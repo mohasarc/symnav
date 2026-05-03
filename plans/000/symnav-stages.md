@@ -53,6 +53,14 @@ The architecture is locked. Stages are framed against it.
 
 **Done when.** A new contributor can clone the repo, run a single install command, and watch the test suite pass. Adding a violating import (e.g. `renderer` importing `backend-typescript`) breaks CI.
 
+**Remarks (post-drill-down, 2026-05-03).** During Stage 0 planning the following adjustments were made to the original scope above. They refine, not replace, the text:
+- **Five packages, not four.** A private `packages/testing` package (published as `@symnav/testing`, never released to npm) is added alongside `apps/cli`, `packages/core`, `packages/renderer`, and `packages/backend-typescript`. It owns the fixture loader, shared test helpers, and the fixture projects themselves. It may depend on `@symnav/core` (for IR types). It is permitted as an import only from test files in other packages; the ESLint boundary rule and TS `tsconfig.test.json`-only references enforce that.
+- **Fixtures live under `packages/testing/fixtures/`,** not at a top-level fixtures directory.
+- **Toolchain locked.** Node 20+, ESM-only, TypeScript built with `tsc --build` + project references (no bundler). pnpm version pinned via `packageManager`. Vitest as the test runner. ESLint flat config + `eslint-plugin-boundaries` + Prettier-via-ESLint. GitHub Actions on Linux/Node 20, single-version matrix. `commander` for CLI argument parsing. `tsx` for dev-time CLI execution.
+- **Two-layer dependency-direction enforcement.** Layer 1: ESLint `boundaries` rule with a test-file exemption for `@symnav/testing`. Layer 2: TypeScript project references — `packages/renderer`'s `tsconfig.json` literally cannot resolve `@symnav/backend-typescript`. ESLint provides clear early errors; project references are the unbypassable structural backstop.
+- **Editor config committed.** `.vscode/settings.json` (formatOnSave + Prettier default + ESLint fixAll) and `.vscode/extensions.json` (recommend Prettier + ESLint extensions) are part of Stage 0 to give contributors a consistent dev experience. CI is still the source of enforcement.
+- **AGENTS.md is the contributor guide** (with `CLAUDE.md` symlinked). It points readers at the functional spec and stages doc for product/roadmap context, lists day-to-day commands and test conventions, and restates the dependency-direction rule near the bottom.
+
 ---
 
 ## Stage 1 — `overview`

@@ -6,3 +6,8 @@ skills-lock.json
 .serena
 
 temp/
+
+node_modules/
+dist/
+coverage/
+*.tsbuildinfo

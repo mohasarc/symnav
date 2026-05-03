@@ -4,5 +4,8 @@
   "packageManager": "pnpm@10.26.2",
   "scripts": {
     "test": "pnpm -r run test"
+  },
+  "devDependencies": {
+    "vitest": "^2.1.9"
   }
 }

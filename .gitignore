@@ -1,0 +1,8 @@
+.agents/skills/*
+!.agents/skills/*+/
+
+skills-lock.json
+
+.serena
+
+temp/

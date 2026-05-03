@@ -12,6 +12,8 @@ importers:
         specifier: ^2.1.9
         version: 2.1.9
 
+  packages/backend-typescript: {}
+
   packages/core: {}
 
   packages/renderer: {}

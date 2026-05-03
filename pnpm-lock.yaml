@@ -18,6 +18,8 @@ importers:
 
   packages/renderer: {}
 
+  packages/testing: {}
+
 packages:
 
   '@esbuild/aix-ppc64@0.21.5':

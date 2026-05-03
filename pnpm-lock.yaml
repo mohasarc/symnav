@@ -12,6 +12,8 @@ importers:
         specifier: ^2.1.9
         version: 2.1.9
 
+  apps/cli: {}
+
   packages/backend-typescript: {}
 
   packages/core: {}

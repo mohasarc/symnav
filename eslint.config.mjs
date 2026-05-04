@@ -55,6 +55,17 @@ export default [
     },
     settings: {
       "boundaries/elements": elements,
+      "import/resolver": {
+        alias: {
+          map: [
+            ["@symnav/core", "./packages/core/src/index.ts"],
+            ["@symnav/renderer", "./packages/renderer/src/index.ts"],
+            ["@symnav/backend-typescript", "./packages/backend-typescript/src/index.ts"],
+            ["@symnav/testing", "./packages/testing/src/index.ts"],
+          ],
+          extensions: [".ts", ".js"],
+        },
+      },
     },
     rules: {
       ...prettierConfig.rules,

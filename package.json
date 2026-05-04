@@ -5,7 +5,7 @@
   "scripts": {
     "test": "pnpm -r run test",
     "build": "tsc --build",
-    "typecheck": "tsc --build",
+    "typecheck": "tsc --build && pnpm -r run typecheck:test",
     "lint": "eslint ."
   },
   "devDependencies": {

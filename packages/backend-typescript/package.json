@@ -18,6 +18,7 @@
     "test": "vitest run",
     "build": "tsc --build",
     "typecheck": "tsc --build",
-    "lint": "eslint src"
+    "lint": "eslint src",
+    "typecheck:test": "tsc -p tsconfig.test.json --noEmit"
   }
 }

@@ -1,6 +1,22 @@
 {
   "extends": "./tsconfig.json",
-  "compilerOptions": { "composite": false, "noEmit": true },
-  "include": ["src/**/*.ts", "test/**/*.ts"],
-  "references": [{ "path": "./tsconfig.json" }, { "path": "../testing" }]
+  "compilerOptions": {
+    "composite": false,
+    "noEmit": true
+  },
+  "include": [
+    "src/**/*.ts",
+    "test/**/*.ts"
+  ],
+  "references": [
+    {
+      "path": "./tsconfig.json"
+    },
+    {
+      "path": "../testing"
+    }
+  ],
+  "exclude": [
+    "**/dist/**"
+  ]
 }

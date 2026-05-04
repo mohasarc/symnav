@@ -16,6 +16,7 @@
     "rootDir": "./src",
     "esModuleInterop": false,
     "verbatimModuleSyntax": true,
-    "skipLibCheck": true
+    "skipLibCheck": true,
+    "ignoreDeprecations": "6.0"
   }
 }

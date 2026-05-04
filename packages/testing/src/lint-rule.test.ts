@@ -1,13 +1,13 @@
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { ESLint } from "eslint";
+import { ESLint, type Linter } from "eslint";
 import { loadWorkspaceEslintConfig } from "./eslint-config.js";
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
 
 async function makeESLint(): Promise<ESLint> {
-  const config = (await loadWorkspaceEslintConfig()) as ESLint.ConfigData[];
+  const config = (await loadWorkspaceEslintConfig()) as Linter.Config[];
   return new ESLint({
     cwd: repoRoot,
     overrideConfigFile: true,

@@ -1,8 +1,13 @@
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import tsParser from "@typescript-eslint/parser";
 import tsPlugin from "@typescript-eslint/eslint-plugin";
 import boundaries from "eslint-plugin-boundaries";
 import prettierPlugin from "eslint-plugin-prettier";
 import prettierConfig from "eslint-config-prettier";
+
+const repoRoot = dirname(fileURLToPath(import.meta.url));
+const pkg = (sub) => join(repoRoot, sub);
 
 const elements = [
   { type: "core", pattern: "packages/core/**" },
@@ -58,10 +63,10 @@ export default [
       "import/resolver": {
         alias: {
           map: [
-            ["@symnav/core", "./packages/core/src/index.ts"],
-            ["@symnav/renderer", "./packages/renderer/src/index.ts"],
-            ["@symnav/backend-typescript", "./packages/backend-typescript/src/index.ts"],
-            ["@symnav/testing", "./packages/testing/src/index.ts"],
+            ["@symnav/core", pkg("packages/core/src/index.ts")],
+            ["@symnav/renderer", pkg("packages/renderer/src/index.ts")],
+            ["@symnav/backend-typescript", pkg("packages/backend-typescript/src/index.ts")],
+            ["@symnav/testing", pkg("packages/testing/src/index.ts")],
           ],
           extensions: [".ts", ".js"],
         },

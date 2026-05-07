@@ -1,1 +1,1 @@
-export { loadWorkspaceEslintConfig } from "./eslint-config.js";
+export const placeholder = true;

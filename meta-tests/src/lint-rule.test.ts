@@ -1,17 +1,22 @@
 import { dirname, join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { describe, expect, it } from "vitest";
 import { ESLint, type Linter } from "eslint";
-import { loadWorkspaceEslintConfig } from "./eslint-config.js";
 
-const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
+const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
+
+async function loadConfig(): Promise<Linter.Config[]> {
+  const configUrl = pathToFileURL(join(repoRoot, "eslint.config.mjs")).href;
+  const mod = (await import(configUrl)) as { default: Linter.Config[] };
+  return mod.default;
+}
 
 async function makeESLint(): Promise<ESLint> {
-  const config = (await loadWorkspaceEslintConfig()) as Linter.Config[];
+  const baseConfig = await loadConfig();
   return new ESLint({
     cwd: repoRoot,
     overrideConfigFile: true,
-    baseConfig: config,
+    baseConfig,
   });
 }
 
@@ -38,7 +43,7 @@ describe("ESLint workspace config", () => {
 
   it("allows test files to import @symnav/testing", async () => {
     const eslint = await makeESLint();
-    const code = `import { fixturePath } from "@symnav/testing";\nexport const f = fixturePath;\n`;
+    const code = `import { placeholder } from "@symnav/testing";\nexport const f = placeholder;\n`;
     const [result] = await eslint.lintText(code, {
       filePath: join(repoRoot, "packages/renderer/src/foo.test.ts"),
     });

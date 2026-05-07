@@ -20,9 +20,7 @@ describe("buildSymbolPath", () => {
   it("joins ancestor names with ::", () => {
     const ancestors = [decl("CheckoutService", "class")];
     const leaf = decl("processPayment", "method");
-    expect(buildSymbolPath(ancestors, leaf)).toBe(
-      "CheckoutService::processPayment",
-    );
+    expect(buildSymbolPath(ancestors, leaf)).toBe("CheckoutService::processPayment");
   });
 
   it("handles three-deep nesting", () => {

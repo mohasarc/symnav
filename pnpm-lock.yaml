@@ -73,10 +73,18 @@ importers:
       ignore:
         specifier: ^7.0.5
         version: 7.0.5
+    devDependencies:
+      '@symnav/testing':
+        specifier: workspace:*
+        version: link:../testing
 
   packages/renderer: {}
 
-  packages/testing: {}
+  packages/testing:
+    dependencies:
+      '@symnav/core':
+        specifier: workspace:*
+        version: link:../core
 
 packages:
 

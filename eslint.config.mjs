@@ -1,3 +1,4 @@
+// @ts-check
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import tsParser from "@typescript-eslint/parser";
@@ -7,32 +8,54 @@ import prettierPlugin from "eslint-plugin-prettier";
 import prettierConfig from "eslint-config-prettier";
 
 const repoRoot = dirname(fileURLToPath(import.meta.url));
+
+/** @param {string} sub */
 const pkg = (sub) => join(repoRoot, sub);
 
-const elements = [
-  { type: "core", pattern: "packages/core/**" },
-  { type: "renderer", pattern: "packages/renderer/**" },
-  { type: "backend", pattern: "packages/backend-typescript/**" },
-  { type: "cli", pattern: "apps/cli/**" },
-  { type: "testing", pattern: "packages/testing/**" },
+/**
+ * Importable workspace packages. Drives both the boundaries `elements` map and
+ * the alias resolver — adding a new package means adding one entry here.
+ *
+ * `apps/cli` is intentionally absent: it's an app, not an importable name.
+ *
+ * @type {{ name: string; type: string; dir: string }[]}
+ */
+const packages = [
+  { name: "@symnav/core", type: "core", dir: "packages/core" },
+  { name: "@symnav/renderer", type: "renderer", dir: "packages/renderer" },
+  { name: "@symnav/backend-typescript", type: "backend", dir: "packages/backend-typescript" },
+  { name: "@symnav/testing", type: "testing", dir: "packages/testing" },
 ];
 
-function dependencyRules(allowTesting) {
-  const baseAllows = {
-    core: [],
-    renderer: ["core"],
-    backend: ["core"],
-    cli: ["core", "renderer", "backend"],
-    testing: ["core"],
-  };
-  const rules = [];
-  for (const [from, allow] of Object.entries(baseAllows)) {
-    const allowed = allowTesting ? [...allow, "testing"] : allow;
-    if (allowed.length > 0) {
-      rules.push({ from: { type: from }, allow: { to: { type: allowed } } });
-    }
-  }
-  return rules;
+const elements = [
+  ...packages.map((p) => ({ type: p.type, pattern: `${p.dir}/**` })),
+  { type: "cli", pattern: "apps/cli/**" },
+];
+
+const aliasMap = packages.map(
+  (p) => /** @type {[string, string]} */ ([p.name, pkg(`${p.dir}/src/index.ts`)]),
+);
+
+function productionRules() {
+  return [
+    { from: { type: "renderer" }, allow: { to: { type: ["core"] } } },
+    { from: { type: "backend" }, allow: { to: { type: ["core"] } } },
+    { from: { type: "cli" }, allow: { to: { type: ["core", "renderer", "backend"] } } },
+    { from: { type: "testing" }, allow: { to: { type: ["core"] } } },
+  ];
+}
+
+function testRules() {
+  return [
+    { from: { type: "core" }, allow: { to: { type: ["testing"] } } },
+    { from: { type: "renderer" }, allow: { to: { type: ["core", "testing"] } } },
+    { from: { type: "backend" }, allow: { to: { type: ["core", "testing"] } } },
+    {
+      from: { type: "cli" },
+      allow: { to: { type: ["core", "renderer", "backend", "testing"] } },
+    },
+    { from: { type: "testing" }, allow: { to: { type: ["core"] } } },
+  ];
 }
 
 const baseLanguageOptions = {
@@ -61,15 +84,7 @@ export default [
     settings: {
       "boundaries/elements": elements,
       "import/resolver": {
-        alias: {
-          map: [
-            ["@symnav/core", pkg("packages/core/src/index.ts")],
-            ["@symnav/renderer", pkg("packages/renderer/src/index.ts")],
-            ["@symnav/backend-typescript", pkg("packages/backend-typescript/src/index.ts")],
-            ["@symnav/testing", pkg("packages/testing/src/index.ts")],
-          ],
-          extensions: [".ts", ".js"],
-        },
+        alias: { map: aliasMap, extensions: [".ts", ".js"] },
       },
     },
     rules: {
@@ -77,7 +92,7 @@ export default [
       "prettier/prettier": "error",
       "boundaries/dependencies": [
         "error",
-        { default: "disallow", rules: dependencyRules(false) },
+        { default: "disallow", rules: productionRules() },
       ],
     },
   },
@@ -86,7 +101,7 @@ export default [
     rules: {
       "boundaries/dependencies": [
         "error",
-        { default: "disallow", rules: dependencyRules(true) },
+        { default: "disallow", rules: testRules() },
       ],
     },
   },

@@ -1,1 +1,1 @@
-export const placeholder = true;
+export { fixturePath } from "./fixtures.js";

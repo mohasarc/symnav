@@ -48,6 +48,9 @@ importers:
         specifier: ^14.0.3
         version: 14.0.3
     devDependencies:
+      '@symnav/testing':
+        specifier: workspace:*
+        version: link:../../packages/testing
       tsx:
         specifier: ^4.21.0
         version: 4.21.0

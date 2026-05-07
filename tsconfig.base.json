@@ -14,9 +14,7 @@
     "incremental": true,
     "outDir": "./dist",
     "rootDir": "./src",
-    "esModuleInterop": false,
     "verbatimModuleSyntax": true,
-    "skipLibCheck": true,
-    "ignoreDeprecations": "6.0"
+    "skipLibCheck": true
   }
 }

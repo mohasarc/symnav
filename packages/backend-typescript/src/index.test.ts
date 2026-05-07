@@ -1,8 +1,9 @@
 import { describe, expect, it } from "vitest";
-import * as mod from "./index.js";
+import { TS_EXTENSIONS, TypeScriptBackend } from "./index.js";
 
-describe("@symnav/backend-typescript", () => {
-  it("module loads", () => {
-    expect(mod).toBeDefined();
+describe("@symnav/backend-typescript public surface", () => {
+  it("exports TypeScriptBackend and TS_EXTENSIONS", () => {
+    expect(typeof TypeScriptBackend).toBe("function");
+    expect(TS_EXTENSIONS).toContain(".ts");
   });
 });

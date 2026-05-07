@@ -12,8 +12,8 @@ pnpm build
 pnpm test
 ```
 
-To run the CLI from source during development, use the `dev` script in `apps/cli`. Pass CLI arguments after a `--` separator so pnpm forwards them through:
+To run the CLI from source during development, use the `dev` script in `apps/cli`:
 
 ```sh
-pnpm --filter symnav dev -- --version
+pnpm --filter symnav dev --version
 ```

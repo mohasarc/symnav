@@ -20,5 +20,8 @@
     "typecheck": "tsc --build",
     "lint": "eslint src",
     "typecheck:test": "tsc -p tsconfig.test.json --noEmit"
+  },
+  "dependencies": {
+    "ignore": "^7.0.5"
   }
 }

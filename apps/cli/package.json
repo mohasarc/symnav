@@ -1,8 +1,9 @@
 {
   "name": "symnav",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "private": true,
   "type": "module",
+  "bin": { "symnav": "./dist/cli.js" },
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
@@ -14,11 +15,23 @@
   "files": [
     "dist"
   ],
+  "engines": { "node": ">=20" },
   "scripts": {
     "test": "vitest run",
     "build": "tsc --build",
     "typecheck": "tsc --build",
-    "lint": "eslint src",
-    "typecheck:test": "tsc -p tsconfig.test.json --noEmit"
+    "lint": "eslint src test",
+    "typecheck:test": "tsc -p tsconfig.test.json --noEmit",
+    "dev": "tsx src/cli.ts"
+  },
+  "dependencies": {
+    "commander": "^14.0.3",
+    "@symnav/core": "workspace:*",
+    "@symnav/renderer": "workspace:*",
+    "@symnav/backend-typescript": "workspace:*"
+  },
+  "devDependencies": {
+    "@symnav/testing": "workspace:*",
+    "tsx": "^4.21.0"
   }
 }

@@ -22,6 +22,7 @@
     "typecheck:test": "tsc -p tsconfig.test.json --noEmit"
   },
   "dependencies": {
-    "@symnav/core": "workspace:*"
+    "@symnav/core": "workspace:*",
+    "ts-morph": "^28.0.0"
   }
 }

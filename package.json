@@ -3,9 +3,13 @@
   "private": true,
   "packageManager": "pnpm@10.26.2",
   "scripts": {
-    "test": "pnpm -r run test"
+    "test": "pnpm -r run test",
+    "build": "tsc --build",
+    "typecheck": "tsc --build"
   },
   "devDependencies": {
+    "@types/node": "^25.6.0",
+    "typescript": "^6.0.3",
     "vitest": "^2.1.9"
   }
 }

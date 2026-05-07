@@ -1,0 +1,10 @@
+{
+  "name": "@symnav/meta-tests",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "vitest run",
+    "typecheck:test": "tsc -p tsconfig.test.json --noEmit"
+  }
+}

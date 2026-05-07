@@ -1,4 +1,5 @@
 import { dirname } from "node:path/posix";
+import ignore, { type Ignore } from "ignore";
 import type { WorkspaceFileSystem } from "./file-system.js";
 import { NotInWorkspaceError } from "./errors.js";
 
@@ -47,12 +48,86 @@ function normalizePosix(p: string): string {
   return parts.join("/") || "/";
 }
 
+function joinAbs(root: string, relDir: string, name: string): string {
+  const sep1 = root.endsWith("/") ? "" : "/";
+  if (relDir === "") return `${root}${sep1}${name}`;
+  return `${root}${sep1}${relDir}/${name}`;
+}
+
+function buildIgnoreMatcher(root: string, fs: WorkspaceFileSystem): Ignore {
+  const matcher = ignore();
+  const stack: string[] = [""];
+
+  while (stack.length > 0) {
+    const relDir = stack.pop()!;
+    const absDir = relDir === "" ? root : joinAbs(root, "", relDir);
+
+    let entries: readonly string[];
+    try {
+      entries = fs.listDirSync(absDir);
+    } catch {
+      continue;
+    }
+
+    if (entries.includes(".gitignore")) {
+      const gitignoreAbs = joinAbs(root, relDir, ".gitignore");
+      let content: string;
+      try {
+        content = fs.readFileSync(gitignoreAbs);
+      } catch {
+        content = "";
+      }
+      const scoped =
+        relDir === ""
+          ? content
+          : content
+              .split("\n")
+              .map((line) => scopeIgnoreLine(line, relDir))
+              .join("\n");
+      matcher.add(scoped);
+    }
+
+    for (const name of entries) {
+      if (name === ".git") continue;
+      const childRel = relDir === "" ? name : `${relDir}/${name}`;
+      const childAbs = joinAbs(root, relDir, name);
+      if (matcher.ignores(childRel)) continue;
+      if (fs.isDirectorySync(childAbs)) {
+        stack.push(childRel);
+      }
+    }
+  }
+
+  return matcher;
+}
+
+function scopeIgnoreLine(line: string, scope: string): string {
+  const trimmed = line.trim();
+  if (trimmed === "" || trimmed.startsWith("#")) return line;
+  let negated = false;
+  let body = line;
+  if (body.startsWith("!")) {
+    negated = true;
+    body = body.slice(1);
+  }
+  const prefix = negated ? "!" : "";
+  if (body.startsWith("/")) {
+    return `${prefix}${scope}${body}`;
+  }
+  if (body.includes("/") && !body.endsWith("/")) {
+    return `${prefix}${scope}/${body}`;
+  }
+  return `${prefix}${scope}/**/${body}`;
+}
+
 export function createWorkspace(opts: CreateWorkspaceOptions): Promise<Workspace> {
   const { startDir, fs } = opts;
   const root = findGitRoot(startDir, fs);
   if (root === null) {
     return Promise.reject(new NotInWorkspaceError(startDir));
   }
+
+  const matcher = buildIgnoreMatcher(root, fs);
 
   const ws: Workspace = {
     root,
@@ -78,8 +153,10 @@ export function createWorkspace(opts: CreateWorkspaceOptions): Promise<Workspace
       const prefix = root.endsWith("/") ? root : `${root}/`;
       return normalized.startsWith(prefix);
     },
-    isIgnored() {
-      return false;
+    isIgnored(relPath) {
+      if (relPath === ".git" || relPath.startsWith(".git/")) return true;
+      if (relPath === "") return false;
+      return matcher.ignores(relPath);
     },
   };
   return Promise.resolve(ws);

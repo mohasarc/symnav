@@ -96,10 +96,13 @@ describe("Workspace.isIgnored", () => {
   });
 
   it("honors negation patterns", async () => {
+    // Note: gitignore semantics forbid re-including files under an ignored
+    // directory — `dir/` followed by `!dir/keep.js` does not work. Negation
+    // requires the parent rule to leave the directory traversable, e.g. `dir/*`.
     const ws = await inMemoryWorkspace({
       files: {
         "/repo/.git/HEAD": "",
-        "/repo/.gitignore": "dist/\n!dist/keep.js\n",
+        "/repo/.gitignore": "dist/*\n!dist/keep.js\n",
         "/repo/dist/keep.js": "",
         "/repo/dist/other.js": "",
       },

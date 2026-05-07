@@ -1,9 +1,9 @@
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
-const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
+const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 
 function readReferences(tsconfigRelPath: string): string[] {
   const raw = readFileSync(join(repoRoot, tsconfigRelPath), "utf8");
@@ -63,5 +63,13 @@ describe("tsconfig project references", () => {
 
   it("@symnav/testing's own tsconfig.test.json references only its production tsconfig.json", () => {
     expect(readReferences("packages/testing/tsconfig.test.json")).toEqual(["./tsconfig.json"]);
+  });
+
+  it("meta-tests intentionally ships no production tsconfig.json", () => {
+    expect(existsSync(join(repoRoot, "meta-tests/tsconfig.json"))).toBe(false);
+  });
+
+  it("meta-tests/tsconfig.test.json has no references (depends on nothing internal)", () => {
+    expect(readReferences("meta-tests/tsconfig.test.json")).toEqual([]);
   });
 });

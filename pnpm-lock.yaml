@@ -20,6 +20,8 @@ importers:
 
   apps/cli: {}
 
+  meta-tests: {}
+
   packages/backend-typescript: {}
 
   packages/core: {}

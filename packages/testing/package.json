@@ -11,10 +11,14 @@
       "default": "./dist/index.js"
     }
   },
-  "files": ["dist"],
+  "files": [
+    "dist"
+  ],
   "scripts": {
     "test": "vitest run",
     "build": "tsc --build",
-    "typecheck": "tsc --build"
+    "typecheck": "tsc --build",
+    "lint": "eslint src",
+    "typecheck:test": "tsc -p tsconfig.test.json --noEmit"
   }
 }

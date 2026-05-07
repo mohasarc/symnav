@@ -5,10 +5,19 @@
   "scripts": {
     "test": "pnpm -r run test",
     "build": "tsc --build",
-    "typecheck": "tsc --build"
+    "typecheck": "tsc --build && pnpm -r run typecheck:test",
+    "lint": "eslint ."
   },
   "devDependencies": {
     "@types/node": "^25.6.0",
+    "@typescript-eslint/eslint-plugin": "^8.59.1",
+    "@typescript-eslint/parser": "^8.59.1",
+    "eslint": "^10.3.0",
+    "eslint-config-prettier": "^10.1.8",
+    "eslint-import-resolver-alias": "^1.1.2",
+    "eslint-plugin-boundaries": "^6.0.2",
+    "eslint-plugin-prettier": "^5.5.5",
+    "prettier": "^3.8.3",
     "typescript": "^6.0.3",
     "vitest": "^2.1.9"
   }

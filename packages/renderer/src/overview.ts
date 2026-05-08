@@ -53,3 +53,19 @@ export function renderOverviewText(file: FileSymbols): string {
   const blocks = file.symbols.map(renderTopLevel);
   return `${header}${blocks.join("\n")}`;
 }
+
+function sortKeysReplacer(_key: string, value: unknown): unknown {
+  if (value !== null && typeof value === "object" && !Array.isArray(value)) {
+    const source = value as Record<string, unknown>;
+    const sorted: Record<string, unknown> = {};
+    for (const k of Object.keys(source).sort()) {
+      sorted[k] = source[k];
+    }
+    return sorted;
+  }
+  return value;
+}
+
+export function renderOverviewJson(file: FileSymbols): string {
+  return `${JSON.stringify(file, sortKeysReplacer, 2)}\n`;
+}

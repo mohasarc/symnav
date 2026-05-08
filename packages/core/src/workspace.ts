@@ -17,3 +17,16 @@ export interface Workspace {
   /** `.gitignore`-aware ignore check for a workspace-relative POSIX path. */
   isIgnored(relPath: string): boolean;
 }
+
+export interface CreateWorkspaceOptions {
+  startDir: string;
+  fs: WorkspaceFileSystem;
+}
+
+/**
+ * Build a `Workspace` rooted at the nearest `.git` ancestor of `startDir`.
+ * Throws `NotInWorkspaceError` if no such ancestor exists.
+ */
+export function createWorkspace(_opts: CreateWorkspaceOptions): Promise<Workspace> {
+  return Promise.reject(new Error("createWorkspace not implemented yet"));
+}

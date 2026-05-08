@@ -80,3 +80,75 @@ describe("Workspace filesystem", () => {
     await expect(ws.fs.readFile("/repo/hello.txt")).resolves.toBe("Hello, world!\n");
   });
 });
+
+describe("Workspace.isIgnored", () => {
+  it("honors a single root .gitignore", async () => {
+    const ws = await inMemoryWorkspace({
+      files: {
+        "/repo/.git/HEAD": "ref: refs/heads/main\n",
+        "/repo/.gitignore": "dist/\n",
+        "/repo/dist/x.js": "",
+        "/repo/src/x.ts": "",
+      },
+      startDir: "/repo",
+    });
+    expect(ws.isIgnored("dist/x.js")).toBe(true);
+    expect(ws.isIgnored("src/x.ts")).toBe(false);
+  });
+
+  it("aggregates subdirectory .gitignore files", async () => {
+    const ws = await inMemoryWorkspace({
+      files: {
+        "/repo/.git/HEAD": "ref: refs/heads/main\n",
+        "/repo/.gitignore": "",
+        "/repo/pkg/.gitignore": "temp.ts\n",
+        "/repo/pkg/temp.ts": "",
+        "/repo/temp.ts": "",
+      },
+      startDir: "/repo",
+    });
+    expect(ws.isIgnored("pkg/temp.ts")).toBe(true);
+    expect(ws.isIgnored("temp.ts")).toBe(false);
+  });
+
+  it("honors negation", async () => {
+    const ws = await inMemoryWorkspace({
+      files: {
+        "/repo/.git/HEAD": "ref: refs/heads/main\n",
+        "/repo/.gitignore": "dist/\n!dist/keep.js\n",
+        "/repo/dist/keep.js": "",
+        "/repo/dist/other.js": "",
+      },
+      startDir: "/repo",
+    });
+    expect(ws.isIgnored("dist/keep.js")).toBe(false);
+    expect(ws.isIgnored("dist/other.js")).toBe(true);
+  });
+
+  it("always rejects .git/ and any path under it", async () => {
+    const ws = await inMemoryWorkspace({
+      files: {
+        "/repo/.git/HEAD": "ref: refs/heads/main\n",
+        "/repo/src/x.ts": "",
+      },
+      startDir: "/repo",
+    });
+    expect(ws.isIgnored(".git")).toBe(true);
+    expect(ws.isIgnored(".git/HEAD")).toBe(true);
+    expect(ws.isIgnored(".git/refs/heads/main")).toBe(true);
+  });
+
+  it("returns false for everything (except .git/) when no .gitignore exists", async () => {
+    const ws = await inMemoryWorkspace({
+      files: {
+        "/repo/.git/HEAD": "ref: refs/heads/main\n",
+        "/repo/src/x.ts": "",
+        "/repo/dist/x.js": "",
+      },
+      startDir: "/repo",
+    });
+    expect(ws.isIgnored("src/x.ts")).toBe(false);
+    expect(ws.isIgnored("dist/x.js")).toBe(false);
+    expect(ws.isIgnored(".git/HEAD")).toBe(true);
+  });
+});

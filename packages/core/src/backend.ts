@@ -1,4 +1,4 @@
-import type { FileSymbols } from "./ir.js";
+import type { FileSymbols } from "./intermediate-representation/types.js";
 
 /**
  * Cross-language contract for a symnav language backend. A backend is

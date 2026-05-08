@@ -4,6 +4,9 @@ import type { Ignore } from "ignore";
 import type { WorkspaceFileSystem } from "./file-system.js";
 import { NotInWorkspaceError } from "./errors.js";
 
+export { nodeFileSystem } from "./file-system.js";
+export type { WorkspaceFileSystem } from "./file-system.js";
+
 /**
  * The workspace abstraction. Knows the workspace root (nearest `.git` ancestor
  * of the user's starting directory), exposes a filesystem port, and answers

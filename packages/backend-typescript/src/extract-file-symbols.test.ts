@@ -21,12 +21,7 @@ describe("extractFileSymbols", () => {
     );
     const ir = extractFileSymbols({ sourceFile, filePath: "x.ts" });
     expect(ir.symbols.map((s) => s.name)).toEqual(["a", "B", "C", "D"]);
-    expect(ir.symbols.map((s) => s.kind)).toEqual([
-      "function",
-      "class",
-      "interface",
-      "type-alias",
-    ]);
+    expect(ir.symbols.map((s) => s.kind)).toEqual(["function", "class", "interface", "type-alias"]);
   });
 
   it("emits class members as children", () => {

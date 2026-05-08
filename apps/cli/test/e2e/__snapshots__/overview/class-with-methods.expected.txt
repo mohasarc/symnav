@@ -1,0 +1,16 @@
+Overview: class-with-methods.ts
+
+1-23: CheckoutService
+   export class CheckoutService
+├── 2: CheckoutService::retries
+│   private retries: number = 0
+├── 4-6: CheckoutService::constructor
+│   constructor(initial: number)
+├── 8-10: CheckoutService::count
+│   get count(): number
+├── 12-14: CheckoutService::count
+│   set count(value: number)
+├── 16-18: CheckoutService::process
+│   process(order: string): string
+└── 20-22: CheckoutService::make
+    static make(): CheckoutService

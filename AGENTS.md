@@ -21,12 +21,14 @@
 - `pnpm build` — `tsc --build` across the workspace.
 - `pnpm --filter symnav dev -- <args>` — run the CLI from source via `tsx` (no build step).
 
+The first user-facing command is `symnav overview <file>`, which prints the symbol structure of a TypeScript file (text by default, JSON via `--json`). Workspace root is the nearest `.git` ancestor; `--cwd <dir>` overrides where path resolution starts. User-facing failures use the spec's `Cannot answer: <reason>.` voice on stderr with exit 1; unexpected errors exit 2.
+
 ## Test conventions
 
 - Unit tests are colocated next to source: `<package>/src/foo.test.ts`.
 - Integration tests live under `<package>/test/integration/`.
 - End-to-end tests live under `apps/cli/test/e2e/` and spawn the built binary.
-- Fixture projects live under `packages/testing/fixtures/`. Resolve them via `fixturePath("name")` from `@symnav/testing` — never hardcode paths.
+- Fixture projects live under `packages/testing/fixtures/`. Resolve them via `fixturePath("name")` from `@symnav/testing` — never hardcode paths. The `overview-cases` fixture's `.git/HEAD` marker is created at test runtime (it's gitignored at the repo root) — see `apps/cli/test/e2e/overview.test.ts`'s `beforeAll`.
 
 ## TDD
 

@@ -11,3 +11,6 @@ node_modules/
 dist/
 coverage/
 *.tsbuildinfo
+
+# Synthetic .git markers in test fixtures (created at test runtime)
+packages/testing/fixtures/overview-cases/.git

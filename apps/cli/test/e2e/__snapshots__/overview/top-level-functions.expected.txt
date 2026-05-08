@@ -1,0 +1,10 @@
+Overview: top-level-functions.ts
+
+1-3: fetchData
+   export async function fetchData(url: string): Promise<string>
+
+5-7: identity
+   export function identity<T>(value: T): T
+
+9-11: counter
+   export function* counter(): Generator<number>

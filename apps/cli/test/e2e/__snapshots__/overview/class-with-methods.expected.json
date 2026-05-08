@@ -1,0 +1,76 @@
+{
+  "filePath": "class-with-methods.ts",
+  "symbols": [
+    {
+      "children": [
+        {
+          "children": [],
+          "kind": "property",
+          "name": "retries",
+          "range": {
+            "endLine": 2,
+            "startLine": 2
+          },
+          "signature": "private retries: number = 0"
+        },
+        {
+          "children": [],
+          "kind": "constructor",
+          "name": "constructor",
+          "range": {
+            "endLine": 6,
+            "startLine": 4
+          },
+          "signature": "constructor(initial: number)"
+        },
+        {
+          "children": [],
+          "kind": "getter",
+          "name": "count",
+          "range": {
+            "endLine": 10,
+            "startLine": 8
+          },
+          "signature": "get count(): number"
+        },
+        {
+          "children": [],
+          "kind": "setter",
+          "name": "count",
+          "range": {
+            "endLine": 14,
+            "startLine": 12
+          },
+          "signature": "set count(value: number)"
+        },
+        {
+          "children": [],
+          "kind": "method",
+          "name": "process",
+          "range": {
+            "endLine": 18,
+            "startLine": 16
+          },
+          "signature": "process(order: string): string"
+        },
+        {
+          "children": [],
+          "kind": "method",
+          "name": "make",
+          "range": {
+            "endLine": 22,
+            "startLine": 20
+          },
+          "signature": "static make(): CheckoutService"
+        }
+      ],
+      "kind": "class",
+      "name": "CheckoutService",
+      "range": {
+        "endLine": 23,
+        "startLine": 1
+      },
+      "signature": "export class CheckoutService"
+    }
+  ]
+}

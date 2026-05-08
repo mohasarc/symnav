@@ -9,7 +9,7 @@ import {
   runOverview,
   UnsupportedFileError,
 } from "@symnav/core";
-import { inMemoryWorkspace } from "@symnav/testing";
+import { InMemoryWorkspace } from "../helpers/in-memory-workspace.js";
 
 const SAMPLE_IR: FileSymbols = {
   filePath: "src/x.ts",
@@ -38,7 +38,7 @@ function recordingBackend(opts: {
 
 describe("runOverview happy path", () => {
   it("returns the backend's IR for a relative input path", async () => {
-    const ws = await inMemoryWorkspace({
+    const ws = await InMemoryWorkspace.create({
       files: {
         "/repo/.git/HEAD": "ref: refs/heads/main\n",
         "/repo/src/x.ts": "export const x = 1;\n",
@@ -62,7 +62,7 @@ describe("runOverview happy path", () => {
   });
 
   it("accepts an absolute input path and returns the IR", async () => {
-    const ws = await inMemoryWorkspace({
+    const ws = await InMemoryWorkspace.create({
       files: {
         "/repo/.git/HEAD": "ref: refs/heads/main\n",
         "/repo/src/x.ts": "export const x = 1;\n",
@@ -83,7 +83,7 @@ describe("runOverview happy path", () => {
   });
 
   it("resolves relative paths against cwd, not the workspace root", async () => {
-    const ws = await inMemoryWorkspace({
+    const ws = await InMemoryWorkspace.create({
       files: {
         "/repo/.git/HEAD": "ref: refs/heads/main\n",
         "/repo/pkg/sub/x.ts": "export const x = 1;\n",
@@ -104,7 +104,7 @@ describe("runOverview happy path", () => {
   });
 
   it("invokes the backend with the workspace-relative POSIX path", async () => {
-    const ws = await inMemoryWorkspace({
+    const ws = await InMemoryWorkspace.create({
       files: {
         "/repo/.git/HEAD": "ref: refs/heads/main\n",
         "/repo/pkg/a/b/file.ts": "export {};\n",
@@ -127,7 +127,7 @@ describe("runOverview happy path", () => {
 
 describe("runOverview validation errors", () => {
   it("throws FileNotFoundError when the file does not exist", async () => {
-    const ws = await inMemoryWorkspace({
+    const ws = await InMemoryWorkspace.create({
       files: {
         "/repo/.git/HEAD": "ref: refs/heads/main\n",
         "/repo/src/x.ts": "",
@@ -153,7 +153,7 @@ describe("runOverview validation errors", () => {
   });
 
   it("preserves the absolute input as displayed path on missing", async () => {
-    const ws = await inMemoryWorkspace({
+    const ws = await InMemoryWorkspace.create({
       files: {
         "/repo/.git/HEAD": "ref: refs/heads/main\n",
       },
@@ -177,7 +177,7 @@ describe("runOverview validation errors", () => {
   });
 
   it("throws OutsideWorkspaceError when the path resolves outside the workspace", async () => {
-    const ws = await inMemoryWorkspace({
+    const ws = await InMemoryWorkspace.create({
       files: {
         "/repo/.git/HEAD": "ref: refs/heads/main\n",
         "/repo/src/x.ts": "",
@@ -199,7 +199,7 @@ describe("runOverview validation errors", () => {
   });
 
   it("throws IgnoredFileError when the path is .gitignored", async () => {
-    const ws = await inMemoryWorkspace({
+    const ws = await InMemoryWorkspace.create({
       files: {
         "/repo/.git/HEAD": "ref: refs/heads/main\n",
         "/repo/.gitignore": "dist/\n",
@@ -225,7 +225,7 @@ describe("runOverview validation errors", () => {
   });
 
   it("throws UnsupportedFileError when no backend accepts the file", async () => {
-    const ws = await inMemoryWorkspace({
+    const ws = await InMemoryWorkspace.create({
       files: {
         "/repo/.git/HEAD": "ref: refs/heads/main\n",
         "/repo/data.json": "{}",
@@ -255,7 +255,7 @@ describe("runOverview validation errors", () => {
 
 describe("runOverview validation order: missing > outside > ignored > unsupported", () => {
   it("missing wins over outside (path is outside AND missing)", async () => {
-    const ws = await inMemoryWorkspace({
+    const ws = await InMemoryWorkspace.create({
       files: {
         "/repo/.git/HEAD": "ref: refs/heads/main\n",
       },
@@ -278,7 +278,7 @@ describe("runOverview validation order: missing > outside > ignored > unsupporte
   it("outside wins over ignored (a path outside the workspace cannot also be ignored)", async () => {
     // We construct the case as: existing file outside workspace; ignore matcher
     // would not apply because the path isn't a workspace-relative path.
-    const ws = await inMemoryWorkspace({
+    const ws = await InMemoryWorkspace.create({
       files: {
         "/repo/.git/HEAD": "ref: refs/heads/main\n",
         "/repo/.gitignore": "x.ts\n",
@@ -300,7 +300,7 @@ describe("runOverview validation order: missing > outside > ignored > unsupporte
   });
 
   it("ignored wins over unsupported (ignored .json file inside workspace)", async () => {
-    const ws = await inMemoryWorkspace({
+    const ws = await InMemoryWorkspace.create({
       files: {
         "/repo/.git/HEAD": "ref: refs/heads/main\n",
         "/repo/.gitignore": "dist/\n",

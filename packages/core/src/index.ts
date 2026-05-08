@@ -22,3 +22,4 @@ export {
 } from "./backend/errors.js";
 export { NotInWorkspaceError } from "./workspace/errors.js";
 export { runOverview } from "./commands/overview.js";
+export type { RunOverviewArgs } from "./commands/overview.js";

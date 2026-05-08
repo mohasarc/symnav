@@ -47,4 +47,188 @@ describe("renderOverviewText", () => {
     `);
     assertTrailingNewline(out);
   });
+
+  it("separates multiple top-level entries with a single blank line each", () => {
+    const file: FileSymbols = {
+      filePath: "src/m.ts",
+      symbols: [
+        decl({
+          name: "A",
+          range: { startLine: 1, endLine: 1 },
+          signature: "const A: number",
+          kind: "variable",
+        }),
+        decl({
+          name: "B",
+          range: { startLine: 3, endLine: 3 },
+          signature: "const B: number",
+          kind: "variable",
+        }),
+        decl({
+          name: "C",
+          range: { startLine: 5, endLine: 5 },
+          signature: "const C: number",
+          kind: "variable",
+        }),
+      ],
+    };
+    const out = renderOverviewText(file);
+    expect(out).toMatchInlineSnapshot(`
+      "Overview: src/m.ts
+
+      1: A
+         const A: number
+
+      3: B
+         const B: number
+
+      5: C
+         const C: number
+      "
+    `);
+    // Exactly two blank-line separators between three entries.
+    const blankSeparators = out.split("\n\n").length - 1;
+    // header blank line + 2 inter-entry blank lines = 3
+    expect(blankSeparators).toBe(3);
+    assertTrailingNewline(out);
+  });
+
+  it("renders a class with three methods using ├── / └── and │   /     prefixes", () => {
+    const cls = decl({
+      name: "CheckoutService",
+      kind: "class",
+      range: { startLine: 12, endLine: 96 },
+      signature: "class CheckoutService",
+      children: [
+        decl({
+          name: "constructor",
+          kind: "constructor",
+          range: { startLine: 24, endLine: 34 },
+          signature: "constructor(paymentProcessor: PaymentProcessor, inventory: InventoryService)",
+        }),
+        decl({
+          name: "processPayment",
+          kind: "method",
+          range: { startLine: 42, endLine: 78 },
+          signature: "async processPayment(order: Order): Promise<Receipt>",
+        }),
+        decl({
+          name: "validateOrder",
+          kind: "method",
+          range: { startLine: 80, endLine: 94 },
+          signature: "private validateOrder(order: Order): void",
+        }),
+      ],
+    });
+    const file: FileSymbols = {
+      filePath: "src/checkout/CheckoutService.ts",
+      symbols: [cls],
+    };
+    const out = renderOverviewText(file);
+    expect(out).toMatchInlineSnapshot(`
+      "Overview: src/checkout/CheckoutService.ts
+
+      12-96: CheckoutService
+         class CheckoutService
+      ├── 24-34: CheckoutService::constructor
+      │   constructor(paymentProcessor: PaymentProcessor, inventory: InventoryService)
+      ├── 42-78: CheckoutService::processPayment
+      │   async processPayment(order: Order): Promise<Receipt>
+      └── 80-94: CheckoutService::validateOrder
+          private validateOrder(order: Order): void
+      "
+    `);
+    assertTrailingNewline(out);
+  });
+
+  it("renders three-deep nesting (namespace → class → method) with cumulative prefixes", () => {
+    const file: FileSymbols = {
+      filePath: "src/deep.ts",
+      symbols: [
+        decl({
+          name: "Outer",
+          kind: "namespace",
+          range: { startLine: 1, endLine: 12 },
+          signature: "namespace Outer",
+          children: [
+            decl({
+              name: "Inner",
+              kind: "class",
+              range: { startLine: 2, endLine: 11 },
+              signature: "class Inner",
+              children: [
+                decl({
+                  name: "method",
+                  kind: "method",
+                  range: { startLine: 4, endLine: 9 },
+                  signature: "method(): void",
+                }),
+              ],
+            }),
+          ],
+        }),
+      ],
+    };
+    const out = renderOverviewText(file);
+    expect(out).toMatchInlineSnapshot(`
+      "Overview: src/deep.ts
+
+      1-12: Outer
+         namespace Outer
+      └── 2-11: Outer::Inner
+          class Inner
+          └── 4-9: Outer::Inner::method
+              method(): void
+      "
+    `);
+    assertTrailingNewline(out);
+  });
+
+  it("renders single-line range as N and multi-line range as N-M", () => {
+    const file: FileSymbols = {
+      filePath: "src/r.ts",
+      symbols: [
+        decl({
+          name: "single",
+          range: { startLine: 8, endLine: 8 },
+          signature: "function single(): void",
+        }),
+        decl({
+          name: "multi",
+          range: { startLine: 12, endLine: 96 },
+          signature: "function multi(): void",
+        }),
+      ],
+    };
+    const out = renderOverviewText(file);
+    expect(out).toContain("8: single");
+    expect(out).toContain("12-96: multi");
+    expect(out).not.toContain("8-8:");
+    assertTrailingNewline(out);
+  });
+
+  it("includes ancestors joined by :: in the symbol path of a nested decl", () => {
+    const file: FileSymbols = {
+      filePath: "src/p.ts",
+      symbols: [
+        decl({
+          name: "C",
+          kind: "class",
+          range: { startLine: 1, endLine: 5 },
+          signature: "class C",
+          children: [
+            decl({
+              name: "m",
+              kind: "method",
+              range: { startLine: 2, endLine: 4 },
+              signature: "m(): void",
+            }),
+          ],
+        }),
+      ],
+    };
+    const out = renderOverviewText(file);
+    expect(out).toContain("C::m");
+    assertTrailingNewline(out);
+  });
 });

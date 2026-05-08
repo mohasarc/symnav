@@ -23,5 +23,8 @@
   },
   "dependencies": {
     "ignore": "^7.0.5"
+  },
+  "devDependencies": {
+    "@symnav/testing": "workspace:*"
   }
 }

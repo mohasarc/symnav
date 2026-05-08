@@ -6,7 +6,6 @@ import {
   nodeFileSystem,
   runOverview,
 } from "@symnav/core";
-import { TypeScriptBackend } from "@symnav/backend-typescript";
 import { renderOverviewJson, renderOverviewText } from "@symnav/renderer";
 import type { ProgramContext } from "../program.js";
 import { formatUserError } from "../error-output.js";
@@ -46,8 +45,7 @@ export function registerOverviewCommand(
           startDir: effectiveCwd,
           fs: nodeFileSystem(),
         });
-        const backend = new TypeScriptBackend(workspace);
-        const router = new BackendRouter([backend]);
+        const router = new BackendRouter(context.backendsFor(workspace));
         const ir = await runOverview({
           workspace,
           router,

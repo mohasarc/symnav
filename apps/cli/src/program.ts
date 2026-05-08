@@ -2,6 +2,8 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Command } from "commander";
+import type { LanguageBackend, Workspace } from "@symnav/core";
+import { TypeScriptBackend } from "@symnav/backend-typescript";
 import { registerOverviewCommand } from "./commands/overview.js";
 
 function readPackageVersion(): string {
@@ -25,6 +27,13 @@ export interface BuildProgramOptions {
   cwd?: string;
   /** Process-exit hook. Defaults to `process.exit`. Tests pass a function that throws so flow halts predictably. */
   exit?: (code: number) => never;
+  /**
+   * Backend factory; given the constructed `Workspace`, returns the ordered
+   * list of `LanguageBackend`s to register with the router. Defaults to a
+   * single `TypeScriptBackend(workspace)`. Tests inject a fake to exercise
+   * router/error-handling code paths without standing up ts-morph.
+   */
+  backendsFor?: (workspace: Workspace) => readonly LanguageBackend[];
 }
 
 /**
@@ -39,7 +48,13 @@ function resolveContext(options: BuildProgramOptions | undefined): ProgramContex
     stderr: options?.stderr ?? process.stderr,
     cwd: options?.cwd ?? process.cwd(),
     exit: options?.exit ?? ((code: number) => process.exit(code)),
+    backendsFor: options?.backendsFor ?? defaultBackendsFor,
   };
+}
+
+// Real-backend default. Tests pass a fake via `backendsFor`.
+function defaultBackendsFor(workspace: Workspace): readonly LanguageBackend[] {
+  return [new TypeScriptBackend(workspace)];
 }
 
 export function buildProgram(options?: BuildProgramOptions): Command {

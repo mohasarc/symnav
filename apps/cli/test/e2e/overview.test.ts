@@ -138,3 +138,14 @@ describe("symnav overview e2e — JSON output", () => {
     );
   });
 });
+
+describe("symnav overview e2e — determinism", () => {
+  it("re-running the same query produces byte-identical stdout", () => {
+    const a = runSymnavOverview(["overview", "class-with-methods.ts"], overviewCasesRoot());
+    const b = runSymnavOverview(["overview", "class-with-methods.ts"], overviewCasesRoot());
+    expect(a.status).toBe(0);
+    expect(b.status).toBe(0);
+    expect(a.stdout).toBe(b.stdout);
+    expect(a.stderr).toBe(b.stderr);
+  });
+});

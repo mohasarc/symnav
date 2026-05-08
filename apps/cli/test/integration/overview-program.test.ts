@@ -126,3 +126,107 @@ describe("overview subcommand happy path", () => {
     }
   });
 });
+
+describe("overview subcommand user errors", () => {
+  it("missing file -> Cannot answer: file not found, exit 1", async () => {
+    makeWorkspace({
+      ".git/HEAD": "ref: refs/heads/main\n",
+    });
+    const r = await runOverviewCli(["overview", "missing.ts"], tmpRoot);
+    expect(r.status).toBe(1);
+    expect(r.stdout).toBe("");
+    expect(r.stderr).toBe("Cannot answer: file not found: missing.ts.\n");
+  });
+
+  it("path outside workspace -> Cannot answer: outside workspace, exit 1", async () => {
+    makeWorkspace({
+      ".git/HEAD": "ref: refs/heads/main\n",
+      "src/x.ts": "export const x = 1;\n",
+    });
+    // Place a file outside the workspace and reference it via an absolute path
+    // so root detection still anchors at tmpRoot but the target is outside.
+    const outsideDir = mkdtempSync(join(tmpdir(), "symnav-outside-"));
+    try {
+      const outsidePath = join(outsideDir, "y.ts");
+      writeFileSync(outsidePath, "export const y = 2;\n");
+      const r = await runOverviewCli(["overview", outsidePath], tmpRoot);
+      expect(r.status).toBe(1);
+      expect(r.stdout).toBe("");
+      expect(r.stderr).toMatch(
+        /^Cannot answer: .* is outside the workspace rooted at .*\.\n$/,
+      );
+      expect(r.stderr).toContain(outsidePath);
+    } finally {
+      rmSync(outsideDir, { recursive: true, force: true });
+    }
+  });
+
+  it("ignored file -> Cannot answer: ignored by .gitignore, exit 1", async () => {
+    makeWorkspace({
+      ".git/HEAD": "ref: refs/heads/main\n",
+      ".gitignore": "ignored.ts\n",
+      "ignored.ts": "export const z = 3;\n",
+    });
+    const r = await runOverviewCli(["overview", "ignored.ts"], tmpRoot);
+    expect(r.status).toBe(1);
+    expect(r.stdout).toBe("");
+    expect(r.stderr).toBe(
+      "Cannot answer: ignored.ts is ignored by .gitignore.\n",
+    );
+  });
+
+  it("unsupported extension -> Cannot answer: not supported, exit 1", async () => {
+    makeWorkspace({
+      ".git/HEAD": "ref: refs/heads/main\n",
+      "package.json": "{}\n",
+    });
+    const r = await runOverviewCli(["overview", "package.json"], tmpRoot);
+    expect(r.status).toBe(1);
+    expect(r.stdout).toBe("");
+    expect(r.stderr).toBe("Cannot answer: .json files are not supported.\n");
+  });
+
+  it("no .git in or above cwd -> Cannot answer: not in a git workspace, exit 1", async () => {
+    // Note: tmpRoot has no `.git` here.
+    writeFileSync(join(tmpRoot, "x.ts"), "export const x = 1;\n");
+    const r = await runOverviewCli(["overview", "x.ts"], tmpRoot);
+    expect(r.status).toBe(1);
+    expect(r.stdout).toBe("");
+    expect(r.stderr).toMatch(/^Cannot answer: not in a git workspace .*\.\n$/);
+  });
+
+  it("an unexpected internal error exits 2 with the error on stderr", async () => {
+    makeWorkspace({
+      ".git/HEAD": "ref: refs/heads/main\n",
+      "src/x.ts": "export const x = 1;\n",
+    });
+    const exploding: import("@symnav/core").LanguageBackend = {
+      accepts: (p) => p.endsWith(".ts"),
+      async fileSymbols(): Promise<never> {
+        throw new Error("kaboom");
+      },
+    };
+    const stdout = capturingStream();
+    const stderr = capturingStream();
+    let status = 0;
+    try {
+      const program = buildProgram({
+        stdout,
+        stderr,
+        cwd: tmpRoot,
+        exit: makeExit(),
+        backendsFor: () => [exploding],
+      });
+      await program.parseAsync(["node", "symnav", "overview", "src/x.ts"]);
+    } catch (err) {
+      if (err instanceof TestExit) {
+        status = err.code;
+      } else {
+        throw err;
+      }
+    }
+    expect(status).toBe(2);
+    expect(stdout.text()).toBe("");
+    expect(stderr.text()).toContain("kaboom");
+  });
+});

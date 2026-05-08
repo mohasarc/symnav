@@ -15,12 +15,8 @@ describe("formatUserError", () => {
   });
 
   it("formats OutsideWorkspaceError citing the workspace root", () => {
-    const line = formatUserError(
-      new OutsideWorkspaceError("../outside.ts", "/repo"),
-    );
-    expect(line).toBe(
-      "Cannot answer: ../outside.ts is outside the workspace rooted at /repo.",
-    );
+    const line = formatUserError(new OutsideWorkspaceError("../outside.ts", "/repo"));
+    expect(line).toBe("Cannot answer: ../outside.ts is outside the workspace rooted at /repo.");
   });
 
   it("formats IgnoredFileError matching the spec voice", () => {
@@ -29,17 +25,13 @@ describe("formatUserError", () => {
   });
 
   it("formats UnsupportedFileError citing the extension", () => {
-    const line = formatUserError(
-      new UnsupportedFileError("package.json", ".json"),
-    );
+    const line = formatUserError(new UnsupportedFileError("package.json", ".json"));
     expect(line).toBe("Cannot answer: .json files are not supported.");
   });
 
   it("formats NotInWorkspaceError citing the startDir", () => {
     const line = formatUserError(new NotInWorkspaceError("/somewhere"));
-    expect(line).toBe(
-      "Cannot answer: not in a git workspace (no .git ancestor of /somewhere).",
-    );
+    expect(line).toBe("Cannot answer: not in a git workspace (no .git ancestor of /somewhere).");
   });
 
   it("returns null for an arbitrary unknown error", () => {

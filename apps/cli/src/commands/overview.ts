@@ -1,11 +1,6 @@
 import { resolve } from "node:path";
 import type { Command } from "commander";
-import {
-  BackendRouter,
-  createWorkspace,
-  nodeFileSystem,
-  runOverview,
-} from "@symnav/core";
+import { BackendRouter, NodeWorkspace, runOverview } from "@symnav/core";
 import { renderOverviewJson, renderOverviewText } from "@symnav/renderer";
 import type { ProgramContext } from "../program.js";
 import { formatUserError } from "../error-output.js";
@@ -18,20 +13,7 @@ interface GlobalOptions {
   cwd?: string;
 }
 
-/**
- * Wire the `overview <file>` subcommand onto the given Commander program.
- *
- * The action resolves the effective working directory (global `--cwd` wins
- * over the program context's default), constructs a `Workspace` and a
- * `TypeScriptBackend`-only router, and dispatches to `runOverview`. Output
- * goes to `context.stdout` via the appropriate renderer; user-facing errors
- * (`BackendError`, `NotInWorkspaceError`) are formatted to `context.stderr`
- * with exit 1; any other error exits 2.
- */
-export function registerOverviewCommand(
-  program: Command,
-  context: ProgramContext,
-): void {
+export function registerOverviewCommand(program: Command, context: ProgramContext): void {
   program
     .command("overview")
     .description("Print the symbol structure of a TypeScript file")
@@ -41,10 +23,7 @@ export function registerOverviewCommand(
       const globals = program.opts<GlobalOptions>();
       const effectiveCwd = resolve(globals.cwd ?? context.cwd);
       try {
-        const workspace = await createWorkspace({
-          startDir: effectiveCwd,
-          fs: nodeFileSystem(),
-        });
+        const workspace = await NodeWorkspace.create({ startDir: effectiveCwd });
         const router = new BackendRouter(context.backendsFor(workspace));
         const ir = await runOverview({
           workspace,
@@ -52,9 +31,7 @@ export function registerOverviewCommand(
           cwd: effectiveCwd,
           inputPath: file,
         });
-        const output = options.json
-          ? renderOverviewJson(ir)
-          : renderOverviewText(ir);
+        const output = options.json ? renderOverviewJson(ir) : renderOverviewText(ir);
         context.stdout.write(output);
       } catch (err) {
         const formatted = formatUserError(err);
@@ -63,7 +40,7 @@ export function registerOverviewCommand(
           context.exit(1);
         }
         context.stderr.write(
-          `${err instanceof Error ? err.stack ?? err.message : String(err)}\n`,
+          `${err instanceof Error ? (err.stack ?? err.message) : String(err)}\n`,
         );
         context.exit(2);
       }

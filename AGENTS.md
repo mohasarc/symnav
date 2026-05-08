@@ -21,6 +21,16 @@
 - `pnpm build` — `tsc --build` across the workspace.
 - `pnpm --filter symnav dev -- <args>` — run the CLI from source via `tsx` (no build step).
 
+## Pre-PR verification
+
+Before opening or pushing to a PR, run the full CI-parity sequence locally on a clean tree:
+
+```
+pnpm install --frozen-lockfile && pnpm build && pnpm test && pnpm lint && pnpm typecheck
+```
+
+The `--frozen-lockfile` install is load-bearing: it's the only step that detects lockfile drift from `package.json` changes. A plain `pnpm install` (or none at all) silently tolerates stale `node_modules` symlinks left over from earlier installs, which can hide a missing dependency declaration that CI will then fail on. Treat anything short of this sequence as not-yet-verified.
+
 ## Test conventions
 
 - Unit tests are colocated next to source: `<package>/src/foo.test.ts`.

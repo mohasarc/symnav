@@ -1,6 +1,101 @@
-import type { LineRange, SymbolKind } from "@symnav/core";
-import { Node, SyntaxKind } from "ts-morph";
+import type { FileSymbols, LineRange, SymbolDecl, SymbolKind } from "@symnav/core";
+import { Node, type SourceFile, SyntaxKind } from "ts-morph";
 import { SIGNATURE_CAP_CHARS, SIGNATURE_ELLIPSIS } from "./signature-cap.js";
+
+/**
+ * Build the `FileSymbols` IR for a parsed `SourceFile`. The caller is
+ * responsible for choosing the workspace-relative `filePath` to embed in the
+ * IR; this function returns it verbatim.
+ */
+export function extractFileSymbols(args: {
+  sourceFile: SourceFile;
+  filePath: string;
+}): FileSymbols {
+  return {
+    filePath: args.filePath,
+    symbols: extractTopLevel(args.sourceFile),
+  };
+}
+
+/**
+ * Walk the top-level statements of a source file, classifying and recursing
+ * into nested declarations. Statements that don't classify (re-exports, bare
+ * imports, etc.) are skipped silently. `VariableStatement` is expanded into
+ * one `SymbolDecl` per declared name.
+ */
+export function extractTopLevel(sourceFile: SourceFile): readonly SymbolDecl[] {
+  const result: SymbolDecl[] = [];
+  for (const stmt of sourceFile.getStatements()) {
+    appendDeclsForStatement(stmt, result);
+  }
+  return result;
+}
+
+/**
+ * Walk the declaration-bearing children of a parent (class body, interface
+ * body, namespace body, module block) and produce their child decls. Used by
+ * top-level walks to recurse into containers.
+ */
+export function extractChildren(parent: Node): readonly SymbolDecl[] {
+  if (Node.isClassDeclaration(parent)) {
+    return parent.getMembers().flatMap((m) => declFromNode(m) ?? []);
+  }
+  if (Node.isInterfaceDeclaration(parent)) {
+    return parent.getMembers().flatMap((m) => declFromNode(m) ?? []);
+  }
+  if (Node.isModuleDeclaration(parent)) {
+    const body = parent.getBody();
+    if (body && Node.isModuleBlock(body)) {
+      const out: SymbolDecl[] = [];
+      for (const stmt of body.getStatements()) {
+        appendDeclsForStatement(stmt, out);
+      }
+      return out;
+    }
+    return [];
+  }
+  return [];
+}
+
+function appendDeclsForStatement(stmt: Node, out: SymbolDecl[]): void {
+  if (Node.isVariableStatement(stmt)) {
+    const list = stmt.getDeclarationList();
+    for (const decl of list.getDeclarations()) {
+      const variableDecl = declFromNode(decl);
+      if (variableDecl) out.push(variableDecl);
+    }
+    return;
+  }
+  const decl = declFromNode(stmt);
+  if (decl) out.push(decl);
+}
+
+function declFromNode(node: Node): SymbolDecl | null {
+  if (Node.isVariableDeclaration(node)) {
+    return {
+      kind: "variable",
+      name: node.getName(),
+      range: nodeRange(node),
+      signature: renderSignature(node),
+      children: [],
+    };
+  }
+  const kind = nodeKind(node);
+  if (kind === null) return null;
+  const children =
+    Node.isClassDeclaration(node) ||
+    Node.isInterfaceDeclaration(node) ||
+    Node.isModuleDeclaration(node)
+      ? extractChildren(node)
+      : [];
+  return {
+    kind,
+    name: nodeName(node),
+    range: nodeRange(node),
+    signature: renderSignature(node),
+    children,
+  };
+}
 
 /**
  * Map a ts-morph node to its `SymbolKind`, or `null` when the node is not a

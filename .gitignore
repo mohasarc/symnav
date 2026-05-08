@@ -13,3 +13,6 @@ node_modules/
 dist/
 coverage/
 *.tsbuildinfo
+
+# Synthetic .git markers materialized by overview-cases e2e tests at runtime.
+packages/testing/fixtures/overview-cases/.git/

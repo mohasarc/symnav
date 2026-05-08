@@ -89,7 +89,11 @@ importers:
         specifier: workspace:*
         version: link:../testing
 
-  packages/renderer: {}
+  packages/renderer:
+    dependencies:
+      '@symnav/core':
+        specifier: workspace:*
+        version: link:../core
 
   packages/testing:
     dependencies:

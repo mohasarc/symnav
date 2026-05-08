@@ -77,8 +77,6 @@ describe("Workspace filesystem", () => {
       },
       startDir: "/repo",
     });
-    await expect(ws.fs.readFile("/repo/hello.txt")).resolves.toBe(
-      "Hello, world!\n",
-    );
+    await expect(ws.fs.readFile("/repo/hello.txt")).resolves.toBe("Hello, world!\n");
   });
 });

@@ -3,7 +3,10 @@ import { describe, expect, it } from "vitest";
 import { BackendRouter, type LanguageBackend } from "./backend.js";
 import type { FileSymbols } from "./ir.js";
 
-function fakeBackend(label: string, accepts: (path: string) => boolean): LanguageBackend & { label: string } {
+function fakeBackend(
+  label: string,
+  accepts: (path: string) => boolean,
+): LanguageBackend & { label: string } {
   return {
     label,
     accepts,

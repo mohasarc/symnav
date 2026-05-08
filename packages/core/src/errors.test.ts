@@ -38,16 +38,10 @@ describe("BackendError hierarchy", () => {
   });
 
   it("each error subclass exposes the displayed path", () => {
-    expect(new FileNotFoundError("src/missing.ts").displayedPath).toBe(
-      "src/missing.ts",
-    );
-    expect(
-      new OutsideWorkspaceError("/tmp/other.ts", "/repo").displayedPath,
-    ).toBe("/tmp/other.ts");
+    expect(new FileNotFoundError("src/missing.ts").displayedPath).toBe("src/missing.ts");
+    expect(new OutsideWorkspaceError("/tmp/other.ts", "/repo").displayedPath).toBe("/tmp/other.ts");
     expect(new IgnoredFileError("dist/x.js").displayedPath).toBe("dist/x.js");
-    expect(new UnsupportedFileError("data.json", ".json").displayedPath).toBe(
-      "data.json",
-    );
+    expect(new UnsupportedFileError("data.json", ".json").displayedPath).toBe("data.json");
   });
 
   it("OutsideWorkspaceError carries the workspace root", () => {

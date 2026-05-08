@@ -39,10 +39,7 @@ interface RunResult {
   stderr: string;
 }
 
-async function runOverviewCli(
-  args: readonly string[],
-  cwd: string,
-): Promise<RunResult> {
+async function runOverviewCli(args: readonly string[], cwd: string): Promise<RunResult> {
   const stdout = capturingStream();
   const stderr = capturingStream();
   const exit = makeExit();
@@ -152,9 +149,7 @@ describe("overview subcommand user errors", () => {
       const r = await runOverviewCli(["overview", outsidePath], tmpRoot);
       expect(r.status).toBe(1);
       expect(r.stdout).toBe("");
-      expect(r.stderr).toMatch(
-        /^Cannot answer: .* is outside the workspace rooted at .*\.\n$/,
-      );
+      expect(r.stderr).toMatch(/^Cannot answer: .* is outside the workspace rooted at .*\.\n$/);
       expect(r.stderr).toContain(outsidePath);
     } finally {
       rmSync(outsideDir, { recursive: true, force: true });
@@ -170,9 +165,7 @@ describe("overview subcommand user errors", () => {
     const r = await runOverviewCli(["overview", "ignored.ts"], tmpRoot);
     expect(r.status).toBe(1);
     expect(r.stdout).toBe("");
-    expect(r.stderr).toBe(
-      "Cannot answer: ignored.ts is ignored by .gitignore.\n",
-    );
+    expect(r.stderr).toBe("Cannot answer: ignored.ts is ignored by .gitignore.\n");
   });
 
   it("unsupported extension -> Cannot answer: not supported, exit 1", async () => {

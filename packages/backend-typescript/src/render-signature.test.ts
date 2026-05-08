@@ -11,9 +11,7 @@ function firstStatement(source: string) {
 
 describe("renderSignature: top-level functions", () => {
   it("renders a function declaration with declaration text up to (not including) the body", () => {
-    const node = firstStatement(
-      "export function greet(name: string): string { return name; }\n",
-    );
+    const node = firstStatement("export function greet(name: string): string { return name; }\n");
     expect(renderSignature(node)).toBe("export function greet(name: string): string");
   });
 
@@ -28,7 +26,9 @@ describe("renderSignature: top-level functions", () => {
   });
 
   it("renders a generic function", () => {
-    const node = firstStatement("function map<T, U>(t: T, f: (t: T) => U): U {\n  return f(t);\n}\n");
+    const node = firstStatement(
+      "function map<T, U>(t: T, f: (t: T) => U): U {\n  return f(t);\n}\n",
+    );
     expect(renderSignature(node)).toBe("function map<T, U>(t: T, f: (t: T) => U): U");
   });
 
@@ -113,7 +113,7 @@ describe("renderSignature: variables", () => {
   });
 
   it("ellipsizes a long unannotated initializer at the cap", () => {
-    const source = `const big = ${"\"x\".repeat(1)+".repeat(40)}\"end\";\n`;
+    const source = `const big = ${'"x".repeat(1)+'.repeat(40)}\"end\";\n`;
     const decl = parseTs(source).getVariableDeclarations()[0]!;
     const rendered = renderSignature(decl);
     expect(rendered.length).toBeLessThanOrEqual(SIGNATURE_CAP_CHARS);

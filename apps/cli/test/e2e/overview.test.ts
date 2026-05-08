@@ -12,11 +12,7 @@ import {
 
 const cliRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const binPath = join(cliRoot, "dist", "cli.js");
-const snapshotsDir = resolve(
-  dirname(fileURLToPath(import.meta.url)),
-  "__snapshots__",
-  "overview",
-);
+const snapshotsDir = resolve(dirname(fileURLToPath(import.meta.url)), "__snapshots__", "overview");
 
 interface RunResult {
   status: number | null;
@@ -72,9 +68,7 @@ describe("symnav overview e2e — happy path", () => {
     const r = runSymnavOverview(["overview", "nested-symbols.ts"], overviewCasesRoot());
     expect(r.status).toBe(0);
     expect(r.stderr).toBe("");
-    await expect(r.stdout).toMatchFileSnapshot(
-      join(snapshotsDir, "nested-symbols.expected.txt"),
-    );
+    await expect(r.stdout).toMatchFileSnapshot(join(snapshotsDir, "nested-symbols.expected.txt"));
   });
 
   it("empty.ts renders the (no symbols) sentinel", () => {
@@ -108,9 +102,7 @@ describe("symnav overview e2e — user errors", () => {
       const r = runSymnavOverview(["overview", outsidePath], overviewCasesRoot());
       expect(r.status).toBe(1);
       expect(r.stdout).toBe("");
-      expect(r.stderr).toMatch(
-        /^Cannot answer: .* is outside the workspace rooted at .*\.\n$/,
-      );
+      expect(r.stderr).toMatch(/^Cannot answer: .* is outside the workspace rooted at .*\.\n$/);
       expect(r.stderr).toContain(outsidePath);
     } finally {
       rmSync(outsideDir, { recursive: true, force: true });

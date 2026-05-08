@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Command } from "commander";
+import { registerOverviewCommand } from "./commands/overview.js";
 
 function readPackageVersion(): string {
   const here = dirname(fileURLToPath(import.meta.url));
@@ -47,6 +48,10 @@ export function buildProgram(options?: BuildProgramOptions): Command {
   program
     .name("symnav")
     .version(readPackageVersion(), "-v, --version")
+    .option(
+      "--cwd <dir>",
+      "override the working directory for root detection and relative-path resolution",
+    )
     .configureOutput({
       writeOut: (str) => context.stdout.write(str),
       writeErr: (str) => context.stderr.write(str),
@@ -58,5 +63,6 @@ export function buildProgram(options?: BuildProgramOptions): Command {
       program.outputHelp({ error: true });
       context.exit(1);
     });
+  registerOverviewCommand(program, context);
   return program;
 }

@@ -20,5 +20,12 @@
     "typecheck": "tsc --build",
     "lint": "eslint src",
     "typecheck:test": "tsc -p tsconfig.test.json --noEmit"
+  },
+  "dependencies": {
+    "@symnav/core": "workspace:*",
+    "ts-morph": "^24.0.0"
+  },
+  "devDependencies": {
+    "@symnav/testing": "workspace:*"
   }
 }

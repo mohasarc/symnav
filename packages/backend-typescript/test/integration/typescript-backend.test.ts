@@ -1,13 +1,14 @@
 import { describe, expect, it } from "vitest";
-import { FileNotFoundError, type WorkspaceFileSystem } from "@symnav/core";
-import { inMemoryFileSystem, inMemoryWorkspace, parseTs } from "@symnav/testing";
-import { createWorkspace } from "@symnav/core";
+import { FileNotFoundError, NodeWorkspace, type WorkspaceFileSystem } from "@symnav/core";
+import { parseTs } from "@symnav/testing";
+import { InMemoryFileSystem } from "../../../core/test/helpers/in-memory-file-system.js";
+import { InMemoryWorkspace } from "../../../core/test/helpers/in-memory-workspace.js";
 import { extractFileSymbols } from "../../src/extract.js";
 import { TypeScriptBackend } from "../../src/typescript-backend.js";
 
 describe("TypeScriptBackend.accepts", () => {
   it("returns true for TypeScript file extensions and false for others", async () => {
-    const workspace = await inMemoryWorkspace({
+    const workspace = await InMemoryWorkspace.create({
       files: {
         "/repo/.git/HEAD": "ref: refs/heads/main\n",
         "/repo/src/x.ts": "export const x = 1;\n",
@@ -42,7 +43,7 @@ describe("TypeScriptBackend.fileSymbols", () => {
   ].join("\n");
 
   it("produces IR matching extractFileSymbols over the same source", async () => {
-    const workspace = await inMemoryWorkspace({
+    const workspace = await InMemoryWorkspace.create({
       files: {
         "/repo/.git/HEAD": "ref: refs/heads/main\n",
         "/repo/src/checkout.ts": SOURCE,
@@ -61,7 +62,7 @@ describe("TypeScriptBackend.fileSymbols", () => {
   });
 
   it("returns the supplied workspace-relative POSIX path verbatim on the IR", async () => {
-    const workspace = await inMemoryWorkspace({
+    const workspace = await InMemoryWorkspace.create({
       files: {
         "/repo/.git/HEAD": "ref: refs/heads/main\n",
         "/repo/src/checkout.ts": SOURCE,
@@ -76,7 +77,7 @@ describe("TypeScriptBackend.fileSymbols", () => {
   });
 
   it("reads the file through Workspace.fs rather than directly from disk", async () => {
-    const inner = inMemoryFileSystem({
+    const inner = new InMemoryFileSystem({
       "/repo/.git/HEAD": "ref: refs/heads/main\n",
       "/repo/src/checkout.ts": SOURCE,
     });
@@ -95,7 +96,7 @@ describe("TypeScriptBackend.fileSymbols", () => {
       listDirSync: inner.listDirSync.bind(inner),
       isDirectorySync: inner.isDirectorySync.bind(inner),
     };
-    const workspace = await createWorkspace({ startDir: "/repo", fs: counting });
+    const workspace = await NodeWorkspace.create({ startDir: "/repo", fs: counting });
     const backend = new TypeScriptBackend(workspace);
 
     await backend.fileSymbols("src/checkout.ts");
@@ -104,7 +105,7 @@ describe("TypeScriptBackend.fileSymbols", () => {
   });
 
   it("throws FileNotFoundError when the path does not exist", async () => {
-    const workspace = await inMemoryWorkspace({
+    const workspace = await InMemoryWorkspace.create({
       files: {
         "/repo/.git/HEAD": "ref: refs/heads/main\n",
         "/repo/src/x.ts": "export const x = 1;\n",

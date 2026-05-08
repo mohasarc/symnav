@@ -149,3 +149,18 @@ describe("symnav overview e2e — determinism", () => {
     expect(a.stderr).toBe(b.stderr);
   });
 });
+
+describe("symnav overview e2e — no-git workspace", () => {
+  it("running from a directory with no .git ancestor exits 1 with a Cannot answer line", () => {
+    const noGitDir = mkdtempSync(join(tmpdir(), "symnav-no-git-"));
+    try {
+      writeFileSync(join(noGitDir, "x.ts"), "export const x = 1;\n");
+      const r = runSymnavOverview(["overview", "x.ts"], noGitDir);
+      expect(r.status).toBe(1);
+      expect(r.stdout).toBe("");
+      expect(r.stderr).toMatch(/^Cannot answer: not in a git workspace .*\.\n$/);
+    } finally {
+      rmSync(noGitDir, { recursive: true, force: true });
+    }
+  });
+});

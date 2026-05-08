@@ -21,6 +21,15 @@
 - `pnpm build` — `tsc --build` across the workspace.
 - `pnpm --filter symnav dev -- <args>` — run the CLI from source via `tsx` (no build step).
 
+## CLI surface
+
+- `symnav overview <file>` — print the symbol structure of a TypeScript file (hierarchy, signatures, line ranges). Pass `--json` to emit the IR as JSON. The global `--cwd <dir>` flag overrides the working directory used for both git-root detection and relative-path resolution.
+
+## Fixtures
+
+- `packages/testing/fixtures/trivial-project/` — minimal package.json + a single TS file. Used by the `--version` e2e and other smoke tests.
+- `packages/testing/fixtures/overview-cases/` — per-scenario TypeScript files (class with methods, top-level functions, constants, nested namespace/interface/enum, empty, ignored). Backs `apps/cli/test/e2e/overview.test.ts`. The fixture has no checked-in `.git/` (the host repo would treat one as a submodule); the e2e test file materializes a synthetic `.git/HEAD` in `beforeAll` and removes it in `afterAll` via the helper at `apps/cli/test/e2e/overview-fixture.ts`. The host `.gitignore` lists this synthetic path so an interrupted run does not leave a stray artifact.
+
 ## Pre-PR verification
 
 Before opening or pushing to a PR, run the full CI-parity sequence locally on a clean tree:

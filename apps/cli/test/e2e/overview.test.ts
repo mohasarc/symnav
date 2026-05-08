@@ -124,3 +124,17 @@ describe("symnav overview e2e — user errors", () => {
     expect(r.stderr).toBe("Cannot answer: .json files are not supported.\n");
   });
 });
+
+describe("symnav overview e2e — JSON output", () => {
+  it("class-with-methods.ts --json matches the expected JSON snapshot", async () => {
+    const r = runSymnavOverview(
+      ["overview", "class-with-methods.ts", "--json"],
+      overviewCasesRoot(),
+    );
+    expect(r.status).toBe(0);
+    expect(r.stderr).toBe("");
+    await expect(r.stdout).toMatchFileSnapshot(
+      join(snapshotsDir, "class-with-methods.expected.json"),
+    );
+  });
+});

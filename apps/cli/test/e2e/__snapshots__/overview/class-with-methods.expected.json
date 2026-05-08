@@ -1,0 +1,117 @@
+{
+  "filePath": "class-with-methods.ts",
+  "symbols": [
+    {
+      "children": [
+        {
+          "children": [],
+          "kind": "method",
+          "name": "area",
+          "range": {
+            "endLine": 2,
+            "startLine": 2
+          },
+          "signature": "abstract area(): number"
+        }
+      ],
+      "kind": "class",
+      "name": "Shape",
+      "range": {
+        "endLine": 3,
+        "startLine": 1
+      },
+      "signature": "export abstract class Shape"
+    },
+    {
+      "children": [
+        {
+          "children": [],
+          "kind": "property",
+          "name": "SIDES",
+          "range": {
+            "endLine": 6,
+            "startLine": 6
+          },
+          "signature": "static readonly SIDES = 6"
+        },
+        {
+          "children": [],
+          "kind": "property",
+          "name": "width",
+          "range": {
+            "endLine": 8,
+            "startLine": 8
+          },
+          "signature": "width: number"
+        },
+        {
+          "children": [],
+          "kind": "property",
+          "name": "height",
+          "range": {
+            "endLine": 9,
+            "startLine": 9
+          },
+          "signature": "height: number"
+        },
+        {
+          "children": [],
+          "kind": "constructor",
+          "name": "constructor",
+          "range": {
+            "endLine": 15,
+            "startLine": 11
+          },
+          "signature": "constructor(width: number, height: number)"
+        },
+        {
+          "children": [],
+          "kind": "getter",
+          "name": "perimeter",
+          "range": {
+            "endLine": 19,
+            "startLine": 17
+          },
+          "signature": "get perimeter(): number"
+        },
+        {
+          "children": [],
+          "kind": "setter",
+          "name": "dimensions",
+          "range": {
+            "endLine": 24,
+            "startLine": 21
+          },
+          "signature": "set dimensions(value: { width: number; height: number })"
+        },
+        {
+          "children": [],
+          "kind": "method",
+          "name": "area",
+          "range": {
+            "endLine": 28,
+            "startLine": 26
+          },
+          "signature": "area(): number"
+        },
+        {
+          "children": [],
+          "kind": "method",
+          "name": "unit",
+          "range": {
+            "endLine": 32,
+            "startLine": 30
+          },
+          "signature": "static unit(): Box"
+        }
+      ],
+      "kind": "class",
+      "name": "Box",
+      "range": {
+        "endLine": 33,
+        "startLine": 5
+      },
+      "signature": "export class Box extends Shape"
+    }
+  ]
+}

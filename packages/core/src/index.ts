@@ -21,3 +21,4 @@ export {
   UnsupportedFileError,
 } from "./backend/errors.js";
 export { NotInWorkspaceError } from "./workspace/errors.js";
+export { runOverview } from "./commands/overview.js";

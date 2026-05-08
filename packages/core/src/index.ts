@@ -14,3 +14,5 @@ export {
   IgnoredFileError,
   UnsupportedFileError,
 } from "./errors.js";
+export { runOverview } from "./commands/overview.js";
+export type { RunOverviewArgs } from "./commands/overview.js";

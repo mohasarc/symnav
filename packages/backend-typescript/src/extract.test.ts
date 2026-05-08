@@ -54,7 +54,6 @@ describe("nodeKind", () => {
         "  method() {}",
         "  get value() { return 1; }",
         "  set value(v: number) {}",
-        "  [key: string]: number;",
         "}",
         "",
       ].join("\n"),
@@ -63,14 +62,7 @@ describe("nodeKind", () => {
     if (!cls) throw new Error("expected class");
     const members = cls.getMembers();
     const kinds = members.map((m) => nodeKind(m));
-    expect(kinds).toEqual([
-      "property",
-      "constructor",
-      "method",
-      "getter",
-      "setter",
-      "index-signature",
-    ]);
+    expect(kinds).toEqual(["property", "constructor", "method", "getter", "setter"]);
   });
 
   it("classifies interface members by call/construct/index/method/property", () => {

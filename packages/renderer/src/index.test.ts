@@ -1,8 +1,9 @@
 import { describe, expect, it } from "vitest";
-import * as mod from "./index.js";
+import { renderOverviewJson, renderOverviewText } from "./index.js";
 
-describe("@symnav/renderer", () => {
-  it("module loads", () => {
-    expect(mod).toBeDefined();
+describe("@symnav/renderer public surface", () => {
+  it("exports renderOverviewText and renderOverviewJson", () => {
+    expect(typeof renderOverviewText).toBe("function");
+    expect(typeof renderOverviewJson).toBe("function");
   });
 });

@@ -1,0 +1,25 @@
+Overview: class-with-methods.ts
+
+1-3: Shape
+   export abstract class Shape
+└── 2: Shape::area
+    abstract area(): number
+
+5-33: Box
+   export class Box extends Shape
+├── 6: Box::SIDES
+│   static readonly SIDES = 6
+├── 8: Box::width
+│   width: number
+├── 9: Box::height
+│   height: number
+├── 11-15: Box::constructor
+│   constructor(width: number, height: number)
+├── 17-19: Box::perimeter
+│   get perimeter(): number
+├── 21-24: Box::dimensions
+│   set dimensions(value: { width: number; height: number })
+├── 26-28: Box::area
+│   area(): number
+└── 30-32: Box::unit
+    static unit(): Box

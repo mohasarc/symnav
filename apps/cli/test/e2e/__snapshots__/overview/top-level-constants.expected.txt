@@ -1,0 +1,16 @@
+Overview: top-level-constants.ts
+
+1: MAX_RETRIES
+   const MAX_RETRIES: number
+
+2: DEFAULT_NAME
+   const DEFAULT_NAME = "symnav"
+
+3: counter
+   let counter = 0
+
+4: legacyFlag
+   var legacyFlag: boolean
+
+6-9: default
+   export default { name: "overview-cases", version: 1, }

@@ -1,0 +1,16 @@
+Overview: top-level-functions.ts
+
+1-3: greet
+   export function greet(name: string): string
+
+5-8: loadJson
+   export async function loadJson<T>(url: string): Promise<T>
+
+10: add
+   export function add(a: number, b: number): number
+
+11: add
+   export function add(a: string, b: string): string
+
+12-14: add
+   export function add(a: number | string, b: number | string): number | string

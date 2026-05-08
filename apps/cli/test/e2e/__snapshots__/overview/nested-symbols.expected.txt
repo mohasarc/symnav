@@ -1,0 +1,24 @@
+Overview: nested-symbols.ts
+
+1-13: Outer
+   export namespace Outer
+├── 2-8: Outer::Inner
+│   export class Inner
+│   ├── 3: Outer::Inner::run
+│   │   run(): void
+│   └── 5-7: Outer::Inner::factory
+│       static factory(): Inner
+└── 10-12: Outer::helper
+    export function helper(x: number): number
+
+15-19: Order
+   export interface Order
+├── 16: Order::id
+│   id: string
+├── 17: Order::total
+│   total: number
+└── 18: Order::items
+    items(): readonly string[]
+
+21-25: Status
+   export enum Status

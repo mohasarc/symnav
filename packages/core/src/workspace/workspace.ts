@@ -1,4 +1,4 @@
-import type { WorkspaceFileSystem } from "./workspace-file-system.js";
+import type { WorkspaceFileSystem } from "./file-system.js";
 
 export interface Workspace {
   readonly root: string;

@@ -1,4 +1,4 @@
-import type { WorkspaceFileSystem } from "./workspace-file-system.js";
+import type { WorkspaceFileSystem } from "./file-system.js";
 import { NotInWorkspaceError } from "./errors.js";
 import { buildIgnoreScopes } from "./build-ignore-scopes.js";
 import { findWorkspaceRoot } from "./find-workspace-root.js";

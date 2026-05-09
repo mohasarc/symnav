@@ -88,7 +88,7 @@ export abstract class AbstractWorkspace implements Workspace {
   }
 }
 
-class WorkspaceImpl extends AbstractWorkspace {
+class NodeWorkspace extends AbstractWorkspace {
   constructor(root: string, fs: WorkspaceFileSystem, scopes: readonly IgnoreScope[]) {
     super(root, fs, scopes);
   }
@@ -96,7 +96,7 @@ class WorkspaceImpl extends AbstractWorkspace {
 
 export async function createWorkspace(opts: CreateWorkspaceOptions): Promise<Workspace> {
   const { root, fs, scopes } = await AbstractWorkspace.resolveDependencies(opts);
-  return new WorkspaceImpl(root, fs, scopes);
+  return new NodeWorkspace(root, fs, scopes);
 }
 
 function posixify(input: string): string {

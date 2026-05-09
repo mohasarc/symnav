@@ -3,7 +3,7 @@ import { posix } from "node:path";
 import type { WorkspaceFileSystem } from "../file-system.js";
 import type { IgnoreScope } from "./scope.js";
 import { isIgnoredByScopes } from "./is-ignored.js";
-import { relPathFromRoot } from "../rel-path-from-root.js";
+import { relPathFromRoot } from "../paths/rel-from-root.js";
 
 export function buildIgnoreScopes(root: string, fs: WorkspaceFileSystem): IgnoreScope[] {
   const scopes: IgnoreScope[] = [];

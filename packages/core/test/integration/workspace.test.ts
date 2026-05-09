@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { NodeWorkspace, NotInWorkspaceError } from "@symnav/core";
-import { InMemoryFileSystem, InMemoryWorkspace } from "../helpers/in-memory-workspace.js";
+import { InMemoryFileSystem } from "../helpers/in-memory-file-system.js";
+import { InMemoryWorkspace } from "../helpers/in-memory-workspace.js";
 
 describe("Workspace root detection", () => {
   it("finds the nearest .git ancestor", async () => {

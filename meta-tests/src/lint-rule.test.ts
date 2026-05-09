@@ -49,4 +49,14 @@ describe("ESLint workspace config", () => {
     });
     expect(result!.errorCount).toBe(0);
   });
+
+  it("reports a boundaries violation when @symnav/testing imports from @symnav/core", async () => {
+    const eslint = await makeESLint();
+    const code = `import type { Workspace } from "@symnav/core";\nexport type X = Workspace;\n`;
+    const [result] = await eslint.lintText(code, {
+      filePath: join(repoRoot, "packages/testing/src/forbidden.ts"),
+    });
+    const boundaries = result!.messages.filter((m) => m.ruleId === "boundaries/dependencies");
+    expect(boundaries).toHaveLength(1);
+  });
 });

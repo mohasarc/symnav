@@ -68,7 +68,15 @@ importers:
 
   packages/backend-typescript: {}
 
-  packages/core: {}
+  packages/core:
+    dependencies:
+      ignore:
+        specifier: ^7.0.5
+        version: 7.0.5
+    devDependencies:
+      '@symnav/testing':
+        specifier: workspace:*
+        version: link:../testing
 
   packages/renderer: {}
 

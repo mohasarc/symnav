@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import type { SymbolDecl } from "./ir.js";
+import type { SymbolDecl } from "./types.js";
 import { buildSymbolPath } from "./symbol-path.js";
 
 function decl(name: string, kind: SymbolDecl["kind"]): SymbolDecl {

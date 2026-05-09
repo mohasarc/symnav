@@ -10,7 +10,7 @@
 - `packages/core` — language-agnostic primitives and the cross-language backend interface. Has no internal dependencies.
 - `packages/renderer` — output formatters (text, JSON). Depends only on `@symnav/core`.
 - `packages/backend-typescript` — the TypeScript language backend. Depends only on `@symnav/core`.
-- `packages/testing` — test-only utilities (fixture loader, ESLint config helper, fixtures themselves). Importable from any package's *test* code; never from production code. Private; never published.
+- `packages/testing` — test-only utilities (fixture loader, ESLint config helper, fixtures themselves). Importable from any package's _test_ code; never from production code. Private; never published.
 
 ## Day-to-day commands
 
@@ -37,6 +37,7 @@ The `--frozen-lockfile` install is load-bearing: it's the only step that detects
 - Integration tests live under `<package>/test/integration/`.
 - End-to-end tests live under `apps/cli/test/e2e/` and spawn the built binary.
 - Fixture projects live under `packages/testing/fixtures/`. Resolve them via `fixturePath("name")` from `@symnav/testing` — never hardcode paths.
+- In-memory or mock helpers live beside the tests that use them — not in `@symnav/testing`, which is reserved for cross-cutting test utils with no upstream package deps.
 
 ## TDD
 
@@ -44,23 +45,32 @@ Write the failing test first, then make it pass. Every behavior the code perform
 
 ## Project rules
 
-- Prefer clear, small TypeScript modules with explicit types at public boundaries.
-- Keep CLI behavior deterministic, non-interactive by default, and covered by focused tests.
-- Reuse existing utilities before adding dependencies or new abstractions.
+- Avoid comments — meaning comes from clear names; comments only clarify non-obvious decisions.
 - Favor readable names, early returns, and simple control flow over clever code.
+- Spell out abbreviations in directory and file names — clarity for every future reader beats brevity once.
+- Break large functions into smaller named ones; break long logic chains into named intermediate variables.
+- Prefer classes with explicit public/private/static members over scattered functions plus object literals; share logic via abstract classes.
+- Define only what you need now when shaping interfaces — defer everything speculative.
+- Few things per file (mostly only one): never put multiple classes or top-level functions in one `.ts`.
+- If a directory mixes files from two unrelated bounded contexts, split it — the listing should narrate what the package contains.
+- Optimise filenames for the `ls`; optimise function names for the call site — they can disagree.
+- Loose coupling beats DRY across module boundaries — do not deduplicate across independent modules.
+- Prefer clear, small TypeScript modules with explicit types at public boundaries.
+- Reuse existing utilities before adding dependencies or new abstractions.
+- Keep CLI behavior deterministic, non-interactive by default, and covered by focused tests.
 - Update docs and examples whenever command behavior or output changes.
 
 ## Dependency direction
 
 The package dependency graph is locked. A given package may import only from the packages listed below.
 
-| Package | May depend on (internal) |
-|---|---|
-| `@symnav/core` | (nothing) |
-| `@symnav/renderer` | `@symnav/core` |
-| `@symnav/backend-typescript` | `@symnav/core` |
-| `symnav` (apps/cli) | `@symnav/core`, `@symnav/renderer`, `@symnav/backend-typescript` |
-| `@symnav/testing` | (nothing) |
+| Package                      | May depend on (internal)                                         |
+| ---------------------------- | ---------------------------------------------------------------- |
+| `@symnav/core`               | (nothing)                                                        |
+| `@symnav/renderer`           | `@symnav/core`                                                   |
+| `@symnav/backend-typescript` | `@symnav/core`                                                   |
+| `symnav` (apps/cli)          | `@symnav/core`, `@symnav/renderer`, `@symnav/backend-typescript` |
+| `@symnav/testing`            | (nothing)                                                        |
 
 `@symnav/testing` is additionally importable from any package's test files. Production code may not import it.
 

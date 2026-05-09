@@ -1,15 +1,13 @@
-import ignore from "ignore";
-import type { Ignore } from "ignore";
-import { posix } from "node:path";
 import type { WorkspaceFileSystem } from "./file-system.js";
 import { NotInWorkspaceError } from "./errors.js";
+import { buildIgnoreScopes } from "./build-ignore-scopes.js";
+import { findWorkspaceRoot } from "./find-workspace-root.js";
+import type { IgnoreScope } from "./ignore-scope.js";
+import { isIgnoredByScopes } from "./is-ignored-by-scopes.js";
 import { isUnderRoot } from "./is-under-root.js";
-import { pathRelativeToScope } from "./path-relative-to-scope.js";
 import { posixify } from "./posixify.js";
-import { relPathFromRoot } from "./rel-path-from-root.js";
 
-export { NodeFileSystem } from "./file-system.js";
-export type { WorkspaceFileSystem } from "./file-system.js";
+export type { IgnoreScope } from "./ignore-scope.js";
 
 export interface Workspace {
   readonly root: string;
@@ -23,11 +21,6 @@ export interface Workspace {
 export interface ResolveWorkspaceDependenciesOptions {
   startDir: string;
   fs: WorkspaceFileSystem;
-}
-
-export interface IgnoreScope {
-  readonly dirRelToRoot: string;
-  readonly matcher: Ignore;
 }
 
 export abstract class AbstractWorkspace implements Workspace {
@@ -64,16 +57,7 @@ export abstract class AbstractWorkspace implements Workspace {
     if (relPath === ".git" || relPath.startsWith(".git/")) {
       return true;
     }
-    for (const scope of this.scopes) {
-      const relToScope = pathRelativeToScope(relPath, scope.dirRelToRoot);
-      if (relToScope === null) {
-        continue;
-      }
-      if (scope.matcher.ignores(relToScope)) {
-        return true;
-      }
-    }
-    return false;
+    return isIgnoredByScopes(relPath, this.scopes);
   }
 
   static async resolveDependencies(opts: ResolveWorkspaceDependenciesOptions): Promise<{
@@ -90,72 +74,4 @@ export abstract class AbstractWorkspace implements Workspace {
     const scopes = buildIgnoreScopes(root, fs);
     return { root, fs, scopes };
   }
-}
-
-function findWorkspaceRoot(startDir: string, fs: WorkspaceFileSystem): string | null {
-  let current = startDir;
-  while (true) {
-    const gitPath = posix.join(current, ".git");
-    if (fs.existsSync(gitPath)) {
-      return current;
-    }
-    const parent = posix.dirname(current);
-    if (parent === current) {
-      return null;
-    }
-    current = parent;
-  }
-}
-
-function buildIgnoreScopes(root: string, fs: WorkspaceFileSystem): IgnoreScope[] {
-  const scopes: IgnoreScope[] = [];
-  walkGitignores(root, root, fs, scopes);
-  return scopes;
-}
-
-function walkGitignores(
-  dirAbs: string,
-  root: string,
-  fs: WorkspaceFileSystem,
-  scopes: IgnoreScope[],
-): void {
-  const dirRelToRoot = relPathFromRoot(dirAbs, root);
-  const gitignorePath = posix.join(dirAbs, ".gitignore");
-  if (fs.existsSync(gitignorePath) && !fs.isDirectorySync(gitignorePath)) {
-    const content = fs.readFileSync(gitignorePath);
-    scopes.push({ dirRelToRoot, matcher: ignore().add(content) });
-  }
-  let entries: readonly string[];
-  try {
-    entries = fs.listDirSync(dirAbs);
-  } catch {
-    return;
-  }
-  for (const entry of entries) {
-    if (entry === ".git") {
-      continue;
-    }
-    const childAbs = posix.join(dirAbs, entry);
-    if (!fs.isDirectorySync(childAbs)) {
-      continue;
-    }
-    const childRelToRoot = dirRelToRoot === "" ? entry : `${dirRelToRoot}/${entry}`;
-    if (isIgnoredByScopes(`${childRelToRoot}/`, scopes)) {
-      continue;
-    }
-    walkGitignores(childAbs, root, fs, scopes);
-  }
-}
-
-function isIgnoredByScopes(relPath: string, scopes: readonly IgnoreScope[]): boolean {
-  for (const scope of scopes) {
-    const relToScope = pathRelativeToScope(relPath, scope.dirRelToRoot);
-    if (relToScope === null) {
-      continue;
-    }
-    if (scope.matcher.ignores(relToScope)) {
-      return true;
-    }
-  }
-  return false;
 }

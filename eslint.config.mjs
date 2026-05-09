@@ -34,7 +34,6 @@ function productionRules() {
     { from: { type: "renderer" }, allow: { to: { type: ["core"] } } },
     { from: { type: "backend" }, allow: { to: { type: ["core"] } } },
     { from: { type: "cli" }, allow: { to: { type: ["core", "renderer", "backend"] } } },
-    { from: { type: "testing" }, allow: { to: { type: ["core"] } } },
   ];
 }
 
@@ -47,7 +46,6 @@ function testRules() {
       from: { type: "cli" },
       allow: { to: { type: ["core", "renderer", "backend", "testing"] } },
     },
-    { from: { type: "testing" }, allow: { to: { type: ["core"] } } },
   ];
 }
 

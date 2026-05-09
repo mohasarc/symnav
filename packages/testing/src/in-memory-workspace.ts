@@ -1,13 +1,6 @@
 import type { Workspace, WorkspaceFileSystem } from "@symnav/core";
 import { createWorkspace } from "@symnav/core";
 
-/**
- * Build a `WorkspaceFileSystem` backed by an in-memory map of files.
- *
- * Keys are absolute POSIX paths; values are file contents. Directory existence
- * is inferred from the file map: a directory exists when one or more entries
- * are nested under it.
- */
 export function inMemoryFileSystem(files: Record<string, string>): WorkspaceFileSystem {
   const fileSet = new Set<string>(Object.keys(files));
   const dirSet = computeDirSet(fileSet);
@@ -67,7 +60,6 @@ function computeDirSet(fileSet: Set<string>): Set<string> {
   const dirs = new Set<string>();
   for (const filePath of fileSet) {
     const segments = filePath.split("/");
-    // walk every prefix dir: ["", "repo", "pkg", "x.ts"] → "/", "/repo", "/repo/pkg"
     let current = "";
     for (let i = 1; i < segments.length - 1; i++) {
       current = `${current}/${segments[i]}`;
@@ -80,16 +72,6 @@ function computeDirSet(fileSet: Set<string>): Set<string> {
   return dirs;
 }
 
-/**
- * Build a `Workspace` whose underlying filesystem is in-memory.
- *
- * `files` keys are absolute POSIX paths; values are file contents. `.git/HEAD`
- * (or `.git` as a regular file entry) must be present so `createWorkspace` can
- * find a workspace root.
- *
- * `startDir` defaults to the lexicographically smallest directory under the
- * inferred root, so simple tests can omit it.
- */
 export function inMemoryWorkspace(args: {
   files: Record<string, string>;
   startDir?: string;

@@ -12,14 +12,7 @@ const repoRoot = dirname(fileURLToPath(import.meta.url));
 /** @param {string} sub */
 const pkg = (sub) => join(repoRoot, sub);
 
-/**
- * Importable workspace packages. Drives both the boundaries `elements` map and
- * the alias resolver — adding a new package means adding one entry here.
- *
- * `apps/cli` is intentionally absent: it's an app, not an importable name.
- *
- * @type {{ name: string; type: string; dir: string }[]}
- */
+/** @type {{ name: string; type: string; dir: string }[]} */
 const packages = [
   { name: "@symnav/core", type: "core", dir: "packages/core" },
   { name: "@symnav/renderer", type: "renderer", dir: "packages/renderer" },

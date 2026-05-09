@@ -112,10 +112,7 @@ describe("Workspace.isIgnored", () => {
   });
 
   it("honors negation", async () => {
-    // Note: gitignore(5) semantics — once a parent directory is ignored
-    // wholesale (`dist/`), files inside cannot be re-included. To rescue an
-    // individual file you must list the contents explicitly (`dist/*`) so
-    // that the negation has a sibling to override.
+    // gitignore(5): wholesale `dist/` cannot be re-included — list contents (`dist/*`) to allow `!`.
     const ws = await inMemoryWorkspace({
       files: {
         "/repo/.git/HEAD": "ref: refs/heads/main\n",

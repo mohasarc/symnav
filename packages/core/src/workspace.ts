@@ -7,21 +7,12 @@ import { NotInWorkspaceError } from "./errors.js";
 export { nodeFileSystem } from "./file-system.js";
 export type { WorkspaceFileSystem } from "./file-system.js";
 
-/**
- * The workspace abstraction. Knows the workspace root (nearest `.git` ancestor
- * of the user's starting directory), exposes a filesystem port, and answers
- * path/ignore questions about workspace-relative paths.
- */
 export interface Workspace {
   readonly root: string;
   readonly fs: WorkspaceFileSystem;
-  /** Convert an absolute path under root to a workspace-relative POSIX path. */
   toRelative(absPath: string): string;
-  /** Convert a workspace-relative POSIX path to an absolute platform path. */
   toAbsolute(relPath: string): string;
-  /** Whether the given absolute path lies under the workspace root. */
   isInWorkspace(absPath: string): boolean;
-  /** `.gitignore`-aware ignore check for a workspace-relative POSIX path. */
   isIgnored(relPath: string): boolean;
 }
 
@@ -30,10 +21,6 @@ export interface CreateWorkspaceOptions {
   fs: WorkspaceFileSystem;
 }
 
-/**
- * Build a `Workspace` rooted at the nearest `.git` ancestor of `startDir`.
- * Throws `NotInWorkspaceError` if no such ancestor exists.
- */
 export async function createWorkspace(opts: CreateWorkspaceOptions): Promise<Workspace> {
   const { fs } = opts;
   const startDir = posix.normalize(opts.startDir);
@@ -100,12 +87,6 @@ function isUnderRoot(normalizedAbs: string, root: string): boolean {
   return normalizedAbs.startsWith(prefix);
 }
 
-/**
- * Build a single `ignore` matcher that aggregates every `.gitignore` file
- * found in the workspace tree (skipping `.git/` itself). Patterns from a
- * `.gitignore` in subdirectory `dir` are rewritten so they apply only to
- * paths under `dir/`, mirroring `gitignore(5)` per-directory scoping.
- */
 function buildIgnoreMatcher(root: string, fs: WorkspaceFileSystem): Ignore {
   const matcher = ignore();
   walkGitignores(root, root, fs, (gitignorePath, dirRelToRoot) => {
@@ -152,21 +133,6 @@ function relPathFromRoot(dirAbs: string, root: string): string {
   return dirAbs.startsWith(prefix) ? dirAbs.slice(prefix.length) : "";
 }
 
-/**
- * Rewrite the patterns from a `.gitignore` so they match against paths that
- * are relative to the workspace root rather than to the directory holding the
- * `.gitignore`.
- *
- * Rules:
- * - Comments and blank lines pass through unchanged.
- * - Negations (`!pattern`) are rewritten with the prefix preserved.
- * - At the workspace root (`scope === ""`), patterns pass through unchanged.
- * - In a subdirectory `scope`:
- *   - Anchored patterns (`/foo`) become `/<scope>/foo`.
- *   - Unanchored patterns (`foo`, `foo/`) become `<scope>/**\/<foo>` so they
- *     match any depth under `<scope>`, mirroring `gitignore(5)` per-directory
- *     scoping.
- */
 function rewritePatternsForScope(content: string, scope: string): string {
   const lines = content.split(/\r?\n/);
   const out: string[] = [];

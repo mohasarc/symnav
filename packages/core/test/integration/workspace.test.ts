@@ -111,6 +111,20 @@ describe("Workspace.isIgnored", () => {
     expect(ws.isIgnored("temp.ts")).toBe(false);
   });
 
+  it("anchors sub-.gitignore patterns with internal slashes to that subdirectory", async () => {
+    const ws = await InMemoryWorkspace.create({
+      files: {
+        "/repo/.git/HEAD": "ref: refs/heads/main\n",
+        "/repo/pkg/.gitignore": "build/output\n",
+        "/repo/pkg/build/output/x.js": "",
+        "/repo/pkg/sub/build/output/x.js": "",
+      },
+      startDir: "/repo",
+    });
+    expect(ws.isIgnored("pkg/build/output/x.js")).toBe(true);
+    expect(ws.isIgnored("pkg/sub/build/output/x.js")).toBe(false);
+  });
+
   it("honors negation", async () => {
     // gitignore(5): wholesale `dist/` cannot be re-included — list contents (`dist/*`) to allow `!`.
     const ws = await InMemoryWorkspace.create({

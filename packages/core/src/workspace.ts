@@ -21,11 +21,16 @@ export interface CreateWorkspaceOptions {
   fs: WorkspaceFileSystem;
 }
 
+export interface IgnoreScope {
+  readonly dirRelToRoot: string;
+  readonly matcher: Ignore;
+}
+
 export abstract class AbstractWorkspace implements Workspace {
   protected constructor(
     public readonly root: string,
     public readonly fs: WorkspaceFileSystem,
-    protected readonly matcher: Ignore,
+    protected readonly scopes: readonly IgnoreScope[],
   ) {}
 
   toRelative(absPath: string): string {
@@ -52,17 +57,25 @@ export abstract class AbstractWorkspace implements Workspace {
     if (relPath === "" || relPath === "/") {
       return false;
     }
-    const normalized = relPath.replace(/^\/+/, "");
-    if (normalized === ".git" || normalized.startsWith(".git/")) {
+    if (relPath === ".git" || relPath.startsWith(".git/")) {
       return true;
     }
-    return this.matcher.ignores(normalized);
+    for (const scope of this.scopes) {
+      const relToScope = pathRelativeToScope(relPath, scope.dirRelToRoot);
+      if (relToScope === null) {
+        continue;
+      }
+      if (scope.matcher.ignores(relToScope)) {
+        return true;
+      }
+    }
+    return false;
   }
 
   static async resolveDependencies(opts: CreateWorkspaceOptions): Promise<{
     root: string;
     fs: WorkspaceFileSystem;
-    matcher: Ignore;
+    scopes: IgnoreScope[];
   }> {
     const { fs } = opts;
     const startDir = posix.normalize(opts.startDir);
@@ -70,20 +83,34 @@ export abstract class AbstractWorkspace implements Workspace {
     if (root === null) {
       throw new NotInWorkspaceError(opts.startDir);
     }
-    const matcher = buildIgnoreMatcher(root, fs);
-    return { root, fs, matcher };
+    const scopes = buildIgnoreScopes(root, fs);
+    return { root, fs, scopes };
   }
 }
 
 class WorkspaceImpl extends AbstractWorkspace {
-  constructor(root: string, fs: WorkspaceFileSystem, matcher: Ignore) {
-    super(root, fs, matcher);
+  constructor(root: string, fs: WorkspaceFileSystem, scopes: readonly IgnoreScope[]) {
+    super(root, fs, scopes);
   }
 }
 
 export async function createWorkspace(opts: CreateWorkspaceOptions): Promise<Workspace> {
-  const { root, fs, matcher } = await AbstractWorkspace.resolveDependencies(opts);
-  return new WorkspaceImpl(root, fs, matcher);
+  const { root, fs, scopes } = await AbstractWorkspace.resolveDependencies(opts);
+  return new WorkspaceImpl(root, fs, scopes);
+}
+
+function pathRelativeToScope(relPath: string, dirRelToRoot: string): string | null {
+  if (dirRelToRoot === "") {
+    return relPath;
+  }
+  const prefix = `${dirRelToRoot}/`;
+  if (relPath === dirRelToRoot) {
+    return "";
+  }
+  if (relPath.startsWith(prefix)) {
+    return relPath.slice(prefix.length);
+  }
+  return null;
 }
 
 function findWorkspaceRoot(startDir: string, fs: WorkspaceFileSystem): string | null {
@@ -109,14 +136,14 @@ function isUnderRoot(normalizedAbs: string, root: string): boolean {
   return normalizedAbs.startsWith(prefix);
 }
 
-function buildIgnoreMatcher(root: string, fs: WorkspaceFileSystem): Ignore {
-  const matcher = ignore();
+function buildIgnoreScopes(root: string, fs: WorkspaceFileSystem): IgnoreScope[] {
+  const scopes: IgnoreScope[] = [];
   walkGitignores(root, root, fs, (gitignorePath, dirRelToRoot) => {
     const content = fs.readFileSync(gitignorePath);
-    const rewritten = rewritePatternsForScope(content, dirRelToRoot);
-    matcher.add(rewritten);
+    const matcher = ignore().add(content);
+    scopes.push({ dirRelToRoot, matcher });
   });
-  return matcher;
+  return scopes;
 }
 
 function walkGitignores(
@@ -153,34 +180,4 @@ function relPathFromRoot(dirAbs: string, root: string): string {
   }
   const prefix = root === "/" ? "/" : `${root}/`;
   return dirAbs.startsWith(prefix) ? dirAbs.slice(prefix.length) : "";
-}
-
-function rewritePatternsForScope(content: string, scope: string): string {
-  const lines = content.split(/\r?\n/);
-  const out: string[] = [];
-  for (const line of lines) {
-    const trimmed = line.trim();
-    if (trimmed === "" || trimmed.startsWith("#")) {
-      out.push(line);
-      continue;
-    }
-    if (scope === "") {
-      out.push(line);
-      continue;
-    }
-    let negate = false;
-    let body = trimmed;
-    if (body.startsWith("!")) {
-      negate = true;
-      body = body.slice(1);
-    }
-    let rewritten: string;
-    if (body.startsWith("/")) {
-      rewritten = `/${scope}${body}`;
-    } else {
-      rewritten = `${scope}/**/${body}`;
-    }
-    out.push(`${negate ? "!" : ""}${rewritten}`);
-  }
-  return out.join("\n");
 }

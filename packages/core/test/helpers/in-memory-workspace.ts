@@ -1,5 +1,4 @@
-import type { Ignore } from "ignore";
-import type { WorkspaceFileSystem } from "@symnav/core";
+import type { IgnoreScope, WorkspaceFileSystem } from "@symnav/core";
 import { AbstractWorkspace } from "@symnav/core";
 
 export class InMemoryFileSystem implements WorkspaceFileSystem {
@@ -84,8 +83,8 @@ function computeDirSet(fileSet: Set<string>): Set<string> {
 }
 
 export class InMemoryWorkspace extends AbstractWorkspace {
-  constructor(root: string, fs: WorkspaceFileSystem, matcher: Ignore) {
-    super(root, fs, matcher);
+  constructor(root: string, fs: WorkspaceFileSystem, scopes: readonly IgnoreScope[]) {
+    super(root, fs, scopes);
   }
 
   static async create(args: {
@@ -95,7 +94,7 @@ export class InMemoryWorkspace extends AbstractWorkspace {
     const fs = new InMemoryFileSystem(args.files);
     const startDir = args.startDir ?? defaultStartDir(args.files);
     const deps = await AbstractWorkspace.resolveDependencies({ startDir, fs });
-    return new InMemoryWorkspace(deps.root, deps.fs, deps.matcher);
+    return new InMemoryWorkspace(deps.root, deps.fs, deps.scopes);
   }
 }
 

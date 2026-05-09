@@ -21,6 +21,51 @@ export interface CreateWorkspaceOptions {
   fs: WorkspaceFileSystem;
 }
 
+export abstract class AbstractWorkspace implements Workspace {
+  protected constructor(
+    public readonly root: string,
+    public readonly fs: WorkspaceFileSystem,
+    protected readonly matcher: Ignore,
+  ) {}
+
+  toRelative(absPath: string): string {
+    const normalized = posix.normalize(absPath);
+    if (!isUnderRoot(normalized, this.root)) {
+      throw new Error(`Path ${absPath} is not under workspace root ${this.root}`);
+    }
+    if (normalized === this.root) {
+      return "";
+    }
+    return normalized.slice(this.root.length + 1);
+  }
+
+  toAbsolute(relPath: string): string {
+    return relPath === "" ? this.root : `${this.root}/${relPath}`;
+  }
+
+  isInWorkspace(absPath: string): boolean {
+    const normalized = posix.normalize(absPath);
+    return isUnderRoot(normalized, this.root);
+  }
+
+  isIgnored(relPath: string): boolean {
+    if (relPath === "" || relPath === "/") {
+      return false;
+    }
+    const normalized = relPath.replace(/^\/+/, "");
+    if (normalized === ".git" || normalized.startsWith(".git/")) {
+      return true;
+    }
+    return this.matcher.ignores(normalized);
+  }
+}
+
+class WorkspaceImpl extends AbstractWorkspace {
+  constructor(root: string, fs: WorkspaceFileSystem, matcher: Ignore) {
+    super(root, fs, matcher);
+  }
+}
+
 export async function createWorkspace(opts: CreateWorkspaceOptions): Promise<Workspace> {
   const { fs } = opts;
   const startDir = posix.normalize(opts.startDir);
@@ -28,40 +73,8 @@ export async function createWorkspace(opts: CreateWorkspaceOptions): Promise<Wor
   if (root === null) {
     throw new NotInWorkspaceError(opts.startDir);
   }
-
   const matcher = buildIgnoreMatcher(root, fs);
-
-  return {
-    root,
-    fs,
-    toRelative(absPath: string): string {
-      const normalized = posix.normalize(absPath);
-      if (!isUnderRoot(normalized, root)) {
-        throw new Error(`Path ${absPath} is not under workspace root ${root}`);
-      }
-      if (normalized === root) {
-        return "";
-      }
-      return normalized.slice(root.length + 1);
-    },
-    toAbsolute(relPath: string): string {
-      return relPath === "" ? root : `${root}/${relPath}`;
-    },
-    isInWorkspace(absPath: string): boolean {
-      const normalized = posix.normalize(absPath);
-      return isUnderRoot(normalized, root);
-    },
-    isIgnored(relPath: string): boolean {
-      if (relPath === "" || relPath === "/") {
-        return false;
-      }
-      const normalized = relPath.replace(/^\/+/, "");
-      if (normalized === ".git" || normalized.startsWith(".git/")) {
-        return true;
-      }
-      return matcher.ignores(normalized);
-    },
-  };
+  return new WorkspaceImpl(root, fs, matcher);
 }
 
 function findWorkspaceRoot(startDir: string, fs: WorkspaceFileSystem): string | null {

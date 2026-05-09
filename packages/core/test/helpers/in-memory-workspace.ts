@@ -1,10 +1,10 @@
-import type { IgnoreScope, WorkspaceFileSystem } from "@symnav/core";
+import type { IgnoreScope, FileSystem } from "@symnav/core";
 import { AbstractWorkspace } from "@symnav/core";
 import { computeDirSet } from "./compute-dir-set.js";
 import { InMemoryFileSystem } from "./in-memory-file-system.js";
 
 export class InMemoryWorkspace extends AbstractWorkspace {
-  constructor(root: string, fs: WorkspaceFileSystem, scopes: readonly IgnoreScope[]) {
+  constructor(root: string, fs: FileSystem, scopes: readonly IgnoreScope[]) {
     super(root, fs, scopes);
   }
 

@@ -1,7 +1,7 @@
-import type { WorkspaceFileSystem } from "@symnav/core";
+import type { FileSystem } from "@symnav/core";
 import { computeDirSet } from "./compute-dir-set.js";
 
-export class InMemoryFileSystem implements WorkspaceFileSystem {
+export class InMemoryFileSystem implements FileSystem {
   private readonly files: Record<string, string>;
   private readonly fileSet: Set<string>;
   private readonly dirSet: Set<string>;

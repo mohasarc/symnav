@@ -1,4 +1,4 @@
-import type { WorkspaceFileSystem } from "./file-system.js";
+import type { FileSystem } from "./file-system.js";
 import { NotInWorkspaceError } from "./errors.js";
 import { buildIgnoreScopes } from "./ignore/build-scopes.js";
 import { findWorkspaceRoot } from "./paths/find-root.js";
@@ -11,7 +11,7 @@ import type { Workspace } from "./workspace.js";
 export abstract class AbstractWorkspace implements Workspace {
   protected constructor(
     public readonly root: string,
-    public readonly fs: WorkspaceFileSystem,
+    public readonly fs: FileSystem,
     protected readonly scopes: readonly IgnoreScope[],
   ) {}
 
@@ -45,9 +45,9 @@ export abstract class AbstractWorkspace implements Workspace {
     return isIgnoredByScopes(relPath, this.scopes);
   }
 
-  static async resolveDependencies(opts: { startDir: string; fs: WorkspaceFileSystem }): Promise<{
+  static async resolveDependencies(opts: { startDir: string; fs: FileSystem }): Promise<{
     root: string;
-    fs: WorkspaceFileSystem;
+    fs: FileSystem;
     scopes: IgnoreScope[];
   }> {
     const { fs } = opts;

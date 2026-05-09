@@ -1,7 +1,7 @@
 import { posix } from "node:path";
-import type { WorkspaceFileSystem } from "../file-system.js";
+import type { FileSystem } from "../file-system.js";
 
-export function findWorkspaceRoot(startDir: string, fs: WorkspaceFileSystem): string | null {
+export function findWorkspaceRoot(startDir: string, fs: FileSystem): string | null {
   let current = startDir;
   while (true) {
     const gitPath = posix.join(current, ".git");

@@ -1,4 +1,4 @@
-export interface WorkspaceFileSystem {
+export interface FileSystem {
   readFile(absPath: string): Promise<string>;
   exists(absPath: string): Promise<boolean>;
   existsSync(absPath: string): boolean;

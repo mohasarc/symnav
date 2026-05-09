@@ -1,8 +1,8 @@
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { readFile } from "node:fs/promises";
-import type { WorkspaceFileSystem } from "./file-system.js";
+import type { FileSystem } from "./file-system.js";
 
-export class NodeFileSystem implements WorkspaceFileSystem {
+export class NodeFileSystem implements FileSystem {
   async readFile(absPath: string): Promise<string> {
     return readFile(absPath, "utf8");
   }

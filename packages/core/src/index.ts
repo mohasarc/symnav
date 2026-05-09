@@ -5,7 +5,7 @@ export type {
   FileSymbols,
 } from "./intermediate-representation/types.js";
 export { buildSymbolPath } from "./intermediate-representation/symbol-path.js";
-export type { WorkspaceFileSystem } from "./workspace/file-system.js";
+export type { FileSystem } from "./workspace/file-system.js";
 export { NodeFileSystem } from "./workspace/node-file-system.js";
 export type { Workspace } from "./workspace/workspace.js";
 export { AbstractWorkspace } from "./workspace/abstract-workspace.js";

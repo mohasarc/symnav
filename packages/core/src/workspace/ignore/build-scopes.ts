@@ -1,22 +1,17 @@
 import ignore from "ignore";
 import { posix } from "node:path";
-import type { WorkspaceFileSystem } from "../file-system.js";
+import type { FileSystem } from "../file-system.js";
 import type { IgnoreScope } from "./scope.js";
 import { isIgnoredByScopes } from "./is-ignored.js";
 import { relPathFromRoot } from "../paths/rel-from-root.js";
 
-export function buildIgnoreScopes(root: string, fs: WorkspaceFileSystem): IgnoreScope[] {
+export function buildIgnoreScopes(root: string, fs: FileSystem): IgnoreScope[] {
   const scopes: IgnoreScope[] = [];
   walkGitignores(root, root, fs, scopes);
   return scopes;
 }
 
-function walkGitignores(
-  dirAbs: string,
-  root: string,
-  fs: WorkspaceFileSystem,
-  scopes: IgnoreScope[],
-): void {
+function walkGitignores(dirAbs: string, root: string, fs: FileSystem, scopes: IgnoreScope[]): void {
   const dirRelToRoot = relPathFromRoot(dirAbs, root);
   const gitignorePath = posix.join(dirAbs, ".gitignore");
   if (fs.existsSync(gitignorePath) && !fs.isDirectorySync(gitignorePath)) {

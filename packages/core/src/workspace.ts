@@ -16,7 +16,7 @@ export interface Workspace {
   isIgnored(relPath: string): boolean;
 }
 
-export interface CreateWorkspaceOptions {
+export interface ResolveWorkspaceDependenciesOptions {
   startDir: string;
   fs: WorkspaceFileSystem;
 }
@@ -72,7 +72,7 @@ export abstract class AbstractWorkspace implements Workspace {
     return false;
   }
 
-  static async resolveDependencies(opts: CreateWorkspaceOptions): Promise<{
+  static async resolveDependencies(opts: ResolveWorkspaceDependenciesOptions): Promise<{
     root: string;
     fs: WorkspaceFileSystem;
     scopes: IgnoreScope[];
@@ -86,17 +86,6 @@ export abstract class AbstractWorkspace implements Workspace {
     const scopes = buildIgnoreScopes(root, fs);
     return { root, fs, scopes };
   }
-}
-
-class NodeWorkspace extends AbstractWorkspace {
-  constructor(root: string, fs: WorkspaceFileSystem, scopes: readonly IgnoreScope[]) {
-    super(root, fs, scopes);
-  }
-}
-
-export async function createWorkspace(opts: CreateWorkspaceOptions): Promise<Workspace> {
-  const { root, fs, scopes } = await AbstractWorkspace.resolveDependencies(opts);
-  return new NodeWorkspace(root, fs, scopes);
 }
 
 function posixify(input: string): string {

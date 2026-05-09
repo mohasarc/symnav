@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { NotInWorkspaceError, createWorkspace } from "@symnav/core";
+import { NodeWorkspace, NotInWorkspaceError } from "@symnav/core";
 import { InMemoryFileSystem, InMemoryWorkspace } from "../helpers/in-memory-workspace.js";
 
 describe("Workspace root detection", () => {
@@ -196,7 +196,7 @@ describe("Workspace.isIgnored", () => {
       "/repo/node_modules/foo/index.js": "",
       "/repo/src/x.ts": "",
     });
-    await createWorkspace({ startDir: "/repo", fs });
+    await NodeWorkspace.create({ startDir: "/repo", fs });
     expect(listed).not.toContain("/repo/node_modules");
     expect(listed).toContain("/repo/src");
   });

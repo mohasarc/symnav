@@ -1,8 +1,8 @@
-import type { WorkspaceFileSystem } from "@symnav/core";
+import type { FileSystem } from "@symnav/core";
 import type { FileSystemHost, RuntimeDirEntry } from "ts-morph";
 
 /**
- * Adapt our `WorkspaceFileSystem` to ts-morph's `FileSystemHost` so ts-morph
+ * Adapt our `FileSystem` to ts-morph's `FileSystemHost` so ts-morph
  * never reaches the real filesystem when a custom workspace fs is in use.
  *
  * Stage 1 only needs read-side methods plus enough probing for ts-morph to
@@ -13,7 +13,7 @@ import type { FileSystemHost, RuntimeDirEntry } from "ts-morph";
  * throw `unsupportedOperation` so a future use-case forces an explicit
  * decision rather than silent disk access.
  */
-export function fileSystemHostFromWorkspace(fs: WorkspaceFileSystem): FileSystemHost {
+export function fileSystemHostFromWorkspace(fs: FileSystem): FileSystemHost {
   return {
     isCaseSensitive(): boolean {
       return true;

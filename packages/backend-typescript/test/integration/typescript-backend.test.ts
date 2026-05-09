@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { FileNotFoundError, NodeWorkspace, type WorkspaceFileSystem } from "@symnav/core";
+import { FileNotFoundError, NodeWorkspace, type FileSystem } from "@symnav/core";
 import { parseTs } from "@symnav/testing";
 import { InMemoryFileSystem } from "../../../core/test/helpers/in-memory-file-system.js";
 import { InMemoryWorkspace } from "../../../core/test/helpers/in-memory-workspace.js";
@@ -82,7 +82,7 @@ describe("TypeScriptBackend.fileSymbols", () => {
       "/repo/src/checkout.ts": SOURCE,
     });
     const reads: string[] = [];
-    const counting: WorkspaceFileSystem = {
+    const counting: FileSystem = {
       readFile: (path) => {
         reads.push(path);
         return inner.readFile(path);

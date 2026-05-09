@@ -60,7 +60,7 @@ The package dependency graph is locked. A given package may import only from the
 | `@symnav/renderer` | `@symnav/core` |
 | `@symnav/backend-typescript` | `@symnav/core` |
 | `symnav` (apps/cli) | `@symnav/core`, `@symnav/renderer`, `@symnav/backend-typescript` |
-| `@symnav/testing` | `@symnav/core` |
+| `@symnav/testing` | (nothing) |
 
 `@symnav/testing` is additionally importable from any package's test files. Production code may not import it.
 

@@ -34,7 +34,7 @@ export abstract class AbstractWorkspace implements Workspace {
   ) {}
 
   toRelative(absPath: string): string {
-    const normalized = posix.normalize(absPath);
+    const normalized = posixify(absPath);
     if (!isUnderRoot(normalized, this.root)) {
       throw new Error(`Path ${absPath} is not under workspace root ${this.root}`);
     }
@@ -49,7 +49,7 @@ export abstract class AbstractWorkspace implements Workspace {
   }
 
   isInWorkspace(absPath: string): boolean {
-    const normalized = posix.normalize(absPath);
+    const normalized = posixify(absPath);
     return isUnderRoot(normalized, this.root);
   }
 
@@ -78,7 +78,7 @@ export abstract class AbstractWorkspace implements Workspace {
     scopes: IgnoreScope[];
   }> {
     const { fs } = opts;
-    const startDir = posix.normalize(opts.startDir);
+    const startDir = posixify(opts.startDir);
     const root = findWorkspaceRoot(startDir, fs);
     if (root === null) {
       throw new NotInWorkspaceError(opts.startDir);
@@ -97,6 +97,13 @@ class WorkspaceImpl extends AbstractWorkspace {
 export async function createWorkspace(opts: CreateWorkspaceOptions): Promise<Workspace> {
   const { root, fs, scopes } = await AbstractWorkspace.resolveDependencies(opts);
   return new WorkspaceImpl(root, fs, scopes);
+}
+
+function posixify(input: string): string {
+  if (input.startsWith("\\\\") || input.startsWith("//")) {
+    throw new Error(`UNC paths are not supported: ${input}`);
+  }
+  return posix.normalize(input.replace(/\\/g, "/"));
 }
 
 function pathRelativeToScope(relPath: string, dirRelToRoot: string): string | null {

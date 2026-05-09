@@ -37,6 +37,35 @@ describe("Workspace root detection", () => {
   });
 });
 
+describe("Windows-shaped paths", () => {
+  it("resolves Windows-shaped startDir through the workspace", async () => {
+    const ws = await InMemoryWorkspace.create({
+      files: {
+        "C:/repo/.git/HEAD": "ref: refs/heads/main\n",
+        "C:/repo/.gitignore": "dist/\n",
+        "C:/repo/src/x.ts": "",
+        "C:/repo/dist/x.js": "",
+      },
+      startDir: "C:\\repo\\src",
+    });
+    expect(ws.root).toBe("C:/repo");
+    expect(ws.toRelative("C:\\repo\\src\\x.ts")).toBe("src/x.ts");
+    expect(ws.toAbsolute("src/x.ts")).toBe("C:/repo/src/x.ts");
+    expect(ws.isInWorkspace("C:\\repo\\src\\x.ts")).toBe(true);
+    expect(ws.isInWorkspace("C:\\other\\x.ts")).toBe(false);
+    expect(ws.isIgnored("dist/x.js")).toBe(true);
+  });
+
+  it("rejects UNC paths with a clear error", async () => {
+    await expect(
+      InMemoryWorkspace.create({
+        files: { "//server/share/.git/HEAD": "" },
+        startDir: "\\\\server\\share",
+      }),
+    ).rejects.toThrow(/UNC/i);
+  });
+});
+
 describe("Workspace path helpers", () => {
   it("toRelative and toAbsolute round-trip via POSIX paths", async () => {
     const ws = await InMemoryWorkspace.create({

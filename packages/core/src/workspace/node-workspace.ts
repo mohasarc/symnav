@@ -1,5 +1,5 @@
 import { AbstractWorkspace } from "./abstract-workspace.js";
-import type { IgnoreScope } from "./ignore-scope.js";
+import type { IgnoreScope } from "./ignore/scope.js";
 import { NodeFileSystem } from "./node-file-system.js";
 import type { WorkspaceFileSystem } from "./file-system.js";
 

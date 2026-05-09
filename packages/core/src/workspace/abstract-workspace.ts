@@ -1,9 +1,9 @@
 import type { WorkspaceFileSystem } from "./file-system.js";
 import { NotInWorkspaceError } from "./errors.js";
-import { buildIgnoreScopes } from "./build-ignore-scopes.js";
+import { buildIgnoreScopes } from "./ignore/build-scopes.js";
 import { findWorkspaceRoot } from "./find-workspace-root.js";
-import type { IgnoreScope } from "./ignore-scope.js";
-import { isIgnoredByScopes } from "./is-ignored-by-scopes.js";
+import type { IgnoreScope } from "./ignore/scope.js";
+import { isIgnoredByScopes } from "./ignore/is-ignored.js";
 import { isUnderRoot } from "./is-under-root.js";
 import { posixify } from "./posixify.js";
 import type { Workspace } from "./workspace.js";

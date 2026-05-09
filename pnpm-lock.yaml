@@ -80,11 +80,7 @@ importers:
 
   packages/renderer: {}
 
-  packages/testing:
-    dependencies:
-      '@symnav/core':
-        specifier: workspace:*
-        version: link:../core
+  packages/testing: {}
 
 packages:
 

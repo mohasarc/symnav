@@ -24,8 +24,8 @@ describe("tsconfig project references", () => {
     expect(readReferences("packages/backend-typescript/tsconfig.json")).toEqual(["../core"]);
   });
 
-  it("@symnav/testing references only @symnav/core", () => {
-    expect(readReferences("packages/testing/tsconfig.json")).toEqual(["../core"]);
+  it("@symnav/testing has no internal references (leaf package)", () => {
+    expect(readReferences("packages/testing/tsconfig.json")).toEqual([]);
   });
 
   it("apps/cli references all three production libs", () => {

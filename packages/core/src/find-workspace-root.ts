@@ -1,5 +1,5 @@
 import { posix } from "node:path";
-import type { WorkspaceFileSystem } from "./file-system.js";
+import type { WorkspaceFileSystem } from "./workspace-file-system.js";
 
 export function findWorkspaceRoot(startDir: string, fs: WorkspaceFileSystem): string | null {
   let current = startDir;

@@ -1,7 +1,7 @@
 export type { SymbolKind, LineRange, SymbolDecl, FileSymbols } from "./ir.js";
 export { buildSymbolPath } from "./symbol-path.js";
-export type { WorkspaceFileSystem } from "./file-system.js";
-export { NodeFileSystem } from "./file-system.js";
+export type { WorkspaceFileSystem } from "./workspace-file-system.js";
+export { NodeFileSystem } from "./node-file-system.js";
 export type { Workspace } from "./workspace.js";
 export { AbstractWorkspace } from "./abstract-workspace.js";
 export type { IgnoreScope } from "./ignore-scope.js";

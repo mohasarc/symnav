@@ -1,7 +1,7 @@
 import { AbstractWorkspace } from "./abstract-workspace.js";
-import { NodeFileSystem } from "./file-system.js";
-import type { WorkspaceFileSystem } from "./file-system.js";
 import type { IgnoreScope } from "./ignore-scope.js";
+import { NodeFileSystem } from "./node-file-system.js";
+import type { WorkspaceFileSystem } from "./workspace-file-system.js";
 
 export class NodeWorkspace extends AbstractWorkspace {
   constructor(root: string, fs: WorkspaceFileSystem, scopes: readonly IgnoreScope[]) {

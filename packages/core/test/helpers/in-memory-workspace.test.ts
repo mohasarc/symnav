@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { NotInWorkspaceError } from "@symnav/core";
-import { InMemoryWorkspace, inMemoryFileSystem } from "./in-memory-workspace.js";
+import { InMemoryFileSystem, InMemoryWorkspace } from "./in-memory-workspace.js";
 
 describe("InMemoryWorkspace", () => {
   it("rejects with NotInWorkspaceError when no .git entry is present", async () => {
@@ -15,8 +15,8 @@ describe("InMemoryWorkspace", () => {
   });
 });
 
-describe("inMemoryFileSystem", () => {
-  const fs = inMemoryFileSystem({
+describe("InMemoryFileSystem", () => {
+  const fs = new InMemoryFileSystem({
     "/repo/.git/HEAD": "ref: refs/heads/main\n",
     "/repo/src/x.ts": "export const x = 1;\n",
   });

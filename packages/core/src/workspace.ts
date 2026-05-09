@@ -4,7 +4,7 @@ import type { Ignore } from "ignore";
 import type { WorkspaceFileSystem } from "./file-system.js";
 import { NotInWorkspaceError } from "./errors.js";
 
-export { nodeFileSystem } from "./file-system.js";
+export { NodeFileSystem } from "./file-system.js";
 export type { WorkspaceFileSystem } from "./file-system.js";
 
 export interface Workspace {

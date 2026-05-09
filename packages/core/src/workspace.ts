@@ -58,6 +58,21 @@ export abstract class AbstractWorkspace implements Workspace {
     }
     return this.matcher.ignores(normalized);
   }
+
+  static async resolveDependencies(opts: CreateWorkspaceOptions): Promise<{
+    root: string;
+    fs: WorkspaceFileSystem;
+    matcher: Ignore;
+  }> {
+    const { fs } = opts;
+    const startDir = posix.normalize(opts.startDir);
+    const root = findWorkspaceRoot(startDir, fs);
+    if (root === null) {
+      throw new NotInWorkspaceError(opts.startDir);
+    }
+    const matcher = buildIgnoreMatcher(root, fs);
+    return { root, fs, matcher };
+  }
 }
 
 class WorkspaceImpl extends AbstractWorkspace {
@@ -67,13 +82,7 @@ class WorkspaceImpl extends AbstractWorkspace {
 }
 
 export async function createWorkspace(opts: CreateWorkspaceOptions): Promise<Workspace> {
-  const { fs } = opts;
-  const startDir = posix.normalize(opts.startDir);
-  const root = findWorkspaceRoot(startDir, fs);
-  if (root === null) {
-    throw new NotInWorkspaceError(opts.startDir);
-  }
-  const matcher = buildIgnoreMatcher(root, fs);
+  const { root, fs, matcher } = await AbstractWorkspace.resolveDependencies(opts);
   return new WorkspaceImpl(root, fs, matcher);
 }
 

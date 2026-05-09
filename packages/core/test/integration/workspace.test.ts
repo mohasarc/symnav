@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { NotInWorkspaceError } from "@symnav/core";
-import { inMemoryWorkspace } from "../helpers/in-memory-workspace.js";
+import { InMemoryWorkspace } from "../helpers/in-memory-workspace.js";
 
 describe("Workspace root detection", () => {
   it("finds the nearest .git ancestor", async () => {
-    const ws = await inMemoryWorkspace({
+    const ws = await InMemoryWorkspace.create({
       files: {
         "/repo/.git/HEAD": "ref: refs/heads/main\n",
         "/repo/pkg/sub/x.ts": "export const x = 1;\n",
@@ -15,7 +15,7 @@ describe("Workspace root detection", () => {
   });
 
   it("treats a .git regular file (submodule layout) the same as a directory", async () => {
-    const ws = await inMemoryWorkspace({
+    const ws = await InMemoryWorkspace.create({
       files: {
         "/repo/.git": "gitdir: ../.git/modules/repo\n",
         "/repo/pkg/x.ts": "export {};\n",
@@ -27,7 +27,7 @@ describe("Workspace root detection", () => {
 
   it("rejects with NotInWorkspaceError when no .git ancestor exists", async () => {
     await expect(
-      inMemoryWorkspace({
+      InMemoryWorkspace.create({
         files: {
           "/elsewhere/x.ts": "export {};\n",
         },
@@ -39,7 +39,7 @@ describe("Workspace root detection", () => {
 
 describe("Workspace path helpers", () => {
   it("toRelative and toAbsolute round-trip via POSIX paths", async () => {
-    const ws = await inMemoryWorkspace({
+    const ws = await InMemoryWorkspace.create({
       files: {
         "/repo/.git/HEAD": "ref: refs/heads/main\n",
         "/repo/pkg/sub/file.ts": "",
@@ -53,7 +53,7 @@ describe("Workspace path helpers", () => {
   });
 
   it("isInWorkspace rejects paths above root and sibling-of-root paths", async () => {
-    const ws = await inMemoryWorkspace({
+    const ws = await InMemoryWorkspace.create({
       files: {
         "/repo/.git/HEAD": "ref: refs/heads/main\n",
         "/repo/x.ts": "",
@@ -70,7 +70,7 @@ describe("Workspace path helpers", () => {
 
 describe("Workspace filesystem", () => {
   it("fs.readFile reads files placed in the in-memory map", async () => {
-    const ws = await inMemoryWorkspace({
+    const ws = await InMemoryWorkspace.create({
       files: {
         "/repo/.git/HEAD": "ref: refs/heads/main\n",
         "/repo/hello.txt": "Hello, world!\n",
@@ -83,7 +83,7 @@ describe("Workspace filesystem", () => {
 
 describe("Workspace.isIgnored", () => {
   it("honors a single root .gitignore", async () => {
-    const ws = await inMemoryWorkspace({
+    const ws = await InMemoryWorkspace.create({
       files: {
         "/repo/.git/HEAD": "ref: refs/heads/main\n",
         "/repo/.gitignore": "dist/\n",
@@ -97,7 +97,7 @@ describe("Workspace.isIgnored", () => {
   });
 
   it("aggregates subdirectory .gitignore files", async () => {
-    const ws = await inMemoryWorkspace({
+    const ws = await InMemoryWorkspace.create({
       files: {
         "/repo/.git/HEAD": "ref: refs/heads/main\n",
         "/repo/.gitignore": "",
@@ -113,7 +113,7 @@ describe("Workspace.isIgnored", () => {
 
   it("honors negation", async () => {
     // gitignore(5): wholesale `dist/` cannot be re-included — list contents (`dist/*`) to allow `!`.
-    const ws = await inMemoryWorkspace({
+    const ws = await InMemoryWorkspace.create({
       files: {
         "/repo/.git/HEAD": "ref: refs/heads/main\n",
         "/repo/.gitignore": "dist/*\n!dist/keep.js\n",
@@ -127,7 +127,7 @@ describe("Workspace.isIgnored", () => {
   });
 
   it("always rejects .git/ and any path under it", async () => {
-    const ws = await inMemoryWorkspace({
+    const ws = await InMemoryWorkspace.create({
       files: {
         "/repo/.git/HEAD": "ref: refs/heads/main\n",
         "/repo/src/x.ts": "",
@@ -140,7 +140,7 @@ describe("Workspace.isIgnored", () => {
   });
 
   it("returns false for everything (except .git/) when no .gitignore exists", async () => {
-    const ws = await inMemoryWorkspace({
+    const ws = await InMemoryWorkspace.create({
       files: {
         "/repo/.git/HEAD": "ref: refs/heads/main\n",
         "/repo/src/x.ts": "",

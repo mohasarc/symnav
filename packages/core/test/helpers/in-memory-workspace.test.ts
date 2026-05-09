@@ -1,11 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { NotInWorkspaceError } from "@symnav/core";
-import { inMemoryFileSystem, inMemoryWorkspace } from "./in-memory-workspace.js";
+import { InMemoryWorkspace, inMemoryFileSystem } from "./in-memory-workspace.js";
 
-describe("inMemoryWorkspace", () => {
+describe("InMemoryWorkspace", () => {
   it("rejects with NotInWorkspaceError when no .git entry is present", async () => {
     await expect(
-      inMemoryWorkspace({
+      InMemoryWorkspace.create({
         files: {
           "/elsewhere/x.ts": "export {};\n",
         },

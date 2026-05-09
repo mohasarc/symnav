@@ -1,5 +1,6 @@
-import type { Workspace, WorkspaceFileSystem } from "@symnav/core";
-import { createWorkspace } from "@symnav/core";
+import type { Ignore } from "ignore";
+import type { WorkspaceFileSystem } from "@symnav/core";
+import { AbstractWorkspace } from "@symnav/core";
 
 export function inMemoryFileSystem(files: Record<string, string>): WorkspaceFileSystem {
   const fileSet = new Set<string>(Object.keys(files));
@@ -72,13 +73,20 @@ function computeDirSet(fileSet: Set<string>): Set<string> {
   return dirs;
 }
 
-export function inMemoryWorkspace(args: {
-  files: Record<string, string>;
-  startDir?: string;
-}): Promise<Workspace> {
-  const fs = inMemoryFileSystem(args.files);
-  const startDir = args.startDir ?? defaultStartDir(args.files);
-  return createWorkspace({ startDir, fs });
+export class InMemoryWorkspace extends AbstractWorkspace {
+  constructor(root: string, fs: WorkspaceFileSystem, matcher: Ignore) {
+    super(root, fs, matcher);
+  }
+
+  static async create(args: {
+    files: Record<string, string>;
+    startDir?: string;
+  }): Promise<InMemoryWorkspace> {
+    const fs = inMemoryFileSystem(args.files);
+    const startDir = args.startDir ?? defaultStartDir(args.files);
+    const deps = await AbstractWorkspace.resolveDependencies({ startDir, fs });
+    return new InMemoryWorkspace(deps.root, deps.fs, deps.matcher);
+  }
 }
 
 function defaultStartDir(files: Record<string, string>): string {

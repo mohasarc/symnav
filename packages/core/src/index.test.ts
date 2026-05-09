@@ -7,9 +7,15 @@ describe("@symnav/core entry", () => {
     expect(Object.keys(coreEntry).sort()).toMatchInlineSnapshot(`
       [
         "AbstractWorkspace",
+        "BackendError",
+        "BackendRouter",
+        "FileNotFoundError",
+        "IgnoredFileError",
         "NodeFileSystem",
         "NodeWorkspace",
         "NotInWorkspaceError",
+        "OutsideWorkspaceError",
+        "UnsupportedFileError",
         "buildSymbolPath",
       ]
     `);

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
-import { BackendRouter, type LanguageBackend } from "./backend.js";
-import type { FileSymbols } from "./intermediate-representation/types.js";
+import { BackendRouter, type LanguageBackend } from "./router.js";
+import type { FileSymbols } from "../intermediate-representation/types.js";
 
 function fakeBackend(
   label: string,

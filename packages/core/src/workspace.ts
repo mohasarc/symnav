@@ -138,11 +138,7 @@ function isUnderRoot(normalizedAbs: string, root: string): boolean {
 
 function buildIgnoreScopes(root: string, fs: WorkspaceFileSystem): IgnoreScope[] {
   const scopes: IgnoreScope[] = [];
-  walkGitignores(root, root, fs, (gitignorePath, dirRelToRoot) => {
-    const content = fs.readFileSync(gitignorePath);
-    const matcher = ignore().add(content);
-    scopes.push({ dirRelToRoot, matcher });
-  });
+  walkGitignores(root, root, fs, scopes);
   return scopes;
 }
 
@@ -150,12 +146,13 @@ function walkGitignores(
   dirAbs: string,
   root: string,
   fs: WorkspaceFileSystem,
-  onGitignore: (gitignorePath: string, dirRelToRoot: string) => void,
+  scopes: IgnoreScope[],
 ): void {
+  const dirRelToRoot = relPathFromRoot(dirAbs, root);
   const gitignorePath = posix.join(dirAbs, ".gitignore");
   if (fs.existsSync(gitignorePath) && !fs.isDirectorySync(gitignorePath)) {
-    const dirRelToRoot = relPathFromRoot(dirAbs, root);
-    onGitignore(gitignorePath, dirRelToRoot);
+    const content = fs.readFileSync(gitignorePath);
+    scopes.push({ dirRelToRoot, matcher: ignore().add(content) });
   }
   let entries: readonly string[];
   try {
@@ -168,10 +165,28 @@ function walkGitignores(
       continue;
     }
     const childAbs = posix.join(dirAbs, entry);
-    if (fs.isDirectorySync(childAbs)) {
-      walkGitignores(childAbs, root, fs, onGitignore);
+    if (!fs.isDirectorySync(childAbs)) {
+      continue;
+    }
+    const childRelToRoot = dirRelToRoot === "" ? entry : `${dirRelToRoot}/${entry}`;
+    if (isIgnoredByScopes(`${childRelToRoot}/`, scopes)) {
+      continue;
+    }
+    walkGitignores(childAbs, root, fs, scopes);
+  }
+}
+
+function isIgnoredByScopes(relPath: string, scopes: readonly IgnoreScope[]): boolean {
+  for (const scope of scopes) {
+    const relToScope = pathRelativeToScope(relPath, scope.dirRelToRoot);
+    if (relToScope === null) {
+      continue;
+    }
+    if (scope.matcher.ignores(relToScope)) {
+      return true;
     }
   }
+  return false;
 }
 
 function relPathFromRoot(dirAbs: string, root: string): string {

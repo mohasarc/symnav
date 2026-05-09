@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { NotInWorkspaceError } from "@symnav/core";
-import { InMemoryWorkspace } from "../helpers/in-memory-workspace.js";
+import { NotInWorkspaceError, createWorkspace } from "@symnav/core";
+import { InMemoryFileSystem, InMemoryWorkspace } from "../helpers/in-memory-workspace.js";
 
 describe("Workspace root detection", () => {
   it("finds the nearest .git ancestor", async () => {
@@ -151,6 +151,25 @@ describe("Workspace.isIgnored", () => {
     expect(ws.isIgnored(".git")).toBe(true);
     expect(ws.isIgnored(".git/HEAD")).toBe(true);
     expect(ws.isIgnored(".git/refs/heads/main")).toBe(true);
+  });
+
+  it("skips walking into ignored directories during workspace construction", async () => {
+    const listed: string[] = [];
+    class TrackingFs extends InMemoryFileSystem {
+      override listDirSync(absPath: string): readonly string[] {
+        listed.push(absPath);
+        return super.listDirSync(absPath);
+      }
+    }
+    const fs = new TrackingFs({
+      "/repo/.git/HEAD": "ref: refs/heads/main\n",
+      "/repo/.gitignore": "node_modules/\n",
+      "/repo/node_modules/foo/index.js": "",
+      "/repo/src/x.ts": "",
+    });
+    await createWorkspace({ startDir: "/repo", fs });
+    expect(listed).not.toContain("/repo/node_modules");
+    expect(listed).toContain("/repo/src");
   });
 
   it("returns false for everything (except .git/) when no .gitignore exists", async () => {

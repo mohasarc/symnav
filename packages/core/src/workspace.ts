@@ -1,8 +1,12 @@
-import { posix } from "node:path";
 import ignore from "ignore";
 import type { Ignore } from "ignore";
+import { posix } from "node:path";
 import type { WorkspaceFileSystem } from "./file-system.js";
 import { NotInWorkspaceError } from "./errors.js";
+import { isUnderRoot } from "./is-under-root.js";
+import { pathRelativeToScope } from "./path-relative-to-scope.js";
+import { posixify } from "./posixify.js";
+import { relPathFromRoot } from "./rel-path-from-root.js";
 
 export { NodeFileSystem } from "./file-system.js";
 export type { WorkspaceFileSystem } from "./file-system.js";
@@ -88,27 +92,6 @@ export abstract class AbstractWorkspace implements Workspace {
   }
 }
 
-function posixify(input: string): string {
-  if (input.startsWith("\\\\") || input.startsWith("//")) {
-    throw new Error(`UNC paths are not supported: ${input}`);
-  }
-  return posix.normalize(input.replace(/\\/g, "/"));
-}
-
-function pathRelativeToScope(relPath: string, dirRelToRoot: string): string | null {
-  if (dirRelToRoot === "") {
-    return relPath;
-  }
-  const prefix = `${dirRelToRoot}/`;
-  if (relPath === dirRelToRoot) {
-    return "";
-  }
-  if (relPath.startsWith(prefix)) {
-    return relPath.slice(prefix.length);
-  }
-  return null;
-}
-
 function findWorkspaceRoot(startDir: string, fs: WorkspaceFileSystem): string | null {
   let current = startDir;
   while (true) {
@@ -122,14 +105,6 @@ function findWorkspaceRoot(startDir: string, fs: WorkspaceFileSystem): string | 
     }
     current = parent;
   }
-}
-
-function isUnderRoot(normalizedAbs: string, root: string): boolean {
-  if (normalizedAbs === root) {
-    return true;
-  }
-  const prefix = root === "/" ? "/" : `${root}/`;
-  return normalizedAbs.startsWith(prefix);
 }
 
 function buildIgnoreScopes(root: string, fs: WorkspaceFileSystem): IgnoreScope[] {
@@ -183,12 +158,4 @@ function isIgnoredByScopes(relPath: string, scopes: readonly IgnoreScope[]): boo
     }
   }
   return false;
-}
-
-function relPathFromRoot(dirAbs: string, root: string): string {
-  if (dirAbs === root) {
-    return "";
-  }
-  const prefix = root === "/" ? "/" : `${root}/`;
-  return dirAbs.startsWith(prefix) ? dirAbs.slice(prefix.length) : "";
 }

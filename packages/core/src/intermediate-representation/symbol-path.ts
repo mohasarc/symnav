@@ -1,4 +1,4 @@
-import type { SymbolDecl } from "./ir.js";
+import type { SymbolDecl } from "./types.js";
 
 export function buildSymbolPath(ancestors: readonly SymbolDecl[], decl: SymbolDecl): string {
   if (ancestors.length === 0) {

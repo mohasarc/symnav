@@ -61,6 +61,19 @@ Write the failing test first, then make it pass. Every behavior the code perform
 - Keep CLI behavior deterministic, non-interactive by default, and covered by focused tests.
 - Update docs and examples whenever command behavior or output changes.
 
+## PR descriptions
+
+Use the template at `.github/PULL_REQUEST_TEMPLATE.md`. Per-section purpose is explained inline there.
+
+Writing rules:
+
+- Conciseness is non-negotiable. Structure beats wall-of-text. Short prose is fine where bullets would be awkward — pick whichever reads faster.
+- One concrete fact per sentence or bullet. Prefer concrete nouns ("validates input order") over hand-waving ("improves robustness").
+- Cut filler: no metaphors, no "really" / "very" / "simply" / "just", no decorative adjectives.
+- Drop unnecessary articles where readability holds.
+- Skip any section that would be empty or restate the title.
+- Do not add a "Summary" / "What changed" section — reviewers read the commits and diff for that.
+
 ## Dependency direction
 
 The package dependency graph is locked. A given package may import only from the packages listed below.

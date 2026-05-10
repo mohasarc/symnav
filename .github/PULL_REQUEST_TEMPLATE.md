@@ -1,11 +1,11 @@
-## Summary
-
-<!-- One sentence first: what does this PR do? Optional follow-up: a sentence or two of higher-resolution detail. Stop reading here and you should have the picture. -->
-
 ## Why
 
-<!-- One sentence first: what prompted this change — what problem, deadline, or larger arc it serves. Optional follow-up: alternatives considered, why this approach. -->
+<!-- The motivation, constraint, or decision a reviewer can't infer from the diff. Skip the section if the title already says it. -->
 
-## QA
+## Notes
 
-<!-- One sentence first: how this is verified (e.g. "added unit + e2e tests, all green"). Optional follow-up: manual steps run, sample output, edge cases checked. -->
+<!-- Optional. Non-obvious things worth flagging: surprising trade-offs, follow-ups deferred, files that look bigger than they are. Delete the section if there's nothing. -->
+
+## Test plan
+
+<!-- Checklist of what was actually run or verified. -->

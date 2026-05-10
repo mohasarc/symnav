@@ -73,7 +73,11 @@ describe("symnav overview e2e (user errors)", () => {
     const r = runSymnavOverview(["--cwd", fixtureRoot, "overview", outside], fixtureRoot);
     expect(r.stdout).toBe("");
     expect(r.status).toBe(1);
-    const normalized = r.stderr.split(fixtureRoot).join("<fixtureRoot>");
+    const normalized = r.stderr
+      .split(outside)
+      .join("<outsidePath>")
+      .split(fixtureRoot)
+      .join("<fixtureRoot>");
     await expect(normalized).toMatchFileSnapshot(snapshot("outside.expected.err"));
   });
 

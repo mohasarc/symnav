@@ -88,3 +88,12 @@ describe("symnav overview e2e (user errors)", () => {
     await expect(r.stderr).toMatchFileSnapshot(snapshot("unsupported.expected.err"));
   });
 });
+
+describe("symnav overview e2e (JSON output)", () => {
+  it("renders class-with-methods.ts as JSON", async () => {
+    const r = runSymnavOverview(["overview", "class-with-methods.ts", "--json"], fixtureRoot);
+    expect(r.stderr).toBe("");
+    expect(r.status).toBe(0);
+    await expect(r.stdout).toMatchFileSnapshot(snapshot("class-with-methods.expected.json"));
+  });
+});

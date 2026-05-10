@@ -45,12 +45,13 @@ Write the failing test first, then make it pass. Every behavior the code perform
 
 ## Project rules
 
-- Avoid comments — meaning comes from clear names; comments only clarify non-obvious decisions.
+- Avoid comments — meaning comes from clear names. Comments never carry contracts, preconditions, or other load-bearing info; if it matters, encode it in types, names, or tests, where it can't silently rot during a refactor.
 - Favor readable names, early returns, and simple control flow over clever code.
 - Spell out abbreviations in directory and file names — clarity for every future reader beats brevity once.
 - Break large functions into smaller named ones; break long logic chains into named intermediate variables.
 - Prefer classes with explicit public/private/static members over scattered functions plus object literals; share logic via abstract classes.
 - Define only what you need now when shaping interfaces — defer everything speculative.
+- Don't invent preconditions on interfaces. Before stating "caller must do X", name the concrete failure mode if X is skipped. If nothing concretely breaks, the precondition is fictional — drop it, and don't smuggle one layer's responsibilities into another's surface.
 - Few things per file (mostly only one): never put multiple classes or top-level functions in one `.ts`.
 - If a directory mixes files from two unrelated bounded contexts, split it — the listing should narrate what the package contains.
 - Optimise filenames for the `ls`; optimise function names for the call site — they can disagree.

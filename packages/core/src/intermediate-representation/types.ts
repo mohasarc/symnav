@@ -25,7 +25,7 @@ export interface SymbolDecl {
   readonly kind: SymbolKind;
   readonly name: string;
   readonly range: LineRange;
-  readonly signature: string;
+  readonly signatureSource: string;
   readonly children: readonly SymbolDecl[];
 }
 

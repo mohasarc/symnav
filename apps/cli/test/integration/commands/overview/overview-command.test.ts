@@ -3,7 +3,7 @@ import type { FileSymbols } from "@symnav/core";
 import { buildProgram } from "../../../../src/program.js";
 import { InMemoryFileSystem } from "../../../helpers/in-memory-file-system.js";
 import { FakeLanguageBackend } from "./fake-language-backend.js";
-import { createFakeProgramContext, ExitCalledError } from "./fake-program-context.js";
+import { createFakeProgramContext } from "./fake-program-context.js";
 
 async function parse(
   argv: readonly string[],
@@ -16,11 +16,7 @@ async function parse(
 }> {
   const context = createFakeProgramContext({ cwd });
   const program = buildProgram(context, deps);
-  try {
-    await program.parseAsync([...argv], { from: "user" });
-  } catch (err) {
-    if (!(err instanceof ExitCalledError)) throw err;
-  }
+  await program.parseAsync([...argv], { from: "user" });
   return {
     stdout: context.stdout.text(),
     stderr: context.stderr.text(),

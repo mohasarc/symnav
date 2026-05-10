@@ -24,13 +24,6 @@ export class BufferStream extends Writable {
   }
 }
 
-export class ExitCalledError extends Error {
-  constructor(readonly code: number) {
-    super(`exit(${code})`);
-    this.name = "ExitCalledError";
-  }
-}
-
 export interface FakeProgramContext extends ProgramContext {
   stdout: BufferStream;
   stderr: BufferStream;
@@ -41,10 +34,10 @@ export function createFakeProgramContext(args: { cwd: string }): FakeProgramCont
   const stdout = new BufferStream();
   const stderr = new BufferStream();
   const exitCodes: number[] = [];
-  const exit = (code: number): never => {
+  const exit = ((code: number): never => {
     exitCodes.push(code);
-    throw new ExitCalledError(code);
-  };
+    return undefined as never;
+  }) as ProgramContext["exit"];
   return {
     stdout,
     stderr,

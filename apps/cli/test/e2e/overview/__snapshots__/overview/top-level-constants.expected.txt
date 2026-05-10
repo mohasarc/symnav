@@ -1,0 +1,13 @@
+Overview: top-level-constants.ts
+
+1: PI
+   const PI = 3.14
+
+3: greeting
+   const greeting: string
+
+5: VERSION
+   const VERSION: string
+
+7: default
+   42

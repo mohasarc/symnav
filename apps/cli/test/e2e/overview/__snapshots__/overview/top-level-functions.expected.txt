@@ -1,0 +1,7 @@
+Overview: top-level-functions.ts
+
+1-3: add
+   export function add(a: number, b: number): number
+
+5-7: subtract
+   export function subtract(a: number, b: number): number

@@ -1,0 +1,8 @@
+Overview: class-with-methods.ts
+
+1-9: Greeter
+   export class Greeter
+├── 2-4: Greeter::greet
+│   greet(name: string): string
+└── 6-8: Greeter::shout
+    shout(name: string): string

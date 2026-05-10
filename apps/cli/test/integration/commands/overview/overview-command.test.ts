@@ -96,3 +96,111 @@ describe("symnav overview happy path", () => {
     expect(backend.calls).toEqual(["src/a.ts"]);
   });
 });
+
+describe("symnav overview user errors", () => {
+  it("writes the file-not-found line to stderr with exit 1 for a missing file", async () => {
+    const fs = new InMemoryFileSystem({
+      "/repo/.git/HEAD": "ref: refs/heads/main\n",
+    });
+    const backend = new FakeLanguageBackend();
+
+    const r = await parse(["overview", "src/missing.ts"], {
+      fs,
+      backends: () => [backend],
+    });
+
+    expect(r.stdout).toBe("");
+    expect(r.stderr).toBe("Cannot answer: file not found: src/missing.ts.\n");
+    expect(r.exitCodes).toEqual([1]);
+  });
+
+  it("writes the outside-workspace line for a path outside the workspace", async () => {
+    const fs = new InMemoryFileSystem({
+      "/repo/.git/HEAD": "ref: refs/heads/main\n",
+      "/other/src/a.ts": "export const x = 1;\n",
+    });
+    const backend = new FakeLanguageBackend();
+
+    const r = await parse(["overview", "/other/src/a.ts"], {
+      fs,
+      backends: () => [backend],
+    });
+
+    expect(r.stdout).toBe("");
+    expect(r.stderr).toBe(
+      "Cannot answer: /other/src/a.ts is outside the workspace rooted at /repo.\n",
+    );
+    expect(r.exitCodes).toEqual([1]);
+  });
+
+  it("writes the ignored line for an ignored path", async () => {
+    const fs = new InMemoryFileSystem({
+      "/repo/.git/HEAD": "ref: refs/heads/main\n",
+      "/repo/.gitignore": "build/\n",
+      "/repo/build/a.ts": "export const x = 1;\n",
+    });
+    const backend = new FakeLanguageBackend();
+
+    const r = await parse(["overview", "build/a.ts"], {
+      fs,
+      backends: () => [backend],
+    });
+
+    expect(r.stdout).toBe("");
+    expect(r.stderr).toBe("Cannot answer: build/a.ts is ignored by .gitignore.\n");
+    expect(r.exitCodes).toEqual([1]);
+  });
+
+  it("writes the unsupported-extension line citing .json for a .json file", async () => {
+    const fs = new InMemoryFileSystem({
+      "/repo/.git/HEAD": "ref: refs/heads/main\n",
+      "/repo/data.json": "{}\n",
+    });
+    const backend = new FakeLanguageBackend({ accept: () => false });
+
+    const r = await parse(["overview", "data.json"], {
+      fs,
+      backends: () => [backend],
+    });
+
+    expect(r.stdout).toBe("");
+    expect(r.stderr).toBe("Cannot answer: cannot read .json files (data.json).\n");
+    expect(r.exitCodes).toEqual([1]);
+  });
+
+  it("writes the no-workspace line when there is no .git in or above cwd", async () => {
+    const fs = new InMemoryFileSystem({
+      "/loose/src/a.ts": "export const x = 1;\n",
+    });
+    const backend = new FakeLanguageBackend();
+
+    const r = await parse(["overview", "src/a.ts"], { fs, backends: () => [backend] }, "/loose");
+
+    expect(r.stdout).toBe("");
+    expect(r.stderr).toBe(
+      "Cannot answer: not in a git workspace (no .git found in or above /loose).\n",
+    );
+    expect(r.exitCodes).toEqual([1]);
+  });
+
+  it("exits 2 and writes the message to stderr for an unexpected internal error", async () => {
+    const fs = new InMemoryFileSystem({
+      "/repo/.git/HEAD": "ref: refs/heads/main\n",
+      "/repo/src/a.ts": "export const x = 1;\n",
+    });
+    const throwingBackend = new FakeLanguageBackend({
+      symbols: () => {
+        throw new Error("backend went sideways");
+      },
+    });
+
+    const r = await parse(["overview", "src/a.ts"], {
+      fs,
+      backends: () => [throwingBackend],
+    });
+
+    expect(r.stdout).toBe("");
+    expect(r.stderr).toBe("backend went sideways\n");
+    expect(r.exitCodes).toEqual([2]);
+  });
+});

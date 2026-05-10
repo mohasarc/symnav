@@ -1,5 +1,5 @@
 import { posix } from "node:path";
-import type { BackendRouter } from "../backend/router.js";
+import type { BackendRouter } from "../backend/backend-router.js";
 import {
   FileNotFoundError,
   IgnoredFileError,

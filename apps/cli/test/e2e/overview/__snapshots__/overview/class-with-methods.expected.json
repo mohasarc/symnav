@@ -1,0 +1,36 @@
+{
+  "filePath": "class-with-methods.ts",
+  "symbols": [
+    {
+      "children": [
+        {
+          "children": [],
+          "kind": "method",
+          "name": "greet",
+          "range": {
+            "endLine": 4,
+            "startLine": 2
+          },
+          "signatureSource": "greet(name: string): string"
+        },
+        {
+          "children": [],
+          "kind": "method",
+          "name": "shout",
+          "range": {
+            "endLine": 8,
+            "startLine": 6
+          },
+          "signatureSource": "shout(name: string): string"
+        }
+      ],
+      "kind": "class",
+      "name": "Greeter",
+      "range": {
+        "endLine": 9,
+        "startLine": 1
+      },
+      "signatureSource": "export class Greeter"
+    }
+  ]
+}

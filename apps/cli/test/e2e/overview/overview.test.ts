@@ -1,3 +1,5 @@
+import { mkdtempSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { beforeAll, describe, expect, it } from "vitest";
 import { fixturePath } from "@symnav/testing";
@@ -106,5 +108,17 @@ describe("symnav overview e2e (determinism)", () => {
     expect(second.status).toBe(0);
     expect(second.stdout).toBe(first.stdout);
     expect(second.stderr).toBe(first.stderr);
+  });
+});
+
+describe("symnav overview e2e (no git workspace)", () => {
+  it("reports when run outside of any git workspace", async () => {
+    const looseDir = mkdtempSync(join(tmpdir(), "overview-no-git-"));
+    writeFileSync(join(looseDir, "a.ts"), "export const x = 1;\n");
+    const r = runSymnavOverview(["--cwd", looseDir, "overview", "a.ts"], looseDir);
+    expect(r.stdout).toBe("");
+    expect(r.status).toBe(1);
+    const normalized = r.stderr.split(looseDir).join("<looseDir>");
+    await expect(normalized).toMatchFileSnapshot(snapshot("no-git.expected.err"));
   });
 });

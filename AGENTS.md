@@ -61,6 +61,24 @@ Write the failing test first, then make it pass. Every behavior the code perform
 - Keep CLI behavior deterministic, non-interactive by default, and covered by focused tests.
 - Update docs and examples whenever command behavior or output changes.
 
+## PR descriptions
+
+Short, structured, hierarchical. Nobody reads paragraphs under headers.
+
+- Bullets and sub-bullets, not prose. One bullet ≈ one line; if it overflows, split it.
+- One concrete fact per bullet. Prefer concrete nouns ("validates input order") over hand-waving ("improves robustness").
+- Cut filler: no metaphors, no "really" / "very" / "simply" / "just", no decorative adjectives.
+- Drop unnecessary articles where readability holds.
+- Skip any section that would be empty or restate the title.
+
+Standard sections, in order:
+
+- **Summary** — 1–3 bullets. What changed.
+- **Why** — 1–2 bullets. Omit if the summary or title already conveys it.
+- **Test plan** — checklist of what was actually run / verified.
+
+Length cap: aim for under 20 lines total. If you need more, the PR is probably too big.
+
 ## Dependency direction
 
 The package dependency graph is locked. A given package may import only from the packages listed below.

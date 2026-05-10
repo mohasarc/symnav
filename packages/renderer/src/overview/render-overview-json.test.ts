@@ -62,11 +62,11 @@ describe("renderOverviewJson", () => {
     expect(lines[1]).toBe(`  "filePath": "src/file.ts",`);
     expect(lines[2]).toBe(`  "symbols": [`);
 
-    const expectedKeyOrder = ["children", "kind", "name", "range", "signatureSource"];
-    const keyLines = lines
-      .filter((line) => /^\s+"[a-zA-Z]+":/.test(line) && !line.includes("filePath") && !line.includes("symbols"))
+    const declKeyOrder = ["children", "kind", "name", "range", "signatureSource"];
+    const declKeyLines = lines
+      .filter((line) => /^ {6}"[a-zA-Z]+":/.test(line))
       .map((line) => line.trim().split('"')[1]);
-    expect(keyLines).toEqual(expectedKeyOrder);
+    expect(declKeyLines).toEqual(declKeyOrder);
   });
 
   it("emits signatureSource uncapped even when the source exceeds SIGNATURE_CAP_CHARS", () => {

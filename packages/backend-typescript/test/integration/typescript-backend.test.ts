@@ -5,7 +5,7 @@ import { InMemoryWorkspace } from "../helpers/in-memory-workspace.js";
 
 async function backendOver(files: Record<string, string>): Promise<TypeScriptBackend> {
   const workspace = await InMemoryWorkspace.create({
-    files: { "/repo/package.json": "{}", ...files },
+    files: { "/repo/.git/HEAD": "ref: refs/heads/main\n", ...files },
     startDir: "/repo",
   });
   return new TypeScriptBackend(workspace);

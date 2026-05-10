@@ -68,6 +68,9 @@ importers:
 
   packages/backend-typescript:
     dependencies:
+      '@symnav/core':
+        specifier: workspace:*
+        version: link:../core
       ts-morph:
         specifier: ^24.0.0
         version: 24.0.0

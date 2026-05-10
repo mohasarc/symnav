@@ -63,21 +63,22 @@ Write the failing test first, then make it pass. Every behavior the code perform
 
 ## PR descriptions
 
-Short, structured, hierarchical. Nobody reads paragraphs under headers.
+Conciseness is non-negotiable. Structure beats wall-of-text. Short prose is fine where bullets would be awkward — pick whichever reads faster.
 
-- Bullets and sub-bullets, not prose. One bullet ≈ one line; if it overflows, split it.
-- One concrete fact per bullet. Prefer concrete nouns ("validates input order") over hand-waving ("improves robustness").
+Writing rules:
+
+- One concrete fact per sentence or bullet. Prefer concrete nouns ("validates input order") over hand-waving ("improves robustness").
 - Cut filler: no metaphors, no "really" / "very" / "simply" / "just", no decorative adjectives.
 - Drop unnecessary articles where readability holds.
 - Skip any section that would be empty or restate the title.
 
-Standard sections, in order:
+Sections:
 
-- **Summary** — 1–3 bullets. What changed.
-- **Why** — 1–2 bullets. Omit if the summary or title already conveys it.
-- **Test plan** — checklist of what was actually run / verified.
+- **Why** — the motivation, constraint, or decision a reviewer can't infer from the diff. Skip if the title already says it.
+- **Notes** (optional) — call out anything non-obvious: surprising trade-offs, follow-ups deferred, files that look bigger than they are. Skip if there's nothing worth flagging.
+- **Test plan** — checklist of what was actually run or verified.
 
-Length cap: aim for under 20 lines total. If you need more, the PR is probably too big.
+Do not add a "Summary" / "What changed" section — reviewers read the commits and diff for that.
 
 ## Dependency direction
 

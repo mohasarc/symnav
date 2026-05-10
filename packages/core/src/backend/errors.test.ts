@@ -53,4 +53,18 @@ describe("BackendError hierarchy", () => {
     const err = new UnsupportedFileError("data.json", ".json");
     expect(err.extension).toBe(".json");
   });
+
+  it("no subclass exposes a displayedPath field", () => {
+    expect(new FileNotFoundError()).not.toHaveProperty("displayedPath");
+    expect(new IgnoredFileError()).not.toHaveProperty("displayedPath");
+    expect(new OutsideWorkspaceError()).not.toHaveProperty("displayedPath");
+    expect(new UnsupportedFileError()).not.toHaveProperty("displayedPath");
+  });
+
+  it("each subclass carries a fixed opaque message token, not a templated user-facing string", () => {
+    expect(new FileNotFoundError().message).toBe("file-not-found");
+    expect(new IgnoredFileError().message).toBe("ignored-file");
+    expect(new OutsideWorkspaceError().message).toBe("outside-workspace");
+    expect(new UnsupportedFileError().message).toBe("unsupported-file");
+  });
 });

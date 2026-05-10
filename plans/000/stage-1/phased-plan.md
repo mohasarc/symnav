@@ -9,7 +9,7 @@ When this plan is complete:
 - `pnpm --filter symnav dev -- overview <file>` (and the built `symnav overview <file>`) prints the symbol structure of a TypeScript file: hierarchy, signatures, line ranges, matching the [functional spec's `overview` examples](../symnav-functional-spec.md).
 - `--json` produces a structured variant whose shape mirrors the in-memory IR.
 - Workspace root detection (walk to nearest `.git`), `--cwd` override, `.gitignore` honoring, and the four user-error paths (missing / outside-workspace / ignored / unsupported extension) are all implemented and tested.
-- The TypeScript backend is wired through ts-morph using a `FileSystemHost` adapted from `core`'s `WorkspaceFileSystem` port, so the adapter is an in-memory swap away from real disk for tests.
+- The TypeScript backend is wired through ts-morph using a `FileSystemHost` adapted from `core`'s `FileSystem` port, so the adapter is an in-memory swap away from real disk for tests.
 - E2E snapshot tests against a `packages/testing/fixtures/overview-cases/` project gate the stage. Re-running the same query against the same workspace produces byte-identical output (determinism asserted in CI).
 
 The IR (`SymbolDecl`, `FileSymbols`, `LineRange`, `SymbolKind`), the `LanguageBackend` interface, the `Workspace` abstraction, and the renderer's tree-output rules are all locked here. Stages 2–5 extend these contracts; they do not redefine them.
@@ -20,17 +20,17 @@ Stage 0 left the workspace at empty placeholders. Today every package's `src/ind
 
 Relevant existing pieces this plan plugs into:
 
-- **`packages/core`** — currently empty (`export {};`). Owns IR types, workspace services, the language-backend interface, command logic, and shared error types after this stage.
-- **`packages/renderer`** — currently empty. Adds `renderOverviewText` and `renderOverviewJson` against the IR exported by `core`.
-- **`packages/backend-typescript`** — currently empty. Adds `TypeScriptBackend` plus a pure layer of extraction helpers over ts-morph.
-- **`apps/cli/src/program.ts`** — currently has only the `--version` action. The `overview` subcommand is registered here.
+- **`packages/core`** — owns IR types, workspace services, the language-backend interface, the `BackendRouter`, and the typed `BackendError` hierarchy. Knows nothing about command orchestration, ts-morph, or user-voice text.
+- **`packages/renderer`** — adds `renderOverviewText` and `renderOverviewJson` against the IR exported by `core`. Owns all signature presentation policy: cap, ellipsis, and (future) styling.
+- **`packages/backend-typescript`** — adds `TypeScriptBackend` plus a pure extraction layer over ts-morph. Produces the IR; produces no rendered text. Public surface is `TypeScriptBackend` only.
+- **`apps/cli`** — registers the `overview` subcommand on `program.ts`, owns the overview command orchestration (`runOverview`), and owns user-facing error voice (`Cannot answer: …`).
 - **`packages/testing`** — currently exports `fixturePath`. **No new exports in Stage 1.** Per AGENTS.md ("In-memory or mock helpers live beside the tests that use them — not in `@symnav/testing`"), the in-memory `Workspace`/`FileSystem` helpers and the ts-morph `parseTypeScriptSource` helper live in each consuming package's `test/helpers/`. `@symnav/testing` continues to be reserved for cross-cutting utilities with no upstream package deps. (Phase 2 already established this: `InMemoryWorkspace` lives in `packages/core/test/helpers/`, not in `@symnav/testing`.)
 - **`packages/testing/fixtures/`** — currently has `trivial-project/`. Stage 1 adds `overview-cases/`, a self-contained per-scenario fixture project.
 - **`apps/cli/test/e2e/version.test.ts`** — establishes the e2e shape (spawn `dist/cli.js` with `spawnSync`, `cwd` set to a fixture). New e2e tests follow that shape.
 - **`meta-tests/`** — no changes: this stage adds no new packages and does not touch the dependency-direction graph encoded in `eslint.config.mjs` or root `tsconfig.json`.
 
 The dependency direction is locked by Stage 0 and remains:
-`@symnav/core` → ∅; `@symnav/renderer` → core; `@symnav/backend-typescript` → core; `apps/cli` → core, renderer, backend-typescript; `@symnav/testing` → core (test files anywhere may import testing).
+`@symnav/core` → ∅; `@symnav/renderer` → core; `@symnav/backend-typescript` → core; `apps/cli` → core, renderer, backend-typescript; `@symnav/testing` → ∅ (test files anywhere may import testing).
 
 External runtime dependencies introduced in this stage:
 
@@ -350,9 +350,74 @@ export {
 
 ---
 
-## Phase 4 — TypeScript backend pure layer
+## Phase 4 — IR signature semantics and `BackendError` data revisions
 
-**Behavior delivered.** `packages/backend-typescript` exports `extractFileSymbols`, the integrator that turns a parsed ts-morph `SourceFile` into the `FileSymbols` IR from Phase 1. Behind it sit a small set of single-purpose helpers (`nodeKind`, `nodeName`, `nodeRange`, `renderSignature`, `extractChildren`, `extractTopLevel`). The whole layer is pure — no disk, no workspace — and is exercised by parsing source strings inline through a `parseTypeScriptSource` test helper colocated in `packages/backend-typescript/test/helpers/`. The adapter that owns disk IO comes in Phase 5.
+**Behavior delivered.** Two `@symnav/core` contracts shipped earlier are revised before any backend, renderer, or CLI consumes them, so presentation policy stops leaking into the wrong package. No new behavior — these are seam corrections.
+
+1. **`SymbolDecl.signature: string` → `SymbolDecl.signatureSource: string`.** The IR no longer carries pre-rendered display text. Backends produce the raw source-text excerpt of the signature span (uncapped, no ellipsis). The renderer owns truncation, ellipsis, and any future width/styling policy.
+2. **`BackendError` subclasses lose `displayedPath` and stop carrying user-facing strings in `Error.message`.** Subclasses become pure type-discrimination markers. `Error.message` becomes opaque developer text — useful in stack traces, never quoted to users. The CLI builds `Cannot answer: <reason>.` lines from the subclass type plus context the CLI already has (`inputPath`, `workspace.root`).
+
+After this phase, `@symnav/core` knows nothing about how errors or signatures are rendered.
+
+**Test cases.**
+
+In `packages/core/src/intermediate-representation/symbol-decl.test.ts` (or extending the Phase 1 test file):
+
+1. **`SymbolDecl.signatureSource` round-trips a raw source-text string** — type-level + a hand-built IR literal demonstrates the field is the raw excerpt (no truncation applied). Level: unit.
+
+In `packages/core/src/backend/errors.test.ts` (extending the Phase 3 file):
+
+2. **Each `BackendError` subclass is `instanceof BackendError` and `Error`** — unchanged. Level: unit.
+3. **No subclass exposes a `displayedPath` field** — explicit negative assertion locks the seam. Level: unit.
+4. **No subclass exposes a `message` derived from a user-readable template** — `Error.message` is short, opaque, and never templated with caller data. Asserted by checking each subclass's `message` is a fixed token (e.g. `"file-not-found"`), not `"File not found: <path>"`. Level: unit.
+
+**Components.**
+
+```ts
+// packages/core/src/intermediate-representation/types.ts (revised)
+export interface SymbolDecl {
+  readonly kind: SymbolKind;
+  readonly name: string;
+  readonly range: LineRange;
+  readonly signatureSource: string;
+  readonly children: readonly SymbolDecl[];
+}
+```
+
+```ts
+// packages/core/src/backend/errors.ts (revised — type-only subclasses)
+export class BackendError extends Error {}
+
+export class FileNotFoundError extends BackendError {
+  constructor() { super("file-not-found"); this.name = "FileNotFoundError"; }
+}
+export class IgnoredFileError extends BackendError {
+  constructor() { super("ignored-file"); this.name = "IgnoredFileError"; }
+}
+export class OutsideWorkspaceError extends BackendError {
+  constructor() { super("outside-workspace"); this.name = "OutsideWorkspaceError"; }
+}
+export class UnsupportedFileError extends BackendError {
+  constructor() { super("unsupported-file"); this.name = "UnsupportedFileError"; }
+}
+```
+
+The CLI in Phase 9 catches each subclass and constructs the full user-facing line from its own callsite context (the original `inputPath`, the `workspace.root`, and `path.extname(inputPath)` for the unsupported case).
+
+**Commit plan.**
+
+1. **`Test (unit): SymbolDecl carries signatureSource as raw source text`** — adds case 1. Fails. *Hygiene: red test.*
+2. **`Rename SymbolDecl.signature -> signatureSource`** — updates `intermediate-representation/types.ts` and any internal callsite. Tests green. *Hygiene: rename + tests in one commit; renames are mechanical.*
+3. **`Test (unit): BackendError subclasses are type-only with no presentation fields`** — extends `errors.test.ts` with cases 3–4. Fails. *Hygiene: red test.*
+4. **`Trim BackendError hierarchy: drop displayedPath, drop user-facing message strings`** — simplifies subclass constructors. Tests green. *Hygiene: contract revision.*
+
+**Done when.** Four test cases pass. `pnpm typecheck` / `pnpm lint` green. `@symnav/core` carries no rendering and no user-voice text.
+
+---
+
+## Phase 5 — TypeScript backend pure layer
+
+**Behavior delivered.** `packages/backend-typescript` exports `extractFileSymbols` (package-internal — not on the public surface), the integrator that turns a parsed ts-morph `SourceFile` into the `FileSymbols` IR. Behind it sit a small set of single-purpose helpers (`nodeKind`, `nodeName`, `nodeRange`, `extractSignatureSource`, `extractChildren`, `extractTopLevel`). The whole layer is pure — no disk, no workspace, **no rendering** (no truncation, no ellipsis) — and is exercised by parsing source strings inline through a `parseTypeScriptSource` test helper colocated in `packages/backend-typescript/test/helpers/`. The adapter that owns disk IO comes in Phase 6.
 
 **File layout.** Following the one-thing-per-file convention from Phases 1–3, the pure layer is grouped under `packages/backend-typescript/src/extract/`, one symbol per file:
 
@@ -366,8 +431,7 @@ backend-typescript/
       node-kind.ts
       node-name.ts
       node-range.ts
-      render-signature.ts
-      signature-cap.ts
+      extract-signature-source.ts
     index.ts
   test/
     helpers/
@@ -375,7 +439,7 @@ backend-typescript/
       parse-typescript-source.test.ts
 ```
 
-These helpers stay as free functions because they are stateless leaf utilities, matching `buildSymbolPath`. A class would add ceremony without sharing state. `parseTypeScriptSource` is **not** added to `@symnav/testing` — per AGENTS.md, in-memory/mock helpers live beside the tests that use them. Phase 5's adapter tests get their own fresh helpers rather than reaching across packages.
+There is **no `signature-cap.ts` here** — cap and ellipsis policy live in `@symnav/renderer` (Phase 7). `extract-signature-source.ts` returns the raw source-text excerpt of the signature span, untruncated. These helpers stay as free functions because they are stateless leaf utilities, matching `buildSymbolPath`. `parseTypeScriptSource` is **not** added to `@symnav/testing` — per AGENTS.md, in-memory/mock helpers live beside the tests that use them. Phase 6's adapter tests get their own fresh helpers rather than reaching across packages.
 
 **Test cases.**
 
@@ -387,13 +451,13 @@ In `packages/backend-typescript/src/extract/node-kind.test.ts`:
 
 2. **`nodeKind` classifier covers each Stage 1 `SymbolKind`** — one focused case per declaration form (function, async function, generator function, class, interface, type alias, enum, namespace, method, constructor, getter, setter, property, variable, default-export expression, index signature, call signature, construct signature). Returns `null` for unsupported nodes (re-exports, bare imports). Level: unit.
 
-In `packages/backend-typescript/src/extract/render-signature.test.ts`:
+In `packages/backend-typescript/src/extract/extract-signature-source.test.ts`:
 
-3. **Function declaration signature is the source text up to the body brace, no trailing `;`** — input `export function greet(name: string): string { return name; }` → `export function greet(name: string): string`. Async, generator, generic, and overloaded variants asserted as separate cases. Level: unit.
-4. **Class / interface / enum / namespace signature ends at the opening `{`** — Level: unit.
-5. **Type alias signature is capped + ellipsized at `SIGNATURE_CAP_CHARS`** — long RHS gets truncated with the ellipsis token. Level: unit.
-6. **Variable signature renders `const|let|var <name>` plus annotation if present, plus initializer if no annotation** — long initializer is capped. Level: unit.
-7. **Default export signature is the expression text** — Level: unit.
+3. **Function signature span is the source text up to the body brace, no trailing `;`** — input `export function greet(name: string): string { return name; }` → `export function greet(name: string): string`. Async, generator, generic, and overloaded variants asserted as separate cases. Output is **raw source**, never truncated. Level: unit.
+4. **Class / interface / enum / namespace signature span ends at the opening `{`** — Level: unit.
+5. **Type alias signature span runs to the terminating `;` and is returned in full, however long** — explicitly asserts no truncation; cap/ellipsis is the renderer's concern. Level: unit.
+6. **Variable signature span is `const|let|var <name>` plus annotation if present, plus initializer if no annotation, in full** — Level: unit.
+7. **Default export signature span is the expression text** — Level: unit.
 
 In `packages/backend-typescript/src/extract/extract-file-symbols.test.ts`:
 
@@ -414,12 +478,6 @@ In `packages/backend-typescript/src/extract/extract-file-symbols.test.ts`:
 import type { SourceFile } from "ts-morph";
 
 export function parseTypeScriptSource(source: string, fileName?: string): SourceFile;
-```
-
-```ts
-// packages/backend-typescript/src/extract/signature-cap.ts
-export const SIGNATURE_CAP_CHARS = 120;
-export const SIGNATURE_ELLIPSIS = "…";
 ```
 
 ```ts
@@ -446,10 +504,10 @@ export function nodeRange(node: Node): LineRange;
 ```
 
 ```ts
-// packages/backend-typescript/src/extract/render-signature.ts
+// packages/backend-typescript/src/extract/extract-signature-source.ts
 import type { Node } from "ts-morph";
 
-export function renderSignature(node: Node): string;
+export function extractSignatureSource(node: Node): string;
 ```
 
 ```ts
@@ -479,12 +537,12 @@ export function extractFileSymbols(args: {
 }): FileSymbols;
 ```
 
-`packages/backend-typescript/src/index.ts` re-exports `extractFileSymbols` (consumed by Phase 5's adapter); the smaller helpers stay package-internal.
+`packages/backend-typescript/src/index.ts` re-exports **only** the public surface needed by `apps/cli`. After Phase 5, that surface is empty — `TypeScriptBackend` arrives in Phase 6. `extractFileSymbols` and the smaller helpers stay package-internal; the Phase 6 adapter and any test that compares against them imports them via internal file paths, not via the package entry.
 
 **Algorithm notes (prose, not implementation).**
 
-- **`extractTopLevel`.** Iterate `sourceFile.getStatements()`. Classify each via `nodeKind`; skip nulls. For `VariableStatement`, expand into one decl per declared name. Build `SymbolDecl` from name, range, signature, and `extractChildren(node)` (empty for leaves; non-empty for class/interface/namespace).
-- **`renderSignature`.** Source-text-driven. Functions/methods → declaration text up to (but not including) the body brace, dropping any trailing `;`. Class/interface/enum/namespace → declaration text up to the opening `{`. Type aliases → declaration text up to the terminating `;`, capped + ellipsized at `SIGNATURE_CAP_CHARS`. Variables → `const|let|var <name>` plus annotation if present, plus initializer if no annotation, capped + ellipsized.
+- **`extractTopLevel`.** Iterate `sourceFile.getStatements()`. Classify each via `nodeKind`; skip nulls. For `VariableStatement`, expand into one decl per declared name. Build `SymbolDecl` from name, range, `signatureSource`, and `extractChildren(node)` (empty for leaves; non-empty for class/interface/namespace).
+- **`extractSignatureSource`.** Source-text-driven; **never truncates**. Functions/methods → declaration text up to (but not including) the body brace, dropping any trailing `;`. Class/interface/enum/namespace → declaration text up to the opening `{`. Type aliases → declaration text up to the terminating `;`, in full. Variables → `const|let|var <name>` plus annotation if present, plus initializer if no annotation, in full.
 - **`nodeKind`.** Switch over ts-morph `SyntaxKind`s to the `SymbolKind` union. Unhandled kinds return `null` (skipped silently).
 
 **Dependency:** `ts-morph` added to `packages/backend-typescript/package.json` `dependencies`. `@symnav/testing` is **not** modified — `parseTypeScriptSource` lives in this package's test helpers.
@@ -494,21 +552,20 @@ export function extractFileSymbols(args: {
 1. **`Add ts-morph dependency to @symnav/backend-typescript`** — package.json + lockfile only. *Hygiene: dependency change alone.*
 2. **`Test (unit): parseTypeScriptSource round-trips a TS source string`** — adds `test/helpers/parse-typescript-source.test.ts`. Fails. *Hygiene: red test.*
 3. **`Add parseTypeScriptSource test helper`** — adds `test/helpers/parse-typescript-source.ts`. Test green. *Hygiene: smallest impl.*
-4. **`Add signature-cap constants in backend-typescript`** — adds `src/extract/signature-cap.ts`. *Hygiene: constants alone, consumed in later commits.*
-5. **`Test (unit): nodeKind classifier covers Stage 1 SymbolKind vocabulary`** — adds `src/extract/node-kind.test.ts` covering case 2. *Hygiene: red test.*
-6. **`Implement nodeKind classifier`** — adds `src/extract/node-kind.ts`. Tests green. *Hygiene: classifier first.*
-7. **`Add nodeName and nodeRange leaf helpers`** — adds `src/extract/node-name.ts` and `src/extract/node-range.ts` together; each is a thin wrapper on ts-morph and is exercised indirectly by the upcoming extract-file-symbols tests. *Hygiene: trivial paired helpers.*
-8. **`Test (unit): renderSignature for each declaration form`** — adds `src/extract/render-signature.test.ts` covering cases 3–7. Fails. *Hygiene: red tests.*
-9. **`Implement renderSignature with source-text rules and signature cap`** — adds `src/extract/render-signature.ts`. Tests green. *Hygiene: feature impl.*
-10. **`Test (unit): extractFileSymbols produces FileSymbols matching IR shape`** — adds `src/extract/extract-file-symbols.test.ts` covering cases 8–16. Fails. *Hygiene: red tests for the integrating function.*
-11. **`Implement extractTopLevel and extractChildren`** — adds the two recursion helpers in their own files. *Hygiene: recursion machinery, kept separate from the integrator below for diff clarity.*
-12. **`Implement extractFileSymbols and re-export from package entry`** — adds `extract-file-symbols.ts` plus the re-export in `src/index.ts`. Tests green. *Hygiene: integrator + surface.*
+4. **`Test (unit): nodeKind classifier covers Stage 1 SymbolKind vocabulary`** — adds `src/extract/node-kind.test.ts` covering case 2. Fails. *Hygiene: red test.*
+5. **`Implement nodeKind classifier`** — adds `src/extract/node-kind.ts`. Tests green. *Hygiene: classifier first.*
+6. **`Add nodeName and nodeRange leaf helpers`** — adds `src/extract/node-name.ts` and `src/extract/node-range.ts` together; each is a thin wrapper on ts-morph and is exercised indirectly by the upcoming extract-file-symbols tests. *Hygiene: trivial paired helpers.*
+7. **`Test (unit): extractSignatureSource returns raw, untruncated source per declaration form`** — adds `src/extract/extract-signature-source.test.ts` covering cases 3–7. Fails. *Hygiene: red tests.*
+8. **`Implement extractSignatureSource`** — adds `src/extract/extract-signature-source.ts`. Tests green. *Hygiene: feature impl, no truncation logic at all.*
+9. **`Test (unit): extractFileSymbols produces FileSymbols matching IR shape`** — adds `src/extract/extract-file-symbols.test.ts` covering cases 8–16. Fails. *Hygiene: red tests for the integrating function.*
+10. **`Implement extractTopLevel and extractChildren`** — adds the two recursion helpers in their own files. *Hygiene: recursion machinery, kept separate from the integrator below for diff clarity.*
+11. **`Implement extractFileSymbols`** — adds `src/extract/extract-file-symbols.ts`. Tests green. **No change to `src/index.ts` in this phase** — `extractFileSymbols` stays package-internal; the public surface remains empty until Phase 6 adds `TypeScriptBackend`. *Hygiene: integrator alone.*
 
-**Done when.** All sixteen test cases pass. `pnpm typecheck` and `pnpm lint` green. The pure layer is fully exercised without a `Workspace` or disk. `@symnav/testing` is unchanged.
+**Done when.** All sixteen test cases pass. `pnpm typecheck` and `pnpm lint` green. The pure layer is fully exercised without a `Workspace` or disk. The package's public surface (`src/index.ts`) is unchanged from Stage 0. `@symnav/testing` is unchanged.
 
 ---
 
-## Phase 5 — TypeScript backend adapter (`TypeScriptBackend`)
+## Phase 6 — TypeScript backend adapter (`TypeScriptBackend`)
 
 **Behavior delivered.** `packages/backend-typescript` exports `TypeScriptBackend`, a `LanguageBackend` implementation that drives ts-morph through a `FileSystemHost` adapted from `core`'s `FileSystem` port. `accepts(filePath)` returns true for `.ts`, `.tsx`, `.mts`, `.cts`, and `.d.ts`. `fileSymbols(filePath)` loads the requested file via the workspace's filesystem, hands the resulting `SourceFile` to `extractFileSymbols`, and returns the IR. No tsconfig is loaded; ts-morph runs in single-file mode.
 
@@ -589,9 +646,9 @@ export class TypeScriptBackend implements LanguageBackend {
 ```ts
 // packages/backend-typescript/src/index.ts
 export { TypeScriptBackend } from "./typescript-backend/typescript-backend.js";
-export { TYPESCRIPT_EXTENSIONS } from "./typescript-backend/typescript-extensions.js";
-export { extractFileSymbols } from "./extract/extract-file-symbols.js";
 ```
+
+`TYPESCRIPT_EXTENSIONS` and `extractFileSymbols` stay package-internal: the router exercises the `accepts(filePath)` method, not the constant; the adapter consumes `extractFileSymbols` via internal import. Keeping the public surface to one class avoids leaking ts-morph types or implementation-detail constants to `apps/cli`.
 
 **Algorithm notes (prose, not implementation).**
 
@@ -607,32 +664,32 @@ export { extractFileSymbols } from "./extract/extract-file-symbols.js";
 5. **`Add loadSourceFile encapsulating per-call ts-morph Project setup`** — adds `load-source-file.ts` wired to the host above. *Hygiene: helper alone, still no `fileSymbols` consumer.*
 6. **`Test (integration): TypeScriptBackend.fileSymbols reads via Workspace.fs and returns IR`** — adds cases 2–5. Fails. *Hygiene: red tests.*
 7. **`Implement TypeScriptBackend.fileSymbols on top of loadSourceFile and extractFileSymbols`** — replaces the stub. Tests green. *Hygiene: integrator.*
-8. **`Re-export TypeScriptBackend, TYPESCRIPT_EXTENSIONS, extractFileSymbols from package entry`** — *Hygiene: surface only.*
+8. **`Re-export TypeScriptBackend from package entry`** — adds the single public export. *Hygiene: surface only; TYPESCRIPT_EXTENSIONS and extractFileSymbols stay internal.*
 
 **Done when.** Five integration tests pass. The backend reads exclusively through `Workspace.fs` (verified by case 4). `pnpm typecheck` / `pnpm lint` green.
 
 ---
 
-## Phase 6 — Overview renderer (text + JSON)
+## Phase 7 — Overview renderer (text + JSON)
 
-**Behavior delivered.** `packages/renderer` exports `renderOverviewText(file: FileSymbols): string` and `renderOverviewJson(file: FileSymbols): string`. Given any `FileSymbols` IR, the text renderer produces output matching the spec's `overview` shape exactly: header, blank line, top-level entries flat with 3-space-indented signatures, nested entries with `├──`/`└──`/`│   ` Unicode tree characters, `(no symbols)` for empty files, trailing newline. The JSON renderer produces 2-space-indented sorted-key output with `children` always present and a trailing newline.
+**Behavior delivered.** `packages/renderer` exports `renderOverviewText(file: FileSymbols): string` and `renderOverviewJson(file: FileSymbols): string`. Given any `FileSymbols` IR, the text renderer produces output matching the spec's `overview` shape exactly: header, blank line, top-level entries flat with 3-space-indented signatures, nested entries with `├──`/`└──`/`│   ` Unicode tree characters, `(no symbols)` for empty files, trailing newline. **The text renderer also owns signature presentation policy: cap at `SIGNATURE_CAP_CHARS` and append `SIGNATURE_ELLIPSIS` when the raw `signatureSource` exceeds the cap.** The JSON renderer produces 2-space-indented sorted-key output with `children` always present, **emits `signatureSource` verbatim (uncapped, no ellipsis)**, and ends with a trailing newline.
 
-**File layout.** One thing per file under `packages/renderer/src/overview/`. Free functions are appropriate here — these are stateless transformations that compose without sharing state.
+**File layout.** One thing per file under `packages/renderer/src/overview/`. Free functions are appropriate here — these are stateless transformations.
 
 ```
 renderer/
   src/
     overview/
-      render-overview-text.ts        # renderOverviewText
-      render-overview-json.ts        # renderOverviewJson
+      render-overview-text.ts        # renderOverviewText (recursive walk inlined)
+      render-overview-json.ts        # renderOverviewJson (sorted-key serializer inlined)
       tree-glyphs.ts                 # TREE_BRANCH, TREE_LAST, TREE_VERTICAL, TREE_SPACE, SIGNATURE_INDENT
-      render-decl-block.ts           # internal: emits the two-line block for one decl
-      render-children.ts             # internal: recursive walk with tree prefixes
-      stable-stringify.ts            # internal: JSON.stringify with sorted keys
+      signature-cap.ts               # SIGNATURE_CAP_CHARS, SIGNATURE_ELLIPSIS, capSignature
     index.ts
 ```
 
-The internal helpers (`render-decl-block`, `render-children`, `stable-stringify`) are not re-exported; they exist as separate files because each is a discrete operation worth naming, not because either renderer needs them as a public API.
+The earlier draft of this phase split out `render-decl-block`, `render-children`, and `stable-stringify` as separate files. Removed: each was a single-caller helper inside one renderer with no independent test coverage — splitting bought file-hopping without **depth**. They're inlined into the integrating renderer files. Re-split only if a second caller appears or the logic grows enough to warrant a name.
+
+`signature-cap.ts` lives **here**, not in `@symnav/backend-typescript`. Cap and ellipsis are presentation policy: the text renderer applies them; the JSON renderer skips them; a future `--no-truncate` or terminal-width flag would also live here. Backends produce raw source text; the renderer decides how it appears.
 
 **Test cases.**
 
@@ -646,12 +703,20 @@ In `packages/renderer/src/overview/render-overview-text.test.ts`, all driven by 
 6. **Single-line range renders as `8`, multi-line as `12-96`** — Level: unit.
 7. **Symbol path includes ancestors joined by `::`** — Level: unit.
 8. **Output ends with exactly one trailing newline** — asserted on every text-render test via a shared `assertSingleTrailingNewline` helper colocated in the test file. Level: unit.
+9. **`signatureSource` shorter than `SIGNATURE_CAP_CHARS` is emitted verbatim** — Level: unit.
+10. **`signatureSource` longer than `SIGNATURE_CAP_CHARS` is truncated to the cap and suffixed with `SIGNATURE_ELLIPSIS`** — Level: unit.
+
+In `packages/renderer/src/overview/signature-cap.test.ts`:
+
+11. **`capSignature(source)` returns `source` unchanged when `source.length <= SIGNATURE_CAP_CHARS`** — Level: unit.
+12. **`capSignature(source)` returns the first `SIGNATURE_CAP_CHARS - SIGNATURE_ELLIPSIS.length` chars + `SIGNATURE_ELLIPSIS` otherwise** — exact byte-budget assertion locks the contract. Level: unit.
 
 In `packages/renderer/src/overview/render-overview-json.test.ts`:
 
-9. **JSON output mirrors `FileSymbols` verbatim, with `children` always present** — leaf decls render `"children": []` rather than omitting the key. Level: unit.
-10. **JSON output is 2-space-indented with sorted keys and a trailing newline** — Level: unit.
-11. **JSON renders identical bytes for identical IR across two calls** — determinism. Level: unit.
+13. **JSON output mirrors `FileSymbols` verbatim, with `children` always present** — leaf decls render `"children": []` rather than omitting the key. Level: unit.
+14. **JSON output is 2-space-indented with sorted keys and a trailing newline** — Level: unit.
+15. **JSON emits `signatureSource` uncapped** — even for sources well above `SIGNATURE_CAP_CHARS`. Explicit assertion that JSON does **not** apply the cap. Level: unit.
+16. **JSON renders identical bytes for identical IR across two calls** — determinism. Level: unit.
 
 **Components.**
 
@@ -662,6 +727,14 @@ export const TREE_LAST = "└── ";
 export const TREE_VERTICAL = "│   ";
 export const TREE_SPACE = "    ";
 export const SIGNATURE_INDENT = "   ";
+```
+
+```ts
+// packages/renderer/src/overview/signature-cap.ts
+export const SIGNATURE_CAP_CHARS = 120;
+export const SIGNATURE_ELLIPSIS = "…";
+
+export function capSignature(source: string): string;
 ```
 
 ```ts
@@ -684,72 +757,79 @@ export { renderOverviewText } from "./overview/render-overview-text.js";
 export { renderOverviewJson } from "./overview/render-overview-json.js";
 ```
 
+`signature-cap.ts` is package-internal — `capSignature` is consumed only by `renderOverviewText`. Tests import it directly.
+
 **Algorithm notes (prose, not implementation).**
 
-- **Text rendering.** Emit header `Overview: <filePath>` plus blank line. Walk top-level `symbols` in order; each top-level decl produces a two-line block (`<range>: <symbol-path>` then `<SIGNATURE_INDENT><signature>`), separated by blank lines. For each top-level decl with non-empty `children`, `renderChildren` recurses with tree prefixes — `├── ` for non-last siblings, `└── ` for the last. The signature continuation column is `│   ` for non-last and `    ` for last. The accumulated prefix for grandchildren replaces any `│   ` from a closed parent with `    ` so descendants under a closed branch are not mis-aligned.
+- **Text rendering.** Emit header `Overview: <filePath>` plus blank line. Walk top-level `symbols` in order; each top-level decl produces a two-line block (`<range>: <symbol-path>` then `<SIGNATURE_INDENT><capSignature(signatureSource)>`), separated by blank lines. For each top-level decl with non-empty `children`, recurse with tree prefixes — `├── ` for non-last siblings, `└── ` for the last. The signature continuation column is `│   ` for non-last and `    ` for last. The accumulated prefix for grandchildren replaces any `│   ` from a closed parent with `    ` so descendants under a closed branch are not mis-aligned. The recursion lives inline inside `render-overview-text.ts`.
 - **Empty file.** `Overview: <filePath>\n\n(no symbols)\n`.
-- **JSON rendering.** Build a plain object from the IR, ensuring `children` is always an array (even empty). Pass through `stableStringify`, which is `JSON.stringify(value, sortedKeyReplacer, 2)`. Append `\n`.
+- **JSON rendering.** Build a plain object from the IR, ensuring `children` is always an array (even empty). `signatureSource` is copied verbatim — **no cap applied**. Serialize with `JSON.stringify(value, sortedKeyReplacer, 2)` (the sorted-key replacer lives inline). Append `\n`.
 
 **Commit plan.**
 
 1. **`Add tree-glyph constants in @symnav/renderer`** — adds `src/overview/tree-glyphs.ts`. *Hygiene: constants alone.*
-2. **`Test (unit): renderOverviewText shape — header, empty file, single decl`** — adds `src/overview/render-overview-text.test.ts` with cases 1–2 + 8 and the colocated `assertSingleTrailingNewline` helper. Fails. *Hygiene: red tests.*
-3. **`Implement renderOverviewText for flat top-level shape`** — adds `src/overview/render-overview-text.ts` plus the internal `render-decl-block.ts` helper. Cases 1–2 + 8 green. *Hygiene: smallest impl, with the per-decl block extracted as its own file from the start.*
-4. **`Test (unit): renderOverviewText nested entries with tree glyphs`** — adds cases 3–7. Fails. *Hygiene: red tests.*
-5. **`Add render-children recursive walk and wire into renderOverviewText`** — adds `src/overview/render-children.ts` with the recursive prefix accumulation; `renderOverviewText` delegates child rendering to it. Tests green. *Hygiene: recursion in its own file, integrator updated.*
-6. **`Test (unit): renderOverviewJson mirrors IR with sorted keys and stable bytes`** — adds `src/overview/render-overview-json.test.ts` covering cases 9–11. Fails. *Hygiene: red tests.*
-7. **`Add stableStringify and implement renderOverviewJson`** — adds `src/overview/stable-stringify.ts` and `src/overview/render-overview-json.ts`. Tests green. *Hygiene: helper + integrator.*
-8. **`Re-export overview renderers from @symnav/renderer entry`** — *Hygiene: surface only.*
+2. **`Test (unit): capSignature applies SIGNATURE_CAP_CHARS + SIGNATURE_ELLIPSIS`** — adds `src/overview/signature-cap.test.ts` with cases 11–12. Fails. *Hygiene: red test.*
+3. **`Add capSignature with cap + ellipsis policy`** — adds `src/overview/signature-cap.ts`. Tests green. *Hygiene: pure helper, foundational for the text renderer.*
+4. **`Test (unit): renderOverviewText shape — header, empty file, flat top-level, signature cap`** — adds `src/overview/render-overview-text.test.ts` covering cases 1–2 + 8–10 plus the colocated `assertSingleTrailingNewline` helper. Fails. *Hygiene: red tests.*
+5. **`Implement renderOverviewText for flat top-level shape with capped signatures`** — adds `src/overview/render-overview-text.ts`; consumes `capSignature` for the signature line. Cases 1–2 + 8–10 green. *Hygiene: smallest impl, recursion deferred.*
+6. **`Test (unit): renderOverviewText nested entries with tree glyphs`** — adds cases 3–7. Fails. *Hygiene: red tests.*
+7. **`Extend renderOverviewText with the recursive child walk`** — adds the recursion inline; no new file. Tests green. *Hygiene: feature impl.*
+8. **`Test (unit): renderOverviewJson mirrors IR with sorted keys, uncapped signatures, stable bytes`** — adds `src/overview/render-overview-json.test.ts` covering cases 13–16. Fails. *Hygiene: red tests.*
+9. **`Implement renderOverviewJson with inline sorted-key serialization`** — adds `src/overview/render-overview-json.ts`. Sort-key replacer lives inline inside the file. Tests green. *Hygiene: integrator.*
+10. **`Re-export overview renderers from @symnav/renderer entry`** — *Hygiene: surface only.*
 
-**Done when.** Eleven test cases pass. The renderer is consumable from `apps/cli` in Phase 8. `pnpm typecheck` / `pnpm lint` green.
+**Done when.** Sixteen test cases pass. The renderer is consumable from `apps/cli` in Phase 9. `pnpm typecheck` / `pnpm lint` green.
 
 ---
 
-## Phase 7 — Overview command logic in `@symnav/core`
+## Phase 8 — Overview command logic in `apps/cli`
 
-**Behavior delivered.** `@symnav/core` exports `runOverview(args)`, the pure command logic that orchestrates: resolve user-supplied path against `cwd` → check existence → check workspace membership → check ignore → route to a backend → return `FileSymbols`. Each validation failure throws the appropriate `BackendError` from Phase 3. The command is independently testable with a fake backend; no real backend, renderer, or CLI is involved.
+**Behavior delivered.** `apps/cli` gains `runOverview(args)`, the async command logic that orchestrates: resolve user-supplied path against `cwd` → check existence → check workspace membership → check ignore → route to a backend → return `FileSymbols`. Each validation failure throws the appropriate `BackendError` from Phase 4. The function is independently testable with a fake backend; no real backend, renderer, or commander wiring is involved.
 
-**File layout.** Under `packages/core/src/commands/overview/`, one file per concern:
+This phase deliberately keeps `runOverview` **out of `@symnav/core`**. Core's role is "language-agnostic primitives + cross-language backend interface" — orchestration with knowledge of cwd, user inputs, and validation ordering is frontend wiring. The only consumer is the CLI, so it lives in the CLI.
+
+**File layout.** Under `apps/cli/src/commands/overview/`, one file per concern. Test helpers live in `apps/cli/test/helpers/` and `apps/cli/test/integration/...` per AGENTS.md.
 
 ```
-core/
+apps/cli/
   src/
     commands/
       overview/
-        run-overview.ts            # public runOverview function
-        resolve-input-path.ts      # internal: input → { absolutePath, displayedPath }
+        run-overview.ts             # public runOverview function (CLI-internal)
+        resolve-input-path.ts       # internal: { cwd, inputPath } → absolute path
         validate-overview-target.ts # internal: existence → in-workspace → ignored → routed
   test/
+    helpers/
+      in-memory-file-system.ts
+      in-memory-workspace.ts
     integration/
       commands/
         overview/
           run-overview.test.ts
-          fake-language-backend.ts # local test double, not a shared helper
+          fake-language-backend.ts  # local recording test double
 ```
 
-`runOverview` stays a free function (no shared state across invocations); the validation pipeline lives in its own file because the ordering rule is the load-bearing decision and isolating it keeps the public function readable.
+`runOverview` stays a free function (no shared state across invocations); the validation pipeline lives in its own file because the ordering rule is the load-bearing decision and isolating it keeps the orchestrator readable.
 
 **Test cases.**
 
-In `packages/core/test/integration/commands/overview/run-overview.test.ts`, driven by `InMemoryWorkspace.create` from `packages/core/test/helpers/` and a local recording `FakeLanguageBackend`:
+In `apps/cli/test/integration/commands/overview/run-overview.test.ts`, driven by the local `InMemoryWorkspace.create` and a local recording `FakeLanguageBackend`:
 
 1. **Happy path: relative input path, workspace member, not ignored, accepted** — returns the fake backend's IR. Level: integration.
 2. **Absolute input path returns the same IR** — Level: integration.
 3. **Relative path resolves against `cwd`, not workspace root** — `cwd` is a subdirectory; passing `x.ts` resolves to `<cwd>/x.ts`, not `<root>/x.ts`. Level: integration.
-4. **Missing file → `FileNotFoundError` with `displayedPath` matching user input** — Level: integration.
+4. **Missing file → `FileNotFoundError`** — Level: integration. (No `displayedPath` assertion: the error carries no presentation data; the CLI's catch frame builds user voice from its own `inputPath`.)
 5. **Path outside workspace → `OutsideWorkspaceError`** — Level: integration.
 6. **Ignored path → `IgnoredFileError`** — Level: integration.
-7. **No backend accepts → `UnsupportedFileError` carrying the actual file extension** — Level: integration.
+7. **No backend accepts → `UnsupportedFileError`** — Level: integration. (Extension is derived by the CLI via `path.extname(inputPath)`; not carried on the error.)
 8. **Validation order: missing > outside > ignored > unsupported** — when several conditions fail simultaneously (e.g. missing file outside workspace), the first applicable error wins. Each pairwise combination asserted separately. Level: integration.
 9. **Backend is invoked with the workspace-relative POSIX path** — not absolute, not platform-native; verified via the recording fake. Level: integration.
 
 **Components.**
 
 ```ts
-// packages/core/src/commands/overview/run-overview.ts
-import type { BackendRouter } from "../../backend/backend-router.js";
-import type { FileSymbols } from "../../intermediate-representation/types.js";
-import type { Workspace } from "../../workspace/workspace.js";
+// apps/cli/src/commands/overview/run-overview.ts
+import type { BackendRouter, FileSymbols, Workspace } from "@symnav/core";
 
 export interface RunOverviewArgs {
   workspace: Workspace;
@@ -762,108 +842,99 @@ export function runOverview(args: RunOverviewArgs): Promise<FileSymbols>;
 ```
 
 ```ts
-// packages/core/src/commands/overview/resolve-input-path.ts
-export interface ResolvedInputPath {
-  absolutePath: string;
-  displayedPath: string;
-}
-
+// apps/cli/src/commands/overview/resolve-input-path.ts
 export function resolveInputPath(args: {
   cwd: string;
   inputPath: string;
-}): ResolvedInputPath;
+}): string;
 ```
 
 ```ts
-// packages/core/src/commands/overview/validate-overview-target.ts
-import type { BackendRouter } from "../../backend/backend-router.js";
-import type { LanguageBackend } from "../../backend/language-backend.js";
-import type { Workspace } from "../../workspace/workspace.js";
+// apps/cli/src/commands/overview/validate-overview-target.ts
+import type { BackendRouter, LanguageBackend, Workspace } from "@symnav/core";
 
 export function validateOverviewTarget(args: {
   workspace: Workspace;
   router: BackendRouter;
   absolutePath: string;
-  displayedPath: string;
 }): Promise<{ relativePath: string; backend: LanguageBackend }>;
 ```
 
-`packages/core/src/index.ts` adds:
-
-```ts
-export { runOverview } from "./commands/overview/run-overview.js";
-export type { RunOverviewArgs } from "./commands/overview/run-overview.js";
-```
+No change to `packages/core/src/index.ts` — `runOverview` is **not** exported from `@symnav/core`. Phase 9's `runOverviewAction` imports it from the sibling file.
 
 **Algorithm notes (prose, not implementation).**
 
-- **`resolveInputPath`.** If `inputPath` is absolute, the absolute path is itself and `displayedPath` is the absolute path. Otherwise, `path.resolve(cwd, inputPath)` produces the absolute path and `displayedPath` is the original input string.
-- **`validateOverviewTarget`.** Sequence: `fs.exists(absolutePath)` → `workspace.isInWorkspace(absolutePath)` → `workspace.isIgnored(workspace.toRelative(absolutePath))` → `router.find(relativePath)`. The first failing gate throws its error; subsequent gates do not run. Returns `{ relativePath, backend }` on success.
+- **`resolveInputPath`.** If `inputPath` is absolute, return it as-is. Otherwise, `path.resolve(cwd, inputPath)`. Returns just the absolute path; the original `inputPath` is kept on the caller's frame for any user-facing display in the catching layer.
+- **`validateOverviewTarget`.** Sequence: `fs.exists(absolutePath)` → `workspace.isInWorkspace(absolutePath)` → `workspace.isIgnored(workspace.toRelative(absolutePath))` → `router.find(relativePath)`. The first failing gate throws its error (no presentation data attached — Phase 4's structured errors carry only their type); subsequent gates do not run. Returns `{ relativePath, backend }` on success.
 - **`runOverview`.** Compose the two helpers, then delegate to `backend.fileSymbols(relativePath)`.
 
 **Commit plan.**
 
-1. **`Add resolveInputPath helper for runOverview`** — adds `src/commands/overview/resolve-input-path.ts`. Indirectly covered by the upcoming integration tests; isolated commit because the resolution rule is independently meaningful. *Hygiene: leaf helper alone.*
-2. **`Add FakeLanguageBackend local test double`** — adds `test/integration/commands/overview/fake-language-backend.ts`, a recording double colocated with the test that consumes it (per AGENTS.md, mocks live beside the tests). *Hygiene: scaffolding alone.*
-3. **`Test (integration): runOverview happy-path resolves and dispatches to the backend`** — adds `run-overview.test.ts` covering cases 1–3 + 9. Fails (function does not exist). *Hygiene: red.*
-4. **`Implement runOverview happy-path with resolveInputPath and direct dispatch`** — adds `src/commands/overview/run-overview.ts`. Cases 1–3 + 9 green; validation cases still fail with raw exceptions. *Hygiene: smallest impl.*
-5. **`Test (integration): runOverview validation errors and locked ordering`** — adds cases 4–8. Fails. *Hygiene: red.*
-6. **`Add validateOverviewTarget with the locked validation order`** — adds `src/commands/overview/validate-overview-target.ts` and updates `runOverview` to delegate to it. Tests green. *Hygiene: validation pipeline in its own file, integrator updated.*
-7. **`Re-export runOverview from @symnav/core entry`** — *Hygiene: surface only.*
+1. **`Add InMemoryFileSystem and InMemoryWorkspace test helpers in apps/cli`** — adds `test/helpers/`, mirroring Phase 6's rationale (loose coupling over cross-package test imports). *Hygiene: scaffolding alone.*
+2. **`Add FakeLanguageBackend local test double`** — adds `test/integration/commands/overview/fake-language-backend.ts`, a recording double colocated with the test that consumes it. *Hygiene: scaffolding alone.*
+3. **`Add resolveInputPath helper for runOverview`** — adds `src/commands/overview/resolve-input-path.ts`. *Hygiene: leaf helper alone, covered indirectly by upcoming tests.*
+4. **`Test (integration): runOverview happy-path resolves and dispatches to the backend`** — adds `run-overview.test.ts` covering cases 1–3 + 9. Fails. *Hygiene: red.*
+5. **`Implement runOverview happy-path with resolveInputPath and direct dispatch`** — adds `src/commands/overview/run-overview.ts`. Cases 1–3 + 9 green; validation cases still fail with raw exceptions. *Hygiene: smallest impl.*
+6. **`Test (integration): runOverview validation errors and locked ordering`** — adds cases 4–8. Fails. *Hygiene: red.*
+7. **`Add validateOverviewTarget with the locked validation order`** — adds `src/commands/overview/validate-overview-target.ts` and updates `runOverview` to delegate to it. Tests green. *Hygiene: validation pipeline in its own file, integrator updated.*
 
-**Done when.** Nine integration tests pass. `runOverview` is fully testable without ts-morph or a real backend. `pnpm typecheck` / `pnpm lint` green.
+**Done when.** Nine integration tests pass. `runOverview` is fully testable without ts-morph or a real backend. `@symnav/core`'s public surface is unchanged. `pnpm typecheck` / `pnpm lint` green.
 
 ---
 
-## Phase 8 — CLI `overview` subcommand
+## Phase 9 — CLI `overview` subcommand
 
-**Behavior delivered.** `apps/cli/src/program.ts` registers an `overview` subcommand with positional `<file>`, a `--json` flag, and the program-level `--cwd <dir>` option. The CLI builds a `NodeWorkspace`, instantiates `[new TypeScriptBackend(workspace)]` behind a `BackendRouter`, calls `runOverview`, and writes either the text or JSON renderer's output to stdout. `BackendError`s and `NotInWorkspaceError` are caught and printed to stderr in the spec's `Cannot answer: <reason>.` voice with exit code 1. Unexpected errors print to stderr and exit 2.
+**Behavior delivered.** `apps/cli/src/program.ts` registers an `overview` subcommand with positional `<file>`, a `--json` flag, and the program-level `--cwd <dir>` option. The CLI builds a `NodeWorkspace`, instantiates `[new TypeScriptBackend(workspace)]` behind a `BackendRouter`, calls `runOverview` (the sibling function from Phase 8), and writes either the text or JSON renderer's output to stdout. `BackendError`s and `NotInWorkspaceError` are caught and printed to stderr in the spec's `Cannot answer: <reason>.` voice with exit code 1. Unexpected errors print to stderr and exit 2.
+
+This phase owns **all** user-facing error voice. `formatUserError` constructs the full `Cannot answer: …` line by switching on the typed error subclass and assembling the sentence from data the CLI already has on the catching frame (`inputPath`, `workspace.root`, `cwd`).
 
 No new runtime dependencies; everything wires existing pieces.
 
-**File layout.** One thing per file. The CLI's `cli.ts`/`program.ts`/`index.ts` already exist; this phase adds:
+**File layout.** One thing per file. `cli.ts`/`program.ts`/`index.ts` already exist; the helpers from Phase 8 (`in-memory-workspace.ts`, `in-memory-file-system.ts`, `fake-language-backend.ts`) are reused. This phase adds:
 
 ```
 apps/cli/
   src/
-    program.ts                      # extended with options arg + overview registration
-    program-context.ts              # ProgramContext interface (stdout/stderr/cwd/exit)
+    program.ts                       # extended with context arg + overview registration
+    program-context.ts               # ProgramContext interface (stdout/stderr/cwd/exit)
     commands/
       overview/
         register-overview-command.ts # wires the commander subcommand
-        run-overview-action.ts       # the async action: build workspace → run → render → write
+        run-overview-action.ts       # async action: build workspace → run → render → write
         write-overview-output.ts     # internal: chooses text vs JSON renderer and writes to stdout
     error-output/
-      format-user-error.ts          # one function: BackendError | NotInWorkspaceError → string | null
-      format-user-error.test.ts     # unit test
+      format-user-error.ts           # (err, ctx) → "Cannot answer: …." | null
+      format-user-error.test.ts
   test/
     integration/
       commands/
         overview/
-          overview-command.test.ts   # in-process program invocation against InMemoryWorkspace
+          overview-command.test.ts   # in-process program invocation
           fake-program-context.ts    # stdout/stderr buffer streams + exit recorder
-    helpers/
-      in-memory-workspace.ts         # local copy (same rationale as Phase 5)
-      in-memory-file-system.ts
 ```
 
 **Test cases.**
 
 In `apps/cli/src/error-output/format-user-error.test.ts`:
 
-1. **Each `BackendError` subclass formats to its `Cannot answer: <reason>.` line with a trailing period** — one case per subclass. Level: unit.
-2. **`NotInWorkspaceError` formats to `Cannot answer: not in a git workspace…`** — Level: unit.
-3. **An unrelated `Error` returns `null`** — signaling "let it propagate". Level: unit.
+1. **Each `BackendError` subclass formats to its `Cannot answer: <reason>.` line with a trailing period** — given context `{ inputPath, workspaceRoot }`, one case per subclass:
+   - `FileNotFoundError` → `Cannot answer: file not found: <inputPath>.`
+   - `IgnoredFileError` → `Cannot answer: <inputPath> is ignored by .gitignore.`
+   - `OutsideWorkspaceError` → `Cannot answer: <inputPath> is outside the workspace rooted at <workspaceRoot>.`
+   - `UnsupportedFileError` → `Cannot answer: cannot read <ext> files (<inputPath>).` (extension derived from `path.extname(inputPath)`)
+   Level: unit.
+2. **`NotInWorkspaceError` formats to `Cannot answer: not in a git workspace (no .git found in or above <cwd>).`** — given context `{ cwd }`. Level: unit.
+3. **An unrelated `Error` returns `null`** — signals "let it propagate to the exit-2 path". Level: unit.
 
-In `apps/cli/test/integration/commands/overview/overview-command.test.ts` — the program is invoked in-process via `buildProgram(...).parseAsync(...)` against an `InMemoryWorkspace`; subprocess e2e is Phase 9. Stdout, stderr, cwd, and exit are all captured via the injected `ProgramContext`:
+In `apps/cli/test/integration/commands/overview/overview-command.test.ts` — the program is invoked in-process via `buildProgram(...).parseAsync(...)` against the `InMemoryWorkspace` from Phase 8. Stdout, stderr, cwd, and exit are all captured via the injected `ProgramContext`. Subprocess e2e is Phase 10:
 
 4. **`overview <file>` writes text-rendered IR to stdout, exit 0** — Level: integration.
 5. **`overview <file> --json` writes JSON to stdout, exit 0** — Level: integration.
-6. **`overview` on a missing file writes `Cannot answer: file not found: <path>.` to stderr, exit 1** — Level: integration.
-7. **`overview` on a path outside the workspace writes the outside-workspace `Cannot answer:` line, exit 1** — Level: integration.
-8. **`overview` on an ignored path writes the ignored `Cannot answer:` line, exit 1** — Level: integration.
-9. **`overview` on a `.json` file writes the unsupported-extension `Cannot answer:` line, exit 1** — Level: integration.
-10. **`overview` with no `.git` in or above the program's cwd writes `Cannot answer: not in a git workspace…`, exit 1** — Level: integration.
+6. **`overview` on a missing file writes the file-not-found line to stderr, exit 1** — Level: integration.
+7. **`overview` on a path outside the workspace writes the outside-workspace line, exit 1** — Level: integration.
+8. **`overview` on an ignored path writes the ignored line, exit 1** — Level: integration.
+9. **`overview` on a `.json` file writes the unsupported-extension line citing `.json`, exit 1** — Level: integration.
+10. **`overview` with no `.git` in or above the program's cwd writes the no-workspace line, exit 1** — Level: integration.
 11. **Program-level `--cwd <dir>` overrides startDir for both root detection and relative-path resolution** — Level: integration.
 12. **An unexpected internal error exits 2 and writes the message to stderr** — simulated by injecting a backend that throws an ordinary `Error`. Level: integration.
 
@@ -914,7 +985,7 @@ export interface RunOverviewActionArgs {
 export function runOverviewAction(args: RunOverviewActionArgs): Promise<void>;
 ```
 
-The action: resolve `cwd` (override → context.cwd), `await NodeWorkspace.create({ startDir: cwd })`, build `[new TypeScriptBackend(workspace)]` and `new BackendRouter(...)`, `await runOverview({ workspace, router, cwd, inputPath: file })`, then call `writeOverviewOutput`. On `BackendError` or `NotInWorkspaceError`, format via `formatUserError`, write to `context.stderr`, call `context.exit(1)`. On any other error, write `err.message` to `context.stderr`, call `context.exit(2)`.
+The action: resolve `cwd` (override → `context.cwd`), `await NodeWorkspace.create({ startDir: cwd })`, build `[new TypeScriptBackend(workspace)]` and `new BackendRouter(...)`, import `runOverview` from `./run-overview.js` and `await runOverview({ workspace, router, cwd, inputPath: file })`, then call `writeOverviewOutput`. On `BackendError`, format via `formatUserError(err, { inputPath: file, workspaceRoot: workspace.root })`. On `NotInWorkspaceError` (which fires before the workspace exists), format via `formatUserError(err, { cwd })`. On any other error, write `err.message` to `context.stderr` and `context.exit(2)`.
 
 ```ts
 // apps/cli/src/commands/overview/write-overview-output.ts
@@ -929,13 +1000,19 @@ export function writeOverviewOutput(args: {
 
 ```ts
 // apps/cli/src/error-output/format-user-error.ts
-export function formatUserError(err: unknown): string | null;
+export interface FormatUserErrorContext {
+  inputPath?: string;
+  workspaceRoot?: string;
+  cwd?: string;
+}
+
+export function formatUserError(err: unknown, ctx: FormatUserErrorContext): string | null;
 ```
 
 **Algorithm notes (prose, not implementation).**
 
 - **Program-level `--cwd`.** Added on the root `Command` so future subcommands inherit it. The overview action reads it via commander's `program.opts().cwd`, falling back to `context.cwd`.
-- **Catch-and-format flow.** `formatUserError` returns `null` for unknown errors so the action can branch cleanly: non-null → exit 1, null → exit 2 (after writing `err instanceof Error ? err.message : String(err)`).
+- **`formatUserError`.** `instanceof` switch on the typed errors. For each `BackendError` subclass, build the line from the context: `inputPath` for the path token, `workspaceRoot` for the outside-workspace line, `path.extname(inputPath)` for the unsupported-extension line. For `NotInWorkspaceError`, use `cwd`. For anything else (including `BackendError` subclasses reached without the required context fields — a programming error), return `null` so the action falls through to exit 2.
 - **`writeOverviewOutput`.** Single switch on `json`: true → `renderOverviewJson`, false → `renderOverviewText`. Both renderers already include the trailing newline.
 - **Streams.** Production `cli.ts` calls `buildProgram()` with no arguments and lets defaults apply. Tests pass a `Partial<ProgramContext>` with buffer-backed writable streams and a recording `exit`.
 
@@ -943,20 +1020,19 @@ export function formatUserError(err: unknown): string | null;
 
 1. **`Add ProgramContext interface for the CLI`** — adds `src/program-context.ts`. *Hygiene: type alone.*
 2. **`Refactor buildProgram to accept Partial<ProgramContext>`** — extends `program.ts` to accept options without changing `--version` behavior; the existing version e2e tests stay green. *Hygiene: refactor only.*
-3. **`Test (unit): formatUserError handles BackendError, NotInWorkspaceError, and unknown`** — adds `src/error-output/format-user-error.test.ts` covering cases 1–3. Fails. *Hygiene: red test.*
+3. **`Test (unit): formatUserError builds Cannot answer lines from typed errors + context`** — adds `src/error-output/format-user-error.test.ts` covering cases 1–3. Fails. *Hygiene: red test.*
 4. **`Add formatUserError`** — adds `src/error-output/format-user-error.ts`. Tests green. *Hygiene: pure helper.*
-5. **`Add InMemoryWorkspace and InMemoryFileSystem test helpers in apps/cli`** — adds `test/helpers/` copies, mirroring Phase 5's rationale (loose coupling over cross-package test imports). *Hygiene: scaffolding alone.*
-6. **`Add fake-program-context test helper for in-process program invocation`** — adds `test/integration/commands/overview/fake-program-context.ts`: buffer streams + recorder. *Hygiene: scaffolding alone.*
-7. **`Test (integration): overview subcommand happy-path text and JSON output`** — adds `overview-command.test.ts` covering cases 4–5 + 11. Fails (subcommand not registered). *Hygiene: red.*
-8. **`Add writeOverviewOutput, runOverviewAction (happy path), and registerOverviewCommand`** — adds the three files and registers the subcommand from `buildProgram`. Cases 4–5 + 11 green. *Hygiene: feature impl across three single-purpose files.*
-9. **`Test (integration): overview surfaces user errors via Cannot answer voice and exits 1/2`** — adds cases 6–10 + 12. Fails. *Hygiene: red.*
-10. **`Wire BackendError / NotInWorkspaceError handling in runOverviewAction with exit 1, fallback exit 2`** — fills the catch-and-format flow. Tests green. *Hygiene: feature impl.*
+5. **`Add fake-program-context test helper for in-process program invocation`** — adds `test/integration/commands/overview/fake-program-context.ts`: buffer streams + recorder. *Hygiene: scaffolding alone.*
+6. **`Test (integration): overview subcommand happy-path text and JSON output`** — adds `overview-command.test.ts` covering cases 4–5 + 11. Fails (subcommand not registered). *Hygiene: red.*
+7. **`Add writeOverviewOutput, runOverviewAction (happy path), and registerOverviewCommand`** — adds the three files and registers the subcommand from `buildProgram`; the action imports `runOverview` from the Phase 8 sibling file. Cases 4–5 + 11 green. *Hygiene: feature impl across three single-purpose files.*
+8. **`Test (integration): overview surfaces user errors via Cannot answer voice and exits 1/2`** — adds cases 6–10 + 12. Fails. *Hygiene: red.*
+9. **`Wire BackendError / NotInWorkspaceError handling in runOverviewAction with exit 1, fallback exit 2`** — fills the catch-and-format flow. Tests green. *Hygiene: feature impl.*
 
 **Done when.** Twelve test cases plus the existing version e2e tests pass. `pnpm --filter symnav dev -- overview <file>` against a real workspace produces text output; `--json` produces structured output; user errors produce the spec's `Cannot answer:` voice. `pnpm typecheck` / `pnpm lint` green.
 
 ---
 
-## Phase 9 — `overview-cases` fixture and end-to-end snapshot tests
+## Phase 10 — `overview-cases` fixture and end-to-end snapshot tests
 
 **Behavior delivered.** `packages/testing/fixtures/overview-cases/` exists with a self-contained set of TypeScript files exercising every Stage 1 scenario. `apps/cli/test/e2e/overview.test.ts` spawns the built `dist/cli.js` against the fixture (resolved via `fixturePath("overview-cases")`) and snapshot-matches stdout, stderr, and exit code for each scenario. A determinism test re-runs the same query and asserts byte-identical output across runs. This is the gating set of tests for Stage 1: when they all pass, the stage is done.
 

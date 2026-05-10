@@ -63,22 +63,16 @@ Write the failing test first, then make it pass. Every behavior the code perform
 
 ## PR descriptions
 
-Conciseness is non-negotiable. Structure beats wall-of-text. Short prose is fine where bullets would be awkward — pick whichever reads faster.
+Use the template at `.github/PULL_REQUEST_TEMPLATE.md`. Per-section purpose is explained inline there.
 
 Writing rules:
 
+- Conciseness is non-negotiable. Structure beats wall-of-text. Short prose is fine where bullets would be awkward — pick whichever reads faster.
 - One concrete fact per sentence or bullet. Prefer concrete nouns ("validates input order") over hand-waving ("improves robustness").
 - Cut filler: no metaphors, no "really" / "very" / "simply" / "just", no decorative adjectives.
 - Drop unnecessary articles where readability holds.
 - Skip any section that would be empty or restate the title.
-
-Sections:
-
-- **Why** — the motivation, constraint, or decision a reviewer can't infer from the diff. Skip if the title already says it.
-- **Notes** (optional) — call out anything non-obvious: surprising trade-offs, follow-ups deferred, files that look bigger than they are. Skip if there's nothing worth flagging.
-- **Test plan** — checklist of what was actually run or verified.
-
-Do not add a "Summary" / "What changed" section — reviewers read the commits and diff for that.
+- Do not add a "Summary" / "What changed" section — reviewers read the commits and diff for that.
 
 ## Dependency direction
 

@@ -1,5 +1,7 @@
 import type { FileSymbols, LanguageBackend, Workspace } from "@symnav/core";
 
+import { extractFileSymbols } from "../extract/extract-file-symbols.js";
+import { loadSourceFile } from "./load-source-file.js";
 import { acceptsTypeScriptFile } from "./typescript-extensions.js";
 
 export class TypeScriptBackend implements LanguageBackend {
@@ -9,8 +11,9 @@ export class TypeScriptBackend implements LanguageBackend {
     return acceptsTypeScriptFile(filePath);
   }
 
-  async fileSymbols(_filePath: string): Promise<FileSymbols> {
-    void this.workspace;
-    throw new Error("TypeScriptBackend.fileSymbols not implemented");
+  async fileSymbols(filePath: string): Promise<FileSymbols> {
+    const absolutePath = this.workspace.toAbsolute(filePath);
+    const sourceFile = loadSourceFile({ fs: this.workspace.fs, absolutePath });
+    return extractFileSymbols({ sourceFile, filePath });
   }
 }

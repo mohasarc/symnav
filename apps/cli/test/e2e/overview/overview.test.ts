@@ -97,3 +97,14 @@ describe("symnav overview e2e (JSON output)", () => {
     await expect(r.stdout).toMatchFileSnapshot(snapshot("class-with-methods.expected.json"));
   });
 });
+
+describe("symnav overview e2e (determinism)", () => {
+  it("produces byte-identical stdout across repeated runs", () => {
+    const first = runSymnavOverview(["overview", "class-with-methods.ts"], fixtureRoot);
+    const second = runSymnavOverview(["overview", "class-with-methods.ts"], fixtureRoot);
+    expect(first.status).toBe(0);
+    expect(second.status).toBe(0);
+    expect(second.stdout).toBe(first.stdout);
+    expect(second.stderr).toBe(first.stderr);
+  });
+});

@@ -92,11 +92,7 @@ describe("extractFileSymbols", () => {
   });
 
   it("recurses through namespaces — nested function appears as a child function", () => {
-    const source = [
-      "export namespace Outer {",
-      "  export function inner() {}",
-      "}",
-    ].join("\n");
+    const source = ["export namespace Outer {", "  export function inner() {}", "}"].join("\n");
     const result = symbolsOf(source);
     const ns = result.symbols[0];
     if (!ns) throw new Error("expected namespace");

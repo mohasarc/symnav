@@ -1,9 +1,4 @@
-import type { FileSymbols } from "../intermediate-representation/types.js";
-
-export interface LanguageBackend {
-  accepts(filePath: string): boolean;
-  fileSymbols(filePath: string): Promise<FileSymbols>;
-}
+import type { LanguageBackend } from "./language-backend.js";
 
 export class BackendRouter {
   readonly #backends: readonly LanguageBackend[];

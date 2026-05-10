@@ -2,7 +2,9 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Command } from "commander";
+import { registerOverviewCommand } from "./commands/overview/register-overview-command.js";
 import type { ProgramContext } from "./program-context.js";
+import type { ProgramDependencies } from "./program-dependencies.js";
 
 function readPackageVersion(): string {
   const here = dirname(fileURLToPath(import.meta.url));
@@ -20,12 +22,16 @@ function resolveContext(overrides?: Partial<ProgramContext>): ProgramContext {
   };
 }
 
-export function buildProgram(overrides?: Partial<ProgramContext>): Command {
+export function buildProgram(
+  overrides?: Partial<ProgramContext>,
+  dependencies?: ProgramDependencies,
+): Command {
   const context = resolveContext(overrides);
   const program = new Command();
   program
     .name("symnav")
     .version(readPackageVersion(), "-v, --version")
+    .option("--cwd <dir>", "run as if symnav was started in <dir>")
     .configureOutput({
       writeOut: (s) => {
         context.stdout.write(s);
@@ -41,5 +47,6 @@ export function buildProgram(overrides?: Partial<ProgramContext>): Command {
       program.outputHelp({ error: true });
       context.exit(1);
     });
+  registerOverviewCommand(program, context, dependencies ?? {});
   return program;
 }

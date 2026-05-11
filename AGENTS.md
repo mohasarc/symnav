@@ -52,7 +52,7 @@ Write the failing test first, then make it pass. Every behavior the code perform
 - Prefer classes with explicit public/private/static members over scattered functions plus object literals; share logic via abstract classes.
 - Define only what you need now when shaping interfaces — defer everything speculative.
 - Don't invent preconditions on interfaces. Before stating "caller must do X", name the concrete failure mode if X is skipped. If nothing concretely breaks, the precondition is fictional — drop it, and don't smuggle one layer's responsibilities into another's surface.
-- Few things per file (mostly only one): never put multiple classes or top-level functions in one `.ts`.
+- File boundaries follow architecture, not granularity. A file owns one cohesive unit — a class, an interface, a public function, or a small family of types that travel together — alongside the private helpers and types only it uses. Two failure modes to avoid: co-locating unrelated top-level abstractions in the same `.ts`, and shattering a coherent unit into one-function-per-file scaffolding. A helper that is used in exactly one place, has no independent meaning, and isn't tested on its own belongs inline with its caller; promote it to its own file once any of those changes.
 - If a directory mixes files from two unrelated bounded contexts, split it — the listing should narrate what the package contains.
 - Optimise filenames for the `ls`; optimise function names for the call site — they can disagree.
 - Loose coupling beats DRY across module boundaries — do not deduplicate across independent modules.

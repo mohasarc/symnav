@@ -8,7 +8,7 @@ function decl(name: string, kind: SymbolDecl["kind"]): SymbolDecl {
     kind,
     name,
     range: { startLine: 1, endLine: 1 },
-    signature: "",
+    signatureSource: "",
     children: [],
   };
 }

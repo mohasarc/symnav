@@ -14,9 +14,13 @@ export function extractChildren(parent: Node): readonly SymbolDecl[] {
     return parent.getMembers().flatMap(toMemberDecl);
   }
   if (Node.isModuleDeclaration(parent)) {
-    return parent.getStatements().flatMap(toStatementDecl);
+    return extractStatementDecls(parent.getStatements());
   }
   return [];
+}
+
+export function extractStatementDecls(statements: readonly Node[]): readonly SymbolDecl[] {
+  return statements.flatMap(toStatementDecl);
 }
 
 function toMemberDecl(member: Node): SymbolDecl[] {

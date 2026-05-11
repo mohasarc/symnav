@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { Node, type SourceFile } from "ts-morph";
+import { Node, type SourceFile, type Statement } from "ts-morph";
 
 import { parseTypeScriptSource } from "../../test/helpers/parse-typescript-source.js";
 import { nodeKind } from "./node-kind.js";
 
-function firstStatement(file: SourceFile) {
+function firstStatement(file: SourceFile): Statement {
   const stmt = file.getStatements()[0];
   if (!stmt) throw new Error("expected at least one statement");
   return stmt;

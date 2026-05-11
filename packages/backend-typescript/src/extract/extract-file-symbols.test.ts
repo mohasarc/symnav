@@ -1,9 +1,10 @@
 import { describe, expect, it } from "vitest";
+import type { FileSymbols } from "@symnav/core";
 
 import { parseTypeScriptSource } from "../../test/helpers/parse-typescript-source.js";
 import { extractFileSymbols } from "./extract-file-symbols.js";
 
-function symbolsOf(source: string, filePath = "input.ts") {
+function symbolsOf(source: string, filePath: string = "input.ts"): FileSymbols {
   const sourceFile = parseTypeScriptSource(source);
   return extractFileSymbols({ sourceFile, filePath });
 }

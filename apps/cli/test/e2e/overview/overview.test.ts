@@ -1,16 +1,27 @@
+import { spawnSync } from "node:child_process";
 import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { beforeAll, describe, expect, it } from "vitest";
 import { fixturePath } from "@symnav/testing";
 import { ensureFixtureGitMarker } from "./ensure-fixture-git-marker.js";
-import { runSymnavOverview } from "./run-symnav-overview.js";
 
+const cliRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
+const binPath = join(cliRoot, "dist", "cli.js");
 const fixtureRoot = fixturePath("overview-cases");
 const snapshotsDir = new URL("./__snapshots__/overview/", import.meta.url).pathname;
 
 function snapshot(name: string): string {
   return join(snapshotsDir, name);
+}
+
+function runSymnavOverview(
+  args: readonly string[],
+  cwd: string,
+): { status: number | null; stdout: string; stderr: string } {
+  const result = spawnSync(process.execPath, [binPath, ...args], { cwd, encoding: "utf8" });
+  return { status: result.status, stdout: result.stdout, stderr: result.stderr };
 }
 
 beforeAll(() => {

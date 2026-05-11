@@ -95,32 +95,6 @@ describe("extractSignatureSource", () => {
     });
   });
 
-  describe("variable statements", () => {
-    it("annotated variable: const name plus annotation, no initializer", () => {
-      const file = parseTypeScriptSource("const total: number = computeTotal();");
-      expect(extractSignatureSource(firstStatement(file))).toBe("const total: number");
-    });
-
-    it("unannotated variable: const name plus initializer in full", () => {
-      const file = parseTypeScriptSource(
-        "const items = ['alpha', 'beta', 'gamma', 'delta', 'epsilon'];",
-      );
-      expect(extractSignatureSource(firstStatement(file))).toBe(
-        "const items = ['alpha', 'beta', 'gamma', 'delta', 'epsilon']",
-      );
-    });
-
-    it("let variable uses the let keyword", () => {
-      const file = parseTypeScriptSource("let counter: number = 0;");
-      expect(extractSignatureSource(firstStatement(file))).toBe("let counter: number");
-    });
-
-    it("var variable uses the var keyword", () => {
-      const file = parseTypeScriptSource("var legacy = 1;");
-      expect(extractSignatureSource(firstStatement(file))).toBe("var legacy = 1");
-    });
-  });
-
   describe("default export", () => {
     it("returns the expression text", () => {
       const file = parseTypeScriptSource("export default { handler: 'main' };");

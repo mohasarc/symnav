@@ -1,10 +1,8 @@
 import { Node, type VariableDeclaration, type VariableDeclarationKind } from "ts-morph";
-import type { SymbolDecl } from "@symnav/core";
+import type { LineRange, SymbolDecl } from "@symnav/core";
 
 import { extractSignatureSource } from "./extract-signature-source.js";
 import { nodeKind } from "./node-kind.js";
-import { nodeName } from "./node-name.js";
-import { nodeRange } from "./node-range.js";
 
 export function extractChildren(parent: Node): readonly SymbolDecl[] {
   if (Node.isClassDeclaration(parent)) {
@@ -77,4 +75,38 @@ function singleVariableSignature(
   const initializer = decl.getInitializer();
   if (initializer) return `${keyword} ${name} = ${initializer.getText()}`;
   return `${keyword} ${name}`;
+}
+
+function nodeName(node: Node): string {
+  if (Node.isConstructorDeclaration(node)) return "constructor";
+  if (Node.isCallSignatureDeclaration(node)) return "()";
+  if (Node.isConstructSignatureDeclaration(node)) return "new()";
+  if (Node.isIndexSignatureDeclaration(node)) return "[index]";
+  if (Node.isExportAssignment(node)) return "default";
+
+  if (
+    Node.isFunctionDeclaration(node) ||
+    Node.isClassDeclaration(node) ||
+    Node.isInterfaceDeclaration(node) ||
+    Node.isTypeAliasDeclaration(node) ||
+    Node.isEnumDeclaration(node) ||
+    Node.isModuleDeclaration(node) ||
+    Node.isMethodDeclaration(node) ||
+    Node.isGetAccessorDeclaration(node) ||
+    Node.isSetAccessorDeclaration(node) ||
+    Node.isPropertyDeclaration(node) ||
+    Node.isMethodSignature(node) ||
+    Node.isPropertySignature(node)
+  ) {
+    return node.getName() ?? "";
+  }
+
+  return "";
+}
+
+function nodeRange(node: Node): LineRange {
+  return {
+    startLine: node.getStartLineNumber(),
+    endLine: node.getEndLineNumber(),
+  };
 }

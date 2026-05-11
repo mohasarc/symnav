@@ -1,5 +1,8 @@
 import {
   Node,
+  type ClassDeclaration,
+  type InterfaceDeclaration,
+  type ModuleDeclaration,
   type VariableDeclaration,
   type VariableDeclarationKind,
   type VariableStatement,
@@ -9,17 +12,23 @@ import type { LineRange, SymbolDecl } from "@symnav/core";
 import { extractSignatureSource } from "./extract-signature-source.js";
 import { nodeKind } from "./node-kind.js";
 
-export function extractChildren(parent: Node): readonly SymbolDecl[] {
-  if (Node.isClassDeclaration(parent)) {
+function extractChildren(
+  parent: ClassDeclaration | InterfaceDeclaration | ModuleDeclaration,
+): readonly SymbolDecl[] {
+  if (Node.isClassDeclaration(parent) || Node.isInterfaceDeclaration(parent)) {
     return parent.getMembers().flatMap(toMemberDecl);
   }
-  if (Node.isInterfaceDeclaration(parent)) {
-    return parent.getMembers().flatMap(toMemberDecl);
-  }
-  if (Node.isModuleDeclaration(parent)) {
-    return extractStatementDecls(parent.getStatements());
-  }
-  return [];
+  return extractStatementDecls(parent.getStatements());
+}
+
+function hasChildren(
+  node: Node,
+): node is ClassDeclaration | InterfaceDeclaration | ModuleDeclaration {
+  return (
+    Node.isClassDeclaration(node) ||
+    Node.isInterfaceDeclaration(node) ||
+    Node.isModuleDeclaration(node)
+  );
 }
 
 export function extractStatementDecls(statements: readonly Node[]): readonly SymbolDecl[] {
@@ -52,7 +61,7 @@ function toStatementDecl(stmt: Node): SymbolDecl[] {
       name: nodeName(stmt),
       range: nodeRange(stmt),
       signatureSource: extractSignatureSource(stmt),
-      children: extractChildren(stmt),
+      children: hasChildren(stmt) ? extractChildren(stmt) : [],
     },
   ];
 }

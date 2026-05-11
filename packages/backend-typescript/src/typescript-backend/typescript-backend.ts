@@ -3,14 +3,22 @@ import { FileNotFoundError } from "@symnav/core";
 import { Project, ScriptTarget, type SourceFile } from "ts-morph";
 
 import { extractFileSymbols } from "../extract/extract-file-symbols.js";
-import { acceptsTypeScriptFile } from "./typescript-extensions.js";
 import { WorkspaceFileSystemHost } from "./workspace-file-system-host.js";
+
+const TYPESCRIPT_EXTENSIONS = [".d.ts", ".ts", ".tsx", ".mts", ".cts"] as const;
 
 export class TypeScriptBackend implements LanguageBackend {
   constructor(private readonly workspace: Workspace) {}
 
   accepts(filePath: string): boolean {
-    return acceptsTypeScriptFile(filePath);
+    const lastSlash = filePath.lastIndexOf("/");
+    const basename = (lastSlash === -1 ? filePath : filePath.slice(lastSlash + 1)).toLowerCase();
+    for (const ext of TYPESCRIPT_EXTENSIONS) {
+      if (basename.endsWith(ext)) {
+        return true;
+      }
+    }
+    return false;
   }
 
   async fileSymbols(filePath: string): Promise<FileSymbols> {

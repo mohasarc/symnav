@@ -1,4 +1,4 @@
-import { Node } from "ts-morph";
+import { Node, type VariableDeclaration, type VariableDeclarationKind } from "ts-morph";
 import type { SymbolDecl } from "@symnav/core";
 
 import { extractSignatureSource } from "./extract-signature-source.js";
@@ -68,8 +68,8 @@ function expandVariableStatement(stmt: Node): SymbolDecl[] {
 }
 
 function singleVariableSignature(
-  keyword: string,
-  decl: { getName(): string; getTypeNode(): Node | undefined; getInitializer(): Node | undefined },
+  keyword: VariableDeclarationKind,
+  decl: VariableDeclaration,
 ): string {
   const name = decl.getName();
   const typeNode = decl.getTypeNode();

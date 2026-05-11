@@ -26,11 +26,24 @@ function cutBeforeTerminator(node: Node): string {
 }
 
 function cutBeforeBodyOrTerminator(node: Node): string {
-  const body = (node as { getBody?: () => Node | undefined }).getBody?.();
+  const body = bodyOf(node);
   if (body) {
     const text = node.getText();
     const bodyStart = body.getStart() - node.getStart();
     return text.slice(0, bodyStart).trimEnd();
   }
   return cutBeforeTerminator(node);
+}
+
+function bodyOf(node: Node): Node | undefined {
+  if (
+    Node.isFunctionDeclaration(node) ||
+    Node.isMethodDeclaration(node) ||
+    Node.isGetAccessorDeclaration(node) ||
+    Node.isSetAccessorDeclaration(node) ||
+    Node.isConstructorDeclaration(node)
+  ) {
+    return node.getBody();
+  }
+  return undefined;
 }

@@ -1,4 +1,9 @@
-import { Node, type VariableDeclaration, type VariableDeclarationKind } from "ts-morph";
+import {
+  Node,
+  type VariableDeclaration,
+  type VariableDeclarationKind,
+  type VariableStatement,
+} from "ts-morph";
 import type { LineRange, SymbolDecl } from "@symnav/core";
 
 import { extractSignatureSource } from "./extract-signature-source.js";
@@ -52,8 +57,7 @@ function toStatementDecl(stmt: Node): SymbolDecl[] {
   ];
 }
 
-function expandVariableStatement(stmt: Node): SymbolDecl[] {
-  if (!Node.isVariableStatement(stmt)) return [];
+function expandVariableStatement(stmt: VariableStatement): SymbolDecl[] {
   const declList = stmt.getDeclarationList();
   const keyword = declList.getDeclarationKind();
   return declList.getDeclarations().map((decl) => ({

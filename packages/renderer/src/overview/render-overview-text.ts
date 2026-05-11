@@ -1,14 +1,13 @@
 import type { FileSymbols, LineRange, SymbolDecl } from "@symnav/core";
 import { buildSymbolPath } from "@symnav/core";
 
-import {
-  SIGNATURE_INDENT,
-  TREE_BRANCH,
-  TREE_LAST,
-  TREE_SPACE,
-  TREE_VERTICAL,
-} from "./tree-glyphs.js";
 import { capSignature } from "./signature-cap.js";
+
+const TREE_BRANCH = "├── ";
+const TREE_LAST = "└── ";
+const TREE_VERTICAL = "│   ";
+const TREE_SPACE = "    ";
+const SIGNATURE_INDENT = "   ";
 
 export function renderOverviewText(file: FileSymbols): string {
   const header = `Overview: ${file.filePath}\n\n`;

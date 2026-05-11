@@ -1,10 +1,10 @@
 import { BackendError, BackendRouter, NodeWorkspace, NotInWorkspaceError } from "@symnav/core";
 import { TypeScriptBackend } from "@symnav/backend-typescript";
+import { renderOverviewJson, renderOverviewText } from "@symnav/renderer";
 import { formatUserError } from "../../error-output/format-user-error.js";
 import type { ProgramContext } from "../../program-context.js";
 import type { ProgramDependencies } from "../../program-dependencies.js";
 import { runOverview } from "./run-overview.js";
-import { writeOverviewOutput } from "./write-overview-output.js";
 
 export interface RunOverviewActionArgs {
   context: ProgramContext;
@@ -34,11 +34,8 @@ export async function runOverviewAction(args: RunOverviewActionArgs): Promise<vo
       cwd,
       inputPath: args.file,
     });
-    writeOverviewOutput({
-      symbols,
-      json: args.json,
-      stdout: args.context.stdout,
-    });
+    const rendered = args.json ? renderOverviewJson(symbols) : renderOverviewText(symbols);
+    args.context.stdout.write(rendered);
   } catch (err) {
     exitWithError(err, args.context, {
       inputPath: args.file,

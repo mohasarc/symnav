@@ -1,5 +1,6 @@
 import {
   Node,
+  SyntaxKind,
   type ClassDeclaration,
   type InterfaceDeclaration,
   type ModuleDeclaration,
@@ -35,9 +36,25 @@ export function extractStatementDecls(statements: readonly Node[]): readonly Sym
   return statements.flatMap(toStatementDecl);
 }
 
+const IGNORED_STATEMENT_KINDS: ReadonlySet<SyntaxKind> = new Set([
+  SyntaxKind.ImportDeclaration,
+  SyntaxKind.ExportDeclaration,
+  SyntaxKind.ImportEqualsDeclaration,
+  SyntaxKind.EmptyStatement,
+  SyntaxKind.ExpressionStatement,
+]);
+
+const IGNORED_MEMBER_KINDS: ReadonlySet<SyntaxKind> = new Set([
+  SyntaxKind.ClassStaticBlockDeclaration,
+  SyntaxKind.SemicolonClassElement,
+]);
+
 function toMemberDecl(member: Node): SymbolDecl[] {
   const kind = nodeKind(member);
-  if (!kind) return [];
+  if (!kind) {
+    if (IGNORED_MEMBER_KINDS.has(member.getKind())) return [];
+    throw new Error(`Unrecognised class/interface member kind: ${member.getKindName()}`);
+  }
   return [
     {
       kind,
@@ -51,7 +68,10 @@ function toMemberDecl(member: Node): SymbolDecl[] {
 
 function toStatementDecl(stmt: Node): SymbolDecl[] {
   const kind = nodeKind(stmt);
-  if (!kind) return [];
+  if (!kind) {
+    if (IGNORED_STATEMENT_KINDS.has(stmt.getKind())) return [];
+    throw new Error(`Unrecognised top-level statement kind: ${stmt.getKindName()}`);
+  }
   if (Node.isVariableStatement(stmt)) {
     return expandVariableStatement(stmt);
   }

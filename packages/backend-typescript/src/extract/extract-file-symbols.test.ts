@@ -132,4 +132,24 @@ describe("extractFileSymbols", () => {
     const result = symbolsOf(source);
     expect(result.symbols).toEqual([]);
   });
+
+  it("ignores expression statements and empty statements at the top level", () => {
+    const source = ["sideEffect();", ";"].join("\n");
+    const result = symbolsOf(source);
+    expect(result.symbols).toEqual([]);
+  });
+
+  it("throws on an unrecognised top-level statement kind (e.g. control flow)", () => {
+    expect(() => symbolsOf("if (true) {}")).toThrow(
+      /Unrecognised top-level statement kind: IfStatement/,
+    );
+  });
+
+  it("ignores class static blocks but counts other members", () => {
+    const source = ["class C {", "  static {}", "  m() {}", "}"].join("\n");
+    const result = symbolsOf(source);
+    const cls = result.symbols[0];
+    if (!cls) throw new Error("expected class");
+    expect(cls.children.map((c) => [c.kind, c.name])).toEqual([["method", "m"]]);
+  });
 });

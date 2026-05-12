@@ -1,5 +1,6 @@
-import type { IgnoreScope, FileSystem } from "@symnav/core";
-import { AbstractWorkspace } from "@symnav/core";
+import type { FileSystem } from "../file-system.js";
+import type { IgnoreScope } from "../ignore/scope.js";
+import { AbstractWorkspace } from "../abstract-workspace.js";
 import { computeDirSet } from "./compute-dir-set.js";
 import { InMemoryFileSystem } from "./in-memory-file-system.js";
 

@@ -1,7 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { NodeWorkspace } from "@symnav/core";
-import { InMemoryFileSystem } from "../../helpers/in-memory-file-system.js";
-import { InMemoryWorkspace } from "../../helpers/in-memory-workspace.js";
+import { InMemoryFileSystem, InMemoryWorkspace, NodeWorkspace } from "@symnav/core";
 
 describe("Workspace.isIgnored", () => {
   it("honors a single root .gitignore", async () => {

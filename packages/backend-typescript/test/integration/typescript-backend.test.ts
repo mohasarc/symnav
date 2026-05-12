@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 
 import {
   FileNotFoundError,
+  InMemoryFileSystem,
+  InMemoryWorkspace,
   OutsideWorkspaceError,
   type FileSystem,
   type Workspace,
@@ -10,8 +12,6 @@ import {
 import { extractFileSymbols } from "../../src/extract/extract-file-symbols.js";
 import { TypeScriptBackend } from "../../src/typescript-backend/typescript-backend.js";
 import { parseTypeScriptSource } from "../helpers/parse-typescript-source.js";
-import { InMemoryFileSystem } from "../helpers/in-memory-file-system.js";
-import { InMemoryWorkspace } from "../helpers/in-memory-workspace.js";
 
 async function workspaceOver(files: Record<string, string>): Promise<InMemoryWorkspace> {
   return InMemoryWorkspace.create({

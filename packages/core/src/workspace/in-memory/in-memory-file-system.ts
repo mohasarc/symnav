@@ -1,4 +1,4 @@
-import type { FileSystem } from "@symnav/core";
+import type { FileSystem } from "../file-system.js";
 import { computeDirSet } from "./compute-dir-set.js";
 
 export class InMemoryFileSystem implements FileSystem {

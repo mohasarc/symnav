@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { NotInWorkspaceError } from "@symnav/core";
+import { NotInWorkspaceError } from "../errors.js";
 import { InMemoryFileSystem } from "./in-memory-file-system.js";
 import { InMemoryWorkspace } from "./in-memory-workspace.js";
 

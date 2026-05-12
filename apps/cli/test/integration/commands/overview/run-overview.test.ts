@@ -3,12 +3,12 @@ import {
   BackendRouter,
   FileNotFoundError,
   IgnoredFileError,
+  InMemoryWorkspace,
   OutsideWorkspaceError,
   UnsupportedFileError,
 } from "@symnav/core";
 import type { FileSymbols } from "@symnav/core";
 import { runOverview } from "../../../../src/commands/overview/run-overview.js";
-import { InMemoryWorkspace } from "../../../helpers/in-memory-workspace.js";
 import { FakeLanguageBackend } from "./fake-language-backend.js";
 
 describe("runOverview happy path", () => {

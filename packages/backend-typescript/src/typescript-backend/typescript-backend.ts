@@ -2,7 +2,7 @@ import { basename } from "node:path";
 
 import type { FileSymbols, LanguageBackend, Workspace } from "@symnav/core";
 import { FileNotFoundError } from "@symnav/core";
-import { Project, ScriptTarget, type SourceFile } from "ts-morph";
+import { Project, type SourceFile } from "ts-morph";
 
 import { extractFileSymbols } from "../extract/extract-file-symbols.js";
 import { WorkspaceFileSystemHost } from "./workspace-file-system-host.js";
@@ -35,7 +35,6 @@ export class TypeScriptBackend implements LanguageBackend {
     }
     const project = new Project({
       fileSystem: new WorkspaceFileSystemHost(fs),
-      compilerOptions: { target: ScriptTarget.ES2022, allowJs: false },
     });
     return project.addSourceFileAtPath(absolutePath);
   }

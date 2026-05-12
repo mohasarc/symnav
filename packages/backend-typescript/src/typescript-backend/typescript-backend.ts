@@ -1,3 +1,5 @@
+import { basename } from "node:path";
+
 import type { FileSymbols, LanguageBackend, Workspace } from "@symnav/core";
 import { FileNotFoundError } from "@symnav/core";
 import { Project, ScriptTarget, type SourceFile } from "ts-morph";
@@ -11,10 +13,9 @@ export class TypeScriptBackend implements LanguageBackend {
   constructor(private readonly workspace: Workspace) {}
 
   accepts(filePath: string): boolean {
-    const lastSlash = filePath.lastIndexOf("/");
-    const basename = (lastSlash === -1 ? filePath : filePath.slice(lastSlash + 1)).toLowerCase();
+    const name = basename(filePath);
     for (const ext of TYPESCRIPT_EXTENSIONS) {
-      if (basename.endsWith(ext)) {
+      if (name.endsWith(ext)) {
         return true;
       }
     }

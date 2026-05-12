@@ -79,6 +79,13 @@ describe("TypeScriptBackend.accepts", () => {
     expect(backend.accepts("src/a.json")).toBe(false);
     expect(backend.accepts("README.md")).toBe(false);
   });
+
+  it("matches extensions case-sensitively (uppercase variants are rejected)", async () => {
+    const backend = await backendOver({});
+    expect(backend.accepts("src/a.TS")).toBe(false);
+    expect(backend.accepts("src/a.TSX")).toBe(false);
+    expect(backend.accepts("src/a.D.TS")).toBe(false);
+  });
 });
 
 describe("TypeScriptBackend.fileSymbols", () => {

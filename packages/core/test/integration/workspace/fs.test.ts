@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { InMemoryWorkspace } from "../../helpers/in-memory-workspace.js";
+import { InMemoryWorkspace } from "@symnav/core";
 
 describe("Workspace filesystem", () => {
   it("fs.readFile reads files placed in the in-memory map", async () => {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { InMemoryWorkspace } from "../../helpers/in-memory-workspace.js";
+import { InMemoryWorkspace } from "@symnav/core";
 
 describe("Windows-shaped paths", () => {
   it("resolves Windows-shaped startDir through the workspace", async () => {

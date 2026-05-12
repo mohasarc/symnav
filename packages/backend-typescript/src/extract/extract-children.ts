@@ -93,21 +93,22 @@ function expandVariableStatement(stmt: VariableStatement): SymbolDecl[] {
     kind: "variable" as const,
     name: decl.getName(),
     range: nodeRange(stmt),
-    signatureSource: singleVariableSignature(keyword, decl),
+    signatureSource: singleVariableSignature(stmt, keyword, decl),
     children: [],
   }));
 }
 
 function singleVariableSignature(
+  stmt: VariableStatement,
   keyword: VariableDeclarationKind,
   decl: VariableDeclaration,
 ): string {
-  const name = decl.getName();
-  const typeNode = decl.getTypeNode();
-  if (typeNode) return `${keyword} ${name}: ${typeNode.getText()}`;
-  const initializer = decl.getInitializer();
-  if (initializer) return `${keyword} ${name} = ${initializer.getText()}`;
-  return `${keyword} ${name}`;
+  const modifiers = stmt
+    .getModifiers()
+    .map((m) => m.getText())
+    .join(" ");
+  const head = modifiers ? `${modifiers} ${keyword}` : keyword;
+  return `${head} ${decl.getText()}`;
 }
 
 function nodeName(node: Node): string {

@@ -1,7 +1,7 @@
 import { basename } from "node:path";
 
 import type { FileSymbols, LanguageBackend, Workspace } from "@symnav/core";
-import { FileNotFoundError } from "@symnav/core";
+import { FileNotFoundError, OutsideWorkspaceError } from "@symnav/core";
 import { Project, type SourceFile } from "ts-morph";
 
 import { extractFileSymbols } from "../extract/extract-file-symbols.js";
@@ -24,6 +24,9 @@ export class TypeScriptBackend implements LanguageBackend {
 
   async fileSymbols(filePath: string): Promise<FileSymbols> {
     const absolutePath = this.workspace.toAbsolute(filePath);
+    if (!this.workspace.isInWorkspace(absolutePath)) {
+      throw new OutsideWorkspaceError();
+    }
     const sourceFile = this.loadSourceFile(absolutePath);
     return extractFileSymbols({ sourceFile, filePath });
   }

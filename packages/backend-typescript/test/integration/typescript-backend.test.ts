@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 
-import { FileNotFoundError, type FileSystem, type Workspace } from "@symnav/core";
+import {
+  FileNotFoundError,
+  OutsideWorkspaceError,
+  type FileSystem,
+  type Workspace,
+} from "@symnav/core";
 
 import { extractFileSymbols } from "../../src/extract/extract-file-symbols.js";
 import { TypeScriptBackend } from "../../src/typescript-backend/typescript-backend.js";
@@ -129,6 +134,13 @@ describe("TypeScriptBackend.fileSymbols", () => {
   it("on a nonexistent file throws FileNotFoundError", async () => {
     const backend = await backendOver({});
     await expect(backend.fileSymbols("src/missing.ts")).rejects.toBeInstanceOf(FileNotFoundError);
+  });
+
+  it("on a path that resolves outside the workspace throws OutsideWorkspaceError", async () => {
+    const backend = await backendOver({});
+    await expect(backend.fileSymbols("../outside.ts")).rejects.toBeInstanceOf(
+      OutsideWorkspaceError,
+    );
   });
 
   it("parses a .tsx file without ts-morph touching unsupported FileSystemHost methods", async () => {

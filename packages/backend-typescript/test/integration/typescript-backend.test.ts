@@ -91,6 +91,12 @@ describe("TypeScriptBackend.accepts", () => {
     expect(backend.accepts("src/a.TSX")).toBe(false);
     expect(backend.accepts("src/a.D.TS")).toBe(false);
   });
+
+  it("exposes extension knowledge statically (no workspace required)", () => {
+    expect(TypeScriptBackend.accepts("src/a.ts")).toBe(true);
+    expect(TypeScriptBackend.accepts("src/a.js")).toBe(false);
+    expect(TypeScriptBackend.extensions).toEqual([".d.ts", ".ts", ".tsx", ".mts", ".cts"]);
+  });
 });
 
 describe("TypeScriptBackend.fileSymbols", () => {

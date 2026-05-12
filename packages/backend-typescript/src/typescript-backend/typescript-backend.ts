@@ -7,19 +7,23 @@ import { Project, type SourceFile } from "ts-morph";
 import { extractFileSymbols } from "../extract/extract-file-symbols.js";
 import { WorkspaceFileSystemHost } from "./workspace-file-system-host.js";
 
-const TYPESCRIPT_EXTENSIONS = [".d.ts", ".ts", ".tsx", ".mts", ".cts"] as const;
-
 export class TypeScriptBackend implements LanguageBackend {
-  constructor(private readonly workspace: Workspace) {}
+  static readonly extensions: readonly string[] = [".d.ts", ".ts", ".tsx", ".mts", ".cts"];
 
-  accepts(filePath: string): boolean {
+  static accepts(filePath: string): boolean {
     const name = basename(filePath);
-    for (const ext of TYPESCRIPT_EXTENSIONS) {
+    for (const ext of TypeScriptBackend.extensions) {
       if (name.endsWith(ext)) {
         return true;
       }
     }
     return false;
+  }
+
+  constructor(private readonly workspace: Workspace) {}
+
+  accepts(filePath: string): boolean {
+    return TypeScriptBackend.accepts(filePath);
   }
 
   async fileSymbols(filePath: string): Promise<FileSymbols> {

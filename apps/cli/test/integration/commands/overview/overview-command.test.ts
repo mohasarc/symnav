@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
-import type { FileSymbols } from "@symnav/core";
+import { InMemoryFileSystem, type FileSymbols } from "@symnav/core";
 import { buildProgram } from "../../../../src/program.js";
-import { InMemoryFileSystem } from "../../../helpers/in-memory-file-system.js";
 import { FakeLanguageBackend } from "./fake-language-backend.js";
 import { createFakeProgramContext } from "./fake-program-context.js";
 

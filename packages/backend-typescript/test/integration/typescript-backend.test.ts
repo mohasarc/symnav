@@ -130,4 +130,15 @@ describe("TypeScriptBackend.fileSymbols", () => {
     const backend = await backendOver({});
     await expect(backend.fileSymbols("src/missing.ts")).rejects.toBeInstanceOf(FileNotFoundError);
   });
+
+  it("parses a .tsx file without ts-morph touching unsupported FileSystemHost methods", async () => {
+    const tsxSource = [
+      "export function Greeting(props: { name: string }) {",
+      "  return <span>{props.name}</span>;",
+      "}",
+    ].join("\n");
+    const backend = await backendOver({ "/repo/src/greeting.tsx": tsxSource });
+    const result = await backend.fileSymbols("src/greeting.tsx");
+    expect(result.symbols.map((s) => [s.kind, s.name])).toEqual([["function", "Greeting"]]);
+  });
 });

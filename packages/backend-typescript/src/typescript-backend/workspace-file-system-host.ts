@@ -1,8 +1,10 @@
 import type { FileSystem } from "@symnav/core";
 import type { FileSystemHost, RuntimeDirEntry } from "ts-morph";
 
-function unsupported(operation: string): never {
-  throw new Error(`WorkspaceFileSystemHost: ${operation} not supported in single-file mode`);
+const UNSUPPORTED_HOST_METHOD = "WorkspaceFileSystemHost: unsupported method in single-file mode";
+
+function unsupported(): never {
+  throw new Error(UNSUPPORTED_HOST_METHOD);
 }
 
 export class WorkspaceFileSystemHost implements FileSystemHost {
@@ -45,54 +47,54 @@ export class WorkspaceFileSystemHost implements FileSystemHost {
   }
 
   readDirSync(_dirPath: string): RuntimeDirEntry[] {
-    return unsupported("readDirSync");
+    return unsupported();
   }
 
   async delete(_path: string): Promise<void> {
-    return unsupported("delete");
+    return unsupported();
   }
 
   deleteSync(_path: string): void {
-    return unsupported("deleteSync");
+    return unsupported();
   }
 
   async writeFile(_filePath: string, _fileText: string): Promise<void> {
-    return unsupported("writeFile");
+    return unsupported();
   }
 
   writeFileSync(_filePath: string, _fileText: string): void {
-    return unsupported("writeFileSync");
+    return unsupported();
   }
 
   async mkdir(_dirPath: string): Promise<void> {
-    return unsupported("mkdir");
+    return unsupported();
   }
 
   mkdirSync(_dirPath: string): void {
-    return unsupported("mkdirSync");
+    return unsupported();
   }
 
   async move(_srcPath: string, _destPath: string): Promise<void> {
-    return unsupported("move");
+    return unsupported();
   }
 
   moveSync(_srcPath: string, _destPath: string): void {
-    return unsupported("moveSync");
+    return unsupported();
   }
 
   async copy(_srcPath: string, _destPath: string): Promise<void> {
-    return unsupported("copy");
+    return unsupported();
   }
 
   copySync(_srcPath: string, _destPath: string): void {
-    return unsupported("copySync");
+    return unsupported();
   }
 
   async glob(_patterns: ReadonlyArray<string>): Promise<string[]> {
-    return unsupported("glob");
+    return unsupported();
   }
 
   globSync(_patterns: ReadonlyArray<string>): string[] {
-    return unsupported("globSync");
+    return unsupported();
   }
 }

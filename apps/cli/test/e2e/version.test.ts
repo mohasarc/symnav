@@ -1,12 +1,10 @@
-import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { fixturePath } from "@symnav/testing";
+import { fixturePath, runSymnavBinary } from "@symnav/testing";
 
 const cliRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
-const binPath = join(cliRoot, "dist", "cli.js");
 const expectedVersion = (
   JSON.parse(readFileSync(join(cliRoot, "package.json"), "utf8")) as { version: string }
 ).version;
@@ -16,11 +14,7 @@ function runSymnav(args: readonly string[]): {
   stdout: string;
   stderr: string;
 } {
-  const result = spawnSync(process.execPath, [binPath, ...args], {
-    cwd: fixturePath("trivial-project"),
-    encoding: "utf8",
-  });
-  return { status: result.status, stdout: result.stdout, stderr: result.stderr };
+  return runSymnavBinary(args, { cwd: fixturePath("trivial-project") });
 }
 
 describe("symnav CLI e2e", () => {

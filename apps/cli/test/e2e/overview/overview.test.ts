@@ -1,14 +1,10 @@
-import { spawnSync } from "node:child_process";
 import { mkdtempSync, realpathSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { join } from "node:path";
 import { beforeAll, describe, expect, it } from "vitest";
-import { fixturePath } from "@symnav/testing";
+import { fixturePath, runSymnavBinary } from "@symnav/testing";
 import { ensureFixtureGitMarker } from "./ensure-fixture-git-marker.js";
 
-const cliRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
-const binPath = join(cliRoot, "dist", "cli.js");
 const fixtureRoot = fixturePath("overview-cases");
 const snapshotsDir = new URL("./__snapshots__/", import.meta.url).pathname;
 
@@ -20,20 +16,19 @@ function runSymnavOverview(
   args: readonly string[],
   cwd: string,
 ): { status: number | null; stdout: string; stderr: string } {
-  const result = spawnSync(process.execPath, [binPath, ...args], { cwd, encoding: "utf8" });
-  return { status: result.status, stdout: result.stdout, stderr: result.stderr };
+  return runSymnavBinary(args, { cwd });
 }
 
 function applyOrderedReplacements(
   input: string,
   replacements: readonly { find: string; replace: string }[],
 ): string {
-  for (let i = 0; i < replacements.length; i++) {
-    for (let j = 0; j < replacements.length; j++) {
-      if (i === j) continue;
-      if (replacements[i].find.includes(replacements[j].find)) {
+  for (const outer of replacements) {
+    for (const inner of replacements) {
+      if (outer === inner) continue;
+      if (outer.find.includes(inner.find)) {
         throw new Error(
-          `applyOrderedReplacements: find ${JSON.stringify(replacements[j].find)} is a substring of ${JSON.stringify(replacements[i].find)} — replacements must not overlap`,
+          `applyOrderedReplacements: find ${JSON.stringify(inner.find)} is a substring of ${JSON.stringify(outer.find)} — replacements must not overlap`,
         );
       }
     }

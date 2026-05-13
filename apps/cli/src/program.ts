@@ -13,20 +13,20 @@ function readPackageVersion(): string {
   return parsed.version;
 }
 
-function resolveContext(overrides?: Partial<ProgramContext>): ProgramContext {
+function defaultContext(): ProgramContext {
   return {
-    stdout: overrides?.stdout ?? process.stdout,
-    stderr: overrides?.stderr ?? process.stderr,
-    cwd: overrides?.cwd ?? process.cwd(),
-    exit: overrides?.exit ?? ((code: number) => process.exit(code)),
+    stdout: process.stdout,
+    stderr: process.stderr,
+    cwd: process.cwd(),
+    exit: (code: number) => process.exit(code),
   };
 }
 
 export function buildProgram(
-  overrides?: Partial<ProgramContext>,
+  context?: ProgramContext,
   dependencies?: ProgramDependencies,
 ): Command {
-  const context = resolveContext(overrides);
+  const ctx = context ?? defaultContext();
   const program = new Command();
   program
     .name("symnav")
@@ -34,19 +34,19 @@ export function buildProgram(
     .option("--cwd <dir>", "run as if symnav was started in <dir>")
     .configureOutput({
       writeOut: (s) => {
-        context.stdout.write(s);
+        ctx.stdout.write(s);
       },
       writeErr: (s) => {
-        context.stderr.write(s);
+        ctx.stderr.write(s);
       },
     })
     .exitOverride((err) => {
-      context.exit(err.exitCode);
+      ctx.exit(err.exitCode);
     })
     .action(() => {
       program.outputHelp({ error: true });
-      context.exit(1);
+      ctx.exit(1);
     });
-  registerOverviewCommand(program, context, dependencies ?? {});
+  registerOverviewCommand(program, ctx, dependencies ?? {});
   return program;
 }

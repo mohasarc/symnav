@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { mkdtempSync, realpathSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -83,7 +83,7 @@ describe("symnav overview e2e (user errors)", () => {
 
   it("reports a target outside the workspace", async () => {
     const outside = join(fixtureRoot, "..", "trivial-project", "package.json");
-    const r = runSymnavOverview(["--cwd", fixtureRoot, "overview", outside], fixtureRoot);
+    const r = runSymnavOverview(["overview", outside], fixtureRoot);
     expect(r.stdout).toBe("");
     expect(r.status).toBe(1);
     const normalized = r.stderr
@@ -124,9 +124,9 @@ describe("symnav overview e2e (determinism)", () => {
 
 describe("symnav overview e2e (no git workspace)", () => {
   it("reports when run outside of any git workspace", async () => {
-    const looseDir = mkdtempSync(join(tmpdir(), "overview-no-git-"));
+    const looseDir = realpathSync(mkdtempSync(join(tmpdir(), "overview-no-git-")));
     writeFileSync(join(looseDir, "a.ts"), "export const x = 1;\n");
-    const r = runSymnavOverview(["--cwd", looseDir, "overview", "a.ts"], looseDir);
+    const r = runSymnavOverview(["overview", "a.ts"], looseDir);
     expect(r.stdout).toBe("");
     expect(r.status).toBe(1);
     const normalized = r.stderr.split(looseDir).join("<looseDir>");

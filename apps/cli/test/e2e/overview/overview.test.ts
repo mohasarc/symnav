@@ -10,7 +10,7 @@ import { ensureFixtureGitMarker } from "./ensure-fixture-git-marker.js";
 const cliRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
 const binPath = join(cliRoot, "dist", "cli.js");
 const fixtureRoot = fixturePath("overview-cases");
-const snapshotsDir = new URL("./__snapshots__/overview/", import.meta.url).pathname;
+const snapshotsDir = new URL("./__snapshots__/", import.meta.url).pathname;
 
 function snapshot(name: string): string {
   return join(snapshotsDir, name);

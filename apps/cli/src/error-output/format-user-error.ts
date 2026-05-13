@@ -7,32 +7,34 @@ import {
   UnsupportedFileError,
 } from "@symnav/core";
 
-export interface FormatUserErrorContext {
-  inputPath?: string;
-  workspaceRoot?: string;
-  cwd?: string;
-}
-
-export function formatUserError(err: unknown, ctx: FormatUserErrorContext): string | null {
-  if (err instanceof FileNotFoundError && ctx.inputPath !== undefined) {
+export function formatUserError(err: FileNotFoundError, ctx: { inputPath: string }): string;
+export function formatUserError(err: IgnoredFileError, ctx: { inputPath: string }): string;
+export function formatUserError(
+  err: OutsideWorkspaceError,
+  ctx: { inputPath: string; workspaceRoot: string },
+): string;
+export function formatUserError(err: UnsupportedFileError, ctx: { inputPath: string }): string;
+export function formatUserError(err: NotInWorkspaceError, ctx: { cwd: string }): string;
+export function formatUserError(
+  err:
+    | FileNotFoundError
+    | IgnoredFileError
+    | OutsideWorkspaceError
+    | UnsupportedFileError
+    | NotInWorkspaceError,
+  ctx: { inputPath?: string; workspaceRoot?: string; cwd?: string },
+): string {
+  if (err instanceof FileNotFoundError) {
     return `Cannot answer: file not found: ${ctx.inputPath}.`;
   }
-  if (err instanceof IgnoredFileError && ctx.inputPath !== undefined) {
+  if (err instanceof IgnoredFileError) {
     return `Cannot answer: ${ctx.inputPath} is ignored by .gitignore.`;
   }
-  if (
-    err instanceof OutsideWorkspaceError &&
-    ctx.inputPath !== undefined &&
-    ctx.workspaceRoot !== undefined
-  ) {
+  if (err instanceof OutsideWorkspaceError) {
     return `Cannot answer: ${ctx.inputPath} is outside the workspace rooted at ${ctx.workspaceRoot}.`;
   }
-  if (err instanceof UnsupportedFileError && ctx.inputPath !== undefined) {
-    const extension = extname(ctx.inputPath);
-    return `Cannot answer: cannot read ${extension} files (${ctx.inputPath}).`;
+  if (err instanceof UnsupportedFileError) {
+    return `Cannot answer: cannot read ${extname(ctx.inputPath ?? "")} files (${ctx.inputPath}).`;
   }
-  if (err instanceof NotInWorkspaceError && ctx.cwd !== undefined) {
-    return `Cannot answer: not in a git workspace (no .git found in or above ${ctx.cwd}).`;
-  }
-  return null;
+  return `Cannot answer: not in a git workspace (no .git found in or above ${ctx.cwd}).`;
 }

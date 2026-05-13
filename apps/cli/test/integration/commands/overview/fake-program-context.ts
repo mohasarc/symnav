@@ -34,10 +34,10 @@ export function createFakeProgramContext(args: { cwd: string }): FakeProgramCont
   const stdout = new BufferStream();
   const stderr = new BufferStream();
   const exitCodes: number[] = [];
-  const exit = ((code: number): never => {
+  const exit: ProgramContext["exit"] = (code) => {
     exitCodes.push(code);
     return undefined as never;
-  }) as ProgramContext["exit"];
+  };
   return {
     stdout,
     stderr,

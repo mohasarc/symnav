@@ -18,7 +18,11 @@ export async function runOverviewAction(args: RunOverviewActionArgs): Promise<vo
   const cwd = args.cwdOverride ?? args.context.cwd;
   let workspace: NodeWorkspace;
   try {
-    workspace = await createWorkspace({ cwd, fs: args.dependencies.fs });
+    workspace = await NodeWorkspace.create(
+      args.dependencies.fs !== undefined
+        ? { startDir: cwd, fs: args.dependencies.fs }
+        : { startDir: cwd },
+    );
   } catch (err) {
     exitWithError(err, args.context, { cwd });
     return;
@@ -42,14 +46,6 @@ export async function runOverviewAction(args: RunOverviewActionArgs): Promise<vo
       workspaceRoot: workspace.root,
     });
   }
-}
-
-async function createWorkspace(args: {
-  cwd: string;
-  fs: ProgramDependencies["fs"];
-}): Promise<NodeWorkspace> {
-  const opts = args.fs ? { startDir: args.cwd, fs: args.fs } : { startDir: args.cwd };
-  return NodeWorkspace.create(opts);
 }
 
 function exitWithError(

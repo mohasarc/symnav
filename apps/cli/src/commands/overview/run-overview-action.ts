@@ -1,6 +1,7 @@
 import {
   BackendRouter,
   FileNotFoundError,
+  type FileSymbols,
   IgnoredFileError,
   NodeWorkspace,
   NotInWorkspaceError,
@@ -39,22 +40,16 @@ export async function runOverviewAction(args: RunOverviewActionArgs): Promise<vo
     exitUnexpected(args.context, err);
     return;
   }
+  const backends = args.dependencies.backends
+    ? args.dependencies.backends(workspace)
+    : [new TypeScriptBackend(workspace)];
+  const router = new BackendRouter(backends);
+  const inputPath = args.file;
+  const workspaceRoot = workspace.root;
+  let symbols: FileSymbols;
   try {
-    const backends = args.dependencies.backends
-      ? args.dependencies.backends(workspace)
-      : [new TypeScriptBackend(workspace)];
-    const router = new BackendRouter(backends);
-    const symbols = await runOverview({
-      workspace,
-      router,
-      cwd,
-      inputPath: args.file,
-    });
-    const rendered = args.json ? renderOverviewJson(symbols) : renderOverviewText(symbols);
-    args.context.stdout.write(rendered);
+    symbols = await runOverview({ workspace, router, cwd, inputPath });
   } catch (err) {
-    const inputPath = args.file;
-    const workspaceRoot = workspace.root;
     if (err instanceof FileNotFoundError) {
       writeUserError(args.context, formatUserError(err, { inputPath }));
       return;
@@ -72,7 +67,10 @@ export async function runOverviewAction(args: RunOverviewActionArgs): Promise<vo
       return;
     }
     exitUnexpected(args.context, err);
+    return;
   }
+  const rendered = args.json ? renderOverviewJson(symbols) : renderOverviewText(symbols);
+  args.context.stdout.write(rendered);
 }
 
 function writeUserError(context: ProgramContext, line: string): void {

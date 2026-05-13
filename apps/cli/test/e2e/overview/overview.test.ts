@@ -24,6 +24,23 @@ function runSymnavOverview(
   return { status: result.status, stdout: result.stdout, stderr: result.stderr };
 }
 
+function applyOrderedReplacements(
+  input: string,
+  replacements: readonly { find: string; replace: string }[],
+): string {
+  for (let i = 0; i < replacements.length; i++) {
+    for (let j = 0; j < replacements.length; j++) {
+      if (i === j) continue;
+      if (replacements[i].find.includes(replacements[j].find)) {
+        throw new Error(
+          `applyOrderedReplacements: find ${JSON.stringify(replacements[j].find)} is a substring of ${JSON.stringify(replacements[i].find)} — replacements must not overlap`,
+        );
+      }
+    }
+  }
+  return replacements.reduce((acc, { find, replace }) => acc.split(find).join(replace), input);
+}
+
 beforeAll(() => {
   ensureFixtureGitMarker(fixtureRoot);
 });
@@ -86,11 +103,10 @@ describe("symnav overview e2e (user errors)", () => {
     const r = runSymnavOverview(["overview", outside], fixtureRoot);
     expect(r.stdout).toBe("");
     expect(r.status).toBe(1);
-    const normalized = r.stderr
-      .split(outside)
-      .join("<outsidePath>")
-      .split(fixtureRoot)
-      .join("<fixtureRoot>");
+    const normalized = applyOrderedReplacements(r.stderr, [
+      { find: outside, replace: "<outsidePath>" },
+      { find: fixtureRoot, replace: "<fixtureRoot>" },
+    ]);
     await expect(normalized).toMatchFileSnapshot(snapshot("outside.expected.err"));
   });
 
@@ -129,7 +145,9 @@ describe("symnav overview e2e (no git workspace)", () => {
     const r = runSymnavOverview(["overview", "a.ts"], looseDir);
     expect(r.stdout).toBe("");
     expect(r.status).toBe(1);
-    const normalized = r.stderr.split(looseDir).join("<looseDir>");
+    const normalized = applyOrderedReplacements(r.stderr, [
+      { find: looseDir, replace: "<looseDir>" },
+    ]);
     await expect(normalized).toMatchFileSnapshot(snapshot("no-git.expected.err"));
   });
 });

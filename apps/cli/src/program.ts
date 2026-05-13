@@ -2,6 +2,9 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Command } from "commander";
+import { registerOverviewCommand } from "./commands/overview/register-overview-command.js";
+import type { ProgramContext } from "./program-context.js";
+import type { ProgramDependencies } from "./program-dependencies.js";
 
 function readPackageVersion(): string {
   const here = dirname(fileURLToPath(import.meta.url));
@@ -10,14 +13,40 @@ function readPackageVersion(): string {
   return parsed.version;
 }
 
-export function buildProgram(): Command {
+function defaultContext(): ProgramContext {
+  return {
+    stdout: process.stdout,
+    stderr: process.stderr,
+    cwd: process.cwd(),
+    exit: (code: number) => process.exit(code),
+  };
+}
+
+export function buildProgram(
+  context?: ProgramContext,
+  dependencies?: ProgramDependencies,
+): Command {
+  const ctx = context ?? defaultContext();
   const program = new Command();
   program
     .name("symnav")
     .version(readPackageVersion(), "-v, --version")
+    .option("--cwd <dir>", "run as if symnav was started in <dir>")
+    .configureOutput({
+      writeOut: (s) => {
+        ctx.stdout.write(s);
+      },
+      writeErr: (s) => {
+        ctx.stderr.write(s);
+      },
+    })
+    .exitOverride((err) => {
+      ctx.exit(err.exitCode);
+    })
     .action(() => {
       program.outputHelp({ error: true });
-      process.exit(1);
+      ctx.exit(1);
     });
+  registerOverviewCommand(program, ctx, dependencies ?? {});
   return program;
 }

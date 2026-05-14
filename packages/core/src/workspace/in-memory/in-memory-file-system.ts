@@ -1,5 +1,20 @@
 import type { FileSystem } from "../file-system.js";
-import { computeDirSet } from "./compute-dir-set.js";
+
+function computeDirSet(fileSet: Set<string>): Set<string> {
+  const dirs = new Set<string>();
+  for (const filePath of fileSet) {
+    const segments = filePath.split("/");
+    let current = segments[0] ?? "";
+    for (let i = 1; i < segments.length - 1; i++) {
+      current = current === "" ? `/${segments[i]}` : `${current}/${segments[i]}`;
+      dirs.add(current);
+    }
+    if (filePath.startsWith("/") && segments.length > 1) {
+      dirs.add("/");
+    }
+  }
+  return dirs;
+}
 
 export class InMemoryFileSystem implements FileSystem {
   private readonly files: Record<string, string>;

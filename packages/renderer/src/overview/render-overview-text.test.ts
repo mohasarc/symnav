@@ -6,8 +6,7 @@ import { renderOverviewText } from "./render-overview-text.js";
 import { SIGNATURE_CAP_CHARS, SIGNATURE_ELLIPSIS } from "./signature-cap.js";
 
 function decl(
-  partial: Partial<Omit<SymbolDecl, "kind">> &
-    Pick<SymbolDecl, "name"> & { kind: string },
+  partial: Partial<Omit<SymbolDecl, "kind">> & Pick<SymbolDecl, "name"> & { kind: string },
 ): SymbolDecl {
   const { kind, ...rest } = partial;
   return {

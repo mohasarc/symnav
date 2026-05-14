@@ -24,7 +24,7 @@ export interface LineRange {
 }
 
 export interface SymbolDecl {
-  readonly kind: SymbolKind;
+  readonly kind: { readonly role: SymbolRole; readonly nativeLabel: string };
   readonly name: string;
   readonly range: LineRange;
   readonly signatureSource: string;

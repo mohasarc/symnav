@@ -1,7 +1,8 @@
 import { Node } from "ts-morph";
-import type { SymbolKind } from "@symnav/core";
 
-export function nodeKind(node: Node): SymbolKind | null {
+import type { TypeScriptSymbolKind } from "./typescript-symbol-kind.js";
+
+export function nodeKind(node: Node): TypeScriptSymbolKind | null {
   if (Node.isFunctionDeclaration(node)) return "function";
   if (Node.isClassDeclaration(node)) return "class";
   if (Node.isInterfaceDeclaration(node)) return "interface";

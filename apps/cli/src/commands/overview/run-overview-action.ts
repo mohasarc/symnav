@@ -36,7 +36,7 @@ export async function runOverviewAction(args: RunOverviewActionArgs): Promise<vo
   const router = new BackendRouter(backends);
   let symbols: FileSymbols;
   try {
-    symbols = await runOverview({ workspace, fs, router, cwd, inputPath: args.file });
+    symbols = await runOverview({ workspace, router, cwd, inputPath: args.file });
   } catch (err) {
     handleError(args.context, err);
     return;

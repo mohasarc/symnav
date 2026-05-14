@@ -9,10 +9,10 @@ import {
   UserFacingError,
 } from "@symnav/core";
 import type { FileSymbols } from "@symnav/core";
-import { runOverview } from "../../../../src/commands/overview/run-overview.js";
+import { OverviewCommand } from "../../../../src/commands/overview/overview-command.js";
 import { FakeLanguageBackend } from "./fake-language-backend.js";
 
-describe("runOverview happy path", () => {
+describe("OverviewCommand.compute happy path", () => {
   it("returns the backend's FileSymbols for a relative input under cwd=root", async () => {
     const expected: FileSymbols = { filePath: "src/a.ts", symbols: [] };
     const backend = new FakeLanguageBackend({
@@ -25,11 +25,10 @@ describe("runOverview happy path", () => {
     const workspace = await createWorkspace({ startDir: "/repo", fs });
     const router = new BackendRouter([backend]);
 
-    const result = await runOverview({
+    const result = await new OverviewCommand("src/a.ts").compute({
       workspace,
       router,
       cwd: "/repo",
-      inputPath: "src/a.ts",
     });
 
     expect(result).toBe(expected);
@@ -45,11 +44,10 @@ describe("runOverview happy path", () => {
     const workspace = await createWorkspace({ startDir: "/repo", fs });
     const router = new BackendRouter([backend]);
 
-    const result = await runOverview({
+    const result = await new OverviewCommand("/repo/src/a.ts").compute({
       workspace,
       router,
       cwd: "/repo",
-      inputPath: "/repo/src/a.ts",
     });
 
     expect(result).toBe(expected);
@@ -64,11 +62,10 @@ describe("runOverview happy path", () => {
     const workspace = await createWorkspace({ startDir: "/repo", fs });
     const router = new BackendRouter([backend]);
 
-    await runOverview({
+    await new OverviewCommand("a.ts").compute({
       workspace,
       router,
       cwd: "/repo/src/nested",
-      inputPath: "a.ts",
     });
 
     expect(backend.calls).toEqual(["src/nested/a.ts"]);
@@ -83,18 +80,17 @@ describe("runOverview happy path", () => {
     const workspace = await createWorkspace({ startDir: "/repo", fs });
     const router = new BackendRouter([backend]);
 
-    await runOverview({
+    await new OverviewCommand("/repo/src/a.ts").compute({
       workspace,
       router,
       cwd: "/repo",
-      inputPath: "/repo/src/a.ts",
     });
 
     expect(backend.calls).toEqual(["src/a.ts"]);
   });
 });
 
-describe("runOverview validation errors", () => {
+describe("OverviewCommand.compute validation errors", () => {
   it("throws FileNotFoundError when the resolved path does not exist", async () => {
     const backend = new FakeLanguageBackend();
     const fs = new InMemoryFileSystem({ "/repo/.git/HEAD": "ref: refs/heads/main\n" });
@@ -102,12 +98,7 @@ describe("runOverview validation errors", () => {
     const router = new BackendRouter([backend]);
 
     await expect(
-      runOverview({
-        workspace,
-        router,
-        cwd: "/repo",
-        inputPath: "src/missing.ts",
-      }),
+      new OverviewCommand("src/missing.ts").compute({ workspace, router, cwd: "/repo" }),
     ).rejects.toBeInstanceOf(FileNotFoundError);
   });
 
@@ -122,12 +113,7 @@ describe("runOverview validation errors", () => {
     const router = new BackendRouter([backend]);
 
     await expect(
-      runOverview({
-        workspace,
-        router,
-        cwd: "/repo",
-        inputPath: "/other/src/a.ts",
-      }),
+      new OverviewCommand("/other/src/a.ts").compute({ workspace, router, cwd: "/repo" }),
     ).rejects.toBeInstanceOf(OutsideWorkspaceError);
   });
 
@@ -141,12 +127,9 @@ describe("runOverview validation errors", () => {
     const workspace = await createWorkspace({ startDir: "/repo", fs });
     const router = new BackendRouter([backend]);
 
-    const error = await runOverview({
-      workspace,
-      router,
-      cwd: "/repo",
-      inputPath: "build/a.ts",
-    }).catch((thrown: unknown) => thrown);
+    const error = await new OverviewCommand("build/a.ts")
+      .compute({ workspace, router, cwd: "/repo" })
+      .catch((thrown: unknown) => thrown);
 
     expect(error).toBeInstanceOf(UserFacingError);
     expect((error as UserFacingError).reason).toBe("build/a.ts is ignored by .gitignore");
@@ -162,17 +145,12 @@ describe("runOverview validation errors", () => {
     const router = new BackendRouter([backend]);
 
     await expect(
-      runOverview({
-        workspace,
-        router,
-        cwd: "/repo",
-        inputPath: "README.md",
-      }),
+      new OverviewCommand("README.md").compute({ workspace, router, cwd: "/repo" }),
     ).rejects.toBeInstanceOf(UnsupportedFileError);
   });
 });
 
-describe("runOverview validation order", () => {
+describe("OverviewCommand.compute validation order", () => {
   it("prefers FileNotFoundError over OutsideWorkspaceError", async () => {
     const backend = new FakeLanguageBackend();
     const fs = new InMemoryFileSystem({ "/repo/.git/HEAD": "ref: refs/heads/main\n" });
@@ -180,12 +158,7 @@ describe("runOverview validation order", () => {
     const router = new BackendRouter([backend]);
 
     await expect(
-      runOverview({
-        workspace,
-        router,
-        cwd: "/repo",
-        inputPath: "/other/missing.ts",
-      }),
+      new OverviewCommand("/other/missing.ts").compute({ workspace, router, cwd: "/repo" }),
     ).rejects.toBeInstanceOf(FileNotFoundError);
   });
 
@@ -199,12 +172,7 @@ describe("runOverview validation order", () => {
     const router = new BackendRouter([backend]);
 
     await expect(
-      runOverview({
-        workspace,
-        router,
-        cwd: "/repo",
-        inputPath: "build/missing.ts",
-      }),
+      new OverviewCommand("build/missing.ts").compute({ workspace, router, cwd: "/repo" }),
     ).rejects.toBeInstanceOf(FileNotFoundError);
   });
 
@@ -215,12 +183,7 @@ describe("runOverview validation order", () => {
     const router = new BackendRouter([backend]);
 
     await expect(
-      runOverview({
-        workspace,
-        router,
-        cwd: "/repo",
-        inputPath: "missing.md",
-      }),
+      new OverviewCommand("missing.md").compute({ workspace, router, cwd: "/repo" }),
     ).rejects.toBeInstanceOf(FileNotFoundError);
   });
 
@@ -235,12 +198,7 @@ describe("runOverview validation order", () => {
     const router = new BackendRouter([backend]);
 
     await expect(
-      runOverview({
-        workspace,
-        router,
-        cwd: "/repo",
-        inputPath: "/other/build/a.ts",
-      }),
+      new OverviewCommand("/other/build/a.ts").compute({ workspace, router, cwd: "/repo" }),
     ).rejects.toBeInstanceOf(OutsideWorkspaceError);
   });
 
@@ -254,12 +212,7 @@ describe("runOverview validation order", () => {
     const router = new BackendRouter([backend]);
 
     await expect(
-      runOverview({
-        workspace,
-        router,
-        cwd: "/repo",
-        inputPath: "/other/README.md",
-      }),
+      new OverviewCommand("/other/README.md").compute({ workspace, router, cwd: "/repo" }),
     ).rejects.toBeInstanceOf(OutsideWorkspaceError);
   });
 
@@ -273,12 +226,9 @@ describe("runOverview validation order", () => {
     const workspace = await createWorkspace({ startDir: "/repo", fs });
     const router = new BackendRouter([backend]);
 
-    const error = await runOverview({
-      workspace,
-      router,
-      cwd: "/repo",
-      inputPath: "build/notes.md",
-    }).catch((thrown: unknown) => thrown);
+    const error = await new OverviewCommand("build/notes.md")
+      .compute({ workspace, router, cwd: "/repo" })
+      .catch((thrown: unknown) => thrown);
 
     expect(error).toBeInstanceOf(UserFacingError);
     expect(error).not.toBeInstanceOf(UnsupportedFileError);

@@ -11,6 +11,7 @@ export { splitSignatureLines } from "./intermediate-representation/split-signatu
 export type { FileSystem } from "./workspace/file-system.js";
 export { NodeFileSystem } from "./workspace/node-file-system.js";
 export type { Workspace } from "./workspace/workspace.js";
+export { createWorkspace } from "./workspace/workspace.js";
 export { AbstractWorkspace } from "./workspace/abstract-workspace.js";
 export { InMemoryFileSystem } from "./workspace/in-memory/in-memory-file-system.js";
 export { InMemoryWorkspace } from "./workspace/in-memory/in-memory-workspace.js";

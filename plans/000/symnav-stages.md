@@ -85,6 +85,30 @@ This stage's real output is not just a working `overview` — it is the IR shape
 
 ---
 
+## Stage 1.5 — Foundation Hardening
+
+**What we deliver.** No new command. A consolidation pass over the code Stage 1 shipped, locking the IR contract and the workspace/CLI scaffolding before Stage 2 multiplies them across three more commands. Seven targeted deepenings, each independently landable, each leaving the `overview` command behaviourally identical.
+
+**Why this stage.** Stage 1 was the walking skeleton — its real output was the IR shape, the renderer rules, the language-backend interface, and the CLI scaffolding. Those decisions were made under the pressure of shipping one command. Stage 2 (`resolve`, `def`) is the first stage to *consume* them: two commands that reuse the IR, the workspace path-resolution dance, the error-routing scaffold, and the renderer-selection logic. Every shallow seam left in place now gets copied two-to-four more times before Stage 5. The cheapest moment to deepen a seam is before it has callers; that moment is now.
+
+This stage deliberately breaks the *letter* of the "iterate vertically" principle — it produces no new user-facing slice — but honours its *spirit*: it keeps the architecture honest so later vertical slices stay cheap. It is not scaffolding for a later stage; it is deepening of code already in production.
+
+**In scope.**
+
+- **Self-rendering errors.** Error types carry their user-facing context at the point they are thrown and own how they render into the spec's "Cannot answer:" voice. The CLI's per-error type-check ladder and the multi-overload error formatter collapse to a single dispatch.
+- **Workspace-owned input-path resolution.** The resolve-relative / file-exists / inside-workspace / not-ignored sequence becomes a single workspace operation that returns a workspace-relative path or fails. Every later command starts from that one call instead of re-implementing the policy.
+- **Workspace construction collapses to a factory.** The `Workspace` interface plus its abstract base plus its two zero-override concrete subclasses become a single `createWorkspace` factory over an injected file-system port — the shape the Stage 1 plan originally called for. The unused polymorphism leaves the `@symnav/core` public surface.
+- **A shared command pipeline.** Workspace lifecycle, error dispatch, output-stream selection, and exit-code policy move out of the `overview` action into one reusable command-runner seam. Each command then supplies only its result-computing function and its renderer pair.
+- **Ignore rules consolidate behind one module.** The four-file ignore cluster and the `.git/` rule currently duplicated in two places become a single workspace-ignore module with a build step and an `isIgnored` query. Three internal types leave the `@symnav/core` public surface; one cohesive type replaces them.
+- **Signatures become line arrays.** A symbol's signature in the IR becomes an ordered list of single-line strings rather than one possibly-multi-line string. The language-backend interface enforces single-line-per-element; the renderer applies tree glyphs and indentation per line. Includes the multi-line renderer test deferred during Stage 1.
+- **Symbol kinds split into role and native label.** The IR's symbol-kind field stops hard-coding TypeScript-specific labels. It carries a small language-agnostic role — the few buckets the renderer actually reasons about — plus a backend-supplied native label for faithful display. The TypeScript-flavoured label set moves into the TypeScript backend, so `core` need not change when a future backend lands.
+
+**Out of scope.** Any new command. Any change to `overview`'s observable output for inputs Stage 1 already handled — multi-line signatures are new *correct* output, not a change to existing output. New language backends; the symbol-kind split makes `core` ready for them but adds none.
+
+**Done when.** All seven deepenings have landed. `overview` produces byte-identical output to Stage 1 for every Stage 1 fixture. The `@symnav/core` public surface exports only what cross-package callers use. CI is green. A contributor adding a Stage 2 command reuses the command pipeline, the workspace path-resolution call, and the self-rendering error types without re-deriving them.
+
+---
+
 ## Stage 2 — `resolve` and `def`
 
 **What we deliver.** A working `symnav resolve <name>` (with optional fuzzy matching) and `symnav def <symbol-id>`. `resolve` produces matching symbols and files in two sections; `def` produces the locations a symbol is defined, including overload signatures, declarations, and multiple implementations when the symbol is a contract or base.
@@ -205,6 +229,7 @@ These items are explicitly **not** part of the v1 plan. They are catalogued here
 |---|---|---|
 | 0 | Foundations | Working monorepo, test harness, enforced dependency direction |
 | 1 | `overview` | The walking skeleton; IR + renderer + backend interface locked |
+| 1.5 | Foundation hardening | IR contract, workspace factory, and error/pipeline scaffolding deepened before Stage 2 multiplies them |
 | 2 | `resolve`, `def` | Canonical symbol IDs and overload disambiguation |
 | 3 | `refs` | Cross-file reference enumeration and pagination |
 | 4 | `context` | Composition + direct callers/callees + git history |

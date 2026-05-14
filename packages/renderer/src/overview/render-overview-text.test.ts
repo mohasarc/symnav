@@ -5,12 +5,17 @@ import type { FileSymbols, SymbolDecl } from "@symnav/core";
 import { renderOverviewText } from "./render-overview-text.js";
 import { SIGNATURE_CAP_CHARS, SIGNATURE_ELLIPSIS } from "./signature-cap.js";
 
-function decl(partial: Partial<SymbolDecl> & Pick<SymbolDecl, "name" | "kind">): SymbolDecl {
+function decl(
+  partial: Partial<Omit<SymbolDecl, "kind">> &
+    Pick<SymbolDecl, "name"> & { kind: string },
+): SymbolDecl {
+  const { kind, ...rest } = partial;
   return {
     range: { startLine: 1, endLine: 1 },
     signatureSource: "",
     children: [],
-    ...partial,
+    ...rest,
+    kind: { role: "value", nativeLabel: kind },
   };
 }
 

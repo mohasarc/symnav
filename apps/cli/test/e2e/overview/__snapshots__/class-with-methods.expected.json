@@ -5,7 +5,10 @@
       "children": [
         {
           "children": [],
-          "kind": "method",
+          "kind": {
+            "nativeLabel": "method",
+            "role": "callable"
+          },
           "name": "greet",
           "range": {
             "endLine": 4,
@@ -15,7 +18,10 @@
         },
         {
           "children": [],
-          "kind": "method",
+          "kind": {
+            "nativeLabel": "method",
+            "role": "callable"
+          },
           "name": "shout",
           "range": {
             "endLine": 8,
@@ -24,7 +30,10 @@
           "signatureSource": "shout(name: string): string"
         }
       ],
-      "kind": "class",
+      "kind": {
+        "nativeLabel": "class",
+        "role": "container"
+      },
       "name": "Greeter",
       "range": {
         "endLine": 9,

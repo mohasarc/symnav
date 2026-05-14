@@ -16,7 +16,7 @@ export { InMemoryFileSystem } from "./workspace/in-memory/in-memory-file-system.
 export type { LanguageBackend } from "./backend/language-backend.js";
 export { BackendRouter } from "./backend/backend-router.js";
 export { UserFacingError } from "./errors.js";
-export { BackendError, UnsupportedFileError } from "./backend/errors.js";
+export { UnsupportedFileError } from "./backend/errors.js";
 export {
   FileNotFoundError,
   IgnoredFileError,

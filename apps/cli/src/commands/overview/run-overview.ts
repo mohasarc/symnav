@@ -19,18 +19,18 @@ export async function runOverview(args: RunOverviewArgs): Promise<FileSymbols> {
   const { workspace, fs, router, cwd, inputPath } = args;
   const absolutePath = isAbsolute(inputPath) ? inputPath : resolve(cwd, inputPath);
   if (!(await fs.exists(absolutePath))) {
-    throw new FileNotFoundError();
+    throw new FileNotFoundError(inputPath);
   }
   if (!workspace.isInWorkspace(absolutePath)) {
-    throw new OutsideWorkspaceError();
+    throw new OutsideWorkspaceError(inputPath, workspace.root);
   }
   const relativePath = workspace.toRelative(absolutePath);
   if (workspace.isIgnored(relativePath)) {
-    throw new IgnoredFileError();
+    throw new IgnoredFileError(inputPath);
   }
   const backend = router.find(relativePath);
   if (backend === undefined) {
-    throw new UnsupportedFileError();
+    throw new UnsupportedFileError(inputPath);
   }
   return backend.fileSymbols(relativePath);
 }

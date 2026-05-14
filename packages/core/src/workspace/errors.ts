@@ -1,31 +1,48 @@
-import { BackendError } from "../backend/errors.js";
+import { UserFacingError } from "../errors.js";
 
-export class NotInWorkspaceError extends Error {
-  readonly startDir: string;
-  constructor(startDir: string) {
-    super(`No .git directory found at or above ${startDir}`);
+export class NotInWorkspaceError extends UserFacingError {
+  constructor(private readonly startDir: string) {
+    super("not-in-workspace");
     this.name = "NotInWorkspaceError";
-    this.startDir = startDir;
+  }
+
+  get reason(): string {
+    return `not in a git workspace (no .git found in or above ${this.startDir})`;
   }
 }
 
-export class FileNotFoundError extends BackendError {
-  constructor() {
+export class FileNotFoundError extends UserFacingError {
+  constructor(private readonly inputPath: string) {
     super("file-not-found");
     this.name = "FileNotFoundError";
   }
-}
 
-export class IgnoredFileError extends BackendError {
-  constructor() {
-    super("ignored-file");
-    this.name = "IgnoredFileError";
+  get reason(): string {
+    return `file not found: ${this.inputPath}`;
   }
 }
 
-export class OutsideWorkspaceError extends BackendError {
-  constructor() {
+export class IgnoredFileError extends UserFacingError {
+  constructor(private readonly inputPath: string) {
+    super("ignored-file");
+    this.name = "IgnoredFileError";
+  }
+
+  get reason(): string {
+    return `${this.inputPath} is ignored by .gitignore`;
+  }
+}
+
+export class OutsideWorkspaceError extends UserFacingError {
+  constructor(
+    private readonly inputPath: string,
+    private readonly workspaceRoot: string,
+  ) {
     super("outside-workspace");
     this.name = "OutsideWorkspaceError";
+  }
+
+  get reason(): string {
+    return `${this.inputPath} is outside the workspace rooted at ${this.workspaceRoot}`;
   }
 }

@@ -32,15 +32,15 @@ export class TypeScriptBackend implements LanguageBackend {
   async fileSymbols(filePath: string): Promise<FileSymbols> {
     const absolutePath = this.workspace.toAbsolute(filePath);
     if (!this.workspace.isInWorkspace(absolutePath)) {
-      throw new OutsideWorkspaceError();
+      throw new OutsideWorkspaceError(filePath, this.workspace.root);
     }
-    const sourceFile = this.loadSourceFile(absolutePath);
+    const sourceFile = this.loadSourceFile(absolutePath, filePath);
     return extractFileSymbols({ sourceFile, filePath });
   }
 
-  private loadSourceFile(absolutePath: string): SourceFile {
+  private loadSourceFile(absolutePath: string, filePath: string): SourceFile {
     if (!this.fs.existsSync(absolutePath) || this.fs.isDirectorySync(absolutePath)) {
-      throw new FileNotFoundError();
+      throw new FileNotFoundError(filePath);
     }
     const project = new Project({
       fileSystem: new WorkspaceFileSystemHost(this.fs),

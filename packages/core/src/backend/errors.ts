@@ -1,8 +1,14 @@
-export class BackendError extends Error {}
+import { extname } from "node:path";
 
-export class UnsupportedFileError extends BackendError {
-  constructor() {
+import { UserFacingError } from "../errors.js";
+
+export class UnsupportedFileError extends UserFacingError {
+  constructor(private readonly inputPath: string) {
     super("unsupported-file");
     this.name = "UnsupportedFileError";
+  }
+
+  get reason(): string {
+    return `cannot read ${extname(this.inputPath)} files (${this.inputPath})`;
   }
 }

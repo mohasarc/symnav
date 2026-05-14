@@ -15,6 +15,7 @@ export { createWorkspace } from "./workspace/workspace.js";
 export { InMemoryFileSystem } from "./workspace/in-memory/in-memory-file-system.js";
 export type { LanguageBackend } from "./backend/language-backend.js";
 export { BackendRouter } from "./backend/backend-router.js";
+export { UserFacingError } from "./errors.js";
 export {
   BackendError,
   FileNotFoundError,

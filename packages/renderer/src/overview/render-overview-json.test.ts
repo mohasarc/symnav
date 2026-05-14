@@ -1,11 +1,13 @@
 import { describe, expect, it } from "vitest";
 
-import type { FileSymbols, SymbolDecl } from "@symnav/core";
+import type { FileSymbols, SymbolDecl, SymbolKind } from "@symnav/core";
 
 import { renderOverviewJson } from "./render-overview-json.js";
 import { SIGNATURE_CAP_CHARS } from "./signature-cap.js";
 
-function decl(partial: Partial<SymbolDecl> & Pick<SymbolDecl, "name" | "kind">): SymbolDecl {
+function decl(
+  partial: Partial<Omit<SymbolDecl, "kind">> & Pick<SymbolDecl, "name"> & { kind: SymbolKind },
+): SymbolDecl {
   return {
     range: { startLine: 1, endLine: 1 },
     signatureSource: "",
@@ -20,7 +22,7 @@ describe("renderOverviewJson", () => {
       filePath: "src/file.ts",
       symbols: [
         decl({
-          kind: "function",
+          kind: { role: "callable", nativeLabel: "function" },
           name: "leaf",
           range: { startLine: 4, endLine: 4 },
           signatureSource: "function leaf(): void",
@@ -32,7 +34,7 @@ describe("renderOverviewJson", () => {
       filePath: "src/file.ts",
       symbols: [
         {
-          kind: "function",
+          kind: { role: "callable", nativeLabel: "function" },
           name: "leaf",
           range: { startLine: 4, endLine: 4 },
           signatureSource: "function leaf(): void",
@@ -47,7 +49,7 @@ describe("renderOverviewJson", () => {
       filePath: "src/file.ts",
       symbols: [
         decl({
-          kind: "function",
+          kind: { role: "callable", nativeLabel: "function" },
           name: "leaf",
           signatureSource: "function leaf(): void",
         }),
@@ -75,7 +77,7 @@ describe("renderOverviewJson", () => {
       filePath: "src/file.ts",
       symbols: [
         decl({
-          kind: "function",
+          kind: { role: "callable", nativeLabel: "function" },
           name: "wide",
           signatureSource: oversized,
         }),
@@ -91,13 +93,13 @@ describe("renderOverviewJson", () => {
       filePath: "src/file.ts",
       symbols: [
         decl({
-          kind: "class",
+          kind: { role: "container", nativeLabel: "class" },
           name: "C",
           range: { startLine: 1, endLine: 10 },
           signatureSource: "class C",
           children: [
             decl({
-              kind: "method",
+              kind: { role: "callable", nativeLabel: "method" },
               name: "m",
               range: { startLine: 2, endLine: 4 },
               signatureSource: "m(): void",

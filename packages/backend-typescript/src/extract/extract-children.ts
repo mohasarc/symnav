@@ -12,6 +12,7 @@ import type { LineRange, SymbolDecl } from "@symnav/core";
 
 import { extractSignatureSource } from "./extract-signature-source.js";
 import { nodeKind } from "./node-kind.js";
+import { roleOf } from "./typescript-symbol-kind.js";
 
 function extractChildren(
   parent: ClassDeclaration | InterfaceDeclaration | ModuleDeclaration,
@@ -57,7 +58,7 @@ function toMemberDecl(member: Node): SymbolDecl[] {
   }
   return [
     {
-      kind,
+      kind: { role: roleOf(kind), nativeLabel: kind },
       name: nodeName(member),
       range: nodeRange(member),
       signatureSource: extractSignatureSource(member),
@@ -77,7 +78,7 @@ function toStatementDecl(stmt: Node): SymbolDecl[] {
   }
   return [
     {
-      kind,
+      kind: { role: roleOf(kind), nativeLabel: kind },
       name: nodeName(stmt),
       range: nodeRange(stmt),
       signatureSource: extractSignatureSource(stmt),
@@ -90,7 +91,7 @@ function expandVariableStatement(stmt: VariableStatement): SymbolDecl[] {
   const declList = stmt.getDeclarationList();
   const keyword = declList.getDeclarationKind();
   return declList.getDeclarations().map((decl) => ({
-    kind: "variable" as const,
+    kind: { role: roleOf("variable"), nativeLabel: "variable" },
     name: decl.getName(),
     range: nodeRange(stmt),
     signatureSource: singleVariableSignature(stmt, keyword, decl),

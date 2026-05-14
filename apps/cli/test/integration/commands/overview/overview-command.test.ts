@@ -29,7 +29,7 @@ describe("symnav overview happy path", () => {
       filePath: "src/a.ts",
       symbols: [
         {
-          kind: "function",
+          kind: { role: "callable", nativeLabel: "function" },
           name: "greet",
           range: { startLine: 1, endLine: 1 },
           signatureSource: "function greet(): void",

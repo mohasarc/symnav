@@ -1,20 +1,9 @@
-export type SymbolKind =
-  | "class"
-  | "interface"
-  | "type-alias"
-  | "enum"
-  | "namespace"
-  | "function"
-  | "method"
-  | "constructor"
-  | "getter"
-  | "setter"
-  | "property"
-  | "variable"
-  | "default-export"
-  | "index-signature"
-  | "call-signature"
-  | "construct-signature";
+export type SymbolRole = "container" | "callable" | "value" | "type";
+
+export interface SymbolKind {
+  readonly role: SymbolRole;
+  readonly nativeLabel: string;
+}
 
 export interface LineRange {
   readonly startLine: number; // 1-based, inclusive

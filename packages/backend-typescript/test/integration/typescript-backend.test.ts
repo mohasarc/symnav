@@ -157,6 +157,8 @@ describe("TypeScriptBackend.fileSymbols", () => {
     ].join("\n");
     const backend = await backendOver({ "/repo/src/greeting.tsx": tsxSource });
     const result = await backend.fileSymbols("src/greeting.tsx");
-    expect(result.symbols.map((s) => [s.kind, s.name])).toEqual([["function", "Greeting"]]);
+    expect(result.symbols.map((s) => [s.kind.nativeLabel, s.name])).toEqual([
+      ["function", "Greeting"],
+    ]);
   });
 });

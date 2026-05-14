@@ -32,7 +32,7 @@ describe("symnav overview happy path", () => {
           kind: { role: "callable", nativeLabel: "function" },
           name: "greet",
           range: { startLine: 1, endLine: 1 },
-          signatureSource: "function greet(): void",
+          signature: { startLine: 1, lines: ["function greet(): void"] },
           children: [],
         },
       ],

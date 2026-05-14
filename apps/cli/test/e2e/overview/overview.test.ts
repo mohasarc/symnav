@@ -69,6 +69,13 @@ describe("symnav overview e2e (happy path)", () => {
     await expect(r.stdout).toMatchFileSnapshot(snapshot("nested-symbols.expected.txt"));
   });
 
+  it("renders multi-line-signature.ts", async () => {
+    const r = runSymnavOverview(["overview", "multi-line-signature.ts"], fixtureRoot);
+    expect(r.stderr).toBe("");
+    expect(r.status).toBe(0);
+    await expect(r.stdout).toMatchFileSnapshot(snapshot("multi-line-signature.expected.txt"));
+  });
+
   it("renders empty.ts as no symbols", async () => {
     const r = runSymnavOverview(["overview", "empty.ts"], fixtureRoot);
     expect(r.stderr).toBe("");
@@ -119,6 +126,13 @@ describe("symnav overview e2e (JSON output)", () => {
     expect(r.stderr).toBe("");
     expect(r.status).toBe(0);
     await expect(r.stdout).toMatchFileSnapshot(snapshot("class-with-methods.expected.json"));
+  });
+
+  it("renders multi-line-signature.ts as JSON", async () => {
+    const r = runSymnavOverview(["overview", "multi-line-signature.ts", "--json"], fixtureRoot);
+    expect(r.stderr).toBe("");
+    expect(r.status).toBe(0);
+    await expect(r.stdout).toMatchFileSnapshot(snapshot("multi-line-signature.expected.json"));
   });
 });
 

@@ -1,24 +1,28 @@
 import { describe, expect, it } from "vitest";
 
-import { SIGNATURE_CAP_CHARS, SIGNATURE_ELLIPSIS, capSignature } from "./signature-cap.js";
+import {
+  SIGNATURE_CAP_LINES,
+  SIGNATURE_ELLIPSIS,
+  capSignatureLines,
+} from "./signature-cap.js";
 
-describe("capSignature", () => {
-  it("returns the source unchanged when its length is at or below SIGNATURE_CAP_CHARS", () => {
-    const exact = "x".repeat(SIGNATURE_CAP_CHARS);
-    expect(capSignature(exact)).toBe(exact);
+describe("capSignatureLines", () => {
+  it("returns a list at or under the cap unchanged", () => {
+    const atCap = Array.from({ length: SIGNATURE_CAP_LINES }, (_, i) => `line ${i}`);
+    expect(capSignatureLines(atCap)).toEqual(atCap);
 
-    const shorter = "x".repeat(SIGNATURE_CAP_CHARS - 1);
-    expect(capSignature(shorter)).toBe(shorter);
+    const underCap = atCap.slice(0, SIGNATURE_CAP_LINES - 1);
+    expect(capSignatureLines(underCap)).toEqual(underCap);
   });
 
-  it("returns the first SIGNATURE_CAP_CHARS - SIGNATURE_ELLIPSIS.length chars plus SIGNATURE_ELLIPSIS otherwise", () => {
-    const oversized = "x".repeat(SIGNATURE_CAP_CHARS + 50);
-    const capped = capSignature(oversized);
+  it("truncates a longer list to the cap with a final elision marker", () => {
+    const oversized = Array.from({ length: SIGNATURE_CAP_LINES + 5 }, (_, i) => `line ${i}`);
+    const capped = capSignatureLines(oversized);
 
-    expect(capped.length).toBe(SIGNATURE_CAP_CHARS);
-    expect(capped.endsWith(SIGNATURE_ELLIPSIS)).toBe(true);
-    expect(capped.slice(0, SIGNATURE_CAP_CHARS - SIGNATURE_ELLIPSIS.length)).toBe(
-      oversized.slice(0, SIGNATURE_CAP_CHARS - SIGNATURE_ELLIPSIS.length),
+    expect(capped).toHaveLength(SIGNATURE_CAP_LINES);
+    expect(capped[capped.length - 1]).toBe(SIGNATURE_ELLIPSIS);
+    expect(capped.slice(0, SIGNATURE_CAP_LINES - 1)).toEqual(
+      oversized.slice(0, SIGNATURE_CAP_LINES - 1),
     );
   });
 });

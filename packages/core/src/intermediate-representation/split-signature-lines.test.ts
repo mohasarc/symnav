@@ -9,11 +9,7 @@ describe("splitSignatureLines", () => {
 
   it("returns one element per line for a newline-joined string", () => {
     const raw = ["function configure(", "  host: string,", "): void"].join("\n");
-    expect(splitSignatureLines(raw)).toEqual([
-      "function configure(",
-      "  host: string,",
-      "): void",
-    ]);
+    expect(splitSignatureLines(raw)).toEqual(["function configure(", "  host: string,", "): void"]);
   });
 
   it("produces no element containing a newline", () => {

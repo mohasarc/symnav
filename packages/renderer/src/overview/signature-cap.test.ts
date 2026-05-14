@@ -1,10 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import {
-  SIGNATURE_CAP_LINES,
-  SIGNATURE_ELLIPSIS,
-  capSignatureLines,
-} from "./signature-cap.js";
+import { SIGNATURE_CAP_LINES, SIGNATURE_ELLIPSIS, capSignatureLines } from "./signature-cap.js";
 
 describe("capSignatureLines", () => {
   it("returns a list at or under the cap unchanged", () => {

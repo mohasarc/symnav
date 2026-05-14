@@ -78,7 +78,10 @@ describe("renderOverviewJson", () => {
           kind: { role: "callable", nativeLabel: "function" },
           name: "configure",
           range: { startLine: 10, endLine: 12 },
-          signature: { startLine: 10, lines: ["function configure(", "  host: string,", "): void"] },
+          signature: {
+            startLine: 10,
+            lines: ["function configure(", "  host: string,", "): void"],
+          },
         }),
       ],
     };

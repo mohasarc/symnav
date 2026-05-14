@@ -2,6 +2,7 @@ export type {
   SymbolRole,
   SymbolKind,
   LineRange,
+  Signature,
   SymbolDecl,
   FileSymbols,
 } from "./intermediate-representation/types.js";

@@ -143,7 +143,7 @@ describe("extractFileSymbols", () => {
     const decl = symbolsOf(source).symbols[0];
     if (!decl) throw new Error("expected decl");
     expect(decl.signature.startLine).toBe(1);
-    expect(decl.signature.lines).toEqual(["function multi(", "  arg: number,", ") "]);
+    expect(decl.signature.lines).toEqual(["function multi(", "  arg: number,", ")"]);
   });
 
   it("single-line decls have startLine === endLine; multi-line decls span exact source lines", () => {

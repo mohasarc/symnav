@@ -1,5 +1,6 @@
 export type {
   SymbolKind,
+  SymbolRole,
   LineRange,
   SymbolDecl,
   FileSymbols,

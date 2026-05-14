@@ -16,6 +16,8 @@ export type SymbolKind =
   | "call-signature"
   | "construct-signature";
 
+export type SymbolRole = "container" | "callable" | "value" | "type";
+
 export interface LineRange {
   readonly startLine: number; // 1-based, inclusive
   readonly endLine: number; // 1-based, inclusive; equals startLine for single-line decls

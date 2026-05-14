@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  createWorkspace,
   FileNotFoundError,
   InMemoryFileSystem,
-  InMemoryWorkspace,
   OutsideWorkspaceError,
   type FileSystem,
   type Workspace,
@@ -13,10 +13,10 @@ import { extractFileSymbols } from "../../src/extract/extract-file-symbols.js";
 import { TypeScriptBackend } from "../../src/typescript-backend/typescript-backend.js";
 import { parseTypeScriptSource } from "../helpers/parse-typescript-source.js";
 
-async function workspaceOver(files: Record<string, string>): Promise<InMemoryWorkspace> {
-  return InMemoryWorkspace.create({
-    files: { "/repo/.git/HEAD": "ref: refs/heads/main\n", ...files },
+async function workspaceOver(files: Record<string, string>): Promise<Workspace> {
+  return createWorkspace({
     startDir: "/repo",
+    fs: new InMemoryFileSystem({ "/repo/.git/HEAD": "ref: refs/heads/main\n", ...files }),
   });
 }
 
@@ -124,12 +124,12 @@ describe("TypeScriptBackend.fileSymbols", () => {
       "/repo/src/x.ts": source,
     });
     const counting = new CountingFileSystem(inner);
-    const baseWorkspace = await InMemoryWorkspace.create({
-      files: {
+    const baseWorkspace = await createWorkspace({
+      startDir: "/repo",
+      fs: new InMemoryFileSystem({
         "/repo/.git/HEAD": "ref: refs/heads/main\n",
         "/repo/src/x.ts": source,
-      },
-      startDir: "/repo",
+      }),
     });
     const workspace = new WrappedWorkspace(baseWorkspace, counting);
     const backend = new TypeScriptBackend(workspace);

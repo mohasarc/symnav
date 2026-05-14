@@ -407,20 +407,22 @@ Example:
 Overview: src/checkout/CheckoutService.ts
 
 8: MAX_RETRY_ATTEMPTS
-   const MAX_RETRY_ATTEMPTS: number
+8: const MAX_RETRY_ATTEMPTS: number
 
 12-96: CheckoutService
-   class CheckoutService
+12: class CheckoutService
 ├── 24-34: CheckoutService::constructor
-│   constructor(paymentProcessor: PaymentProcessor, inventory: InventoryService)
+│   24: constructor(paymentProcessor: PaymentProcessor, inventory: InventoryService)
 ├── 42-78: CheckoutService::processPayment
-│   async processPayment(order: Order): Promise<Receipt>
+│   42: async processPayment(order: Order): Promise<Receipt>
 └── 80-94: CheckoutService::validateOrder
-    private validateOrder(order: Order): void
+    80: private validateOrder(order: Order): void
 
 98-112: createReceipt
-        function createReceipt(order: Order, payment: Payment): Receipt
+98: function createReceipt(order: Order, payment: Payment): Receipt
 ```
+
+Each signature line is prefixed with its source line number; a multi-line signature renders one numbered line per source line.
 
 ## `context`
 

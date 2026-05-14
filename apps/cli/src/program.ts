@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { Command } from "commander";
+import { Command as CommanderCommand } from "commander";
 import { registerOverviewCommand } from "./commands/overview/register-overview-command.js";
 import type { ProgramContext } from "./program-context.js";
 import type { ProgramDependencies } from "./program-dependencies.js";
@@ -25,9 +25,9 @@ function defaultContext(): ProgramContext {
 export function buildProgram(
   context?: ProgramContext,
   dependencies?: ProgramDependencies,
-): Command {
+): CommanderCommand {
   const ctx = context ?? defaultContext();
-  const program = new Command();
+  const program = new CommanderCommand();
   program
     .name("symnav")
     .version(readPackageVersion(), "-v, --version")

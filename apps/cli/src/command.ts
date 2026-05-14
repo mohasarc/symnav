@@ -34,15 +34,13 @@ export async function runCommand<Result>(
 ): Promise<void> {
   const { context, dependencies, cwdOverride, json } = invocation;
   const cwd = cwdOverride ?? context.cwd;
+  const fs = dependencies.fs ?? new NodeFileSystem();
   let result: Result;
   try {
-    const workspace = await createWorkspace({
-      startDir: cwd,
-      fs: dependencies.fs ?? new NodeFileSystem(),
-    });
+    const workspace = await createWorkspace({ startDir: cwd, fs });
     const backends = dependencies.backends
       ? dependencies.backends(workspace)
-      : [new TypeScriptBackend(workspace)];
+      : [new TypeScriptBackend(workspace, fs)];
     const router = new BackendRouter(backends);
     result = await command.compute({ workspace, router, cwd });
   } catch (err) {

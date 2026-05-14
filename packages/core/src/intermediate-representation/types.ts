@@ -1,12 +1,17 @@
 export type SymbolRole = "container" | "callable" | "value" | "type";
 
+export interface SymbolKind {
+  readonly role: SymbolRole;
+  readonly nativeLabel: string;
+}
+
 export interface LineRange {
   readonly startLine: number; // 1-based, inclusive
   readonly endLine: number; // 1-based, inclusive; equals startLine for single-line decls
 }
 
 export interface SymbolDecl {
-  readonly kind: { readonly role: SymbolRole; readonly nativeLabel: string };
+  readonly kind: SymbolKind;
   readonly name: string;
   readonly range: LineRange;
   readonly signatureSource: string;

@@ -1,12 +1,12 @@
 import type { FileSystem } from "../file-system.js";
-import type { IgnoreScope } from "../ignore/scope.js";
+import type { WorkspaceIgnore } from "../ignore/workspace-ignore.js";
 import { AbstractWorkspace } from "../abstract-workspace.js";
 import { computeDirSet } from "./compute-dir-set.js";
 import { InMemoryFileSystem } from "./in-memory-file-system.js";
 
 export class InMemoryWorkspace extends AbstractWorkspace {
-  constructor(root: string, fs: FileSystem, scopes: readonly IgnoreScope[]) {
-    super(root, fs, scopes);
+  constructor(root: string, fs: FileSystem, ignore: WorkspaceIgnore) {
+    super(root, fs, ignore);
   }
 
   static async create(args: {
@@ -16,7 +16,7 @@ export class InMemoryWorkspace extends AbstractWorkspace {
     const fs = new InMemoryFileSystem(args.files);
     const startDir = args.startDir ?? InMemoryWorkspace.defaultStartDir(args.files);
     const deps = await AbstractWorkspace.resolveDependencies({ startDir, fs });
-    return new InMemoryWorkspace(deps.root, deps.fs, deps.scopes);
+    return new InMemoryWorkspace(deps.root, deps.fs, deps.ignore);
   }
 
   private static defaultStartDir(files: Record<string, string>): string {

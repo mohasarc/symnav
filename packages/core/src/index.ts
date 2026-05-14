@@ -17,9 +17,4 @@ export type { LanguageBackend } from "./backend/language-backend.js";
 export { BackendRouter } from "./backend/backend-router.js";
 export { UserFacingError } from "./errors.js";
 export { UnsupportedFileError } from "./backend/errors.js";
-export {
-  FileNotFoundError,
-  IgnoredFileError,
-  NotInWorkspaceError,
-  OutsideWorkspaceError,
-} from "./workspace/errors.js";
+export { FileNotFoundError, IgnoredFileError, OutsideWorkspaceError } from "./workspace/errors.js";

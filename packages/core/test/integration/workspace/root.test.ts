@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createWorkspace, InMemoryFileSystem, NotInWorkspaceError } from "@symnav/core";
+import { createWorkspace, InMemoryFileSystem } from "@symnav/core";
 
 describe("Workspace root detection", () => {
   it("finds the nearest .git ancestor", async () => {
@@ -24,7 +24,7 @@ describe("Workspace root detection", () => {
     expect(ws.root).toBe("/repo");
   });
 
-  it("rejects with NotInWorkspaceError when no .git ancestor exists", async () => {
+  it("rejects with a UserFacingError when no .git ancestor exists", async () => {
     await expect(
       createWorkspace({
         startDir: "/elsewhere",
@@ -32,6 +32,8 @@ describe("Workspace root detection", () => {
           "/elsewhere/x.ts": "export {};\n",
         }),
       }),
-    ).rejects.toBeInstanceOf(NotInWorkspaceError);
+    ).rejects.toMatchObject({
+      reason: "not in a git workspace (no .git found in or above /elsewhere)",
+    });
   });
 });

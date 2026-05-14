@@ -9,8 +9,6 @@ describe("UnsupportedFileError", () => {
   });
 
   it("renders a reason citing the extension and input path", () => {
-    expect(new UnsupportedFileError("README.md").reason).toBe(
-      "cannot read .md files (README.md)",
-    );
+    expect(new UnsupportedFileError("README.md").reason).toBe("cannot read .md files (README.md)");
   });
 });

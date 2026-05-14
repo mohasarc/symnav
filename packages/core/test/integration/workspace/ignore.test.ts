@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { createWorkspace, InMemoryFileSystem } from "@symnav/core";
+import { createWorkspace } from "../../../src/workspace/workspace.js";
+import { InMemoryFileSystem } from "../../../src/workspace/in-memory/in-memory-file-system.js";
+import { IgnoredFileError } from "../../../src/workspace/errors.js";
 
-describe("Workspace.isIgnored", () => {
+describe("Workspace ignore handling", () => {
   it("honors a single root .gitignore", async () => {
     const ws = await createWorkspace({
       startDir: "/repo",
@@ -12,8 +14,10 @@ describe("Workspace.isIgnored", () => {
         "/repo/src/x.ts": "",
       }),
     });
-    expect(ws.isIgnored("dist/x.js")).toBe(true);
-    expect(ws.isIgnored("src/x.ts")).toBe(false);
+    await expect(ws.resolveInputPath("dist/x.js", "/repo")).rejects.toBeInstanceOf(
+      IgnoredFileError,
+    );
+    expect(await ws.resolveInputPath("src/x.ts", "/repo")).toBe("src/x.ts");
   });
 
   it("aggregates subdirectory .gitignore files", async () => {
@@ -27,8 +31,10 @@ describe("Workspace.isIgnored", () => {
         "/repo/temp.ts": "",
       }),
     });
-    expect(ws.isIgnored("pkg/temp.ts")).toBe(true);
-    expect(ws.isIgnored("temp.ts")).toBe(false);
+    await expect(ws.resolveInputPath("pkg/temp.ts", "/repo")).rejects.toBeInstanceOf(
+      IgnoredFileError,
+    );
+    expect(await ws.resolveInputPath("temp.ts", "/repo")).toBe("temp.ts");
   });
 
   it("anchors sub-.gitignore patterns with internal slashes to that subdirectory", async () => {
@@ -41,8 +47,12 @@ describe("Workspace.isIgnored", () => {
         "/repo/pkg/sub/build/output/x.js": "",
       }),
     });
-    expect(ws.isIgnored("pkg/build/output/x.js")).toBe(true);
-    expect(ws.isIgnored("pkg/sub/build/output/x.js")).toBe(false);
+    await expect(ws.resolveInputPath("pkg/build/output/x.js", "/repo")).rejects.toBeInstanceOf(
+      IgnoredFileError,
+    );
+    expect(await ws.resolveInputPath("pkg/sub/build/output/x.js", "/repo")).toBe(
+      "pkg/sub/build/output/x.js",
+    );
   });
 
   it("honors negation", async () => {
@@ -56,11 +66,13 @@ describe("Workspace.isIgnored", () => {
         "/repo/dist/other.js": "",
       }),
     });
-    expect(ws.isIgnored("dist/keep.js")).toBe(false);
-    expect(ws.isIgnored("dist/other.js")).toBe(true);
+    expect(await ws.resolveInputPath("dist/keep.js", "/repo")).toBe("dist/keep.js");
+    await expect(ws.resolveInputPath("dist/other.js", "/repo")).rejects.toBeInstanceOf(
+      IgnoredFileError,
+    );
   });
 
-  it("always rejects .git/ and any path under it", async () => {
+  it("always rejects paths under .git/", async () => {
     const ws = await createWorkspace({
       startDir: "/repo",
       fs: new InMemoryFileSystem({
@@ -68,9 +80,9 @@ describe("Workspace.isIgnored", () => {
         "/repo/src/x.ts": "",
       }),
     });
-    expect(ws.isIgnored(".git")).toBe(true);
-    expect(ws.isIgnored(".git/HEAD")).toBe(true);
-    expect(ws.isIgnored(".git/refs/heads/main")).toBe(true);
+    await expect(ws.resolveInputPath(".git/HEAD", "/repo")).rejects.toBeInstanceOf(
+      IgnoredFileError,
+    );
   });
 
   it("skips walking into ignored directories during workspace construction", async () => {
@@ -92,7 +104,7 @@ describe("Workspace.isIgnored", () => {
     expect(listed).toContain("/repo/src");
   });
 
-  it("returns false for everything (except .git/) when no .gitignore exists", async () => {
+  it("ignores nothing (except .git/) when no .gitignore exists", async () => {
     const ws = await createWorkspace({
       startDir: "/repo",
       fs: new InMemoryFileSystem({
@@ -101,8 +113,10 @@ describe("Workspace.isIgnored", () => {
         "/repo/dist/x.js": "",
       }),
     });
-    expect(ws.isIgnored("src/x.ts")).toBe(false);
-    expect(ws.isIgnored("dist/x.js")).toBe(false);
-    expect(ws.isIgnored(".git/HEAD")).toBe(true);
+    expect(await ws.resolveInputPath("src/x.ts", "/repo")).toBe("src/x.ts");
+    expect(await ws.resolveInputPath("dist/x.js", "/repo")).toBe("dist/x.js");
+    await expect(ws.resolveInputPath(".git/HEAD", "/repo")).rejects.toBeInstanceOf(
+      IgnoredFileError,
+    );
   });
 });

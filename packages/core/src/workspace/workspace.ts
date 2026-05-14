@@ -13,10 +13,8 @@ import { posixify } from "./paths/posixify.js";
 
 export interface Workspace {
   readonly root: string;
-  toRelative(absPath: string): string;
   toAbsolute(relPath: string): string;
   isInWorkspace(absPath: string): boolean;
-  isIgnored(relPath: string): boolean;
   resolveInputPath(inputPath: string, fromDir: string): Promise<string>;
 }
 
@@ -27,7 +25,15 @@ class DefaultWorkspace implements Workspace {
     private readonly ignore: WorkspaceIgnore,
   ) {}
 
-  toRelative(absPath: string): string {
+  toAbsolute(relPath: string): string {
+    return relPath === "" ? this.root : `${this.root}/${relPath}`;
+  }
+
+  isInWorkspace(absPath: string): boolean {
+    return isUnderRoot(posixify(absPath), this.root);
+  }
+
+  private toRelative(absPath: string): string {
     const normalized = posixify(absPath);
     if (!isUnderRoot(normalized, this.root)) {
       throw new Error(`Path ${absPath} is not under workspace root ${this.root}`);
@@ -38,15 +44,7 @@ class DefaultWorkspace implements Workspace {
     return normalized.slice(this.root.length + 1);
   }
 
-  toAbsolute(relPath: string): string {
-    return relPath === "" ? this.root : `${this.root}/${relPath}`;
-  }
-
-  isInWorkspace(absPath: string): boolean {
-    return isUnderRoot(posixify(absPath), this.root);
-  }
-
-  isIgnored(relPath: string): boolean {
+  private isIgnored(relPath: string): boolean {
     return this.ignore.isIgnored(relPath);
   }
 

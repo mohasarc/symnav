@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { createWorkspace, InMemoryFileSystem } from "@symnav/core";
+import { createWorkspace } from "../../../src/workspace/workspace.js";
+import { InMemoryFileSystem } from "../../../src/workspace/in-memory/in-memory-file-system.js";
 
 describe("Windows-shaped paths", () => {
   it("resolves Windows-shaped startDir through the workspace", async () => {
@@ -7,17 +8,13 @@ describe("Windows-shaped paths", () => {
       startDir: "C:\\repo\\src",
       fs: new InMemoryFileSystem({
         "C:/repo/.git/HEAD": "ref: refs/heads/main\n",
-        "C:/repo/.gitignore": "dist/\n",
         "C:/repo/src/x.ts": "",
-        "C:/repo/dist/x.js": "",
       }),
     });
     expect(ws.root).toBe("C:/repo");
-    expect(ws.toRelative("C:\\repo\\src\\x.ts")).toBe("src/x.ts");
     expect(ws.toAbsolute("src/x.ts")).toBe("C:/repo/src/x.ts");
     expect(ws.isInWorkspace("C:\\repo\\src\\x.ts")).toBe(true);
     expect(ws.isInWorkspace("C:\\other\\x.ts")).toBe(false);
-    expect(ws.isIgnored("dist/x.js")).toBe(true);
   });
 
   it("rejects UNC paths with a clear error", async () => {
@@ -31,7 +28,7 @@ describe("Windows-shaped paths", () => {
 });
 
 describe("Workspace path helpers", () => {
-  it("toRelative and toAbsolute round-trip via POSIX paths", async () => {
+  it("resolveInputPath and toAbsolute round-trip via POSIX paths", async () => {
     const ws = await createWorkspace({
       startDir: "/repo",
       fs: new InMemoryFileSystem({
@@ -40,7 +37,7 @@ describe("Workspace path helpers", () => {
       }),
     });
     const abs = "/repo/pkg/sub/file.ts";
-    const rel = ws.toRelative(abs);
+    const rel = await ws.resolveInputPath(abs, "/repo");
     expect(rel).toBe("pkg/sub/file.ts");
     expect(ws.toAbsolute(rel)).toBe(abs);
   });

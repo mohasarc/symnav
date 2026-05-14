@@ -1,11 +1,11 @@
 import { describe, expect, it } from "vitest";
+import { createWorkspace } from "../../../src/workspace/workspace.js";
+import { InMemoryFileSystem } from "../../../src/workspace/in-memory/in-memory-file-system.js";
 import {
-  createWorkspace,
   FileNotFoundError,
   IgnoredFileError,
-  InMemoryFileSystem,
   OutsideWorkspaceError,
-} from "@symnav/core";
+} from "../../../src/workspace/errors.js";
 
 describe("Workspace.resolveInputPath", () => {
   it("resolves a relative input against fromDir into a workspace-relative POSIX path", async () => {

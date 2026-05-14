@@ -1,0 +1,95 @@
+import ignore from "ignore";
+import type { Ignore } from "ignore";
+import { posix } from "node:path";
+import type { FileSystem } from "../file-system.js";
+import { relPathFromRoot } from "../paths/rel-from-root.js";
+
+interface IgnoreScope {
+  readonly dirRelToRoot: string;
+  readonly matcher: Ignore;
+}
+
+function isGitInternal(relPath: string): boolean {
+  return relPath === ".git" || relPath.startsWith(".git/");
+}
+
+function pathRelativeToScope(relPath: string, dirRelToRoot: string): string | null {
+  if (dirRelToRoot === "") {
+    return relPath;
+  }
+  if (relPath === dirRelToRoot) {
+    return "";
+  }
+  const prefix = `${dirRelToRoot}/`;
+  if (relPath.startsWith(prefix)) {
+    return relPath.slice(prefix.length);
+  }
+  return null;
+}
+
+function matchesAnyScope(relPath: string, scopes: readonly IgnoreScope[]): boolean {
+  for (const scope of scopes) {
+    const relToScope = pathRelativeToScope(relPath, scope.dirRelToRoot);
+    if (relToScope === null) {
+      continue;
+    }
+    if (scope.matcher.ignores(relToScope)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+export class WorkspaceIgnore {
+  private constructor(private readonly scopes: readonly IgnoreScope[]) {}
+
+  static build(root: string, fs: FileSystem): WorkspaceIgnore {
+    const scopes: IgnoreScope[] = [];
+    WorkspaceIgnore.walk(root, root, fs, scopes);
+    return new WorkspaceIgnore(scopes);
+  }
+
+  private static walk(
+    dirAbs: string,
+    root: string,
+    fs: FileSystem,
+    scopes: IgnoreScope[],
+  ): void {
+    const dirRelToRoot = relPathFromRoot(dirAbs, root);
+    const gitignorePath = posix.join(dirAbs, ".gitignore");
+    if (fs.existsSync(gitignorePath) && !fs.isDirectorySync(gitignorePath)) {
+      const content = fs.readFileSync(gitignorePath);
+      scopes.push({ dirRelToRoot, matcher: ignore().add(content) });
+    }
+    let entries: readonly string[];
+    try {
+      entries = fs.listDirSync(dirAbs);
+    } catch {
+      return;
+    }
+    for (const entry of entries) {
+      const childAbs = posix.join(dirAbs, entry);
+      if (!fs.isDirectorySync(childAbs)) {
+        continue;
+      }
+      const childRelToRoot = dirRelToRoot === "" ? entry : `${dirRelToRoot}/${entry}`;
+      if (isGitInternal(childRelToRoot)) {
+        continue;
+      }
+      if (matchesAnyScope(`${childRelToRoot}/`, scopes)) {
+        continue;
+      }
+      WorkspaceIgnore.walk(childAbs, root, fs, scopes);
+    }
+  }
+
+  isIgnored(relPath: string): boolean {
+    if (relPath === "" || relPath === "/") {
+      return false;
+    }
+    if (isGitInternal(relPath)) {
+      return true;
+    }
+    return matchesAnyScope(relPath, this.scopes);
+  }
+}

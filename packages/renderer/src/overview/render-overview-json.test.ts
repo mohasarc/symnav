@@ -1,13 +1,12 @@
 import { describe, expect, it } from "vitest";
 
-import type { FileSymbols, SymbolDecl } from "@symnav/core";
+import type { FileSymbols, SymbolDecl, SymbolKind } from "@symnav/core";
 
 import { renderOverviewJson } from "./render-overview-json.js";
 import { SIGNATURE_CAP_CHARS } from "./signature-cap.js";
 
 function decl(
-  partial: Partial<Omit<SymbolDecl, "kind">> &
-    Pick<SymbolDecl, "name"> & { kind: SymbolDecl["kind"] },
+  partial: Partial<Omit<SymbolDecl, "kind">> & Pick<SymbolDecl, "name"> & { kind: SymbolKind },
 ): SymbolDecl {
   return {
     range: { startLine: 1, endLine: 1 },

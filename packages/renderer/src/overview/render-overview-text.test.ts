@@ -1,20 +1,18 @@
 import { describe, expect, it } from "vitest";
 
-import type { FileSymbols, SymbolDecl } from "@symnav/core";
+import type { FileSymbols, SymbolDecl, SymbolKind } from "@symnav/core";
 
 import { renderOverviewText } from "./render-overview-text.js";
 import { SIGNATURE_CAP_CHARS, SIGNATURE_ELLIPSIS } from "./signature-cap.js";
 
 function decl(
-  partial: Partial<Omit<SymbolDecl, "kind">> & Pick<SymbolDecl, "name"> & { kind: string },
+  partial: Partial<Omit<SymbolDecl, "kind">> & Pick<SymbolDecl, "name"> & { kind: SymbolKind },
 ): SymbolDecl {
-  const { kind, ...rest } = partial;
   return {
     range: { startLine: 1, endLine: 1 },
     signatureSource: "",
     children: [],
-    ...rest,
-    kind: { role: "value", nativeLabel: kind },
+    ...partial,
   };
 }
 
@@ -36,7 +34,7 @@ describe("renderOverviewText", () => {
       filePath: "src/file.ts",
       symbols: [
         decl({
-          kind: "function",
+          kind: { role: "callable", nativeLabel: "function" },
           name: "greet",
           range: { startLine: 4, endLine: 4 },
           signatureSource: "function greet(name: string): void",
@@ -55,7 +53,7 @@ describe("renderOverviewText", () => {
       filePath: "src/file.ts",
       symbols: [
         decl({
-          kind: "function",
+          kind: { role: "callable", nativeLabel: "function" },
           name: "greet",
           range: { startLine: 4, endLine: 4 },
           signatureSource: "function greet(): void",
@@ -73,7 +71,7 @@ describe("renderOverviewText", () => {
       filePath: "src/file.ts",
       symbols: [
         decl({
-          kind: "function",
+          kind: { role: "callable", nativeLabel: "function" },
           name: "greet",
           range: { startLine: 1, endLine: 1 },
           signatureSource: signature,
@@ -89,7 +87,7 @@ describe("renderOverviewText", () => {
       filePath: "src/file.ts",
       symbols: [
         decl({
-          kind: "function",
+          kind: { role: "callable", nativeLabel: "function" },
           name: "wide",
           range: { startLine: 1, endLine: 1 },
           signatureSource: oversized,
@@ -108,19 +106,19 @@ describe("renderOverviewText", () => {
       filePath: "src/file.ts",
       symbols: [
         decl({
-          kind: "variable",
+          kind: { role: "value", nativeLabel: "variable" },
           name: "A",
           range: { startLine: 1, endLine: 1 },
           signatureSource: "const A: number",
         }),
         decl({
-          kind: "variable",
+          kind: { role: "value", nativeLabel: "variable" },
           name: "B",
           range: { startLine: 3, endLine: 3 },
           signatureSource: "const B: number",
         }),
         decl({
-          kind: "variable",
+          kind: { role: "value", nativeLabel: "variable" },
           name: "C",
           range: { startLine: 5, endLine: 5 },
           signatureSource: "const C: number",
@@ -150,25 +148,25 @@ describe("renderOverviewText", () => {
       filePath: "src/checkout.ts",
       symbols: [
         decl({
-          kind: "class",
+          kind: { role: "container", nativeLabel: "class" },
           name: "CheckoutService",
           range: { startLine: 12, endLine: 96 },
           signatureSource: "class CheckoutService",
           children: [
             decl({
-              kind: "constructor",
+              kind: { role: "callable", nativeLabel: "constructor" },
               name: "constructor",
               range: { startLine: 24, endLine: 34 },
               signatureSource: "constructor(p: P, i: I)",
             }),
             decl({
-              kind: "method",
+              kind: { role: "callable", nativeLabel: "method" },
               name: "processPayment",
               range: { startLine: 42, endLine: 78 },
               signatureSource: "async processPayment(order: Order): Promise<Receipt>",
             }),
             decl({
-              kind: "method",
+              kind: { role: "callable", nativeLabel: "method" },
               name: "validateOrder",
               range: { startLine: 80, endLine: 94 },
               signatureSource: "private validateOrder(order: Order): void",
@@ -200,19 +198,19 @@ describe("renderOverviewText", () => {
       filePath: "src/nested.ts",
       symbols: [
         decl({
-          kind: "namespace",
+          kind: { role: "container", nativeLabel: "namespace" },
           name: "Outer",
           range: { startLine: 1, endLine: 50 },
           signatureSource: "namespace Outer",
           children: [
             decl({
-              kind: "class",
+              kind: { role: "container", nativeLabel: "class" },
               name: "Inner",
               range: { startLine: 5, endLine: 40 },
               signatureSource: "class Inner",
               children: [
                 decl({
-                  kind: "method",
+                  kind: { role: "callable", nativeLabel: "method" },
                   name: "method",
                   range: { startLine: 10, endLine: 20 },
                   signatureSource: "method(): void",
@@ -243,13 +241,13 @@ describe("renderOverviewText", () => {
       filePath: "src/file.ts",
       symbols: [
         decl({
-          kind: "variable",
+          kind: { role: "value", nativeLabel: "variable" },
           name: "single",
           range: { startLine: 8, endLine: 8 },
           signatureSource: "const single: number",
         }),
         decl({
-          kind: "function",
+          kind: { role: "callable", nativeLabel: "function" },
           name: "multi",
           range: { startLine: 12, endLine: 96 },
           signatureSource: "function multi(): void",
@@ -266,15 +264,15 @@ describe("renderOverviewText", () => {
       filePath: "src/nested.ts",
       symbols: [
         decl({
-          kind: "namespace",
+          kind: { role: "container", nativeLabel: "namespace" },
           name: "Outer",
           children: [
             decl({
-              kind: "class",
+              kind: { role: "container", nativeLabel: "class" },
               name: "Inner",
               children: [
                 decl({
-                  kind: "method",
+                  kind: { role: "callable", nativeLabel: "method" },
                   name: "deep",
                 }),
               ],

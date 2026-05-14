@@ -49,12 +49,7 @@ export class WorkspaceIgnore {
     return new WorkspaceIgnore(scopes);
   }
 
-  private static walk(
-    dirAbs: string,
-    root: string,
-    fs: FileSystem,
-    scopes: IgnoreScope[],
-  ): void {
+  private static walk(dirAbs: string, root: string, fs: FileSystem, scopes: IgnoreScope[]): void {
     const dirRelToRoot = relPathFromRoot(dirAbs, root);
     const gitignorePath = posix.join(dirAbs, ".gitignore");
     if (fs.existsSync(gitignorePath) && !fs.isDirectorySync(gitignorePath)) {

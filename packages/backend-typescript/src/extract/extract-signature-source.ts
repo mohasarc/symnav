@@ -1,6 +1,10 @@
 import { Node } from "ts-morph";
 
 export function extractSignatureSource(node: Node): string {
+  return dedentContinuationLines(rawSignatureSource(node), ambientIndentation(node));
+}
+
+function rawSignatureSource(node: Node): string {
   if (Node.isExportAssignment(node)) return node.getExpression().getText();
   if (Node.isTypeAliasDeclaration(node)) return cutBeforeTerminator(node);
   if (
@@ -12,6 +16,27 @@ export function extractSignatureSource(node: Node): string {
     return cutBeforeOpeningBrace(node);
   }
   return cutBeforeBodyOrTerminator(node);
+}
+
+function ambientIndentation(node: Node): number {
+  return node.getStart() - node.getStartLinePos();
+}
+
+function dedentContinuationLines(source: string, ambient: number): string {
+  const lines = source.split("\n");
+  if (lines.length <= 1 || ambient === 0) {
+    return source;
+  }
+  const dedented = lines.map((line, index) => (index === 0 ? line : stripLeading(line, ambient)));
+  return dedented.join("\n");
+}
+
+function stripLeading(line: string, max: number): string {
+  let removable = 0;
+  while (removable < max && line[removable] === " ") {
+    removable += 1;
+  }
+  return line.slice(removable);
 }
 
 function cutBeforeOpeningBrace(node: Node): string {

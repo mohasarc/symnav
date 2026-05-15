@@ -14,7 +14,12 @@
             "endLine": 4,
             "startLine": 2
           },
-          "signatureSource": "greet(name: string): string"
+          "signature": {
+            "lines": [
+              "greet(name: string): string"
+            ],
+            "startLine": 2
+          }
         },
         {
           "children": [],
@@ -27,7 +32,12 @@
             "endLine": 8,
             "startLine": 6
           },
-          "signatureSource": "shout(name: string): string"
+          "signature": {
+            "lines": [
+              "shout(name: string): string"
+            ],
+            "startLine": 6
+          }
         }
       ],
       "kind": {
@@ -39,7 +49,12 @@
         "endLine": 9,
         "startLine": 1
       },
-      "signatureSource": "export class Greeter"
+      "signature": {
+        "lines": [
+          "export class Greeter"
+        ],
+        "startLine": 1
+      }
     }
   ]
 }

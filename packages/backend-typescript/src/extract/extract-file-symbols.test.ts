@@ -111,16 +111,39 @@ describe("extractFileSymbols", () => {
     ]);
     expect(result.symbols[0]?.range).toEqual({ startLine: 1, endLine: 1 });
     expect(result.symbols[1]?.range).toEqual({ startLine: 1, endLine: 1 });
-    expect(result.symbols[0]?.signatureSource).toBe("const a = 1");
-    expect(result.symbols[1]?.signatureSource).toBe("const b = 2");
+    expect(result.symbols[0]?.signature.lines).toEqual(["const a = 1"]);
+    expect(result.symbols[1]?.signature.lines).toEqual(["const b = 2"]);
   });
 
-  it("variable signatureSource preserves modifiers, type annotation, and initializer", () => {
-    expect(symbolsOf("export const x = 1;").symbols[0]?.signatureSource).toBe("export const x = 1");
-    expect(symbolsOf("export const x: number = 1;").symbols[0]?.signatureSource).toBe(
+  it("variable signature preserves modifiers, type annotation, and initializer", () => {
+    expect(symbolsOf("export const x = 1;").symbols[0]?.signature.lines).toEqual([
+      "export const x = 1",
+    ]);
+    expect(symbolsOf("export const x: number = 1;").symbols[0]?.signature.lines).toEqual([
       "export const x: number = 1",
-    );
-    expect(symbolsOf("declare const y: T;").symbols[0]?.signatureSource).toBe("declare const y: T");
+    ]);
+    expect(symbolsOf("declare const y: T;").symbols[0]?.signature.lines).toEqual([
+      "declare const y: T",
+    ]);
+  });
+
+  it("signature carries startLine equal to range.startLine and newline-free lines", () => {
+    const result = symbolsOf("export const x = 1;");
+    const decl = result.symbols[0];
+    if (!decl) throw new Error("expected decl");
+    expect(decl.signature.startLine).toBe(decl.range.startLine);
+    expect(decl.signature.lines.length).toBeGreaterThan(0);
+    for (const line of decl.signature.lines) {
+      expect(line).not.toContain("\n");
+    }
+  });
+
+  it("a multi-line declaration produces one signature line per source line", () => {
+    const source = ["function multi(", "  arg: number,", ") {", "  return arg;", "}"].join("\n");
+    const decl = symbolsOf(source).symbols[0];
+    if (!decl) throw new Error("expected decl");
+    expect(decl.signature.startLine).toBe(1);
+    expect(decl.signature.lines).toEqual(["function multi(", "  arg: number,", ")"]);
   });
 
   it("single-line decls have startLine === endLine; multi-line decls span exact source lines", () => {

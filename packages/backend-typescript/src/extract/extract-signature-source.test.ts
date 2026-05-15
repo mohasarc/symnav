@@ -103,4 +103,36 @@ describe("extractSignatureSource", () => {
       expect(extractSignatureSource(stmt)).toBe("{ handler: 'main' }");
     });
   });
+
+  describe("multi-line declarations", () => {
+    it("leaves a top-level multi-line signature flush", () => {
+      const file = parseTypeScriptSource(
+        ["function configure(", "  host: string,", "): void {", "  void host;", "}"].join("\n"),
+      );
+      expect(extractSignatureSource(firstStatement(file))).toBe(
+        ["function configure(", "  host: string,", "): void"].join("\n"),
+      );
+    });
+
+    it("strips ambient indentation from continuation lines of a nested declaration", () => {
+      const file = parseTypeScriptSource(
+        [
+          "class Server {",
+          "  start(",
+          "    host: string,",
+          "  ): void {",
+          "    void host;",
+          "  }",
+          "}",
+        ].join("\n"),
+      );
+      const cls = firstStatement(file);
+      if (!Node.isClassDeclaration(cls)) throw new Error("expected class");
+      const member = cls.getMembers()[0];
+      if (!member) throw new Error("expected member");
+      expect(extractSignatureSource(member)).toBe(
+        ["start(", "  host: string,", "): void"].join("\n"),
+      );
+    });
+  });
 });

@@ -1,0 +1,66 @@
+{
+  "filePath": "multi-line-signature.ts",
+  "symbols": [
+    {
+      "children": [],
+      "kind": {
+        "nativeLabel": "function",
+        "role": "callable"
+      },
+      "name": "configure",
+      "range": {
+        "endLine": 7,
+        "startLine": 1
+      },
+      "signature": {
+        "lines": [
+          "export function configure(",
+          "  host: string,",
+          "  port: number,",
+          "): void"
+        ],
+        "startLine": 1
+      }
+    },
+    {
+      "children": [
+        {
+          "children": [],
+          "kind": {
+            "nativeLabel": "method",
+            "role": "callable"
+          },
+          "name": "start",
+          "range": {
+            "endLine": 16,
+            "startLine": 10
+          },
+          "signature": {
+            "lines": [
+              "start(",
+              "  host: string,",
+              "  port: number,",
+              "): void"
+            ],
+            "startLine": 10
+          }
+        }
+      ],
+      "kind": {
+        "nativeLabel": "class",
+        "role": "container"
+      },
+      "name": "Server",
+      "range": {
+        "endLine": 17,
+        "startLine": 9
+      },
+      "signature": {
+        "lines": [
+          "export class Server"
+        ],
+        "startLine": 9
+      }
+    }
+  ]
+}

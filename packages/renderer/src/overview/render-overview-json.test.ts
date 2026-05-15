@@ -3,14 +3,13 @@ import { describe, expect, it } from "vitest";
 import type { FileSymbols, SymbolDecl, SymbolKind } from "@symnav/core";
 
 import { renderOverviewJson } from "./render-overview-json.js";
-import { SIGNATURE_CAP_CHARS } from "./signature-cap.js";
 
 function decl(
   partial: Partial<Omit<SymbolDecl, "kind">> & Pick<SymbolDecl, "name"> & { kind: SymbolKind },
 ): SymbolDecl {
   return {
     range: { startLine: 1, endLine: 1 },
-    signatureSource: "",
+    signature: { startLine: 1, lines: [""] },
     children: [],
     ...partial,
   };
@@ -25,7 +24,7 @@ describe("renderOverviewJson", () => {
           kind: { role: "callable", nativeLabel: "function" },
           name: "leaf",
           range: { startLine: 4, endLine: 4 },
-          signatureSource: "function leaf(): void",
+          signature: { startLine: 4, lines: ["function leaf(): void"] },
         }),
       ],
     };
@@ -37,7 +36,7 @@ describe("renderOverviewJson", () => {
           kind: { role: "callable", nativeLabel: "function" },
           name: "leaf",
           range: { startLine: 4, endLine: 4 },
-          signatureSource: "function leaf(): void",
+          signature: { startLine: 4, lines: ["function leaf(): void"] },
           children: [],
         },
       ],
@@ -51,7 +50,7 @@ describe("renderOverviewJson", () => {
         decl({
           kind: { role: "callable", nativeLabel: "function" },
           name: "leaf",
-          signatureSource: "function leaf(): void",
+          signature: { startLine: 1, lines: ["function leaf(): void"] },
         }),
       ],
     };
@@ -64,28 +63,33 @@ describe("renderOverviewJson", () => {
     expect(lines[1]).toBe(`  "filePath": "src/file.ts",`);
     expect(lines[2]).toBe(`  "symbols": [`);
 
-    const declKeyOrder = ["children", "kind", "name", "range", "signatureSource"];
+    const declKeyOrder = ["children", "kind", "name", "range", "signature"];
     const declKeyLines = lines
       .filter((line) => /^ {6}"[a-zA-Z]+":/.test(line))
       .map((line) => line.trim().split('"')[1]);
     expect(declKeyLines).toEqual(declKeyOrder);
   });
 
-  it("emits signatureSource uncapped even when the source exceeds SIGNATURE_CAP_CHARS", () => {
-    const oversized = "x".repeat(SIGNATURE_CAP_CHARS + 50);
+  it("emits the signature object with its startLine and lines", () => {
     const file: FileSymbols = {
       filePath: "src/file.ts",
       symbols: [
         decl({
           kind: { role: "callable", nativeLabel: "function" },
-          name: "wide",
-          signatureSource: oversized,
+          name: "configure",
+          range: { startLine: 10, endLine: 12 },
+          signature: {
+            startLine: 10,
+            lines: ["function configure(", "  host: string,", "): void"],
+          },
         }),
       ],
     };
-    const output = renderOverviewJson(file);
-    expect(output).toContain(oversized);
-    expect(output).not.toContain("…");
+    const parsed = JSON.parse(renderOverviewJson(file)) as FileSymbols;
+    expect(parsed.symbols[0]?.signature).toEqual({
+      startLine: 10,
+      lines: ["function configure(", "  host: string,", "): void"],
+    });
   });
 
   it("renders identical bytes for identical IR across two calls", () => {
@@ -96,13 +100,13 @@ describe("renderOverviewJson", () => {
           kind: { role: "container", nativeLabel: "class" },
           name: "C",
           range: { startLine: 1, endLine: 10 },
-          signatureSource: "class C",
+          signature: { startLine: 1, lines: ["class C"] },
           children: [
             decl({
               kind: { role: "callable", nativeLabel: "method" },
               name: "m",
               range: { startLine: 2, endLine: 4 },
-              signatureSource: "m(): void",
+              signature: { startLine: 2, lines: ["m(): void"] },
             }),
           ],
         }),

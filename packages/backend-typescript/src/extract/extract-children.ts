@@ -8,7 +8,8 @@ import {
   type VariableDeclarationKind,
   type VariableStatement,
 } from "ts-morph";
-import type { LineRange, SymbolDecl } from "@symnav/core";
+import type { LineRange, Signature, SymbolDecl } from "@symnav/core";
+import { splitSignatureLines } from "@symnav/core";
 
 import { extractSignatureSource } from "./extract-signature-source.js";
 import { nodeKind } from "./node-kind.js";
@@ -56,12 +57,13 @@ function toMemberDecl(member: Node): SymbolDecl[] {
     if (IGNORED_MEMBER_KINDS.has(member.getKind())) return [];
     throw new Error(`Unrecognised class/interface member kind: ${member.getKindName()}`);
   }
+  const range = nodeRange(member);
   return [
     {
       kind: { role: roleOf(kind), nativeLabel: kind },
       name: nodeName(member),
-      range: nodeRange(member),
-      signatureSource: extractSignatureSource(member),
+      range,
+      signature: signatureFrom(range.startLine, extractSignatureSource(member)),
       children: [],
     },
   ];
@@ -76,12 +78,13 @@ function toStatementDecl(stmt: Node): SymbolDecl[] {
   if (Node.isVariableStatement(stmt)) {
     return expandVariableStatement(stmt);
   }
+  const range = nodeRange(stmt);
   return [
     {
       kind: { role: roleOf(kind), nativeLabel: kind },
       name: nodeName(stmt),
-      range: nodeRange(stmt),
-      signatureSource: extractSignatureSource(stmt),
+      range,
+      signature: signatureFrom(range.startLine, extractSignatureSource(stmt)),
       children: hasChildren(stmt) ? extractChildren(stmt) : [],
     },
   ];
@@ -90,13 +93,18 @@ function toStatementDecl(stmt: Node): SymbolDecl[] {
 function expandVariableStatement(stmt: VariableStatement): SymbolDecl[] {
   const declList = stmt.getDeclarationList();
   const keyword = declList.getDeclarationKind();
+  const range = nodeRange(stmt);
   return declList.getDeclarations().map((decl) => ({
     kind: { role: roleOf("variable"), nativeLabel: "variable" },
     name: decl.getName(),
-    range: nodeRange(stmt),
-    signatureSource: singleVariableSignature(stmt, keyword, decl),
+    range,
+    signature: signatureFrom(range.startLine, singleVariableSignature(stmt, keyword, decl)),
     children: [],
   }));
+}
+
+function signatureFrom(startLine: number, raw: string): Signature {
+  return { startLine, lines: splitSignatureLines(raw) };
 }
 
 function singleVariableSignature(

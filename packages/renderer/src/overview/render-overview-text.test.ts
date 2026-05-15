@@ -1,19 +1,25 @@
 import { describe, expect, it } from "vitest";
 
-import type { FileSymbols, SymbolDecl, SymbolKind } from "@symnav/core";
+import type { FileSymbols, Signature, SymbolDecl } from "@symnav/core";
 
 import { renderOverviewText } from "./render-overview-text.js";
-import { SIGNATURE_CAP_CHARS, SIGNATURE_ELLIPSIS } from "./signature-cap.js";
+import { SIGNATURE_CAP_LINES, SIGNATURE_ELLIPSIS } from "./signature-cap.js";
 
 function decl(
-  partial: Partial<Omit<SymbolDecl, "kind">> & Pick<SymbolDecl, "name"> & { kind: SymbolKind },
+  partial: Partial<Omit<SymbolDecl, "kind">> & Pick<SymbolDecl, "name"> & { kind: string },
 ): SymbolDecl {
+  const { kind, ...rest } = partial;
   return {
     range: { startLine: 1, endLine: 1 },
-    signatureSource: "",
+    signature: { startLine: 1, lines: [""] },
     children: [],
-    ...partial,
+    ...rest,
+    kind: { role: "value", nativeLabel: kind },
   };
+}
+
+function signature(startLine: number, ...lines: string[]): Signature {
+  return { startLine, lines };
 }
 
 function assertSingleTrailingNewline(output: string): void {
@@ -29,21 +35,21 @@ describe("renderOverviewText", () => {
     assertSingleTrailingNewline(output);
   });
 
-  it("renders a single top-level function flat with a 3-space signature indent", () => {
+  it("renders a single top-level function with its signature line numbered flush", () => {
     const file: FileSymbols = {
       filePath: "src/file.ts",
       symbols: [
         decl({
-          kind: { role: "callable", nativeLabel: "function" },
+          kind: "function",
           name: "greet",
           range: { startLine: 4, endLine: 4 },
-          signatureSource: "function greet(name: string): void",
+          signature: signature(4, "function greet(name: string): void"),
         }),
       ],
     };
     const output = renderOverviewText(file);
     expect(output).toBe(
-      "Overview: src/file.ts\n\n4: greet\n   function greet(name: string): void\n",
+      "Overview: src/file.ts\n\n4: greet\n4: function greet(name: string): void\n",
     );
     assertSingleTrailingNewline(output);
   });
@@ -53,52 +59,77 @@ describe("renderOverviewText", () => {
       filePath: "src/file.ts",
       symbols: [
         decl({
-          kind: { role: "callable", nativeLabel: "function" },
+          kind: "function",
           name: "greet",
           range: { startLine: 4, endLine: 4 },
-          signatureSource: "function greet(): void",
+          signature: signature(4, "function greet(): void"),
         }),
       ],
     };
     assertSingleTrailingNewline(renderOverviewText(file));
   });
 
-  it("emits a signatureSource shorter than SIGNATURE_CAP_CHARS verbatim", () => {
-    const signature = "function greet(name: string): void";
-    expect(signature.length).toBeLessThan(SIGNATURE_CAP_CHARS);
-
+  it("numbers each line of a multi-line signature from startLine and preserves indentation", () => {
     const file: FileSymbols = {
       filePath: "src/file.ts",
       symbols: [
         decl({
-          kind: { role: "callable", nativeLabel: "function" },
-          name: "greet",
-          range: { startLine: 1, endLine: 1 },
-          signatureSource: signature,
+          kind: "function",
+          name: "configure",
+          range: { startLine: 10, endLine: 14 },
+          signature: signature(10, "function configure(", "  host: string,", "): void"),
         }),
       ],
     };
-    expect(renderOverviewText(file)).toContain(`   ${signature}\n`);
+    expect(renderOverviewText(file)).toBe(
+      [
+        "Overview: src/file.ts",
+        "",
+        "10-14: configure",
+        "10: function configure(",
+        "11:   host: string,",
+        "12: ): void",
+        "",
+      ].join("\n"),
+    );
   });
 
-  it("truncates a signatureSource longer than SIGNATURE_CAP_CHARS to the cap and appends SIGNATURE_ELLIPSIS", () => {
-    const oversized = "x".repeat(SIGNATURE_CAP_CHARS + 50);
+  it("returns signature lines at or under SIGNATURE_CAP_LINES unchanged", () => {
+    const lines = Array.from({ length: SIGNATURE_CAP_LINES }, (_, i) => `line ${i}`);
     const file: FileSymbols = {
       filePath: "src/file.ts",
       symbols: [
         decl({
-          kind: { role: "callable", nativeLabel: "function" },
+          kind: "function",
           name: "wide",
-          range: { startLine: 1, endLine: 1 },
-          signatureSource: oversized,
+          range: { startLine: 1, endLine: SIGNATURE_CAP_LINES },
+          signature: signature(1, ...lines),
         }),
       ],
     };
-
     const output = renderOverviewText(file);
-    const expectedHead = oversized.slice(0, SIGNATURE_CAP_CHARS - SIGNATURE_ELLIPSIS.length);
-    expect(output).toContain(`   ${expectedHead}${SIGNATURE_ELLIPSIS}\n`);
-    expect(output).not.toContain(oversized);
+    for (let i = 0; i < lines.length; i += 1) {
+      expect(output).toContain(`${i + 1}: line ${i}\n`);
+    }
+    expect(output).not.toContain(SIGNATURE_ELLIPSIS);
+  });
+
+  it("caps an oversized signature by line count with a final elision marker", () => {
+    const lines = Array.from({ length: SIGNATURE_CAP_LINES + 5 }, (_, i) => `line ${i}`);
+    const file: FileSymbols = {
+      filePath: "src/file.ts",
+      symbols: [
+        decl({
+          kind: "function",
+          name: "wide",
+          range: { startLine: 1, endLine: lines.length },
+          signature: signature(1, ...lines),
+        }),
+      ],
+    };
+    const output = renderOverviewText(file);
+    expect(output).toContain(`${SIGNATURE_CAP_LINES}: ${SIGNATURE_ELLIPSIS}\n`);
+    expect(output).not.toContain(`line ${SIGNATURE_CAP_LINES}`);
   });
 
   it("separates multiple top-level entries with exactly one blank line", () => {
@@ -106,22 +137,22 @@ describe("renderOverviewText", () => {
       filePath: "src/file.ts",
       symbols: [
         decl({
-          kind: { role: "value", nativeLabel: "variable" },
+          kind: "variable",
           name: "A",
           range: { startLine: 1, endLine: 1 },
-          signatureSource: "const A: number",
+          signature: signature(1, "const A: number"),
         }),
         decl({
-          kind: { role: "value", nativeLabel: "variable" },
+          kind: "variable",
           name: "B",
           range: { startLine: 3, endLine: 3 },
-          signatureSource: "const B: number",
+          signature: signature(3, "const B: number"),
         }),
         decl({
-          kind: { role: "value", nativeLabel: "variable" },
+          kind: "variable",
           name: "C",
           range: { startLine: 5, endLine: 5 },
-          signatureSource: "const C: number",
+          signature: signature(5, "const C: number"),
         }),
       ],
     };
@@ -130,13 +161,13 @@ describe("renderOverviewText", () => {
         "Overview: src/file.ts",
         "",
         "1: A",
-        "   const A: number",
+        "1: const A: number",
         "",
         "3: B",
-        "   const B: number",
+        "3: const B: number",
         "",
         "5: C",
-        "   const C: number",
+        "5: const C: number",
         "",
       ].join("\n"),
     );
@@ -148,28 +179,28 @@ describe("renderOverviewText", () => {
       filePath: "src/checkout.ts",
       symbols: [
         decl({
-          kind: { role: "container", nativeLabel: "class" },
+          kind: "class",
           name: "CheckoutService",
           range: { startLine: 12, endLine: 96 },
-          signatureSource: "class CheckoutService",
+          signature: signature(12, "class CheckoutService"),
           children: [
             decl({
-              kind: { role: "callable", nativeLabel: "constructor" },
+              kind: "constructor",
               name: "constructor",
               range: { startLine: 24, endLine: 34 },
-              signatureSource: "constructor(p: P, i: I)",
+              signature: signature(24, "constructor(p: P, i: I)"),
             }),
             decl({
-              kind: { role: "callable", nativeLabel: "method" },
+              kind: "method",
               name: "processPayment",
               range: { startLine: 42, endLine: 78 },
-              signatureSource: "async processPayment(order: Order): Promise<Receipt>",
+              signature: signature(42, "async processPayment(order: Order): Promise<Receipt>"),
             }),
             decl({
-              kind: { role: "callable", nativeLabel: "method" },
+              kind: "method",
               name: "validateOrder",
               range: { startLine: 80, endLine: 94 },
-              signatureSource: "private validateOrder(order: Order): void",
+              signature: signature(80, "private validateOrder(order: Order): void"),
             }),
           ],
         }),
@@ -180,17 +211,52 @@ describe("renderOverviewText", () => {
         "Overview: src/checkout.ts",
         "",
         "12-96: CheckoutService",
-        "   class CheckoutService",
+        "12: class CheckoutService",
         "├── 24-34: CheckoutService::constructor",
-        "│   constructor(p: P, i: I)",
+        "│   24: constructor(p: P, i: I)",
         "├── 42-78: CheckoutService::processPayment",
-        "│   async processPayment(order: Order): Promise<Receipt>",
+        "│   42: async processPayment(order: Order): Promise<Receipt>",
         "└── 80-94: CheckoutService::validateOrder",
-        "    private validateOrder(order: Order): void",
+        "    80: private validateOrder(order: Order): void",
         "",
       ].join("\n"),
     );
     assertSingleTrailingNewline(renderOverviewText(file));
+  });
+
+  it("numbers a nested symbol's multi-line signature under its continuation glyph", () => {
+    const file: FileSymbols = {
+      filePath: "src/server.ts",
+      symbols: [
+        decl({
+          kind: "class",
+          name: "Server",
+          range: { startLine: 1, endLine: 10 },
+          signature: signature(1, "class Server"),
+          children: [
+            decl({
+              kind: "method",
+              name: "start",
+              range: { startLine: 2, endLine: 6 },
+              signature: signature(2, "start(", "  host: string,", "): void"),
+            }),
+          ],
+        }),
+      ],
+    };
+    expect(renderOverviewText(file)).toBe(
+      [
+        "Overview: src/server.ts",
+        "",
+        "1-10: Server",
+        "1: class Server",
+        "└── 2-6: Server::start",
+        "    2: start(",
+        "    3:   host: string,",
+        "    4: ): void",
+        "",
+      ].join("\n"),
+    );
   });
 
   it("renders three-deep nesting using `    ` under a closed branch", () => {
@@ -198,22 +264,22 @@ describe("renderOverviewText", () => {
       filePath: "src/nested.ts",
       symbols: [
         decl({
-          kind: { role: "container", nativeLabel: "namespace" },
+          kind: "namespace",
           name: "Outer",
           range: { startLine: 1, endLine: 50 },
-          signatureSource: "namespace Outer",
+          signature: signature(1, "namespace Outer"),
           children: [
             decl({
-              kind: { role: "container", nativeLabel: "class" },
+              kind: "class",
               name: "Inner",
               range: { startLine: 5, endLine: 40 },
-              signatureSource: "class Inner",
+              signature: signature(5, "class Inner"),
               children: [
                 decl({
-                  kind: { role: "callable", nativeLabel: "method" },
+                  kind: "method",
                   name: "method",
                   range: { startLine: 10, endLine: 20 },
-                  signatureSource: "method(): void",
+                  signature: signature(10, "method(): void"),
                 }),
               ],
             }),
@@ -226,11 +292,11 @@ describe("renderOverviewText", () => {
         "Overview: src/nested.ts",
         "",
         "1-50: Outer",
-        "   namespace Outer",
+        "1: namespace Outer",
         "└── 5-40: Outer::Inner",
-        "    class Inner",
+        "    5: class Inner",
         "    └── 10-20: Outer::Inner::method",
-        "        method(): void",
+        "        10: method(): void",
         "",
       ].join("\n"),
     );
@@ -241,16 +307,16 @@ describe("renderOverviewText", () => {
       filePath: "src/file.ts",
       symbols: [
         decl({
-          kind: { role: "value", nativeLabel: "variable" },
+          kind: "variable",
           name: "single",
           range: { startLine: 8, endLine: 8 },
-          signatureSource: "const single: number",
+          signature: signature(8, "const single: number"),
         }),
         decl({
-          kind: { role: "callable", nativeLabel: "function" },
+          kind: "function",
           name: "multi",
           range: { startLine: 12, endLine: 96 },
-          signatureSource: "function multi(): void",
+          signature: signature(12, "function multi(): void"),
         }),
       ],
     };
@@ -264,15 +330,15 @@ describe("renderOverviewText", () => {
       filePath: "src/nested.ts",
       symbols: [
         decl({
-          kind: { role: "container", nativeLabel: "namespace" },
+          kind: "namespace",
           name: "Outer",
           children: [
             decl({
-              kind: { role: "container", nativeLabel: "class" },
+              kind: "class",
               name: "Inner",
               children: [
                 decl({
-                  kind: { role: "callable", nativeLabel: "method" },
+                  kind: "method",
                   name: "deep",
                 }),
               ],

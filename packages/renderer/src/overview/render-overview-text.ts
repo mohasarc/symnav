@@ -1,25 +1,26 @@
-import type { FileSymbols, LineRange, Signature, SymbolDecl } from "@symnav/core";
+import type { FileSymbols, Signature, SymbolDecl } from "@symnav/core";
 import { buildSymbolPath } from "@symnav/core";
 
+import {
+  BLOCK_SEPARATOR,
+  formatEmptyOverview,
+  formatHeadLine,
+  formatOverviewHeader,
+  formatSignatureLine,
+  treeGlyphsFor,
+} from "./overview-format.js";
 import { capSignatureLines } from "./signature-cap.js";
 
-const TREE_BRANCH = "├── ";
-const TREE_LAST = "└── ";
-const TREE_VERTICAL = "│   ";
-const TREE_SPACE = "    ";
-
 export function renderOverviewText(file: FileSymbols): string {
-  const header = `Overview: ${file.filePath}\n\n`;
   if (file.symbols.length === 0) {
-    return `${header}(no symbols)\n`;
+    return formatEmptyOverview(file.filePath);
   }
-
   const blocks = file.symbols.map((decl) => renderTopLevel(decl, []));
-  return header + blocks.join("\n");
+  return formatOverviewHeader(file.filePath) + blocks.join(BLOCK_SEPARATOR);
 }
 
 function renderTopLevel(decl: SymbolDecl, ancestors: readonly SymbolDecl[]): string {
-  const headLine = `${formatRange(decl.range)}: ${buildSymbolPath(ancestors, decl)}\n`;
+  const headLine = formatHeadLine("", decl.range, buildSymbolPath(ancestors, decl));
   const signatureBlock = renderSignature(decl.signature, "");
   const childrenBlock = renderChildren(decl.children, [...ancestors, decl], "");
   return headLine + signatureBlock + childrenBlock;
@@ -31,10 +32,9 @@ function renderChildren(
   parentPrefix: string,
 ): string {
   return children
-    .map((child, index) => {
-      const isLast = index === children.length - 1;
-      return renderChild(child, ancestors, parentPrefix, isLast);
-    })
+    .map((child, index) =>
+      renderChild(child, ancestors, parentPrefix, index === children.length - 1),
+    )
     .join("");
 }
 
@@ -44,28 +44,20 @@ function renderChild(
   parentPrefix: string,
   isLast: boolean,
 ): string {
-  const branchGlyph = isLast ? TREE_LAST : TREE_BRANCH;
-  const continuationGlyph = isLast ? TREE_SPACE : TREE_VERTICAL;
-
-  const headLine = `${parentPrefix}${branchGlyph}${formatRange(decl.range)}: ${buildSymbolPath(ancestors, decl)}\n`;
-  const signatureBlock = renderSignature(decl.signature, parentPrefix + continuationGlyph);
-  const childrenBlock = renderChildren(
-    decl.children,
-    [...ancestors, decl],
-    parentPrefix + continuationGlyph,
+  const { branchGlyph, continuationGlyph } = treeGlyphsFor(isLast);
+  const headLine = formatHeadLine(
+    parentPrefix + branchGlyph,
+    decl.range,
+    buildSymbolPath(ancestors, decl),
   );
+  const childPrefix = parentPrefix + continuationGlyph;
+  const signatureBlock = renderSignature(decl.signature, childPrefix);
+  const childrenBlock = renderChildren(decl.children, [...ancestors, decl], childPrefix);
   return headLine + signatureBlock + childrenBlock;
 }
 
 function renderSignature(signature: Signature, prefix: string): string {
   return capSignatureLines(signature.lines)
-    .map((text, index) => `${prefix}${signature.startLine + index}: ${text}\n`)
+    .map((text, index) => formatSignatureLine(prefix, signature.startLine + index, text))
     .join("");
-}
-
-function formatRange(range: LineRange): string {
-  if (range.startLine === range.endLine) {
-    return `${range.startLine}`;
-  }
-  return `${range.startLine}-${range.endLine}`;
 }

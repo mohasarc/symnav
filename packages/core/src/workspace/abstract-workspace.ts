@@ -1,9 +1,7 @@
 import type { FileSystem } from "./file-system.js";
 import { NotInWorkspaceError } from "./errors.js";
-import { buildIgnoreScopes } from "./ignore/build-scopes.js";
+import { WorkspaceIgnore } from "./ignore/workspace-ignore.js";
 import { findWorkspaceRoot } from "./paths/find-root.js";
-import type { IgnoreScope } from "./ignore/scope.js";
-import { isIgnoredByScopes } from "./ignore/is-ignored.js";
 import { isUnderRoot } from "./paths/is-under-root.js";
 import { posixify } from "./paths/posixify.js";
 import type { Workspace } from "./workspace.js";
@@ -12,7 +10,7 @@ export abstract class AbstractWorkspace implements Workspace {
   protected constructor(
     public readonly root: string,
     public readonly fs: FileSystem,
-    protected readonly scopes: readonly IgnoreScope[],
+    private readonly ignore: WorkspaceIgnore,
   ) {}
 
   toRelative(absPath: string): string {
@@ -36,19 +34,13 @@ export abstract class AbstractWorkspace implements Workspace {
   }
 
   isIgnored(relPath: string): boolean {
-    if (relPath === "" || relPath === "/") {
-      return false;
-    }
-    if (relPath === ".git" || relPath.startsWith(".git/")) {
-      return true;
-    }
-    return isIgnoredByScopes(relPath, this.scopes);
+    return this.ignore.isIgnored(relPath);
   }
 
   static async resolveDependencies(opts: { startDir: string; fs: FileSystem }): Promise<{
     root: string;
     fs: FileSystem;
-    scopes: IgnoreScope[];
+    ignore: WorkspaceIgnore;
   }> {
     const { fs } = opts;
     const startDir = posixify(opts.startDir);
@@ -56,7 +48,7 @@ export abstract class AbstractWorkspace implements Workspace {
     if (root === null) {
       throw new NotInWorkspaceError(opts.startDir);
     }
-    const scopes = buildIgnoreScopes(root, fs);
-    return { root, fs, scopes };
+    const ignore = WorkspaceIgnore.build(root, fs);
+    return { root, fs, ignore };
   }
 }

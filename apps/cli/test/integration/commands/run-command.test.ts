@@ -2,8 +2,8 @@ import { describe, expect, it } from "vitest";
 import { InMemoryFileSystem, UserFacingError } from "@symnav/core";
 import { Command, runCommand } from "../../../src/command.js";
 import type { CommandContext } from "../../../src/command.js";
-import { FakeLanguageBackend } from "./overview/fake-language-backend.js";
-import { createFakeProgramContext } from "./overview/fake-program-context.js";
+import { FakeLanguageBackend } from "./helpers/fake-language-backend.js";
+import { createFakeProgramContext } from "./helpers/fake-program-context.js";
 
 class StubCommand extends Command<string> {
   constructor(

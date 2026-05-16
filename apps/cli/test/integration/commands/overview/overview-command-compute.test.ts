@@ -10,7 +10,7 @@ import {
 } from "@symnav/core";
 import type { FileSymbols } from "@symnav/core";
 import { OverviewCommand } from "../../../../src/commands/overview/overview-command.js";
-import { FakeLanguageBackend } from "./fake-language-backend.js";
+import { FakeLanguageBackend } from "../helpers/fake-language-backend.js";
 
 describe("OverviewCommand.compute happy path", () => {
   it("returns the backend's FileSymbols for a relative input under cwd=root", async () => {

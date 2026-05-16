@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { InMemoryFileSystem, type FileSymbols } from "@symnav/core";
 import { buildProgram } from "../../../../src/program.js";
-import { FakeLanguageBackend } from "./fake-language-backend.js";
-import { createFakeProgramContext } from "./fake-program-context.js";
+import { FakeLanguageBackend } from "../helpers/fake-language-backend.js";
+import { createFakeProgramContext } from "../helpers/fake-program-context.js";
 
 async function parse(
   argv: readonly string[],

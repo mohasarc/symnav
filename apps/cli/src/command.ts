@@ -1,11 +1,4 @@
-import {
-  BackendRouter,
-  createWorkspace,
-  NodeFileSystem,
-  UserFacingError,
-  type Workspace,
-} from "@symnav/core";
-import { TypeScriptBackend } from "@symnav/backend-typescript";
+import { BackendRouter, createWorkspace, UserFacingError, type Workspace } from "@symnav/core";
 import type { ProgramContext } from "./program-context.js";
 import type { ProgramDependencies } from "./program-dependencies.js";
 
@@ -34,12 +27,11 @@ export async function runCommand<Result>(
 ): Promise<void> {
   const { context, dependencies, cwdOverride, json } = invocation;
   const cwd = cwdOverride ?? context.cwd;
-  const fs = dependencies.fs ?? new NodeFileSystem();
+  const fs = dependencies.fs;
   let result: Result;
   try {
     const workspace = await createWorkspace({ startDir: cwd, fs });
-    const backends = dependencies.backends ? dependencies.backends() : [new TypeScriptBackend(fs)];
-    const router = new BackendRouter(backends);
+    const router = new BackendRouter(dependencies.backends());
     result = await command.compute({ workspace, router, cwd });
   } catch (err) {
     handleError(context, err);

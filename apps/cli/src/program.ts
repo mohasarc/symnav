@@ -1,7 +1,9 @@
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { Command } from "commander";
+import { Command as CommanderCommand } from "commander";
+import { NodeFileSystem } from "@symnav/core";
+import { TypeScriptBackend } from "@symnav/backend-typescript";
 import { registerOverviewCommand } from "./commands/overview/register-overview-command.js";
 import type { ProgramContext } from "./program-context.js";
 import type { ProgramDependencies } from "./program-dependencies.js";
@@ -22,12 +24,21 @@ function defaultContext(): ProgramContext {
   };
 }
 
+function defaultDependencies(): ProgramDependencies {
+  const fs = new NodeFileSystem();
+  return {
+    fs,
+    backends: () => [new TypeScriptBackend(fs)],
+  };
+}
+
 export function buildProgram(
   context?: ProgramContext,
   dependencies?: ProgramDependencies,
-): Command {
+): CommanderCommand {
   const ctx = context ?? defaultContext();
-  const program = new Command();
+  const deps = dependencies ?? defaultDependencies();
+  const program = new CommanderCommand();
   program
     .name("symnav")
     .version(readPackageVersion(), "-v, --version")
@@ -47,6 +58,6 @@ export function buildProgram(
       program.outputHelp({ error: true });
       ctx.exit(1);
     });
-  registerOverviewCommand(program, ctx, dependencies ?? {});
+  registerOverviewCommand(program, ctx, deps);
   return program;
 }

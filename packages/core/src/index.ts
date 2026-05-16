@@ -10,7 +10,7 @@ export { buildSymbolPath } from "./intermediate-representation/symbol-path.js";
 export { splitSignatureLines } from "./intermediate-representation/split-signature-lines.js";
 export type { FileSystem } from "./workspace/file-system.js";
 export { NodeFileSystem } from "./workspace/node-file-system.js";
-export type { Workspace } from "./workspace/workspace.js";
+export type { ResolvedPath, Workspace } from "./workspace/workspace.js";
 export { createWorkspace } from "./workspace/workspace.js";
 export { InMemoryFileSystem } from "./workspace/in-memory/in-memory-file-system.js";
 export type { LanguageBackend } from "./backend/language-backend.js";

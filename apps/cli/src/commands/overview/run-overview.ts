@@ -10,10 +10,10 @@ export interface RunOverviewArgs {
 
 export async function runOverview(args: RunOverviewArgs): Promise<FileSymbols> {
   const { workspace, router, cwd, inputPath } = args;
-  const relativePath = await workspace.resolveInputPath(inputPath, cwd);
-  const backend = router.find(relativePath);
+  const path = await workspace.resolveInputPath(inputPath, cwd);
+  const backend = router.find(path.relative);
   if (backend === undefined) {
     throw new UnsupportedFileError(inputPath);
   }
-  return backend.fileSymbols(relativePath);
+  return backend.fileSymbols(path);
 }

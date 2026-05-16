@@ -1,9 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { createWorkspace } from "../../../src/workspace/workspace.js";
 import { InMemoryFileSystem } from "../../../src/workspace/in-memory/in-memory-file-system.js";
+import { OutsideWorkspaceError } from "../../../src/workspace/errors.js";
 
 describe("Windows-shaped paths", () => {
-  it("resolves Windows-shaped startDir through the workspace", async () => {
+  it("normalises Windows-shaped startDir into a POSIX workspace root", async () => {
     const ws = await createWorkspace({
       startDir: "C:\\repo\\src",
       fs: new InMemoryFileSystem({
@@ -12,9 +13,6 @@ describe("Windows-shaped paths", () => {
       }),
     });
     expect(ws.root).toBe("C:/repo");
-    expect(ws.toAbsolute("src/x.ts")).toBe("C:/repo/src/x.ts");
-    expect(ws.isInWorkspace("C:\\repo\\src\\x.ts")).toBe(true);
-    expect(ws.isInWorkspace("C:\\other\\x.ts")).toBe(false);
   });
 
   it("rejects UNC paths with a clear error", async () => {
@@ -28,7 +26,7 @@ describe("Windows-shaped paths", () => {
 });
 
 describe("Workspace path helpers", () => {
-  it("resolveInputPath and toAbsolute round-trip via POSIX paths", async () => {
+  it("resolveInputPath returns both relative and absolute POSIX paths", async () => {
     const ws = await createWorkspace({
       startDir: "/repo",
       fs: new InMemoryFileSystem({
@@ -36,13 +34,13 @@ describe("Workspace path helpers", () => {
         "/repo/pkg/sub/file.ts": "",
       }),
     });
-    const abs = "/repo/pkg/sub/file.ts";
-    const rel = await ws.resolveInputPath(abs, "/repo");
-    expect(rel).toBe("pkg/sub/file.ts");
-    expect(ws.toAbsolute(rel)).toBe(abs);
+    expect(await ws.resolveInputPath("/repo/pkg/sub/file.ts", "/repo")).toEqual({
+      relative: "pkg/sub/file.ts",
+      absolute: "/repo/pkg/sub/file.ts",
+    });
   });
 
-  it("isInWorkspace rejects paths above root and sibling-of-root paths", async () => {
+  it("rejects paths above root and sibling-of-root paths", async () => {
     const ws = await createWorkspace({
       startDir: "/repo",
       fs: new InMemoryFileSystem({
@@ -52,8 +50,15 @@ describe("Workspace path helpers", () => {
         "/other.ts": "",
       }),
     });
-    expect(ws.isInWorkspace("/repo/x.ts")).toBe(true);
-    expect(ws.isInWorkspace("/repo-other/x.ts")).toBe(false);
-    expect(ws.isInWorkspace("/repo/../other.ts")).toBe(false);
+    expect(await ws.resolveInputPath("/repo/x.ts", "/repo")).toEqual({
+      relative: "x.ts",
+      absolute: "/repo/x.ts",
+    });
+    await expect(ws.resolveInputPath("/repo-other/x.ts", "/repo")).rejects.toBeInstanceOf(
+      OutsideWorkspaceError,
+    );
+    await expect(ws.resolveInputPath("/other.ts", "/repo")).rejects.toBeInstanceOf(
+      OutsideWorkspaceError,
+    );
   });
 });

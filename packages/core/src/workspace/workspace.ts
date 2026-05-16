@@ -11,11 +11,14 @@ import { findWorkspaceRoot } from "./paths/find-root.js";
 import { isUnderRoot } from "./paths/is-under-root.js";
 import { posixify } from "./paths/posixify.js";
 
+export interface ResolvedPath {
+  readonly relative: string;
+  readonly absolute: string;
+}
+
 export interface Workspace {
   readonly root: string;
-  toAbsolute(relPath: string): string;
-  isInWorkspace(absPath: string): boolean;
-  resolveInputPath(inputPath: string, cwd: string): Promise<string>;
+  resolveInputPath(inputPath: string, cwd: string): Promise<ResolvedPath>;
 }
 
 class DefaultWorkspace implements Workspace {
@@ -25,42 +28,26 @@ class DefaultWorkspace implements Workspace {
     private readonly ignore: WorkspaceIgnore,
   ) {}
 
-  toAbsolute(relPath: string): string {
-    return relPath === "" ? this.root : `${this.root}/${relPath}`;
-  }
-
-  isInWorkspace(absPath: string): boolean {
-    return isUnderRoot(posixify(absPath), this.root);
-  }
-
   private toRelative(absPath: string): string {
-    const normalized = posixify(absPath);
-    if (!isUnderRoot(normalized, this.root)) {
-      throw new Error(`Path ${absPath} is not under workspace root ${this.root}`);
-    }
-    if (normalized === this.root) {
+    if (absPath === this.root) {
       return "";
     }
-    return normalized.slice(this.root.length + 1);
+    return absPath.slice(this.root.length + 1);
   }
 
-  private isIgnored(relPath: string): boolean {
-    return this.ignore.isIgnored(relPath);
-  }
-
-  async resolveInputPath(inputPath: string, cwd: string): Promise<string> {
-    const absolutePath = isAbsolute(inputPath) ? inputPath : resolve(cwd, inputPath);
+  async resolveInputPath(inputPath: string, cwd: string): Promise<ResolvedPath> {
+    const absolutePath = posixify(isAbsolute(inputPath) ? inputPath : resolve(cwd, inputPath));
     if (!(await this.fs.exists(absolutePath))) {
       throw new FileNotFoundError(inputPath);
     }
-    if (!this.isInWorkspace(absolutePath)) {
+    if (!isUnderRoot(absolutePath, this.root)) {
       throw new OutsideWorkspaceError(inputPath, this.root);
     }
     const relativePath = this.toRelative(absolutePath);
-    if (this.isIgnored(relativePath)) {
+    if (this.ignore.isIgnored(relativePath)) {
       throw new IgnoredFileError(inputPath);
     }
-    return relativePath;
+    return { relative: relativePath, absolute: absolutePath };
   }
 }
 

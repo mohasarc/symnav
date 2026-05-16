@@ -16,7 +16,10 @@ describe("Workspace.resolveInputPath", () => {
         "/repo/src/nested/a.ts": "export const x = 1;",
       }),
     });
-    expect(await ws.resolveInputPath("a.ts", "/repo/src/nested")).toBe("src/nested/a.ts");
+    expect(await ws.resolveInputPath("a.ts", "/repo/src/nested")).toEqual({
+      relative: "src/nested/a.ts",
+      absolute: "/repo/src/nested/a.ts",
+    });
   });
 
   it("returns an absolute input inside the workspace as a workspace-relative path", async () => {
@@ -27,7 +30,10 @@ describe("Workspace.resolveInputPath", () => {
         "/repo/src/a.ts": "export const x = 1;",
       }),
     });
-    expect(await ws.resolveInputPath("/repo/src/a.ts", "/repo")).toBe("src/a.ts");
+    expect(await ws.resolveInputPath("/repo/src/a.ts", "/repo")).toEqual({
+      relative: "src/a.ts",
+      absolute: "/repo/src/a.ts",
+    });
   });
 
   it("throws FileNotFoundError when the resolved path does not exist", async () => {

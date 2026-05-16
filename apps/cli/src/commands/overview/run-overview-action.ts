@@ -31,12 +31,12 @@ export async function runOverviewAction(args: RunOverviewActionArgs): Promise<vo
     return;
   }
   const backends = args.dependencies.backends
-    ? args.dependencies.backends(workspace)
-    : [new TypeScriptBackend(workspace, fs)];
+    ? args.dependencies.backends()
+    : [new TypeScriptBackend(fs)];
   const router = new BackendRouter(backends);
   let symbols: FileSymbols;
   try {
-    symbols = await runOverview({ workspace, fs, router, cwd, inputPath: args.file });
+    symbols = await runOverview({ workspace, router, cwd, inputPath: args.file });
   } catch (err) {
     handleError(args.context, err);
     return;

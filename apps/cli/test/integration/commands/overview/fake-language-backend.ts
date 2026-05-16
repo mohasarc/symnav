@@ -1,4 +1,4 @@
-import type { FileSymbols, LanguageBackend } from "@symnav/core";
+import type { FileSymbols, LanguageBackend, ResolvedPath } from "@symnav/core";
 
 export interface FakeLanguageBackendOptions {
   accept?: (filePath: string) => boolean;
@@ -19,8 +19,8 @@ export class FakeLanguageBackend implements LanguageBackend {
     return this.acceptFn(filePath);
   }
 
-  async fileSymbols(filePath: string): Promise<FileSymbols> {
-    this.calls.push(filePath);
-    return this.symbolsFn(filePath);
+  async fileSymbols(path: ResolvedPath): Promise<FileSymbols> {
+    this.calls.push(path.relative);
+    return this.symbolsFn(path.relative);
   }
 }

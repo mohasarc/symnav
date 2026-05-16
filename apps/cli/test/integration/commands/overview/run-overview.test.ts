@@ -3,10 +3,10 @@ import {
   BackendRouter,
   createWorkspace,
   FileNotFoundError,
-  IgnoredFileError,
   InMemoryFileSystem,
   OutsideWorkspaceError,
   UnsupportedFileError,
+  UserFacingError,
 } from "@symnav/core";
 import type { FileSymbols } from "@symnav/core";
 import { runOverview } from "../../../../src/commands/overview/run-overview.js";
@@ -27,7 +27,6 @@ describe("runOverview happy path", () => {
 
     const result = await runOverview({
       workspace,
-      fs,
       router,
       cwd: "/repo",
       inputPath: "src/a.ts",
@@ -48,7 +47,6 @@ describe("runOverview happy path", () => {
 
     const result = await runOverview({
       workspace,
-      fs,
       router,
       cwd: "/repo",
       inputPath: "/repo/src/a.ts",
@@ -68,7 +66,6 @@ describe("runOverview happy path", () => {
 
     await runOverview({
       workspace,
-      fs,
       router,
       cwd: "/repo/src/nested",
       inputPath: "a.ts",
@@ -88,7 +85,6 @@ describe("runOverview happy path", () => {
 
     await runOverview({
       workspace,
-      fs,
       router,
       cwd: "/repo",
       inputPath: "/repo/src/a.ts",
@@ -108,7 +104,6 @@ describe("runOverview validation errors", () => {
     await expect(
       runOverview({
         workspace,
-        fs,
         router,
         cwd: "/repo",
         inputPath: "src/missing.ts",
@@ -129,7 +124,6 @@ describe("runOverview validation errors", () => {
     await expect(
       runOverview({
         workspace,
-        fs,
         router,
         cwd: "/repo",
         inputPath: "/other/src/a.ts",
@@ -137,7 +131,7 @@ describe("runOverview validation errors", () => {
     ).rejects.toBeInstanceOf(OutsideWorkspaceError);
   });
 
-  it("throws IgnoredFileError when the path matches an ignore rule", async () => {
+  it("rejects an ignored path with a UserFacingError", async () => {
     const backend = new FakeLanguageBackend();
     const fs = new InMemoryFileSystem({
       "/repo/.git/HEAD": "ref: refs/heads/main\n",
@@ -147,15 +141,15 @@ describe("runOverview validation errors", () => {
     const workspace = await createWorkspace({ startDir: "/repo", fs });
     const router = new BackendRouter([backend]);
 
-    await expect(
-      runOverview({
-        workspace,
-        fs,
-        router,
-        cwd: "/repo",
-        inputPath: "build/a.ts",
-      }),
-    ).rejects.toBeInstanceOf(IgnoredFileError);
+    const error = await runOverview({
+      workspace,
+      router,
+      cwd: "/repo",
+      inputPath: "build/a.ts",
+    }).catch((thrown: unknown) => thrown);
+
+    expect(error).toBeInstanceOf(UserFacingError);
+    expect((error as UserFacingError).reason).toBe("build/a.ts is ignored by .gitignore");
   });
 
   it("throws UnsupportedFileError when no backend accepts the path", async () => {
@@ -170,7 +164,6 @@ describe("runOverview validation errors", () => {
     await expect(
       runOverview({
         workspace,
-        fs,
         router,
         cwd: "/repo",
         inputPath: "README.md",
@@ -189,7 +182,6 @@ describe("runOverview validation order", () => {
     await expect(
       runOverview({
         workspace,
-        fs,
         router,
         cwd: "/repo",
         inputPath: "/other/missing.ts",
@@ -209,7 +201,6 @@ describe("runOverview validation order", () => {
     await expect(
       runOverview({
         workspace,
-        fs,
         router,
         cwd: "/repo",
         inputPath: "build/missing.ts",
@@ -226,7 +217,6 @@ describe("runOverview validation order", () => {
     await expect(
       runOverview({
         workspace,
-        fs,
         router,
         cwd: "/repo",
         inputPath: "missing.md",
@@ -247,7 +237,6 @@ describe("runOverview validation order", () => {
     await expect(
       runOverview({
         workspace,
-        fs,
         router,
         cwd: "/repo",
         inputPath: "/other/build/a.ts",
@@ -267,7 +256,6 @@ describe("runOverview validation order", () => {
     await expect(
       runOverview({
         workspace,
-        fs,
         router,
         cwd: "/repo",
         inputPath: "/other/README.md",
@@ -275,7 +263,7 @@ describe("runOverview validation order", () => {
     ).rejects.toBeInstanceOf(OutsideWorkspaceError);
   });
 
-  it("prefers IgnoredFileError over UnsupportedFileError", async () => {
+  it("prefers the ignored-file rejection over UnsupportedFileError", async () => {
     const backend = new FakeLanguageBackend({ accept: () => false });
     const fs = new InMemoryFileSystem({
       "/repo/.git/HEAD": "ref: refs/heads/main\n",
@@ -285,14 +273,15 @@ describe("runOverview validation order", () => {
     const workspace = await createWorkspace({ startDir: "/repo", fs });
     const router = new BackendRouter([backend]);
 
-    await expect(
-      runOverview({
-        workspace,
-        fs,
-        router,
-        cwd: "/repo",
-        inputPath: "build/notes.md",
-      }),
-    ).rejects.toBeInstanceOf(IgnoredFileError);
+    const error = await runOverview({
+      workspace,
+      router,
+      cwd: "/repo",
+      inputPath: "build/notes.md",
+    }).catch((thrown: unknown) => thrown);
+
+    expect(error).toBeInstanceOf(UserFacingError);
+    expect(error).not.toBeInstanceOf(UnsupportedFileError);
+    expect((error as UserFacingError).reason).toBe("build/notes.md is ignored by .gitignore");
   });
 });

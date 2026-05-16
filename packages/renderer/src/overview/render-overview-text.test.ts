@@ -28,14 +28,14 @@ function assertSingleTrailingNewline(output: string): void {
 }
 
 describe("renderOverviewText", () => {
-  it("renders an empty file with header, blank line, and `(no symbols)`", () => {
+  it("renders an empty file with the file path header and `(no symbols)` directly under", () => {
     const file: FileSymbols = { filePath: "src/empty.ts", symbols: [] };
     const output = renderOverviewText(file);
-    expect(output).toBe("Overview: src/empty.ts\n\n(no symbols)\n");
+    expect(output).toBe("Overview: src/empty.ts\n(no symbols)\n");
     assertSingleTrailingNewline(output);
   });
 
-  it("renders a single top-level function with its signature line numbered flush", () => {
+  it("renders a single top-level function as the file's only tree child", () => {
     const file: FileSymbols = {
       filePath: "src/file.ts",
       symbols: [
@@ -49,7 +49,12 @@ describe("renderOverviewText", () => {
     };
     const output = renderOverviewText(file);
     expect(output).toBe(
-      "Overview: src/file.ts\n\n4: greet\n4: function greet(name: string): void\n",
+      [
+        "Overview: src/file.ts",
+        "└── 4: greet",
+        "    4: function greet(name: string): void",
+        "",
+      ].join("\n"),
     );
     assertSingleTrailingNewline(output);
   });
@@ -84,11 +89,10 @@ describe("renderOverviewText", () => {
     expect(renderOverviewText(file)).toBe(
       [
         "Overview: src/file.ts",
-        "",
-        "10-14: configure",
-        "10: function configure(",
-        "11:   host: string,",
-        "12: ): void",
+        "└── 10-14: configure",
+        "    10: function configure(",
+        "    11:   host: string,",
+        "    12: ): void",
         "",
       ].join("\n"),
     );
@@ -132,7 +136,7 @@ describe("renderOverviewText", () => {
     expect(output).not.toContain(`line ${SIGNATURE_CAP_LINES}`);
   });
 
-  it("separates multiple top-level entries with exactly one blank line", () => {
+  it("renders multiple top-level entries as tree children of the file path", () => {
     const file: FileSymbols = {
       filePath: "src/file.ts",
       symbols: [
@@ -159,15 +163,12 @@ describe("renderOverviewText", () => {
     expect(renderOverviewText(file)).toBe(
       [
         "Overview: src/file.ts",
-        "",
-        "1: A",
-        "1: const A: number",
-        "",
-        "3: B",
-        "3: const B: number",
-        "",
-        "5: C",
-        "5: const C: number",
+        "├── 1: A",
+        "│   1: const A: number",
+        "├── 3: B",
+        "│   3: const B: number",
+        "└── 5: C",
+        "    5: const C: number",
         "",
       ].join("\n"),
     );
@@ -209,15 +210,14 @@ describe("renderOverviewText", () => {
     expect(renderOverviewText(file)).toBe(
       [
         "Overview: src/checkout.ts",
-        "",
-        "12-96: CheckoutService",
-        "12: class CheckoutService",
-        "├── 24-34: CheckoutService::constructor",
-        "│   24: constructor(p: P, i: I)",
-        "├── 42-78: CheckoutService::processPayment",
-        "│   42: async processPayment(order: Order): Promise<Receipt>",
-        "└── 80-94: CheckoutService::validateOrder",
-        "    80: private validateOrder(order: Order): void",
+        "└── 12-96: CheckoutService",
+        "    12: class CheckoutService",
+        "    ├── 24-34: CheckoutService::constructor",
+        "    │   24: constructor(p: P, i: I)",
+        "    ├── 42-78: CheckoutService::processPayment",
+        "    │   42: async processPayment(order: Order): Promise<Receipt>",
+        "    └── 80-94: CheckoutService::validateOrder",
+        "        80: private validateOrder(order: Order): void",
         "",
       ].join("\n"),
     );
@@ -247,13 +247,12 @@ describe("renderOverviewText", () => {
     expect(renderOverviewText(file)).toBe(
       [
         "Overview: src/server.ts",
-        "",
-        "1-10: Server",
-        "1: class Server",
-        "└── 2-6: Server::start",
-        "    2: start(",
-        "    3:   host: string,",
-        "    4: ): void",
+        "└── 1-10: Server",
+        "    1: class Server",
+        "    └── 2-6: Server::start",
+        "        2: start(",
+        "        3:   host: string,",
+        "        4: ): void",
         "",
       ].join("\n"),
     );
@@ -290,13 +289,12 @@ describe("renderOverviewText", () => {
     expect(renderOverviewText(file)).toBe(
       [
         "Overview: src/nested.ts",
-        "",
-        "1-50: Outer",
-        "1: namespace Outer",
-        "└── 5-40: Outer::Inner",
-        "    5: class Inner",
-        "    └── 10-20: Outer::Inner::method",
-        "        10: method(): void",
+        "└── 1-50: Outer",
+        "    1: namespace Outer",
+        "    └── 5-40: Outer::Inner",
+        "        5: class Inner",
+        "        └── 10-20: Outer::Inner::method",
+        "            10: method(): void",
         "",
       ].join("\n"),
     );

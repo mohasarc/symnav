@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  BLOCK_SEPARATOR,
   formatEmptyOverview,
   formatHeadLine,
   formatOverviewHeader,
@@ -12,14 +11,14 @@ import {
 
 describe("overview-format", () => {
   describe("formatOverviewHeader", () => {
-    it("renders the header with two trailing newlines", () => {
-      expect(formatOverviewHeader("src/file.ts")).toBe("Overview: src/file.ts\n\n");
+    it("renders the header on a single line with a trailing newline", () => {
+      expect(formatOverviewHeader("src/file.ts")).toBe("Overview: src/file.ts\n");
     });
   });
 
   describe("formatEmptyOverview", () => {
-    it("appends `(no symbols)` to the header on a new line", () => {
-      expect(formatEmptyOverview("src/file.ts")).toBe("Overview: src/file.ts\n\n(no symbols)\n");
+    it("appends `(no symbols)` directly under the header", () => {
+      expect(formatEmptyOverview("src/file.ts")).toBe("Overview: src/file.ts\n(no symbols)\n");
     });
   });
 
@@ -60,12 +59,6 @@ describe("overview-format", () => {
 
     it("returns last + space continuation for the last child", () => {
       expect(treeGlyphsFor(true)).toEqual({ branchGlyph: "└── ", continuationGlyph: "    " });
-    });
-  });
-
-  describe("BLOCK_SEPARATOR", () => {
-    it("is a single newline so joined blocks produce a blank line between them", () => {
-      expect(BLOCK_SEPARATOR).toBe("\n");
     });
   });
 });

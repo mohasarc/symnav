@@ -80,7 +80,7 @@ describe("symnav overview e2e (happy path)", () => {
     const r = runSymnavOverview(["overview", "empty.ts"], fixtureRoot);
     expect(r.stderr).toBe("");
     expect(r.status).toBe(0);
-    expect(r.stdout).toBe("Overview: empty.ts\n\n(no symbols)\n");
+    expect(r.stdout).toBe("Overview: empty.ts\n(no symbols)\n");
     await expect(r.stdout).toMatchFileSnapshot(snapshot("empty.expected.txt"));
   });
 });

@@ -1,11 +1,9 @@
 import { type FileSymbols, UnsupportedFileError } from "@symnav/core";
 import { renderOverviewJson, renderOverviewText } from "@symnav/renderer";
-import { Command, type CommandContext } from "../../command.js";
+import type { Command, CommandContext } from "../../command.js";
 
-export class OverviewCommand extends Command<FileSymbols> {
-  constructor(private readonly file: string) {
-    super();
-  }
+export class OverviewCommand implements Command<FileSymbols> {
+  constructor(private readonly file: string) {}
 
   async compute(ctx: CommandContext): Promise<FileSymbols> {
     const path = await ctx.workspace.resolveInputPath(this.file, ctx.cwd);
@@ -16,11 +14,6 @@ export class OverviewCommand extends Command<FileSymbols> {
     return backend.fileSymbols(path);
   }
 
-  renderText(result: FileSymbols): string {
-    return renderOverviewText(result);
-  }
-
-  renderJson(result: FileSymbols): string {
-    return renderOverviewJson(result);
-  }
+  readonly renderText = renderOverviewText;
+  readonly renderJson = renderOverviewJson;
 }

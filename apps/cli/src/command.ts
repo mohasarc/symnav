@@ -15,10 +15,10 @@ export interface CommandInvocation {
   json: boolean;
 }
 
-export abstract class Command<Result> {
-  abstract compute(ctx: CommandContext): Promise<Result>;
-  abstract renderText(result: Result): string;
-  abstract renderJson(result: Result): string;
+export interface Command<Result> {
+  compute(ctx: CommandContext): Promise<Result>;
+  renderText(result: Result): string;
+  renderJson(result: Result): string;
 }
 
 export async function runCommand<Result>(

@@ -8,7 +8,7 @@ import {
 } from "../../../src/workspace/errors.js";
 
 describe("Workspace.resolveInputPath", () => {
-  it("resolves a relative input against fromDir into a workspace-relative POSIX path", async () => {
+  it("resolves a relative input against cwd into a workspace-relative POSIX path", async () => {
     const ws = await createWorkspace({
       startDir: "/repo",
       fs: new InMemoryFileSystem({

@@ -15,7 +15,7 @@ export interface Workspace {
   readonly root: string;
   toAbsolute(relPath: string): string;
   isInWorkspace(absPath: string): boolean;
-  resolveInputPath(inputPath: string, fromDir: string): Promise<string>;
+  resolveInputPath(inputPath: string, cwd: string): Promise<string>;
 }
 
 class DefaultWorkspace implements Workspace {
@@ -48,8 +48,8 @@ class DefaultWorkspace implements Workspace {
     return this.ignore.isIgnored(relPath);
   }
 
-  async resolveInputPath(inputPath: string, fromDir: string): Promise<string> {
-    const absolutePath = isAbsolute(inputPath) ? inputPath : resolve(fromDir, inputPath);
+  async resolveInputPath(inputPath: string, cwd: string): Promise<string> {
+    const absolutePath = isAbsolute(inputPath) ? inputPath : resolve(cwd, inputPath);
     if (!(await this.fs.exists(absolutePath))) {
       throw new FileNotFoundError(inputPath);
     }

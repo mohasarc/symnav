@@ -43,12 +43,12 @@ describe("overview-format", () => {
   });
 
   describe("formatSignatureLine", () => {
-    it("composes prefix + line number + text with `: ` and a trailing newline", () => {
-      expect(formatSignatureLine("", 10, "function configure(")).toBe("10: function configure(\n");
+    it("composes prefix + line number + text with a single space and a trailing newline", () => {
+      expect(formatSignatureLine("", 10, "function configure(")).toBe("10 function configure(\n");
     });
 
     it("preserves the caller-supplied prefix verbatim", () => {
-      expect(formatSignatureLine("│   ", 24, "constructor()")).toBe("│   24: constructor()\n");
+      expect(formatSignatureLine("│   ", 24, "constructor()")).toBe("│   24 constructor()\n");
     });
   });
 

@@ -25,7 +25,7 @@ export function formatHeadLine(prefix: string, range: LineRange, path: string): 
 }
 
 export function formatSignatureLine(prefix: string, lineNumber: number, text: string): string {
-  return `${prefix}${lineNumber}: ${text}\n`;
+  return `${prefix}${lineNumber} ${text}\n`;
 }
 
 export function treeGlyphsFor(isLast: boolean): {

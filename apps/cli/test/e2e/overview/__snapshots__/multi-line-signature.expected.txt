@@ -1,13 +1,13 @@
 Overview: multi-line-signature.ts
 ├── 1-7: configure
-│   1: export function configure(
-│   2:   host: string,
-│   3:   port: number,
-│   4: ): void
+│   1 export function configure(
+│   2   host: string,
+│   3   port: number,
+│   4 ): void
 └── 9-17: Server
-    9: export class Server
+    9 export class Server
     └── 10-16: Server::start
-        10: start(
-        11:   host: string,
-        12:   port: number,
-        13: ): void
+        10 start(
+        11   host: string,
+        12   port: number,
+        13 ): void

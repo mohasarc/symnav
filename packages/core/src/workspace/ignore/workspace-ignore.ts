@@ -28,8 +28,11 @@ export class WorkspaceIgnore {
     let entries: readonly string[];
     try {
       entries = fs.listDirSync(dirAbs);
-    } catch {
-      return;
+    } catch (err) {
+      if (WorkspaceIgnore.isExpectedListDirError(err)) {
+        return;
+      }
+      throw err;
     }
     for (const entry of entries) {
       const childAbs = posix.join(dirAbs, entry);
@@ -49,6 +52,14 @@ export class WorkspaceIgnore {
 
   private static isGitInternal(relPath: string): boolean {
     return relPath === ".git" || relPath.startsWith(".git/");
+  }
+
+  private static isExpectedListDirError(err: unknown): boolean {
+    if (typeof err !== "object" || err === null) {
+      return false;
+    }
+    const code = (err as { code?: unknown }).code;
+    return code === "ENOENT" || code === "EACCES";
   }
 
   private static pathRelativeToScope(relPath: string, dirRelToRoot: string): string | null {

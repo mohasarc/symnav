@@ -4,7 +4,7 @@ import { UserFacingError } from "../errors.js";
 
 export class UnsupportedFileError extends UserFacingError {
   constructor(private readonly inputPath: string) {
-    super("unsupported-file");
+    super();
     this.name = "UnsupportedFileError";
   }
 

@@ -2,7 +2,7 @@ import { UserFacingError } from "../errors.js";
 
 export class NotInWorkspaceError extends UserFacingError {
   constructor(private readonly startDir: string) {
-    super("not-in-workspace");
+    super();
     this.name = "NotInWorkspaceError";
   }
 
@@ -13,7 +13,7 @@ export class NotInWorkspaceError extends UserFacingError {
 
 export class FileNotFoundError extends UserFacingError {
   constructor(private readonly inputPath: string) {
-    super("file-not-found");
+    super();
     this.name = "FileNotFoundError";
   }
 
@@ -24,7 +24,7 @@ export class FileNotFoundError extends UserFacingError {
 
 export class IgnoredFileError extends UserFacingError {
   constructor(private readonly inputPath: string) {
-    super("ignored-file");
+    super();
     this.name = "IgnoredFileError";
   }
 
@@ -38,7 +38,7 @@ export class OutsideWorkspaceError extends UserFacingError {
     private readonly inputPath: string,
     private readonly workspaceRoot: string,
   ) {
-    super("outside-workspace");
+    super();
     this.name = "OutsideWorkspaceError";
   }
 

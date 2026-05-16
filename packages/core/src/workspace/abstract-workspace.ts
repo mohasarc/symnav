@@ -10,7 +10,7 @@ export abstract class AbstractWorkspace implements Workspace {
   protected constructor(
     public readonly root: string,
     public readonly fs: FileSystem,
-    protected readonly ignore: WorkspaceIgnore,
+    private readonly ignore: WorkspaceIgnore,
   ) {}
 
   toRelative(absPath: string): string {

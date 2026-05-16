@@ -6,23 +6,16 @@ import {
   InMemoryFileSystem,
   OutsideWorkspaceError,
   type FileSystem,
-  type Workspace,
 } from "@symnav/core";
 
 import { extractFileSymbols } from "../../src/extract/extract-file-symbols.js";
 import { TypeScriptBackend } from "../../src/typescript-backend/typescript-backend.js";
 import { parseTypeScriptSource } from "../helpers/parse-typescript-source.js";
 
-async function workspaceOver(files: Record<string, string>): Promise<Workspace> {
-  return createWorkspace({
-    startDir: "/repo",
-    fs: new InMemoryFileSystem({ "/repo/.git/HEAD": "ref: refs/heads/main\n", ...files }),
-  });
-}
-
 async function backendOver(files: Record<string, string>): Promise<TypeScriptBackend> {
-  const workspace = await workspaceOver(files);
-  return new TypeScriptBackend(workspace);
+  const fs = new InMemoryFileSystem({ "/repo/.git/HEAD": "ref: refs/heads/main\n", ...files });
+  const workspace = await createWorkspace({ startDir: "/repo", fs });
+  return new TypeScriptBackend(workspace, fs);
 }
 
 class CountingFileSystem implements FileSystem {
@@ -47,28 +40,6 @@ class CountingFileSystem implements FileSystem {
   }
   isDirectorySync(absPath: string): boolean {
     return this.inner.isDirectorySync(absPath);
-  }
-}
-
-class WrappedWorkspace implements Workspace {
-  constructor(
-    private readonly inner: Workspace,
-    public readonly fs: FileSystem,
-  ) {}
-  get root(): string {
-    return this.inner.root;
-  }
-  toRelative(absPath: string): string {
-    return this.inner.toRelative(absPath);
-  }
-  toAbsolute(relPath: string): string {
-    return this.inner.toAbsolute(relPath);
-  }
-  isInWorkspace(absPath: string): boolean {
-    return this.inner.isInWorkspace(absPath);
-  }
-  isIgnored(relPath: string): boolean {
-    return this.inner.isIgnored(relPath);
   }
 }
 
@@ -118,21 +89,14 @@ describe("TypeScriptBackend.fileSymbols", () => {
     expect(result.filePath).toBe("src/nested/y.ts");
   });
 
-  it("reads the file exclusively through Workspace.fs", async () => {
+  it("reads the file exclusively through the injected FileSystem", async () => {
     const inner = new InMemoryFileSystem({
       "/repo/.git/HEAD": "ref: refs/heads/main\n",
       "/repo/src/x.ts": source,
     });
     const counting = new CountingFileSystem(inner);
-    const baseWorkspace = await createWorkspace({
-      startDir: "/repo",
-      fs: new InMemoryFileSystem({
-        "/repo/.git/HEAD": "ref: refs/heads/main\n",
-        "/repo/src/x.ts": source,
-      }),
-    });
-    const workspace = new WrappedWorkspace(baseWorkspace, counting);
-    const backend = new TypeScriptBackend(workspace);
+    const workspace = await createWorkspace({ startDir: "/repo", fs: counting });
+    const backend = new TypeScriptBackend(workspace, counting);
     await backend.fileSymbols("src/x.ts");
     expect(counting.readFileCalls).toContain("/repo/src/x.ts");
   });

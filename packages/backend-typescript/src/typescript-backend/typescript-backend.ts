@@ -1,6 +1,6 @@
 import { basename } from "node:path";
 
-import type { FileSymbols, LanguageBackend, Workspace } from "@symnav/core";
+import type { FileSystem, FileSymbols, LanguageBackend, Workspace } from "@symnav/core";
 import { FileNotFoundError, OutsideWorkspaceError } from "@symnav/core";
 import { Project, type SourceFile } from "ts-morph";
 
@@ -20,7 +20,10 @@ export class TypeScriptBackend implements LanguageBackend {
     return false;
   }
 
-  constructor(private readonly workspace: Workspace) {}
+  constructor(
+    private readonly workspace: Workspace,
+    private readonly fs: FileSystem,
+  ) {}
 
   accepts(filePath: string): boolean {
     return TypeScriptBackend.accepts(filePath);
@@ -36,12 +39,11 @@ export class TypeScriptBackend implements LanguageBackend {
   }
 
   private loadSourceFile(absolutePath: string): SourceFile {
-    const fs = this.workspace.fs;
-    if (!fs.existsSync(absolutePath) || fs.isDirectorySync(absolutePath)) {
+    if (!this.fs.existsSync(absolutePath) || this.fs.isDirectorySync(absolutePath)) {
       throw new FileNotFoundError();
     }
     const project = new Project({
-      fileSystem: new WorkspaceFileSystemHost(fs),
+      fileSystem: new WorkspaceFileSystemHost(this.fs),
     });
     return project.addSourceFileAtPath(absolutePath);
   }

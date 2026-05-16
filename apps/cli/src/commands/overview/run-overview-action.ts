@@ -27,12 +27,10 @@ export interface RunOverviewActionArgs {
 
 export async function runOverviewAction(args: RunOverviewActionArgs): Promise<void> {
   const cwd = args.cwdOverride ?? args.context.cwd;
+  const fs = args.dependencies.fs ?? new NodeFileSystem();
   let workspace: Workspace;
   try {
-    workspace = await createWorkspace({
-      startDir: cwd,
-      fs: args.dependencies.fs ?? new NodeFileSystem(),
-    });
+    workspace = await createWorkspace({ startDir: cwd, fs });
   } catch (err) {
     if (err instanceof NotInWorkspaceError) {
       writeUserError(args.context, formatUserError(err, { cwd }));
@@ -43,13 +41,13 @@ export async function runOverviewAction(args: RunOverviewActionArgs): Promise<vo
   }
   const backends = args.dependencies.backends
     ? args.dependencies.backends(workspace)
-    : [new TypeScriptBackend(workspace)];
+    : [new TypeScriptBackend(workspace, fs)];
   const router = new BackendRouter(backends);
   const inputPath = args.file;
   const workspaceRoot = workspace.root;
   let symbols: FileSymbols;
   try {
-    symbols = await runOverview({ workspace, router, cwd, inputPath });
+    symbols = await runOverview({ workspace, fs, router, cwd, inputPath });
   } catch (err) {
     if (err instanceof FileNotFoundError) {
       writeUserError(args.context, formatUserError(err, { inputPath }));

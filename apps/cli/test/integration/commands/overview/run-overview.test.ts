@@ -18,17 +18,16 @@ describe("runOverview happy path", () => {
     const backend = new FakeLanguageBackend({
       symbols: () => expected,
     });
-    const workspace = await createWorkspace({
-      startDir: "/repo",
-      fs: new InMemoryFileSystem({
-        "/repo/.git/HEAD": "ref: refs/heads/main\n",
-        "/repo/src/a.ts": "export const x = 1;",
-      }),
+    const fs = new InMemoryFileSystem({
+      "/repo/.git/HEAD": "ref: refs/heads/main\n",
+      "/repo/src/a.ts": "export const x = 1;",
     });
+    const workspace = await createWorkspace({ startDir: "/repo", fs });
     const router = new BackendRouter([backend]);
 
     const result = await runOverview({
       workspace,
+      fs,
       router,
       cwd: "/repo",
       inputPath: "src/a.ts",
@@ -40,17 +39,16 @@ describe("runOverview happy path", () => {
   it("returns the same IR for an absolute input path", async () => {
     const expected: FileSymbols = { filePath: "src/a.ts", symbols: [] };
     const backend = new FakeLanguageBackend({ symbols: () => expected });
-    const workspace = await createWorkspace({
-      startDir: "/repo",
-      fs: new InMemoryFileSystem({
-        "/repo/.git/HEAD": "ref: refs/heads/main\n",
-        "/repo/src/a.ts": "export const x = 1;",
-      }),
+    const fs = new InMemoryFileSystem({
+      "/repo/.git/HEAD": "ref: refs/heads/main\n",
+      "/repo/src/a.ts": "export const x = 1;",
     });
+    const workspace = await createWorkspace({ startDir: "/repo", fs });
     const router = new BackendRouter([backend]);
 
     const result = await runOverview({
       workspace,
+      fs,
       router,
       cwd: "/repo",
       inputPath: "/repo/src/a.ts",
@@ -61,17 +59,16 @@ describe("runOverview happy path", () => {
 
   it("resolves a relative input against cwd, not the workspace root", async () => {
     const backend = new FakeLanguageBackend();
-    const workspace = await createWorkspace({
-      startDir: "/repo",
-      fs: new InMemoryFileSystem({
-        "/repo/.git/HEAD": "ref: refs/heads/main\n",
-        "/repo/src/nested/a.ts": "export const x = 1;",
-      }),
+    const fs = new InMemoryFileSystem({
+      "/repo/.git/HEAD": "ref: refs/heads/main\n",
+      "/repo/src/nested/a.ts": "export const x = 1;",
     });
+    const workspace = await createWorkspace({ startDir: "/repo", fs });
     const router = new BackendRouter([backend]);
 
     await runOverview({
       workspace,
+      fs,
       router,
       cwd: "/repo/src/nested",
       inputPath: "a.ts",
@@ -82,17 +79,16 @@ describe("runOverview happy path", () => {
 
   it("invokes the backend with the workspace-relative POSIX path", async () => {
     const backend = new FakeLanguageBackend();
-    const workspace = await createWorkspace({
-      startDir: "/repo",
-      fs: new InMemoryFileSystem({
-        "/repo/.git/HEAD": "ref: refs/heads/main\n",
-        "/repo/src/a.ts": "export const x = 1;",
-      }),
+    const fs = new InMemoryFileSystem({
+      "/repo/.git/HEAD": "ref: refs/heads/main\n",
+      "/repo/src/a.ts": "export const x = 1;",
     });
+    const workspace = await createWorkspace({ startDir: "/repo", fs });
     const router = new BackendRouter([backend]);
 
     await runOverview({
       workspace,
+      fs,
       router,
       cwd: "/repo",
       inputPath: "/repo/src/a.ts",
@@ -105,15 +101,14 @@ describe("runOverview happy path", () => {
 describe("runOverview validation errors", () => {
   it("throws FileNotFoundError when the resolved path does not exist", async () => {
     const backend = new FakeLanguageBackend();
-    const workspace = await createWorkspace({
-      startDir: "/repo",
-      fs: new InMemoryFileSystem({ "/repo/.git/HEAD": "ref: refs/heads/main\n" }),
-    });
+    const fs = new InMemoryFileSystem({ "/repo/.git/HEAD": "ref: refs/heads/main\n" });
+    const workspace = await createWorkspace({ startDir: "/repo", fs });
     const router = new BackendRouter([backend]);
 
     await expect(
       runOverview({
         workspace,
+        fs,
         router,
         cwd: "/repo",
         inputPath: "src/missing.ts",
@@ -123,19 +118,18 @@ describe("runOverview validation errors", () => {
 
   it("throws OutsideWorkspaceError for a path outside the workspace root", async () => {
     const backend = new FakeLanguageBackend();
-    const workspace = await createWorkspace({
-      startDir: "/repo",
-      fs: new InMemoryFileSystem({
-        "/repo/.git/HEAD": "ref: refs/heads/main\n",
-        "/repo/src/a.ts": "export const x = 1;",
-        "/other/src/a.ts": "export const x = 1;",
-      }),
+    const fs = new InMemoryFileSystem({
+      "/repo/.git/HEAD": "ref: refs/heads/main\n",
+      "/repo/src/a.ts": "export const x = 1;",
+      "/other/src/a.ts": "export const x = 1;",
     });
+    const workspace = await createWorkspace({ startDir: "/repo", fs });
     const router = new BackendRouter([backend]);
 
     await expect(
       runOverview({
         workspace,
+        fs,
         router,
         cwd: "/repo",
         inputPath: "/other/src/a.ts",
@@ -145,19 +139,18 @@ describe("runOverview validation errors", () => {
 
   it("throws IgnoredFileError when the path matches an ignore rule", async () => {
     const backend = new FakeLanguageBackend();
-    const workspace = await createWorkspace({
-      startDir: "/repo",
-      fs: new InMemoryFileSystem({
-        "/repo/.git/HEAD": "ref: refs/heads/main\n",
-        "/repo/.gitignore": "build/\n",
-        "/repo/build/a.ts": "export const x = 1;",
-      }),
+    const fs = new InMemoryFileSystem({
+      "/repo/.git/HEAD": "ref: refs/heads/main\n",
+      "/repo/.gitignore": "build/\n",
+      "/repo/build/a.ts": "export const x = 1;",
     });
+    const workspace = await createWorkspace({ startDir: "/repo", fs });
     const router = new BackendRouter([backend]);
 
     await expect(
       runOverview({
         workspace,
+        fs,
         router,
         cwd: "/repo",
         inputPath: "build/a.ts",
@@ -167,18 +160,17 @@ describe("runOverview validation errors", () => {
 
   it("throws UnsupportedFileError when no backend accepts the path", async () => {
     const backend = new FakeLanguageBackend({ accept: () => false });
-    const workspace = await createWorkspace({
-      startDir: "/repo",
-      fs: new InMemoryFileSystem({
-        "/repo/.git/HEAD": "ref: refs/heads/main\n",
-        "/repo/README.md": "# repo",
-      }),
+    const fs = new InMemoryFileSystem({
+      "/repo/.git/HEAD": "ref: refs/heads/main\n",
+      "/repo/README.md": "# repo",
     });
+    const workspace = await createWorkspace({ startDir: "/repo", fs });
     const router = new BackendRouter([backend]);
 
     await expect(
       runOverview({
         workspace,
+        fs,
         router,
         cwd: "/repo",
         inputPath: "README.md",
@@ -190,15 +182,14 @@ describe("runOverview validation errors", () => {
 describe("runOverview validation order", () => {
   it("prefers FileNotFoundError over OutsideWorkspaceError", async () => {
     const backend = new FakeLanguageBackend();
-    const workspace = await createWorkspace({
-      startDir: "/repo",
-      fs: new InMemoryFileSystem({ "/repo/.git/HEAD": "ref: refs/heads/main\n" }),
-    });
+    const fs = new InMemoryFileSystem({ "/repo/.git/HEAD": "ref: refs/heads/main\n" });
+    const workspace = await createWorkspace({ startDir: "/repo", fs });
     const router = new BackendRouter([backend]);
 
     await expect(
       runOverview({
         workspace,
+        fs,
         router,
         cwd: "/repo",
         inputPath: "/other/missing.ts",
@@ -208,18 +199,17 @@ describe("runOverview validation order", () => {
 
   it("prefers FileNotFoundError over IgnoredFileError", async () => {
     const backend = new FakeLanguageBackend();
-    const workspace = await createWorkspace({
-      startDir: "/repo",
-      fs: new InMemoryFileSystem({
-        "/repo/.git/HEAD": "ref: refs/heads/main\n",
-        "/repo/.gitignore": "build/\n",
-      }),
+    const fs = new InMemoryFileSystem({
+      "/repo/.git/HEAD": "ref: refs/heads/main\n",
+      "/repo/.gitignore": "build/\n",
     });
+    const workspace = await createWorkspace({ startDir: "/repo", fs });
     const router = new BackendRouter([backend]);
 
     await expect(
       runOverview({
         workspace,
+        fs,
         router,
         cwd: "/repo",
         inputPath: "build/missing.ts",
@@ -229,15 +219,14 @@ describe("runOverview validation order", () => {
 
   it("prefers FileNotFoundError over UnsupportedFileError", async () => {
     const backend = new FakeLanguageBackend({ accept: () => false });
-    const workspace = await createWorkspace({
-      startDir: "/repo",
-      fs: new InMemoryFileSystem({ "/repo/.git/HEAD": "ref: refs/heads/main\n" }),
-    });
+    const fs = new InMemoryFileSystem({ "/repo/.git/HEAD": "ref: refs/heads/main\n" });
+    const workspace = await createWorkspace({ startDir: "/repo", fs });
     const router = new BackendRouter([backend]);
 
     await expect(
       runOverview({
         workspace,
+        fs,
         router,
         cwd: "/repo",
         inputPath: "missing.md",
@@ -247,19 +236,18 @@ describe("runOverview validation order", () => {
 
   it("prefers OutsideWorkspaceError over IgnoredFileError", async () => {
     const backend = new FakeLanguageBackend();
-    const workspace = await createWorkspace({
-      startDir: "/repo",
-      fs: new InMemoryFileSystem({
-        "/repo/.git/HEAD": "ref: refs/heads/main\n",
-        "/repo/.gitignore": "build/\n",
-        "/other/build/a.ts": "export const x = 1;",
-      }),
+    const fs = new InMemoryFileSystem({
+      "/repo/.git/HEAD": "ref: refs/heads/main\n",
+      "/repo/.gitignore": "build/\n",
+      "/other/build/a.ts": "export const x = 1;",
     });
+    const workspace = await createWorkspace({ startDir: "/repo", fs });
     const router = new BackendRouter([backend]);
 
     await expect(
       runOverview({
         workspace,
+        fs,
         router,
         cwd: "/repo",
         inputPath: "/other/build/a.ts",
@@ -269,18 +257,17 @@ describe("runOverview validation order", () => {
 
   it("prefers OutsideWorkspaceError over UnsupportedFileError", async () => {
     const backend = new FakeLanguageBackend({ accept: () => false });
-    const workspace = await createWorkspace({
-      startDir: "/repo",
-      fs: new InMemoryFileSystem({
-        "/repo/.git/HEAD": "ref: refs/heads/main\n",
-        "/other/README.md": "# other",
-      }),
+    const fs = new InMemoryFileSystem({
+      "/repo/.git/HEAD": "ref: refs/heads/main\n",
+      "/other/README.md": "# other",
     });
+    const workspace = await createWorkspace({ startDir: "/repo", fs });
     const router = new BackendRouter([backend]);
 
     await expect(
       runOverview({
         workspace,
+        fs,
         router,
         cwd: "/repo",
         inputPath: "/other/README.md",
@@ -290,19 +277,18 @@ describe("runOverview validation order", () => {
 
   it("prefers IgnoredFileError over UnsupportedFileError", async () => {
     const backend = new FakeLanguageBackend({ accept: () => false });
-    const workspace = await createWorkspace({
-      startDir: "/repo",
-      fs: new InMemoryFileSystem({
-        "/repo/.git/HEAD": "ref: refs/heads/main\n",
-        "/repo/.gitignore": "build/\n",
-        "/repo/build/notes.md": "notes",
-      }),
+    const fs = new InMemoryFileSystem({
+      "/repo/.git/HEAD": "ref: refs/heads/main\n",
+      "/repo/.gitignore": "build/\n",
+      "/repo/build/notes.md": "notes",
     });
+    const workspace = await createWorkspace({ startDir: "/repo", fs });
     const router = new BackendRouter([backend]);
 
     await expect(
       runOverview({
         workspace,
+        fs,
         router,
         cwd: "/repo",
         inputPath: "build/notes.md",

@@ -7,7 +7,6 @@ import { posixify } from "./paths/posixify.js";
 
 export interface Workspace {
   readonly root: string;
-  readonly fs: FileSystem;
   toRelative(absPath: string): string;
   toAbsolute(relPath: string): string;
   isInWorkspace(absPath: string): boolean;
@@ -17,7 +16,6 @@ export interface Workspace {
 class DefaultWorkspace implements Workspace {
   constructor(
     public readonly root: string,
-    public readonly fs: FileSystem,
     private readonly ignore: WorkspaceIgnore,
   ) {}
 
@@ -56,5 +54,5 @@ export async function createWorkspace(opts: {
     throw new NotInWorkspaceError(opts.startDir);
   }
   const ignore = WorkspaceIgnore.build(root, fs);
-  return new DefaultWorkspace(root, fs, ignore);
+  return new DefaultWorkspace(root, ignore);
 }

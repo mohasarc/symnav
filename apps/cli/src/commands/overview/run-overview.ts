@@ -1,5 +1,5 @@
 import { isAbsolute, resolve } from "node:path";
-import type { BackendRouter, FileSymbols, Workspace } from "@symnav/core";
+import type { BackendRouter, FileSystem, FileSymbols, Workspace } from "@symnav/core";
 import {
   FileNotFoundError,
   IgnoredFileError,
@@ -9,15 +9,16 @@ import {
 
 export interface RunOverviewArgs {
   workspace: Workspace;
+  fs: FileSystem;
   router: BackendRouter;
   cwd: string;
   inputPath: string;
 }
 
 export async function runOverview(args: RunOverviewArgs): Promise<FileSymbols> {
-  const { workspace, router, cwd, inputPath } = args;
+  const { workspace, fs, router, cwd, inputPath } = args;
   const absolutePath = isAbsolute(inputPath) ? inputPath : resolve(cwd, inputPath);
-  if (!(await workspace.fs.exists(absolutePath))) {
+  if (!(await fs.exists(absolutePath))) {
     throw new FileNotFoundError();
   }
   if (!workspace.isInWorkspace(absolutePath)) {

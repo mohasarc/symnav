@@ -38,9 +38,7 @@ export async function runCommand<Result>(
   let result: Result;
   try {
     const workspace = await createWorkspace({ startDir: cwd, fs });
-    const backends = dependencies.backends
-      ? dependencies.backends(workspace)
-      : [new TypeScriptBackend(workspace, fs)];
+    const backends = dependencies.backends ? dependencies.backends() : [new TypeScriptBackend(fs)];
     const router = new BackendRouter(backends);
     result = await command.compute({ workspace, router, cwd });
   } catch (err) {

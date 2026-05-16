@@ -8,12 +8,12 @@ export class OverviewCommand extends Command<FileSymbols> {
   }
 
   async compute(ctx: CommandContext): Promise<FileSymbols> {
-    const relativePath = await ctx.workspace.resolveInputPath(this.file, ctx.cwd);
-    const backend = ctx.router.find(relativePath);
+    const path = await ctx.workspace.resolveInputPath(this.file, ctx.cwd);
+    const backend = ctx.router.find(path.relative);
     if (backend === undefined) {
       throw new UnsupportedFileError(this.file);
     }
-    return backend.fileSymbols(relativePath);
+    return backend.fileSymbols(path);
   }
 
   renderText(result: FileSymbols): string {

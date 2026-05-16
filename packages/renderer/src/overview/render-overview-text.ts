@@ -10,11 +10,19 @@ import {
 } from "./overview-format.js";
 import { capSignatureLines } from "./signature-cap.js";
 
+const TOP_LEVEL_SEPARATOR = "│\n";
+
 export function renderOverviewText(file: FileSymbols): string {
   if (file.symbols.length === 0) {
     return formatEmptyOverview(file.filePath);
   }
-  return formatOverviewHeader(file.filePath) + renderChildren(file.symbols, [], "");
+  return formatOverviewHeader(file.filePath) + renderTopLevelChildren(file.symbols);
+}
+
+function renderTopLevelChildren(children: readonly SymbolDecl[]): string {
+  return children
+    .map((child, index) => renderChild(child, [], "", index === children.length - 1))
+    .join(TOP_LEVEL_SEPARATOR);
 }
 
 function renderChildren(

@@ -1,9 +1,12 @@
 Overview: top-level-constants.ts
 ├── 1: PI
 │   1 export const PI = 3.14
+│
 ├── 3: greeting
 │   3 export const greeting: string = "hello"
+│
 ├── 5: VERSION
 │   5 declare const VERSION: string
+│
 └── 7: default
     7 42

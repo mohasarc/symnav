@@ -14,7 +14,7 @@ export interface Workspace {
   isIgnored(relPath: string): boolean;
 }
 
-class ResolvedWorkspace implements Workspace {
+class DefaultWorkspace implements Workspace {
   constructor(
     public readonly root: string,
     public readonly fs: FileSystem,
@@ -56,5 +56,5 @@ export async function createWorkspace(opts: {
     throw new NotInWorkspaceError(opts.startDir);
   }
   const ignore = WorkspaceIgnore.build(root, fs);
-  return new ResolvedWorkspace(root, fs, ignore);
+  return new DefaultWorkspace(root, fs, ignore);
 }

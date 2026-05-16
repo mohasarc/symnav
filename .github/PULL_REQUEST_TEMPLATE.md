@@ -73,24 +73,25 @@ how runtime flow moves. Not behavior, not implementation detail.
 Skip the section if there is no architectural delta (pure bugfix,
 small rename, docs-only).
 
-Form — default to bullets, escalate to a diagram only when it earns
-its place:
-
-  Default: 3-5 bullets. "Before, X lived inline in Y. After, X is a
-  class in Z. Two callers updated."
-
-  Diagram: only if ALL THREE conditions hold —
-    (1) the delta is module boundaries, class relationships, or
-        runtime flow (sequence);
-    (2) the structure changed in this PR;
-    (3) prose would take more than 2 sentences to convey.
-  Most PRs flunk at least one condition. Default is no diagram.
+Form — default to a paired before/after diagram. Skip the diagram
+only when the change is genuinely small (pure rename, single-file
+bugfix, docs-only, mechanical type fix); in that case 3-5 bullets
+are enough. When in doubt, draw the diagram.
 
 Diagram rules:
-  - Mermaid for general use; ASCII for tiny shapes (≤4 nodes).
   - PAIRED before/after — two diagrams, one labeled "Before", one
     labeled "After". Never a standalone "new shape"; the delta is
     the point.
+  - COLOR-CODED to show what changed vs. what was already there:
+      green fill  = added in this PR
+      red fill    = removed in this PR
+      yellow fill = changed in this PR
+      default     = pre-existing, unchanged
+    Include a one-line legend under the diagrams.
+  - ANNOTATIONS on arrows and nodes — name the load-bearing
+    relationships ("injected by caller", "returns", "extends",
+    "<<unexported>>"). Bare class boxes do not earn their place.
+  - Mermaid for general use; ASCII for tiny shapes (≤4 nodes).
   - ≤8 nodes per diagram. If you need more, either the PR or the
     diagram is wrong.
   - One verb per arrow type ("uses" / "depends on" / "calls" —
@@ -98,6 +99,9 @@ Diagram rules:
   - Each diagram captioned with the delta it shows.
   - No nested subgraphs beyond one level. No general-architecture
     portraits unrelated to this PR's change.
+
+A short prose lead-in (1-3 bullets) under the diagrams is welcome
+when the picture alone leaves something implicit.
 -->
 
 ## Public surface

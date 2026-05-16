@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { InMemoryFileSystem, UserFacingError } from "@symnav/core";
 import { runCommand } from "../../../src/command.js";
-import type { Command, CommandContext } from "../../../src/command.js";
+import type { Command, CommandArgs, CommandContext } from "../../../src/command.js";
 import { FakeLanguageBackend } from "./helpers/fake-language-backend.js";
 import { createFakeProgramContext } from "./helpers/fake-program-context.js";
 
@@ -28,18 +28,24 @@ class StubCommand implements Command<string> {
   }
 }
 
+const repoWithFile = (): InMemoryFileSystem =>
+  new InMemoryFileSystem({
+    "/repo/.git/HEAD": "ref: refs/heads/main\n",
+    "/repo/src/a.ts": "export const x = 1;",
+  });
+
+const stubArgs = (file: string): CommandArgs => ({ file });
+
 describe("runCommand lifecycle", () => {
   it("writes the rendered text result to stdout on success", async () => {
     const context = createFakeProgramContext({ cwd: "/repo" });
-    const fs = new InMemoryFileSystem({
-      "/repo/.git/HEAD": "ref: refs/heads/main\n",
-    });
 
     await runCommand(new StubCommand(), {
       context,
-      dependencies: { fs, backends: () => [new FakeLanguageBackend()] },
+      dependencies: { fs: repoWithFile(), backends: () => [new FakeLanguageBackend()] },
       cwdOverride: undefined,
       json: false,
+      args: stubArgs("src/a.ts"),
     });
 
     expect(context.stdout.text()).toBe("text:computed");
@@ -49,15 +55,13 @@ describe("runCommand lifecycle", () => {
 
   it("selects renderJson when json is true", async () => {
     const context = createFakeProgramContext({ cwd: "/repo" });
-    const fs = new InMemoryFileSystem({
-      "/repo/.git/HEAD": "ref: refs/heads/main\n",
-    });
 
     await runCommand(new StubCommand(), {
       context,
-      dependencies: { fs, backends: () => [new FakeLanguageBackend()] },
+      dependencies: { fs: repoWithFile(), backends: () => [new FakeLanguageBackend()] },
       cwdOverride: undefined,
       json: true,
+      args: stubArgs("src/a.ts"),
     });
 
     expect(context.stdout.text()).toBe("json:computed");
@@ -74,6 +78,7 @@ describe("runCommand lifecycle", () => {
       dependencies: { fs, backends: () => [new FakeLanguageBackend()] },
       cwdOverride: undefined,
       json: false,
+      args: stubArgs("src/a.ts"),
     });
 
     expect(context.stdout.text()).toBe("");
@@ -85,9 +90,6 @@ describe("runCommand lifecycle", () => {
 
   it("writes a Cannot answer line and exits 1 when compute throws a UserFacingError", async () => {
     const context = createFakeProgramContext({ cwd: "/repo" });
-    const fs = new InMemoryFileSystem({
-      "/repo/.git/HEAD": "ref: refs/heads/main\n",
-    });
 
     class BoomError extends UserFacingError {
       get reason(): string {
@@ -103,9 +105,10 @@ describe("runCommand lifecycle", () => {
       }),
       {
         context,
-        dependencies: { fs, backends: () => [new FakeLanguageBackend()] },
+        dependencies: { fs: repoWithFile(), backends: () => [new FakeLanguageBackend()] },
         cwdOverride: undefined,
         json: false,
+        args: stubArgs("src/a.ts"),
       },
     );
 
@@ -116,9 +119,6 @@ describe("runCommand lifecycle", () => {
 
   it("writes the raw message and exits 2 when compute throws a non-UserFacingError", async () => {
     const context = createFakeProgramContext({ cwd: "/repo" });
-    const fs = new InMemoryFileSystem({
-      "/repo/.git/HEAD": "ref: refs/heads/main\n",
-    });
 
     await runCommand(
       new StubCommand({
@@ -128,9 +128,10 @@ describe("runCommand lifecycle", () => {
       }),
       {
         context,
-        dependencies: { fs, backends: () => [new FakeLanguageBackend()] },
+        dependencies: { fs: repoWithFile(), backends: () => [new FakeLanguageBackend()] },
         cwdOverride: undefined,
         json: false,
+        args: stubArgs("src/a.ts"),
       },
     );
 
@@ -141,9 +142,6 @@ describe("runCommand lifecycle", () => {
 
   it("resolves cwd from cwdOverride when provided", async () => {
     const context = createFakeProgramContext({ cwd: "/unrelated" });
-    const fs = new InMemoryFileSystem({
-      "/repo/.git/HEAD": "ref: refs/heads/main\n",
-    });
     let seenCwd = "";
 
     await runCommand(
@@ -155,13 +153,111 @@ describe("runCommand lifecycle", () => {
       }),
       {
         context,
-        dependencies: { fs, backends: () => [new FakeLanguageBackend()] },
+        dependencies: { fs: repoWithFile(), backends: () => [new FakeLanguageBackend()] },
         cwdOverride: "/repo",
         json: false,
+        args: stubArgs("src/a.ts"),
       },
     );
 
     expect(seenCwd).toBe("/repo");
     expect(context.exitCodes).toEqual([]);
+  });
+});
+
+describe("runCommand input resolution", () => {
+  it("resolves args.file against cwd and passes path + backend to compute", async () => {
+    const context = createFakeProgramContext({ cwd: "/repo/src/nested" });
+    const fs = new InMemoryFileSystem({
+      "/repo/.git/HEAD": "ref: refs/heads/main\n",
+      "/repo/src/nested/a.ts": "export const x = 1;",
+    });
+    const backend = new FakeLanguageBackend();
+    let seenRelative = "";
+    let seenBackend: unknown;
+
+    await runCommand(
+      new StubCommand({
+        compute: async (ctx) => {
+          seenRelative = ctx.path.relative;
+          seenBackend = ctx.backend;
+          return "ok";
+        },
+      }),
+      {
+        context,
+        dependencies: { fs, backends: () => [backend] },
+        cwdOverride: undefined,
+        json: false,
+        args: stubArgs("a.ts"),
+      },
+    );
+
+    expect(seenRelative).toBe("src/nested/a.ts");
+    expect(seenBackend).toBe(backend);
+    expect(context.exitCodes).toEqual([]);
+  });
+
+  it("exits 1 with file-not-found when the resolved path does not exist", async () => {
+    const context = createFakeProgramContext({ cwd: "/repo" });
+    const fs = new InMemoryFileSystem({ "/repo/.git/HEAD": "ref: refs/heads/main\n" });
+
+    await runCommand(new StubCommand(), {
+      context,
+      dependencies: { fs, backends: () => [new FakeLanguageBackend()] },
+      cwdOverride: undefined,
+      json: false,
+      args: stubArgs("src/missing.ts"),
+    });
+
+    expect(context.stderr.text()).toBe("Cannot answer: file not found: src/missing.ts.\n");
+    expect(context.exitCodes).toEqual([1]);
+  });
+
+  it("exits 1 with unsupported-extension when no backend accepts the resolved path", async () => {
+    const context = createFakeProgramContext({ cwd: "/repo" });
+    const fs = new InMemoryFileSystem({
+      "/repo/.git/HEAD": "ref: refs/heads/main\n",
+      "/repo/data.json": "{}\n",
+    });
+
+    await runCommand(new StubCommand(), {
+      context,
+      dependencies: {
+        fs,
+        backends: () => [new FakeLanguageBackend({ accept: () => false })],
+      },
+      cwdOverride: undefined,
+      json: false,
+      args: stubArgs("data.json"),
+    });
+
+    expect(context.stderr.text()).toBe("Cannot answer: cannot read .json files (data.json).\n");
+    expect(context.exitCodes).toEqual([1]);
+  });
+
+  it("does not invoke compute when path resolution fails", async () => {
+    const context = createFakeProgramContext({ cwd: "/repo" });
+    const fs = new InMemoryFileSystem({ "/repo/.git/HEAD": "ref: refs/heads/main\n" });
+    let computeCalls = 0;
+
+    await runCommand(
+      new StubCommand({
+        compute: async () => {
+          computeCalls += 1;
+          return "ok";
+        },
+      }),
+      {
+        context,
+        dependencies: { fs, backends: () => [new FakeLanguageBackend()] },
+        cwdOverride: undefined,
+        json: false,
+        args: stubArgs("src/missing.ts"),
+      },
+    );
+
+    expect(computeCalls).toBe(0);
+    expect(context.exitCodes).toEqual([1]);
   });
 });

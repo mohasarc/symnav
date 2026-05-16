@@ -2,7 +2,7 @@ import type { Command as CommanderCommand } from "commander";
 import type { ProgramContext } from "../../program-context.js";
 import type { ProgramDependencies } from "../../program-dependencies.js";
 import { runCommand } from "../../command.js";
-import { OverviewCommand } from "./overview-command.js";
+import { overviewCommand } from "./overview-command.js";
 
 export function registerOverviewCommand(
   program: CommanderCommand,
@@ -15,11 +15,12 @@ export function registerOverviewCommand(
     .option("--json", "emit JSON instead of text", false)
     .action(async (file: string, options: { json: boolean }) => {
       const cwdOverride = program.opts<{ cwd?: string }>().cwd;
-      await runCommand(new OverviewCommand(file), {
+      await runCommand(overviewCommand, {
         context,
         dependencies,
         cwdOverride,
         json: options.json,
+        args: { file },
       });
     });
 }

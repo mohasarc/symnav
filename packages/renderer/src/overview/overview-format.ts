@@ -5,10 +5,8 @@ const TREE_LAST = "└── ";
 const TREE_VERTICAL = "│   ";
 const TREE_SPACE = "    ";
 
-export const BLOCK_SEPARATOR = "\n";
-
 export function formatOverviewHeader(filePath: string): string {
-  return `Overview: ${filePath}\n\n`;
+  return `Overview: ${filePath}\n`;
 }
 
 export function formatEmptyOverview(filePath: string): string {
@@ -27,7 +25,7 @@ export function formatHeadLine(prefix: string, range: LineRange, path: string): 
 }
 
 export function formatSignatureLine(prefix: string, lineNumber: number, text: string): string {
-  return `${prefix}${lineNumber}: ${text}\n`;
+  return `${prefix}${lineNumber} ${text}\n`;
 }
 
 export function treeGlyphsFor(isLast: boolean): {

@@ -2,7 +2,6 @@ import type { FileSymbols, Signature, SymbolDecl } from "@symnav/core";
 import { buildSymbolPath } from "@symnav/core";
 
 import {
-  BLOCK_SEPARATOR,
   formatEmptyOverview,
   formatHeadLine,
   formatOverviewHeader,
@@ -11,19 +10,19 @@ import {
 } from "./overview-format.js";
 import { capSignatureLines } from "./signature-cap.js";
 
+const TOP_LEVEL_SEPARATOR = "│\n";
+
 export function renderOverviewText(file: FileSymbols): string {
   if (file.symbols.length === 0) {
     return formatEmptyOverview(file.filePath);
   }
-  const blocks = file.symbols.map((decl) => renderTopLevel(decl, []));
-  return formatOverviewHeader(file.filePath) + blocks.join(BLOCK_SEPARATOR);
+  return formatOverviewHeader(file.filePath) + renderTopLevelChildren(file.symbols);
 }
 
-function renderTopLevel(decl: SymbolDecl, ancestors: readonly SymbolDecl[]): string {
-  const headLine = formatHeadLine("", decl.range, buildSymbolPath(ancestors, decl));
-  const signatureBlock = renderSignature(decl.signature, "");
-  const childrenBlock = renderChildren(decl.children, [...ancestors, decl], "");
-  return headLine + signatureBlock + childrenBlock;
+function renderTopLevelChildren(children: readonly SymbolDecl[]): string {
+  return children
+    .map((child, index) => renderChild(child, [], "", index === children.length - 1))
+    .join(TOP_LEVEL_SEPARATOR);
 }
 
 function renderChildren(

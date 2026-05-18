@@ -9,15 +9,6 @@ function makeBackend(): TypeScriptBackend {
   return new TypeScriptBackend(fs);
 }
 
-describe("TypeScriptBackend.resolveSymbols", () => {
-  it("throws not implemented", async () => {
-    const backend = makeBackend();
-    await expect(backend.resolveSymbols([], "query", { fuzzy: false })).rejects.toThrow(
-      "not implemented",
-    );
-  });
-});
-
 describe("TypeScriptBackend.findDefinitions", () => {
   it("throws not implemented", async () => {
     const backend = makeBackend();

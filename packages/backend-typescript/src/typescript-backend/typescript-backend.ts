@@ -13,6 +13,7 @@ import { FileNotFoundError } from "@symnav/core";
 import { Project } from "ts-morph";
 
 import { extractFileSymbols } from "../extract/extract-file-symbols.js";
+import { resolveSymbols } from "../resolve/resolve-symbols.js";
 import { WorkspaceFileSystemHost } from "./workspace-file-system-host.js";
 
 export class TypeScriptBackend implements LanguageBackend {
@@ -46,11 +47,11 @@ export class TypeScriptBackend implements LanguageBackend {
   }
 
   async resolveSymbols(
-    _files: readonly ResolvedPath[],
-    _query: string,
-    _options: ResolveSymbolsOptions,
+    files: readonly ResolvedPath[],
+    query: string,
+    options: ResolveSymbolsOptions,
   ): Promise<readonly SymbolDecl[]> {
-    throw new Error("not implemented");
+    return resolveSymbols({ fs: this.fs, files, query, options });
   }
 
   async findDefinitions(

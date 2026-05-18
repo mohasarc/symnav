@@ -1,4 +1,4 @@
-import { isAbsolute, resolve } from "node:path";
+import { isAbsolute, posix, resolve } from "node:path";
 import type { FileSystem } from "./file-system.js";
 import {
   FileNotFoundError,
@@ -19,6 +19,7 @@ export interface ResolvedPath {
 export interface Workspace {
   readonly root: string;
   resolveInputPath(inputPath: string, cwd: string): Promise<ResolvedPath>;
+  enumerate(): Promise<readonly ResolvedPath[]>;
 }
 
 class DefaultWorkspace implements Workspace {
@@ -48,6 +49,34 @@ class DefaultWorkspace implements Workspace {
       throw new IgnoredFileError(inputPath);
     }
     return { relative: relativePath, absolute: absolutePath };
+  }
+
+  async enumerate(): Promise<readonly ResolvedPath[]> {
+    const results: ResolvedPath[] = [];
+    this.collect(this.root, results);
+    results.sort((a, b) => (a.relative < b.relative ? -1 : a.relative > b.relative ? 1 : 0));
+    return results;
+  }
+
+  private collect(dirAbs: string, out: ResolvedPath[]): void {
+    let entries: readonly string[];
+    try {
+      entries = this.fs.listDirSync(dirAbs);
+    } catch {
+      return;
+    }
+    for (const entry of entries) {
+      const childAbs = posix.join(dirAbs, entry);
+      const childRel = this.toRelative(childAbs);
+      if (this.ignore.isIgnored(childRel)) {
+        continue;
+      }
+      if (this.fs.isDirectorySync(childAbs)) {
+        this.collect(childAbs, out);
+      } else {
+        out.push({ relative: childRel, absolute: childAbs });
+      }
+    }
   }
 }
 

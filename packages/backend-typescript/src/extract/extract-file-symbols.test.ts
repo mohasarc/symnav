@@ -43,7 +43,7 @@ describe("extractFileSymbols", () => {
     ].join("\n");
     const result = symbolsOf(source);
     expect(result.symbols.map((s) => [s.kind.nativeLabel, ownName(s)])).toEqual([
-      ["function", "fn"],
+      ["function-implementation", "fn"],
       ["class", "Cls"],
       ["interface", "Iface"],
       ["type-alias", "Alias"],
@@ -71,12 +71,12 @@ describe("extractFileSymbols", () => {
     if (!cls) throw new Error("expected class");
     expect(cls.children.map((c) => [c.kind.nativeLabel, ownName(c)])).toEqual([
       ["property", "prop"],
-      ["constructor", "constructor"],
-      ["method", "method"],
+      ["constructor-implementation", "constructor"],
+      ["method-implementation", "method"],
       ["getter", "value"],
       ["setter", "value"],
-      ["method", "helper"],
-      ["method", "overrideMe"],
+      ["method-implementation", "helper"],
+      ["method-declaration", "overrideMe"],
     ]);
   });
 
@@ -95,7 +95,7 @@ describe("extractFileSymbols", () => {
     if (!iface) throw new Error("expected interface");
     expect(iface.children.map((c) => [c.kind.nativeLabel, ownName(c)])).toEqual([
       ["property", "x"],
-      ["method", "m"],
+      ["method-declaration", "m"],
       ["index-signature", "[index]"],
       ["call-signature", "()"],
       ["construct-signature", "new()"],
@@ -109,7 +109,7 @@ describe("extractFileSymbols", () => {
     if (!ns) throw new Error("expected namespace");
     expect(ns.kind.nativeLabel).toBe("namespace");
     expect(ns.children).toHaveLength(1);
-    expect(ns.children[0]?.kind.nativeLabel).toBe("function");
+    expect(ns.children[0]?.kind.nativeLabel).toBe("function-implementation");
     expect(ns.children[0]).toBeDefined();
     expect(ownName(ns.children[0]!)).toBe("inner");
   });
@@ -204,7 +204,9 @@ describe("extractFileSymbols", () => {
     const result = symbolsOf(source);
     const cls = result.symbols[0];
     if (!cls) throw new Error("expected class");
-    expect(cls.children.map((c) => [c.kind.nativeLabel, ownName(c)])).toEqual([["method", "m"]]);
+    expect(cls.children.map((c) => [c.kind.nativeLabel, ownName(c)])).toEqual([
+      ["method-implementation", "m"],
+    ]);
   });
 
   it("extracts a private field whose canonical id round-trips", () => {

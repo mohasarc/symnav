@@ -13,6 +13,7 @@ import { splitSignatureLines } from "@symnav/core";
 
 import { extractSignatureSource } from "./extract-signature-source.js";
 import { nodeKind } from "./node-kind.js";
+import { refineLabel } from "./refine-label.js";
 import { roleOf } from "./typescript-symbol-kind.js";
 
 export interface ExtractionScope {
@@ -79,10 +80,11 @@ function toMemberDecl(member: Node, scope: ExtractionScope): SymbolDecl[] {
   }
   const range = nodeRange(member);
   const name = nodeName(member);
+  const refined = refineLabel(member, kind);
   return [
     {
       identity: identityFor(scope, name),
-      kind: { role: roleOf(kind), nativeLabel: kind },
+      kind: { role: roleOf(refined), nativeLabel: refined },
       range,
       signature: signatureFrom(range.startLine, extractSignatureSource(member)),
       children: [],
@@ -101,10 +103,11 @@ function toStatementDecl(stmt: Node, scope: ExtractionScope): SymbolDecl[] {
   }
   const range = nodeRange(stmt);
   const name = nodeName(stmt);
+  const refined = refineLabel(stmt, kind);
   return [
     {
       identity: identityFor(scope, name),
-      kind: { role: roleOf(kind), nativeLabel: kind },
+      kind: { role: roleOf(refined), nativeLabel: refined },
       range,
       signature: signatureFrom(range.startLine, extractSignatureSource(stmt)),
       children: hasChildren(stmt) ? extractChildren(stmt, childScope(scope, name)) : [],

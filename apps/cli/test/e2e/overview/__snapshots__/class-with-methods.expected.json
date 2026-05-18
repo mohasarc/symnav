@@ -17,7 +17,7 @@
             ]
           },
           "kind": {
-            "nativeLabel": "method",
+            "nativeLabel": "method-implementation",
             "role": "callable"
           },
           "range": {
@@ -45,7 +45,7 @@
             ]
           },
           "kind": {
-            "nativeLabel": "method",
+            "nativeLabel": "method-implementation",
             "role": "callable"
           },
           "range": {

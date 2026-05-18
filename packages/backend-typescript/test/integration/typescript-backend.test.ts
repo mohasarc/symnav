@@ -130,6 +130,6 @@ describe("TypeScriptBackend.fileSymbols", () => {
         s.kind.nativeLabel,
         s.identity.segments[s.identity.segments.length - 1]?.name,
       ]),
-    ).toEqual([["function", "Greeting"]]);
+    ).toEqual([["function-implementation", "Greeting"]]);
   });
 });

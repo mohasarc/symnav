@@ -5,6 +5,7 @@ import { Command as CommanderCommand } from "commander";
 import { NodeFileSystem } from "@symnav/core";
 import { TypeScriptBackend } from "@symnav/backend-typescript";
 import { registerOverviewCommand } from "./commands/overview/register-overview-command.js";
+import { registerResolveCommand } from "./commands/resolve/register-resolve-command.js";
 import type { ProgramContext } from "./program-context.js";
 import type { ProgramDependencies } from "./program-dependencies.js";
 
@@ -59,5 +60,6 @@ export function buildProgram(
       ctx.exit(1);
     });
   registerOverviewCommand(program, ctx, deps);
+  registerResolveCommand(program, ctx, deps);
   return program;
 }

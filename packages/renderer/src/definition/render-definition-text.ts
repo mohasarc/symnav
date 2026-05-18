@@ -51,7 +51,10 @@ function formatIdentityPath(identity: SymbolIdentity): string {
   return identity.segments.map((segment) => formatSegment(segment)).join("::");
 }
 
-function formatSegment(segment: { readonly name: string; readonly disambiguator?: number }): string {
+function formatSegment(segment: {
+  readonly name: string;
+  readonly disambiguator?: number;
+}): string {
   if (segment.disambiguator === undefined) {
     return segment.name;
   }

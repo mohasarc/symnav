@@ -182,9 +182,7 @@ describe("findDefinitions", () => {
         "src/payments/StripeProvider.ts",
       ].sort(),
     );
-    const declaration = summary.find(
-      (s) => s.file === "src/payments/PaymentProvider.ts",
-    );
+    const declaration = summary.find((s) => s.file === "src/payments/PaymentProvider.ts");
     expect(declaration?.label).toBe("method-declaration");
     const stripe = summary.find((s) => s.file === "src/payments/StripeProvider.ts");
     expect(stripe?.label).toBe("method-implementation");

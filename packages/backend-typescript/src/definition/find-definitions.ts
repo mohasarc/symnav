@@ -8,7 +8,13 @@ import {
   type ModuleDeclaration,
   type SourceFile,
 } from "ts-morph";
-import type { FileSystem, ResolvedPath, SymbolDecl, SymbolIdentity, SymbolPathSegment } from "@symnav/core";
+import type {
+  FileSystem,
+  ResolvedPath,
+  SymbolDecl,
+  SymbolIdentity,
+  SymbolPathSegment,
+} from "@symnav/core";
 
 import { extractFileSymbols } from "../extract/extract-file-symbols.js";
 import { WorkspaceFileSystemHost } from "../typescript-backend/workspace-file-system-host.js";
@@ -73,7 +79,9 @@ function identityKey(identity: SymbolIdentity): string {
 }
 
 function segmentKey(segment: SymbolPathSegment): string {
-  return segment.disambiguator === undefined ? segment.name : `${segment.name}#${segment.disambiguator}`;
+  return segment.disambiguator === undefined
+    ? segment.name
+    : `${segment.name}#${segment.disambiguator}`;
 }
 
 function matchIdentity(
@@ -261,7 +269,9 @@ function enclosingTypeNames(node: Node): string[] {
   let current: Node | undefined = node.getParent();
   while (current) {
     if (isContainer(current)) {
-      const name = (current as ClassDeclaration | InterfaceDeclaration | ModuleDeclaration).getName();
+      const name = (
+        current as ClassDeclaration | InterfaceDeclaration | ModuleDeclaration
+      ).getName();
       if (name) out.unshift(name);
     }
     current = current.getParent();

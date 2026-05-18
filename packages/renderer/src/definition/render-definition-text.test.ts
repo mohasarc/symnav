@@ -133,12 +133,7 @@ describe("renderDefinitionText", () => {
       symbols: [],
     };
     expect(renderDefinitionText(result)).toBe(
-      [
-        "Definition: PaymentProvider::ghost",
-        "",
-        "(no matching definitions)",
-        "",
-      ].join("\n"),
+      ["Definition: PaymentProvider::ghost", "", "(no matching definitions)", ""].join("\n"),
     );
   });
 
@@ -157,14 +152,9 @@ describe("renderDefinitionText", () => {
       ],
     };
     expect(renderDefinitionText(result)).toBe(
-      [
-        "Definition: PI",
-        "",
-        "src/util/constants.ts",
-        "└── 1: PI",
-        "    const PI = 3.14",
-        "",
-      ].join("\n"),
+      ["Definition: PI", "", "src/util/constants.ts", "└── 1: PI", "    const PI = 3.14", ""].join(
+        "\n",
+      ),
     );
   });
 });

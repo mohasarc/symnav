@@ -1,0 +1,13 @@
+Definition: PaymentProvider::charge
+
+src/payments/PaymentProvider.ts
+└── 2: PaymentProvider::charge  [declaration]
+    charge(orderId: string): Promise<string>
+
+src/payments/PaypalProvider.ts
+└── 4-6: PaypalProvider::charge  [implementation]
+    async charge(orderId: string): Promise<string>
+
+src/payments/StripeProvider.ts
+└── 4-6: StripeProvider::charge  [implementation]
+    async charge(orderId: string): Promise<string>

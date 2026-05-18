@@ -1,6 +1,14 @@
 import { basename } from "node:path";
 
-import type { FileSystem, LanguageBackend, OverviewFileSymbols, ResolvedPath } from "@symnav/core";
+import type {
+  FileSystem,
+  LanguageBackend,
+  OverviewFileSymbols,
+  ResolveSymbolsOptions,
+  ResolvedPath,
+  SymbolDecl,
+  SymbolIdentity,
+} from "@symnav/core";
 import { FileNotFoundError } from "@symnav/core";
 import { Project } from "ts-morph";
 
@@ -35,5 +43,20 @@ export class TypeScriptBackend implements LanguageBackend {
     });
     const sourceFile = project.addSourceFileAtPath(absolute);
     return extractFileSymbols({ sourceFile, filePath: relative });
+  }
+
+  async resolveSymbols(
+    _files: readonly ResolvedPath[],
+    _query: string,
+    _options: ResolveSymbolsOptions,
+  ): Promise<readonly SymbolDecl[]> {
+    throw new Error("not implemented");
+  }
+
+  async findDefinitions(
+    _files: readonly ResolvedPath[],
+    _identity: SymbolIdentity,
+  ): Promise<readonly SymbolDecl[]> {
+    throw new Error("not implemented");
   }
 }

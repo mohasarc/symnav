@@ -1,3 +1,4 @@
+import { UnsupportedFileError } from "./errors.js";
 import type { LanguageBackend } from "./language-backend.js";
 
 export class BackendRouter {
@@ -14,5 +15,13 @@ export class BackendRouter {
       }
     }
     return undefined;
+  }
+
+  findOrThrow(filePath: string): LanguageBackend {
+    const backend = this.find(filePath);
+    if (backend === undefined) {
+      throw new UnsupportedFileError(filePath);
+    }
+    return backend;
   }
 }

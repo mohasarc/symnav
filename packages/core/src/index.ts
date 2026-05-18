@@ -6,6 +6,10 @@ export type {
   SymbolDecl,
   FileSymbols,
 } from "./intermediate-representation/types.js";
+export type {
+  SymbolPathSegment,
+  SymbolIdentity,
+} from "./intermediate-representation/symbol-identity.js";
 export { buildSymbolPath } from "./intermediate-representation/symbol-path.js";
 export { splitSignatureLines } from "./intermediate-representation/split-signature-lines.js";
 export type { FileSystem } from "./workspace/file-system.js";

@@ -8,20 +8,37 @@ import {
   type VariableDeclarationKind,
   type VariableStatement,
 } from "ts-morph";
-import type { LineRange, Signature, SymbolDecl } from "@symnav/core";
+import type { LineRange, Signature, SymbolDecl, SymbolIdentity } from "@symnav/core";
 import { splitSignatureLines } from "@symnav/core";
 
 import { extractSignatureSource } from "./extract-signature-source.js";
 import { nodeKind } from "./node-kind.js";
 import { roleOf } from "./typescript-symbol-kind.js";
 
+export interface ExtractionScope {
+  readonly file: string;
+  readonly ancestorNames: readonly string[];
+}
+
+function childScope(parent: ExtractionScope, name: string): ExtractionScope {
+  return { file: parent.file, ancestorNames: [...parent.ancestorNames, name] };
+}
+
+function identityFor(scope: ExtractionScope, name: string): SymbolIdentity {
+  return {
+    file: scope.file,
+    path: [...scope.ancestorNames, name].map((segmentName) => ({ name: segmentName })),
+  };
+}
+
 function extractChildren(
   parent: ClassDeclaration | InterfaceDeclaration | ModuleDeclaration,
+  scope: ExtractionScope,
 ): readonly SymbolDecl[] {
   if (Node.isClassDeclaration(parent) || Node.isInterfaceDeclaration(parent)) {
-    return parent.getMembers().flatMap(toMemberDecl);
+    return parent.getMembers().flatMap((member) => toMemberDecl(member, scope));
   }
-  return extractStatementDecls(parent.getStatements());
+  return extractStatementDecls(parent.getStatements(), scope);
 }
 
 function hasChildren(
@@ -34,8 +51,11 @@ function hasChildren(
   );
 }
 
-export function extractStatementDecls(statements: readonly Node[]): readonly SymbolDecl[] {
-  return statements.flatMap(toStatementDecl);
+export function extractStatementDecls(
+  statements: readonly Node[],
+  scope: ExtractionScope,
+): readonly SymbolDecl[] {
+  return statements.flatMap((stmt) => toStatementDecl(stmt, scope));
 }
 
 const IGNORED_STATEMENT_KINDS: ReadonlySet<SyntaxKind> = new Set([
@@ -51,17 +71,18 @@ const IGNORED_MEMBER_KINDS: ReadonlySet<SyntaxKind> = new Set([
   SyntaxKind.SemicolonClassElement,
 ]);
 
-function toMemberDecl(member: Node): SymbolDecl[] {
+function toMemberDecl(member: Node, scope: ExtractionScope): SymbolDecl[] {
   const kind = nodeKind(member);
   if (!kind) {
     if (IGNORED_MEMBER_KINDS.has(member.getKind())) return [];
     throw new Error(`Unrecognised class/interface member kind: ${member.getKindName()}`);
   }
   const range = nodeRange(member);
+  const name = nodeName(member);
   return [
     {
+      identity: identityFor(scope, name),
       kind: { role: roleOf(kind), nativeLabel: kind },
-      name: nodeName(member),
       range,
       signature: signatureFrom(range.startLine, extractSignatureSource(member)),
       children: [],
@@ -69,34 +90,35 @@ function toMemberDecl(member: Node): SymbolDecl[] {
   ];
 }
 
-function toStatementDecl(stmt: Node): SymbolDecl[] {
+function toStatementDecl(stmt: Node, scope: ExtractionScope): SymbolDecl[] {
   const kind = nodeKind(stmt);
   if (!kind) {
     if (IGNORED_STATEMENT_KINDS.has(stmt.getKind())) return [];
     throw new Error(`Unrecognised top-level statement kind: ${stmt.getKindName()}`);
   }
   if (Node.isVariableStatement(stmt)) {
-    return expandVariableStatement(stmt);
+    return expandVariableStatement(stmt, scope);
   }
   const range = nodeRange(stmt);
+  const name = nodeName(stmt);
   return [
     {
+      identity: identityFor(scope, name),
       kind: { role: roleOf(kind), nativeLabel: kind },
-      name: nodeName(stmt),
       range,
       signature: signatureFrom(range.startLine, extractSignatureSource(stmt)),
-      children: hasChildren(stmt) ? extractChildren(stmt) : [],
+      children: hasChildren(stmt) ? extractChildren(stmt, childScope(scope, name)) : [],
     },
   ];
 }
 
-function expandVariableStatement(stmt: VariableStatement): SymbolDecl[] {
+function expandVariableStatement(stmt: VariableStatement, scope: ExtractionScope): SymbolDecl[] {
   const declList = stmt.getDeclarationList();
   const keyword = declList.getDeclarationKind();
   const range = nodeRange(stmt);
   return declList.getDeclarations().map((decl) => ({
+    identity: identityFor(scope, decl.getName()),
     kind: { role: roleOf("variable"), nativeLabel: "variable" },
-    name: decl.getName(),
     range,
     signature: signatureFrom(range.startLine, singleVariableSignature(stmt, keyword, decl)),
     children: [],

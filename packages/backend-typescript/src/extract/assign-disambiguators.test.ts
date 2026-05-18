@@ -1,11 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import type {
-  LineRange,
-  Signature,
-  SymbolIdentity,
-  SymbolKind,
-} from "@symnav/core";
+import type { LineRange, Signature, SymbolIdentity, SymbolKind } from "@symnav/core";
 
 import { assignDisambiguators } from "./assign-disambiguators.js";
 

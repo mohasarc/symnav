@@ -1,29 +1,15 @@
-import {
-  BackendRouter,
-  createWorkspace,
-  UnsupportedFileError,
-  UserFacingError,
-  type LanguageBackend,
-  type ResolvedPath,
-  type Workspace,
-} from "@symnav/core";
+import { BackendRouter, createWorkspace, UserFacingError, type Workspace } from "@symnav/core";
 import type { ProgramContext } from "./program-context.js";
 import type { ProgramDependencies } from "./program-dependencies.js";
 
-export interface CommandArgs {
-  file: string;
+export interface CommandContext<Args> {
+  readonly workspace: Workspace;
+  readonly router: BackendRouter;
+  readonly cwd: string;
+  readonly args: Args;
 }
 
-export interface CommandContext<Args extends CommandArgs = CommandArgs> {
-  workspace: Workspace;
-  router: BackendRouter;
-  cwd: string;
-  args: Args;
-  path: ResolvedPath;
-  backend: LanguageBackend;
-}
-
-export interface CommandInvocation<Args extends CommandArgs = CommandArgs> {
+export interface CommandInvocation<Args> {
   context: ProgramContext;
   dependencies: ProgramDependencies;
   cwdOverride: string | undefined;
@@ -31,13 +17,13 @@ export interface CommandInvocation<Args extends CommandArgs = CommandArgs> {
   args: Args;
 }
 
-export interface Command<Result, Args extends CommandArgs = CommandArgs> {
+export interface Command<Result, Args> {
   compute(ctx: CommandContext<Args>): Promise<Result>;
   renderText(result: Result): string;
   renderJson(result: Result): string;
 }
 
-export async function runCommand<Result, Args extends CommandArgs>(
+export async function runCommand<Result, Args>(
   command: Command<Result, Args>,
   invocation: CommandInvocation<Args>,
 ): Promise<void> {
@@ -48,12 +34,7 @@ export async function runCommand<Result, Args extends CommandArgs>(
   try {
     const workspace = await createWorkspace({ startDir: cwd, fs });
     const router = new BackendRouter(dependencies.backends());
-    const path = await workspace.resolveInputPath(args.file, cwd);
-    const backend = router.find(path.relative);
-    if (backend === undefined) {
-      throw new UnsupportedFileError(args.file);
-    }
-    result = await command.compute({ workspace, router, cwd, args, path, backend });
+    result = await command.compute({ workspace, router, cwd, args });
   } catch (err) {
     handleError(context, err);
     return;

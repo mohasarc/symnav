@@ -10,6 +10,11 @@ export type {
   SymbolPathSegment,
   SymbolIdentity,
 } from "./intermediate-representation/symbol-identity.js";
+export {
+  InvalidSymbolIdError,
+  formatSymbolIdentity,
+  parseSymbolIdentity,
+} from "./intermediate-representation/canonical-identity.js";
 export { splitSignatureLines } from "./intermediate-representation/split-signature-lines.js";
 export type { FileSystem } from "./workspace/file-system.js";
 export { NodeFileSystem } from "./workspace/node-file-system.js";

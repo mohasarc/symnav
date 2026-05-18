@@ -1,0 +1,85 @@
+import type { ResolveResult, SymbolDecl, SymbolIdentity } from "@symnav/core";
+
+import { formatRange, treeGlyphsFor } from "../overview/overview-format.js";
+
+export function renderResolveText(result: ResolveResult): string {
+  return (
+    `Resolve: ${result.query}\n` +
+    "\n" +
+    renderSymbolsSection(result.symbols) +
+    "\n" +
+    renderFilesSection(result.files)
+  );
+}
+
+function renderSymbolsSection(symbols: readonly SymbolDecl[]): string {
+  if (symbols.length === 0) {
+    return "Symbols\n(none)\n";
+  }
+  const byFile = groupByFile(symbols);
+  const files = [...byFile.keys()];
+  return (
+    "Symbols\n" +
+    files
+      .map((file, index) =>
+        renderFileGroup(file, byFile.get(file) ?? [], index === files.length - 1),
+      )
+      .join("")
+  );
+}
+
+function renderFilesSection(files: readonly string[]): string {
+  if (files.length === 0) {
+    return "Files\n(none)\n";
+  }
+  return (
+    "Files\n" +
+    files
+      .map((file, index) => {
+        const { branchGlyph } = treeGlyphsFor(index === files.length - 1);
+        return `${branchGlyph}${file}\n`;
+      })
+      .join("")
+  );
+}
+
+function groupByFile(symbols: readonly SymbolDecl[]): Map<string, SymbolDecl[]> {
+  const map = new Map<string, SymbolDecl[]>();
+  for (const symbol of symbols) {
+    const file = symbol.identity.file;
+    const bucket = map.get(file);
+    if (bucket) {
+      bucket.push(symbol);
+    } else {
+      map.set(file, [symbol]);
+    }
+  }
+  return map;
+}
+
+function renderFileGroup(
+  file: string,
+  symbols: readonly SymbolDecl[],
+  isLastFile: boolean,
+): string {
+  const { branchGlyph, continuationGlyph } = treeGlyphsFor(isLastFile);
+  const header = `${branchGlyph}${file}\n`;
+  const childLines = symbols
+    .map((symbol, index) =>
+      renderSymbolEntry(symbol, continuationGlyph, index === symbols.length - 1),
+    )
+    .join("");
+  return header + childLines;
+}
+
+function renderSymbolEntry(symbol: SymbolDecl, parentPrefix: string, isLast: boolean): string {
+  const { branchGlyph, continuationGlyph } = treeGlyphsFor(isLast);
+  const head = `${parentPrefix}${branchGlyph}${formatRange(symbol.range)}: ${formatIdentityPath(symbol.identity)}\n`;
+  const signaturePrefix = parentPrefix + continuationGlyph;
+  const sig = symbol.signature.lines.map((line) => `${signaturePrefix}${line}\n`).join("");
+  return head + sig;
+}
+
+function formatIdentityPath(identity: SymbolIdentity): string {
+  return identity.segments.map((segment) => segment.name).join("::");
+}

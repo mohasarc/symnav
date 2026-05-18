@@ -11,6 +11,7 @@ import type {
 } from "@symnav/core";
 import { FileNotFoundError } from "@symnav/core";
 
+import { findDefinitions } from "../definition/find-definitions.js";
 import { loadFileSymbols } from "../extract/load-file-symbols.js";
 import { resolveSymbols } from "../resolve/resolve-symbols.js";
 
@@ -49,9 +50,9 @@ export class TypeScriptBackend implements LanguageBackend {
   }
 
   async findDefinitions(
-    _files: readonly ResolvedPath[],
-    _identity: SymbolIdentity,
+    files: readonly ResolvedPath[],
+    identity: SymbolIdentity,
   ): Promise<readonly SymbolDecl[]> {
-    throw new Error("not implemented");
+    return findDefinitions({ fs: this.fs, files, identity });
   }
 }

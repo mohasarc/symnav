@@ -78,18 +78,34 @@ function toMemberDecl(member: Node, scope: ExtractionScope): SymbolDecl[] {
     if (IGNORED_MEMBER_KINDS.has(member.getKind())) return [];
     throw new Error(`Unrecognised class/interface member kind: ${member.getKindName()}`);
   }
+  return expandOverloads(member).map((node) => buildMemberDecl(node, kind, scope));
+}
+
+function buildMemberDecl(
+  member: Node,
+  kind: NonNullable<ReturnType<typeof nodeKind>>,
+  scope: ExtractionScope,
+): SymbolDecl {
   const range = nodeRange(member);
   const name = nodeName(member);
   const refined = refineLabel(member, kind);
-  return [
-    {
-      identity: identityFor(scope, name),
-      kind: { role: roleOf(refined), nativeLabel: refined },
-      range,
-      signature: signatureFrom(range.startLine, extractSignatureSource(member)),
-      children: [],
-    },
-  ];
+  return {
+    identity: identityFor(scope, name),
+    kind: { role: roleOf(refined), nativeLabel: refined },
+    range,
+    signature: signatureFrom(range.startLine, extractSignatureSource(member)),
+    children: [],
+  };
+}
+
+function expandOverloads(member: Node): Node[] {
+  if (Node.isOverloadable(member) && member.isImplementation()) {
+    const overloads = member.getOverloads();
+    if (overloads.length > 0) {
+      return [...overloads, member];
+    }
+  }
+  return [member];
 }
 
 function toStatementDecl(stmt: Node, scope: ExtractionScope): SymbolDecl[] {

@@ -24,11 +24,14 @@ function refineMethodLabel(node: Node): TypeScriptSymbolKind {
     return "method-declaration";
   }
   if (Node.isMethodDeclaration(node)) {
-    if (!node.hasBody()) {
+    if (node.isAbstract()) {
       return "method-declaration";
     }
     if (node.isOverload()) {
       return "method-overload-signature";
+    }
+    if (!node.hasBody()) {
+      return "method-declaration";
     }
     return "method-implementation";
   }

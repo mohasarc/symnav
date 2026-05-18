@@ -1,0 +1,26 @@
+Resolve: payment
+
+Symbols
+├── src/checkout/CheckoutService.ts
+│   ├── 1: MAX_PAYMENT_RETRIES
+│   │   export const MAX_PAYMENT_RETRIES = 3
+│   ├── 3-5: Payment
+│   │   export interface Payment
+│   └── 8-10: CheckoutService::processPayment
+│       async processPayment(orderId: string): Promise<string>
+├── src/payments/PaymentProcessor.ts
+│   └── 1-5: PaymentProcessor
+│       export class PaymentProcessor
+├── src/payments/PaymentProvider.ts
+│   └── 1-3: PaymentProvider
+│       export interface PaymentProvider
+└── src/payments/types.ts
+    ├── 1: PaymentStatus
+    │   export type PaymentStatus = "pending" | "paid" | "failed"
+    ├── 3-6: PaymentMethod
+    │   export enum PaymentMethod
+    └── 8-11: Payment
+        export interface Payment
+
+Files
+└── src/Payment.ts

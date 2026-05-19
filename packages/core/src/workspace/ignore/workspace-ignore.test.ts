@@ -89,6 +89,17 @@ describe("WorkspaceIgnore", () => {
     expect(() => WorkspaceIgnore.build("/repo", new ThrowingFs(other))).toThrow(/boom/);
   });
 
+  it("does not ignore a subdirectory that hosts its own .gitignore", () => {
+    const fs = new InMemoryFileSystem({
+      "/repo/.gitignore": "",
+      "/repo/pkg/.gitignore": "temp.ts\n",
+      "/repo/pkg/temp.ts": "",
+      "/repo/pkg/keep.ts": "",
+    });
+    const ignore = WorkspaceIgnore.build("/repo", fs);
+    expect(ignore.isIgnored("pkg")).toBe(false);
+  });
+
   it("does not ignore the empty or root path", () => {
     const fs = new InMemoryFileSystem({
       "/repo/.gitignore": "dist/\n",

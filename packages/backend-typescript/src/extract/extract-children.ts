@@ -65,6 +65,22 @@ const IGNORED_STATEMENT_KINDS: ReadonlySet<SyntaxKind> = new Set([
   SyntaxKind.ImportEqualsDeclaration,
   SyntaxKind.EmptyStatement,
   SyntaxKind.ExpressionStatement,
+  SyntaxKind.IfStatement,
+  SyntaxKind.ForStatement,
+  SyntaxKind.ForInStatement,
+  SyntaxKind.ForOfStatement,
+  SyntaxKind.WhileStatement,
+  SyntaxKind.DoStatement,
+  SyntaxKind.SwitchStatement,
+  SyntaxKind.TryStatement,
+  SyntaxKind.ThrowStatement,
+  SyntaxKind.ReturnStatement,
+  SyntaxKind.BreakStatement,
+  SyntaxKind.ContinueStatement,
+  SyntaxKind.LabeledStatement,
+  SyntaxKind.Block,
+  SyntaxKind.DebuggerStatement,
+  SyntaxKind.WithStatement,
 ]);
 
 const IGNORED_MEMBER_KINDS: ReadonlySet<SyntaxKind> = new Set([

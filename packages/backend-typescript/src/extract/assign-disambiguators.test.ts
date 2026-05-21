@@ -52,12 +52,7 @@ describe("assignDisambiguators", () => {
     expect(result.map(disambiguatorOf)).toEqual([1, 2, 3]);
   });
 
-  it("assigns #1 to the first occurrence and #2 to the second of a colliding name", () => {
-    const result = assignDisambiguators(buildSiblings([{ name: "bar" }, { name: "bar" }]));
-    expect(result.map(disambiguatorOf)).toEqual([1, 2]);
-  });
-
-  it("disambiguates regardless of kind, since collision is by name alone", () => {
+  it("assigns #1/#2 to a colliding name regardless of kind, since collision is by name alone", () => {
     const result = assignDisambiguators(
       buildSiblings([
         { name: "bar", kind: CALLABLE_GETTER },

@@ -2,21 +2,21 @@ import type { SymbolPathSegment } from "./symbol-identity.js";
 import type { SymbolDecl } from "./types.js";
 
 export function assignDisambiguators(siblings: readonly SymbolDecl[]): readonly SymbolDecl[] {
-  const occurrencesByName = countByLeafName(siblings);
+  const occurrencesByName = countByOwnName(siblings);
   const assignedCountsByName = new Map<string, number>();
   return siblings.map((sibling) => {
-    const leafName = leafNameOf(sibling);
-    const totalForName = occurrencesByName.get(leafName) ?? 0;
+    const ownName = ownNameOf(sibling);
+    const totalForName = occurrencesByName.get(ownName) ?? 0;
     const nextDisambiguator =
-      totalForName >= 2 ? (assignedCountsByName.get(leafName) ?? 0) + 1 : undefined;
+      totalForName >= 2 ? (assignedCountsByName.get(ownName) ?? 0) + 1 : undefined;
     if (nextDisambiguator !== undefined) {
-      assignedCountsByName.set(leafName, nextDisambiguator);
+      assignedCountsByName.set(ownName, nextDisambiguator);
     }
     return withDisambiguatedIdentity(sibling, nextDisambiguator);
   });
 }
 
-function leafNameOf(decl: SymbolDecl): string {
+function ownNameOf(decl: SymbolDecl): string {
   const segments = decl.identity.segments;
   const last = segments[segments.length - 1];
   if (!last) {
@@ -25,10 +25,10 @@ function leafNameOf(decl: SymbolDecl): string {
   return last.name;
 }
 
-function countByLeafName(siblings: readonly SymbolDecl[]): Map<string, number> {
+function countByOwnName(siblings: readonly SymbolDecl[]): Map<string, number> {
   const counts = new Map<string, number>();
   for (const sibling of siblings) {
-    const name = leafNameOf(sibling);
+    const name = ownNameOf(sibling);
     counts.set(name, (counts.get(name) ?? 0) + 1);
   }
   return counts;

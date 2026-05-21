@@ -9,7 +9,7 @@ function symbolsOf(source: string, filePath: string = "input.ts"): OverviewFileS
   return extractFileSymbols({ sourceFile, filePath });
 }
 
-function leafName(decl: SymbolDecl): string {
+function ownName(decl: SymbolDecl): string {
   const segments = decl.identity.segments;
   return segments[segments.length - 1]?.name ?? "";
 }
@@ -37,7 +37,7 @@ describe("extractFileSymbols", () => {
       "export default 42;",
     ].join("\n");
     const result = symbolsOf(source);
-    expect(result.symbols.map((s) => [s.kind.nativeLabel, leafName(s)])).toEqual([
+    expect(result.symbols.map((s) => [s.kind.nativeLabel, ownName(s)])).toEqual([
       ["function", "fn"],
       ["class", "Cls"],
       ["interface", "Iface"],
@@ -64,7 +64,7 @@ describe("extractFileSymbols", () => {
     const result = symbolsOf(source);
     const cls = result.symbols[0];
     if (!cls) throw new Error("expected class");
-    expect(cls.children.map((c) => [c.kind.nativeLabel, leafName(c)])).toEqual([
+    expect(cls.children.map((c) => [c.kind.nativeLabel, ownName(c)])).toEqual([
       ["property", "prop"],
       ["constructor", "constructor"],
       ["method", "method"],
@@ -88,7 +88,7 @@ describe("extractFileSymbols", () => {
     const result = symbolsOf(source);
     const iface = result.symbols[0];
     if (!iface) throw new Error("expected interface");
-    expect(iface.children.map((c) => [c.kind.nativeLabel, leafName(c)])).toEqual([
+    expect(iface.children.map((c) => [c.kind.nativeLabel, ownName(c)])).toEqual([
       ["property", "x"],
       ["method", "m"],
       ["index-signature", "[index]"],
@@ -106,7 +106,7 @@ describe("extractFileSymbols", () => {
     expect(ns.children).toHaveLength(1);
     expect(ns.children[0]?.kind.nativeLabel).toBe("function");
     expect(ns.children[0]).toBeDefined();
-    expect(leafName(ns.children[0]!)).toBe("inner");
+    expect(ownName(ns.children[0]!)).toBe("inner");
   });
 
   it("a nested decl's identity carries the full ancestor chain in path", () => {
@@ -121,7 +121,7 @@ describe("extractFileSymbols", () => {
 
   it("expands a single `const a = 1, b = 2;` into two separate variable decls with their own ranges", () => {
     const result = symbolsOf("const a = 1, b = 2;");
-    expect(result.symbols.map((s) => [s.kind.nativeLabel, leafName(s)])).toEqual([
+    expect(result.symbols.map((s) => [s.kind.nativeLabel, ownName(s)])).toEqual([
       ["variable", "a"],
       ["variable", "b"],
     ]);
@@ -199,6 +199,6 @@ describe("extractFileSymbols", () => {
     const result = symbolsOf(source);
     const cls = result.symbols[0];
     if (!cls) throw new Error("expected class");
-    expect(cls.children.map((c) => [c.kind.nativeLabel, leafName(c)])).toEqual([["method", "m"]]);
+    expect(cls.children.map((c) => [c.kind.nativeLabel, ownName(c)])).toEqual([["method", "m"]]);
   });
 });

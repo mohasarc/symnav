@@ -19,7 +19,7 @@ const CONTAINER_CLASS: SymbolKind = { role: "container", nativeLabel: "class" };
 
 function leaf(name: string, kind: SymbolKind = CALLABLE_METHOD): IdentitySymbolDecl {
   return {
-    identity: { file: "src/foo.ts", path: [{ name }] },
+    identity: { file: "src/foo.ts", segments: [{ name }] },
     kind,
     range: { startLine: 1, endLine: 1 },
     signature: { startLine: 1, lines: [name] },
@@ -33,7 +33,7 @@ function withChildren(
   kind: SymbolKind = CONTAINER_CLASS,
 ): IdentitySymbolDecl {
   return {
-    identity: { file: "src/foo.ts", path: [{ name }] },
+    identity: { file: "src/foo.ts", segments: [{ name }] },
     kind,
     range: { startLine: 1, endLine: 10 },
     signature: { startLine: 1, lines: [name] },
@@ -42,7 +42,7 @@ function withChildren(
 }
 
 function disambiguatorOf(decl: IdentitySymbolDecl): number | undefined {
-  return decl.identity.path[decl.identity.path.length - 1]?.disambiguator;
+  return decl.identity.segments[decl.identity.segments.length - 1]?.disambiguator;
 }
 
 describe("assignDisambiguators", () => {

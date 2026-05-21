@@ -23,7 +23,7 @@ export function assignDisambiguators<T extends IdentitySymbolDecl>(
 }
 
 function leafNameOf(decl: IdentitySymbolDecl): string {
-  const segments = decl.identity.path;
+  const segments = decl.identity.segments;
   const last = segments[segments.length - 1];
   if (!last) {
     throw new Error("symbol identity has empty path");
@@ -44,11 +44,11 @@ function withDisambiguatedIdentity<T extends IdentitySymbolDecl>(
   decl: T,
   disambiguator: number | undefined,
 ): T {
-  const updatedLeaf = updatedLeafSegment(decl.identity.path, disambiguator);
+  const updatedLeaf = updatedLeafSegment(decl.identity.segments, disambiguator);
   const updatedChildren = assignDisambiguators(decl.children);
   return {
     ...decl,
-    identity: { ...decl.identity, path: updatedLeaf },
+    identity: { ...decl.identity, segments: updatedLeaf },
     children: updatedChildren,
   };
 }

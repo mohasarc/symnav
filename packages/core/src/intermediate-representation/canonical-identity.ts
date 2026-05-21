@@ -32,8 +32,8 @@ export function parseSymbolIdentity(raw: string): SymbolIdentity {
     throw new InvalidSymbolIdError("empty file portion", raw);
   }
   const segmentStrings = rest.split(SEGMENT_SEPARATOR);
-  const path = segmentStrings.map((segment) => parseSegment(segment, raw));
-  return { file, path };
+  const segments = segmentStrings.map((segment) => parseSegment(segment, raw));
+  return { file, segments };
 }
 
 function parseSegment(segment: string, raw: string): SymbolPathSegment {
@@ -59,7 +59,7 @@ function parseSegment(segment: string, raw: string): SymbolPathSegment {
 }
 
 export function formatSymbolIdentity(identity: SymbolIdentity): string {
-  const segments = identity.path.map(formatSegment);
+  const segments = identity.segments.map(formatSegment);
   return [identity.file, ...segments].join(SEGMENT_SEPARATOR);
 }
 

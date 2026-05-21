@@ -44,7 +44,7 @@ function renderChild(decl: SymbolDecl, parentPrefix: string, isLast: boolean): s
 }
 
 function formatIdentityPath(identity: SymbolIdentity): string {
-  return identity.path.map((segment) => segment.name).join("::");
+  return identity.segments.map((segment) => segment.name).join("::");
 }
 
 function renderSignature(signature: Signature, prefix: string): string {

@@ -10,7 +10,7 @@ function symbolsOf(source: string, filePath: string = "input.ts"): OverviewFileS
 }
 
 function leafName(decl: SymbolDecl): string {
-  const segments = decl.identity.path;
+  const segments = decl.identity.segments;
   return segments[segments.length - 1]?.name ?? "";
 }
 
@@ -115,7 +115,7 @@ describe("extractFileSymbols", () => {
     const nested = result.symbols[0]?.children[0];
     expect(nested?.identity).toEqual({
       file: "input.ts",
-      path: [{ name: "Outer" }, { name: "inner" }],
+      segments: [{ name: "Outer" }, { name: "inner" }],
     });
   });
 

@@ -12,7 +12,7 @@ import { renderOverviewText } from "./render-overview-text.js";
 import { SIGNATURE_CAP_LINES, SIGNATURE_ELLIPSIS } from "./signature-cap.js";
 
 interface DeclPartial {
-  readonly path: readonly SymbolPathSegment[];
+  readonly segments: readonly SymbolPathSegment[];
   readonly kind: string;
   readonly range?: LineRange;
   readonly signature?: Signature;
@@ -21,7 +21,7 @@ interface DeclPartial {
 
 function decl(partial: DeclPartial, file: string = "src/file.ts"): SymbolDecl {
   return {
-    identity: { file, path: partial.path },
+    identity: { file, segments: partial.segments },
     kind: { role: "value", nativeLabel: partial.kind },
     range: partial.range ?? { startLine: 1, endLine: 1 },
     signature: partial.signature ?? { startLine: 1, lines: [""] },
@@ -52,7 +52,7 @@ describe("renderOverviewText", () => {
       symbols: [
         decl({
           kind: "function",
-          path: [{ name: "greet" }],
+          segments: [{ name: "greet" }],
           range: { startLine: 4, endLine: 4 },
           signature: signature(4, "function greet(name: string): void"),
         }),
@@ -76,7 +76,7 @@ describe("renderOverviewText", () => {
       symbols: [
         decl({
           kind: "function",
-          path: [{ name: "greet" }],
+          segments: [{ name: "greet" }],
           range: { startLine: 4, endLine: 4 },
           signature: signature(4, "function greet(): void"),
         }),
@@ -91,7 +91,7 @@ describe("renderOverviewText", () => {
       symbols: [
         decl({
           kind: "function",
-          path: [{ name: "configure" }],
+          segments: [{ name: "configure" }],
           range: { startLine: 10, endLine: 14 },
           signature: signature(10, "function configure(", "  host: string,", "): void"),
         }),
@@ -116,7 +116,7 @@ describe("renderOverviewText", () => {
       symbols: [
         decl({
           kind: "function",
-          path: [{ name: "wide" }],
+          segments: [{ name: "wide" }],
           range: { startLine: 1, endLine: SIGNATURE_CAP_LINES },
           signature: signature(1, ...lines),
         }),
@@ -136,7 +136,7 @@ describe("renderOverviewText", () => {
       symbols: [
         decl({
           kind: "function",
-          path: [{ name: "wide" }],
+          segments: [{ name: "wide" }],
           range: { startLine: 1, endLine: lines.length },
           signature: signature(1, ...lines),
         }),
@@ -153,19 +153,19 @@ describe("renderOverviewText", () => {
       symbols: [
         decl({
           kind: "variable",
-          path: [{ name: "A" }],
+          segments: [{ name: "A" }],
           range: { startLine: 1, endLine: 1 },
           signature: signature(1, "const A: number"),
         }),
         decl({
           kind: "variable",
-          path: [{ name: "B" }],
+          segments: [{ name: "B" }],
           range: { startLine: 3, endLine: 3 },
           signature: signature(3, "const B: number"),
         }),
         decl({
           kind: "variable",
-          path: [{ name: "C" }],
+          segments: [{ name: "C" }],
           range: { startLine: 5, endLine: 5 },
           signature: signature(5, "const C: number"),
         }),
@@ -194,25 +194,25 @@ describe("renderOverviewText", () => {
       symbols: [
         decl({
           kind: "class",
-          path: [{ name: "CheckoutService" }],
+          segments: [{ name: "CheckoutService" }],
           range: { startLine: 12, endLine: 96 },
           signature: signature(12, "class CheckoutService"),
           children: [
             decl({
               kind: "constructor",
-              path: [{ name: "CheckoutService" }, { name: "constructor" }],
+              segments: [{ name: "CheckoutService" }, { name: "constructor" }],
               range: { startLine: 24, endLine: 34 },
               signature: signature(24, "constructor(p: P, i: I)"),
             }),
             decl({
               kind: "method",
-              path: [{ name: "CheckoutService" }, { name: "processPayment" }],
+              segments: [{ name: "CheckoutService" }, { name: "processPayment" }],
               range: { startLine: 42, endLine: 78 },
               signature: signature(42, "async processPayment(order: Order): Promise<Receipt>"),
             }),
             decl({
               kind: "method",
-              path: [{ name: "CheckoutService" }, { name: "validateOrder" }],
+              segments: [{ name: "CheckoutService" }, { name: "validateOrder" }],
               range: { startLine: 80, endLine: 94 },
               signature: signature(80, "private validateOrder(order: Order): void"),
             }),
@@ -243,13 +243,13 @@ describe("renderOverviewText", () => {
       symbols: [
         decl({
           kind: "class",
-          path: [{ name: "Server" }],
+          segments: [{ name: "Server" }],
           range: { startLine: 1, endLine: 10 },
           signature: signature(1, "class Server"),
           children: [
             decl({
               kind: "method",
-              path: [{ name: "Server" }, { name: "start" }],
+              segments: [{ name: "Server" }, { name: "start" }],
               range: { startLine: 2, endLine: 6 },
               signature: signature(2, "start(", "  host: string,", "): void"),
             }),
@@ -277,19 +277,19 @@ describe("renderOverviewText", () => {
       symbols: [
         decl({
           kind: "namespace",
-          path: [{ name: "Outer" }],
+          segments: [{ name: "Outer" }],
           range: { startLine: 1, endLine: 50 },
           signature: signature(1, "namespace Outer"),
           children: [
             decl({
               kind: "class",
-              path: [{ name: "Outer" }, { name: "Inner" }],
+              segments: [{ name: "Outer" }, { name: "Inner" }],
               range: { startLine: 5, endLine: 40 },
               signature: signature(5, "class Inner"),
               children: [
                 decl({
                   kind: "method",
-                  path: [{ name: "Outer" }, { name: "Inner" }, { name: "method" }],
+                  segments: [{ name: "Outer" }, { name: "Inner" }, { name: "method" }],
                   range: { startLine: 10, endLine: 20 },
                   signature: signature(10, "method(): void"),
                 }),
@@ -319,13 +319,13 @@ describe("renderOverviewText", () => {
       symbols: [
         decl({
           kind: "variable",
-          path: [{ name: "single" }],
+          segments: [{ name: "single" }],
           range: { startLine: 8, endLine: 8 },
           signature: signature(8, "const single: number"),
         }),
         decl({
           kind: "function",
-          path: [{ name: "multi" }],
+          segments: [{ name: "multi" }],
           range: { startLine: 12, endLine: 96 },
           signature: signature(12, "function multi(): void"),
         }),
@@ -342,15 +342,15 @@ describe("renderOverviewText", () => {
       symbols: [
         decl({
           kind: "namespace",
-          path: [{ name: "Outer" }],
+          segments: [{ name: "Outer" }],
           children: [
             decl({
               kind: "class",
-              path: [{ name: "Outer" }, { name: "Inner" }],
+              segments: [{ name: "Outer" }, { name: "Inner" }],
               children: [
                 decl({
                   kind: "method",
-                  path: [{ name: "Outer" }, { name: "Inner" }, { name: "deep" }],
+                  segments: [{ name: "Outer" }, { name: "Inner" }, { name: "deep" }],
                 }),
               ],
             }),

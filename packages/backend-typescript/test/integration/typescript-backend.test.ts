@@ -122,7 +122,7 @@ describe("TypeScriptBackend.fileSymbols", () => {
     expect(
       result.symbols.map((s) => [
         s.kind.nativeLabel,
-        s.identity.path[s.identity.path.length - 1]?.name,
+        s.identity.segments[s.identity.segments.length - 1]?.name,
       ]),
     ).toEqual([["function", "Greeting"]]);
   });

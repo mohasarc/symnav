@@ -11,28 +11,28 @@ describe("parseSymbolIdentity", () => {
   it("parses a simple `<file>::<segment>::<segment>` id", () => {
     expect(parseSymbolIdentity("src/foo.ts::Bar::baz")).toEqual({
       file: "src/foo.ts",
-      path: [{ name: "Bar" }, { name: "baz" }],
+      segments: [{ name: "Bar" }, { name: "baz" }],
     });
   });
 
   it("parses a leaf disambiguator `src/foo.ts::Bar::baz#2`", () => {
     expect(parseSymbolIdentity("src/foo.ts::Bar::baz#2")).toEqual({
       file: "src/foo.ts",
-      path: [{ name: "Bar" }, { name: "baz", disambiguator: 2 }],
+      segments: [{ name: "Bar" }, { name: "baz", disambiguator: 2 }],
     });
   });
 
   it("parses an ancestor disambiguator `src/foo.ts::Bar#1::baz`", () => {
     expect(parseSymbolIdentity("src/foo.ts::Bar#1::baz")).toEqual({
       file: "src/foo.ts",
-      path: [{ name: "Bar", disambiguator: 1 }, { name: "baz" }],
+      segments: [{ name: "Bar", disambiguator: 1 }, { name: "baz" }],
     });
   });
 
   it("parses a single-segment id `src/foo.ts::topLevel`", () => {
     expect(parseSymbolIdentity("src/foo.ts::topLevel")).toEqual({
       file: "src/foo.ts",
-      path: [{ name: "topLevel" }],
+      segments: [{ name: "topLevel" }],
     });
   });
 
@@ -79,7 +79,7 @@ describe("formatSymbolIdentity", () => {
   it("formats an identity with no disambiguators", () => {
     const identity: SymbolIdentity = {
       file: "src/foo.ts",
-      path: [{ name: "Bar" }, { name: "baz" }],
+      segments: [{ name: "Bar" }, { name: "baz" }],
     };
     expect(formatSymbolIdentity(identity)).toBe("src/foo.ts::Bar::baz");
   });
@@ -87,7 +87,7 @@ describe("formatSymbolIdentity", () => {
   it("formats a leaf disambiguator", () => {
     const identity: SymbolIdentity = {
       file: "src/foo.ts",
-      path: [{ name: "Bar" }, { name: "baz", disambiguator: 2 }],
+      segments: [{ name: "Bar" }, { name: "baz", disambiguator: 2 }],
     };
     expect(formatSymbolIdentity(identity)).toBe("src/foo.ts::Bar::baz#2");
   });
@@ -95,7 +95,7 @@ describe("formatSymbolIdentity", () => {
   it("formats an ancestor disambiguator", () => {
     const identity: SymbolIdentity = {
       file: "src/foo.ts",
-      path: [{ name: "Bar", disambiguator: 1 }, { name: "baz" }],
+      segments: [{ name: "Bar", disambiguator: 1 }, { name: "baz" }],
     };
     expect(formatSymbolIdentity(identity)).toBe("src/foo.ts::Bar#1::baz");
   });
@@ -103,7 +103,7 @@ describe("formatSymbolIdentity", () => {
   it("formats a single-segment identity", () => {
     const identity: SymbolIdentity = {
       file: "src/foo.ts",
-      path: [{ name: "topLevel" }],
+      segments: [{ name: "topLevel" }],
     };
     expect(formatSymbolIdentity(identity)).toBe("src/foo.ts::topLevel");
   });

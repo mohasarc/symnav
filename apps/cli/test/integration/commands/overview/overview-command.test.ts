@@ -29,7 +29,7 @@ describe("symnav overview happy path", () => {
       file: "src/a.ts",
       symbols: [
         {
-          identity: { file: "src/a.ts", path: [{ name: "greet" }] },
+          identity: { file: "src/a.ts", segments: [{ name: "greet" }] },
           kind: { role: "callable", nativeLabel: "function" },
           range: { startLine: 1, endLine: 1 },
           signature: { startLine: 1, lines: ["function greet(): void"] },

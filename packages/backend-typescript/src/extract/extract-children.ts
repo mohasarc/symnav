@@ -27,7 +27,7 @@ function childScope(parent: ExtractionScope, name: string): ExtractionScope {
 function identityFor(scope: ExtractionScope, name: string): SymbolIdentity {
   return {
     file: scope.file,
-    path: [...scope.ancestorNames, name].map((segmentName) => ({ name: segmentName })),
+    segments: [...scope.ancestorNames, name].map((segmentName) => ({ name: segmentName })),
   };
 }
 

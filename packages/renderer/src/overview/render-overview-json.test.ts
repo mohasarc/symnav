@@ -5,7 +5,7 @@ import type { OverviewFileSymbols, SymbolDecl, SymbolKind } from "@symnav/core";
 import { renderOverviewJson } from "./render-overview-json.js";
 
 interface DeclPartial {
-  readonly path: readonly { readonly name: string; readonly disambiguator?: number }[];
+  readonly segments: readonly { readonly name: string; readonly disambiguator?: number }[];
   readonly kind: SymbolKind;
   readonly range?: SymbolDecl["range"];
   readonly signature?: SymbolDecl["signature"];
@@ -14,7 +14,7 @@ interface DeclPartial {
 
 function decl(partial: DeclPartial, file: string = "src/file.ts"): SymbolDecl {
   return {
-    identity: { file, path: partial.path },
+    identity: { file, segments: partial.segments },
     kind: partial.kind,
     range: partial.range ?? { startLine: 1, endLine: 1 },
     signature: partial.signature ?? { startLine: 1, lines: [""] },
@@ -29,7 +29,7 @@ describe("renderOverviewJson", () => {
       symbols: [
         decl({
           kind: { role: "callable", nativeLabel: "function" },
-          path: [{ name: "leaf" }],
+          segments: [{ name: "leaf" }],
           range: { startLine: 4, endLine: 4 },
           signature: { startLine: 4, lines: ["function leaf(): void"] },
         }),
@@ -40,7 +40,7 @@ describe("renderOverviewJson", () => {
       file: "src/file.ts",
       symbols: [
         {
-          identity: { file: "src/file.ts", path: [{ name: "leaf" }] },
+          identity: { file: "src/file.ts", segments: [{ name: "leaf" }] },
           kind: { role: "callable", nativeLabel: "function" },
           range: { startLine: 4, endLine: 4 },
           signature: { startLine: 4, lines: ["function leaf(): void"] },
@@ -56,7 +56,7 @@ describe("renderOverviewJson", () => {
       symbols: [
         decl({
           kind: { role: "callable", nativeLabel: "function" },
-          path: [{ name: "leaf" }],
+          segments: [{ name: "leaf" }],
           signature: { startLine: 1, lines: ["function leaf(): void"] },
         }),
       ],
@@ -83,7 +83,7 @@ describe("renderOverviewJson", () => {
       symbols: [
         decl({
           kind: { role: "callable", nativeLabel: "function" },
-          path: [{ name: "configure" }],
+          segments: [{ name: "configure" }],
           range: { startLine: 10, endLine: 12 },
           signature: {
             startLine: 10,
@@ -105,13 +105,13 @@ describe("renderOverviewJson", () => {
       symbols: [
         decl({
           kind: { role: "container", nativeLabel: "class" },
-          path: [{ name: "C" }],
+          segments: [{ name: "C" }],
           range: { startLine: 1, endLine: 10 },
           signature: { startLine: 1, lines: ["class C"] },
           children: [
             decl({
               kind: { role: "callable", nativeLabel: "method" },
-              path: [{ name: "C" }, { name: "m" }],
+              segments: [{ name: "C" }, { name: "m" }],
               range: { startLine: 2, endLine: 4 },
               signature: { startLine: 2, lines: ["m(): void"] },
             }),

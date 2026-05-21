@@ -5,5 +5,5 @@ export interface SymbolPathSegment {
 
 export interface SymbolIdentity {
   readonly file: string;
-  readonly path: readonly SymbolPathSegment[];
+  readonly segments: readonly SymbolPathSegment[];
 }

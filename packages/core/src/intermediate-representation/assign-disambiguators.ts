@@ -1,4 +1,5 @@
-import type { SymbolDecl, SymbolPathSegment } from "@symnav/core";
+import type { SymbolPathSegment } from "./symbol-identity.js";
+import type { SymbolDecl } from "./types.js";
 
 export function assignDisambiguators(siblings: readonly SymbolDecl[]): readonly SymbolDecl[] {
   const occurrencesByName = countByLeafName(siblings);

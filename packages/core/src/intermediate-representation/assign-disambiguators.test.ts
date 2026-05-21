@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 
-import { formatSymbolIdentity, type SymbolDecl, type SymbolKind } from "@symnav/core";
-
 import { assignDisambiguators } from "./assign-disambiguators.js";
+import { formatSymbolIdentity } from "./canonical-identity.js";
+import type { SymbolDecl, SymbolKind } from "./types.js";
 
 const CALLABLE_METHOD: SymbolKind = { role: "callable", nativeLabel: "method" };
 const CALLABLE_GETTER: SymbolKind = { role: "callable", nativeLabel: "getter" };

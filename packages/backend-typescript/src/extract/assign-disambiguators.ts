@@ -38,11 +38,30 @@ function withDisambiguatedIdentity(
   disambiguator: number | undefined,
 ): SymbolDecl {
   const updatedLeaf = updatedLeafSegment(decl.identity.segments, disambiguator);
-  const updatedChildren = assignDisambiguators(decl.children);
+  const depth = decl.identity.segments.length - 1;
+  const childrenWithUpdatedPrefix =
+    disambiguator === undefined
+      ? decl.children
+      : decl.children.map((child) => stampSegmentDisambiguator(child, depth, disambiguator));
   return {
     ...decl,
     identity: { ...decl.identity, segments: updatedLeaf },
-    children: updatedChildren,
+    children: assignDisambiguators(childrenWithUpdatedPrefix),
+  };
+}
+
+function stampSegmentDisambiguator(
+  decl: SymbolDecl,
+  index: number,
+  disambiguator: number,
+): SymbolDecl {
+  const stampedSegments = decl.identity.segments.map((segment, position) =>
+    position === index ? { name: segment.name, disambiguator } : segment,
+  );
+  return {
+    ...decl,
+    identity: { ...decl.identity, segments: stampedSegments },
+    children: decl.children.map((child) => stampSegmentDisambiguator(child, index, disambiguator)),
   };
 }
 

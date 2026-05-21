@@ -1,23 +1,15 @@
 import { describe, expect, it } from "vitest";
 
-import type { LineRange, Signature, SymbolIdentity, SymbolKind } from "@symnav/core";
+import type { SymbolDecl, SymbolKind } from "@symnav/core";
 
 import { assignDisambiguators } from "./assign-disambiguators.js";
-
-interface IdentitySymbolDecl {
-  readonly identity: SymbolIdentity;
-  readonly kind: SymbolKind;
-  readonly range: LineRange;
-  readonly signature: Signature;
-  readonly children: readonly IdentitySymbolDecl[];
-}
 
 const CALLABLE_METHOD: SymbolKind = { role: "callable", nativeLabel: "method" };
 const CALLABLE_GETTER: SymbolKind = { role: "callable", nativeLabel: "getter" };
 const CALLABLE_SETTER: SymbolKind = { role: "callable", nativeLabel: "setter" };
 const CONTAINER_CLASS: SymbolKind = { role: "container", nativeLabel: "class" };
 
-function leaf(name: string, kind: SymbolKind = CALLABLE_METHOD): IdentitySymbolDecl {
+function leaf(name: string, kind: SymbolKind = CALLABLE_METHOD): SymbolDecl {
   return {
     identity: { file: "src/foo.ts", segments: [{ name }] },
     kind,
@@ -29,9 +21,9 @@ function leaf(name: string, kind: SymbolKind = CALLABLE_METHOD): IdentitySymbolD
 
 function withChildren(
   name: string,
-  children: readonly IdentitySymbolDecl[],
+  children: readonly SymbolDecl[],
   kind: SymbolKind = CONTAINER_CLASS,
-): IdentitySymbolDecl {
+): SymbolDecl {
   return {
     identity: { file: "src/foo.ts", segments: [{ name }] },
     kind,
@@ -41,7 +33,7 @@ function withChildren(
   };
 }
 
-function disambiguatorOf(decl: IdentitySymbolDecl): number | undefined {
+function disambiguatorOf(decl: SymbolDecl): number | undefined {
   return decl.identity.segments[decl.identity.segments.length - 1]?.disambiguator;
 }
 

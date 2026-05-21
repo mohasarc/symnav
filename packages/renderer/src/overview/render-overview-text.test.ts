@@ -1,23 +1,14 @@
 import { describe, expect, it } from "vitest";
 
-import type {
-  LineRange,
-  OverviewFileSymbols,
-  Signature,
-  SymbolDecl,
-  SymbolPathSegment,
-} from "@symnav/core";
+import type { OverviewFileSymbols, Signature, SymbolDecl } from "@symnav/core";
 
 import { renderOverviewText } from "./render-overview-text.js";
 import { SIGNATURE_CAP_LINES, SIGNATURE_ELLIPSIS } from "./signature-cap.js";
 
-interface DeclPartial {
-  readonly segments: readonly SymbolPathSegment[];
-  readonly kind: string;
-  readonly range?: LineRange;
-  readonly signature?: Signature;
-  readonly children?: readonly SymbolDecl[];
-}
+type DeclPartial = Pick<SymbolDecl["identity"], "segments"> &
+  Partial<Pick<SymbolDecl, "range" | "signature" | "children">> & {
+    readonly kind: string;
+  };
 
 function decl(partial: DeclPartial, file: string = "src/file.ts"): SymbolDecl {
   return {

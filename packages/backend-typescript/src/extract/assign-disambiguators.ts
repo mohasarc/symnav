@@ -1,13 +1,6 @@
-import type { SymbolIdentity, SymbolPathSegment } from "@symnav/core";
+import type { SymbolDecl, SymbolPathSegment } from "@symnav/core";
 
-interface IdentitySymbolDecl {
-  readonly identity: SymbolIdentity;
-  readonly children: readonly IdentitySymbolDecl[];
-}
-
-export function assignDisambiguators<T extends IdentitySymbolDecl>(
-  siblings: readonly T[],
-): readonly T[] {
+export function assignDisambiguators(siblings: readonly SymbolDecl[]): readonly SymbolDecl[] {
   const occurrencesByName = countByLeafName(siblings);
   const assignedCountsByName = new Map<string, number>();
   return siblings.map((sibling) => {
@@ -22,7 +15,7 @@ export function assignDisambiguators<T extends IdentitySymbolDecl>(
   });
 }
 
-function leafNameOf(decl: IdentitySymbolDecl): string {
+function leafNameOf(decl: SymbolDecl): string {
   const segments = decl.identity.segments;
   const last = segments[segments.length - 1];
   if (!last) {
@@ -31,7 +24,7 @@ function leafNameOf(decl: IdentitySymbolDecl): string {
   return last.name;
 }
 
-function countByLeafName(siblings: readonly IdentitySymbolDecl[]): Map<string, number> {
+function countByLeafName(siblings: readonly SymbolDecl[]): Map<string, number> {
   const counts = new Map<string, number>();
   for (const sibling of siblings) {
     const name = leafNameOf(sibling);
@@ -40,10 +33,10 @@ function countByLeafName(siblings: readonly IdentitySymbolDecl[]): Map<string, n
   return counts;
 }
 
-function withDisambiguatedIdentity<T extends IdentitySymbolDecl>(
-  decl: T,
+function withDisambiguatedIdentity(
+  decl: SymbolDecl,
   disambiguator: number | undefined,
-): T {
+): SymbolDecl {
   const updatedLeaf = updatedLeafSegment(decl.identity.segments, disambiguator);
   const updatedChildren = assignDisambiguators(decl.children);
   return {

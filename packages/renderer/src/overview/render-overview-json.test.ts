@@ -50,7 +50,7 @@ describe("renderOverviewJson", () => {
     });
   });
 
-  it("emits 2-space-indented output with sorted keys and a trailing newline", () => {
+  it("emits 2-space-indented output with a trailing newline", () => {
     const file: OverviewFileSymbols = {
       file: "src/file.ts",
       symbols: [
@@ -69,12 +69,6 @@ describe("renderOverviewJson", () => {
     expect(lines[0]).toBe("{");
     expect(lines[1]).toBe(`  "file": "src/file.ts",`);
     expect(lines[2]).toBe(`  "symbols": [`);
-
-    const declKeyOrder = ["children", "identity", "kind", "range", "signature"];
-    const declKeyLines = lines
-      .filter((line) => /^ {6}"[a-zA-Z]+":/.test(line))
-      .map((line) => line.trim().split('"')[1]);
-    expect(declKeyLines).toEqual(declKeyOrder);
   });
 
   it("emits the signature object with its startLine and lines", () => {

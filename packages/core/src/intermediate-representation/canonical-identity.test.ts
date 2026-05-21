@@ -124,3 +124,19 @@ describe("canonical-identity codec round-trip", () => {
     });
   }
 });
+
+describe("formatSymbolIdentity file-portion boundary", () => {
+  it("rejects a file portion containing the `::` separator", () => {
+    expect(() =>
+      formatSymbolIdentity({ file: "src/a::b.ts", segments: [{ name: "Foo" }] }),
+    ).toThrow(InvalidSymbolIdError);
+  });
+
+  it("permits a single colon in the file portion and round-trips it", () => {
+    const id = formatSymbolIdentity({ file: "C:/proj/a.ts", segments: [{ name: "Foo" }] });
+    expect(parseSymbolIdentity(id)).toEqual({
+      file: "C:/proj/a.ts",
+      segments: [{ name: "Foo" }],
+    });
+  });
+});

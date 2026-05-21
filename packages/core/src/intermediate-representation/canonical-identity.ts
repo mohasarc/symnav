@@ -59,6 +59,9 @@ function parseSegment(segment: string, raw: string): SymbolPathSegment {
 }
 
 export function formatSymbolIdentity(identity: SymbolIdentity): string {
+  if (identity.file.includes(SEGMENT_SEPARATOR)) {
+    throw new InvalidSymbolIdError('file portion must not contain "::"', identity.file);
+  }
   const segments = identity.segments.map(formatSegment);
   return [identity.file, ...segments].join(SEGMENT_SEPARATOR);
 }

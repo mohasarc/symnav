@@ -40,14 +40,14 @@ function parseSegment(segment: string, raw: string): SymbolPathSegment {
   if (segment.length === 0) {
     throw new InvalidSymbolIdError("empty segment", raw);
   }
-  const hashIndex = segment.indexOf(DISAMBIGUATOR_PREFIX);
+  const hashIndex = segment.lastIndexOf(DISAMBIGUATOR_PREFIX);
   if (hashIndex === -1) {
     return { name: segment };
   }
   const name = segment.slice(0, hashIndex);
   const disambiguatorText = segment.slice(hashIndex + DISAMBIGUATOR_PREFIX.length);
   if (name.length === 0) {
-    throw new InvalidSymbolIdError("empty segment name", raw);
+    return { name: segment };
   }
   if (!/^[1-9][0-9]*$/.test(disambiguatorText)) {
     throw new InvalidSymbolIdError(

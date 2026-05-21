@@ -125,6 +125,28 @@ describe("canonical-identity codec round-trip", () => {
   }
 });
 
+describe("private field segment names", () => {
+  it("parses a leading-`#` name as a plain name, not a disambiguator", () => {
+    expect(parseSymbolIdentity("src/foo.ts::C::#secret")).toEqual({
+      file: "src/foo.ts",
+      segments: [{ name: "C" }, { name: "#secret" }],
+    });
+  });
+
+  it("parses a private field carrying a trailing disambiguator", () => {
+    expect(parseSymbolIdentity("src/foo.ts::C::#secret#2")).toEqual({
+      file: "src/foo.ts",
+      segments: [{ name: "C" }, { name: "#secret", disambiguator: 2 }],
+    });
+  });
+
+  it("round-trips private field names with and without a disambiguator", () => {
+    for (const id of ["src/foo.ts::C::#secret", "src/foo.ts::C::#secret#2"]) {
+      expect(formatSymbolIdentity(parseSymbolIdentity(id))).toBe(id);
+    }
+  });
+});
+
 describe("formatSymbolIdentity file-portion boundary", () => {
   it("rejects a file portion containing the `::` separator", () => {
     expect(() =>

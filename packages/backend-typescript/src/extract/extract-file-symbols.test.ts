@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import type { OverviewFileSymbols, SymbolDecl } from "@symnav/core";
+import {
+  formatSymbolIdentity,
+  parseSymbolIdentity,
+  type OverviewFileSymbols,
+  type SymbolDecl,
+} from "@symnav/core";
 
 import { parseTypeScriptSource } from "../../test/helpers/parse-typescript-source.js";
 import { extractFileSymbols } from "./extract-file-symbols.js";
@@ -200,5 +205,15 @@ describe("extractFileSymbols", () => {
     const cls = result.symbols[0];
     if (!cls) throw new Error("expected class");
     expect(cls.children.map((c) => [c.kind.nativeLabel, ownName(c)])).toEqual([["method", "m"]]);
+  });
+
+  it("extracts a private field whose canonical id round-trips", () => {
+    const result = symbolsOf("class C { #secret = 1; }");
+    const cls = result.symbols[0];
+    if (!cls) throw new Error("expected class");
+    const field = cls.children[0];
+    if (!field) throw new Error("expected private field");
+    expect(ownName(field)).toBe("#secret");
+    expect(parseSymbolIdentity(formatSymbolIdentity(field.identity))).toEqual(field.identity);
   });
 });

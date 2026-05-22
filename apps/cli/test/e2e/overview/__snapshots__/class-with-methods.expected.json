@@ -7,7 +7,7 @@
           "children": [],
           "identity": {
             "file": "class-with-methods.ts",
-            "path": [
+            "segments": [
               {
                 "name": "Greeter"
               },
@@ -35,7 +35,7 @@
           "children": [],
           "identity": {
             "file": "class-with-methods.ts",
-            "path": [
+            "segments": [
               {
                 "name": "Greeter"
               },
@@ -62,7 +62,7 @@
       ],
       "identity": {
         "file": "class-with-methods.ts",
-        "path": [
+        "segments": [
           {
             "name": "Greeter"
           }

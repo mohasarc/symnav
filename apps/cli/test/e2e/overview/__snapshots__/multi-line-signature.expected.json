@@ -5,7 +5,7 @@
       "children": [],
       "identity": {
         "file": "multi-line-signature.ts",
-        "path": [
+        "segments": [
           {
             "name": "configure"
           }
@@ -35,7 +35,7 @@
           "children": [],
           "identity": {
             "file": "multi-line-signature.ts",
-            "path": [
+            "segments": [
               {
                 "name": "Server"
               },
@@ -65,7 +65,7 @@
       ],
       "identity": {
         "file": "multi-line-signature.ts",
-        "path": [
+        "segments": [
           {
             "name": "Server"
           }

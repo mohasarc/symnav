@@ -25,7 +25,7 @@ describe("extractFileSymbols", () => {
     expect(result.symbols).toEqual([]);
   });
 
-  it("forwards filePath verbatim onto the IR as `file`", () => {
+  it("forwards filePath verbatim onto the IR", () => {
     const result = symbolsOf("export const x = 1;", "src/foo/bar.ts");
     expect(result.file).toBe("src/foo/bar.ts");
   });

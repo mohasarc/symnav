@@ -38,7 +38,7 @@ export function parseSymbolIdentity(raw: string): SymbolIdentity {
 
 function parseSegment(segment: string, raw: string): SymbolPathSegment {
   if (segment.length === 0) {
-    throw new InvalidSymbolIdError("empty segment", raw);
+    throw new InvalidSymbolIdError('empty path segment between "::" separators', raw);
   }
   const hashIndex = segment.lastIndexOf(DISAMBIGUATOR_PREFIX);
   if (hashIndex === -1) {

@@ -162,3 +162,49 @@ describe("formatSymbolIdentity file-portion boundary", () => {
     });
   });
 });
+
+describe("InvalidSymbolIdError reasons", () => {
+  function reasonOf(thrower: () => unknown): string {
+    try {
+      thrower();
+    } catch (err) {
+      if (err instanceof InvalidSymbolIdError) return err.reason;
+      throw err;
+    }
+    throw new Error("expected InvalidSymbolIdError to be thrown");
+  }
+
+  it("names empty input", () => {
+    expect(reasonOf(() => parseSymbolIdentity(""))).toContain("empty input");
+  });
+
+  it("names a missing `::` separator", () => {
+    expect(reasonOf(() => parseSymbolIdentity("src/foo.ts"))).toContain("missing `::` separator");
+  });
+
+  it("names an empty file portion", () => {
+    expect(reasonOf(() => parseSymbolIdentity("::Foo"))).toContain("empty file portion");
+  });
+
+  it("names an empty path segment", () => {
+    expect(reasonOf(() => parseSymbolIdentity("a::::b"))).toContain(
+      'empty path segment between "::" separators',
+    );
+  });
+
+  it("names a non-numeric disambiguator and echoes the offending text", () => {
+    const reason = reasonOf(() => parseSymbolIdentity("a::b#abc"));
+    expect(reason).toContain("disambiguator must be a positive integer");
+    expect(reason).toContain('"abc"');
+  });
+
+  it("names a file portion containing the `::` separator", () => {
+    expect(
+      reasonOf(() => formatSymbolIdentity({ file: "a::b.ts", segments: [{ name: "Foo" }] })),
+    ).toContain('file portion must not contain "::"');
+  });
+
+  it("echoes the raw offending input", () => {
+    expect(reasonOf(() => parseSymbolIdentity("a::b#abc"))).toContain("a::b#abc");
+  });
+});

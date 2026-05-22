@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { InMemoryFileSystem, type FileSymbols } from "@symnav/core";
+import { InMemoryFileSystem, type OverviewFileSymbols } from "@symnav/core";
 import { buildProgram } from "../../../../src/program.js";
 import { FakeLanguageBackend } from "../helpers/fake-language-backend.js";
 import { createFakeProgramContext } from "../helpers/fake-program-context.js";
@@ -25,12 +25,12 @@ async function parse(
 
 describe("symnav overview happy path", () => {
   it("writes text-rendered IR to stdout with exit 0", async () => {
-    const symbols: FileSymbols = {
-      filePath: "src/a.ts",
+    const symbols: OverviewFileSymbols = {
+      file: "src/a.ts",
       symbols: [
         {
+          identity: { file: "src/a.ts", segments: [{ name: "greet" }] },
           kind: { role: "callable", nativeLabel: "function" },
-          name: "greet",
           range: { startLine: 1, endLine: 1 },
           signature: { startLine: 1, lines: ["function greet(): void"] },
           children: [],
@@ -55,7 +55,7 @@ describe("symnav overview happy path", () => {
   });
 
   it("writes JSON output with --json flag", async () => {
-    const symbols: FileSymbols = { filePath: "src/a.ts", symbols: [] };
+    const symbols: OverviewFileSymbols = { file: "src/a.ts", symbols: [] };
     const fs = new InMemoryFileSystem({
       "/repo/.git/HEAD": "ref: refs/heads/main\n",
       "/repo/src/a.ts": "export const x = 1;\n",
@@ -69,7 +69,7 @@ describe("symnav overview happy path", () => {
 
     expect(r.stderr).toBe("");
     expect(r.exitCodes).toEqual([]);
-    const parsed = JSON.parse(r.stdout) as FileSymbols;
+    const parsed = JSON.parse(r.stdout) as OverviewFileSymbols;
     expect(parsed).toEqual(symbols);
   });
 

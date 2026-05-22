@@ -1,20 +1,22 @@
 import { describe, expect, it } from "vitest";
 
-import type { FileSymbols, Signature, SymbolDecl } from "@symnav/core";
+import type { OverviewFileSymbols, Signature, SymbolDecl } from "@symnav/core";
 
 import { renderOverviewText } from "./render-overview-text.js";
 import { SIGNATURE_CAP_LINES, SIGNATURE_ELLIPSIS } from "./signature-cap.js";
 
-function decl(
-  partial: Partial<Omit<SymbolDecl, "kind">> & Pick<SymbolDecl, "name"> & { kind: string },
-): SymbolDecl {
-  const { kind, ...rest } = partial;
+type DeclPartial = Pick<SymbolDecl["identity"], "segments"> &
+  Partial<Pick<SymbolDecl, "range" | "signature" | "children">> & {
+    readonly kind: string;
+  };
+
+function decl(partial: DeclPartial, file: string = "src/file.ts"): SymbolDecl {
   return {
-    range: { startLine: 1, endLine: 1 },
-    signature: { startLine: 1, lines: [""] },
-    children: [],
-    ...rest,
-    kind: { role: "value", nativeLabel: kind },
+    identity: { file, segments: partial.segments },
+    kind: { role: "value", nativeLabel: partial.kind },
+    range: partial.range ?? { startLine: 1, endLine: 1 },
+    signature: partial.signature ?? { startLine: 1, lines: [""] },
+    children: partial.children ?? [],
   };
 }
 
@@ -29,19 +31,19 @@ function assertSingleTrailingNewline(output: string): void {
 
 describe("renderOverviewText", () => {
   it("renders an empty file with the file path header and `(no symbols)` directly under", () => {
-    const file: FileSymbols = { filePath: "src/empty.ts", symbols: [] };
+    const file: OverviewFileSymbols = { file: "src/empty.ts", symbols: [] };
     const output = renderOverviewText(file);
     expect(output).toBe("Overview: src/empty.ts\n(no symbols)\n");
     assertSingleTrailingNewline(output);
   });
 
   it("renders a single top-level function as the file's only tree child", () => {
-    const file: FileSymbols = {
-      filePath: "src/file.ts",
+    const file: OverviewFileSymbols = {
+      file: "src/file.ts",
       symbols: [
         decl({
           kind: "function",
-          name: "greet",
+          segments: [{ name: "greet" }],
           range: { startLine: 4, endLine: 4 },
           signature: signature(4, "function greet(name: string): void"),
         }),
@@ -60,12 +62,12 @@ describe("renderOverviewText", () => {
   });
 
   it("ends with exactly one trailing newline for non-empty output", () => {
-    const file: FileSymbols = {
-      filePath: "src/file.ts",
+    const file: OverviewFileSymbols = {
+      file: "src/file.ts",
       symbols: [
         decl({
           kind: "function",
-          name: "greet",
+          segments: [{ name: "greet" }],
           range: { startLine: 4, endLine: 4 },
           signature: signature(4, "function greet(): void"),
         }),
@@ -75,12 +77,12 @@ describe("renderOverviewText", () => {
   });
 
   it("numbers each line of a multi-line signature from startLine and preserves indentation", () => {
-    const file: FileSymbols = {
-      filePath: "src/file.ts",
+    const file: OverviewFileSymbols = {
+      file: "src/file.ts",
       symbols: [
         decl({
           kind: "function",
-          name: "configure",
+          segments: [{ name: "configure" }],
           range: { startLine: 10, endLine: 14 },
           signature: signature(10, "function configure(", "  host: string,", "): void"),
         }),
@@ -100,12 +102,12 @@ describe("renderOverviewText", () => {
 
   it("returns signature lines at or under SIGNATURE_CAP_LINES unchanged", () => {
     const lines = Array.from({ length: SIGNATURE_CAP_LINES }, (_, i) => `line ${i}`);
-    const file: FileSymbols = {
-      filePath: "src/file.ts",
+    const file: OverviewFileSymbols = {
+      file: "src/file.ts",
       symbols: [
         decl({
           kind: "function",
-          name: "wide",
+          segments: [{ name: "wide" }],
           range: { startLine: 1, endLine: SIGNATURE_CAP_LINES },
           signature: signature(1, ...lines),
         }),
@@ -120,12 +122,12 @@ describe("renderOverviewText", () => {
 
   it("caps an oversized signature by line count with a final elision marker", () => {
     const lines = Array.from({ length: SIGNATURE_CAP_LINES + 5 }, (_, i) => `line ${i}`);
-    const file: FileSymbols = {
-      filePath: "src/file.ts",
+    const file: OverviewFileSymbols = {
+      file: "src/file.ts",
       symbols: [
         decl({
           kind: "function",
-          name: "wide",
+          segments: [{ name: "wide" }],
           range: { startLine: 1, endLine: lines.length },
           signature: signature(1, ...lines),
         }),
@@ -137,24 +139,24 @@ describe("renderOverviewText", () => {
   });
 
   it("renders multiple top-level entries as tree children of the file path", () => {
-    const file: FileSymbols = {
-      filePath: "src/file.ts",
+    const file: OverviewFileSymbols = {
+      file: "src/file.ts",
       symbols: [
         decl({
           kind: "variable",
-          name: "A",
+          segments: [{ name: "A" }],
           range: { startLine: 1, endLine: 1 },
           signature: signature(1, "const A: number"),
         }),
         decl({
           kind: "variable",
-          name: "B",
+          segments: [{ name: "B" }],
           range: { startLine: 3, endLine: 3 },
           signature: signature(3, "const B: number"),
         }),
         decl({
           kind: "variable",
-          name: "C",
+          segments: [{ name: "C" }],
           range: { startLine: 5, endLine: 5 },
           signature: signature(5, "const C: number"),
         }),
@@ -178,30 +180,30 @@ describe("renderOverviewText", () => {
   });
 
   it("renders a class with three methods using `├──`/`└──` and `│   `/`    ` continuations", () => {
-    const file: FileSymbols = {
-      filePath: "src/checkout.ts",
+    const file: OverviewFileSymbols = {
+      file: "src/checkout.ts",
       symbols: [
         decl({
           kind: "class",
-          name: "CheckoutService",
+          segments: [{ name: "CheckoutService" }],
           range: { startLine: 12, endLine: 96 },
           signature: signature(12, "class CheckoutService"),
           children: [
             decl({
               kind: "constructor",
-              name: "constructor",
+              segments: [{ name: "CheckoutService" }, { name: "constructor" }],
               range: { startLine: 24, endLine: 34 },
               signature: signature(24, "constructor(p: P, i: I)"),
             }),
             decl({
               kind: "method",
-              name: "processPayment",
+              segments: [{ name: "CheckoutService" }, { name: "processPayment" }],
               range: { startLine: 42, endLine: 78 },
               signature: signature(42, "async processPayment(order: Order): Promise<Receipt>"),
             }),
             decl({
               kind: "method",
-              name: "validateOrder",
+              segments: [{ name: "CheckoutService" }, { name: "validateOrder" }],
               range: { startLine: 80, endLine: 94 },
               signature: signature(80, "private validateOrder(order: Order): void"),
             }),
@@ -227,18 +229,18 @@ describe("renderOverviewText", () => {
   });
 
   it("numbers a nested symbol's multi-line signature under its continuation glyph", () => {
-    const file: FileSymbols = {
-      filePath: "src/server.ts",
+    const file: OverviewFileSymbols = {
+      file: "src/server.ts",
       symbols: [
         decl({
           kind: "class",
-          name: "Server",
+          segments: [{ name: "Server" }],
           range: { startLine: 1, endLine: 10 },
           signature: signature(1, "class Server"),
           children: [
             decl({
               kind: "method",
-              name: "start",
+              segments: [{ name: "Server" }, { name: "start" }],
               range: { startLine: 2, endLine: 6 },
               signature: signature(2, "start(", "  host: string,", "): void"),
             }),
@@ -261,24 +263,24 @@ describe("renderOverviewText", () => {
   });
 
   it("renders three-deep nesting using `    ` under a closed branch", () => {
-    const file: FileSymbols = {
-      filePath: "src/nested.ts",
+    const file: OverviewFileSymbols = {
+      file: "src/nested.ts",
       symbols: [
         decl({
           kind: "namespace",
-          name: "Outer",
+          segments: [{ name: "Outer" }],
           range: { startLine: 1, endLine: 50 },
           signature: signature(1, "namespace Outer"),
           children: [
             decl({
               kind: "class",
-              name: "Inner",
+              segments: [{ name: "Outer" }, { name: "Inner" }],
               range: { startLine: 5, endLine: 40 },
               signature: signature(5, "class Inner"),
               children: [
                 decl({
                   kind: "method",
-                  name: "method",
+                  segments: [{ name: "Outer" }, { name: "Inner" }, { name: "method" }],
                   range: { startLine: 10, endLine: 20 },
                   signature: signature(10, "method(): void"),
                 }),
@@ -303,18 +305,18 @@ describe("renderOverviewText", () => {
   });
 
   it("formats single-line ranges as `N` and multi-line ranges as `N-M`", () => {
-    const file: FileSymbols = {
-      filePath: "src/file.ts",
+    const file: OverviewFileSymbols = {
+      file: "src/file.ts",
       symbols: [
         decl({
           kind: "variable",
-          name: "single",
+          segments: [{ name: "single" }],
           range: { startLine: 8, endLine: 8 },
           signature: signature(8, "const single: number"),
         }),
         decl({
           kind: "function",
-          name: "multi",
+          segments: [{ name: "multi" }],
           range: { startLine: 12, endLine: 96 },
           signature: signature(12, "function multi(): void"),
         }),
@@ -326,20 +328,20 @@ describe("renderOverviewText", () => {
   });
 
   it("includes ancestor names joined by `::` in nested symbol paths", () => {
-    const file: FileSymbols = {
-      filePath: "src/nested.ts",
+    const file: OverviewFileSymbols = {
+      file: "src/nested.ts",
       symbols: [
         decl({
           kind: "namespace",
-          name: "Outer",
+          segments: [{ name: "Outer" }],
           children: [
             decl({
               kind: "class",
-              name: "Inner",
+              segments: [{ name: "Outer" }, { name: "Inner" }],
               children: [
                 decl({
                   kind: "method",
-                  name: "deep",
+                  segments: [{ name: "Outer" }, { name: "Inner" }, { name: "deep" }],
                 }),
               ],
             }),

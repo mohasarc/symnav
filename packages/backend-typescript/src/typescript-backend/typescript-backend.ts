@@ -1,6 +1,6 @@
 import { basename } from "node:path";
 
-import type { FileSystem, FileSymbols, LanguageBackend, ResolvedPath } from "@symnav/core";
+import type { FileSystem, LanguageBackend, OverviewFileSymbols, ResolvedPath } from "@symnav/core";
 import { FileNotFoundError } from "@symnav/core";
 import { Project } from "ts-morph";
 
@@ -26,7 +26,7 @@ export class TypeScriptBackend implements LanguageBackend {
     return TypeScriptBackend.accepts(filePath);
   }
 
-  async fileSymbols({ relative, absolute }: ResolvedPath): Promise<FileSymbols> {
+  async fileSymbols({ relative, absolute }: ResolvedPath): Promise<OverviewFileSymbols> {
     if (!this.fs.existsSync(absolute) || this.fs.isDirectorySync(absolute)) {
       throw new FileNotFoundError(relative);
     }

@@ -1,6 +1,6 @@
-import type { FileSymbols } from "@symnav/core";
+import type { OverviewFileSymbols } from "@symnav/core";
 
-export function renderOverviewJson(file: FileSymbols): string {
+export function renderOverviewJson(file: OverviewFileSymbols): string {
   return JSON.stringify(file, sortedKeyReplacer, 2) + "\n";
 }
 

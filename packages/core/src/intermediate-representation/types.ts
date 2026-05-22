@@ -1,3 +1,5 @@
+import type { SymbolIdentity } from "./symbol-identity.js";
+
 export type SymbolRole = "container" | "callable" | "value" | "type";
 
 export interface SymbolKind {
@@ -16,14 +18,14 @@ export interface Signature {
 }
 
 export interface SymbolDecl {
+  readonly identity: SymbolIdentity;
   readonly kind: SymbolKind;
-  readonly name: string;
   readonly range: LineRange;
   readonly signature: Signature;
   readonly children: readonly SymbolDecl[];
 }
 
-export interface FileSymbols {
-  readonly filePath: string; // workspace-relative, POSIX separators
+export interface OverviewFileSymbols {
+  readonly file: string; // workspace-relative, POSIX separators
   readonly symbols: readonly SymbolDecl[]; // top-level entries, source order
 }

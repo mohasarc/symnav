@@ -1,15 +1,25 @@
 {
-  "filePath": "class-with-methods.ts",
+  "file": "class-with-methods.ts",
   "symbols": [
     {
       "children": [
         {
           "children": [],
+          "identity": {
+            "file": "class-with-methods.ts",
+            "segments": [
+              {
+                "name": "Greeter"
+              },
+              {
+                "name": "greet"
+              }
+            ]
+          },
           "kind": {
             "nativeLabel": "method",
             "role": "callable"
           },
-          "name": "greet",
           "range": {
             "endLine": 4,
             "startLine": 2
@@ -23,11 +33,21 @@
         },
         {
           "children": [],
+          "identity": {
+            "file": "class-with-methods.ts",
+            "segments": [
+              {
+                "name": "Greeter"
+              },
+              {
+                "name": "shout"
+              }
+            ]
+          },
           "kind": {
             "nativeLabel": "method",
             "role": "callable"
           },
-          "name": "shout",
           "range": {
             "endLine": 8,
             "startLine": 6
@@ -40,11 +60,18 @@
           }
         }
       ],
+      "identity": {
+        "file": "class-with-methods.ts",
+        "segments": [
+          {
+            "name": "Greeter"
+          }
+        ]
+      },
       "kind": {
         "nativeLabel": "class",
         "role": "container"
       },
-      "name": "Greeter",
       "range": {
         "endLine": 9,
         "startLine": 1

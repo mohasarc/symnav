@@ -87,10 +87,10 @@ describe("TypeScriptBackend.fileSymbols", () => {
     expect(result).toEqual(expected);
   });
 
-  it("returns filePath as the workspace-relative POSIX path", async () => {
+  it("returns file as the workspace-relative POSIX path", async () => {
     const { backend, path } = backendOver({ "/repo/src/nested/y.ts": source });
     const result = await backend.fileSymbols(path("src/nested/y.ts"));
-    expect(result.filePath).toBe("src/nested/y.ts");
+    expect(result.file).toBe("src/nested/y.ts");
   });
 
   it("reads the file exclusively through the injected FileSystem", async () => {
@@ -119,8 +119,11 @@ describe("TypeScriptBackend.fileSymbols", () => {
     ].join("\n");
     const { backend, path } = backendOver({ "/repo/src/greeting.tsx": tsxSource });
     const result = await backend.fileSymbols(path("src/greeting.tsx"));
-    expect(result.symbols.map((s) => [s.kind.nativeLabel, s.name])).toEqual([
-      ["function", "Greeting"],
-    ]);
+    expect(
+      result.symbols.map((s) => [
+        s.kind.nativeLabel,
+        s.identity.segments[s.identity.segments.length - 1]?.name,
+      ]),
+    ).toEqual([["function", "Greeting"]]);
   });
 });

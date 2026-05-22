@@ -1,13 +1,20 @@
 {
-  "filePath": "multi-line-signature.ts",
+  "file": "multi-line-signature.ts",
   "symbols": [
     {
       "children": [],
+      "identity": {
+        "file": "multi-line-signature.ts",
+        "segments": [
+          {
+            "name": "configure"
+          }
+        ]
+      },
       "kind": {
         "nativeLabel": "function",
         "role": "callable"
       },
-      "name": "configure",
       "range": {
         "endLine": 7,
         "startLine": 1
@@ -26,11 +33,21 @@
       "children": [
         {
           "children": [],
+          "identity": {
+            "file": "multi-line-signature.ts",
+            "segments": [
+              {
+                "name": "Server"
+              },
+              {
+                "name": "start"
+              }
+            ]
+          },
           "kind": {
             "nativeLabel": "method",
             "role": "callable"
           },
-          "name": "start",
           "range": {
             "endLine": 16,
             "startLine": 10
@@ -46,11 +63,18 @@
           }
         }
       ],
+      "identity": {
+        "file": "multi-line-signature.ts",
+        "segments": [
+          {
+            "name": "Server"
+          }
+        ]
+      },
       "kind": {
         "nativeLabel": "class",
         "role": "container"
       },
-      "name": "Server",
       "range": {
         "endLine": 17,
         "startLine": 9

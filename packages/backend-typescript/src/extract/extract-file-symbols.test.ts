@@ -1,23 +1,33 @@
 import { describe, expect, it } from "vitest";
-import type { FileSymbols } from "@symnav/core";
+import {
+  formatSymbolIdentity,
+  parseSymbolIdentity,
+  type OverviewFileSymbols,
+  type SymbolDecl,
+} from "@symnav/core";
 
 import { parseTypeScriptSource } from "../../test/helpers/parse-typescript-source.js";
 import { extractFileSymbols } from "./extract-file-symbols.js";
 
-function symbolsOf(source: string, filePath: string = "input.ts"): FileSymbols {
+function symbolsOf(source: string, filePath: string = "input.ts"): OverviewFileSymbols {
   const sourceFile = parseTypeScriptSource(source);
   return extractFileSymbols({ sourceFile, filePath });
 }
 
+function ownName(decl: SymbolDecl): string {
+  const segments = decl.identity.segments;
+  return segments[segments.length - 1]?.name ?? "";
+}
+
 describe("extractFileSymbols", () => {
-  it("produces FileSymbols with empty symbols for an empty source", () => {
+  it("produces OverviewFileSymbols with empty symbols for an empty source", () => {
     const result = symbolsOf("");
     expect(result.symbols).toEqual([]);
   });
 
   it("forwards filePath verbatim onto the IR", () => {
     const result = symbolsOf("export const x = 1;", "src/foo/bar.ts");
-    expect(result.filePath).toBe("src/foo/bar.ts");
+    expect(result.file).toBe("src/foo/bar.ts");
   });
 
   it("enumerates top-level declarations in source order across all forms", () => {
@@ -32,7 +42,7 @@ describe("extractFileSymbols", () => {
       "export default 42;",
     ].join("\n");
     const result = symbolsOf(source);
-    expect(result.symbols.map((s) => [s.kind.nativeLabel, s.name])).toEqual([
+    expect(result.symbols.map((s) => [s.kind.nativeLabel, ownName(s)])).toEqual([
       ["function", "fn"],
       ["class", "Cls"],
       ["interface", "Iface"],
@@ -59,7 +69,7 @@ describe("extractFileSymbols", () => {
     const result = symbolsOf(source);
     const cls = result.symbols[0];
     if (!cls) throw new Error("expected class");
-    expect(cls.children.map((c) => [c.kind.nativeLabel, c.name])).toEqual([
+    expect(cls.children.map((c) => [c.kind.nativeLabel, ownName(c)])).toEqual([
       ["property", "prop"],
       ["constructor", "constructor"],
       ["method", "method"],
@@ -83,7 +93,7 @@ describe("extractFileSymbols", () => {
     const result = symbolsOf(source);
     const iface = result.symbols[0];
     if (!iface) throw new Error("expected interface");
-    expect(iface.children.map((c) => [c.kind.nativeLabel, c.name])).toEqual([
+    expect(iface.children.map((c) => [c.kind.nativeLabel, ownName(c)])).toEqual([
       ["property", "x"],
       ["method", "m"],
       ["index-signature", "[index]"],
@@ -100,12 +110,23 @@ describe("extractFileSymbols", () => {
     expect(ns.kind.nativeLabel).toBe("namespace");
     expect(ns.children).toHaveLength(1);
     expect(ns.children[0]?.kind.nativeLabel).toBe("function");
-    expect(ns.children[0]?.name).toBe("inner");
+    expect(ns.children[0]).toBeDefined();
+    expect(ownName(ns.children[0]!)).toBe("inner");
+  });
+
+  it("a nested decl's identity carries the full ancestor chain in path", () => {
+    const source = ["export namespace Outer {", "  export function inner() {}", "}"].join("\n");
+    const result = symbolsOf(source);
+    const nested = result.symbols[0]?.children[0];
+    expect(nested?.identity).toEqual({
+      file: "input.ts",
+      segments: [{ name: "Outer" }, { name: "inner" }],
+    });
   });
 
   it("expands a single `const a = 1, b = 2;` into two separate variable decls with their own ranges", () => {
     const result = symbolsOf("const a = 1, b = 2;");
-    expect(result.symbols.map((s) => [s.kind.nativeLabel, s.name])).toEqual([
+    expect(result.symbols.map((s) => [s.kind.nativeLabel, ownName(s)])).toEqual([
       ["variable", "a"],
       ["variable", "b"],
     ]);
@@ -183,6 +204,16 @@ describe("extractFileSymbols", () => {
     const result = symbolsOf(source);
     const cls = result.symbols[0];
     if (!cls) throw new Error("expected class");
-    expect(cls.children.map((c) => [c.kind.nativeLabel, c.name])).toEqual([["method", "m"]]);
+    expect(cls.children.map((c) => [c.kind.nativeLabel, ownName(c)])).toEqual([["method", "m"]]);
+  });
+
+  it("extracts a private field whose canonical id round-trips", () => {
+    const result = symbolsOf("class C { #secret = 1; }");
+    const cls = result.symbols[0];
+    if (!cls) throw new Error("expected class");
+    const field = cls.children[0];
+    if (!field) throw new Error("expected private field");
+    expect(ownName(field)).toBe("#secret");
+    expect(parseSymbolIdentity(formatSymbolIdentity(field.identity))).toEqual(field.identity);
   });
 });

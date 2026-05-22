@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { BackendRouter } from "./backend-router.js";
 import type { LanguageBackend } from "./language-backend.js";
-import type { FileSymbols } from "../intermediate-representation/types.js";
+import type { OverviewFileSymbols } from "../intermediate-representation/types.js";
 import type { ResolvedPath } from "../workspace/workspace.js";
 
 function fakeBackend(
@@ -12,8 +12,8 @@ function fakeBackend(
   return {
     label,
     accepts,
-    fileSymbols(path: ResolvedPath): Promise<FileSymbols> {
-      return Promise.resolve({ filePath: path.relative, symbols: [] });
+    fileSymbols(path: ResolvedPath): Promise<OverviewFileSymbols> {
+      return Promise.resolve({ file: path.relative, symbols: [] });
     },
   };
 }

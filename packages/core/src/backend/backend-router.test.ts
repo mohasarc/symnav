@@ -16,6 +16,12 @@ function fakeBackend(
     fileSymbols(path: ResolvedPath): Promise<OverviewFileSymbols> {
       return Promise.resolve({ file: path.relative, symbols: [] });
     },
+    resolveSymbols() {
+      return Promise.resolve([]);
+    },
+    findDefinitions() {
+      return Promise.resolve([]);
+    },
   };
 }
 

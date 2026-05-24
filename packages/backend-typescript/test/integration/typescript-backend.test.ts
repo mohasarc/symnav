@@ -32,6 +32,12 @@ class CountingFileSystem implements FileSystem {
   async exists(absPath: string): Promise<boolean> {
     return this.inner.exists(absPath);
   }
+  async listDir(absPath: string): Promise<readonly string[]> {
+    return this.inner.listDir(absPath);
+  }
+  async isDirectory(absPath: string): Promise<boolean> {
+    return this.inner.isDirectory(absPath);
+  }
   existsSync(absPath: string): boolean {
     return this.inner.existsSync(absPath);
   }

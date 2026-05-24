@@ -1,5 +1,5 @@
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
-import { readFile } from "node:fs/promises";
+import { readFile, readdir, stat } from "node:fs/promises";
 import type { FileSystem } from "./file-system.js";
 
 export class NodeFileSystem implements FileSystem {
@@ -9,6 +9,18 @@ export class NodeFileSystem implements FileSystem {
 
   async exists(absPath: string): Promise<boolean> {
     return existsSync(absPath);
+  }
+
+  async listDir(absPath: string): Promise<readonly string[]> {
+    return readdir(absPath);
+  }
+
+  async isDirectory(absPath: string): Promise<boolean> {
+    try {
+      return (await stat(absPath)).isDirectory();
+    } catch {
+      return false;
+    }
   }
 
   existsSync(absPath: string): boolean {

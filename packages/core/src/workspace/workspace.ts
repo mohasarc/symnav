@@ -1,15 +1,17 @@
-import { isAbsolute, resolve } from "node:path";
+import { isAbsolute, posix, resolve } from "node:path";
 import type { FileSystem } from "./file-system.js";
 import {
   FileNotFoundError,
   IgnoredFileError,
   NotInWorkspaceError,
   OutsideWorkspaceError,
+  UnreadableDirectoryWarningCandidateError,
 } from "./errors.js";
 import { WorkspaceIgnore } from "./ignore/workspace-ignore.js";
 import { findWorkspaceRoot } from "./paths/find-root.js";
 import { isUnderRoot } from "./paths/is-under-root.js";
 import { posixify } from "./paths/posixify.js";
+import { relPathFromRoot } from "./paths/rel-from-root.js";
 
 export interface ResolvedPath {
   readonly relative: string;
@@ -19,6 +21,7 @@ export interface ResolvedPath {
 export interface Workspace {
   readonly root: string;
   resolveInputPath(inputPath: string, cwd: string): Promise<ResolvedPath>;
+  enumerate(): Promise<readonly ResolvedPath[]>;
 }
 
 class DefaultWorkspace implements Workspace {
@@ -28,13 +31,6 @@ class DefaultWorkspace implements Workspace {
     private readonly ignore: WorkspaceIgnore,
   ) {}
 
-  private toRelative(absPath: string): string {
-    if (absPath === this.root) {
-      return "";
-    }
-    return absPath.slice(this.root.length + 1);
-  }
-
   async resolveInputPath(inputPath: string, cwd: string): Promise<ResolvedPath> {
     const absolutePath = posixify(isAbsolute(inputPath) ? inputPath : resolve(cwd, inputPath));
     if (!(await this.fs.exists(absolutePath))) {
@@ -43,11 +39,44 @@ class DefaultWorkspace implements Workspace {
     if (!isUnderRoot(absolutePath, this.root)) {
       throw new OutsideWorkspaceError(inputPath, this.root);
     }
-    const relativePath = this.toRelative(absolutePath);
+    const relativePath = relPathFromRoot(absolutePath, this.root);
     if (this.ignore.isIgnored(relativePath)) {
       throw new IgnoredFileError(inputPath);
     }
     return { relative: relativePath, absolute: absolutePath };
+  }
+
+  async enumerate(): Promise<readonly ResolvedPath[]> {
+    const results = await this.collect();
+    results.sort((a, b) => (a.relative < b.relative ? -1 : a.relative > b.relative ? 1 : 0));
+    return results;
+  }
+
+  private async collect(): Promise<ResolvedPath[]> {
+    const results: ResolvedPath[] = [];
+    const pending: string[] = [this.root];
+    while (pending.length > 0) {
+      const dirAbs = pending.pop() as string;
+      let entries: readonly string[];
+      try {
+        entries = await this.fs.listDir(dirAbs);
+      } catch (error) {
+        throw new UnreadableDirectoryWarningCandidateError(dirAbs, error);
+      }
+      for (const entry of entries) {
+        const childAbs = posix.join(dirAbs, entry);
+        const childRel = relPathFromRoot(childAbs, this.root);
+        if (this.ignore.isIgnored(childRel)) {
+          continue;
+        }
+        if (await this.fs.isDirectory(childAbs)) {
+          pending.push(childAbs);
+        } else {
+          results.push({ relative: childRel, absolute: childAbs });
+        }
+      }
+    }
+    return results;
   }
 }
 

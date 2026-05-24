@@ -33,6 +33,20 @@ export class IgnoredFileError extends UserFacingError {
   }
 }
 
+export class UnreadableDirectoryWarningCandidateError extends UserFacingError {
+  constructor(
+    private readonly directory: string,
+    cause: unknown,
+  ) {
+    super(undefined, { cause });
+    this.name = "UnreadableDirectoryWarningCandidateError";
+  }
+
+  get reason(): string {
+    return `cannot read directory during enumeration: ${this.directory} — warning candidate: downgrade to a non-fatal warning once enumerate can report partial results instead of throwing`;
+  }
+}
+
 export class OutsideWorkspaceError extends UserFacingError {
   constructor(
     private readonly inputPath: string,

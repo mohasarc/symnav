@@ -35,6 +35,14 @@ export class InMemoryFileSystem implements FileSystem {
     return this.fileSet.has(absPath) || this.dirSet.has(absPath);
   }
 
+  async listDir(absPath: string): Promise<readonly string[]> {
+    return this.listDirSync(absPath);
+  }
+
+  async isDirectory(absPath: string): Promise<boolean> {
+    return this.isDirectorySync(absPath);
+  }
+
   existsSync(absPath: string): boolean {
     return this.fileSet.has(absPath) || this.dirSet.has(absPath);
   }

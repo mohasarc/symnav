@@ -67,7 +67,7 @@ export class WorkspaceIgnore {
       return relPath;
     }
     if (relPath === dirRelToRoot) {
-      return "";
+      return null;
     }
     const prefix = `${dirRelToRoot}/`;
     if (relPath.startsWith(prefix)) {

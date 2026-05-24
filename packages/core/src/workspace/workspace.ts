@@ -46,31 +46,36 @@ class DefaultWorkspace implements Workspace {
   }
 
   async enumerate(): Promise<readonly ResolvedPath[]> {
-    const results: ResolvedPath[] = [];
-    this.collect(this.root, results);
+    const results = await this.collect();
     results.sort((a, b) => (a.relative < b.relative ? -1 : a.relative > b.relative ? 1 : 0));
     return results;
   }
 
-  private collect(dirAbs: string, out: ResolvedPath[]): void {
-    let entries: readonly string[];
-    try {
-      entries = this.fs.listDirSync(dirAbs);
-    } catch {
-      return;
-    }
-    for (const entry of entries) {
-      const childAbs = posix.join(dirAbs, entry);
-      const childRel = relPathFromRoot(childAbs, this.root);
-      if (this.ignore.isIgnored(childRel)) {
+  private async collect(): Promise<ResolvedPath[]> {
+    const results: ResolvedPath[] = [];
+    const pending: string[] = [this.root];
+    while (pending.length > 0) {
+      const dirAbs = pending.pop() as string;
+      let entries: readonly string[];
+      try {
+        entries = await this.fs.listDir(dirAbs);
+      } catch {
         continue;
       }
-      if (this.fs.isDirectorySync(childAbs)) {
-        this.collect(childAbs, out);
-      } else {
-        out.push({ relative: childRel, absolute: childAbs });
+      for (const entry of entries) {
+        const childAbs = posix.join(dirAbs, entry);
+        const childRel = relPathFromRoot(childAbs, this.root);
+        if (this.ignore.isIgnored(childRel)) {
+          continue;
+        }
+        if (await this.fs.isDirectory(childAbs)) {
+          pending.push(childAbs);
+        } else {
+          results.push({ relative: childRel, absolute: childAbs });
+        }
       }
     }
+    return results;
   }
 }
 

@@ -10,6 +10,7 @@ import { WorkspaceIgnore } from "./ignore/workspace-ignore.js";
 import { findWorkspaceRoot } from "./paths/find-root.js";
 import { isUnderRoot } from "./paths/is-under-root.js";
 import { posixify } from "./paths/posixify.js";
+import { relPathFromRoot } from "./paths/rel-from-root.js";
 
 export interface ResolvedPath {
   readonly relative: string;
@@ -29,13 +30,6 @@ class DefaultWorkspace implements Workspace {
     private readonly ignore: WorkspaceIgnore,
   ) {}
 
-  private toRelative(absPath: string): string {
-    if (absPath === this.root) {
-      return "";
-    }
-    return absPath.slice(this.root.length + 1);
-  }
-
   async resolveInputPath(inputPath: string, cwd: string): Promise<ResolvedPath> {
     const absolutePath = posixify(isAbsolute(inputPath) ? inputPath : resolve(cwd, inputPath));
     if (!(await this.fs.exists(absolutePath))) {
@@ -44,7 +38,7 @@ class DefaultWorkspace implements Workspace {
     if (!isUnderRoot(absolutePath, this.root)) {
       throw new OutsideWorkspaceError(inputPath, this.root);
     }
-    const relativePath = this.toRelative(absolutePath);
+    const relativePath = relPathFromRoot(absolutePath, this.root);
     if (this.ignore.isIgnored(relativePath)) {
       throw new IgnoredFileError(inputPath);
     }
@@ -67,7 +61,7 @@ class DefaultWorkspace implements Workspace {
     }
     for (const entry of entries) {
       const childAbs = posix.join(dirAbs, entry);
-      const childRel = this.toRelative(childAbs);
+      const childRel = relPathFromRoot(childAbs, this.root);
       if (this.ignore.isIgnored(childRel)) {
         continue;
       }

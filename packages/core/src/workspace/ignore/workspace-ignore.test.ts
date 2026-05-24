@@ -100,6 +100,16 @@ describe("WorkspaceIgnore", () => {
     expect(ignore.isIgnored("pkg")).toBe(false);
   });
 
+  it("does not crash or ignore a nested scope's own directory (empty-path-crash fix)", () => {
+    const fs = new InMemoryFileSystem({
+      "/repo/.gitignore": "",
+      "/repo/a/b/.gitignore": "*\n",
+      "/repo/a/b/keep.ts": "",
+    });
+    const ignore = WorkspaceIgnore.build("/repo", fs);
+    expect(ignore.isIgnored("a/b")).toBe(false);
+  });
+
   it("does not ignore the empty or root path", () => {
     const fs = new InMemoryFileSystem({
       "/repo/.gitignore": "dist/\n",

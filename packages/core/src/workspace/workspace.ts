@@ -5,6 +5,7 @@ import {
   IgnoredFileError,
   NotInWorkspaceError,
   OutsideWorkspaceError,
+  UnreadableDirectoryWarningCandidateError,
 } from "./errors.js";
 import { WorkspaceIgnore } from "./ignore/workspace-ignore.js";
 import { findWorkspaceRoot } from "./paths/find-root.js";
@@ -59,8 +60,8 @@ class DefaultWorkspace implements Workspace {
       let entries: readonly string[];
       try {
         entries = await this.fs.listDir(dirAbs);
-      } catch {
-        continue;
+      } catch (error) {
+        throw new UnreadableDirectoryWarningCandidateError(dirAbs, error);
       }
       for (const entry of entries) {
         const childAbs = posix.join(dirAbs, entry);

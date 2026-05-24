@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { createWorkspace } from "../../../src/workspace/workspace.js";
 import { InMemoryFileSystem } from "../../../src/workspace/in-memory/in-memory-file-system.js";
+import { UnreadableDirectoryWarningCandidateError } from "../../../src/workspace/errors.js";
 
 describe("Workspace.enumerate", () => {
   it("returns every non-ignored file under the workspace root as ResolvedPath", async () => {
@@ -73,6 +74,34 @@ describe("Workspace.enumerate", () => {
       "src/beta.ts",
       "zeta.ts",
     ]);
+  });
+
+  it("throws a warning-candidate error (preserving the cause) when a directory cannot be read", async () => {
+    const cause = Object.assign(new Error("denied"), { code: "EACCES" });
+    class UnreadableSubdirFs extends InMemoryFileSystem {
+      override async listDir(absPath: string): Promise<readonly string[]> {
+        if (absPath === "/repo/src") {
+          throw cause;
+        }
+        return super.listDir(absPath);
+      }
+    }
+    const ws = await createWorkspace({
+      startDir: "/repo",
+      fs: new UnreadableSubdirFs({
+        "/repo/.git/HEAD": "ref: refs/heads/main\n",
+        "/repo/src/a.ts": "",
+      }),
+    });
+    const error = await ws.enumerate().then(
+      () => undefined,
+      (thrown: unknown) => thrown,
+    );
+    expect(error).toBeInstanceOf(UnreadableDirectoryWarningCandidateError);
+    expect((error as UnreadableDirectoryWarningCandidateError).reason).toContain(
+      "warning candidate",
+    );
+    expect((error as Error).cause).toBe(cause);
   });
 
   it("returns the same order on repeated calls", async () => {

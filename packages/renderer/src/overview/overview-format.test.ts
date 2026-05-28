@@ -2,11 +2,8 @@ import { describe, expect, it } from "vitest";
 
 import {
   formatEmptyOverview,
-  formatHeadLine,
   formatOverviewHeader,
-  formatRange,
   formatSignatureLine,
-  treeGlyphsFor,
 } from "./overview-format.js";
 
 describe("overview-format", () => {
@@ -22,26 +19,6 @@ describe("overview-format", () => {
     });
   });
 
-  describe("formatRange", () => {
-    it("renders a single-line range as `N`", () => {
-      expect(formatRange({ startLine: 8, endLine: 8 })).toBe("8");
-    });
-
-    it("renders a multi-line range as `N-M`", () => {
-      expect(formatRange({ startLine: 12, endLine: 96 })).toBe("12-96");
-    });
-  });
-
-  describe("formatHeadLine", () => {
-    it("composes prefix + range + path with `: ` and a trailing newline", () => {
-      expect(formatHeadLine("", { startLine: 4, endLine: 4 }, "greet")).toBe("4: greet\n");
-    });
-
-    it("preserves the caller-supplied prefix verbatim", () => {
-      expect(formatHeadLine("├── ", { startLine: 2, endLine: 4 }, "C::m")).toBe("├── 2-4: C::m\n");
-    });
-  });
-
   describe("formatSignatureLine", () => {
     it("composes prefix + line number + text with a single space and a trailing newline", () => {
       expect(formatSignatureLine("", 10, "function configure(")).toBe("10 function configure(\n");
@@ -49,16 +26,6 @@ describe("overview-format", () => {
 
     it("preserves the caller-supplied prefix verbatim", () => {
       expect(formatSignatureLine("│   ", 24, "constructor()")).toBe("│   24 constructor()\n");
-    });
-  });
-
-  describe("treeGlyphsFor", () => {
-    it("returns branch + vertical continuation for a non-last child", () => {
-      expect(treeGlyphsFor(false)).toEqual({ branchGlyph: "├── ", continuationGlyph: "│   " });
-    });
-
-    it("returns last + space continuation for the last child", () => {
-      expect(treeGlyphsFor(true)).toEqual({ branchGlyph: "└── ", continuationGlyph: "    " });
     });
   });
 });

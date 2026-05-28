@@ -1,6 +1,6 @@
-import type { ResolveResult, SymbolDecl, SymbolIdentity } from "@symnav/core";
+import type { ResolveResult, SymbolDecl } from "@symnav/core";
 
-import { formatRange, treeGlyphsFor } from "../overview/overview-format.js";
+import { formatHeadLine, formatIdentityPath, treeGlyphsFor } from "../shared/render-format.js";
 
 export function renderResolveText(result: ResolveResult): string {
   return (
@@ -74,12 +74,12 @@ function renderFileGroup(
 
 function renderSymbolEntry(symbol: SymbolDecl, parentPrefix: string, isLast: boolean): string {
   const { branchGlyph, continuationGlyph } = treeGlyphsFor(isLast);
-  const head = `${parentPrefix}${branchGlyph}${formatRange(symbol.range)}: ${formatIdentityPath(symbol.identity)}\n`;
+  const head = formatHeadLine(
+    parentPrefix + branchGlyph,
+    symbol.range,
+    formatIdentityPath(symbol.identity),
+  );
   const signaturePrefix = parentPrefix + continuationGlyph;
   const sig = symbol.signature.lines.map((line) => `${signaturePrefix}${line}\n`).join("");
   return head + sig;
-}
-
-function formatIdentityPath(identity: SymbolIdentity): string {
-  return identity.segments.map((segment) => segment.name).join("::");
 }

@@ -106,6 +106,48 @@ describe("renderResolveText", () => {
     );
   });
 
+  it("emits `name#N` segments for disambiguated overloads", () => {
+    const result: ResolveResult = {
+      query: "post",
+      fuzzy: false,
+      symbols: [
+        decl({
+          file: "src/http/Router.ts",
+          segments: [{ name: "Router" }, { name: "post", disambiguator: 1 }],
+          kind: "method",
+          startLine: 40,
+          endLine: 40,
+          signature: ["post(path: string, handler: Handler): void"],
+        }),
+        decl({
+          file: "src/http/Router.ts",
+          segments: [{ name: "Router" }, { name: "post", disambiguator: 2 }],
+          kind: "method",
+          startLine: 44,
+          endLine: 44,
+          signature: ["post(path: RegExp, handler: Handler): void"],
+        }),
+      ],
+      files: [],
+    };
+    expect(renderResolveText(result)).toBe(
+      [
+        "Resolve: post",
+        "",
+        "Symbols",
+        "└── src/http/Router.ts",
+        "    ├── 40: Router::post#1",
+        "    │   post(path: string, handler: Handler): void",
+        "    └── 44: Router::post#2",
+        "        post(path: RegExp, handler: Handler): void",
+        "",
+        "Files",
+        "(none)",
+        "",
+      ].join("\n"),
+    );
+  });
+
   it("groups multiple symbols in the same file under one file branch", () => {
     const result: ResolveResult = {
       query: "charge",

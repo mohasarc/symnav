@@ -26,7 +26,7 @@ describe("renderResolveJson", () => {
     expect(parsed).toEqual(result);
   });
 
-  it("emits stably-ordered keys", () => {
+  it("emits keys in ResolveResult declaration order", () => {
     const result: ResolveResult = {
       query: "x",
       fuzzy: false,
@@ -37,10 +37,10 @@ describe("renderResolveJson", () => {
     expect(json).toBe(
       [
         "{",
-        '  "files": [],',
-        '  "fuzzy": false,',
         '  "query": "x",',
-        '  "symbols": []',
+        '  "fuzzy": false,',
+        '  "symbols": [],',
+        '  "files": []',
         "}",
         "",
       ].join("\n"),

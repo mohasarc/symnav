@@ -1,6 +1,6 @@
-import type { DefinitionResult, SymbolDecl, SymbolIdentity } from "@symnav/core";
+import type { DefinitionResult, SymbolDecl } from "@symnav/core";
 
-import { formatRange, treeGlyphsFor } from "../overview/overview-format.js";
+import { formatIdentityPath, formatRange, treeGlyphsFor } from "../shared/render-format.js";
 import { bracketTagFor } from "./definition-tag.js";
 
 export function renderDefinitionText(result: DefinitionResult): string {
@@ -45,18 +45,4 @@ function renderSymbolEntry(symbol: SymbolDecl, isLast: boolean): string {
   const head = `${branchGlyph}${formatRange(symbol.range)}: ${formatIdentityPath(symbol.identity)}${tagSuffix}\n`;
   const sig = symbol.signature.lines.map((line) => `${continuationGlyph}${line}\n`).join("");
   return head + sig;
-}
-
-function formatIdentityPath(identity: SymbolIdentity): string {
-  return identity.segments.map((segment) => formatSegment(segment)).join("::");
-}
-
-function formatSegment(segment: {
-  readonly name: string;
-  readonly disambiguator?: number;
-}): string {
-  if (segment.disambiguator === undefined) {
-    return segment.name;
-  }
-  return `${segment.name}#${segment.disambiguator}`;
 }

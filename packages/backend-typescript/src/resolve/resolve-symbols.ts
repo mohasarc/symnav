@@ -1,9 +1,7 @@
 import type { FileSystem, ResolveSymbolsOptions, ResolvedPath, SymbolDecl } from "@symnav/core";
 import fuzzysort from "fuzzysort";
-import { Project } from "ts-morph";
 
-import { extractFileSymbols } from "../extract/extract-file-symbols.js";
-import { WorkspaceFileSystemHost } from "../typescript-backend/workspace-file-system-host.js";
+import { loadFileSymbols } from "../extract/load-file-symbols.js";
 
 export interface ResolveSymbolsArgs {
   readonly fs: FileSystem;
@@ -21,12 +19,9 @@ export async function resolveSymbols(args: ResolveSymbolsArgs): Promise<readonly
 }
 
 function extractAllSymbols(fs: FileSystem, files: readonly ResolvedPath[]): readonly SymbolDecl[] {
-  const project = new Project({ fileSystem: new WorkspaceFileSystemHost(fs) });
   const all: SymbolDecl[] = [];
-  for (const path of files) {
-    if (!fs.existsSync(path.absolute) || fs.isDirectorySync(path.absolute)) continue;
-    const sourceFile = project.addSourceFileAtPath(path.absolute);
-    const { symbols } = extractFileSymbols({ sourceFile, filePath: path.relative });
+  for (const file of files) {
+    const { symbols } = loadFileSymbols(fs, file);
     collectAll(symbols, all);
   }
   return all;

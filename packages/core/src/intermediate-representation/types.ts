@@ -29,3 +29,10 @@ export interface OverviewFileSymbols {
   readonly file: string; // workspace-relative, POSIX separators
   readonly symbols: readonly SymbolDecl[]; // top-level entries, source order
 }
+
+export interface ResolveResult {
+  readonly query: string;
+  readonly fuzzy: boolean;
+  readonly symbols: readonly SymbolDecl[];
+  readonly files: readonly string[];
+}

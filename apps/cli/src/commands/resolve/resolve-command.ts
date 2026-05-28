@@ -97,6 +97,6 @@ function compareStringsAscending(a: string, b: string): number {
 }
 
 function stripExtension(name: string): string {
-  const dot = name.indexOf(".");
-  return dot >= 0 ? name.slice(0, dot) : name;
+  const dot = name.lastIndexOf(".");
+  return dot > 0 ? name.slice(0, dot) : name;
 }

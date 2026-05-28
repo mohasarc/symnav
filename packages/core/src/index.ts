@@ -5,6 +5,7 @@ export type {
   Signature,
   SymbolDecl,
   OverviewFileSymbols,
+  ResolveResult,
 } from "./intermediate-representation/types.js";
 export type {
   SymbolPathSegment,

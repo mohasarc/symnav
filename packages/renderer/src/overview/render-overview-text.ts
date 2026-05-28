@@ -1,11 +1,10 @@
-import type { OverviewFileSymbols, Signature, SymbolDecl, SymbolIdentity } from "@symnav/core";
+import type { OverviewFileSymbols, Signature, SymbolDecl } from "@symnav/core";
 
+import { formatHeadLine, formatIdentityPath, treeGlyphsFor } from "../shared/render-format.js";
 import {
   formatEmptyOverview,
-  formatHeadLine,
   formatOverviewHeader,
   formatSignatureLine,
-  treeGlyphsFor,
 } from "./overview-format.js";
 import { capSignatureLines } from "./signature-cap.js";
 
@@ -41,10 +40,6 @@ function renderChild(decl: SymbolDecl, parentPrefix: string, isLast: boolean): s
   const signatureBlock = renderSignature(decl.signature, childPrefix);
   const childrenBlock = renderChildren(decl.children, childPrefix);
   return headLine + signatureBlock + childrenBlock;
-}
-
-function formatIdentityPath(identity: SymbolIdentity): string {
-  return identity.segments.map((segment) => segment.name).join("::");
 }
 
 function renderSignature(signature: Signature, prefix: string): string {

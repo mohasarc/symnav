@@ -1,0 +1,9 @@
+Resolve: PaymentProcessor
+
+Symbols
+└── src/payments/PaymentProcessor.ts
+    └── 1-5: PaymentProcessor
+        export class PaymentProcessor
+
+Files
+(none)

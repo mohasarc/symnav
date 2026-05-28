@@ -82,12 +82,18 @@ function matchFilesByBasename(
   }));
   if (fuzzy) {
     const ranked = fuzzysort.go(query, indexed, { key: "basename" });
-    return ranked.map((result) => result.obj.relative).sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
+    return ranked.map((result) => result.obj.relative).sort(compareStringsAscending);
   }
   return indexed
     .filter((entry) => entry.basename === query)
     .map((entry) => entry.relative)
-    .sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
+    .sort(compareStringsAscending);
+}
+
+function compareStringsAscending(a: string, b: string): number {
+  if (a < b) return -1;
+  if (a > b) return 1;
+  return 0;
 }
 
 function stripExtension(name: string): string {

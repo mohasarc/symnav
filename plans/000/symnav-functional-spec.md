@@ -335,7 +335,7 @@ Purpose:
 Show all references to a symbol, excluding the symbol's own definition/declaration.
 ```
 
-`refs` should not hide import/export/type/test references. It shows everything within non-ignored workspace files, except the symbol's own definition/declaration.
+`refs` should not hide import/export/type references. It shows everything within non-ignored workspace files, except the symbol's own definition/declaration.
 
 Default output is a compact Unicode filesystem tree.
 
@@ -348,7 +348,7 @@ Example:
 ```text
 References: PaymentProcessor
 Total: 6
-Kinds: usage 2, import 2, export 1, test 1
+Kinds: usage 3, import 2, export 1
 Page: 1/1
 Sort: path, line
 
@@ -363,7 +363,7 @@ src/
 │       ├── 6: import { PaymentProcessor } from "./PaymentProcessor"  [import]
 │       └── 29: await PaymentProcessor.refund(paymentId)  [usage]
 └── tests/payments/PaymentProcessor.test.ts
-    └── 18: expect(await PaymentProcessor.charge(order)).toEqual(receipt)  [test]
+    └── 18: expect(await PaymentProcessor.charge(order)).toEqual(receipt)  [usage]
 ```
 
 Preview rules:

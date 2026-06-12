@@ -1,0 +1,27 @@
+References: PaymentProcessor
+Total: 14
+Kinds: usage 7, import 5, export 1, type 1
+Page: 1/1
+Sort: path, line
+
+src/
+├── billing/RefundService.ts
+│   ├── 1: import { PaymentProcessor } from "../payments";  [import]
+│   └── 5:     const processor = new PaymentProcessor();  [usage]
+├── checkout/CheckoutService.ts
+│   ├── 1: import { PaymentProcessor } from "../payments/PaymentProcessor";  [import]
+│   ├── 4:   private readonly processor: PaymentProcessor;  [type]
+│   └── 7:     this.processor = new PaymentProcessor();  [usage]
+├── long/LongLine.ts
+│   ├── 1: import { PaymentProcessor } from "../payments/PaymentProcessor";  [import]
+│   ├── 3: export const earlyProcessor = { processor: new PaymentProcessor(), label: "a deliberately long label that pushes this source line well past the preview width" };  [usage]
+│   └── 5: export const lateProcessor = { label: "another deliberately long label that pushes this source line well past the preview width", processor: new PaymentProcessor() };  [usage]
+├── multi/SameLine.ts
+│   ├── 1: import { PaymentProcessor } from "../payments/PaymentProcessor";  [import]
+│   ├── 3: export const processors = [new PaymentProcessor(), new PaymentProcessor()];  [usage]
+│   └── 3: export const processors = [new PaymentProcessor(), new PaymentProcessor()];  [usage]
+└── payments/index.ts
+    └── 1: export { PaymentProcessor } from "./PaymentProcessor";  [export]
+tests/payments/PaymentProcessor.test.ts
+├── 1: import { PaymentProcessor } from "../../src/payments/PaymentProcessor";  [import]
+└── 4:   const sut = new PaymentProcessor();  [usage]

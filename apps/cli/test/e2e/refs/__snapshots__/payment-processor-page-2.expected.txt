@@ -1,0 +1,12 @@
+References: PaymentProcessor
+Total: 14
+Kinds: usage 7, import 5, export 1, type 1
+Page: 2/5
+Sort: path, line
+
+src/
+├── checkout/CheckoutService.ts
+│   ├── 4: private readonly processor: PaymentProcessor;  [type]
+│   └── 7: this.processor = new PaymentProcessor();  [usage]
+└── long/LongLine.ts
+    └── 1: import { PaymentProcessor } from "../payments/PaymentProcessor";  [import]

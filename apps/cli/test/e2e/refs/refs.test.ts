@@ -87,11 +87,11 @@ describe("symnav refs e2e (default output)", () => {
 describe("symnav refs e2e (preview trimming)", () => {
   it("trims long lines with an ellipsis while keeping the match visible", () => {
     const r = runRefs([processorId]);
-    const longLineEntries = r.stdout
-      .split("\n")
-      .filter((line) => line.includes("earlyProcessor") || line.includes("lateProcessor"));
-    expect(longLineEntries).toHaveLength(2);
-    for (const entry of longLineEntries) {
+    const lines = r.stdout.split("\n");
+    const earlyEntry = lines.find((line) => line.includes("earlyProcessor"));
+    const lateEntry = lines.find((line) => line.includes("processor: new PaymentProcessor() }"));
+    for (const entry of [earlyEntry, lateEntry]) {
+      expect(entry).toBeDefined();
       expect(entry).toContain("…");
       expect(entry).toContain("new PaymentProcessor()");
     }

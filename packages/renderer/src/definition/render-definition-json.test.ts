@@ -5,7 +5,7 @@ import type { DefinitionResult } from "@symnav/core";
 import { renderDefinitionJson } from "./render-definition-json.js";
 
 describe("renderDefinitionJson", () => {
-  it("emits stable, sorted-key JSON over the DefinitionResult", () => {
+  it("emits pretty-printed JSON over the DefinitionResult", () => {
     const result: DefinitionResult = {
       identity: { file: "src/http/Router.ts", segments: [{ name: "Router" }, { name: "post" }] },
       symbols: [
@@ -38,9 +38,9 @@ describe("renderDefinitionJson", () => {
     expect(first.range).toEqual({ startLine: 4, endLine: 4 });
   });
 
-  it("sorts object keys alphabetically", () => {
+  it("preserves the result's own key order", () => {
     const result: DefinitionResult = {
-      identity: { file: "a.ts", segments: [{ name: "X" }] },
+      identity: { segments: [{ name: "X" }], file: "a.ts" },
       symbols: [],
     };
     const json = renderDefinitionJson(result);
@@ -48,12 +48,12 @@ describe("renderDefinitionJson", () => {
       [
         "{",
         '  "identity": {',
-        '    "file": "a.ts",',
         '    "segments": [',
         "      {",
         '        "name": "X"',
         "      }",
-        "    ]",
+        "    ],",
+        '    "file": "a.ts"',
         "  },",
         '  "symbols": []',
         "}",

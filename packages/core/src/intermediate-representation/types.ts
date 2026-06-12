@@ -36,3 +36,8 @@ export interface ResolveResult {
   readonly symbols: readonly SymbolDecl[];
   readonly files: readonly string[];
 }
+
+export interface DefinitionResult {
+  readonly identity: SymbolIdentity;
+  readonly symbols: readonly SymbolDecl[];
+}

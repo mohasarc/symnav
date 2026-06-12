@@ -193,10 +193,23 @@ describe("extractFileSymbols", () => {
     expect(result.symbols).toEqual([]);
   });
 
-  it("throws on an unrecognised top-level statement kind (e.g. control flow)", () => {
-    expect(() => symbolsOf("if (true) {}")).toThrow(
-      /Unrecognised top-level statement kind: IfStatement/,
-    );
+  it("ignores top-level executable control-flow statements", () => {
+    const source = [
+      "if (true) { sideEffect(); }",
+      "for (const x of []) {}",
+      "for (const x in {}) {}",
+      "for (let i = 0; i < 1; i++) {}",
+      "while (false) {}",
+      "do {} while (false);",
+      "switch (x) { case 1: break; default: break; }",
+      "try { run(); } catch (e) {} finally {}",
+      "throw new Error('x');",
+      "label: { break label; }",
+      "{ const inner = 1; }",
+      "debugger;",
+    ].join("\n");
+    const result = symbolsOf(source);
+    expect(result.symbols).toEqual([]);
   });
 
   it("ignores class static blocks but counts other members", () => {

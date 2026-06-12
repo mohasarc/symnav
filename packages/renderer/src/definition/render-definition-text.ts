@@ -1,5 +1,6 @@
 import type { DefinitionResult, SymbolDecl } from "@symnav/core";
 
+import { groupByFile } from "../shared/group-symbols-by-file.js";
 import { formatIdentityPath, formatRange, treeGlyphsFor } from "../shared/render-format.js";
 import { bracketTagFor } from "./definition-tag.js";
 
@@ -14,20 +15,6 @@ export function renderDefinitionText(result: DefinitionResult): string {
 function renderFileGroups(symbols: readonly SymbolDecl[]): string {
   const groups = groupByFile(symbols);
   return [...groups.entries()].map(([file, group]) => renderFileGroup(file, group)).join("\n");
-}
-
-function groupByFile(symbols: readonly SymbolDecl[]): Map<string, SymbolDecl[]> {
-  const map = new Map<string, SymbolDecl[]>();
-  for (const symbol of symbols) {
-    const file = symbol.identity.file;
-    const bucket = map.get(file);
-    if (bucket) {
-      bucket.push(symbol);
-    } else {
-      map.set(file, [symbol]);
-    }
-  }
-  return map;
 }
 
 function renderFileGroup(file: string, symbols: readonly SymbolDecl[]): string {

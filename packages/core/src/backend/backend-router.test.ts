@@ -22,6 +22,9 @@ function fakeBackend(
     findDefinitions() {
       return Promise.resolve([]);
     },
+    findReferences() {
+      return Promise.resolve([]);
+    },
   };
 }
 

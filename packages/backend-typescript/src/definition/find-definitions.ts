@@ -29,7 +29,6 @@ export async function findDefinitions(args: FindDefinitionsArgs): Promise<readon
   const project = new Project({ fileSystem: new WorkspaceFileSystemHost(args.fs) });
   const fileToPath = new Map<string, ResolvedPath>();
   for (const path of args.files) {
-    if (!args.fs.existsSync(path.absolute) || args.fs.isDirectorySync(path.absolute)) continue;
     project.addSourceFileAtPath(path.absolute);
     fileToPath.set(path.relative, path);
   }

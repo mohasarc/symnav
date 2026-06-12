@@ -5,3 +5,4 @@ export { renderResolveJson } from "./resolve/render-resolve-json.js";
 export { renderDefinitionText } from "./definition/render-definition-text.js";
 export { renderDefinitionJson } from "./definition/render-definition-json.js";
 export { bracketTagFor } from "./definition/definition-tag.js";
+export { renderRefsText } from "./refs/render-refs-text.js";

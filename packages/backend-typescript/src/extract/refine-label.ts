@@ -7,14 +7,10 @@ export function refineLabel(node: Node, baseKind: TypeScriptSymbolKind): TypeScr
     return refineMethodLabel(node);
   }
   if (baseKind === "function") {
-    return refineOverloadableLabel(node, "function-implementation", "function-overload-signature");
+    return refineFunctionLabel(node);
   }
   if (baseKind === "constructor") {
-    return refineOverloadableLabel(
-      node,
-      "constructor-implementation",
-      "constructor-overload-signature",
-    );
+    return refineConstructorLabel(node);
   }
   return baseKind;
 }
@@ -38,13 +34,20 @@ function refineMethodLabel(node: Node): TypeScriptSymbolKind {
   return "method-implementation";
 }
 
-function refineOverloadableLabel(
-  node: Node,
-  implementationLabel: TypeScriptSymbolKind,
-  overloadLabel: TypeScriptSymbolKind,
-): TypeScriptSymbolKind {
-  if (Node.isOverloadable(node) && node.isOverload()) {
-    return overloadLabel;
+function refineFunctionLabel(node: Node): TypeScriptSymbolKind {
+  if (isOverloadSignature(node)) {
+    return "function-overload-signature";
   }
-  return implementationLabel;
+  return "function-implementation";
+}
+
+function refineConstructorLabel(node: Node): TypeScriptSymbolKind {
+  if (isOverloadSignature(node)) {
+    return "constructor-overload-signature";
+  }
+  return "constructor-implementation";
+}
+
+function isOverloadSignature(node: Node): boolean {
+  return Node.isOverloadable(node) && node.isOverload();
 }

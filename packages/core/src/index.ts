@@ -12,6 +12,16 @@ export type {
   SymbolPathSegment,
   SymbolIdentity,
 } from "./intermediate-representation/symbol-identity.js";
+export type {
+  ReferenceKind,
+  Reference,
+  RefsResult,
+} from "./intermediate-representation/references.js";
+export type { BuildRefsResultArgs } from "./intermediate-representation/build-refs-result.js";
+export { buildRefsResult } from "./intermediate-representation/build-refs-result.js";
+export type { PageRequest, Page } from "./pagination/paginate.js";
+export { DEFAULT_PAGE_SIZE, paginate } from "./pagination/paginate.js";
+export { InvalidPageRequestError, PageOutOfRangeError } from "./pagination/errors.js";
 export {
   InvalidSymbolIdError,
   formatSymbolIdentity,
@@ -27,5 +37,5 @@ export { InMemoryFileSystem } from "./workspace/in-memory/in-memory-file-system.
 export type { LanguageBackend, ResolveSymbolsOptions } from "./backend/language-backend.js";
 export { BackendRouter } from "./backend/backend-router.js";
 export { UserFacingError } from "./errors.js";
-export { UnsupportedFileError } from "./backend/errors.js";
+export { SymbolNotFoundError, UnsupportedFileError } from "./backend/errors.js";
 export { FileNotFoundError, OutsideWorkspaceError } from "./workspace/errors.js";

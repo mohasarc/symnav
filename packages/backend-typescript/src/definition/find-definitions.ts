@@ -127,7 +127,7 @@ function locateNodeFor(sourceFile: SourceFile, decl: SymbolDecl): Node | undefin
     if (found) return;
     if (!isDefinitionNode(node)) return;
     if (node.getStartLineNumber() !== startLine) return;
-    if (declarationName(node) !== leafName(decl)) return;
+    if (declarationName(node) !== ownName(decl)) return;
     found = node;
   });
   return found;
@@ -174,7 +174,7 @@ function declarationName(node: Node): string | undefined {
   return undefined;
 }
 
-function leafName(decl: SymbolDecl): string {
+function ownName(decl: SymbolDecl): string {
   const leaf = decl.identity.segments[decl.identity.segments.length - 1];
   return leaf?.name ?? "";
 }

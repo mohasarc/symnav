@@ -26,51 +26,138 @@ export interface FindDefinitionsArgs {
 }
 
 export async function findDefinitions(args: FindDefinitionsArgs): Promise<readonly SymbolDecl[]> {
-  const project = new Project({ fileSystem: new WorkspaceFileSystemHost(args.fs) });
-  const fileToPath = new Map<string, ResolvedPath>();
-  for (const path of args.files) {
-    project.addSourceFileAtPath(path.absolute);
-    fileToPath.set(path.relative, path);
-  }
-  const symbolIndex = buildSymbolIndex(project, fileToPath);
-  const targetPath = fileToPath.get(args.identity.file);
-  if (!targetPath) return [];
-  const targetSource = project.getSourceFile(targetPath.absolute);
-  if (!targetSource) return [];
-  const leafMatches = matchIdentity(targetSource, args.identity, symbolIndex);
-  return expandContracts(leafMatches, project, symbolIndex);
+  return new DefinitionFinder(args).find();
 }
 
-interface MatchedLeaf {
-  readonly decl: SymbolDecl;
+interface MatchedDeclaration {
+  readonly declaration: SymbolDecl;
   readonly node: Node;
 }
 
-type SymbolIndex = ReadonlyMap<string, { readonly decl: SymbolDecl; readonly file: ResolvedPath }>;
-
-function buildSymbolIndex(
-  project: Project,
-  fileToPath: ReadonlyMap<string, ResolvedPath>,
-): SymbolIndex {
-  const index = new Map<string, { decl: SymbolDecl; file: ResolvedPath }>();
-  for (const [relative, path] of fileToPath) {
-    const sourceFile = project.getSourceFile(path.absolute);
-    if (!sourceFile) continue;
-    const { symbols } = extractFileSymbols({ sourceFile, filePath: relative });
-    for (const decl of flatten(symbols)) {
-      index.set(identityKey(decl.identity), { decl, file: path });
-    }
-  }
-  return index;
+interface IndexedDeclaration {
+  readonly declaration: SymbolDecl;
+  readonly file: ResolvedPath;
 }
 
-function flatten(symbols: readonly SymbolDecl[]): SymbolDecl[] {
-  const out: SymbolDecl[] = [];
-  for (const symbol of symbols) {
-    out.push(symbol);
-    out.push(...flatten(symbol.children));
+class DefinitionFinder {
+  private readonly project: Project;
+  private readonly fileByRelativePath = new Map<string, ResolvedPath>();
+  private readonly declarationsByIdentity = new Map<string, IndexedDeclaration>();
+
+  constructor(private readonly args: FindDefinitionsArgs) {
+    this.project = new Project({ fileSystem: new WorkspaceFileSystemHost(args.fs) });
   }
-  return out;
+
+  async find(): Promise<readonly SymbolDecl[]> {
+    this.loadWorkspaceFiles();
+    this.indexAllDeclarations();
+    const targetSource = this.targetSourceFile();
+    if (!targetSource) return [];
+    const matches = this.declarationsMatchingIdentity(targetSource);
+    return this.withContractImplementations(matches);
+  }
+
+  private loadWorkspaceFiles(): void {
+    for (const path of this.args.files) {
+      this.project.addSourceFileAtPath(path.absolute);
+      this.fileByRelativePath.set(path.relative, path);
+    }
+  }
+
+  private indexAllDeclarations(): void {
+    for (const [relative, path] of this.fileByRelativePath) {
+      const sourceFile = this.project.getSourceFile(path.absolute);
+      if (!sourceFile) continue;
+      const { symbols } = extractFileSymbols({ sourceFile, filePath: relative });
+      for (const declaration of withNestedDeclarations(symbols)) {
+        this.declarationsByIdentity.set(identityKey(declaration.identity), {
+          declaration,
+          file: path,
+        });
+      }
+    }
+  }
+
+  private targetSourceFile(): SourceFile | undefined {
+    const targetPath = this.fileByRelativePath.get(this.args.identity.file);
+    if (!targetPath) return undefined;
+    return this.project.getSourceFile(targetPath.absolute);
+  }
+
+  private declarationsMatchingIdentity(targetSource: SourceFile): MatchedDeclaration[] {
+    const { segments } = this.args.identity;
+    const ownSegment = segments[segments.length - 1];
+    if (!ownSegment) return [];
+    let candidates = extractFileSymbols({
+      sourceFile: targetSource,
+      filePath: this.args.identity.file,
+    }).symbols;
+    for (const ancestorSegment of segments.slice(0, -1)) {
+      candidates = candidates
+        .filter((candidate) => ownSegmentMatches(candidate, ancestorSegment))
+        .flatMap((candidate) => candidate.children);
+    }
+    return candidates
+      .filter((candidate) => ownSegmentMatches(candidate, ownSegment))
+      .flatMap((declaration) => {
+        const node = locateDeclarationNode(targetSource, declaration);
+        return node ? [{ declaration, node }] : [];
+      });
+  }
+
+  private withContractImplementations(matches: readonly MatchedDeclaration[]): SymbolDecl[] {
+    const seen = new Set<string>();
+    const out: SymbolDecl[] = [];
+    for (const match of matches) {
+      addUniqueDeclaration(out, seen, match.declaration);
+      if (!isContract(match.node)) continue;
+      for (const implementation of this.implementationsOf(match.node)) {
+        addUniqueDeclaration(out, seen, implementation);
+      }
+    }
+    return out;
+  }
+
+  private implementationsOf(node: Node): SymbolDecl[] {
+    if (!Node.isMethodSignature(node) && !Node.isMethodDeclaration(node)) return [];
+    const nameNode = node.getNameNode();
+    if (!Node.isIdentifier(nameNode)) return [];
+    const out: SymbolDecl[] = [];
+    for (const location of nameNode.getImplementations()) {
+      const owner = enclosingMethod(location.getNode());
+      if (!owner || owner === node) continue;
+      const declaration = this.indexedDeclarationFor(owner);
+      if (declaration) out.push(declaration);
+    }
+    return out;
+  }
+
+  private indexedDeclarationFor(
+    methodNode: MethodDeclaration | MethodSignature,
+  ): SymbolDecl | undefined {
+    const filePath = this.workspaceRelativePathOf(methodNode.getSourceFile());
+    if (!filePath) return undefined;
+    const segments = [...enclosingTypeNames(methodNode), methodNode.getName()].map((name) => ({
+      name,
+    }));
+    return this.declarationsByIdentity.get(identityKey({ file: filePath, segments }))?.declaration;
+  }
+
+  private workspaceRelativePathOf(sourceFile: SourceFile): string | undefined {
+    const absolute = sourceFile.getFilePath();
+    for (const file of this.fileByRelativePath.values()) {
+      if (file.absolute === absolute) return file.relative;
+    }
+    return undefined;
+  }
+}
+
+function withNestedDeclarations(symbols: readonly SymbolDecl[]): readonly SymbolDecl[] {
+  const queue = [...symbols];
+  for (let i = 0; i < queue.length; i++) {
+    queue.push(...queue[i]!.children);
+  }
+  return queue;
 }
 
 function identityKey(identity: SymbolIdentity): string {
@@ -83,50 +170,22 @@ function segmentKey(segment: SymbolPathSegment): string {
     : `${segment.name}#${segment.disambiguator}`;
 }
 
-function matchIdentity(
-  sourceFile: SourceFile,
-  identity: SymbolIdentity,
-  index: SymbolIndex,
-): MatchedLeaf[] {
-  const { symbols } = extractFileSymbols({ sourceFile, filePath: identity.file });
-  return walkPath(symbols, identity.segments, sourceFile, index);
-}
-
-function walkPath(
-  candidates: readonly SymbolDecl[],
-  remaining: readonly SymbolPathSegment[],
-  sourceFile: SourceFile,
-  index: SymbolIndex,
-): MatchedLeaf[] {
-  if (remaining.length === 0) return [];
-  const [head, ...rest] = remaining;
-  if (!head) return [];
-  const matched = candidates.filter((decl) => matchesSegment(decl, head));
-  if (rest.length === 0) {
-    return matched.flatMap((decl) => {
-      const node = locateNodeFor(sourceFile, decl);
-      return node ? [{ decl, node }] : [];
-    });
-  }
-  return matched.flatMap((decl) => walkPath(decl.children, rest, sourceFile, index));
-}
-
-function matchesSegment(decl: SymbolDecl, segment: SymbolPathSegment): boolean {
-  const leaf = decl.identity.segments[decl.identity.segments.length - 1];
-  if (!leaf) return false;
-  if (leaf.name !== segment.name) return false;
+function ownSegmentMatches(declaration: SymbolDecl, segment: SymbolPathSegment): boolean {
+  const own = declaration.identity.segments[declaration.identity.segments.length - 1];
+  if (!own) return false;
+  if (own.name !== segment.name) return false;
   if (segment.disambiguator === undefined) return true;
-  return leaf.disambiguator === segment.disambiguator;
+  return own.disambiguator === segment.disambiguator;
 }
 
-function locateNodeFor(sourceFile: SourceFile, decl: SymbolDecl): Node | undefined {
-  const startLine = decl.range.startLine;
+function locateDeclarationNode(sourceFile: SourceFile, declaration: SymbolDecl): Node | undefined {
+  const startLine = declaration.range.startLine;
   let found: Node | undefined;
   sourceFile.forEachDescendant((node) => {
     if (found) return;
     if (!isDefinitionNode(node)) return;
     if (node.getStartLineNumber() !== startLine) return;
-    if (declarationName(node) !== ownName(decl)) return;
+    if (declarationName(node) !== ownName(declaration)) return;
     found = node;
   });
   return found;
@@ -173,60 +232,22 @@ function declarationName(node: Node): string | undefined {
   return undefined;
 }
 
-function ownName(decl: SymbolDecl): string {
-  const leaf = decl.identity.segments[decl.identity.segments.length - 1];
-  return leaf?.name ?? "";
+function ownName(declaration: SymbolDecl): string {
+  const own = declaration.identity.segments[declaration.identity.segments.length - 1];
+  return own?.name ?? "";
 }
 
-function expandContracts(
-  matches: readonly MatchedLeaf[],
-  project: Project,
-  index: SymbolIndex,
-): SymbolDecl[] {
-  const seen = new Set<string>();
-  const out: SymbolDecl[] = [];
-  for (const match of matches) {
-    addUnique(out, seen, match.decl);
-    if (!isContract(match.node)) continue;
-    for (const impl of implementationsOf(match.node, project, index)) {
-      addUnique(out, seen, impl);
-    }
-  }
-  return out;
-}
-
-function addUnique(out: SymbolDecl[], seen: Set<string>, decl: SymbolDecl): void {
-  const key = identityKey(decl.identity);
+function addUniqueDeclaration(out: SymbolDecl[], seen: Set<string>, declaration: SymbolDecl): void {
+  const key = identityKey(declaration.identity);
   if (seen.has(key)) return;
   seen.add(key);
-  out.push(decl);
+  out.push(declaration);
 }
 
 function isContract(node: Node): boolean {
   if (Node.isMethodSignature(node)) return true;
   if (Node.isMethodDeclaration(node) && node.isAbstract()) return true;
   return false;
-}
-
-function implementationsOf(
-  node: MethodDeclaration | MethodSignature | Node,
-  project: Project,
-  index: SymbolIndex,
-): SymbolDecl[] {
-  if (!Node.isMethodSignature(node) && !Node.isMethodDeclaration(node)) return [];
-  const nameNode = node.getNameNode();
-  if (!Node.isIdentifier(nameNode)) return [];
-  const locations = nameNode.getImplementations();
-  const out: SymbolDecl[] = [];
-  for (const location of locations) {
-    const implNode = location.getNode();
-    const owner = enclosingMethod(implNode);
-    if (!owner) continue;
-    if (owner === node) continue;
-    const decl = lookupSymbolDecl(owner, project, index);
-    if (decl) out.push(decl);
-  }
-  return out;
 }
 
 function enclosingMethod(node: Node): MethodDeclaration | MethodSignature | undefined {
@@ -236,29 +257,6 @@ function enclosingMethod(node: Node): MethodDeclaration | MethodSignature | unde
       return current;
     }
     current = current.getParent();
-  }
-  return undefined;
-}
-
-function lookupSymbolDecl(
-  node: MethodDeclaration | MethodSignature,
-  _project: Project,
-  index: SymbolIndex,
-): SymbolDecl | undefined {
-  const sourceFile = node.getSourceFile();
-  const filePath = workspaceRelativeFor(sourceFile, index);
-  if (!filePath) return undefined;
-  const ancestors = enclosingTypeNames(node);
-  const name = node.getName();
-  const segments = [...ancestors, name].map((n) => ({ name: n }));
-  const key = identityKey({ file: filePath, segments });
-  return index.get(key)?.decl;
-}
-
-function workspaceRelativeFor(sourceFile: SourceFile, index: SymbolIndex): string | undefined {
-  const absolute = sourceFile.getFilePath();
-  for (const { file } of index.values()) {
-    if (file.absolute === absolute) return file.relative;
   }
   return undefined;
 }

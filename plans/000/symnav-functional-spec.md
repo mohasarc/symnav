@@ -271,11 +271,10 @@ Symbols
         enum PaymentMethod
 
 Files
-├── src/checkout/CheckoutService.ts
-├── src/payments/PaymentProvider.ts
-├── src/payments/PaymentProcessor.ts
-└── src/payments/types.ts
+(none)
 ```
+
+The Files section excludes any file already present in the Symbols section. Only files whose basename matches the query and that contain no matching symbol appear here.
 
 ## `def`
 
@@ -300,13 +299,15 @@ Example:
 Definition: Router::post
 
 src/http/Router.ts
-├── 40: Router::post#overload1  [overload]
+├── 40: Router::post#1  [overload]
 │   post(path: string, handler: Handler): void
-├── 44: Router::post#overload2  [overload]
+├── 44: Router::post#2  [overload]
 │   post(path: RegExp, handler: Handler): void
-└── 48-62: Router::post#implementation  [implementation]
-    post(path: string | RegExp, handler: Handler) { ... }
+└── 48-62: Router::post#3  [implementation]
+    post(path: string | RegExp, handler: Handler): void
 ```
+
+When a name collides with siblings in the same scope, each colliding symbol carries a numeric disambiguator (`#1`, `#2`, …) assigned in source order. The query may include or omit the disambiguator: with it, exactly that symbol matches; without it, every same-name sibling matches.
 
 Example with multiple implementations:
 

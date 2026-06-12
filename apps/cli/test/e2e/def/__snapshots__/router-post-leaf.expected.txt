@@ -1,0 +1,5 @@
+Definition: Router::post#1
+
+src/http/Router.ts
+└── 4: Router::post#1  [overload]
+    post(path: string, handler: Handler): void

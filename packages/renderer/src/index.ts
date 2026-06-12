@@ -2,3 +2,6 @@ export { renderOverviewText } from "./overview/render-overview-text.js";
 export { renderOverviewJson } from "./overview/render-overview-json.js";
 export { renderResolveText } from "./resolve/render-resolve-text.js";
 export { renderResolveJson } from "./resolve/render-resolve-json.js";
+export { renderDefinitionText } from "./definition/render-definition-text.js";
+export { renderDefinitionJson } from "./definition/render-definition-json.js";
+export { bracketTagFor } from "./definition/definition-tag.js";

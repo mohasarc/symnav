@@ -1,0 +1,9 @@
+Definition: Shape::area
+
+src/shapes/Shape.ts
+├── 2: Shape::area  [declaration]
+│   abstract area(): number
+├── 9-11: Circle::area  [implementation]
+│   area(): number
+└── 18-20: Square::area  [implementation]
+    area(): number

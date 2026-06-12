@@ -6,6 +6,7 @@ export type {
   SymbolDecl,
   OverviewFileSymbols,
   ResolveResult,
+  DefinitionResult,
 } from "./intermediate-representation/types.js";
 export type {
   SymbolPathSegment,

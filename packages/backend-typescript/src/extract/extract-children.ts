@@ -13,6 +13,7 @@ import { splitSignatureLines } from "@symnav/core";
 
 import { extractSignatureSource } from "./extract-signature-source.js";
 import { nodeKind } from "./node-kind.js";
+import { refineLabel } from "./refine-label.js";
 import { roleOf } from "./typescript-symbol-kind.js";
 
 export interface ExtractionScope {
@@ -77,17 +78,34 @@ function toMemberDecl(member: Node, scope: ExtractionScope): SymbolDecl[] {
     if (IGNORED_MEMBER_KINDS.has(member.getKind())) return [];
     throw new Error(`Unrecognised class/interface member kind: ${member.getKindName()}`);
   }
+  return expandOverloads(member).map((node) => buildMemberDecl(node, kind, scope));
+}
+
+function buildMemberDecl(
+  member: Node,
+  kind: NonNullable<ReturnType<typeof nodeKind>>,
+  scope: ExtractionScope,
+): SymbolDecl {
   const range = nodeRange(member);
   const name = nodeName(member);
-  return [
-    {
-      identity: identityFor(scope, name),
-      kind: { role: roleOf(kind), nativeLabel: kind },
-      range,
-      signature: signatureFrom(range.startLine, extractSignatureSource(member)),
-      children: [],
-    },
-  ];
+  const refined = refineLabel(member, kind);
+  return {
+    identity: identityFor(scope, name),
+    kind: { role: roleOf(refined), nativeLabel: refined },
+    range,
+    signature: signatureFrom(range.startLine, extractSignatureSource(member)),
+    children: [],
+  };
+}
+
+function expandOverloads(member: Node): Node[] {
+  if (Node.isOverloadable(member) && member.isImplementation()) {
+    const overloads = member.getOverloads();
+    if (overloads.length > 0) {
+      return [...overloads, member];
+    }
+  }
+  return [member];
 }
 
 function toStatementDecl(stmt: Node, scope: ExtractionScope): SymbolDecl[] {
@@ -101,10 +119,11 @@ function toStatementDecl(stmt: Node, scope: ExtractionScope): SymbolDecl[] {
   }
   const range = nodeRange(stmt);
   const name = nodeName(stmt);
+  const refined = refineLabel(stmt, kind);
   return [
     {
       identity: identityFor(scope, name),
-      kind: { role: roleOf(kind), nativeLabel: kind },
+      kind: { role: roleOf(refined), nativeLabel: refined },
       range,
       signature: signatureFrom(range.startLine, extractSignatureSource(stmt)),
       children: hasChildren(stmt) ? extractChildren(stmt, childScope(scope, name)) : [],

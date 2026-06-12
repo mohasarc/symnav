@@ -7,8 +7,15 @@ export type TypeScriptSymbolKind =
   | "enum"
   | "namespace"
   | "function"
+  | "function-implementation"
+  | "function-overload-signature"
   | "method"
+  | "method-implementation"
+  | "method-declaration"
+  | "method-overload-signature"
   | "constructor"
+  | "constructor-implementation"
+  | "constructor-overload-signature"
   | "getter"
   | "setter"
   | "property"
@@ -24,8 +31,15 @@ const ROLE_BY_KIND: Record<TypeScriptSymbolKind, SymbolRole> = {
   enum: "container",
   namespace: "container",
   function: "callable",
+  "function-implementation": "callable",
+  "function-overload-signature": "callable",
   method: "callable",
+  "method-implementation": "callable",
+  "method-declaration": "callable",
+  "method-overload-signature": "callable",
   constructor: "callable",
+  "constructor-implementation": "callable",
+  "constructor-overload-signature": "callable",
   getter: "callable",
   setter: "callable",
   "call-signature": "callable",

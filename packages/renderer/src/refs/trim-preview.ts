@@ -1,10 +1,10 @@
-import type { Reference } from "@symnav/core";
+import type { SymbolReference } from "@symnav/core";
 
 export const PREVIEW_WIDTH = 80;
 
 const PREVIEW_ELLIPSIS = "…";
 
-export function trimPreview(reference: Reference): string {
+export function trimPreview(reference: SymbolReference): string {
   const { text, matchStart, matchEnd } = stripSurroundingWhitespace(reference);
   if (text.length <= PREVIEW_WIDTH) {
     return text;
@@ -20,7 +20,7 @@ export function trimPreview(reference: Reference): string {
   return PREVIEW_ELLIPSIS + text.slice(matchStart, matchStart + windowWidth) + PREVIEW_ELLIPSIS;
 }
 
-export function fullPreview(reference: Reference): string {
+export function fullPreview(reference: SymbolReference): string {
   return reference.previewSource;
 }
 
@@ -30,7 +30,7 @@ interface StrippedPreview {
   readonly matchEnd: number;
 }
 
-function stripSurroundingWhitespace(reference: Reference): StrippedPreview {
+function stripSurroundingWhitespace(reference: SymbolReference): StrippedPreview {
   const text = reference.previewSource.trim();
   const leadingWidth = reference.previewSource.length - reference.previewSource.trimStart().length;
   const matchStart = Math.max(0, reference.matchStart - leadingWidth);

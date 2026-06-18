@@ -1,4 +1,4 @@
-import type { Reference } from "@symnav/core";
+import type { SymbolReference } from "@symnav/core";
 
 export interface ReferenceTreeDirectory {
   readonly label: string;
@@ -7,12 +7,14 @@ export interface ReferenceTreeDirectory {
 
 export interface ReferenceTreeFile {
   readonly label: string;
-  readonly references: readonly Reference[];
+  readonly references: readonly SymbolReference[];
 }
 
 export type ReferenceTreeNode = ReferenceTreeDirectory | ReferenceTreeFile;
 
-export function buildReferenceTree(references: readonly Reference[]): readonly ReferenceTreeNode[] {
+export function buildReferenceTree(
+  references: readonly SymbolReference[],
+): readonly ReferenceTreeNode[] {
   const root = newTrieDirectory();
   for (const reference of references) {
     insertReference(root, reference);
@@ -25,7 +27,7 @@ interface TrieDirectory {
 }
 
 interface TrieFile {
-  readonly references: Reference[];
+  readonly references: SymbolReference[];
 }
 
 type TrieEntry = TrieDirectory | TrieFile;
@@ -38,7 +40,7 @@ function isTrieDirectory(entry: TrieEntry): entry is TrieDirectory {
   return "entries" in entry;
 }
 
-function insertReference(root: TrieDirectory, reference: Reference): void {
+function insertReference(root: TrieDirectory, reference: SymbolReference): void {
   let directory = root;
   let remainder = reference.file;
   let slashIndex = remainder.indexOf("/");

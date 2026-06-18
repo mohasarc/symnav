@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-import type { Reference } from "@symnav/core";
+import type { SymbolReference } from "@symnav/core";
 
 import { PREVIEW_WIDTH, fullPreview, trimPreview } from "./trim-preview.js";
 
-function reference(previewSource: string, matchStart: number, matchEnd: number): Reference {
+function reference(previewSource: string, matchStart: number, matchEnd: number): SymbolReference {
   return {
     file: "src/example.ts",
     line: 1,

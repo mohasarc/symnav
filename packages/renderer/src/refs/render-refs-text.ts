@@ -1,4 +1,4 @@
-import type { Reference, ReferenceKind, RefsResult } from "@symnav/core";
+import type { SymbolReference, ReferenceKind, RefsResult } from "@symnav/core";
 
 import { formatIdentityPath, treeGlyphsFor } from "../shared/render-format.js";
 import type { ReferenceTreeNode } from "./reference-tree.js";
@@ -7,7 +7,7 @@ import { fullPreview, trimPreview } from "./trim-preview.js";
 
 const KIND_ORDER: readonly ReferenceKind[] = ["usage", "import", "export", "type"];
 
-type PreviewFor = (reference: Reference) => string;
+type PreviewFor = (reference: SymbolReference) => string;
 
 export function renderRefsText(result: RefsResult): string {
   const header = renderHeader(result);
@@ -64,7 +64,7 @@ function renderChildren(node: ReferenceTreeNode, prefix: string, previewFor: Pre
 }
 
 function renderReferenceEntry(
-  reference: Reference,
+  reference: SymbolReference,
   prefix: string,
   isLast: boolean,
   previewFor: PreviewFor,

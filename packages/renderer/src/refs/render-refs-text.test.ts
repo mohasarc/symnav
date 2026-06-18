@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import type { Reference, ReferenceKind, RefsResult } from "@symnav/core";
+import type { SymbolReference, ReferenceKind, RefsResult, SymbolIdentity } from "@symnav/core";
 
 import { renderRefsText } from "./render-refs-text.js";
 
@@ -9,7 +9,7 @@ function reference(
   line: number,
   previewSource: string,
   kind: ReferenceKind,
-): Reference {
+): SymbolReference {
   const matchStart = previewSource.indexOf("PaymentProcessor");
   return {
     file,
@@ -21,7 +21,7 @@ function reference(
   };
 }
 
-const identity = {
+const identity: SymbolIdentity = {
   file: "src/payments/PaymentProcessor.ts",
   segments: [{ name: "PaymentProcessor" }],
 };

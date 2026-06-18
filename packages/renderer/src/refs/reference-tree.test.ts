@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-import type { Reference, ReferenceKind } from "@symnav/core";
+import type { SymbolReference, ReferenceKind } from "@symnav/core";
 
 import { buildReferenceTree } from "./reference-tree.js";
 
-function reference(file: string, line: number, kind: ReferenceKind = "usage"): Reference {
+function reference(file: string, line: number, kind: ReferenceKind = "usage"): SymbolReference {
   return {
     file,
     line,

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { buildRefsResult } from "./build-refs-result.js";
+import { RefsResultBuilder } from "./refs-result-builder.js";
 import type { SymbolReference } from "./references.js";
 import type { SymbolIdentity } from "./symbol-identity.js";
 
@@ -21,7 +21,7 @@ function reference(overrides: Partial<SymbolReference>): SymbolReference {
   };
 }
 
-describe("buildRefsResult", () => {
+describe("RefsResultBuilder", () => {
   it("sorts references by file, then line, then matchStart", () => {
     const unsorted = [
       reference({ file: "src/b.ts", line: 2 }),
@@ -29,12 +29,12 @@ describe("buildRefsResult", () => {
       reference({ file: "src/a.ts", line: 9, matchStart: 4, matchEnd: 20 }),
       reference({ file: "src/a.ts", line: 3 }),
     ];
-    const result = buildRefsResult({
+    const result = new RefsResultBuilder({
       identity,
       references: unsorted,
       pageRequest: { all: false },
       fullLines: false,
-    });
+    }).build();
     expect(
       result.references.map(({ file, line, matchStart }) => ({ file, line, matchStart })),
     ).toEqual([
@@ -52,23 +52,23 @@ describe("buildRefsResult", () => {
       reference({ kind: "import", line: 3 }),
       reference({ kind: "export", line: 4 }),
     ];
-    const result = buildRefsResult({
+    const result = new RefsResultBuilder({
       identity,
       references,
       pageRequest: { page: 2, pageSize: 3, all: false },
       fullLines: false,
-    });
+    }).build();
     expect(result.kindCounts).toEqual({ usage: 2, import: 1, export: 1, type: 0 });
   });
 
   it("paginates the sorted references and reports the full total", () => {
     const references = [7, 3, 5, 1, 6, 2, 4].map((line) => reference({ line }));
-    const result = buildRefsResult({
+    const result = new RefsResultBuilder({
       identity,
       references,
       pageRequest: { page: 2, pageSize: 3, all: false },
       fullLines: false,
-    });
+    }).build();
     expect(result.references.map(({ line }) => line)).toEqual([4, 5, 6]);
     expect(result.total).toBe(7);
     expect(result.page).toBe(2);
@@ -76,12 +76,12 @@ describe("buildRefsResult", () => {
   });
 
   it.each([true, false])("threads fullLines %s onto the result", (fullLines) => {
-    const result = buildRefsResult({
+    const result = new RefsResultBuilder({
       identity,
       references: [],
       pageRequest: { all: false },
       fullLines,
-    });
+    }).build();
     expect(result.fullLines).toBe(fullLines);
   });
 });

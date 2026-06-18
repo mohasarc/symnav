@@ -14,7 +14,7 @@ export type {
 } from "./intermediate-representation/symbol-identity.js";
 export type {
   ReferenceKind,
-  Reference,
+  SymbolReference,
   RefsResult,
 } from "./intermediate-representation/references.js";
 export type { BuildRefsResultArgs } from "./intermediate-representation/build-refs-result.js";

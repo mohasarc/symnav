@@ -1,14 +1,14 @@
 import { describe, expect, it } from "vitest";
 
 import { buildRefsResult } from "./build-refs-result.js";
-import type { Reference } from "./references.js";
+import type { SymbolReference } from "./references.js";
 
 const identity = {
   file: "src/payments/PaymentProcessor.ts",
   segments: [{ name: "PaymentProcessor" }],
 };
 
-function reference(overrides: Partial<Reference>): Reference {
+function reference(overrides: Partial<SymbolReference>): SymbolReference {
   return {
     file: "src/a.ts",
     line: 1,

@@ -1,11 +1,11 @@
 import type { PageRequest } from "../pagination/paginate.js";
 import { paginate } from "../pagination/paginate.js";
-import type { Reference, ReferenceKind, RefsResult } from "./references.js";
+import type { ReferenceKind, RefsResult, SymbolReference } from "./references.js";
 import type { SymbolIdentity } from "./symbol-identity.js";
 
 export interface BuildRefsResultArgs {
   readonly identity: SymbolIdentity;
-  readonly references: readonly Reference[];
+  readonly references: readonly SymbolReference[];
   readonly pageRequest: PageRequest;
   readonly fullLines: boolean;
 }
@@ -24,7 +24,7 @@ export function buildRefsResult(args: BuildRefsResultArgs): RefsResult {
   };
 }
 
-function compareReferences(left: Reference, right: Reference): number {
+function compareReferences(left: SymbolReference, right: SymbolReference): number {
   if (left.file !== right.file) {
     return left.file < right.file ? -1 : 1;
   }
@@ -34,7 +34,9 @@ function compareReferences(left: Reference, right: Reference): number {
   return left.matchStart - right.matchStart;
 }
 
-function countKinds(references: readonly Reference[]): Readonly<Record<ReferenceKind, number>> {
+function countKinds(
+  references: readonly SymbolReference[],
+): Readonly<Record<ReferenceKind, number>> {
   const counts: Record<ReferenceKind, number> = { usage: 0, import: 0, export: 0, type: 0 };
   for (const reference of references) {
     counts[reference.kind] += 1;

@@ -2,7 +2,7 @@ import type { SymbolIdentity } from "./symbol-identity.js";
 
 export type ReferenceKind = "usage" | "import" | "export" | "type";
 
-export interface Reference {
+export interface SymbolReference {
   readonly file: string;
   readonly line: number;
   readonly previewSource: string;
@@ -18,5 +18,5 @@ export interface RefsResult {
   readonly page: number;
   readonly pageCount: number;
   readonly fullLines: boolean;
-  readonly references: readonly Reference[];
+  readonly references: readonly SymbolReference[];
 }

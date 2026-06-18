@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   InMemoryFileSystem,
   SymbolNotFoundError,
-  type Reference,
+  type SymbolReference,
   type SymbolIdentity,
 } from "@symnav/core";
 
@@ -12,7 +12,7 @@ import { findReferences } from "./find-references.js";
 async function refsIn(
   files: Record<string, string>,
   identity: SymbolIdentity,
-): Promise<readonly Reference[]> {
+): Promise<readonly SymbolReference[]> {
   const absoluteEntries = Object.fromEntries(
     Object.entries(files).map(([relative, source]) => [`/repo/${relative}`, source]),
   );
@@ -28,7 +28,7 @@ function identityOf(file: string, ...names: string[]): SymbolIdentity {
   return { file, segments: names.map((name) => ({ name })) };
 }
 
-function matchedText(reference: Reference): string {
+function matchedText(reference: SymbolReference): string {
   return reference.previewSource.slice(reference.matchStart, reference.matchEnd);
 }
 

@@ -2,7 +2,7 @@ import { Node, Project, type ReferencedSymbolEntry, type SourceFile } from "ts-m
 import {
   SymbolNotFoundError,
   type FileSystem,
-  type Reference,
+  type SymbolReference,
   type ResolvedPath,
   type SymbolIdentity,
 } from "@symnav/core";
@@ -17,7 +17,9 @@ export interface FindReferencesArgs {
   readonly identity: SymbolIdentity;
 }
 
-export async function findReferences(args: FindReferencesArgs): Promise<readonly Reference[]> {
+export async function findReferences(
+  args: FindReferencesArgs,
+): Promise<readonly SymbolReference[]> {
   return new ReferenceFinder(args).find();
 }
 
@@ -29,7 +31,7 @@ class ReferenceFinder {
     this.project = new Project({ fileSystem: new WorkspaceFileSystemHost(args.fs) });
   }
 
-  async find(): Promise<readonly Reference[]> {
+  async find(): Promise<readonly SymbolReference[]> {
     this.loadWorkspaceFiles();
     const declarationNodes = this.declarationNodesMatchingIdentity();
     if (declarationNodes.length === 0) throw new SymbolNotFoundError(this.args.identity);
@@ -60,8 +62,8 @@ class ReferenceFinder {
     return undefined;
   }
 
-  private referencesFrom(declarationNodes: readonly Node[]): Reference[] {
-    const out: Reference[] = [];
+  private referencesFrom(declarationNodes: readonly Node[]): SymbolReference[] {
+    const out: SymbolReference[] = [];
     const seen = new Set<string>();
     for (const declarationNode of declarationNodes) {
       for (const entry of referenceEntriesOf(declarationNode)) {
@@ -76,7 +78,7 @@ class ReferenceFinder {
     return out;
   }
 
-  private toReference(entry: ReferencedSymbolEntry): Reference | undefined {
+  private toReference(entry: ReferencedSymbolEntry): SymbolReference | undefined {
     const node = entry.getNode();
     const sourceFile = node.getSourceFile();
     const relative = this.relativePathByAbsolute.get(sourceFile.getFilePath());

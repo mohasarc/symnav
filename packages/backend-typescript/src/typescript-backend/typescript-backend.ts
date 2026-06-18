@@ -4,7 +4,7 @@ import type {
   FileSystem,
   LanguageBackend,
   OverviewFileSymbols,
-  Reference,
+  SymbolReference,
   ResolveSymbolsOptions,
   ResolvedPath,
   SymbolDecl,
@@ -61,7 +61,7 @@ export class TypeScriptBackend implements LanguageBackend {
   async findReferences(
     files: readonly ResolvedPath[],
     identity: SymbolIdentity,
-  ): Promise<readonly Reference[]> {
+  ): Promise<readonly SymbolReference[]> {
     return findReferences({ fs: this.fs, files, identity });
   }
 }

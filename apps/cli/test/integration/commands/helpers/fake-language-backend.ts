@@ -1,7 +1,7 @@
 import type {
   LanguageBackend,
   OverviewFileSymbols,
-  Reference,
+  SymbolReference,
   ResolvedPath,
   SymbolDecl,
 } from "@symnav/core";
@@ -38,7 +38,7 @@ export class FakeLanguageBackend implements LanguageBackend {
     return [];
   }
 
-  async findReferences(): Promise<readonly Reference[]> {
+  async findReferences(): Promise<readonly SymbolReference[]> {
     return [];
   }
 }

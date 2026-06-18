@@ -4,7 +4,7 @@ import { InMemoryFileSystem, type ResolvedPath } from "@symnav/core";
 
 import { resolveSymbols } from "./resolve-symbols.js";
 
-const FIXTURE = {
+const FIXTURE: Record<string, string> = {
   "/repo/.git/HEAD": "ref: refs/heads/main\n",
   "/repo/src/payments/PaymentProcessor.ts": [
     "export class PaymentProcessor {",

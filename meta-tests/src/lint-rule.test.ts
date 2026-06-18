@@ -50,6 +50,31 @@ describe("ESLint workspace config", () => {
     expect(result!.errorCount).toBe(0);
   });
 
+  it("reports on an untyped object-literal declaration", async () => {
+    const eslint = await makeESLint();
+    const code = `export const config = { enabled: true };\n`;
+    const [result] = await eslint.lintText(code, {
+      filePath: join(repoRoot, "packages/core/src/untyped.ts"),
+    });
+    const restricted = result!.messages.filter((m) => m.ruleId === "no-restricted-syntax");
+    expect(restricted).toHaveLength(1);
+  });
+
+  it("allows an annotated or satisfied object-literal declaration", async () => {
+    const eslint = await makeESLint();
+    const code = [
+      `type Config = { enabled: boolean };`,
+      `export const annotated: Config = { enabled: true };`,
+      `export const satisfied = { enabled: true } satisfies Config;`,
+      ``,
+    ].join("\n");
+    const [result] = await eslint.lintText(code, {
+      filePath: join(repoRoot, "packages/core/src/typed.ts"),
+    });
+    const restricted = result!.messages.filter((m) => m.ruleId === "no-restricted-syntax");
+    expect(restricted).toHaveLength(0);
+  });
+
   it("reports a boundaries violation when @symnav/testing imports from @symnav/core", async () => {
     const eslint = await makeESLint();
     const code = `import type { Workspace } from "@symnav/core";\nexport type X = Workspace;\n`;

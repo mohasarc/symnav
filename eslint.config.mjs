@@ -81,6 +81,14 @@ export default [
     rules: {
       ...prettierConfig.rules,
       "prettier/prettier": "error",
+      "no-restricted-syntax": [
+        "error",
+        {
+          selector: "VariableDeclarator[init.type='ObjectExpression']:not([id.typeAnnotation])",
+          message:
+            "Annotate object-literal declarations with a type (`const x: T = {…}`) or use `satisfies`.",
+        },
+      ],
       "boundaries/dependencies": [
         "error",
         { default: "disallow", rules: productionRules() },

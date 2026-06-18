@@ -1,5 +1,5 @@
-import type { PageRequest } from "../pagination/paginate.js";
-import { paginate } from "../pagination/paginate.js";
+import type { PageRequest } from "../pagination/paginator.js";
+import { Paginator } from "../pagination/paginator.js";
 import type { ReferenceKind, RefsResult, SymbolReference } from "./references.js";
 import type { SymbolIdentity } from "./symbol-identity.js";
 
@@ -12,7 +12,7 @@ export interface BuildRefsResultArgs {
 
 export function buildRefsResult(args: BuildRefsResultArgs): RefsResult {
   const sorted = [...args.references].sort(compareReferences);
-  const { items, page, pageCount } = paginate(sorted, args.pageRequest);
+  const { items, page, pageCount } = new Paginator(args.pageRequest).paginate(sorted);
   return {
     identity: args.identity,
     total: sorted.length,

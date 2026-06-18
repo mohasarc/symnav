@@ -1,13 +1,17 @@
 import { describe, expect, it } from "vitest";
 
 import { InvalidPageRequestError, PageOutOfRangeError } from "./errors.js";
-import { DEFAULT_PAGE_SIZE, paginate } from "./paginate.js";
+import { DEFAULT_PAGE_SIZE, Paginator, type PageRequest } from "./paginator.js";
 
 function numbered(count: number): number[] {
   return Array.from({ length: count }, (_, index) => index + 1);
 }
 
-describe("paginate", () => {
+function paginate<T>(items: readonly T[], request: PageRequest) {
+  return new Paginator(request).paginate(items);
+}
+
+describe("Paginator", () => {
   it("defaults to the first page of 100", () => {
     const page = paginate(numbered(250), { all: false });
     expect(page.items).toEqual(numbered(100));
@@ -65,18 +69,14 @@ describe("paginate", () => {
   });
 
   it.each([0, -1, 1.5, Number.NaN])("rejects page %s", (page) => {
-    expect(() => paginate(numbered(7), { page, all: false })).toThrowError(InvalidPageRequestError);
+    expect(() => new Paginator({ page, all: false })).toThrowError(InvalidPageRequestError);
   });
 
   it.each([0, -1, 1.5, Number.NaN])("rejects page size %s", (pageSize) => {
-    expect(() => paginate(numbered(7), { pageSize, all: false })).toThrowError(
-      InvalidPageRequestError,
-    );
+    expect(() => new Paginator({ pageSize, all: false })).toThrowError(InvalidPageRequestError);
   });
 
   it("rejects an explicit page combined with all", () => {
-    expect(() => paginate(numbered(7), { page: 2, all: true })).toThrowError(
-      InvalidPageRequestError,
-    );
+    expect(() => new Paginator({ page: 2, all: true })).toThrowError(InvalidPageRequestError);
   });
 });

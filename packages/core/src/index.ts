@@ -19,8 +19,8 @@ export type {
 } from "./intermediate-representation/references.js";
 export type { BuildRefsResultArgs } from "./intermediate-representation/build-refs-result.js";
 export { buildRefsResult } from "./intermediate-representation/build-refs-result.js";
-export type { PageRequest, Page } from "./pagination/paginate.js";
-export { DEFAULT_PAGE_SIZE, paginate } from "./pagination/paginate.js";
+export type { PageRequest, Page } from "./pagination/paginator.js";
+export { DEFAULT_PAGE_SIZE, Paginator } from "./pagination/paginator.js";
 export { InvalidPageRequestError, PageOutOfRangeError } from "./pagination/errors.js";
 export { isPositiveInteger } from "./validation/is-positive-integer.js";
 export {

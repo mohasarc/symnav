@@ -1,3 +1,4 @@
+import { isPositiveInteger } from "../validation/is-positive-integer.js";
 import { InvalidPageRequestError, PageOutOfRangeError } from "./errors.js";
 
 export const DEFAULT_PAGE_SIZE = 100;
@@ -41,8 +42,4 @@ function validate(request: PageRequest): void {
       `page size must be a positive integer, got ${request.pageSize}`,
     );
   }
-}
-
-function isPositiveInteger(value: number): boolean {
-  return Number.isInteger(value) && value > 0;
 }

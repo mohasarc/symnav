@@ -22,6 +22,7 @@ export { buildRefsResult } from "./intermediate-representation/build-refs-result
 export type { PageRequest, Page } from "./pagination/paginate.js";
 export { DEFAULT_PAGE_SIZE, paginate } from "./pagination/paginate.js";
 export { InvalidPageRequestError, PageOutOfRangeError } from "./pagination/errors.js";
+export { isPositiveInteger } from "./validation/is-positive-integer.js";
 export {
   InvalidSymbolIdError,
   formatSymbolIdentity,

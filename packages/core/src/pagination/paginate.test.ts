@@ -68,7 +68,7 @@ describe("paginate", () => {
     expect(() => paginate(numbered(7), { page, all: false })).toThrowError(InvalidPageRequestError);
   });
 
-  it.each([0, Number.NaN])("rejects page size %s", (pageSize) => {
+  it.each([0, -1, 1.5, Number.NaN])("rejects page size %s", (pageSize) => {
     expect(() => paginate(numbered(7), { pageSize, all: false })).toThrowError(
       InvalidPageRequestError,
     );

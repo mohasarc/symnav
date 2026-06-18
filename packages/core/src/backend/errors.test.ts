@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { UserFacingError } from "../errors.js";
+import type { SymbolIdentity } from "../intermediate-representation/symbol-identity.js";
 import { SymbolNotFoundError, UnsupportedFileError } from "./errors.js";
 
 describe("UnsupportedFileError", () => {
@@ -14,7 +15,7 @@ describe("UnsupportedFileError", () => {
 });
 
 describe("SymbolNotFoundError", () => {
-  const identity = {
+  const identity: SymbolIdentity = {
     file: "src/payments/PaymentProcessor.ts",
     segments: [{ name: "PaymentProcessor" }, { name: "charge" }],
   };

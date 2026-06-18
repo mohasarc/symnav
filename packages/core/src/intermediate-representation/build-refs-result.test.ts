@@ -2,8 +2,9 @@ import { describe, expect, it } from "vitest";
 
 import { buildRefsResult } from "./build-refs-result.js";
 import type { SymbolReference } from "./references.js";
+import type { SymbolIdentity } from "./symbol-identity.js";
 
-const identity = {
+const identity: SymbolIdentity = {
   file: "src/payments/PaymentProcessor.ts",
   segments: [{ name: "PaymentProcessor" }],
 };

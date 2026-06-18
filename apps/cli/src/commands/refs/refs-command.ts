@@ -1,5 +1,5 @@
 import type { PageRequest, RefsResult } from "@symnav/core";
-import { buildRefsResult, parseSymbolIdentity } from "@symnav/core";
+import { RefsResultBuilder, parseSymbolIdentity } from "@symnav/core";
 import { renderRefsJson, renderRefsText } from "@symnav/renderer";
 
 import type { Command, CommandContext } from "../../command.js";
@@ -20,12 +20,12 @@ export const refsCommand: Command<RefsResult, RefsArgs> = {
     const backend = ctx.router.findOrThrow(identity.file);
     const accepted = files.filter((file) => backend.accepts(file.relative));
     const references = await backend.findReferences(accepted, identity);
-    return buildRefsResult({
+    return new RefsResultBuilder({
       identity,
       references,
       pageRequest: pageRequestFrom(ctx.args),
       fullLines: ctx.args.fullLines,
-    });
+    }).build();
   },
   renderText: renderRefsText,
   renderJson: renderRefsJson,

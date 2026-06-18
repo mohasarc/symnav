@@ -4,7 +4,7 @@ import { InMemoryFileSystem, type ResolvedPath, type SymbolDecl } from "@symnav/
 
 import { findDefinitions } from "./find-definitions.js";
 
-const FIXTURE = {
+const FIXTURE: Record<string, string> = {
   "/repo/.git/HEAD": "ref: refs/heads/main\n",
   "/repo/src/http/Router.ts": [
     "export type Handler = (req: string) => string;",

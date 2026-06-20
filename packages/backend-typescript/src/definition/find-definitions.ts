@@ -11,11 +11,7 @@ import {
 import type { FileSystem, ResolvedPath, SymbolDecl, SymbolIdentity } from "@symnav/core";
 
 import { extractFileSymbols } from "../extract/extract-file-symbols.js";
-import {
-  identityKey,
-  locateDeclarationsMatchingIdentity,
-  type LocatedDeclaration,
-} from "../identity/locate-declarations.js";
+import { DeclarationLocator, type LocatedDeclaration } from "../identity/locate-declarations.js";
 import { WorkspaceFileSystemHost } from "../typescript-backend/workspace-file-system-host.js";
 
 export interface FindDefinitionsArgs {
@@ -47,7 +43,7 @@ class DefinitionFinder {
     this.indexAllDeclarations();
     const targetSource = this.targetSourceFile();
     if (!targetSource) return [];
-    const matches = locateDeclarationsMatchingIdentity(targetSource, this.args.identity);
+    const matches = new DeclarationLocator(targetSource).locate(this.args.identity);
     return this.withContractImplementations(matches);
   }
 
@@ -64,7 +60,7 @@ class DefinitionFinder {
       if (!sourceFile) continue;
       const { symbols } = extractFileSymbols({ sourceFile, filePath: relative });
       for (const declaration of withNestedDeclarations(symbols)) {
-        this.declarationsByIdentity.set(identityKey(declaration.identity), {
+        this.declarationsByIdentity.set(DeclarationLocator.identityKey(declaration.identity), {
           declaration,
           file: path,
         });
@@ -113,7 +109,9 @@ class DefinitionFinder {
     const segments = [...enclosingTypeNames(methodNode), methodNode.getName()].map((name) => ({
       name,
     }));
-    return this.declarationsByIdentity.get(identityKey({ file: filePath, segments }))?.declaration;
+    return this.declarationsByIdentity.get(
+      DeclarationLocator.identityKey({ file: filePath, segments }),
+    )?.declaration;
   }
 
   private workspaceRelativePathOf(sourceFile: SourceFile): string | undefined {
@@ -134,7 +132,7 @@ function withNestedDeclarations(symbols: readonly SymbolDecl[]): readonly Symbol
 }
 
 function addUniqueDeclaration(out: SymbolDecl[], seen: Set<string>, declaration: SymbolDecl): void {
-  const key = identityKey(declaration.identity);
+  const key = DeclarationLocator.identityKey(declaration.identity);
   if (seen.has(key)) return;
   seen.add(key);
   out.push(declaration);

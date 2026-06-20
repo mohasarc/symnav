@@ -7,7 +7,7 @@ import {
   type SymbolIdentity,
 } from "@symnav/core";
 
-import { locateDeclarationsMatchingIdentity } from "../identity/locate-declarations.js";
+import { DeclarationLocator } from "../identity/locate-declarations.js";
 import { WorkspaceFileSystemHost } from "../typescript-backend/workspace-file-system-host.js";
 import { classifyReferenceKind } from "./classify-reference-kind.js";
 
@@ -48,9 +48,9 @@ class ReferenceFinder {
   private declarationNodesMatchingIdentity(): readonly Node[] {
     const targetSource = this.targetSourceFile();
     if (!targetSource) return [];
-    return locateDeclarationsMatchingIdentity(targetSource, this.args.identity).map(
-      (located) => located.node,
-    );
+    return new DeclarationLocator(targetSource)
+      .locate(this.args.identity)
+      .map((located) => located.node);
   }
 
   private targetSourceFile(): SourceFile | undefined {

@@ -17,21 +17,15 @@ export interface FindReferencesArgs {
   readonly identity: SymbolIdentity;
 }
 
-export async function findReferences(
-  args: FindReferencesArgs,
-): Promise<readonly SymbolReference[]> {
-  return new ReferenceFinder(args).find();
-}
-
-class ReferenceFinder {
+export class ReferenceFinder {
   private readonly project: Project;
   private readonly relativePathByAbsolute = new Map<string, string>();
 
-  constructor(private readonly args: FindReferencesArgs) {
+  public constructor(private readonly args: FindReferencesArgs) {
     this.project = new Project({ fileSystem: new WorkspaceFileSystemHost(args.fs) });
   }
 
-  async find(): Promise<readonly SymbolReference[]> {
+  public async find(): Promise<readonly SymbolReference[]> {
     this.loadWorkspaceFiles();
     const declarationNodes = this.declarationNodesMatchingIdentity();
     if (declarationNodes.length === 0) throw new SymbolNotFoundError(this.args.identity);
@@ -66,7 +60,7 @@ class ReferenceFinder {
     const out: SymbolReference[] = [];
     const seen = new Set<string>();
     for (const declarationNode of declarationNodes) {
-      for (const entry of referenceEntriesOf(declarationNode)) {
+      for (const entry of this.referenceEntriesOf(declarationNode)) {
         const reference = this.toReference(entry);
         if (!reference) continue;
         const key = `${reference.file}:${reference.line}:${reference.matchStart}`;
@@ -89,27 +83,27 @@ class ReferenceFinder {
     return {
       file: relative,
       line: line + 1,
-      previewSource: lineText(sourceFile, line),
+      previewSource: this.lineText(sourceFile, line),
       matchStart: character,
       matchEnd: character + node.getWidth(),
       kind: classifyReferenceKind(node),
     };
   }
-}
 
-function referenceEntriesOf(declarationNode: Node): readonly ReferencedSymbolEntry[] {
-  if (!Node.isReferenceFindable(declarationNode)) return [];
-  return declarationNode
-    .findReferences()
-    .flatMap((referencedSymbol) => referencedSymbol.getReferences())
-    .filter((entry) => !entry.isDefinition());
-}
+  private referenceEntriesOf(declarationNode: Node): readonly ReferencedSymbolEntry[] {
+    if (!Node.isReferenceFindable(declarationNode)) return [];
+    return declarationNode
+      .findReferences()
+      .flatMap((referencedSymbol) => referencedSymbol.getReferences())
+      .filter((entry) => !entry.isDefinition());
+  }
 
-function lineText(sourceFile: SourceFile, zeroBasedLine: number): string {
-  const fullText = sourceFile.getFullText();
-  const lineStarts = sourceFile.compilerNode.getLineStarts();
-  const start = lineStarts[zeroBasedLine] ?? 0;
-  const end =
-    zeroBasedLine + 1 < lineStarts.length ? lineStarts[zeroBasedLine + 1]! : fullText.length;
-  return fullText.slice(start, end).replace(/\r?\n$/, "");
+  private lineText(sourceFile: SourceFile, zeroBasedLine: number): string {
+    const fullText = sourceFile.getFullText();
+    const lineStarts = sourceFile.compilerNode.getLineStarts();
+    const start = lineStarts[zeroBasedLine] ?? 0;
+    const end =
+      zeroBasedLine + 1 < lineStarts.length ? lineStarts[zeroBasedLine + 1]! : fullText.length;
+    return fullText.slice(start, end).replace(/\r?\n$/, "");
+  }
 }

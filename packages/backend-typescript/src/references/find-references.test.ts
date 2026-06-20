@@ -7,7 +7,7 @@ import {
   type SymbolIdentity,
 } from "@symnav/core";
 
-import { findReferences } from "./find-references.js";
+import { ReferenceFinder } from "./find-references.js";
 
 async function refsIn(
   files: Record<string, string>,
@@ -21,7 +21,7 @@ async function refsIn(
     relative,
     absolute: `/repo/${relative}`,
   }));
-  return findReferences({ fs, files: paths, identity });
+  return new ReferenceFinder({ fs, files: paths, identity }).find();
 }
 
 function identityOf(file: string, ...names: string[]): SymbolIdentity {

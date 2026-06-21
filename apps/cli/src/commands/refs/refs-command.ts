@@ -3,6 +3,7 @@ import { RefsResultBuilder, parseSymbolIdentity } from "@symnav/core";
 import { renderRefsJson, renderRefsText } from "@symnav/renderer";
 
 import type { Command, CommandContext } from "../../command.js";
+import { classifyArgKind, lengthBucketOf } from "../../telemetry/arg-shape.js";
 
 export interface RefsArgs {
   readonly symbolId: string;
@@ -13,6 +14,21 @@ export interface RefsArgs {
 }
 
 export const refsCommand: Command<RefsResult, RefsArgs> = {
+  name: "refs",
+  describeArgs(args: RefsArgs) {
+    return {
+      kind: classifyArgKind(args.symbolId),
+      lengthBucket: lengthBucketOf(args.symbolId),
+      flags: refsFlags(args),
+    };
+  },
+  countResults(result: RefsResult) {
+    return {
+      total: result.total,
+      page: result.references.length,
+      pages: result.pageCount,
+    };
+  },
   async compute(ctx: CommandContext<RefsArgs>): Promise<RefsResult> {
     const identity = parseSymbolIdentity(ctx.args.symbolId);
     await ctx.workspace.resolveInputPath(identity.file, ctx.cwd);
@@ -37,4 +53,13 @@ function pageRequestFrom(args: RefsArgs): PageRequest {
     ...(args.pageSize !== undefined && { pageSize: args.pageSize }),
     all: args.all,
   };
+}
+
+function refsFlags(args: RefsArgs): string[] {
+  return [
+    ...(args.all ? ["all"] : []),
+    ...(args.fullLines ? ["full-lines"] : []),
+    ...(args.page !== undefined ? ["page"] : []),
+    ...(args.pageSize !== undefined ? ["page-size"] : []),
+  ].sort();
 }

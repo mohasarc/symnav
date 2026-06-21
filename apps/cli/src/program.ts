@@ -16,6 +16,7 @@ import { registerDefCommand } from "./commands/def/register-def-command.js";
 import { registerOverviewCommand } from "./commands/overview/register-overview-command.js";
 import { registerRefsCommand } from "./commands/refs/register-refs-command.js";
 import { registerResolveCommand } from "./commands/resolve/register-resolve-command.js";
+import { registerStatsCommand } from "./commands/stats/register-stats-command.js";
 import type { ProgramContext } from "./program-context.js";
 import type { ProgramDependencies } from "./program-dependencies.js";
 import { isTelemetryEnabled } from "./telemetry/is-telemetry-enabled.js";
@@ -87,5 +88,6 @@ export function buildProgram(
   registerResolveCommand(program, ctx, deps);
   registerDefCommand(program, ctx, deps);
   registerRefsCommand(program, ctx, deps);
+  registerStatsCommand(program, ctx, deps);
   return program;
 }

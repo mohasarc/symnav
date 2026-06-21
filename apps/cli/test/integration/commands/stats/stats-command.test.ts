@@ -113,7 +113,9 @@ describe("symnav stats", () => {
     expect(result.stdout).toContain("0.2.0  3");
     expect(result.stdout).toContain("0.1.0  2");
     expect(result.stdout).toContain("0.3.0  1");
-    expect(result.stdout).toContain("Date range: 1970-01-01T00:00:00.100Z to 1970-01-01T00:00:00.900Z");
+    expect(result.stdout).toContain(
+      "Date range: 1970-01-01T00:00:00.100Z to 1970-01-01T00:00:00.900Z",
+    );
   });
 
   it("renders raw UsageSummary JSON with --json", async () => {
@@ -162,7 +164,11 @@ function tempStateDir(roots: string[]): string {
 
 function seedUsageLog(stateDir: string, events: readonly UsageEvent[]): string {
   const usageFilePath = join(stateDir, "usage.jsonl");
-  writeFileSync(usageFilePath, `${events.map((event) => JSON.stringify(event)).join("\n")}\n`, "utf8");
+  writeFileSync(
+    usageFilePath,
+    `${events.map((event) => JSON.stringify(event)).join("\n")}\n`,
+    "utf8",
+  );
   return usageFilePath;
 }
 

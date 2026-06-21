@@ -17,76 +17,71 @@ export type ReferenceTreeNode = ReferenceTreeDirectory | ReferenceTreeFile;
 export function buildReferenceTree(
   references: readonly SymbolReference[],
 ): readonly ReferenceTreeNode[] {
-  const root = newTrieDirectory();
+  const root = new TrieDirectory();
   for (const reference of references) {
-    insertReference(root, reference);
+    root.insert(reference);
   }
-  return [...root.entries.entries()].map(([name, entry]) => toNode(name, entry));
-}
-
-interface TrieDirectory {
-  readonly entries: Map<string, TrieEntry>;
-}
-
-interface TrieFile {
-  readonly references: SymbolReference[];
+  return root.toNodes();
 }
 
 type TrieEntry = TrieDirectory | TrieFile;
 
-function newTrieDirectory(): TrieDirectory {
-  return { entries: new Map() };
+class TrieFile {
+  readonly references: SymbolReference[] = [];
+
+  toNode(name: string): ReferenceTreeFile {
+    return { subpath: name, references: this.references };
+  }
 }
 
-function isTrieDirectory(entry: TrieEntry): entry is TrieDirectory {
-  return "entries" in entry;
-}
+class TrieDirectory {
+  private readonly entries = new Map<string, TrieEntry>();
 
-function insertReference(root: TrieDirectory, reference: SymbolReference): void {
-  let directory = root;
-  let remainder = reference.file;
-  let slashIndex = remainder.indexOf("/");
-  while (slashIndex !== -1) {
-    directory = childDirectory(directory, remainder.slice(0, slashIndex));
-    remainder = remainder.slice(slashIndex + 1);
-    slashIndex = remainder.indexOf("/");
+  insert(reference: SymbolReference): void {
+    let directory: TrieDirectory = this;
+    let remainder = reference.file;
+    let slashIndex = remainder.indexOf("/");
+    while (slashIndex !== -1) {
+      directory = directory.childDirectory(remainder.slice(0, slashIndex));
+      remainder = remainder.slice(slashIndex + 1);
+      slashIndex = remainder.indexOf("/");
+    }
+    directory.childFile(remainder).references.push(reference);
   }
-  childFile(directory, remainder).references.push(reference);
-}
 
-function childDirectory(parent: TrieDirectory, name: string): TrieDirectory {
-  const existing = parent.entries.get(name);
-  if (existing !== undefined && isTrieDirectory(existing)) {
-    return existing;
+  toNodes(): readonly ReferenceTreeNode[] {
+    return [...this.entries.entries()].map(([name, entry]) => entry.toNode(name));
   }
-  const created = newTrieDirectory();
-  parent.entries.set(name, created);
-  return created;
-}
 
-function childFile(parent: TrieDirectory, name: string): TrieFile {
-  const existing = parent.entries.get(name);
-  if (existing !== undefined && !isTrieDirectory(existing)) {
-    return existing;
+  toNode(name: string): ReferenceTreeNode {
+    const children = this.toNodes();
+    const subpath = `${name}/`;
+    const [onlyChild, ...rest] = children;
+    if (onlyChild !== undefined && rest.length === 0) {
+      return collapseInto(subpath, onlyChild);
+    }
+    return { subpath, children };
   }
-  const created: TrieFile = { references: [] };
-  parent.entries.set(name, created);
-  return created;
-}
 
-function toNode(name: string, entry: TrieEntry): ReferenceTreeNode {
-  if (!isTrieDirectory(entry)) {
-    return { subpath: name, references: entry.references };
+  private childDirectory(name: string): TrieDirectory {
+    const existing = this.entries.get(name);
+    if (existing instanceof TrieDirectory) {
+      return existing;
+    }
+    const created = new TrieDirectory();
+    this.entries.set(name, created);
+    return created;
   }
-  const children = [...entry.entries.entries()].map(([childName, child]) =>
-    toNode(childName, child),
-  );
-  const subpath = `${name}/`;
-  const [onlyChild, ...rest] = children;
-  if (onlyChild !== undefined && rest.length === 0) {
-    return collapseInto(subpath, onlyChild);
+
+  private childFile(name: string): TrieFile {
+    const existing = this.entries.get(name);
+    if (existing instanceof TrieFile) {
+      return existing;
+    }
+    const created = new TrieFile();
+    this.entries.set(name, created);
+    return created;
   }
-  return { subpath, children };
 }
 
 function collapseInto(directorySubpath: string, child: ReferenceTreeNode): ReferenceTreeNode {

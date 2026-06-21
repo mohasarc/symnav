@@ -4,6 +4,7 @@ import type {
   FileSystem,
   LanguageBackend,
   OverviewFileSymbols,
+  SymbolReference,
   ResolveSymbolsOptions,
   ResolvedPath,
   SymbolDecl,
@@ -13,6 +14,7 @@ import { FileNotFoundError } from "@symnav/core";
 
 import { findDefinitions } from "../definition/find-definitions.js";
 import { loadFileSymbols } from "../extract/load-file-symbols.js";
+import { ReferenceFinder } from "../references/find-references.js";
 import { resolveSymbols } from "../resolve/resolve-symbols.js";
 
 export class TypeScriptBackend implements LanguageBackend {
@@ -54,5 +56,12 @@ export class TypeScriptBackend implements LanguageBackend {
     identity: SymbolIdentity,
   ): Promise<readonly SymbolDecl[]> {
     return findDefinitions({ fs: this.fs, files, identity });
+  }
+
+  async findReferences(
+    files: readonly ResolvedPath[],
+    identity: SymbolIdentity,
+  ): Promise<readonly SymbolReference[]> {
+    return new ReferenceFinder({ fs: this.fs, files, identity }).find();
   }
 }

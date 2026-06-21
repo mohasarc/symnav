@@ -1,3 +1,4 @@
+import type { SymbolReference } from "../intermediate-representation/references.js";
 import type { SymbolIdentity } from "../intermediate-representation/symbol-identity.js";
 import type { OverviewFileSymbols, SymbolDecl } from "../intermediate-representation/types.js";
 import type { ResolvedPath } from "../workspace/workspace.js";
@@ -18,4 +19,8 @@ export interface LanguageBackend {
     files: readonly ResolvedPath[],
     identity: SymbolIdentity,
   ): Promise<readonly SymbolDecl[]>;
+  findReferences(
+    files: readonly ResolvedPath[],
+    identity: SymbolIdentity,
+  ): Promise<readonly SymbolReference[]>;
 }

@@ -1,0 +1,109 @@
+import { Node, Project, type ReferencedSymbolEntry, type SourceFile } from "ts-morph";
+import {
+  SymbolNotFoundError,
+  type FileSystem,
+  type SymbolReference,
+  type ResolvedPath,
+  type SymbolIdentity,
+} from "@symnav/core";
+
+import { DeclarationLocator } from "../identity/locate-declarations.js";
+import { WorkspaceFileSystemHost } from "../typescript-backend/workspace-file-system-host.js";
+import { classifyReferenceKind } from "./classify-reference-kind.js";
+
+export interface FindReferencesArgs {
+  readonly fs: FileSystem;
+  readonly files: readonly ResolvedPath[];
+  readonly identity: SymbolIdentity;
+}
+
+export class ReferenceFinder {
+  private readonly project: Project;
+  private readonly relativePathByAbsolute = new Map<string, string>();
+
+  public constructor(private readonly args: FindReferencesArgs) {
+    this.project = new Project({ fileSystem: new WorkspaceFileSystemHost(args.fs) });
+  }
+
+  public async find(): Promise<readonly SymbolReference[]> {
+    this.loadWorkspaceFiles();
+    const declarationNodes = this.declarationNodesMatchingIdentity();
+    if (declarationNodes.length === 0) throw new SymbolNotFoundError(this.args.identity);
+    return this.referencesFrom(declarationNodes);
+  }
+
+  private loadWorkspaceFiles(): void {
+    for (const path of this.args.files) {
+      this.project.addSourceFileAtPath(path.absolute);
+      this.relativePathByAbsolute.set(path.absolute, path.relative);
+    }
+  }
+
+  private declarationNodesMatchingIdentity(): readonly Node[] {
+    const targetSource = this.targetSourceFile();
+    if (!targetSource) return [];
+    return new DeclarationLocator(targetSource)
+      .locate(this.args.identity)
+      .map((located) => located.node);
+  }
+
+  private targetSourceFile(): SourceFile | undefined {
+    for (const path of this.args.files) {
+      if (path.relative === this.args.identity.file) {
+        return this.project.getSourceFile(path.absolute);
+      }
+    }
+    return undefined;
+  }
+
+  private referencesFrom(declarationNodes: readonly Node[]): SymbolReference[] {
+    const out: SymbolReference[] = [];
+    const seen = new Set<string>();
+    for (const declarationNode of declarationNodes) {
+      for (const entry of this.referenceEntriesOf(declarationNode)) {
+        const reference = this.toReference(entry);
+        if (!reference) continue;
+        const key = `${reference.file}:${reference.line}:${reference.matchStart}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        out.push(reference);
+      }
+    }
+    return out;
+  }
+
+  private toReference(entry: ReferencedSymbolEntry): SymbolReference | undefined {
+    const node = entry.getNode();
+    const sourceFile = node.getSourceFile();
+    const relative = this.relativePathByAbsolute.get(sourceFile.getFilePath());
+    if (!relative) return undefined;
+    const { line, character } = sourceFile.compilerNode.getLineAndCharacterOfPosition(
+      node.getStart(),
+    );
+    return {
+      file: relative,
+      line: line + 1,
+      previewSource: this.lineText(sourceFile, line),
+      matchStart: character,
+      matchEnd: character + node.getWidth(),
+      kind: classifyReferenceKind(node),
+    };
+  }
+
+  private referenceEntriesOf(declarationNode: Node): readonly ReferencedSymbolEntry[] {
+    if (!Node.isReferenceFindable(declarationNode)) return [];
+    return declarationNode
+      .findReferences()
+      .flatMap((referencedSymbol) => referencedSymbol.getReferences())
+      .filter((entry) => !entry.isDefinition());
+  }
+
+  private lineText(sourceFile: SourceFile, zeroBasedLine: number): string {
+    const fullText = sourceFile.getFullText();
+    const lineStarts = sourceFile.compilerNode.getLineStarts();
+    const start = lineStarts[zeroBasedLine] ?? 0;
+    const end =
+      zeroBasedLine + 1 < lineStarts.length ? lineStarts[zeroBasedLine + 1]! : fullText.length;
+    return fullText.slice(start, end).replace(/\r?\n$/, "");
+  }
+}

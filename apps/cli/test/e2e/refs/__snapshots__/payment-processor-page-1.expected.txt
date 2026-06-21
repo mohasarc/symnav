@@ -1,0 +1,12 @@
+References: PaymentProcessor
+Total: 14
+Kinds: usage 7, import 5, export 1, type 1
+Page: 1/5
+Sort: path, line
+
+src/
+├── billing/RefundService.ts
+│   ├── 1: import { PaymentProcessor } from "../payments";  [import]
+│   └── 5: const processor = new PaymentProcessor();  [usage]
+└── checkout/CheckoutService.ts
+    └── 1: import { PaymentProcessor } from "../payments/PaymentProcessor";  [import]

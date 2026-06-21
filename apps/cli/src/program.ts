@@ -6,6 +6,7 @@ import { NodeFileSystem } from "@symnav/core";
 import { TypeScriptBackend } from "@symnav/backend-typescript";
 import { registerDefCommand } from "./commands/def/register-def-command.js";
 import { registerOverviewCommand } from "./commands/overview/register-overview-command.js";
+import { registerRefsCommand } from "./commands/refs/register-refs-command.js";
 import { registerResolveCommand } from "./commands/resolve/register-resolve-command.js";
 import type { ProgramContext } from "./program-context.js";
 import type { ProgramDependencies } from "./program-dependencies.js";
@@ -63,5 +64,6 @@ export function buildProgram(
   registerOverviewCommand(program, ctx, deps);
   registerResolveCommand(program, ctx, deps);
   registerDefCommand(program, ctx, deps);
+  registerRefsCommand(program, ctx, deps);
   return program;
 }

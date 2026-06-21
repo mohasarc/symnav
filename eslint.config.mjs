@@ -17,6 +17,7 @@ const packages = [
   { name: "@symnav/core", type: "core", dir: "packages/core" },
   { name: "@symnav/renderer", type: "renderer", dir: "packages/renderer" },
   { name: "@symnav/backend-typescript", type: "backend", dir: "packages/backend-typescript" },
+  { name: "@symnav/telemetry", type: "telemetry", dir: "packages/telemetry" },
   { name: "@symnav/testing", type: "testing", dir: "packages/testing" },
 ];
 
@@ -33,7 +34,10 @@ function productionRules() {
   return [
     { from: { type: "renderer" }, allow: { to: { type: ["core"] } } },
     { from: { type: "backend" }, allow: { to: { type: ["core"] } } },
-    { from: { type: "cli" }, allow: { to: { type: ["core", "renderer", "backend"] } } },
+    {
+      from: { type: "cli" },
+      allow: { to: { type: ["core", "renderer", "backend", "telemetry"] } },
+    },
   ];
 }
 
@@ -44,7 +48,7 @@ function testRules() {
     { from: { type: "backend" }, allow: { to: { type: ["core", "testing"] } } },
     {
       from: { type: "cli" },
-      allow: { to: { type: ["core", "renderer", "backend", "testing"] } },
+      allow: { to: { type: ["core", "renderer", "backend", "telemetry", "testing"] } },
     },
   ];
 }

@@ -1,15 +1,22 @@
+import { randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Command as CommanderCommand } from "commander";
 import { NodeFileSystem } from "@symnav/core";
 import { TypeScriptBackend } from "@symnav/backend-typescript";
+import { NodeTelemetryWritePort, NodeUsageRecorder, resolveStateDir } from "@symnav/telemetry";
 import { registerDefCommand } from "./commands/def/register-def-command.js";
 import { registerOverviewCommand } from "./commands/overview/register-overview-command.js";
 import { registerRefsCommand } from "./commands/refs/register-refs-command.js";
 import { registerResolveCommand } from "./commands/resolve/register-resolve-command.js";
 import type { ProgramContext } from "./program-context.js";
 import type { ProgramDependencies } from "./program-dependencies.js";
+import { isTelemetryEnabled } from "./telemetry/is-telemetry-enabled.js";
+import {
+  NodeGitRemoteReader,
+  NodeTelemetryIdentityProvider,
+} from "./telemetry/telemetry-identity.js";
 
 function readPackageVersion(): string {
   const here = dirname(fileURLToPath(import.meta.url));
@@ -29,9 +36,20 @@ function defaultContext(): ProgramContext {
 
 function defaultDependencies(): ProgramDependencies {
   const fs = new NodeFileSystem();
+  const clock = { now: () => Date.now() };
+  const stateDir = resolveStateDir(process.env);
   return {
     fs,
     backends: () => [new TypeScriptBackend(fs)],
+    recorder: new NodeUsageRecorder(
+      new NodeTelemetryWritePort(),
+      { next: () => randomUUID() },
+      stateDir,
+    ),
+    clock,
+    telemetryEnabled: isTelemetryEnabled(process.env),
+    identity: new NodeTelemetryIdentityProvider(stateDir, new NodeGitRemoteReader()),
+    symnavVersion: readPackageVersion(),
   };
 }
 

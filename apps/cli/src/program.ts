@@ -6,6 +6,7 @@ import { Command as CommanderCommand } from "commander";
 import { NodeFileSystem } from "@symnav/core";
 import { TypeScriptBackend } from "@symnav/backend-typescript";
 import { NodeTelemetryWritePort, NodeUsageRecorder, resolveStateDir } from "@symnav/telemetry";
+import type { Clock } from "@symnav/telemetry";
 import { registerDefCommand } from "./commands/def/register-def-command.js";
 import { registerOverviewCommand } from "./commands/overview/register-overview-command.js";
 import { registerRefsCommand } from "./commands/refs/register-refs-command.js";
@@ -36,7 +37,7 @@ function defaultContext(): ProgramContext {
 
 function defaultDependencies(): ProgramDependencies {
   const fs = new NodeFileSystem();
-  const clock = { now: () => Date.now() };
+  const clock: Clock = { now: () => Date.now() };
   const stateDir = resolveStateDir(process.env);
   return {
     fs,

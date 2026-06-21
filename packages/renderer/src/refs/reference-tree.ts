@@ -1,12 +1,14 @@
 import type { SymbolReference } from "@symnav/core";
 
-export interface ReferenceTreeDirectory {
-  readonly label: string;
+interface ReferenceTreeNodeBase {
+  readonly subpath: string;
+}
+
+export interface ReferenceTreeDirectory extends ReferenceTreeNodeBase {
   readonly children: readonly ReferenceTreeNode[];
 }
 
-export interface ReferenceTreeFile {
-  readonly label: string;
+export interface ReferenceTreeFile extends ReferenceTreeNodeBase {
   readonly references: readonly SymbolReference[];
 }
 
@@ -74,22 +76,22 @@ function childFile(parent: TrieDirectory, name: string): TrieFile {
 
 function toNode(name: string, entry: TrieEntry): ReferenceTreeNode {
   if (!isTrieDirectory(entry)) {
-    return { label: name, references: entry.references };
+    return { subpath: name, references: entry.references };
   }
   const children = [...entry.entries.entries()].map(([childName, child]) =>
     toNode(childName, child),
   );
-  const label = `${name}/`;
+  const subpath = `${name}/`;
   const [onlyChild, ...rest] = children;
   if (onlyChild !== undefined && rest.length === 0) {
-    return collapseInto(label, onlyChild);
+    return collapseInto(subpath, onlyChild);
   }
-  return { label, children };
+  return { subpath, children };
 }
 
-function collapseInto(directoryLabel: string, child: ReferenceTreeNode): ReferenceTreeNode {
+function collapseInto(directorySubpath: string, child: ReferenceTreeNode): ReferenceTreeNode {
   if ("references" in child) {
-    return { label: directoryLabel + child.label, references: child.references };
+    return { subpath: directorySubpath + child.subpath, references: child.references };
   }
-  return { label: directoryLabel + child.label, children: child.children };
+  return { subpath: directorySubpath + child.subpath, children: child.children };
 }

@@ -42,7 +42,7 @@ function renderKinds(result: RefsResult): string | undefined {
 }
 
 function renderRootNode(node: ReferenceTreeNode, previewFor: PreviewFor): string {
-  return `${node.label}\n` + renderChildren(node, "", previewFor);
+  return `${node.subpath}\n` + renderChildren(node, "", previewFor);
 }
 
 function renderChildren(node: ReferenceTreeNode, prefix: string, previewFor: PreviewFor): string {
@@ -57,8 +57,8 @@ function renderChildren(node: ReferenceTreeNode, prefix: string, previewFor: Pre
     .map((child, index) => {
       const isLast = index === node.children.length - 1;
       const { branchGlyph, continuationGlyph } = treeGlyphsFor(isLast);
-      const labelLine = `${prefix}${branchGlyph}${child.label}\n`;
-      return labelLine + renderChildren(child, prefix + continuationGlyph, previewFor);
+      const subpathLine = `${prefix}${branchGlyph}${child.subpath}\n`;
+      return subpathLine + renderChildren(child, prefix + continuationGlyph, previewFor);
     })
     .join("");
 }

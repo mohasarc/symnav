@@ -16,26 +16,26 @@ function reference(file: string, line: number, kind: ReferenceKind = "usage"): S
 }
 
 describe("buildReferenceTree", () => {
-  it("collapses the whole directory chain into one root label when all references share a file", () => {
+  it("collapses the whole directory chain into one root subpath when all references share a file", () => {
     const refs = [
       reference("src/payments/RefundService.ts", 6),
       reference("src/payments/RefundService.ts", 29),
     ];
     expect(buildReferenceTree(refs)).toEqual([
-      { label: "src/payments/RefundService.ts", references: refs },
+      { subpath: "src/payments/RefundService.ts", references: refs },
     ]);
   });
 
   it("keeps a file node and its line entries as separate levels for a single reference", () => {
     const refs = [reference("src/a.ts", 7)];
-    expect(buildReferenceTree(refs)).toEqual([{ label: "src/a.ts", references: refs }]);
+    expect(buildReferenceTree(refs)).toEqual([{ subpath: "src/a.ts", references: refs }]);
   });
 
   it("renders files under different top-level directories as top-level siblings", () => {
     const refs = [reference("src/a.ts", 1), reference("tools/b.ts", 2)];
     expect(buildReferenceTree(refs)).toEqual([
-      { label: "src/a.ts", references: [refs[0]] },
-      { label: "tools/b.ts", references: [refs[1]] },
+      { subpath: "src/a.ts", references: [refs[0]] },
+      { subpath: "tools/b.ts", references: [refs[1]] },
     ]);
   });
 
@@ -49,21 +49,21 @@ describe("buildReferenceTree", () => {
     const refs = [checkoutImport, checkoutUsage, indexExport, refundImport, refundUsage, testUsage];
     expect(buildReferenceTree(refs)).toEqual([
       {
-        label: "src/",
+        subpath: "src/",
         children: [
           {
-            label: "checkout/CheckoutService.ts",
+            subpath: "checkout/CheckoutService.ts",
             references: [checkoutImport, checkoutUsage],
           },
           {
-            label: "payments/",
+            subpath: "payments/",
             children: [
-              { label: "index.ts", references: [indexExport] },
-              { label: "RefundService.ts", references: [refundImport, refundUsage] },
+              { subpath: "index.ts", references: [indexExport] },
+              { subpath: "RefundService.ts", references: [refundImport, refundUsage] },
             ],
           },
           {
-            label: "tests/payments/PaymentProcessor.test.ts",
+            subpath: "tests/payments/PaymentProcessor.test.ts",
             references: [testUsage],
           },
         ],

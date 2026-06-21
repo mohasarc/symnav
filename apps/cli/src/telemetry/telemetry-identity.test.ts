@@ -3,10 +3,7 @@ import { existsSync, mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import {
-  NodeTelemetryIdentityProvider,
-  type GitRemoteReader,
-} from "./telemetry-identity.js";
+import { NodeTelemetryIdentityProvider, type GitRemoteReader } from "./telemetry-identity.js";
 
 class FakeGitRemoteReader implements GitRemoteReader {
   public constructor(private readonly remote: string | undefined) {}
@@ -114,8 +111,7 @@ describe("NodeTelemetryIdentityProvider", () => {
   });
 });
 
-const uuidPattern =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u;
+const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u;
 
 function createStateDir(): string {
   const stateDir = mkdtempSync(join(tmpdir(), "symnav-telemetry-identity-"));

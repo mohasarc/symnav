@@ -12,5 +12,12 @@ export type {
   OutcomeReport,
   UsageEvent,
 } from "./usage-event.js";
+export type {
+  CommandStat,
+  DurationStats,
+  OutcomeStat,
+  UsageSummary,
+  VersionStat,
+} from "./usage-summary.js";
 export { NodeTelemetryWritePort } from "./node-telemetry-write-port.js";
 export type { TelemetryWritePort } from "./write-port.js";

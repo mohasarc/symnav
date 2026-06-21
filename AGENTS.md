@@ -49,6 +49,7 @@ Write the failing test first, then make it pass. Every behavior the code perform
 
 - Avoid comments — meaning comes from clear names. Comments never carry contracts, preconditions, or other load-bearing info; if it matters, encode it in types, names, or tests, where it can't silently rot during a refactor.
 - Favor readable names, early returns, and simple control flow over clever code.
+- Name what a value is, not the generic role it plays, so the name alone tells the reader its meaning. When related types share a member, lift it into a shared base so the commonality is expressed once.
 - Spell out abbreviations in directory and file names — clarity for every future reader beats brevity once.
 - Break large functions into smaller named ones; break long logic chains into named intermediate variables.
 - Prefer classes with explicit public/private/static members over scattered functions plus object literals; share logic via abstract classes.

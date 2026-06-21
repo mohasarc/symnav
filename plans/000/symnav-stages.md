@@ -152,6 +152,47 @@ It is also the first stage where the "no stale data" guarantee meets non-trivial
 
 ---
 
+## Stage 3.5 — Anonymous Usage Telemetry
+
+**What we deliver.** Every command invocation appends one shape-only usage event to a global append-only log on the user's machine, and a hidden `symnav stats` command aggregates that log into a usage summary. No new navigation behavior. The six commands produce byte-identical output whether telemetry is on or off.
+
+**Why this stage.** The tool now has four working commands and its first real user — its own author, using it for development. Before adding more surface in Stage 4, we want evidence of what is actually used and how. This stage builds the local measurement layer that produces that evidence. The cohort is small and known (the author plus a few trusted users), so this is private-beta instrumentation, not anonymous fleet analytics. A full endpoint-based collection pipeline is a deliberate later step; this stage builds only the capture and local-read halves, with an event schema designed to be the same one a future endpoint would ingest.
+
+Doing this at 3.5 — before `context` and `graph` — means the two heaviest commands are measured from their first day, and the capture seam is locked while there are four call sites to thread it through instead of six.
+
+**Design decisions (locked during grilling).**
+
+- **Subject.** Small known cohort. Capture now, transport later. The local event schema is the upload schema — nothing is recorded locally that could not later be uploaded.
+- **Capture point.** The single `runCommand` seam in `apps/cli`. One event per invocation, covering all three outcomes (success, user-facing error, crash).
+- **Shape, not content.** Events record command, timestamp, duration, outcome, error reason (enum, not free text), which flags were set (not their string values), result-size counts, argument *shape* (kind and length bucket), `workspaceId`, `machineId`, `sessionId`, `symnavVersion`, and `schemaVersion`. Never symbol names, file paths, query strings, or source previews.
+- **Identity.** `machineId` is a random UUID generated once and persisted to `~/.symnav/machine-id`. `workspaceId` is a hash of the git remote URL, falling back to an abs-path hash when there is no remote. The same workspace on two machines yields the same `workspaceId` and different `machineId`. Both are computed at the `runCommand` seam and handed to the recorder; the telemetry package never reads git itself.
+- **Package.** A new `@symnav/telemetry` leaf package depends on nothing internal. It owns the `UsageEvent` type, the `Recorder` interface, a node append-file recorder with its own narrow write port (it does not reuse or extend `core`'s read-only `FileSystem`), and the stats aggregator. `apps/cli` gains it as an allowed dependency; `renderer` and `backend-typescript` never touch it.
+- **Storage.** A single global JSONL file at `~/.symnav/usage.jsonl`, location built from Node's `os.homedir()` (cross-platform, no invented per-OS paths), the base dir overridable via `SYMNAV_STATE_DIR` for tests. One global file across all projects, grouped by `workspaceId` at read time.
+- **Write semantics.** Synchronous append, one event per invocation, emitted after the result is known and before any `exit`. The recorder swallows every internal fault: a telemetry error never throws into the command path, never writes to stdout or stderr, and never changes the exit code.
+- **Opt-out.** On by default. `SYMNAV_TELEMETRY=0` makes the recorder a fully inert no-op — no event built, no directory created, no file touched. Disclosure lives in the README; there is no runtime notice, to keep output clean and deterministic. The tool's own test suites default to disabled.
+- **Reader.** `symnav stats` is registered but hidden from `--help`, keeping the agent-facing surface exactly the six navigation commands. It prints a usage summary (per-command counts and share, outcome breakdown, duration avg/p50/p95, distinct workspace count, version spread, date range) and supports `--json`. It does not record its own invocation.
+- **Determinism.** The recorder takes an injected clock and id generator so events are byte-stable under test.
+
+**In scope.**
+- The `@symnav/telemetry` package: `UsageEvent` type, `Recorder` interface, node append-file recorder with its own write port, stats aggregator.
+- Capture wired into `runCommand`, with `workspaceId`/`machineId` computed at that seam.
+- The `SYMNAV_TELEMETRY` kill switch and `SYMNAV_STATE_DIR` override.
+- The hidden `symnav stats` command (summary + `--json`).
+- README disclosure of what is collected, where it is stored, and how to disable it.
+- Tests at three layers: unit (event built correctly from injected clock/id, no-op when disabled, write errors swallowed, aggregator math), integration (real append and read-back against a tmp `SYMNAV_STATE_DIR`), e2e (built binary appends one correct line; `SYMNAV_TELEMETRY=0` writes nothing; command stdout/stderr/exit-code identical with telemetry on versus off).
+
+**Out of scope.**
+- Any network, upload endpoint, or transport. Getting a user's log to the author is manual export only.
+- Any consent UI or runtime notice beyond README disclosure and the env kill switch.
+- Log rotation or size cap.
+- `stats` filter flags (`--since`, `--command`, `--workspace`).
+- Any raw source identifier — symbol names, file paths, query strings, previews.
+- Any change to the six commands' observable output.
+
+**Done when.** Every command emits one shape-only event through the `runCommand` seam. `SYMNAV_TELEMETRY=0` makes telemetry fully inert. Hidden `symnav stats` aggregates the global JSONL into a usage summary. Telemetry faults never touch stdout, stderr, or exit codes. The six commands produce byte-identical output with telemetry on or off. The three test layers and CI are green.
+
+---
+
 ## Stage 4 — `context`
 
 **What we deliver.** A working `symnav context <symbol-id>` that produces the compact context block described in the spec: definition, direct callers with previews, direct callees with previews, a reference summary (counts and a hint to run `refs`), and a recent-history summary from git. Sections with no results are still shown.
@@ -232,6 +273,7 @@ These items are explicitly **not** part of the v1 plan. They are catalogued here
 | 1.5 | Foundation hardening | IR contract, workspace factory, and error/pipeline scaffolding deepened before Stage 2 multiplies them |
 | 2 | `resolve`, `def` | Canonical symbol IDs and overload disambiguation |
 | 3 | `refs` | Cross-file reference enumeration and pagination |
+| 3.5 | Anonymous usage telemetry | Shape-only event capture at the CLI seam + hidden `stats` reader |
 | 4 | `context` | Composition + direct callers/callees + git history |
 | 5 | `graph` | Multi-hop traversal and path-based pagination |
 | 6 | Release | Distribution, documentation, performance baseline |

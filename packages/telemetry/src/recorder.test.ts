@@ -47,13 +47,12 @@ describe("NodeUsageRecorder", () => {
     recorder.record(input);
 
     expect(writePort.ensuredDirs).toEqual(["/state"]);
-    expect(writePort.appendedLines).toHaveLength(1);
-    expect(writePort.appendedLines[0]).toEqual({
+    const appendedLine = onlyAppendedLine(writePort);
+    expect(appendedLine).toEqual({
       filePath: "/state/usage.jsonl",
-      line:
-        '{"schemaVersion":1,"symnavVersion":"0.1.0","command":"overview","timestamp":1790000000000,"durationMs":42,"outcome":"user_error","errorReason":"no-match","argShape":{"kind":"path","lengthBucket":"medium","flags":["json"]},"resultCounts":{"symbols":3},"workspaceId":"workspace","machineId":"machine","sessionId":"session-1"}',
+      line: '{"schemaVersion":1,"symnavVersion":"0.1.0","command":"overview","timestamp":1790000000000,"durationMs":42,"outcome":"user_error","errorReason":"no-match","argShape":{"kind":"path","lengthBucket":"medium","flags":["json"]},"resultCounts":{"symbols":3},"workspaceId":"workspace","machineId":"machine","sessionId":"session-1"}',
     });
-    expect(JSON.parse(writePort.appendedLines[0].line)).toEqual({
+    expect(JSON.parse(appendedLine.line)).toEqual({
       schemaVersion: 1,
       ...input,
       sessionId: "session-1",
@@ -67,13 +66,17 @@ describe("NodeUsageRecorder", () => {
 
     recorder.record(input);
 
-    expect(writePort.appendedLines[0].line).toBe(
+    expect(onlyAppendedLine(writePort).line).toBe(
       '{"schemaVersion":1,"symnavVersion":"0.1.0","command":"overview","timestamp":1790000000000,"durationMs":42,"outcome":"user_error","argShape":{"kind":"path","lengthBucket":"medium","flags":["json"]},"workspaceId":"workspace","machineId":"machine","sessionId":"session-1"}',
     );
   });
 
   it.each(["ensureDir", "appendLine"] as const)("swallows %s faults", (fault) => {
-    const recorder = new NodeUsageRecorder(new ThrowingWritePort(fault), new FixedIdGenerator(), "/state");
+    const recorder = new NodeUsageRecorder(
+      new ThrowingWritePort(fault),
+      new FixedIdGenerator(),
+      "/state",
+    );
 
     expect(() => recorder.record(usageEventInput())).not.toThrow();
   });
@@ -98,4 +101,17 @@ function usageEventInput(): UsageEventInput {
     workspaceId: "workspace",
     machineId: "machine",
   };
+}
+
+function onlyAppendedLine(writePort: CapturingWritePort): {
+  readonly filePath: string;
+  readonly line: string;
+} {
+  expect(writePort.appendedLines).toHaveLength(1);
+  const appendedLine = writePort.appendedLines[0];
+  if (appendedLine === undefined) {
+    throw new Error("expected one appended line");
+  }
+
+  return appendedLine;
 }

@@ -27,7 +27,11 @@ describe("NodeUsageRecorder integration", () => {
     roots.push(root);
     const stateDir = join(root, "state");
     const usageLog = join(stateDir, "usage.jsonl");
-    const recorder = new NodeUsageRecorder(new NodeTelemetryWritePort(), new FixedIdGenerator(), stateDir);
+    const recorder = new NodeUsageRecorder(
+      new NodeTelemetryWritePort(),
+      new FixedIdGenerator(),
+      stateDir,
+    );
 
     recorder.record(usageEventInput("overview", 1));
     recorder.record(usageEventInput("def", 2));

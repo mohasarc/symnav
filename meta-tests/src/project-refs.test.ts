@@ -28,11 +28,12 @@ describe("tsconfig project references", () => {
     expect(readReferences("packages/testing/tsconfig.json")).toEqual([]);
   });
 
-  it("apps/cli references all three production libs", () => {
+  it("apps/cli references all four production libs", () => {
     expect(readReferences("apps/cli/tsconfig.json")).toEqual([
       "../../packages/core",
       "../../packages/renderer",
       "../../packages/backend-typescript",
+      "../../packages/telemetry",
     ]);
   });
 
@@ -41,6 +42,7 @@ describe("tsconfig project references", () => {
       "packages/core/tsconfig.json",
       "packages/renderer/tsconfig.json",
       "packages/backend-typescript/tsconfig.json",
+      "packages/telemetry/tsconfig.json",
       "apps/cli/tsconfig.json",
     ];
     for (const cfg of productionConfigs) {
@@ -54,6 +56,7 @@ describe("tsconfig project references", () => {
       { path: "packages/core/tsconfig.test.json", testingRef: "../testing" },
       { path: "packages/renderer/tsconfig.test.json", testingRef: "../testing" },
       { path: "packages/backend-typescript/tsconfig.test.json", testingRef: "../testing" },
+      { path: "packages/telemetry/tsconfig.test.json", testingRef: "../testing" },
       { path: "apps/cli/tsconfig.test.json", testingRef: "../../packages/testing" },
     ];
     for (const { path, testingRef } of testConfigs) {

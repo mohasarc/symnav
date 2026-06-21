@@ -161,11 +161,11 @@ describe("symnav refs e2e (errors)", () => {
     expect(r.stderr).toContain("Cannot answer: page 99 is out of range (1-5)");
   });
 
-  it("rejects a non-positive page", () => {
-    const r = runRefs([processorId, "--page", "0"]);
+  it.each(["0", "-1", "1.5"])("rejects a page that is not a positive integer (%s)", (page) => {
+    const r = runRefs([processorId, "--page", page]);
     expect(r.status).toBe(1);
     expect(r.stdout).toBe("");
-    expect(r.stderr).toContain("Cannot answer:");
+    expect(r.stderr).toContain(`page must be a positive integer, got ${page}`);
   });
 
   it("rejects --all combined with an explicit page", () => {

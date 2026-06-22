@@ -1,20 +1,14 @@
 import type { IdGenerator } from "./id-generator.js";
 import { usageLogPath } from "./state-dir.js";
-import { SCHEMA_VERSION, type ArgShape, type Outcome, type UsageEvent } from "./usage-event.js";
+import {
+  SCHEMA_VERSION,
+  type OutcomeReport,
+  type UsageEvent,
+  type UsageEventContent,
+} from "./usage-event.js";
 import type { TelemetryWritePort } from "./write-port.js";
 
-export interface UsageEventInput {
-  readonly symnavVersion: string;
-  readonly command: string;
-  readonly timestamp: number;
-  readonly durationMs: number;
-  readonly outcome: Outcome;
-  readonly errorReason?: string;
-  readonly argShape: ArgShape;
-  readonly resultCounts?: Readonly<Record<string, number>>;
-  readonly workspaceId: string;
-  readonly machineId: string;
-}
+export type UsageEventInput = UsageEventContent & OutcomeReport;
 
 export interface Recorder {
   record(input: UsageEventInput): void;
@@ -44,19 +38,25 @@ export class NodeUsageRecorder implements Recorder {
   }
 
   private buildUsageEvent(input: UsageEventInput): UsageEvent {
-    return {
+    const head = {
       schemaVersion: SCHEMA_VERSION,
       symnavVersion: input.symnavVersion,
       command: input.command,
       timestamp: input.timestamp,
       durationMs: input.durationMs,
-      outcome: input.outcome,
-      ...(input.errorReason === undefined ? {} : { errorReason: input.errorReason }),
+    } satisfies Partial<UsageEvent>;
+    const tail = {
       argShape: input.argShape,
       ...(input.resultCounts === undefined ? {} : { resultCounts: input.resultCounts }),
       workspaceId: input.workspaceId,
       machineId: input.machineId,
       sessionId: this.sessionId,
-    };
+    } satisfies Partial<UsageEvent>;
+
+    if (input.outcome === "success") {
+      return { ...head, outcome: input.outcome, ...tail };
+    }
+
+    return { ...head, outcome: input.outcome, errorReason: input.errorReason, ...tail };
   }
 }

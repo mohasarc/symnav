@@ -10,8 +10,7 @@ export interface ArgShape {
   readonly flags: readonly string[];
 }
 
-interface UsageEventBase {
-  readonly schemaVersion: number;
+export interface UsageEventContent {
   readonly symnavVersion: string;
   readonly command: string;
   readonly timestamp: number;
@@ -20,16 +19,21 @@ interface UsageEventBase {
   readonly resultCounts?: Readonly<Record<string, number>>;
   readonly workspaceId: string;
   readonly machineId: string;
-  readonly sessionId: string;
 }
 
-export interface SuccessEvent extends UsageEventBase {
+interface SuccessOutcome {
   readonly outcome: "success";
 }
 
-export interface FailureEvent extends UsageEventBase {
+interface FailureOutcome {
   readonly outcome: "user_error" | "crash";
   readonly errorReason: string;
 }
 
-export type UsageEvent = SuccessEvent | FailureEvent;
+export type OutcomeReport = SuccessOutcome | FailureOutcome;
+
+export type UsageEvent = UsageEventContent &
+  OutcomeReport & {
+    readonly schemaVersion: number;
+    readonly sessionId: string;
+  };

@@ -62,12 +62,25 @@ describe("NodeUsageRecorder", () => {
   it("omits absent optional fields", () => {
     const writePort = new CapturingWritePort();
     const recorder = new NodeUsageRecorder(writePort, new FixedIdGenerator(), "/state");
-    const { errorReason, resultCounts, ...input } = usageEventInput();
+    const input: UsageEventInput = {
+      symnavVersion: "0.1.0",
+      command: "overview",
+      timestamp: 1_790_000_000_000,
+      durationMs: 42,
+      outcome: "success",
+      argShape: {
+        kind: "path",
+        lengthBucket: "medium",
+        flags: ["json"],
+      },
+      workspaceId: "workspace",
+      machineId: "machine",
+    };
 
     recorder.record(input);
 
     expect(onlyAppendedLine(writePort).line).toBe(
-      '{"schemaVersion":1,"symnavVersion":"0.1.0","command":"overview","timestamp":1790000000000,"durationMs":42,"outcome":"user_error","argShape":{"kind":"path","lengthBucket":"medium","flags":["json"]},"workspaceId":"workspace","machineId":"machine","sessionId":"session-1"}',
+      '{"schemaVersion":1,"symnavVersion":"0.1.0","command":"overview","timestamp":1790000000000,"durationMs":42,"outcome":"success","argShape":{"kind":"path","lengthBucket":"medium","flags":["json"]},"workspaceId":"workspace","machineId":"machine","sessionId":"session-1"}',
     );
   });
 

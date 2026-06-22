@@ -1,5 +1,4 @@
 import { InMemoryFileSystem } from "@symnav/core";
-import type { LanguageBackend } from "@symnav/core";
 import type { Clock, Recorder, UsageEventInput } from "@symnav/telemetry";
 import type { ProgramDependencies } from "../../../../src/program-dependencies.js";
 import type {
@@ -8,23 +7,8 @@ import type {
 } from "../../../../src/telemetry/telemetry-identity.js";
 import { FakeLanguageBackend } from "./fake-language-backend.js";
 
-export type FakeProgramDependencies = ProgramDependencies & {
-  recorder: Recorder;
-  clock: Clock;
-  telemetryEnabled: boolean;
-  identity: TelemetryIdentityProvider;
-  symnavVersion: string;
-};
-
-export interface FakeDependenciesOverrides {
-  readonly fs?: InMemoryFileSystem;
-  readonly backends?: () => readonly LanguageBackend[];
-  readonly recorder?: Recorder;
-  readonly clock?: Clock;
-  readonly telemetryEnabled?: boolean;
-  readonly identity?: TelemetryIdentityProvider;
-  readonly symnavVersion?: string;
-}
+export type FakeProgramDependencies = ProgramDependencies;
+export type FakeDependenciesOverrides = Partial<ProgramDependencies>;
 
 export function fakeDependencies(
   overrides: FakeDependenciesOverrides = {},

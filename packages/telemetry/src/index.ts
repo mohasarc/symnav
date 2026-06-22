@@ -1,4 +1,4 @@
-export { aggregate } from "./aggregate.js";
+export { UsageAggregator } from "./aggregate.js";
 export type { Clock } from "./clock.js";
 export type { IdGenerator } from "./id-generator.js";
 export { NodeUsageRecorder } from "./recorder.js";

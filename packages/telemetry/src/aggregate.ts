@@ -1,11 +1,7 @@
 import type { UsageEvent } from "./usage-event.js";
 import type { CommandStat, OutcomeStat, UsageSummary, VersionStat } from "./usage-summary.js";
 
-export function aggregate(events: readonly UsageEvent[]): UsageSummary {
-  return new UsageAggregator(events).aggregate();
-}
-
-class UsageAggregator {
+export class UsageAggregator {
   public constructor(private readonly events: readonly UsageEvent[]) {}
 
   public aggregate(): UsageSummary {

@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { aggregate } from "./aggregate.js";
+import { UsageAggregator } from "./aggregate.js";
 import { SCHEMA_VERSION, type Outcome, type UsageEvent } from "./usage-event.js";
 
-describe("aggregate", () => {
+describe("UsageAggregator", () => {
   it("summarizes usage events", () => {
-    const summary = aggregate([
+    const summary = new UsageAggregator([
       usageEvent({
         command: "overview",
         durationMs: 10,
@@ -53,7 +53,7 @@ describe("aggregate", () => {
         timestamp: 200,
         workspaceId: "workspace-c",
       }),
-    ]);
+    ]).aggregate();
 
     expect(summary.totalEvents).toBe(6);
     expect(summary.perCommand).toEqual([
@@ -82,7 +82,7 @@ describe("aggregate", () => {
   });
 
   it("returns an empty summary for no events", () => {
-    expect(aggregate([])).toEqual({
+    expect(new UsageAggregator([]).aggregate()).toEqual({
       totalEvents: 0,
       perCommand: [],
       outcomes: [],

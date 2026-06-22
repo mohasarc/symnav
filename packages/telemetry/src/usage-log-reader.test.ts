@@ -22,7 +22,7 @@ describe("NodeUsageLogReader", () => {
     const events = [usageEvent("overview", 1), usageEvent("def", 2)];
     writeFileSync(
       usageFilePath,
-      `${JSON.stringify(events[0])}\nnot json\n${JSON.stringify(events[1])}\n`,
+      `${JSON.stringify(events[0])}\nnot json\n{}\n${JSON.stringify({ ...events[1], durationMs: undefined })}\n${JSON.stringify(events[1])}\n`,
       "utf8",
     );
 

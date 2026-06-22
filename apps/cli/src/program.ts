@@ -22,7 +22,7 @@ import { isTelemetryEnabled } from "./telemetry/is-telemetry-enabled.js";
 import {
   NodeGitRemoteReader,
   NodeTelemetryIdentityProvider,
-} from "./telemetry/telemetry-identity.js";
+} from "./telemetry/node-telemetry-identity-provider.js";
 
 function readPackageVersion(): string {
   const here = dirname(fileURLToPath(import.meta.url));

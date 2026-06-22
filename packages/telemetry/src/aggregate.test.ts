@@ -99,13 +99,12 @@ describe("aggregate", () => {
 });
 
 function usageEvent(overrides: UsageEventOverrides): UsageEvent {
-  return {
+  const base = {
     schemaVersion: SCHEMA_VERSION,
     symnavVersion: overrides.symnavVersion,
     command: overrides.command,
     timestamp: overrides.timestamp,
     durationMs: overrides.durationMs,
-    outcome: overrides.outcome,
     argShape: {
       kind: "path",
       lengthBucket: "medium",
@@ -114,7 +113,13 @@ function usageEvent(overrides: UsageEventOverrides): UsageEvent {
     workspaceId: overrides.workspaceId,
     machineId: "machine",
     sessionId: "session",
-  };
+  } satisfies Partial<UsageEvent>;
+
+  if (overrides.outcome === "success") {
+    return { ...base, outcome: "success" };
+  }
+
+  return { ...base, outcome: overrides.outcome, errorReason: "reason" };
 }
 
 interface UsageEventOverrides {

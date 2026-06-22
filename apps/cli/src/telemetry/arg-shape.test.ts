@@ -4,6 +4,9 @@ import { classifyArgKind, lengthBucketOf } from "./arg-shape.js";
 describe("classifyArgKind", () => {
   it.each([
     ["a/b.ts", "path"],
+    ["a\\b.ts", "path"],
+    ["C:/repo/file.ts", "path"],
+    ["C:\\repo\\file.ts", "path"],
     ["File.ts::Foo", "symbol_id"],
     ["foo", "bare"],
     ["", "empty"],

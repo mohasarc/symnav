@@ -3,7 +3,7 @@ import type { ArgKind, LengthBucket } from "@symnav/telemetry";
 export function classifyArgKind(value: string): ArgKind {
   if (value.length === 0) return "empty";
   if (value.includes("::")) return "symbol_id";
-  if (value.includes("/")) return "path";
+  if (value.includes("/") || value.includes("\\") || /^[A-Za-z]:[\\/]/.test(value)) return "path";
   return "bare";
 }
 

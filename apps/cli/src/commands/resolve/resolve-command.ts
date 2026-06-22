@@ -5,6 +5,7 @@ import { renderResolveJson, renderResolveText } from "@symnav/renderer";
 import fuzzysort from "fuzzysort";
 
 import type { Command, CommandContext } from "../../command.js";
+import { classifyArgKind, lengthBucketOf } from "../../telemetry/arg-shape.js";
 
 export interface ResolveArgs {
   readonly query: string;
@@ -12,6 +13,17 @@ export interface ResolveArgs {
 }
 
 export const resolveCommand: Command<ResolveResult, ResolveArgs> = {
+  name: "resolve",
+  describeArgs(args: ResolveArgs) {
+    return {
+      kind: classifyArgKind(args.query),
+      lengthBucket: lengthBucketOf(args.query),
+      flags: args.fuzzy ? ["fuzzy"] : [],
+    };
+  },
+  countResults(result: ResolveResult) {
+    return { symbols: result.symbols.length, files: result.files.length };
+  },
   async compute(ctx: CommandContext<ResolveArgs>): Promise<ResolveResult> {
     const files = await ctx.workspace.enumerate();
     const groups = groupFilesByBackend(files, ctx.router);

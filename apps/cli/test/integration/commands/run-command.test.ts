@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { InMemoryFileSystem, UserFacingError } from "@symnav/core";
+import type { ArgShape } from "@symnav/telemetry";
 import { runCommand } from "../../../src/command.js";
 import type { Command, CommandContext } from "../../../src/command.js";
 import { FakeLanguageBackend } from "./helpers/fake-language-backend.js";
@@ -10,11 +11,21 @@ interface StubArgs {
 }
 
 class StubCommand implements Command<string, StubArgs> {
+  readonly name = "stub";
+
   constructor(
     private readonly options: {
       compute?: (ctx: CommandContext<StubArgs>) => Promise<string>;
     } = {},
   ) {}
+
+  describeArgs(args: StubArgs): ArgShape {
+    return { kind: "bare", lengthBucket: args.note.length === 0 ? "empty" : "short", flags: [] };
+  }
+
+  countResults(result: string): Record<string, number> {
+    return { length: result.length };
+  }
 
   async compute(ctx: CommandContext<StubArgs>): Promise<string> {
     if (this.options.compute) {

@@ -1,4 +1,5 @@
 import { BackendRouter, createWorkspace, UserFacingError, type Workspace } from "@symnav/core";
+import type { ArgShape } from "@symnav/telemetry";
 import type { ProgramContext } from "./program-context.js";
 import type { ProgramDependencies } from "./program-dependencies.js";
 
@@ -18,6 +19,9 @@ export interface CommandInvocation<Args> {
 }
 
 export interface Command<Result, Args> {
+  readonly name: string;
+  describeArgs(args: Args): ArgShape;
+  countResults(result: Result): Record<string, number>;
   compute(ctx: CommandContext<Args>): Promise<Result>;
   renderText(result: Result): string;
   renderJson(result: Result): string;

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { InMemoryFileSystem, type OverviewFileSymbols } from "@symnav/core";
 import { buildProgram } from "../../../../src/program.js";
 import { FakeLanguageBackend } from "../helpers/fake-language-backend.js";
+import { fakeDependencies } from "../helpers/fake-program-dependencies.js";
 import { createFakeProgramContext } from "../helpers/fake-program-context.js";
 
 async function parse(
@@ -43,10 +44,13 @@ describe("symnav overview happy path", () => {
     });
     const backend = new FakeLanguageBackend({ symbols: () => symbols });
 
-    const r = await parse(["overview", "src/a.ts"], {
-      fs,
-      backends: () => [backend],
-    });
+    const r = await parse(
+      ["overview", "src/a.ts"],
+      fakeDependencies({
+        fs,
+        backends: () => [backend],
+      }),
+    );
 
     expect(r.stderr).toBe("");
     expect(r.exitCodes).toEqual([]);
@@ -62,10 +66,13 @@ describe("symnav overview happy path", () => {
     });
     const backend = new FakeLanguageBackend({ symbols: () => symbols });
 
-    const r = await parse(["overview", "src/a.ts", "--json"], {
-      fs,
-      backends: () => [backend],
-    });
+    const r = await parse(
+      ["overview", "src/a.ts", "--json"],
+      fakeDependencies({
+        fs,
+        backends: () => [backend],
+      }),
+    );
 
     expect(r.stderr).toBe("");
     expect(r.exitCodes).toEqual([]);
@@ -82,7 +89,7 @@ describe("symnav overview happy path", () => {
 
     const r = await parse(
       ["--cwd", "/other/repo", "overview", "src/a.ts"],
-      { fs, backends: () => [backend] },
+      fakeDependencies({ fs, backends: () => [backend] }),
       "/unrelated",
     );
 
@@ -99,10 +106,13 @@ describe("symnav overview user errors", () => {
     });
     const backend = new FakeLanguageBackend();
 
-    const r = await parse(["overview", "src/missing.ts"], {
-      fs,
-      backends: () => [backend],
-    });
+    const r = await parse(
+      ["overview", "src/missing.ts"],
+      fakeDependencies({
+        fs,
+        backends: () => [backend],
+      }),
+    );
 
     expect(r.stdout).toBe("");
     expect(r.stderr).toBe("Cannot answer: file not found: src/missing.ts.\n");
@@ -116,10 +126,13 @@ describe("symnav overview user errors", () => {
     });
     const backend = new FakeLanguageBackend();
 
-    const r = await parse(["overview", "/other/src/a.ts"], {
-      fs,
-      backends: () => [backend],
-    });
+    const r = await parse(
+      ["overview", "/other/src/a.ts"],
+      fakeDependencies({
+        fs,
+        backends: () => [backend],
+      }),
+    );
 
     expect(r.stdout).toBe("");
     expect(r.stderr).toBe(
@@ -136,10 +149,13 @@ describe("symnav overview user errors", () => {
     });
     const backend = new FakeLanguageBackend();
 
-    const r = await parse(["overview", "build/a.ts"], {
-      fs,
-      backends: () => [backend],
-    });
+    const r = await parse(
+      ["overview", "build/a.ts"],
+      fakeDependencies({
+        fs,
+        backends: () => [backend],
+      }),
+    );
 
     expect(r.stdout).toBe("");
     expect(r.stderr).toBe("Cannot answer: build/a.ts is ignored by .gitignore.\n");
@@ -153,10 +169,13 @@ describe("symnav overview user errors", () => {
     });
     const backend = new FakeLanguageBackend({ accept: () => false });
 
-    const r = await parse(["overview", "data.json"], {
-      fs,
-      backends: () => [backend],
-    });
+    const r = await parse(
+      ["overview", "data.json"],
+      fakeDependencies({
+        fs,
+        backends: () => [backend],
+      }),
+    );
 
     expect(r.stdout).toBe("");
     expect(r.stderr).toBe("Cannot answer: cannot read .json files (data.json).\n");
@@ -169,7 +188,11 @@ describe("symnav overview user errors", () => {
     });
     const backend = new FakeLanguageBackend();
 
-    const r = await parse(["overview", "src/a.ts"], { fs, backends: () => [backend] }, "/loose");
+    const r = await parse(
+      ["overview", "src/a.ts"],
+      fakeDependencies({ fs, backends: () => [backend] }),
+      "/loose",
+    );
 
     expect(r.stdout).toBe("");
     expect(r.stderr).toBe(
@@ -189,10 +212,13 @@ describe("symnav overview user errors", () => {
       },
     });
 
-    const r = await parse(["overview", "src/a.ts"], {
-      fs,
-      backends: () => [throwingBackend],
-    });
+    const r = await parse(
+      ["overview", "src/a.ts"],
+      fakeDependencies({
+        fs,
+        backends: () => [throwingBackend],
+      }),
+    );
 
     expect(r.stdout).toBe("");
     expect(r.stderr).toBe("backend went sideways\n");

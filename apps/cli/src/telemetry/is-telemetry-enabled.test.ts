@@ -12,7 +12,11 @@ describe("isTelemetryEnabled", () => {
     [{}, true],
     [{ SYMNAV_TELEMETRY: "1" }, true],
     [{ SYMNAV_TELEMETRY: "true" }, true],
+    [{ SYMNAV_TELEMETRY: "on" }, true],
+    [{ SYMNAV_TELEMETRY: "yes" }, true],
+    [{ SYMNAV_TELEMETRY: "YES" }, true],
     [{ SYMNAV_TELEMETRY: "" }, true],
+    [{ SYMNAV_TELEMETRY: "maybe" }, true],
   ] as const)("returns %s for %j", (env, expected) => {
     expect(isTelemetryEnabled(env)).toBe(expected);
   });

@@ -4,7 +4,7 @@ export type { IdGenerator } from "./id-generator.js";
 export { NodeUsageRecorder } from "./recorder.js";
 export type { Recorder, UsageEventInput } from "./recorder.js";
 export { resolveStateDir, usageLogPath } from "./state-dir.js";
-export { NodeUsageLogReader } from "./usage-log-reader.js";
+export { NodeUsageLogReader } from "./node-usage-log-reader.js";
 export type { UsageLogReader } from "./usage-log-reader.js";
 export { SCHEMA_VERSION } from "./usage-event.js";
 export type {

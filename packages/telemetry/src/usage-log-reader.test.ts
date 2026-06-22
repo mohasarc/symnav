@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { NodeUsageLogReader } from "./usage-log-reader.js";
+import { NodeUsageLogReader } from "./node-usage-log-reader.js";
 import { SCHEMA_VERSION, type UsageEvent } from "./usage-event.js";
 
 describe("NodeUsageLogReader", () => {

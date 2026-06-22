@@ -1,5 +1,4 @@
 import type { IdGenerator } from "./id-generator.js";
-import { usageLogPath } from "./state-dir.js";
 import {
   SCHEMA_VERSION,
   type OutcomeReport,
@@ -20,18 +19,13 @@ export class NodeUsageRecorder implements Recorder {
   constructor(
     private readonly writePort: TelemetryWritePort,
     idGenerator: IdGenerator,
-    private readonly stateDir: string,
   ) {
     this.sessionId = idGenerator.next();
   }
 
   record(input: UsageEventInput): void {
     try {
-      this.writePort.ensureDir(this.stateDir);
-      this.writePort.appendLine(
-        usageLogPath(this.stateDir),
-        JSON.stringify(this.buildUsageEvent(input)),
-      );
+      this.writePort.append(JSON.stringify(this.buildUsageEvent(input)));
     } catch {
       return;
     }

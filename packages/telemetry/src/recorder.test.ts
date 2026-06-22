@@ -4,31 +4,16 @@ import { NodeUsageRecorder, type UsageEventInput } from "./recorder.js";
 import type { TelemetryWritePort } from "./write-port.js";
 
 class CapturingWritePort implements TelemetryWritePort {
-  readonly ensuredDirs: string[] = [];
-  readonly appendedLines: Array<{ readonly filePath: string; readonly line: string }> = [];
+  readonly appendedLines: string[] = [];
 
-  ensureDir(dir: string): void {
-    this.ensuredDirs.push(dir);
-  }
-
-  appendLine(filePath: string, line: string): void {
-    this.appendedLines.push({ filePath, line });
+  append(line: string): void {
+    this.appendedLines.push(line);
   }
 }
 
 class ThrowingWritePort implements TelemetryWritePort {
-  constructor(private readonly fault: "ensureDir" | "appendLine") {}
-
-  ensureDir(): void {
-    if (this.fault === "ensureDir") {
-      throw new Error("ensureDir failed");
-    }
-  }
-
-  appendLine(): void {
-    if (this.fault === "appendLine") {
-      throw new Error("appendLine failed");
-    }
+  append(): void {
+    throw new Error("append failed");
   }
 }
 
@@ -41,18 +26,16 @@ class FixedIdGenerator implements IdGenerator {
 describe("NodeUsageRecorder", () => {
   it("builds a complete event from input", () => {
     const writePort = new CapturingWritePort();
-    const recorder = new NodeUsageRecorder(writePort, new FixedIdGenerator(), "/state");
+    const recorder = new NodeUsageRecorder(writePort, new FixedIdGenerator());
     const input = usageEventInput();
 
     recorder.record(input);
 
-    expect(writePort.ensuredDirs).toEqual(["/state"]);
     const appendedLine = onlyAppendedLine(writePort);
-    expect(appendedLine).toEqual({
-      filePath: "/state/usage.jsonl",
-      line: '{"schemaVersion":1,"symnavVersion":"0.1.0","command":"overview","timestamp":1790000000000,"durationMs":42,"outcome":"user_error","errorReason":"no-match","argShape":{"kind":"path","lengthBucket":"medium","flags":["json"]},"resultCounts":{"symbols":3},"workspaceId":"workspace","machineId":"machine","sessionId":"session-1"}',
-    });
-    expect(JSON.parse(appendedLine.line)).toEqual({
+    expect(appendedLine).toBe(
+      '{"schemaVersion":1,"symnavVersion":"0.1.0","command":"overview","timestamp":1790000000000,"durationMs":42,"outcome":"user_error","errorReason":"no-match","argShape":{"kind":"path","lengthBucket":"medium","flags":["json"]},"resultCounts":{"symbols":3},"workspaceId":"workspace","machineId":"machine","sessionId":"session-1"}',
+    );
+    expect(JSON.parse(appendedLine)).toEqual({
       schemaVersion: 1,
       ...input,
       sessionId: "session-1",
@@ -61,7 +44,7 @@ describe("NodeUsageRecorder", () => {
 
   it("omits absent optional fields", () => {
     const writePort = new CapturingWritePort();
-    const recorder = new NodeUsageRecorder(writePort, new FixedIdGenerator(), "/state");
+    const recorder = new NodeUsageRecorder(writePort, new FixedIdGenerator());
     const input: UsageEventInput = {
       symnavVersion: "0.1.0",
       command: "overview",
@@ -79,17 +62,13 @@ describe("NodeUsageRecorder", () => {
 
     recorder.record(input);
 
-    expect(onlyAppendedLine(writePort).line).toBe(
+    expect(onlyAppendedLine(writePort)).toBe(
       '{"schemaVersion":1,"symnavVersion":"0.1.0","command":"overview","timestamp":1790000000000,"durationMs":42,"outcome":"success","argShape":{"kind":"path","lengthBucket":"medium","flags":["json"]},"workspaceId":"workspace","machineId":"machine","sessionId":"session-1"}',
     );
   });
 
-  it.each(["ensureDir", "appendLine"] as const)("swallows %s faults", (fault) => {
-    const recorder = new NodeUsageRecorder(
-      new ThrowingWritePort(fault),
-      new FixedIdGenerator(),
-      "/state",
-    );
+  it("swallows write faults", () => {
+    const recorder = new NodeUsageRecorder(new ThrowingWritePort(), new FixedIdGenerator());
 
     expect(() => recorder.record(usageEventInput())).not.toThrow();
   });
@@ -116,10 +95,7 @@ function usageEventInput(): UsageEventInput {
   };
 }
 
-function onlyAppendedLine(writePort: CapturingWritePort): {
-  readonly filePath: string;
-  readonly line: string;
-} {
+function onlyAppendedLine(writePort: CapturingWritePort): string {
   expect(writePort.appendedLines).toHaveLength(1);
   const appendedLine = writePort.appendedLines[0];
   if (appendedLine === undefined) {

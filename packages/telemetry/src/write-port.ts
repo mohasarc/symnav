@@ -1,16 +1,15 @@
 import { appendFileSync, mkdirSync } from "node:fs";
+import { dirname } from "node:path";
 
 export interface TelemetryWritePort {
-  ensureDir(dir: string): void;
-  appendLine(filePath: string, line: string): void;
+  append(line: string): void;
 }
 
 export class NodeTelemetryWritePort implements TelemetryWritePort {
-  ensureDir(dir: string): void {
-    mkdirSync(dir, { recursive: true });
-  }
+  constructor(private readonly usageLogPath: string) {}
 
-  appendLine(filePath: string, line: string): void {
-    appendFileSync(filePath, `${line}\n`, "utf8");
+  append(line: string): void {
+    mkdirSync(dirname(this.usageLogPath), { recursive: true });
+    appendFileSync(this.usageLogPath, `${line}\n`, "utf8");
   }
 }

@@ -2,7 +2,7 @@ import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "no
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { aggregate, SCHEMA_VERSION, type Outcome, type UsageEvent } from "@symnav/telemetry";
+import { SCHEMA_VERSION, UsageAggregator, type Outcome, type UsageEvent } from "@symnav/telemetry";
 import { buildProgram } from "../../../../src/program.js";
 import type { ProgramContext } from "../../../../src/program-context.js";
 import { fakeDependencies } from "../helpers/fake-program-dependencies.js";
@@ -127,7 +127,7 @@ describe("symnav stats", () => {
 
     expect(result.stderr).toBe("");
     expect(result.exitCodes).toEqual([]);
-    expect(JSON.parse(result.stdout)).toEqual(aggregate(events));
+    expect(JSON.parse(result.stdout)).toEqual(new UsageAggregator(events).aggregate());
   });
 
   it("renders a clean empty summary when the usage log is missing", async () => {

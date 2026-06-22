@@ -3,8 +3,8 @@ import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
+import { NodeTelemetryIdentityProvider } from "./node-telemetry-identity-provider.js";
 import {
-  NodeTelemetryIdentityProvider,
   type GitRemoteReader,
   type IdentityAnomaly,
   type IdentityAnomalySink,

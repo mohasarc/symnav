@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import type { IdGenerator } from "../../src/id-generator.js";
 import { NodeUsageRecorder, type UsageEventInput } from "../../src/recorder.js";
-import { NodeTelemetryWritePort } from "../../src/write-port.js";
+import { NodeTelemetryWritePort } from "../../src/node-telemetry-write-port.js";
 
 class FixedIdGenerator implements IdGenerator {
   next(): string {

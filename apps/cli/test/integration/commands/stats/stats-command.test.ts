@@ -2,7 +2,7 @@ import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "no
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { SCHEMA_VERSION, UsageAggregator, type Outcome, type UsageEvent } from "@symnav/telemetry";
+import { SCHEMA_VERSION, UsageAggregator, type UsageEvent } from "@symnav/telemetry";
 import { buildProgram } from "../../../../src/program.js";
 import type { ProgramContext } from "../../../../src/program-context.js";
 import { fakeDependencies } from "../helpers/fake-program-dependencies.js";
@@ -255,11 +255,7 @@ function usageEvent(overrides: UsageEventOverrides): UsageEvent {
   return { ...base, outcome: overrides.outcome, errorReason: "reason" };
 }
 
-interface UsageEventOverrides {
-  readonly command: string;
-  readonly durationMs: number;
-  readonly outcome: Outcome;
-  readonly symnavVersion: string;
-  readonly timestamp: number;
-  readonly workspaceId: string;
-}
+type UsageEventOverrides = Pick<
+  UsageEvent,
+  "command" | "durationMs" | "outcome" | "symnavVersion" | "timestamp" | "workspaceId"
+>;

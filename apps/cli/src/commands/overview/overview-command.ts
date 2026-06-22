@@ -29,5 +29,12 @@ export const overviewCommand: Command<OverviewFileSymbols, OverviewArgs> = {
 };
 
 function countSymbols(symbols: readonly SymbolDecl[]): number {
-  return symbols.reduce((total, symbol) => total + 1 + countSymbols(symbol.children), 0);
+  const stack: SymbolDecl[] = [...symbols];
+  let total = 0;
+  while (stack.length > 0) {
+    const symbol = stack.pop()!;
+    total += 1;
+    stack.push(...symbol.children);
+  }
+  return total;
 }

@@ -64,6 +64,16 @@ describe("symnav telemetry e2e", () => {
     expect(existsSync(usageLogPath(stateDir))).toBe(false);
   });
 
+  it("writes nothing when disabled via a word opt-out value", () => {
+    const stateDir = newStateDir();
+    const result = runOverview(stateDir, "off");
+
+    expect(result.stderr).toBe("");
+    expect(result.status).toBe(0);
+    expect(existsSync(stateDir)).toBe(false);
+    expect(existsSync(usageLogPath(stateDir))).toBe(false);
+  });
+
   it("keeps command output identical when telemetry is on or off", () => {
     const enabled = runOverview(newStateDir(), "1");
     const disabled = runOverview(newStateDir(), "0");
@@ -92,7 +102,7 @@ describe("symnav telemetry e2e", () => {
   });
 });
 
-function runOverview(stateDir: string, telemetry: "0" | "1") {
+function runOverview(stateDir: string, telemetry: string) {
   return runSymnavBinary(overviewArgs, {
     cwd: fixtureRoot,
     env: {

@@ -31,6 +31,25 @@ describe("ESLint workspace config", () => {
     expect(boundaries).toHaveLength(1);
   });
 
+  it("allows cli files to import @symnav/telemetry", async () => {
+    const eslint = await makeESLint();
+    const code = `import type { UsageEvent } from "@symnav/telemetry";\nexport type X = UsageEvent;\n`;
+    const [result] = await eslint.lintText(code, {
+      filePath: join(repoRoot, "apps/cli/src/telemetry.ts"),
+    });
+    expect(result!.errorCount).toBe(0);
+  });
+
+  it("reports a boundaries violation when renderer imports @symnav/telemetry", async () => {
+    const eslint = await makeESLint();
+    const code = `import type { UsageEvent } from "@symnav/telemetry";\nexport type X = UsageEvent;\n`;
+    const [result] = await eslint.lintText(code, {
+      filePath: join(repoRoot, "packages/renderer/src/forbidden.ts"),
+    });
+    const boundaries = result!.messages.filter((m) => m.ruleId === "boundaries/dependencies");
+    expect(boundaries).toHaveLength(1);
+  });
+
   it("reports a prettier violation on unformatted code", async () => {
     const eslint = await makeESLint();
     const code = `export const x   =    1;\n`;

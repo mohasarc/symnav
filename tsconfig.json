@@ -4,6 +4,7 @@
     { "path": "./packages/core" },
     { "path": "./packages/renderer" },
     { "path": "./packages/backend-typescript" },
+    { "path": "./packages/telemetry" },
     { "path": "./packages/testing" },
     { "path": "./apps/cli" }
   ]

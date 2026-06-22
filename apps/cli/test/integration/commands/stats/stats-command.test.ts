@@ -118,6 +118,25 @@ describe("symnav stats", () => {
     );
   });
 
+  it("skips structurally invalid usage records before aggregating", async () => {
+    const stateDir = tempStateDir(roots);
+    const [validEvent] = seededEvents();
+    const usageFilePath = join(stateDir, "usage.jsonl");
+    writeFileSync(
+      usageFilePath,
+      `${JSON.stringify(validEvent)}\nnot json\n${JSON.stringify({ ...validEvent, durationMs: "slow" })}\n${JSON.stringify({ ...validEvent, outcome: "ignored" })}\n`,
+      "utf8",
+    );
+
+    const result = await parse(["stats"], stateDir);
+
+    expect(result.stderr).toBe("");
+    expect(result.exitCodes).toEqual([]);
+    expect(result.stdout).toContain("Total events: 1");
+    expect(result.stdout).toContain("overview  1  100.0%");
+    expect(result.stdout).not.toContain("ignored");
+  });
+
   it("renders raw UsageSummary JSON with --json", async () => {
     const stateDir = tempStateDir(roots);
     const events = seededEvents();

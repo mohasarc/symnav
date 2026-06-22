@@ -1,5 +1,5 @@
 import { BackendRouter, createWorkspace, UserFacingError, type Workspace } from "@symnav/core";
-import type { ArgShape, Outcome } from "@symnav/telemetry";
+import type { ArgShape, OutcomeReport } from "@symnav/telemetry";
 import type { ProgramContext } from "./program-context.js";
 import type { ProgramDependencies } from "./program-dependencies.js";
 
@@ -39,8 +39,7 @@ export async function runCommand<Result, Args>(
   let result: Result | undefined;
   let error: unknown;
   let failed = false;
-  let outcome: Outcome = "success";
-  let errorReason: string | undefined;
+  let outcomeReport: OutcomeReport = { outcome: "success" };
 
   try {
     workspace = await createWorkspace({ startDir: cwd, fs });
@@ -49,13 +48,10 @@ export async function runCommand<Result, Args>(
   } catch (err) {
     failed = true;
     error = err;
-    if (err instanceof UserFacingError) {
-      outcome = "user_error";
-      errorReason = err.constructor.name;
-    } else {
-      outcome = "crash";
-      errorReason = "crash";
-    }
+    outcomeReport =
+      err instanceof UserFacingError
+        ? { outcome: "user_error", errorReason: err.constructor.name }
+        : { outcome: "crash", errorReason: "crash" };
   }
 
   if (dependencies.telemetryEnabled) {
@@ -63,8 +59,7 @@ export async function runCommand<Result, Args>(
       cwd,
       workspaceRoot: workspace?.root,
       timestamp: telemetryStartedAt!,
-      outcome,
-      errorReason,
+      outcomeReport,
       result: failed ? undefined : result,
       args,
       json,
@@ -89,8 +84,7 @@ function recordTelemetry<Result, Args>(
     readonly cwd: string;
     readonly workspaceRoot: string | undefined;
     readonly timestamp: number;
-    readonly outcome: Outcome;
-    readonly errorReason: string | undefined;
+    readonly outcomeReport: OutcomeReport;
     readonly result: Result | undefined;
     readonly args: Args;
     readonly json: boolean;
@@ -102,17 +96,32 @@ function recordTelemetry<Result, Args>(
       cwd: input.cwd,
       workspaceRoot: input.workspaceRoot,
     });
+    const argShape = argShapeFor(command.describeArgs(input.args), input.json);
+
+    if (input.outcomeReport.outcome === "success") {
+      dependencies.recorder.record({
+        symnavVersion: dependencies.symnavVersion,
+        command: command.name,
+        timestamp: input.timestamp,
+        durationMs,
+        outcome: "success",
+        argShape,
+        resultCounts: command.countResults(input.result!),
+        workspaceId: identity.workspaceId,
+        machineId: identity.machineId,
+      });
+      return;
+    }
+
     dependencies.recorder.record({
       symnavVersion: dependencies.symnavVersion,
       command: command.name,
       timestamp: input.timestamp,
       durationMs,
-      outcome: input.outcome,
-      ...(input.errorReason === undefined ? {} : { errorReason: input.errorReason }),
-      argShape: argShapeFor(command.describeArgs(input.args), input.json),
-      ...(input.outcome === "success" ? { resultCounts: command.countResults(input.result!) } : {}),
+      argShape,
       workspaceId: identity.workspaceId,
       machineId: identity.machineId,
+      ...input.outcomeReport,
     });
   } catch {
     return;

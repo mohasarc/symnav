@@ -5,7 +5,12 @@ import { fileURLToPath } from "node:url";
 import { Command as CommanderCommand } from "commander";
 import { NodeFileSystem } from "@symnav/core";
 import { TypeScriptBackend } from "@symnav/backend-typescript";
-import { NodeTelemetryWritePort, NodeUsageRecorder, resolveStateDir } from "@symnav/telemetry";
+import {
+  NodeTelemetryWritePort,
+  NodeUsageRecorder,
+  resolveStateDir,
+  usageLogPath,
+} from "@symnav/telemetry";
 import type { Clock } from "@symnav/telemetry";
 import { registerDefCommand } from "./commands/def/register-def-command.js";
 import { registerOverviewCommand } from "./commands/overview/register-overview-command.js";
@@ -42,11 +47,9 @@ function defaultDependencies(): ProgramDependencies {
   return {
     fs,
     backends: () => [new TypeScriptBackend(fs)],
-    recorder: new NodeUsageRecorder(
-      new NodeTelemetryWritePort(),
-      { next: () => randomUUID() },
-      stateDir,
-    ),
+    recorder: new NodeUsageRecorder(new NodeTelemetryWritePort(usageLogPath(stateDir)), {
+      next: () => randomUUID(),
+    }),
     clock,
     telemetryEnabled: isTelemetryEnabled(process.env),
     identity: new NodeTelemetryIdentityProvider(stateDir, new NodeGitRemoteReader()),

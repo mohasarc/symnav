@@ -1,3 +1,6 @@
+const disabledValues = new Set(["0", "false", "off", "no"]);
+
 export function isTelemetryEnabled(env: NodeJS.ProcessEnv): boolean {
-  return env.SYMNAV_TELEMETRY !== "0";
+  const value = env.SYMNAV_TELEMETRY;
+  return value === undefined || !disabledValues.has(value.trim().toLowerCase());
 }

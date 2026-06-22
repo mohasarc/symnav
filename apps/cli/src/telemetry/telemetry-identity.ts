@@ -56,7 +56,7 @@ export class NodeTelemetryIdentityProvider implements TelemetryIdentityProvider 
     const machineIdPath = join(this.stateDir, "machine-id");
 
     if (existsSync(machineIdPath)) {
-      return readFileSync(machineIdPath, "utf8");
+      return readFileSync(machineIdPath, "utf8").trim();
     }
 
     const machineId = randomUUID();

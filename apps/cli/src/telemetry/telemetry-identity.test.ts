@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { existsSync, mkdtempSync, readFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -34,6 +34,19 @@ describe("NodeTelemetryIdentityProvider", () => {
     expect(firstIdentity.machineId).toMatch(uuidPattern);
     expect(persistedMachineId).toBe(firstIdentity.machineId);
     expect(secondIdentity.machineId).toBe(firstIdentity.machineId);
+  });
+
+  it("trims a persisted machine id that carries a trailing newline", () => {
+    const stateDir = createStateDir();
+    writeFileSync(join(stateDir, "machine-id"), "11111111-1111-4111-8111-111111111111\n", "utf8");
+    const provider = new NodeTelemetryIdentityProvider(
+      stateDir,
+      new FakeGitRemoteReader("git@github.com:o/r.git"),
+    );
+
+    const identity = provider.resolve({ cwd: "/work/repo", workspaceRoot: "/work/repo" });
+
+    expect(identity.machineId).toBe("11111111-1111-4111-8111-111111111111");
   });
 
   it("hashes the git remote for workspace id", () => {

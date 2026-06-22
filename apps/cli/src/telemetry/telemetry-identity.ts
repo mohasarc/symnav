@@ -37,8 +37,13 @@ export class NodeGitRemoteReader implements GitRemoteReader {
   }
 }
 
+export interface TelemetryIdentityInput {
+  readonly cwd: string;
+  readonly workspaceRoot: string | undefined;
+}
+
 export interface TelemetryIdentityProvider {
-  resolve(input: { cwd: string; workspaceRoot: string | undefined }): TelemetryIdentity;
+  resolve(input: TelemetryIdentityInput): TelemetryIdentity;
 }
 
 export class NodeTelemetryIdentityProvider implements TelemetryIdentityProvider {
@@ -48,14 +53,14 @@ export class NodeTelemetryIdentityProvider implements TelemetryIdentityProvider 
     private readonly anomalySink: IdentityAnomalySink = noopAnomalySink,
   ) {}
 
-  public resolve(input: { cwd: string; workspaceRoot: string | undefined }): TelemetryIdentity {
+  public resolve(input: TelemetryIdentityInput): TelemetryIdentity {
     return {
       workspaceId: this.workspaceIdFor(input),
       machineId: this.readMachineId(),
     };
   }
 
-  private workspaceIdFor(input: { cwd: string; workspaceRoot: string | undefined }): string {
+  private workspaceIdFor(input: TelemetryIdentityInput): string {
     const workspaceSource =
       input.workspaceRoot === undefined
         ? input.cwd

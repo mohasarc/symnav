@@ -36,45 +36,45 @@ export async function runCommand<Result, Args>(
   const fs = dependencies.fs;
   const telemetryStartedAt = dependencies.telemetryEnabled ? dependencies.clock.now() : undefined;
   let workspace: Workspace | undefined;
-  let result: Result | undefined;
-  let error: unknown;
-  let failed = false;
-  let outcomeReport: OutcomeReport = { outcome: "success" };
 
   try {
     workspace = await createWorkspace({ startDir: cwd, fs });
     const router = new BackendRouter(dependencies.backends());
-    result = await command.compute({ workspace, router, cwd, args });
+    const result = await command.compute({ workspace, router, cwd, args });
+    const rendered = json ? command.renderJson(result) : command.renderText(result);
+    context.stdout.write(rendered);
+
+    if (dependencies.telemetryEnabled) {
+      recordTelemetry(command, dependencies, {
+        cwd,
+        workspaceRoot: workspace.root,
+        timestamp: telemetryStartedAt!,
+        outcomeReport: { outcome: "success" },
+        result,
+        args,
+        json,
+      });
+    }
   } catch (err) {
-    failed = true;
-    error = err;
-    outcomeReport =
+    const outcomeReport: OutcomeReport =
       err instanceof UserFacingError
         ? { outcome: "user_error", errorReason: err.constructor.name }
         : { outcome: "crash", errorReason: "crash" };
-  }
 
-  if (dependencies.telemetryEnabled) {
-    recordTelemetry(command, dependencies, {
-      cwd,
-      workspaceRoot: workspace?.root,
-      timestamp: telemetryStartedAt!,
-      outcomeReport,
-      result: failed ? undefined : result,
-      args,
-      json,
-    });
-  }
+    if (dependencies.telemetryEnabled) {
+      recordTelemetry(command, dependencies, {
+        cwd,
+        workspaceRoot: workspace?.root,
+        timestamp: telemetryStartedAt!,
+        outcomeReport,
+        result: undefined,
+        args,
+        json,
+      });
+    }
 
-  if (failed) {
-    handleError(context, error);
-    return;
+    handleError(context, err);
   }
-
-  const rendered = json
-    ? command.renderJson(result as Result)
-    : command.renderText(result as Result);
-  context.stdout.write(rendered);
 }
 
 function recordTelemetry<Result, Args>(

@@ -21,6 +21,8 @@ class StubCommand implements Command<string, StubArgs> {
   constructor(
     private readonly options: {
       compute?: (ctx: CommandContext<StubArgs>) => Promise<string>;
+      renderText?: (result: string) => string;
+      renderJson?: (result: string) => string;
     } = {},
   ) {}
 
@@ -40,10 +42,16 @@ class StubCommand implements Command<string, StubArgs> {
   }
 
   renderText(result: string): string {
+    if (this.options.renderText) {
+      return this.options.renderText(result);
+    }
     return `text:${result}`;
   }
 
   renderJson(result: string): string {
+    if (this.options.renderJson) {
+      return this.options.renderJson(result);
+    }
     return `json:${result}`;
   }
 }
@@ -309,6 +317,71 @@ describe("runCommand lifecycle", () => {
 
     expect(context.stdout.text()).toBe("");
     expect(context.stderr.text()).toBe("internal boom\n");
+    expect(context.exitCodes).toEqual([2]);
+    expect(recorder.events).toEqual([
+      expect.objectContaining({
+        command: "stub",
+        outcome: "crash",
+        errorReason: "crash",
+      }),
+    ]);
+    expect(recorder.events[0]).not.toHaveProperty("resultCounts");
+  });
+
+  it("records one crash event when rendering throws", async () => {
+    const context = createFakeProgramContext({ cwd: "/repo" });
+    const recorder = createCapturingRecorder();
+
+    await runCommand(
+      new StubCommand({
+        renderText: () => {
+          throw new Error("render boom");
+        },
+      }),
+      {
+        context,
+        dependencies: fakeDependencies({
+          recorder,
+          telemetryEnabled: true,
+        }),
+        cwdOverride: undefined,
+        json: false,
+        args: stubArgs("hi"),
+      },
+    );
+
+    expect(context.stdout.text()).toBe("");
+    expect(context.stderr.text()).toBe("render boom\n");
+    expect(context.exitCodes).toEqual([2]);
+    expect(recorder.events).toEqual([
+      expect.objectContaining({
+        command: "stub",
+        outcome: "crash",
+        errorReason: "crash",
+      }),
+    ]);
+    expect(recorder.events[0]).not.toHaveProperty("resultCounts");
+  });
+
+  it("records one crash event when stdout write throws", async () => {
+    const context = createFakeProgramContext({ cwd: "/repo" });
+    context.stdout.write = (() => {
+      throw new Error("write boom");
+    }) as typeof context.stdout.write;
+    const recorder = createCapturingRecorder();
+
+    await runCommand(new StubCommand(), {
+      context,
+      dependencies: fakeDependencies({
+        recorder,
+        telemetryEnabled: true,
+      }),
+      cwdOverride: undefined,
+      json: false,
+      args: stubArgs("hi"),
+    });
+
+    expect(context.stderr.text()).toBe("write boom\n");
     expect(context.exitCodes).toEqual([2]);
     expect(recorder.events).toEqual([
       expect.objectContaining({

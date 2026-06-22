@@ -8,13 +8,7 @@ Symnav records local, shape-only usage telemetry by default. Each command append
 
 Telemetry does not record symbol names, file paths, query strings, source previews, or command output. `machineId` is stored in `~/.symnav/machine-id`; `workspaceId` is derived from the git remote URL when available, with a workspace-path fallback.
 
-Disable telemetry with:
-
-```sh
-SYMNAV_TELEMETRY=0
-```
-
-The values `false`, `off`, and `no` also disable telemetry.
+Set `SYMNAV_TELEMETRY` to `0`, `false`, `off`, or `no` (case-insensitive) to disable telemetry. When disabled, `symnav` does not create the telemetry directory and does not write `usage.jsonl`.
 
 ## Development
 

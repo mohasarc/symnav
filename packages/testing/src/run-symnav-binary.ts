@@ -21,6 +21,7 @@ export interface RunSymnavBinaryResult {
 
 export interface RunSymnavBinaryOptions {
   cwd: string;
+  env?: NodeJS.ProcessEnv;
 }
 
 export function runSymnavBinary(
@@ -30,6 +31,7 @@ export function runSymnavBinary(
   const result = spawnSync(process.execPath, [cliBinPath, ...args], {
     cwd: opts.cwd,
     encoding: "utf8",
+    env: { ...process.env, SYMNAV_TELEMETRY: "0", ...opts.env },
   });
   return { status: result.status, stdout: result.stdout, stderr: result.stderr };
 }

@@ -3,13 +3,26 @@ import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { NodeTelemetryIdentityProvider, type GitRemoteReader } from "./telemetry-identity.js";
+import {
+  NodeTelemetryIdentityProvider,
+  type GitRemoteReader,
+  type IdentityAnomaly,
+  type IdentityAnomalySink,
+} from "./telemetry-identity.js";
 
 class FakeGitRemoteReader implements GitRemoteReader {
   public constructor(private readonly remote: string | undefined) {}
 
   public read(_workspaceRoot: string): string | undefined {
     return this.remote;
+  }
+}
+
+class RecordingAnomalySink implements IdentityAnomalySink {
+  public readonly anomalies: IdentityAnomaly[] = [];
+
+  public record(anomaly: IdentityAnomaly): void {
+    this.anomalies.push(anomaly);
   }
 }
 
@@ -47,6 +60,37 @@ describe("NodeTelemetryIdentityProvider", () => {
     const identity = provider.resolve({ cwd: "/work/repo", workspaceRoot: "/work/repo" });
 
     expect(identity.machineId).toBe("11111111-1111-4111-8111-111111111111");
+  });
+
+  it("records an anomaly when the persisted machine id exceeds the max length", () => {
+    const stateDir = createStateDir();
+    const overLength = "x".repeat(40);
+    writeFileSync(join(stateDir, "machine-id"), `${overLength}\n`, "utf8");
+    const sink = new RecordingAnomalySink();
+    const provider = new NodeTelemetryIdentityProvider(
+      stateDir,
+      new FakeGitRemoteReader("git@github.com:o/r.git"),
+      sink,
+    );
+
+    const identity = provider.resolve({ cwd: "/work/repo", workspaceRoot: "/work/repo" });
+
+    expect(identity.machineId).toBe(overLength);
+    expect(sink.anomalies).toEqual([{ kind: "machine_id_over_max_length", length: 40 }]);
+  });
+
+  it("records no anomaly for a machine id within the max length", () => {
+    const stateDir = createStateDir();
+    const sink = new RecordingAnomalySink();
+    const provider = new NodeTelemetryIdentityProvider(
+      stateDir,
+      new FakeGitRemoteReader("git@github.com:o/r.git"),
+      sink,
+    );
+
+    provider.resolve({ cwd: "/work/repo", workspaceRoot: "/work/repo" });
+
+    expect(sink.anomalies).toEqual([]);
   });
 
   it("hashes the git remote for workspace id", () => {

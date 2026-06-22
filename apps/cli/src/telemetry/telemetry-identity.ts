@@ -8,6 +8,17 @@ export interface TelemetryIdentity {
   readonly machineId: string;
 }
 
+export const MAX_MACHINE_ID_LENGTH = 36;
+
+export interface IdentityAnomaly {
+  readonly kind: "machine_id_over_max_length";
+  readonly length: number;
+}
+
+export interface IdentityAnomalySink {
+  record(anomaly: IdentityAnomaly): void;
+}
+
 export interface GitRemoteReader {
   read(workspaceRoot: string): string | undefined;
 }
@@ -34,6 +45,7 @@ export class NodeTelemetryIdentityProvider implements TelemetryIdentityProvider 
   public constructor(
     private readonly stateDir: string,
     private readonly gitRemoteReader: GitRemoteReader,
+    private readonly anomalySink: IdentityAnomalySink = noopAnomalySink,
   ) {}
 
   public resolve(input: { cwd: string; workspaceRoot: string | undefined }): TelemetryIdentity {
@@ -56,7 +68,11 @@ export class NodeTelemetryIdentityProvider implements TelemetryIdentityProvider 
     const machineIdPath = join(this.stateDir, "machine-id");
 
     if (existsSync(machineIdPath)) {
-      return readFileSync(machineIdPath, "utf8").trim();
+      const machineId = readFileSync(machineIdPath, "utf8").trim();
+      if (machineId.length > MAX_MACHINE_ID_LENGTH) {
+        this.anomalySink.record({ kind: "machine_id_over_max_length", length: machineId.length });
+      }
+      return machineId;
     }
 
     const machineId = randomUUID();
@@ -65,6 +81,8 @@ export class NodeTelemetryIdentityProvider implements TelemetryIdentityProvider 
     return machineId;
   }
 }
+
+const noopAnomalySink: IdentityAnomalySink = { record: () => undefined };
 
 function stableHash(value: string): string {
   return createHash("sha256").update(value).digest("hex").slice(0, 16);

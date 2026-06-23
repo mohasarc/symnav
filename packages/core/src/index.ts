@@ -27,6 +27,7 @@ export type {
 } from "./intermediate-representation/call-edge.js";
 export type { BuildRefsResultArgs } from "./intermediate-representation/refs-result-builder.js";
 export { RefsResultBuilder } from "./intermediate-representation/refs-result-builder.js";
+export { countReferenceKinds } from "./intermediate-representation/reference-kinds.js";
 export type { PageRequest, Page } from "./pagination/paginator.js";
 export { DEFAULT_PAGE_SIZE, Paginator } from "./pagination/paginator.js";
 export { InvalidPageRequestError, PageOutOfRangeError } from "./pagination/errors.js";

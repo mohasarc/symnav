@@ -1,4 +1,5 @@
 import { InMemoryFileSystem } from "@symnav/core";
+import type { GitHistory, HistoryEntry } from "@symnav/core";
 import type { Clock, Recorder, UsageEventInput } from "@symnav/telemetry";
 import type { ProgramDependencies } from "../../../../src/program-dependencies.js";
 import type {
@@ -16,6 +17,7 @@ export function fakeDependencies(
   return {
     fs: overrides.fs ?? repoFs(),
     backends: overrides.backends ?? (() => [new FakeLanguageBackend()]),
+    git: overrides.git ?? createFakeGitHistory(),
     recorder: overrides.recorder ?? { record: () => {} },
     clock: overrides.clock ?? createScriptedClock([1_000, 1_025]),
     telemetryEnabled: overrides.telemetryEnabled ?? false,
@@ -33,6 +35,12 @@ export function createCapturingRecorder(): Recorder & {
     record: (event) => {
       events.push(event);
     },
+  };
+}
+
+export function createFakeGitHistory(entries: readonly HistoryEntry[] = []): GitHistory {
+  return {
+    recentHistory: () => Promise.resolve(entries),
   };
 }
 

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import type { ContextResult, ReferenceKind } from "@symnav/core";
+import type { ContextResult, ReferenceKind, SymbolDecl } from "@symnav/core";
 
 import { renderContextJson } from "./render-context-json.js";
 
@@ -10,12 +10,12 @@ function emptyKindCounts(): Record<ReferenceKind, number> {
 
 describe("renderContextJson", () => {
   it("serializes the result verbatim with a trailing newline", () => {
-    const target = {
+    const target: SymbolDecl = {
       identity: {
         file: "src/checkout/CheckoutService.ts",
         segments: [{ name: "CheckoutService" }, { name: "processPayment" }],
       },
-      kind: { role: "callable" as const, nativeLabel: "method-implementation" },
+      kind: { role: "callable", nativeLabel: "method-implementation" },
       range: { startLine: 42, endLine: 78 },
       signature: { startLine: 42, lines: ["async processPayment(order: Order): Promise<Receipt>"] },
       children: [],

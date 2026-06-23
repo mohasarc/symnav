@@ -19,6 +19,7 @@ export type {
 } from "./intermediate-representation/references.js";
 export type { SourceMatch } from "./intermediate-representation/source-match.js";
 export type { CallTargetResolution } from "./intermediate-representation/call-target.js";
+export type { HistoryEntry, RecentHistoryQuery, GitHistory } from "./git/git-history.js";
 export type {
   EdgeConfidence,
   CallSite,

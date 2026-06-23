@@ -51,4 +51,8 @@ export class FakeLanguageBackend implements LanguageBackend {
   async findCallees(): Promise<readonly CallEdge[]> {
     return [];
   }
+
+  async findCallers(): Promise<readonly CallEdge[]> {
+    return [];
+  }
 }

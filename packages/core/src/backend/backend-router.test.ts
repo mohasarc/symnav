@@ -31,6 +31,9 @@ function fakeBackend(
     findCallees() {
       return Promise.resolve([]);
     },
+    findCallers() {
+      return Promise.resolve([]);
+    },
   };
 }
 

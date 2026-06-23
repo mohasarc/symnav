@@ -33,4 +33,8 @@ export interface LanguageBackend {
     files: readonly ResolvedPath[],
     identity: SymbolIdentity,
   ): Promise<readonly CallEdge[]>;
+  findCallers(
+    files: readonly ResolvedPath[],
+    identity: SymbolIdentity,
+  ): Promise<readonly CallEdge[]>;
 }

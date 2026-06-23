@@ -54,5 +54,9 @@ export { InMemoryFileSystem } from "./workspace/in-memory/in-memory-file-system.
 export type { LanguageBackend, ResolveSymbolsOptions } from "./backend/language-backend.js";
 export { BackendRouter } from "./backend/backend-router.js";
 export { UserFacingError } from "./errors.js";
-export { SymbolNotFoundError, UnsupportedFileError } from "./backend/errors.js";
+export {
+  AmbiguousSymbolError,
+  SymbolNotFoundError,
+  UnsupportedFileError,
+} from "./backend/errors.js";
 export { FileNotFoundError, OutsideWorkspaceError } from "./workspace/errors.js";

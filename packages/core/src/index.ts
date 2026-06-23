@@ -34,6 +34,8 @@ export type {
   ContextResult,
 } from "./intermediate-representation/context-result.js";
 export { DEFAULT_CONTEXT_CAP } from "./intermediate-representation/context-result.js";
+export type { BuildContextResultArgs } from "./intermediate-representation/context-result-builder.js";
+export { ContextResultBuilder } from "./intermediate-representation/context-result-builder.js";
 export type { PageRequest, Page } from "./pagination/paginator.js";
 export { DEFAULT_PAGE_SIZE, Paginator } from "./pagination/paginator.js";
 export { InvalidPageRequestError, PageOutOfRangeError } from "./pagination/errors.js";

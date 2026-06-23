@@ -1,3 +1,4 @@
+import type { CallTargetResolution } from "../intermediate-representation/call-target.js";
 import type { SymbolReference } from "../intermediate-representation/references.js";
 import type { SymbolIdentity } from "../intermediate-representation/symbol-identity.js";
 import type { OverviewFileSymbols, SymbolDecl } from "../intermediate-representation/types.js";
@@ -23,4 +24,8 @@ export interface LanguageBackend {
     files: readonly ResolvedPath[],
     identity: SymbolIdentity,
   ): Promise<readonly SymbolReference[]>;
+  findCallTarget(
+    files: readonly ResolvedPath[],
+    identity: SymbolIdentity,
+  ): Promise<CallTargetResolution>;
 }

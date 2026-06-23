@@ -1,4 +1,5 @@
 import type {
+  CallTargetResolution,
   LanguageBackend,
   OverviewFileSymbols,
   SymbolReference,
@@ -40,5 +41,9 @@ export class FakeLanguageBackend implements LanguageBackend {
 
   async findReferences(): Promise<readonly SymbolReference[]> {
     return [];
+  }
+
+  async findCallTarget(): Promise<CallTargetResolution> {
+    return { outcome: "not-found" };
   }
 }

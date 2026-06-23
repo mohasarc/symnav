@@ -6,9 +6,12 @@ import { TypeScriptBackend } from "../../src/typescript-backend/typescript-backe
 
 const CALL_GRAPH_CASES: Record<string, string> = {
   "/repo/.git/HEAD": "ref: refs/heads/main\n",
-  "/repo/src/plain.ts": ["export function greet(name: string): string {", "  return `hi ${name}`;", "}", ""].join(
-    "\n",
-  ),
+  "/repo/src/plain.ts": [
+    "export function greet(name: string): string {",
+    "  return `hi ${name}`;",
+    "}",
+    "",
+  ].join("\n"),
   "/repo/src/overloaded.ts": [
     "export class Formatter {",
     "  format(value: string): string;",
@@ -19,7 +22,9 @@ const CALL_GRAPH_CASES: Record<string, string> = {
     "}",
     "",
   ].join("\n"),
-  "/repo/src/contract/Shape.ts": ["export interface Shape {", "  area(): number;", "}", ""].join("\n"),
+  "/repo/src/contract/Shape.ts": ["export interface Shape {", "  area(): number;", "}", ""].join(
+    "\n",
+  ),
   "/repo/src/contract/Drawable.ts": [
     "export interface Drawable {",
     "  render(): string;",

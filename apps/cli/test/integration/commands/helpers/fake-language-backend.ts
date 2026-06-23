@@ -1,4 +1,5 @@
 import type {
+  CallEdge,
   CallTargetResolution,
   LanguageBackend,
   OverviewFileSymbols,
@@ -45,5 +46,9 @@ export class FakeLanguageBackend implements LanguageBackend {
 
   async findCallTarget(): Promise<CallTargetResolution> {
     return { outcome: "not-found" };
+  }
+
+  async findCallees(): Promise<readonly CallEdge[]> {
+    return [];
   }
 }

@@ -28,6 +28,9 @@ function fakeBackend(
     findCallTarget() {
       return Promise.resolve({ outcome: "not-found" });
     },
+    findCallees() {
+      return Promise.resolve([]);
+    },
   };
 }
 

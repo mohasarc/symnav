@@ -12,6 +12,7 @@ import {
   usageLogPath,
 } from "@symnav/telemetry";
 import type { Clock } from "@symnav/telemetry";
+import { registerContextCommand } from "./commands/context/register-context-command.js";
 import { registerDefCommand } from "./commands/def/register-def-command.js";
 import { NodeGitHistory } from "./git/node-git-history.js";
 import { registerOverviewCommand } from "./commands/overview/register-overview-command.js";
@@ -90,6 +91,7 @@ export function buildProgram(
   registerResolveCommand(program, ctx, deps);
   registerDefCommand(program, ctx, deps);
   registerRefsCommand(program, ctx, deps);
+  registerContextCommand(program, ctx, deps);
   registerStatsCommand(program, ctx, deps);
   return program;
 }

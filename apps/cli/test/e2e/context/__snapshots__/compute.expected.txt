@@ -1,0 +1,40 @@
+Context: compute
+File: src/math/calculator.ts
+Lines: 3-7
+
+Definition
+src/math/calculator.ts
+└── 3-7: compute  [implementation]
+    export function compute(a: number, b: number): number
+
+Callers
+src/app/runner.ts
+├── 3-5: runOnce  [call]
+│     return compute(1, 2);
+└── 7-11: runTwice  [call ×2]
+      const first = compute(3, 4);
+
+Callees
+src/math/operations.ts
+├── 1-3: add  [call]
+│   export function add(a: number, b: number): number
+└── 5-7: multiply  [call]
+    export function multiply(a: number, b: number): number
+
+References
+Total: 4
+Kinds: usage 3, import 1
+Run: symnav refs src/math/calculator.ts::compute
+
+Recent History
+1. 7828a8b 2023-04-25 Calc Bot
+   name the scaled value
+
+2. fa9d0a6 2023-03-20 Calc Bot
+   double the scale
+
+3. 1f56880 2023-02-15 Calc Bot
+   scale the sum
+
+4. de56fa9 2023-01-10 Calc Bot
+   add compute over add

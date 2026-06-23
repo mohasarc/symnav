@@ -18,6 +18,11 @@ export type {
   RefsResult,
 } from "./intermediate-representation/references.js";
 export type { CallTargetResolution } from "./intermediate-representation/call-target.js";
+export type {
+  EdgeConfidence,
+  CallSite,
+  CallEdge,
+} from "./intermediate-representation/call-edge.js";
 export type { BuildRefsResultArgs } from "./intermediate-representation/refs-result-builder.js";
 export { RefsResultBuilder } from "./intermediate-representation/refs-result-builder.js";
 export type { PageRequest, Page } from "./pagination/paginator.js";

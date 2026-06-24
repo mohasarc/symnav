@@ -1,6 +1,5 @@
 import {
   Node,
-  Project,
   type CallExpression,
   type ClassDeclaration,
   type NewExpression,
@@ -16,9 +15,8 @@ import type {
   SymbolIdentity,
 } from "@symnav/core";
 
-import { extractFileSymbols } from "../extract/extract-file-symbols.js";
 import { DeclarationLocator } from "../identity/locate-declarations.js";
-import { WorkspaceFileSystemHost } from "../typescript-backend/workspace-file-system-host.js";
+import { WorkspaceDeclarationIndex } from "../identity/workspace-declaration-index.js";
 
 const DYNAMIC_DISPATCH_REASON = "dynamic dispatch: exact callee not statically resolvable";
 
@@ -39,56 +37,22 @@ interface ResolvedCallee {
 }
 
 class CalleeFinder {
-  private readonly project: Project;
-  private readonly fileByRelativePath = new Map<string, ResolvedPath>();
-  private readonly relativePathByAbsolute = new Map<string, string>();
-  private readonly declarationsByLocation = new Map<string, Map<number, SymbolDecl>>();
+  private readonly index: WorkspaceDeclarationIndex;
 
   constructor(private readonly args: FindCalleesArgs) {
-    this.project = new Project({ fileSystem: new WorkspaceFileSystemHost(args.fs) });
+    this.index = new WorkspaceDeclarationIndex(args);
   }
 
   find(): readonly CallEdge[] {
-    this.loadWorkspaceFiles();
-    this.indexDeclarationsByLocation();
     const bodyNode = this.targetBodyNode();
     if (!bodyNode) return [];
     return this.edgesFrom(bodyNode);
   }
 
-  private loadWorkspaceFiles(): void {
-    for (const path of this.args.files) {
-      this.project.addSourceFileAtPath(path.absolute);
-      this.fileByRelativePath.set(path.relative, path);
-      this.relativePathByAbsolute.set(path.absolute, path.relative);
-    }
-  }
-
-  private indexDeclarationsByLocation(): void {
-    for (const [relative, path] of this.fileByRelativePath) {
-      const sourceFile = this.project.getSourceFile(path.absolute);
-      if (!sourceFile) continue;
-      const byLine = new Map<number, SymbolDecl>();
-      const { symbols } = extractFileSymbols({ sourceFile, filePath: relative });
-      for (const declaration of withNestedDeclarations(symbols)) {
-        byLine.set(declaration.range.startLine, declaration);
-      }
-      this.declarationsByLocation.set(relative, byLine);
-    }
-  }
-
   private targetBodyNode(): Node | undefined {
-    const targetSource = this.targetSourceFile();
-    if (!targetSource) return undefined;
-    const matches = new DeclarationLocator(targetSource).locate(this.args.identity);
+    const matches = this.index.locate(this.args.identity);
     const withBody = matches.find((match) => carriesBody(match.node));
     return (withBody ?? matches[0])?.node;
-  }
-
-  private targetSourceFile(): SourceFile | undefined {
-    const targetPath = this.fileByRelativePath.get(this.args.identity.file);
-    if (!targetPath) return undefined;
-    return this.project.getSourceFile(targetPath.absolute);
   }
 
   private edgesFrom(bodyNode: Node): readonly CallEdge[] {
@@ -165,14 +129,12 @@ class CalleeFinder {
   }
 
   private workspaceSymbolFor(node: Node): SymbolDecl | undefined {
-    const relative = this.relativePathByAbsolute.get(node.getSourceFile().getFilePath());
-    if (!relative) return undefined;
-    return this.declarationsByLocation.get(relative)?.get(node.getStartLineNumber());
+    return this.index.declarationAt(node);
   }
 
   private siteFor(node: Node): CallSite {
     const sourceFile = node.getSourceFile();
-    const relative = this.relativePathByAbsolute.get(sourceFile.getFilePath()) ?? "";
+    const relative = this.index.relativePathOf(sourceFile) ?? "";
     const { line, character } = sourceFile.compilerNode.getLineAndCharacterOfPosition(
       node.getStart(),
     );
@@ -239,14 +201,6 @@ function definitionNodesOf(node: Node): readonly Node[] {
 
 function carriesBody(node: Node): boolean {
   return Node.isBodyable(node) && node.hasBody();
-}
-
-function withNestedDeclarations(symbols: readonly SymbolDecl[]): readonly SymbolDecl[] {
-  const queue = [...symbols];
-  for (let i = 0; i < queue.length; i++) {
-    queue.push(...queue[i]!.children);
-  }
-  return queue;
 }
 
 function lineText(sourceFile: SourceFile, zeroBasedLine: number): string {

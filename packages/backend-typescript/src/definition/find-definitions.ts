@@ -1,6 +1,5 @@
 import {
   Node,
-  Project,
   type ClassDeclaration,
   type InterfaceDeclaration,
   type MethodDeclaration,
@@ -10,9 +9,8 @@ import {
 } from "ts-morph";
 import type { FileSystem, ResolvedPath, SymbolDecl, SymbolIdentity } from "@symnav/core";
 
-import { extractFileSymbols } from "../extract/extract-file-symbols.js";
 import { DeclarationLocator, type LocatedDeclaration } from "../identity/locate-declarations.js";
-import { WorkspaceFileSystemHost } from "../typescript-backend/workspace-file-system-host.js";
+import { WorkspaceDeclarationIndex } from "../identity/workspace-declaration-index.js";
 
 export interface FindDefinitionsArgs {
   readonly fs: FileSystem;
@@ -24,54 +22,16 @@ export async function findDefinitions(args: FindDefinitionsArgs): Promise<readon
   return new DefinitionFinder(args).find();
 }
 
-interface IndexedDeclaration {
-  readonly declaration: SymbolDecl;
-  readonly file: ResolvedPath;
-}
-
 class DefinitionFinder {
-  private readonly project: Project;
-  private readonly fileByRelativePath = new Map<string, ResolvedPath>();
-  private readonly declarationsByIdentity = new Map<string, IndexedDeclaration>();
+  private readonly index: WorkspaceDeclarationIndex;
 
   constructor(private readonly args: FindDefinitionsArgs) {
-    this.project = new Project({ fileSystem: new WorkspaceFileSystemHost(args.fs) });
+    this.index = new WorkspaceDeclarationIndex(args);
   }
 
   async find(): Promise<readonly SymbolDecl[]> {
-    this.loadWorkspaceFiles();
-    this.indexAllDeclarations();
-    const targetSource = this.targetSourceFile();
-    if (!targetSource) return [];
-    const matches = new DeclarationLocator(targetSource).locate(this.args.identity);
+    const matches = this.index.locate(this.args.identity);
     return this.withContractImplementations(matches);
-  }
-
-  private loadWorkspaceFiles(): void {
-    for (const path of this.args.files) {
-      this.project.addSourceFileAtPath(path.absolute);
-      this.fileByRelativePath.set(path.relative, path);
-    }
-  }
-
-  private indexAllDeclarations(): void {
-    for (const [relative, path] of this.fileByRelativePath) {
-      const sourceFile = this.project.getSourceFile(path.absolute);
-      if (!sourceFile) continue;
-      const { symbols } = extractFileSymbols({ sourceFile, filePath: relative });
-      for (const declaration of withNestedDeclarations(symbols)) {
-        this.declarationsByIdentity.set(DeclarationLocator.identityKey(declaration.identity), {
-          declaration,
-          file: path,
-        });
-      }
-    }
-  }
-
-  private targetSourceFile(): SourceFile | undefined {
-    const targetPath = this.fileByRelativePath.get(this.args.identity.file);
-    if (!targetPath) return undefined;
-    return this.project.getSourceFile(targetPath.absolute);
   }
 
   private withContractImplementations(matches: readonly LocatedDeclaration[]): SymbolDecl[] {
@@ -109,26 +69,12 @@ class DefinitionFinder {
     const segments = [...enclosingTypeNames(methodNode), methodNode.getName()].map((name) => ({
       name,
     }));
-    return this.declarationsByIdentity.get(
-      DeclarationLocator.identityKey({ file: filePath, segments }),
-    )?.declaration;
+    return this.index.declarationForIdentity({ file: filePath, segments })?.declaration;
   }
 
   private workspaceRelativePathOf(sourceFile: SourceFile): string | undefined {
-    const absolute = sourceFile.getFilePath();
-    for (const file of this.fileByRelativePath.values()) {
-      if (file.absolute === absolute) return file.relative;
-    }
-    return undefined;
+    return this.index.relativePathOf(sourceFile);
   }
-}
-
-function withNestedDeclarations(symbols: readonly SymbolDecl[]): readonly SymbolDecl[] {
-  const queue = [...symbols];
-  for (let i = 0; i < queue.length; i++) {
-    queue.push(...queue[i]!.children);
-  }
-  return queue;
 }
 
 function addUniqueDeclaration(out: SymbolDecl[], seen: Set<string>, declaration: SymbolDecl): void {

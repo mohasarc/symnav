@@ -59,6 +59,22 @@ const CALL_GRAPH_CASES: Record<string, string> = {
     '  console.log("hi");',
     "}",
     "",
+    "export function callsThroughControlFlow(flag: boolean, items: string[]): void {",
+    "  if (flag) {",
+    "    helperA();",
+    "  } else {",
+    "    for (const item of items) {",
+    "      if (item) {",
+    "        helperB();",
+    "      }",
+    "    }",
+    "  }",
+    "  while (flag) {",
+    "    helperA();",
+    "    break;",
+    "  }",
+    "}",
+    "",
     "export function recurses(n: number): number {",
     "  if (n <= 0) return 0;",
     "  return recurses(n - 1);",
@@ -125,6 +141,12 @@ describe("TypeScriptBackend.findCallees", () => {
   it("drops calls to symbols outside the workspace", async () => {
     const edges = await calleesOf("callsExternal");
     expect(edges).toEqual([]);
+  });
+
+  it("discovers calls nested inside control-flow blocks", async () => {
+    const edges = await calleesOf("callsThroughControlFlow");
+    expect(edges.map(segmentNames)).toEqual([["helperA"], ["helperB"]]);
+    expect(edges.map((edge) => edge.sites.map((site) => site.line))).toEqual([[28, 37], [32]]);
   });
 
   it("tags element-access dispatch as a possible edge with a reason", async () => {

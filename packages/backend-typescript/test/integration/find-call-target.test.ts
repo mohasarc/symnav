@@ -51,11 +51,28 @@ const CALL_GRAPH_CASES: Record<string, string> = {
     "}",
     "",
   ].join("\n"),
+  "/repo/src/contract/Service.ts": ["export interface Service {", "  run(): void;", "}", ""].join(
+    "\n",
+  ),
+  "/repo/src/contract/ConcreteService.ts": [
+    'import type { Service } from "./Service.js";',
+    "",
+    "function helper(): void {}",
+    "",
+    "export class ConcreteService implements Service {",
+    "  run(): void {",
+    "    helper();",
+    "  }",
+    "}",
+    "",
+  ].join("\n"),
 };
 
 const ALL_FILES: readonly ResolvedPath[] = [
   "src/contract/Circle.ts",
+  "src/contract/ConcreteService.ts",
   "src/contract/Drawable.ts",
+  "src/contract/Service.ts",
   "src/contract/Shape.ts",
   "src/contract/Square.ts",
   "src/overloaded.ts",
@@ -117,6 +134,21 @@ describe("TypeScriptBackend.findCallTarget", () => {
     if (resolution.outcome !== "resolved") return;
     expect(resolution.target.identity.file).toBe("src/contract/Drawable.ts");
     expect(leafLabel(resolution.target)).toBe("method-declaration");
+  });
+
+  it("resolves a single-implementation contract method to the concrete implementation", async () => {
+    const resolution = await backend().findCallTarget(ALL_FILES, {
+      file: "src/contract/Service.ts",
+      segments: [{ name: "Service" }, { name: "run" }],
+    });
+    expect(resolution.outcome).toBe("resolved");
+    if (resolution.outcome !== "resolved") return;
+    expect(resolution.target.identity.file).toBe("src/contract/ConcreteService.ts");
+    expect(resolution.target.identity.segments.map((s) => s.name)).toEqual([
+      "ConcreteService",
+      "run",
+    ]);
+    expect(leafLabel(resolution.target)).toBe("method-implementation");
   });
 
   it("reports an identity matching nothing as not-found", async () => {

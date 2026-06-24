@@ -1,14 +1,9 @@
 import type { SymbolDecl } from "./types.js";
+import type { SourceMatch } from "./source-match.js";
 
 export type EdgeConfidence = "certain" | "possible";
 
-export interface CallSite {
-  readonly file: string; // workspace-relative, POSIX
-  readonly line: number; // 1-based
-  readonly previewSource: string; // full source line
-  readonly matchStart: number;
-  readonly matchEnd: number;
-}
+export type CallSite = SourceMatch;
 
 export interface CallEdge {
   readonly symbol: SymbolDecl; // the callee (this phase) or caller (Phase 3)

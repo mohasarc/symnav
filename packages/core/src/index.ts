@@ -17,6 +17,7 @@ export type {
   SymbolReference,
   RefsResult,
 } from "./intermediate-representation/references.js";
+export type { SourceMatch } from "./intermediate-representation/source-match.js";
 export type { CallTargetResolution } from "./intermediate-representation/call-target.js";
 export type {
   EdgeConfidence,

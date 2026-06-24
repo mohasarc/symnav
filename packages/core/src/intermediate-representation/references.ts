@@ -1,13 +1,9 @@
 import type { SymbolIdentity } from "./symbol-identity.js";
+import type { SourceMatch } from "./source-match.js";
 
 export type ReferenceKind = "usage" | "import" | "export" | "type";
 
-export interface SymbolReference {
-  readonly file: string;
-  readonly line: number;
-  readonly previewSource: string;
-  readonly matchStart: number;
-  readonly matchEnd: number;
+export interface SymbolReference extends SourceMatch {
   readonly kind: ReferenceKind;
 }
 

@@ -102,6 +102,8 @@ class CalleeFinder {
 
   private resolveCalled(call: CallExpression): ResolvedCallee | undefined {
     const expression = call.getExpression();
+    const concreteElementAccess = this.resolveConcreteElementAccess(expression);
+    if (concreteElementAccess) return { symbol: concreteElementAccess, confidence: "certain" };
     const nameNode = calleeNameNode(expression);
     if (nameNode) {
       const symbol = this.workspaceSymbolForDefinitionsOf(nameNode);
@@ -111,12 +113,34 @@ class CalleeFinder {
     return this.resolveDynamic(call);
   }
 
+  private resolveConcreteElementAccess(expression: Node): SymbolDecl | undefined {
+    if (!Node.isElementAccessExpression(expression)) return undefined;
+    const memberName = literalMemberName(expression.getArgumentExpression());
+    if (!memberName) return undefined;
+    const target = expression.getExpression();
+    if (!Node.isIdentifier(target)) return undefined;
+    for (const declaration of definitionNodesOf(target)) {
+      if (!Node.isVariableDeclaration(declaration)) continue;
+      const initializer = declaration.getInitializer();
+      if (!initializer || !Node.isObjectLiteralExpression(initializer)) continue;
+      const property = initializer
+        .getProperties()
+        .find((candidate) => propertyName(candidate) === memberName);
+      const callee = property && propertyInitializer(property);
+      if (!callee) continue;
+      const symbol = this.workspaceSymbolForDefinitionsOf(callee);
+      if (symbol) return symbol;
+    }
+    return undefined;
+  }
+
   private resolveDynamic(call: CallExpression): ResolvedCallee | undefined {
     const type = call.getExpression().getType();
     const symbol = type.getAliasSymbol() ?? type.getSymbol();
     const declaration = symbol?.getDeclarations()[0];
     const resolved = declaration && this.workspaceSymbolFor(declaration);
     if (!resolved) return undefined;
+    if (resolved.kind.role === "type") return undefined;
     return { symbol: resolved, confidence: "possible", reason: DYNAMIC_DISPATCH_REASON };
   }
 
@@ -197,6 +221,27 @@ function definitionNodesOf(node: Node): readonly Node[] {
     return node.getDefinitionNodes();
   }
   return [];
+}
+
+function literalMemberName(node: Node | undefined): string | undefined {
+  if (!node) return undefined;
+  if (Node.isStringLiteral(node) || Node.isNoSubstitutionTemplateLiteral(node)) {
+    return node.getLiteralText();
+  }
+  return undefined;
+}
+
+function propertyName(node: Node): string | undefined {
+  if (Node.isPropertyAssignment(node) || Node.isShorthandPropertyAssignment(node)) {
+    return node.getName();
+  }
+  return undefined;
+}
+
+function propertyInitializer(node: Node): Node | undefined {
+  if (Node.isPropertyAssignment(node)) return node.getInitializer();
+  if (Node.isShorthandPropertyAssignment(node)) return node.getNameNode();
+  return undefined;
 }
 
 function carriesBody(node: Node): boolean {

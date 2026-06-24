@@ -27,9 +27,14 @@ const CALL_GRAPH_CASES: Record<string, string> = {
     "type Action = () => void;",
     "",
     "const table: Record<string, Action> = { a: helperA };",
+    "const concreteTable = { a: helperA };",
     "",
     "export function dynamicDispatch(key: string): void {",
     "  table[key]();",
+    "}",
+    "",
+    "export function concreteElementAccess(): void {",
+    '  concreteTable["a"]();',
     "}",
     "",
   ].join("\n"),
@@ -149,14 +154,21 @@ describe("TypeScriptBackend.findCallees", () => {
     expect(edges.map((edge) => edge.sites.map((site) => site.line))).toEqual([[28, 37], [32]]);
   });
 
-  it("tags element-access dispatch as a possible edge with a reason", async () => {
+  it("does not report a type alias as an element-access callee", async () => {
     const edges = await backend().findCallees(ALL_FILES, {
       file: "src/callees/dispatch.ts",
       segments: [{ name: "dynamicDispatch" }],
     });
-    expect(edges).toHaveLength(1);
-    expect(edges[0]!.confidence).toBe("possible");
-    expect(edges[0]!.reason).toBeTruthy();
+    expect(edges).toEqual([]);
+  });
+
+  it("resolves concrete element-access callees when the target member is known", async () => {
+    const edges = await backend().findCallees(ALL_FILES, {
+      file: "src/callees/dispatch.ts",
+      segments: [{ name: "concreteElementAccess" }],
+    });
+    expect(edges.map(segmentNames)).toEqual([["helperA"]]);
+    expect(edges[0]!.confidence).toBe("certain");
   });
 
   it("includes a self-edge for a recursive symbol", async () => {

@@ -69,6 +69,19 @@ const FIXTURE: Record<string, string> = {
     "}",
     "",
   ].join("\n"),
+  "/repo/src/control-flow/LocalDeclarations.ts": [
+    "export function outer(flag: boolean, items: readonly string[]): void {",
+    "  if (flag) {",
+    "    function insideIf(): void {}",
+    "    insideIf();",
+    "  }",
+    "  for (const item of items) {",
+    "    const insideLoop = item;",
+    "    void insideLoop;",
+    "  }",
+    "}",
+    "",
+  ].join("\n"),
   "/repo/src/util/constants.ts": [
     "export const MAX_RETRIES = 3;",
     "",
@@ -88,6 +101,7 @@ function fsWithFixture() {
 }
 
 const ALL_FILES = pathsFor([
+  "src/control-flow/LocalDeclarations.ts",
   "src/http/Router.ts",
   "src/payments/PaymentProvider.ts",
   "src/payments/PaypalProvider.ts",
@@ -217,5 +231,24 @@ describe("findDefinitions", () => {
       },
     });
     expect(result).toEqual([]);
+  });
+
+  it.skip("returns definitions for declarations nested inside executable control-flow blocks", async () => {
+    const result = await findDefinitions({
+      fs: fsWithFixture(),
+      files: ALL_FILES,
+      identity: {
+        file: "src/control-flow/LocalDeclarations.ts",
+        segments: [{ name: "outer" }, { name: "insideLoop" }],
+      },
+    });
+    expect(labelsAndFiles(result)).toEqual([
+      {
+        label: "variable",
+        file: "src/control-flow/LocalDeclarations.ts",
+        name: "insideLoop",
+        disambiguator: undefined,
+      },
+    ]);
   });
 });

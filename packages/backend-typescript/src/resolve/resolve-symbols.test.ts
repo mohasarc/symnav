@@ -42,6 +42,15 @@ const FIXTURE: Record<string, string> = {
     "}",
     "",
   ].join("\n"),
+  "/repo/src/control-flow/LocalDeclarations.ts": [
+    "export function outer(flag: boolean): void {",
+    "  if (flag) {",
+    "    function insideIf(): void {}",
+    "    insideIf();",
+    "  }",
+    "}",
+    "",
+  ].join("\n"),
 };
 
 function pathsFor(relativePaths: readonly string[]): readonly ResolvedPath[] {
@@ -54,6 +63,7 @@ function fsWithFixture() {
 
 const ALL_FILES = pathsFor([
   "src/checkout/CheckoutService.ts",
+  "src/control-flow/LocalDeclarations.ts",
   "src/payments/PaymentProcessor.ts",
   "src/payments/PaymentProvider.ts",
   "src/payments/types.ts",
@@ -96,6 +106,16 @@ describe("resolveSymbols (exact)", () => {
     expect(names(result).sort()).toEqual(
       ["PaymentProcessor::charge", "PaymentProvider::charge"].sort(),
     );
+  });
+
+  it.skip("finds declarations nested inside executable control-flow blocks", async () => {
+    const result = await resolveSymbols({
+      fs: fsWithFixture(),
+      files: ALL_FILES,
+      query: "insideIf",
+      options: { fuzzy: false },
+    });
+    expect(names(result)).toEqual(["outer::insideIf"]);
   });
 
   it("surfaces every occurrence of a name across files", async () => {

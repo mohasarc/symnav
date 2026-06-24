@@ -132,4 +132,60 @@ describe("TypeScriptBackend.fileSymbols", () => {
       ]),
     ).toEqual([["function-implementation", "Greeting"]]);
   });
+
+  it.skip("returns declarations nested inside executable control-flow blocks", async () => {
+    const sourceWithLocalDeclarations = [
+      "export function outer(flag: boolean): void {",
+      "  if (flag) {",
+      "    function insideIf(): void {}",
+      "    insideIf();",
+      "  }",
+      "}",
+    ].join("\n");
+    const { backend, path } = backendOver({
+      "/repo/src/control-flow.ts": sourceWithLocalDeclarations,
+    });
+    const result = await backend.fileSymbols(path("src/control-flow.ts"));
+    expect(
+      result.symbols[0]?.children.map((symbol) => symbol.identity.segments.at(-1)?.name),
+    ).toEqual(["insideIf"]);
+  });
+});
+
+describe("TypeScriptBackend.findReferences", () => {
+  it("finds references nested inside executable control-flow blocks", async () => {
+    const files: Record<string, string> = {
+      "/repo/src/lib/run.ts": "export function run(): void {}\n",
+      "/repo/src/app/run-user.ts": [
+        'import { run } from "../lib/run.js";',
+        "",
+        "export function main(items: readonly string[], enabled: boolean): void {",
+        "  if (enabled) {",
+        "    run();",
+        "  }",
+        "  for (const item of items) {",
+        "    if (item) {",
+        "      run();",
+        "    }",
+        "  }",
+        "  while (enabled) {",
+        "    run();",
+        "    break;",
+        "  }",
+        "}",
+        "",
+      ].join("\n"),
+    };
+    const { backend, path } = backendOver(files);
+    const result = await backend.findReferences(
+      [path("src/app/run-user.ts"), path("src/lib/run.ts")],
+      { file: "src/lib/run.ts", segments: [{ name: "run" }] },
+    );
+    expect(result.map((reference) => [reference.file, reference.line, reference.kind])).toEqual([
+      ["src/app/run-user.ts", 1, "import"],
+      ["src/app/run-user.ts", 5, "usage"],
+      ["src/app/run-user.ts", 9, "usage"],
+      ["src/app/run-user.ts", 13, "usage"],
+    ]);
+  });
 });

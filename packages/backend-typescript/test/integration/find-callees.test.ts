@@ -22,19 +22,45 @@ const CALL_GRAPH_CASES: Record<string, string> = {
     "",
   ].join("\n"),
   "/repo/src/callees/dispatch.ts": [
-    'import { helperA } from "./helpers.js";',
+    'import { helperA, helperB } from "./helpers.js";',
     "",
     "type Action = () => void;",
+    "interface Registry {",
+    "  [key: string]: Action;",
+    "}",
     "",
-    "const table: Record<string, Action> = { a: helperA };",
-    "const concreteTable = { a: helperA };",
+    "declare const unknownTable: Record<string, Action>;",
+    "const recordTable: Record<string, Action> = { a: helperA, b: helperB };",
+    "const interfaceTable: Registry = { a: helperA, b: helperB };",
+    "const concreteTable = { a: helperA, b: helperB };",
+    "const arrayTable = [helperA, helperB];",
     "",
-    "export function dynamicDispatch(key: string): void {",
-    "  table[key]();",
+    "export function recordDispatch(key: string): void {",
+    "  recordTable[key]();",
+    "}",
+    "",
+    "export function interfaceDispatch(key: string): void {",
+    "  interfaceTable[key]();",
+    "}",
+    "",
+    'export function concreteUnionDispatch(key: "a" | "b"): void {',
+    "  concreteTable[key]();",
     "}",
     "",
     "export function concreteElementAccess(): void {",
     '  concreteTable["a"]();',
+    "}",
+    "",
+    "export function arrayDispatch(index: number): void {",
+    "  arrayTable[index]();",
+    "}",
+    "",
+    "export function conditionalDispatch(flag: boolean): void {",
+    "  (flag ? helperA : helperB)();",
+    "}",
+    "",
+    "export function unknownDispatch(key: string): void {",
+    "  unknownTable[key]();",
     "}",
     "",
   ].join("\n"),
@@ -112,6 +138,13 @@ function calleesOf(symbol: string): Promise<readonly CallEdge[]> {
   });
 }
 
+function dispatchCalleesOf(symbol: string): Promise<readonly CallEdge[]> {
+  return backend().findCallees(ALL_FILES, {
+    file: "src/callees/dispatch.ts",
+    segments: [{ name: symbol }],
+  });
+}
+
 describe("TypeScriptBackend.findCallees", () => {
   it("discovers two cross-file callees as certain edges with one site each", async () => {
     const edges = await calleesOf("callsTwo");
@@ -154,21 +187,46 @@ describe("TypeScriptBackend.findCallees", () => {
     expect(edges.map((edge) => edge.sites.map((site) => site.line))).toEqual([[28, 37], [32]]);
   });
 
-  it("does not report a type alias as an element-access callee", async () => {
-    const edges = await backend().findCallees(ALL_FILES, {
-      file: "src/callees/dispatch.ts",
-      segments: [{ name: "dynamicDispatch" }],
-    });
-    expect(edges).toEqual([]);
+  it("resolves record table values as possible dynamic callees without reporting the type alias", async () => {
+    const edges = await dispatchCalleesOf("recordDispatch");
+    expect(edges.map(segmentNames)).toEqual([["helperA"], ["helperB"]]);
+    expect(edges.map((edge) => edge.confidence)).toEqual(["possible", "possible"]);
+    expect(edges.every((edge) => edge.symbol.kind.role === "callable")).toBe(true);
+  });
+
+  it("resolves interface table values as possible dynamic callees", async () => {
+    const edges = await dispatchCalleesOf("interfaceDispatch");
+    expect(edges.map(segmentNames)).toEqual([["helperA"], ["helperB"]]);
+    expect(edges.map((edge) => edge.confidence)).toEqual(["possible", "possible"]);
+  });
+
+  it("filters concrete object table candidates by union key type", async () => {
+    const edges = await dispatchCalleesOf("concreteUnionDispatch");
+    expect(edges.map(segmentNames)).toEqual([["helperA"], ["helperB"]]);
+    expect(edges.map((edge) => edge.confidence)).toEqual(["possible", "possible"]);
   });
 
   it("resolves concrete element-access callees when the target member is known", async () => {
-    const edges = await backend().findCallees(ALL_FILES, {
-      file: "src/callees/dispatch.ts",
-      segments: [{ name: "concreteElementAccess" }],
-    });
+    const edges = await dispatchCalleesOf("concreteElementAccess");
     expect(edges.map(segmentNames)).toEqual([["helperA"]]);
     expect(edges[0]!.confidence).toBe("certain");
+  });
+
+  it("resolves array element candidates as possible dynamic callees", async () => {
+    const edges = await dispatchCalleesOf("arrayDispatch");
+    expect(edges.map(segmentNames)).toEqual([["helperA"], ["helperB"]]);
+    expect(edges.map((edge) => edge.confidence)).toEqual(["possible", "possible"]);
+  });
+
+  it("resolves conditional expression branches as possible dynamic callees", async () => {
+    const edges = await dispatchCalleesOf("conditionalDispatch");
+    expect(edges.map(segmentNames)).toEqual([["helperA"], ["helperB"]]);
+    expect(edges.map((edge) => edge.confidence)).toEqual(["possible", "possible"]);
+  });
+
+  it("ignores dynamic calls when only the callable shape is known", async () => {
+    const edges = await dispatchCalleesOf("unknownDispatch");
+    expect(edges).toEqual([]);
   });
 
   it("includes a self-edge for a recursive symbol", async () => {

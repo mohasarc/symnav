@@ -125,7 +125,7 @@ describe("ContextResultBuilder", () => {
 
   it("passes history through unchanged", () => {
     const history: readonly HistoryEntry[] = [
-      { sha: "abc1234", date: "2026-06-01", author: "Mo", subject: "init" },
+      { shortSha: "abc1234", isoDate: "2026-06-01", author: "Mo", subject: "init" },
     ];
     const result = build({ history });
     expect(result.history).toEqual(history);

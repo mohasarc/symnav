@@ -13,61 +13,61 @@ export class NodeGitHistory implements GitHistory {
   public constructor(private readonly run: GitCommandRunner = runGit) {}
 
   public async recentHistory(query: RecentHistoryQuery): Promise<readonly HistoryEntry[]> {
-    if (!isWorkspaceRelativePosixFile(query.workspaceRelativeFile)) {
+    if (!this.isWorkspaceRelativePosixFile(query.workspaceRelativeFile)) {
       return [];
     }
 
     try {
-      const raw = this.run(logArgsFor(query), query.workspaceRoot);
-      const entries = parseEntries(raw);
+      const raw = this.run(this.logArgsFor(query), query.workspaceRoot);
+      const entries = this.parseEntries(raw);
       return entries === undefined ? [] : entries.slice(0, query.limit);
     } catch {
       return [];
     }
   }
-}
 
-function logArgsFor(query: RecentHistoryQuery): readonly string[] {
-  const range = `${query.range.startLine},${query.range.endLine}:${query.workspaceRelativeFile}`;
-  const format = ["%h", "%ad", "%an", "%s"].join(FIELD_SEPARATOR);
-  return [
-    "log",
-    `-L${range}`,
-    `--max-count=${query.limit}`,
-    "--no-patch",
-    "--date=short",
-    `--format=${format}`,
-  ];
-}
-
-function parseEntries(raw: string): HistoryEntry[] | undefined {
-  const lines = raw.split("\n").filter((line) => line.length > 0);
-  const entries: HistoryEntry[] = [];
-  for (const line of lines) {
-    const fields = line.split(FIELD_SEPARATOR);
-    if (fields.length !== FIELD_COUNT) {
-      return undefined;
-    }
-    const [shortSha, isoDate, author, subject] = fields;
-    if (
-      shortSha === undefined ||
-      isoDate === undefined ||
-      author === undefined ||
-      subject === undefined
-    ) {
-      return undefined;
-    }
-    entries.push({ shortSha, isoDate, author, subject });
+  private logArgsFor(query: RecentHistoryQuery): readonly string[] {
+    const range = `${query.range.startLine},${query.range.endLine}:${query.workspaceRelativeFile}`;
+    const format = ["%h", "%ad", "%an", "%s"].join(FIELD_SEPARATOR);
+    return [
+      "log",
+      `-L${range}`,
+      `--max-count=${query.limit}`,
+      "--no-patch",
+      "--date=short",
+      `--format=${format}`,
+    ];
   }
-  return entries;
-}
 
-function isWorkspaceRelativePosixFile(file: string): boolean {
-  return (
-    file.length > 0 &&
-    !file.startsWith("/") &&
-    !/^[A-Za-z]:[\\/]/.test(file) &&
-    !file.includes("\\") &&
-    !file.split("/").includes("..")
-  );
+  private parseEntries(raw: string): HistoryEntry[] | undefined {
+    const lines = raw.split("\n").filter((line) => line.length > 0);
+    const entries: HistoryEntry[] = [];
+    for (const line of lines) {
+      const fields = line.split(FIELD_SEPARATOR);
+      if (fields.length !== FIELD_COUNT) {
+        return undefined;
+      }
+      const [shortSha, isoDate, author, subject] = fields;
+      if (
+        shortSha === undefined ||
+        isoDate === undefined ||
+        author === undefined ||
+        subject === undefined
+      ) {
+        return undefined;
+      }
+      entries.push({ shortSha, isoDate, author, subject });
+    }
+    return entries;
+  }
+
+  private isWorkspaceRelativePosixFile(file: string): boolean {
+    return (
+      file.length > 0 &&
+      !file.startsWith("/") &&
+      !/^[A-Za-z]:[\\/]/.test(file) &&
+      !file.includes("\\") &&
+      !file.split("/").includes("..")
+    );
+  }
 }

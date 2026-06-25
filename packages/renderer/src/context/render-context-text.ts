@@ -172,7 +172,7 @@ function renderHistory(history: readonly HistoryEntry[]): string {
   const entries = history
     .map(
       (entry, index) =>
-        `${index + 1}. ${entry.sha} ${entry.date} ${entry.author}\n   ${entry.subject}\n`,
+        `${index + 1}. ${entry.shortSha} ${entry.isoDate} ${entry.author}\n   ${entry.subject}\n`,
     )
     .join("\n");
   return `Recent History\n${entries}`;

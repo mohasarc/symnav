@@ -93,14 +93,14 @@ describe("renderContextText", () => {
     });
     const history: HistoryEntry[] = [
       {
-        sha: "abc123f",
-        date: "2026-04-12",
+        shortSha: "abc123f",
+        isoDate: "2026-04-12",
         author: "Alice",
         subject: "add retry handling to payment processing",
       },
       {
-        sha: "def456a",
-        date: "2026-03-29",
+        shortSha: "def456a",
+        isoDate: "2026-03-29",
         author: "Bob",
         subject: "move checkout flow into CheckoutService",
       },

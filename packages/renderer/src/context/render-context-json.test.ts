@@ -54,7 +54,12 @@ describe("renderContextJson", () => {
       callees: { edges: [], overflow: 0 },
       references: { total: 8, kindCounts: { ...emptyKindCounts(), usage: 8 } },
       history: [
-        { sha: "abc123f", date: "2026-04-12", author: "Alice", subject: "add retry handling" },
+        {
+          shortSha: "abc123f",
+          isoDate: "2026-04-12",
+          author: "Alice",
+          subject: "add retry handling",
+        },
       ],
     };
 

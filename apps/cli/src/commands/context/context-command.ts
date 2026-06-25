@@ -46,7 +46,7 @@ export const contextCommand: Command<ContextResult, ContextArgs> = {
     const references = await backend.findReferences(accepted, identity);
     const history = await ctx.git.recentHistory({
       workspaceRoot: ctx.workspace.root,
-      file: target.identity.file,
+      workspaceRelativeFile: target.identity.file,
       range: target.range,
       limit: 5,
     });

@@ -29,7 +29,7 @@ interface JsonContextResult {
   callers: { edges: readonly JsonEdge[]; overflow: number };
   callees: { edges: readonly JsonEdge[]; overflow: number };
   references: { total: number; kindCounts: Record<string, number> };
-  history: readonly { sha: string; date: string; author: string; subject: string }[];
+  history: readonly { shortSha: string; isoDate: string; author: string; subject: string }[];
 }
 
 beforeAll(() => {
@@ -107,7 +107,7 @@ describe("symnav context e2e (JSON output)", () => {
     expect(parsed.references.kindCounts).toMatchObject({ usage: 3, import: 1 });
     expect(parsed.history).toHaveLength(4);
     expect(parsed.history[0]).toMatchObject({
-      date: "2023-04-25",
+      isoDate: "2023-04-25",
       author: "Calc Bot",
       subject: "name the scaled value",
     });

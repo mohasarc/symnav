@@ -25,6 +25,9 @@ function fakeBackend(
     findReferences() {
       return Promise.resolve([]);
     },
+    findCallTarget() {
+      return Promise.resolve({ outcome: "not-found" });
+    },
   };
 }
 

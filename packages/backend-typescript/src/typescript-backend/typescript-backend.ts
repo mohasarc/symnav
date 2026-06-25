@@ -1,6 +1,7 @@
 import { basename } from "node:path";
 
 import type {
+  CallTargetResolution,
   FileSystem,
   LanguageBackend,
   OverviewFileSymbols,
@@ -12,6 +13,7 @@ import type {
 } from "@symnav/core";
 import { FileNotFoundError } from "@symnav/core";
 
+import { findCallTarget } from "../call-graph/find-call-target.js";
 import { findDefinitions } from "../definition/find-definitions.js";
 import { loadFileSymbols } from "../extract/load-file-symbols.js";
 import { ReferenceFinder } from "../references/find-references.js";
@@ -63,5 +65,12 @@ export class TypeScriptBackend implements LanguageBackend {
     identity: SymbolIdentity,
   ): Promise<readonly SymbolReference[]> {
     return new ReferenceFinder({ fs: this.fs, files, identity }).find();
+  }
+
+  async findCallTarget(
+    files: readonly ResolvedPath[],
+    identity: SymbolIdentity,
+  ): Promise<CallTargetResolution> {
+    return findCallTarget({ fs: this.fs, files, identity });
   }
 }

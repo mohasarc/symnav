@@ -13,6 +13,7 @@ import {
 } from "@symnav/telemetry";
 import type { Clock } from "@symnav/telemetry";
 import { registerDefCommand } from "./commands/def/register-def-command.js";
+import { NodeGitHistory } from "./git/node-git-history.js";
 import { registerOverviewCommand } from "./commands/overview/register-overview-command.js";
 import { registerRefsCommand } from "./commands/refs/register-refs-command.js";
 import { registerResolveCommand } from "./commands/resolve/register-resolve-command.js";
@@ -48,6 +49,7 @@ function defaultDependencies(): ProgramDependencies {
   return {
     fs,
     backends: () => [new TypeScriptBackend(fs)],
+    git: new NodeGitHistory(),
     recorder: new NodeUsageRecorder(new NodeTelemetryWritePort(usageLogPath(stateDir)), {
       next: () => randomUUID(),
     }),

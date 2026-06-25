@@ -1,4 +1,10 @@
-import { BackendRouter, createWorkspace, UserFacingError, type Workspace } from "@symnav/core";
+import {
+  BackendRouter,
+  createWorkspace,
+  type GitHistory,
+  UserFacingError,
+  type Workspace,
+} from "@symnav/core";
 import type { ArgShape, OutcomeReport } from "@symnav/telemetry";
 import type { ProgramContext } from "./program-context.js";
 import type { ProgramDependencies } from "./program-dependencies.js";
@@ -6,6 +12,7 @@ import type { ProgramDependencies } from "./program-dependencies.js";
 export interface CommandContext<Args> {
   readonly workspace: Workspace;
   readonly router: BackendRouter;
+  readonly git: GitHistory;
   readonly cwd: string;
   readonly args: Args;
 }
@@ -40,7 +47,7 @@ export async function runCommand<Result, Args>(
   try {
     workspace = await createWorkspace({ startDir: cwd, fs });
     const router = new BackendRouter(dependencies.backends());
-    const result = await command.compute({ workspace, router, cwd, args });
+    const result = await command.compute({ workspace, router, git: dependencies.git, cwd, args });
     const rendered = json ? command.renderJson(result) : command.renderText(result);
     context.stdout.write(rendered);
 

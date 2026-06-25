@@ -30,7 +30,14 @@ export class NodeGitHistory implements GitHistory {
 function logArgsFor(query: RecentHistoryQuery): readonly string[] {
   const range = `${query.range.startLine},${query.range.endLine}:${query.workspaceRelativeFile}`;
   const format = ["%h", "%ad", "%an", "%s"].join(FIELD_SEPARATOR);
-  return ["log", `-L${range}`, "--no-patch", "--date=short", `--format=${format}`];
+  return [
+    "log",
+    `-L${range}`,
+    `--max-count=${query.limit}`,
+    "--no-patch",
+    "--date=short",
+    `--format=${format}`,
+  ];
 }
 
 function parseEntries(raw: string): HistoryEntry[] | undefined {

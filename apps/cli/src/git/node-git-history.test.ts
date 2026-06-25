@@ -27,6 +27,18 @@ describe("NodeGitHistory", () => {
     expect(await history.recentHistory(query)).toEqual([]);
   });
 
+  it("passes the limit to git log", async () => {
+    let seenArgs: readonly string[] | undefined;
+    const history = new NodeGitHistory((args) => {
+      seenArgs = args;
+      return "";
+    });
+
+    await history.recentHistory(query);
+
+    expect(seenArgs).toContain("--max-count=5");
+  });
+
   it("returns [] without calling git when the file is not workspace-relative POSIX", async () => {
     const rejectedFiles = [
       "/repo/greeter.ts",

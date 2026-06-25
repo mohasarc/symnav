@@ -212,6 +212,21 @@ describe("extractFileSymbols", () => {
     expect(result.symbols).toEqual([]);
   });
 
+  it.skip("discovers declarations nested inside executable control-flow blocks", () => {
+    const source = [
+      "export function outer(flag: boolean, items: readonly string[]): void {",
+      "  if (flag) {",
+      "    function insideIf(): void {}",
+      "  }",
+      "  for (const item of items) {",
+      "    const insideLoop = item;",
+      "  }",
+      "}",
+    ].join("\n");
+    const outer = symbolsOf(source).symbols[0];
+    expect(outer?.children.map(ownName)).toEqual(["insideIf", "insideLoop"]);
+  });
+
   it("ignores class static blocks but counts other members", () => {
     const source = ["class C {", "  static {}", "  m() {}", "}"].join("\n");
     const result = symbolsOf(source);

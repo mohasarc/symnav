@@ -7,6 +7,7 @@ import { ensureFixtureGitMarker } from "../overview/ensure-fixture-git-marker.js
 const fixtureRoot = fixturePath("refs-cases");
 const snapshotsDir = new URL("./__snapshots__/", import.meta.url).pathname;
 const processorId = "src/payments/PaymentProcessor.ts::PaymentProcessor";
+const controlFlowTargetId = "src/control-flow/ControlFlowTarget.ts::controlFlowTarget";
 
 function snapshot(name: string): string {
   return join(snapshotsDir, name);
@@ -81,6 +82,23 @@ describe("symnav refs e2e (default output)", () => {
     for (const entry of sameLineEntries) {
       expect(entry).toContain("[usage]");
     }
+  });
+
+  it("lists references nested inside executable control-flow blocks", () => {
+    const r = runRefs([controlFlowTargetId, "--json"]);
+    expect(r.stderr).toBe("");
+    expect(r.status).toBe(0);
+    const parsed = parseJsonRefs(r.stdout);
+    expect(parsed.total).toBe(4);
+    expect(parsed.kindCounts).toEqual({ usage: 3, import: 1, export: 0, type: 0 });
+    expect(
+      parsed.references.map((reference) => [reference.file, reference.line, reference.kind]),
+    ).toEqual([
+      ["src/control-flow/ControlFlowReferences.ts", 1, "import"],
+      ["src/control-flow/ControlFlowReferences.ts", 5, "usage"],
+      ["src/control-flow/ControlFlowReferences.ts", 10, "usage"],
+      ["src/control-flow/ControlFlowReferences.ts", 15, "usage"],
+    ]);
   });
 });
 

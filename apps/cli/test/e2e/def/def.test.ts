@@ -79,6 +79,13 @@ describe("symnav def e2e (errors and empty results)", () => {
     expect(r.status).toBe(0);
     await expect(r.stdout).toMatchFileSnapshot(snapshot("no-match.expected.txt"));
   });
+
+  it.skip("returns definitions for declarations nested inside executable control-flow blocks", () => {
+    const r = runDef(["def", "src/control-flow/LocalDeclarations.ts::outer::insideLoop"]);
+    expect(r.stderr).toBe("");
+    expect(r.status).toBe(0);
+    expect(r.stdout).toContain("insideLoop");
+  });
 });
 
 describe("symnav def e2e (JSON output)", () => {

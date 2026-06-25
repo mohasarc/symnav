@@ -241,6 +241,40 @@ describe("findReferences", () => {
     );
   });
 
+  it("finds references nested inside executable control-flow blocks", async () => {
+    const result = await refsIn(
+      {
+        "src/lib/run.ts": "export function run(): void {}\n",
+        "src/app/run-user.ts": [
+          'import { run } from "../lib/run.js";',
+          "",
+          "export function main(items: readonly string[], enabled: boolean): void {",
+          "  if (enabled) {",
+          "    run();",
+          "  }",
+          "  for (const item of items) {",
+          "    if (item) {",
+          "      run();",
+          "    }",
+          "  }",
+          "  while (enabled) {",
+          "    run();",
+          "    break;",
+          "  }",
+          "}",
+          "",
+        ].join("\n"),
+      },
+      identityOf("src/lib/run.ts", "run"),
+    );
+    expect(result).toEqual([
+      expect.objectContaining({ file: "src/app/run-user.ts", line: 1, kind: "import" }),
+      expect.objectContaining({ file: "src/app/run-user.ts", line: 5, kind: "usage" }),
+      expect.objectContaining({ file: "src/app/run-user.ts", line: 9, kind: "usage" }),
+      expect.objectContaining({ file: "src/app/run-user.ts", line: 13, kind: "usage" }),
+    ]);
+  });
+
   it("follows a re-export chain back to the original symbol", async () => {
     const result = await refsIn(
       {

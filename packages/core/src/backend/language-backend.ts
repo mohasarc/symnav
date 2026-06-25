@@ -1,3 +1,4 @@
+import type { CallEdge } from "../intermediate-representation/call-edge.js";
 import type { CallTargetResolution } from "../intermediate-representation/call-target.js";
 import type { SymbolReference } from "../intermediate-representation/references.js";
 import type { SymbolIdentity } from "../intermediate-representation/symbol-identity.js";
@@ -28,4 +29,8 @@ export interface LanguageBackend {
     files: readonly ResolvedPath[],
     identity: SymbolIdentity,
   ): Promise<CallTargetResolution>;
+  findCallees(
+    files: readonly ResolvedPath[],
+    identity: SymbolIdentity,
+  ): Promise<readonly CallEdge[]>;
 }

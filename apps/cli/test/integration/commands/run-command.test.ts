@@ -5,7 +5,6 @@ import { runCommand } from "../../../src/command.js";
 import type { Command, CommandContext } from "../../../src/command.js";
 import {
   createCapturingRecorder,
-  createFakeGitHistory,
   createFakeIdentityProvider,
   createScriptedClock,
   fakeDependencies,
@@ -92,7 +91,7 @@ describe("runCommand lifecycle", () => {
 
   it("passes workspace, router, git, cwd, and args to compute and nothing else", async () => {
     const context = createFakeProgramContext({ cwd: "/repo" });
-    const git = createFakeGitHistory();
+    const dependencies = fakeDependencies();
     let seen: CommandContext<StubArgs> | undefined;
 
     await runCommand(
@@ -104,7 +103,7 @@ describe("runCommand lifecycle", () => {
       }),
       {
         context,
-        dependencies: fakeDependencies({ git }),
+        dependencies,
         cwdOverride: undefined,
         json: false,
         args: stubArgs("hi"),
@@ -115,7 +114,7 @@ describe("runCommand lifecycle", () => {
     expect(Object.keys(seen!).sort()).toEqual(["args", "cwd", "git", "router", "workspace"]);
     expect(seen!.cwd).toBe("/repo");
     expect(seen!.args).toEqual({ note: "hi" });
-    expect(seen!.git).toBe(git);
+    expect(seen!.git).toBe(dependencies.git);
   });
 
   it("writes a Cannot answer line and exits 1 when workspace creation fails", async () => {

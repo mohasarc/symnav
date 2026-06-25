@@ -1,8 +1,10 @@
 import {
   Node,
+  type ArrayLiteralExpression,
   type CallExpression,
   type ClassDeclaration,
   type NewExpression,
+  type ObjectLiteralExpression,
   type SourceFile,
 } from "ts-morph";
 import type {
@@ -36,6 +38,11 @@ interface ResolvedCallee {
   readonly reason?: string;
 }
 
+interface DynamicCandidate {
+  readonly memberName: string | undefined;
+  readonly node: Node;
+}
+
 class CalleeFinder {
   private readonly index: WorkspaceDeclarationIndex;
 
@@ -60,28 +67,100 @@ class CalleeFinder {
     bodyNode.forEachDescendant((node) => {
       const call = asCall(node);
       if (!call) return;
-      const callee = this.resolveCallee(call);
-      if (!callee) return;
-      const key = `${DeclarationLocator.identityKey(callee.symbol.identity)}#${callee.confidence}`;
-      const existing = edgesByKey.get(key);
       const site = this.siteFor(call.getExpression());
-      if (existing) {
-        existing.sites.push(site);
-        return;
+      for (const callee of this.resolveCallees(call)) {
+        this.addEdge(callee, site, edgesByKey);
       }
-      edgesByKey.set(key, {
-        symbol: callee.symbol,
-        confidence: callee.confidence,
-        reason: callee.reason,
-        sites: [site],
-      });
     });
     return [...edgesByKey.values()].map(finalizeEdge).sort(compareEdges);
+  }
+
+  private addEdge(
+    callee: ResolvedCallee,
+    site: CallSite,
+    edgesByKey: Map<string, MutableEdge>,
+  ): void {
+    const key = `${DeclarationLocator.identityKey(callee.symbol.identity)}#${callee.confidence}`;
+    const existing = edgesByKey.get(key);
+    if (existing) {
+      existing.sites.push(site);
+      return;
+    }
+    edgesByKey.set(key, {
+      symbol: callee.symbol,
+      confidence: callee.confidence,
+      reason: callee.reason,
+      sites: [site],
+    });
+  }
+
+  private resolveCallees(call: CallExpression | NewExpression): readonly ResolvedCallee[] {
+    const callee = this.resolveCallee(call);
+    if (callee) return [callee];
+    if (!Node.isCallExpression(call)) return [];
+    return this.resolveDynamicCandidates(call.getExpression()).map((symbol) => ({
+      symbol,
+      confidence: "possible",
+      reason: DYNAMIC_DISPATCH_REASON,
+    }));
   }
 
   private resolveCallee(call: CallExpression | NewExpression): ResolvedCallee | undefined {
     if (Node.isNewExpression(call)) return this.resolveConstructed(call);
     return this.resolveCalled(call);
+  }
+
+  private resolveDynamicCandidates(expression: Node): readonly SymbolDecl[] {
+    const unwrapped = withoutParentheses(expression);
+    if (Node.isElementAccessExpression(unwrapped)) {
+      return uniqueSymbols(
+        this.elementAccessCandidates(unwrapped)
+          .map((candidate) => this.workspaceSymbolForDefinitionsOf(candidate.node))
+          .filter((symbol): symbol is SymbolDecl => symbol !== undefined),
+      );
+    }
+    if (Node.isConditionalExpression(unwrapped)) {
+      return uniqueSymbols(
+        [unwrapped.getWhenTrue(), unwrapped.getWhenFalse()]
+          .map((candidate) => this.workspaceSymbolForDefinitionsOf(withoutParentheses(candidate)))
+          .filter((symbol): symbol is SymbolDecl => symbol !== undefined),
+      );
+    }
+    return [];
+  }
+
+  private elementAccessCandidates(expression: Node): readonly DynamicCandidate[] {
+    if (!Node.isElementAccessExpression(expression)) return [];
+    const container = this.literalContainerFor(expression.getExpression(), 1);
+    if (!container) return [];
+    const memberNames = staticMemberNames(expression.getArgumentExpression());
+    const candidates = candidatesInContainer(container);
+    if (!memberNames) return candidates;
+    return candidates.filter(
+      (candidate) => candidate.memberName !== undefined && memberNames.has(candidate.memberName),
+    );
+  }
+
+  private literalContainerFor(node: Node, remainingAliases: number): Node | undefined {
+    const unwrapped = withoutParentheses(node);
+    if (Node.isObjectLiteralExpression(unwrapped) || Node.isArrayLiteralExpression(unwrapped)) {
+      return unwrapped;
+    }
+    if (!Node.isIdentifier(unwrapped)) return undefined;
+    for (const declaration of definitionNodesOf(unwrapped)) {
+      if (!Node.isVariableDeclaration(declaration)) continue;
+      const initializer = declaration.getInitializer();
+      if (!initializer) continue;
+      const literal = withoutParentheses(initializer);
+      if (Node.isObjectLiteralExpression(literal) || Node.isArrayLiteralExpression(literal)) {
+        return literal;
+      }
+      if (remainingAliases > 0 && Node.isIdentifier(literal)) {
+        const resolved = this.literalContainerFor(literal, remainingAliases - 1);
+        if (resolved) return resolved;
+      }
+    }
+    return undefined;
   }
 
   private resolveConstructed(call: NewExpression): ResolvedCallee | undefined {
@@ -104,6 +183,7 @@ class CalleeFinder {
     const expression = call.getExpression();
     const concreteElementAccess = this.resolveConcreteElementAccess(expression);
     if (concreteElementAccess) return { symbol: concreteElementAccess, confidence: "certain" };
+    if (this.resolveDynamicCandidates(expression).length > 0) return undefined;
     const nameNode = calleeNameNode(expression);
     if (nameNode) {
       const symbol = this.workspaceSymbolForDefinitionsOf(nameNode);
@@ -242,6 +322,72 @@ function propertyInitializer(node: Node): Node | undefined {
   if (Node.isPropertyAssignment(node)) return node.getInitializer();
   if (Node.isShorthandPropertyAssignment(node)) return node.getNameNode();
   return undefined;
+}
+
+function candidatesInContainer(node: Node): readonly DynamicCandidate[] {
+  if (Node.isObjectLiteralExpression(node)) return objectLiteralCandidates(node);
+  if (Node.isArrayLiteralExpression(node)) return arrayLiteralCandidates(node);
+  return [];
+}
+
+function objectLiteralCandidates(node: ObjectLiteralExpression): readonly DynamicCandidate[] {
+  return node
+    .getProperties()
+    .map((property) => {
+      const initializer = propertyInitializer(property);
+      if (!initializer) return undefined;
+      return { memberName: propertyName(property), node: initializer };
+    })
+    .filter((candidate): candidate is DynamicCandidate => candidate !== undefined);
+}
+
+function arrayLiteralCandidates(node: ArrayLiteralExpression): readonly DynamicCandidate[] {
+  return node.getElements().map((element, index) => ({
+    memberName: String(index),
+    node: element,
+  }));
+}
+
+function staticMemberNames(node: Node | undefined): ReadonlySet<string> | undefined {
+  const literalName = literalMemberName(node);
+  if (literalName) return new Set([literalName]);
+  if (node && Node.isNumericLiteral(node)) return new Set([node.getLiteralText()]);
+  const typeText = node?.getType().getText();
+  if (!typeText) return undefined;
+  const members = typeText
+    .split("|")
+    .map((part) => quotedLiteralText(part.trim()))
+    .filter((part): part is string => part !== undefined);
+  return members.length > 0 ? new Set(members) : undefined;
+}
+
+function quotedLiteralText(text: string): string | undefined {
+  const match = /^["'](.+)["']$/.exec(text);
+  return match?.[1];
+}
+
+function withoutParentheses(node: Node): Node {
+  let current = node;
+  while (Node.isParenthesizedExpression(current)) {
+    current = current.getExpression();
+  }
+  return current;
+}
+
+function uniqueSymbols(symbols: readonly SymbolDecl[]): readonly SymbolDecl[] {
+  const byKey = new Map<string, SymbolDecl>();
+  for (const symbol of symbols) {
+    byKey.set(DeclarationLocator.identityKey(symbol.identity), symbol);
+  }
+  return [...byKey.values()].sort(compareSymbolDecls);
+}
+
+function compareSymbolDecls(a: SymbolDecl, b: SymbolDecl): number {
+  if (a.identity.file !== b.identity.file) return a.identity.file < b.identity.file ? -1 : 1;
+  if (a.range.startLine !== b.range.startLine) return a.range.startLine - b.range.startLine;
+  const aKey = DeclarationLocator.identityKey(a.identity);
+  const bKey = DeclarationLocator.identityKey(b.identity);
+  return aKey < bKey ? -1 : aKey > bKey ? 1 : 0;
 }
 
 function carriesBody(node: Node): boolean {

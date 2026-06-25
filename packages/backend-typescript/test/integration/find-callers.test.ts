@@ -12,6 +12,7 @@ const CALL_GRAPH_CASES: Record<string, string> = {
     "export function calledFromTest(): void {}",
     "export function neverCalled(): void {}",
     "export function calledDynamically(): void {}",
+    "export function calledFromNestedTraversal(): void {}",
     "export function mentionedNotCalled(): void {}",
     "",
   ].join("\n"),
@@ -65,6 +66,22 @@ const CALL_GRAPH_CASES: Record<string, string> = {
     "}",
     "",
   ].join("\n"),
+  "/repo/src/callers/nested.ts": [
+    'import { calledFromNestedTraversal } from "./targets.js";',
+    "",
+    "export function nestedCaller(items: number[], enabled: boolean): void {",
+    "  if (enabled) {",
+    "    for (const item of items) {",
+    "      {",
+    "        [item].forEach(() => {",
+    "          calledFromNestedTraversal();",
+    "        });",
+    "      }",
+    "    }",
+    "  }",
+    "}",
+    "",
+  ].join("\n"),
 };
 
 const ALL_FILES: readonly ResolvedPath[] = [
@@ -72,6 +89,7 @@ const ALL_FILES: readonly ResolvedPath[] = [
   "src/callers/file-a.ts",
   "src/callers/file-b.ts",
   "src/callers/mentions.ts",
+  "src/callers/nested.ts",
   "src/callers/sample.test.ts",
   "src/callers/targets.ts",
   "src/callers/twice.ts",
@@ -115,6 +133,14 @@ describe("TypeScriptBackend.findCallers", () => {
     expect(edges).toHaveLength(1);
     expect(segmentNames(edges[0]!)).toEqual(["testCaller"]);
     expect(edges[0]!.sites[0]!.file).toBe("src/callers/sample.test.ts");
+  });
+
+  it("finds callers inside nested control flow and callbacks", async () => {
+    const edges = await callersOf("calledFromNestedTraversal");
+    expect(edges).toHaveLength(1);
+    expect(segmentNames(edges[0]!)).toEqual(["nestedCaller"]);
+    expect(edges[0]!.sites[0]!.file).toBe("src/callers/nested.ts");
+    expect(edges[0]!.sites[0]!.previewSource).toContain("calledFromNestedTraversal()");
   });
 
   it("returns no edges for a symbol with no callers", async () => {

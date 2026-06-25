@@ -15,6 +15,7 @@ import type {
 import { FileNotFoundError } from "@symnav/core";
 
 import { findCallees } from "../call-graph/find-callees.js";
+import { findCallers } from "../call-graph/find-callers.js";
 import { findCallTarget } from "../call-graph/find-call-target.js";
 import { findDefinitions } from "../definition/find-definitions.js";
 import { loadFileSymbols } from "../extract/load-file-symbols.js";
@@ -81,5 +82,12 @@ export class TypeScriptBackend implements LanguageBackend {
     identity: SymbolIdentity,
   ): Promise<readonly CallEdge[]> {
     return findCallees({ fs: this.fs, files, identity });
+  }
+
+  async findCallers(
+    files: readonly ResolvedPath[],
+    identity: SymbolIdentity,
+  ): Promise<readonly CallEdge[]> {
+    return findCallers({ fs: this.fs, files, identity });
   }
 }

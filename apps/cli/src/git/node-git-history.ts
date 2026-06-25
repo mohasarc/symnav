@@ -13,6 +13,10 @@ export class NodeGitHistory implements GitHistory {
   public constructor(private readonly run: GitCommandRunner = runGit) {}
 
   public async recentHistory(query: RecentHistoryQuery): Promise<readonly HistoryEntry[]> {
+    if (!isWorkspaceRelativePosixFile(query.workspaceRelativeFile)) {
+      return [];
+    }
+
     try {
       const raw = this.run(logArgsFor(query), query.workspaceRoot);
       const entries = parseEntries(raw);
@@ -24,7 +28,7 @@ export class NodeGitHistory implements GitHistory {
 }
 
 function logArgsFor(query: RecentHistoryQuery): readonly string[] {
-  const range = `${query.range.startLine},${query.range.endLine}:${query.file}`;
+  const range = `${query.range.startLine},${query.range.endLine}:${query.workspaceRelativeFile}`;
   const format = ["%h", "%ad", "%an", "%s"].join(FIELD_SEPARATOR);
   return ["log", `-L${range}`, "--no-patch", "--date=short", `--format=${format}`];
 }
@@ -37,11 +41,26 @@ function parseEntries(raw: string): HistoryEntry[] | undefined {
     if (fields.length !== FIELD_COUNT) {
       return undefined;
     }
-    const [sha, date, author, subject] = fields;
-    if (sha === undefined || date === undefined || author === undefined || subject === undefined) {
+    const [shortSha, isoDate, author, subject] = fields;
+    if (
+      shortSha === undefined ||
+      isoDate === undefined ||
+      author === undefined ||
+      subject === undefined
+    ) {
       return undefined;
     }
-    entries.push({ sha, date, author, subject });
+    entries.push({ shortSha, isoDate, author, subject });
   }
   return entries;
+}
+
+function isWorkspaceRelativePosixFile(file: string): boolean {
+  return (
+    file.length > 0 &&
+    !file.startsWith("/") &&
+    !/^[A-Za-z]:[\\/]/.test(file) &&
+    !file.includes("\\") &&
+    !file.split("/").includes("..")
+  );
 }

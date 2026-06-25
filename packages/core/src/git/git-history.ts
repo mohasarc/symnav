@@ -1,15 +1,15 @@
 import type { LineRange } from "../intermediate-representation/types.js";
 
 export interface HistoryEntry {
-  readonly sha: string; // short sha
-  readonly date: string; // YYYY-MM-DD
+  readonly shortSha: string;
+  readonly isoDate: string;
   readonly author: string;
   readonly subject: string;
 }
 
 export interface RecentHistoryQuery {
   readonly workspaceRoot: string;
-  readonly file: string; // workspace-relative, POSIX
+  readonly workspaceRelativeFile: string;
   readonly range: LineRange;
   readonly limit: number;
 }

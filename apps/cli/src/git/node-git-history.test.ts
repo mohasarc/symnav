@@ -4,7 +4,7 @@ import { NodeGitHistory } from "./node-git-history.js";
 
 const query: RecentHistoryQuery = {
   workspaceRoot: "/somewhere",
-  file: "greeter.ts",
+  workspaceRelativeFile: "greeter.ts",
   range: { startLine: 1, endLine: 3 },
   limit: 5,
 };
@@ -25,5 +25,20 @@ describe("NodeGitHistory", () => {
   it("returns [] when git produces no output", async () => {
     const history = new NodeGitHistory(() => "");
     expect(await history.recentHistory(query)).toEqual([]);
+  });
+
+  it("returns [] without calling git when the file is not workspace-relative POSIX", async () => {
+    const rejectedFiles = [
+      "/repo/greeter.ts",
+      "../greeter.ts",
+      "src\\greeter.ts",
+      "C:/repo/greeter.ts",
+    ];
+    for (const workspaceRelativeFile of rejectedFiles) {
+      const history = new NodeGitHistory(() => {
+        throw new Error("git should not run");
+      });
+      await expect(history.recentHistory({ ...query, workspaceRelativeFile })).resolves.toEqual([]);
+    }
   });
 });

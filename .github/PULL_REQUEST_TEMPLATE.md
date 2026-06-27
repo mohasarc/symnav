@@ -104,6 +104,54 @@ A short prose lead-in (1-3 bullets) under the diagrams is welcome
 when the picture alone leaves something implicit.
 -->
 
+## Where it lives
+
+<!--
+Repo-root file-structure sketch for the important changed areas.
+This is placement review, not a complete file list.
+
+Include when changes span multiple packages/directories, add/remove/
+move files, or introduce a new ownership boundary.
+
+Skip for single-file fixes, obvious small renames, docs-only edits,
+or when paths add no review signal.
+
+Form: Unicode filesystem tree anchored at repo root. Use `.` as the
+root. Include unchanged parent directories as context; annotate only
+nodes that matter for ownership or review.
+
+Legend: `++` added, `**` changed, `~~` moved, `--` removed.
+
+Example:
+
+  .
+  ├── apps/
+  │   └── cli/
+  │       └── src/
+  │           └── ** register-context-command.ts <-- wires history flag
+  └── packages/
+      └── backend-typescript/
+          └── src/
+              ├── ++ reference-search/
+              │   └── ++ ... 12 files           <-- owns TS ref lookup
+              └── ~~ git/
+                  └── ~~ ... 3 files            <-- moved from apps/cli/src/history/
+
+Rules:
+  - Show important changed areas, not every touched file.
+  - Use `... N files` for collapsed groups. Count files, even when
+    the group is generated or mechanical.
+  - Place `~~` moved entries at their new path and note the old path:
+    `<-- moved from <old path>`.
+  - Use `**` only for changed existing files whose placement or role
+    matters.
+  - Include tests only when their placement carries review signal.
+    Collapse colocated tests into the source group when they follow
+    the same ownership.
+  - Inline `<-- ...` notes should name purpose or ownership. Do not
+    restate marker status except the required moved-from note.
+-->
+
 ## Public surface
 
 <!--

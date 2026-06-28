@@ -1,0 +1,39 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1180" height="756" viewBox="0 0 1180 756">
+  <style>
+    text { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace; font-size: 16px; fill: #24292f; }
+    .added { fill: #1a7f37; font-weight: 700; }
+    .changed { fill: #9a6700; font-weight: 700; }
+    .comment { fill: #57606a; }
+  </style>
+  <rect width="100%" height="100%" fill="#ffffff"/>
+  <text x="16" y="28">.</text>
+  <text x="16" y="52">├── <tspan class="changed">**</tspan> README.md <tspan class="comment"># documents context command scope</tspan></text>
+  <text x="16" y="76">├── apps/</text>
+  <text x="16" y="100">│   └── cli/</text>
+  <text x="16" y="124">│       ├── src/</text>
+  <text x="16" y="148">│       │   ├── <tspan class="changed">**</tspan> program.ts <tspan class="comment"># registers context with Commander</tspan></text>
+  <text x="16" y="172">│       │   └── commands/</text>
+  <text x="16" y="196">│       │       └── context/</text>
+  <text x="16" y="220">│       │           ├── <tspan class="added">++</tspan> context-command.ts <tspan class="comment"># computes context result and renders output</tspan></text>
+  <text x="16" y="244">│       │           └── <tspan class="added">++</tspan> register-context-command.ts <tspan class="comment"># owns CLI command registration</tspan></text>
+  <text x="16" y="268">│       └── test/</text>
+  <text x="16" y="292">│           └── e2e/</text>
+  <text x="16" y="316">│               └── context/</text>
+  <text x="16" y="340">│                   ├── <tspan class="added">++</tspan> context.test.ts <tspan class="comment"># e2e coverage for output, errors, JSON, telemetry</tspan></text>
+  <text x="16" y="364">│                   └── __snapshots__/</text>
+  <text x="16" y="388">│                       └── <tspan class="added">++</tspan> compute.expected.txt <tspan class="comment"># default output contract</tspan></text>
+  <text x="16" y="412">└── packages/</text>
+  <text x="16" y="436">    ├── core/</text>
+  <text x="16" y="460">    │   └── src/</text>
+  <text x="16" y="484">    │       ├── <tspan class="changed">**</tspan> index.ts <tspan class="comment"># exports ambiguous-symbol error</tspan></text>
+  <text x="16" y="508">    │       └── backend/</text>
+  <text x="16" y="532">    │           └── <tspan class="changed">**</tspan> errors.ts <tspan class="comment"># defines ambiguous target failure</tspan></text>
+  <text x="16" y="556">    └── testing/</text>
+  <text x="16" y="580">        └── fixtures/</text>
+  <text x="16" y="604">            └── context-cases/</text>
+  <text x="16" y="628">                ├── <tspan class="added">++</tspan> package.json <tspan class="comment"># fixture project manifest</tspan></text>
+  <text x="16" y="652">                ├── <tspan class="added">++</tspan> dot-git/ <tspan class="comment"># pinned history for git log -L assertions</tspan></text>
+  <text x="16" y="676">                │   └── <tspan class="added">++</tspan> ... 41 files</text>
+  <text x="16" y="700">                └── <tspan class="added">++</tspan> src/ <tspan class="comment"># fixture symbols for callers, callees, ambiguity, overflow, history</tspan></text>
+  <text x="16" y="724">                    └── <tspan class="added">++</tspan> ... 10 files</text>
+</svg>

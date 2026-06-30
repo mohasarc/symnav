@@ -57,8 +57,8 @@ function baseResult(overrides: Partial<ContextResult> = {}): ContextResult {
     identity: target.identity,
     target,
     definitions: [target],
-    callers: { edges: [], overflow: 0 },
-    callees: { edges: [], overflow: 0 },
+    callers: { sortedEdges: [], omittedCertainEdgeCount: 0 },
+    callees: { sortedEdges: [], omittedCertainEdgeCount: 0 },
     references: { total: 0, kindCounts: emptyKindCounts() },
     history: [],
     ...overrides,
@@ -107,7 +107,7 @@ describe("renderContextText", () => {
     ];
     const result = baseResult({
       callers: {
-        edges: [
+        sortedEdges: [
           edge(caller, [
             site(
               "src/api/CheckoutController.ts",
@@ -116,16 +116,16 @@ describe("renderContextText", () => {
             ),
           ]),
         ],
-        overflow: 0,
+        omittedCertainEdgeCount: 0,
       },
       callees: {
-        edges: [
+        sortedEdges: [
           edge(charge, [site("src/payments/PaymentProcessor.ts", 30, "PaymentProcessor.charge")]),
           edge(recordReceipt, [
             site("src/payments/PaymentProcessor.ts", 50, "PaymentProcessor.recordReceipt"),
           ]),
         ],
-        overflow: 0,
+        omittedCertainEdgeCount: 0,
       },
       references: { total: 8, kindCounts: { usage: 3, import: 2, export: 0, type: 3 } },
       history,
@@ -181,14 +181,14 @@ describe("renderContextText", () => {
     });
     const result = baseResult({
       callers: {
-        edges: [
+        sortedEdges: [
           edge(caller, [
             site("src/api/CheckoutController.ts", 60, "checkoutService.processPayment(order)"),
             site("src/api/CheckoutController.ts", 64, "checkoutService.processPayment(retry)"),
             site("src/api/CheckoutController.ts", 70, "checkoutService.processPayment(fallback)"),
           ]),
         ],
-        overflow: 0,
+        omittedCertainEdgeCount: 0,
       },
     });
     const text = renderContextText(result);
@@ -216,12 +216,12 @@ describe("renderContextText", () => {
     });
     const result = baseResult({
       callers: {
-        edges: [edge(caller, [site("src/api/CheckoutController.ts", 60, "a()")])],
-        overflow: 3,
+        sortedEdges: [edge(caller, [site("src/api/CheckoutController.ts", 60, "a()")])],
+        omittedCertainEdgeCount: 3,
       },
       callees: {
-        edges: [edge(charge, [site("src/payments/PaymentProcessor.ts", 30, "b()")])],
-        overflow: 5,
+        sortedEdges: [edge(charge, [site("src/payments/PaymentProcessor.ts", 30, "b()")])],
+        omittedCertainEdgeCount: 5,
       },
     });
     const text = renderContextText(result);
@@ -277,13 +277,13 @@ describe("renderContextText", () => {
       );
     const result = baseResult({
       callers: {
-        edges: [
+        sortedEdges: [
           callerIn("src/checkout/CheckoutService.ts", "a"),
           callerIn("src/payments/index.ts", "b"),
           callerIn("src/payments/RefundService.ts", "c"),
           callerIn("src/tests/payments/PaymentProcessor.test.ts", "d"),
         ],
-        overflow: 0,
+        omittedCertainEdgeCount: 0,
       },
     });
     const text = renderContextText(result);

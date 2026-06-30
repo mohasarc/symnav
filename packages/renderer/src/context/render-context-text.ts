@@ -1,6 +1,6 @@
 import type {
   CallEdge,
-  CappedCallEdges,
+  CappedCertainCallEdges,
   ContextReferenceSummary,
   ContextResult,
   HistoryEntry,
@@ -74,17 +74,20 @@ function renderDefinitionEntry(symbol: SymbolDecl, isLast: boolean): string {
 
 function renderEdges(
   header: string,
-  capped: CappedCallEdges,
+  capped: CappedCertainCallEdges,
   previewLinesFor: PreviewLinesFor,
   overflow: string,
 ): string {
-  if (capped.edges.length === 0 && capped.overflow === 0) {
+  if (capped.sortedEdges.length === 0 && capped.omittedCertainEdgeCount === 0) {
     return `${header}\n${NONE}`;
   }
-  const tree = buildCallEdgeTree(capped.edges)
+  const tree = buildCallEdgeTree(capped.sortedEdges)
     .map((node) => renderRootNode(node, previewLinesFor))
     .join("");
-  const overflowSuffix = capped.overflow === 0 ? "" : overflow.replace("{N}", `${capped.overflow}`);
+  const overflowSuffix =
+    capped.omittedCertainEdgeCount === 0
+      ? ""
+      : overflow.replace("{N}", `${capped.omittedCertainEdgeCount}`);
   return `${header}\n${tree}${overflowSuffix}`;
 }
 

@@ -25,7 +25,7 @@ describe("renderContextJson", () => {
       target,
       definitions: [target],
       callers: {
-        edges: [
+        sortedEdges: [
           {
             symbol: {
               identity: {
@@ -49,9 +49,9 @@ describe("renderContextJson", () => {
             confidence: "certain",
           },
         ],
-        overflow: 0,
+        omittedCertainEdgeCount: 0,
       },
-      callees: { edges: [], overflow: 0 },
+      callees: { sortedEdges: [], omittedCertainEdgeCount: 0 },
       references: { total: 8, kindCounts: { ...emptyKindCounts(), usage: 8 } },
       history: [
         {

@@ -1,6 +1,7 @@
 import type { PageRequest } from "../pagination/paginator.js";
 import { Paginator } from "../pagination/paginator.js";
-import type { ReferenceKind, RefsResult, SymbolReference } from "./references.js";
+import { countReferenceKinds } from "./reference-kinds.js";
+import type { RefsResult, SymbolReference } from "./references.js";
 import type { SymbolIdentity } from "./symbol-identity.js";
 
 export interface BuildRefsResultArgs {
@@ -19,7 +20,7 @@ export class RefsResultBuilder {
     return {
       identity: this.args.identity,
       total: sorted.length,
-      kindCounts: RefsResultBuilder.countKinds(sorted),
+      kindCounts: countReferenceKinds(sorted),
       page,
       pageCount,
       fullLines: this.args.fullLines,
@@ -35,15 +36,5 @@ export class RefsResultBuilder {
       return left.line - right.line;
     }
     return left.matchStart - right.matchStart;
-  }
-
-  private static countKinds(
-    references: readonly SymbolReference[],
-  ): Readonly<Record<ReferenceKind, number>> {
-    const counts: Record<ReferenceKind, number> = { usage: 0, import: 0, export: 0, type: 0 };
-    for (const reference of references) {
-      counts[reference.kind] += 1;
-    }
-    return counts;
   }
 }

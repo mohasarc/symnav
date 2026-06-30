@@ -26,8 +26,8 @@ export const contextCommand: Command<ContextResult, ContextArgs> = {
   },
   countResults(result: ContextResult) {
     return {
-      callers: result.callers.edges.length,
-      callees: result.callees.edges.length,
+      callers: result.callers.sortedEdges.length,
+      callees: result.callees.sortedEdges.length,
       references: result.references.total,
       history: result.history.length,
     };
@@ -55,8 +55,8 @@ export const contextCommand: Command<ContextResult, ContextArgs> = {
       identity,
       target,
       definitions,
-      callers,
-      callees,
+      callerEdgesWithAnyConfidence: callers,
+      calleeEdgesWithAnyConfidence: callees,
       references,
       history,
       cap: DEFAULT_CONTEXT_CAP,

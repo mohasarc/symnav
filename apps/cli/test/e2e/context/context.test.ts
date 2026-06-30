@@ -26,8 +26,8 @@ interface JsonEdge {
 
 interface JsonContextResult {
   identity: { file: string; segments: readonly { name: string }[] };
-  callers: { edges: readonly JsonEdge[]; overflow: number };
-  callees: { edges: readonly JsonEdge[]; overflow: number };
+  callers: { sortedEdges: readonly JsonEdge[]; omittedCertainEdgeCount: number };
+  callees: { sortedEdges: readonly JsonEdge[]; omittedCertainEdgeCount: number };
   references: { total: number; kindCounts: Record<string, number> };
   history: readonly { shortSha: string; isoDate: string; author: string; subject: string }[];
 }
@@ -93,16 +93,14 @@ describe("symnav context e2e (JSON output)", () => {
       file: "src/math/calculator.ts",
       segments: [{ name: "compute" }],
     });
-    expect(parsed.callees.edges.map((edge) => edge.symbol.identity.segments[0]!.name)).toEqual([
-      "add",
-      "multiply",
-    ]);
-    expect(parsed.callers.edges.map((edge) => edge.symbol.identity.segments[0]!.name)).toEqual([
-      "runOnce",
-      "runTwice",
-    ]);
-    expect(parsed.callers.edges.every((edge) => edge.confidence === "certain")).toBe(true);
-    expect(parsed.callees.edges.every((edge) => edge.confidence === "certain")).toBe(true);
+    expect(
+      parsed.callees.sortedEdges.map((edge) => edge.symbol.identity.segments[0]!.name),
+    ).toEqual(["add", "multiply"]);
+    expect(
+      parsed.callers.sortedEdges.map((edge) => edge.symbol.identity.segments[0]!.name),
+    ).toEqual(["runOnce", "runTwice"]);
+    expect(parsed.callers.sortedEdges.every((edge) => edge.confidence === "certain")).toBe(true);
+    expect(parsed.callees.sortedEdges.every((edge) => edge.confidence === "certain")).toBe(true);
     expect(parsed.references.total).toBe(4);
     expect(parsed.references.kindCounts).toMatchObject({ usage: 3, import: 1 });
     expect(parsed.history).toHaveLength(4);

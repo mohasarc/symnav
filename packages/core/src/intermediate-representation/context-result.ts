@@ -6,9 +6,9 @@ import type { SymbolDecl } from "./types.js";
 
 export const DEFAULT_CONTEXT_CAP = 20;
 
-export interface CappedCallEdges {
-  readonly edges: readonly CallEdge[]; // certain only, sorted, <= cap
-  readonly overflow: number; // certain edges beyond the cap
+export interface CappedCertainCallEdges {
+  readonly sortedEdges: readonly CallEdge[];
+  readonly omittedCertainEdgeCount: number;
 }
 
 export interface ContextReferenceSummary {
@@ -20,8 +20,8 @@ export interface ContextResult {
   readonly identity: SymbolIdentity;
   readonly target: SymbolDecl;
   readonly definitions: readonly SymbolDecl[];
-  readonly callers: CappedCallEdges;
-  readonly callees: CappedCallEdges;
+  readonly callers: CappedCertainCallEdges;
+  readonly callees: CappedCertainCallEdges;
   readonly references: ContextReferenceSummary;
   readonly history: readonly HistoryEntry[];
 }

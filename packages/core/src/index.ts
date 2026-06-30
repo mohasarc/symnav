@@ -29,7 +29,7 @@ export type { BuildRefsResultArgs } from "./intermediate-representation/refs-res
 export { RefsResultBuilder } from "./intermediate-representation/refs-result-builder.js";
 export { countReferenceKinds } from "./intermediate-representation/reference-kinds.js";
 export type {
-  CappedCallEdges,
+  CappedCertainCallEdges,
   ContextReferenceSummary,
   ContextResult,
 } from "./intermediate-representation/context-result.js";

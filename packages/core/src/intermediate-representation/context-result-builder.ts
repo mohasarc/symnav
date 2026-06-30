@@ -1,6 +1,6 @@
 import type { HistoryEntry } from "../git/git-history.js";
 import type { CallEdge } from "./call-edge.js";
-import type { CappedCallEdges, ContextResult } from "./context-result.js";
+import type { CappedCertainCallEdges, ContextResult } from "./context-result.js";
 import { countReferenceKinds } from "./reference-kinds.js";
 import type { SymbolReference } from "./references.js";
 import type { SymbolIdentity } from "./symbol-identity.js";
@@ -10,8 +10,8 @@ export interface BuildContextResultArgs {
   readonly identity: SymbolIdentity;
   readonly target: SymbolDecl;
   readonly definitions: readonly SymbolDecl[];
-  readonly callers: readonly CallEdge[]; // raw (all confidences)
-  readonly callees: readonly CallEdge[];
+  readonly callerEdgesWithAnyConfidence: readonly CallEdge[];
+  readonly calleeEdgesWithAnyConfidence: readonly CallEdge[];
   readonly references: readonly SymbolReference[];
   readonly history: readonly HistoryEntry[];
   readonly cap: number;
@@ -25,8 +25,8 @@ export class ContextResultBuilder {
       identity: this.args.identity,
       target: this.args.target,
       definitions: this.args.definitions,
-      callers: this.capEdges(this.args.callers),
-      callees: this.capEdges(this.args.callees),
+      callers: this.capEdges(this.args.callerEdgesWithAnyConfidence),
+      callees: this.capEdges(this.args.calleeEdgesWithAnyConfidence),
       references: {
         total: this.args.references.length,
         kindCounts: countReferenceKinds(this.args.references),
@@ -35,13 +35,13 @@ export class ContextResultBuilder {
     };
   }
 
-  private capEdges(edges: readonly CallEdge[]): CappedCallEdges {
+  private capEdges(edges: readonly CallEdge[]): CappedCertainCallEdges {
     const certain = edges
       .filter((edge) => edge.confidence === "certain")
       .sort(ContextResultBuilder.compareEdges);
     return {
-      edges: certain.slice(0, this.args.cap),
-      overflow: Math.max(certain.length - this.args.cap, 0),
+      sortedEdges: certain.slice(0, this.args.cap),
+      omittedCertainEdgeCount: Math.max(certain.length - this.args.cap, 0),
     };
   }
 

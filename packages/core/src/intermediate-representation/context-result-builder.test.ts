@@ -53,8 +53,8 @@ function build(overrides: {
     identity,
     target,
     definitions: [target],
-    callers: overrides.callers ?? [],
-    callees: overrides.callees ?? [],
+    callerEdgesWithAnyConfidence: overrides.callers ?? [],
+    calleeEdgesWithAnyConfidence: overrides.callees ?? [],
     references: overrides.references ?? [],
     history: overrides.history ?? [],
     cap: overrides.cap ?? DEFAULT_CONTEXT_CAP,
@@ -67,28 +67,28 @@ describe("ContextResultBuilder", () => {
       callers: [edge("src/a.ts", 1, "certain"), edge("src/b.ts", 2, "possible")],
       callees: [edge("src/c.ts", 1, "possible"), edge("src/d.ts", 2, "certain")],
     });
-    expect(result.callers.edges).toHaveLength(1);
-    expect(result.callers.edges[0]!.symbol.identity.file).toBe("src/a.ts");
-    expect(result.callees.edges).toHaveLength(1);
-    expect(result.callees.edges[0]!.symbol.identity.file).toBe("src/d.ts");
+    expect(result.callers.sortedEdges).toHaveLength(1);
+    expect(result.callers.sortedEdges[0]!.symbol.identity.file).toBe("src/a.ts");
+    expect(result.callees.sortedEdges).toHaveLength(1);
+    expect(result.callees.sortedEdges[0]!.symbol.identity.file).toBe("src/d.ts");
   });
 
-  it("caps edges at the cap and reports overflow", () => {
+  it("caps certain edges and reports omitted certain edges", () => {
     const callees = Array.from({ length: 25 }, (_value, index) =>
       edge(`src/file-${String(index).padStart(2, "0")}.ts`, index + 1),
     );
     const result = build({ callees });
-    expect(result.callees.edges).toHaveLength(20);
-    expect(result.callees.overflow).toBe(5);
+    expect(result.callees.sortedEdges).toHaveLength(20);
+    expect(result.callees.omittedCertainEdgeCount).toBe(5);
   });
 
-  it("reports zero overflow at exactly the cap", () => {
+  it("reports zero omitted certain edges at exactly the cap", () => {
     const callees = Array.from({ length: 20 }, (_value, index) =>
       edge(`src/file-${String(index).padStart(2, "0")}.ts`, index + 1),
     );
     const result = build({ callees });
-    expect(result.callees.edges).toHaveLength(20);
-    expect(result.callees.overflow).toBe(0);
+    expect(result.callees.sortedEdges).toHaveLength(20);
+    expect(result.callees.omittedCertainEdgeCount).toBe(0);
   });
 
   it("sorts edges by file then symbol start line", () => {
@@ -96,7 +96,7 @@ describe("ContextResultBuilder", () => {
       callees: [edge("src/b.ts", 5), edge("src/a.ts", 9), edge("src/a.ts", 2)],
     });
     expect(
-      result.callees.edges.map((each) => ({
+      result.callees.sortedEdges.map((each) => ({
         file: each.symbol.identity.file,
         startLine: each.symbol.range.startLine,
       })),

@@ -25,6 +25,8 @@ export type {
   CallSite,
   CallEdge,
 } from "./intermediate-representation/call-edge.js";
+export type { GraphPathStep, GraphPath } from "./graph/graph-path.js";
+export { DEFAULT_GRAPH_DEPTH, MAX_GRAPH_DEPTH } from "./graph/graph-path.js";
 export type { BuildRefsResultArgs } from "./intermediate-representation/refs-result-builder.js";
 export { RefsResultBuilder } from "./intermediate-representation/refs-result-builder.js";
 export type {

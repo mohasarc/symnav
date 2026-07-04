@@ -105,7 +105,11 @@ class ContextTextRenderer {
     return `${header}\n${tree}${overflowSuffix}`;
   }
 
-  private static overflowLine(noun: string, direction: string, id: string): string {
+  private static overflowLine(
+    noun: string,
+    direction: "--incoming" | "--outgoing",
+    id: string,
+  ): string {
     return `… {N} more ${noun}. Run: symnav graph ${id} ${direction}\n`;
   }
 

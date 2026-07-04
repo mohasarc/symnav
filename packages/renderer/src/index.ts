@@ -7,3 +7,5 @@ export { renderDefinitionJson } from "./definition/render-definition-json.js";
 export { bracketTagFor } from "./definition/definition-tag.js";
 export { renderRefsText } from "./refs/render-refs-text.js";
 export { renderRefsJson } from "./refs/render-refs-json.js";
+export { renderContextText } from "./context/render-context-text.js";
+export { renderContextJson } from "./context/render-context-json.js";

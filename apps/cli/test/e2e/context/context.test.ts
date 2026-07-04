@@ -71,6 +71,19 @@ describe("symnav context e2e (contract resolution)", () => {
   });
 });
 
+describe("symnav context e2e (nested call sites)", () => {
+  it("finds call sites nested inside a branch, a loop, and a callback", () => {
+    const r = runContext(["src/nested/transform.ts::transform", "--json"]);
+    expect(r.stderr).toBe("");
+    expect(r.status).toBe(0);
+    const parsed = JSON.parse(r.stdout) as JsonContextResult;
+    expect(
+      parsed.callers.sortedEdges.map((edge) => edge.symbol.identity.segments.at(-1)!.name),
+    ).toEqual(["runPipeline", "mapAll"]);
+    expect(parsed.callers.sortedEdges.every((edge) => edge.confidence === "certain")).toBe(true);
+  });
+});
+
 describe("symnav context e2e (overflow)", () => {
   it("caps callers and points overflow at graph --incoming", () => {
     const r = runContext(["src/popular/popular.ts::popular"]);

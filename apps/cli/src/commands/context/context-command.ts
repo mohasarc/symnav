@@ -41,8 +41,8 @@ export const contextCommand: Command<ContextResult, ContextArgs> = {
     const target = await resolveTarget(backend, accepted, identity);
 
     const definitions = await backend.findDefinitions(accepted, identity);
-    const callers = await backend.findCallers(accepted, identity);
-    const callees = await backend.findCallees(accepted, identity);
+    const callers = await backend.findCallers(accepted, target.identity);
+    const callees = await backend.findCallees(accepted, target.identity);
     const references = await backend.findReferences(accepted, identity);
     const history = await ctx.git.recentHistory({
       workspaceRoot: ctx.workspace.root,

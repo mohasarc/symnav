@@ -56,6 +56,21 @@ describe("symnav context e2e (default output)", () => {
   });
 });
 
+describe("symnav context e2e (contract resolution)", () => {
+  it("walks callers and callees from the resolved implementation of a single-impl contract method", () => {
+    const r = runContext(["src/logging/logger.ts::Logger::log", "--json"]);
+    expect(r.stderr).toBe("");
+    expect(r.status).toBe(0);
+    const parsed = JSON.parse(r.stdout) as JsonContextResult;
+    expect(
+      parsed.callees.sortedEdges.map((edge) => edge.symbol.identity.segments.at(-1)!.name),
+    ).toEqual(["stamp"]);
+    expect(
+      parsed.callers.sortedEdges.map((edge) => edge.symbol.identity.segments.at(-1)!.name),
+    ).toContain("bootDefault");
+  });
+});
+
 describe("symnav context e2e (overflow)", () => {
   it("caps callers and points overflow at graph --incoming", () => {
     const r = runContext(["src/popular/popular.ts::popular"]);

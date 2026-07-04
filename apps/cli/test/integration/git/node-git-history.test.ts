@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { fixturePath } from "@symnav/testing";
 import { NodeGitHistory } from "../../../src/git/node-git-history.js";
-import { ensureFixtureGitMarker } from "../../e2e/overview/ensure-fixture-git-marker.js";
+import { ensureFixtureGitMarker } from "../../e2e/ensure-fixture-git-marker.js";
 
 const fixtureRoot = fixturePath("context-history-cases");
 let nonRepoDir: string;

@@ -56,9 +56,16 @@ class TrieDirectory {
     const subpath = `${name}/`;
     const [onlyChild, ...rest] = children;
     if (onlyChild !== undefined && rest.length === 0) {
-      return collapseInto(subpath, onlyChild);
+      return TrieDirectory.collapseInto(subpath, onlyChild);
     }
     return { subpath, children };
+  }
+
+  private static collapseInto(directorySubpath: string, child: CallEdgeTreeNode): CallEdgeTreeNode {
+    if ("edges" in child) {
+      return { subpath: directorySubpath + child.subpath, edges: child.edges };
+    }
+    return { subpath: directorySubpath + child.subpath, children: child.children };
   }
 
   private childDirectory(name: string): TrieDirectory {
@@ -80,11 +87,4 @@ class TrieDirectory {
     this.entries.set(name, created);
     return created;
   }
-}
-
-function collapseInto(directorySubpath: string, child: CallEdgeTreeNode): CallEdgeTreeNode {
-  if ("edges" in child) {
-    return { subpath: directorySubpath + child.subpath, edges: child.edges };
-  }
-  return { subpath: directorySubpath + child.subpath, children: child.children };
 }

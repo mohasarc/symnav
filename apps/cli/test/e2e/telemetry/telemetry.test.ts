@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { beforeAll, describe, expect, it } from "vitest";
 import { fixturePath, runSymnavBinary } from "@symnav/testing";
 
-import { ensureFixtureGitMarker } from "../overview/ensure-fixture-git-marker.js";
+import { ensureFixtureGitMarker } from "../ensure-fixture-git-marker.js";
 
 const fixtureRoot = fixturePath("overview-cases");
 const overviewArgs = ["overview", "class-with-methods.ts"] as const;

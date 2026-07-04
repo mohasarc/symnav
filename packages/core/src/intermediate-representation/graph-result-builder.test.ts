@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { GraphPath } from "../graph/graph-path.js";
-import { PageOutOfRangeError } from "../pagination/errors.js";
+import { InvalidPageRequestError, PageOutOfRangeError } from "../pagination/errors.js";
 import { GraphResultBuilder, type BuildGraphResultArgs } from "./graph-result-builder.js";
 import type { GraphDirection } from "./graph-result.js";
 import type { SymbolIdentity } from "./symbol-identity.js";
@@ -129,6 +129,16 @@ describe("GraphResultBuilder", () => {
     ).toThrowError(PageOutOfRangeError);
   });
 
+  it("rejects a both-direction page size that cannot give each direction a budget", () => {
+    expect(() =>
+      build({
+        incomingPaths: [],
+        outgoingPaths: numberedPaths("out", 2),
+        pageRequest: { pageSize: 1, all: false },
+      }),
+    ).toThrowError(InvalidPageRequestError);
+  });
+
   it("treats no paths as one empty page", () => {
     const result = build();
 
@@ -144,6 +154,7 @@ describe("GraphResultBuilder", () => {
     const result = build({
       identity: root.identity,
       root,
+      direction: "incoming",
       incomingPaths: [path(symbol("left"), shared, root), path(symbol("right"), shared, root)],
       pageRequest: { pageSize: 2, all: false },
     });

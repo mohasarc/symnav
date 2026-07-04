@@ -5,9 +5,7 @@ import { validatePageRequest } from "./validate-page-request.js";
 
 describe("validatePageRequest", () => {
   it.each([0, -1, 1.5, Number.NaN])("rejects page %s", (page) => {
-    expect(() => validatePageRequest({ page, all: false })).toThrowError(
-      InvalidPageRequestError,
-    );
+    expect(() => validatePageRequest({ page, all: false })).toThrowError(InvalidPageRequestError);
   });
 
   it.each([0, -1, 1.5, Number.NaN])("rejects page size %s", (pageSize) => {
@@ -17,8 +15,6 @@ describe("validatePageRequest", () => {
   });
 
   it("rejects an explicit page combined with all", () => {
-    expect(() => validatePageRequest({ page: 2, all: true })).toThrowError(
-      InvalidPageRequestError,
-    );
+    expect(() => validatePageRequest({ page: 2, all: true })).toThrowError(InvalidPageRequestError);
   });
 });

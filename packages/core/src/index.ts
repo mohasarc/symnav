@@ -34,6 +34,8 @@ export type {
   GraphDirectionPage,
   GraphResult,
 } from "./intermediate-representation/graph-result.js";
+export type { BuildGraphResultArgs } from "./intermediate-representation/graph-result-builder.js";
+export { GraphResultBuilder } from "./intermediate-representation/graph-result-builder.js";
 export type { BuildRefsResultArgs } from "./intermediate-representation/refs-result-builder.js";
 export { RefsResultBuilder } from "./intermediate-representation/refs-result-builder.js";
 export type {

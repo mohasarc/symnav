@@ -203,12 +203,12 @@ describe("symnav graph e2e (telemetry)", () => {
     const event = JSON.parse(singleUsageLine(stateDir)) as {
       command: string;
       outcome: string;
-      flags: readonly string[];
+      argShape: { flags: readonly string[] };
       resultCounts?: Record<string, number>;
     };
     expect(event.command).toBe("graph");
     expect(event.outcome).toBe("success");
-    expect(event.flags).toEqual(["depth", "incoming"]);
+    expect(event.argShape.flags).toEqual(["depth", "incoming"]);
     expect(Object.keys(event.resultCounts ?? {}).sort()).toEqual([
       "incomingPaths",
       "outgoingPaths",

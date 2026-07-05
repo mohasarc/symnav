@@ -11,13 +11,13 @@ src/hub.ts
 └── 1-5: hub
     export function hub(value: number): number
     └── src/hub-callers.ts
-        └── 7-9: callerTwo  [caller]
-            export function callerTwo(): number
+        └── 11-13: callerThree  [caller]
+            export function callerThree(): number
 
 Outgoing
 src/hub.ts
 └── 1-5: hub
     export function hub(value: number): number
     └── src/hub.ts
-        └── 11-13: spokeTwo  [callee]
-            export function spokeTwo(value: number): number
+        └── 15-17: spokeThree  [callee]
+            export function spokeThree(value: number): number

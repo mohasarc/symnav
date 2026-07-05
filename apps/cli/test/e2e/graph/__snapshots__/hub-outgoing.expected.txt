@@ -12,7 +12,7 @@ src/hub.ts
     └── src/hub.ts
         ├── 7-9: spokeOne  [callee]
         │   export function spokeOne(value: number): number
-        ├── 11-13: spokeTwo  [callee]
-        │   export function spokeTwo(value: number): number
-        └── 15-17: spokeThree  [callee]
-            export function spokeThree(value: number): number
+        ├── 15-17: spokeThree  [callee]
+        │   export function spokeThree(value: number): number
+        └── 11-13: spokeTwo  [callee]
+            export function spokeTwo(value: number): number

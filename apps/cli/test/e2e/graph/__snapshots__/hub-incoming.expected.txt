@@ -12,7 +12,7 @@ src/hub.ts
     └── src/hub-callers.ts
         ├── 3-5: callerOne  [caller]
         │   export function callerOne(): number
-        ├── 7-9: callerTwo  [caller]
-        │   export function callerTwo(): number
-        └── 11-13: callerThree  [caller]
-            export function callerThree(): number
+        ├── 11-13: callerThree  [caller]
+        │   export function callerThree(): number
+        └── 7-9: callerTwo  [caller]
+            export function callerTwo(): number

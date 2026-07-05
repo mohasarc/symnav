@@ -27,6 +27,7 @@ export type {
 } from "./intermediate-representation/call-edge.js";
 export type { GraphPathStep, GraphPath } from "./graph/graph-path.js";
 export { DEFAULT_GRAPH_DEPTH, MAX_GRAPH_DEPTH } from "./graph/graph-path.js";
+export { GraphDepthExceededError, InvalidGraphRequestError } from "./graph/errors.js";
 export type { GraphTraverserArgs } from "./graph/graph-traverser.js";
 export { GraphTraverser } from "./graph/graph-traverser.js";
 export type {

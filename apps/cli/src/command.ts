@@ -143,7 +143,7 @@ function argShapeFor(shape: ArgShape, json: boolean): ArgShape {
 
 function handleError(context: ProgramContext, err: unknown): void {
   if (err instanceof UserFacingError) {
-    context.stderr.write(`Cannot answer: ${err.reason}.\n`);
+    context.stderr.write(err.render());
     context.exit(1);
     return;
   }

@@ -1,12 +1,14 @@
 import { describe, expect, it } from "vitest";
 import type {
   DefinitionResult,
+  GraphResult,
   OverviewFileSymbols,
   RefsResult,
   ResolveResult,
   SymbolDecl,
 } from "@symnav/core";
 import { defCommand } from "./def/def-command.js";
+import { graphCommand } from "./graph/graph-command.js";
 import { overviewCommand } from "./overview/overview-command.js";
 import { refsCommand } from "./refs/refs-command.js";
 import { resolveCommand } from "./resolve/resolve-command.js";
@@ -25,6 +27,7 @@ describe("command telemetry descriptors", () => {
     expect(resolveCommand.name).toBe("resolve");
     expect(defCommand.name).toBe("def");
     expect(refsCommand.name).toBe("refs");
+    expect(graphCommand.name).toBe("graph");
   });
 
   it("describes overview arguments", () => {
@@ -64,6 +67,24 @@ describe("command telemetry descriptors", () => {
       kind: "symbol_id",
       lengthBucket: "short",
       flags: ["all", "page"],
+    });
+  });
+
+  it("describes graph arguments", () => {
+    expect(
+      graphCommand.describeArgs({
+        symbolId: "a.ts::Foo",
+        incoming: true,
+        outgoing: false,
+        depth: 2,
+        page: undefined,
+        pageSize: 5,
+        all: true,
+      }),
+    ).toEqual({
+      kind: "symbol_id",
+      lengthBucket: "short",
+      flags: ["all", "depth", "incoming", "page-size"],
     });
   });
 
@@ -125,5 +146,25 @@ describe("command telemetry descriptors", () => {
     };
 
     expect(refsCommand.countResults(result)).toEqual({ total: 12, page: 2, pages: 6 });
+  });
+
+  it("counts graph result path totals and pages", () => {
+    const result: GraphResult = {
+      identity: { file: "src/a.ts", segments: [{ name: "Foo" }] },
+      root: symbol("Foo"),
+      depth: 2,
+      direction: "both",
+      incoming: { paths: [], totalPathCount: 3 },
+      outgoing: { paths: [], totalPathCount: 4 },
+      page: 1,
+      pageCount: 2,
+      repeatedSymbolCount: 0,
+    };
+
+    expect(graphCommand.countResults(result)).toEqual({
+      incomingPaths: 3,
+      outgoingPaths: 4,
+      pages: 2,
+    });
   });
 });

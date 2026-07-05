@@ -89,7 +89,9 @@ describe("symnav graph e2e (default output)", () => {
     const r = runGraph([dynamicRootId, "--outgoing", "--depth", "2"]);
     expect(r.stderr).toBe("");
     expect(r.status).toBe(0);
-    expect(r.stdout).toContain("[possible: dynamic dispatch: exact callee not statically resolvable]");
+    expect(r.stdout).toContain(
+      "[possible: dynamic dispatch: exact callee not statically resolvable]",
+    );
     expect(r.stdout).toContain("alphaLeaf  [callee]");
     expect(r.stdout).toContain("betaLeaf  [callee]");
     await expect(r.stdout).toMatchFileSnapshot(snapshot("dynamic.expected.txt"));

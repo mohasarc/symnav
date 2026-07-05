@@ -1,15 +1,10 @@
-import type { ContextResult, LanguageBackend, ResolvedPath, SymbolIdentity } from "@symnav/core";
-import {
-  AmbiguousSymbolError,
-  ContextResultBuilder,
-  DEFAULT_CONTEXT_CAP,
-  SymbolNotFoundError,
-  parseSymbolIdentity,
-} from "@symnav/core";
+import type { ContextResult } from "@symnav/core";
+import { ContextResultBuilder, DEFAULT_CONTEXT_CAP, parseSymbolIdentity } from "@symnav/core";
 import { renderContextJson, renderContextText } from "@symnav/renderer";
 
 import type { Command, CommandContext } from "../../command.js";
 import { classifyArgKind, lengthBucketOf } from "../../telemetry/arg-shape.js";
+import { resolveCallTarget } from "../resolve-call-target.js";
 
 export interface ContextArgs {
   readonly symbolId: string;
@@ -38,7 +33,7 @@ export const contextCommand: Command<ContextResult, ContextArgs> = {
     const files = await ctx.workspace.enumerate();
     const backend = ctx.router.findOrThrow(identity.file);
     const accepted = files.filter((file) => backend.accepts(file.relative));
-    const target = await resolveTarget(backend, accepted, identity);
+    const target = await resolveCallTarget(backend, accepted, identity);
 
     const definitions = await backend.findDefinitions(accepted, identity);
     const callers = await backend.findCallers(accepted, target.identity);
@@ -65,18 +60,3 @@ export const contextCommand: Command<ContextResult, ContextArgs> = {
   renderText: renderContextText,
   renderJson: renderContextJson,
 };
-
-async function resolveTarget(
-  backend: LanguageBackend,
-  files: readonly ResolvedPath[],
-  identity: SymbolIdentity,
-) {
-  const resolution = await backend.findCallTarget(files, identity);
-  if (resolution.outcome === "not-found") {
-    throw new SymbolNotFoundError(identity);
-  }
-  if (resolution.outcome === "ambiguous") {
-    throw new AmbiguousSymbolError(identity, resolution.candidates);
-  }
-  return resolution.target;
-}

@@ -1,7 +1,38 @@
 import { describe, expect, it } from "vitest";
 
+import type { GraphPath, GraphPathStep, SymbolDecl, SymbolPathSegment } from "@symnav/core";
+
 import { buildGraphPathTree } from "./graph-path-tree.js";
-import { decl, path, step } from "./graph-renderer-test-helpers.js";
+
+interface DeclInput {
+  readonly file: string;
+  readonly segments: readonly SymbolPathSegment[];
+  readonly startLine: number;
+  readonly endLine: number;
+  readonly signature: readonly string[];
+}
+
+function decl(input: DeclInput): SymbolDecl {
+  return {
+    identity: { file: input.file, segments: input.segments },
+    kind: { role: "callable", nativeLabel: "function-implementation" },
+    range: { startLine: input.startLine, endLine: input.endLine },
+    signature: { startLine: input.startLine, lines: input.signature },
+    children: [],
+  };
+}
+
+function step(symbol: SymbolDecl, options: { readonly closesCycle?: boolean } = {}): GraphPathStep {
+  return {
+    symbol,
+    confidence: "certain",
+    closesCycle: options.closesCycle ?? false,
+  };
+}
+
+function path(...steps: readonly GraphPathStep[]): GraphPath {
+  return { steps };
+}
 
 describe("buildGraphPathTree", () => {
   it("merges paths with the same first step and preserves first occurrence order", () => {

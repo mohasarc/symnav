@@ -9,3 +9,7 @@ export { renderRefsText } from "./refs/render-refs-text.js";
 export { renderRefsJson } from "./refs/render-refs-json.js";
 export { renderContextText } from "./context/render-context-text.js";
 export { renderContextJson } from "./context/render-context-json.js";
+export { renderGraphText } from "./graph/render-graph-text.js";
+export { renderGraphJson } from "./graph/render-graph-json.js";
+export type { GraphPathTreeNode } from "./graph/graph-path-tree.js";
+export { buildGraphPathTree } from "./graph/graph-path-tree.js";

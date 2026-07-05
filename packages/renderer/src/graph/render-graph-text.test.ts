@@ -1,7 +1,83 @@
 import { describe, expect, it } from "vitest";
 
-import { decl, path, result, step } from "./graph-renderer-test-helpers.js";
+import type {
+  EdgeConfidence,
+  GraphDirectionPage,
+  GraphPath,
+  GraphPathStep,
+  GraphResult,
+  SymbolDecl,
+  SymbolPathSegment,
+} from "@symnav/core";
+
 import { renderGraphText } from "./render-graph-text.js";
+
+interface DeclInput {
+  readonly file: string;
+  readonly segments: readonly SymbolPathSegment[];
+  readonly startLine: number;
+  readonly endLine: number;
+  readonly signature: readonly string[];
+}
+
+interface GraphResultOverrides {
+  readonly direction?: GraphResult["direction"];
+  readonly incoming?: GraphDirectionPage;
+  readonly outgoing?: GraphDirectionPage;
+  readonly omitIncoming?: boolean;
+  readonly omitOutgoing?: boolean;
+  readonly page?: GraphResult["page"];
+  readonly pageCount?: GraphResult["pageCount"];
+  readonly repeatedSymbolCount?: GraphResult["repeatedSymbolCount"];
+}
+
+function decl(input: DeclInput): SymbolDecl {
+  return {
+    identity: { file: input.file, segments: input.segments },
+    kind: { role: "callable", nativeLabel: "function-implementation" },
+    range: { startLine: input.startLine, endLine: input.endLine },
+    signature: { startLine: input.startLine, lines: input.signature },
+    children: [],
+  };
+}
+
+function step(
+  symbol: SymbolDecl,
+  options: {
+    readonly confidence?: EdgeConfidence;
+    readonly reason?: string;
+    readonly closesCycle?: boolean;
+  } = {},
+): GraphPathStep {
+  return {
+    symbol,
+    confidence: options.confidence ?? "certain",
+    ...(options.reason === undefined ? {} : { reason: options.reason }),
+    closesCycle: options.closesCycle ?? false,
+  };
+}
+
+function path(...steps: readonly GraphPathStep[]): GraphPath {
+  return { steps };
+}
+
+function graphResult(root: SymbolDecl, overrides: GraphResultOverrides = {}): GraphResult {
+  return {
+    identity: root.identity,
+    root,
+    depth: 2,
+    direction: overrides.direction ?? "both",
+    ...(overrides.omitIncoming
+      ? {}
+      : { incoming: overrides.incoming ?? { paths: [], totalPathCount: 0 } }),
+    ...(overrides.omitOutgoing
+      ? {}
+      : { outgoing: overrides.outgoing ?? { paths: [], totalPathCount: 0 } }),
+    page: overrides.page ?? 1,
+    pageCount: overrides.pageCount ?? 1,
+    repeatedSymbolCount: overrides.repeatedSymbolCount ?? 0,
+  };
+}
 
 const root = decl({
   file: "src/checkout/CheckoutService.ts",
@@ -56,7 +132,7 @@ describe("renderGraphText", () => {
       signature: ["transaction<T>(callback: TransactionCallback<T>): Promise<T>"],
     });
 
-    const graph = result(root, {
+    const graph = graphResult(root, {
       incoming: { paths: [path(step(controller), step(routes))], totalPathCount: 1 },
       outgoing: {
         paths: [path(step(charge), step(capture)), path(step(markPaid), step(transaction))],
@@ -120,8 +196,8 @@ describe("renderGraphText", () => {
       endLine: 78,
       signature: ["async processPayment(order: Order): Promise<Receipt>"],
     });
-    const graph = result(root, {
-      incoming: undefined,
+    const graph = graphResult(root, {
+      omitIncoming: true,
       direction: "outgoing",
       outgoing: {
         paths: [
@@ -154,8 +230,8 @@ describe("renderGraphText", () => {
       endLine: 45,
       signature: ["refund(): void"],
     });
-    const graph = result(root, {
-      incoming: undefined,
+    const graph = graphResult(root, {
+      omitIncoming: true,
       direction: "outgoing",
       outgoing: { paths: [path(step(charge)), path(step(refund))], totalPathCount: 2 },
     });
@@ -171,10 +247,56 @@ describe("renderGraphText", () => {
     );
   });
 
+  it("preserves non-consecutive same-file sibling order", () => {
+    const firstSameFile = decl({
+      file: "src/shared.ts",
+      segments: [{ name: "firstSameFile" }],
+      startLine: 10,
+      endLine: 12,
+      signature: ["function firstSameFile(): void"],
+    });
+    const otherFile = decl({
+      file: "src/other.ts",
+      segments: [{ name: "otherFile" }],
+      startLine: 20,
+      endLine: 22,
+      signature: ["function otherFile(): void"],
+    });
+    const secondSameFile = decl({
+      file: "src/shared.ts",
+      segments: [{ name: "secondSameFile" }],
+      startLine: 30,
+      endLine: 32,
+      signature: ["function secondSameFile(): void"],
+    });
+    const graph = graphResult(root, {
+      omitIncoming: true,
+      direction: "outgoing",
+      outgoing: {
+        paths: [path(step(firstSameFile)), path(step(otherFile)), path(step(secondSameFile))],
+        totalPathCount: 3,
+      },
+    });
+
+    expect(renderGraphText(graph)).toContain(
+      [
+        "    ├── src/shared.ts",
+        "    │   └── 10-12: firstSameFile  [callee]",
+        "    │       function firstSameFile(): void",
+        "    ├── src/other.ts",
+        "    │   └── 20-22: otherFile  [callee]",
+        "    │       function otherFile(): void",
+        "    └── src/shared.ts",
+        "        └── 30-32: secondSameFile  [callee]",
+        "            function secondSameFile(): void",
+      ].join("\n"),
+    );
+  });
+
   it("renders an empty included direction as a root-only tree", () => {
-    const graph = result(root, {
+    const graph = graphResult(root, {
       direction: "incoming",
-      outgoing: undefined,
+      omitOutgoing: true,
       incoming: { paths: [], totalPathCount: 0 },
     });
 
@@ -197,7 +319,7 @@ describe("renderGraphText", () => {
   });
 
   it("renders only the requested direction", () => {
-    const graph = result(root, { direction: "outgoing", incoming: undefined });
+    const graph = graphResult(root, { direction: "outgoing", omitIncoming: true });
     const text = renderGraphText(graph);
 
     expect(text).not.toContain("Incoming");
@@ -205,20 +327,20 @@ describe("renderGraphText", () => {
   });
 
   it("adds page metadata only for multi-page results", () => {
-    const onePageText = renderGraphText(result(root, { page: 1, pageCount: 1 }));
-    const multiPageText = renderGraphText(result(root, { page: 2, pageCount: 3 }));
+    const onePageText = renderGraphText(graphResult(root, { page: 1, pageCount: 1 }));
+    const multiPageText = renderGraphText(graphResult(root, { page: 2, pageCount: 3 }));
 
     expect(onePageText).not.toContain("Page:");
     expect(multiPageText).toContain("Edges: calls\nPage: 2/3");
   });
 
   it("adds singular and plural repeated symbol notes", () => {
-    expect(renderGraphText(result(root, { repeatedSymbolCount: 1 }))).toContain(
+    expect(renderGraphText(graphResult(root, { repeatedSymbolCount: 1 }))).toContain(
       "Note: 1 symbol appears in multiple paths.",
     );
-    expect(renderGraphText(result(root, { repeatedSymbolCount: 3 }))).toContain(
+    expect(renderGraphText(graphResult(root, { repeatedSymbolCount: 3 }))).toContain(
       "Note: 3 symbols appear in multiple paths.",
     );
-    expect(renderGraphText(result(root, { repeatedSymbolCount: 0 }))).not.toContain("Note:");
+    expect(renderGraphText(graphResult(root, { repeatedSymbolCount: 0 }))).not.toContain("Note:");
   });
 });

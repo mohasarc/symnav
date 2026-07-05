@@ -1,0 +1,23 @@
+Graph: hub
+File: src/hub.ts
+Lines: 1-5
+Depth: 1
+Direction: both
+Edges: calls
+Page: 2/3
+
+Incoming
+src/hub.ts
+└── 1-5: hub
+    export function hub(value: number): number
+    └── src/hub-callers.ts
+        └── 7-9: callerTwo  [caller]
+            export function callerTwo(): number
+
+Outgoing
+src/hub.ts
+└── 1-5: hub
+    export function hub(value: number): number
+    └── src/hub.ts
+        └── 11-13: spokeTwo  [callee]
+            export function spokeTwo(value: number): number

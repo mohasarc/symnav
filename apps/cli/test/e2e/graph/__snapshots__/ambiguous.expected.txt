@@ -1,0 +1,8 @@
+Cannot answer: symbol src/contract.ts::GraphShape::render matches multiple implementations.
+
+Candidates
+src/contract.ts
+├── 6-8: Box::render
+│   render(): number
+└── 12-14: Circle::render
+    render(): number

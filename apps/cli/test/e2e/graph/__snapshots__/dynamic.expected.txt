@@ -1,0 +1,22 @@
+Graph: dynamicRoot
+File: src/dynamic.ts
+Lines: 1-3
+Depth: 2
+Direction: outgoing
+Edges: calls
+
+Outgoing
+src/dynamic.ts
+└── 1-3: dynamicRoot
+    export function dynamicRoot(kind: "alpha" | "beta"): number
+    └── src/dynamic.ts
+        ├── 10-12: dynamicAlpha  [possible: dynamic dispatch: exact callee not statically resolvable]
+        │   export function dynamicAlpha(): number
+        │   └── src/dynamic.ts
+        │       └── 18-20: alphaLeaf  [callee]
+        │           export function alphaLeaf(): number
+        └── 14-16: dynamicBeta  [possible: dynamic dispatch: exact callee not statically resolvable]
+            export function dynamicBeta(): number
+            └── src/dynamic.ts
+                └── 22-24: betaLeaf  [callee]
+                    export function betaLeaf(): number

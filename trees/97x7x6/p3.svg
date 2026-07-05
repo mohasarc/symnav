@@ -1,0 +1,40 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="56" height="363" viewBox="720 0 56 363.12"><style>
+    :root {
+      --ct-fill: rgba(246,248,250,0.85);
+      --ct-path: #24292f;
+      --ct-muted: #57606a;
+      --ct-added: #1a7f37;
+      --ct-changed: #9a6700;
+      --ct-moved: #8250df;
+      --ct-removed: #cf222e;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --ct-fill: rgba(22,27,34,0.85);
+        --ct-path: #e6edf3;
+        --ct-muted: #8b949e;
+        --ct-added: #3fb950;
+        --ct-changed: #d29922;
+        --ct-moved: #bc8cff;
+        --ct-removed: #f85149;
+      }
+    }
+    text { font-family: ui-monospace, 'Cascadia Code', 'Source Code Pro', Menlo, Consolas, 'DejaVu Sans Mono', monospace; font-size: 13.6px; }
+  </style>
+  <text x="-1" y="23.799999999999997" xml:space="preserve"><tspan fill="var(--ct-path)">.</tspan></text>
+  <text x="-1" y="43.519999999999996" xml:space="preserve"><tspan fill="var(--ct-muted)">├── </tspan><tspan fill="var(--ct-added)">++</tspan><tspan fill="var(--ct-path)"> .agents/skills/symnav/SKILL.md</tspan><tspan fill="var(--ct-muted)" x="317.24"># documents graph command usage for agents</tspan></text>
+  <text x="-1" y="63.239999999999995" xml:space="preserve"><tspan fill="var(--ct-muted)">├── </tspan><tspan fill="var(--ct-path)">apps/</tspan></text>
+  <text x="-1" y="82.96" xml:space="preserve"><tspan fill="var(--ct-muted)">│   └── </tspan><tspan fill="var(--ct-path)">cli/</tspan></text>
+  <text x="-1" y="102.67999999999999" xml:space="preserve"><tspan fill="var(--ct-muted)">│       ├── </tspan><tspan fill="var(--ct-path)">src/</tspan></text>
+  <text x="-1" y="122.39999999999999" xml:space="preserve"><tspan fill="var(--ct-muted)">│       │   └── </tspan><tspan fill="var(--ct-changed)">**</tspan><tspan fill="var(--ct-path)"> commands/</tspan></text>
+  <text x="-1" y="142.12" xml:space="preserve"><tspan fill="var(--ct-muted)">│       │       ├── </tspan><tspan fill="var(--ct-added)">++</tspan><tspan fill="var(--ct-path)"> graph/</tspan><tspan fill="var(--ct-muted)" x="317.24"># owns graph CLI compute and Commander wiring</tspan></text>
+  <text x="-1" y="161.84" xml:space="preserve"><tspan fill="var(--ct-muted)">│       │       ├── </tspan><tspan fill="var(--ct-changed)">**</tspan><tspan fill="var(--ct-path)"> context/</tspan><tspan fill="var(--ct-muted)" x="317.24"># reuses shared call-target resolution</tspan></text>
+  <text x="-1" y="181.56" xml:space="preserve"><tspan fill="var(--ct-muted)">│       │       └── </tspan><tspan fill="var(--ct-added)">++</tspan><tspan fill="var(--ct-path)"> resolve-call-target.ts</tspan><tspan fill="var(--ct-muted)" x="374.36"># shared call-target error bridge</tspan></text>
+  <text x="-1" y="201.28" xml:space="preserve"><tspan fill="var(--ct-muted)">│       └── </tspan><tspan fill="var(--ct-path)">test/e2e/</tspan></text>
+  <text x="-1" y="221" xml:space="preserve"><tspan fill="var(--ct-muted)">│           └── </tspan><tspan fill="var(--ct-added)">++</tspan><tspan fill="var(--ct-path)"> graph/</tspan><tspan fill="var(--ct-muted)" x="317.24"># graph command snapshots and telemetry coverage</tspan></text>
+  <text x="-1" y="240.72" xml:space="preserve"><tspan fill="var(--ct-muted)">└── </tspan><tspan fill="var(--ct-path)">packages/</tspan></text>
+  <text x="-1" y="260.44" xml:space="preserve"><tspan fill="var(--ct-muted)">    └── </tspan><tspan fill="var(--ct-path)">testing/</tspan></text>
+  <text x="-1" y="280.15999999999997" xml:space="preserve"><tspan fill="var(--ct-muted)">        └── </tspan><tspan fill="var(--ct-path)">fixtures/</tspan></text>
+  <text x="-1" y="299.87999999999994" xml:space="preserve"><tspan fill="var(--ct-muted)">            └── </tspan><tspan fill="var(--ct-added)">++</tspan><tspan fill="var(--ct-path)"> graph-cases/</tspan><tspan fill="var(--ct-muted)" x="317.24"># fan-in, fan-out, chain, cycle, dynamic, isolated cases</tspan></text>
+  <text x="-1" y="319.59999999999997" xml:space="preserve"></text>
+  <text x="-1" y="349.17999999999995"><tspan fill="var(--ct-added)">++</tspan><tspan fill="var(--ct-muted)"> added   </tspan><tspan fill="var(--ct-changed)">**</tspan><tspan fill="var(--ct-muted)"> changed   </tspan><tspan fill="var(--ct-moved)">~~</tspan><tspan fill="var(--ct-muted)"> moved   </tspan><tspan fill="var(--ct-removed)">--</tspan><tspan fill="var(--ct-muted)"> removed</tspan></text></svg>

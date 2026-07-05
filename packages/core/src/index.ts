@@ -29,6 +29,13 @@ export type { GraphPathStep, GraphPath } from "./graph/graph-path.js";
 export { DEFAULT_GRAPH_DEPTH, MAX_GRAPH_DEPTH } from "./graph/graph-path.js";
 export type { GraphTraverserArgs } from "./graph/graph-traverser.js";
 export { GraphTraverser } from "./graph/graph-traverser.js";
+export type {
+  GraphDirection,
+  GraphDirectionPage,
+  GraphResult,
+} from "./intermediate-representation/graph-result.js";
+export type { BuildGraphResultArgs } from "./intermediate-representation/graph-result-builder.js";
+export { GraphResultBuilder } from "./intermediate-representation/graph-result-builder.js";
 export type { BuildRefsResultArgs } from "./intermediate-representation/refs-result-builder.js";
 export { RefsResultBuilder } from "./intermediate-representation/refs-result-builder.js";
 export type {

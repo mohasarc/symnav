@@ -1,5 +1,5 @@
-import { isPositiveInteger } from "../validation/is-positive-integer.js";
-import { InvalidPageRequestError, PageOutOfRangeError } from "./errors.js";
+import { PageOutOfRangeError } from "./errors.js";
+import { validatePageRequest } from "./validate-page-request.js";
 
 export const DEFAULT_PAGE_SIZE = 100;
 
@@ -17,7 +17,7 @@ export interface Page<T> {
 
 export class Paginator {
   constructor(private readonly request: PageRequest) {
-    this.validate();
+    validatePageRequest(request);
   }
 
   paginate<T>(items: readonly T[]): Page<T> {
@@ -32,18 +32,5 @@ export class Paginator {
     }
     const start = (page - 1) * pageSize;
     return { items: items.slice(start, start + pageSize), page, pageCount };
-  }
-
-  private validate(): void {
-    const { all, page, pageSize } = this.request;
-    if (all && page !== undefined) {
-      throw new InvalidPageRequestError("--all cannot be combined with an explicit page");
-    }
-    if (page !== undefined && !isPositiveInteger(page)) {
-      throw new InvalidPageRequestError(`page must be a positive integer, got ${page}`);
-    }
-    if (pageSize !== undefined && !isPositiveInteger(pageSize)) {
-      throw new InvalidPageRequestError(`page size must be a positive integer, got ${pageSize}`);
-    }
   }
 }

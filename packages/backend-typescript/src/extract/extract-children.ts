@@ -4,8 +4,6 @@ import {
   type ClassDeclaration,
   type InterfaceDeclaration,
   type ModuleDeclaration,
-  type VariableDeclaration,
-  type VariableDeclarationKind,
   type VariableStatement,
 } from "ts-morph";
 import type {
@@ -19,6 +17,7 @@ import { splitSignatureLines } from "@symnav/core";
 
 import { reportUnrecognisedNode } from "./extraction-diagnostics.js";
 import { extractSignatureSource } from "./extract-signature-source.js";
+import { extractVariableSignature } from "./extract-variable-signature.js";
 import { nodeKind } from "./node-kind.js";
 import { refineLabel } from "./refine-label.js";
 import { roleOf } from "./typescript-symbol-kind.js";
@@ -164,32 +163,21 @@ function toStatementDecl(stmt: Node, scope: ExtractionScope): SymbolDecl[] {
 
 function expandVariableStatement(stmt: VariableStatement, scope: ExtractionScope): SymbolDecl[] {
   const declList = stmt.getDeclarationList();
-  const keyword = declList.getDeclarationKind();
   const range = nodeRange(stmt);
   return declList.getDeclarations().map((decl) => ({
     identity: identityFor(scope, decl.getName()),
     kind: { role: roleOf("variable"), nativeLabel: "variable" },
     range,
-    signature: signatureFrom(range.startLine, singleVariableSignature(stmt, keyword, decl)),
+    signature: signatureFrom(
+      range.startLine,
+      extractVariableSignature({ statement: stmt, declaration: decl }),
+    ),
     children: [],
   }));
 }
 
 function signatureFrom(startLine: number, raw: string): Signature {
   return { startLine, lines: splitSignatureLines(raw) };
-}
-
-function singleVariableSignature(
-  stmt: VariableStatement,
-  keyword: VariableDeclarationKind,
-  decl: VariableDeclaration,
-): string {
-  const modifiers = stmt
-    .getModifiers()
-    .map((m) => m.getText())
-    .join(" ");
-  const head = modifiers ? `${modifiers} ${keyword}` : keyword;
-  return `${head} ${decl.getText()}`;
 }
 
 function nodeName(node: Node): string {

@@ -9,4 +9,4 @@ Overview: top-level-constants.ts
 │   5 declare const VERSION: string
 │
 └── 7: default
-    7 42
+    7 export default 42

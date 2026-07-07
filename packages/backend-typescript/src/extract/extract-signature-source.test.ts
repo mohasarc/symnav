@@ -199,11 +199,11 @@ describe("extractSignatureSource", () => {
   });
 
   describe("default export", () => {
-    it("returns the expression text", () => {
+    it("returns a bounded export assignment head", () => {
       const file = parseTypeScriptSource("export default { handler: 'main' };");
       const stmt = firstStatement(file);
       if (!Node.isExportAssignment(stmt)) throw new Error("expected export assignment");
-      expect(extractSignatureSource(stmt)).toBe("{ handler: 'main' }");
+      expect(extractSignatureSource(stmt)).toBe("export default { … }");
     });
   });
 

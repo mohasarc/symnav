@@ -1,11 +1,11 @@
-import { Node } from "ts-morph";
+import { Node, SyntaxKind } from "ts-morph";
 
 export function extractSignatureSource(node: Node): string {
   return dedentContinuationLines(rawSignatureSource(node), ambientIndentation(node));
 }
 
 function rawSignatureSource(node: Node): string {
-  if (Node.isExportAssignment(node)) return node.getExpression().getText();
+  if (Node.isExportAssignment(node)) return `export default ${collapsedExpression(node.getExpression())}`;
   if (Node.isTypeAliasDeclaration(node)) return cutBeforeTerminator(node);
   if (
     Node.isClassDeclaration(node) ||
@@ -16,6 +16,24 @@ function rawSignatureSource(node: Node): string {
     return cutBeforeOpeningBrace(node);
   }
   return cutBeforeBodyOrTerminator(node);
+}
+
+function collapsedExpression(node: Node): string {
+  if (Node.isObjectLiteralExpression(node)) return "{ … }";
+  if (Node.isArrayLiteralExpression(node)) return "[…]";
+  if (Node.isCallExpression(node)) return `${node.getExpression().getText()}(…)`;
+  if (Node.isFunctionExpression(node)) {
+    const body = node.getBody();
+    if (!body) return node.getText();
+    const bodyStart = body.getStart() - node.getStart();
+    return `${node.getText().slice(0, bodyStart).trimEnd()} …`;
+  }
+  if (Node.isArrowFunction(node)) {
+    const body = node.getBody();
+    const bodyStart = body.getStart() - node.getStart();
+    return `${node.getText().slice(0, bodyStart).trimEnd()} …`;
+  }
+  return node.getText();
 }
 
 function ambientIndentation(node: Node): number {
@@ -40,6 +58,11 @@ function stripLeading(line: string, max: number): string {
 }
 
 function cutBeforeOpeningBrace(node: Node): string {
+  const openingBrace = node.getFirstChildByKind(SyntaxKind.OpenBraceToken);
+  if (openingBrace) {
+    const text = node.getText();
+    return text.slice(0, openingBrace.getStart() - node.getStart()).trimEnd();
+  }
   const text = node.getText();
   const brace = text.indexOf("{");
   return brace === -1 ? text.trimEnd() : text.slice(0, brace).trimEnd();

@@ -62,6 +62,7 @@ export function extractStatementDecls(
 const IGNORED_STATEMENT_KINDS: ReadonlySet<SyntaxKind> = new Set([
   SyntaxKind.ImportDeclaration,
   SyntaxKind.ExportDeclaration,
+  SyntaxKind.NamespaceExportDeclaration,
   SyntaxKind.ImportEqualsDeclaration,
   SyntaxKind.EmptyStatement,
   SyntaxKind.ExpressionStatement,

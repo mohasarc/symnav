@@ -138,6 +138,23 @@ describe("renderOverviewText", () => {
     expect(output).not.toContain(`line ${SIGNATURE_CAP_LINES}`);
   });
 
+  it("does not cap a collapsed initializer signature from a long declaration range", () => {
+    const file: OverviewFileSymbols = {
+      file: "src/file.ts",
+      symbols: [
+        decl({
+          kind: "variable",
+          segments: [{ name: "schema" }],
+          range: { startLine: 1, endLine: 24 },
+          signature: signature(1, "const schema = z.object(…)"),
+        }),
+      ],
+    };
+    const output = renderOverviewText(file);
+    expect(output).toContain("    1 const schema = z.object(…)\n");
+    expect(output).not.toContain(`    ${SIGNATURE_CAP_LINES} ${SIGNATURE_ELLIPSIS}\n`);
+  });
+
   it("renders multiple top-level entries as tree children of the file path", () => {
     const file: OverviewFileSymbols = {
       file: "src/file.ts",

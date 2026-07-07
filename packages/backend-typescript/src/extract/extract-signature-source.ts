@@ -5,7 +5,9 @@ export function extractSignatureSource(node: Node): string {
 }
 
 function rawSignatureSource(node: Node): string {
-  if (Node.isExportAssignment(node)) return `export default ${collapsedExpression(node.getExpression())}`;
+  if (Node.isExportAssignment(node)) {
+    return `export default ${collapsedExpression(node.getExpression())}`;
+  }
   if (Node.isTypeAliasDeclaration(node)) return cutBeforeTerminator(node);
   if (
     Node.isClassDeclaration(node) ||

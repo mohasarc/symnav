@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { UserFacingError } from "../errors.js";
 import {
+  DirectoryInputError,
   FileNotFoundError,
   IgnoredFileError,
   NotInWorkspaceError,
@@ -19,6 +20,12 @@ describe("workspace errors render their reason", () => {
     const err = new IgnoredFileError("foo.ts");
     expect(err).toBeInstanceOf(UserFacingError);
     expect(err.reason).toBe("foo.ts is ignored by .gitignore");
+  });
+
+  it("DirectoryInputError cites the input path", () => {
+    const err = new DirectoryInputError("src/rules");
+    expect(err).toBeInstanceOf(UserFacingError);
+    expect(err.reason).toBe("src/rules is a directory; expected a TypeScript source file");
   });
 
   it("OutsideWorkspaceError cites the input path and workspace root", () => {

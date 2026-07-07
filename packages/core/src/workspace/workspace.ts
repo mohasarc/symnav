@@ -3,6 +3,7 @@ import type { FileSystem } from "./file-system.js";
 import {
   FileNotFoundError,
   IgnoredFileError,
+  DirectoryInputError,
   NotInWorkspaceError,
   OutsideWorkspaceError,
   UnreadableDirectoryWarningCandidateError,
@@ -42,6 +43,9 @@ class DefaultWorkspace implements Workspace {
     const relativePath = relPathFromRoot(absolutePath, this.root);
     if (this.ignore.isIgnored(relativePath)) {
       throw new IgnoredFileError(inputPath);
+    }
+    if (await this.fs.isDirectory(absolutePath)) {
+      throw new DirectoryInputError(relativePath);
     }
     return { relative: relativePath, absolute: absolutePath };
   }

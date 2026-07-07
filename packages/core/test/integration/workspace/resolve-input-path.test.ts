@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { createWorkspace } from "../../../src/workspace/workspace.js";
 import { InMemoryFileSystem } from "../../../src/workspace/in-memory/in-memory-file-system.js";
 import {
+  DirectoryInputError,
   FileNotFoundError,
   IgnoredFileError,
   OutsideWorkspaceError,
@@ -70,6 +71,19 @@ describe("Workspace.resolveInputPath", () => {
     });
     await expect(ws.resolveInputPath("build/a.ts", "/repo")).rejects.toBeInstanceOf(
       IgnoredFileError,
+    );
+  });
+
+  it("throws DirectoryInputError when the resolved path is a directory", async () => {
+    const ws = await createWorkspace({
+      startDir: "/repo",
+      fs: new InMemoryFileSystem({
+        "/repo/.git/HEAD": "ref: refs/heads/main\n",
+        "/repo/src/rules/index.ts": "export const rule = true;",
+      }),
+    });
+    await expect(ws.resolveInputPath("src/rules", "/repo")).rejects.toBeInstanceOf(
+      DirectoryInputError,
     );
   });
 });

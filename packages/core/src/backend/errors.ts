@@ -12,7 +12,11 @@ export class UnsupportedFileError extends UserFacingError {
   }
 
   get reason(): string {
-    return `cannot read ${extname(this.inputPath)} files (${this.inputPath})`;
+    const extension = extname(this.inputPath);
+    if (extension === "") {
+      return `${this.inputPath} has no file extension; expected a TypeScript source file`;
+    }
+    return `cannot read ${extension} files (${this.inputPath})`;
   }
 }
 

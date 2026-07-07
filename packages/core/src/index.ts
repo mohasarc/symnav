@@ -79,3 +79,4 @@ export {
   UnsupportedFileError,
 } from "./backend/errors.js";
 export { FileNotFoundError, OutsideWorkspaceError } from "./workspace/errors.js";
+export { DirectoryInputError } from "./workspace/errors.js";

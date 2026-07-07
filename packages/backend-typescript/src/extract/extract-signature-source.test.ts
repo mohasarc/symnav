@@ -62,6 +62,94 @@ describe("extractSignatureSource", () => {
         expected: "constructor(private readonly id: string)",
       },
       {
+        name: "property arrow function initializer",
+        source: "class Service { handler = (value: string) => { return value.trim(); }; }",
+        select: firstClassMember,
+        expected: "handler = (value: string) => …",
+      },
+      {
+        name: "property object literal initializer",
+        source: "class Service { public readonly options: Options = { retry: true, name: 'x' }; }",
+        select: firstClassMember,
+        expected: "public readonly options: Options = { … }",
+      },
+      {
+        name: "property chained schema builder initializer",
+        source:
+          "class Service { static schema = z.object({ name: z.string() }).extend({ id: z.string() }); }",
+        select: firstClassMember,
+        expected: "static schema = z.object(…).extend(…)",
+      },
+      {
+        name: "property parenthesized chained schema builder initializer",
+        source:
+          "class Service { static schema = (z.object({ name: z.string() })).extend({ id: z.string() }); }",
+        select: firstClassMember,
+        expected: "static schema = z.object(…).extend(…)",
+      },
+      {
+        name: "property asserted chained schema builder initializer",
+        source:
+          "class Service { static schema = (z.object({ name: z.string() }) as Schema).extend({ id: z.string() }); }",
+        select: firstClassMember,
+        expected: "static schema = z.object(…).extend(…)",
+      },
+      {
+        name: "property nested factory call initializer",
+        source: "class Service { static fn = factory({ retry: true })({ id: 1 }); }",
+        select: firstClassMember,
+        expected: "static fn = factory(…)(…)",
+      },
+      {
+        name: "property awaited call initializer",
+        source: "class Service { data = await fetchData({ retry: true }); }",
+        select: firstClassMember,
+        expected: "data = await fetchData(…)",
+      },
+      {
+        name: "property new expression initializer",
+        source: "class Service { client = new Client({ retry: true }); }",
+        select: firstClassMember,
+        expected: "client = new Client(…)",
+      },
+      {
+        name: "property anonymous class new expression initializer",
+        source: "class Service { service = new class { run() { return { retry: true }; } }(); }",
+        select: firstClassMember,
+        expected: "service = new class …()",
+      },
+      {
+        name: "property anonymous class new expression initializer with argument",
+        source:
+          "class Service { service = new class { run() { return { retry: true }; } }({ id: 1 }); }",
+        select: firstClassMember,
+        expected: "service = new class …(…)",
+      },
+      {
+        name: "property object literal satisfies initializer",
+        source: "class Service { options = { retry: true, name: 'x' } satisfies Options; }",
+        select: firstClassMember,
+        expected: "options = { … }",
+      },
+      {
+        name: "property array literal as const initializer",
+        source: "class Service { values = [1, 2] as const; }",
+        select: firstClassMember,
+        expected: "values = […]",
+      },
+      {
+        name: "property object literal as type initializer",
+        source: "class Service { options = { retry: true } as Options; }",
+        select: firstClassMember,
+        expected: "options = { … }",
+      },
+      {
+        name: "property object literal non-null assertion initializer",
+        source: "class Service { options = ({ retry: true })!; }",
+        select: firstClassMember,
+        expected: "options = { … }",
+      },
+      {
         name: "class declaration",
         source: "export class CheckoutService extends Base implements Iface { m() {} }",
         expected: "export class CheckoutService extends Base implements Iface",
@@ -100,6 +188,58 @@ describe("extractSignatureSource", () => {
         name: "export default expression-bodied arrow",
         source: "export default (value: string) => ({ value, ok: true });",
         expected: "export default (value: string) => …",
+      },
+      {
+        name: "export default chained schema builder",
+        source:
+          "export default z.object({ name: z.string(), count: z.number() }).extend({ id: z.string() });",
+        expected: "export default z.object(…).extend(…)",
+      },
+      {
+        name: "export default asserted chained schema builder",
+        source:
+          "export default (z.object({ name: z.string(), count: z.number() }) as Schema).extend({ id: z.string() });",
+        expected: "export default z.object(…).extend(…)",
+      },
+      {
+        name: "export default nested factory call",
+        source: "export default factory({ retry: true })({ id: 1 });",
+        expected: "export default factory(…)(…)",
+      },
+      {
+        name: "export default awaited call",
+        source: "export default await fetchData({ retry: true });",
+        expected: "export default await fetchData(…)",
+      },
+      {
+        name: "export default new expression",
+        source: "export default new Client({ retry: true });",
+        expected: "export default new Client(…)",
+      },
+      {
+        name: "export default anonymous class new expression",
+        source: "export default new class { run() { return { retry: true }; } }();",
+        expected: "export default new class …()",
+      },
+      {
+        name: "export default anonymous class new expression with argument",
+        source: "export default new class { run() { return { retry: true }; } }({ id: 1 });",
+        expected: "export default new class …(…)",
+      },
+      {
+        name: "export equals nested factory call",
+        source: "export = factory({ retry: true })({ id: 1 });",
+        expected: "export = factory(…)(…)",
+      },
+      {
+        name: "export equals awaited call",
+        source: "export = await fetchData({ retry: true });",
+        expected: "export = await fetchData(…)",
+      },
+      {
+        name: "export equals anonymous class new expression",
+        source: "export = new class { run() { return { retry: true }; } }();",
+        expected: "export = new class …()",
       },
       {
         name: "declaration with attached JSDoc",

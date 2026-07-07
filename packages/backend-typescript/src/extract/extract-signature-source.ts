@@ -1,13 +1,14 @@
-import { Node, SyntaxKind } from "ts-morph";
+import { Node, SyntaxKind, type ExportAssignment } from "ts-morph";
+
+import { collapseInitializerSource } from "./collapse-initializer-source.js";
 
 export function extractSignatureSource(node: Node): string {
   return dedentContinuationLines(rawSignatureSource(node), ambientIndentation(node));
 }
 
 function rawSignatureSource(node: Node): string {
-  if (Node.isExportAssignment(node)) {
-    return `export default ${collapsedExpression(node.getExpression())}`;
-  }
+  if (Node.isExportAssignment(node)) return exportAssignmentSignature(node);
+  if (Node.isPropertyDeclaration(node)) return propertySignature(node);
   if (Node.isTypeAliasDeclaration(node)) return cutBeforeTerminator(node);
   if (
     Node.isClassDeclaration(node) ||
@@ -20,22 +21,25 @@ function rawSignatureSource(node: Node): string {
   return cutBeforeBodyOrTerminator(node);
 }
 
-function collapsedExpression(node: Node): string {
-  if (Node.isObjectLiteralExpression(node)) return "{ … }";
-  if (Node.isArrayLiteralExpression(node)) return "[…]";
-  if (Node.isCallExpression(node)) return `${node.getExpression().getText()}(…)`;
-  if (Node.isFunctionExpression(node)) {
-    const body = node.getBody();
-    if (!body) return node.getText();
-    const bodyStart = body.getStart() - node.getStart();
-    return `${node.getText().slice(0, bodyStart).trimEnd()} …`;
-  }
-  if (Node.isArrowFunction(node)) {
-    const body = node.getBody();
-    const bodyStart = body.getStart() - node.getStart();
-    return `${node.getText().slice(0, bodyStart).trimEnd()} …`;
-  }
-  return node.getText();
+function exportAssignmentSignature(node: ExportAssignment): string {
+  const keyword = node.isExportEquals() ? "export =" : "export default";
+  return `${keyword} ${collapseInitializerSource(node.getExpression())}`;
+}
+
+function propertySignature(node: Node): string {
+  if (!Node.isPropertyDeclaration(node)) return cutBeforeTerminator(node);
+  const initializer = node.getInitializer();
+  if (!initializer) return cutBeforeTerminator(node);
+  return `${headBeforeInitializer(node, initializer)} = ${collapseInitializerSource(initializer)}`;
+}
+
+function headBeforeInitializer(node: Node, initializer: Node): string {
+  return node
+    .getText()
+    .slice(0, initializer.getStart() - node.getStart())
+    .trimEnd()
+    .replace(/\s*=$/, "")
+    .trimEnd();
 }
 
 function ambientIndentation(node: Node): number {

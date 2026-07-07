@@ -5,9 +5,16 @@ export type {
   Signature,
   SymbolDecl,
   OverviewFileSymbols,
+  ResultWithDiagnostics,
   ResolveResult,
   DefinitionResult,
 } from "./intermediate-representation/types.js";
+export type {
+  NavigationDiagnosticSeverity,
+  NavigationDiagnostic,
+  DiagnosticSink,
+} from "./diagnostics/navigation-diagnostic.js";
+export { CollectingDiagnosticSink } from "./diagnostics/navigation-diagnostic.js";
 export type {
   SymbolPathSegment,
   SymbolIdentity,

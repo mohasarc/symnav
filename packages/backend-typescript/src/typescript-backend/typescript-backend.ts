@@ -12,7 +12,7 @@ import type {
   SymbolDecl,
   SymbolIdentity,
 } from "@symnav/core";
-import { FileNotFoundError } from "@symnav/core";
+import { CollectingDiagnosticSink, FileNotFoundError } from "@symnav/core";
 
 import { findCallees } from "../call-graph/find-callees.js";
 import { findCallers } from "../call-graph/find-callers.js";
@@ -45,7 +45,9 @@ export class TypeScriptBackend implements LanguageBackend {
     if (!this.fs.existsSync(file.absolute) || this.fs.isDirectorySync(file.absolute)) {
       throw new FileNotFoundError(file.relative);
     }
-    return loadFileSymbols(this.fs, file);
+    const diagnostics = new CollectingDiagnosticSink();
+    const result = loadFileSymbols(this.fs, file, diagnostics);
+    return withDiagnostics(result, diagnostics);
   }
 
   async resolveSymbols(
@@ -90,4 +92,13 @@ export class TypeScriptBackend implements LanguageBackend {
   ): Promise<readonly CallEdge[]> {
     return findCallers({ fs: this.fs, files, identity });
   }
+}
+
+function withDiagnostics(
+  result: OverviewFileSymbols,
+  diagnostics: CollectingDiagnosticSink,
+): OverviewFileSymbols {
+  const collected = diagnostics.diagnostics();
+  if (collected.length === 0) return result;
+  return { ...result, diagnostics: collected };
 }

@@ -26,13 +26,13 @@ export interface SymbolDecl {
   readonly children: readonly SymbolDecl[];
 }
 
-export interface OverviewFileSymbols {
-  readonly file: string; // workspace-relative, POSIX separators
-  readonly symbols: readonly SymbolDecl[]; // top-level entries, source order
-}
-
 export interface ResultWithDiagnostics {
   readonly diagnostics?: readonly NavigationDiagnostic[];
+}
+
+export interface OverviewFileSymbols extends ResultWithDiagnostics {
+  readonly file: string; // workspace-relative, POSIX separators
+  readonly symbols: readonly SymbolDecl[]; // top-level entries, source order
 }
 
 export interface ResolveResult {

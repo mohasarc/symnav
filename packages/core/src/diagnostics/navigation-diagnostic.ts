@@ -12,8 +12,11 @@ export interface DiagnosticSink {
 
 export class CollectingDiagnosticSink implements DiagnosticSink {
   readonly #diagnostics: NavigationDiagnostic[] = [];
+  readonly #keys = new Set<string>();
 
   report(diagnostic: NavigationDiagnostic): void {
+    if (this.#keys.has(diagnostic.key)) return;
+    this.#keys.add(diagnostic.key);
     this.#diagnostics.push(diagnostic);
   }
 

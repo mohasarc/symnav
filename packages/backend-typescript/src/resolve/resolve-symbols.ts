@@ -20,7 +20,7 @@ export async function resolveSymbols(
   args: ResolveSymbolsArgs,
 ): Promise<readonly SymbolOverviewNode[]> {
   const candidates = extractAllSymbols(args.fs, args.files);
-  if (args.options.fuzzy) {
+  if (args.options.mode === "fuzzy") {
     return fuzzyMatch(candidates, args.query);
   }
   return exactMatch(candidates, args.query);

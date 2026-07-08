@@ -91,7 +91,7 @@ describe("resolveSymbols (exact)", () => {
       fs: fsWithFixture(),
       files: ALL_FILES,
       query: "PaymentProcessor",
-      options: { fuzzy: false },
+      options: { mode: "exact" },
     });
     expect(names(result)).toEqual(["PaymentProcessor"]);
   });
@@ -101,7 +101,7 @@ describe("resolveSymbols (exact)", () => {
       fs: fsWithFixture(),
       files: ALL_FILES,
       query: "paymentprocessor",
-      options: { fuzzy: false },
+      options: { mode: "exact" },
     });
     expect(result).toEqual([]);
   });
@@ -111,7 +111,7 @@ describe("resolveSymbols (exact)", () => {
       fs: fsWithFixture(),
       files: ALL_FILES,
       query: "charge",
-      options: { fuzzy: false },
+      options: { mode: "exact" },
     });
     expect(names(result).sort()).toEqual(
       ["PaymentProcessor::charge", "PaymentProvider::charge"].sort(),
@@ -123,7 +123,7 @@ describe("resolveSymbols (exact)", () => {
       fs: fsWithFixture(),
       files: ALL_FILES,
       query: "insideIf",
-      options: { fuzzy: false },
+      options: { mode: "exact" },
     });
     expect(names(result)).toEqual(["outer::insideIf"]);
     expect(result[0]?.identity).toEqual({
@@ -137,7 +137,7 @@ describe("resolveSymbols (exact)", () => {
       fs: fsWithFixture(),
       files: ALL_FILES,
       query: "src/control-flow/LocalDeclarations.ts::outer::insideIf",
-      options: { fuzzy: false },
+      options: { mode: "exact" },
     });
     expect(names(result)).toEqual(["outer::insideIf"]);
     expect(result[0]?.identity).toEqual({
@@ -151,7 +151,7 @@ describe("resolveSymbols (exact)", () => {
       fs: fsWithFixture(),
       files: ALL_FILES,
       query: "Payment",
-      options: { fuzzy: false },
+      options: { mode: "exact" },
     });
     expect(result.map((d) => d.identity.file).sort()).toEqual(
       ["src/checkout/CheckoutService.ts", "src/payments/types.ts"].sort(),
@@ -164,7 +164,7 @@ describe("resolveSymbols (exact)", () => {
       fs: fsWithFixture(),
       files: ALL_FILES,
       query: "NoSuchSymbol",
-      options: { fuzzy: false },
+      options: { mode: "exact" },
     });
     expect(result).toEqual([]);
   });
@@ -176,7 +176,7 @@ describe("resolveSymbols (fuzzy)", () => {
       fs: fsWithFixture(),
       files: ALL_FILES,
       query: "payproc",
-      options: { fuzzy: true },
+      options: { mode: "fuzzy" },
     });
     expect(names(result)).toContain("PaymentProcessor");
   });
@@ -186,7 +186,7 @@ describe("resolveSymbols (fuzzy)", () => {
       fs: fsWithFixture(),
       files: ALL_FILES,
       query: "payment",
-      options: { fuzzy: true },
+      options: { mode: "fuzzy" },
     });
     const all = names(result);
     expect(all.length).toBeGreaterThan(1);

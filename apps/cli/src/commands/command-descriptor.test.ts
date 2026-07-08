@@ -65,7 +65,7 @@ describe("command telemetry descriptors", () => {
   });
 
   it("describes resolve arguments", () => {
-    expect(resolveCommand.describeArgs({ query: "Foo", fuzzy: true })).toEqual({
+    expect(resolveCommand.describeArgs({ query: "Foo", mode: "fuzzy" })).toEqual({
       kind: "bare",
       lengthBucket: "short",
       flags: ["fuzzy"],

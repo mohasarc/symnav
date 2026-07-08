@@ -22,7 +22,7 @@ export function registerResolveCommand(
         dependencies,
         cwdOverride,
         json: options.json,
-        args: { query, fuzzy: options.fuzzy },
+        args: { query, mode: options.fuzzy ? "fuzzy" : "exact" },
       });
     });
 }

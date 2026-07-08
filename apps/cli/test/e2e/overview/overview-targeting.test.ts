@@ -2,8 +2,14 @@ import { describe, expect, it } from "vitest";
 
 import { runOverview } from "./run-overview.js";
 
+const snapshotsDir = new URL("./__snapshots__/", import.meta.url).pathname;
+
+function snapshot(name: string): string {
+  return new URL(name, `file://${snapshotsDir}`).pathname;
+}
+
 describe("symnav overview e2e (targeting)", () => {
-  it("renders collapsed fold interiors by default", () => {
+  it("renders copied fold headers without opening fold internals by default", async () => {
     const r = runOverview(["overview", "targeted-expansion.ts"]);
 
     expect(r.stderr).toBe("");
@@ -15,6 +21,38 @@ describe("symnav overview e2e (targeting)", () => {
     expect(r.stdout).not.toContain("setupHelper");
     expect(r.stdout).not.toContain("cursorHelper");
     expect(r.stdout).not.toContain("branchValue");
+    await expect(r.stdout).toMatchFileSnapshot(
+      snapshot("targeted-expansion-depth-0.expected.txt"),
+    );
+  });
+
+  it("opens one fold level globally", async () => {
+    const r = runOverview(["overview", "targeted-expansion.ts", "--depth", "1"]);
+
+    expect(r.stderr).toBe("");
+    expect(r.status).toBe(0);
+    expect(r.stdout).toContain("2: setupHelper");
+    expect(r.stdout).toContain("6: cursorHelper");
+    expect(r.stdout).toContain('8-10: describe("nested", () => {');
+    expect(r.stdout).toContain("15: action::branchValue");
+    expect(r.stdout).not.toContain("9: nestedHelper");
+    await expect(r.stdout).toMatchFileSnapshot(
+      snapshot("targeted-expansion-depth-1.expected.txt"),
+    );
+  });
+
+  it("opens nested fold levels globally", async () => {
+    const r = runOverview(["overview", "targeted-expansion.ts", "--depth", "2"]);
+
+    expect(r.stderr).toBe("");
+    expect(r.status).toBe(0);
+    expect(r.stdout).toContain("2: setupHelper");
+    expect(r.stdout).toContain("6: cursorHelper");
+    expect(r.stdout).toContain("9: nestedHelper");
+    expect(r.stdout).toContain("15: action::branchValue");
+    await expect(r.stdout).toMatchFileSnapshot(
+      snapshot("targeted-expansion-depth-2.expected.txt"),
+    );
   });
 
   it("expands a copied fold header target", () => {

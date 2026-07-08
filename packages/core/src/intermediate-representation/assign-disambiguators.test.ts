@@ -1,7 +1,14 @@
 import { describe, expect, it } from "vitest";
 
-import { assignDisambiguators } from "./assign-disambiguators.js";
+import { assignDisambiguators, assignOverviewDisambiguators } from "./assign-disambiguators.js";
 import { formatSymbolIdentity } from "./canonical-identity.js";
+import { walkOverviewSymbols } from "./overview-tree.js";
+import type {
+  FoldOverviewNode,
+  OverviewNode,
+  ReExportOverviewNode,
+  SymbolOverviewNode,
+} from "./overview-tree.js";
 import type { SymbolDecl, SymbolKind } from "./types.js";
 
 const CALLABLE_METHOD: SymbolKind = { role: "callable", nativeLabel: "method" };
@@ -33,6 +40,39 @@ function buildSiblings(
 
 function disambiguatorOf(decl: SymbolDecl): number | undefined {
   return decl.identity.segments[decl.identity.segments.length - 1]?.disambiguator;
+}
+
+function overviewSymbol(name: string): SymbolOverviewNode {
+  return {
+    type: "symbol",
+    identity: { file: "src/foo.ts", segments: [{ name }] },
+    kind: CALLABLE_METHOD,
+    range: { startLine: 1, endLine: 1 },
+    header: { startLine: 1, lines: [name] },
+    children: [],
+  };
+}
+
+function fold(children: readonly OverviewNode[] = []): FoldOverviewNode {
+  return {
+    type: "fold",
+    foldKind: "block",
+    range: { startLine: 1, endLine: 1 },
+    header: { startLine: 1, lines: ["{"] },
+    children,
+  };
+}
+
+function reExport(children: readonly OverviewNode[] = []): ReExportOverviewNode {
+  return {
+    type: "re-export",
+    exportKind: "named",
+    exportedNames: ["m"],
+    sourceModule: "./other.js",
+    range: { startLine: 1, endLine: 1 },
+    header: { startLine: 1, lines: ["export { m } from './other.js'"] },
+    children,
+  };
 }
 
 describe("assignDisambiguators", () => {
@@ -123,5 +163,32 @@ describe("assignDisambiguators", () => {
 
   it("returns an empty array when given no siblings", () => {
     expect(assignDisambiguators([])).toEqual([]);
+  });
+
+  it("ignores fold siblings when assigning symbol disambiguators", () => {
+    const [first, middle, second] = assignOverviewDisambiguators([
+      overviewSymbol("m"),
+      fold(),
+      overviewSymbol("m"),
+    ]);
+
+    expect(first?.type).toBe("symbol");
+    expect(first?.type === "symbol" ? disambiguatorOf(first) : undefined).toBe(1);
+    expect(middle).toEqual(fold());
+    expect(second?.type).toBe("symbol");
+    expect(second?.type === "symbol" ? disambiguatorOf(second) : undefined).toBe(2);
+  });
+
+  it("counts symbols behind transparent overview nodes in the containing sibling scope", () => {
+    const result = assignOverviewDisambiguators([
+      overviewSymbol("m"),
+      fold([overviewSymbol("m")]),
+      reExport([overviewSymbol("m")]),
+    ]);
+    const ids = walkOverviewSymbols(result).map((symbol) => formatSymbolIdentity(symbol.identity));
+
+    expect(ids).toEqual(["src/foo.ts::m#1", "src/foo.ts::m#2", "src/foo.ts::m#3"]);
+    expect("identity" in result[1]!).toBe(false);
+    expect("identity" in result[2]!).toBe(false);
   });
 });

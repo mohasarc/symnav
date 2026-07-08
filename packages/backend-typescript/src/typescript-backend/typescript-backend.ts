@@ -65,7 +65,7 @@ export class TypeScriptBackend implements LanguageBackend {
     files: readonly ResolvedPath[],
     pattern: SymbolTargetPattern,
     options: ResolveSymbolTargetOptions,
-  ): Promise<SymbolDecl> {
+  ): Promise<SymbolOverviewNode> {
     return resolveSymbolTarget({ fs: this.fs, files, pattern, options });
   }
 

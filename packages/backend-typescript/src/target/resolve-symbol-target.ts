@@ -2,7 +2,7 @@ import type {
   FileSystem,
   ResolvedPath,
   ResolveSymbolTargetOptions,
-  SymbolDecl,
+  SymbolOverviewNode,
   SymbolTargetCandidate,
   SymbolTargetPattern,
 } from "@symnav/core";
@@ -11,11 +11,11 @@ import {
   SymbolTargetNotFoundError,
   formatSymbolIdentity,
   symbolTargetMatches,
-  walkOverviewSymbols,
+  OverviewTree,
 } from "@symnav/core";
 import type { SymbolIdentity } from "@symnav/core";
 
-import { loadFileSymbols } from "../extract/load-file-symbols.js";
+import { loadFileEntries } from "../extract/load-file-entries.js";
 
 export interface ResolveSymbolTargetArgs {
   readonly fs: FileSystem;
@@ -24,7 +24,9 @@ export interface ResolveSymbolTargetArgs {
   readonly options: ResolveSymbolTargetOptions;
 }
 
-export async function resolveSymbolTarget(args: ResolveSymbolTargetArgs): Promise<SymbolDecl> {
+export async function resolveSymbolTarget(
+  args: ResolveSymbolTargetArgs,
+): Promise<SymbolOverviewNode> {
   const candidates = extractMatchingCandidates(args);
   if (candidates.length === 0) {
     throw new SymbolTargetNotFoundError(args.pattern);
@@ -42,7 +44,7 @@ export async function resolveSymbolTarget(args: ResolveSymbolTargetArgs): Promis
 function overloadGroupCandidate(
   candidates: readonly SymbolTargetCandidate[],
   pattern: SymbolTargetPattern,
-): SymbolDecl | undefined {
+): SymbolOverviewNode | undefined {
   const leafPattern = pattern.segmentSuffix[pattern.segmentSuffix.length - 1];
   if (leafPattern?.disambiguator !== undefined) {
     return undefined;
@@ -72,7 +74,7 @@ function extractMatchingCandidates(
 ): readonly SymbolTargetCandidate[] {
   const candidates: SymbolTargetCandidate[] = [];
   for (const file of args.files) {
-    for (const symbol of walkOverviewSymbols(loadFileSymbols(args.fs, file).entries)) {
+    for (const symbol of OverviewTree.walkSymbols(loadFileEntries(args.fs, file).entries)) {
       if (!symbolTargetMatches(args.pattern, symbol.identity)) continue;
       if (!matchesLine(args.options.line, symbol)) continue;
       candidates.push({
@@ -85,7 +87,7 @@ function extractMatchingCandidates(
   return candidates.sort((left, right) => left.canonicalId.localeCompare(right.canonicalId));
 }
 
-function matchesLine(line: number | undefined, symbol: SymbolDecl): boolean {
+function matchesLine(line: number | undefined, symbol: SymbolOverviewNode): boolean {
   if (line === undefined) {
     return true;
   }

@@ -1,12 +1,13 @@
 import { UserFacingError } from "../errors.js";
 import { formatSymbolIdentity } from "../intermediate-representation/canonical-identity.js";
-import type { Signature, SymbolDecl } from "../intermediate-representation/types.js";
+import type { Header } from "../intermediate-representation/types.js";
+import type { SymbolOverviewNode } from "../intermediate-representation/overview-tree.js";
 import type { SymbolTargetPattern } from "./symbol-target-pattern.js";
 
 export interface SymbolTargetCandidate {
-  readonly symbol: SymbolDecl;
+  readonly symbol: SymbolOverviewNode;
   readonly canonicalId: string;
-  readonly signature: Signature;
+  readonly signature: Header;
 }
 
 export class SymbolTargetNotFoundError extends UserFacingError {

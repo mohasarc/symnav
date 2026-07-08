@@ -3,7 +3,8 @@ import { describe, expect, it } from "vitest";
 import { parseSymbolTargetPattern, symbolTargetMatches } from "./symbol-target-pattern.js";
 import { AmbiguousSymbolTargetError, type SymbolTargetCandidate } from "./symbol-target-result.js";
 import type { SymbolIdentity } from "../intermediate-representation/symbol-identity.js";
-import type { Signature, SymbolDecl } from "../intermediate-representation/types.js";
+import type { Header } from "../intermediate-representation/types.js";
+import type { SymbolOverviewNode } from "../intermediate-representation/overview-tree.js";
 
 describe("parseSymbolTargetPattern", () => {
   it("parses a bare name as a segment suffix", () => {
@@ -106,8 +107,8 @@ function candidate(
   names: readonly string[],
   signatureLines: readonly string[],
 ): SymbolTargetCandidate {
-  const signature: Signature = { startLine: 1, lines: signatureLines };
-  const symbol: SymbolDecl = {
+  const signature: Header = { startLine: 1, lines: signatureLines };
+  const symbol: SymbolOverviewNode = {
     type: "symbol",
     identity: identity(file, ...names),
     kind: { role: "callable", nativeLabel: "function" },

@@ -2,7 +2,7 @@ import type {
   BackendRouter,
   LanguageBackend,
   ResolvedPath,
-  SymbolDecl,
+  SymbolOverviewNode,
   Workspace,
 } from "@symnav/core";
 import { parseSymbolTargetPattern } from "@symnav/core";
@@ -17,7 +17,7 @@ export interface ResolveSymbolTargetForCommandArgs {
 
 export async function resolveSymbolTargetForCommand(
   args: ResolveSymbolTargetForCommandArgs,
-): Promise<SymbolDecl> {
+): Promise<SymbolOverviewNode> {
   const pattern = parseSymbolTargetPattern(args.rawTarget);
   const files = await args.workspace.enumerate();
   await validateExactMissingPath(args, files, pattern.fileSuffix);

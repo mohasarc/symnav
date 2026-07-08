@@ -108,7 +108,8 @@ describe("command telemetry descriptors", () => {
   it("describes graph arguments", () => {
     expect(
       graphCommand.describeArgs({
-        symbolId: "a.ts::Foo",
+        target: "a.ts::Foo",
+        line: 9,
         incoming: true,
         outgoing: false,
         depth: 2,
@@ -119,7 +120,7 @@ describe("command telemetry descriptors", () => {
     ).toEqual({
       kind: "symbol_id",
       lengthBucket: "short",
-      flags: ["all", "depth", "incoming", "page-size"],
+      flags: ["all", "depth", "incoming", "line", "page-size"],
     });
   });
 

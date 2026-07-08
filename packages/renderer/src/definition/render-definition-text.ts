@@ -30,6 +30,6 @@ function renderSymbolEntry(symbol: SymbolDecl, isLast: boolean): string {
   const tag = bracketTagFor(symbol.kind.nativeLabel);
   const tagSuffix = tag === undefined ? "" : `  [${tag}]`;
   const head = `${branchGlyph}${formatRange(symbol.range)}: ${formatIdentityPath(symbol.identity)}${tagSuffix}\n`;
-  const sig = symbol.signature.lines.map((line) => `${continuationGlyph}${line}\n`).join("");
+  const sig = symbol.header.lines.map((line) => `${continuationGlyph}${line}\n`).join("");
   return head + sig;
 }

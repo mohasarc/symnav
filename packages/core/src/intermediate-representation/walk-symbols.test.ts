@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-import { walkOverviewSymbols, type OverviewNode, type SymbolOverviewNode } from "./overview-tree.js";
+import {
+  walkOverviewSymbols,
+  type OverviewNode,
+  type SymbolOverviewNode,
+} from "./overview-tree.js";
 
 function symbol(name: string, children: readonly OverviewNode[] = []): SymbolOverviewNode {
   return {

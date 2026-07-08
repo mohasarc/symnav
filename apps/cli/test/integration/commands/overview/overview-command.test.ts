@@ -26,14 +26,15 @@ async function parse(
 
 describe("symnav overview happy path", () => {
   it("writes text-rendered IR to stdout with exit 0", async () => {
-    const symbols: OverviewFileSymbols = {
+    const entries: OverviewFileSymbols = {
       file: "src/a.ts",
-      symbols: [
+      entries: [
         {
+          type: "symbol",
           identity: { file: "src/a.ts", segments: [{ name: "greet" }] },
           kind: { role: "callable", nativeLabel: "function" },
           range: { startLine: 1, endLine: 1 },
-          signature: { startLine: 1, lines: ["function greet(): void"] },
+          header: { startLine: 1, lines: ["function greet(): void"] },
           children: [],
         },
       ],
@@ -42,7 +43,7 @@ describe("symnav overview happy path", () => {
       "/repo/.git/HEAD": "ref: refs/heads/main\n",
       "/repo/src/a.ts": "export function greet(): void {}\n",
     });
-    const backend = new FakeLanguageBackend({ symbols: () => symbols });
+    const backend = new FakeLanguageBackend({ entries: () => entries });
 
     const r = await parse(
       ["overview", "src/a.ts"],
@@ -59,12 +60,12 @@ describe("symnav overview happy path", () => {
   });
 
   it("writes JSON output with --json flag", async () => {
-    const symbols: OverviewFileSymbols = { file: "src/a.ts", symbols: [] };
+    const entries: OverviewFileSymbols = { file: "src/a.ts", entries: [] };
     const fs = new InMemoryFileSystem({
       "/repo/.git/HEAD": "ref: refs/heads/main\n",
       "/repo/src/a.ts": "export const x = 1;\n",
     });
-    const backend = new FakeLanguageBackend({ symbols: () => symbols });
+    const backend = new FakeLanguageBackend({ entries: () => entries });
 
     const r = await parse(
       ["overview", "src/a.ts", "--json"],
@@ -77,7 +78,7 @@ describe("symnav overview happy path", () => {
     expect(r.stderr).toBe("");
     expect(r.exitCodes).toEqual([]);
     const parsed = JSON.parse(r.stdout) as OverviewFileSymbols;
-    expect(parsed).toEqual(symbols);
+    expect(parsed).toEqual(entries);
   });
 
   it("--cwd overrides startDir for root detection and relative-path resolution", async () => {
@@ -207,7 +208,7 @@ describe("symnav overview user errors", () => {
       "/repo/src/a.ts": "export const x = 1;\n",
     });
     const throwingBackend = new FakeLanguageBackend({
-      symbols: () => {
+      entries: () => {
         throw new Error("backend went sideways");
       },
     });

@@ -1,4 +1,5 @@
 import type { FileSystem, ResolveSymbolsOptions, ResolvedPath, SymbolDecl } from "@symnav/core";
+import { walkOverviewSymbols } from "@symnav/core";
 import fuzzysort from "fuzzysort";
 
 import { loadFileSymbols } from "../extract/load-file-symbols.js";
@@ -21,17 +22,9 @@ export async function resolveSymbols(args: ResolveSymbolsArgs): Promise<readonly
 function extractAllSymbols(fs: FileSystem, files: readonly ResolvedPath[]): readonly SymbolDecl[] {
   const all: SymbolDecl[] = [];
   for (const file of files) {
-    const { symbols } = loadFileSymbols(fs, file);
-    collectAll(symbols, all);
+    all.push(...walkOverviewSymbols(loadFileSymbols(fs, file).entries));
   }
   return all;
-}
-
-function collectAll(symbols: readonly SymbolDecl[], out: SymbolDecl[]): void {
-  for (const symbol of symbols) {
-    out.push(symbol);
-    collectAll(symbol.children, out);
-  }
 }
 
 function ownName(decl: SymbolDecl): string {

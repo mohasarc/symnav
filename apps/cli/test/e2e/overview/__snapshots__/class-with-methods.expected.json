@@ -1,10 +1,15 @@
 {
-  "file": "class-with-methods.ts",
-  "symbols": [
+  "entries": [
     {
       "children": [
         {
           "children": [],
+          "header": {
+            "lines": [
+              "greet(name: string): string"
+            ],
+            "startLine": 2
+          },
           "identity": {
             "file": "class-with-methods.ts",
             "segments": [
@@ -24,15 +29,16 @@
             "endLine": 4,
             "startLine": 2
           },
-          "signature": {
-            "lines": [
-              "greet(name: string): string"
-            ],
-            "startLine": 2
-          }
+          "type": "symbol"
         },
         {
           "children": [],
+          "header": {
+            "lines": [
+              "shout(name: string): string"
+            ],
+            "startLine": 6
+          },
           "identity": {
             "file": "class-with-methods.ts",
             "segments": [
@@ -52,14 +58,15 @@
             "endLine": 8,
             "startLine": 6
           },
-          "signature": {
-            "lines": [
-              "shout(name: string): string"
-            ],
-            "startLine": 6
-          }
+          "type": "symbol"
         }
       ],
+      "header": {
+        "lines": [
+          "export class Greeter"
+        ],
+        "startLine": 1
+      },
       "identity": {
         "file": "class-with-methods.ts",
         "segments": [
@@ -76,12 +83,8 @@
         "endLine": 9,
         "startLine": 1
       },
-      "signature": {
-        "lines": [
-          "export class Greeter"
-        ],
-        "startLine": 1
-      }
+      "type": "symbol"
     }
-  ]
+  ],
+  "file": "class-with-methods.ts"
 }

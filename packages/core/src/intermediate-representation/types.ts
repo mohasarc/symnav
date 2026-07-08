@@ -1,5 +1,9 @@
 import type { SymbolIdentity } from "./symbol-identity.js";
 import type { NavigationDiagnostic } from "../diagnostics/navigation-diagnostic.js";
+import type {
+  OverviewFileSymbols as OverviewTreeFileSymbols,
+  SymbolOverviewNode,
+} from "./overview-tree.js";
 
 export type SymbolRole = "container" | "callable" | "value" | "type";
 
@@ -18,22 +22,13 @@ export interface Signature {
   readonly lines: readonly string[]; // each element single-line, no "\n"
 }
 
-export interface SymbolDecl {
-  readonly identity: SymbolIdentity;
-  readonly kind: SymbolKind;
-  readonly range: LineRange;
-  readonly signature: Signature;
-  readonly children: readonly SymbolDecl[];
-}
+export type SymbolDecl = SymbolOverviewNode;
 
 export interface ResultWithDiagnostics {
   readonly diagnostics?: readonly NavigationDiagnostic[];
 }
 
-export interface OverviewFileSymbols extends ResultWithDiagnostics {
-  readonly file: string; // workspace-relative, POSIX separators
-  readonly symbols: readonly SymbolDecl[]; // top-level entries, source order
-}
+export type OverviewFileSymbols = OverviewTreeFileSymbols;
 
 export interface ResolveResult {
   readonly query: string;

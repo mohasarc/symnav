@@ -11,10 +11,11 @@ describe("renderResolveJson", () => {
       fuzzy: true,
       symbols: [
         {
+          type: "symbol",
           identity: { file: "src/payments/types.ts", segments: [{ name: "Payment" }] },
           kind: { role: "type", nativeLabel: "interface" },
           range: { startLine: 3, endLine: 6 },
-          signature: { startLine: 3, lines: ["interface Payment"] },
+          header: { startLine: 3, lines: ["interface Payment"] },
           children: [],
         },
       ],

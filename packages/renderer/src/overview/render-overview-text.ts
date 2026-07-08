@@ -1,4 +1,4 @@
-import type { OverviewFileSymbols, Signature, SymbolDecl } from "@symnav/core";
+import type { OverviewFileSymbols, OverviewNode, Signature, SymbolDecl } from "@symnav/core";
 
 import { formatHeadLine, formatIdentityPath, treeGlyphsFor } from "../shared/render-format.js";
 import {
@@ -11,10 +11,10 @@ import { capSignatureLines } from "./signature-cap.js";
 const TOP_LEVEL_SEPARATOR = "│\n";
 
 export function renderOverviewText(file: OverviewFileSymbols): string {
-  if (file.symbols.length === 0) {
+  if (file.entries.length === 0) {
     return formatEmptyOverview(file.file);
   }
-  return formatOverviewHeader(file.file) + renderTopLevelChildren(file.symbols);
+  return formatOverviewHeader(file.file) + renderTopLevelChildren(symbolNodes(file.entries));
 }
 
 function renderTopLevelChildren(children: readonly SymbolDecl[]): string {
@@ -37,13 +37,17 @@ function renderChild(decl: SymbolDecl, parentPrefix: string, isLast: boolean): s
     formatIdentityPath(decl.identity),
   );
   const childPrefix = parentPrefix + continuationGlyph;
-  const signatureBlock = renderSignature(decl.signature, childPrefix);
-  const childrenBlock = renderChildren(decl.children, childPrefix);
+  const signatureBlock = renderSignature(decl.header, childPrefix);
+  const childrenBlock = renderChildren(symbolNodes(decl.children), childPrefix);
   return headLine + signatureBlock + childrenBlock;
 }
 
-function renderSignature(signature: Signature, prefix: string): string {
-  return capSignatureLines(signature.lines)
-    .map((text, index) => formatSignatureLine(prefix, signature.startLine + index, text))
+function renderSignature(header: Signature, prefix: string): string {
+  return capSignatureLines(header.lines)
+    .map((text, index) => formatSignatureLine(prefix, header.startLine + index, text))
     .join("");
+}
+
+function symbolNodes(nodes: readonly OverviewNode[]): readonly SymbolDecl[] {
+  return nodes.filter((node): node is SymbolDecl => node.type === "symbol");
 }

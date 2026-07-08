@@ -10,13 +10,14 @@ describe("renderDefinitionJson", () => {
       identity: { file: "src/http/Router.ts", segments: [{ name: "Router" }, { name: "post" }] },
       symbols: [
         {
+          type: "symbol",
           identity: {
             file: "src/http/Router.ts",
             segments: [{ name: "Router" }, { name: "post", disambiguator: 1 }],
           },
           kind: { role: "callable", nativeLabel: "method-overload-signature" },
           range: { startLine: 4, endLine: 4 },
-          signature: { startLine: 4, lines: ["post(path: string, handler: Handler): void"] },
+          header: { startLine: 4, lines: ["post(path: string, handler: Handler): void"] },
           children: [],
         },
       ],

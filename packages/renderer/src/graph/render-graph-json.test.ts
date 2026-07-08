@@ -16,7 +16,7 @@ interface DeclInput {
   readonly segments: readonly SymbolPathSegment[];
   readonly startLine: number;
   readonly endLine: number;
-  readonly signature: readonly string[];
+  readonly header: readonly string[];
 }
 
 interface GraphResultOverrides {
@@ -30,10 +30,11 @@ interface GraphResultOverrides {
 
 function decl(input: DeclInput): SymbolDecl {
   return {
+    type: "symbol",
     identity: { file: input.file, segments: input.segments },
     kind: { role: "callable", nativeLabel: "function-implementation" },
     range: { startLine: input.startLine, endLine: input.endLine },
-    signature: { startLine: input.startLine, lines: input.signature },
+    header: { startLine: input.startLine, lines: input.header },
     children: [],
   };
 }
@@ -67,14 +68,14 @@ describe("renderGraphJson", () => {
       segments: [{ name: "root" }],
       startLine: 1,
       endLine: 4,
-      signature: ["function root()"],
+      header: ["function root()"],
     });
     const caller = decl({
       file: "src/caller.ts",
       segments: [{ name: "caller" }],
       startLine: 8,
       endLine: 12,
-      signature: ["function caller()"],
+      header: ["function caller()"],
     });
     const graph = graphResult(root, {
       direction: "incoming",

@@ -1,5 +1,6 @@
 import { Project, type Node, type SourceFile } from "ts-morph";
 import type { FileSystem, ResolvedPath, SymbolDecl, SymbolIdentity } from "@symnav/core";
+import { walkOverviewSymbols } from "@symnav/core";
 
 import { extractFileSymbols } from "../extract/extract-file-symbols.js";
 import { WorkspaceFileSystemHost } from "../typescript-backend/workspace-file-system-host.js";
@@ -67,8 +68,8 @@ export class WorkspaceDeclarationIndex {
       const sourceFile = this.project.getSourceFile(path.absolute);
       if (!sourceFile) continue;
       const byLine = new Map<number, SymbolDecl>();
-      const { symbols } = extractFileSymbols({ sourceFile, filePath: relative });
-      for (const declaration of withNestedDeclarations(symbols)) {
+      const { entries } = extractFileSymbols({ sourceFile, filePath: relative });
+      for (const declaration of walkOverviewSymbols(entries)) {
         this.declarationsByIdentity.set(DeclarationLocator.identityKey(declaration.identity), {
           declaration,
           file: path,
@@ -78,12 +79,4 @@ export class WorkspaceDeclarationIndex {
       this.declarationsByLocation.set(relative, byLine);
     }
   }
-}
-
-function withNestedDeclarations(symbols: readonly SymbolDecl[]): readonly SymbolDecl[] {
-  const queue = [...symbols];
-  for (let i = 0; i < queue.length; i++) {
-    queue.push(...queue[i]!.children);
-  }
-  return queue;
 }

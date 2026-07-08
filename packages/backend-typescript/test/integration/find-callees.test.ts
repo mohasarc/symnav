@@ -151,7 +151,7 @@ describe("TypeScriptBackend.findCallees", () => {
     expect(edges.map((edge) => edge.confidence)).toEqual(["certain", "certain"]);
     expect(edges.map(segmentNames)).toEqual([["helperA"], ["helperB"]]);
     expect(edges.every((edge) => edge.sites.length === 1)).toBe(true);
-    expect(edges.every((edge) => edge.symbol.signature.lines.length > 0)).toBe(true);
+    expect(edges.every((edge) => edge.symbol.header.lines.length > 0)).toBe(true);
   });
 
   it("groups repeated calls to one callee into a single edge with sorted sites", async () => {

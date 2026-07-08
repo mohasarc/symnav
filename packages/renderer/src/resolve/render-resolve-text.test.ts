@@ -10,16 +10,17 @@ interface DeclInput {
   readonly kind: string;
   readonly startLine: number;
   readonly endLine: number;
-  readonly signature: readonly string[];
+  readonly header: readonly string[];
 }
 
 function decl(input: DeclInput): SymbolDecl {
-  const sig: Signature = { startLine: input.startLine, lines: input.signature };
+  const sig: Signature = { startLine: input.startLine, lines: input.header };
   return {
+    type: "symbol",
     identity: { file: input.file, segments: input.segments },
     kind: { role: "value", nativeLabel: input.kind },
     range: { startLine: input.startLine, endLine: input.endLine },
-    signature: sig,
+    header: sig,
     children: [],
   };
 }
@@ -36,7 +37,7 @@ describe("renderResolveText", () => {
           kind: "variable",
           startLine: 8,
           endLine: 8,
-          signature: ["const MAX_PAYMENT_RETRIES: number"],
+          header: ["const MAX_PAYMENT_RETRIES: number"],
         }),
         decl({
           file: "src/checkout/CheckoutService.ts",
@@ -44,7 +45,7 @@ describe("renderResolveText", () => {
           kind: "method",
           startLine: 42,
           endLine: 78,
-          signature: ["async processPayment(order: Order): Promise<Receipt>"],
+          header: ["async processPayment(order: Order): Promise<Receipt>"],
         }),
         decl({
           file: "src/payments/PaymentProvider.ts",
@@ -52,7 +53,7 @@ describe("renderResolveText", () => {
           kind: "interface",
           startLine: 2,
           endLine: 5,
-          signature: ["interface PaymentProvider"],
+          header: ["interface PaymentProvider"],
         }),
       ],
       files: ["src/checkout/CheckoutService.ts", "src/payments/PaymentProvider.ts"],
@@ -117,7 +118,7 @@ describe("renderResolveText", () => {
           kind: "method",
           startLine: 40,
           endLine: 40,
-          signature: ["post(path: string, handler: Handler): void"],
+          header: ["post(path: string, handler: Handler): void"],
         }),
         decl({
           file: "src/http/Router.ts",
@@ -125,7 +126,7 @@ describe("renderResolveText", () => {
           kind: "method",
           startLine: 44,
           endLine: 44,
-          signature: ["post(path: RegExp, handler: Handler): void"],
+          header: ["post(path: RegExp, handler: Handler): void"],
         }),
       ],
       files: [],
@@ -159,7 +160,7 @@ describe("renderResolveText", () => {
           kind: "method",
           startLine: 22,
           endLine: 36,
-          signature: ["static async charge(order: Order): Promise<Payment>"],
+          header: ["static async charge(order: Order): Promise<Payment>"],
         }),
         decl({
           file: "src/payments/PaymentProcessor.ts",
@@ -167,7 +168,7 @@ describe("renderResolveText", () => {
           kind: "method",
           startLine: 40,
           endLine: 52,
-          signature: ["static async refund(order: Order): Promise<Payment>"],
+          header: ["static async refund(order: Order): Promise<Payment>"],
         }),
       ],
       files: [],

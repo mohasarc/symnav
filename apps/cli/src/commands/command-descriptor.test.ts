@@ -14,10 +14,11 @@ import { refsCommand } from "./refs/refs-command.js";
 import { resolveCommand } from "./resolve/resolve-command.js";
 
 const symbol = (name: string, children: readonly SymbolDecl[] = []): SymbolDecl => ({
+  type: "symbol",
   identity: { file: "src/a.ts", segments: [{ name }] },
   kind: { role: "callable", nativeLabel: "function" },
   range: { startLine: 1, endLine: 1 },
-  signature: { startLine: 1, lines: [`function ${name}(): void`] },
+  header: { startLine: 1, lines: [`function ${name}(): void`] },
   children,
 });
 
@@ -91,7 +92,7 @@ describe("command telemetry descriptors", () => {
   it("counts overview result symbols recursively", () => {
     const result: OverviewFileSymbols = {
       file: "src/a.ts",
-      symbols: [symbol("top", [symbol("nested", [symbol("leaf")])]), symbol("other")],
+      entries: [symbol("top", [symbol("nested", [symbol("leaf")])]), symbol("other")],
     };
 
     expect(overviewCommand.countResults(result)).toEqual({ symbols: 4 });

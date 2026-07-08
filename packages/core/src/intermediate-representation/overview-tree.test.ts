@@ -1,9 +1,10 @@
 import { describe, expect, it } from "vitest";
 
 import type { FoldOverviewNode, SymbolOverviewNode } from "./overview-tree.js";
+import type { LineRange, Signature } from "./types.js";
 
-const HEADER = { startLine: 1, lines: ["function top(): void"] };
-const RANGE = { startLine: 1, endLine: 3 };
+const HEADER: Signature = { startLine: 1, lines: ["function top(): void"] };
+const RANGE: LineRange = { startLine: 1, endLine: 3 };
 
 describe("overview tree", () => {
   it("lets symbol and fold nodes share range, header, and children", () => {

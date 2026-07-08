@@ -18,15 +18,16 @@ interface DeclInput {
   readonly nativeLabel: string;
   readonly startLine: number;
   readonly endLine: number;
-  readonly signature: readonly string[];
+  readonly header: readonly string[];
 }
 
 function decl(input: DeclInput): SymbolDecl {
   return {
+    type: "symbol",
     identity: { file: input.file, segments: input.segments },
     kind: { role: "callable", nativeLabel: input.nativeLabel },
     range: { startLine: input.startLine, endLine: input.endLine },
-    signature: { startLine: input.startLine, lines: input.signature },
+    header: { startLine: input.startLine, lines: input.header },
     children: [],
   };
 }
@@ -49,7 +50,7 @@ const target = decl({
   nativeLabel: "method-implementation",
   startLine: 42,
   endLine: 78,
-  signature: ["async processPayment(order: Order): Promise<Receipt>"],
+  header: ["async processPayment(order: Order): Promise<Receipt>"],
 });
 
 function baseResult(overrides: Partial<ContextResult> = {}): ContextResult {
@@ -73,7 +74,7 @@ describe("renderContextText", () => {
       nativeLabel: "method-implementation",
       startLine: 58,
       endLine: 72,
-      signature: ["async submitOrder(): Promise<void>"],
+      header: ["async submitOrder(): Promise<void>"],
     });
     const charge = decl({
       file: "src/payments/PaymentProcessor.ts",
@@ -81,7 +82,7 @@ describe("renderContextText", () => {
       nativeLabel: "method-implementation",
       startLine: 22,
       endLine: 36,
-      signature: ["static async charge(order: Order): Promise<Payment>"],
+      header: ["static async charge(order: Order): Promise<Payment>"],
     });
     const recordReceipt = decl({
       file: "src/payments/PaymentProcessor.ts",
@@ -89,7 +90,7 @@ describe("renderContextText", () => {
       nativeLabel: "method-implementation",
       startLine: 47,
       endLine: 55,
-      signature: ["static async recordReceipt(receipt: Receipt): Promise<void>"],
+      header: ["static async recordReceipt(receipt: Receipt): Promise<void>"],
     });
     const history: HistoryEntry[] = [
       {
@@ -177,7 +178,7 @@ describe("renderContextText", () => {
       nativeLabel: "method-implementation",
       startLine: 58,
       endLine: 72,
-      signature: ["async submitOrder(): Promise<void>"],
+      header: ["async submitOrder(): Promise<void>"],
     });
     const result = baseResult({
       callers: {
@@ -204,7 +205,7 @@ describe("renderContextText", () => {
       nativeLabel: "method-implementation",
       startLine: 22,
       endLine: 36,
-      signature: ["static async charge(order: Order): Promise<Payment>"],
+      header: ["static async charge(order: Order): Promise<Payment>"],
     });
     const caller = decl({
       file: "src/api/CheckoutController.ts",
@@ -212,7 +213,7 @@ describe("renderContextText", () => {
       nativeLabel: "method-implementation",
       startLine: 58,
       endLine: 72,
-      signature: ["async submitOrder(): Promise<void>"],
+      header: ["async submitOrder(): Promise<void>"],
     });
     const result = baseResult({
       callers: {
@@ -271,7 +272,7 @@ describe("renderContextText", () => {
           nativeLabel: "function-implementation",
           startLine: 1,
           endLine: 3,
-          signature: [`function ${name}()`],
+          header: [`function ${name}()`],
         }),
         [site(file, 2, `${name}()`)],
       );

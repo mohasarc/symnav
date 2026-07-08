@@ -15,10 +15,11 @@ const identity: SymbolIdentity = {
 
 function decl(file: string, startLine: number, name = "sym"): SymbolDecl {
   return {
+    type: "symbol",
     identity: { file, segments: [{ name }] },
     kind: { role: "callable", nativeLabel: "function" },
     range: { startLine, endLine: startLine },
-    signature: { startLine, lines: [`function ${name}()`] },
+    header: { startLine, lines: [`function ${name}()`] },
     children: [],
   };
 }

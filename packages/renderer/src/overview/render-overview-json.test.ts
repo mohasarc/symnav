@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import type {
   FoldOverviewNode,
-  OverviewFileEntries,
+  OverviewFileSymbols,
   OverviewNode,
   SymbolKind,
   SymbolOverviewNode,
@@ -41,7 +41,7 @@ function fold(children: readonly OverviewNode[] = []): FoldOverviewNode {
 
 describe("renderOverviewJson", () => {
   it("mirrors overview entries verbatim with `children` always present on leaf decls", () => {
-    const file: OverviewFileEntries = {
+    const file: OverviewFileSymbols = {
       file: "src/file.ts",
       entries: [
         decl({
@@ -69,18 +69,21 @@ describe("renderOverviewJson", () => {
   });
 
   it("emits a discriminant for symbol and fold entries", () => {
-    const file: OverviewFileEntries = {
+    const file: OverviewFileSymbols = {
       file: "src/file.ts",
-      entries: [decl({ kind: { role: "callable", nativeLabel: "function" }, segments: [{ name: "leaf" }] }), fold()],
+      entries: [
+        decl({ kind: { role: "callable", nativeLabel: "function" }, segments: [{ name: "leaf" }] }),
+        fold(),
+      ],
     };
 
-    const parsed = JSON.parse(renderOverviewJson(file)) as OverviewFileEntries;
+    const parsed = JSON.parse(renderOverviewJson(file)) as OverviewFileSymbols;
 
     expect(parsed.entries.map((entry) => entry.type)).toEqual(["symbol", "fold"]);
   });
 
   it("emits 2-space-indented output with a trailing newline", () => {
-    const file: OverviewFileEntries = {
+    const file: OverviewFileSymbols = {
       file: "src/file.ts",
       entries: [
         decl({
@@ -100,7 +103,7 @@ describe("renderOverviewJson", () => {
   });
 
   it("emits the header object with its startLine and lines", () => {
-    const file: OverviewFileEntries = {
+    const file: OverviewFileSymbols = {
       file: "src/file.ts",
       entries: [
         decl({
@@ -114,7 +117,7 @@ describe("renderOverviewJson", () => {
         }),
       ],
     };
-    const parsed = JSON.parse(renderOverviewJson(file)) as OverviewFileEntries;
+    const parsed = JSON.parse(renderOverviewJson(file)) as OverviewFileSymbols;
     expect(parsed.entries[0]?.header).toEqual({
       startLine: 10,
       lines: ["function configure(", "  host: string,", "): void"],
@@ -144,7 +147,7 @@ describe("renderOverviewJson", () => {
   });
 
   it("renders identical bytes for identical IR across two calls", () => {
-    const build = (): OverviewFileEntries => ({
+    const build = (): OverviewFileSymbols => ({
       file: "src/file.ts",
       entries: [
         decl({

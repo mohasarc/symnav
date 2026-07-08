@@ -1,6 +1,5 @@
-import type { NavigationDiagnostic } from "../diagnostics/navigation-diagnostic.js";
 import type { SymbolIdentity } from "./symbol-identity.js";
-import type { LineRange, Signature, SymbolKind } from "./types.js";
+import type { LineRange, ResultWithDiagnostics, Signature, SymbolKind } from "./types.js";
 
 export type OverviewNode = SymbolOverviewNode | FoldOverviewNode | ReExportOverviewNode;
 
@@ -39,13 +38,14 @@ export interface ReExportOverviewNode extends OverviewNodeBase {
   readonly sourceModule: string | undefined;
 }
 
-export interface OverviewFileEntries {
-  readonly diagnostics?: readonly NavigationDiagnostic[];
+export interface OverviewFileSymbols extends ResultWithDiagnostics {
   readonly file: string;
   readonly entries: readonly OverviewNode[];
 }
 
-export function walkOverviewSymbols(entries: readonly OverviewNode[]): readonly SymbolOverviewNode[] {
+export function walkOverviewSymbols(
+  entries: readonly OverviewNode[],
+): readonly SymbolOverviewNode[] {
   const symbols: SymbolOverviewNode[] = [];
   for (const entry of entries) {
     collectSymbols(entry, symbols);

@@ -80,9 +80,7 @@ class ContextTextRenderer {
     const tag = bracketTagFor(symbol.kind.nativeLabel);
     const tagSuffix = tag === undefined ? "" : `  [${tag}]`;
     const head = `${branchGlyph}${formatRange(symbol.range)}: ${formatIdentityPath(symbol.identity)}${tagSuffix}\n`;
-    const signature = symbol.signature.lines
-      .map((line) => `${continuationGlyph}${line}\n`)
-      .join("");
+    const signature = symbol.header.lines.map((line) => `${continuationGlyph}${line}\n`).join("");
     return head + signature;
   }
 
@@ -168,7 +166,7 @@ class ContextTextRenderer {
   }
 
   private static calleePreview(edge: CallEdge): readonly string[] {
-    return edge.symbol.signature.lines;
+    return edge.symbol.header.lines;
   }
 
   private static renderReferences(references: ContextReferenceSummary, id: string): string {

@@ -9,15 +9,16 @@ interface DeclInput {
   readonly segments: readonly SymbolPathSegment[];
   readonly startLine: number;
   readonly endLine: number;
-  readonly signature: readonly string[];
+  readonly header: readonly string[];
 }
 
 function decl(input: DeclInput): SymbolDecl {
   return {
+    type: "symbol",
     identity: { file: input.file, segments: input.segments },
     kind: { role: "callable", nativeLabel: "function-implementation" },
     range: { startLine: input.startLine, endLine: input.endLine },
-    signature: { startLine: input.startLine, lines: input.signature },
+    header: { startLine: input.startLine, lines: input.header },
     children: [],
   };
 }
@@ -41,21 +42,21 @@ describe("buildGraphPathTree", () => {
       segments: [{ name: "shared" }],
       startLine: 1,
       endLine: 3,
-      signature: ["function shared()"],
+      header: ["function shared()"],
     });
     const first = decl({
       file: "src/first.ts",
       segments: [{ name: "first" }],
       startLine: 5,
       endLine: 7,
-      signature: ["function first()"],
+      header: ["function first()"],
     });
     const second = decl({
       file: "src/second.ts",
       segments: [{ name: "second" }],
       startLine: 9,
       endLine: 11,
-      signature: ["function second()"],
+      header: ["function second()"],
     });
 
     const tree = buildGraphPathTree([
@@ -80,14 +81,14 @@ describe("buildGraphPathTree", () => {
       segments: [{ name: "cycle" }],
       startLine: 1,
       endLine: 1,
-      signature: ["function cycle()"],
+      header: ["function cycle()"],
     });
     const unreachable = decl({
       file: "src/unreachable.ts",
       segments: [{ name: "unreachable" }],
       startLine: 2,
       endLine: 2,
-      signature: ["function unreachable()"],
+      header: ["function unreachable()"],
     });
 
     const tree = buildGraphPathTree([path(step(cycle, { closesCycle: true }), step(unreachable))]);

@@ -1,4 +1,5 @@
-import type { NavigationDiagnostic, OverviewFileSymbols, SymbolDecl } from "@symnav/core";
+import type { NavigationDiagnostic, OverviewFileSymbols } from "@symnav/core";
+import { walkOverviewSymbols } from "@symnav/core";
 import { renderOverviewJson, renderOverviewText } from "@symnav/renderer";
 import type { Command, CommandContext } from "../../command.js";
 import { classifyArgKind, lengthBucketOf } from "../../telemetry/arg-shape.js";
@@ -17,7 +18,7 @@ export const overviewCommand: Command<OverviewFileSymbols, OverviewArgs> = {
     };
   },
   countResults(result: OverviewFileSymbols) {
-    return { symbols: countSymbols(result.symbols) };
+    return { symbols: walkOverviewSymbols(result.entries).length };
   },
   diagnostics(result: OverviewFileSymbols): readonly NavigationDiagnostic[] {
     return result.diagnostics ?? [];
@@ -30,14 +31,3 @@ export const overviewCommand: Command<OverviewFileSymbols, OverviewArgs> = {
   renderText: renderOverviewText,
   renderJson: renderOverviewJson,
 };
-
-function countSymbols(symbols: readonly SymbolDecl[]): number {
-  const stack: SymbolDecl[] = [...symbols];
-  let total = 0;
-  while (stack.length > 0) {
-    const symbol = stack.pop()!;
-    total += 1;
-    stack.push(...symbol.children);
-  }
-  return total;
-}

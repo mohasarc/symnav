@@ -5,6 +5,7 @@ import {
   InMemoryFileSystem,
   type FileSystem,
   type ResolvedPath,
+  walkOverviewSymbols,
 } from "@symnav/core";
 
 import { extractFileSymbols } from "../../src/extract/extract-file-symbols.js";
@@ -126,7 +127,7 @@ describe("TypeScriptBackend.fileSymbols", () => {
     const { backend, path } = backendOver({ "/repo/src/greeting.tsx": tsxSource });
     const result = await backend.fileSymbols(path("src/greeting.tsx"));
     expect(
-      result.symbols.map((s) => [
+      walkOverviewSymbols(result.entries).map((s) => [
         s.kind.nativeLabel,
         s.identity.segments[s.identity.segments.length - 1]?.name,
       ]),
@@ -147,7 +148,9 @@ describe("TypeScriptBackend.fileSymbols", () => {
     });
     const result = await backend.fileSymbols(path("src/control-flow.ts"));
     expect(
-      result.symbols[0]?.children.map((symbol) => symbol.identity.segments.at(-1)?.name),
+      walkOverviewSymbols(result.entries[0]?.children ?? []).map(
+        (symbol) => symbol.identity.segments.at(-1)?.name,
+      ),
     ).toEqual(["insideIf"]);
   });
 });

@@ -15,6 +15,6 @@ export function extractFileSymbols(args: {
   });
   return {
     file: args.filePath,
-    symbols: assignDisambiguators(topLevel),
+    entries: assignDisambiguators(topLevel),
   };
 }

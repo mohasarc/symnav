@@ -67,6 +67,6 @@ function renderSymbolEntry(symbol: SymbolDecl, parentPrefix: string, isLast: boo
     formatIdentityPath(symbol.identity),
   );
   const signaturePrefix = parentPrefix + continuationGlyph;
-  const sig = symbol.signature.lines.map((line) => `${signaturePrefix}${line}\n`).join("");
+  const sig = symbol.header.lines.map((line) => `${signaturePrefix}${line}\n`).join("");
   return head + sig;
 }

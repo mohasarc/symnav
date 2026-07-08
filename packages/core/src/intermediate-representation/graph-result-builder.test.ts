@@ -9,10 +9,11 @@ import type { SymbolDecl } from "./types.js";
 
 function symbol(name: string, file = `src/${name}.ts`): SymbolDecl {
   return {
+    type: "symbol",
     identity: { file, segments: [{ name }] },
     kind: { role: "callable", nativeLabel: "function" },
     range: { startLine: 1, endLine: 1 },
-    signature: { startLine: 1, lines: [`function ${name}()`] },
+    header: { startLine: 1, lines: [`function ${name}()`] },
     children: [],
   };
 }

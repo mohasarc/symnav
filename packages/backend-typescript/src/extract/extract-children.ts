@@ -119,10 +119,11 @@ function buildMemberDecl(
   const name = nodeName(member);
   const refined = refineLabel(member, kind);
   return {
+    type: "symbol",
     identity: identityFor(scope, name),
     kind: { role: roleOf(refined), nativeLabel: refined },
     range,
-    signature: signatureFrom(range.startLine, extractSignatureSource(member)),
+    header: signatureFrom(range.startLine, extractSignatureSource(member)),
     children: [],
   };
 }
@@ -152,10 +153,11 @@ function toStatementDecl(stmt: Node, scope: ExtractionScope): SymbolDecl[] {
   const refined = refineLabel(stmt, kind);
   return [
     {
+      type: "symbol",
       identity: identityFor(scope, name),
       kind: { role: roleOf(refined), nativeLabel: refined },
       range,
-      signature: signatureFrom(range.startLine, extractSignatureSource(stmt)),
+      header: signatureFrom(range.startLine, extractSignatureSource(stmt)),
       children: hasChildren(stmt) ? extractChildren(stmt, childScope(scope, name)) : [],
     },
   ];
@@ -165,10 +167,11 @@ function expandVariableStatement(stmt: VariableStatement, scope: ExtractionScope
   const declList = stmt.getDeclarationList();
   const range = nodeRange(stmt);
   return declList.getDeclarations().map((decl) => ({
+    type: "symbol",
     identity: identityFor(scope, decl.getName()),
     kind: { role: roleOf("variable"), nativeLabel: "variable" },
     range,
-    signature: signatureFrom(
+    header: signatureFrom(
       range.startLine,
       extractVariableSignature({ statement: stmt, declaration: decl }),
     ),

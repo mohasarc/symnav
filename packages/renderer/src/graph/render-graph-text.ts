@@ -49,7 +49,7 @@ class GraphTextRenderer {
     label: GraphDirectionLabel,
   ): string {
     const head = `└── ${formatRange(root.range)}: ${formatIdentityPath(root.identity)}\n`;
-    const signatures = root.signature.lines.map((line) => `    ${line}\n`).join("");
+    const signatures = root.header.lines.map((line) => `    ${line}\n`).join("");
     return head + signatures + GraphTextRenderer.renderChildren(children, "    ", label);
   }
 
@@ -96,7 +96,7 @@ class GraphTextRenderer {
     const tag = GraphTextRenderer.renderStepTag(node.step, label);
     const head = `${prefix}${branchGlyph}${formatRange(node.step.symbol.range)}: ${formatIdentityPath(node.step.symbol.identity)}${tag}\n`;
     const signaturePrefix = `${prefix}${continuationGlyph}`;
-    const signatures = node.step.symbol.signature.lines
+    const signatures = node.step.symbol.header.lines
       .map((line) => `${signaturePrefix}${line}\n`)
       .join("");
     if (node.step.closesCycle) {

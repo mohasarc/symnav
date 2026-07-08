@@ -1,5 +1,5 @@
 import { Node, type SourceFile } from "ts-morph";
-import type { SymbolDecl, SymbolIdentity, SymbolPathSegment } from "@symnav/core";
+import type { OverviewNode, SymbolDecl, SymbolIdentity, SymbolPathSegment } from "@symnav/core";
 
 import { extractFileSymbols } from "../extract/extract-file-symbols.js";
 
@@ -28,11 +28,11 @@ export class DeclarationLocator {
     let candidates = extractFileSymbols({
       sourceFile: this.sourceFile,
       filePath: identity.file,
-    }).symbols;
+    }).entries.flatMap((entry) => symbolScopeChildren(entry));
     for (const ancestorSegment of segments.slice(0, -1)) {
       candidates = candidates
         .filter((candidate) => this.ownSegmentMatches(candidate, ancestorSegment))
-        .flatMap((candidate) => candidate.children);
+        .flatMap((candidate) => candidate.children.flatMap((child) => symbolScopeChildren(child)));
     }
     return candidates
       .filter((candidate) => this.ownSegmentMatches(candidate, ownSegment))
@@ -107,4 +107,9 @@ export class DeclarationLocator {
     const own = declaration.identity.segments[declaration.identity.segments.length - 1];
     return own?.name ?? "";
   }
+}
+
+function symbolScopeChildren(node: OverviewNode): readonly SymbolDecl[] {
+  if (node.type === "symbol") return [node];
+  return node.children.flatMap((child) => symbolScopeChildren(child));
 }

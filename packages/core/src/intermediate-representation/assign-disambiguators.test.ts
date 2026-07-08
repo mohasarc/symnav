@@ -29,10 +29,11 @@ function buildSiblings(
   return specs.map((spec) => {
     const lineage = [...ancestors, spec.name];
     return {
+      type: "symbol",
       identity: { file: "src/foo.ts", segments: lineage.map((name) => ({ name })) },
       kind: spec.kind ?? CALLABLE_METHOD,
       range: { startLine: 1, endLine: 1 },
-      signature: { startLine: 1, lines: [spec.name] },
+      header: { startLine: 1, lines: [spec.name] },
       children: buildSiblings(spec.children ?? [], lineage),
     };
   });
@@ -115,7 +116,7 @@ describe("assignDisambiguators", () => {
         { name: "Inner", kind: CONTAINER_CLASS, children: [{ name: "m" }, { name: "m" }] },
       ]),
     );
-    expect(result[0]!.children.map(disambiguatorOf)).toEqual([1, 2]);
+    expect(walkOverviewSymbols(result[0]!.children).map(disambiguatorOf)).toEqual([1, 2]);
   });
 
   it("only disambiguates within the same sibling scope (independent groups don't share counts)", () => {
@@ -125,8 +126,8 @@ describe("assignDisambiguators", () => {
         { name: "B", kind: CONTAINER_CLASS, children: [{ name: "m" }, { name: "m" }] },
       ]),
     );
-    expect(result[0]!.children.map(disambiguatorOf)).toEqual([1, 2]);
-    expect(result[1]!.children.map(disambiguatorOf)).toEqual([1, 2]);
+    expect(walkOverviewSymbols(result[0]!.children).map(disambiguatorOf)).toEqual([1, 2]);
+    expect(walkOverviewSymbols(result[1]!.children).map(disambiguatorOf)).toEqual([1, 2]);
   });
 
   it("propagates a parent's disambiguator into its descendants' path prefix", () => {
@@ -136,8 +137,8 @@ describe("assignDisambiguators", () => {
         { name: "A", kind: CONTAINER_CLASS, children: [{ name: "m" }] },
       ]),
     );
-    const firstChild = result[0]!.children[0]!;
-    const secondChild = result[1]!.children[0]!;
+    const firstChild = walkOverviewSymbols(result[0]!.children)[0]!;
+    const secondChild = walkOverviewSymbols(result[1]!.children)[0]!;
     expect(formatSymbolIdentity(firstChild.identity)).toBe("src/foo.ts::A#1::m");
     expect(formatSymbolIdentity(secondChild.identity)).toBe("src/foo.ts::A#2::m");
   });
@@ -150,7 +151,7 @@ describe("assignDisambiguators", () => {
       ]),
     );
     const innerIds = result.flatMap((outer) =>
-      outer.children.map((inner) => formatSymbolIdentity(inner.identity)),
+      walkOverviewSymbols(outer.children).map((inner) => formatSymbolIdentity(inner.identity)),
     );
     expect(innerIds).toEqual([
       "src/foo.ts::A#1::B#1",

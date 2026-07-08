@@ -8,6 +8,7 @@ const fixtureRoot = fixturePath("refs-cases");
 const snapshotsDir = new URL("./__snapshots__/", import.meta.url).pathname;
 const processorId = "src/payments/PaymentProcessor.ts::PaymentProcessor";
 const controlFlowTargetId = "src/control-flow/ControlFlowTarget.ts::controlFlowTarget";
+const foldedInnerId = "src/folded-symbols.ts::foldedRoot::foldedInner";
 
 function snapshot(name: string): string {
   return join(snapshotsDir, name);
@@ -21,6 +22,7 @@ interface JsonReference {
   file: string;
   line: number;
   kind: string;
+  previewSource: string;
   matchStart: number;
   matchEnd: number;
 }
@@ -89,15 +91,26 @@ describe("symnav refs e2e (default output)", () => {
     expect(r.stderr).toBe("");
     expect(r.status).toBe(0);
     const parsed = parseJsonRefs(r.stdout);
-    expect(parsed.total).toBe(4);
-    expect(parsed.kindCounts).toEqual({ usage: 3, import: 1, export: 0, type: 0 });
+    expect(parsed.total).toBe(5);
+    expect(parsed.kindCounts).toEqual({ usage: 4, import: 1, export: 0, type: 0 });
     expect(
-      parsed.references.map((reference) => [reference.file, reference.line, reference.kind]),
+      parsed.references.map((reference) => [
+        reference.file,
+        reference.line,
+        reference.kind,
+        reference.previewSource.trim(),
+      ]),
     ).toEqual([
-      ["src/control-flow/ControlFlowReferences.ts", 1, "import"],
-      ["src/control-flow/ControlFlowReferences.ts", 5, "usage"],
-      ["src/control-flow/ControlFlowReferences.ts", 10, "usage"],
-      ["src/control-flow/ControlFlowReferences.ts", 15, "usage"],
+      [
+        "src/control-flow/ControlFlowReferences.ts",
+        1,
+        "import",
+        'import { controlFlowTarget } from "./ControlFlowTarget";',
+      ],
+      ["src/control-flow/ControlFlowReferences.ts", 5, "usage", "controlFlowTarget();"],
+      ["src/control-flow/ControlFlowReferences.ts", 10, "usage", "controlFlowTarget();"],
+      ["src/control-flow/ControlFlowReferences.ts", 15, "usage", "controlFlowTarget();"],
+      ["src/control-flow/ControlFlowReferences.ts", 21, "usage", "controlFlowTarget();"],
     ]);
   });
 
@@ -110,7 +123,23 @@ describe("symnav refs e2e (default output)", () => {
       file: "src/control-flow/ControlFlowTarget.ts",
       segments: [{ name: "controlFlowTarget" }],
     });
-    expect(parsed.total).toBe(4);
+    expect(parsed.total).toBe(5);
+  });
+
+  it("accepts a folded declaration id as the target", () => {
+    const r = runRefs([foldedInnerId, "--json"]);
+    expect(r.stderr).toBe("");
+    expect(r.status).toBe(0);
+    const parsed = parseJsonRefs(r.stdout);
+    expect(parsed.identity).toEqual({
+      file: "src/folded-symbols.ts",
+      segments: [{ name: "foldedRoot" }, { name: "foldedInner" }],
+    });
+    expect(parsed.identity.segments.map((segment) => segment.name)).not.toContain("if");
+    expect(parsed.total).toBe(1);
+    expect(parsed.references.map((reference) => reference.previewSource.trim())).toEqual([
+      "return foldedInner();",
+    ]);
   });
 });
 

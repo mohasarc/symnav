@@ -2,6 +2,12 @@ import { describe, expect, it } from "vitest";
 
 import { runResolve, snapshot } from "./run-resolve.js";
 
+interface JsonResolveResult {
+  symbols: readonly {
+    identity: { file: string; segments: readonly { name: string }[] };
+  }[];
+}
+
 describe("symnav resolve e2e (exact)", () => {
   it("renders exact PaymentProcessor", async () => {
     const r = runResolve(["resolve", "PaymentProcessor"]);
@@ -30,7 +36,9 @@ describe("symnav resolve e2e (exact)", () => {
     expect(r.stderr).toBe("");
     expect(r.status).toBe(0);
     expect(r.stdout).toContain("src/control-flow/LocalDeclarations.ts");
-    expect(r.stdout).toContain("outer::insideIf");
+    expect(r.stdout).toContain("3: outer::insideIf");
+    expect(r.stdout).toContain("function insideIf(): void");
+    expect(r.stdout).not.toContain("if::insideIf");
   });
 
   it("finds declarations nested inside folds by full canonical id", () => {
@@ -38,8 +46,23 @@ describe("symnav resolve e2e (exact)", () => {
     expect(r.stderr).toBe("");
     expect(r.status).toBe(0);
     expect(r.stdout).toContain("src/control-flow/LocalDeclarations.ts");
-    expect(r.stdout).toContain("outer::insideIf");
-    expect(r.stdout).not.toContain("Symbols (none)");
+    expect(r.stdout).toContain("3: outer::insideIf");
+    expect(r.stdout).not.toContain("if::insideIf");
+    expect(r.stdout).not.toContain("Symbols\n(none)");
+  });
+
+  it("emits declaration-only identities for declarations nested inside folds", () => {
+    const r = runResolve([
+      "resolve",
+      "src/control-flow/LocalDeclarations.ts::outer::insideIf",
+      "--json",
+    ]);
+    expect(r.stderr).toBe("");
+    expect(r.status).toBe(0);
+    const parsed = JSON.parse(r.stdout) as JsonResolveResult;
+    expect(parsed.symbols).toHaveLength(1);
+    expect(parsed.symbols[0]!.identity.segments).toEqual([{ name: "outer" }, { name: "insideIf" }]);
+    expect(parsed.symbols[0]!.identity.segments.map((segment) => segment.name)).not.toContain("if");
   });
 });
 

@@ -1,13 +1,17 @@
 import { describe, expect, it } from "vitest";
 
-import type { LanguageBackend, ResolveSymbolsOptions } from "../backend/language-backend.js";
+import type {
+  LanguageBackend,
+  ResolveSymbolsOptions,
+  ResolveSymbolTargetOptions,
+} from "../backend/language-backend.js";
 import type { CallEdge, EdgeConfidence } from "../intermediate-representation/call-edge.js";
 import type { CallTargetResolution } from "../intermediate-representation/call-target.js";
 import { formatSymbolIdentity } from "../intermediate-representation/canonical-identity.js";
 import type { SymbolReference } from "../intermediate-representation/references.js";
 import type { SymbolIdentity } from "../intermediate-representation/symbol-identity.js";
-import type { OverviewFileEntries } from "../intermediate-representation/overview-tree.js";
-import type { SymbolOverviewNode } from "../intermediate-representation/overview-tree.js";
+import type { OverviewFileEntries, SymbolOverviewNode } from "../intermediate-representation/overview-tree.js";
+import type { SymbolTargetPattern } from "../target/symbol-target-pattern.js";
 import type { ResolvedPath } from "../workspace/workspace.js";
 import { GraphTraverser } from "./graph-traverser.js";
 
@@ -49,9 +53,7 @@ function ids(pathSymbols: readonly SymbolOverviewNode[]): readonly string[] {
   return pathSymbols.map((each) => formatSymbolIdentity(each.identity));
 }
 
-function pathIds(
-  paths: readonly { readonly steps: readonly { readonly symbol: SymbolOverviewNode }[] }[],
-) {
+function pathIds(paths: readonly { readonly steps: readonly { readonly symbol: SymbolOverviewNode }[] }[]) {
   return paths.map((path) => ids(path.steps.map((step) => step.symbol)));
 }
 
@@ -80,6 +82,14 @@ class FakeLanguageBackend implements LanguageBackend {
     _query: string,
     _options: ResolveSymbolsOptions,
   ): Promise<readonly SymbolOverviewNode[]> {
+    throw new Error("not implemented");
+  }
+
+  resolveSymbolTarget(
+    _files: readonly ResolvedPath[],
+    _pattern: SymbolTargetPattern,
+    _options: ResolveSymbolTargetOptions,
+  ): Promise<SymbolOverviewNode> {
     throw new Error("not implemented");
   }
 
@@ -119,11 +129,7 @@ class FakeLanguageBackend implements LanguageBackend {
   }
 }
 
-function traverser(
-  backend: LanguageBackend,
-  root: SymbolOverviewNode,
-  depth: number,
-): GraphTraverser {
+function traverser(backend: LanguageBackend, root: SymbolOverviewNode, depth: number): GraphTraverser {
   return new GraphTraverser({ backend, files, root, depth });
 }
 

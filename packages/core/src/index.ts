@@ -99,7 +99,11 @@ export { NodeFileSystem } from "./workspace/node-file-system.js";
 export type { ResolvedPath, Workspace } from "./workspace/workspace.js";
 export { createWorkspace } from "./workspace/workspace.js";
 export { InMemoryFileSystem } from "./workspace/in-memory/in-memory-file-system.js";
-export type { LanguageBackend, ResolveSymbolsOptions } from "./backend/language-backend.js";
+export type {
+  LanguageBackend,
+  ResolveSymbolsOptions,
+  ResolveSymbolTargetOptions,
+} from "./backend/language-backend.js";
 export { BackendRouter } from "./backend/backend-router.js";
 export { UserFacingError } from "./errors.js";
 export {

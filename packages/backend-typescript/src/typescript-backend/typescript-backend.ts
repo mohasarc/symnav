@@ -7,10 +7,12 @@ import type {
   LanguageBackend,
   OverviewFileEntries,
   SymbolReference,
+  ResolveSymbolTargetOptions,
   ResolveSymbolsOptions,
   ResolvedPath,
   SymbolOverviewNode,
   SymbolIdentity,
+  SymbolTargetPattern,
 } from "@symnav/core";
 import { CollectingDiagnosticSink, FileNotFoundError } from "@symnav/core";
 
@@ -21,6 +23,7 @@ import { findDefinitions } from "../definition/find-definitions.js";
 import { loadFileEntries } from "../extract/load-file-entries.js";
 import { ReferenceFinder } from "../references/find-references.js";
 import { resolveSymbols } from "../resolve/resolve-symbols.js";
+import { resolveSymbolTarget } from "../target/resolve-symbol-target.js";
 
 export class TypeScriptBackend implements LanguageBackend {
   static readonly extensions: readonly string[] = [".d.ts", ".ts", ".tsx", ".mts", ".cts"];
@@ -56,6 +59,14 @@ export class TypeScriptBackend implements LanguageBackend {
     options: ResolveSymbolsOptions,
   ): Promise<readonly SymbolOverviewNode[]> {
     return resolveSymbols({ fs: this.fs, files, query, options });
+  }
+
+  async resolveSymbolTarget(
+    files: readonly ResolvedPath[],
+    pattern: SymbolTargetPattern,
+    options: ResolveSymbolTargetOptions,
+  ): Promise<SymbolDecl> {
+    return resolveSymbolTarget({ fs: this.fs, files, pattern, options });
   }
 
   async findDefinitions(

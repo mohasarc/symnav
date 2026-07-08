@@ -6,6 +6,7 @@ import type {
   SymbolReference,
   ResolvedPath,
   SymbolOverviewNode,
+  SymbolTargetPattern,
 } from "@symnav/core";
 
 export interface FakeLanguageBackendOptions {
@@ -34,6 +35,13 @@ export class FakeLanguageBackend implements LanguageBackend {
 
   async resolveSymbols(): Promise<readonly SymbolOverviewNode[]> {
     return [];
+  }
+
+  async resolveSymbolTarget(
+    _files: readonly ResolvedPath[],
+    pattern: SymbolTargetPattern,
+  ): Promise<SymbolOverviewNode> {
+    throw new Error(`unexpected symbol target resolution: ${pattern.raw}`);
   }
 
   async findDefinitions(): Promise<readonly SymbolOverviewNode[]> {

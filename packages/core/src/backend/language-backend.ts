@@ -2,12 +2,16 @@ import type { CallEdge } from "../intermediate-representation/call-edge.js";
 import type { CallTargetResolution } from "../intermediate-representation/call-target.js";
 import type { SymbolReference } from "../intermediate-representation/references.js";
 import type { SymbolIdentity } from "../intermediate-representation/symbol-identity.js";
-import type { OverviewFileEntries } from "../intermediate-representation/overview-tree.js";
-import type { SymbolOverviewNode } from "../intermediate-representation/overview-tree.js";
+import type { OverviewFileEntries, SymbolOverviewNode } from "../intermediate-representation/overview-tree.js";
+import type { SymbolTargetPattern } from "../target/symbol-target-pattern.js";
 import type { ResolvedPath } from "../workspace/workspace.js";
 
 export interface ResolveSymbolsOptions {
   readonly fuzzy: boolean;
+}
+
+export interface ResolveSymbolTargetOptions {
+  readonly line: number | undefined;
 }
 
 export interface LanguageBackend {
@@ -18,6 +22,11 @@ export interface LanguageBackend {
     query: string,
     options: ResolveSymbolsOptions,
   ): Promise<readonly SymbolOverviewNode[]>;
+  resolveSymbolTarget(
+    files: readonly ResolvedPath[],
+    pattern: SymbolTargetPattern,
+    options: ResolveSymbolTargetOptions,
+  ): Promise<SymbolOverviewNode>;
   findDefinitions(
     files: readonly ResolvedPath[],
     identity: SymbolIdentity,

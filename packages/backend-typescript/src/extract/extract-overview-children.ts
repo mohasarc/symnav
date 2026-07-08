@@ -235,9 +235,7 @@ function foldChildren(
 ): readonly OverviewNode[] {
   if (Node.isExpressionStatement(node)) {
     const body = trailingCallBody(node);
-    return body
-      ? extractOverviewChildren({ nodes: body.getStatements(), scope, diagnostics })
-      : [];
+    return body ? extractOverviewChildren({ nodes: body.getStatements(), scope, diagnostics }) : [];
   }
   if (Node.isBlock(node)) {
     return extractOverviewChildren({ nodes: node.getStatements(), scope, diagnostics });
@@ -262,11 +260,13 @@ function foldChildren(
     });
   }
   if (Node.isCaseClause(node) || Node.isDefaultClause(node)) {
-    return node.getStatements().flatMap((statement) =>
-      Node.isBlock(statement)
-        ? extractOverviewChildren({ nodes: statement.getStatements(), scope, diagnostics })
-        : toOverviewNode(statement, scope, diagnostics, "statement"),
-    );
+    return node
+      .getStatements()
+      .flatMap((statement) =>
+        Node.isBlock(statement)
+          ? extractOverviewChildren({ nodes: statement.getStatements(), scope, diagnostics })
+          : toOverviewNode(statement, scope, diagnostics, "statement"),
+      );
   }
   return [];
 }

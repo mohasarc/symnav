@@ -101,7 +101,7 @@ class CallerFinder {
 
   private enclosingSymbolOf(referenceNode: Node): SymbolOverviewNode | undefined {
     let ancestor = referenceNode.getParent();
-    let nearestValue: SymbolDecl | undefined;
+    let nearestValue: SymbolOverviewNode | undefined;
     while (ancestor) {
       const declaration = this.index.declarationAt(ancestor);
       if (declaration) {

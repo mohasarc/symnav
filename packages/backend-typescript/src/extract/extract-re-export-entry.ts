@@ -1,5 +1,5 @@
 import { Node } from "ts-morph";
-import type { LineRange, ReExportOverviewNode, Signature } from "@symnav/core";
+import type { LineRange, ReExportOverviewNode, Header } from "@symnav/core";
 
 export function extractReExportEntry(
   node: Node,
@@ -19,7 +19,9 @@ export function extractReExportEntry(
     return reExportNode(
       node,
       "named",
-      namedExports.map((namedExport) => namedExport.getAliasNode()?.getText() ?? namedExport.getName()),
+      namedExports.map(
+        (namedExport) => namedExport.getAliasNode()?.getText() ?? namedExport.getName(),
+      ),
       sourceModule,
     );
   }
@@ -39,12 +41,11 @@ function reExportNode(
     exportedNames,
     sourceModule,
     range,
-    header: signatureFrom(range.startLine, node.getText()),
-    children: [],
+    header: headerFrom(range.startLine, node.getText()),
   };
 }
 
-function signatureFrom(startLine: number, text: string): Signature {
+function headerFrom(startLine: number, text: string): Header {
   return {
     startLine,
     lines: [text],

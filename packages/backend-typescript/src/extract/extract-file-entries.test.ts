@@ -102,13 +102,15 @@ describe("extractFileEntries", () => {
     const result = symbolsOf(source);
     const iface = result[0];
     if (!iface) throw new Error("expected interface");
-    expect(symbolChildren(iface).map((c) => [c.kind.nativeLabel, OverviewTree.ownName(c)])).toEqual([
-      ["property", "x"],
-      ["method-declaration", "m"],
-      ["index-signature", "[index]"],
-      ["call-signature", "()"],
-      ["construct-signature", "new()"],
-    ]);
+    expect(symbolChildren(iface).map((c) => [c.kind.nativeLabel, OverviewTree.ownName(c)])).toEqual(
+      [
+        ["property", "x"],
+        ["method-declaration", "m"],
+        ["index-signature", "[index]"],
+        ["call-signature", "()"],
+        ["construct-signature", "new()"],
+      ],
+    );
   });
 
   it("recurses through namespaces — nested function appears as a child function", () => {

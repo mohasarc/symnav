@@ -49,11 +49,7 @@ function onlyFold(source: string): FoldOverviewNode {
 
 describe("fold tree extraction", () => {
   it("fuses a top-level call and trailing callback into one fold with callback body children", () => {
-    const source = [
-      'describe("x", () => {',
-      "  const helper = () => {};",
-      "});",
-    ].join("\n");
+    const source = ['describe("x", () => {', "  const helper = () => {};", "});"].join("\n");
 
     expect(foldSummaries(fileEntriesOf(source).entries)).toEqual([
       {
@@ -115,20 +111,29 @@ describe("fold tree extraction", () => {
         type: "fold",
         foldKind: "conditional",
         header: ["if (flag) {"],
-        children: [{ type: "symbol", name: "insideIf", header: ["function insideIf(): void"], children: [] }],
+        children: [
+          { type: "symbol", name: "insideIf", header: ["function insideIf(): void"], children: [] },
+        ],
       },
       {
         type: "fold",
         foldKind: "loop",
         header: ["for (let i = 0; i < 2; i++) {"],
-        children: [{ type: "symbol", name: "insideFor", header: ["const insideFor = i"], children: [] }],
+        children: [
+          { type: "symbol", name: "insideFor", header: ["const insideFor = i"], children: [] },
+        ],
       },
       {
         type: "fold",
         foldKind: "loop",
         header: ["for (const value of values) {"],
         children: [
-          { type: "symbol", name: "insideForOf", header: ["const insideForOf = value"], children: [] },
+          {
+            type: "symbol",
+            name: "insideForOf",
+            header: ["const insideForOf = value"],
+            children: [],
+          },
         ],
       },
       {
@@ -136,7 +141,12 @@ describe("fold tree extraction", () => {
         foldKind: "loop",
         header: ["for (const key in values) {"],
         children: [
-          { type: "symbol", name: "insideForIn", header: ["const insideForIn = key"], children: [] },
+          {
+            type: "symbol",
+            name: "insideForIn",
+            header: ["const insideForIn = key"],
+            children: [],
+          },
         ],
       },
       {
@@ -144,7 +154,12 @@ describe("fold tree extraction", () => {
         foldKind: "loop",
         header: ["while (keepGoing) {"],
         children: [
-          { type: "symbol", name: "insideWhile", header: ["const insideWhile = keepGoing"], children: [] },
+          {
+            type: "symbol",
+            name: "insideWhile",
+            header: ["const insideWhile = keepGoing"],
+            children: [],
+          },
         ],
       },
       {
@@ -157,7 +172,12 @@ describe("fold tree extraction", () => {
             foldKind: "switch",
             header: ["case 1:"],
             children: [
-              { type: "symbol", name: "insideCase", header: ["const insideCase = kind"], children: [] },
+              {
+                type: "symbol",
+                name: "insideCase",
+                header: ["const insideCase = kind"],
+                children: [],
+              },
             ],
           },
           {
@@ -193,7 +213,12 @@ describe("fold tree extraction", () => {
         foldKind: "catch",
         header: ["catch (error) {"],
         children: [
-          { type: "symbol", name: "insideCatch", header: ["const insideCatch = error"], children: [] },
+          {
+            type: "symbol",
+            name: "insideCatch",
+            header: ["const insideCatch = error"],
+            children: [],
+          },
         ],
       },
       {
@@ -201,7 +226,12 @@ describe("fold tree extraction", () => {
         foldKind: "finally",
         header: ["finally {"],
         children: [
-          { type: "symbol", name: "insideFinally", header: ["const insideFinally = true"], children: [] },
+          {
+            type: "symbol",
+            name: "insideFinally",
+            header: ["const insideFinally = true"],
+            children: [],
+          },
         ],
       },
       {
@@ -209,18 +239,19 @@ describe("fold tree extraction", () => {
         foldKind: "block",
         header: ["{"],
         children: [
-          { type: "symbol", name: "insideBlock", header: ["const insideBlock = true"], children: [] },
+          {
+            type: "symbol",
+            name: "insideBlock",
+            header: ["const insideBlock = true"],
+            children: [],
+          },
         ],
       },
     ]);
   });
 
   it("does not turn nested call expressions into symbols", () => {
-    const source = [
-      "const value = compute(run());",
-      "",
-      "effect();",
-    ].join("\n");
+    const source = ["const value = compute(run());", "", "effect();"].join("\n");
 
     expect(foldSummaries(fileEntriesOf(source).entries)).toEqual([
       {
@@ -240,13 +271,7 @@ describe("fold tree extraction", () => {
 
   it("extracts nested callback bodies behind foldable call arguments", () => {
     const fold = onlyFold(
-      [
-        "suite(() => {",
-        "  test(() => {",
-        "    const nested = true;",
-        "  });",
-        "});",
-      ].join("\n"),
+      ["suite(() => {", "  test(() => {", "    const nested = true;", "  });", "});"].join("\n"),
     );
 
     expect(foldSummaries(fold.children)).toEqual([

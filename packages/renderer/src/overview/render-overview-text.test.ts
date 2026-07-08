@@ -1,7 +1,12 @@
 import { describe, expect, it } from "vitest";
 
-import { OverviewTree } from "@symnav/core";
-import type { OverviewFileEntries, Header, SymbolOverviewNode } from "@symnav/core";
+import type {
+  FoldOverviewNode,
+  OverviewFileEntries,
+  ReExportOverviewNode,
+  Header,
+  SymbolOverviewNode,
+} from "@symnav/core";
 
 import { renderOverviewText } from "./render-overview-text.js";
 import { HEADER_CAP_LINES, HEADER_ELLIPSIS } from "./header-cap.js";
@@ -19,6 +24,31 @@ function decl(partial: DeclPartial, file: string = "src/file.ts"): SymbolOvervie
     range: partial.range ?? { startLine: 1, endLine: 1 },
     header: partial.header ?? { startLine: 1, lines: [""] },
     children: partial.children ?? [],
+  };
+}
+
+function fold(
+  partial: Partial<Pick<FoldOverviewNode, "range" | "header" | "children">> = {},
+): FoldOverviewNode {
+  return {
+    type: "fold",
+    foldKind: "call",
+    range: partial.range ?? { startLine: 1, endLine: 3 },
+    header: partial.header ?? signature(1, 'describe("x", () => {'),
+    children: partial.children ?? [],
+  };
+}
+
+function reExport(
+  partial: Partial<Pick<ReExportOverviewNode, "range" | "header">> = {},
+): ReExportOverviewNode {
+  return {
+    type: "re-export",
+    exportKind: "star",
+    exportedNames: [],
+    sourceModule: "./core",
+    range: partial.range ?? { startLine: 1, endLine: 1 },
+    header: partial.header ?? signature(1, 'export * from "./core";'),
   };
 }
 
@@ -354,69 +384,49 @@ describe("renderOverviewText", () => {
     expect(renderOverviewText(file)).toContain("Outer::Inner::deep");
   });
 
-  it("renders fold-nested symbols at the containing nesting level, hiding the fold itself", () => {
+  it("renders fold nodes as header-only tree entries with nested symbols", () => {
     const file: OverviewFileEntries = {
-      file: "src/folds.ts",
+      file: "src/fold.ts",
       entries: [
-        decl({
-          kind: "function",
-          segments: [{ name: "outer" }],
-          range: { startLine: 1, endLine: 5 },
-          header: signature(1, "function outer(): void"),
+        fold({
+          range: { startLine: 1, endLine: 3 },
+          header: signature(1, 'describe("x", () => {'),
           children: [
-            OverviewTree.fold({
-              foldKind: "conditional",
-              range: { startLine: 2, endLine: 4 },
-              header: signature(2, "if (enabled)"),
-              children: [
-                decl({
-                  kind: "function",
-                  segments: [{ name: "outer" }, { name: "insideIf" }],
-                  range: { startLine: 3, endLine: 3 },
-                  header: signature(3, "function insideIf(): void"),
-                }),
-              ],
+            decl({
+              kind: "variable",
+              segments: [{ name: "helper" }],
+              range: { startLine: 2, endLine: 2 },
+              header: signature(2, "const helper = () => …"),
             }),
           ],
         }),
       ],
     };
-    const output = renderOverviewText(file);
-    expect(output).toBe(
+
+    expect(renderOverviewText(file)).toBe(
       [
-        "Overview: src/folds.ts",
-        "└── 1-5: outer",
-        "    1 function outer(): void",
-        "    └── 3: outer::insideIf",
-        "        3 function insideIf(): void",
+        "Overview: src/fold.ts",
+        '└── 1-3: describe("x", () => {',
+        "    └── 2: helper",
+        "        2 const helper = () => …",
         "",
       ].join("\n"),
     );
-    expect(output).not.toContain("if (enabled)");
   });
 
-  it("drops re-export entries from the rendered tree", () => {
+  it("renders re-export nodes as header-only tree entries", () => {
     const file: OverviewFileEntries = {
-      file: "src/re-exports.ts",
+      file: "src/index.ts",
       entries: [
-        OverviewTree.reExport({
-          exportKind: "named",
-          exportedNames: ["m"],
-          sourceModule: "./other.js",
+        reExport({
           range: { startLine: 1, endLine: 1 },
-          header: signature(1, "export { m } from './other.js'"),
-        }),
-        decl({
-          kind: "function",
-          segments: [{ name: "kept" }],
-          range: { startLine: 2, endLine: 2 },
-          header: signature(2, "function kept(): void"),
+          header: signature(1, 'export * from "./core";'),
         }),
       ],
     };
-    const output = renderOverviewText(file);
-    expect(output).toBe(
-      ["Overview: src/re-exports.ts", "└── 2: kept", "    2 function kept(): void", ""].join("\n"),
+
+    expect(renderOverviewText(file)).toBe(
+      ["Overview: src/index.ts", '└── 1: export * from "./core";', ""].join("\n"),
     );
   });
 });

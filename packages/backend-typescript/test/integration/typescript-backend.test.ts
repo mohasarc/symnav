@@ -156,7 +156,9 @@ describe("TypeScriptBackend.fileEntries", () => {
       ["conditional", ["if (flag) {"]],
     ]);
     expect(
-      OverviewTree.walkSymbols(outer.children).map((symbol) => formatSymbolIdentity(symbol.identity)),
+      OverviewTree.walkSymbols(outer.children).map((symbol) =>
+        formatSymbolIdentity(symbol.identity),
+      ),
     ).toEqual(["src/control-flow.ts::outer::insideIf"]);
   });
 });

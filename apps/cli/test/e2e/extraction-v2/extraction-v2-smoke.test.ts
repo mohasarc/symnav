@@ -69,7 +69,7 @@ beforeAll(() => {
 });
 
 describe("symnav extraction v2 workflow smoke", () => {
-  it("composes overview targeting, target patterns, pagination, JSON, and diagnostics", async () => {
+  it("renders compact overview and expands a copied fold header", async () => {
     const overview = runSymnav(["overview", "src/agent-workflow.ts"]);
     expect(overview.stderr).toBe("");
     expect(overview.status).toBe(0);
@@ -102,7 +102,9 @@ describe("symnav extraction v2 workflow smoke", () => {
     await expect(targetedOverview.stdout).toMatchFileSnapshot(
       snapshot("agent-workflow-targeted-fold.expected.txt"),
     );
+  });
 
+  it("resolves own-name regex matches and follows a copied ambiguity candidate", async () => {
     const resolved = runSymnav(["resolve", "--regex", "^build[A-Z]"]);
     expectUnsupportedStatementWarning(resolved.stderr);
     expect(resolved.status).toBe(0);
@@ -130,7 +132,9 @@ describe("symnav extraction v2 workflow smoke", () => {
     expectUnsupportedStatementWarning(copiedDefinition.stderr);
     expect(copiedDefinition.status).toBe(0);
     expect(copiedDefinition.stdout).toContain("Definition: AgentBuilder::buildTask");
+  });
 
+  it("keeps suffix-target pagination stable across runs", async () => {
     const firstReferences = runSymnav([
       "refs",
       "agent-workflow.ts::buildWorkflow",
@@ -153,7 +157,9 @@ describe("symnav extraction v2 workflow smoke", () => {
     await expect(firstReferences.stdout).toMatchFileSnapshot(
       snapshot("agent-workflow-refs-page-1.expected.txt"),
     );
+  });
 
+  it("keeps JSON outputs parseable and routes diagnostics to stderr", () => {
     const context = runSymnav(["context", "buildWorkflow", "--json"]);
     expectUnsupportedStatementWarning(context.stderr);
     expect(context.status).toBe(0);

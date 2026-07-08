@@ -226,3 +226,16 @@ describe("target-pattern line narrowing", () => {
     },
   );
 });
+
+describe("target-pattern fold node rejection", () => {
+  it.each<SymbolCommand>(["def", "refs", "context", "graph"])(
+    "%s rejects copied fold headers as non-symbol targets",
+    (command) => {
+      const result = runCommand(command, ['describe("x")']);
+      expect(result.status).toBe(1);
+      expect(result.stdout).toBe("");
+      expect(result.stderr).toBe('Cannot answer: no symbol target "describe(\\"x\\")" found.\n');
+      expect(result.stderr).not.toContain("Invalid symbol id");
+    },
+  );
+});

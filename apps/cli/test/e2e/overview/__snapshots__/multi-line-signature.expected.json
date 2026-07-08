@@ -30,40 +30,7 @@
       "type": "symbol"
     },
     {
-      "children": [
-        {
-          "children": [],
-          "header": {
-            "lines": [
-              "start(",
-              "  host: string,",
-              "  port: number,",
-              "): void"
-            ],
-            "startLine": 10
-          },
-          "identity": {
-            "file": "multi-line-signature.ts",
-            "segments": [
-              {
-                "name": "Server"
-              },
-              {
-                "name": "start"
-              }
-            ]
-          },
-          "kind": {
-            "nativeLabel": "method-implementation",
-            "role": "callable"
-          },
-          "range": {
-            "endLine": 16,
-            "startLine": 10
-          },
-          "type": "symbol"
-        }
-      ],
+      "children": [],
       "header": {
         "lines": [
           "export class Server"

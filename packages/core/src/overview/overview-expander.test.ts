@@ -79,7 +79,7 @@ describe("OverviewExpander request validation", () => {
 });
 
 describe("OverviewExpander depth", () => {
-  it("renders symbol children and fold headers at depth 0", () => {
+  it("renders only top-level nodes at depth 0", () => {
     const entries = [
       symbol("outer", {
         range: { startLine: 1, endLine: 10 },
@@ -96,18 +96,12 @@ describe("OverviewExpander depth", () => {
     expect(expandRequest(entries, { depth: 0, at: undefined, line: undefined }).entries).toEqual([
       symbol("outer", {
         range: { startLine: 1, endLine: 10 },
-        children: [
-          symbol("nested", { range: { startLine: 2, endLine: 2 } }),
-          fold("if (flag) {", {
-            range: { startLine: 3, endLine: 8 },
-            children: [],
-          }),
-        ],
+        children: [],
       }),
     ]);
   });
 
-  it("opens one fold interior at depth 1", () => {
+  it("renders one child level at depth 1", () => {
     const entries = [
       fold('describe("outer", () => {', {
         range: { startLine: 1, endLine: 8 },
@@ -135,14 +129,15 @@ describe("OverviewExpander depth", () => {
     ]);
   });
 
-  it("opens nested fold interiors at depth 2", () => {
+  it("renders two child levels at depth 2", () => {
     const entries = [
       fold('describe("outer", () => {', {
-        range: { startLine: 1, endLine: 8 },
+        range: { startLine: 1, endLine: 10 },
         children: [
+          symbol("helper", { range: { startLine: 2, endLine: 2 } }),
           fold("if (flag) {", {
-            range: { startLine: 2, endLine: 7 },
-            children: [symbol("inner", { range: { startLine: 3, endLine: 3 } })],
+            range: { startLine: 3, endLine: 9 },
+            children: [symbol("inner", { range: { startLine: 4, endLine: 4 } })],
           }),
         ],
       }),
@@ -150,18 +145,19 @@ describe("OverviewExpander depth", () => {
 
     expect(expandRequest(entries, { depth: 2, at: undefined, line: undefined }).entries).toEqual([
       fold('describe("outer", () => {', {
-        range: { startLine: 1, endLine: 8 },
+        range: { startLine: 1, endLine: 10 },
         children: [
+          symbol("helper", { range: { startLine: 2, endLine: 2 } }),
           fold("if (flag) {", {
-            range: { startLine: 2, endLine: 7 },
-            children: [symbol("inner", { range: { startLine: 3, endLine: 3 } })],
+            range: { startLine: 3, endLine: 9 },
+            children: [symbol("inner", { range: { startLine: 4, endLine: 4 } })],
           }),
         ],
       }),
     ]);
   });
 
-  it("does not charge depth for symbol children", () => {
+  it("renders symbol child levels uniformly at depth 2", () => {
     const entries = [
       fold('describe("outer", () => {', {
         range: { startLine: 1, endLine: 12 },
@@ -184,7 +180,7 @@ describe("OverviewExpander depth", () => {
       }),
     ];
 
-    expect(expandRequest(entries, { depth: 1, at: undefined, line: undefined }).entries).toEqual([
+    expect(expandRequest(entries, { depth: 2, at: undefined, line: undefined }).entries).toEqual([
       fold('describe("outer", () => {', {
         range: { startLine: 1, endLine: 12 },
         children: [
@@ -193,12 +189,7 @@ describe("OverviewExpander depth", () => {
             children: [
               symbol("innerSymbol", {
                 range: { startLine: 3, endLine: 9 },
-                children: [
-                  fold("if (flag) {", {
-                    range: { startLine: 4, endLine: 8 },
-                    children: [],
-                  }),
-                ],
+                children: [],
               }),
             ],
           }),
@@ -345,6 +336,24 @@ describe("OverviewExpander target selection", () => {
 
     expect(expandRequest(entries, { depth: 0, at: "alpha", line: undefined }).entries).toEqual([
       symbol("alpha", { range: { startLine: 1, endLine: 2 } }),
+    ]);
+  });
+
+  it("selects nested targets from the full tree before trimming depth", () => {
+    const entries = [
+      symbol("outer", {
+        range: { startLine: 1, endLine: 10 },
+        children: [
+          fold("if (flag) {", {
+            range: { startLine: 3, endLine: 8 },
+            children: [symbol("inside", { range: { startLine: 4, endLine: 4 } })],
+          }),
+        ],
+      }),
+    ];
+
+    expect(expandRequest(entries, { depth: 0, at: "inside", line: undefined }).entries).toEqual([
+      symbol("inside", { range: { startLine: 4, endLine: 4 } }),
     ]);
   });
 

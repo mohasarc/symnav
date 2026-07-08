@@ -3,7 +3,18 @@ import { describe, expect, it } from "vitest";
 import { runOverview } from "./run-overview.js";
 
 describe("symnav overview e2e (fold tree)", () => {
-  it("renders folded call headers and nested declarations without callback body lines", () => {
+  it("renders folded call headers without opening them at depth zero", () => {
+    const r = runOverview(["overview", "fold-tree.ts", "--depth", "0"]);
+
+    expect(r.stderr).toBe("");
+    expect(r.status).toBe(0);
+    expect(r.stdout).toContain('1-5: describe("x", () => {');
+    expect(r.stdout).not.toContain("2-4: helper");
+    expect(r.stdout).not.toContain("2 const helper = () => …");
+    expect(r.stdout).not.toContain("return 1");
+  });
+
+  it("renders one child level inside folded call headers at depth one", () => {
     const r = runOverview(["overview", "fold-tree.ts", "--depth", "1"]);
 
     expect(r.stderr).toBe("");
@@ -43,8 +54,6 @@ describe("symnav overview e2e (fold tree)", () => {
     expect(r.stdout).toContain("50-53: finally {");
     expect(r.stdout).toContain("55-58: {");
     expect(r.stdout).toContain("60-63: values.map((value) => {");
-    expect(r.stdout).toContain("67-70: if (flag) {");
-    expect(r.stdout).toContain("initializerHost::initializerNestedDeclaration");
     expect(r.stdout).not.toContain("branchValue");
     expect(r.stdout).not.toContain("loopValue");
     expect(r.stdout).not.toContain("callbackValue");
@@ -53,7 +62,24 @@ describe("symnav overview e2e (fold tree)", () => {
     );
   });
 
-  it("opens one fold interior with nested declarations at depth one", async () => {
+  it("renders only top-level folds and declarations at depth zero", async () => {
+    const r = runOverview(["overview", "default-fold-overview.ts", "--depth", "0"]);
+
+    expect(r.stderr).toBe("");
+    expect(r.status).toBe(0);
+    expect(r.stdout).toContain("10-13: if (flag) {");
+    expect(r.stdout).toContain("65-76: FoldMemberHost");
+    expect(r.stdout).toContain("78-84: outerDeclaration");
+    expect(r.stdout).not.toContain("branchValue");
+    expect(r.stdout).not.toContain("FoldMemberHost::run");
+    expect(r.stdout).not.toContain("outerDeclaration::nestedDeclaration");
+    expect(r.stdout).not.toContain("initializerHost::initializerNestedDeclaration");
+    await expect(r.stdout).toMatchFileSnapshot(
+      new URL("./__snapshots__/default-fold-overview.expected.txt", import.meta.url).pathname,
+    );
+  });
+
+  it("opens one child level inside folds and declarations at depth one", async () => {
     const r = runOverview(["overview", "default-fold-overview.ts", "--depth", "1"]);
 
     expect(r.stderr).toBe("");
@@ -69,7 +95,10 @@ describe("symnav overview e2e (fold tree)", () => {
     expect(r.stdout).toContain("cleanupValue");
     expect(r.stdout).toContain("blockValue");
     expect(r.stdout).toContain("callbackValue");
-    expect(r.stdout).toContain("FoldMemberHost::run::memberBranchValue");
+    expect(r.stdout).toContain("FoldMemberHost::run");
+    expect(r.stdout).toContain("outerDeclaration::nestedDeclaration");
+    expect(r.stdout).toContain("initializerHost::initializerNestedDeclaration");
+    expect(r.stdout).not.toContain("FoldMemberHost::run::memberBranchValue");
     await expect(r.stdout).toMatchFileSnapshot(
       new URL("./__snapshots__/default-fold-overview-depth-1.expected.txt", import.meta.url)
         .pathname,

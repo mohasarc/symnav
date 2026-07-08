@@ -407,6 +407,49 @@ Goal: add one compact e2e suite that proves the implemented permutations compose
 
 1. `test(e2e): add agent workflow smoke`
 
+## Phase 9 - Uniform Overview Depth
+
+Goal: make `overview --depth` apply uniformly to declaration nodes, fold nodes, and re-export nodes. A depth value describes how many child tree levels are shown under each rendered node, not how many fold interiors are opened.
+
+### Test files
+
+- Update `packages/core/src/overview/overview-expansion.test.ts`.
+- Update focused overview e2e coverage under `apps/cli/test/e2e/overview/`.
+- Update affected snapshots under `apps/cli/test/e2e/overview/__snapshots__/`.
+
+### Behavior matrix
+
+| Command | Expected |
+| --- | --- |
+| `overview <file> --depth 0` | renders only top-level declarations, fold headers, and re-export nodes; class members, function-local declarations, and fold children are hidden |
+| `overview <file> --depth 1` | renders one child level inside any top-level declaration, fold, or re-export node |
+| `overview <file> --depth 2` | renders two child levels inside nested declarations/folds |
+| `overview <file> --at '<class header>' --depth 0` | renders only the targeted class declaration itself |
+| `overview <file> --at '<class header>' --depth 1` | renders the targeted class and one level of members |
+| `overview <file> --at '<fold header>' --depth 0` | renders only the targeted fold header |
+| `overview <file> --at '<fold header>' --depth 1` | renders the targeted fold and one level inside it |
+| `overview <file> --json --depth 0` | JSON entries mirror text behavior with empty `children` arrays below rendered depth |
+
+### Assertions
+
+- `--depth` decrements for every child level under any node type that can contain children.
+- Depth semantics are the same for full-file overview and targeted overview.
+- Existing `--at` and `--line` candidate matching still searches the full extracted tree, not the depth-trimmed tree.
+- Existing invalid depth validation remains unchanged.
+- Default overview behavior remains the existing depth-0 shallow view.
+- Help text does not need wording changes unless existing prose says depth applies only to folds.
+
+### Implementation notes
+
+- The likely core change is in `packages/core/src/overview/overview-expander.ts`.
+- Existing tests currently encode the old rule that symbol children do not consume depth. Replace that rule with uniform-depth expectations instead of adding compatibility behavior.
+- Prefer small, focused fixture updates over broad snapshot churn.
+
+### Commit plan
+
+1. `test(e2e): cover uniform overview depth`
+2. `fix(overview): apply depth uniformly to overview nodes`
+
 ## Backlog
 
 - Navigation diagnostics double the extraction cost per invocation: the post-compute sweep re-enumerates and re-parses the whole workspace with a fresh ts-morph project after the command's own resolution already parsed the files it needed. Accepted for phase 1; fold diagnostics into the backend navigation methods so the first parse surfaces them.
@@ -415,7 +458,7 @@ Goal: add one compact e2e suite that proves the implemented permutations compose
 ## Done when
 
 - Every phase above has landed as its own focused PR or commit group.
-- E2E coverage names every phase 1-8 user-facing behavior:
+- E2E coverage names every phase 1-9 user-facing behavior:
   - unsupported diagnostics and stdout/stderr routing.
   - directory, extensionless, and unsupported input errors.
   - collapsed headers in overview, def, refs, and context previews where user-visible.
@@ -425,6 +468,7 @@ Goal: add one compact e2e suite that proves the implemented permutations compose
   - suffix-pattern targets for def, refs, context, and graph, including bare names, file suffixes, segment suffixes, full ids, ambiguity, not-found, line narrowing, folded-symbol traversal, and fold-node rejection.
   - resolve exact, fuzzy, regex text, regex JSON, invalid regex, fuzzy/regex conflict, and own-name matching.
   - CLI help surface changed by extraction.
+  - uniform overview depth across declarations, folds, full-file overview, targeted overview, and JSON output.
 - No source or test implementation is modified by this planning PR.
 - Each implementation PR runs:
 

@@ -11,17 +11,21 @@ export function registerContextCommand(
   dependencies: ProgramDependencies,
 ): void {
   program
-    .command("context <symbol-id>")
+    .command("context <target>")
     .description("Show a symbol's definition, callers, callees, references, and recent history")
+    .option("--line <n>", "narrow target matches to declarations containing this line")
     .option("--json", "emit JSON instead of text", false)
-    .action(async (symbolId: string, options: { json: boolean }) => {
+    .action(async (target: string, options: { line?: string; json: boolean }) => {
       const cwdOverride = program.opts<{ cwd?: string }>().cwd;
       await runCommand(contextCommand, {
         context,
         dependencies,
         cwdOverride,
         json: options.json,
-        args: { symbolId },
+        args: {
+          target,
+          line: options.line === undefined ? undefined : Number(options.line),
+        },
       });
     });
 }

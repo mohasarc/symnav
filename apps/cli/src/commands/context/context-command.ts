@@ -1,22 +1,24 @@
 import type { ContextResult } from "@symnav/core";
-import { ContextResultBuilder, DEFAULT_CONTEXT_CAP, parseSymbolIdentity } from "@symnav/core";
+import { ContextResultBuilder, DEFAULT_CONTEXT_CAP } from "@symnav/core";
 import { renderContextJson, renderContextText } from "@symnav/renderer";
 
 import type { Command, CommandContext } from "../../command.js";
 import { classifyArgKind, lengthBucketOf } from "../../telemetry/arg-shape.js";
 import { resolveCallTarget } from "../resolve-call-target.js";
+import { resolveSymbolTargetForCommand } from "../resolve-symbol-target.js";
 
 export interface ContextArgs {
-  readonly symbolId: string;
+  readonly target: string;
+  readonly line: number | undefined;
 }
 
 export const contextCommand: Command<ContextResult, ContextArgs> = {
   name: "context",
   describeArgs(args: ContextArgs) {
     return {
-      kind: classifyArgKind(args.symbolId),
-      lengthBucket: lengthBucketOf(args.symbolId),
-      flags: [],
+      kind: classifyArgKind(args.target),
+      lengthBucket: lengthBucketOf(args.target),
+      flags: args.line === undefined ? [] : ["line"],
     };
   },
   countResults(result: ContextResult) {
@@ -28,8 +30,14 @@ export const contextCommand: Command<ContextResult, ContextArgs> = {
     };
   },
   async compute(ctx: CommandContext<ContextArgs>): Promise<ContextResult> {
-    const identity = parseSymbolIdentity(ctx.args.symbolId);
-    await ctx.workspace.resolveInputPath(identity.file, ctx.cwd);
+    const requestedTarget = await resolveSymbolTargetForCommand({
+      workspace: ctx.workspace,
+      router: ctx.router,
+      cwd: ctx.cwd,
+      rawTarget: ctx.args.target,
+      line: ctx.args.line,
+    });
+    const identity = requestedTarget.identity;
     const files = await ctx.workspace.enumerate();
     const backend = ctx.router.findOrThrow(identity.file);
     const accepted = files.filter((file) => backend.accepts(file.relative));

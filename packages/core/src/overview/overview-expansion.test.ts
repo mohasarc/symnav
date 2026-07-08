@@ -8,6 +8,12 @@ import type {
 } from "../intermediate-representation/overview-tree.js";
 import type { Signature } from "../intermediate-representation/types.js";
 import { OverviewExpander } from "./overview-expander.js";
+import {
+  AmbiguousLineTargetError,
+  AmbiguousOverviewTargetError,
+  type OverviewExpansionRequest,
+  OverviewTargetNotFoundError,
+} from "./overview-query.js";
 
 function symbol(
   name: string,
@@ -42,11 +48,30 @@ function signature(startLine: number, ...lines: string[]): Signature {
 }
 
 function expand(entries: readonly OverviewNode[], depth: number): readonly OverviewNode[] {
+  return expandRequest(entries, { depth, at: undefined, line: undefined }).entries;
+}
+
+function expandRequest(
+  entries: readonly OverviewNode[],
+  request: OverviewExpansionRequest,
+): OverviewFileSymbols {
   const file: OverviewFileSymbols = { file: "src/file.ts", entries };
   return new OverviewExpander({
     file,
-    request: { depth, at: undefined, line: undefined },
-  }).expand().entries;
+    request,
+  }).expand();
+}
+
+function renderThrownError(thunk: () => void): string {
+  try {
+    thunk();
+  } catch (err) {
+    if (err instanceof Error && "render" in err && typeof err.render === "function") {
+      return err.render();
+    }
+    throw err;
+  }
+  throw new Error("Expected thunk to throw");
 }
 
 describe("OverviewExpander depth", () => {
@@ -174,6 +199,135 @@ describe("OverviewExpander depth", () => {
             ],
           }),
         ],
+      }),
+    ]);
+  });
+});
+
+describe("OverviewExpander target selection", () => {
+  it("selects a fold by copied header substring", () => {
+    const entries = [
+      fold("describe(\"setup\", () => {", {
+        range: { startLine: 1, endLine: 3 },
+        children: [symbol("setupHelper", { range: { startLine: 2, endLine: 2 } })],
+      }),
+      fold("describe(\"cursor\", () => {", {
+        range: { startLine: 5, endLine: 9 },
+        children: [
+          symbol("cursorHelper", { range: { startLine: 6, endLine: 6 } }),
+          fold("if (enabled) {", {
+            range: { startLine: 7, endLine: 8 },
+            children: [symbol("inner", { range: { startLine: 8, endLine: 8 } })],
+          }),
+        ],
+      }),
+    ];
+
+    expect(expandRequest(entries, { depth: 1, at: 'describe("cursor")', line: undefined }))
+      .toMatchObject({
+        file: "src/file.ts",
+        request: { depth: 1, at: 'describe("cursor")', line: undefined },
+        entries: [
+          fold("describe(\"cursor\", () => {", {
+            range: { startLine: 5, endLine: 9 },
+            children: [
+              symbol("cursorHelper", { range: { startLine: 6, endLine: 6 } }),
+              fold("if (enabled) {", {
+                range: { startLine: 7, endLine: 8 },
+                children: [],
+              }),
+            ],
+          }),
+        ],
+      });
+  });
+
+  it("returns candidates for a line-only match instead of picking an innermost node", () => {
+    const entries = [
+      symbol("outer", {
+        range: { startLine: 1, endLine: 10 },
+        children: [
+          fold("if (flag) {", {
+            range: { startLine: 3, endLine: 8 },
+            children: [symbol("inside", { range: { startLine: 4, endLine: 4 } })],
+          }),
+        ],
+      }),
+    ];
+
+    expect(() => expandRequest(entries, { depth: 0, at: undefined, line: 4 })).toThrow(
+      AmbiguousLineTargetError,
+    );
+    expect(
+      renderThrownError(() => expandRequest(entries, { depth: 0, at: undefined, line: 4 })),
+    ).toContain("4: inside");
+  });
+
+  it("uses --line to narrow --at candidates", () => {
+    const entries = [
+      fold("describe(\"first\", () => {", {
+        range: { startLine: 1, endLine: 3 },
+      }),
+      fold("describe(\"second\", () => {", {
+        range: { startLine: 8, endLine: 10 },
+      }),
+    ];
+
+    expect(expandRequest(entries, { depth: 0, at: "describe", line: 9 }).entries).toEqual([
+      fold("describe(\"second\", () => {", {
+        range: { startLine: 8, endLine: 10 },
+      }),
+    ]);
+  });
+
+  it("reports not found when --at and --line narrow to zero candidates", () => {
+    const entries = [
+      fold("describe(\"cursor\", () => {", {
+        range: { startLine: 1, endLine: 3 },
+      }),
+    ];
+
+    expect(() => expandRequest(entries, { depth: 0, at: "cursor", line: 9 })).toThrow(
+      OverviewTargetNotFoundError,
+    );
+  });
+
+  it("reports candidates when --at and --line still match multiple nodes", () => {
+    const entries = [
+      fold("describe(\"a\", () => {", {
+        range: { startLine: 1, endLine: 1 },
+      }),
+      fold("describe(\"b\", () => {", {
+        range: { startLine: 1, endLine: 1 },
+      }),
+    ];
+
+    expect(() => expandRequest(entries, { depth: 0, at: "describe", line: 1 })).toThrow(
+      AmbiguousOverviewTargetError,
+    );
+    expect(
+      renderThrownError(() => expandRequest(entries, { depth: 0, at: "describe", line: 1 })),
+    ).toContain('1: describe("b", () => {');
+  });
+
+  it("keeps same-line folds ambiguous under --line and addressable under longer --at text", () => {
+    const entries = [
+      fold("describe(\"cursor\", () => {", {
+        range: { startLine: 1, endLine: 1 },
+      }),
+      fold("describe(\"cursor nested\", () => {", {
+        range: { startLine: 1, endLine: 1 },
+      }),
+    ];
+
+    expect(() => expandRequest(entries, { depth: 0, at: undefined, line: 1 })).toThrow(
+      AmbiguousLineTargetError,
+    );
+    expect(
+      expandRequest(entries, { depth: 0, at: 'describe("cursor nested")', line: 1 }).entries,
+    ).toEqual([
+      fold("describe(\"cursor nested\", () => {", {
+        range: { startLine: 1, endLine: 1 },
       }),
     ]);
   });

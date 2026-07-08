@@ -101,12 +101,16 @@ class CallerFinder {
 
   private enclosingSymbolOf(referenceNode: Node): SymbolOverviewNode | undefined {
     let ancestor = referenceNode.getParent();
+    let nearestValue: SymbolDecl | undefined;
     while (ancestor) {
       const declaration = this.index.declarationAt(ancestor);
-      if (declaration) return declaration;
+      if (declaration) {
+        if (declaration.kind.role !== "value") return declaration;
+        nearestValue = declaration;
+      }
       ancestor = ancestor.getParent();
     }
-    return undefined;
+    return nearestValue;
   }
 
   private siteFor(node: Node): CallSite {

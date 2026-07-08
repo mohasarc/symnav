@@ -58,6 +58,7 @@ const IGNORED_STATEMENT_KINDS: ReadonlySet<SyntaxKind> = new Set([
   SyntaxKind.NamespaceExportDeclaration,
   SyntaxKind.ImportEqualsDeclaration,
   SyntaxKind.EmptyStatement,
+  SyntaxKind.ExpressionStatement,
   SyntaxKind.ThrowStatement,
   SyntaxKind.ReturnStatement,
   SyntaxKind.BreakStatement,

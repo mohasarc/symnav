@@ -99,25 +99,22 @@ export class OverviewExpander {
 
   private static expandNodes(
     nodes: readonly OverviewNode[],
-    remainingFoldDepth: number,
+    remainingChildLevels: number,
   ): readonly OverviewNode[] {
-    return nodes.map((node) => OverviewExpander.expandNode(node, remainingFoldDepth));
+    return nodes.map((node) => OverviewExpander.expandNode(node, remainingChildLevels));
   }
 
-  private static expandNode(node: OverviewNode, remainingFoldDepth: number): OverviewNode {
+  private static expandNode(node: OverviewNode, remainingChildLevels: number): OverviewNode {
     if (node.type === "re-export") {
       return node;
     }
-    if (node.type === "fold") {
-      if (remainingFoldDepth <= 0) {
-        return { ...node, children: [] };
-      }
-      return {
-        ...node,
-        children: OverviewExpander.expandNodes(node.children, remainingFoldDepth - 1),
-      };
+    if (remainingChildLevels <= 0) {
+      return { ...node, children: [] };
     }
-    return { ...node, children: OverviewExpander.expandNodes(node.children, remainingFoldDepth) };
+    return {
+      ...node,
+      children: OverviewExpander.expandNodes(node.children, remainingChildLevels - 1),
+    };
   }
 
   private static collectCandidates(

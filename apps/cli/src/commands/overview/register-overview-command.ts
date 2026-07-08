@@ -19,7 +19,7 @@ export function registerOverviewCommand(
   program
     .command("overview <file>")
     .description("Print a one-screen overview of a file's symbols")
-    .option("--depth <n>", "number of fold levels to expand")
+    .option("--depth <n>", "number of child tree levels to render")
     .option("--at <text>", "expand the overview node whose header contains text")
     .option("--line <n>", "narrow overview target candidates to a source line")
     .option("--json", "emit JSON instead of text", false)

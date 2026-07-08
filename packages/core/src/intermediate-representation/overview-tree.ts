@@ -44,3 +44,20 @@ export interface OverviewFileEntries {
   readonly file: string;
   readonly entries: readonly OverviewNode[];
 }
+
+export function walkOverviewSymbols(entries: readonly OverviewNode[]): readonly SymbolOverviewNode[] {
+  const symbols: SymbolOverviewNode[] = [];
+  for (const entry of entries) {
+    collectSymbols(entry, symbols);
+  }
+  return symbols;
+}
+
+function collectSymbols(node: OverviewNode, symbols: SymbolOverviewNode[]): void {
+  if (node.type === "symbol") {
+    symbols.push(node);
+  }
+  for (const child of node.children) {
+    collectSymbols(child, symbols);
+  }
+}

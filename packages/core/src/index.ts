@@ -18,6 +18,7 @@ export type {
   ReExportOverviewNode,
   SymbolOverviewNode,
 } from "./intermediate-representation/overview-tree.js";
+export { walkOverviewSymbols } from "./intermediate-representation/overview-tree.js";
 export type {
   NavigationDiagnosticSeverity,
   NavigationDiagnostic,

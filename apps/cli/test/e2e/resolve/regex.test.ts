@@ -8,6 +8,8 @@ describe("symnav resolve e2e (regex)", () => {
     expect(r.stderr).toBe("");
     expect(r.status).toBe(0);
     await expect(r.stdout).toMatchFileSnapshot(snapshot("regex-to-converters.expected.txt"));
+    expect(r.stdout).not.toContain("toInvoice");
+    expect(r.stdout).not.toContain("converterNotes");
   });
 
   it("emits JSON for regex matches", () => {
@@ -52,6 +54,22 @@ describe("symnav resolve e2e (regex)", () => {
       'Cannot answer: invalid resolve regex "[": Unterminated character class.\n',
     );
     expect(r.status).toBe(1);
+  });
+
+  it("matches own names without matching parent-only canonical id segments", async () => {
+    const r = runResolve(["resolve", "--regex", "toOrder"]);
+    expect(r.stderr).toBe("");
+    expect(r.status).toBe(0);
+    await expect(r.stdout).toMatchFileSnapshot(snapshot("regex-to-order-own-name.expected.txt"));
+    expect(r.stdout).toContain("Converter::toOrder");
+    expect(r.stdout).not.toContain("receiptOnly");
+  });
+
+  it("does not match source text when no symbol own name matches", async () => {
+    const r = runResolve(["resolve", "--regex", "toInvoice"]);
+    expect(r.stderr).toBe("");
+    expect(r.status).toBe(0);
+    await expect(r.stdout).toMatchFileSnapshot(snapshot("regex-text-only-no-match.expected.txt"));
   });
 
   it("rejects regex and fuzzy mode together", () => {

@@ -1,6 +1,9 @@
 Resolve: PaymentProcessor (exact)
 
 Symbols
+├── src/exact-fuzzy-regression.ts
+│   └── 1-3: PaymentProcessor
+│       export class PaymentProcessor
 └── src/payments/PaymentProcessor.ts
     └── 1-5: PaymentProcessor
         export class PaymentProcessor

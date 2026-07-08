@@ -3,6 +3,8 @@ import { describe, expect, it } from "vitest";
 import { runResolve, snapshot } from "./run-resolve.js";
 import type { JsonSymbol } from "../json-identity.js";
 
+type SymbolCommand = "def" | "refs" | "context" | "graph";
+
 interface JsonResolveResult {
   symbols: readonly JsonSymbol[];
 }
@@ -13,6 +15,16 @@ describe("symnav resolve e2e (exact)", () => {
     expect(r.stderr).toBe("");
     expect(r.status).toBe(0);
     await expect(r.stdout).toMatchFileSnapshot(snapshot("exact-payment-processor.expected.txt"));
+    expect(r.stdout).not.toContain("PayProcessor");
+  });
+
+  it("does not case-normalize or fuzzy-match exact queries", async () => {
+    const r = runResolve(["resolve", "paymentprocessor"]);
+    expect(r.stderr).toBe("");
+    expect(r.status).toBe(0);
+    await expect(r.stdout).toMatchFileSnapshot(
+      snapshot("exact-payment-processor-lowercase.expected.txt"),
+    );
   });
 
   it("renders no-match with empty sections under headers", async () => {
@@ -71,6 +83,7 @@ describe("symnav resolve e2e (fuzzy)", () => {
     expect(r.stderr).toBe("");
     expect(r.status).toBe(0);
     await expect(r.stdout).toMatchFileSnapshot(snapshot("fuzzy-payment.expected.txt"));
+    expect(r.stdout).not.toContain("PayProcessor");
   });
 });
 
@@ -89,7 +102,29 @@ describe("symnav resolve e2e (JSON output)", () => {
     expect(parsed.mode).toBe("exact");
     expect(parsed.files).toEqual([]);
     expect(parsed.symbols.map((s) => s.identity.file)).toEqual([
+      "src/exact-fuzzy-regression.ts",
       "src/payments/PaymentProcessor.ts",
     ]);
   });
+});
+
+describe("symnav resolve e2e (help)", () => {
+  it("exposes regex on resolve help", () => {
+    const r = runResolve(["resolve", "--help"]);
+    expect(r.stderr).toBe("");
+    expect(r.status).toBe(0);
+    expect(r.stdout).toContain("--regex");
+    expect(r.stdout).toContain("match by JavaScript regex against symbol names");
+  });
+
+  it.each<SymbolCommand>(["def", "refs", "context", "graph"])(
+    "does not expose regex on %s help",
+    (command) => {
+      const r = runResolve([command, "--help"]);
+      expect(r.stderr).toBe("");
+      expect(r.status).toBe(0);
+      expect(r.stdout).not.toContain("--regex");
+      expect(r.stdout).not.toContain("regex");
+    },
+  );
 });

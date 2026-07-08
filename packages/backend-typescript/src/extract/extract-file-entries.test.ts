@@ -205,7 +205,7 @@ describe("extractFileEntries", () => {
     expect(result).toEqual([]);
   });
 
-  it("ignores top-level executable control-flow statements", () => {
+  it("ignores executable control-flow statements that contain no declarations", () => {
     const source = [
       "if (true) { sideEffect(); }",
       "for (const x of []) {}",
@@ -221,7 +221,9 @@ describe("extractFileEntries", () => {
       "debugger;",
     ].join("\n");
     const result = symbolsOf(source);
-    expect(result).toEqual([]);
+    expect(result.map((symbol) => formatSymbolIdentity(symbol.identity))).toEqual([
+      "input.ts::inner",
+    ]);
   });
 
   it("discovers declarations nested inside executable control-flow blocks", () => {

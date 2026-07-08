@@ -1,11 +1,11 @@
 import { describe, expect, it } from "vitest";
-import type { FoldOverviewNode, OverviewFileSymbols, OverviewNode } from "@symnav/core";
+import type { FoldOverviewNode, OverviewFileEntries, OverviewNode } from "@symnav/core";
 
 import { parseTypeScriptSource } from "../../test/helpers/parse-typescript-source.js";
-import { extractFileSymbols } from "./extract-file-symbols.js";
+import { extractFileEntries } from "./extract-file-entries.js";
 
-function fileSymbolsOf(source: string): OverviewFileSymbols {
-  return extractFileSymbols({
+function fileEntriesOf(source: string): OverviewFileEntries {
+  return extractFileEntries({
     sourceFile: parseTypeScriptSource(source),
     filePath: "input.ts",
   });
@@ -40,7 +40,7 @@ function foldSummaries(nodes: readonly OverviewNode[]): readonly unknown[] {
 }
 
 function onlyFold(source: string): FoldOverviewNode {
-  const entry = fileSymbolsOf(source).entries[0];
+  const entry = fileEntriesOf(source).entries[0];
   if (!entry || entry.type !== "fold") {
     throw new Error("expected fold entry");
   }
@@ -55,7 +55,7 @@ describe("fold tree extraction", () => {
       "});",
     ].join("\n");
 
-    expect(foldSummaries(fileSymbolsOf(source).entries)).toEqual([
+    expect(foldSummaries(fileEntriesOf(source).entries)).toEqual([
       {
         type: "fold",
         foldKind: "call",
@@ -110,7 +110,7 @@ describe("fold tree extraction", () => {
       "}",
     ].join("\n");
 
-    expect(foldSummaries(fileSymbolsOf(source).entries)).toEqual([
+    expect(foldSummaries(fileEntriesOf(source).entries)).toEqual([
       {
         type: "fold",
         foldKind: "conditional",
@@ -179,7 +179,14 @@ describe("fold tree extraction", () => {
         type: "fold",
         foldKind: "try",
         header: ["try {"],
-        children: [{ type: "symbol", name: "insideTry", header: ["const insideTry = run()"], children: [] }],
+        children: [
+          {
+            type: "symbol",
+            name: "insideTry",
+            header: ["const insideTry = run()"],
+            children: [],
+          },
+        ],
       },
       {
         type: "fold",
@@ -215,7 +222,7 @@ describe("fold tree extraction", () => {
       "effect();",
     ].join("\n");
 
-    expect(foldSummaries(fileSymbolsOf(source).entries)).toEqual([
+    expect(foldSummaries(fileEntriesOf(source).entries)).toEqual([
       {
         type: "symbol",
         name: "value",
@@ -268,7 +275,7 @@ describe("re-export extraction", () => {
       'export * as ns from "./ns";',
     ].join("\n");
 
-    expect(foldSummaries(fileSymbolsOf(source).entries)).toEqual([
+    expect(foldSummaries(fileEntriesOf(source).entries)).toEqual([
       {
         type: "re-export",
         exportKind: "star",

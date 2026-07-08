@@ -89,5 +89,8 @@
       "type": "symbol"
     }
   ],
-  "file": "multi-line-signature.ts"
+  "file": "multi-line-signature.ts",
+  "request": {
+    "depth": 0
+  }
 }

@@ -33,12 +33,13 @@ export class OverviewExpander {
         ? expandNodes(this.#file.entries, this.#request.depth)
         : [expandNode(this.selectTarget().node, this.#request.depth)];
 
-    return {
+    const result: OverviewExpansionResult = {
       file: this.#file.file,
       entries,
       request: this.#request,
-      diagnostics: this.#file.diagnostics,
     };
+    if (this.#file.diagnostics === undefined) return result;
+    return { ...result, diagnostics: this.#file.diagnostics };
   }
 
   private selectTarget(): OverviewExpansionCandidate {

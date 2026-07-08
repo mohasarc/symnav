@@ -15,7 +15,7 @@ beforeAll(() => {
 
 describe("symnav overview e2e (fold tree)", () => {
   it("renders folded call headers and nested declarations without callback body lines", () => {
-    const r = runOverview(["overview", "fold-tree.ts"]);
+    const r = runOverview(["overview", "fold-tree.ts", "--depth", "1"]);
 
     expect(r.stderr).toBe("");
     expect(r.status).toBe(0);

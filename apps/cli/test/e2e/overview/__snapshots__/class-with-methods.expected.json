@@ -86,5 +86,8 @@
       "type": "symbol"
     }
   ],
-  "file": "class-with-methods.ts"
+  "file": "class-with-methods.ts",
+  "request": {
+    "depth": 0
+  }
 }

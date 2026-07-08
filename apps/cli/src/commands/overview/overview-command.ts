@@ -1,5 +1,5 @@
-import type { NavigationDiagnostic, OverviewFileEntries } from "@symnav/core";
-import { OverviewTree } from "@symnav/core";
+import type { NavigationDiagnostic, OverviewExpansionResult } from "@symnav/core";
+import { OverviewExpander, OverviewTree } from "@symnav/core";
 import { renderOverviewJson, renderOverviewText } from "@symnav/renderer";
 import type { Command, CommandContext } from "../../command.js";
 import { classifyArgKind, lengthBucketOf } from "../../telemetry/arg-shape.js";
@@ -11,7 +11,7 @@ export interface OverviewArgs {
   readonly line: number | undefined;
 }
 
-export const overviewCommand: Command<OverviewFileEntries, OverviewArgs> = {
+export const overviewCommand: Command<OverviewExpansionResult, OverviewArgs> = {
   name: "overview",
   describeArgs(args: OverviewArgs) {
     return {
@@ -20,16 +20,24 @@ export const overviewCommand: Command<OverviewFileEntries, OverviewArgs> = {
       flags: flagsFor(args),
     };
   },
-  countResults(result: OverviewFileEntries) {
+  countResults(result: OverviewExpansionResult) {
     return { symbols: OverviewTree.walkSymbols(result.entries).length };
   },
-  diagnostics(result: OverviewFileEntries): readonly NavigationDiagnostic[] {
+  diagnostics(result: OverviewExpansionResult): readonly NavigationDiagnostic[] {
     return result.diagnostics ?? [];
   },
-  async compute(ctx: CommandContext<OverviewArgs>): Promise<OverviewFileEntries> {
+  async compute(ctx: CommandContext<OverviewArgs>): Promise<OverviewExpansionResult> {
     const path = await ctx.workspace.resolveInputPath(ctx.args.file, ctx.cwd);
     const backend = ctx.router.findOrThrow(path.relative);
-    return backend.fileEntries(path);
+    const file = await backend.fileEntries(path);
+    return new OverviewExpander({
+      file,
+      request: {
+        depth: ctx.args.depth,
+        at: ctx.args.at,
+        line: ctx.args.line,
+      },
+    }).expand();
   },
   renderText: renderOverviewText,
   renderJson: renderOverviewJson,

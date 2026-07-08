@@ -259,3 +259,37 @@ describe("fold tree extraction", () => {
     ]);
   });
 });
+
+describe("re-export extraction", () => {
+  it("extracts star, named, and namespace re-export entries without target symbols", () => {
+    const source = [
+      'export * from "./core";',
+      'export { A, B as C } from "./api";',
+      'export * as ns from "./ns";',
+    ].join("\n");
+
+    expect(foldSummaries(fileSymbolsOf(source).entries)).toEqual([
+      {
+        type: "re-export",
+        exportKind: "star",
+        exportedNames: [],
+        sourceModule: "./core",
+        header: ['export * from "./core";'],
+      },
+      {
+        type: "re-export",
+        exportKind: "named",
+        exportedNames: ["A", "C"],
+        sourceModule: "./api",
+        header: ['export { A, B as C } from "./api";'],
+      },
+      {
+        type: "re-export",
+        exportKind: "namespace",
+        exportedNames: ["ns"],
+        sourceModule: "./ns",
+        header: ['export * as ns from "./ns";'],
+      },
+    ]);
+  });
+});

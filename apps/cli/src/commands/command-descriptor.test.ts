@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import type {
   DefinitionResult,
   GraphResult,
-  OverviewFileEntries,
+  OverviewExpansionResult,
   RefsResult,
   ResolveResult,
   SymbolOverviewNode,
@@ -115,9 +115,10 @@ describe("command telemetry descriptors", () => {
   });
 
   it("counts overview result symbols recursively", () => {
-    const result: OverviewFileEntries = {
+    const result: OverviewExpansionResult = {
       file: "src/a.ts",
       entries: [symbol("top", [symbol("nested", [symbol("leaf")])]), symbol("other")],
+      request: { depth: 0, at: undefined, line: undefined },
     };
 
     expect(overviewCommand.countResults(result)).toEqual({ symbols: 4 });

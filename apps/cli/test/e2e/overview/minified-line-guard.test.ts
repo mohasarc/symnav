@@ -33,7 +33,7 @@ describe("symnav overview e2e (minified line guard)", () => {
     expect(r.stderr).toBe("");
     expect(r.status).toBe(0);
     expect(r.stdout).toBe(
-      ['Overview: minified-line.ts', '└── 1: describe("beta", () => {', ""].join("\n"),
+      ["Overview: minified-line.ts", '└── 1: describe("beta", () => {', ""].join("\n"),
     );
   });
 });

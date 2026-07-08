@@ -105,7 +105,7 @@ describe("OverviewExpander depth", () => {
 
   it("opens one fold interior at depth 1", () => {
     const entries = [
-      fold("describe(\"outer\", () => {", {
+      fold('describe("outer", () => {', {
         range: { startLine: 1, endLine: 8 },
         children: [
           symbol("helper", { range: { startLine: 2, endLine: 2 } }),
@@ -118,7 +118,7 @@ describe("OverviewExpander depth", () => {
     ];
 
     expect(expand(entries, 1)).toEqual([
-      fold("describe(\"outer\", () => {", {
+      fold('describe("outer", () => {', {
         range: { startLine: 1, endLine: 8 },
         children: [
           symbol("helper", { range: { startLine: 2, endLine: 2 } }),
@@ -133,7 +133,7 @@ describe("OverviewExpander depth", () => {
 
   it("opens nested fold interiors at depth 2", () => {
     const entries = [
-      fold("describe(\"outer\", () => {", {
+      fold('describe("outer", () => {', {
         range: { startLine: 1, endLine: 8 },
         children: [
           fold("if (flag) {", {
@@ -145,7 +145,7 @@ describe("OverviewExpander depth", () => {
     ];
 
     expect(expand(entries, 2)).toEqual([
-      fold("describe(\"outer\", () => {", {
+      fold('describe("outer", () => {', {
         range: { startLine: 1, endLine: 8 },
         children: [
           fold("if (flag) {", {
@@ -159,7 +159,7 @@ describe("OverviewExpander depth", () => {
 
   it("does not charge depth for symbol children", () => {
     const entries = [
-      fold("describe(\"outer\", () => {", {
+      fold('describe("outer", () => {', {
         range: { startLine: 1, endLine: 12 },
         children: [
           symbol("outerSymbol", {
@@ -181,7 +181,7 @@ describe("OverviewExpander depth", () => {
     ];
 
     expect(expand(entries, 1)).toEqual([
-      fold("describe(\"outer\", () => {", {
+      fold('describe("outer", () => {', {
         range: { startLine: 1, endLine: 12 },
         children: [
           symbol("outerSymbol", {
@@ -207,11 +207,11 @@ describe("OverviewExpander depth", () => {
 describe("OverviewExpander target selection", () => {
   it("selects a fold by copied header substring", () => {
     const entries = [
-      fold("describe(\"setup\", () => {", {
+      fold('describe("setup", () => {', {
         range: { startLine: 1, endLine: 3 },
         children: [symbol("setupHelper", { range: { startLine: 2, endLine: 2 } })],
       }),
-      fold("describe(\"cursor\", () => {", {
+      fold('describe("cursor", () => {', {
         range: { startLine: 5, endLine: 9 },
         children: [
           symbol("cursorHelper", { range: { startLine: 6, endLine: 6 } }),
@@ -223,23 +223,24 @@ describe("OverviewExpander target selection", () => {
       }),
     ];
 
-    expect(expandRequest(entries, { depth: 1, at: 'describe("cursor")', line: undefined }))
-      .toMatchObject({
-        file: "src/file.ts",
-        request: { depth: 1, at: 'describe("cursor")', line: undefined },
-        entries: [
-          fold("describe(\"cursor\", () => {", {
-            range: { startLine: 5, endLine: 9 },
-            children: [
-              symbol("cursorHelper", { range: { startLine: 6, endLine: 6 } }),
-              fold("if (enabled) {", {
-                range: { startLine: 7, endLine: 8 },
-                children: [],
-              }),
-            ],
-          }),
-        ],
-      });
+    expect(
+      expandRequest(entries, { depth: 1, at: 'describe("cursor")', line: undefined }),
+    ).toMatchObject({
+      file: "src/file.ts",
+      request: { depth: 1, at: 'describe("cursor")', line: undefined },
+      entries: [
+        fold('describe("cursor", () => {', {
+          range: { startLine: 5, endLine: 9 },
+          children: [
+            symbol("cursorHelper", { range: { startLine: 6, endLine: 6 } }),
+            fold("if (enabled) {", {
+              range: { startLine: 7, endLine: 8 },
+              children: [],
+            }),
+          ],
+        }),
+      ],
+    });
   });
 
   it("returns candidates for a line-only match instead of picking an innermost node", () => {
@@ -265,16 +266,16 @@ describe("OverviewExpander target selection", () => {
 
   it("uses --line to narrow --at candidates", () => {
     const entries = [
-      fold("describe(\"first\", () => {", {
+      fold('describe("first", () => {', {
         range: { startLine: 1, endLine: 3 },
       }),
-      fold("describe(\"second\", () => {", {
+      fold('describe("second", () => {', {
         range: { startLine: 8, endLine: 10 },
       }),
     ];
 
     expect(expandRequest(entries, { depth: 0, at: "describe", line: 9 }).entries).toEqual([
-      fold("describe(\"second\", () => {", {
+      fold('describe("second", () => {', {
         range: { startLine: 8, endLine: 10 },
       }),
     ]);
@@ -282,7 +283,7 @@ describe("OverviewExpander target selection", () => {
 
   it("reports not found when --at and --line narrow to zero candidates", () => {
     const entries = [
-      fold("describe(\"cursor\", () => {", {
+      fold('describe("cursor", () => {', {
         range: { startLine: 1, endLine: 3 },
       }),
     ];
@@ -294,10 +295,10 @@ describe("OverviewExpander target selection", () => {
 
   it("reports candidates when --at and --line still match multiple nodes", () => {
     const entries = [
-      fold("describe(\"a\", () => {", {
+      fold('describe("a", () => {', {
         range: { startLine: 1, endLine: 1 },
       }),
-      fold("describe(\"b\", () => {", {
+      fold('describe("b", () => {', {
         range: { startLine: 1, endLine: 1 },
       }),
     ];
@@ -312,10 +313,10 @@ describe("OverviewExpander target selection", () => {
 
   it("keeps same-line folds ambiguous under --line and addressable under longer --at text", () => {
     const entries = [
-      fold("describe(\"cursor\", () => {", {
+      fold('describe("cursor", () => {', {
         range: { startLine: 1, endLine: 1 },
       }),
-      fold("describe(\"cursor nested\", () => {", {
+      fold('describe("cursor nested", () => {', {
         range: { startLine: 1, endLine: 1 },
       }),
     ];
@@ -326,7 +327,7 @@ describe("OverviewExpander target selection", () => {
     expect(
       expandRequest(entries, { depth: 0, at: 'describe("cursor nested")', line: 1 }).entries,
     ).toEqual([
-      fold("describe(\"cursor nested\", () => {", {
+      fold('describe("cursor nested", () => {', {
         range: { startLine: 1, endLine: 1 },
       }),
     ]);

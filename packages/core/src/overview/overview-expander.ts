@@ -85,10 +85,7 @@ function collectCandidates(nodes: readonly OverviewNode[]): readonly OverviewExp
   return candidates;
 }
 
-function collectCandidate(
-  node: OverviewNode,
-  candidates: OverviewExpansionCandidate[],
-): void {
+function collectCandidate(node: OverviewNode, candidates: OverviewExpansionCandidate[]): void {
   candidates.push({
     header: headerFor(node),
     range: node.range,
@@ -107,7 +104,9 @@ function matchesRequest(
 }
 
 function matchesAt(candidate: OverviewExpansionCandidate, at: string | undefined): boolean {
-  return at === undefined || searchableHeaders(candidate.header).some((header) => header.includes(at));
+  return (
+    at === undefined || searchableHeaders(candidate.header).some((header) => header.includes(at))
+  );
 }
 
 function matchesLine(range: LineRange, line: number | undefined): boolean {

@@ -1,63 +1,92 @@
 import { describe, expect, it } from "vitest";
 
-import type { OverviewFileSymbols, SymbolDecl, SymbolKind } from "@symnav/core";
+import type {
+  FoldOverviewNode,
+  OverviewFileEntries,
+  OverviewNode,
+  SymbolKind,
+  SymbolOverviewNode,
+} from "@symnav/core";
 
 import { renderOverviewJson } from "./render-overview-json.js";
 
 interface DeclPartial {
   readonly segments: readonly { readonly name: string; readonly disambiguator?: number }[];
   readonly kind: SymbolKind;
-  readonly range?: SymbolDecl["range"];
-  readonly signature?: SymbolDecl["signature"];
-  readonly children?: readonly SymbolDecl[];
+  readonly range?: SymbolOverviewNode["range"];
+  readonly header?: SymbolOverviewNode["header"];
+  readonly children?: readonly OverviewNode[];
 }
 
-function decl(partial: DeclPartial, file: string = "src/file.ts"): SymbolDecl {
+function decl(partial: DeclPartial, file: string = "src/file.ts"): SymbolOverviewNode {
   return {
+    type: "symbol",
     identity: { file, segments: partial.segments },
     kind: partial.kind,
     range: partial.range ?? { startLine: 1, endLine: 1 },
-    signature: partial.signature ?? { startLine: 1, lines: [""] },
+    header: partial.header ?? { startLine: 1, lines: [""] },
     children: partial.children ?? [],
   };
 }
 
+function fold(children: readonly OverviewNode[] = []): FoldOverviewNode {
+  return {
+    type: "fold",
+    foldKind: "block",
+    range: { startLine: 2, endLine: 4 },
+    header: { startLine: 2, lines: ["{"] },
+    children,
+  };
+}
+
 describe("renderOverviewJson", () => {
-  it("mirrors OverviewFileSymbols verbatim with `children` always present on leaf decls", () => {
-    const file: OverviewFileSymbols = {
+  it("mirrors overview entries verbatim with `children` always present on leaf decls", () => {
+    const file: OverviewFileEntries = {
       file: "src/file.ts",
-      symbols: [
+      entries: [
         decl({
           kind: { role: "callable", nativeLabel: "function" },
           segments: [{ name: "leaf" }],
           range: { startLine: 4, endLine: 4 },
-          signature: { startLine: 4, lines: ["function leaf(): void"] },
+          header: { startLine: 4, lines: ["function leaf(): void"] },
         }),
       ],
     };
     const parsed = JSON.parse(renderOverviewJson(file));
     expect(parsed).toEqual({
       file: "src/file.ts",
-      symbols: [
+      entries: [
         {
+          type: "symbol",
           identity: { file: "src/file.ts", segments: [{ name: "leaf" }] },
           kind: { role: "callable", nativeLabel: "function" },
           range: { startLine: 4, endLine: 4 },
-          signature: { startLine: 4, lines: ["function leaf(): void"] },
+          header: { startLine: 4, lines: ["function leaf(): void"] },
           children: [],
         },
       ],
     });
   });
 
-  it("emits 2-space-indented output with a trailing newline", () => {
-    const file: OverviewFileSymbols = {
+  it("emits a discriminant for symbol and fold entries", () => {
+    const file: OverviewFileEntries = {
       file: "src/file.ts",
-      symbols: [
+      entries: [decl({ kind: { role: "callable", nativeLabel: "function" }, segments: [{ name: "leaf" }] }), fold()],
+    };
+
+    const parsed = JSON.parse(renderOverviewJson(file)) as OverviewFileEntries;
+
+    expect(parsed.entries.map((entry) => entry.type)).toEqual(["symbol", "fold"]);
+  });
+
+  it("emits 2-space-indented output with a trailing newline", () => {
+    const file: OverviewFileEntries = {
+      file: "src/file.ts",
+      entries: [
         decl({
           kind: { role: "callable", nativeLabel: "function" },
           segments: [{ name: "leaf" }],
-          signature: { startLine: 1, lines: ["function leaf(): void"] },
+          header: { startLine: 1, lines: ["function leaf(): void"] },
         }),
       ],
     };
@@ -67,27 +96,26 @@ describe("renderOverviewJson", () => {
 
     const lines = output.split("\n");
     expect(lines[0]).toBe("{");
-    expect(lines[1]).toBe(`  "file": "src/file.ts",`);
-    expect(lines[2]).toBe(`  "symbols": [`);
+    expect(lines[1]).toBe(`  "entries": [`);
   });
 
-  it("emits the signature object with its startLine and lines", () => {
-    const file: OverviewFileSymbols = {
+  it("emits the header object with its startLine and lines", () => {
+    const file: OverviewFileEntries = {
       file: "src/file.ts",
-      symbols: [
+      entries: [
         decl({
           kind: { role: "callable", nativeLabel: "function" },
           segments: [{ name: "configure" }],
           range: { startLine: 10, endLine: 12 },
-          signature: {
+          header: {
             startLine: 10,
             lines: ["function configure(", "  host: string,", "): void"],
           },
         }),
       ],
     };
-    const parsed = JSON.parse(renderOverviewJson(file)) as OverviewFileSymbols;
-    expect(parsed.symbols[0]?.signature).toEqual({
+    const parsed = JSON.parse(renderOverviewJson(file)) as OverviewFileEntries;
+    expect(parsed.entries[0]?.header).toEqual({
       startLine: 10,
       lines: ["function configure(", "  host: string,", "): void"],
     });
@@ -116,20 +144,20 @@ describe("renderOverviewJson", () => {
   });
 
   it("renders identical bytes for identical IR across two calls", () => {
-    const build = (): OverviewFileSymbols => ({
+    const build = (): OverviewFileEntries => ({
       file: "src/file.ts",
-      symbols: [
+      entries: [
         decl({
           kind: { role: "container", nativeLabel: "class" },
           segments: [{ name: "C" }],
           range: { startLine: 1, endLine: 10 },
-          signature: { startLine: 1, lines: ["class C"] },
+          header: { startLine: 1, lines: ["class C"] },
           children: [
             decl({
               kind: { role: "callable", nativeLabel: "method" },
               segments: [{ name: "C" }, { name: "m" }],
               range: { startLine: 2, endLine: 4 },
-              signature: { startLine: 2, lines: ["m(): void"] },
+              header: { startLine: 2, lines: ["m(): void"] },
             }),
           ],
         }),

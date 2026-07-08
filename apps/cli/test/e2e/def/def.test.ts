@@ -88,6 +88,39 @@ describe("symnav def e2e (errors and empty results)", () => {
   });
 });
 
+describe("symnav def e2e (pattern targets)", () => {
+  it("resolves a unique bare-name target", () => {
+    const r = runDef(["def", "helper"]);
+    expect(r.stderr).toBe("");
+    expect(r.status).toBe(0);
+    expect(r.stdout).toContain("Definition: helper");
+    expect(r.stdout).toContain("src/pattern/helper.ts");
+    expect(r.stdout).toContain("export function helper(): string");
+  });
+
+  it("lists ambiguous target candidates with canonical ids", () => {
+    const r = runDef(["def", "parse"]);
+    expect(r.status).toBe(1);
+    expect(r.stdout).toBe("");
+    expect(r.stderr).toContain('Cannot answer: symbol target "parse" is ambiguous.');
+    expect(r.stderr).toContain("src/pattern/json.ts::parse");
+    expect(r.stderr).toContain("export function parse(input: string): unknown");
+    expect(r.stderr).toContain("src/pattern/query.ts::parse");
+    expect(r.stderr).toContain(
+      "export function parse(input: URLSearchParams): Record<string, string>",
+    );
+  });
+
+  it("resolves a copied candidate id exactly", () => {
+    const r = runDef(["def", "src/pattern/json.ts::parse"]);
+    expect(r.stderr).toBe("");
+    expect(r.status).toBe(0);
+    expect(r.stdout).toContain("Definition: parse");
+    expect(r.stdout).toContain("src/pattern/json.ts");
+    expect(r.stdout).toContain("export function parse(input: string): unknown");
+  });
+});
+
 describe("symnav def e2e (JSON output)", () => {
   it("emits parseable JSON matching the expected object", () => {
     const r = runDef(["def", "src/http/Router.ts::Router::post#1", "--json"]);

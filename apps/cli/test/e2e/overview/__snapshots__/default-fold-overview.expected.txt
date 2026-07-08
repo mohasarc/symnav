@@ -1,0 +1,51 @@
+Overview: default-fold-overview.ts
+├── 1: flag
+│   1 declare const flag: boolean
+│
+├── 2: values
+│   2 declare const values: readonly string[]
+│
+├── 3: mode
+│   3 declare const mode: "read" | "write"
+│
+├── 4: tap
+│   4 declare function tap(value: string): void
+│
+├── 6: topLevelValue
+│   6 export const topLevelValue = "root"
+│
+├── 8: tap(topLevelValue);
+│
+├── 10-13: if (flag) {
+│
+├── 15-18: for (const value of values) {
+│
+├── 20-23: for (let index = 0; index < values.length; index += 1) {
+│
+├── 25-29: while (flag) {
+│
+├── 31-42: switch (mode) {
+│
+├── 44-47: try {
+│
+├── 47-50: catch (error) {
+│
+├── 50-53: finally {
+│
+├── 55-58: {
+│
+├── 60-63: values.map((value) => {
+│
+├── 65-76: FoldMemberHost
+│   65 export class FoldMemberHost
+│   ├── 66-71: FoldMemberHost::run
+│   │   66 run(): void
+│   │   └── 67-70: if (flag) {
+│   └── 73-75: FoldMemberHost::memberValue
+│       73 private memberValue(): string
+│
+└── 78-84: outerDeclaration
+    78 export function outerDeclaration(): void
+    ├── 79-81: outerDeclaration::nestedDeclaration
+    │   79 function nestedDeclaration(): string
+    └── 83: tap(nestedDeclaration());

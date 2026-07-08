@@ -87,6 +87,11 @@ export {
 } from "./intermediate-representation/canonical-identity.js";
 export type { SymbolTargetPattern } from "./target/symbol-target-pattern.js";
 export { parseSymbolTargetPattern, symbolTargetMatches } from "./target/symbol-target-pattern.js";
+export type { SymbolTargetCandidate } from "./target/symbol-target-result.js";
+export {
+  AmbiguousSymbolTargetError,
+  SymbolTargetNotFoundError,
+} from "./target/symbol-target-result.js";
 export { splitHeaderLines } from "./intermediate-representation/split-header-lines.js";
 export { assignDisambiguators } from "./intermediate-representation/assign-disambiguators.js";
 export type { FileSystem } from "./workspace/file-system.js";

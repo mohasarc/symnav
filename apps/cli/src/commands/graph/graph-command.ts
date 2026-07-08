@@ -12,6 +12,7 @@ import { SymbolTargetErrorRenderer, renderGraphJson, renderGraphText } from "@sy
 
 import type { Command, CommandContext } from "../../command.js";
 import { classifyArgKind, lengthBucketOf } from "../../telemetry/arg-shape.js";
+import { collectNavigationDiagnostics } from "../collect-navigation-diagnostics.js";
 import { resolveCallTarget } from "../resolve-call-target.js";
 import { CommandTargetResolver } from "../resolve-symbol-target.js";
 
@@ -42,6 +43,9 @@ export const graphCommand: Command<GraphResult, GraphArgs> = {
       pages: result.pageCount,
     };
   },
+  diagnostics(result: GraphResult) {
+    return result.diagnostics ?? [];
+  },
   async compute(ctx: CommandContext<GraphArgs>): Promise<GraphResult> {
     const request = graphRequestFrom(ctx.args);
     const resolved = await CommandTargetResolver.resolve({
@@ -67,7 +71,7 @@ export const graphCommand: Command<GraphResult, GraphArgs> = {
       ? await traverser.traverseOutgoing()
       : [];
 
-    return new GraphResultBuilder({
+    const result = new GraphResultBuilder({
       identity,
       root,
       depth: request.depth,
@@ -76,6 +80,8 @@ export const graphCommand: Command<GraphResult, GraphArgs> = {
       outgoingPaths,
       pageRequest: request.pageRequest,
     }).build();
+    const diagnostics = await collectNavigationDiagnostics(ctx.workspace, ctx.router);
+    return { ...result, ...(diagnostics.length > 0 && { diagnostics }) };
   },
   renderText: renderGraphText,
   renderJson: renderGraphJson,

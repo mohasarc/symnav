@@ -1,5 +1,6 @@
 import type { SymbolIdentity } from "./symbol-identity.js";
 import type { SourceMatch } from "./source-match.js";
+import type { ResultWithDiagnostics } from "./types.js";
 
 export type ReferenceKind = "usage" | "import" | "export" | "type";
 
@@ -7,7 +8,7 @@ export interface SymbolReference extends SourceMatch {
   readonly kind: ReferenceKind;
 }
 
-export interface RefsResult {
+export interface RefsResult extends ResultWithDiagnostics {
   readonly identity: SymbolIdentity;
   readonly total: number;
   readonly kindCounts: Readonly<Record<ReferenceKind, number>>;

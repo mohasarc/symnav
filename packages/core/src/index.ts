@@ -17,6 +17,16 @@ export type {
 } from "./intermediate-representation/overview-tree.js";
 export { OverviewTree } from "./intermediate-representation/overview-tree.js";
 export type {
+  OverviewExpansionCandidate,
+  OverviewExpansionRequest,
+  OverviewExpansionResult,
+} from "./overview/overview-query.js";
+export {
+  AmbiguousLineTargetError,
+  AmbiguousOverviewTargetError,
+  OverviewTargetNotFoundError,
+} from "./overview/overview-query.js";
+export type {
   NavigationDiagnosticSeverity,
   NavigationDiagnostic,
   DiagnosticSink,

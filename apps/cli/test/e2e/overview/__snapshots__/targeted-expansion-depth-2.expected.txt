@@ -7,8 +7,8 @@ Overview: targeted-expansion.ts
 │   ├── 6: cursorHelper
 │   │   6 const cursorHelper = () => 2
 │   └── 8-10: describe("nested", () => {
-│       └── 9: nestedHelper
-│           9 const nestedHelper = () => …
+│       └── 9: innerHelper
+│           9 const innerHelper = () => 3
 │
 └── 13-18: action
     13 export function action(flag: boolean): void

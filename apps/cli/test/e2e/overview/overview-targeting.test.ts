@@ -35,7 +35,7 @@ describe("symnav overview e2e (targeting)", () => {
     expect(r.stdout).toContain("6: cursorHelper");
     expect(r.stdout).toContain('8-10: describe("nested", () => {');
     expect(r.stdout).toContain("15: action::branchValue");
-    expect(r.stdout).not.toContain("9: nestedHelper");
+    expect(r.stdout).not.toContain("9: innerHelper");
     await expect(r.stdout).toMatchFileSnapshot(
       snapshot("targeted-expansion-depth-1.expected.txt"),
     );
@@ -48,7 +48,7 @@ describe("symnav overview e2e (targeting)", () => {
     expect(r.status).toBe(0);
     expect(r.stdout).toContain("2: setupHelper");
     expect(r.stdout).toContain("6: cursorHelper");
-    expect(r.stdout).toContain("9: nestedHelper");
+    expect(r.stdout).toContain("9: innerHelper");
     expect(r.stdout).toContain("15: action::branchValue");
     await expect(r.stdout).toMatchFileSnapshot(
       snapshot("targeted-expansion-depth-2.expected.txt"),
@@ -71,7 +71,7 @@ describe("symnav overview e2e (targeting)", () => {
     expect(r.stdout).toContain("6: cursorHelper");
     expect(r.stdout).toContain('8-10: describe("nested", () => {');
     expect(r.stdout).not.toContain('describe("setup"');
-    expect(r.stdout).not.toContain("nestedHelper");
+    expect(r.stdout).not.toContain("innerHelper");
   });
 
   it("targets an async callback fold by its closed call form", () => {
@@ -126,7 +126,25 @@ describe("symnav overview e2e (targeting)", () => {
     expect(r.stdout).toContain("2: longHelper");
   });
 
-  it("prints target candidates for ambiguous header text", () => {
+  it("targets a nested fold by copied header substring", () => {
+    const r = runOverview([
+      "overview",
+      "targeted-expansion.ts",
+      "--at",
+      "nested",
+      "--depth",
+      "1",
+    ]);
+
+    expect(r.stderr).toBe("");
+    expect(r.status).toBe(0);
+    expect(r.stdout).toContain('8-10: describe("nested", () => {');
+    expect(r.stdout).toContain("9: innerHelper");
+    expect(r.stdout).not.toContain('describe("setup"');
+    expect(r.stdout).not.toContain('describe("cursor"');
+  });
+
+  it("prints target candidates for ambiguous header text", async () => {
     const r = runOverview(["overview", "targeted-expansion.ts", "--at", "describe"]);
 
     expect(r.stdout).toBe("");
@@ -135,6 +153,60 @@ describe("symnav overview e2e (targeting)", () => {
     expect(r.stderr).toContain('1-3: describe("setup", () => {');
     expect(r.stderr).toContain('5-11: describe("cursor", () => {');
     expect(r.stderr).toContain('8-10: describe("nested", () => {');
+    await expect(r.stderr).toMatchFileSnapshot(
+      snapshot("targeted-expansion-ambiguous-at.expected.err"),
+    );
+  });
+
+  it("reports missing target text", () => {
+    const r = runOverview(["overview", "targeted-expansion.ts", "--at", "missing"]);
+
+    expect(r.stdout).toBe("");
+    expect(r.status).toBe(1);
+    expect(r.stderr).toBe('Cannot answer: no overview target matching --at "missing".\n');
+  });
+
+  it("narrows a line-only target to one candidate", () => {
+    const r = runOverview(["overview", "line-narrowing.ts", "--line", "8", "--depth", "1"]);
+
+    expect(r.stderr).toBe("");
+    expect(r.status).toBe(0);
+    expect(r.stdout).toContain('8-10: describe("repeated", () => {');
+    expect(r.stdout).toContain("9: secondHelper");
+    expect(r.stdout).not.toContain("firstHelper");
+  });
+
+  it("keeps same-line targets ambiguous under line-only narrowing", async () => {
+    const r = runOverview(["overview", "line-narrowing.ts", "--line", "12"]);
+
+    expect(r.stdout).toBe("");
+    expect(r.status).toBe(1);
+    expect(r.stderr).toContain(
+      "Cannot answer: line 12 matches multiple overview nodes; use --at with copied header text.",
+    );
+    expect(r.stderr).toContain('12: describe("inline", () => {');
+    await expect(r.stderr).toMatchFileSnapshot(
+      snapshot("line-narrowing-ambiguous-line.expected.err"),
+    );
+  });
+
+  it("uses line and header text to select one duplicate header", () => {
+    const r = runOverview([
+      "overview",
+      "line-narrowing.ts",
+      "--line",
+      "8",
+      "--at",
+      "repeated",
+      "--depth",
+      "1",
+    ]);
+
+    expect(r.stderr).toBe("");
+    expect(r.status).toBe(0);
+    expect(r.stdout).toContain('8-10: describe("repeated", () => {');
+    expect(r.stdout).toContain("9: secondHelper");
+    expect(r.stdout).not.toContain("firstHelper");
   });
 
   it("includes expansion request metadata in JSON output", () => {
@@ -188,6 +260,16 @@ describe("symnav overview e2e (targeting)", () => {
     expect(r.status).toBe(1);
     expect(r.stderr).toBe(
       "Cannot answer: invalid overview request: line must be a positive integer, got NaN.\n",
+    );
+  });
+
+  it("rejects fractional line values as overview request errors", () => {
+    const r = runOverview(["overview", "targeted-expansion.ts", "--line", "1.5"]);
+
+    expect(r.stdout).toBe("");
+    expect(r.status).toBe(1);
+    expect(r.stderr).toBe(
+      "Cannot answer: invalid overview request: line must be a positive integer, got 1.5.\n",
     );
   });
 

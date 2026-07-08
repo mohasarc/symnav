@@ -1,0 +1,5 @@
+Overview: src/agent-workflow.ts
+└── 47-53: if (defaultSteps.length > 0) {
+    ├── 48-50: buildNestedWorkflowAudit
+    │   48 function buildNestedWorkflowAudit(input: WorkflowInput): string
+    └── 52: buildNestedWorkflowAudit(defaultWorkflowInput());

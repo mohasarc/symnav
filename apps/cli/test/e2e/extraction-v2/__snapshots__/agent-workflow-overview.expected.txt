@@ -1,0 +1,74 @@
+Overview: src/agent-workflow.ts
+├── 3-7: WorkflowInput
+│   3 interface WorkflowInput
+│   ├── 4: WorkflowInput::agentId
+│   │   4 readonly agentId: string
+│   ├── 5: WorkflowInput::mode
+│   │   5 readonly mode: "draft" | "execute"
+│   └── 6: WorkflowInput::requestedSteps
+│       6 readonly requestedSteps: readonly string[]
+│
+├── 9-13: WorkflowPlan
+│   9 interface WorkflowPlan
+│   ├── 10: WorkflowPlan::title
+│   │   10 readonly title: string
+│   ├── 11: WorkflowPlan::agentId
+│   │   11 readonly agentId: string
+│   └── 12: WorkflowPlan::steps
+│       12 readonly steps: readonly string[]
+│
+├── 15: defaultSteps
+│   15 const defaultSteps = ["plan", "act", "review"]
+│
+├── 17-21: defaultWorkflowInput
+│   17 const defaultWorkflowInput = (): WorkflowInput => …
+│
+├── 23-27: workflowMetadata
+│   23 export const workflowMetadata = { … }
+│
+├── 29-33: BuildCoordinator
+│   29 export class BuildCoordinator
+│   └── 30-32: BuildCoordinator::run
+│       30 run(): WorkflowPlan
+│
+├── 35-39: AgentBuilder
+│   35 export class AgentBuilder
+│   └── 36-38: AgentBuilder::buildTask
+│       36 buildTask(step: string): string
+│
+├── 41-45: WorkflowBuilder
+│   41 export class WorkflowBuilder
+│   └── 42-44: WorkflowBuilder::buildTask
+│       42 buildTask(step: string): string
+│
+├── 47-53: if (defaultSteps.length > 0) {
+│
+├── 58-63: buildWorkflow
+│   58 export function buildWorkflow(input: WorkflowInput = defaultWorkflowInput()): WorkflowPlan
+│   ├── 59: buildWorkflow::plan
+│   │   59 const plan = createPlan(input)
+│   └── 60: buildWorkflow::assignedAgent
+│       60 const assignedAgent = resolveAgent(input.agentId)
+│
+├── 65-71: createPlan
+│   65 function createPlan(input: WorkflowInput): WorkflowPlan
+│
+├── 73-75: normalizeStep
+│   73 function normalizeStep(step: string): string
+│
+├── 77-79: resolveAgent
+│   77 function resolveAgent(agentId: string): string
+│
+├── 81-86: finalizeWorkflow
+│   81 function finalizeWorkflow(plan: WorkflowPlan, assignedAgent: string): WorkflowPlan
+│
+├── 88-90: runAgentWorkflow
+│   88 export function runAgentWorkflow(): WorkflowPlan
+│
+├── 92-96: previewAgentWorkflow
+│   92 export function previewAgentWorkflow(): string
+│   └── 93: previewAgentWorkflow::plan
+│       93 const plan = buildWorkflow(…)
+│
+└── 98: workflowFactory
+    98 export const workflowFactory = (input: WorkflowInput): WorkflowPlan => …

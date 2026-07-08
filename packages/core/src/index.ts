@@ -10,6 +10,15 @@ export type {
   DefinitionResult,
 } from "./intermediate-representation/types.js";
 export type {
+  FoldKind,
+  FoldOverviewNode,
+  OverviewFileEntries,
+  OverviewNode,
+  OverviewNodeBase,
+  ReExportOverviewNode,
+  SymbolOverviewNode,
+} from "./intermediate-representation/overview-tree.js";
+export type {
   NavigationDiagnosticSeverity,
   NavigationDiagnostic,
   DiagnosticSink,

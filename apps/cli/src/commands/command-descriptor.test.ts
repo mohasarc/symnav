@@ -35,10 +35,32 @@ describe("command telemetry descriptors", () => {
   });
 
   it("describes overview arguments", () => {
-    expect(overviewCommand.describeArgs({ file: "src/a.ts" })).toEqual({
+    expect(
+      overviewCommand.describeArgs({
+        file: "src/a.ts",
+        depth: 0,
+        at: undefined,
+        line: undefined,
+      }),
+    ).toEqual({
       kind: "path",
       lengthBucket: "short",
       flags: [],
+    });
+  });
+
+  it("describes overview expansion flags", () => {
+    expect(
+      overviewCommand.describeArgs({
+        file: "src/a.ts",
+        depth: 2,
+        at: "describe",
+        line: 10,
+      }),
+    ).toEqual({
+      kind: "path",
+      lengthBucket: "short",
+      flags: ["depth", "at", "line"],
     });
   });
 

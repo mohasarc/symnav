@@ -4,6 +4,13 @@ import type { ProgramDependencies } from "../../program-dependencies.js";
 import { runCommand } from "../../command.js";
 import { overviewCommand } from "./overview-command.js";
 
+interface OverviewOptions {
+  readonly depth?: string;
+  readonly at?: string;
+  readonly line?: string;
+  readonly json: boolean;
+}
+
 export function registerOverviewCommand(
   program: CommanderCommand,
   context: ProgramContext,
@@ -12,15 +19,23 @@ export function registerOverviewCommand(
   program
     .command("overview <file>")
     .description("Print a one-screen overview of a file's symbols")
+    .option("--depth <n>", "number of fold levels to expand")
+    .option("--at <text>", "expand the overview node whose header contains text")
+    .option("--line <n>", "narrow overview target candidates to a source line")
     .option("--json", "emit JSON instead of text", false)
-    .action(async (file: string, options: { json: boolean }) => {
+    .action(async (file: string, options: OverviewOptions) => {
       const cwdOverride = program.opts<{ cwd?: string }>().cwd;
       await runCommand(overviewCommand, {
         context,
         dependencies,
         cwdOverride,
         json: options.json,
-        args: { file },
+        args: {
+          file,
+          depth: options.depth === undefined ? 0 : Number(options.depth),
+          at: options.at,
+          line: options.line === undefined ? undefined : Number(options.line),
+        },
       });
     });
 }

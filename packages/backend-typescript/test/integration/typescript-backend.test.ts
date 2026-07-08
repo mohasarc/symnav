@@ -2,9 +2,10 @@ import { describe, expect, it } from "vitest";
 
 import {
   FileNotFoundError,
+  formatSymbolIdentity,
+  type FoldOverviewNode,
   InMemoryFileSystem,
   type FileSystem,
-  type OverviewNode,
   type ResolvedPath,
   OverviewTree,
 } from "@symnav/core";
@@ -12,10 +13,6 @@ import {
 import { extractFileEntries } from "../../src/extract/extract-file-entries.js";
 import { TypeScriptBackend } from "../../src/typescript-backend/typescript-backend.js";
 import { parseTypeScriptSource } from "../helpers/parse-typescript-source.js";
-
-function symbolChildrenOf(node: OverviewNode | undefined): readonly OverviewNode[] {
-  return node?.type === "symbol" ? node.children : [];
-}
 
 function backendOver(files: Record<string, string>): {
   backend: TypeScriptBackend;
@@ -139,7 +136,7 @@ describe("TypeScriptBackend.fileEntries", () => {
     ).toEqual([["function-implementation", "Greeting"]]);
   });
 
-  it.skip("returns declarations nested inside executable control-flow blocks", async () => {
+  it("returns declarations nested inside executable control-flow blocks", async () => {
     const sourceWithLocalDeclarations = [
       "export function outer(flag: boolean): void {",
       "  if (flag) {",
@@ -152,11 +149,15 @@ describe("TypeScriptBackend.fileEntries", () => {
       "/repo/src/control-flow.ts": sourceWithLocalDeclarations,
     });
     const result = await backend.fileEntries(path("src/control-flow.ts"));
+    const outer = result.entries[0];
+    if (!outer || outer.type !== "symbol") throw new Error("expected outer symbol");
+    const folds = outer.children.filter((node): node is FoldOverviewNode => node.type === "fold");
+    expect(folds.map((fold) => [fold.foldKind, fold.header.lines])).toEqual([
+      ["conditional", ["if (flag) {"]],
+    ]);
     expect(
-      OverviewTree.walkSymbols(symbolChildrenOf(result.entries[0])).map(
-        (symbol) => symbol.identity.segments.at(-1)?.name,
-      ),
-    ).toEqual(["insideIf"]);
+      OverviewTree.walkSymbols(outer.children).map((symbol) => formatSymbolIdentity(symbol.identity)),
+    ).toEqual(["src/control-flow.ts::outer::insideIf"]);
   });
 });
 

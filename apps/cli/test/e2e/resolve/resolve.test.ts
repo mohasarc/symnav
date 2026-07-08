@@ -42,12 +42,21 @@ describe("symnav resolve e2e (exact)", () => {
     expect(r.stdout).not.toContain("class PaymentLeak");
   });
 
-  it.skip("finds declarations nested inside executable control-flow blocks", () => {
+  it("finds declarations nested inside executable control-flow blocks", () => {
     const r = runResolve(["resolve", "insideIf"]);
     expect(r.stderr).toBe("");
     expect(r.status).toBe(0);
     expect(r.stdout).toContain("src/control-flow/LocalDeclarations.ts");
     expect(r.stdout).toContain("outer::insideIf");
+  });
+
+  it("finds declarations nested inside folds by full canonical id", () => {
+    const r = runResolve(["resolve", "src/control-flow/LocalDeclarations.ts::outer::insideIf"]);
+    expect(r.stderr).toBe("");
+    expect(r.status).toBe(0);
+    expect(r.stdout).toContain("src/control-flow/LocalDeclarations.ts");
+    expect(r.stdout).toContain("outer::insideIf");
+    expect(r.stdout).not.toContain("Symbols (none)");
   });
 });
 

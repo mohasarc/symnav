@@ -3,6 +3,7 @@ import {
   formatSymbolIdentity,
   parseSymbolIdentity,
   OverviewTree,
+  type FoldOverviewNode,
   type OverviewFileEntries,
   type SymbolOverviewNode,
 } from "@symnav/core";
@@ -21,6 +22,10 @@ function symbolsOf(source: string, filePath: string = "input.ts"): readonly Symb
 
 function symbolChildren(decl: SymbolOverviewNode): readonly SymbolOverviewNode[] {
   return OverviewTree.walkSymbols(decl.children);
+}
+
+function childFolds(decl: SymbolOverviewNode): readonly FoldOverviewNode[] {
+  return decl.children.filter((child): child is FoldOverviewNode => child.type === "fold");
 }
 
 describe("extractFileEntries", () => {
@@ -97,15 +102,13 @@ describe("extractFileEntries", () => {
     const result = symbolsOf(source);
     const iface = result[0];
     if (!iface) throw new Error("expected interface");
-    expect(symbolChildren(iface).map((c) => [c.kind.nativeLabel, OverviewTree.ownName(c)])).toEqual(
-      [
-        ["property", "x"],
-        ["method-declaration", "m"],
-        ["index-signature", "[index]"],
-        ["call-signature", "()"],
-        ["construct-signature", "new()"],
-      ],
-    );
+    expect(symbolChildren(iface).map((c) => [c.kind.nativeLabel, OverviewTree.ownName(c)])).toEqual([
+      ["property", "x"],
+      ["method-declaration", "m"],
+      ["index-signature", "[index]"],
+      ["call-signature", "()"],
+      ["construct-signature", "new()"],
+    ]);
   });
 
   it("recurses through namespaces — nested function appears as a child function", () => {
@@ -221,7 +224,7 @@ describe("extractFileEntries", () => {
     expect(result).toEqual([]);
   });
 
-  it.skip("discovers declarations nested inside executable control-flow blocks", () => {
+  it("discovers declarations nested inside executable control-flow blocks", () => {
     const source = [
       "export function outer(flag: boolean, items: readonly string[]): void {",
       "  if (flag) {",
@@ -233,9 +236,15 @@ describe("extractFileEntries", () => {
       "}",
     ].join("\n");
     const outer = symbolsOf(source)[0];
-    expect(outer ? symbolChildren(outer).map(OverviewTree.ownName) : undefined).toEqual([
-      "insideIf",
-      "insideLoop",
+    if (!outer) throw new Error("expected outer");
+
+    expect(childFolds(outer).map((fold) => [fold.foldKind, fold.header.lines])).toEqual([
+      ["conditional", ["if (flag) {"]],
+      ["loop", ["for (const item of items) {"]],
+    ]);
+    expect(symbolChildren(outer).map((symbol) => formatSymbolIdentity(symbol.identity))).toEqual([
+      "input.ts::outer::insideIf",
+      "input.ts::outer::insideLoop",
     ]);
   });
 

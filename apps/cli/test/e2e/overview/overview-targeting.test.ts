@@ -21,9 +21,7 @@ describe("symnav overview e2e (targeting)", () => {
     expect(r.stdout).not.toContain("setupHelper");
     expect(r.stdout).not.toContain("cursorHelper");
     expect(r.stdout).not.toContain("branchValue");
-    await expect(r.stdout).toMatchFileSnapshot(
-      snapshot("targeted-expansion-depth-0.expected.txt"),
-    );
+    await expect(r.stdout).toMatchFileSnapshot(snapshot("targeted-expansion-depth-0.expected.txt"));
   });
 
   it("opens one fold level globally", async () => {
@@ -36,9 +34,7 @@ describe("symnav overview e2e (targeting)", () => {
     expect(r.stdout).toContain('8-10: describe("nested", () => {');
     expect(r.stdout).toContain("15: action::branchValue");
     expect(r.stdout).not.toContain("9: innerHelper");
-    await expect(r.stdout).toMatchFileSnapshot(
-      snapshot("targeted-expansion-depth-1.expected.txt"),
-    );
+    await expect(r.stdout).toMatchFileSnapshot(snapshot("targeted-expansion-depth-1.expected.txt"));
   });
 
   it("opens nested fold levels globally", async () => {
@@ -50,9 +46,7 @@ describe("symnav overview e2e (targeting)", () => {
     expect(r.stdout).toContain("6: cursorHelper");
     expect(r.stdout).toContain("9: innerHelper");
     expect(r.stdout).toContain("15: action::branchValue");
-    await expect(r.stdout).toMatchFileSnapshot(
-      snapshot("targeted-expansion-depth-2.expected.txt"),
-    );
+    await expect(r.stdout).toMatchFileSnapshot(snapshot("targeted-expansion-depth-2.expected.txt"));
   });
 
   it("expands a copied fold header target", () => {
@@ -127,14 +121,7 @@ describe("symnav overview e2e (targeting)", () => {
   });
 
   it("targets a nested fold by copied header substring", () => {
-    const r = runOverview([
-      "overview",
-      "targeted-expansion.ts",
-      "--at",
-      "nested",
-      "--depth",
-      "1",
-    ]);
+    const r = runOverview(["overview", "targeted-expansion.ts", "--at", "nested", "--depth", "1"]);
 
     expect(r.stderr).toBe("");
     expect(r.status).toBe(0);
@@ -231,6 +218,56 @@ describe("symnav overview e2e (targeting)", () => {
     expect(parsed.request).toEqual({ depth: 1, at: 'describe("cursor")' });
     expect(parsed.entries).toHaveLength(1);
     expect(parsed.entries[0]?.header.lines).toEqual(['describe("cursor", () => {']);
+  });
+
+  it("includes line request metadata in JSON output", () => {
+    const r = runOverview([
+      "overview",
+      "line-narrowing.ts",
+      "--line",
+      "8",
+      "--depth",
+      "1",
+      "--json",
+    ]);
+
+    expect(r.stderr).toBe("");
+    expect(r.status).toBe(0);
+    const parsed = JSON.parse(r.stdout) as {
+      readonly file: string;
+      readonly request: { readonly depth: number; readonly line: number };
+      readonly entries: readonly { readonly header: { readonly lines: readonly string[] } }[];
+    };
+    expect(parsed.file).toBe("line-narrowing.ts");
+    expect(parsed.request).toEqual({ depth: 1, line: 8 });
+    expect(parsed.entries).toHaveLength(1);
+    expect(parsed.entries[0]?.header.lines).toEqual(['describe("repeated", () => {']);
+  });
+
+  it("includes combined line and header request metadata in JSON output", () => {
+    const r = runOverview([
+      "overview",
+      "line-narrowing.ts",
+      "--line",
+      "8",
+      "--at",
+      "repeated",
+      "--depth",
+      "1",
+      "--json",
+    ]);
+
+    expect(r.stderr).toBe("");
+    expect(r.status).toBe(0);
+    const parsed = JSON.parse(r.stdout) as {
+      readonly file: string;
+      readonly request: { readonly at: string; readonly depth: number; readonly line: number };
+      readonly entries: readonly { readonly header: { readonly lines: readonly string[] } }[];
+    };
+    expect(parsed.file).toBe("line-narrowing.ts");
+    expect(parsed.request).toEqual({ at: "repeated", depth: 1, line: 8 });
+    expect(parsed.entries).toHaveLength(1);
+    expect(parsed.entries[0]?.header.lines).toEqual(['describe("repeated", () => {']);
   });
 
   it("rejects malformed depth values as overview request errors", () => {

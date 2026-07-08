@@ -5,20 +5,50 @@ description: Navigate a TypeScript codebase by symbol from the CLI — a file's 
 
 **Stop opening files to find things.** `Read` dumps whole files into your context — most of it noise you'll never use. `grep` floods you with line matches and no structure. Both rot your context and burn tokens. `symnav` answers the actual question — "what's in this file", "where is this defined", "who calls it" — and returns _only that_, structured. Use it first; fall back to Read/grep only when symnav can't answer.
 
-Run from inside a git workspace. `--cwd <dir>` to point elsewhere; `--json` on any command for machine output.
+Run from inside a git workspace. `--cwd <dir>` to point elsewhere; `--json` on any command for machine output. In Codex-style environments, pass `yield_time_ms: 60000` on every `exec_command` call that invokes `symnav`; cold TypeScript startup can yield early with empty output, and that is not the command result.
 
 ## Which command, when
 
 | Instead of…                               | Use                | Gives you                                                                      |
 | ----------------------------------------- | ------------------ | ------------------------------------------------------------------------------ |
-| `Read`-ing a file to see what it contains | `overview <file>`  | Symbol tree — classes, functions, methods, line ranges, signatures. No bodies. |
-| `grep`-ing for a name across the repo     | `resolve <query>`  | Every symbol/file matching the name, with its id. Your entry point.            |
-| `Read` + scrolling to find a declaration  | `def <symbol-id>`  | Exact file, line range, and signature where it's defined.                      |
-| `grep`-ing a name to find call sites      | `refs <symbol-id>` | Every reference workspace-wide, grouped by file, tagged by kind, paginated.    |
-| Stitching `def` + `refs` + blame by hand  | `context <symbol-id>` | One block: definition, direct callers, direct callees, reference summary, recent git history. |
-| Tracing call paths across multiple hops   | `graph <symbol-id>` | Incoming and outgoing call paths with depth, direction, pagination, and possible-edge labels. |
+| `Read`-ing a file to see what it contains | `overview <file>`  | One-screen symbol/fold tree. Add `overview --depth` or `overview --at` to expand only the part you need. |
+| `grep`-ing for a name across the repo     | `resolve <query>`  | Every symbol/file matching the name. Add `resolve --regex` for JavaScript regex search. |
+| `Read` + scrolling to find a declaration  | `def <target>`  | Exact file, line range, and signature where a unique suffix target is defined. |
+| `grep`-ing for a name to find call sites  | `refs <target>` | Every reference workspace-wide, grouped by file, tagged by kind, paginated.    |
+| Stitching `def` + `refs` + blame by hand  | `context <target>` | One block: definition, direct callers, direct callees, reference summary, recent git history. |
+| Tracing call paths across multiple hops   | `graph <target>` | Incoming and outgoing call paths with depth, direction, pagination, and possible-edge labels. |
 
-`context` is workspace-only and certain-edges-only: callers/callees count just statically-resolved calls to non-ignored workspace files, capped at 20 per direction. Use `graph` when possible/dynamic edges or multi-hop traversal matter. An ambiguous target (interface method with multiple implementations) is refused; query one implementation directly.
+`context` is workspace-only and certain-edges-only: callers/callees count just statically-resolved calls to non-ignored workspace files, capped at 20 per direction. Use `graph` when possible/dynamic edges or multi-hop traversal matter. An ambiguous target is refused; copy one printed candidate and query that directly.
+
+## Suffix-pattern Targets
+
+Symbol commands accept a suffix of the canonical id, not only the full id. These suffix-pattern targets let you use the shortest target that is unique, then copy a candidate when ambiguity is reported:
+
+```
+$ symnav def charge
+$ symnav def orders.ts::charge
+$ symnav def src/orders.ts::PaymentProcessor::charge
+```
+
+Unique targets proceed. Ambiguous targets print canonical candidates with declarations; copy one of those candidates into `def`, `refs`, `context`, or `graph`.
+
+`resolve` remains the search/listing command. It does not auto-proceed into definitions.
+
+## Overview Expansion
+
+Start with a shallow overview, then expand by copied header text:
+
+```
+$ symnav overview src/orders.ts
+$ symnav overview src/orders.ts --depth 1
+$ symnav overview src/orders.ts --at 'describe("cursor pagination")' --depth 2
+```
+
+`--at <text>` matches text from an overview header, including fold headers such as `describe(...)`, `if (...)`, and loops. If several nodes match, `overview` prints candidates; copy more of the desired header. `--line <n>` is only a narrowing filter, and same-line/minified code may still require `--at`.
+
+## Warning Behavior
+
+The warning behavior is intentionally non-fatal. Warnings are diagnostics on stderr; read them, but if the process exits 0, stdout is still the navigation result.
 
 ## Exploring with `context`
 
@@ -60,15 +90,23 @@ Read it top-down: **Callers = blast radius** (every site you must check before e
 
 ## How to drive it
 
-`def`/`refs` need a **symbol-id**, not a bare name:
+`def`/`refs`/`context`/`graph` need a **target pattern**:
 
 ```
-<relative-file-path>::<Segment>[::<Segment>...]      e.g. src/payments/PaymentProcessor.ts::PaymentProcessor::charge
+<Segment>
+<file-suffix>::<Segment>[::<Segment>...]
+<relative-file-path>::<Segment>[::<Segment>...]
 ```
 
-Don't guess it — `resolve` (or `overview`) hands you the exact id. Bare names are rejected.
+Examples:
 
-Normal flow: **`resolve` a name → take the id → `def` to read it / `refs` to see who uses it.** Or `overview <file>` to get every id in a file at once.
+```
+charge
+PaymentProvider.ts::charge
+src/payments/PaymentProvider.ts::PaymentProvider::charge
+```
+
+Normal flow: **`resolve` a name → copy a candidate if needed → `def` to read it / `refs` to see who uses it.** Or `overview <file>` to get symbol headers and fold headers before targeted expansion.
 
 ## Reading output
 
@@ -85,7 +123,8 @@ Tree glyphs show nesting; `start-end: QualifiedName` then the signature line:
 
 ## Options
 
-- `resolve` — `--fuzzy` (subsequence match, not exact)
+- `overview` — `--depth <n>`, `--at <text>`, `--line <n>`
+- `resolve` — `--fuzzy` (subsequence match, not exact), `--regex` (JavaScript regex; cannot combine with `--fuzzy`)
 - `refs` — `--page <n>`, `--page-size <n>`, `--all` (one page), `--full-lines` (untrimmed source)
 - `graph` — `--incoming`, `--outgoing`, `--depth <n>`, `--page <n>`, `--page-size <n>`, `--all`
 - all — `--json`

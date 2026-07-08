@@ -1,0 +1,8 @@
+References: leakyFunction
+Total: 1
+Kinds: usage 1
+Page: 1/1
+Sort: path, line
+
+collapsed-headers.ts
+└── 10: return leakyFunction("visible-call");  [usage]

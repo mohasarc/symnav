@@ -1,0 +1,24 @@
+Context: leakyFunction
+File: collapsed-headers.ts
+Lines: 4-7
+
+Definition
+collapsed-headers.ts
+└── 4-7: leakyFunction  [implementation]
+    export function leakyFunction(input: string): string
+
+Callers
+collapsed-headers.ts
+└── 9-11: callsLeakyFunction  [call]
+      return leakyFunction("visible-call");
+
+Callees
+(none)
+
+References
+Total: 1
+Kinds: usage 1
+Run: symnav refs collapsed-headers.ts::leakyFunction
+
+Recent History
+<git history>

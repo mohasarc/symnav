@@ -1,0 +1,62 @@
+Overview: collapsed-headers.ts
+├── 4-7: leakyFunction
+│   4 export function leakyFunction(input: string): string
+│
+├── 9-11: callsLeakyFunction
+│   9 export function callsLeakyFunction(): string
+│
+├── 13-15: HeaderContract
+│   13 export interface HeaderContract
+│   └── 14: HeaderContract::readHeader
+│       14 readHeader(name: string): string
+│
+├── 17-20: HeaderAlias
+│   17 export type HeaderAlias = {
+│   18   name: string;
+│   19   enabled: boolean;
+│   20 }
+│
+├── 22-25: HeaderMode
+│   22 export enum HeaderMode
+│
+├── 27-33: HeaderNamespace
+│   27 export namespace HeaderNamespace
+│   ├── 28: HeaderNamespace::defaultName
+│   │   28 export const defaultName = "x-header"
+│   └── 30-32: HeaderNamespace::normalizeName
+│       30 export function normalizeName(name: string): string
+│
+├── 35-49: HeaderService
+│   35 export class HeaderService implements HeaderContract
+│   ├── 36: HeaderService::prefix
+│   │   36 private readonly prefix: string
+│   ├── 38-40: HeaderService::constructor
+│   │   38 constructor(prefix: string)
+│   ├── 42-44: HeaderService::label
+│   │   42 get label(): string
+│   └── 46-48: HeaderService::readHeader
+│       46 readHeader(name: string): string
+│
+├── 51: overloads#1
+│   51 export function overloads(input: string): string
+│
+├── 52: overloads#2
+│   52 export function overloads(input: number): number
+│
+├── 53-55: overloads#3
+│   53 export function overloads(input: string | number): string | number
+│
+├── 57-59: arrowHelper
+│   57 export const arrowHelper = (value: string): string => …
+│
+├── 61-63: functionHelper
+│   61 export const functionHelper = function headerFunction(value: string): string …
+│
+├── 65-70: schema
+│   65 export const schema = z.object(…)
+│
+├── 72-75: values
+│   72 export const values = […]
+│
+└── 77: callResult
+    77 export const callResult = functionHelper("ready")

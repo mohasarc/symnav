@@ -32,9 +32,9 @@ export function registerOverviewCommand(
         json: options.json,
         args: {
           file,
-          depth: options.depth === undefined ? 0 : Number(options.depth),
+          depth: options.depth,
           at: options.at,
-          line: options.line === undefined ? undefined : Number(options.line),
+          line: options.line,
         },
       });
     });

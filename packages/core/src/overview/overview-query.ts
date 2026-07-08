@@ -48,6 +48,17 @@ export class OverviewTargetNotFoundError extends UserFacingError {
   }
 }
 
+export class InvalidOverviewExpansionRequestError extends UserFacingError {
+  constructor(private readonly detail: string) {
+    super();
+    this.name = "InvalidOverviewExpansionRequestError";
+  }
+
+  get reason(): string {
+    return `invalid overview request: ${this.detail}`;
+  }
+}
+
 export class AmbiguousLineTargetError extends UserFacingError {
   constructor(
     private readonly line: number,

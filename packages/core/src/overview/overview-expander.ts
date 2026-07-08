@@ -1,5 +1,5 @@
 import type {
-  OverviewFileSymbols,
+  OverviewFileEntries,
   OverviewNode,
 } from "../intermediate-representation/overview-tree.js";
 import type { LineRange } from "../intermediate-representation/types.js";
@@ -14,12 +14,12 @@ import {
 } from "./overview-query.js";
 
 export interface ExpandOverviewArgs {
-  readonly file: OverviewFileSymbols;
+  readonly file: OverviewFileEntries;
   readonly request: OverviewExpansionRequest;
 }
 
 export class OverviewExpander {
-  readonly #file: OverviewFileSymbols;
+  readonly #file: OverviewFileEntries;
   readonly #request: OverviewExpansionRequest;
 
   constructor(args: ExpandOverviewArgs) {
@@ -68,6 +68,9 @@ function expandNodes(
 }
 
 function expandNode(node: OverviewNode, remainingFoldDepth: number): OverviewNode {
+  if (node.type === "re-export") {
+    return node;
+  }
   if (node.type === "fold") {
     if (remainingFoldDepth <= 0) {
       return { ...node, children: [] };
@@ -91,6 +94,9 @@ function collectCandidate(node: OverviewNode, candidates: OverviewExpansionCandi
     range: node.range,
     node,
   });
+  if (node.type === "re-export") {
+    return;
+  }
   for (const child of node.children) {
     collectCandidate(child, candidates);
   }

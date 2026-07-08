@@ -2,11 +2,11 @@ import { describe, expect, it } from "vitest";
 
 import type {
   FoldOverviewNode,
-  OverviewFileSymbols,
+  OverviewFileEntries,
   OverviewNode,
   SymbolOverviewNode,
 } from "../intermediate-representation/overview-tree.js";
-import type { Signature } from "../intermediate-representation/types.js";
+import type { Header } from "../intermediate-representation/types.js";
 import { OverviewExpander } from "./overview-expander.js";
 import {
   AmbiguousLineTargetError,
@@ -43,7 +43,7 @@ function fold(
   };
 }
 
-function signature(startLine: number, ...lines: string[]): Signature {
+function signature(startLine: number, ...lines: string[]): Header {
   return { startLine, lines };
 }
 
@@ -54,8 +54,8 @@ function expand(entries: readonly OverviewNode[], depth: number): readonly Overv
 function expandRequest(
   entries: readonly OverviewNode[],
   request: OverviewExpansionRequest,
-): OverviewFileSymbols {
-  const file: OverviewFileSymbols = { file: "src/file.ts", entries };
+): OverviewFileEntries {
+  const file: OverviewFileEntries = { file: "src/file.ts", entries };
   return new OverviewExpander({
     file,
     request,

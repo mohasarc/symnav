@@ -81,4 +81,44 @@ describe("symnav overview e2e (targeting)", () => {
     expect(parsed.entries).toHaveLength(1);
     expect(parsed.entries[0]?.header.lines).toEqual(['describe("cursor", () => {']);
   });
+
+  it("rejects malformed depth values as overview request errors", () => {
+    const r = runOverview(["overview", "targeted-expansion.ts", "--depth", "x"]);
+
+    expect(r.stdout).toBe("");
+    expect(r.status).toBe(1);
+    expect(r.stderr).toBe(
+      "Cannot answer: invalid overview request: depth must be a non-negative integer, got x.\n",
+    );
+  });
+
+  it("rejects negative depth values as overview request errors", () => {
+    const r = runOverview(["overview", "targeted-expansion.ts", "--depth", "-1"]);
+
+    expect(r.stdout).toBe("");
+    expect(r.status).toBe(1);
+    expect(r.stderr).toBe(
+      "Cannot answer: invalid overview request: depth must be a non-negative integer, got -1.\n",
+    );
+  });
+
+  it("rejects malformed line values as overview request errors", () => {
+    const r = runOverview(["overview", "targeted-expansion.ts", "--line", "x"]);
+
+    expect(r.stdout).toBe("");
+    expect(r.status).toBe(1);
+    expect(r.stderr).toBe(
+      "Cannot answer: invalid overview request: line must be a positive integer, got x.\n",
+    );
+  });
+
+  it("rejects non-positive line values as overview request errors", () => {
+    const r = runOverview(["overview", "targeted-expansion.ts", "--line", "0"]);
+
+    expect(r.stdout).toBe("");
+    expect(r.status).toBe(1);
+    expect(r.stderr).toBe(
+      "Cannot answer: invalid overview request: line must be a positive integer, got 0.\n",
+    );
+  });
 });

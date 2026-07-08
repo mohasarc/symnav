@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { InMemoryFileSystem, type OverviewExpansionResult } from "@symnav/core";
+import {
+  InMemoryFileSystem,
+  type OverviewExpansionResult,
+  type OverviewFileEntries,
+} from "@symnav/core";
 import { buildProgram } from "../../../../src/program.js";
 import { FakeLanguageBackend } from "../helpers/fake-language-backend.js";
 import { fakeDependencies } from "../helpers/fake-program-dependencies.js";

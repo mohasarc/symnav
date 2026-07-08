@@ -38,7 +38,7 @@ describe("command telemetry descriptors", () => {
     expect(
       overviewCommand.describeArgs({
         file: "src/a.ts",
-        depth: 0,
+        depth: undefined,
         at: undefined,
         line: undefined,
       }),
@@ -53,9 +53,9 @@ describe("command telemetry descriptors", () => {
     expect(
       overviewCommand.describeArgs({
         file: "src/a.ts",
-        depth: 2,
+        depth: "2",
         at: "describe",
-        line: 10,
+        line: "10",
       }),
     ).toEqual({
       kind: "path",

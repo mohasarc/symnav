@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { InMemoryFileSystem, type ResolvedPath } from "@symnav/core";
+import { InMemoryFileSystem, InvalidResolveRegexError, type ResolvedPath } from "@symnav/core";
 
 import { resolveSymbols } from "./resolve-symbols.js";
 
@@ -51,6 +51,15 @@ const FIXTURE: Record<string, string> = {
     "}",
     "",
   ].join("\n"),
+  "/repo/src/converters.ts": [
+    "export class Converter {",
+    "  toPayment(): void {}",
+    "}",
+    "",
+    "export function toReceipt(): void {}",
+    "export function fromReceipt(): void {}",
+    "",
+  ].join("\n"),
 };
 
 function pathsFor(relativePaths: readonly string[]): readonly ResolvedPath[] {
@@ -64,6 +73,7 @@ function fsWithFixture() {
 const ALL_FILES = pathsFor([
   "src/checkout/CheckoutService.ts",
   "src/control-flow/LocalDeclarations.ts",
+  "src/converters.ts",
   "src/payments/PaymentProcessor.ts",
   "src/payments/PaymentProvider.ts",
   "src/payments/types.ts",
@@ -185,5 +195,29 @@ describe("resolveSymbols (fuzzy)", () => {
     expect(paymentIndex).toBeGreaterThanOrEqual(0);
     expect(retriesIndex).toBeGreaterThanOrEqual(0);
     expect(paymentIndex).toBeLessThan(retriesIndex);
+  });
+});
+
+describe("resolveSymbols (regex)", () => {
+  it("matches by own symbol name, not the full canonical id", async () => {
+    const result = await resolveSymbols({
+      fs: fsWithFixture(),
+      files: ALL_FILES,
+      query: "^to[A-Z].*",
+      options: { mode: "regex" },
+    });
+
+    expect(names(result)).toEqual(["Converter::toPayment", "toReceipt"]);
+  });
+
+  it("returns a user-facing error for an invalid regex", async () => {
+    await expect(
+      resolveSymbols({
+        fs: fsWithFixture(),
+        files: ALL_FILES,
+        query: "[",
+        options: { mode: "regex" },
+      }),
+    ).rejects.toBeInstanceOf(InvalidResolveRegexError);
   });
 });

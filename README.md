@@ -4,9 +4,33 @@ A CLI for navigating TypeScript codebases by symbol.
 
 ## Commands
 
-`overview`, `resolve`, `def`, and `refs` navigate symbols. `context <symbol-id>` prints one block per symbol: its definition, direct callers, direct callees, a reference summary, and recent git history.
+`overview`, `resolve`, `def`, and `refs` navigate symbols. `context <target>` prints one block per symbol: its definition, direct callers, direct callees, a reference summary, and recent git history.
 
 `context` is workspace-only and certain-edges-only. Callers and callees count only statically-resolved calls to non-ignored workspace files, capped at 20 per direction; overflow points at `graph`. Possible and dynamic edges (element-access dispatch, calls into `node_modules`) are dropped here — `graph` surfaces them. An ambiguous target — an interface method with multiple implementations — is refused with `Cannot answer:`; query one implementation directly.
+
+Symbol commands accept suffix targets. Use the shortest target that is unique; when a target is ambiguous, copy one printed candidate.
+
+```sh
+symnav def charge
+symnav refs PaymentProvider.ts::charge
+symnav context src/payments/PaymentProvider.ts::PaymentProvider::charge
+```
+
+`overview` starts collapsed. Expand one area by depth, copied header text, or both.
+
+```sh
+symnav overview src/orders.ts
+symnav overview src/orders.ts --depth 1
+symnav overview src/orders.ts --at 'describe("cursor pagination")' --depth 2
+```
+
+`resolve` can match exact names, fuzzy subsequences, or JavaScript regexes.
+
+```sh
+symnav resolve PaymentProvider
+symnav resolve --fuzzy payment
+symnav resolve --regex '^to[A-Z].*'
+```
 
 ## Telemetry
 

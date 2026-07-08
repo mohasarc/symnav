@@ -196,3 +196,33 @@ describe("target-pattern symbol commands", () => {
     },
   );
 });
+
+describe("target-pattern line narrowing", () => {
+  it.each<SymbolCommand>(["def", "refs", "context", "graph"])(
+    "%s narrows an ambiguous target to a declaration containing the requested line",
+    (command) => {
+      const result = runCommand(command, ["PaymentProcessor::charge", "--line", "5", "--json"]);
+      expect(result.stderr).toBe("");
+      expect(result.status).toBe(0);
+
+      const parsed = JSON.parse(result.stdout) as JsonCommandResult;
+      expectIdentity(parsed.identity, orderChargeId);
+      if (command === "graph") {
+        expect(parsed.root).toBeDefined();
+        expectIdentity(parsed.root!.identity, orderChargeId);
+      }
+    },
+  );
+
+  it.each<SymbolCommand>(["def", "refs", "context", "graph"])(
+    "%s names the raw target when line narrowing removes all candidates",
+    (command) => {
+      const result = runCommand(command, ["PaymentProcessor::charge", "--line", "99"]);
+      expect(result.status).toBe(1);
+      expect(result.stdout).toBe("");
+      expect(result.stderr).toBe(
+        'Cannot answer: no symbol target "PaymentProcessor::charge" found.\n',
+      );
+    },
+  );
+});

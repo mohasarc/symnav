@@ -10,8 +10,10 @@ import type { SymbolTargetPattern } from "../target/symbol-target-pattern.js";
 import type { SymbolTargetCandidate } from "../target/symbol-target-result.js";
 import type { ResolvedPath } from "../workspace/workspace.js";
 
+export type ResolveSymbolsMode = "exact" | "fuzzy" | "regex";
+
 export interface ResolveSymbolsOptions {
-  readonly fuzzy: boolean;
+  readonly mode: ResolveSymbolsMode;
 }
 
 export interface ResolveSymbolTargetOptions {

@@ -104,6 +104,7 @@ export { createWorkspace } from "./workspace/workspace.js";
 export { InMemoryFileSystem } from "./workspace/in-memory/in-memory-file-system.js";
 export type {
   LanguageBackend,
+  ResolveSymbolsMode,
   ResolveSymbolsOptions,
   ResolveSymbolTargetOptions,
 } from "./backend/language-backend.js";

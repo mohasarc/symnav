@@ -60,4 +60,19 @@ describe("symnav resolve e2e (regex)", () => {
     expect(r.stderr).toBe("Cannot answer: --regex cannot be combined with --fuzzy.\n");
     expect(r.status).toBe(1);
   });
+
+  it("rejects invalid regex syntax with the parser reason", () => {
+    const r = runResolve(["resolve", "--regex", "["]);
+    expect(r.stdout).toBe("");
+    expect(r.stderr).toContain('Cannot answer: invalid resolve regex "[": ');
+    expect(r.stderr).toContain("Unterminated character class");
+    expect(r.status).toBe(1);
+  });
+
+  it("renders empty sections when no symbol own names match", async () => {
+    const r = runResolve(["resolve", "--regex", "^NoSuch"]);
+    expect(r.stderr).toBe("");
+    expect(r.status).toBe(0);
+    await expect(r.stdout).toMatchFileSnapshot(snapshot("regex-no-match.expected.txt"));
+  });
 });

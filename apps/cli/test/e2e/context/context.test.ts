@@ -9,6 +9,7 @@ import { ensureFixtureGitMarker } from "../ensure-fixture-git-marker.js";
 const fixtureRoot = fixturePath("context-cases");
 const snapshotsDir = new URL("./__snapshots__/", import.meta.url).pathname;
 const computeId = "src/math/calculator.ts::compute";
+const foldedInnerId = "src/nested/folded-symbols.ts::foldedRoot::foldedInner";
 
 function snapshot(name: string): string {
   return join(snapshotsDir, name);
@@ -20,7 +21,7 @@ function runContext(args: readonly string[], env?: NodeJS.ProcessEnv) {
 
 interface JsonEdge {
   symbol: { identity: { file: string; segments: readonly { name: string }[] } };
-  sites: readonly { line: number }[];
+  sites: readonly { line: number; previewSource: string }[];
   confidence: string;
 }
 
@@ -89,10 +90,45 @@ describe("symnav context e2e (nested call sites)", () => {
     expect(r.stderr).toBe("");
     expect(r.status).toBe(0);
     const parsed = JSON.parse(r.stdout) as JsonContextResult;
+    expect(parsed.callers.sortedEdges.map((edge) => edge.symbol.identity)).toEqual([
+      { file: "src/nested/pipeline.ts", segments: [{ name: "runPipeline" }] },
+      { file: "src/nested/pipeline.ts", segments: [{ name: "mapAll" }] },
+    ]);
+    expect(parsed.callers.sortedEdges.map((edge) => edge.sites.map((site) => site.line))).toEqual([
+      [7],
+      [14],
+    ]);
     expect(
-      parsed.callers.sortedEdges.map((edge) => edge.symbol.identity.segments.at(-1)!.name),
-    ).toEqual(["runPipeline", "mapAll"]);
+      parsed.callers.sortedEdges.map((edge) => edge.sites.map((site) => site.previewSource.trim())),
+    ).toEqual([
+      ["out.push(transform(value));"],
+      ["return values.map((value) => transform(value));"],
+    ]);
     expect(parsed.callers.sortedEdges.every((edge) => edge.confidence === "certain")).toBe(true);
+    for (const edge of parsed.callers.sortedEdges) {
+      expect(edge.symbol.identity.segments.map((segment) => segment.name)).not.toContain("if");
+      expect(edge.symbol.identity.segments.map((segment) => segment.name)).not.toContain("for");
+      expect(edge.symbol.identity.segments.map((segment) => segment.name)).not.toContain("map");
+    }
+  });
+
+  it("accepts a folded declaration id as the target", () => {
+    const r = runContext([foldedInnerId, "--json"]);
+    expect(r.stderr).toBe("");
+    expect(r.status).toBe(0);
+    const parsed = JSON.parse(r.stdout) as JsonContextResult;
+    expect(parsed.identity).toEqual({
+      file: "src/nested/folded-symbols.ts",
+      segments: [{ name: "foldedRoot" }, { name: "foldedInner" }],
+    });
+    expect(parsed.identity.segments.map((segment) => segment.name)).not.toContain("if");
+    expect(parsed.callers.sortedEdges.map((edge) => edge.symbol.identity)).toEqual([
+      { file: "src/nested/folded-symbols.ts", segments: [{ name: "foldedRoot" }] },
+    ]);
+    expect(parsed.callees.sortedEdges.map((edge) => edge.symbol.identity)).toEqual([
+      { file: "src/nested/folded-symbols.ts", segments: [{ name: "foldedLeaf" }] },
+    ]);
+    expect(parsed.references.total).toBe(1);
   });
 });
 

@@ -6,6 +6,7 @@ import type { ProgramDependencies } from "../../program-dependencies.js";
 import { refsCommand } from "./refs-command.js";
 
 interface RefsOptions {
+  readonly line?: string;
   readonly page?: string;
   readonly pageSize?: string;
   readonly all: boolean;
@@ -19,14 +20,15 @@ export function registerRefsCommand(
   dependencies: ProgramDependencies,
 ): void {
   program
-    .command("refs <symbol-id>")
+    .command("refs <target>")
     .description("List references to a symbol across the workspace")
+    .option("--line <n>", "narrow target matches to declarations containing this line")
     .option("--page <n>", "page of references to show")
     .option("--page-size <n>", "references per page")
     .option("--all", "show every reference on one page", false)
     .option("--full-lines", "emit source lines verbatim, untrimmed", false)
     .option("--json", "emit JSON instead of text", false)
-    .action(async (symbolId: string, options: RefsOptions) => {
+    .action(async (target: string, options: RefsOptions) => {
       const cwdOverride = program.opts<{ cwd?: string }>().cwd;
       await runCommand(refsCommand, {
         context,
@@ -34,7 +36,8 @@ export function registerRefsCommand(
         cwdOverride,
         json: options.json,
         args: {
-          symbolId,
+          target,
+          line: options.line === undefined ? undefined : Number(options.line),
           page: options.page === undefined ? undefined : Number(options.page),
           pageSize: options.pageSize === undefined ? undefined : Number(options.pageSize),
           all: options.all,

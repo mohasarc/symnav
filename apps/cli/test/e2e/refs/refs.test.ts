@@ -100,6 +100,18 @@ describe("symnav refs e2e (default output)", () => {
       ["src/control-flow/ControlFlowReferences.ts", 15, "usage"],
     ]);
   });
+
+  it("resolves a unique bare-name target through the shared resolver", () => {
+    const r = runRefs(["controlFlowTarget", "--json"]);
+    expect(r.stderr).toBe("");
+    expect(r.status).toBe(0);
+    const parsed = parseJsonRefs(r.stdout);
+    expect(parsed.identity).toEqual({
+      file: "src/control-flow/ControlFlowTarget.ts",
+      segments: [{ name: "controlFlowTarget" }],
+    });
+    expect(parsed.total).toBe(4);
+  });
 });
 
 describe("symnav refs e2e (preview trimming)", () => {
@@ -198,15 +210,15 @@ describe("symnav refs e2e (errors)", () => {
     expect(r.status).toBe(1);
     expect(r.stdout).toBe("");
     expect(r.stderr).toContain(
-      "Cannot answer: no symbol src/payments/PaymentProcessor.ts::Nonexistent found",
+      'Cannot answer: no symbol target "src/payments/PaymentProcessor.ts::Nonexistent" found',
     );
   });
 
-  it("rejects a malformed symbol id", () => {
+  it("treats a former malformed symbol id as a target pattern", () => {
     const r = runRefs(["not_an_id"]);
     expect(r.status).toBe(1);
     expect(r.stdout).toBe("");
-    expect(r.stderr).toContain("Cannot answer: invalid symbol id");
+    expect(r.stderr).toContain('Cannot answer: no symbol target "not_an_id" found');
   });
 
   it("rejects a nonexistent file", () => {

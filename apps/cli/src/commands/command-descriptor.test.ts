@@ -91,7 +91,8 @@ describe("command telemetry descriptors", () => {
   it("describes refs arguments", () => {
     expect(
       refsCommand.describeArgs({
-        symbolId: "a.ts::Foo",
+        target: "a.ts::Foo",
+        line: 8,
         page: 2,
         pageSize: undefined,
         all: true,
@@ -100,7 +101,7 @@ describe("command telemetry descriptors", () => {
     ).toEqual({
       kind: "symbol_id",
       lengthBucket: "short",
-      flags: ["all", "page"],
+      flags: ["all", "line", "page"],
     });
   });
 

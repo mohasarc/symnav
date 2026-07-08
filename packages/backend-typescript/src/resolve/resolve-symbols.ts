@@ -17,7 +17,9 @@ export interface ResolveSymbolsArgs {
   readonly options: ResolveSymbolsOptions;
 }
 
-export async function resolveSymbols(args: ResolveSymbolsArgs): Promise<readonly SymbolOverviewNode[]> {
+export async function resolveSymbols(
+  args: ResolveSymbolsArgs,
+): Promise<readonly SymbolOverviewNode[]> {
   const candidates = extractAllSymbols(args.fs, args.files);
   if (args.options.mode === "fuzzy") {
     return fuzzyMatch(candidates, args.query);
@@ -28,7 +30,10 @@ export async function resolveSymbols(args: ResolveSymbolsArgs): Promise<readonly
   return exactMatch(candidates, args.query);
 }
 
-function extractAllSymbols(fs: FileSystem, files: readonly ResolvedPath[]): readonly SymbolOverviewNode[] {
+function extractAllSymbols(
+  fs: FileSystem,
+  files: readonly ResolvedPath[],
+): readonly SymbolOverviewNode[] {
   const all: SymbolOverviewNode[] = [];
   for (const file of files) {
     all.push(...OverviewTree.walkSymbols(loadFileEntries(fs, file).entries));
@@ -36,19 +41,28 @@ function extractAllSymbols(fs: FileSystem, files: readonly ResolvedPath[]): read
   return all;
 }
 
-function exactMatch(candidates: readonly SymbolOverviewNode[], query: string): readonly SymbolOverviewNode[] {
+function exactMatch(
+  candidates: readonly SymbolOverviewNode[],
+  query: string,
+): readonly SymbolOverviewNode[] {
   return candidates.filter(
     (decl) => OverviewTree.ownName(decl) === query || formatSymbolIdentity(decl.identity) === query,
   );
 }
 
-function fuzzyMatch(candidates: readonly SymbolOverviewNode[], query: string): readonly SymbolOverviewNode[] {
+function fuzzyMatch(
+  candidates: readonly SymbolOverviewNode[],
+  query: string,
+): readonly SymbolOverviewNode[] {
   const indexed = candidates.map((decl) => ({ decl, name: OverviewTree.ownName(decl) }));
   const results = fuzzysort.go(query, indexed, { key: "name" });
   return results.map((result) => result.obj.decl);
 }
 
-function regexMatch(candidates: readonly SymbolOverviewNode[], query: string): readonly SymbolOverviewNode[] {
+function regexMatch(
+  candidates: readonly SymbolOverviewNode[],
+  query: string,
+): readonly SymbolOverviewNode[] {
   const regex = compileRegex(query);
   return candidates.filter((decl) => regex.test(OverviewTree.ownName(decl)));
 }

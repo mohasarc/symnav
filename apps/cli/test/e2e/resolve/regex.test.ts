@@ -45,4 +45,11 @@ describe("symnav resolve e2e (regex)", () => {
     ]);
     expect(parsed.files).toEqual([]);
   });
+
+  it("rejects regex and fuzzy mode together", () => {
+    const r = runResolve(["resolve", "--regex", "--fuzzy", "^to[A-Z].*"]);
+    expect(r.stdout).toBe("");
+    expect(r.stderr).toBe("Cannot answer: --regex cannot be combined with --fuzzy.\n");
+    expect(r.status).toBe(1);
+  });
 });

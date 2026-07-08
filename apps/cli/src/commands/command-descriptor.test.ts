@@ -72,6 +72,14 @@ describe("command telemetry descriptors", () => {
     });
   });
 
+  it("describes resolve regex arguments", () => {
+    expect(resolveCommand.describeArgs({ query: "^to[A-Z].*", mode: "regex" })).toEqual({
+      kind: "bare",
+      lengthBucket: "short",
+      flags: ["regex"],
+    });
+  });
+
   it("describes def arguments", () => {
     expect(defCommand.describeArgs({ target: "a.ts::Foo", line: undefined })).toEqual({
       kind: "symbol_id",

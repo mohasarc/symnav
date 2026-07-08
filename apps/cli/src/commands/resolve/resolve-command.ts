@@ -24,7 +24,7 @@ export const resolveCommand: Command<ResolveResult, ResolveArgs> = {
     return {
       kind: classifyArgKind(args.query),
       lengthBucket: lengthBucketOf(args.query),
-      flags: args.mode === "fuzzy" ? ["fuzzy"] : [],
+      flags: args.mode === "exact" ? [] : [args.mode],
     };
   },
   countResults(result: ResolveResult) {
@@ -98,6 +98,9 @@ function matchFilesByBasename(
     relative: file.relative,
     basename: stripExtension(posix.basename(file.relative)),
   }));
+  if (mode === "regex") {
+    return [];
+  }
   if (mode === "fuzzy") {
     const ranked = fuzzysort.go(query, indexed, { key: "basename" });
     return ranked.map((result) => result.obj.relative).sort(compareStringsAscending);

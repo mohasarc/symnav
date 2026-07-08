@@ -22,6 +22,7 @@ import {
 
 import { reportUnrecognisedNode } from "./extraction-diagnostics.js";
 import { extractFoldHeader } from "./extract-fold-header.js";
+import { extractReExportEntry } from "./extract-re-export-entry.js";
 import { extractSignatureSource } from "./extract-signature-source.js";
 import { extractVariableSignature } from "./extract-variable-signature.js";
 import { childSymbolScope, type ExtractionScope } from "./extraction-scope.js";
@@ -82,6 +83,9 @@ function toOverviewNode(
 
   const foldKind = foldKindOf(node);
   if (foldKind) return toFoldNodes(node, scope, diagnostics);
+
+  const reExport = extractReExportEntry(node, scope.file);
+  if (reExport) return [reExport];
 
   if (isIgnoredNode(node)) return [];
   if (!diagnostics) return [];

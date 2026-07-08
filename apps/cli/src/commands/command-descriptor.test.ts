@@ -73,10 +73,18 @@ describe("command telemetry descriptors", () => {
   });
 
   it("describes def arguments", () => {
-    expect(defCommand.describeArgs({ symbolId: "a.ts::Foo" })).toEqual({
+    expect(defCommand.describeArgs({ target: "a.ts::Foo", line: undefined })).toEqual({
       kind: "symbol_id",
       lengthBucket: "short",
       flags: [],
+    });
+  });
+
+  it("describes def line narrowing", () => {
+    expect(defCommand.describeArgs({ target: "a.ts::Foo", line: 4 })).toEqual({
+      kind: "symbol_id",
+      lengthBucket: "short",
+      flags: ["line"],
     });
   });
 

@@ -30,6 +30,10 @@ export async function resolveSymbolTarget(args: ResolveSymbolTargetArgs): Promis
     throw new SymbolTargetNotFoundError(args.pattern);
   }
   if (candidates.length > 1) {
+    const group = overloadGroupCandidate(candidates, args.pattern);
+    if (group !== undefined) {
+      return group;
+    }
     throw new AmbiguousSymbolTargetError(args.pattern, candidates);
   }
   return candidates[0]!.symbol;

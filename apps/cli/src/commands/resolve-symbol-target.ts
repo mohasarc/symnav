@@ -20,9 +20,26 @@ export async function resolveSymbolTargetForCommand(
 ): Promise<SymbolDecl> {
   const pattern = parseSymbolTargetPattern(args.rawTarget);
   const files = await args.workspace.enumerate();
+  await validateExactMissingPath(args, files, pattern.fileSuffix);
   const backend = backendForPattern(args.router, files, pattern.fileSuffix);
   const accepted = files.filter((file) => backend.accepts(file.relative));
   return backend.resolveSymbolTarget(accepted, pattern, { line: args.line });
+}
+
+async function validateExactMissingPath(
+  args: ResolveSymbolTargetForCommandArgs,
+  files: readonly ResolvedPath[],
+  fileSuffix: string | undefined,
+): Promise<void> {
+  if (
+    fileSuffix === undefined ||
+    files.some((file) => fileSuffixMatches(file.relative, fileSuffix))
+  ) {
+    return;
+  }
+  if (fileSuffix.includes("/")) {
+    await args.workspace.resolveInputPath(fileSuffix, args.cwd);
+  }
 }
 
 function backendForPattern(

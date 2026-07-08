@@ -52,11 +52,11 @@ describe("symnav def e2e (multi-implementation)", () => {
 });
 
 describe("symnav def e2e (errors and empty results)", () => {
-  it("rejects a malformed symbol id with InvalidSymbolIdError", () => {
+  it("treats a former malformed symbol id as a target pattern", () => {
     const r = runDef(["def", "not_an_id"]);
     expect(r.status).toBe(1);
     expect(r.stdout).toBe("");
-    expect(r.stderr).toContain("Cannot answer: invalid symbol id");
+    expect(r.stderr).toContain('Cannot answer: no symbol target "not_an_id" found');
   });
 
   it("rejects a nonexistent file with FileNotFoundError", () => {
@@ -73,11 +73,13 @@ describe("symnav def e2e (errors and empty results)", () => {
     expect(r.stderr).toContain("ignored");
   });
 
-  it("renders the no-matches notice when the symbol path matches nothing in the file", async () => {
+  it("rejects a symbol path that matches nothing in the file", () => {
     const r = runDef(["def", "src/namespace-merge/Box.ts::Box::ghost"]);
-    expect(r.stderr).toBe("");
-    expect(r.status).toBe(0);
-    await expect(r.stdout).toMatchFileSnapshot(snapshot("no-match.expected.txt"));
+    expect(r.status).toBe(1);
+    expect(r.stdout).toBe("");
+    expect(r.stderr).toContain(
+      'Cannot answer: no symbol target "src/namespace-merge/Box.ts::Box::ghost" found',
+    );
   });
 
   it("returns definitions for declarations nested inside executable control-flow blocks", () => {

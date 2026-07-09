@@ -1,9 +1,9 @@
 ---
 name: symnav
-description: Navigate a TypeScript codebase by symbol from the CLI — a file's symbol tree (overview), find a symbol by name (resolve), where it's defined (def), every reference to it (refs), direct context (context), and multi-hop call paths (graph). Each call returns only what you asked for, structured, at a fraction of the tokens Read/grep burn. One `context` call replaces a dozen Read/grep round-trips and hands you a symbol's blast radius instantly; `graph` expands that blast radius across call paths. Read this skill once and every `.ts`/`.tsx` question you face afterward gets cheaper and sharper; skip it and you'll burn thousands of tokens doing by hand what one command does. Reach for it first, before any Read or grep on TypeScript.
+description: Navigate a TypeScript codebase by symbol from the CLI — a file's symbol tree (overview), find a symbol by name (resolve), where it's defined (def), every reference to it (refs), direct context (context), and multi-hop call paths (graph). Use it for deterministic project-wide orientation and symbol navigation before deciding which files, tests, and implementation regions to inspect with normal tools.
 ---
 
-**Stop opening files to find things.** `Read` dumps whole files into your context — most of it noise you'll never use. `grep` floods you with line matches and no structure. Both rot your context and burn tokens. `symnav` answers the actual question — "what's in this file", "where is this defined", "who calls it" — and returns _only that_, structured. Use it first; fall back to Read/grep only when symnav can't answer.
+`symnav` gives deterministic, project-wide answers to navigation questions: what is in a TypeScript file, where a symbol is defined, who references it, and how calls flow around it. Use it early to orient yourself and choose what to inspect next. Then use `Read`, `rg`, tests, and edits normally; symnav is a navigation layer, not a replacement for reading code.
 
 Run from inside a git workspace. `--cwd <dir>` to point elsewhere; `--json` on any command for machine output. In Codex-style environments, pass `yield_time_ms: 60000` on every `exec_command` call that invokes `symnav`; cold TypeScript startup can yield early with empty output, and that is not the command result.
 
@@ -11,25 +11,25 @@ Run from inside a git workspace. `--cwd <dir>` to point elsewhere; `--json` on a
 
 Use this sequence unless the task gives you a more specific starting point:
 
-1. **Start broad with symbols, not text.** Run `symnav resolve '<domain word>'` for one name from the task, error message, failing test, or API surface. Use one query per command; do not pass several symbol names to a single `resolve`. If you already know a likely file, run `symnav overview <file> --depth 1`.
+1. **Start with project orientation.** Run `symnav resolve '<domain word>'` for one name from the task, error message, failing test, or API surface. Use one query per command; do not pass several symbol names to a single `resolve`. If you already know a likely file, run `symnav overview <file> --depth 0` for a top-level map.
 2. **Turn candidates into a target.** Copy the most relevant canonical target from `resolve` or `overview`, then run `symnav def '<target>'` for the exact declaration. Use `def` before opening the file when you need the implementation location or signature.
 3. **Orient on the blast radius.** Run `symnav context <target>` before changing a function, class, method, exported type, public helper, or shared test fixture. Read the callers/callees first; they tell you what your patch can break and what nearby code to inspect next.
 4. **Use references for API changes.** Run `symnav refs <target> --all` before renaming, changing parameters, changing return shapes, changing overloads, or touching exported behavior. Patch the references the tool shows; do not grep for the name first.
 5. **Escalate to graph when one hop is not enough.** Run `symnav graph <target> --incoming --depth 2` to find indirect callers of behavior you are about to change. Run `symnav graph <target> --outgoing --depth 2` when a function delegates through helpers and you need the implementation chain.
-6. **Only then read files.** Open a file with `sed`/Read when symnav has given you the exact region to inspect, when you need surrounding prose/comments, or when the file is not TypeScript/TSX.
+6. **Read the code you need.** Open files with `sed`/Read once symnav has oriented you to the right file, symbol, call site, or test. Use text search for prose, config, non-TypeScript files, generated names, or any case where symbol navigation is not the right tool.
 
-Good runs usually look like `resolve -> def/context -> refs/graph -> targeted file read -> patch`. Bad runs look like `rg -> sed -> more sed` with symnav sprinkled in later. If you catch yourself searching for a symbol name with `rg`, stop and run `symnav resolve` or `symnav refs`.
+Good runs usually look like `resolve/overview -> def/context -> refs/graph when needed -> read relevant code/tests -> patch`. If you catch yourself searching for a TypeScript symbol name with `rg`, consider whether `symnav resolve` or `symnav refs` would give a cleaner map first.
 
 ## Which command, when
 
-| Instead of…                               | Use                | Gives you                                                                      |
+| When you need…                            | Use                | Gives you                                                                      |
 | ----------------------------------------- | ------------------ | ------------------------------------------------------------------------------ |
-| `Read`-ing a file to see what it contains | `overview <file>`  | One-screen symbol/fold tree. Add `overview --depth` or `overview --at` to expand only the part you need. |
-| `grep`-ing for a name across the repo     | `resolve <query>`  | Every symbol/file matching the name. Add `resolve --regex` for JavaScript regex search. |
-| `Read` + scrolling to find a declaration  | `def <target>`  | Exact file, line range, and signature where a unique suffix target is defined. |
-| `grep`-ing for a name to find call sites  | `refs <target>` | Every reference workspace-wide, grouped by file, tagged by kind, paginated.    |
-| Stitching `def` + `refs` + blame by hand  | `context <target>` | One block: definition, direct callers, direct callees, reference summary, recent git history. |
-| Tracing call paths across multiple hops   | `graph <target>` | Incoming and outgoing call paths with depth, direction, pagination, and possible-edge labels. |
+| A file map before reading                 | `overview <file>`  | Symbol/fold tree. Start at `--depth 0`, then add `--depth` or `--at` to expand only the part you need. |
+| A symbol or likely file                   | `resolve <query>`  | Every symbol/file matching the name. Add `resolve --regex` for JavaScript regex search. |
+| A declaration location                    | `def <target>`  | Exact file, line range, and signature where a unique suffix target is defined. |
+| Call sites or usage sites                 | `refs <target>` | Every reference workspace-wide, grouped by file, tagged by kind, paginated.    |
+| Local blast radius                        | `context <target>` | One block: definition, direct callers, direct callees, reference summary, recent git history. |
+| Multi-hop call paths                      | `graph <target>` | Incoming and outgoing call paths with depth, direction, pagination, and possible-edge labels. |
 
 `context` is workspace-only and certain-edges-only: callers/callees count just statically-resolved calls to non-ignored workspace files, capped at 20 per direction. Use `graph` when possible/dynamic edges or multi-hop traversal matter. An ambiguous target is refused; copy one printed candidate and query that directly.
 
@@ -38,7 +38,7 @@ Good runs usually look like `resolve -> def/context -> refs/graph -> targeted fi
 **Fix a failing test**
 
 1. Run `symnav resolve '<test name or failing symbol>'`.
-2. If the failing file is known, run `symnav overview <test-file> --depth 2` to see the test structure without reading the whole file.
+2. If the failing file is known, run `symnav overview <test-file> --depth 0`, then expand with `--depth 1`, `--depth 2`, or `--at '<header>'` if the relevant test block is nested.
 3. Run `symnav context '<implementation target>'` for the code under test.
 4. Run `symnav refs '<implementation target>' --all` when changing public behavior.
 
@@ -87,12 +87,20 @@ $ symnav def 'core/crud/crud.service.ts::$find'
 $ symnav context 'core/crud/crud.service.ts::$find'
 ```
 
-Choose depth based on the task. Start shallow when you only need a map, then increase depth when the interesting code is nested:
+Choose depth based on the task. Start with `--depth 0` when you need a map, then increase depth when the interesting code is nested:
 
 ```
+$ symnav overview src/file.ts --depth 0
 $ symnav overview src/file.ts --depth 1
 $ symnav overview src/file.ts --depth 2
 $ symnav overview src/file.ts --depth 3
+```
+
+When you know the symbol, class, function, or test block you care about, expand only that part with `--at`:
+
+```
+$ symnav overview src/file.ts --at 'class MatchExpression' --depth 2
+$ symnav overview src/file.ts --at 'describe("cursor pagination")' --depth 2
 ```
 
 For behavior spread through dispatchers, adapters, framework registration, plugin hooks, generated builders, or callbacks, use `graph` rather than repeatedly opening files:
@@ -118,11 +126,12 @@ Unique targets proceed. Ambiguous targets print canonical candidates with declar
 
 ## Overview Expansion
 
-Start with a shallow overview, then expand by copied header text:
+Start with a depth-zero overview, then expand by depth or by copied header text:
 
 ```
-$ symnav overview src/orders.ts
+$ symnav overview src/orders.ts --depth 0
 $ symnav overview src/orders.ts --depth 1
+$ symnav overview src/orders.ts --depth 2
 $ symnav overview src/orders.ts --at 'describe("cursor pagination")' --depth 2
 ```
 

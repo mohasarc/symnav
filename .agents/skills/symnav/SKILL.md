@@ -11,11 +11,11 @@ Run from inside a git workspace. `--cwd <dir>` to point elsewhere; `--json` on a
 
 Use this sequence unless the task gives you a more specific starting point:
 
-1. **Start with project orientation.** Run `symnav resolve '<domain word>'` for one name from the task, error message, failing test, or API surface. Use one query per command; do not pass several symbol names to a single `resolve`. If you already know a likely file, run `symnav overview <file> --depth 0` for a top-level map.
+1. **Start with project orientation.** Run `symnav resolve '<domain word>'` for one name from the task, error message, failing test, or API surface. Use one query per command; do not pass several symbol names to a single `resolve`. If you already know a likely `.ts` or `.tsx` file, run `symnav overview <file> --depth 0` for a top-level map.
 2. **Turn candidates into a target.** Copy the most relevant canonical target from `resolve` or `overview`, then run `symnav def '<target>'` for the exact declaration. Use `def` before opening the file when you need the implementation location or signature.
 3. **Orient on the blast radius.** Run `symnav context <target>` before changing a function, class, method, exported type, public helper, or shared test fixture. Read the callers/callees first; they tell you what your patch can break and what nearby code to inspect next.
-4. **Use references for API changes.** Run `symnav refs <target> --all` before renaming, changing parameters, changing return shapes, changing overloads, or touching exported behavior. Patch the references the tool shows; do not grep for the name first.
-5. **Escalate to graph when one hop is not enough.** Run `symnav graph <target> --incoming --depth 2` to find indirect callers of behavior you are about to change. Run `symnav graph <target> --outgoing --depth 2` when a function delegates through helpers and you need the implementation chain.
+4. **Use references for API changes.** Run `symnav refs <target> --all` before renaming, changing parameters, changing return shapes, changing overloads, or touching exported behavior. Use it when a task asks for a new top-level function, exported helper, schema, selector, hook, command, or method so you can see the existing call-site pattern before patching.
+5. **Escalate to graph when one hop is not enough.** Run `symnav graph <target> --incoming --depth 2` to find indirect callers of behavior you are about to change. Run `symnav graph <target> --outgoing --depth 2` when a function delegates through helpers and you need the implementation chain. Use depth 3 when depth 2 ends at wrappers, dispatchers, adapters, framework registration, or test helpers and you still do not see the behavior boundary.
 6. **Read the code you need.** Open files with `sed`/Read once symnav has oriented you to the right file, symbol, call site, or test. Use text search for prose, config, non-TypeScript files, generated names, or any case where symbol navigation is not the right tool.
 
 Good runs usually look like `resolve/overview -> def/context -> refs/graph when needed -> read relevant code/tests -> patch`. If you catch yourself searching for a TypeScript symbol name with `rg`, consider whether `symnav resolve` or `symnav refs` would give a cleaner map first.
@@ -24,7 +24,7 @@ Good runs usually look like `resolve/overview -> def/context -> refs/graph when 
 
 | When you need…                            | Use                | Gives you                                                                      |
 | ----------------------------------------- | ------------------ | ------------------------------------------------------------------------------ |
-| A file map before reading                 | `overview <file>`  | Symbol/fold tree. Start at `--depth 0`, then add `--depth` or `--at` to expand only the part you need. |
+| A file map before reading                 | `overview <file>`  | Symbol/fold tree for one `.ts`/`.tsx` source file. Start at `--depth 0`, then add `--depth` or `--at` to expand only the part you need. |
 | A symbol or likely file                   | `resolve <query>`  | Every symbol/file matching the name. Add `resolve --regex` for JavaScript regex search. |
 | A declaration location                    | `def <target>`  | Exact file, line range, and signature where a unique suffix target is defined. |
 | Call sites or usage sites                 | `refs <target>` | Every reference workspace-wide, grouped by file, tagged by kind, paginated.    |
@@ -38,7 +38,7 @@ Good runs usually look like `resolve/overview -> def/context -> refs/graph when 
 **Fix a failing test**
 
 1. Run `symnav resolve '<test name or failing symbol>'`.
-2. If the failing file is known, run `symnav overview <test-file> --depth 0`, then expand with `--depth 1`, `--depth 2`, or `--at '<header>'` if the relevant test block is nested.
+2. If the failing `.ts`/`.tsx` test file is known, run `symnav overview <test-file> --depth 0`, then expand with `--depth 1`, `--depth 2`, or `--at '<header>'` if the relevant test block is nested.
 3. Run `symnav context '<implementation target>'` for the code under test.
 4. Run `symnav refs '<implementation target>' --all` when changing public behavior.
 
@@ -103,7 +103,7 @@ $ symnav overview src/file.ts --at 'class MatchExpression' --depth 2
 $ symnav overview src/file.ts --at 'describe("cursor pagination")' --depth 2
 ```
 
-For behavior spread through dispatchers, adapters, framework registration, plugin hooks, generated builders, or callbacks, use `graph` rather than repeatedly opening files:
+For behavior spread through dispatchers, adapters, framework registration, plugin hooks, generated builders, or callbacks, use `graph` to orient on the call path before deciding which files to open:
 
 ```
 $ symnav graph 'src/file.ts::target' --incoming --depth 2
@@ -134,6 +134,15 @@ $ symnav overview src/orders.ts --depth 1
 $ symnav overview src/orders.ts --depth 2
 $ symnav overview src/orders.ts --at 'describe("cursor pagination")' --depth 2
 ```
+
+`overview` accepts one TypeScript source file, not a directory. These are wrong:
+
+```
+$ symnav overview src --depth 0
+$ symnav overview packages --depth 0
+```
+
+Use `symnav resolve '<name>'`, `rg --files -g '*.ts'`, or a known path first to identify the file, then run `overview` on that file.
 
 `--at <text>` matches text from an overview header, including fold headers such as `describe(...)`, `if (...)`, and loops. If several nodes match, `overview` prints candidates; copy more of the desired header. `--line <n>` is only a narrowing filter, and same-line/minified code may still require `--at`.
 

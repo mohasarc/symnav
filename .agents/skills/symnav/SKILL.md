@@ -11,8 +11,8 @@ Run from inside a git workspace. `--cwd <dir>` to point elsewhere; `--json` on a
 
 Use this sequence unless the task gives you a more specific starting point:
 
-1. **Start broad with symbols, not text.** Run `symnav resolve <domain word>` for names from the task, error message, failing test, or API surface. If you already know a likely file, run `symnav overview <file> --depth 1`.
-2. **Turn candidates into a target.** Copy the most relevant canonical target from `resolve` or `overview`, then run `symnav def <target>` for the exact declaration. Use `def` before opening the file when you need the implementation location or signature.
+1. **Start broad with symbols, not text.** Run `symnav resolve '<domain word>'` for one name from the task, error message, failing test, or API surface. Use one query per command; do not pass several symbol names to a single `resolve`. If you already know a likely file, run `symnav overview <file> --depth 1`.
+2. **Turn candidates into a target.** Copy the most relevant canonical target from `resolve` or `overview`, then run `symnav def '<target>'` for the exact declaration. Use `def` before opening the file when you need the implementation location or signature.
 3. **Orient on the blast radius.** Run `symnav context <target>` before changing a function, class, method, exported type, public helper, or shared test fixture. Read the callers/callees first; they tell you what your patch can break and what nearby code to inspect next.
 4. **Use references for API changes.** Run `symnav refs <target> --all` before renaming, changing parameters, changing return shapes, changing overloads, or touching exported behavior. Patch the references the tool shows; do not grep for the name first.
 5. **Escalate to graph when one hop is not enough.** Run `symnav graph <target> --incoming --depth 2` to find indirect callers of behavior you are about to change. Run `symnav graph <target> --outgoing --depth 2` when a function delegates through helpers and you need the implementation chain.
@@ -37,31 +37,70 @@ Good runs usually look like `resolve -> def/context -> refs/graph -> targeted fi
 
 **Fix a failing test**
 
-1. Run `symnav resolve <test name or failing symbol>`.
+1. Run `symnav resolve '<test name or failing symbol>'`.
 2. If the failing file is known, run `symnav overview <test-file> --depth 2` to see the test structure without reading the whole file.
-3. Run `symnav context <implementation target>` for the code under test.
-4. Run `symnav refs <implementation target> --all` when changing public behavior.
+3. Run `symnav context '<implementation target>'` for the code under test.
+4. Run `symnav refs '<implementation target>' --all` when changing public behavior.
 
 **Add or change an API**
 
-1. Run `symnav resolve <API name>` to find the declaration.
-2. Run `symnav def <target>` for the exact signature.
-3. Run `symnav refs <target> --all` before editing.
-4. Run `symnav graph <target> --incoming --depth 2` if the API is called through wrappers, adapters, routers, commands, plugins, or framework registration.
+1. Run `symnav resolve '<API name>'` to find the declaration.
+2. Run `symnav def '<target>'` for the exact signature.
+3. Run `symnav refs '<target>' --all` before editing.
+4. Run `symnav graph '<target>' --incoming --depth 2` if the API is called through wrappers, adapters, routers, commands, plugins, or framework registration.
 
 **Trace unfamiliar behavior**
 
-1. Run `symnav resolve <verb or type name>`.
-2. Run `symnav context <target>` for the best candidate.
+1. Run `symnav resolve '<verb or type name>'`.
+2. Run `symnav context '<target>'` for the best candidate.
 3. If the context output says callers/callees overflow, run the suggested `symnav graph` command.
 4. Use `overview --at` only after you know the file and need a specific nested block.
 
 **Refactor safely**
 
-1. Run `symnav refs <target> --all` before the first edit.
-2. Run `symnav graph <target> --incoming --depth 2` for shared methods and exported helpers.
+1. Run `symnav refs '<target>' --all` before the first edit.
+2. Run `symnav graph '<target>' --incoming --depth 2` for shared methods and exported helpers.
 3. Patch the declaration and every reference class of call site the output shows.
 4. Re-run `symnav refs` after the patch if the target still exists and should have fewer/no references.
+
+## Command hygiene
+
+Pass exactly one symbol query or target per command. These are good:
+
+```
+$ symnav resolve 'selectorHealth'
+$ symnav resolve 'resetContext'
+$ symnav context 'src/context.ts::resetContext'
+```
+
+This is bad because `resolve` receives one long query, not four searches:
+
+```
+$ symnav resolve resetContext selectorHealth selector dependencies
+```
+
+Quote targets with single quotes whenever they contain shell-sensitive characters such as `$`, `*`, `[`, `]`, `(`, `)`, `!`, spaces, or quotes from test names. Without quotes, the shell can rewrite the target before symnav sees it:
+
+```
+$ symnav resolve '$find'
+$ symnav def 'core/crud/crud.service.ts::$find'
+$ symnav context 'core/crud/crud.service.ts::$find'
+```
+
+Choose depth based on the task. Start shallow when you only need a map, then increase depth when the interesting code is nested:
+
+```
+$ symnav overview src/file.ts --depth 1
+$ symnav overview src/file.ts --depth 2
+$ symnav overview src/file.ts --depth 3
+```
+
+For behavior spread through dispatchers, adapters, framework registration, plugin hooks, generated builders, or callbacks, use `graph` rather than repeatedly opening files:
+
+```
+$ symnav graph 'src/file.ts::target' --incoming --depth 2
+$ symnav graph 'src/file.ts::target' --outgoing --depth 3
+```
 
 ## Suffix-pattern Targets
 

@@ -1,67 +1,24 @@
 ---
 name: symnav
-description: Navigate a TypeScript codebase by symbol from the CLI — a file's symbol tree (overview), find a symbol by name (resolve), where it's defined (def), every reference to it (refs), direct context (context), and multi-hop call paths (graph). Use it for deterministic project-wide orientation and symbol navigation before deciding which files, tests, and implementation regions to inspect with normal tools.
+description: Navigate a TypeScript codebase by symbol from the CLI — a file's symbol tree (overview), find a symbol by name (resolve), where it's defined (def), every reference to it (refs), direct context (context), and multi-hop call paths (graph). Provides deterministic project-wide orientation and symbol navigation alongside normal reads, search, tests, and edits.
 ---
 
-`symnav` gives deterministic, project-wide answers to navigation questions: what is in a TypeScript file, where a symbol is defined, who references it, and how calls flow around it. Use it early to orient yourself and choose what to inspect next. Treat each useful result as a doorway to further investigation: a symbol, caller, callee, or file region from one command can be the target for the next `overview`, `def`, `refs`, `context`, or `graph` command. Then use `Read`, `rg`, tests, and edits normally; symnav is a navigation layer, not a replacement for reading code.
+`symnav` gives deterministic, project-wide answers to navigation questions: what is in a TypeScript file, where a symbol is defined, who references it, and how calls flow around it. It is a navigation layer for TypeScript code, used alongside normal file reads, text search, tests, and edits.
 
-Run from inside a git workspace. `--cwd <dir>` to point elsewhere; `--json` on any command for machine output. In Codex-style environments, pass `yield_time_ms: 60000` on every `exec_command` call that invokes `symnav`; cold TypeScript startup can yield early with empty output, and that is not the command result.
-
-## Default playbook
-
-Use this sequence unless the task gives you a more specific starting point:
-
-1. **Start with project orientation.** Run `symnav resolve '<domain word>'` for one name from the task, error message, failing test, or API surface. Use one query per command; do not pass several symbol names to a single `resolve`. If you already know a likely `.ts` or `.tsx` file, run `symnav overview <file> --depth 0` for a top-level map.
-2. **Turn candidates into a target.** Copy the most relevant canonical target from `resolve` or `overview`, then run `symnav def '<target>'` for the exact declaration. Use `def` before opening the file when you need the implementation location or signature.
-3. **Orient on the blast radius.** Run `symnav context <target>` before changing a function, class, method, exported type, public helper, or shared test fixture. Read the callers/callees first; they tell you what your patch can break and what nearby code to inspect next.
-4. **Use references for API changes.** Run `symnav refs <target> --all` before renaming, changing parameters, changing return shapes, changing overloads, or touching exported behavior. Use it when a task asks for a new top-level function, exported helper, schema, selector, hook, command, or method so you can see the existing call-site pattern before patching.
-5. **Follow call paths with graph.** Run `symnav graph <target> --incoming --depth 2` to find indirect callers of behavior you are about to change. Run `symnav graph <target> --outgoing --depth 2` when a function delegates through helpers and you need the implementation chain. If graph surfaces a useful caller or callee, run graph again from that symbol, change direction, or increase depth to continue the path.
-6. **Read the code you need.** Open files with `sed`/Read once symnav has oriented you to the right file, symbol, call site, or test. Use text search for prose, config, non-TypeScript files, generated names, or any case where symbol navigation is not the right tool.
-
-Good runs usually look like `resolve/overview -> def/context -> refs/graph when needed -> read relevant code/tests -> patch`. If you catch yourself searching for a TypeScript symbol name with `rg`, consider whether `symnav resolve` or `symnav refs` would give a cleaner map first.
+Run from inside a git workspace. `--cwd <dir>` points at a different workspace; `--json` on any command gives machine-readable output. In Codex-style environments, pass a generous `yield_time_ms` on commands that may take time; cold TypeScript startup can yield early with empty output, and that is not the final command result.
 
 ## Which command, when
 
 | When you need…                            | Use                | Gives you                                                                      |
 | ----------------------------------------- | ------------------ | ------------------------------------------------------------------------------ |
-| A file map before reading                 | `overview <file>`  | Symbol/fold tree for one `.ts`/`.tsx` source file. Start at `--depth 0`, then use `--depth` or `--at` to dig into useful symbols, test blocks, or file regions from the output. |
+| A file map before reading                 | `overview <file>`  | Symbol/fold tree for one `.ts`/`.tsx` source file. `--depth` controls nesting; `--at` selects matching symbols, test blocks, or file regions from the output. |
 | A symbol or likely file                   | `resolve <query>`  | Every symbol/file matching the name. Add `resolve --regex` for JavaScript regex search. |
 | A declaration location                    | `def <target>`  | Exact file, line range, and signature where a unique suffix target is defined. |
 | Call sites or usage sites                 | `refs <target>` | Every reference workspace-wide, grouped by file, tagged by kind, paginated.    |
 | Local blast radius                        | `context <target>` | One block: definition, direct callers, direct callees, reference summary, recent git history. |
 | Multi-hop call paths                      | `graph <target>` | Incoming and outgoing call paths with depth, direction, pagination, and possible-edge labels. |
 
-`context` is workspace-only and certain-edges-only: callers/callees count just statically-resolved calls to non-ignored workspace files, capped at 20 per direction. Use `graph` when possible/dynamic edges or multi-hop traversal matter. An ambiguous target is refused; copy one printed candidate and query that directly.
-
-## Task recipes
-
-**Fix a failing test**
-
-1. Run `symnav resolve '<test name or failing symbol>'`.
-2. If the failing `.ts`/`.tsx` test file is known, run `symnav overview <test-file> --depth 0`, then expand with `--depth 1`, `--depth 2`, or `--at '<header>'` if the relevant test block is nested.
-3. Run `symnav context '<implementation target>'` for the code under test.
-4. Run `symnav refs '<implementation target>' --all` when changing public behavior.
-
-**Add or change an API**
-
-1. Run `symnav resolve '<API name>'` to find the declaration.
-2. Run `symnav def '<target>'` for the exact signature.
-3. Run `symnav refs '<target>' --all` before editing.
-4. Run `symnav graph '<target>' --incoming --depth 2` if the API is called through wrappers, adapters, routers, commands, plugins, or framework registration.
-
-**Trace unfamiliar behavior**
-
-1. Run `symnav resolve '<verb or type name>'`.
-2. Run `symnav context '<target>'` for the best candidate.
-3. If the context output says callers/callees overflow, run the suggested `symnav graph` command.
-4. When the output points at a useful nested block or follow-up symbol, continue with `overview --at`, `context`, `refs`, or `graph` on that target.
-
-**Refactor safely**
-
-1. Run `symnav refs '<target>' --all` before the first edit.
-2. Run `symnav graph '<target>' --incoming --depth 2` for shared methods and exported helpers.
-3. Patch the declaration and every reference class of call site the output shows.
-4. Re-run `symnav refs` after the patch if the target still exists and should have fewer/no references.
+`context` is workspace-only and certain-edges-only: callers/callees count just statically-resolved calls to non-ignored workspace files, capped at 20 per direction. `graph` covers multi-hop traversal and can include possible/dynamic edges. An ambiguous target is refused; copy one printed candidate and query that directly.
 
 ## Command hygiene
 
@@ -87,7 +44,7 @@ $ symnav def 'core/crud/crud.service.ts::$find'
 $ symnav context 'core/crud/crud.service.ts::$find'
 ```
 
-Choose depth based on the task. Start with `--depth 0` when you need a map, then increase depth when the interesting code is nested:
+`overview` depth controls how much nesting appears:
 
 ```
 $ symnav overview src/file.ts --depth 0
@@ -96,21 +53,21 @@ $ symnav overview src/file.ts --depth 2
 $ symnav overview src/file.ts --depth 3
 ```
 
-When you know the symbol, class, function, or test block you care about, expand only that part with `--at`:
+`--at` can select a matching symbol, class, function, or test block:
 
 ```
 $ symnav overview src/file.ts --at 'class MatchExpression' --depth 2
 $ symnav overview src/file.ts --at 'describe("cursor pagination")' --depth 2
 ```
 
-For behavior spread through dispatchers, adapters, framework registration, plugin hooks, generated builders, or callbacks, use `graph` to orient on the call path before deciding which files to open:
+`graph` can show incoming or outgoing call paths:
 
 ```
 $ symnav graph 'src/file.ts::target' --incoming --depth 2
 $ symnav graph 'src/file.ts::target' --outgoing --depth 3
 ```
 
-Graph output is an exploration surface. Pick a useful caller or callee from the output and run `graph` again from that symbol, switch between `--incoming` and `--outgoing`, or increase `--depth` when the next hop matters.
+Depth controls the number of hops. `--incoming` follows callers; `--outgoing` follows callees.
 
 ## Suffix-pattern Targets
 
@@ -128,7 +85,7 @@ Unique targets proceed. Ambiguous targets print canonical candidates with declar
 
 ## Overview Expansion
 
-Start with a depth-zero overview, then expand by depth or by copied header text when the output reveals useful structure:
+`overview` can show a top-level file map or a nested section selected by header text:
 
 ```
 $ symnav overview src/orders.ts --depth 0
@@ -144,7 +101,7 @@ $ symnav overview src --depth 0
 $ symnav overview packages --depth 0
 ```
 
-Use `symnav resolve '<name>'`, `rg --files -g '*.ts'`, or a known path first to identify the file, then run `overview` on that file.
+Use a TypeScript source file path with `overview`.
 
 `--at <text>` matches text from an overview header, including fold headers such as `describe(...)`, `if (...)`, and loops. If several nodes match, `overview` prints candidates; copy more of the desired header. `--line <n>` is only a narrowing filter, and same-line/minified code may still require `--at`.
 
@@ -152,9 +109,9 @@ Use `symnav resolve '<name>'`, `rg --files -g '*.ts'`, or a known path first to 
 
 The warning behavior is intentionally non-fatal. Warnings are diagnostics on stderr; read them, but if the process exits 0, stdout is still the navigation result.
 
-## Exploring with `context`
+## Context Output
 
-When you land on an unfamiliar symbol, `context` is the one call that orients you: what it is, who depends on it (blast radius before you change it), what it leans on, how heavily it's referenced, and how it's changed lately. That's the work of `def` + `refs` + reading caller files + `git log` — collapsed into one block.
+`context` combines one symbol's definition, direct callers, direct callees, reference summary, and recent git history.
 
 ```
 $ symnav context apps/cli/src/command.ts::runCommand
@@ -167,14 +124,14 @@ Definition
 └── 37-85: runCommand  [implementation]
     export async function runCommand<Result, Args>(...): Promise<void>
 
-Callers                          # who breaks if you change this — 5 register-*-command.ts sites
+Callers
 ├── …/def/register-def-command.ts
 │   └── 8-27: registerDefCommand  [call]
 │             await runCommand(defCommand, {
 └── …/refs/register-refs-command.ts
     └── 16-45: registerRefsCommand  [call]
 
-Callees                          # what this leans on — its signature shown inline
+Callees
 ├── 87-136: recordTelemetry  [call ×2]
 └── 144-153: handleError  [call]
 
@@ -183,12 +140,12 @@ Total: 27
 Kinds: usage 21, import 6
 Run: symnav refs apps/cli/src/command.ts::runCommand
 
-Recent History                   # is this hot or stable? who last touched it?
+Recent History
 1. 3c53915 2026-06-23 Mohammed S. Yaseen
    feat(cli): thread GitHistory through dependencies and context
 ```
 
-Read it top-down: **Callers = blast radius** (every site you must check before editing), **Callees = dependencies** (what to read next to understand the body), **References + History** = how load-bearing and how active it is. `[call ×N]` means one caller hits it N times; overflow past 20 points you at `graph`. Start a change here, not with `Read`.
+`[call ×N]` means one caller hits the target N times. Overflow past 20 points to `graph`.
 
 ## How to drive it
 
@@ -208,7 +165,7 @@ PaymentProvider.ts::charge
 src/payments/PaymentProvider.ts::PaymentProvider::charge
 ```
 
-Normal flow: **`resolve` a name → copy a candidate if needed → `def` to read it / `refs` to see who uses it.** Or `overview <file>` to get symbol headers and fold headers before targeted expansion.
+`resolve` lists candidate symbols. `def`, `refs`, `context`, and `graph` accept target patterns. `overview <file>` lists symbol headers and fold headers for one TypeScript file.
 
 ## Reading output
 

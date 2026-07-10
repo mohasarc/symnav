@@ -30,6 +30,8 @@ $ symnav resolve 'resetContext'
 $ symnav context 'src/context.ts::resetContext'
 ```
 
+Use workspace-relative file paths in symbol targets. Do not include the container or checkout root such as `/app`; write `src/context.ts::resetContext`, not `/app/src/context.ts::resetContext`. If an overview header shows `src/context.ts` and `resetContext`, combine them as `src/context.ts::resetContext` or use the shorter suffix if it is unique.
+
 This is bad because `resolve` receives one long query, not four searches:
 
 ```
@@ -80,6 +82,8 @@ $ symnav def src/orders.ts::PaymentProcessor::charge
 ```
 
 Unique targets proceed. Ambiguous targets print canonical candidates with declarations; copy one of those candidates into `def`, `refs`, `context`, or `graph`.
+If symnav says a target is ambiguous, that is expected: choose the candidate that matches the runtime symbol you need and retry with that exact candidate string.
+If symnav says no symbol target was found, re-check that the file path is workspace-relative and that the symbol name appears in `overview`, `resolve`, or the candidate output.
 
 `resolve` remains the search/listing command. It does not auto-proceed into definitions.
 

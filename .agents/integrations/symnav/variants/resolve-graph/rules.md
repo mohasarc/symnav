@@ -1,5 +1,5 @@
 # resolve-graph symnav integration
 
-Always read `.agents/integrations/symnav/variants/resolve-graph/skill/SKILL.md` before starting work. `symnav resolve` and `symnav graph` commands are installed globally.
+`symnav resolve` and `symnav graph` commands are installed globally. Its full command guide is included below in this file.
 
 Use normal reads, search, tests, and edits whenever they help.

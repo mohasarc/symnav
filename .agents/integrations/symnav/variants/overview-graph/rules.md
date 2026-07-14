@@ -1,5 +1,5 @@
 # overview-graph symnav integration
 
-Always read `.agents/integrations/symnav/variants/overview-graph/skill/SKILL.md` before starting work. `symnav overview` and `symnav graph` commands are installed globally.
+`symnav overview` and `symnav graph` commands are installed globally. Its full command guide is included below in this file.
 
 Use normal reads, search, tests, and edits whenever they help.

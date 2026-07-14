@@ -1,5 +1,5 @@
 # def symnav integration
 
-Always read `.agents/integrations/symnav/variants/def/skill/SKILL.md` before starting work. `symnav def` command is installed globally.
+`symnav def` command is installed globally. Its full command guide is included below in this file.
 
 Use normal reads, search, tests, and edits whenever they help.

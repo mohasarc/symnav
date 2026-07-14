@@ -1,5 +1,5 @@
 # context symnav integration
 
-Always read `.agents/integrations/symnav/variants/context/skill/SKILL.md` before starting work. `symnav context` command is installed globally.
+`symnav context` command is installed globally. Its full command guide is included below in this file.
 
 Use normal reads, search, tests, and edits whenever they help.

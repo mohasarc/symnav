@@ -1,5 +1,5 @@
 # resolve symnav integration
 
-Always read `.agents/integrations/symnav/variants/resolve/skill/SKILL.md` before starting work. `symnav resolve` command is installed globally.
+`symnav resolve` command is installed globally. Its full command guide is included below in this file.
 
 Use normal reads, search, tests, and edits whenever they help.

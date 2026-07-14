@@ -1,5 +1,5 @@
 # graph symnav integration
 
-Always read `.agents/integrations/symnav/variants/graph/skill/SKILL.md` before starting work. `symnav graph` command is installed globally.
+`symnav graph` command is installed globally. Its full command guide is included below in this file.
 
 Use normal reads, search, tests, and edits whenever they help.

@@ -175,14 +175,15 @@ describe("symnav agent integration catalog", () => {
     expect(sharedRules.toLowerCase()).not.toContain("symnav");
   });
 
-  it("requires each treatment to read its selected skill without changing the task contract", async () => {
+  it("advertises each treatment command inline without pointing at a skill file or task contract", async () => {
     const catalog = await loadCatalog();
 
     for (const treatment of catalog.bundles) {
       const rules = await readRepositoryFile(treatment.rulesFile);
 
-      expect(rules).toContain(treatment.skillDirectory);
-      expect(rules).toContain("Always read");
+      expect(rules).toContain("symnav");
+      expect(rules).not.toContain(treatment.skillDirectory);
+      expect(rules).not.toContain("Always read");
       expect(rules).not.toMatch(/task requirements?|verification behavior|acceptance criteria/i);
     }
   });

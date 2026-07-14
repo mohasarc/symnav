@@ -1,8 +1,11 @@
 # context symnav integration
 
-Using `symnav context` is required for this task. Reach for it ahead of grep, find, and plain file reads for any question about the TypeScript code — what is in a file, where a symbol is defined, who references it, or how calls flow. Prefer it over the usual tools; do not decide it is not worth running.
+Using `symnav context` is required for this task, and using it *well* matters. Reach for it ahead of grep, find, and plain file reads for any question about the TypeScript code. It is not just an orientation tool — use it to reuse existing code, trace call flow, and understand a symbol's blast radius. Prefer it over the usual tools and lean on it hard.
 
-How you use it is up to you. It fits early orientation before you edit, finding every place something is used, or any point mid-task when you need to locate or understand a symbol — it does not have to be up front.
+Make strong, deliberate use of it:
+- **Grab a symbol's neighborhood in one shot.** `symnav context '<file>::<symbol>'` returns its definition, direct callers, direct callees, and a reference summary — the fastest way to understand a symbol before editing it.
+
+Use it early to orient, mid-task to locate and understand symbols, and before editing shared code.
 
 Known caveat: `symnav context` is extremely slow. A single call can take 10 to 20 minutes. That is expected — run it anyway and wait for it to finish. Do not treat a long-running call as stuck, and do not skip it to save time. Time is not what we care about here.
 

@@ -1,0 +1,4 @@
+interface:
+  display_name: "Symnav Benchmark Analysis"
+  short_description: "Continue reproducible multi-repository benchmark studies."
+  default_prompt: "Orient me to the Symnav benchmark study state, then help analyze, recover, or launch the next experiment."

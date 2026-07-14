@@ -9,12 +9,7 @@ Treat a study—not a GitHub Actions run—as the analytical unit. Preserve immu
 
 ## Orient first
 
-Read these in the `symnav` repository:
-
-- `plans/002/dockerized-eval-bench/analysis-handoff.md` for historical findings and caveats.
-- `plans/002/robust-eval-analysis/phased-plan.md` for the intended protocol and architecture.
-
-Locate the three repositories from the current workspace or their Git remotes; do not rely on temporary worktree names.
+This skill is the durable handoff. Do not depend on historical plan or handoff documents; they may be removed. Locate the three repositories from the current workspace or their Git remotes; do not rely on temporary worktree names.
 
 | Repository | Owns |
 | --- | --- |

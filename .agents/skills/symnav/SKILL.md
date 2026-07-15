@@ -7,6 +7,17 @@ description: Navigate a TypeScript codebase by symbol from the CLI — a file's 
 
 Run from inside a git workspace. `--cwd <dir>` points at a different workspace; `--json` on any command gives machine-readable output. In Codex-style environments, pass a generous `yield_time_ms` on commands that may take time; cold TypeScript startup can yield early with empty output, and that is not the final command result.
 
+## Reach for it at these moments
+
+When you hit one of these ordinary points in a change, run the command — then use whatever it returns however you see fit:
+
+- **After you add or change a symbol** (a function, type, field, variant, or export): `symnav refs '<file>::<symbol>'` to see every site that uses it.
+- **Before you edit an exported or widely-shared symbol**: `symnav context '<file>::<symbol>'` or `symnav graph '<file>::<symbol>' --incoming --depth 2` to see what depends on it.
+- **Before you write a new helper, parser, builder, or validator**: `symnav resolve '<concept>'` to find an existing one to reuse.
+- **Before you extend or subclass an existing type**: `symnav context '<file>::<Type>'` (and `symnav def` its base) to see the shape and constraints you're building on.
+
+The nudge is only to look with symnav first; what you conclude from the output is up to you.
+
 ## Which command, when
 
 | When you need…                            | Use                | Gives you                                                                      |

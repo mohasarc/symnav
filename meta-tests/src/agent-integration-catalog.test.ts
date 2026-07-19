@@ -175,18 +175,36 @@ describe("symnav agent integration catalog", () => {
     expect(sharedRules.toLowerCase()).not.toContain("symnav");
   });
 
-  it("mandates symnav usage and states the slow caveat without pointing at a skill file or task contract", async () => {
+  it("keeps every treatment rules file free of skill-file pointers and task-contract language", async () => {
     const catalog = await loadCatalog();
 
     for (const treatment of catalog.bundles) {
       const rules = await readRepositoryFile(treatment.rulesFile);
 
       expect(rules).toContain("symnav");
-      expect(rules.toLowerCase()).toContain("required");
-      expect(rules.toLowerCase()).toContain("slow");
       expect(rules).not.toContain(treatment.skillDirectory);
       expect(rules).not.toContain("Always read");
       expect(rules).not.toMatch(/task requirements?|verification behavior|acceptance criteria/i);
+    }
+  });
+
+  it("encourages symnav for orienting and confirming without a hard mandate or slow-scare in the full arm", async () => {
+    const rules = await readRepositoryFile(bundle(await loadCatalog(), "full").rulesFile);
+
+    expect(rules).toMatch(/orient/i);
+    expect(rules).toMatch(/confirm/i);
+    expect(rules.toLowerCase()).not.toContain("required");
+    expect(rules).not.toMatch(/10 to 20 minutes/);
+  });
+
+  it("keeps the diagnostic command variants on the mandate-and-slow-caveat wording", async () => {
+    const catalog = await loadCatalog();
+
+    for (const variant of catalog.bundles.filter((candidate) => candidate.id !== "full")) {
+      const rules = await readRepositoryFile(variant.rulesFile);
+
+      expect(rules.toLowerCase()).toContain("required");
+      expect(rules.toLowerCase()).toContain("slow");
     }
   });
 });

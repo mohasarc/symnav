@@ -8,7 +8,7 @@ const fixtureRoot = fixturePath("extraction-v2-cases");
 const snapshotsDir = new URL("./__snapshots__/", import.meta.url).pathname;
 const buildWorkflowId = "src/agent-workflow.ts::buildWorkflow";
 const unsupportedStatementWarning =
-  "Warning: skipped unrecognised statement syntax at src/unsupported-statement.ts:1 (ExportDeclaration).\n";
+  "Warning: skipped unrecognised statement syntax at src/unsupported-statement.ts:1 (ExportDeclaration)\n";
 
 interface JsonIdentity {
   file: string;

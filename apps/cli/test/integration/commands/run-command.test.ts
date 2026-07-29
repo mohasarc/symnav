@@ -118,6 +118,26 @@ describe("runCommand lifecycle", () => {
     expect(context.exitCodes).toEqual([]);
   });
 
+  it("writes diagnostics to stderr in json mode too", async () => {
+    const context = createFakeProgramContext({ cwd: "/repo" });
+
+    await runCommand(
+      new StubCommand({
+        diagnostics: () => [{ severity: "warning", dedupeKey: "one", message: "first" }],
+      }),
+      {
+        context,
+        dependencies: fakeDependencies(),
+        cwdOverride: undefined,
+        json: true,
+        args: stubArgs("hi"),
+      },
+    );
+
+    expect(context.stderr.text()).toBe("Warning: first\n");
+    expect(context.stdout.text()).toBe("json:computed");
+  });
+
   it("passes workspace, router, git, cwd, and args to compute and nothing else", async () => {
     const context = createFakeProgramContext({ cwd: "/repo" });
     const dependencies = fakeDependencies();

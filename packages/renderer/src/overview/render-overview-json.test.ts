@@ -93,6 +93,28 @@ describe("renderOverviewJson", () => {
     });
   });
 
+  it("includes diagnostics in the payload when the result carries them", () => {
+    const file: OverviewFileSymbols = {
+      file: "src/file.ts",
+      symbols: [],
+      diagnostics: [
+        {
+          severity: "warning",
+          dedupeKey: "src/file.ts:statement:Identifier",
+          message: "skipped unrecognised statement syntax at src/file.ts:1 (Identifier)",
+        },
+      ],
+    };
+    const parsed = JSON.parse(renderOverviewJson(file)) as OverviewFileSymbols;
+    expect(parsed.diagnostics).toEqual([
+      {
+        severity: "warning",
+        dedupeKey: "src/file.ts:statement:Identifier",
+        message: "skipped unrecognised statement syntax at src/file.ts:1 (Identifier)",
+      },
+    ]);
+  });
+
   it("renders identical bytes for identical IR across two calls", () => {
     const build = (): OverviewFileSymbols => ({
       file: "src/file.ts",

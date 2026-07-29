@@ -36,6 +36,9 @@ export function collapseInitializerSource(node: Node): string {
   if (Node.isPropertyAccessExpression(expression)) {
     return `${collapseInitializerSource(expression.getExpression())}.${expression.getName()}`;
   }
+  if (Node.isTaggedTemplateExpression(expression)) {
+    return `${collapseInitializerSource(expression.getTag())}\`…\``;
+  }
   if (Node.isFunctionExpression(expression) || Node.isArrowFunction(expression)) {
     return `${functionValuedInitializerHead(expression)} …`;
   }

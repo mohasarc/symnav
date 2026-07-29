@@ -61,6 +61,16 @@ describe("extractVariableSignature", () => {
       expected: "const fn = factory(…)(…)",
     },
     {
+      name: "tagged template initializer",
+      source: "const query = gql`query { user { id name email } }`;",
+      expected: "const query = gql`…`",
+    },
+    {
+      name: "member-tagged template initializer",
+      source: "const Button = styled.div`display: flex; color: ${theme.primary};`;",
+      expected: "const Button = styled.div`…`",
+    },
+    {
       name: "awaited call initializer",
       source: "const data = await fetchData({ retry: true });",
       expected: "const data = await fetchData(…)",

@@ -19,7 +19,7 @@ describe("symnav overview unsupported inputs", () => {
     expect(result.stdout).toBe("");
     expect(result.status).toBe(1);
     expect(result.stderr).toBe(
-      "Cannot answer: extensionless has no file extension; expected a TypeScript source file.\n",
+      "Cannot answer: extensionless has no file extension; expected a source file.\n",
     );
   });
 

@@ -7,7 +7,7 @@ import { ensureFixtureGitMarker } from "../ensure-fixture-git-marker.js";
 const fixtureRoot = fixturePath("extraction-v2-cases");
 const snapshotsDir = new URL("./__snapshots__/", import.meta.url).pathname;
 const warning =
-  "Warning: skipped unrecognised statement syntax at src/unsupported-statement.ts:1 (ExportDeclaration).\n";
+  "Warning: skipped unrecognised statement syntax at src/unsupported-statement.ts:1 (ExportDeclaration)\n";
 
 function snapshot(name: string): string {
   return join(snapshotsDir, name);

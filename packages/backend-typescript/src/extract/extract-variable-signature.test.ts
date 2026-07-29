@@ -44,7 +44,7 @@ describe("extractVariableSignature", () => {
     },
     {
       name: "zero-argument call on nested factory call initializer",
-      source: "const fn = factory({ retry: true })();",
+      source: "const fn = factory({ retry: true, attempts: MAX_RETRY_ATTEMPTS })();",
       expected: "const fn = factory(…)()",
     },
     {
@@ -72,12 +72,12 @@ describe("extractVariableSignature", () => {
     },
     {
       name: "nested factory call initializer",
-      source: "const fn = factory({ retry: true })({ id: 1 });",
+      source: "const fn = factory({ retry: true, attempts: MAX_RETRY_ATTEMPTS })({ id: 1 });",
       expected: "const fn = factory(…)(…)",
     },
     {
       name: "tagged template initializer",
-      source: "const query = gql`query { user { id name email } }`;",
+      source: "const query = gql`query { user { id name email createdAt } }`;",
       expected: "const query = gql`…`",
     },
     {
@@ -87,12 +87,12 @@ describe("extractVariableSignature", () => {
     },
     {
       name: "awaited call initializer",
-      source: "const data = await fetchData({ retry: true });",
+      source: "const data = await fetchData({ retry: true, attempts: MAX_RETRY_ATTEMPTS });",
       expected: "const data = await fetchData(…)",
     },
     {
       name: "new expression initializer",
-      source: "const client = new Client({ retry: true });",
+      source: "const client = new Client({ retry: true, attempts: MAX_RETRY_ATTEMPTS });",
       expected: "const client = new Client(…)",
     },
     {
@@ -107,42 +107,74 @@ describe("extractVariableSignature", () => {
     },
     {
       name: "void call initializer",
-      source: "const data = void fetchData({ retry: true });",
+      source: "const data = void fetchData({ retry: true, attempts: MAX_RETRY_ATTEMPTS });",
       expected: "const data = void fetchData(…)",
     },
     {
-      name: "conditional object literal initializer",
-      source: "const config = enabled ? { retry: true } : { retry: false };",
-      expected: "const config = enabled ? { … } : { … }",
+      name: "conditional initializer collapses only long branches",
+      source:
+        "const config = enabled ? { retry: true, attempts: MAX_RETRY_ATTEMPTS } : { retry: false };",
+      expected: "const config = enabled ? { … } : { retry: false }",
     },
     {
       name: "array literal initializer",
-      source: "const values = [1, 2, 3, 4];",
+      source: "const values = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14];",
       expected: "const values = […]",
     },
     {
       name: "array literal as const initializer",
-      source: "const values = [1, 2, 3, 4] as const;",
+      source: "const values = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14] as const;",
       expected: "const values = […]",
     },
     {
       name: "object literal satisfies initializer",
-      source: "const config = { retry: true, name: 'x' } satisfies Options;",
+      source: "const config = { retry: true, attempts: MAX_RETRY_ATTEMPTS } satisfies Options;",
       expected: "const config = { … }",
     },
     {
       name: "object literal as type initializer",
-      source: "const casted = { retry: true } as Options;",
+      source: "const casted = { retry: true, attempts: MAX_RETRY_ATTEMPTS } as Options;",
       expected: "const casted = { … }",
     },
     {
       name: "object literal type assertion initializer",
-      source: "const casted = <Options>{ retry: true };",
+      source: "const casted = <Options>{ retry: true, attempts: MAX_RETRY_ATTEMPTS };",
       expected: "const casted = { … }",
     },
     {
       name: "object literal non-null assertion initializer",
-      source: "const config = ({ retry: true })!;",
+      source: "const config = ({ retry: true, attempts: MAX_RETRY_ATTEMPTS })!;",
+      expected: "const config = { … }",
+    },
+    {
+      name: "short object literal initializer kept verbatim",
+      source: "const config = { retry: true };",
+      expected: "const config = { retry: true }",
+    },
+    {
+      name: "short array literal initializer kept verbatim",
+      source: "const values = [1, 2, 3, 4];",
+      expected: "const values = [1, 2, 3, 4]",
+    },
+    {
+      name: "short call initializer kept verbatim",
+      source: "const data = fetchData({ retry: true });",
+      expected: "const data = fetchData({ retry: true })",
+    },
+    {
+      name: "short chain target kept verbatim inside long chain",
+      source:
+        "const schema = z.object({ id: z.string() }).extend({ id: z.string(), name: z.string() });",
+      expected: "const schema = z.object({ id: z.string() }).extend(…)",
+    },
+    {
+      name: "long string literal initializer collapses",
+      source: 'const banner = "this banner string is far too long to keep in a header";',
+      expected: "const banner = …",
+    },
+    {
+      name: "multi-line short object literal initializer collapses",
+      source: "const config = {\n  retry: true,\n};",
       expected: "const config = { … }",
     },
     {

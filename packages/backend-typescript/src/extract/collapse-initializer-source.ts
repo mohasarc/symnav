@@ -1,7 +1,10 @@
 import { Node, SyntaxKind, type CallExpression, type NewExpression } from "ts-morph";
 
+const VERBATIM_INITIALIZER_MAX_LENGTH = 40;
+
 export function collapseInitializerSource(node: Node): string {
   const expression = expressionForCollapse(node);
+  if (fitsVerbatim(expression)) return expression.getText();
   if (Node.isAwaitExpression(expression)) {
     return `await ${collapseInitializerSource(expression.getExpression())}`;
   }
@@ -42,7 +45,12 @@ export function collapseInitializerSource(node: Node): string {
   if (Node.isFunctionExpression(expression) || Node.isArrowFunction(expression)) {
     return `${functionValuedInitializerHead(expression)} …`;
   }
-  return isCompactExpression(expression) ? expression.getText() : "…";
+  return "…";
+}
+
+function fitsVerbatim(node: Node): boolean {
+  const text = node.getText();
+  return !text.includes("\n") && text.length <= VERBATIM_INITIALIZER_MAX_LENGTH;
 }
 
 function expressionForCollapse(node: Node): Node {
@@ -96,19 +104,6 @@ function prefixUnaryOperatorText(operator: SyntaxKind): string {
   if (operator === SyntaxKind.TildeToken) return "~";
   if (operator === SyntaxKind.ExclamationToken) return "!";
   return "";
-}
-
-function isCompactExpression(node: Node): boolean {
-  return (
-    Node.isIdentifier(node) ||
-    Node.isThisExpression(node) ||
-    node.getKind() === SyntaxKind.NullKeyword ||
-    node.getKind() === SyntaxKind.TrueKeyword ||
-    node.getKind() === SyntaxKind.FalseKeyword ||
-    node.getKind() === SyntaxKind.NumericLiteral ||
-    node.getKind() === SyntaxKind.StringLiteral ||
-    node.getKind() === SyntaxKind.NoSubstitutionTemplateLiteral
-  );
 }
 
 function functionValuedInitializerHead(node: Node): string {

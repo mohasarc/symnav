@@ -69,46 +69,56 @@ describe("extractSignatureSource", () => {
       },
       {
         name: "property object literal initializer",
-        source: "class Service { public readonly options: Options = { retry: true, name: 'x' }; }",
+        source:
+          "class Service { public readonly options: Options = { retry: true, attempts: MAX_RETRY_ATTEMPTS }; }",
         select: firstClassMember,
         expected: "public readonly options: Options = { … }",
       },
       {
+        name: "property short object literal initializer kept verbatim",
+        source: "class Service { options = { retry: true }; }",
+        select: firstClassMember,
+        expected: "options = { retry: true }",
+      },
+      {
         name: "property chained schema builder initializer",
         source:
-          "class Service { static schema = z.object({ name: z.string() }).extend({ id: z.string() }); }",
+          "class Service { static schema = z.object({ name: z.string(), count: z.number() }).extend({ id: z.string() }); }",
         select: firstClassMember,
         expected: "static schema = z.object(…).extend(…)",
       },
       {
         name: "property parenthesized chained schema builder initializer",
         source:
-          "class Service { static schema = (z.object({ name: z.string() })).extend({ id: z.string() }); }",
+          "class Service { static schema = (z.object({ name: z.string(), count: z.number() })).extend({ id: z.string() }); }",
         select: firstClassMember,
         expected: "static schema = z.object(…).extend(…)",
       },
       {
         name: "property asserted chained schema builder initializer",
         source:
-          "class Service { static schema = (z.object({ name: z.string() }) as Schema).extend({ id: z.string() }); }",
+          "class Service { static schema = (z.object({ name: z.string(), count: z.number() }) as Schema).extend({ id: z.string() }); }",
         select: firstClassMember,
         expected: "static schema = z.object(…).extend(…)",
       },
       {
         name: "property nested factory call initializer",
-        source: "class Service { static fn = factory({ retry: true })({ id: 1 }); }",
+        source:
+          "class Service { static fn = factory({ retry: true, attempts: MAX_RETRY_ATTEMPTS })({ id: 1 }); }",
         select: firstClassMember,
         expected: "static fn = factory(…)(…)",
       },
       {
         name: "property awaited call initializer",
-        source: "class Service { data = await fetchData({ retry: true }); }",
+        source:
+          "class Service { data = await fetchData({ retry: true, attempts: MAX_RETRY_ATTEMPTS }); }",
         select: firstClassMember,
         expected: "data = await fetchData(…)",
       },
       {
         name: "property new expression initializer",
-        source: "class Service { client = new Client({ retry: true }); }",
+        source:
+          "class Service { client = new Client({ retry: true, attempts: MAX_RETRY_ATTEMPTS }); }",
         select: firstClassMember,
         expected: "client = new Client(…)",
       },
@@ -127,25 +137,28 @@ describe("extractSignatureSource", () => {
       },
       {
         name: "property object literal satisfies initializer",
-        source: "class Service { options = { retry: true, name: 'x' } satisfies Options; }",
+        source:
+          "class Service { options = { retry: true, attempts: MAX_RETRY_ATTEMPTS } satisfies Options; }",
         select: firstClassMember,
         expected: "options = { … }",
       },
       {
         name: "property array literal as const initializer",
-        source: "class Service { values = [1, 2] as const; }",
+        source:
+          "class Service { values = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14] as const; }",
         select: firstClassMember,
         expected: "values = […]",
       },
       {
         name: "property object literal as type initializer",
-        source: "class Service { options = { retry: true } as Options; }",
+        source:
+          "class Service { options = { retry: true, attempts: MAX_RETRY_ATTEMPTS } as Options; }",
         select: firstClassMember,
         expected: "options = { … }",
       },
       {
         name: "property object literal non-null assertion initializer",
-        source: "class Service { options = ({ retry: true })!; }",
+        source: "class Service { options = ({ retry: true, attempts: MAX_RETRY_ATTEMPTS })!; }",
         select: firstClassMember,
         expected: "options = { … }",
       },
@@ -181,12 +194,12 @@ describe("extractSignatureSource", () => {
       },
       {
         name: "export default object expression",
-        source: "export default { handler: 'main', retry: true };",
+        source: "export default { handler: 'main', retry: true, attempts: MAX_RETRY_ATTEMPTS };",
         expected: "export default { … }",
       },
       {
         name: "export default expression-bodied arrow",
-        source: "export default (value: string) => ({ value, ok: true });",
+        source: "export default (value: string) => ({ value, ok: true, checked: true });",
         expected: "export default (value: string) => …",
       },
       {
@@ -203,17 +216,17 @@ describe("extractSignatureSource", () => {
       },
       {
         name: "export default nested factory call",
-        source: "export default factory({ retry: true })({ id: 1 });",
+        source: "export default factory({ retry: true, attempts: MAX_RETRY_ATTEMPTS })({ id: 1 });",
         expected: "export default factory(…)(…)",
       },
       {
         name: "export default awaited call",
-        source: "export default await fetchData({ retry: true });",
+        source: "export default await fetchData({ retry: true, attempts: MAX_RETRY_ATTEMPTS });",
         expected: "export default await fetchData(…)",
       },
       {
         name: "export default new expression",
-        source: "export default new Client({ retry: true });",
+        source: "export default new Client({ retry: true, attempts: MAX_RETRY_ATTEMPTS });",
         expected: "export default new Client(…)",
       },
       {
@@ -228,12 +241,12 @@ describe("extractSignatureSource", () => {
       },
       {
         name: "export equals nested factory call",
-        source: "export = factory({ retry: true })({ id: 1 });",
+        source: "export = factory({ retry: true, attempts: MAX_RETRY_ATTEMPTS })({ id: 1 });",
         expected: "export = factory(…)(…)",
       },
       {
         name: "export equals awaited call",
-        source: "export = await fetchData({ retry: true });",
+        source: "export = await fetchData({ retry: true, attempts: MAX_RETRY_ATTEMPTS });",
         expected: "export = await fetchData(…)",
       },
       {
@@ -339,11 +352,11 @@ describe("extractSignatureSource", () => {
   });
 
   describe("default export", () => {
-    it("returns a bounded export assignment head", () => {
+    it("keeps a short export assignment expression verbatim", () => {
       const file = parseTypeScriptSource("export default { handler: 'main' };");
       const stmt = firstStatement(file);
       if (!Node.isExportAssignment(stmt)) throw new Error("expected export assignment");
-      expect(extractSignatureSource(stmt)).toBe("export default { … }");
+      expect(extractSignatureSource(stmt)).toBe("export default { handler: 'main' }");
     });
   });
 

@@ -26,7 +26,7 @@ describe("extraction diagnostics", () => {
     expect(diagnostics.diagnostics()).toEqual([
       {
         severity: "warning",
-        key: "src/input.ts:statement:Identifier",
+        dedupeKey: "src/input.ts:statement:Identifier",
         message: "Warning: skipped unrecognised statement syntax at src/input.ts:1 (Identifier).",
       },
     ]);
@@ -73,7 +73,7 @@ describe("extraction diagnostics", () => {
     expect(diagnostics.diagnostics()).toEqual([
       {
         severity: "warning",
-        key: "src/input.ts:member:Identifier",
+        dedupeKey: "src/input.ts:member:Identifier",
         message: "Warning: skipped unrecognised member syntax at src/input.ts:4 (Identifier).",
       },
     ]);

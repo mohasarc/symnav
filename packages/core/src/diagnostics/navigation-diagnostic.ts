@@ -3,7 +3,7 @@ export type NavigationDiagnosticSeverity = "warning";
 export interface NavigationDiagnostic {
   readonly severity: NavigationDiagnosticSeverity;
   readonly message: string;
-  readonly key: string;
+  readonly dedupeKey: string;
 }
 
 export interface DiagnosticSink {
@@ -12,11 +12,11 @@ export interface DiagnosticSink {
 
 export class CollectingDiagnosticSink implements DiagnosticSink {
   private readonly collected: NavigationDiagnostic[] = [];
-  private readonly keys = new Set<string>();
+  private readonly dedupeKeys = new Set<string>();
 
   report(diagnostic: NavigationDiagnostic): void {
-    if (this.keys.has(diagnostic.key)) return;
-    this.keys.add(diagnostic.key);
+    if (this.dedupeKeys.has(diagnostic.dedupeKey)) return;
+    this.dedupeKeys.add(diagnostic.dedupeKey);
     this.collected.push(diagnostic);
   }
 

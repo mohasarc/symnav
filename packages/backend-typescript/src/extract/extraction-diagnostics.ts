@@ -13,7 +13,7 @@ export function reportUnrecognisedNode(args: ReportUnrecognisedNodeArgs): void {
   const line = args.node.getStartLineNumber();
   args.sink.report({
     severity: "warning",
-    key: `${args.filePath}:${args.category}:${kind}`,
+    dedupeKey: `${args.filePath}:${args.category}:${kind}`,
     message: `Warning: skipped unrecognised ${args.category} syntax at ${args.filePath}:${line} (${kind}).`,
   });
 }

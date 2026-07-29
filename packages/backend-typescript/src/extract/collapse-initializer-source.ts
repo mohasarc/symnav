@@ -59,12 +59,14 @@ function expressionForCollapse(node: Node): Node {
 }
 
 function collapseCallExpression(node: CallExpression): string {
+  const argumentList = node.getArguments().length > 0 ? "(…)" : "()";
   const expression = expressionForCollapse(node.getExpression());
   if (Node.isPropertyAccessExpression(expression)) {
-    return `${collapseInitializerSource(expression.getExpression())}.${expression.getName()}(…)`;
+    return `${collapseInitializerSource(expression.getExpression())}.${expression.getName()}${argumentList}`;
   }
-  if (Node.isCallExpression(expression)) return `${collapseCallExpression(expression)}(…)`;
-  return `${collapseInitializerSource(expression)}(…)`;
+  if (Node.isCallExpression(expression))
+    return `${collapseCallExpression(expression)}${argumentList}`;
+  return `${collapseInitializerSource(expression)}${argumentList}`;
 }
 
 function collapseNewExpression(node: NewExpression): string {

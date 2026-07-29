@@ -33,6 +33,21 @@ describe("extractVariableSignature", () => {
       expected: "const helper = function (value: string): string …",
     },
     {
+      name: "zero-argument call initializer",
+      source: "const registry = createRegistry();",
+      expected: "const registry = createRegistry()",
+    },
+    {
+      name: "zero-argument member call initializer",
+      source: "const registry = factories.createRegistry();",
+      expected: "const registry = factories.createRegistry()",
+    },
+    {
+      name: "zero-argument call on nested factory call initializer",
+      source: "const fn = factory({ retry: true })();",
+      expected: "const fn = factory(…)()",
+    },
+    {
       name: "schema builder call initializer",
       source: "const schema = z.object({ name: z.string(), count: z.number() });",
       expected: "const schema = z.object(…)",

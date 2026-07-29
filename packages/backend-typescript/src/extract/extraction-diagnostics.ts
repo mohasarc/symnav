@@ -14,6 +14,6 @@ export function reportUnrecognisedNode(args: ReportUnrecognisedNodeArgs): void {
   args.sink.report({
     severity: "warning",
     dedupeKey: `${args.filePath}:${args.category}:${kind}`,
-    message: `Warning: skipped unrecognised ${args.category} syntax at ${args.filePath}:${line} (${kind}).`,
+    message: `skipped unrecognised ${args.category} syntax at ${args.filePath}:${line} (${kind})`,
   });
 }

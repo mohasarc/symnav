@@ -100,8 +100,8 @@ describe("runCommand lifecycle", () => {
     await runCommand(
       new StubCommand({
         diagnostics: () => [
-          { severity: "warning", dedupeKey: "one", message: "Warning: first" },
-          { severity: "warning", dedupeKey: "two", message: "Warning: second" },
+          { severity: "warning", dedupeKey: "one", message: "first" },
+          { severity: "warning", dedupeKey: "two", message: "second" },
         ],
       }),
       {

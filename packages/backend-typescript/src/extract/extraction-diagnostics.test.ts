@@ -27,7 +27,7 @@ describe("extraction diagnostics", () => {
       {
         severity: "warning",
         dedupeKey: "src/input.ts:statement:Identifier",
-        message: "Warning: skipped unrecognised statement syntax at src/input.ts:1 (Identifier).",
+        message: "skipped unrecognised statement syntax at src/input.ts:1 (Identifier)",
       },
     ]);
   });
@@ -74,7 +74,7 @@ describe("extraction diagnostics", () => {
       {
         severity: "warning",
         dedupeKey: "src/input.ts:member:Identifier",
-        message: "Warning: skipped unrecognised member syntax at src/input.ts:4 (Identifier).",
+        message: "skipped unrecognised member syntax at src/input.ts:4 (Identifier)",
       },
     ]);
   });

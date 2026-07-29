@@ -1,4 +1,11 @@
-import { Node, SyntaxKind, type CallExpression, type NewExpression } from "ts-morph";
+import {
+  Node,
+  SyntaxKind,
+  type ArrowFunction,
+  type CallExpression,
+  type FunctionExpression,
+  type NewExpression,
+} from "ts-morph";
 
 const VERBATIM_INITIALIZER_MAX_LENGTH = 40;
 
@@ -106,21 +113,10 @@ function prefixUnaryOperatorText(operator: SyntaxKind): string {
   return "";
 }
 
-function functionValuedInitializerHead(node: Node): string {
-  if (Node.isFunctionExpression(node)) {
-    const body = node.getBody();
-    if (!body) return node.getText();
-    return node
-      .getText()
-      .slice(0, body.getStart() - node.getStart())
-      .trimEnd();
-  }
-  if (Node.isArrowFunction(node)) {
-    const body = node.getBody();
-    return node
-      .getText()
-      .slice(0, body.getStart() - node.getStart())
-      .trimEnd();
-  }
-  return node.getText();
+function functionValuedInitializerHead(node: FunctionExpression | ArrowFunction): string {
+  const body = node.getBody();
+  return node
+    .getText()
+    .slice(0, body.getStart() - node.getStart())
+    .trimEnd();
 }

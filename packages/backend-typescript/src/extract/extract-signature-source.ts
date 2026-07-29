@@ -1,4 +1,4 @@
-import { Node, SyntaxKind, type ExportAssignment } from "ts-morph";
+import { Node, SyntaxKind, type ExportAssignment, type PropertyDeclaration } from "ts-morph";
 
 import { collapseInitializerSource } from "./collapse-initializer-source.js";
 
@@ -26,8 +26,7 @@ function exportAssignmentSignature(node: ExportAssignment): string {
   return `${keyword} ${collapseInitializerSource(node.getExpression())}`;
 }
 
-function propertySignature(node: Node): string {
-  if (!Node.isPropertyDeclaration(node)) return cutBeforeTerminator(node);
+function propertySignature(node: PropertyDeclaration): string {
   const initializer = node.getInitializer();
   if (!initializer) return cutBeforeTerminator(node);
   return `${headBeforeInitializer(node, initializer)} = ${collapseInitializerSource(initializer)}`;

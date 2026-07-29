@@ -127,7 +127,7 @@ describe("renderOverviewJson", () => {
   it("includes diagnostics in the payload when the result carries them", () => {
     const file: OverviewFileSymbols = {
       file: "src/file.ts",
-      symbols: [],
+      entries: [],
       diagnostics: [
         {
           severity: "warning",

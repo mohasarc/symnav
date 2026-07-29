@@ -15,7 +15,7 @@ describe("UnsupportedFileError", () => {
 
   it("renders a specific reason for extensionless files", () => {
     expect(new UnsupportedFileError("README").reason).toBe(
-      "README has no file extension; expected a TypeScript source file",
+      "README has no file extension; expected a source file",
     );
   });
 });

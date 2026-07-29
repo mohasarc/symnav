@@ -25,7 +25,7 @@ describe("workspace errors render their reason", () => {
   it("DirectoryInputError cites the input path", () => {
     const err = new DirectoryInputError("src/rules");
     expect(err).toBeInstanceOf(UserFacingError);
-    expect(err.reason).toBe("src/rules is a directory; expected a TypeScript source file");
+    expect(err.reason).toBe("src/rules is a directory; expected a source file");
   });
 
   it("OutsideWorkspaceError cites the input path and workspace root", () => {

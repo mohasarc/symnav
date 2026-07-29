@@ -40,7 +40,7 @@ export class DirectoryInputError extends UserFacingError {
   }
 
   get reason(): string {
-    return `${this.inputPath} is a directory; expected a TypeScript source file`;
+    return `${this.inputPath} is a directory; expected a source file`;
   }
 }
 

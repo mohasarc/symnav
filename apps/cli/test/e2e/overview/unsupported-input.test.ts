@@ -15,7 +15,7 @@ describe("symnav overview unsupported inputs", () => {
     expect(result.stdout).toBe("");
     expect(result.status).toBe(1);
     expect(result.stderr).toBe(
-      "Cannot answer: src/rules is a directory; expected a TypeScript source file.\n",
+      "Cannot answer: src/rules is a directory; expected a source file.\n",
     );
   });
 });

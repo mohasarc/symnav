@@ -17,7 +17,7 @@ export function renderOverviewText(file: OverviewFileEntries): string {
   }
   return (
     formatOverviewHeader(file.file) +
-    renderTopLevelChildren(OverviewTree.directSymbolChildren(file.entries))
+    renderTopLevelChildren(OverviewTree.scopeSymbols(file.entries))
   );
 }
 
@@ -42,10 +42,7 @@ function renderChild(decl: SymbolOverviewNode, parentPrefix: string, isLast: boo
   );
   const childPrefix = parentPrefix + continuationGlyph;
   const signatureBlock = renderSignature(decl.header, childPrefix);
-  const childrenBlock = renderChildren(
-    OverviewTree.directSymbolChildren(decl.children),
-    childPrefix,
-  );
+  const childrenBlock = renderChildren(OverviewTree.scopeSymbols(decl.children), childPrefix);
   return headLine + signatureBlock + childrenBlock;
 }
 

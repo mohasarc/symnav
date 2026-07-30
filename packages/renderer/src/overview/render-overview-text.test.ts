@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 
+import { OverviewTree } from "@symnav/core";
 import type { OverviewFileEntries, Signature, SymbolOverviewNode } from "@symnav/core";
 
 import { renderOverviewText } from "./render-overview-text.js";
@@ -351,5 +352,71 @@ describe("renderOverviewText", () => {
       ],
     };
     expect(renderOverviewText(file)).toContain("Outer::Inner::deep");
+  });
+
+  it("renders fold-nested symbols at the containing nesting level, hiding the fold itself", () => {
+    const file: OverviewFileEntries = {
+      file: "src/folds.ts",
+      entries: [
+        decl({
+          kind: "function",
+          segments: [{ name: "outer" }],
+          range: { startLine: 1, endLine: 5 },
+          header: signature(1, "function outer(): void"),
+          children: [
+            OverviewTree.fold({
+              foldKind: "conditional",
+              range: { startLine: 2, endLine: 4 },
+              header: signature(2, "if (enabled)"),
+              children: [
+                decl({
+                  kind: "function",
+                  segments: [{ name: "outer" }, { name: "insideIf" }],
+                  range: { startLine: 3, endLine: 3 },
+                  header: signature(3, "function insideIf(): void"),
+                }),
+              ],
+            }),
+          ],
+        }),
+      ],
+    };
+    const output = renderOverviewText(file);
+    expect(output).toBe(
+      [
+        "Overview: src/folds.ts",
+        "└── 1-5: outer",
+        "    1 function outer(): void",
+        "    └── 3: outer::insideIf",
+        "        3 function insideIf(): void",
+        "",
+      ].join("\n"),
+    );
+    expect(output).not.toContain("if (enabled)");
+  });
+
+  it("drops re-export entries from the rendered tree", () => {
+    const file: OverviewFileEntries = {
+      file: "src/re-exports.ts",
+      entries: [
+        OverviewTree.reExport({
+          exportKind: "named",
+          exportedNames: ["m"],
+          sourceModule: "./other.js",
+          range: { startLine: 1, endLine: 1 },
+          header: signature(1, "export { m } from './other.js'"),
+        }),
+        decl({
+          kind: "function",
+          segments: [{ name: "kept" }],
+          range: { startLine: 2, endLine: 2 },
+          header: signature(2, "function kept(): void"),
+        }),
+      ],
+    };
+    const output = renderOverviewText(file);
+    expect(output).toBe(
+      ["Overview: src/re-exports.ts", "└── 2: kept", "    2 function kept(): void", ""].join("\n"),
+    );
   });
 });

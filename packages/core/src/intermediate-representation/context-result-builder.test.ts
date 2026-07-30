@@ -6,14 +6,14 @@ import { DEFAULT_CONTEXT_CAP } from "./context-result.js";
 import type { HistoryEntry } from "../git/git-history.js";
 import type { SymbolReference } from "./references.js";
 import type { SymbolIdentity } from "./symbol-identity.js";
-import type { SymbolDecl } from "./types.js";
+import type { SymbolOverviewNode } from "./overview-tree.js";
 
 const identity: SymbolIdentity = {
   file: "src/target.ts",
   segments: [{ name: "target" }],
 };
 
-function decl(file: string, startLine: number, name = "sym"): SymbolDecl {
+function decl(file: string, startLine: number, name = "sym"): SymbolOverviewNode {
   return {
     type: "symbol",
     identity: { file, segments: [{ name }] },

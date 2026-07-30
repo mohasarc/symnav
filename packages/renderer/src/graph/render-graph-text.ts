@@ -1,4 +1,9 @@
-import type { GraphDirectionPage, GraphPathStep, GraphResult, SymbolDecl } from "@symnav/core";
+import type {
+  GraphDirectionPage,
+  GraphPathStep,
+  GraphResult,
+  SymbolOverviewNode,
+} from "@symnav/core";
 
 import { formatIdentityPath, formatRange, treeGlyphsFor } from "../shared/render-format.js";
 import type { GraphPathTreeNode } from "./graph-path-tree.js";
@@ -36,7 +41,7 @@ class GraphTextRenderer {
   private static renderDirection(
     header: string,
     label: GraphDirectionLabel,
-    root: SymbolDecl,
+    root: SymbolOverviewNode,
     page: GraphDirectionPage,
   ): string {
     const tree = buildGraphPathTree(page.paths);
@@ -44,7 +49,7 @@ class GraphTextRenderer {
   }
 
   private static renderRoot(
-    root: SymbolDecl,
+    root: SymbolOverviewNode,
     children: readonly GraphPathTreeNode[],
     label: GraphDirectionLabel,
   ): string {

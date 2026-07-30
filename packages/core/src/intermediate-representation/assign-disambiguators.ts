@@ -1,9 +1,10 @@
 import type { SymbolPathSegment } from "./symbol-identity.js";
 import type { OverviewNode, SymbolOverviewNode } from "./overview-tree.js";
-import type { SymbolDecl } from "./types.js";
 
-export function assignDisambiguators(siblings: readonly SymbolDecl[]): readonly SymbolDecl[] {
-  return assignSymbolDisambiguators(siblings) as readonly SymbolDecl[];
+export function assignDisambiguators(
+  siblings: readonly SymbolOverviewNode[],
+): readonly SymbolOverviewNode[] {
+  return assignSymbolDisambiguators(siblings) as readonly SymbolOverviewNode[];
 }
 
 export function assignOverviewDisambiguators(
@@ -12,7 +13,7 @@ export function assignOverviewDisambiguators(
   return assignSymbolDisambiguators(siblings);
 }
 
-type DisambiguatedSymbol = SymbolDecl | SymbolOverviewNode;
+type DisambiguatedSymbol = SymbolOverviewNode | SymbolOverviewNode;
 type DisambiguatedNode = DisambiguatedSymbol | OverviewNode;
 
 function assignSymbolDisambiguators<T extends DisambiguatedNode>(

@@ -5,9 +5,9 @@ import { InvalidPageRequestError, PageOutOfRangeError } from "../pagination/erro
 import { GraphResultBuilder, type BuildGraphResultArgs } from "./graph-result-builder.js";
 import type { GraphDirection } from "./graph-result.js";
 import type { SymbolIdentity } from "./symbol-identity.js";
-import type { SymbolDecl } from "./types.js";
+import type { SymbolOverviewNode } from "./overview-tree.js";
 
-function symbol(name: string, file = `src/${name}.ts`): SymbolDecl {
+function symbol(name: string, file = `src/${name}.ts`): SymbolOverviewNode {
   return {
     type: "symbol",
     identity: { file, segments: [{ name }] },
@@ -18,7 +18,7 @@ function symbol(name: string, file = `src/${name}.ts`): SymbolDecl {
   };
 }
 
-function path(...symbols: readonly SymbolDecl[]): GraphPath {
+function path(...symbols: readonly SymbolOverviewNode[]): GraphPath {
   return {
     steps: symbols.map((each) => ({
       symbol: each,

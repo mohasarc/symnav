@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import type { ResolveResult, Signature, SymbolDecl, SymbolPathSegment } from "@symnav/core";
+import type { ResolveResult, Signature, SymbolOverviewNode, SymbolPathSegment } from "@symnav/core";
 
 import { renderResolveText } from "./render-resolve-text.js";
 
@@ -13,7 +13,7 @@ interface DeclInput {
   readonly header: readonly string[];
 }
 
-function decl(input: DeclInput): SymbolDecl {
+function decl(input: DeclInput): SymbolOverviewNode {
   const sig: Signature = { startLine: input.startLine, lines: input.header };
   return {
     type: "symbol",

@@ -5,7 +5,7 @@ import type {
   OverviewFileSymbols,
   SymbolReference,
   ResolvedPath,
-  SymbolDecl,
+  SymbolOverviewNode,
 } from "@symnav/core";
 
 export interface FakeLanguageBackendOptions {
@@ -32,11 +32,11 @@ export class FakeLanguageBackend implements LanguageBackend {
     return this.entriesFn(path.relative);
   }
 
-  async resolveSymbols(): Promise<readonly SymbolDecl[]> {
+  async resolveSymbols(): Promise<readonly SymbolOverviewNode[]> {
     return [];
   }
 
-  async findDefinitions(): Promise<readonly SymbolDecl[]> {
+  async findDefinitions(): Promise<readonly SymbolOverviewNode[]> {
     return [];
   }
 

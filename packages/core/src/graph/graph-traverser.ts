@@ -1,26 +1,26 @@
 import type { LanguageBackend } from "../backend/language-backend.js";
 import type { CallEdge } from "../intermediate-representation/call-edge.js";
 import { formatSymbolIdentity } from "../intermediate-representation/canonical-identity.js";
-import type { SymbolDecl } from "../intermediate-representation/types.js";
+import type { SymbolOverviewNode } from "../intermediate-representation/overview-tree.js";
 import type { ResolvedPath } from "../workspace/workspace.js";
 import type { GraphPath, GraphPathStep } from "./graph-path.js";
 
 export interface GraphTraverserArgs {
   readonly backend: LanguageBackend;
   readonly files: readonly ResolvedPath[];
-  readonly root: SymbolDecl;
+  readonly root: SymbolOverviewNode;
   readonly depth: number;
 }
 
 type EdgeFinder = (
   files: readonly ResolvedPath[],
-  identity: SymbolDecl["identity"],
+  identity: SymbolOverviewNode["identity"],
 ) => Promise<readonly CallEdge[]>;
 
 export class GraphTraverser {
   private readonly backend: LanguageBackend;
   private readonly files: readonly ResolvedPath[];
-  private readonly root: SymbolDecl;
+  private readonly root: SymbolOverviewNode;
   private readonly depth: number;
 
   constructor(args: GraphTraverserArgs) {
@@ -54,7 +54,7 @@ export class GraphTraverser {
   }
 
   private async extend(args: {
-    readonly current: SymbolDecl;
+    readonly current: SymbolOverviewNode;
     readonly steps: readonly GraphPathStep[];
     readonly seen: ReadonlySet<string>;
     readonly paths: GraphPath[];
@@ -93,7 +93,7 @@ export class GraphTraverser {
   }
 
   private async findCollapsedEdges(
-    current: SymbolDecl,
+    current: SymbolOverviewNode,
     oneHopEdgesByIdentity: Map<string, Promise<readonly CallEdge[]>>,
     findEdges: EdgeFinder,
   ): Promise<readonly CallEdge[]> {

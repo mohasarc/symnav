@@ -1,10 +1,15 @@
 import { Node, type SourceFile } from "ts-morph";
-import type { OverviewNode, SymbolDecl, SymbolIdentity, SymbolPathSegment } from "@symnav/core";
+import type {
+  OverviewNode,
+  SymbolOverviewNode,
+  SymbolIdentity,
+  SymbolPathSegment,
+} from "@symnav/core";
 
 import { extractFileSymbols } from "../extract/extract-file-symbols.js";
 
 export interface LocatedDeclaration {
-  readonly declaration: SymbolDecl;
+  readonly declaration: SymbolOverviewNode;
   readonly node: Node;
 }
 
@@ -42,7 +47,7 @@ export class DeclarationLocator {
       });
   }
 
-  private ownSegmentMatches(declaration: SymbolDecl, segment: SymbolPathSegment): boolean {
+  private ownSegmentMatches(declaration: SymbolOverviewNode, segment: SymbolPathSegment): boolean {
     const own = declaration.identity.segments[declaration.identity.segments.length - 1];
     if (!own) return false;
     if (own.name !== segment.name) return false;
@@ -50,7 +55,7 @@ export class DeclarationLocator {
     return own.disambiguator === segment.disambiguator;
   }
 
-  private locateDeclarationNode(declaration: SymbolDecl): Node | undefined {
+  private locateDeclarationNode(declaration: SymbolOverviewNode): Node | undefined {
     const startLine = declaration.range.startLine;
     let found: Node | undefined;
     this.sourceFile.forEachDescendant((node) => {
@@ -103,13 +108,13 @@ export class DeclarationLocator {
     return undefined;
   }
 
-  private ownName(declaration: SymbolDecl): string {
+  private ownName(declaration: SymbolOverviewNode): string {
     const own = declaration.identity.segments[declaration.identity.segments.length - 1];
     return own?.name ?? "";
   }
 }
 
-function symbolScopeChildren(node: OverviewNode): readonly SymbolDecl[] {
+function symbolScopeChildren(node: OverviewNode): readonly SymbolOverviewNode[] {
   if (node.type === "symbol") return [node];
   return node.children.flatMap((child) => symbolScopeChildren(child));
 }

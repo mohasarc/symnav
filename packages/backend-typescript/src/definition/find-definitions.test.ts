@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { InMemoryFileSystem, type ResolvedPath, type SymbolDecl } from "@symnav/core";
+import { InMemoryFileSystem, type ResolvedPath, type SymbolOverviewNode } from "@symnav/core";
 
 import { findDefinitions } from "./find-definitions.js";
 
@@ -111,7 +111,7 @@ const ALL_FILES = pathsFor([
 ]);
 
 function labelsAndFiles(
-  decls: readonly SymbolDecl[],
+  decls: readonly SymbolOverviewNode[],
 ): readonly { label: string; file: string; name: string; disambiguator: number | undefined }[] {
   return decls.map((d) => {
     const leaf = d.identity.segments[d.identity.segments.length - 1]!;

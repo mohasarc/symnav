@@ -6,7 +6,7 @@ import type {
   ContextResult,
   HistoryEntry,
   ReferenceKind,
-  SymbolDecl,
+  SymbolOverviewNode,
   SymbolPathSegment,
 } from "@symnav/core";
 
@@ -21,7 +21,7 @@ interface DeclInput {
   readonly header: readonly string[];
 }
 
-function decl(input: DeclInput): SymbolDecl {
+function decl(input: DeclInput): SymbolOverviewNode {
   return {
     type: "symbol",
     identity: { file: input.file, segments: input.segments },
@@ -36,7 +36,7 @@ function site(file: string, line: number, previewSource: string): CallSite {
   return { file, line, previewSource, matchStart: 0, matchEnd: 4 };
 }
 
-function edge(symbol: SymbolDecl, sites: readonly CallSite[]): CallEdge {
+function edge(symbol: SymbolOverviewNode, sites: readonly CallSite[]): CallEdge {
   return { symbol, sites, confidence: "certain" };
 }
 

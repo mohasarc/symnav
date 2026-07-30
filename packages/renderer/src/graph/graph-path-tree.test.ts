@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import type { GraphPath, GraphPathStep, SymbolDecl, SymbolPathSegment } from "@symnav/core";
+import type { GraphPath, GraphPathStep, SymbolOverviewNode, SymbolPathSegment } from "@symnav/core";
 
 import { buildGraphPathTree } from "./graph-path-tree.js";
 
@@ -12,7 +12,7 @@ interface DeclInput {
   readonly header: readonly string[];
 }
 
-function decl(input: DeclInput): SymbolDecl {
+function decl(input: DeclInput): SymbolOverviewNode {
   return {
     type: "symbol",
     identity: { file: input.file, segments: input.segments },
@@ -23,7 +23,10 @@ function decl(input: DeclInput): SymbolDecl {
   };
 }
 
-function step(symbol: SymbolDecl, options: { readonly closesCycle?: boolean } = {}): GraphPathStep {
+function step(
+  symbol: SymbolOverviewNode,
+  options: { readonly closesCycle?: boolean } = {},
+): GraphPathStep {
   return {
     symbol,
     confidence: "certain",

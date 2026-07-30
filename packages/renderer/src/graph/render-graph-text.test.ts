@@ -6,7 +6,7 @@ import type {
   GraphPath,
   GraphPathStep,
   GraphResult,
-  SymbolDecl,
+  SymbolOverviewNode,
   SymbolPathSegment,
 } from "@symnav/core";
 
@@ -31,7 +31,7 @@ interface GraphResultOverrides {
   readonly repeatedSymbolCount?: GraphResult["repeatedSymbolCount"];
 }
 
-function decl(input: DeclInput): SymbolDecl {
+function decl(input: DeclInput): SymbolOverviewNode {
   return {
     type: "symbol",
     identity: { file: input.file, segments: input.segments },
@@ -43,7 +43,7 @@ function decl(input: DeclInput): SymbolDecl {
 }
 
 function step(
-  symbol: SymbolDecl,
+  symbol: SymbolOverviewNode,
   options: {
     readonly confidence?: EdgeConfidence;
     readonly reason?: string;
@@ -62,7 +62,7 @@ function path(...steps: readonly GraphPathStep[]): GraphPath {
   return { steps };
 }
 
-function graphResult(root: SymbolDecl, overrides: GraphResultOverrides = {}): GraphResult {
+function graphResult(root: SymbolOverviewNode, overrides: GraphResultOverrides = {}): GraphResult {
   return {
     identity: root.identity,
     root,

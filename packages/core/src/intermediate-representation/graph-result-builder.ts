@@ -5,11 +5,11 @@ import { validatePageRequest } from "../pagination/validate-page-request.js";
 import { formatSymbolIdentity } from "./canonical-identity.js";
 import type { GraphDirection, GraphDirectionPage, GraphResult } from "./graph-result.js";
 import type { SymbolIdentity } from "./symbol-identity.js";
-import type { SymbolDecl } from "./types.js";
+import type { SymbolOverviewNode } from "./overview-tree.js";
 
 export interface BuildGraphResultArgs {
   readonly identity: SymbolIdentity;
-  readonly root: SymbolDecl;
+  readonly root: SymbolOverviewNode;
   readonly depth: number;
   readonly direction: GraphDirection;
   readonly incomingPaths: readonly GraphPath[];

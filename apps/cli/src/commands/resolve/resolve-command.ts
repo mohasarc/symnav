@@ -1,6 +1,11 @@
 import { posix } from "node:path";
 
-import type { LanguageBackend, ResolvedPath, ResolveResult, SymbolDecl } from "@symnav/core";
+import type {
+  LanguageBackend,
+  ResolvedPath,
+  ResolveResult,
+  SymbolOverviewNode,
+} from "@symnav/core";
 import { renderResolveJson, renderResolveText } from "@symnav/renderer";
 import fuzzysort from "fuzzysort";
 
@@ -65,8 +70,8 @@ async function collectSymbols(
   groups: ReadonlyMap<LanguageBackend, readonly ResolvedPath[]>,
   query: string,
   fuzzy: boolean,
-): Promise<SymbolDecl[]> {
-  const results: SymbolDecl[] = [];
+): Promise<SymbolOverviewNode[]> {
+  const results: SymbolOverviewNode[] = [];
   for (const [backend, backendFiles] of groups) {
     const decls = await backend.resolveSymbols(backendFiles, query, { fuzzy });
     results.push(...decls);
@@ -74,7 +79,7 @@ async function collectSymbols(
   return results;
 }
 
-function sortSymbols(symbols: readonly SymbolDecl[]): SymbolDecl[] {
+function sortSymbols(symbols: readonly SymbolOverviewNode[]): SymbolOverviewNode[] {
   return [...symbols].sort((a, b) => {
     if (a.identity.file !== b.identity.file) {
       return a.identity.file < b.identity.file ? -1 : 1;

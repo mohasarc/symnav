@@ -22,8 +22,6 @@ export interface Signature {
   readonly lines: readonly string[]; // each element single-line, no "\n"
 }
 
-export type SymbolDecl = SymbolOverviewNode;
-
 export interface ResultWithDiagnostics {
   readonly diagnostics?: readonly NavigationDiagnostic[];
 }
@@ -33,11 +31,11 @@ export type OverviewFileSymbols = OverviewTreeFileSymbols;
 export interface ResolveResult {
   readonly query: string;
   readonly fuzzy: boolean;
-  readonly symbols: readonly SymbolDecl[];
+  readonly symbols: readonly SymbolOverviewNode[];
   readonly files: readonly string[];
 }
 
 export interface DefinitionResult {
   readonly identity: SymbolIdentity;
-  readonly symbols: readonly SymbolDecl[];
+  readonly symbols: readonly SymbolOverviewNode[];
 }

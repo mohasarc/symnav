@@ -4,7 +4,7 @@ import {
   parseSymbolIdentity,
   walkOverviewSymbols,
   type OverviewFileSymbols,
-  type SymbolDecl,
+  type SymbolOverviewNode,
 } from "@symnav/core";
 
 import { parseTypeScriptSource } from "../../test/helpers/parse-typescript-source.js";
@@ -15,15 +15,15 @@ function fileSymbolsOf(source: string, filePath: string = "input.ts"): OverviewF
   return extractFileSymbols({ sourceFile, filePath });
 }
 
-function symbolsOf(source: string, filePath: string = "input.ts"): readonly SymbolDecl[] {
+function symbolsOf(source: string, filePath: string = "input.ts"): readonly SymbolOverviewNode[] {
   return walkOverviewSymbols(fileSymbolsOf(source, filePath).entries);
 }
 
-function symbolChildren(decl: SymbolDecl): readonly SymbolDecl[] {
+function symbolChildren(decl: SymbolOverviewNode): readonly SymbolOverviewNode[] {
   return walkOverviewSymbols(decl.children);
 }
 
-function ownName(decl: SymbolDecl): string {
+function ownName(decl: SymbolOverviewNode): string {
   const segments = decl.identity.segments;
   return segments[segments.length - 1]?.name ?? "";
 }

@@ -1,4 +1,9 @@
-import type { FileSystem, ResolveSymbolsOptions, ResolvedPath, SymbolDecl } from "@symnav/core";
+import type {
+  FileSystem,
+  ResolveSymbolsOptions,
+  ResolvedPath,
+  SymbolOverviewNode,
+} from "@symnav/core";
 import { walkOverviewSymbols } from "@symnav/core";
 import fuzzysort from "fuzzysort";
 
@@ -11,7 +16,9 @@ export interface ResolveSymbolsArgs {
   readonly options: ResolveSymbolsOptions;
 }
 
-export async function resolveSymbols(args: ResolveSymbolsArgs): Promise<readonly SymbolDecl[]> {
+export async function resolveSymbols(
+  args: ResolveSymbolsArgs,
+): Promise<readonly SymbolOverviewNode[]> {
   const candidates = extractAllSymbols(args.fs, args.files);
   if (args.options.fuzzy) {
     return fuzzyMatch(candidates, args.query);
@@ -19,24 +26,33 @@ export async function resolveSymbols(args: ResolveSymbolsArgs): Promise<readonly
   return exactMatch(candidates, args.query);
 }
 
-function extractAllSymbols(fs: FileSystem, files: readonly ResolvedPath[]): readonly SymbolDecl[] {
-  const all: SymbolDecl[] = [];
+function extractAllSymbols(
+  fs: FileSystem,
+  files: readonly ResolvedPath[],
+): readonly SymbolOverviewNode[] {
+  const all: SymbolOverviewNode[] = [];
   for (const file of files) {
     all.push(...walkOverviewSymbols(loadFileSymbols(fs, file).entries));
   }
   return all;
 }
 
-function ownName(decl: SymbolDecl): string {
+function ownName(decl: SymbolOverviewNode): string {
   const segment = decl.identity.segments[decl.identity.segments.length - 1];
   return segment?.name ?? "";
 }
 
-function exactMatch(candidates: readonly SymbolDecl[], query: string): readonly SymbolDecl[] {
+function exactMatch(
+  candidates: readonly SymbolOverviewNode[],
+  query: string,
+): readonly SymbolOverviewNode[] {
   return candidates.filter((decl) => ownName(decl) === query);
 }
 
-function fuzzyMatch(candidates: readonly SymbolDecl[], query: string): readonly SymbolDecl[] {
+function fuzzyMatch(
+  candidates: readonly SymbolOverviewNode[],
+  query: string,
+): readonly SymbolOverviewNode[] {
   const indexed = candidates.map((decl) => ({ decl, name: ownName(decl) }));
   const results = fuzzysort.go(query, indexed, { key: "name" });
   return results.map((result) => result.obj.decl);

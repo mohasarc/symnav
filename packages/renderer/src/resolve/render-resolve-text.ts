@@ -1,4 +1,4 @@
-import type { ResolveResult, SymbolDecl } from "@symnav/core";
+import type { ResolveResult, SymbolOverviewNode } from "@symnav/core";
 
 import { groupByFile } from "../shared/group-symbols-by-file.js";
 import { formatHeadLine, formatIdentityPath, treeGlyphsFor } from "../shared/render-format.js";
@@ -13,7 +13,7 @@ export function renderResolveText(result: ResolveResult): string {
   );
 }
 
-function renderSymbolsSection(symbols: readonly SymbolDecl[]): string {
+function renderSymbolsSection(symbols: readonly SymbolOverviewNode[]): string {
   if (symbols.length === 0) {
     return "Symbols\n(none)\n";
   }
@@ -46,7 +46,7 @@ function renderFilesSection(files: readonly string[]): string {
 
 function renderFileGroup(
   file: string,
-  symbols: readonly SymbolDecl[],
+  symbols: readonly SymbolOverviewNode[],
   isLastFile: boolean,
 ): string {
   const { branchGlyph, continuationGlyph } = treeGlyphsFor(isLastFile);
@@ -59,7 +59,11 @@ function renderFileGroup(
   return header + childLines;
 }
 
-function renderSymbolEntry(symbol: SymbolDecl, parentPrefix: string, isLast: boolean): string {
+function renderSymbolEntry(
+  symbol: SymbolOverviewNode,
+  parentPrefix: string,
+  isLast: boolean,
+): string {
   const { branchGlyph, continuationGlyph } = treeGlyphsFor(isLast);
   const head = formatHeadLine(
     parentPrefix + branchGlyph,

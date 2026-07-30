@@ -10,7 +10,7 @@ import type {
   DiagnosticSink,
   LineRange,
   Signature,
-  SymbolDecl,
+  SymbolOverviewNode,
   SymbolIdentity,
 } from "@symnav/core";
 import { splitSignatureLines } from "@symnav/core";
@@ -46,7 +46,7 @@ function identityFor(scope: ExtractionScope, name: string): SymbolIdentity {
 function extractChildren(
   parent: ClassDeclaration | InterfaceDeclaration | ModuleDeclaration,
   scope: ExtractionScope,
-): readonly SymbolDecl[] {
+): readonly SymbolOverviewNode[] {
   if (Node.isClassDeclaration(parent) || Node.isInterfaceDeclaration(parent)) {
     return parent.getMembers().flatMap((member) => toMemberDecl(member, scope));
   }
@@ -66,7 +66,7 @@ function hasChildren(
 export function extractStatementDecls(
   statements: readonly Node[],
   scope: ExtractionScope,
-): readonly SymbolDecl[] {
+): readonly SymbolOverviewNode[] {
   return statements.flatMap((stmt) => toStatementDecl(stmt, scope));
 }
 
@@ -100,7 +100,7 @@ const IGNORED_MEMBER_KINDS: ReadonlySet<SyntaxKind> = new Set([
   SyntaxKind.SemicolonClassElement,
 ]);
 
-function toMemberDecl(member: Node, scope: ExtractionScope): SymbolDecl[] {
+function toMemberDecl(member: Node, scope: ExtractionScope): SymbolOverviewNode[] {
   const kind = nodeKind(member);
   if (!kind) {
     if (IGNORED_MEMBER_KINDS.has(member.getKind())) return [];
@@ -114,7 +114,7 @@ function buildMemberDecl(
   member: Node,
   kind: NonNullable<ReturnType<typeof nodeKind>>,
   scope: ExtractionScope,
-): SymbolDecl {
+): SymbolOverviewNode {
   const range = nodeRange(member);
   const name = nodeName(member);
   const refined = refineLabel(member, kind);
@@ -138,7 +138,7 @@ function expandOverloads(member: Node): Node[] {
   return [member];
 }
 
-function toStatementDecl(stmt: Node, scope: ExtractionScope): SymbolDecl[] {
+function toStatementDecl(stmt: Node, scope: ExtractionScope): SymbolOverviewNode[] {
   const kind = nodeKind(stmt);
   if (!kind) {
     if (IGNORED_STATEMENT_KINDS.has(stmt.getKind())) return [];
@@ -163,7 +163,10 @@ function toStatementDecl(stmt: Node, scope: ExtractionScope): SymbolDecl[] {
   ];
 }
 
-function expandVariableStatement(stmt: VariableStatement, scope: ExtractionScope): SymbolDecl[] {
+function expandVariableStatement(
+  stmt: VariableStatement,
+  scope: ExtractionScope,
+): SymbolOverviewNode[] {
   const declList = stmt.getDeclarationList();
   const range = nodeRange(stmt);
   return declList.getDeclarations().map((decl) => ({

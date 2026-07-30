@@ -3,7 +3,6 @@ export type {
   SymbolKind,
   LineRange,
   Signature,
-  SymbolDecl,
   OverviewFileSymbols,
   ResultWithDiagnostics,
   ResolveResult,

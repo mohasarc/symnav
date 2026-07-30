@@ -2,7 +2,7 @@ import type {
   CallTargetResolution,
   FileSystem,
   ResolvedPath,
-  SymbolDecl,
+  SymbolOverviewNode,
   SymbolIdentity,
 } from "@symnav/core";
 
@@ -27,6 +27,6 @@ export async function findCallTarget(args: FindCallTargetArgs): Promise<CallTarg
   return { outcome: "resolved", target: definitions[0]! };
 }
 
-function carriesBody(declaration: SymbolDecl): boolean {
+function carriesBody(declaration: SymbolOverviewNode): boolean {
   return declaration.kind.nativeLabel.endsWith("-implementation");
 }

@@ -5,7 +5,7 @@ import type {
   OverviewFileSymbols,
   RefsResult,
   ResolveResult,
-  SymbolDecl,
+  SymbolOverviewNode,
 } from "@symnav/core";
 import { defCommand } from "./def/def-command.js";
 import { graphCommand } from "./graph/graph-command.js";
@@ -13,7 +13,10 @@ import { overviewCommand } from "./overview/overview-command.js";
 import { refsCommand } from "./refs/refs-command.js";
 import { resolveCommand } from "./resolve/resolve-command.js";
 
-const symbol = (name: string, children: readonly SymbolDecl[] = []): SymbolDecl => ({
+const symbol = (
+  name: string,
+  children: readonly SymbolOverviewNode[] = [],
+): SymbolOverviewNode => ({
   type: "symbol",
   identity: { file: "src/a.ts", segments: [{ name }] },
   kind: { role: "callable", nativeLabel: "function" },

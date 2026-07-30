@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { InMemoryFileSystem, type ResolvedPath, type SymbolDecl } from "@symnav/core";
+import { InMemoryFileSystem, type ResolvedPath, type SymbolOverviewNode } from "@symnav/core";
 
 import { TypeScriptBackend } from "../../src/typescript-backend/typescript-backend.js";
 
@@ -83,7 +83,7 @@ function backend(): TypeScriptBackend {
   return new TypeScriptBackend(new InMemoryFileSystem(CALL_GRAPH_CASES));
 }
 
-function leafLabel(decl: SymbolDecl): string {
+function leafLabel(decl: SymbolOverviewNode): string {
   return decl.kind.nativeLabel;
 }
 

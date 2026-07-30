@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import type { ContextResult, ReferenceKind, SymbolDecl } from "@symnav/core";
+import type { ContextResult, ReferenceKind, SymbolOverviewNode } from "@symnav/core";
 
 import { renderContextJson } from "./render-context-json.js";
 
@@ -10,7 +10,7 @@ function emptyKindCounts(): Record<ReferenceKind, number> {
 
 describe("renderContextJson", () => {
   it("serializes the result verbatim with a trailing newline", () => {
-    const target: SymbolDecl = {
+    const target: SymbolOverviewNode = {
       type: "symbol",
       identity: {
         file: "src/checkout/CheckoutService.ts",

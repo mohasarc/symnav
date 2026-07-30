@@ -9,7 +9,7 @@ import type {
   SymbolReference,
   ResolveSymbolsOptions,
   ResolvedPath,
-  SymbolDecl,
+  SymbolOverviewNode,
   SymbolIdentity,
 } from "@symnav/core";
 import { CollectingDiagnosticSink, FileNotFoundError } from "@symnav/core";
@@ -54,14 +54,14 @@ export class TypeScriptBackend implements LanguageBackend {
     files: readonly ResolvedPath[],
     query: string,
     options: ResolveSymbolsOptions,
-  ): Promise<readonly SymbolDecl[]> {
+  ): Promise<readonly SymbolOverviewNode[]> {
     return resolveSymbols({ fs: this.fs, files, query, options });
   }
 
   async findDefinitions(
     files: readonly ResolvedPath[],
     identity: SymbolIdentity,
-  ): Promise<readonly SymbolDecl[]> {
+  ): Promise<readonly SymbolOverviewNode[]> {
     return findDefinitions({ fs: this.fs, files, identity });
   }
 

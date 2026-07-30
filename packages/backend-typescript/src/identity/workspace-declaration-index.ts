@@ -1,5 +1,5 @@
 import { Project, type Node, type SourceFile } from "ts-morph";
-import type { FileSystem, ResolvedPath, SymbolDecl, SymbolIdentity } from "@symnav/core";
+import type { FileSystem, ResolvedPath, SymbolOverviewNode, SymbolIdentity } from "@symnav/core";
 import { walkOverviewSymbols } from "@symnav/core";
 
 import { extractFileSymbols } from "../extract/extract-file-symbols.js";
@@ -12,7 +12,7 @@ export interface WorkspaceDeclarationIndexArgs {
 }
 
 export interface IndexedDeclaration {
-  readonly declaration: SymbolDecl;
+  readonly declaration: SymbolOverviewNode;
   readonly file: ResolvedPath;
 }
 
@@ -21,7 +21,7 @@ export class WorkspaceDeclarationIndex {
   private readonly fileByRelativePath = new Map<string, ResolvedPath>();
   private readonly relativePathByAbsolute = new Map<string, string>();
   private readonly declarationsByIdentity = new Map<string, IndexedDeclaration>();
-  private readonly declarationsByLocation = new Map<string, Map<number, SymbolDecl>>();
+  private readonly declarationsByLocation = new Map<string, Map<number, SymbolOverviewNode>>();
 
   constructor(private readonly args: WorkspaceDeclarationIndexArgs) {
     this.project = new Project({ fileSystem: new WorkspaceFileSystemHost(args.fs) });
@@ -41,7 +41,7 @@ export class WorkspaceDeclarationIndex {
     return new DeclarationLocator(sourceFile).locate(identity);
   }
 
-  declarationAt(node: Node): SymbolDecl | undefined {
+  declarationAt(node: Node): SymbolOverviewNode | undefined {
     const relative = this.relativePathOf(node.getSourceFile());
     if (!relative) return undefined;
     return this.declarationsByLocation.get(relative)?.get(node.getStartLineNumber());
@@ -67,7 +67,7 @@ export class WorkspaceDeclarationIndex {
     for (const [relative, path] of this.fileByRelativePath) {
       const sourceFile = this.project.getSourceFile(path.absolute);
       if (!sourceFile) continue;
-      const byLine = new Map<number, SymbolDecl>();
+      const byLine = new Map<number, SymbolOverviewNode>();
       const { entries } = extractFileSymbols({ sourceFile, filePath: relative });
       for (const declaration of walkOverviewSymbols(entries)) {
         this.declarationsByIdentity.set(DeclarationLocator.identityKey(declaration.identity), {

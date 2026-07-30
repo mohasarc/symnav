@@ -9,7 +9,7 @@ import type {
   ReExportOverviewNode,
   SymbolOverviewNode,
 } from "./overview-tree.js";
-import type { SymbolDecl, SymbolKind } from "./types.js";
+import type { SymbolKind } from "./types.js";
 
 const CALLABLE_METHOD: SymbolKind = { role: "callable", nativeLabel: "method" };
 const CALLABLE_GETTER: SymbolKind = { role: "callable", nativeLabel: "getter" };
@@ -25,7 +25,7 @@ interface DeclSpec {
 function buildSiblings(
   specs: readonly DeclSpec[],
   ancestors: readonly string[] = [],
-): SymbolDecl[] {
+): SymbolOverviewNode[] {
   return specs.map((spec) => {
     const lineage = [...ancestors, spec.name];
     return {
@@ -39,7 +39,7 @@ function buildSiblings(
   });
 }
 
-function disambiguatorOf(decl: SymbolDecl): number | undefined {
+function disambiguatorOf(decl: SymbolOverviewNode): number | undefined {
   return decl.identity.segments[decl.identity.segments.length - 1]?.disambiguator;
 }
 

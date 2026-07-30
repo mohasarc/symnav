@@ -4,12 +4,12 @@ import type { CappedCertainCallEdges, ContextResult } from "./context-result.js"
 import { countReferenceKinds } from "./reference-kinds.js";
 import type { SymbolReference } from "./references.js";
 import type { SymbolIdentity } from "./symbol-identity.js";
-import type { SymbolDecl } from "./types.js";
+import type { SymbolOverviewNode } from "./overview-tree.js";
 
 export interface BuildContextResultArgs {
   readonly identity: SymbolIdentity;
-  readonly target: SymbolDecl;
-  readonly definitions: readonly SymbolDecl[];
+  readonly target: SymbolOverviewNode;
+  readonly definitions: readonly SymbolOverviewNode[];
   readonly callerEdgesWithAnyConfidence: readonly CallEdge[];
   readonly calleeEdgesWithAnyConfidence: readonly CallEdge[];
   readonly references: readonly SymbolReference[];

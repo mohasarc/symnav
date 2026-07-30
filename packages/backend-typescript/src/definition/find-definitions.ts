@@ -7,7 +7,7 @@ import {
   type ModuleDeclaration,
   type SourceFile,
 } from "ts-morph";
-import type { FileSystem, ResolvedPath, SymbolDecl, SymbolIdentity } from "@symnav/core";
+import type { FileSystem, ResolvedPath, SymbolOverviewNode, SymbolIdentity } from "@symnav/core";
 
 import { DeclarationLocator, type LocatedDeclaration } from "../identity/locate-declarations.js";
 import { WorkspaceDeclarationIndex } from "../identity/workspace-declaration-index.js";
@@ -18,7 +18,9 @@ export interface FindDefinitionsArgs {
   readonly identity: SymbolIdentity;
 }
 
-export async function findDefinitions(args: FindDefinitionsArgs): Promise<readonly SymbolDecl[]> {
+export async function findDefinitions(
+  args: FindDefinitionsArgs,
+): Promise<readonly SymbolOverviewNode[]> {
   return new DefinitionFinder(args).find();
 }
 
@@ -29,14 +31,16 @@ class DefinitionFinder {
     this.index = new WorkspaceDeclarationIndex(args);
   }
 
-  async find(): Promise<readonly SymbolDecl[]> {
+  async find(): Promise<readonly SymbolOverviewNode[]> {
     const matches = this.index.locate(this.args.identity);
     return this.withContractImplementations(matches);
   }
 
-  private withContractImplementations(matches: readonly LocatedDeclaration[]): SymbolDecl[] {
+  private withContractImplementations(
+    matches: readonly LocatedDeclaration[],
+  ): SymbolOverviewNode[] {
     const seen = new Set<string>();
-    const out: SymbolDecl[] = [];
+    const out: SymbolOverviewNode[] = [];
     for (const match of matches) {
       addUniqueDeclaration(out, seen, match.declaration);
       if (!isContract(match.node)) continue;
@@ -47,11 +51,11 @@ class DefinitionFinder {
     return out;
   }
 
-  private implementationsOf(node: Node): SymbolDecl[] {
+  private implementationsOf(node: Node): SymbolOverviewNode[] {
     if (!Node.isMethodSignature(node) && !Node.isMethodDeclaration(node)) return [];
     const nameNode = node.getNameNode();
     if (!Node.isIdentifier(nameNode)) return [];
-    const out: SymbolDecl[] = [];
+    const out: SymbolOverviewNode[] = [];
     for (const location of nameNode.getImplementations()) {
       const owner = enclosingMethod(location.getNode());
       if (!owner || owner === node) continue;
@@ -63,7 +67,7 @@ class DefinitionFinder {
 
   private indexedDeclarationFor(
     methodNode: MethodDeclaration | MethodSignature,
-  ): SymbolDecl | undefined {
+  ): SymbolOverviewNode | undefined {
     const filePath = this.workspaceRelativePathOf(methodNode.getSourceFile());
     if (!filePath) return undefined;
     const segments = [...enclosingTypeNames(methodNode), methodNode.getName()].map((name) => ({
@@ -77,7 +81,11 @@ class DefinitionFinder {
   }
 }
 
-function addUniqueDeclaration(out: SymbolDecl[], seen: Set<string>, declaration: SymbolDecl): void {
+function addUniqueDeclaration(
+  out: SymbolOverviewNode[],
+  seen: Set<string>,
+  declaration: SymbolOverviewNode,
+): void {
   const key = DeclarationLocator.identityKey(declaration.identity);
   if (seen.has(key)) return;
   seen.add(key);

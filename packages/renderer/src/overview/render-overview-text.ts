@@ -1,4 +1,9 @@
-import type { OverviewFileSymbols, OverviewNode, Signature, SymbolDecl } from "@symnav/core";
+import type {
+  OverviewFileSymbols,
+  OverviewNode,
+  Signature,
+  SymbolOverviewNode,
+} from "@symnav/core";
 
 import { formatHeadLine, formatIdentityPath, treeGlyphsFor } from "../shared/render-format.js";
 import {
@@ -17,19 +22,19 @@ export function renderOverviewText(file: OverviewFileSymbols): string {
   return formatOverviewHeader(file.file) + renderTopLevelChildren(symbolNodes(file.entries));
 }
 
-function renderTopLevelChildren(children: readonly SymbolDecl[]): string {
+function renderTopLevelChildren(children: readonly SymbolOverviewNode[]): string {
   return children
     .map((child, index) => renderChild(child, "", index === children.length - 1))
     .join(TOP_LEVEL_SEPARATOR);
 }
 
-function renderChildren(children: readonly SymbolDecl[], parentPrefix: string): string {
+function renderChildren(children: readonly SymbolOverviewNode[], parentPrefix: string): string {
   return children
     .map((child, index) => renderChild(child, parentPrefix, index === children.length - 1))
     .join("");
 }
 
-function renderChild(decl: SymbolDecl, parentPrefix: string, isLast: boolean): string {
+function renderChild(decl: SymbolOverviewNode, parentPrefix: string, isLast: boolean): string {
   const { branchGlyph, continuationGlyph } = treeGlyphsFor(isLast);
   const headLine = formatHeadLine(
     parentPrefix + branchGlyph,
@@ -48,6 +53,6 @@ function renderSignature(header: Signature, prefix: string): string {
     .join("");
 }
 
-function symbolNodes(nodes: readonly OverviewNode[]): readonly SymbolDecl[] {
-  return nodes.filter((node): node is SymbolDecl => node.type === "symbol");
+function symbolNodes(nodes: readonly OverviewNode[]): readonly SymbolOverviewNode[] {
+  return nodes.filter((node): node is SymbolOverviewNode => node.type === "symbol");
 }

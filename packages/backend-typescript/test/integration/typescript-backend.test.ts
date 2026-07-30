@@ -4,6 +4,7 @@ import {
   FileNotFoundError,
   InMemoryFileSystem,
   type FileSystem,
+  type OverviewNode,
   type ResolvedPath,
   walkOverviewSymbols,
 } from "@symnav/core";
@@ -11,6 +12,10 @@ import {
 import { extractFileEntries } from "../../src/extract/extract-file-entries.js";
 import { TypeScriptBackend } from "../../src/typescript-backend/typescript-backend.js";
 import { parseTypeScriptSource } from "../helpers/parse-typescript-source.js";
+
+function symbolChildrenOf(node: OverviewNode | undefined): readonly OverviewNode[] {
+  return node?.type === "symbol" ? node.children : [];
+}
 
 function backendOver(files: Record<string, string>): {
   backend: TypeScriptBackend;
@@ -148,7 +153,7 @@ describe("TypeScriptBackend.fileEntries", () => {
     });
     const result = await backend.fileEntries(path("src/control-flow.ts"));
     expect(
-      walkOverviewSymbols(result.entries[0]?.children ?? []).map(
+      walkOverviewSymbols(symbolChildrenOf(result.entries[0])).map(
         (symbol) => symbol.identity.segments.at(-1)?.name,
       ),
     ).toEqual(["insideIf"]);

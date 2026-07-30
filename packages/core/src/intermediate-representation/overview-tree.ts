@@ -6,13 +6,13 @@ export type OverviewNode = SymbolOverviewNode | FoldOverviewNode | ReExportOverv
 export interface OverviewNodeBase {
   readonly range: LineRange;
   readonly header: Signature;
-  readonly children: readonly OverviewNode[];
 }
 
 export interface SymbolOverviewNode extends OverviewNodeBase {
   readonly type: "symbol";
   readonly identity: SymbolIdentity;
   readonly kind: SymbolKind;
+  readonly children: readonly OverviewNode[];
 }
 
 export type FoldKind =
@@ -29,6 +29,7 @@ export type FoldKind =
 export interface FoldOverviewNode extends OverviewNodeBase {
   readonly type: "fold";
   readonly foldKind: FoldKind;
+  readonly children: readonly OverviewNode[];
 }
 
 export interface ReExportOverviewNode extends OverviewNodeBase {
@@ -54,6 +55,9 @@ export function walkOverviewSymbols(
 }
 
 function collectSymbols(node: OverviewNode, symbols: SymbolOverviewNode[]): void {
+  if (node.type === "re-export") {
+    return;
+  }
   if (node.type === "symbol") {
     symbols.push(node);
   }

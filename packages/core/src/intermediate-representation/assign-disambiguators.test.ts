@@ -64,7 +64,7 @@ function fold(children: readonly OverviewNode[] = []): FoldOverviewNode {
   };
 }
 
-function reExport(children: readonly OverviewNode[] = []): ReExportOverviewNode {
+function reExport(): ReExportOverviewNode {
   return {
     type: "re-export",
     exportKind: "named",
@@ -72,7 +72,6 @@ function reExport(children: readonly OverviewNode[] = []): ReExportOverviewNode 
     sourceModule: "./other.js",
     range: { startLine: 1, endLine: 1 },
     header: { startLine: 1, lines: ["export { m } from './other.js'"] },
-    children,
   };
 }
 
@@ -180,16 +179,16 @@ describe("assignDisambiguators", () => {
     expect(second?.type === "symbol" ? disambiguatorOf(second) : undefined).toBe(2);
   });
 
-  it("counts symbols behind transparent overview nodes in the containing sibling scope", () => {
+  it("counts symbols behind fold nodes in the containing sibling scope", () => {
     const result = assignOverviewDisambiguators([
       overviewSymbol("m"),
       fold([overviewSymbol("m")]),
-      reExport([overviewSymbol("m")]),
+      reExport(),
     ]);
     const ids = walkOverviewSymbols(result).map((symbol) => formatSymbolIdentity(symbol.identity));
 
-    expect(ids).toEqual(["src/foo.ts::m#1", "src/foo.ts::m#2", "src/foo.ts::m#3"]);
+    expect(ids).toEqual(["src/foo.ts::m#1", "src/foo.ts::m#2"]);
     expect("identity" in result[1]!).toBe(false);
-    expect("identity" in result[2]!).toBe(false);
+    expect(result[2]).toEqual(reExport());
   });
 });

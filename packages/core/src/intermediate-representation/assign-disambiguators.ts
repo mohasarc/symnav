@@ -53,6 +53,7 @@ function transparentScopeSymbols(
 ): readonly DisambiguatedSymbol[] {
   return siblings.flatMap((sibling) => {
     if (isSymbolNode(sibling)) return [sibling];
+    if (sibling.type === "re-export") return [];
     return transparentScopeSymbols(sibling.children);
   });
 }
@@ -63,6 +64,9 @@ function assignNodeInScope<T extends DisambiguatedNode>(
   assignedCountsByName: Map<string, number>,
 ): T {
   if (!isSymbolNode(node)) {
+    if (node.type === "re-export") {
+      return node;
+    }
     return {
       ...node,
       children: node.children.map((child) =>
@@ -103,6 +107,9 @@ function stampSegmentDisambiguator(
   disambiguator: number,
 ): DisambiguatedNode {
   if (!isSymbolNode(decl)) {
+    if (decl.type === "re-export") {
+      return decl;
+    }
     return {
       ...decl,
       children: decl.children.map((child) =>

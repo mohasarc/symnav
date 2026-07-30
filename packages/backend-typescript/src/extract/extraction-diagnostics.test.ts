@@ -1,10 +1,14 @@
 import { Node, SyntaxKind, type ClassDeclaration } from "ts-morph";
 import { describe, expect, it } from "vitest";
-import { CollectingDiagnosticSink, walkOverviewSymbols } from "@symnav/core";
+import { CollectingDiagnosticSink, walkOverviewSymbols, type OverviewNode } from "@symnav/core";
 
 import { parseTypeScriptSource } from "../../test/helpers/parse-typescript-source.js";
 import { extractStatementDecls } from "./extract-children.js";
 import { extractFileEntries } from "./extract-file-entries.js";
+
+function symbolChildrenOf(node: OverviewNode | undefined): readonly OverviewNode[] {
+  return node?.type === "symbol" ? node.children : [];
+}
 
 describe("extraction diagnostics", () => {
   it("reports an unrecognised statement kind once per file and kind", () => {
@@ -68,7 +72,7 @@ describe("extraction diagnostics", () => {
     });
 
     expect(
-      walkOverviewSymbols(result.entries[0]?.children ?? []).map(
+      walkOverviewSymbols(symbolChildrenOf(result.entries[0])).map(
         (symbol) => symbol.identity.segments.at(-1)?.name,
       ),
     ).toEqual(["render"]);

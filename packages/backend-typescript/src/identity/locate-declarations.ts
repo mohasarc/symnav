@@ -116,5 +116,6 @@ export class DeclarationLocator {
 
 function symbolScopeChildren(node: OverviewNode): readonly SymbolOverviewNode[] {
   if (node.type === "symbol") return [node];
+  if (node.type === "re-export") return [];
   return node.children.flatMap((child) => symbolScopeChildren(child));
 }

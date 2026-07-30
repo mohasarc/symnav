@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { assignDisambiguators, assignOverviewDisambiguators } from "./assign-disambiguators.js";
 import { formatSymbolIdentity } from "./canonical-identity.js";
-import { walkOverviewSymbols } from "./overview-tree.js";
+import { OverviewTree } from "./overview-tree.js";
 import type {
   FoldOverviewNode,
   OverviewNode,
@@ -28,14 +28,13 @@ function buildSiblings(
 ): SymbolOverviewNode[] {
   return specs.map((spec) => {
     const lineage = [...ancestors, spec.name];
-    return {
-      type: "symbol",
+    return OverviewTree.symbol({
       identity: { file: "src/foo.ts", segments: lineage.map((name) => ({ name })) },
       kind: spec.kind ?? CALLABLE_METHOD,
       range: { startLine: 1, endLine: 1 },
       header: { startLine: 1, lines: [spec.name] },
       children: buildSiblings(spec.children ?? [], lineage),
-    };
+    });
   });
 }
 
@@ -44,35 +43,31 @@ function disambiguatorOf(decl: SymbolOverviewNode): number | undefined {
 }
 
 function overviewSymbol(name: string): SymbolOverviewNode {
-  return {
-    type: "symbol",
+  return OverviewTree.symbol({
     identity: { file: "src/foo.ts", segments: [{ name }] },
     kind: CALLABLE_METHOD,
     range: { startLine: 1, endLine: 1 },
     header: { startLine: 1, lines: [name] },
-    children: [],
-  };
+  });
 }
 
 function fold(children: readonly OverviewNode[] = []): FoldOverviewNode {
-  return {
-    type: "fold",
+  return OverviewTree.fold({
     foldKind: "block",
     range: { startLine: 1, endLine: 1 },
     header: { startLine: 1, lines: ["{"] },
     children,
-  };
+  });
 }
 
 function reExport(): ReExportOverviewNode {
-  return {
-    type: "re-export",
+  return OverviewTree.reExport({
     exportKind: "named",
     exportedNames: ["m"],
     sourceModule: "./other.js",
     range: { startLine: 1, endLine: 1 },
     header: { startLine: 1, lines: ["export { m } from './other.js'"] },
-  };
+  });
 }
 
 describe("assignDisambiguators", () => {
@@ -115,7 +110,7 @@ describe("assignDisambiguators", () => {
         { name: "Inner", kind: CONTAINER_CLASS, children: [{ name: "m" }, { name: "m" }] },
       ]),
     );
-    expect(walkOverviewSymbols(result[0]!.children).map(disambiguatorOf)).toEqual([1, 2]);
+    expect(OverviewTree.walkSymbols(result[0]!.children).map(disambiguatorOf)).toEqual([1, 2]);
   });
 
   it("only disambiguates within the same sibling scope (independent groups don't share counts)", () => {
@@ -125,8 +120,8 @@ describe("assignDisambiguators", () => {
         { name: "B", kind: CONTAINER_CLASS, children: [{ name: "m" }, { name: "m" }] },
       ]),
     );
-    expect(walkOverviewSymbols(result[0]!.children).map(disambiguatorOf)).toEqual([1, 2]);
-    expect(walkOverviewSymbols(result[1]!.children).map(disambiguatorOf)).toEqual([1, 2]);
+    expect(OverviewTree.walkSymbols(result[0]!.children).map(disambiguatorOf)).toEqual([1, 2]);
+    expect(OverviewTree.walkSymbols(result[1]!.children).map(disambiguatorOf)).toEqual([1, 2]);
   });
 
   it("propagates a parent's disambiguator into its descendants' path prefix", () => {
@@ -136,8 +131,8 @@ describe("assignDisambiguators", () => {
         { name: "A", kind: CONTAINER_CLASS, children: [{ name: "m" }] },
       ]),
     );
-    const firstChild = walkOverviewSymbols(result[0]!.children)[0]!;
-    const secondChild = walkOverviewSymbols(result[1]!.children)[0]!;
+    const firstChild = OverviewTree.walkSymbols(result[0]!.children)[0]!;
+    const secondChild = OverviewTree.walkSymbols(result[1]!.children)[0]!;
     expect(formatSymbolIdentity(firstChild.identity)).toBe("src/foo.ts::A#1::m");
     expect(formatSymbolIdentity(secondChild.identity)).toBe("src/foo.ts::A#2::m");
   });
@@ -150,7 +145,7 @@ describe("assignDisambiguators", () => {
       ]),
     );
     const innerIds = result.flatMap((outer) =>
-      walkOverviewSymbols(outer.children).map((inner) => formatSymbolIdentity(inner.identity)),
+      OverviewTree.walkSymbols(outer.children).map((inner) => formatSymbolIdentity(inner.identity)),
     );
     expect(innerIds).toEqual([
       "src/foo.ts::A#1::B#1",
@@ -185,7 +180,9 @@ describe("assignDisambiguators", () => {
       fold([overviewSymbol("m")]),
       reExport(),
     ]);
-    const ids = walkOverviewSymbols(result).map((symbol) => formatSymbolIdentity(symbol.identity));
+    const ids = OverviewTree.walkSymbols(result).map((symbol) =>
+      formatSymbolIdentity(symbol.identity),
+    );
 
     expect(ids).toEqual(["src/foo.ts::m#1", "src/foo.ts::m#2"]);
     expect("identity" in result[1]!).toBe(false);

@@ -6,7 +6,7 @@ import {
   type FileSystem,
   type OverviewNode,
   type ResolvedPath,
-  walkOverviewSymbols,
+  OverviewTree,
 } from "@symnav/core";
 
 import { extractFileEntries } from "../../src/extract/extract-file-entries.js";
@@ -132,7 +132,7 @@ describe("TypeScriptBackend.fileEntries", () => {
     const { backend, path } = backendOver({ "/repo/src/greeting.tsx": tsxSource });
     const result = await backend.fileEntries(path("src/greeting.tsx"));
     expect(
-      walkOverviewSymbols(result.entries).map((s) => [
+      OverviewTree.walkSymbols(result.entries).map((s) => [
         s.kind.nativeLabel,
         s.identity.segments[s.identity.segments.length - 1]?.name,
       ]),
@@ -153,7 +153,7 @@ describe("TypeScriptBackend.fileEntries", () => {
     });
     const result = await backend.fileEntries(path("src/control-flow.ts"));
     expect(
-      walkOverviewSymbols(symbolChildrenOf(result.entries[0])).map(
+      OverviewTree.walkSymbols(symbolChildrenOf(result.entries[0])).map(
         (symbol) => symbol.identity.segments.at(-1)?.name,
       ),
     ).toEqual(["insideIf"]);

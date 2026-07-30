@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   formatSymbolIdentity,
   parseSymbolIdentity,
-  walkOverviewSymbols,
+  OverviewTree,
   type OverviewFileEntries,
   type SymbolOverviewNode,
 } from "@symnav/core";
@@ -16,16 +16,11 @@ function fileEntriesOf(source: string, filePath: string = "input.ts"): OverviewF
 }
 
 function symbolsOf(source: string, filePath: string = "input.ts"): readonly SymbolOverviewNode[] {
-  return walkOverviewSymbols(fileEntriesOf(source, filePath).entries);
+  return OverviewTree.walkSymbols(fileEntriesOf(source, filePath).entries);
 }
 
 function symbolChildren(decl: SymbolOverviewNode): readonly SymbolOverviewNode[] {
-  return walkOverviewSymbols(decl.children);
-}
-
-function ownName(decl: SymbolOverviewNode): string {
-  const segments = decl.identity.segments;
-  return segments[segments.length - 1]?.name ?? "";
+  return OverviewTree.walkSymbols(decl.children);
 }
 
 describe("extractFileEntries", () => {
@@ -51,7 +46,7 @@ describe("extractFileEntries", () => {
       "export default 42;",
     ].join("\n");
     const result = symbolsOf(source);
-    expect(result.map((s) => [s.kind.nativeLabel, ownName(s)])).toEqual([
+    expect(result.map((s) => [s.kind.nativeLabel, OverviewTree.ownName(s)])).toEqual([
       ["function-implementation", "fn"],
       ["class", "Cls"],
       ["interface", "Iface"],
@@ -78,7 +73,7 @@ describe("extractFileEntries", () => {
     const result = symbolsOf(source);
     const cls = result[0];
     if (!cls) throw new Error("expected class");
-    expect(symbolChildren(cls).map((c) => [c.kind.nativeLabel, ownName(c)])).toEqual([
+    expect(symbolChildren(cls).map((c) => [c.kind.nativeLabel, OverviewTree.ownName(c)])).toEqual([
       ["property", "prop"],
       ["constructor-implementation", "constructor"],
       ["method-implementation", "method"],
@@ -102,13 +97,15 @@ describe("extractFileEntries", () => {
     const result = symbolsOf(source);
     const iface = result[0];
     if (!iface) throw new Error("expected interface");
-    expect(symbolChildren(iface).map((c) => [c.kind.nativeLabel, ownName(c)])).toEqual([
-      ["property", "x"],
-      ["method-declaration", "m"],
-      ["index-signature", "[index]"],
-      ["call-signature", "()"],
-      ["construct-signature", "new()"],
-    ]);
+    expect(symbolChildren(iface).map((c) => [c.kind.nativeLabel, OverviewTree.ownName(c)])).toEqual(
+      [
+        ["property", "x"],
+        ["method-declaration", "m"],
+        ["index-signature", "[index]"],
+        ["call-signature", "()"],
+        ["construct-signature", "new()"],
+      ],
+    );
   });
 
   it("recurses through namespaces — nested function appears as a child function", () => {
@@ -121,7 +118,7 @@ describe("extractFileEntries", () => {
     expect(children).toHaveLength(1);
     expect(children[0]?.kind.nativeLabel).toBe("function-implementation");
     expect(children[0]).toBeDefined();
-    expect(ownName(children[0]!)).toBe("inner");
+    expect(OverviewTree.ownName(children[0]!)).toBe("inner");
   });
 
   it("a nested decl's identity carries the full ancestor chain in path", () => {
@@ -136,7 +133,7 @@ describe("extractFileEntries", () => {
 
   it("expands a single `const a = 1, b = 2;` into two separate variable decls with their own ranges", () => {
     const result = symbolsOf("const a = 1, b = 2;");
-    expect(result.map((s) => [s.kind.nativeLabel, ownName(s)])).toEqual([
+    expect(result.map((s) => [s.kind.nativeLabel, OverviewTree.ownName(s)])).toEqual([
       ["variable", "a"],
       ["variable", "b"],
     ]);
@@ -196,7 +193,7 @@ describe("extractFileEntries", () => {
   it("ignores namespace exports and keeps following declarations", () => {
     const source = ["export as namespace katex;", "export function render() {}"].join("\n");
     const result = symbolsOf(source);
-    expect(result.map((symbol) => ownName(symbol))).toEqual(["render"]);
+    expect(result.map((symbol) => OverviewTree.ownName(symbol))).toEqual(["render"]);
   });
 
   it("ignores expression statements and empty statements at the top level", () => {
@@ -236,7 +233,7 @@ describe("extractFileEntries", () => {
       "}",
     ].join("\n");
     const outer = symbolsOf(source)[0];
-    expect(outer ? symbolChildren(outer).map(ownName) : undefined).toEqual([
+    expect(outer ? symbolChildren(outer).map(OverviewTree.ownName) : undefined).toEqual([
       "insideIf",
       "insideLoop",
     ]);
@@ -247,7 +244,7 @@ describe("extractFileEntries", () => {
     const result = symbolsOf(source);
     const cls = result[0];
     if (!cls) throw new Error("expected class");
-    expect(symbolChildren(cls).map((c) => [c.kind.nativeLabel, ownName(c)])).toEqual([
+    expect(symbolChildren(cls).map((c) => [c.kind.nativeLabel, OverviewTree.ownName(c)])).toEqual([
       ["method-implementation", "m"],
     ]);
   });
@@ -258,7 +255,7 @@ describe("extractFileEntries", () => {
     if (!cls) throw new Error("expected class");
     const field = symbolChildren(cls)[0];
     if (!field) throw new Error("expected private field");
-    expect(ownName(field)).toBe("#secret");
+    expect(OverviewTree.ownName(field)).toBe("#secret");
     expect(parseSymbolIdentity(formatSymbolIdentity(field.identity))).toEqual(field.identity);
   });
 });

@@ -13,7 +13,7 @@ import type {
   SymbolOverviewNode,
   SymbolIdentity,
 } from "@symnav/core";
-import { splitSignatureLines } from "@symnav/core";
+import { OverviewTree, splitSignatureLines } from "@symnav/core";
 
 import { reportUnrecognisedNode } from "./extraction-diagnostics.js";
 import { extractSignatureSource } from "./extract-signature-source.js";
@@ -118,14 +118,12 @@ function buildMemberDecl(
   const range = nodeRange(member);
   const name = nodeName(member);
   const refined = refineLabel(member, kind);
-  return {
-    type: "symbol",
+  return OverviewTree.symbol({
     identity: identityFor(scope, name),
     kind: { role: roleOf(refined), nativeLabel: refined },
     range,
     header: signatureFrom(range.startLine, extractSignatureSource(member)),
-    children: [],
-  };
+  });
 }
 
 function expandOverloads(member: Node): Node[] {
@@ -152,14 +150,13 @@ function toStatementDecl(stmt: Node, scope: ExtractionScope): SymbolOverviewNode
   const name = nodeName(stmt);
   const refined = refineLabel(stmt, kind);
   return [
-    {
-      type: "symbol",
+    OverviewTree.symbol({
       identity: identityFor(scope, name),
       kind: { role: roleOf(refined), nativeLabel: refined },
       range,
       header: signatureFrom(range.startLine, extractSignatureSource(stmt)),
       children: hasChildren(stmt) ? extractChildren(stmt, childScope(scope, name)) : [],
-    },
+    }),
   ];
 }
 
@@ -169,17 +166,17 @@ function expandVariableStatement(
 ): SymbolOverviewNode[] {
   const declList = stmt.getDeclarationList();
   const range = nodeRange(stmt);
-  return declList.getDeclarations().map((decl) => ({
-    type: "symbol",
-    identity: identityFor(scope, decl.getName()),
-    kind: { role: roleOf("variable"), nativeLabel: "variable" },
-    range,
-    header: signatureFrom(
-      range.startLine,
-      extractVariableSignature({ statement: stmt, declaration: decl }),
-    ),
-    children: [],
-  }));
+  return declList.getDeclarations().map((decl) =>
+    OverviewTree.symbol({
+      identity: identityFor(scope, decl.getName()),
+      kind: { role: roleOf("variable"), nativeLabel: "variable" },
+      range,
+      header: signatureFrom(
+        range.startLine,
+        extractVariableSignature({ statement: stmt, declaration: decl }),
+      ),
+    }),
+  );
 }
 
 function signatureFrom(startLine: number, raw: string): Signature {

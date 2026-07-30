@@ -8,6 +8,8 @@ import type {
   SymbolOverviewNode,
 } from "@symnav/core";
 
+import { OverviewTree } from "@symnav/core";
+
 import { renderOverviewJson } from "./render-overview-json.js";
 
 interface DeclPartial {
@@ -19,24 +21,22 @@ interface DeclPartial {
 }
 
 function decl(partial: DeclPartial, file: string = "src/file.ts"): SymbolOverviewNode {
-  return {
-    type: "symbol",
+  return OverviewTree.symbol({
     identity: { file, segments: partial.segments },
     kind: partial.kind,
     range: partial.range ?? { startLine: 1, endLine: 1 },
     header: partial.header ?? { startLine: 1, lines: [""] },
     children: partial.children ?? [],
-  };
+  });
 }
 
 function fold(children: readonly OverviewNode[] = []): FoldOverviewNode {
-  return {
-    type: "fold",
+  return OverviewTree.fold({
     foldKind: "block",
     range: { startLine: 2, endLine: 4 },
     header: { startLine: 2, lines: ["{"] },
     children,
-  };
+  });
 }
 
 describe("renderOverviewJson", () => {

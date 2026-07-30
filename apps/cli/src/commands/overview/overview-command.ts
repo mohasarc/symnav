@@ -1,5 +1,5 @@
 import type { NavigationDiagnostic, OverviewFileEntries } from "@symnav/core";
-import { walkOverviewSymbols } from "@symnav/core";
+import { OverviewTree } from "@symnav/core";
 import { renderOverviewJson, renderOverviewText } from "@symnav/renderer";
 import type { Command, CommandContext } from "../../command.js";
 import { classifyArgKind, lengthBucketOf } from "../../telemetry/arg-shape.js";
@@ -18,7 +18,7 @@ export const overviewCommand: Command<OverviewFileEntries, OverviewArgs> = {
     };
   },
   countResults(result: OverviewFileEntries) {
-    return { symbols: walkOverviewSymbols(result.entries).length };
+    return { symbols: OverviewTree.walkSymbols(result.entries).length };
   },
   diagnostics(result: OverviewFileEntries): readonly NavigationDiagnostic[] {
     return result.diagnostics ?? [];

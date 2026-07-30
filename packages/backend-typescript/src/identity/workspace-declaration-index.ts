@@ -1,6 +1,6 @@
 import { Project, type Node, type SourceFile } from "ts-morph";
 import type { FileSystem, ResolvedPath, SymbolOverviewNode, SymbolIdentity } from "@symnav/core";
-import { walkOverviewSymbols } from "@symnav/core";
+import { OverviewTree } from "@symnav/core";
 
 import { extractFileEntries } from "../extract/extract-file-entries.js";
 import { WorkspaceFileSystemHost } from "../typescript-backend/workspace-file-system-host.js";
@@ -69,7 +69,7 @@ export class WorkspaceDeclarationIndex {
       if (!sourceFile) continue;
       const byLine = new Map<number, SymbolOverviewNode>();
       const { entries } = extractFileEntries({ sourceFile, filePath: relative });
-      for (const declaration of walkOverviewSymbols(entries)) {
+      for (const declaration of OverviewTree.walkSymbols(entries)) {
         this.declarationsByIdentity.set(DeclarationLocator.identityKey(declaration.identity), {
           declaration,
           file: path,

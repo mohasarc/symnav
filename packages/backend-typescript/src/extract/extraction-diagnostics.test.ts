@@ -1,6 +1,6 @@
 import { Node, SyntaxKind, type ClassDeclaration } from "ts-morph";
 import { describe, expect, it } from "vitest";
-import { CollectingDiagnosticSink, walkOverviewSymbols, type OverviewNode } from "@symnav/core";
+import { CollectingDiagnosticSink, OverviewTree, type OverviewNode } from "@symnav/core";
 
 import { parseTypeScriptSource } from "../../test/helpers/parse-typescript-source.js";
 import { extractStatementDecls } from "./extract-children.js";
@@ -49,7 +49,9 @@ describe("extraction diagnostics", () => {
     });
 
     expect(
-      walkOverviewSymbols(result.entries).map((symbol) => symbol.identity.segments.at(-1)?.name),
+      OverviewTree.walkSymbols(result.entries).map(
+        (symbol) => symbol.identity.segments.at(-1)?.name,
+      ),
     ).toEqual(["render"]);
     expect(diagnostics.diagnostics()).toEqual([]);
   });
@@ -72,7 +74,7 @@ describe("extraction diagnostics", () => {
     });
 
     expect(
-      walkOverviewSymbols(symbolChildrenOf(result.entries[0])).map(
+      OverviewTree.walkSymbols(symbolChildrenOf(result.entries[0])).map(
         (symbol) => symbol.identity.segments.at(-1)?.name,
       ),
     ).toEqual(["render"]);

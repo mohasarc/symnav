@@ -4,7 +4,7 @@ import type {
   ResolvedPath,
   SymbolOverviewNode,
 } from "@symnav/core";
-import { walkOverviewSymbols } from "@symnav/core";
+import { OverviewTree } from "@symnav/core";
 import fuzzysort from "fuzzysort";
 
 import { loadFileEntries } from "../extract/load-file-entries.js";
@@ -32,28 +32,23 @@ function extractAllSymbols(
 ): readonly SymbolOverviewNode[] {
   const all: SymbolOverviewNode[] = [];
   for (const file of files) {
-    all.push(...walkOverviewSymbols(loadFileEntries(fs, file).entries));
+    all.push(...OverviewTree.walkSymbols(loadFileEntries(fs, file).entries));
   }
   return all;
-}
-
-function ownName(decl: SymbolOverviewNode): string {
-  const segment = decl.identity.segments[decl.identity.segments.length - 1];
-  return segment?.name ?? "";
 }
 
 function exactMatch(
   candidates: readonly SymbolOverviewNode[],
   query: string,
 ): readonly SymbolOverviewNode[] {
-  return candidates.filter((decl) => ownName(decl) === query);
+  return candidates.filter((decl) => OverviewTree.ownName(decl) === query);
 }
 
 function fuzzyMatch(
   candidates: readonly SymbolOverviewNode[],
   query: string,
 ): readonly SymbolOverviewNode[] {
-  const indexed = candidates.map((decl) => ({ decl, name: ownName(decl) }));
+  const indexed = candidates.map((decl) => ({ decl, name: OverviewTree.ownName(decl) }));
   const results = fuzzysort.go(query, indexed, { key: "name" });
   return results.map((result) => result.obj.decl);
 }

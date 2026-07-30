@@ -1,9 +1,9 @@
 import { Node, type SourceFile } from "ts-morph";
-import type {
-  OverviewNode,
-  SymbolOverviewNode,
-  SymbolIdentity,
-  SymbolPathSegment,
+import {
+  OverviewTree,
+  type SymbolOverviewNode,
+  type SymbolIdentity,
+  type SymbolPathSegment,
 } from "@symnav/core";
 
 import { extractFileEntries } from "../extract/extract-file-entries.js";
@@ -30,14 +30,16 @@ export class DeclarationLocator {
     const { segments } = identity;
     const ownSegment = segments[segments.length - 1];
     if (!ownSegment) return [];
-    let candidates = extractFileEntries({
-      sourceFile: this.sourceFile,
-      filePath: identity.file,
-    }).entries.flatMap((entry) => symbolScopeChildren(entry));
+    let candidates = OverviewTree.scopeSymbols(
+      extractFileEntries({
+        sourceFile: this.sourceFile,
+        filePath: identity.file,
+      }).entries,
+    );
     for (const ancestorSegment of segments.slice(0, -1)) {
       candidates = candidates
         .filter((candidate) => this.ownSegmentMatches(candidate, ancestorSegment))
-        .flatMap((candidate) => candidate.children.flatMap((child) => symbolScopeChildren(child)));
+        .flatMap((candidate) => OverviewTree.scopeSymbols(candidate.children));
     }
     return candidates
       .filter((candidate) => this.ownSegmentMatches(candidate, ownSegment))
@@ -62,7 +64,7 @@ export class DeclarationLocator {
       if (found) return;
       if (!this.isDefinitionNode(node)) return;
       if (node.getStartLineNumber() !== startLine) return;
-      if (this.declarationName(node) !== this.ownName(declaration)) return;
+      if (this.declarationName(node) !== OverviewTree.ownName(declaration)) return;
       found = node;
     });
     return found;
@@ -107,15 +109,4 @@ export class DeclarationLocator {
     }
     return undefined;
   }
-
-  private ownName(declaration: SymbolOverviewNode): string {
-    const own = declaration.identity.segments[declaration.identity.segments.length - 1];
-    return own?.name ?? "";
-  }
-}
-
-function symbolScopeChildren(node: OverviewNode): readonly SymbolOverviewNode[] {
-  if (node.type === "symbol") return [node];
-  if (node.type === "re-export") return [];
-  return node.children.flatMap((child) => symbolScopeChildren(child));
 }

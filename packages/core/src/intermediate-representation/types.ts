@@ -14,7 +14,7 @@ export interface LineRange {
   readonly endLine: number; // 1-based, inclusive; equals startLine for single-line decls
 }
 
-export interface Signature {
+export interface Header {
   readonly startLine: number; // 1-based source line of lines[0]
   readonly lines: readonly string[]; // each element single-line, no "\n"
 }

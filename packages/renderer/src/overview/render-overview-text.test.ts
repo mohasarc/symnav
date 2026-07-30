@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
 
 import { OverviewTree } from "@symnav/core";
-import type { OverviewFileEntries, Signature, SymbolOverviewNode } from "@symnav/core";
+import type { OverviewFileEntries, Header, SymbolOverviewNode } from "@symnav/core";
 
 import { renderOverviewText } from "./render-overview-text.js";
-import { SIGNATURE_CAP_LINES, SIGNATURE_ELLIPSIS } from "./signature-cap.js";
+import { HEADER_CAP_LINES, HEADER_ELLIPSIS } from "./header-cap.js";
 
 type DeclPartial = Pick<SymbolOverviewNode["identity"], "segments"> &
   Partial<Pick<SymbolOverviewNode, "range" | "header" | "children">> & {
@@ -22,7 +22,7 @@ function decl(partial: DeclPartial, file: string = "src/file.ts"): SymbolOvervie
   };
 }
 
-function signature(startLine: number, ...lines: string[]): Signature {
+function signature(startLine: number, ...lines: string[]): Header {
   return { startLine, lines };
 }
 
@@ -102,15 +102,15 @@ describe("renderOverviewText", () => {
     );
   });
 
-  it("returns signature lines at or under SIGNATURE_CAP_LINES unchanged", () => {
-    const lines = Array.from({ length: SIGNATURE_CAP_LINES }, (_, i) => `line ${i}`);
+  it("returns signature lines at or under HEADER_CAP_LINES unchanged", () => {
+    const lines = Array.from({ length: HEADER_CAP_LINES }, (_, i) => `line ${i}`);
     const file: OverviewFileEntries = {
       file: "src/file.ts",
       entries: [
         decl({
           kind: "function",
           segments: [{ name: "wide" }],
-          range: { startLine: 1, endLine: SIGNATURE_CAP_LINES },
+          range: { startLine: 1, endLine: HEADER_CAP_LINES },
           header: signature(1, ...lines),
         }),
       ],
@@ -119,11 +119,11 @@ describe("renderOverviewText", () => {
     for (let i = 0; i < lines.length; i += 1) {
       expect(output).toContain(`${i + 1} line ${i}\n`);
     }
-    expect(output).not.toContain(SIGNATURE_ELLIPSIS);
+    expect(output).not.toContain(HEADER_ELLIPSIS);
   });
 
   it("caps an oversized signature by line count with a final elision marker", () => {
-    const lines = Array.from({ length: SIGNATURE_CAP_LINES + 5 }, (_, i) => `line ${i}`);
+    const lines = Array.from({ length: HEADER_CAP_LINES + 5 }, (_, i) => `line ${i}`);
     const file: OverviewFileEntries = {
       file: "src/file.ts",
       entries: [
@@ -136,8 +136,8 @@ describe("renderOverviewText", () => {
       ],
     };
     const output = renderOverviewText(file);
-    expect(output).toContain(`${SIGNATURE_CAP_LINES} ${SIGNATURE_ELLIPSIS}\n`);
-    expect(output).not.toContain(`line ${SIGNATURE_CAP_LINES}`);
+    expect(output).toContain(`${HEADER_CAP_LINES} ${HEADER_ELLIPSIS}\n`);
+    expect(output).not.toContain(`line ${HEADER_CAP_LINES}`);
   });
 
   it("renders multiple top-level entries as tree children of the file path", () => {

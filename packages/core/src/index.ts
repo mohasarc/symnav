@@ -2,7 +2,7 @@ export type {
   SymbolRole,
   SymbolKind,
   LineRange,
-  Signature,
+  Header,
   ResultWithDiagnostics,
   ResolveResult,
   DefinitionResult,
@@ -70,7 +70,7 @@ export {
   formatSymbolIdentity,
   parseSymbolIdentity,
 } from "./intermediate-representation/canonical-identity.js";
-export { splitSignatureLines } from "./intermediate-representation/split-signature-lines.js";
+export { splitHeaderLines } from "./intermediate-representation/split-header-lines.js";
 export { assignDisambiguators } from "./intermediate-representation/assign-disambiguators.js";
 export type { FileSystem } from "./workspace/file-system.js";
 export { NodeFileSystem } from "./workspace/node-file-system.js";

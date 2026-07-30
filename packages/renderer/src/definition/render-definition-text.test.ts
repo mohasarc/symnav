@@ -1,11 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import type {
-  DefinitionResult,
-  Signature,
-  SymbolOverviewNode,
-  SymbolPathSegment,
-} from "@symnav/core";
+import type { DefinitionResult, Header, SymbolOverviewNode, SymbolPathSegment } from "@symnav/core";
 
 import { renderDefinitionText } from "./render-definition-text.js";
 
@@ -19,7 +14,7 @@ interface DeclInput {
 }
 
 function decl(input: DeclInput): SymbolOverviewNode {
-  const sig: Signature = { startLine: input.startLine, lines: input.header };
+  const sig: Header = { startLine: input.startLine, lines: input.header };
   return {
     type: "symbol",
     identity: { file: input.file, segments: input.segments },

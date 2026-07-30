@@ -1,11 +1,11 @@
 import type { SymbolIdentity } from "./symbol-identity.js";
-import type { LineRange, ResultWithDiagnostics, Signature, SymbolKind } from "./types.js";
+import type { LineRange, ResultWithDiagnostics, Header, SymbolKind } from "./types.js";
 
 export type OverviewNode = SymbolOverviewNode | FoldOverviewNode | ReExportOverviewNode;
 
 export interface OverviewNodeBase {
   readonly range: LineRange;
-  readonly header: Signature;
+  readonly header: Header;
 }
 
 export interface SymbolOverviewNode extends OverviewNodeBase {

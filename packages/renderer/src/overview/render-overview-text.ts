@@ -1,13 +1,9 @@
 import { OverviewTree } from "@symnav/core";
-import type { OverviewFileEntries, Signature, SymbolOverviewNode } from "@symnav/core";
+import type { OverviewFileEntries, Header, SymbolOverviewNode } from "@symnav/core";
 
 import { formatHeadLine, formatIdentityPath, treeGlyphsFor } from "../shared/render-format.js";
-import {
-  formatEmptyOverview,
-  formatOverviewHeader,
-  formatSignatureLine,
-} from "./overview-format.js";
-import { capSignatureLines } from "./signature-cap.js";
+import { formatEmptyOverview, formatOverviewHeader, formatHeaderLine } from "./overview-format.js";
+import { capHeaderLines } from "./header-cap.js";
 
 const TOP_LEVEL_SEPARATOR = "│\n";
 
@@ -41,13 +37,13 @@ function renderChild(decl: SymbolOverviewNode, parentPrefix: string, isLast: boo
     formatIdentityPath(decl.identity),
   );
   const childPrefix = parentPrefix + continuationGlyph;
-  const signatureBlock = renderSignature(decl.header, childPrefix);
+  const headerBlock = renderHeader(decl.header, childPrefix);
   const childrenBlock = renderChildren(OverviewTree.scopeSymbols(decl.children), childPrefix);
-  return headLine + signatureBlock + childrenBlock;
+  return headLine + headerBlock + childrenBlock;
 }
 
-function renderSignature(header: Signature, prefix: string): string {
-  return capSignatureLines(header.lines)
-    .map((text, index) => formatSignatureLine(prefix, header.startLine + index, text))
+function renderHeader(header: Header, prefix: string): string {
+  return capHeaderLines(header.lines)
+    .map((text, index) => formatHeaderLine(prefix, header.startLine + index, text))
     .join("");
 }

@@ -1,10 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import {
-  formatEmptyOverview,
-  formatOverviewHeader,
-  formatSignatureLine,
-} from "./overview-format.js";
+import { formatEmptyOverview, formatOverviewHeader, formatHeaderLine } from "./overview-format.js";
 
 describe("overview-format", () => {
   describe("formatOverviewHeader", () => {
@@ -19,13 +15,13 @@ describe("overview-format", () => {
     });
   });
 
-  describe("formatSignatureLine", () => {
+  describe("formatHeaderLine", () => {
     it("composes prefix + line number + text with a single space and a trailing newline", () => {
-      expect(formatSignatureLine("", 10, "function configure(")).toBe("10 function configure(\n");
+      expect(formatHeaderLine("", 10, "function configure(")).toBe("10 function configure(\n");
     });
 
     it("preserves the caller-supplied prefix verbatim", () => {
-      expect(formatSignatureLine("│   ", 24, "constructor()")).toBe("│   24 constructor()\n");
+      expect(formatHeaderLine("│   ", 24, "constructor()")).toBe("│   24 constructor()\n");
     });
   });
 });

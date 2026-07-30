@@ -9,11 +9,11 @@ import {
 import type {
   DiagnosticSink,
   LineRange,
-  Signature,
+  Header,
   SymbolOverviewNode,
   SymbolIdentity,
 } from "@symnav/core";
-import { OverviewTree, splitSignatureLines } from "@symnav/core";
+import { OverviewTree, splitHeaderLines } from "@symnav/core";
 
 import { reportUnrecognisedNode } from "./extraction-diagnostics.js";
 import { extractSignatureSource } from "./extract-signature-source.js";
@@ -122,7 +122,7 @@ function buildMemberDecl(
     identity: identityFor(scope, name),
     kind: { role: roleOf(refined), nativeLabel: refined },
     range,
-    header: signatureFrom(range.startLine, extractSignatureSource(member)),
+    header: headerFrom(range.startLine, extractSignatureSource(member)),
   });
 }
 
@@ -154,7 +154,7 @@ function toStatementDecl(stmt: Node, scope: ExtractionScope): SymbolOverviewNode
       identity: identityFor(scope, name),
       kind: { role: roleOf(refined), nativeLabel: refined },
       range,
-      header: signatureFrom(range.startLine, extractSignatureSource(stmt)),
+      header: headerFrom(range.startLine, extractSignatureSource(stmt)),
       children: hasChildren(stmt) ? extractChildren(stmt, childScope(scope, name)) : [],
     }),
   ];
@@ -171,7 +171,7 @@ function expandVariableStatement(
       identity: identityFor(scope, decl.getName()),
       kind: { role: roleOf("variable"), nativeLabel: "variable" },
       range,
-      header: signatureFrom(
+      header: headerFrom(
         range.startLine,
         extractVariableSignature({ statement: stmt, declaration: decl }),
       ),
@@ -179,8 +179,8 @@ function expandVariableStatement(
   );
 }
 
-function signatureFrom(startLine: number, raw: string): Signature {
-  return { startLine, lines: splitSignatureLines(raw) };
+function headerFrom(startLine: number, raw: string): Header {
+  return { startLine, lines: splitHeaderLines(raw) };
 }
 
 function nodeName(node: Node): string {

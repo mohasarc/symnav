@@ -8,7 +8,6 @@ export type {
   DefinitionResult,
 } from "./intermediate-representation/types.js";
 export type {
-  FoldKind,
   FoldOverviewNode,
   OverviewFileEntries,
   OverviewNode,

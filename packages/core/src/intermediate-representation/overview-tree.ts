@@ -15,26 +15,15 @@ export interface SymbolOverviewNode extends OverviewNodeBase {
   readonly children: readonly OverviewNode[];
 }
 
-export type FoldKind =
-  | "call"
-  | "block"
-  | "loop"
-  | "conditional"
-  | "switch"
-  | "try"
-  | "catch"
-  | "finally"
-  | "callback";
-
 export interface FoldOverviewNode extends OverviewNodeBase {
   readonly type: "fold";
-  readonly foldKind: FoldKind;
+  readonly foldKind: string;
   readonly children: readonly OverviewNode[];
 }
 
 export interface ReExportOverviewNode extends OverviewNodeBase {
   readonly type: "re-export";
-  readonly exportKind: "named" | "namespace" | "star";
+  readonly exportKind: string;
   readonly exportedNames: readonly string[];
   readonly sourceModule: string | undefined;
 }

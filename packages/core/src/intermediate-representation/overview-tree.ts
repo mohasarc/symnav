@@ -38,7 +38,7 @@ export interface ReExportOverviewNode extends OverviewNodeBase {
   readonly sourceModule: string | undefined;
 }
 
-export interface OverviewFileSymbols extends ResultWithDiagnostics {
+export interface OverviewFileEntries extends ResultWithDiagnostics {
   readonly file: string;
   readonly entries: readonly OverviewNode[];
 }

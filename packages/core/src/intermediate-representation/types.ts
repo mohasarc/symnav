@@ -1,9 +1,6 @@
 import type { SymbolIdentity } from "./symbol-identity.js";
 import type { NavigationDiagnostic } from "../diagnostics/navigation-diagnostic.js";
-import type {
-  OverviewFileSymbols as OverviewTreeFileSymbols,
-  SymbolOverviewNode,
-} from "./overview-tree.js";
+import type { SymbolOverviewNode } from "./overview-tree.js";
 
 export type SymbolRole = "container" | "callable" | "value" | "type";
 
@@ -25,8 +22,6 @@ export interface Signature {
 export interface ResultWithDiagnostics {
   readonly diagnostics?: readonly NavigationDiagnostic[];
 }
-
-export type OverviewFileSymbols = OverviewTreeFileSymbols;
 
 export interface ResolveResult {
   readonly query: string;

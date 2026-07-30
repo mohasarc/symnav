@@ -1,4 +1,4 @@
-import type { NavigationDiagnostic, OverviewFileSymbols } from "@symnav/core";
+import type { NavigationDiagnostic, OverviewFileEntries } from "@symnav/core";
 import { walkOverviewSymbols } from "@symnav/core";
 import { renderOverviewJson, renderOverviewText } from "@symnav/renderer";
 import type { Command, CommandContext } from "../../command.js";
@@ -8,7 +8,7 @@ export interface OverviewArgs {
   readonly file: string;
 }
 
-export const overviewCommand: Command<OverviewFileSymbols, OverviewArgs> = {
+export const overviewCommand: Command<OverviewFileEntries, OverviewArgs> = {
   name: "overview",
   describeArgs(args: OverviewArgs) {
     return {
@@ -17,16 +17,16 @@ export const overviewCommand: Command<OverviewFileSymbols, OverviewArgs> = {
       flags: [],
     };
   },
-  countResults(result: OverviewFileSymbols) {
+  countResults(result: OverviewFileEntries) {
     return { symbols: walkOverviewSymbols(result.entries).length };
   },
-  diagnostics(result: OverviewFileSymbols): readonly NavigationDiagnostic[] {
+  diagnostics(result: OverviewFileEntries): readonly NavigationDiagnostic[] {
     return result.diagnostics ?? [];
   },
-  async compute(ctx: CommandContext<OverviewArgs>): Promise<OverviewFileSymbols> {
+  async compute(ctx: CommandContext<OverviewArgs>): Promise<OverviewFileEntries> {
     const path = await ctx.workspace.resolveInputPath(ctx.args.file, ctx.cwd);
     const backend = ctx.router.findOrThrow(path.relative);
-    return backend.fileSymbols(path);
+    return backend.fileEntries(path);
   },
   renderText: renderOverviewText,
   renderJson: renderOverviewJson,

@@ -6,7 +6,7 @@ import type { CallTargetResolution } from "../intermediate-representation/call-t
 import { formatSymbolIdentity } from "../intermediate-representation/canonical-identity.js";
 import type { SymbolReference } from "../intermediate-representation/references.js";
 import type { SymbolIdentity } from "../intermediate-representation/symbol-identity.js";
-import type { OverviewFileSymbols } from "../intermediate-representation/types.js";
+import type { OverviewFileEntries } from "../intermediate-representation/overview-tree.js";
 import type { SymbolOverviewNode } from "../intermediate-representation/overview-tree.js";
 import type { ResolvedPath } from "../workspace/workspace.js";
 import { GraphTraverser } from "./graph-traverser.js";
@@ -71,7 +71,7 @@ class FakeLanguageBackend implements LanguageBackend {
     throw new Error("not implemented");
   }
 
-  fileSymbols(): Promise<OverviewFileSymbols> {
+  fileEntries(): Promise<OverviewFileEntries> {
     throw new Error("not implemented");
   }
 

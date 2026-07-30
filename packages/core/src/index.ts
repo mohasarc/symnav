@@ -3,7 +3,6 @@ export type {
   SymbolKind,
   LineRange,
   Signature,
-  OverviewFileSymbols,
   ResultWithDiagnostics,
   ResolveResult,
   DefinitionResult,
@@ -11,6 +10,7 @@ export type {
 export type {
   FoldKind,
   FoldOverviewNode,
+  OverviewFileEntries,
   OverviewNode,
   OverviewNodeBase,
   ReExportOverviewNode,

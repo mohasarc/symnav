@@ -4,7 +4,7 @@ import { CollectingDiagnosticSink, walkOverviewSymbols } from "@symnav/core";
 
 import { parseTypeScriptSource } from "../../test/helpers/parse-typescript-source.js";
 import { extractStatementDecls } from "./extract-children.js";
-import { extractFileSymbols } from "./extract-file-symbols.js";
+import { extractFileEntries } from "./extract-file-entries.js";
 
 describe("extraction diagnostics", () => {
   it("reports an unrecognised statement kind once per file and kind", () => {
@@ -38,7 +38,7 @@ describe("extraction diagnostics", () => {
     );
     const diagnostics = new CollectingDiagnosticSink();
 
-    const result = extractFileSymbols({
+    const result = extractFileEntries({
       sourceFile,
       filePath: "src/input.ts",
       diagnostics,
@@ -61,7 +61,7 @@ describe("extraction diagnostics", () => {
     replaceMembers(box, [unhandled, unhandled, render]);
     const diagnostics = new CollectingDiagnosticSink();
 
-    const result = extractFileSymbols({
+    const result = extractFileEntries({
       sourceFile,
       filePath: "src/input.ts",
       diagnostics,

@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import type {
   FoldOverviewNode,
-  OverviewFileSymbols,
+  OverviewFileEntries,
   OverviewNode,
   SymbolKind,
   SymbolOverviewNode,
@@ -41,7 +41,7 @@ function fold(children: readonly OverviewNode[] = []): FoldOverviewNode {
 
 describe("renderOverviewJson", () => {
   it("mirrors overview entries verbatim with `children` always present on leaf decls", () => {
-    const file: OverviewFileSymbols = {
+    const file: OverviewFileEntries = {
       file: "src/file.ts",
       entries: [
         decl({
@@ -69,7 +69,7 @@ describe("renderOverviewJson", () => {
   });
 
   it("emits a discriminant for symbol and fold entries", () => {
-    const file: OverviewFileSymbols = {
+    const file: OverviewFileEntries = {
       file: "src/file.ts",
       entries: [
         decl({ kind: { role: "callable", nativeLabel: "function" }, segments: [{ name: "leaf" }] }),
@@ -77,13 +77,13 @@ describe("renderOverviewJson", () => {
       ],
     };
 
-    const parsed = JSON.parse(renderOverviewJson(file)) as OverviewFileSymbols;
+    const parsed = JSON.parse(renderOverviewJson(file)) as OverviewFileEntries;
 
     expect(parsed.entries.map((entry) => entry.type)).toEqual(["symbol", "fold"]);
   });
 
   it("emits 2-space-indented output with a trailing newline", () => {
-    const file: OverviewFileSymbols = {
+    const file: OverviewFileEntries = {
       file: "src/file.ts",
       entries: [
         decl({
@@ -103,7 +103,7 @@ describe("renderOverviewJson", () => {
   });
 
   it("emits the header object with its startLine and lines", () => {
-    const file: OverviewFileSymbols = {
+    const file: OverviewFileEntries = {
       file: "src/file.ts",
       entries: [
         decl({
@@ -117,7 +117,7 @@ describe("renderOverviewJson", () => {
         }),
       ],
     };
-    const parsed = JSON.parse(renderOverviewJson(file)) as OverviewFileSymbols;
+    const parsed = JSON.parse(renderOverviewJson(file)) as OverviewFileEntries;
     expect(parsed.entries[0]?.header).toEqual({
       startLine: 10,
       lines: ["function configure(", "  host: string,", "): void"],
@@ -125,7 +125,7 @@ describe("renderOverviewJson", () => {
   });
 
   it("includes diagnostics in the payload when the result carries them", () => {
-    const file: OverviewFileSymbols = {
+    const file: OverviewFileEntries = {
       file: "src/file.ts",
       entries: [],
       diagnostics: [
@@ -136,7 +136,7 @@ describe("renderOverviewJson", () => {
         },
       ],
     };
-    const parsed = JSON.parse(renderOverviewJson(file)) as OverviewFileSymbols;
+    const parsed = JSON.parse(renderOverviewJson(file)) as OverviewFileEntries;
     expect(parsed.diagnostics).toEqual([
       {
         severity: "warning",
@@ -147,7 +147,7 @@ describe("renderOverviewJson", () => {
   });
 
   it("renders identical bytes for identical IR across two calls", () => {
-    const build = (): OverviewFileSymbols => ({
+    const build = (): OverviewFileEntries => ({
       file: "src/file.ts",
       entries: [
         decl({

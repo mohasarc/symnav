@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { InMemoryFileSystem, type OverviewFileSymbols } from "@symnav/core";
+import { InMemoryFileSystem, type OverviewFileEntries } from "@symnav/core";
 import { buildProgram } from "../../../../src/program.js";
 import { FakeLanguageBackend } from "../helpers/fake-language-backend.js";
 import { fakeDependencies } from "../helpers/fake-program-dependencies.js";
@@ -26,7 +26,7 @@ async function parse(
 
 describe("symnav overview happy path", () => {
   it("writes text-rendered IR to stdout with exit 0", async () => {
-    const entries: OverviewFileSymbols = {
+    const entries: OverviewFileEntries = {
       file: "src/a.ts",
       entries: [
         {
@@ -60,7 +60,7 @@ describe("symnav overview happy path", () => {
   });
 
   it("writes JSON output with --json flag", async () => {
-    const entries: OverviewFileSymbols = { file: "src/a.ts", entries: [] };
+    const entries: OverviewFileEntries = { file: "src/a.ts", entries: [] };
     const fs = new InMemoryFileSystem({
       "/repo/.git/HEAD": "ref: refs/heads/main\n",
       "/repo/src/a.ts": "export const x = 1;\n",
@@ -77,7 +77,7 @@ describe("symnav overview happy path", () => {
 
     expect(r.stderr).toBe("");
     expect(r.exitCodes).toEqual([]);
-    const parsed = JSON.parse(r.stdout) as OverviewFileSymbols;
+    const parsed = JSON.parse(r.stdout) as OverviewFileEntries;
     expect(parsed).toEqual(entries);
   });
 

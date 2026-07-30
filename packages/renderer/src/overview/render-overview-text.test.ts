@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import type { OverviewFileSymbols, Signature, SymbolOverviewNode } from "@symnav/core";
+import type { OverviewFileEntries, Signature, SymbolOverviewNode } from "@symnav/core";
 
 import { renderOverviewText } from "./render-overview-text.js";
 import { SIGNATURE_CAP_LINES, SIGNATURE_ELLIPSIS } from "./signature-cap.js";
@@ -32,14 +32,14 @@ function assertSingleTrailingNewline(output: string): void {
 
 describe("renderOverviewText", () => {
   it("renders an empty file with the file path header and `(no symbols)` directly under", () => {
-    const file: OverviewFileSymbols = { file: "src/empty.ts", entries: [] };
+    const file: OverviewFileEntries = { file: "src/empty.ts", entries: [] };
     const output = renderOverviewText(file);
     expect(output).toBe("Overview: src/empty.ts\n(no symbols)\n");
     assertSingleTrailingNewline(output);
   });
 
   it("renders a single top-level function as the file's only tree child", () => {
-    const file: OverviewFileSymbols = {
+    const file: OverviewFileEntries = {
       file: "src/file.ts",
       entries: [
         decl({
@@ -63,7 +63,7 @@ describe("renderOverviewText", () => {
   });
 
   it("ends with exactly one trailing newline for non-empty output", () => {
-    const file: OverviewFileSymbols = {
+    const file: OverviewFileEntries = {
       file: "src/file.ts",
       entries: [
         decl({
@@ -78,7 +78,7 @@ describe("renderOverviewText", () => {
   });
 
   it("numbers each line of a multi-line signature from startLine and preserves indentation", () => {
-    const file: OverviewFileSymbols = {
+    const file: OverviewFileEntries = {
       file: "src/file.ts",
       entries: [
         decl({
@@ -103,7 +103,7 @@ describe("renderOverviewText", () => {
 
   it("returns signature lines at or under SIGNATURE_CAP_LINES unchanged", () => {
     const lines = Array.from({ length: SIGNATURE_CAP_LINES }, (_, i) => `line ${i}`);
-    const file: OverviewFileSymbols = {
+    const file: OverviewFileEntries = {
       file: "src/file.ts",
       entries: [
         decl({
@@ -123,7 +123,7 @@ describe("renderOverviewText", () => {
 
   it("caps an oversized signature by line count with a final elision marker", () => {
     const lines = Array.from({ length: SIGNATURE_CAP_LINES + 5 }, (_, i) => `line ${i}`);
-    const file: OverviewFileSymbols = {
+    const file: OverviewFileEntries = {
       file: "src/file.ts",
       entries: [
         decl({
@@ -140,7 +140,7 @@ describe("renderOverviewText", () => {
   });
 
   it("renders multiple top-level entries as tree children of the file path", () => {
-    const file: OverviewFileSymbols = {
+    const file: OverviewFileEntries = {
       file: "src/file.ts",
       entries: [
         decl({
@@ -181,7 +181,7 @@ describe("renderOverviewText", () => {
   });
 
   it("renders a class with three methods using `├──`/`└──` and `│   `/`    ` continuations", () => {
-    const file: OverviewFileSymbols = {
+    const file: OverviewFileEntries = {
       file: "src/checkout.ts",
       entries: [
         decl({
@@ -230,7 +230,7 @@ describe("renderOverviewText", () => {
   });
 
   it("numbers a nested symbol's multi-line signature under its continuation glyph", () => {
-    const file: OverviewFileSymbols = {
+    const file: OverviewFileEntries = {
       file: "src/server.ts",
       entries: [
         decl({
@@ -264,7 +264,7 @@ describe("renderOverviewText", () => {
   });
 
   it("renders three-deep nesting using `    ` under a closed branch", () => {
-    const file: OverviewFileSymbols = {
+    const file: OverviewFileEntries = {
       file: "src/nested.ts",
       entries: [
         decl({
@@ -306,7 +306,7 @@ describe("renderOverviewText", () => {
   });
 
   it("formats single-line ranges as `N` and multi-line ranges as `N-M`", () => {
-    const file: OverviewFileSymbols = {
+    const file: OverviewFileEntries = {
       file: "src/file.ts",
       entries: [
         decl({
@@ -329,7 +329,7 @@ describe("renderOverviewText", () => {
   });
 
   it("includes ancestor names joined by `::` in nested symbol paths", () => {
-    const file: OverviewFileSymbols = {
+    const file: OverviewFileEntries = {
       file: "src/nested.ts",
       entries: [
         decl({

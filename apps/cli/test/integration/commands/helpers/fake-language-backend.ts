@@ -2,7 +2,7 @@ import type {
   CallEdge,
   CallTargetResolution,
   LanguageBackend,
-  OverviewFileSymbols,
+  OverviewFileEntries,
   SymbolReference,
   ResolvedPath,
   SymbolOverviewNode,
@@ -10,13 +10,13 @@ import type {
 
 export interface FakeLanguageBackendOptions {
   accept?: (filePath: string) => boolean;
-  entries?: (filePath: string) => OverviewFileSymbols;
+  entries?: (filePath: string) => OverviewFileEntries;
 }
 
 export class FakeLanguageBackend implements LanguageBackend {
   readonly calls: string[] = [];
   private readonly acceptFn: (filePath: string) => boolean;
-  private readonly entriesFn: (filePath: string) => OverviewFileSymbols;
+  private readonly entriesFn: (filePath: string) => OverviewFileEntries;
 
   constructor(options: FakeLanguageBackendOptions = {}) {
     this.acceptFn = options.accept ?? (() => true);
@@ -27,7 +27,7 @@ export class FakeLanguageBackend implements LanguageBackend {
     return this.acceptFn(filePath);
   }
 
-  async fileSymbols(path: ResolvedPath): Promise<OverviewFileSymbols> {
+  async fileEntries(path: ResolvedPath): Promise<OverviewFileEntries> {
     this.calls.push(path.relative);
     return this.entriesFn(path.relative);
   }

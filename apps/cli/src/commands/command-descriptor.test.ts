@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import type {
   DefinitionResult,
   GraphResult,
-  OverviewFileSymbols,
+  OverviewFileEntries,
   RefsResult,
   ResolveResult,
   SymbolOverviewNode,
@@ -93,7 +93,7 @@ describe("command telemetry descriptors", () => {
   });
 
   it("counts overview result symbols recursively", () => {
-    const result: OverviewFileSymbols = {
+    const result: OverviewFileEntries = {
       file: "src/a.ts",
       entries: [symbol("top", [symbol("nested", [symbol("leaf")])]), symbol("other")],
     };

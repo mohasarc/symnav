@@ -3,20 +3,20 @@ import {
   formatSymbolIdentity,
   parseSymbolIdentity,
   walkOverviewSymbols,
-  type OverviewFileSymbols,
+  type OverviewFileEntries,
   type SymbolOverviewNode,
 } from "@symnav/core";
 
 import { parseTypeScriptSource } from "../../test/helpers/parse-typescript-source.js";
-import { extractFileSymbols } from "./extract-file-symbols.js";
+import { extractFileEntries } from "./extract-file-entries.js";
 
-function fileSymbolsOf(source: string, filePath: string = "input.ts"): OverviewFileSymbols {
+function fileEntriesOf(source: string, filePath: string = "input.ts"): OverviewFileEntries {
   const sourceFile = parseTypeScriptSource(source);
-  return extractFileSymbols({ sourceFile, filePath });
+  return extractFileEntries({ sourceFile, filePath });
 }
 
 function symbolsOf(source: string, filePath: string = "input.ts"): readonly SymbolOverviewNode[] {
-  return walkOverviewSymbols(fileSymbolsOf(source, filePath).entries);
+  return walkOverviewSymbols(fileEntriesOf(source, filePath).entries);
 }
 
 function symbolChildren(decl: SymbolOverviewNode): readonly SymbolOverviewNode[] {
@@ -28,14 +28,14 @@ function ownName(decl: SymbolOverviewNode): string {
   return segments[segments.length - 1]?.name ?? "";
 }
 
-describe("extractFileSymbols", () => {
-  it("produces OverviewFileSymbols with empty symbols for an empty source", () => {
-    const result = fileSymbolsOf("");
+describe("extractFileEntries", () => {
+  it("produces OverviewFileEntries with empty symbols for an empty source", () => {
+    const result = fileEntriesOf("");
     expect(result.entries).toEqual([]);
   });
 
   it("forwards filePath verbatim onto the IR", () => {
-    const result = fileSymbolsOf("export const x = 1;", "src/foo/bar.ts");
+    const result = fileEntriesOf("export const x = 1;", "src/foo/bar.ts");
     expect(result.file).toBe("src/foo/bar.ts");
   });
 

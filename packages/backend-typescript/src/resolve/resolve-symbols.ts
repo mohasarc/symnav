@@ -7,7 +7,7 @@ import type {
 import { walkOverviewSymbols } from "@symnav/core";
 import fuzzysort from "fuzzysort";
 
-import { loadFileSymbols } from "../extract/load-file-symbols.js";
+import { loadFileEntries } from "../extract/load-file-entries.js";
 
 export interface ResolveSymbolsArgs {
   readonly fs: FileSystem;
@@ -32,7 +32,7 @@ function extractAllSymbols(
 ): readonly SymbolOverviewNode[] {
   const all: SymbolOverviewNode[] = [];
   for (const file of files) {
-    all.push(...walkOverviewSymbols(loadFileSymbols(fs, file).entries));
+    all.push(...walkOverviewSymbols(loadFileEntries(fs, file).entries));
   }
   return all;
 }

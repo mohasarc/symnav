@@ -6,7 +6,7 @@ import type {
   SymbolPathSegment,
 } from "@symnav/core";
 
-import { extractFileSymbols } from "../extract/extract-file-symbols.js";
+import { extractFileEntries } from "../extract/extract-file-entries.js";
 
 export interface LocatedDeclaration {
   readonly declaration: SymbolOverviewNode;
@@ -30,7 +30,7 @@ export class DeclarationLocator {
     const { segments } = identity;
     const ownSegment = segments[segments.length - 1];
     if (!ownSegment) return [];
-    let candidates = extractFileSymbols({
+    let candidates = extractFileEntries({
       sourceFile: this.sourceFile,
       filePath: identity.file,
     }).entries.flatMap((entry) => symbolScopeChildren(entry));

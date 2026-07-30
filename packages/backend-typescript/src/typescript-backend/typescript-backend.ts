@@ -5,7 +5,7 @@ import type {
   CallTargetResolution,
   FileSystem,
   LanguageBackend,
-  OverviewFileSymbols,
+  OverviewFileEntries,
   SymbolReference,
   ResolveSymbolsOptions,
   ResolvedPath,
@@ -18,7 +18,7 @@ import { findCallees } from "../call-graph/find-callees.js";
 import { findCallers } from "../call-graph/find-callers.js";
 import { findCallTarget } from "../call-graph/find-call-target.js";
 import { findDefinitions } from "../definition/find-definitions.js";
-import { loadFileSymbols } from "../extract/load-file-symbols.js";
+import { loadFileEntries } from "../extract/load-file-entries.js";
 import { ReferenceFinder } from "../references/find-references.js";
 import { resolveSymbols } from "../resolve/resolve-symbols.js";
 
@@ -41,12 +41,12 @@ export class TypeScriptBackend implements LanguageBackend {
     return TypeScriptBackend.accepts(filePath);
   }
 
-  async fileSymbols(file: ResolvedPath): Promise<OverviewFileSymbols> {
+  async fileEntries(file: ResolvedPath): Promise<OverviewFileEntries> {
     if (!this.fs.existsSync(file.absolute) || this.fs.isDirectorySync(file.absolute)) {
       throw new FileNotFoundError(file.relative);
     }
     const diagnostics = new CollectingDiagnosticSink();
-    const result = loadFileSymbols(this.fs, file, diagnostics);
+    const result = loadFileEntries(this.fs, file, diagnostics);
     return withDiagnostics(result, diagnostics);
   }
 
@@ -95,9 +95,9 @@ export class TypeScriptBackend implements LanguageBackend {
 }
 
 function withDiagnostics(
-  result: OverviewFileSymbols,
+  result: OverviewFileEntries,
   diagnostics: CollectingDiagnosticSink,
-): OverviewFileSymbols {
+): OverviewFileEntries {
   const collected = diagnostics.diagnostics();
   if (collected.length === 0) return result;
   return { ...result, diagnostics: collected };

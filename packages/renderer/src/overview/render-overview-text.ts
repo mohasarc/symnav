@@ -1,5 +1,5 @@
 import type {
-  OverviewFileSymbols,
+  OverviewFileEntries,
   OverviewNode,
   Signature,
   SymbolOverviewNode,
@@ -15,7 +15,7 @@ import { capSignatureLines } from "./signature-cap.js";
 
 const TOP_LEVEL_SEPARATOR = "│\n";
 
-export function renderOverviewText(file: OverviewFileSymbols): string {
+export function renderOverviewText(file: OverviewFileEntries): string {
   if (file.entries.length === 0) {
     return formatEmptyOverview(file.file);
   }

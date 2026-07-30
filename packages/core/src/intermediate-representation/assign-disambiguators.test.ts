@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { assignDisambiguators, assignOverviewDisambiguators } from "./assign-disambiguators.js";
+import { assignDisambiguators } from "./assign-disambiguators.js";
 import { formatSymbolIdentity } from "./canonical-identity.js";
 import { OverviewTree } from "./overview-tree.js";
 import type {
@@ -42,6 +42,10 @@ function disambiguatorOf(decl: SymbolOverviewNode): number | undefined {
   return decl.identity.segments[decl.identity.segments.length - 1]?.disambiguator;
 }
 
+function assignToSymbols(siblings: readonly OverviewNode[]): readonly SymbolOverviewNode[] {
+  return OverviewTree.directSymbolChildren(assignDisambiguators(siblings));
+}
+
 function overviewSymbol(name: string): SymbolOverviewNode {
   return OverviewTree.symbol({
     identity: { file: "src/foo.ts", segments: [{ name }] },
@@ -72,7 +76,7 @@ function reExport(): ReExportOverviewNode {
 
 describe("assignDisambiguators", () => {
   it("leaves disambiguator undefined when each sibling name is unique", () => {
-    const result = assignDisambiguators(
+    const result = assignToSymbols(
       buildSiblings([{ name: "foo" }, { name: "bar" }, { name: "baz" }]),
     );
     for (const decl of result) {
@@ -81,14 +85,14 @@ describe("assignDisambiguators", () => {
   });
 
   it("assigns sequential #1, #2, #3 to a three-element overload set in source order", () => {
-    const result = assignDisambiguators(
+    const result = assignToSymbols(
       buildSiblings([{ name: "post" }, { name: "post" }, { name: "post" }]),
     );
     expect(result.map(disambiguatorOf)).toEqual([1, 2, 3]);
   });
 
   it("assigns #1/#2 to a colliding name regardless of kind, since collision is by name alone", () => {
-    const result = assignDisambiguators(
+    const result = assignToSymbols(
       buildSiblings([
         { name: "bar", kind: CALLABLE_GETTER },
         { name: "bar", kind: CALLABLE_SETTER },
@@ -98,14 +102,14 @@ describe("assignDisambiguators", () => {
   });
 
   it("keeps independent groups at the same level on separate counts", () => {
-    const result = assignDisambiguators(
+    const result = assignToSymbols(
       buildSiblings([{ name: "bar" }, { name: "bar" }, { name: "biz" }, { name: "biz" }]),
     );
     expect(result.map(disambiguatorOf)).toEqual([1, 2, 1, 2]);
   });
 
   it("recurses into children so nested collisions get disambiguated", () => {
-    const result = assignDisambiguators(
+    const result = assignToSymbols(
       buildSiblings([
         { name: "Inner", kind: CONTAINER_CLASS, children: [{ name: "m" }, { name: "m" }] },
       ]),
@@ -114,7 +118,7 @@ describe("assignDisambiguators", () => {
   });
 
   it("only disambiguates within the same sibling scope (independent groups don't share counts)", () => {
-    const result = assignDisambiguators(
+    const result = assignToSymbols(
       buildSiblings([
         { name: "A", kind: CONTAINER_CLASS, children: [{ name: "m" }, { name: "m" }] },
         { name: "B", kind: CONTAINER_CLASS, children: [{ name: "m" }, { name: "m" }] },
@@ -125,7 +129,7 @@ describe("assignDisambiguators", () => {
   });
 
   it("propagates a parent's disambiguator into its descendants' path prefix", () => {
-    const result = assignDisambiguators(
+    const result = assignToSymbols(
       buildSiblings([
         { name: "A", kind: CONTAINER_CLASS, children: [{ name: "m" }] },
         { name: "A", kind: CONTAINER_CLASS, children: [{ name: "m" }] },
@@ -138,7 +142,7 @@ describe("assignDisambiguators", () => {
   });
 
   it("disambiguates outer and inner simultaneously, yielding unique ids throughout", () => {
-    const result = assignDisambiguators(
+    const result = assignToSymbols(
       buildSiblings([
         { name: "A", kind: CONTAINER_CLASS, children: [{ name: "B" }, { name: "B" }] },
         { name: "A", kind: CONTAINER_CLASS, children: [{ name: "B" }, { name: "B" }] },
@@ -161,7 +165,7 @@ describe("assignDisambiguators", () => {
   });
 
   it("ignores fold siblings when assigning symbol disambiguators", () => {
-    const [first, middle, second] = assignOverviewDisambiguators([
+    const [first, middle, second] = assignDisambiguators([
       overviewSymbol("m"),
       fold(),
       overviewSymbol("m"),
@@ -175,7 +179,7 @@ describe("assignDisambiguators", () => {
   });
 
   it("counts symbols behind fold nodes in the containing sibling scope", () => {
-    const result = assignOverviewDisambiguators([
+    const result = assignDisambiguators([
       overviewSymbol("m"),
       fold([overviewSymbol("m")]),
       reExport(),

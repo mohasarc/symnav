@@ -129,7 +129,7 @@ function buildSymbolNode(
     identity: identityFor(symbolScope),
     kind: { role: roleOf(refined), nativeLabel: refined },
     range,
-    header: signatureFrom(range.startLine, extractSignatureSource(node)),
+    header: headerFrom(range.startLine, extractSignatureSource(node)),
     children: symbolChildren(node, symbolScope, diagnostics),
   };
 }
@@ -294,7 +294,7 @@ function expandVariableStatement(
       identity: identityFor(symbolScope),
       kind: { role: roleOf("variable"), nativeLabel: "variable" },
       range,
-      header: signatureFrom(
+      header: headerFrom(
         range.startLine,
         extractVariableSignature({ statement, declaration: decl }),
       ),
@@ -352,7 +352,7 @@ function identityFor(scope: ExtractionScope): SymbolIdentity {
   };
 }
 
-function signatureFrom(startLine: number, raw: string): Header {
+function headerFrom(startLine: number, raw: string): Header {
   return { startLine, lines: splitHeaderLines(raw) };
 }
 

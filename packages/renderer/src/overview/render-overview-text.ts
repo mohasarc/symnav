@@ -29,15 +29,26 @@ function renderChild(node: OverviewNode, parentPrefix: string, isLast: boolean):
   const { branchGlyph, continuationGlyph } = treeGlyphsFor(isLast);
   const headLine = formatHeadLine(parentPrefix + branchGlyph, node.range, overviewNodeLabel(node));
   const childPrefix = parentPrefix + continuationGlyph;
-  const headerBlock = node.type === "symbol" ? renderHeader(node.header, childPrefix) : "";
+  const headerBlock =
+    node.type === "symbol"
+      ? renderHeader(node.header, childPrefix)
+      : renderHeaderContinuation(node.header, childPrefix);
   const childrenBlock = node.type === "re-export" ? "" : renderChildren(node.children, childPrefix);
   return headLine + headerBlock + childrenBlock;
 }
 
 function renderHeader(header: Header, prefix: string): string {
-  return capHeaderLines(header.lines)
-    .map((text, index) => formatHeaderLine(prefix, header.startLine + index, text))
-    .join("");
+  return formattedHeaderLines(header, prefix).join("");
+}
+
+function renderHeaderContinuation(header: Header, prefix: string): string {
+  return formattedHeaderLines(header, prefix).slice(1).join("");
+}
+
+function formattedHeaderLines(header: Header, prefix: string): readonly string[] {
+  return capHeaderLines(header.lines).map((text, index) =>
+    formatHeaderLine(prefix, header.startLine + index, text),
+  );
 }
 
 function overviewNodeLabel(node: OverviewNode): string {

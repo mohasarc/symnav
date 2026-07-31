@@ -414,6 +414,99 @@ describe("renderOverviewText", () => {
     );
   });
 
+  it("renders a multi-line fold header as numbered continuation lines inside the tree", () => {
+    const file: OverviewFileEntries = {
+      file: "src/fold.ts",
+      entries: [
+        fold({
+          range: { startLine: 1, endLine: 6 },
+          header: signature(1, "if (", "  flag &&", ") {"),
+          children: [
+            decl({
+              kind: "function",
+              segments: [{ name: "insideIf" }],
+              range: { startLine: 5, endLine: 5 },
+              header: signature(5, "function insideIf(): void"),
+            }),
+          ],
+        }),
+      ],
+    };
+
+    expect(renderOverviewText(file)).toBe(
+      [
+        "Overview: src/fold.ts",
+        "└── 1-6: if (",
+        "    2   flag &&",
+        "    3 ) {",
+        "    └── 5: insideIf",
+        "        5 function insideIf(): void",
+        "",
+      ].join("\n"),
+    );
+  });
+
+  it("renders a nested multi-line fold header under the open-branch continuation glyph", () => {
+    const file: OverviewFileEntries = {
+      file: "src/fold.ts",
+      entries: [
+        fold({
+          range: { startLine: 1, endLine: 4 },
+          header: signature(1, "while (", ") {"),
+        }),
+        fold({
+          range: { startLine: 6, endLine: 8 },
+          header: signature(6, "block {"),
+        }),
+      ],
+    };
+
+    expect(renderOverviewText(file)).toBe(
+      ["Overview: src/fold.ts", "├── 1-4: while (", "│   2 ) {", "│", "└── 6-8: block {", ""].join(
+        "\n",
+      ),
+    );
+  });
+
+  it("renders a multi-line re-export header as numbered continuation lines", () => {
+    const file: OverviewFileEntries = {
+      file: "src/index.ts",
+      entries: [
+        reExport({
+          range: { startLine: 1, endLine: 3 },
+          header: signature(1, "export {", "  A,", '} from "./api";'),
+        }),
+      ],
+    };
+
+    expect(renderOverviewText(file)).toBe(
+      [
+        "Overview: src/index.ts",
+        "└── 1-3: export {",
+        "    2   A,",
+        '    3 } from "./api";',
+        "",
+      ].join("\n"),
+    );
+  });
+
+  it("caps fold continuation lines at HEADER_CAP_LINES with a final elision marker", () => {
+    const lines = Array.from({ length: HEADER_CAP_LINES + 5 }, (_, i) => `condition ${i} &&`);
+    const file: OverviewFileEntries = {
+      file: "src/fold.ts",
+      entries: [
+        fold({
+          range: { startLine: 1, endLine: lines.length + 1 },
+          header: signature(1, ...lines),
+        }),
+      ],
+    };
+
+    const output = renderOverviewText(file);
+    expect(output).toContain(`${HEADER_CAP_LINES} ${HEADER_ELLIPSIS}\n`);
+    expect(output).not.toContain(`condition ${HEADER_CAP_LINES}`);
+  });
+
   it("renders re-export nodes as header-only tree entries", () => {
     const file: OverviewFileEntries = {
       file: "src/index.ts",

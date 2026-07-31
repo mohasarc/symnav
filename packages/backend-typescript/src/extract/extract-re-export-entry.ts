@@ -1,5 +1,10 @@
 import { Node } from "ts-morph";
-import type { LineRange, ReExportOverviewNode, Header } from "@symnav/core";
+import {
+  splitHeaderLines,
+  type LineRange,
+  type ReExportOverviewNode,
+  type Header,
+} from "@symnav/core";
 
 export function extractReExportEntry(node: Node): ReExportOverviewNode | undefined {
   if (!Node.isExportDeclaration(node)) return undefined;
@@ -43,7 +48,7 @@ function reExportNode(
 function headerFrom(startLine: number, text: string): Header {
   return {
     startLine,
-    lines: [text],
+    lines: splitHeaderLines(text),
   };
 }
 

@@ -1,12 +1,12 @@
 import { Node, type ExpressionStatement } from "ts-morph";
-import type { Header } from "@symnav/core";
+import { splitHeaderLines, type Header } from "@symnav/core";
 
 import { statementCallExpression, trailingCallbackBody } from "./trailing-callback.js";
 
 export function extractFoldHeader(node: Node): Header {
   return {
     startLine: node.getStartLineNumber(),
-    lines: [foldHeaderText(node)],
+    lines: splitHeaderLines(foldHeaderText(node)),
   };
 }
 

@@ -259,6 +259,25 @@ describe("fold tree extraction", () => {
     ]);
   });
 
+  it("splits a multi-line fold header into newline-free lines starting at the fold's line", () => {
+    const source = [
+      "if (",
+      "  flag &&",
+      "  other",
+      ") {",
+      "  function insideIf(): void {}",
+      "}",
+    ].join("\n");
+
+    const fold = onlyFold(source);
+
+    expect(fold.header.startLine).toBe(1);
+    expect(fold.header.lines).toEqual(["if (", "  flag &&", "  other", ") {"]);
+    for (const line of fold.header.lines) {
+      expect(line).not.toContain("\n");
+    }
+  });
+
   it("fuses an awaited call with a trailing callback", () => {
     const source = ["await runSuite(() => {", "  const helper = 1;", "});"].join("\n");
 
@@ -429,6 +448,19 @@ describe("re-export extraction", () => {
         header: ['export { x as default } from "./other";'],
       },
     ]);
+  });
+
+  it("splits a multi-line re-export header into newline-free lines starting at its line", () => {
+    const source = ["export {", "  A,", "  B as C,", '} from "./api";'].join("\n");
+
+    const entry = fileEntriesOf(source).entries[0];
+    if (!entry || entry.type !== "re-export") throw new Error("expected re-export entry");
+
+    expect(entry.header.startLine).toBe(1);
+    expect(entry.header.lines).toEqual(["export {", "  A,", "  B as C,", '} from "./api";']);
+    for (const line of entry.header.lines) {
+      expect(line).not.toContain("\n");
+    }
   });
 
   it("extracts a specifier-less named export without reporting a diagnostic", () => {

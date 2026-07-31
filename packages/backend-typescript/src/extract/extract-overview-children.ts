@@ -26,7 +26,7 @@ import { extractReExportEntry } from "./extract-re-export-entry.js";
 import { extractSignatureSource } from "./extract-signature-source.js";
 import { extractVariableSignature } from "./extract-variable-signature.js";
 import { childSymbolScope, type ExtractionScope } from "./extraction-scope.js";
-import { foldKindOf } from "./fold-node-kind.js";
+import { foldKindOf, type TypeScriptFoldKind } from "./fold-node-kind.js";
 import { nodeKind } from "./node-kind.js";
 import { refineLabel } from "./refine-label.js";
 import { roleOf } from "./typescript-symbol-kind.js";
@@ -83,7 +83,7 @@ function toOverviewNode(
   if (kind) return toSymbolNodes(node, kind, scope, diagnostics);
 
   const foldKind = foldKindOf(node);
-  if (foldKind) return toFoldNodes(node, scope, diagnostics);
+  if (foldKind) return toFoldNodes(node, foldKind, scope, diagnostics);
 
   const reExport = extractReExportEntry(node, scope.file);
   if (reExport) return [reExport];
@@ -160,14 +160,13 @@ function symbolChildren(
 
 function toFoldNodes(
   node: Node,
+  foldKind: TypeScriptFoldKind,
   scope: ExtractionScope,
   diagnostics: DiagnosticSink | undefined,
 ): readonly FoldOverviewNode[] {
   if (Node.isTryStatement(node)) {
     return tryFoldNodes(node, scope, diagnostics);
   }
-  const foldKind = foldKindOf(node);
-  if (!foldKind) return [];
   return [
     {
       type: "fold",

@@ -6,6 +6,8 @@ export type TypeScriptFoldKind =
   | "loop"
   | "conditional"
   | "switch"
+  | "switchCase"
+  | "switchDefault"
   | "try"
   | "catch"
   | "finally";
@@ -25,9 +27,9 @@ export function foldKindOf(node: Node): TypeScriptFoldKind | undefined {
   ) {
     return "loop";
   }
-  if (Node.isSwitchStatement(node) || Node.isCaseClause(node) || Node.isDefaultClause(node)) {
-    return "switch";
-  }
+  if (Node.isSwitchStatement(node)) return "switch";
+  if (Node.isCaseClause(node)) return "switchCase";
+  if (Node.isDefaultClause(node)) return "switchDefault";
   if (Node.isTryStatement(node)) return "try";
   return undefined;
 }

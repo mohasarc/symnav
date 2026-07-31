@@ -178,7 +178,7 @@ describe("fold tree extraction", () => {
         children: [
           {
             type: "fold",
-            foldKind: "switch",
+            foldKind: "switchCase",
             header: ["case 1:"],
             children: [
               {
@@ -191,7 +191,7 @@ describe("fold tree extraction", () => {
           },
           {
             type: "fold",
-            foldKind: "switch",
+            foldKind: "switchDefault",
             header: ["default:"],
             children: [
               {

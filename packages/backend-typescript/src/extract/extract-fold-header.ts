@@ -1,7 +1,7 @@
-import { Node, type CallExpression, type ExpressionStatement } from "ts-morph";
+import { Node, type ExpressionStatement } from "ts-morph";
 import type { Header } from "@symnav/core";
 
-import { statementCallExpression } from "./trailing-callback.js";
+import { statementCallExpression, trailingCallbackBody } from "./trailing-callback.js";
 
 export function extractFoldHeader(node: Node): Header {
   return {
@@ -23,24 +23,10 @@ function foldHeaderText(node: Node): string {
 
 function expressionStatementHeader(node: ExpressionStatement): string {
   const call = statementCallExpression(node);
-  if (call && trailingFunctionBody(call)) {
+  if (call && trailingCallbackBody(call)) {
     return textThroughFirst(node.getText(), "{");
   }
   return firstLine(node.getText());
-}
-
-function trailingFunctionBody(node: CallExpression): Node | undefined {
-  const args = node.getArguments();
-  const trailing = args[args.length - 1];
-  if (!trailing) return undefined;
-  if (Node.isArrowFunction(trailing)) {
-    const body = trailing.getBody();
-    return Node.isBlock(body) ? body : undefined;
-  }
-  if (Node.isFunctionExpression(trailing)) {
-    return trailing.getBody();
-  }
-  return undefined;
 }
 
 function textThroughFirst(text: string, token: string): string {

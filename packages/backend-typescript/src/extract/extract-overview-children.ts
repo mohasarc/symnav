@@ -29,7 +29,7 @@ import { childSymbolScope, type ExtractionScope } from "./extraction-scope.js";
 import { foldKindOf, type TypeScriptFoldKind } from "./fold-node-kind.js";
 import { nodeKind } from "./node-kind.js";
 import { refineLabel } from "./refine-label.js";
-import { statementCallExpression } from "./trailing-callback.js";
+import { statementCallExpression, trailingCallbackBody } from "./trailing-callback.js";
 import { roleOf } from "./typescript-symbol-kind.js";
 
 export interface ExtractOverviewChildrenArgs {
@@ -327,20 +327,9 @@ function functionBodyOf(node: Node): Block | undefined {
 }
 
 function trailingCallBody(node: ExpressionStatement): Block | undefined {
-  const expression = statementCallExpression(node);
-  if (!expression) return undefined;
-  const args = expression.getArguments();
-  const trailing = args[args.length - 1];
-  if (!trailing) return undefined;
-  if (Node.isArrowFunction(trailing)) {
-    const body = trailing.getBody();
-    return Node.isBlock(body) ? body : undefined;
-  }
-  if (Node.isFunctionExpression(trailing)) {
-    const body = trailing.getBody();
-    return body && Node.isBlock(body) ? body : undefined;
-  }
-  return undefined;
+  const call = statementCallExpression(node);
+  if (!call) return undefined;
+  return trailingCallbackBody(call);
 }
 
 function identityFor(scope: ExtractionScope): SymbolIdentity {

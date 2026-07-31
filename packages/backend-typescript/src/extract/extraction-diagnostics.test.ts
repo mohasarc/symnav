@@ -3,8 +3,8 @@ import { describe, expect, it } from "vitest";
 import { CollectingDiagnosticSink, OverviewTree, type OverviewNode } from "@symnav/core";
 
 import { parseTypeScriptSource } from "../../test/helpers/parse-typescript-source.js";
-import { extractStatementDecls } from "./extract-children.js";
 import { extractFileEntries } from "./extract-file-entries.js";
+import { extractOverviewChildren } from "./extract-overview-children.js";
 
 function symbolChildrenOf(node: OverviewNode | undefined): readonly OverviewNode[] {
   return node?.type === "symbol" ? node.children : [];
@@ -20,13 +20,14 @@ describe("extraction diagnostics", () => {
     if (!render) throw new Error("expected render declaration");
     const diagnostics = new CollectingDiagnosticSink();
 
-    const symbols = extractStatementDecls([unhandled, unhandled, render], {
-      file: "src/input.ts",
-      ancestorNames: [],
-      diagnostics,
+    const entries = extractOverviewChildren({
+      nodes: [unhandled, unhandled, render],
+      scope: { file: "src/input.ts", symbolSegments: [], diagnostics },
     });
 
-    expect(symbols.map((symbol) => symbol.identity.segments.at(-1)?.name)).toEqual(["render"]);
+    expect(
+      OverviewTree.walkSymbols(entries).map((symbol) => symbol.identity.segments.at(-1)?.name),
+    ).toEqual(["render"]);
     expect(diagnostics.diagnostics()).toEqual([
       {
         severity: "warning",

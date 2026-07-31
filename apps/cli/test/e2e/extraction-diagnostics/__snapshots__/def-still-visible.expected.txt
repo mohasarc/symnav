@@ -1,5 +1,5 @@
 Definition: stillVisible
 
 src/unsupported-statement.ts
-└── 4-6: stillVisible  [implementation]
+└── 1-3: stillVisible  [implementation]
     export function stillVisible(): string

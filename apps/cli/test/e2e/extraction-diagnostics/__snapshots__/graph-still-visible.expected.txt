@@ -1,16 +1,16 @@
 Graph: stillVisible
 File: src/unsupported-statement.ts
-Lines: 4-6
+Lines: 1-3
 Depth: 1
 Direction: both
 Edges: calls
 
 Incoming
 src/unsupported-statement.ts
-└── 4-6: stillVisible
+└── 1-3: stillVisible
     export function stillVisible(): string
 
 Outgoing
 src/unsupported-statement.ts
-└── 4-6: stillVisible
+└── 1-3: stillVisible
     export function stillVisible(): string

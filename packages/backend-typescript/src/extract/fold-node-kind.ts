@@ -8,8 +8,7 @@ export type TypeScriptFoldKind =
   | "switch"
   | "try"
   | "catch"
-  | "finally"
-  | "callback";
+  | "finally";
 
 export function foldKindOf(node: Node): TypeScriptFoldKind | undefined {
   if (Node.isExpressionStatement(node) && Node.isCallExpression(node.getExpression())) {
@@ -30,16 +29,5 @@ export function foldKindOf(node: Node): TypeScriptFoldKind | undefined {
     return "switch";
   }
   if (Node.isTryStatement(node)) return "try";
-  if (Node.isCatchClause(node)) return "catch";
-  return foldKindOfFinally(node);
-}
-
-function foldKindOfFinally(node: Node): TypeScriptFoldKind | undefined {
-  if (node.getKindName() === "Block" && Node.isTryStatement(node.getParent())) {
-    const parent = node.getParentOrThrow();
-    if (Node.isTryStatement(parent) && parent.getFinallyBlock() === node) {
-      return "finally";
-    }
-  }
   return undefined;
 }

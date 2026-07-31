@@ -7,6 +7,7 @@ import {
   type InterfaceDeclaration,
   type ModuleDeclaration,
   type TryStatement,
+  type VariableDeclaration,
   type VariableStatement,
 } from "ts-morph";
 import {
@@ -106,7 +107,7 @@ function toSymbolNodes(
   diagnostics: DiagnosticSink | undefined,
 ): readonly SymbolOverviewNode[] {
   if (Node.isVariableStatement(node)) {
-    return expandVariableStatement(node, scope);
+    return expandVariableStatement(node, scope, diagnostics);
   }
   if (isMemberNode(node)) {
     return expandOverloads(node).map((member) => buildSymbolNode(member, kind, scope, diagnostics));
@@ -148,6 +149,9 @@ function symbolChildren(
       scope,
       diagnostics,
     });
+  }
+  if (Node.isExportAssignment(node)) {
+    return functionValueChildren(node.getExpression(), scope, diagnostics);
   }
   const body = functionBodyOf(node);
   if (!body) return [];
@@ -284,6 +288,7 @@ function extractStatementChildren(
 function expandVariableStatement(
   statement: VariableStatement,
   scope: ExtractionScope,
+  diagnostics: DiagnosticSink | undefined,
 ): readonly SymbolOverviewNode[] {
   const declList = statement.getDeclarationList();
   const range = nodeRange(statement);
@@ -298,9 +303,40 @@ function expandVariableStatement(
         range.startLine,
         extractVariableSignature({ statement, declaration: decl }),
       ),
-      children: [],
+      children: variableInitializerChildren(decl, symbolScope, diagnostics),
     };
   });
+}
+
+function variableInitializerChildren(
+  declaration: VariableDeclaration,
+  scope: ExtractionScope,
+  diagnostics: DiagnosticSink | undefined,
+): readonly OverviewNode[] {
+  const initializer = declaration.getInitializer();
+  if (!initializer) return [];
+  return functionValueChildren(initializer, scope, diagnostics);
+}
+
+function functionValueChildren(
+  expression: Node,
+  scope: ExtractionScope,
+  diagnostics: DiagnosticSink | undefined,
+): readonly OverviewNode[] {
+  const body = functionValueBody(expression);
+  if (!body) return [];
+  return extractOverviewChildren({ nodes: body.getStatements(), scope, diagnostics });
+}
+
+function functionValueBody(expression: Node): Block | undefined {
+  if (Node.isParenthesizedExpression(expression)) {
+    return functionValueBody(expression.getExpression());
+  }
+  if (Node.isArrowFunction(expression) || Node.isFunctionExpression(expression)) {
+    const body = expression.getBody();
+    return Node.isBlock(body) ? body : undefined;
+  }
+  return undefined;
 }
 
 function expandOverloads(node: Node): Node[] {

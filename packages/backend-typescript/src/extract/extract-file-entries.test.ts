@@ -252,6 +252,43 @@ describe("extractFileEntries", () => {
     ]);
   });
 
+  it("discovers declarations inside a function-valued variable initializer body", () => {
+    const source = ["const handler = () => {", "  function inner() {}", "};"].join("\n");
+    const handler = symbolsOf(source)[0];
+    if (!handler) throw new Error("expected handler");
+    expect(symbolChildren(handler).map((symbol) => formatSymbolIdentity(symbol.identity))).toEqual([
+      "input.ts::handler::inner",
+    ]);
+  });
+
+  it("discovers declarations inside a function-expression variable initializer body", () => {
+    const source = ["const handler = function () {", "  function inner() {}", "};"].join("\n");
+    const handler = symbolsOf(source)[0];
+    if (!handler) throw new Error("expected handler");
+    expect(symbolChildren(handler).map((symbol) => formatSymbolIdentity(symbol.identity))).toEqual([
+      "input.ts::handler::inner",
+    ]);
+  });
+
+  it("discovers declarations inside a default-exported arrow function body", () => {
+    const source = ["export default () => {", "  const nested = () => {};", "};"].join("\n");
+    const defaultExport = symbolsOf(source)[0];
+    if (!defaultExport) throw new Error("expected default export");
+    expect(defaultExport.kind.nativeLabel).toBe("default-export");
+    expect(
+      symbolChildren(defaultExport).map((symbol) => formatSymbolIdentity(symbol.identity)),
+    ).toEqual(["input.ts::default::nested"]);
+  });
+
+  it("discovers declarations inside a default-exported function expression body", () => {
+    const source = ["export default (function () {", "  const nested = 1;", "});"].join("\n");
+    const defaultExport = symbolsOf(source)[0];
+    if (!defaultExport) throw new Error("expected default export");
+    expect(
+      symbolChildren(defaultExport).map((symbol) => formatSymbolIdentity(symbol.identity)),
+    ).toEqual(["input.ts::default::nested"]);
+  });
+
   it("ignores class static blocks but counts other members", () => {
     const source = ["class C {", "  static {}", "  m() {}", "}"].join("\n");
     const result = symbolsOf(source);

@@ -85,7 +85,7 @@ function toOverviewNode(
   const foldKind = foldKindOf(node);
   if (foldKind) return toFoldNodes(node, foldKind, scope, diagnostics);
 
-  const reExport = extractReExportEntry(node, scope.file);
+  const reExport = extractReExportEntry(node);
   if (reExport) return [reExport];
 
   if (isIgnoredNode(node)) return [];

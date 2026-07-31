@@ -1,11 +1,7 @@
 import { Node } from "ts-morph";
 import type { LineRange, ReExportOverviewNode, Header } from "@symnav/core";
 
-export function extractReExportEntry(
-  node: Node,
-  filePath: string,
-): ReExportOverviewNode | undefined {
-  void filePath;
+export function extractReExportEntry(node: Node): ReExportOverviewNode | undefined {
   if (!Node.isExportDeclaration(node)) return undefined;
   const sourceModule = node.getModuleSpecifierValue();
   if (!sourceModule) return undefined;

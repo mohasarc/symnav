@@ -64,6 +64,10 @@ export class OverviewTree {
     return nodes.filter((node): node is SymbolOverviewNode => node.type === "symbol");
   }
 
+  static directFolds(nodes: readonly OverviewNode[]): readonly FoldOverviewNode[] {
+    return nodes.filter((node): node is FoldOverviewNode => node.type === "fold");
+  }
+
   static scopeSymbols(siblings: readonly OverviewNode[]): readonly SymbolOverviewNode[] {
     return siblings.flatMap((sibling) => {
       if (sibling.type === "symbol") return [sibling];

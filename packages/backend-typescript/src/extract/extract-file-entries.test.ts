@@ -62,12 +62,8 @@ function symbolsOf(source: string, filePath: string = "input.ts"): readonly Symb
   return OverviewTree.walkSymbols(fileEntriesOf(source, filePath).entries);
 }
 
-function symbolChildren(decl: SymbolOverviewNode): readonly SymbolOverviewNode[] {
-  return OverviewTree.walkSymbols(decl.children);
-}
-
-function childFolds(decl: SymbolOverviewNode): readonly FoldOverviewNode[] {
-  return decl.children.filter((child): child is FoldOverviewNode => child.type === "fold");
+function symbolChildren(symbol: SymbolOverviewNode): readonly SymbolOverviewNode[] {
+  return OverviewTree.walkSymbols(symbol.children);
 }
 
 describe("extractFileEntries", () => {
@@ -284,7 +280,9 @@ describe("extractFileEntries", () => {
     const outer = symbolsOf(source)[0];
     if (!outer) throw new Error("expected outer");
 
-    expect(childFolds(outer).map((fold) => [fold.foldKind, fold.header.lines])).toEqual([
+    expect(
+      OverviewTree.directFolds(outer.children).map((fold) => [fold.foldKind, fold.header.lines]),
+    ).toEqual([
       ["conditional", ["if (flag) {"]],
       ["loop", ["for (const item of items) {"]],
     ]);

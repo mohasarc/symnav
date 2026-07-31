@@ -3,7 +3,6 @@ import { describe, expect, it } from "vitest";
 import {
   FileNotFoundError,
   formatSymbolIdentity,
-  type FoldOverviewNode,
   InMemoryFileSystem,
   type FileSystem,
   type ResolvedPath,
@@ -151,7 +150,7 @@ describe("TypeScriptBackend.fileEntries", () => {
     const result = await backend.fileEntries(path("src/control-flow.ts"));
     const outer = result.entries[0];
     if (!outer || outer.type !== "symbol") throw new Error("expected outer symbol");
-    const folds = outer.children.filter((node): node is FoldOverviewNode => node.type === "fold");
+    const folds = OverviewTree.directFolds(outer.children);
     expect(folds.map((fold) => [fold.foldKind, fold.header.lines])).toEqual([
       ["conditional", ["if (flag) {"]],
     ]);

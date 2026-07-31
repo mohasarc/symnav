@@ -1,13 +1,22 @@
 import { describe, expect, it } from "vitest";
-import type { FoldOverviewNode, OverviewFileEntries, OverviewNode } from "@symnav/core";
+import {
+  CollectingDiagnosticSink,
+  type FoldOverviewNode,
+  type OverviewFileEntries,
+  type OverviewNode,
+} from "@symnav/core";
 
 import { parseTypeScriptSource } from "../../test/helpers/parse-typescript-source.js";
 import { extractFileEntries } from "./extract-file-entries.js";
 
-function fileEntriesOf(source: string): OverviewFileEntries {
+function fileEntriesOf(
+  source: string,
+  diagnostics?: CollectingDiagnosticSink,
+): OverviewFileEntries {
   return extractFileEntries({
     sourceFile: parseTypeScriptSource(source),
     filePath: "input.ts",
+    diagnostics,
   });
 }
 
@@ -323,5 +332,38 @@ describe("re-export extraction", () => {
         header: ['export * as ns from "./ns";'],
       },
     ]);
+  });
+
+  it("extracts a specifier-less named export without reporting a diagnostic", () => {
+    const diagnostics = new CollectingDiagnosticSink();
+    const source = ["const a = 1;", "export { a };"].join("\n");
+
+    const entries = fileEntriesOf(source, diagnostics).entries;
+
+    expect(foldSummaries(entries).at(-1)).toEqual({
+      type: "re-export",
+      exportKind: "named",
+      exportedNames: ["a"],
+      sourceModule: undefined,
+      header: ["export { a };"],
+    });
+    expect(diagnostics.diagnostics()).toEqual([]);
+  });
+
+  it("extracts a bare empty export without reporting a diagnostic", () => {
+    const diagnostics = new CollectingDiagnosticSink();
+
+    const entries = fileEntriesOf("export {};", diagnostics).entries;
+
+    expect(foldSummaries(entries)).toEqual([
+      {
+        type: "re-export",
+        exportKind: "named",
+        exportedNames: [],
+        sourceModule: undefined,
+        header: ["export {};"],
+      },
+    ]);
+    expect(diagnostics.diagnostics()).toEqual([]);
   });
 });

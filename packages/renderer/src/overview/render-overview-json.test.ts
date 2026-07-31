@@ -82,6 +82,65 @@ describe("renderOverviewJson", () => {
     expect(parsed.entries.map((entry) => entry.type)).toEqual(["symbol", "fold"]);
   });
 
+  it("mirrors fold and re-export entries verbatim, dropping an undefined sourceModule key", () => {
+    const nestedReExport = OverviewTree.reExport({
+      exportKind: "named",
+      exportedNames: ["A", "C"],
+      sourceModule: "./api",
+      range: { startLine: 3, endLine: 3 },
+      header: { startLine: 3, lines: ['export { A, B as C } from "./api";'] },
+    });
+    const foldEntry = OverviewTree.fold({
+      foldKind: "conditional",
+      range: { startLine: 2, endLine: 5 },
+      header: { startLine: 2, lines: ["if (", "  enabled", ") {"] },
+      children: [nestedReExport],
+    });
+    const specifierLessReExport = OverviewTree.reExport({
+      exportKind: "named",
+      exportedNames: ["a"],
+      sourceModule: undefined,
+      range: { startLine: 7, endLine: 7 },
+      header: { startLine: 7, lines: ["export { a };"] },
+    });
+    const file: OverviewFileEntries = {
+      file: "src/file.ts",
+      entries: [foldEntry, specifierLessReExport],
+    };
+
+    const parsed = JSON.parse(renderOverviewJson(file)) as OverviewFileEntries;
+
+    expect(parsed).toEqual({
+      file: "src/file.ts",
+      entries: [
+        {
+          type: "fold",
+          foldKind: "conditional",
+          range: { startLine: 2, endLine: 5 },
+          header: { startLine: 2, lines: ["if (", "  enabled", ") {"] },
+          children: [
+            {
+              type: "re-export",
+              exportKind: "named",
+              exportedNames: ["A", "C"],
+              sourceModule: "./api",
+              range: { startLine: 3, endLine: 3 },
+              header: { startLine: 3, lines: ['export { A, B as C } from "./api";'] },
+            },
+          ],
+        },
+        {
+          type: "re-export",
+          exportKind: "named",
+          exportedNames: ["a"],
+          range: { startLine: 7, endLine: 7 },
+          header: { startLine: 7, lines: ["export { a };"] },
+        },
+      ],
+    });
+    expect(parsed.entries[1]).not.toHaveProperty("sourceModule");
+  });
+
   it("emits 2-space-indented output with a trailing newline", () => {
     const file: OverviewFileEntries = {
       file: "src/file.ts",

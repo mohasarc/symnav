@@ -9,7 +9,7 @@ import type {
 } from "@symnav/core";
 
 import { renderOverviewText } from "./render-overview-text.js";
-import { HEADER_CAP_LINES, HEADER_ELLIPSIS } from "./header-cap.js";
+import { HEADER_CAP_LINES, HEADER_CAP_LINE_LENGTH, HEADER_ELLIPSIS } from "./header-cap.js";
 
 type DeclPartial = Pick<SymbolOverviewNode["identity"], "segments"> &
   Partial<Pick<SymbolOverviewNode, "range" | "header" | "children">> & {
@@ -505,6 +505,77 @@ describe("renderOverviewText", () => {
     const output = renderOverviewText(file);
     expect(output).toContain(`${HEADER_CAP_LINES} ${HEADER_ELLIPSIS}\n`);
     expect(output).not.toContain(`condition ${HEADER_CAP_LINES}`);
+  });
+
+  it("caps an over-length fold label at HEADER_CAP_LINE_LENGTH with a final elision marker", () => {
+    const label = `call(${"a".repeat(100)}) {`;
+    const file: OverviewFileEntries = {
+      file: "src/fold.ts",
+      entries: [fold({ range: { startLine: 1, endLine: 3 }, header: signature(1, label) })],
+    };
+
+    const cappedLabel = label.slice(0, HEADER_CAP_LINE_LENGTH - 1) + HEADER_ELLIPSIS;
+    expect(cappedLabel).toHaveLength(HEADER_CAP_LINE_LENGTH);
+    expect(renderOverviewText(file)).toBe(
+      ["Overview: src/fold.ts", `└── 1-3: ${cappedLabel}`, ""].join("\n"),
+    );
+  });
+
+  it("renders a fold label of exactly HEADER_CAP_LINE_LENGTH characters untouched", () => {
+    const label = "y".repeat(HEADER_CAP_LINE_LENGTH);
+    const file: OverviewFileEntries = {
+      file: "src/fold.ts",
+      entries: [fold({ range: { startLine: 1, endLine: 3 }, header: signature(1, label) })],
+    };
+
+    const output = renderOverviewText(file);
+    expect(output).toContain(`└── 1-3: ${label}\n`);
+    expect(output).not.toContain(HEADER_ELLIPSIS);
+  });
+
+  it("caps over-length re-export label and continuation lines", () => {
+    const label = `export { ${"A".repeat(100)}`;
+    const continuation = `  ${"B".repeat(100)},`;
+    const file: OverviewFileEntries = {
+      file: "src/index.ts",
+      entries: [
+        reExport({
+          range: { startLine: 1, endLine: 3 },
+          header: signature(1, label, continuation, '} from "./api";'),
+        }),
+      ],
+    };
+
+    const cappedLabel = label.slice(0, HEADER_CAP_LINE_LENGTH - 1) + HEADER_ELLIPSIS;
+    const cappedContinuation = continuation.slice(0, HEADER_CAP_LINE_LENGTH - 1) + HEADER_ELLIPSIS;
+    expect(renderOverviewText(file)).toBe(
+      [
+        "Overview: src/index.ts",
+        `└── 1-3: ${cappedLabel}`,
+        `    2 ${cappedContinuation}`,
+        '    3 } from "./api";',
+        "",
+      ].join("\n"),
+    );
+  });
+
+  it("renders over-length symbol header lines untouched", () => {
+    const longSignature = `function wide(${"a".repeat(100)}): void`;
+    const file: OverviewFileEntries = {
+      file: "src/file.ts",
+      entries: [
+        decl({
+          kind: "function",
+          segments: [{ name: "wide" }],
+          range: { startLine: 1, endLine: 1 },
+          header: signature(1, longSignature),
+        }),
+      ],
+    };
+
+    const output = renderOverviewText(file);
+    expect(output).toContain(`1 ${longSignature}\n`);
+    expect(output).not.toContain(HEADER_ELLIPSIS);
   });
 
   it("renders re-export nodes as header-only tree entries", () => {

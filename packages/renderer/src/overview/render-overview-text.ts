@@ -2,7 +2,7 @@ import type { Header, OverviewFileEntries, OverviewNode } from "@symnav/core";
 
 import { formatHeadLine, formatIdentityPath, treeGlyphsFor } from "../shared/render-format.js";
 import { formatEmptyOverview, formatOverviewHeader, formatHeaderLine } from "./overview-format.js";
-import { capHeaderLines } from "./header-cap.js";
+import { capHeaderLineLength, capHeaderLines } from "./header-cap.js";
 
 const TOP_LEVEL_SEPARATOR = "│\n";
 
@@ -42,7 +42,11 @@ function renderHeader(header: Header, prefix: string): string {
 }
 
 function renderHeaderContinuation(header: Header, prefix: string): string {
-  return formattedHeaderLines(header, prefix).slice(1).join("");
+  return formattedHeaderLines(lengthCappedHeader(header), prefix).slice(1).join("");
+}
+
+function lengthCappedHeader(header: Header): Header {
+  return { startLine: header.startLine, lines: header.lines.map(capHeaderLineLength) };
 }
 
 function formattedHeaderLines(header: Header, prefix: string): readonly string[] {
@@ -53,5 +57,5 @@ function formattedHeaderLines(header: Header, prefix: string): readonly string[]
 
 function overviewNodeLabel(node: OverviewNode): string {
   if (node.type === "symbol") return formatIdentityPath(node.identity);
-  return node.header.lines[0] ?? "";
+  return capHeaderLineLength(node.header.lines[0] ?? "");
 }

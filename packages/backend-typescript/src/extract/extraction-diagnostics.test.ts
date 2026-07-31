@@ -4,7 +4,7 @@ import { CollectingDiagnosticSink, OverviewTree, type OverviewNode } from "@symn
 
 import { parseTypeScriptSource } from "../../test/helpers/parse-typescript-source.js";
 import { extractFileEntries } from "./extract-file-entries.js";
-import { extractOverviewChildren } from "./extract-overview-children.js";
+import { OverviewChildrenExtractor } from "./extract-overview-children.js";
 
 function symbolChildrenOf(node: OverviewNode | undefined): readonly OverviewNode[] {
   return node?.type === "symbol" ? node.children : [];
@@ -20,10 +20,10 @@ describe("extraction diagnostics", () => {
     if (!render) throw new Error("expected render declaration");
     const diagnostics = new CollectingDiagnosticSink();
 
-    const entries = extractOverviewChildren({
-      nodes: [unhandled, unhandled, render],
-      scope: { file: "src/input.ts", symbolSegments: [], diagnostics },
-    });
+    const entries = new OverviewChildrenExtractor({
+      file: "src/input.ts",
+      diagnostics,
+    }).extract([unhandled, unhandled, render]);
 
     expect(
       OverviewTree.walkSymbols(entries).map((symbol) => symbol.identity.segments.at(-1)?.name),

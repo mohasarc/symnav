@@ -2,397 +2,440 @@ import {
   Node,
   SyntaxKind,
   type Block,
-  type ClassDeclaration,
   type ExpressionStatement,
-  type InterfaceDeclaration,
-  type ModuleDeclaration,
   type TryStatement,
   type VariableDeclaration,
   type VariableStatement,
 } from "ts-morph";
 import {
   splitHeaderLines,
+  type DiagnosticSink,
   type FoldOverviewNode,
   type LineRange,
   type OverviewNode,
   type Header,
   type SymbolIdentity,
   type SymbolOverviewNode,
+  type SymbolPathSegment,
 } from "@symnav/core";
 
 import { reportUnrecognisedNode } from "./extraction-diagnostics.js";
-import { extractFoldHeader } from "./extract-fold-header.js";
-import { extractReExportEntry } from "./extract-re-export-entry.js";
+import { FoldHeaderExtractor } from "./extract-fold-header.js";
+import { ReExportEntryExtractor } from "./extract-re-export-entry.js";
 import { extractSignatureSource } from "./extract-signature-source.js";
 import { extractVariableSignature } from "./extract-variable-signature.js";
-import { childSymbolScope, type ExtractionScope } from "./extraction-scope.js";
-import { foldKindOf, type TypeScriptFoldKind } from "./fold-node-kind.js";
+import { FoldNodeKind, type TypeScriptFoldKind } from "./fold-node-kind.js";
 import { nodeKind } from "./node-kind.js";
 import { refineLabel } from "./refine-label.js";
 import { statementCallExpression, trailingCallbackBody } from "./trailing-callback.js";
 import { roleOf } from "./typescript-symbol-kind.js";
 
-export interface ExtractOverviewChildrenArgs {
-  readonly nodes: readonly Node[];
-  readonly scope: ExtractionScope;
-}
+export class OverviewChildrenExtractor {
+  private static readonly IGNORED_STATEMENT_KINDS: ReadonlySet<SyntaxKind> = new Set([
+    SyntaxKind.ImportDeclaration,
+    SyntaxKind.NamespaceExportDeclaration,
+    SyntaxKind.ImportEqualsDeclaration,
+    SyntaxKind.EmptyStatement,
+    SyntaxKind.ExpressionStatement,
+    SyntaxKind.ThrowStatement,
+    SyntaxKind.ReturnStatement,
+    SyntaxKind.BreakStatement,
+    SyntaxKind.ContinueStatement,
+    SyntaxKind.LabeledStatement,
+    SyntaxKind.DebuggerStatement,
+    SyntaxKind.WithStatement,
+  ]);
 
-export function extractOverviewChildren(
-  args: ExtractOverviewChildrenArgs,
-): readonly OverviewNode[] {
-  return extractNodes({ nodes: args.nodes, scope: args.scope, category: "statement" });
-}
+  private static readonly IGNORED_MEMBER_KINDS: ReadonlySet<SyntaxKind> = new Set([
+    SyntaxKind.ClassStaticBlockDeclaration,
+    SyntaxKind.SemicolonClassElement,
+  ]);
 
-function extractNodes(args: {
-  nodes: readonly Node[];
-  scope: ExtractionScope;
-  category: "statement" | "member";
-}): readonly OverviewNode[] {
-  return args.nodes.flatMap((node) =>
-    toOverviewNode({ node, scope: args.scope, category: args.category }),
-  );
-}
+  private readonly file: string;
+  private readonly diagnostics: DiagnosticSink | undefined;
 
-const IGNORED_STATEMENT_KINDS: ReadonlySet<SyntaxKind> = new Set([
-  SyntaxKind.ImportDeclaration,
-  SyntaxKind.NamespaceExportDeclaration,
-  SyntaxKind.ImportEqualsDeclaration,
-  SyntaxKind.EmptyStatement,
-  SyntaxKind.ExpressionStatement,
-  SyntaxKind.ThrowStatement,
-  SyntaxKind.ReturnStatement,
-  SyntaxKind.BreakStatement,
-  SyntaxKind.ContinueStatement,
-  SyntaxKind.LabeledStatement,
-  SyntaxKind.DebuggerStatement,
-  SyntaxKind.WithStatement,
-]);
-
-const IGNORED_MEMBER_KINDS: ReadonlySet<SyntaxKind> = new Set([
-  SyntaxKind.ClassStaticBlockDeclaration,
-  SyntaxKind.SemicolonClassElement,
-]);
-
-function toOverviewNode(args: {
-  node: Node;
-  scope: ExtractionScope;
-  category: "statement" | "member";
-}): readonly OverviewNode[] {
-  const { node, scope, category } = args;
-  const kind = nodeKind(node);
-  if (kind) return toSymbolNodes(node, kind, scope);
-
-  const foldKind = foldKindOf(node);
-  if (foldKind) return toFoldNodes(node, foldKind, scope);
-
-  const reExport = extractReExportEntry(node);
-  if (reExport) return [reExport];
-
-  if (isIgnoredNode(node)) return [];
-  if (!scope.diagnostics) return [];
-  reportUnrecognisedNode({
-    sink: scope.diagnostics,
-    node,
-    filePath: scope.file,
-    category,
-  });
-  return [];
-}
-
-function toSymbolNodes(
-  node: Node,
-  kind: NonNullable<ReturnType<typeof nodeKind>>,
-  scope: ExtractionScope,
-): readonly SymbolOverviewNode[] {
-  if (Node.isVariableStatement(node)) {
-    return expandVariableStatement(node, scope);
+  constructor(args: { file: string; diagnostics?: DiagnosticSink | undefined }) {
+    this.file = args.file;
+    this.diagnostics = args.diagnostics;
   }
-  if (isMemberNode(node)) {
-    return expandOverloads(node).map((member) => buildSymbolNode({ node: member, kind, scope }));
-  }
-  return [buildSymbolNode({ node, kind, scope })];
-}
 
-function buildSymbolNode(args: {
-  node: Node;
-  kind: NonNullable<ReturnType<typeof nodeKind>>;
-  scope: ExtractionScope;
-}): SymbolOverviewNode {
-  const { node, kind, scope } = args;
-  const range = nodeRange(node);
-  const name = nodeName(node);
-  const refined = refineLabel(node, kind);
-  const symbolScope = childSymbolScope(scope, name);
-  return {
-    type: "symbol",
-    identity: identityFor(symbolScope),
-    kind: { role: roleOf(refined), nativeLabel: refined },
-    range,
-    header: headerFrom(range.startLine, extractSignatureSource(node)),
-    children: symbolChildren(node, symbolScope),
-  };
-}
+  extract(nodes: readonly Node[]): readonly OverviewNode[] {
+    return this.extractNodes({ nodes, symbolSegments: [], category: "statement" });
+  }
 
-function symbolChildren(node: Node, scope: ExtractionScope): readonly OverviewNode[] {
-  if (Node.isClassDeclaration(node) || Node.isInterfaceDeclaration(node)) {
-    return extractNodes({ nodes: node.getMembers(), scope, category: "member" });
+  private extractNodes(args: {
+    nodes: readonly Node[];
+    symbolSegments: readonly SymbolPathSegment[];
+    category: "statement" | "member";
+  }): readonly OverviewNode[] {
+    return args.nodes.flatMap((node) =>
+      this.toOverviewNode({ node, symbolSegments: args.symbolSegments, category: args.category }),
+    );
   }
-  if (Node.isModuleDeclaration(node)) {
-    return extractOverviewChildren({ nodes: node.getStatements(), scope });
-  }
-  if (Node.isExportAssignment(node)) {
-    return functionValueChildren(node.getExpression(), scope);
-  }
-  const body = functionBodyOf(node);
-  if (!body) return [];
-  return extractOverviewChildren({ nodes: body.getStatements(), scope });
-}
 
-function toFoldNodes(
-  node: Node,
-  foldKind: TypeScriptFoldKind,
-  scope: ExtractionScope,
-): readonly FoldOverviewNode[] {
-  if (Node.isTryStatement(node)) {
-    return tryFoldNodes(node, scope);
-  }
-  return [
-    {
-      type: "fold",
-      foldKind,
-      range: nodeRange(node),
-      header: extractFoldHeader(node),
-      children: foldChildren(node, scope),
-    },
-  ];
-}
+  private toOverviewNode(args: {
+    node: Node;
+    symbolSegments: readonly SymbolPathSegment[];
+    category: "statement" | "member";
+  }): readonly OverviewNode[] {
+    const { node, symbolSegments, category } = args;
+    const kind = nodeKind(node);
+    if (kind) return this.toSymbolNodes(node, kind, symbolSegments);
 
-function tryFoldNodes(node: TryStatement, scope: ExtractionScope): readonly FoldOverviewNode[] {
-  const nodes: FoldOverviewNode[] = [
-    {
-      type: "fold",
-      foldKind: "try",
-      range: nodeRange(node.getTryBlock()),
-      header: extractFoldHeader(node),
-      children: extractOverviewChildren({
-        nodes: node.getTryBlock().getStatements(),
-        scope,
-      }),
-    },
-  ];
-  const catchClause = node.getCatchClause();
-  if (catchClause) {
-    nodes.push({
-      type: "fold",
-      foldKind: "catch",
-      range: nodeRange(catchClause),
-      header: extractFoldHeader(catchClause),
-      children: extractOverviewChildren({
-        nodes: catchClause.getBlock().getStatements(),
-        scope,
-      }),
+    const foldKind = FoldNodeKind.of(node);
+    if (foldKind) return this.toFoldNodes(node, foldKind, symbolSegments);
+
+    const reExport = ReExportEntryExtractor.extract(node);
+    if (reExport) return [reExport];
+
+    if (OverviewChildrenExtractor.isIgnoredNode(node)) return [];
+    if (!this.diagnostics) return [];
+    reportUnrecognisedNode({
+      sink: this.diagnostics,
+      node,
+      filePath: this.file,
+      category,
     });
+    return [];
   }
-  const finallyBlock = node.getFinallyBlock();
-  if (finallyBlock) {
-    nodes.push({
-      type: "fold",
-      foldKind: "finally",
-      range: nodeRange(finallyBlock),
-      header: { startLine: finallyBlock.getStartLineNumber(), lines: ["finally {"] },
-      children: extractOverviewChildren({
-        nodes: finallyBlock.getStatements(),
-        scope,
-      }),
-    });
-  }
-  return nodes;
-}
 
-function foldChildren(node: Node, scope: ExtractionScope): readonly OverviewNode[] {
-  if (Node.isExpressionStatement(node)) {
-    const body = trailingCallBody(node);
-    return body ? extractOverviewChildren({ nodes: body.getStatements(), scope }) : [];
-  }
-  if (Node.isBlock(node)) {
-    return extractOverviewChildren({ nodes: node.getStatements(), scope });
-  }
-  if (Node.isIfStatement(node)) {
-    return extractStatementChildren(node.getThenStatement(), scope);
-  }
-  if (
-    Node.isForStatement(node) ||
-    Node.isForInStatement(node) ||
-    Node.isForOfStatement(node) ||
-    Node.isWhileStatement(node) ||
-    Node.isDoStatement(node)
-  ) {
-    return extractStatementChildren(node.getStatement(), scope);
-  }
-  if (Node.isSwitchStatement(node)) {
-    return extractOverviewChildren({
-      nodes: node.getCaseBlock().getClauses(),
-      scope,
-    });
-  }
-  if (Node.isCaseClause(node) || Node.isDefaultClause(node)) {
-    return node
-      .getStatements()
-      .flatMap((statement) =>
-        Node.isBlock(statement)
-          ? extractOverviewChildren({ nodes: statement.getStatements(), scope })
-          : toOverviewNode({ node: statement, scope, category: "statement" }),
+  private toSymbolNodes(
+    node: Node,
+    kind: NonNullable<ReturnType<typeof nodeKind>>,
+    symbolSegments: readonly SymbolPathSegment[],
+  ): readonly SymbolOverviewNode[] {
+    if (Node.isVariableStatement(node)) {
+      return this.expandVariableStatement(node, symbolSegments);
+    }
+    if (OverviewChildrenExtractor.isMemberNode(node)) {
+      return OverviewChildrenExtractor.expandOverloads(node).map((member) =>
+        this.buildSymbolNode({ node: member, kind, symbolSegments }),
       );
+    }
+    return [this.buildSymbolNode({ node, kind, symbolSegments })];
   }
-  return [];
-}
 
-function extractStatementChildren(
-  statement: Node,
-  scope: ExtractionScope,
-): readonly OverviewNode[] {
-  if (Node.isBlock(statement)) {
-    return extractOverviewChildren({ nodes: statement.getStatements(), scope });
-  }
-  return toOverviewNode({ node: statement, scope, category: "statement" });
-}
-
-function expandVariableStatement(
-  statement: VariableStatement,
-  scope: ExtractionScope,
-): readonly SymbolOverviewNode[] {
-  const declList = statement.getDeclarationList();
-  const range = nodeRange(statement);
-  return declList.getDeclarations().map((decl) => {
-    const symbolScope = childSymbolScope(scope, decl.getName());
+  private buildSymbolNode(args: {
+    node: Node;
+    kind: NonNullable<ReturnType<typeof nodeKind>>;
+    symbolSegments: readonly SymbolPathSegment[];
+  }): SymbolOverviewNode {
+    const { node, kind, symbolSegments } = args;
+    const range = OverviewChildrenExtractor.nodeRange(node);
+    const name = OverviewChildrenExtractor.nodeName(node);
+    const refined = refineLabel(node, kind);
+    const childSegments = [...symbolSegments, { name }];
     return {
       type: "symbol",
-      identity: identityFor(symbolScope),
-      kind: { role: roleOf("variable"), nativeLabel: "variable" },
+      identity: this.identityFor(childSegments),
+      kind: { role: roleOf(refined), nativeLabel: refined },
       range,
-      header: headerFrom(
-        range.startLine,
-        extractVariableSignature({ statement, declaration: decl }),
-      ),
-      children: variableInitializerChildren(decl, symbolScope),
+      header: OverviewChildrenExtractor.headerFrom(range.startLine, extractSignatureSource(node)),
+      children: this.symbolChildren(node, childSegments),
     };
-  });
-}
-
-function variableInitializerChildren(
-  declaration: VariableDeclaration,
-  scope: ExtractionScope,
-): readonly OverviewNode[] {
-  const initializer = declaration.getInitializer();
-  if (!initializer) return [];
-  return functionValueChildren(initializer, scope);
-}
-
-function functionValueChildren(expression: Node, scope: ExtractionScope): readonly OverviewNode[] {
-  const body = functionValueBody(expression);
-  if (!body) return [];
-  return extractOverviewChildren({ nodes: body.getStatements(), scope });
-}
-
-function functionValueBody(expression: Node): Block | undefined {
-  if (Node.isParenthesizedExpression(expression)) {
-    return functionValueBody(expression.getExpression());
   }
-  if (Node.isArrowFunction(expression) || Node.isFunctionExpression(expression)) {
-    const body = expression.getBody();
-    return Node.isBlock(body) ? body : undefined;
-  }
-  return undefined;
-}
 
-function expandOverloads(node: Node): Node[] {
-  if (Node.isOverloadable(node) && node.isImplementation()) {
-    const overloads = node.getOverloads();
-    if (overloads.length > 0) {
-      return [...overloads, node];
+  private symbolChildren(
+    node: Node,
+    symbolSegments: readonly SymbolPathSegment[],
+  ): readonly OverviewNode[] {
+    if (Node.isClassDeclaration(node) || Node.isInterfaceDeclaration(node)) {
+      return this.extractNodes({ nodes: node.getMembers(), symbolSegments, category: "member" });
     }
-  }
-  return [node];
-}
-
-function functionBodyOf(node: Node): Block | undefined {
-  if (
-    Node.isFunctionDeclaration(node) ||
-    Node.isMethodDeclaration(node) ||
-    Node.isConstructorDeclaration(node) ||
-    Node.isGetAccessorDeclaration(node) ||
-    Node.isSetAccessorDeclaration(node) ||
-    Node.isFunctionExpression(node)
-  ) {
-    const body = node.getBody();
-    return body && Node.isBlock(body) ? body : undefined;
-  }
-  return undefined;
-}
-
-function trailingCallBody(node: ExpressionStatement): Block | undefined {
-  const call = statementCallExpression(node);
-  if (!call) return undefined;
-  return trailingCallbackBody(call);
-}
-
-function identityFor(scope: ExtractionScope): SymbolIdentity {
-  return {
-    file: scope.file,
-    segments: scope.symbolSegments,
-  };
-}
-
-function headerFrom(startLine: number, raw: string): Header {
-  return { startLine, lines: splitHeaderLines(raw) };
-}
-
-function nodeName(node: Node): string {
-  if (Node.isConstructorDeclaration(node)) return "constructor";
-  if (Node.isCallSignatureDeclaration(node)) return "()";
-  if (Node.isConstructSignatureDeclaration(node)) return "new()";
-  if (Node.isIndexSignatureDeclaration(node)) return "[index]";
-  if (Node.isExportAssignment(node)) return "default";
-
-  if (
-    Node.isFunctionDeclaration(node) ||
-    Node.isClassDeclaration(node) ||
-    Node.isInterfaceDeclaration(node) ||
-    Node.isTypeAliasDeclaration(node) ||
-    Node.isEnumDeclaration(node) ||
-    Node.isModuleDeclaration(node) ||
-    Node.isMethodDeclaration(node) ||
-    Node.isGetAccessorDeclaration(node) ||
-    Node.isSetAccessorDeclaration(node) ||
-    Node.isPropertyDeclaration(node) ||
-    Node.isMethodSignature(node) ||
-    Node.isPropertySignature(node)
-  ) {
-    return node.getName() ?? "";
+    if (Node.isModuleDeclaration(node)) {
+      return this.extractNodes({
+        nodes: node.getStatements(),
+        symbolSegments,
+        category: "statement",
+      });
+    }
+    if (Node.isExportAssignment(node)) {
+      return this.functionValueChildren(node.getExpression(), symbolSegments);
+    }
+    const body = OverviewChildrenExtractor.functionBodyOf(node);
+    if (!body) return [];
+    return this.extractNodes({
+      nodes: body.getStatements(),
+      symbolSegments,
+      category: "statement",
+    });
   }
 
-  return "";
-}
+  private toFoldNodes(
+    node: Node,
+    foldKind: TypeScriptFoldKind,
+    symbolSegments: readonly SymbolPathSegment[],
+  ): readonly FoldOverviewNode[] {
+    if (Node.isTryStatement(node)) {
+      return this.tryFoldNodes(node, symbolSegments);
+    }
+    return [
+      {
+        type: "fold",
+        foldKind,
+        range: OverviewChildrenExtractor.nodeRange(node),
+        header: FoldHeaderExtractor.extract(node),
+        children: this.foldChildren(node, symbolSegments),
+      },
+    ];
+  }
 
-function nodeRange(node: Node): LineRange {
-  return {
-    startLine: node.getStartLineNumber(),
-    endLine: node.getEndLineNumber(),
-  };
-}
+  private tryFoldNodes(
+    node: TryStatement,
+    symbolSegments: readonly SymbolPathSegment[],
+  ): readonly FoldOverviewNode[] {
+    const nodes: FoldOverviewNode[] = [
+      {
+        type: "fold",
+        foldKind: "try",
+        range: OverviewChildrenExtractor.nodeRange(node.getTryBlock()),
+        header: FoldHeaderExtractor.extract(node),
+        children: this.extractNodes({
+          nodes: node.getTryBlock().getStatements(),
+          symbolSegments,
+          category: "statement",
+        }),
+      },
+    ];
+    const catchClause = node.getCatchClause();
+    if (catchClause) {
+      nodes.push({
+        type: "fold",
+        foldKind: "catch",
+        range: OverviewChildrenExtractor.nodeRange(catchClause),
+        header: FoldHeaderExtractor.extract(catchClause),
+        children: this.extractNodes({
+          nodes: catchClause.getBlock().getStatements(),
+          symbolSegments,
+          category: "statement",
+        }),
+      });
+    }
+    const finallyBlock = node.getFinallyBlock();
+    if (finallyBlock) {
+      nodes.push({
+        type: "fold",
+        foldKind: "finally",
+        range: OverviewChildrenExtractor.nodeRange(finallyBlock),
+        header: { startLine: finallyBlock.getStartLineNumber(), lines: ["finally {"] },
+        children: this.extractNodes({
+          nodes: finallyBlock.getStatements(),
+          symbolSegments,
+          category: "statement",
+        }),
+      });
+    }
+    return nodes;
+  }
 
-function isMemberNode(node: Node): boolean {
-  const parent = node.getParent();
-  return (
-    !!parent &&
-    (Node.isClassDeclaration(parent) || Node.isInterfaceDeclaration(parent)) &&
-    !Node.isClassDeclaration(node) &&
-    !Node.isInterfaceDeclaration(node)
-  );
-}
+  private foldChildren(
+    node: Node,
+    symbolSegments: readonly SymbolPathSegment[],
+  ): readonly OverviewNode[] {
+    if (Node.isExpressionStatement(node)) {
+      const body = OverviewChildrenExtractor.trailingCallBody(node);
+      return body
+        ? this.extractNodes({ nodes: body.getStatements(), symbolSegments, category: "statement" })
+        : [];
+    }
+    if (Node.isBlock(node)) {
+      return this.extractNodes({
+        nodes: node.getStatements(),
+        symbolSegments,
+        category: "statement",
+      });
+    }
+    if (Node.isIfStatement(node)) {
+      return this.extractStatementChildren(node.getThenStatement(), symbolSegments);
+    }
+    if (
+      Node.isForStatement(node) ||
+      Node.isForInStatement(node) ||
+      Node.isForOfStatement(node) ||
+      Node.isWhileStatement(node) ||
+      Node.isDoStatement(node)
+    ) {
+      return this.extractStatementChildren(node.getStatement(), symbolSegments);
+    }
+    if (Node.isSwitchStatement(node)) {
+      return this.extractNodes({
+        nodes: node.getCaseBlock().getClauses(),
+        symbolSegments,
+        category: "statement",
+      });
+    }
+    if (Node.isCaseClause(node) || Node.isDefaultClause(node)) {
+      return node.getStatements().flatMap((statement) =>
+        Node.isBlock(statement)
+          ? this.extractNodes({
+              nodes: statement.getStatements(),
+              symbolSegments,
+              category: "statement",
+            })
+          : this.toOverviewNode({ node: statement, symbolSegments, category: "statement" }),
+      );
+    }
+    return [];
+  }
 
-function isIgnoredNode(node: Node): boolean {
-  if (IGNORED_STATEMENT_KINDS.has(node.getKind())) return true;
-  if (IGNORED_MEMBER_KINDS.has(node.getKind())) return true;
-  return false;
+  private extractStatementChildren(
+    statement: Node,
+    symbolSegments: readonly SymbolPathSegment[],
+  ): readonly OverviewNode[] {
+    if (Node.isBlock(statement)) {
+      return this.extractNodes({
+        nodes: statement.getStatements(),
+        symbolSegments,
+        category: "statement",
+      });
+    }
+    return this.toOverviewNode({ node: statement, symbolSegments, category: "statement" });
+  }
+
+  private expandVariableStatement(
+    statement: VariableStatement,
+    symbolSegments: readonly SymbolPathSegment[],
+  ): readonly SymbolOverviewNode[] {
+    const declList = statement.getDeclarationList();
+    const range = OverviewChildrenExtractor.nodeRange(statement);
+    return declList.getDeclarations().map((decl) => {
+      const childSegments = [...symbolSegments, { name: decl.getName() }];
+      return {
+        type: "symbol",
+        identity: this.identityFor(childSegments),
+        kind: { role: roleOf("variable"), nativeLabel: "variable" },
+        range,
+        header: OverviewChildrenExtractor.headerFrom(
+          range.startLine,
+          extractVariableSignature({ statement, declaration: decl }),
+        ),
+        children: this.variableInitializerChildren(decl, childSegments),
+      };
+    });
+  }
+
+  private variableInitializerChildren(
+    declaration: VariableDeclaration,
+    symbolSegments: readonly SymbolPathSegment[],
+  ): readonly OverviewNode[] {
+    const initializer = declaration.getInitializer();
+    if (!initializer) return [];
+    return this.functionValueChildren(initializer, symbolSegments);
+  }
+
+  private functionValueChildren(
+    expression: Node,
+    symbolSegments: readonly SymbolPathSegment[],
+  ): readonly OverviewNode[] {
+    const body = OverviewChildrenExtractor.functionValueBody(expression);
+    if (!body) return [];
+    return this.extractNodes({
+      nodes: body.getStatements(),
+      symbolSegments,
+      category: "statement",
+    });
+  }
+
+  private identityFor(symbolSegments: readonly SymbolPathSegment[]): SymbolIdentity {
+    return {
+      file: this.file,
+      segments: symbolSegments,
+    };
+  }
+
+  private static functionValueBody(expression: Node): Block | undefined {
+    if (Node.isParenthesizedExpression(expression)) {
+      return OverviewChildrenExtractor.functionValueBody(expression.getExpression());
+    }
+    if (Node.isArrowFunction(expression) || Node.isFunctionExpression(expression)) {
+      const body = expression.getBody();
+      return Node.isBlock(body) ? body : undefined;
+    }
+    return undefined;
+  }
+
+  private static expandOverloads(node: Node): Node[] {
+    if (Node.isOverloadable(node) && node.isImplementation()) {
+      const overloads = node.getOverloads();
+      if (overloads.length > 0) {
+        return [...overloads, node];
+      }
+    }
+    return [node];
+  }
+
+  private static functionBodyOf(node: Node): Block | undefined {
+    if (
+      Node.isFunctionDeclaration(node) ||
+      Node.isMethodDeclaration(node) ||
+      Node.isConstructorDeclaration(node) ||
+      Node.isGetAccessorDeclaration(node) ||
+      Node.isSetAccessorDeclaration(node) ||
+      Node.isFunctionExpression(node)
+    ) {
+      const body = node.getBody();
+      return body && Node.isBlock(body) ? body : undefined;
+    }
+    return undefined;
+  }
+
+  private static trailingCallBody(node: ExpressionStatement): Block | undefined {
+    const call = statementCallExpression(node);
+    if (!call) return undefined;
+    return trailingCallbackBody(call);
+  }
+
+  private static headerFrom(startLine: number, raw: string): Header {
+    return { startLine, lines: splitHeaderLines(raw) };
+  }
+
+  private static nodeName(node: Node): string {
+    if (Node.isConstructorDeclaration(node)) return "constructor";
+    if (Node.isCallSignatureDeclaration(node)) return "()";
+    if (Node.isConstructSignatureDeclaration(node)) return "new()";
+    if (Node.isIndexSignatureDeclaration(node)) return "[index]";
+    if (Node.isExportAssignment(node)) return "default";
+
+    if (
+      Node.isFunctionDeclaration(node) ||
+      Node.isClassDeclaration(node) ||
+      Node.isInterfaceDeclaration(node) ||
+      Node.isTypeAliasDeclaration(node) ||
+      Node.isEnumDeclaration(node) ||
+      Node.isModuleDeclaration(node) ||
+      Node.isMethodDeclaration(node) ||
+      Node.isGetAccessorDeclaration(node) ||
+      Node.isSetAccessorDeclaration(node) ||
+      Node.isPropertyDeclaration(node) ||
+      Node.isMethodSignature(node) ||
+      Node.isPropertySignature(node)
+    ) {
+      return node.getName() ?? "";
+    }
+
+    return "";
+  }
+
+  private static nodeRange(node: Node): LineRange {
+    return {
+      startLine: node.getStartLineNumber(),
+      endLine: node.getEndLineNumber(),
+    };
+  }
+
+  private static isMemberNode(node: Node): boolean {
+    const parent = node.getParent();
+    return (
+      !!parent &&
+      (Node.isClassDeclaration(parent) || Node.isInterfaceDeclaration(parent)) &&
+      !Node.isClassDeclaration(node) &&
+      !Node.isInterfaceDeclaration(node)
+    );
+  }
+
+  private static isIgnoredNode(node: Node): boolean {
+    if (OverviewChildrenExtractor.IGNORED_STATEMENT_KINDS.has(node.getKind())) return true;
+    if (OverviewChildrenExtractor.IGNORED_MEMBER_KINDS.has(node.getKind())) return true;
+    return false;
+  }
 }

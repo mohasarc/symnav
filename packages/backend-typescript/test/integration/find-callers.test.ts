@@ -14,6 +14,8 @@ const CALL_GRAPH_CASES: Record<string, string> = {
     "export function calledDynamically(): void {}",
     "export function calledFromNestedTraversal(): void {}",
     "export function mentionedNotCalled(): void {}",
+    "export function calledFromFunctionValuedConst(): void {}",
+    "export function calledFromTopLevelHandler(): void {}",
     "",
   ].join("\n"),
   "/repo/src/callers/file-a.ts": [
@@ -82,16 +84,37 @@ const CALL_GRAPH_CASES: Record<string, string> = {
     "}",
     "",
   ].join("\n"),
+  "/repo/src/callers/function-valued-const.ts": [
+    'import { calledFromFunctionValuedConst } from "./targets.js";',
+    "",
+    "export function bar(): void {",
+    "  const handler = () => {",
+    "    calledFromFunctionValuedConst();",
+    "  };",
+    "  handler();",
+    "}",
+    "",
+  ].join("\n"),
+  "/repo/src/callers/top-level-handler.ts": [
+    'import { calledFromTopLevelHandler } from "./targets.js";',
+    "",
+    "export const handler = () => {",
+    "  calledFromTopLevelHandler();",
+    "};",
+    "",
+  ].join("\n"),
 };
 
 const ALL_FILES: readonly ResolvedPath[] = [
   "src/callers/dynamic.ts",
   "src/callers/file-a.ts",
   "src/callers/file-b.ts",
+  "src/callers/function-valued-const.ts",
   "src/callers/mentions.ts",
   "src/callers/nested.ts",
   "src/callers/sample.test.ts",
   "src/callers/targets.ts",
+  "src/callers/top-level-handler.ts",
   "src/callers/twice.ts",
 ].map((relative) => ({ relative, absolute: `/repo/${relative}` }));
 
@@ -151,6 +174,24 @@ describe("TypeScriptBackend.findCallers", () => {
   it("ignores references that are imports or type-only mentions, not calls", async () => {
     const edges = await callersOf("mentionedNotCalled");
     expect(edges).toEqual([]);
+  });
+
+  it("attributes a call inside a function-valued const to the nearest enclosing non-value symbol", async () => {
+    const edges = await callersOf("calledFromFunctionValuedConst");
+    expect(edges).toHaveLength(1);
+    expect(edges[0]!.symbol.identity).toEqual({
+      file: "src/callers/function-valued-const.ts",
+      segments: [{ name: "bar" }],
+    });
+  });
+
+  it("falls back to the function-valued const itself when no enclosing non-value symbol exists", async () => {
+    const edges = await callersOf("calledFromTopLevelHandler");
+    expect(edges).toHaveLength(1);
+    expect(edges[0]!.symbol.identity).toEqual({
+      file: "src/callers/top-level-handler.ts",
+      segments: [{ name: "handler" }],
+    });
   });
 
   it("tags an indirect dispatch caller as a possible edge with a reason", async () => {

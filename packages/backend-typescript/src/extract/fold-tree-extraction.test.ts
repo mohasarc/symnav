@@ -259,6 +259,79 @@ describe("fold tree extraction", () => {
     ]);
   });
 
+  it("fuses an awaited call with a trailing callback", () => {
+    const source = ["await runSuite(() => {", "  const helper = 1;", "});"].join("\n");
+
+    expect(foldSummaries(fileEntriesOf(source).entries)).toEqual([
+      {
+        type: "fold",
+        foldKind: "call",
+        header: ["await runSuite(() => {"],
+        children: [
+          {
+            type: "symbol",
+            name: "helper",
+            header: ["const helper = 1"],
+            children: [],
+          },
+        ],
+      },
+    ]);
+  });
+
+  it("fuses an assigned call with a trailing callback", () => {
+    const source = ["x = register(() => {", "  const helper = 1;", "});"].join("\n");
+
+    expect(foldSummaries(fileEntriesOf(source).entries)).toEqual([
+      {
+        type: "fold",
+        foldKind: "call",
+        header: ["x = register(() => {"],
+        children: [
+          {
+            type: "symbol",
+            name: "helper",
+            header: ["const helper = 1"],
+            children: [],
+          },
+        ],
+      },
+    ]);
+  });
+
+  it("fuses an assigned awaited call with a trailing callback", () => {
+    const source = ["x = await f(() => {", "  const helper = 1;", "});"].join("\n");
+
+    expect(foldSummaries(fileEntriesOf(source).entries)).toEqual([
+      {
+        type: "fold",
+        foldKind: "call",
+        header: ["x = await f(() => {"],
+        children: [
+          {
+            type: "symbol",
+            name: "helper",
+            header: ["const helper = 1"],
+            children: [],
+          },
+        ],
+      },
+    ]);
+  });
+
+  it("does not fuse through compound assignment operators like += and ??=", () => {
+    const source = [
+      "x += register(() => {",
+      "  const helper = 1;",
+      "});",
+      "y ??= register(() => {",
+      "  const other = 1;",
+      "});",
+    ].join("\n");
+
+    expect(foldSummaries(fileEntriesOf(source).entries)).toEqual([]);
+  });
+
   it("does not turn nested call expressions into symbols", () => {
     const source = ["const value = compute(run());", "", "effect();"].join("\n");
 

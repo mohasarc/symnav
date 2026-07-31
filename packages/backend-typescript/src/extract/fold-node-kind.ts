@@ -1,5 +1,7 @@
 import { Node } from "ts-morph";
 
+import { statementCallExpression } from "./trailing-callback.js";
+
 export type TypeScriptFoldKind =
   | "call"
   | "block"
@@ -13,7 +15,7 @@ export type TypeScriptFoldKind =
   | "finally";
 
 export function foldKindOf(node: Node): TypeScriptFoldKind | undefined {
-  if (Node.isExpressionStatement(node) && Node.isCallExpression(node.getExpression())) {
+  if (Node.isExpressionStatement(node) && statementCallExpression(node)) {
     return "call";
   }
   if (Node.isBlock(node)) return "block";

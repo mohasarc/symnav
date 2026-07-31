@@ -9,15 +9,16 @@ export function extractReExportEntry(node: Node): ReExportOverviewNode | undefin
   if (namespaceExport) {
     return reExportNode(node, "namespace", [namespaceExport.getName()], sourceModule);
   }
-  if (sourceModule && !node.hasNamedExports()) {
+  const namedExports = node.getNamedExports();
+  if (sourceModule && namedExports.length === 0) {
     return reExportNode(node, "star", [], sourceModule);
   }
   return reExportNode(
     node,
     "named",
-    node
-      .getNamedExports()
-      .map((namedExport) => namedExport.getAliasNode()?.getText() ?? namedExport.getName()),
+    namedExports.map(
+      (namedExport) => namedExport.getAliasNode()?.getText() ?? namedExport.getName(),
+    ),
     sourceModule,
   );
 }

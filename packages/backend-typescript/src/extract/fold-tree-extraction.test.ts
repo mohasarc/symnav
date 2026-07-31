@@ -447,6 +447,18 @@ describe("re-export extraction", () => {
     expect(diagnostics.diagnostics()).toEqual([]);
   });
 
+  it("classifies an empty named clause with a specifier as a star re-export", () => {
+    expect(foldSummaries(fileEntriesOf('export {} from "./m";').entries)).toEqual([
+      {
+        type: "re-export",
+        exportKind: "star",
+        exportedNames: [],
+        sourceModule: "./m",
+        header: ['export {} from "./m";'],
+      },
+    ]);
+  });
+
   it("extracts a bare empty export without reporting a diagnostic", () => {
     const diagnostics = new CollectingDiagnosticSink();
 

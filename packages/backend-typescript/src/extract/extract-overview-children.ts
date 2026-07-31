@@ -40,15 +40,17 @@ export interface ExtractOverviewChildrenArgs {
 export function extractOverviewChildren(
   args: ExtractOverviewChildrenArgs,
 ): readonly OverviewNode[] {
-  return extractNodes(args.nodes, args.scope, "statement");
+  return extractNodes({ nodes: args.nodes, scope: args.scope, category: "statement" });
 }
 
-function extractNodes(
-  nodes: readonly Node[],
-  scope: ExtractionScope,
-  category: "statement" | "member",
-): readonly OverviewNode[] {
-  return nodes.flatMap((node) => toOverviewNode(node, scope, category));
+function extractNodes(args: {
+  nodes: readonly Node[];
+  scope: ExtractionScope;
+  category: "statement" | "member";
+}): readonly OverviewNode[] {
+  return args.nodes.flatMap((node) =>
+    toOverviewNode({ node, scope: args.scope, category: args.category }),
+  );
 }
 
 const IGNORED_STATEMENT_KINDS: ReadonlySet<SyntaxKind> = new Set([
@@ -71,11 +73,12 @@ const IGNORED_MEMBER_KINDS: ReadonlySet<SyntaxKind> = new Set([
   SyntaxKind.SemicolonClassElement,
 ]);
 
-function toOverviewNode(
-  node: Node,
-  scope: ExtractionScope,
-  category: "statement" | "member",
-): readonly OverviewNode[] {
+function toOverviewNode(args: {
+  node: Node;
+  scope: ExtractionScope;
+  category: "statement" | "member";
+}): readonly OverviewNode[] {
+  const { node, scope, category } = args;
   const kind = nodeKind(node);
   if (kind) return toSymbolNodes(node, kind, scope);
 
@@ -105,16 +108,17 @@ function toSymbolNodes(
     return expandVariableStatement(node, scope);
   }
   if (isMemberNode(node)) {
-    return expandOverloads(node).map((member) => buildSymbolNode(member, kind, scope));
+    return expandOverloads(node).map((member) => buildSymbolNode({ node: member, kind, scope }));
   }
-  return [buildSymbolNode(node, kind, scope)];
+  return [buildSymbolNode({ node, kind, scope })];
 }
 
-function buildSymbolNode(
-  node: Node,
-  kind: NonNullable<ReturnType<typeof nodeKind>>,
-  scope: ExtractionScope,
-): SymbolOverviewNode {
+function buildSymbolNode(args: {
+  node: Node;
+  kind: NonNullable<ReturnType<typeof nodeKind>>;
+  scope: ExtractionScope;
+}): SymbolOverviewNode {
+  const { node, kind, scope } = args;
   const range = nodeRange(node);
   const name = nodeName(node);
   const refined = refineLabel(node, kind);
@@ -131,7 +135,7 @@ function buildSymbolNode(
 
 function symbolChildren(node: Node, scope: ExtractionScope): readonly OverviewNode[] {
   if (Node.isClassDeclaration(node) || Node.isInterfaceDeclaration(node)) {
-    return extractNodes(node.getMembers(), scope, "member");
+    return extractNodes({ nodes: node.getMembers(), scope, category: "member" });
   }
   if (Node.isModuleDeclaration(node)) {
     return extractOverviewChildren({ nodes: node.getStatements(), scope });
@@ -237,7 +241,7 @@ function foldChildren(node: Node, scope: ExtractionScope): readonly OverviewNode
       .flatMap((statement) =>
         Node.isBlock(statement)
           ? extractOverviewChildren({ nodes: statement.getStatements(), scope })
-          : toOverviewNode(statement, scope, "statement"),
+          : toOverviewNode({ node: statement, scope, category: "statement" }),
       );
   }
   return [];
@@ -250,7 +254,7 @@ function extractStatementChildren(
   if (Node.isBlock(statement)) {
     return extractOverviewChildren({ nodes: statement.getStatements(), scope });
   }
-  return toOverviewNode(statement, scope, "statement");
+  return toOverviewNode({ node: statement, scope, category: "statement" });
 }
 
 function expandVariableStatement(

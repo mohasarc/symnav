@@ -12,28 +12,34 @@ export function extractReExportEntry(node: Node): ReExportOverviewNode | undefin
 
   const namespaceExport = node.getNamespaceExport();
   if (namespaceExport) {
-    return reExportNode(node, "namespace", [namespaceExport.getName()], sourceModule);
+    return reExportNode({
+      node,
+      exportKind: "namespace",
+      exportedNames: [namespaceExport.getName()],
+      sourceModule,
+    });
   }
   const namedExports = node.getNamedExports();
   if (sourceModule && namedExports.length === 0) {
-    return reExportNode(node, "star", [], sourceModule);
+    return reExportNode({ node, exportKind: "star", exportedNames: [], sourceModule });
   }
-  return reExportNode(
+  return reExportNode({
     node,
-    "named",
-    namedExports.map(
+    exportKind: "named",
+    exportedNames: namedExports.map(
       (namedExport) => namedExport.getAliasNode()?.getText() ?? namedExport.getName(),
     ),
     sourceModule,
-  );
+  });
 }
 
-function reExportNode(
-  node: Node,
-  exportKind: ReExportOverviewNode["exportKind"],
-  exportedNames: readonly string[],
-  sourceModule: string | undefined,
-): ReExportOverviewNode {
+function reExportNode(args: {
+  node: Node;
+  exportKind: ReExportOverviewNode["exportKind"];
+  exportedNames: readonly string[];
+  sourceModule: string | undefined;
+}): ReExportOverviewNode {
+  const { node, exportKind, exportedNames, sourceModule } = args;
   const range = nodeRange(node);
   return {
     type: "re-export",

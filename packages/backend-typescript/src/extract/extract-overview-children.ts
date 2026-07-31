@@ -12,7 +12,6 @@ import {
 } from "ts-morph";
 import {
   splitHeaderLines,
-  type DiagnosticSink,
   type FoldOverviewNode,
   type LineRange,
   type OverviewNode,
@@ -36,23 +35,20 @@ import { roleOf } from "./typescript-symbol-kind.js";
 export interface ExtractOverviewChildrenArgs {
   readonly nodes: readonly Node[];
   readonly scope: ExtractionScope;
-  readonly diagnostics?: DiagnosticSink | undefined;
 }
 
 export function extractOverviewChildren(
   args: ExtractOverviewChildrenArgs,
 ): readonly OverviewNode[] {
-  const diagnostics = args.diagnostics ?? args.scope.diagnostics;
-  return extractNodes(args.nodes, args.scope, diagnostics, "statement");
+  return extractNodes(args.nodes, args.scope, "statement");
 }
 
 function extractNodes(
   nodes: readonly Node[],
   scope: ExtractionScope,
-  diagnostics: DiagnosticSink | undefined,
   category: "statement" | "member",
 ): readonly OverviewNode[] {
-  return nodes.flatMap((node) => toOverviewNode(node, scope, diagnostics, category));
+  return nodes.flatMap((node) => toOverviewNode(node, scope, category));
 }
 
 const IGNORED_STATEMENT_KINDS: ReadonlySet<SyntaxKind> = new Set([
@@ -78,22 +74,21 @@ const IGNORED_MEMBER_KINDS: ReadonlySet<SyntaxKind> = new Set([
 function toOverviewNode(
   node: Node,
   scope: ExtractionScope,
-  diagnostics: DiagnosticSink | undefined,
   category: "statement" | "member",
 ): readonly OverviewNode[] {
   const kind = nodeKind(node);
-  if (kind) return toSymbolNodes(node, kind, scope, diagnostics);
+  if (kind) return toSymbolNodes(node, kind, scope);
 
   const foldKind = foldKindOf(node);
-  if (foldKind) return toFoldNodes(node, foldKind, scope, diagnostics);
+  if (foldKind) return toFoldNodes(node, foldKind, scope);
 
   const reExport = extractReExportEntry(node);
   if (reExport) return [reExport];
 
   if (isIgnoredNode(node)) return [];
-  if (!diagnostics) return [];
+  if (!scope.diagnostics) return [];
   reportUnrecognisedNode({
-    sink: diagnostics,
+    sink: scope.diagnostics,
     node,
     filePath: scope.file,
     category,
@@ -105,22 +100,20 @@ function toSymbolNodes(
   node: Node,
   kind: NonNullable<ReturnType<typeof nodeKind>>,
   scope: ExtractionScope,
-  diagnostics: DiagnosticSink | undefined,
 ): readonly SymbolOverviewNode[] {
   if (Node.isVariableStatement(node)) {
-    return expandVariableStatement(node, scope, diagnostics);
+    return expandVariableStatement(node, scope);
   }
   if (isMemberNode(node)) {
-    return expandOverloads(node).map((member) => buildSymbolNode(member, kind, scope, diagnostics));
+    return expandOverloads(node).map((member) => buildSymbolNode(member, kind, scope));
   }
-  return [buildSymbolNode(node, kind, scope, diagnostics)];
+  return [buildSymbolNode(node, kind, scope)];
 }
 
 function buildSymbolNode(
   node: Node,
   kind: NonNullable<ReturnType<typeof nodeKind>>,
   scope: ExtractionScope,
-  diagnostics: DiagnosticSink | undefined,
 ): SymbolOverviewNode {
   const range = nodeRange(node);
   const name = nodeName(node);
@@ -132,45 +125,32 @@ function buildSymbolNode(
     kind: { role: roleOf(refined), nativeLabel: refined },
     range,
     header: headerFrom(range.startLine, extractSignatureSource(node)),
-    children: symbolChildren(node, symbolScope, diagnostics),
+    children: symbolChildren(node, symbolScope),
   };
 }
 
-function symbolChildren(
-  node: Node,
-  scope: ExtractionScope,
-  diagnostics: DiagnosticSink | undefined,
-): readonly OverviewNode[] {
+function symbolChildren(node: Node, scope: ExtractionScope): readonly OverviewNode[] {
   if (Node.isClassDeclaration(node) || Node.isInterfaceDeclaration(node)) {
-    return extractNodes(node.getMembers(), scope, diagnostics, "member");
+    return extractNodes(node.getMembers(), scope, "member");
   }
   if (Node.isModuleDeclaration(node)) {
-    return extractOverviewChildren({
-      nodes: node.getStatements(),
-      scope,
-      diagnostics,
-    });
+    return extractOverviewChildren({ nodes: node.getStatements(), scope });
   }
   if (Node.isExportAssignment(node)) {
-    return functionValueChildren(node.getExpression(), scope, diagnostics);
+    return functionValueChildren(node.getExpression(), scope);
   }
   const body = functionBodyOf(node);
   if (!body) return [];
-  return extractOverviewChildren({
-    nodes: body.getStatements(),
-    scope,
-    diagnostics,
-  });
+  return extractOverviewChildren({ nodes: body.getStatements(), scope });
 }
 
 function toFoldNodes(
   node: Node,
   foldKind: TypeScriptFoldKind,
   scope: ExtractionScope,
-  diagnostics: DiagnosticSink | undefined,
 ): readonly FoldOverviewNode[] {
   if (Node.isTryStatement(node)) {
-    return tryFoldNodes(node, scope, diagnostics);
+    return tryFoldNodes(node, scope);
   }
   return [
     {
@@ -178,16 +158,12 @@ function toFoldNodes(
       foldKind,
       range: nodeRange(node),
       header: extractFoldHeader(node),
-      children: foldChildren(node, scope, diagnostics),
+      children: foldChildren(node, scope),
     },
   ];
 }
 
-function tryFoldNodes(
-  node: TryStatement,
-  scope: ExtractionScope,
-  diagnostics: DiagnosticSink | undefined,
-): readonly FoldOverviewNode[] {
+function tryFoldNodes(node: TryStatement, scope: ExtractionScope): readonly FoldOverviewNode[] {
   const nodes: FoldOverviewNode[] = [
     {
       type: "fold",
@@ -197,7 +173,6 @@ function tryFoldNodes(
       children: extractOverviewChildren({
         nodes: node.getTryBlock().getStatements(),
         scope,
-        diagnostics,
       }),
     },
   ];
@@ -211,7 +186,6 @@ function tryFoldNodes(
       children: extractOverviewChildren({
         nodes: catchClause.getBlock().getStatements(),
         scope,
-        diagnostics,
       }),
     });
   }
@@ -225,27 +199,22 @@ function tryFoldNodes(
       children: extractOverviewChildren({
         nodes: finallyBlock.getStatements(),
         scope,
-        diagnostics,
       }),
     });
   }
   return nodes;
 }
 
-function foldChildren(
-  node: Node,
-  scope: ExtractionScope,
-  diagnostics: DiagnosticSink | undefined,
-): readonly OverviewNode[] {
+function foldChildren(node: Node, scope: ExtractionScope): readonly OverviewNode[] {
   if (Node.isExpressionStatement(node)) {
     const body = trailingCallBody(node);
-    return body ? extractOverviewChildren({ nodes: body.getStatements(), scope, diagnostics }) : [];
+    return body ? extractOverviewChildren({ nodes: body.getStatements(), scope }) : [];
   }
   if (Node.isBlock(node)) {
-    return extractOverviewChildren({ nodes: node.getStatements(), scope, diagnostics });
+    return extractOverviewChildren({ nodes: node.getStatements(), scope });
   }
   if (Node.isIfStatement(node)) {
-    return extractStatementChildren(node.getThenStatement(), scope, diagnostics);
+    return extractStatementChildren(node.getThenStatement(), scope);
   }
   if (
     Node.isForStatement(node) ||
@@ -254,13 +223,12 @@ function foldChildren(
     Node.isWhileStatement(node) ||
     Node.isDoStatement(node)
   ) {
-    return extractStatementChildren(node.getStatement(), scope, diagnostics);
+    return extractStatementChildren(node.getStatement(), scope);
   }
   if (Node.isSwitchStatement(node)) {
     return extractOverviewChildren({
       nodes: node.getCaseBlock().getClauses(),
       scope,
-      diagnostics,
     });
   }
   if (Node.isCaseClause(node) || Node.isDefaultClause(node)) {
@@ -268,8 +236,8 @@ function foldChildren(
       .getStatements()
       .flatMap((statement) =>
         Node.isBlock(statement)
-          ? extractOverviewChildren({ nodes: statement.getStatements(), scope, diagnostics })
-          : toOverviewNode(statement, scope, diagnostics, "statement"),
+          ? extractOverviewChildren({ nodes: statement.getStatements(), scope })
+          : toOverviewNode(statement, scope, "statement"),
       );
   }
   return [];
@@ -278,18 +246,16 @@ function foldChildren(
 function extractStatementChildren(
   statement: Node,
   scope: ExtractionScope,
-  diagnostics: DiagnosticSink | undefined,
 ): readonly OverviewNode[] {
   if (Node.isBlock(statement)) {
-    return extractOverviewChildren({ nodes: statement.getStatements(), scope, diagnostics });
+    return extractOverviewChildren({ nodes: statement.getStatements(), scope });
   }
-  return toOverviewNode(statement, scope, diagnostics, "statement");
+  return toOverviewNode(statement, scope, "statement");
 }
 
 function expandVariableStatement(
   statement: VariableStatement,
   scope: ExtractionScope,
-  diagnostics: DiagnosticSink | undefined,
 ): readonly SymbolOverviewNode[] {
   const declList = statement.getDeclarationList();
   const range = nodeRange(statement);
@@ -304,7 +270,7 @@ function expandVariableStatement(
         range.startLine,
         extractVariableSignature({ statement, declaration: decl }),
       ),
-      children: variableInitializerChildren(decl, symbolScope, diagnostics),
+      children: variableInitializerChildren(decl, symbolScope),
     };
   });
 }
@@ -312,21 +278,16 @@ function expandVariableStatement(
 function variableInitializerChildren(
   declaration: VariableDeclaration,
   scope: ExtractionScope,
-  diagnostics: DiagnosticSink | undefined,
 ): readonly OverviewNode[] {
   const initializer = declaration.getInitializer();
   if (!initializer) return [];
-  return functionValueChildren(initializer, scope, diagnostics);
+  return functionValueChildren(initializer, scope);
 }
 
-function functionValueChildren(
-  expression: Node,
-  scope: ExtractionScope,
-  diagnostics: DiagnosticSink | undefined,
-): readonly OverviewNode[] {
+function functionValueChildren(expression: Node, scope: ExtractionScope): readonly OverviewNode[] {
   const body = functionValueBody(expression);
   if (!body) return [];
-  return extractOverviewChildren({ nodes: body.getStatements(), scope, diagnostics });
+  return extractOverviewChildren({ nodes: body.getStatements(), scope });
 }
 
 function functionValueBody(expression: Node): Block | undefined {

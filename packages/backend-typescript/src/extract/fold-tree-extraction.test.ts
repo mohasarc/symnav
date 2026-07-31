@@ -334,6 +334,30 @@ describe("re-export extraction", () => {
     ]);
   });
 
+  it("extracts default re-exports, direct and aliased", () => {
+    const source = [
+      'export { default } from "./mod";',
+      'export { x as default } from "./other";',
+    ].join("\n");
+
+    expect(foldSummaries(fileEntriesOf(source).entries)).toEqual([
+      {
+        type: "re-export",
+        exportKind: "named",
+        exportedNames: ["default"],
+        sourceModule: "./mod",
+        header: ['export { default } from "./mod";'],
+      },
+      {
+        type: "re-export",
+        exportKind: "named",
+        exportedNames: ["default"],
+        sourceModule: "./other",
+        header: ['export { x as default } from "./other";'],
+      },
+    ]);
+  });
+
   it("extracts a specifier-less named export without reporting a diagnostic", () => {
     const diagnostics = new CollectingDiagnosticSink();
     const source = ["const a = 1;", "export { a };"].join("\n");

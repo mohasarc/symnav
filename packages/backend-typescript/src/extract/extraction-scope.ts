@@ -13,11 +13,3 @@ export function childSymbolScope(parent: ExtractionScope, name: string): Extract
     diagnostics: parent.diagnostics,
   };
 }
-
-export function transparentScope(parent: ExtractionScope): ExtractionScope {
-  return {
-    file: parent.file,
-    symbolSegments: parent.symbolSegments,
-    diagnostics: parent.diagnostics,
-  };
-}

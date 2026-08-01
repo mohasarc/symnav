@@ -8,7 +8,7 @@ import {
   MAX_GRAPH_DEPTH,
   isPositiveInteger,
 } from "@symnav/core";
-import { renderGraphJson, renderGraphText } from "@symnav/renderer";
+import { SymbolTargetErrorRenderer, renderGraphJson, renderGraphText } from "@symnav/renderer";
 
 import type { Command, CommandContext } from "../../command.js";
 import { classifyArgKind, lengthBucketOf } from "../../telemetry/arg-shape.js";
@@ -81,6 +81,7 @@ export const graphCommand: Command<GraphResult, GraphArgs> = {
   },
   renderText: renderGraphText,
   renderJson: renderGraphJson,
+  renderError: SymbolTargetErrorRenderer.render,
 };
 
 interface GraphRequest {

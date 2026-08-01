@@ -1,11 +1,8 @@
 import { describe, expect, it } from "vitest";
 
 import { parseSymbolTargetPattern, symbolTargetMatches } from "./symbol-target-pattern.js";
-import { AmbiguousSymbolTargetError, type SymbolTargetCandidate } from "./symbol-target-result.js";
 import { InvalidSymbolIdError } from "../intermediate-representation/canonical-identity.js";
 import type { SymbolIdentity } from "../intermediate-representation/symbol-identity.js";
-import type { Header } from "../intermediate-representation/types.js";
-import type { SymbolOverviewNode } from "../intermediate-representation/overview-tree.js";
 
 describe("parseSymbolTargetPattern", () => {
   it("parses a bare name as a segment suffix", () => {
@@ -167,43 +164,6 @@ describe("symbolTargetMatches", () => {
   });
 });
 
-describe("AmbiguousSymbolTargetError", () => {
-  it("renders full candidate ids and signatures", () => {
-    const pattern = parseSymbolTargetPattern("parse");
-    const error = new AmbiguousSymbolTargetError(pattern, [
-      candidate("src/json.ts", ["parse"], ["export function parse(input: string): JsonValue"]),
-      candidate(
-        "src/query.ts",
-        ["parse"],
-        ["export function parse(input: URLSearchParams): Query"],
-      ),
-    ]);
-
-    expect(error.render()).toContain('Cannot answer: symbol target "parse" is ambiguous.');
-    expect(error.render()).toContain("src/json.ts::parse");
-    expect(error.render()).toContain("export function parse(input: string): JsonValue");
-    expect(error.render()).toContain("src/query.ts::parse");
-    expect(error.render()).toContain("export function parse(input: URLSearchParams): Query");
-  });
-});
-
 function identity(file: string, ...names: readonly string[]): SymbolIdentity {
   return { file, segments: names.map((name) => ({ name })) };
-}
-
-function candidate(
-  file: string,
-  names: readonly string[],
-  headerLines: readonly string[],
-): SymbolTargetCandidate {
-  const header: Header = { startLine: 1, lines: headerLines };
-  const symbol: SymbolOverviewNode = {
-    type: "symbol",
-    identity: identity(file, ...names),
-    kind: { role: "callable", nativeLabel: "function" },
-    range: { startLine: 1, endLine: 1 },
-    header,
-    children: [],
-  };
-  return { symbol, canonicalId: `${file}::${names.join("::")}`, header };
 }

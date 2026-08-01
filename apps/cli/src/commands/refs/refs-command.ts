@@ -1,6 +1,6 @@
 import type { PageRequest, RefsResult } from "@symnav/core";
 import { RefsResultBuilder } from "@symnav/core";
-import { renderRefsJson, renderRefsText } from "@symnav/renderer";
+import { SymbolTargetErrorRenderer, renderRefsJson, renderRefsText } from "@symnav/renderer";
 
 import type { Command, CommandContext } from "../../command.js";
 import { classifyArgKind, lengthBucketOf } from "../../telemetry/arg-shape.js";
@@ -53,6 +53,7 @@ export const refsCommand: Command<RefsResult, RefsArgs> = {
   },
   renderText: renderRefsText,
   renderJson: renderRefsJson,
+  renderError: SymbolTargetErrorRenderer.render,
 };
 
 function pageRequestFrom(args: RefsArgs): PageRequest {

@@ -5,7 +5,11 @@ import type {
   SymbolOverviewNode,
   SymbolIdentity,
 } from "@symnav/core";
-import { renderDefinitionJson, renderDefinitionText } from "@symnav/renderer";
+import {
+  SymbolTargetErrorRenderer,
+  renderDefinitionJson,
+  renderDefinitionText,
+} from "@symnav/renderer";
 
 import type { Command, CommandContext } from "../../command.js";
 import { classifyArgKind, lengthBucketOf } from "../../telemetry/arg-shape.js";
@@ -44,6 +48,7 @@ export const defCommand: Command<DefinitionResult, DefArgs> = {
   },
   renderText: renderDefinitionText,
   renderJson: renderDefinitionJson,
+  renderError: SymbolTargetErrorRenderer.render,
 };
 
 async function callOwningBackend(

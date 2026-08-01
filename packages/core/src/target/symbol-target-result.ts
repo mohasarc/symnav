@@ -23,8 +23,8 @@ export class SymbolTargetNotFoundError extends UserFacingError {
 
 export class AmbiguousSymbolTargetError extends UserFacingError {
   constructor(
-    private readonly pattern: SymbolTargetPattern,
-    private readonly candidates: readonly SymbolTargetCandidate[],
+    readonly pattern: SymbolTargetPattern,
+    readonly candidates: readonly SymbolTargetCandidate[],
   ) {
     super();
     this.name = "AmbiguousSymbolTargetError";
@@ -36,25 +36,4 @@ export class AmbiguousSymbolTargetError extends UserFacingError {
       .join(", ");
     return `symbol target ${JSON.stringify(this.pattern.raw)} is ambiguous: ${candidateIds}`;
   }
-
-  override render(): string {
-    return [
-      `Cannot answer: symbol target ${JSON.stringify(this.pattern.raw)} is ambiguous.`,
-      "",
-      "Candidates",
-      ...this.candidates.flatMap((candidate, index) =>
-        candidateLines(candidate, index === this.candidates.length - 1),
-      ),
-      "",
-    ].join("\n");
-  }
-}
-
-function candidateLines(candidate: SymbolTargetCandidate, isLast: boolean): string[] {
-  const idPrefix = isLast ? "└── " : "├── ";
-  const headerPrefix = isLast ? "    " : "│   ";
-  return [
-    `${idPrefix}${candidate.canonicalId}`,
-    ...candidate.header.lines.map((line) => `${headerPrefix}${line}`),
-  ];
 }

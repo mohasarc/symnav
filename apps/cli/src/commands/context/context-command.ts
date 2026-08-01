@@ -1,6 +1,6 @@
 import type { ContextResult } from "@symnav/core";
 import { ContextResultBuilder, DEFAULT_CONTEXT_CAP } from "@symnav/core";
-import { renderContextJson, renderContextText } from "@symnav/renderer";
+import { SymbolTargetErrorRenderer, renderContextJson, renderContextText } from "@symnav/renderer";
 
 import type { Command, CommandContext } from "../../command.js";
 import { classifyArgKind, lengthBucketOf } from "../../telemetry/arg-shape.js";
@@ -67,4 +67,5 @@ export const contextCommand: Command<ContextResult, ContextArgs> = {
   },
   renderText: renderContextText,
   renderJson: renderContextJson,
+  renderError: SymbolTargetErrorRenderer.render,
 };

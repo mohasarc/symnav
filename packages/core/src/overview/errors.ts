@@ -5,9 +5,15 @@ import type {
 } from "./overview-expansion-result.js";
 import { formatRequest, renderCandidateError } from "./overview-query.js";
 
-export class AmbiguousOverviewTargetError extends UserFacingError {
+export abstract class AmbiguousOverviewError extends UserFacingError {
   constructor(readonly candidates: readonly OverviewExpansionCandidate[]) {
     super();
+  }
+}
+
+export class AmbiguousOverviewTargetError extends AmbiguousOverviewError {
+  constructor(candidates: readonly OverviewExpansionCandidate[]) {
+    super(candidates);
     this.name = "AmbiguousOverviewTargetError";
   }
 
@@ -42,12 +48,12 @@ export class InvalidOverviewExpansionRequestError extends UserFacingError {
   }
 }
 
-export class AmbiguousLineTargetError extends UserFacingError {
+export class AmbiguousLineTargetError extends AmbiguousOverviewError {
   constructor(
     private readonly line: number,
-    readonly candidates: readonly OverviewExpansionCandidate[],
+    candidates: readonly OverviewExpansionCandidate[],
   ) {
-    super();
+    super(candidates);
     this.name = "AmbiguousLineTargetError";
   }
 

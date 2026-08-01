@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import type { OverviewNode } from "../intermediate-representation/overview-tree.js";
 import {
   AmbiguousLineTargetError,
+  AmbiguousOverviewError,
   AmbiguousOverviewTargetError,
   InvalidOverviewExpansionRequestError,
   OverviewTargetNotFoundError,
@@ -52,6 +53,13 @@ describe("AmbiguousLineTargetError", () => {
     expect(err.reason).toBe(
       "line 1 matches multiple overview nodes; use --at with copied header text",
     );
+  });
+});
+
+describe("AmbiguousOverviewError", () => {
+  it("is the base of both ambiguous overview errors", () => {
+    expect(new AmbiguousOverviewTargetError([])).toBeInstanceOf(AmbiguousOverviewError);
+    expect(new AmbiguousLineTargetError(1, [])).toBeInstanceOf(AmbiguousOverviewError);
   });
 });
 

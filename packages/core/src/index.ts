@@ -23,6 +23,7 @@ export type {
 } from "./overview/overview-expansion-result.js";
 export {
   AmbiguousLineTargetError,
+  AmbiguousOverviewError,
   AmbiguousOverviewTargetError,
   InvalidOverviewExpansionRequestError,
   OverviewTargetNotFoundError,

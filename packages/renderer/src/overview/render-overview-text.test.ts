@@ -57,9 +57,13 @@ function signature(startLine: number, ...lines: string[]): Header {
 }
 
 function overviewResult(
-  partial: Omit<OverviewExpansionResult, "request">,
+  partial: Omit<OverviewExpansionResult, "request" | "totalSymbolCount">,
 ): OverviewExpansionResult {
-  return { ...partial, request: { depth: 0, at: undefined, line: undefined } };
+  return {
+    ...partial,
+    request: { depth: 0, at: undefined, line: undefined },
+    totalSymbolCount: 0,
+  };
 }
 
 function assertSingleTrailingNewline(output: string): void {

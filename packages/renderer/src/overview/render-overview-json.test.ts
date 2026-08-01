@@ -40,9 +40,13 @@ function fold(children: readonly OverviewNode[] = []): FoldOverviewNode {
 }
 
 function overviewResult(
-  partial: Omit<OverviewExpansionResult, "request">,
+  partial: Omit<OverviewExpansionResult, "request" | "totalSymbolCount">,
 ): OverviewExpansionResult {
-  return { ...partial, request: { depth: 0, at: undefined, line: undefined } };
+  return {
+    ...partial,
+    request: { depth: 0, at: undefined, line: undefined },
+    totalSymbolCount: 0,
+  };
 }
 
 describe("renderOverviewJson", () => {
@@ -72,6 +76,7 @@ describe("renderOverviewJson", () => {
         },
       ],
       request: { depth: 0 },
+      totalSymbolCount: 0,
     });
   });
 
@@ -145,6 +150,7 @@ describe("renderOverviewJson", () => {
         },
       ],
       request: { depth: 0 },
+      totalSymbolCount: 0,
     });
     expect(parsed.entries[1]).not.toHaveProperty("sourceModule");
   });

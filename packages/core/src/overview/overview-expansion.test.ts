@@ -7,6 +7,7 @@ import type {
   SymbolOverviewNode,
 } from "../intermediate-representation/overview-tree.js";
 import type { Header } from "../intermediate-representation/types.js";
+import { OverviewTree } from "../intermediate-representation/overview-tree.js";
 import { OverviewExpander } from "./overview-expander.js";
 import {
   AmbiguousLineTargetError,
@@ -241,6 +242,44 @@ describe("OverviewExpander depth", () => {
         ],
       }),
     ]);
+  });
+});
+
+describe("OverviewExpander totalSymbolCount", () => {
+  it("counts the full pre-expansion tree when depth pruning hides fold interiors", () => {
+    const entries = [
+      symbol("top", { range: { startLine: 1, endLine: 1 } }),
+      fold("if (flag) {", {
+        range: { startLine: 3, endLine: 8 },
+        children: [
+          symbol("insideFold", { range: { startLine: 4, endLine: 4 } }),
+          symbol("alsoInside", { range: { startLine: 5, endLine: 5 } }),
+        ],
+      }),
+    ];
+
+    const result = new OverviewExpander({
+      file: { file: "src/file.ts", entries },
+      request: { depth: 0, at: undefined, line: undefined },
+    }).expand();
+
+    expect(result.totalSymbolCount).toBe(3);
+    expect(OverviewTree.walkSymbols(result.entries)).toHaveLength(1);
+  });
+
+  it("counts the full tree when targeted selection narrows entries to one subtree", () => {
+    const entries = [
+      symbol("alpha", { range: { startLine: 1, endLine: 2 } }),
+      symbol("beta", { range: { startLine: 4, endLine: 5 } }),
+    ];
+
+    const result = new OverviewExpander({
+      file: { file: "src/file.ts", entries },
+      request: { depth: 0, at: "alpha", line: undefined },
+    }).expand();
+
+    expect(result.totalSymbolCount).toBe(2);
+    expect(OverviewTree.walkSymbols(result.entries)).toHaveLength(1);
   });
 });
 

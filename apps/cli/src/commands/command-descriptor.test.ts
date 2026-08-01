@@ -119,6 +119,7 @@ describe("command telemetry descriptors", () => {
       file: "src/a.ts",
       entries: [symbol("top", [symbol("nested", [symbol("leaf")])]), symbol("other")],
       request: { depth: 0, at: undefined, line: undefined },
+      totalSymbolCount: 4,
     };
 
     expect(overviewCommand.countResults(result)).toEqual({ symbols: 4 });

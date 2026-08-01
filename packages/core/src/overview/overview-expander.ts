@@ -2,6 +2,7 @@ import type {
   OverviewFileEntries,
   OverviewNode,
 } from "../intermediate-representation/overview-tree.js";
+import { OverviewTree } from "../intermediate-representation/overview-tree.js";
 import type { LineRange } from "../intermediate-representation/types.js";
 import { formatSymbolPath } from "../intermediate-representation/canonical-identity.js";
 import { isPositiveInteger } from "../validation/is-positive-integer.js";
@@ -56,6 +57,7 @@ export class OverviewExpander {
       file: this.file.file,
       entries,
       request: this.request,
+      totalSymbolCount: OverviewTree.walkSymbols(this.file.entries).length,
     };
     if (this.file.diagnostics === undefined) return result;
     return { ...result, diagnostics: this.file.diagnostics };

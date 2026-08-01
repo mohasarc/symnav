@@ -92,5 +92,6 @@
   "file": "multi-line-signature.ts",
   "request": {
     "depth": 0
-  }
+  },
+  "totalSymbolCount": 3
 }

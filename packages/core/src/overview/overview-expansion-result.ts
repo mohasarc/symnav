@@ -18,5 +18,6 @@ export interface OverviewExpansionResult {
   readonly file: string;
   readonly entries: readonly OverviewNode[];
   readonly request: OverviewExpansionRequest;
+  readonly totalSymbolCount: number;
   readonly diagnostics?: readonly NavigationDiagnostic[];
 }

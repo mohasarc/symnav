@@ -8,7 +8,7 @@ import {
   UserFacingError,
 } from "@symnav/core";
 
-import { renderOverviewError } from "./render-overview-error.js";
+import { OverviewErrorRenderer } from "./render-overview-error.js";
 
 const node: OverviewNode = {
   type: "fold",
@@ -32,14 +32,14 @@ class UnrelatedError extends UserFacingError {
   }
 }
 
-describe("renderOverviewError", () => {
+describe("OverviewErrorRenderer", () => {
   it("renders ambiguous target candidates with copied headers", () => {
     const err = new AmbiguousOverviewTargetError([
       candidate('1-3: describe("setup", () => {', 1, 3),
       candidate('5-9: describe("cursor", () => {', 5, 9),
     ]);
 
-    expect(renderOverviewError(err)).toBe(
+    expect(OverviewErrorRenderer.render(err)).toBe(
       [
         "Cannot answer: overview target matches multiple nodes.",
         "",
@@ -57,7 +57,7 @@ describe("renderOverviewError", () => {
       candidate('1: describe("beta", () => {', 1, 1),
     ]);
 
-    expect(renderOverviewError(err)).toBe(
+    expect(OverviewErrorRenderer.render(err)).toBe(
       [
         "Cannot answer: line 1 matches multiple overview nodes; use --at with copied header text.",
         "",
@@ -72,7 +72,7 @@ describe("renderOverviewError", () => {
   it("renders not-found requests naming both at text and line", () => {
     const err = new OverviewTargetNotFoundError({ depth: 0, at: "describe", line: 9 });
 
-    expect(renderOverviewError(err)).toBe(
+    expect(OverviewErrorRenderer.render(err)).toBe(
       'Cannot answer: no overview target matching --at "describe" on line 9.\n',
     );
   });
@@ -80,7 +80,7 @@ describe("renderOverviewError", () => {
   it("renders not-found requests naming at text alone", () => {
     const err = new OverviewTargetNotFoundError({ depth: 0, at: "describe", line: undefined });
 
-    expect(renderOverviewError(err)).toBe(
+    expect(OverviewErrorRenderer.render(err)).toBe(
       'Cannot answer: no overview target matching --at "describe".\n',
     );
   });
@@ -88,10 +88,12 @@ describe("renderOverviewError", () => {
   it("renders not-found requests naming the line alone", () => {
     const err = new OverviewTargetNotFoundError({ depth: 0, at: undefined, line: 9 });
 
-    expect(renderOverviewError(err)).toBe("Cannot answer: no overview target matching line 9.\n");
+    expect(OverviewErrorRenderer.render(err)).toBe(
+      "Cannot answer: no overview target matching line 9.\n",
+    );
   });
 
   it("leaves unrelated user-facing errors unrendered", () => {
-    expect(renderOverviewError(new UnrelatedError())).toBeUndefined();
+    expect(OverviewErrorRenderer.render(new UnrelatedError())).toBeUndefined();
   });
 });

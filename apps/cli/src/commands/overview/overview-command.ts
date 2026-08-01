@@ -1,7 +1,7 @@
 import type { NavigationDiagnostic, OverviewExpansionResult } from "@symnav/core";
 import { OverviewExpander, OverviewTree } from "@symnav/core";
 import {
-  renderOverviewError,
+  OverviewErrorRenderer,
   renderOverviewJson,
   renderOverviewText,
   stripHeaderEllipsis,
@@ -46,7 +46,7 @@ export const overviewCommand: Command<OverviewExpansionResult, OverviewArgs> = {
   },
   renderText: renderOverviewText,
   renderJson: renderOverviewJson,
-  renderError: renderOverviewError,
+  renderError: OverviewErrorRenderer.render,
 };
 
 function flagsFor(args: OverviewArgs): readonly string[] {

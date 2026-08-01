@@ -36,6 +36,40 @@ describe("symnav overview e2e (targeting)", () => {
     expect(r.stdout).not.toContain("nestedHelper");
   });
 
+  it("targets an async callback fold by its closed call form", () => {
+    const r = runOverview([
+      "overview",
+      "async-callbacks.ts",
+      "--at",
+      'describe("beta")',
+      "--depth",
+      "1",
+    ]);
+
+    expect(r.stderr).toBe("");
+    expect(r.status).toBe(0);
+    expect(r.stdout).toContain('1-3: describe("beta", async () => {');
+    expect(r.stdout).toContain("2: betaHelper");
+    expect(r.stdout).not.toContain("gamma");
+  });
+
+  it("targets a parameterized callback fold by its closed call form", () => {
+    const r = runOverview([
+      "overview",
+      "async-callbacks.ts",
+      "--at",
+      'describe("gamma")',
+      "--depth",
+      "1",
+    ]);
+
+    expect(r.stderr).toBe("");
+    expect(r.status).toBe(0);
+    expect(r.stdout).toContain('5-7: describe("gamma", (t) => {');
+    expect(r.stdout).toContain("6: gammaHelper");
+    expect(r.stdout).not.toContain("beta");
+  });
+
   it("prints target candidates for ambiguous header text", () => {
     const r = runOverview(["overview", "targeted-expansion.ts", "--at", "describe"]);
 

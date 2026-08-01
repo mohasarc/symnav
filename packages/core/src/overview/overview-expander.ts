@@ -4,16 +4,16 @@ import type {
 } from "../intermediate-representation/overview-tree.js";
 import type { LineRange } from "../intermediate-representation/types.js";
 import { formatSymbolPath } from "../intermediate-representation/canonical-identity.js";
+import {
+  AmbiguousLineTargetError,
+  AmbiguousOverviewTargetError,
+  OverviewTargetNotFoundError,
+} from "./errors.js";
 import type {
   OverviewExpansionCandidate,
   OverviewExpansionRequest,
   OverviewExpansionResult,
 } from "./overview-expansion-result.js";
-import {
-  AmbiguousLineTargetError,
-  AmbiguousOverviewTargetError,
-  OverviewTargetNotFoundError,
-} from "./overview-query.js";
 
 export interface ExpandOverviewArgs {
   readonly file: OverviewFileEntries;

@@ -8,12 +8,12 @@ import type {
 } from "../intermediate-representation/overview-tree.js";
 import type { Header } from "../intermediate-representation/types.js";
 import { OverviewExpander } from "./overview-expander.js";
-import type { OverviewExpansionRequest } from "./overview-expansion-result.js";
 import {
   AmbiguousLineTargetError,
   AmbiguousOverviewTargetError,
   OverviewTargetNotFoundError,
-} from "./overview-query.js";
+} from "./errors.js";
+import type { OverviewExpansionRequest } from "./overview-expansion-result.js";
 
 function symbol(
   name: string,

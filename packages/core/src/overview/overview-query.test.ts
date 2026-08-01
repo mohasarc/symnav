@@ -1,12 +1,12 @@
 import { describe, expect, it } from "vitest";
 
 import type { OverviewNode } from "../intermediate-representation/overview-tree.js";
-import type { OverviewExpansionCandidate } from "./overview-expansion-result.js";
 import {
   AmbiguousLineTargetError,
   AmbiguousOverviewTargetError,
   OverviewTargetNotFoundError,
-} from "./overview-query.js";
+} from "./errors.js";
+import type { OverviewExpansionCandidate } from "./overview-expansion-result.js";
 
 const node: OverviewNode = {
   type: "fold",

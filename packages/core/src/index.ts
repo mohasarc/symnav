@@ -26,7 +26,7 @@ export {
   AmbiguousOverviewTargetError,
   InvalidOverviewExpansionRequestError,
   OverviewTargetNotFoundError,
-} from "./overview/overview-query.js";
+} from "./overview/errors.js";
 export type { ExpandOverviewArgs } from "./overview/overview-expander.js";
 export { OverviewExpander } from "./overview/overview-expander.js";
 export type {

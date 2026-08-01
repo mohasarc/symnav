@@ -51,7 +51,7 @@ function overviewResult(
 
 describe("renderOverviewJson", () => {
   it("mirrors overview entries verbatim with `children` always present on leaf decls", () => {
-    const file = overviewResult({
+    const result = overviewResult({
       file: "src/file.ts",
       entries: [
         decl({
@@ -62,7 +62,7 @@ describe("renderOverviewJson", () => {
         }),
       ],
     });
-    const parsed = JSON.parse(renderOverviewJson(file));
+    const parsed = JSON.parse(renderOverviewJson(result));
     expect(parsed).toEqual({
       file: "src/file.ts",
       entries: [
@@ -80,7 +80,7 @@ describe("renderOverviewJson", () => {
   });
 
   it("emits a discriminant for symbol and fold entries", () => {
-    const file = overviewResult({
+    const result = overviewResult({
       file: "src/file.ts",
       entries: [
         decl({ kind: { role: "callable", nativeLabel: "function" }, segments: [{ name: "leaf" }] }),
@@ -88,7 +88,7 @@ describe("renderOverviewJson", () => {
       ],
     });
 
-    const parsed = JSON.parse(renderOverviewJson(file)) as OverviewExpansionResult;
+    const parsed = JSON.parse(renderOverviewJson(result)) as OverviewExpansionResult;
 
     expect(parsed.entries.map((entry) => entry.type)).toEqual(["symbol", "fold"]);
   });
@@ -114,12 +114,12 @@ describe("renderOverviewJson", () => {
       range: { startLine: 7, endLine: 7 },
       header: { startLine: 7, lines: ["export { a };"] },
     });
-    const file = overviewResult({
+    const result = overviewResult({
       file: "src/file.ts",
       entries: [foldEntry, specifierLessReExport],
     });
 
-    const parsed = JSON.parse(renderOverviewJson(file)) as OverviewExpansionResult;
+    const parsed = JSON.parse(renderOverviewJson(result)) as OverviewExpansionResult;
 
     expect(parsed).toEqual({
       file: "src/file.ts",
@@ -154,7 +154,7 @@ describe("renderOverviewJson", () => {
   });
 
   it("emits 2-space-indented output with a trailing newline", () => {
-    const file = overviewResult({
+    const result = overviewResult({
       file: "src/file.ts",
       entries: [
         decl({
@@ -164,7 +164,7 @@ describe("renderOverviewJson", () => {
         }),
       ],
     });
-    const output = renderOverviewJson(file);
+    const output = renderOverviewJson(result);
     expect(output.endsWith("\n")).toBe(true);
     expect(output.endsWith("\n\n")).toBe(false);
 
@@ -174,7 +174,7 @@ describe("renderOverviewJson", () => {
   });
 
   it("emits the header object with its startLine and lines", () => {
-    const file = overviewResult({
+    const result = overviewResult({
       file: "src/file.ts",
       entries: [
         decl({
@@ -188,7 +188,7 @@ describe("renderOverviewJson", () => {
         }),
       ],
     });
-    const parsed = JSON.parse(renderOverviewJson(file)) as OverviewExpansionResult;
+    const parsed = JSON.parse(renderOverviewJson(result)) as OverviewExpansionResult;
     expect(parsed.entries[0]?.header).toEqual({
       startLine: 10,
       lines: ["function configure(", "  host: string,", "): void"],
@@ -196,7 +196,7 @@ describe("renderOverviewJson", () => {
   });
 
   it("includes diagnostics in the payload when the result carries them", () => {
-    const file = overviewResult({
+    const result = overviewResult({
       file: "src/file.ts",
       entries: [],
       diagnostics: [
@@ -207,7 +207,7 @@ describe("renderOverviewJson", () => {
         },
       ],
     });
-    const parsed = JSON.parse(renderOverviewJson(file)) as OverviewExpansionResult;
+    const parsed = JSON.parse(renderOverviewJson(result)) as OverviewExpansionResult;
     expect(parsed.diagnostics).toEqual([
       {
         severity: "warning",
@@ -218,13 +218,13 @@ describe("renderOverviewJson", () => {
   });
 
   it("keeps totalSymbolCount off the wire", () => {
-    const file = overviewResult({
+    const result = overviewResult({
       file: "src/file.ts",
       entries: [
         decl({ kind: { role: "callable", nativeLabel: "function" }, segments: [{ name: "leaf" }] }),
       ],
     });
-    const parsed = JSON.parse(renderOverviewJson(file)) as Record<string, unknown>;
+    const parsed = JSON.parse(renderOverviewJson(result)) as Record<string, unknown>;
     expect(parsed).not.toHaveProperty("totalSymbolCount");
   });
 

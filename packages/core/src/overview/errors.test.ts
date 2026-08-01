@@ -51,9 +51,7 @@ describe("AmbiguousLineTargetError", () => {
 
     expect(err.candidates).toBe(candidates);
     expect(err.line).toBe(1);
-    expect(err.reason).toBe(
-      "line 1 matches multiple overview nodes; use --at with copied header text",
-    );
+    expect(err.reason).toBe("line 1 matches multiple overview nodes");
   });
 });
 
@@ -65,11 +63,23 @@ describe("AmbiguousOverviewError", () => {
 });
 
 describe("OverviewTargetNotFoundError", () => {
-  it("names the unmatched request", () => {
+  it("names the unmatched header text and line", () => {
     const err = new OverviewTargetNotFoundError({ depth: 0, at: "describe", line: 9 });
 
     expect(err.request).toEqual({ depth: 0, at: "describe", line: 9 });
-    expect(err.reason).toBe('no overview target matching --at "describe" on line 9');
+    expect(err.reason).toBe('no overview target matching header text "describe" on line 9');
+  });
+
+  it("names unmatched header text alone", () => {
+    const err = new OverviewTargetNotFoundError({ depth: 0, at: "describe", line: undefined });
+
+    expect(err.reason).toBe('no overview target matching header text "describe"');
+  });
+
+  it("names an unmatched line alone", () => {
+    const err = new OverviewTargetNotFoundError({ depth: 0, at: undefined, line: 9 });
+
+    expect(err.reason).toBe("no overview target matching line 9");
   });
 });
 

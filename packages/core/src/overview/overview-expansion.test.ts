@@ -10,6 +10,7 @@ import type { Header } from "../intermediate-representation/types.js";
 import { OverviewExpander } from "./overview-expander.js";
 import {
   AmbiguousLineTargetError,
+  AmbiguousOverviewError,
   AmbiguousOverviewTargetError,
   OverviewTargetNotFoundError,
 } from "./errors.js";
@@ -62,16 +63,16 @@ function expandRequest(
   }).expand();
 }
 
-function renderThrownError(thunk: () => void): string {
+function thrownCandidateHeaders(thunk: () => void): readonly string[] {
   try {
     thunk();
   } catch (err) {
-    if (err instanceof Error && "render" in err && typeof err.render === "function") {
-      return err.render();
+    if (err instanceof AmbiguousOverviewError) {
+      return err.candidates.map((candidate) => candidate.header);
     }
     throw err;
   }
-  throw new Error("Expected thunk to throw");
+  throw new Error("Expected thunk to throw an ambiguous overview error");
 }
 
 describe("OverviewExpander depth", () => {
@@ -260,11 +261,11 @@ describe("OverviewExpander target selection", () => {
       AmbiguousLineTargetError,
     );
     expect(
-      renderThrownError(() => expandRequest(entries, { depth: 0, at: undefined, line: 4 })),
+      thrownCandidateHeaders(() => expandRequest(entries, { depth: 0, at: undefined, line: 4 })),
     ).toContain("4: inside");
   });
 
-  it("uses --line to narrow --at candidates", () => {
+  it("uses a line target to narrow header-text candidates", () => {
     const entries = [
       fold('describe("first", () => {', {
         range: { startLine: 1, endLine: 3 },
@@ -281,7 +282,7 @@ describe("OverviewExpander target selection", () => {
     ]);
   });
 
-  it("reports not found when --at and --line narrow to zero candidates", () => {
+  it("reports not found when header text and line narrow to zero candidates", () => {
     const entries = [
       fold('describe("cursor", () => {', {
         range: { startLine: 1, endLine: 3 },
@@ -293,7 +294,7 @@ describe("OverviewExpander target selection", () => {
     );
   });
 
-  it("reports candidates when --at and --line still match multiple nodes", () => {
+  it("reports candidates when header text and line still match multiple nodes", () => {
     const entries = [
       fold('describe("a", () => {', {
         range: { startLine: 1, endLine: 1 },
@@ -307,11 +308,11 @@ describe("OverviewExpander target selection", () => {
       AmbiguousOverviewTargetError,
     );
     expect(
-      renderThrownError(() => expandRequest(entries, { depth: 0, at: "describe", line: 1 })),
+      thrownCandidateHeaders(() => expandRequest(entries, { depth: 0, at: "describe", line: 1 })),
     ).toContain('1: describe("b", () => {');
   });
 
-  it("keeps same-line folds ambiguous under --line and addressable under longer --at text", () => {
+  it("keeps same-line folds ambiguous under a line target and addressable under longer header text", () => {
     const entries = [
       fold('describe("cursor", () => {', {
         range: { startLine: 1, endLine: 1 },

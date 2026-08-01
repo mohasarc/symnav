@@ -3,7 +3,6 @@ import type {
   OverviewExpansionCandidate,
   OverviewExpansionRequest,
 } from "./overview-expansion-result.js";
-import { formatRequest, renderCandidateError } from "./overview-query.js";
 
 export abstract class AmbiguousOverviewError extends UserFacingError {
   constructor(readonly candidates: readonly OverviewExpansionCandidate[]) {
@@ -20,10 +19,6 @@ export class AmbiguousOverviewTargetError extends AmbiguousOverviewError {
   get reason(): string {
     return "overview target matches multiple nodes";
   }
-
-  override render(): string {
-    return renderCandidateError(this.reason, this.candidates);
-  }
 }
 
 export class OverviewTargetNotFoundError extends UserFacingError {
@@ -33,7 +28,17 @@ export class OverviewTargetNotFoundError extends UserFacingError {
   }
 
   get reason(): string {
-    return `no overview target matching ${formatRequest(this.request)}`;
+    return `no overview target matching ${this.describeRequest()}`;
+  }
+
+  private describeRequest(): string {
+    if (this.request.at !== undefined && this.request.line !== undefined) {
+      return `header text ${JSON.stringify(this.request.at)} on line ${this.request.line}`;
+    }
+    if (this.request.at !== undefined) {
+      return `header text ${JSON.stringify(this.request.at)}`;
+    }
+    return `line ${this.request.line}`;
   }
 }
 
@@ -58,10 +63,6 @@ export class AmbiguousLineTargetError extends AmbiguousOverviewError {
   }
 
   get reason(): string {
-    return `line ${this.line} matches multiple overview nodes; use --at with copied header text`;
-  }
-
-  override render(): string {
-    return renderCandidateError(this.reason, this.candidates);
+    return `line ${this.line} matches multiple overview nodes`;
   }
 }

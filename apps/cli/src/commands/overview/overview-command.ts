@@ -1,6 +1,6 @@
 import type { NavigationDiagnostic, OverviewExpansionResult } from "@symnav/core";
 import { InvalidOverviewExpansionRequestError, OverviewExpander, OverviewTree } from "@symnav/core";
-import { renderOverviewJson, renderOverviewText } from "@symnav/renderer";
+import { renderOverviewError, renderOverviewJson, renderOverviewText } from "@symnav/renderer";
 import type { Command, CommandContext } from "../../command.js";
 import { classifyArgKind, lengthBucketOf } from "../../telemetry/arg-shape.js";
 
@@ -38,6 +38,7 @@ export const overviewCommand: Command<OverviewExpansionResult, OverviewArgs> = {
   },
   renderText: renderOverviewText,
   renderJson: renderOverviewJson,
+  renderError: renderOverviewError,
 };
 
 function flagsFor(args: OverviewArgs): readonly string[] {

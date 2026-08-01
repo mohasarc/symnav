@@ -1,16 +1,10 @@
-import { describe, expect, it, beforeAll } from "vitest";
-import { fixturePath, runSymnavBinary } from "@symnav/testing";
-import { ensureFixtureGitMarker } from "../ensure-fixture-git-marker.js";
+import { describe, expect, it } from "vitest";
 
-const fixtureRoot = fixturePath("overview-cases");
-
-beforeAll(() => {
-  ensureFixtureGitMarker(fixtureRoot);
-});
+import { runOverview } from "./run-overview.js";
 
 describe("symnav overview unsupported inputs", () => {
   it("reports directory inputs as unsupported source files", () => {
-    const result = runSymnavBinary(["overview", "src/rules"], { cwd: fixtureRoot });
+    const result = runOverview(["overview", "src/rules"]);
 
     expect(result.stdout).toBe("");
     expect(result.status).toBe(1);

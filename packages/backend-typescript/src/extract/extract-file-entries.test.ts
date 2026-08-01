@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   CollectingDiagnosticSink,
   formatSymbolIdentity,
-  parseSymbolIdentity,
+  parseSymbolTargetPattern,
   OverviewTree,
   type FoldOverviewNode,
   type OverviewFileEntries,
@@ -346,7 +346,11 @@ describe("extractFileEntries", () => {
     const field = symbolChildren(cls)[0];
     if (!field) throw new Error("expected private field");
     expect(OverviewTree.ownName(field)).toBe("#secret");
-    expect(parseSymbolIdentity(formatSymbolIdentity(field.identity))).toEqual(field.identity);
+    const id = formatSymbolIdentity(field.identity);
+    const pattern = parseSymbolTargetPattern(id);
+    expect(
+      formatSymbolIdentity({ file: pattern.fileSuffix!, segments: pattern.segmentSuffix }),
+    ).toBe(id);
   });
 });
 

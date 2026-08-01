@@ -83,7 +83,6 @@ export {
   InvalidSymbolIdError,
   formatSymbolIdentity,
   formatSymbolPath,
-  parseSymbolIdentity,
 } from "./intermediate-representation/canonical-identity.js";
 export type { SymbolTargetPattern } from "./target/symbol-target-pattern.js";
 export { parseSymbolTargetPattern, symbolTargetMatches } from "./target/symbol-target-pattern.js";

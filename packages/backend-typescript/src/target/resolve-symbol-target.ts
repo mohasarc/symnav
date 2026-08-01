@@ -20,29 +20,29 @@ export interface FindTargetCandidatesArgs {
   readonly options: ResolveSymbolTargetOptions;
 }
 
-export async function findTargetCandidates(
-  args: FindTargetCandidatesArgs,
-): Promise<readonly SymbolTargetCandidate[]> {
-  validateResolveSymbolTargetOptions(args.options);
-  args.index.ensureFiles(args.files);
-  const candidates: SymbolTargetCandidate[] = [];
-  for (const file of args.files) {
-    for (const symbol of args.index.declarationsIn(file.relative) ?? []) {
-      if (!SymbolTargetGrammar.matches(args.pattern, symbol.identity)) continue;
-      if (!matchesLine(args.options.containingLine, symbol)) continue;
-      candidates.push({
-        symbol,
-        canonicalId: formatSymbolIdentity(symbol.identity),
-        header: symbol.header,
-      });
+export class TargetCandidateFinder {
+  static async find(args: FindTargetCandidatesArgs): Promise<readonly SymbolTargetCandidate[]> {
+    validateResolveSymbolTargetOptions(args.options);
+    args.index.ensureFiles(args.files);
+    const candidates: SymbolTargetCandidate[] = [];
+    for (const file of args.files) {
+      for (const symbol of args.index.declarationsIn(file.relative) ?? []) {
+        if (!SymbolTargetGrammar.matches(args.pattern, symbol.identity)) continue;
+        if (!TargetCandidateFinder.matchesLine(args.options.containingLine, symbol)) continue;
+        candidates.push({
+          symbol,
+          canonicalId: formatSymbolIdentity(symbol.identity),
+          header: symbol.header,
+        });
+      }
     }
+    return candidates;
   }
-  return candidates;
-}
 
-function matchesLine(line: number | undefined, symbol: SymbolOverviewNode): boolean {
-  if (line === undefined) {
-    return true;
+  private static matchesLine(line: number | undefined, symbol: SymbolOverviewNode): boolean {
+    if (line === undefined) {
+      return true;
+    }
+    return line >= symbol.range.startLine && line <= symbol.range.endLine;
   }
-  return line >= symbol.range.startLine && line <= symbol.range.endLine;
 }

@@ -25,7 +25,7 @@ import { loadFileEntries } from "../extract/load-file-entries.js";
 import { WorkspaceDeclarationIndex } from "../identity/workspace-declaration-index.js";
 import { ReferenceFinder } from "../references/find-references.js";
 import { resolveSymbols } from "../resolve/resolve-symbols.js";
-import { findTargetCandidates } from "../target/resolve-symbol-target.js";
+import { TargetCandidateFinder } from "../target/resolve-symbol-target.js";
 
 export class TypeScriptBackend implements LanguageBackend {
   static readonly extensions: readonly string[] = [".d.ts", ".ts", ".tsx", ".mts", ".cts"];
@@ -75,7 +75,12 @@ export class TypeScriptBackend implements LanguageBackend {
     pattern: SymbolTargetPattern,
     options: ResolveSymbolTargetOptions,
   ): Promise<readonly SymbolTargetCandidate[]> {
-    return findTargetCandidates({ index: this.sharedDeclarationIndex(), files, pattern, options });
+    return TargetCandidateFinder.find({
+      index: this.sharedDeclarationIndex(),
+      files,
+      pattern,
+      options,
+    });
   }
 
   async findDefinitions(

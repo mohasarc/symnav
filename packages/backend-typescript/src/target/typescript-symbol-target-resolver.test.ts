@@ -8,7 +8,7 @@ import {
 } from "@symnav/core";
 
 import { WorkspaceDeclarationIndex } from "../identity/workspace-declaration-index.js";
-import { findTargetCandidates } from "./resolve-symbol-target.js";
+import { TargetCandidateFinder } from "./resolve-symbol-target.js";
 
 const FIXTURE: Record<string, string> = {
   "/repo/.git/HEAD": "ref: refs/heads/main\n",
@@ -65,9 +65,9 @@ function sortedCanonicalIds(candidates: readonly SymbolTargetCandidate[]): reado
   return candidates.map((candidate) => candidate.canonicalId).sort();
 }
 
-describe("findTargetCandidates", () => {
+describe("TargetCandidateFinder.find", () => {
   it("returns the one candidate matching a unique bare-name pattern", async () => {
-    const candidates = await findTargetCandidates({
+    const candidates = await TargetCandidateFinder.find({
       index: new WorkspaceDeclarationIndex(fsWithFixture()),
       files: ALL_FILES,
       pattern: SymbolTargetGrammar.parse("helper"),
@@ -84,7 +84,7 @@ describe("findTargetCandidates", () => {
   });
 
   it("walks through fold nodes while returning only declaration symbols", async () => {
-    const candidates = await findTargetCandidates({
+    const candidates = await TargetCandidateFinder.find({
       index: new WorkspaceDeclarationIndex(fsWithFixture()),
       files: ALL_FILES,
       pattern: SymbolTargetGrammar.parse("insideIf"),
@@ -100,7 +100,7 @@ describe("findTargetCandidates", () => {
   });
 
   it("keeps a candidate when the supplied line is inside its declaration range", async () => {
-    const candidates = await findTargetCandidates({
+    const candidates = await TargetCandidateFinder.find({
       index: new WorkspaceDeclarationIndex(fsWithFixture()),
       files: ALL_FILES,
       pattern: SymbolTargetGrammar.parse("helper"),
@@ -113,7 +113,7 @@ describe("findTargetCandidates", () => {
 
   it("rejects a non-positive containingLine before searching", async () => {
     await expect(
-      findTargetCandidates({
+      TargetCandidateFinder.find({
         index: new WorkspaceDeclarationIndex(fsWithFixture()),
         files: ALL_FILES,
         pattern: SymbolTargetGrammar.parse("helper"),
@@ -123,7 +123,7 @@ describe("findTargetCandidates", () => {
   });
 
   it("drops candidates whose declaration range excludes the supplied line", async () => {
-    const candidates = await findTargetCandidates({
+    const candidates = await TargetCandidateFinder.find({
       index: new WorkspaceDeclarationIndex(fsWithFixture()),
       files: ALL_FILES,
       pattern: SymbolTargetGrammar.parse("helper"),
@@ -134,7 +134,7 @@ describe("findTargetCandidates", () => {
   });
 
   it("keeps only the candidate whose declaration range contains the supplied line", async () => {
-    const candidates = await findTargetCandidates({
+    const candidates = await TargetCandidateFinder.find({
       index: new WorkspaceDeclarationIndex(fsWithFixture()),
       files: pathsFor(["src/json.ts", "src/spaced.ts"]),
       pattern: SymbolTargetGrammar.parse("parse"),
@@ -145,7 +145,7 @@ describe("findTargetCandidates", () => {
   });
 
   it("returns an empty list for zero matches without throwing", async () => {
-    const candidates = await findTargetCandidates({
+    const candidates = await TargetCandidateFinder.find({
       index: new WorkspaceDeclarationIndex(fsWithFixture()),
       files: ALL_FILES,
       pattern: SymbolTargetGrammar.parse("missing"),
@@ -156,7 +156,7 @@ describe("findTargetCandidates", () => {
   });
 
   it("returns every matching declaration candidate in any order", async () => {
-    const candidates = await findTargetCandidates({
+    const candidates = await TargetCandidateFinder.find({
       index: new WorkspaceDeclarationIndex(fsWithFixture()),
       files: ALL_FILES,
       pattern: SymbolTargetGrammar.parse("parse"),

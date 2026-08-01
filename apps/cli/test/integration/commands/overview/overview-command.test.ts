@@ -85,7 +85,6 @@ describe("symnav overview happy path", () => {
     expect(parsed).toEqual({
       ...entries,
       request: { depth: 0 },
-      totalSymbolCount: 0,
     });
   });
 

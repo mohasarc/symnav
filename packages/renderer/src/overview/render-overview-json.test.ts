@@ -76,7 +76,6 @@ describe("renderOverviewJson", () => {
         },
       ],
       request: { depth: 0 },
-      totalSymbolCount: 0,
     });
   });
 
@@ -150,7 +149,6 @@ describe("renderOverviewJson", () => {
         },
       ],
       request: { depth: 0 },
-      totalSymbolCount: 0,
     });
     expect(parsed.entries[1]).not.toHaveProperty("sourceModule");
   });
@@ -217,6 +215,17 @@ describe("renderOverviewJson", () => {
         message: "skipped unrecognised statement syntax at src/file.ts:1 (Identifier)",
       },
     ]);
+  });
+
+  it("keeps totalSymbolCount off the wire", () => {
+    const file = overviewResult({
+      file: "src/file.ts",
+      entries: [
+        decl({ kind: { role: "callable", nativeLabel: "function" }, segments: [{ name: "leaf" }] }),
+      ],
+    });
+    const parsed = JSON.parse(renderOverviewJson(file)) as Record<string, unknown>;
+    expect(parsed).not.toHaveProperty("totalSymbolCount");
   });
 
   it("renders identical bytes for identical IR across two calls", () => {

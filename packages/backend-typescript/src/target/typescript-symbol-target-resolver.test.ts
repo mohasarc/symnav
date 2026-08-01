@@ -8,7 +8,7 @@ import {
 } from "@symnav/core";
 
 import { WorkspaceDeclarationIndex } from "../identity/workspace-declaration-index.js";
-import { TargetCandidateFinder } from "./resolve-symbol-target.js";
+import { TargetCandidateFinder } from "./find-target-candidates.js";
 
 const FIXTURE: Record<string, string> = {
   "/repo/.git/HEAD": "ref: refs/heads/main\n",

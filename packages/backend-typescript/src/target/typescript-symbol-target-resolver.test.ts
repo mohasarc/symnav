@@ -58,7 +58,7 @@ describe("resolveSymbolTarget", () => {
       fs: fsWithFixture(),
       files: ALL_FILES,
       pattern: parseSymbolTargetPattern("helper"),
-      options: { line: undefined },
+      options: { containingLine: undefined },
     });
 
     expect(result.identity).toEqual({ file: "src/helpers.ts", segments: [{ name: "helper" }] });
@@ -69,7 +69,7 @@ describe("resolveSymbolTarget", () => {
       fs: fsWithFixture(),
       files: ALL_FILES,
       pattern: parseSymbolTargetPattern("insideIf"),
-      options: { line: undefined },
+      options: { containingLine: undefined },
     });
 
     expect(result.type).toBe("symbol");
@@ -84,7 +84,7 @@ describe("resolveSymbolTarget", () => {
       fs: fsWithFixture(),
       files: ALL_FILES,
       pattern: parseSymbolTargetPattern("helper"),
-      options: { line: 2 },
+      options: { containingLine: 2 },
     });
 
     expect(result.identity.file).toBe("src/helpers.ts");
@@ -96,7 +96,7 @@ describe("resolveSymbolTarget", () => {
         fs: fsWithFixture(),
         files: ALL_FILES,
         pattern: parseSymbolTargetPattern("missing"),
-        options: { line: undefined },
+        options: { containingLine: undefined },
       }),
     ).rejects.toBeInstanceOf(SymbolTargetNotFoundError);
   });
@@ -107,7 +107,7 @@ describe("resolveSymbolTarget", () => {
         fs: fsWithFixture(),
         files: ALL_FILES,
         pattern: parseSymbolTargetPattern("parse"),
-        options: { line: undefined },
+        options: { containingLine: undefined },
       }),
     ).rejects.toMatchObject({
       name: "AmbiguousSymbolTargetError",

@@ -12,7 +12,7 @@ export interface ResolveSymbolTargetForCommandArgs {
   readonly router: BackendRouter;
   readonly cwd: string;
   readonly rawTarget: string;
-  readonly line: number | undefined;
+  readonly containingLine: number | undefined;
 }
 
 export async function resolveSymbolTargetForCommand(
@@ -23,7 +23,7 @@ export async function resolveSymbolTargetForCommand(
   await validateExactMissingPath(args, files, pattern.fileSuffix);
   const backend = backendForPattern(args.router, files, pattern.fileSuffix);
   const accepted = files.filter((file) => backend.accepts(file.relative));
-  return backend.resolveSymbolTarget(accepted, pattern, { line: args.line });
+  return backend.resolveSymbolTarget(accepted, pattern, { containingLine: args.containingLine });
 }
 
 async function validateExactMissingPath(

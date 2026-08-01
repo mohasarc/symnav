@@ -49,7 +49,7 @@ export const graphCommand: Command<GraphResult, GraphArgs> = {
       router: ctx.router,
       cwd: ctx.cwd,
       rawTarget: ctx.args.target,
-      line: ctx.args.line,
+      containingLine: ctx.args.line,
     });
     const identity = requestedTarget.identity;
     const files = await ctx.workspace.enumerate();

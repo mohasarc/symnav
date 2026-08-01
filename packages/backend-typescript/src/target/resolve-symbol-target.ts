@@ -76,7 +76,7 @@ function extractMatchingCandidates(
   for (const file of args.files) {
     for (const symbol of OverviewTree.walkSymbols(loadFileEntries(args.fs, file).entries)) {
       if (!symbolTargetMatches(args.pattern, symbol.identity)) continue;
-      if (!matchesLine(args.options.line, symbol)) continue;
+      if (!matchesLine(args.options.containingLine, symbol)) continue;
       candidates.push({
         symbol,
         canonicalId: formatSymbolIdentity(symbol.identity),

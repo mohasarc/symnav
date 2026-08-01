@@ -14,7 +14,7 @@ export interface ResolveSymbolsOptions {
 }
 
 export interface ResolveSymbolTargetOptions {
-  readonly line: number | undefined;
+  readonly containingLine: number | undefined;
 }
 
 export interface LanguageBackend {

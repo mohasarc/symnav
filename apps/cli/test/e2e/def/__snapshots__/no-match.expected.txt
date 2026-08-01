@@ -1,3 +1,0 @@
-Definition: Box::ghost
-
-(no matching definitions)

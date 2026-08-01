@@ -49,7 +49,7 @@ export function symbolTargetMatches(
   );
 }
 
-function fileSuffixMatches(file: string, suffix: string): boolean {
+export function fileSuffixMatches(file: string, suffix: string): boolean {
   if (file === suffix) {
     return true;
   }

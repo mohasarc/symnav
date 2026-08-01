@@ -5,7 +5,7 @@ import type {
   SymbolOverviewNode,
   Workspace,
 } from "@symnav/core";
-import { parseSymbolTargetPattern } from "@symnav/core";
+import { fileSuffixMatches, parseSymbolTargetPattern } from "@symnav/core";
 
 export interface ResolveSymbolTargetForCommandArgs {
   readonly workspace: Workspace;
@@ -61,11 +61,4 @@ function backendForPattern(
     }
   }
   return router.findOrThrow(fileSuffix ?? "");
-}
-
-function fileSuffixMatches(file: string, suffix: string): boolean {
-  if (file === suffix) {
-    return true;
-  }
-  return file.endsWith(`/${suffix}`);
 }

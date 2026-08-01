@@ -27,7 +27,7 @@ export class AmbiguousOverviewTargetError extends AmbiguousOverviewError {
 }
 
 export class OverviewTargetNotFoundError extends UserFacingError {
-  constructor(private readonly request: OverviewExpansionRequest) {
+  constructor(readonly request: OverviewExpansionRequest) {
     super();
     this.name = "OverviewTargetNotFoundError";
   }
@@ -50,7 +50,7 @@ export class InvalidOverviewExpansionRequestError extends UserFacingError {
 
 export class AmbiguousLineTargetError extends AmbiguousOverviewError {
   constructor(
-    private readonly line: number,
+    readonly line: number,
     candidates: readonly OverviewExpansionCandidate[],
   ) {
     super(candidates);

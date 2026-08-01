@@ -50,6 +50,7 @@ describe("AmbiguousLineTargetError", () => {
     const err = new AmbiguousLineTargetError(1, candidates);
 
     expect(err.candidates).toBe(candidates);
+    expect(err.line).toBe(1);
     expect(err.reason).toBe(
       "line 1 matches multiple overview nodes; use --at with copied header text",
     );
@@ -67,6 +68,7 @@ describe("OverviewTargetNotFoundError", () => {
   it("names the unmatched request", () => {
     const err = new OverviewTargetNotFoundError({ depth: 0, at: "describe", line: 9 });
 
+    expect(err.request).toEqual({ depth: 0, at: "describe", line: 9 });
     expect(err.reason).toBe('no overview target matching --at "describe" on line 9');
   });
 });

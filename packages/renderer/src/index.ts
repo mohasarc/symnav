@@ -1,5 +1,6 @@
 export { renderOverviewText } from "./overview/render-overview-text.js";
 export { renderOverviewJson } from "./overview/render-overview-json.js";
+export { renderOverviewError } from "./overview/render-overview-error.js";
 export { renderResolveText } from "./resolve/render-resolve-text.js";
 export { renderResolveJson } from "./resolve/render-resolve-json.js";
 export { renderDefinitionText } from "./definition/render-definition-text.js";

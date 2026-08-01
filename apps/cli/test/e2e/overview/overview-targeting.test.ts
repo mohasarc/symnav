@@ -88,7 +88,7 @@ describe("symnav overview e2e (targeting)", () => {
     expect(r.stdout).toBe("");
     expect(r.status).toBe(1);
     expect(r.stderr).toBe(
-      "Cannot answer: invalid overview request: depth must be a non-negative integer, got x.\n",
+      "Cannot answer: invalid overview request: depth must be a non-negative integer, got NaN.\n",
     );
   });
 
@@ -108,7 +108,7 @@ describe("symnav overview e2e (targeting)", () => {
     expect(r.stdout).toBe("");
     expect(r.status).toBe(1);
     expect(r.stderr).toBe(
-      "Cannot answer: invalid overview request: line must be a positive integer, got x.\n",
+      "Cannot answer: invalid overview request: line must be a positive integer, got NaN.\n",
     );
   });
 
@@ -119,6 +119,16 @@ describe("symnav overview e2e (targeting)", () => {
     expect(r.status).toBe(1);
     expect(r.stderr).toBe(
       "Cannot answer: invalid overview request: line must be a positive integer, got 0.\n",
+    );
+  });
+
+  it("rejects fractional line values as overview request errors", () => {
+    const r = runOverview(["overview", "targeted-expansion.ts", "--line", "1.5"]);
+
+    expect(r.stdout).toBe("");
+    expect(r.status).toBe(1);
+    expect(r.stderr).toBe(
+      "Cannot answer: invalid overview request: line must be a positive integer, got 1.5.\n",
     );
   });
 });

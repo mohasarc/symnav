@@ -1,5 +1,5 @@
 import type { NavigationDiagnostic, OverviewExpansionResult } from "@symnav/core";
-import { InvalidOverviewExpansionRequestError, OverviewExpander, OverviewTree } from "@symnav/core";
+import { OverviewExpander, OverviewTree } from "@symnav/core";
 import { renderOverviewError, renderOverviewJson, renderOverviewText } from "@symnav/renderer";
 import type { Command, CommandContext } from "../../command.js";
 import { classifyArgKind, lengthBucketOf } from "../../telemetry/arg-shape.js";
@@ -63,20 +63,10 @@ function overviewRequestFrom(args: OverviewArgs): {
 
 function depthFrom(depth: OverviewArgs["depth"]): number {
   if (depth === undefined) return 0;
-  const numericDepth = Number(depth);
-  if (!Number.isInteger(numericDepth) || numericDepth < 0) {
-    throw new InvalidOverviewExpansionRequestError(
-      `depth must be a non-negative integer, got ${depth}`,
-    );
-  }
-  return numericDepth;
+  return Number(depth);
 }
 
 function lineFrom(line: OverviewArgs["line"]): number | undefined {
   if (line === undefined) return undefined;
-  const numericLine = Number(line);
-  if (!Number.isInteger(numericLine) || numericLine <= 0) {
-    throw new InvalidOverviewExpansionRequestError(`line must be a positive integer, got ${line}`);
-  }
-  return numericLine;
+  return Number(line);
 }

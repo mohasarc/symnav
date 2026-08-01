@@ -6,22 +6,27 @@ import type {
   SymbolReference,
   ResolvedPath,
   SymbolOverviewNode,
+  SymbolTargetCandidate,
   SymbolTargetPattern,
 } from "@symnav/core";
+import { symbolTargetMatches } from "@symnav/core";
 
 export interface FakeLanguageBackendOptions {
   accept?: (filePath: string) => boolean;
   entries?: (filePath: string) => OverviewFileEntries;
+  targetCandidates?: readonly SymbolTargetCandidate[];
 }
 
 export class FakeLanguageBackend implements LanguageBackend {
   readonly calls: string[] = [];
   private readonly acceptFn: (filePath: string) => boolean;
   private readonly entriesFn: (filePath: string) => OverviewFileEntries;
+  private readonly targetCandidates: readonly SymbolTargetCandidate[];
 
   constructor(options: FakeLanguageBackendOptions = {}) {
     this.acceptFn = options.accept ?? (() => true);
     this.entriesFn = options.entries ?? ((filePath: string) => ({ file: filePath, entries: [] }));
+    this.targetCandidates = options.targetCandidates ?? [];
   }
 
   accepts(filePath: string): boolean {
@@ -37,11 +42,13 @@ export class FakeLanguageBackend implements LanguageBackend {
     return [];
   }
 
-  async resolveSymbolTarget(
+  async findTargetCandidates(
     _files: readonly ResolvedPath[],
     pattern: SymbolTargetPattern,
-  ): Promise<SymbolOverviewNode> {
-    throw new Error(`unexpected symbol target resolution: ${pattern.raw}`);
+  ): Promise<readonly SymbolTargetCandidate[]> {
+    return this.targetCandidates.filter((candidate) =>
+      symbolTargetMatches(pattern, candidate.symbol.identity),
+    );
   }
 
   async findDefinitions(): Promise<readonly SymbolOverviewNode[]> {

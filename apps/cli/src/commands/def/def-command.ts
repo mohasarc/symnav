@@ -33,14 +33,13 @@ export const defCommand: Command<DefinitionResult, DefArgs> = {
     return { definitions: result.symbols.length };
   },
   async compute(ctx: CommandContext<DefArgs>): Promise<DefinitionResult> {
-    const target = await resolveSymbolTargetForCommand({
+    const identity = await resolveSymbolTargetForCommand({
       workspace: ctx.workspace,
       router: ctx.router,
       cwd: ctx.cwd,
       rawTarget: ctx.args.target,
       containingLine: ctx.args.line,
     });
-    const identity = target.identity;
     const files = await ctx.workspace.enumerate();
     const owningBackend = ctx.router.findOrThrow(identity.file);
     const symbols = await callOwningBackend(owningBackend, files, identity);

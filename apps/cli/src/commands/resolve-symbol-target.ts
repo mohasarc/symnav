@@ -2,10 +2,18 @@ import type {
   BackendRouter,
   LanguageBackend,
   ResolvedPath,
-  SymbolOverviewNode,
+  SymbolIdentity,
+  SymbolTargetCandidate,
+  SymbolTargetPattern,
   Workspace,
 } from "@symnav/core";
-import { fileSuffixMatches, parseSymbolTargetPattern } from "@symnav/core";
+import {
+  AmbiguousSymbolTargetError,
+  SymbolTargetNotFoundError,
+  fileSuffixMatches,
+  formatSymbolIdentity,
+  parseSymbolTargetPattern,
+} from "@symnav/core";
 
 export interface ResolveSymbolTargetForCommandArgs {
   readonly workspace: Workspace;
@@ -17,13 +25,29 @@ export interface ResolveSymbolTargetForCommandArgs {
 
 export async function resolveSymbolTargetForCommand(
   args: ResolveSymbolTargetForCommandArgs,
-): Promise<SymbolOverviewNode> {
+): Promise<SymbolIdentity> {
   const pattern = parseSymbolTargetPattern(args.rawTarget);
   const files = await args.workspace.enumerate();
   await validateExactMissingPath(args, files, pattern.fileSuffix);
-  const backend = backendForPattern(args.router, files, pattern.fileSuffix);
-  const accepted = files.filter((file) => backend.accepts(file.relative));
-  return backend.resolveSymbolTarget(accepted, pattern, { containingLine: args.containingLine });
+  const acceptedFilesByBackend = groupFilesByAcceptingBackend(args.router, files);
+  if (acceptedFilesByBackend.size === 0) {
+    args.router.findOrThrow(pattern.fileSuffix ?? "");
+  }
+  const candidates = await collectCandidates(acceptedFilesByBackend, pattern, args.containingLine);
+  const sortedCandidates = [...candidates].sort((left, right) =>
+    left.canonicalId.localeCompare(right.canonicalId),
+  );
+  if (sortedCandidates.length === 0) {
+    throw new SymbolTargetNotFoundError(pattern);
+  }
+  if (sortedCandidates.length > 1) {
+    const collapsedIdentity = collapsedOverloadIdentity(sortedCandidates, pattern);
+    if (collapsedIdentity !== undefined) {
+      return collapsedIdentity;
+    }
+    throw new AmbiguousSymbolTargetError(pattern, sortedCandidates);
+  }
+  return sortedCandidates[0]!.symbol.identity;
 }
 
 async function validateExactMissingPath(
@@ -42,23 +66,62 @@ async function validateExactMissingPath(
   }
 }
 
-function backendForPattern(
+function groupFilesByAcceptingBackend(
   router: BackendRouter,
   files: readonly ResolvedPath[],
-  fileSuffix: string | undefined,
-): LanguageBackend {
-  const matchingFile =
-    fileSuffix === undefined
-      ? undefined
-      : files.find((file) => fileSuffixMatches(file.relative, fileSuffix));
-  if (matchingFile !== undefined) {
-    return router.findOrThrow(matchingFile.relative);
-  }
+): Map<LanguageBackend, ResolvedPath[]> {
+  const acceptedFilesByBackend = new Map<LanguageBackend, ResolvedPath[]>();
   for (const file of files) {
     const backend = router.find(file.relative);
-    if (backend !== undefined) {
-      return backend;
+    if (backend === undefined) {
+      continue;
+    }
+    const accepted = acceptedFilesByBackend.get(backend);
+    if (accepted === undefined) {
+      acceptedFilesByBackend.set(backend, [file]);
+    } else {
+      accepted.push(file);
     }
   }
-  return router.findOrThrow(fileSuffix ?? "");
+  return acceptedFilesByBackend;
+}
+
+async function collectCandidates(
+  acceptedFilesByBackend: ReadonlyMap<LanguageBackend, readonly ResolvedPath[]>,
+  pattern: SymbolTargetPattern,
+  containingLine: number | undefined,
+): Promise<readonly SymbolTargetCandidate[]> {
+  const candidates: SymbolTargetCandidate[] = [];
+  for (const [backend, accepted] of acceptedFilesByBackend) {
+    candidates.push(...(await backend.findTargetCandidates(accepted, pattern, { containingLine })));
+  }
+  return candidates;
+}
+
+function collapsedOverloadIdentity(
+  candidates: readonly SymbolTargetCandidate[],
+  pattern: SymbolTargetPattern,
+): SymbolIdentity | undefined {
+  const leafPattern = pattern.segmentSuffix[pattern.segmentSuffix.length - 1];
+  if (leafPattern?.disambiguator !== undefined) {
+    return undefined;
+  }
+  const identities = candidates.map((candidate) =>
+    identityWithoutLeafDisambiguator(candidate.symbol.identity),
+  );
+  const identityKeys = new Set(identities.map(formatSymbolIdentity));
+  if (identityKeys.size !== 1) {
+    return undefined;
+  }
+  return identities[0]!;
+}
+
+function identityWithoutLeafDisambiguator(identity: SymbolIdentity): SymbolIdentity {
+  const segments = identity.segments.map((segment, index) => {
+    if (index !== identity.segments.length - 1 || segment.disambiguator === undefined) {
+      return segment;
+    }
+    return { name: segment.name };
+  });
+  return { file: identity.file, segments };
 }

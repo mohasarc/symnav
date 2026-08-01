@@ -7,6 +7,7 @@ import type {
   SymbolOverviewNode,
 } from "../intermediate-representation/overview-tree.js";
 import type { SymbolTargetPattern } from "../target/symbol-target-pattern.js";
+import type { SymbolTargetCandidate } from "../target/symbol-target-result.js";
 import type { ResolvedPath } from "../workspace/workspace.js";
 
 export interface ResolveSymbolsOptions {
@@ -25,11 +26,11 @@ export interface LanguageBackend {
     query: string,
     options: ResolveSymbolsOptions,
   ): Promise<readonly SymbolOverviewNode[]>;
-  resolveSymbolTarget(
+  findTargetCandidates(
     files: readonly ResolvedPath[],
     pattern: SymbolTargetPattern,
     options: ResolveSymbolTargetOptions,
-  ): Promise<SymbolOverviewNode>;
+  ): Promise<readonly SymbolTargetCandidate[]>;
   findDefinitions(
     files: readonly ResolvedPath[],
     identity: SymbolIdentity,

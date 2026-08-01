@@ -1,13 +1,12 @@
 import { describe, expect, it } from "vitest";
 import {
-  AmbiguousSymbolTargetError,
   InMemoryFileSystem,
-  SymbolTargetNotFoundError,
   parseSymbolTargetPattern,
   type ResolvedPath,
+  type SymbolTargetCandidate,
 } from "@symnav/core";
 
-import { resolveSymbolTarget } from "./resolve-symbol-target.js";
+import { findTargetCandidates } from "./resolve-symbol-target.js";
 
 const FIXTURE: Record<string, string> = {
   "/repo/.git/HEAD": "ref: refs/heads/main\n",
@@ -52,66 +51,86 @@ function fsWithFixture() {
   return new InMemoryFileSystem(FIXTURE);
 }
 
-describe("resolveSymbolTarget", () => {
-  it("resolves a unique bare-name pattern", async () => {
-    const result = await resolveSymbolTarget({
+function sortedCanonicalIds(candidates: readonly SymbolTargetCandidate[]): readonly string[] {
+  return candidates.map((candidate) => candidate.canonicalId).sort();
+}
+
+describe("findTargetCandidates", () => {
+  it("returns the one candidate matching a unique bare-name pattern", async () => {
+    const candidates = await findTargetCandidates({
       fs: fsWithFixture(),
       files: ALL_FILES,
       pattern: parseSymbolTargetPattern("helper"),
       options: { containingLine: undefined },
     });
 
-    expect(result.identity).toEqual({ file: "src/helpers.ts", segments: [{ name: "helper" }] });
+    expect(candidates).toHaveLength(1);
+    expect(candidates[0]!.symbol.identity).toEqual({
+      file: "src/helpers.ts",
+      segments: [{ name: "helper" }],
+    });
+    expect(candidates[0]!.canonicalId).toBe("src/helpers.ts::helper");
+    expect(candidates[0]!.header.lines.join("\n")).toContain("export function helper(): string");
   });
 
   it("walks through fold nodes while returning only declaration symbols", async () => {
-    const result = await resolveSymbolTarget({
+    const candidates = await findTargetCandidates({
       fs: fsWithFixture(),
       files: ALL_FILES,
       pattern: parseSymbolTargetPattern("insideIf"),
       options: { containingLine: undefined },
     });
 
-    expect(result.type).toBe("symbol");
-    expect(result.identity).toEqual({
+    expect(candidates).toHaveLength(1);
+    expect(candidates[0]!.symbol.type).toBe("symbol");
+    expect(candidates[0]!.symbol.identity).toEqual({
       file: "src/control-flow.ts",
       segments: [{ name: "outer" }, { name: "insideIf" }],
     });
   });
 
-  it("keeps a target when the supplied line is inside its declaration range", async () => {
-    const result = await resolveSymbolTarget({
+  it("keeps a candidate when the supplied line is inside its declaration range", async () => {
+    const candidates = await findTargetCandidates({
       fs: fsWithFixture(),
       files: ALL_FILES,
       pattern: parseSymbolTargetPattern("helper"),
       options: { containingLine: 2 },
     });
 
-    expect(result.identity.file).toBe("src/helpers.ts");
+    expect(candidates).toHaveLength(1);
+    expect(candidates[0]!.symbol.identity.file).toBe("src/helpers.ts");
   });
 
-  it("throws not-found for zero matches", async () => {
-    await expect(
-      resolveSymbolTarget({
-        fs: fsWithFixture(),
-        files: ALL_FILES,
-        pattern: parseSymbolTargetPattern("missing"),
-        options: { containingLine: undefined },
-      }),
-    ).rejects.toBeInstanceOf(SymbolTargetNotFoundError);
+  it("drops candidates whose declaration range excludes the supplied line", async () => {
+    const candidates = await findTargetCandidates({
+      fs: fsWithFixture(),
+      files: ALL_FILES,
+      pattern: parseSymbolTargetPattern("helper"),
+      options: { containingLine: 99 },
+    });
+
+    expect(candidates).toEqual([]);
   });
 
-  it("throws ambiguity with every matching declaration candidate", async () => {
-    await expect(
-      resolveSymbolTarget({
-        fs: fsWithFixture(),
-        files: ALL_FILES,
-        pattern: parseSymbolTargetPattern("parse"),
-        options: { containingLine: undefined },
-      }),
-    ).rejects.toMatchObject({
-      name: "AmbiguousSymbolTargetError",
-      reason: 'symbol target "parse" is ambiguous: src/json.ts::parse, src/query.ts::parse',
-    } satisfies Partial<AmbiguousSymbolTargetError>);
+  it("returns an empty list for zero matches without throwing", async () => {
+    const candidates = await findTargetCandidates({
+      fs: fsWithFixture(),
+      files: ALL_FILES,
+      pattern: parseSymbolTargetPattern("missing"),
+      options: { containingLine: undefined },
+    });
+
+    expect(candidates).toEqual([]);
+  });
+
+  it("returns every matching declaration candidate in any order", async () => {
+    const candidates = await findTargetCandidates({
+      fs: fsWithFixture(),
+      files: ALL_FILES,
+      pattern: parseSymbolTargetPattern("parse"),
+      options: { containingLine: undefined },
+    });
+
+    expect(sortedCanonicalIds(candidates)).toEqual(["src/json.ts::parse", "src/query.ts::parse"]);
   });
 });

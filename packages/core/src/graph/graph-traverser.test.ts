@@ -15,6 +15,7 @@ import type {
   SymbolOverviewNode,
 } from "../intermediate-representation/overview-tree.js";
 import type { SymbolTargetPattern } from "../target/symbol-target-pattern.js";
+import type { SymbolTargetCandidate } from "../target/symbol-target-result.js";
 import type { ResolvedPath } from "../workspace/workspace.js";
 import { GraphTraverser } from "./graph-traverser.js";
 
@@ -90,11 +91,11 @@ class FakeLanguageBackend implements LanguageBackend {
     throw new Error("not implemented");
   }
 
-  resolveSymbolTarget(
+  findTargetCandidates(
     _files: readonly ResolvedPath[],
     _pattern: SymbolTargetPattern,
     _options: ResolveSymbolTargetOptions,
-  ): Promise<SymbolOverviewNode> {
+  ): Promise<readonly SymbolTargetCandidate[]> {
     throw new Error("not implemented");
   }
 

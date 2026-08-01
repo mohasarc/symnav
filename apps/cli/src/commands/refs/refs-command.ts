@@ -32,14 +32,13 @@ export const refsCommand: Command<RefsResult, RefsArgs> = {
     };
   },
   async compute(ctx: CommandContext<RefsArgs>): Promise<RefsResult> {
-    const target = await resolveSymbolTargetForCommand({
+    const identity = await resolveSymbolTargetForCommand({
       workspace: ctx.workspace,
       router: ctx.router,
       cwd: ctx.cwd,
       rawTarget: ctx.args.target,
       containingLine: ctx.args.line,
     });
-    const identity = target.identity;
     const files = await ctx.workspace.enumerate();
     const backend = ctx.router.findOrThrow(identity.file);
     const accepted = files.filter((file) => backend.accepts(file.relative));

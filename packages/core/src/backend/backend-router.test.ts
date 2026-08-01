@@ -19,7 +19,7 @@ function fakeBackend(
     resolveSymbols() {
       return Promise.resolve([]);
     },
-    resolveSymbolTarget() {
+    findTargetCandidates() {
       throw new Error("unexpected symbol target resolution");
     },
     findDefinitions() {

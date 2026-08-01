@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   AmbiguousSymbolTargetError,
   BackendRouter,
+  InMemoryFileSystem,
   SymbolTargetNotFoundError,
   formatSymbolIdentity,
 } from "@symnav/core";
@@ -14,9 +15,13 @@ import type {
   Workspace,
 } from "@symnav/core";
 
+import { runCommand } from "../../../src/command.js";
+import { defCommand } from "../../../src/commands/def/def-command.js";
 import { resolveSymbolTargetForCommand } from "../../../src/commands/resolve-symbol-target.js";
 import type { ResolvedCommandTarget } from "../../../src/commands/resolve-symbol-target.js";
 import { FakeLanguageBackend } from "./helpers/fake-language-backend.js";
+import { createFakeProgramContext } from "./helpers/fake-program-context.js";
+import { fakeDependencies } from "./helpers/fake-program-dependencies.js";
 
 const WORKSPACE_FILES: readonly ResolvedPath[] = [
   { relative: "src/alpha.ts", absolute: "/repo/src/alpha.ts" },
@@ -148,6 +153,30 @@ describe("resolveSymbolTargetForCommand across backends", () => {
     ]);
 
     await expect(resolveWith(router, "missing")).rejects.toBeInstanceOf(SymbolTargetNotFoundError);
+  });
+
+  it("reports a workspace whose files no backend supports", async () => {
+    const context = createFakeProgramContext({ cwd: "/repo" });
+
+    await runCommand(defCommand, {
+      context,
+      dependencies: fakeDependencies({
+        fs: new InMemoryFileSystem({
+          "/repo/.git/HEAD": "ref: refs/heads/main\n",
+          "/repo/README.md": "docs only\n",
+        }),
+        backends: () => [new FakeLanguageBackend({ accept: () => false })],
+      }),
+      cwdOverride: undefined,
+      json: false,
+      args: { target: "helper", line: undefined },
+    });
+
+    expect(context.stdout.text()).toBe("");
+    expect(context.stderr.text()).toBe(
+      "Cannot answer: workspace contains no files supported by any language backend.\n",
+    );
+    expect(context.exitCodes).toEqual([1]);
   });
 
   it("collapses overload candidates to the disambiguator-stripped identity", async () => {

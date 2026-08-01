@@ -20,6 +20,17 @@ export class UnsupportedFileError extends UserFacingError {
   }
 }
 
+export class NoSupportedFilesError extends UserFacingError {
+  constructor() {
+    super();
+    this.name = "NoSupportedFilesError";
+  }
+
+  get reason(): string {
+    return "workspace contains no files supported by any language backend";
+  }
+}
+
 export class SymbolNotFoundError extends UserFacingError {
   constructor(private readonly identity: SymbolIdentity) {
     super();

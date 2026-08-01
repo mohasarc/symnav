@@ -111,6 +111,7 @@ export { BackendRouter } from "./backend/backend-router.js";
 export { UserFacingError } from "./errors.js";
 export {
   AmbiguousSymbolError,
+  NoSupportedFilesError,
   SymbolNotFoundError,
   UnsupportedFileError,
 } from "./backend/errors.js";

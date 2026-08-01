@@ -9,6 +9,7 @@ import type {
 } from "@symnav/core";
 import {
   AmbiguousSymbolTargetError,
+  NoSupportedFilesError,
   SymbolTargetNotFoundError,
   fileSuffixMatches,
   formatSymbolIdentity,
@@ -42,7 +43,7 @@ export async function resolveSymbolTargetForCommand(
   await validateExactMissingPath(args, files, pattern.fileSuffix);
   const acceptedFilesByBackend = groupFilesByAcceptingBackend(args.router, files);
   if (acceptedFilesByBackend.size === 0) {
-    args.router.findOrThrow(pattern.fileSuffix ?? "");
+    throw new NoSupportedFilesError();
   }
   const ownedCandidates = await collectCandidates(
     acceptedFilesByBackend,

@@ -4,7 +4,7 @@ import { SymbolTargetErrorRenderer, renderRefsJson, renderRefsText } from "@symn
 
 import type { Command, CommandContext } from "../../command.js";
 import { classifyArgKind, lengthBucketOf } from "../../telemetry/arg-shape.js";
-import { resolveSymbolTargetForCommand } from "../resolve-symbol-target.js";
+import { CommandTargetResolver } from "../resolve-symbol-target.js";
 
 export interface RefsArgs {
   readonly target: string;
@@ -32,7 +32,7 @@ export const refsCommand: Command<RefsResult, RefsArgs> = {
     };
   },
   async compute(ctx: CommandContext<RefsArgs>): Promise<RefsResult> {
-    const resolved = await resolveSymbolTargetForCommand({
+    const resolved = await CommandTargetResolver.resolve({
       workspace: ctx.workspace,
       router: ctx.router,
       cwd: ctx.cwd,

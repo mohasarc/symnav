@@ -17,7 +17,7 @@ import type {
 
 import { runCommand } from "../../../src/command.js";
 import { defCommand } from "../../../src/commands/def/def-command.js";
-import { resolveSymbolTargetForCommand } from "../../../src/commands/resolve-symbol-target.js";
+import { CommandTargetResolver } from "../../../src/commands/resolve-symbol-target.js";
 import type { ResolvedCommandTarget } from "../../../src/commands/resolve-symbol-target.js";
 import { FakeLanguageBackend } from "./helpers/fake-language-backend.js";
 import { createFakeProgramContext } from "./helpers/fake-program-context.js";
@@ -74,7 +74,7 @@ function zetaFake(targetCandidates: readonly SymbolTargetCandidate[]): FakeLangu
 }
 
 function resolveWith(router: BackendRouter, rawTarget: string): Promise<ResolvedCommandTarget> {
-  return resolveSymbolTargetForCommand({
+  return CommandTargetResolver.resolve({
     workspace: fakeWorkspace(WORKSPACE_FILES),
     router,
     cwd: "/repo",
@@ -87,7 +87,7 @@ function relativeFiles(resolved: ResolvedCommandTarget): readonly string[] {
   return resolved.files.map((file) => file.relative);
 }
 
-describe("resolveSymbolTargetForCommand across backends", () => {
+describe("CommandTargetResolver.resolve across backends", () => {
   it("resolves a bare name unique to one backend while another backend's files exist", async () => {
     const typescriptBackend = typescriptFake([candidateFor("src/alpha.ts", [{ name: "walk" }])]);
     const router = new BackendRouter([

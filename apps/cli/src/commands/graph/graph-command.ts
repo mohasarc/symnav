@@ -13,7 +13,7 @@ import { SymbolTargetErrorRenderer, renderGraphJson, renderGraphText } from "@sy
 import type { Command, CommandContext } from "../../command.js";
 import { classifyArgKind, lengthBucketOf } from "../../telemetry/arg-shape.js";
 import { resolveCallTarget } from "../resolve-call-target.js";
-import { resolveSymbolTargetForCommand } from "../resolve-symbol-target.js";
+import { CommandTargetResolver } from "../resolve-symbol-target.js";
 
 export interface GraphArgs {
   readonly target: string;
@@ -44,7 +44,7 @@ export const graphCommand: Command<GraphResult, GraphArgs> = {
   },
   async compute(ctx: CommandContext<GraphArgs>): Promise<GraphResult> {
     const request = graphRequestFrom(ctx.args);
-    const resolved = await resolveSymbolTargetForCommand({
+    const resolved = await CommandTargetResolver.resolve({
       workspace: ctx.workspace,
       router: ctx.router,
       cwd: ctx.cwd,

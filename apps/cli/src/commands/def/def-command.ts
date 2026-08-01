@@ -7,7 +7,7 @@ import {
 
 import type { Command, CommandContext } from "../../command.js";
 import { classifyArgKind, lengthBucketOf } from "../../telemetry/arg-shape.js";
-import { resolveSymbolTargetForCommand } from "../resolve-symbol-target.js";
+import { CommandTargetResolver } from "../resolve-symbol-target.js";
 
 export interface DefArgs {
   readonly target: string;
@@ -27,7 +27,7 @@ export const defCommand: Command<DefinitionResult, DefArgs> = {
     return { definitions: result.symbols.length };
   },
   async compute(ctx: CommandContext<DefArgs>): Promise<DefinitionResult> {
-    const resolved = await resolveSymbolTargetForCommand({
+    const resolved = await CommandTargetResolver.resolve({
       workspace: ctx.workspace,
       router: ctx.router,
       cwd: ctx.cwd,

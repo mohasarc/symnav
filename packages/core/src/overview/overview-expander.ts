@@ -4,9 +4,11 @@ import type {
 } from "../intermediate-representation/overview-tree.js";
 import type { LineRange } from "../intermediate-representation/types.js";
 import { formatSymbolPath } from "../intermediate-representation/canonical-identity.js";
+import { isPositiveInteger } from "../validation/is-positive-integer.js";
 import {
   AmbiguousLineTargetError,
   AmbiguousOverviewTargetError,
+  InvalidOverviewExpansionRequestError,
   OverviewTargetNotFoundError,
 } from "./errors.js";
 import type {
@@ -27,6 +29,21 @@ export class OverviewExpander {
   constructor(args: ExpandOverviewArgs) {
     this.file = args.file;
     this.request = args.request;
+    this.validateRequest();
+  }
+
+  private validateRequest(): void {
+    const { depth, line } = this.request;
+    if (!Number.isInteger(depth) || depth < 0) {
+      throw new InvalidOverviewExpansionRequestError(
+        `depth must be a non-negative integer, got ${depth}`,
+      );
+    }
+    if (line !== undefined && !isPositiveInteger(line)) {
+      throw new InvalidOverviewExpansionRequestError(
+        `line must be a positive integer, got ${line}`,
+      );
+    }
   }
 
   expand(): OverviewExpansionResult {

@@ -18,6 +18,7 @@ export interface SymbolOverviewNode extends OverviewNodeBase {
 export interface FoldOverviewNode extends OverviewNodeBase {
   readonly type: "fold";
   readonly foldKind: string;
+  readonly headerVariants?: readonly string[];
   readonly children: readonly OverviewNode[];
 }
 

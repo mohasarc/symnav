@@ -32,19 +32,16 @@ export const refsCommand: Command<RefsResult, RefsArgs> = {
     };
   },
   async compute(ctx: CommandContext<RefsArgs>): Promise<RefsResult> {
-    const identity = await resolveSymbolTargetForCommand({
+    const resolved = await resolveSymbolTargetForCommand({
       workspace: ctx.workspace,
       router: ctx.router,
       cwd: ctx.cwd,
       rawTarget: ctx.args.target,
       containingLine: ctx.args.line,
     });
-    const files = await ctx.workspace.enumerate();
-    const backend = ctx.router.findOrThrow(identity.file);
-    const accepted = files.filter((file) => backend.accepts(file.relative));
-    const references = await backend.findReferences(accepted, identity);
+    const references = await resolved.backend.findReferences(resolved.files, resolved.identity);
     return new RefsResultBuilder({
-      identity,
+      identity: resolved.identity,
       references,
       pageRequest: pageRequestFrom(ctx.args),
       fullLines: ctx.args.fullLines,

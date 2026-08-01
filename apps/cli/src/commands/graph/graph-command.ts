@@ -44,20 +44,19 @@ export const graphCommand: Command<GraphResult, GraphArgs> = {
   },
   async compute(ctx: CommandContext<GraphArgs>): Promise<GraphResult> {
     const request = graphRequestFrom(ctx.args);
-    const identity = await resolveSymbolTargetForCommand({
+    const resolved = await resolveSymbolTargetForCommand({
       workspace: ctx.workspace,
       router: ctx.router,
       cwd: ctx.cwd,
       rawTarget: ctx.args.target,
       containingLine: ctx.args.line,
     });
-    const files = await ctx.workspace.enumerate();
-    const backend = ctx.router.findOrThrow(identity.file);
-    const accepted = files.filter((file) => backend.accepts(file.relative));
-    const root = await resolveCallTarget(backend, accepted, identity);
+    const identity = resolved.identity;
+    const backend = resolved.backend;
+    const root = await resolveCallTarget(backend, resolved.files, identity);
     const traverser = new GraphTraverser({
       backend,
-      files: accepted,
+      files: resolved.files,
       root,
       depth: request.depth,
     });

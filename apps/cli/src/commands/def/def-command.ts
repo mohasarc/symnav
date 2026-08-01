@@ -1,10 +1,4 @@
-import type {
-  DefinitionResult,
-  LanguageBackend,
-  ResolvedPath,
-  SymbolOverviewNode,
-  SymbolIdentity,
-} from "@symnav/core";
+import type { DefinitionResult } from "@symnav/core";
 import {
   SymbolTargetErrorRenderer,
   renderDefinitionJson,
@@ -33,28 +27,17 @@ export const defCommand: Command<DefinitionResult, DefArgs> = {
     return { definitions: result.symbols.length };
   },
   async compute(ctx: CommandContext<DefArgs>): Promise<DefinitionResult> {
-    const identity = await resolveSymbolTargetForCommand({
+    const resolved = await resolveSymbolTargetForCommand({
       workspace: ctx.workspace,
       router: ctx.router,
       cwd: ctx.cwd,
       rawTarget: ctx.args.target,
       containingLine: ctx.args.line,
     });
-    const files = await ctx.workspace.enumerate();
-    const owningBackend = ctx.router.findOrThrow(identity.file);
-    const symbols = await callOwningBackend(owningBackend, files, identity);
-    return { identity, symbols };
+    const symbols = await resolved.backend.findDefinitions(resolved.files, resolved.identity);
+    return { identity: resolved.identity, symbols };
   },
   renderText: renderDefinitionText,
   renderJson: renderDefinitionJson,
   renderError: SymbolTargetErrorRenderer.render,
 };
-
-async function callOwningBackend(
-  backend: LanguageBackend,
-  files: readonly ResolvedPath[],
-  identity: SymbolIdentity,
-): Promise<readonly SymbolOverviewNode[]> {
-  const accepted = files.filter((file) => backend.accepts(file.relative));
-  return backend.findDefinitions(accepted, identity);
-}

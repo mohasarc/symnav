@@ -23,9 +23,20 @@ export interface ResolveSymbolTargetForCommandArgs {
   readonly containingLine: number | undefined;
 }
 
+export interface ResolvedCommandTarget {
+  readonly identity: SymbolIdentity;
+  readonly backend: LanguageBackend;
+  readonly files: readonly ResolvedPath[];
+}
+
+interface OwnedCandidate {
+  readonly candidate: SymbolTargetCandidate;
+  readonly backend: LanguageBackend;
+}
+
 export async function resolveSymbolTargetForCommand(
   args: ResolveSymbolTargetForCommandArgs,
-): Promise<SymbolIdentity> {
+): Promise<ResolvedCommandTarget> {
   const pattern = parseSymbolTargetPattern(args.rawTarget);
   const files = await args.workspace.enumerate();
   await validateExactMissingPath(args, files, pattern.fileSuffix);
@@ -33,21 +44,35 @@ export async function resolveSymbolTargetForCommand(
   if (acceptedFilesByBackend.size === 0) {
     args.router.findOrThrow(pattern.fileSuffix ?? "");
   }
-  const candidates = await collectCandidates(acceptedFilesByBackend, pattern, args.containingLine);
-  const sortedCandidates = [...candidates].sort((left, right) =>
-    left.canonicalId.localeCompare(right.canonicalId),
+  const ownedCandidates = await collectCandidates(
+    acceptedFilesByBackend,
+    pattern,
+    args.containingLine,
   );
-  if (sortedCandidates.length === 0) {
+  const sortedOwnedCandidates = [...ownedCandidates].sort((left, right) =>
+    left.candidate.canonicalId.localeCompare(right.candidate.canonicalId),
+  );
+  if (sortedOwnedCandidates.length === 0) {
     throw new SymbolTargetNotFoundError(pattern);
   }
-  if (sortedCandidates.length > 1) {
+  const winner = sortedOwnedCandidates[0]!;
+  if (sortedOwnedCandidates.length > 1) {
+    const sortedCandidates = sortedOwnedCandidates.map((owned) => owned.candidate);
     const collapsedIdentity = collapsedOverloadIdentity(sortedCandidates, pattern);
-    if (collapsedIdentity !== undefined) {
-      return collapsedIdentity;
+    if (collapsedIdentity === undefined) {
+      throw new AmbiguousSymbolTargetError(pattern, sortedCandidates);
     }
-    throw new AmbiguousSymbolTargetError(pattern, sortedCandidates);
+    return resolvedTarget(collapsedIdentity, winner.backend, acceptedFilesByBackend);
   }
-  return sortedCandidates[0]!.symbol.identity;
+  return resolvedTarget(winner.candidate.symbol.identity, winner.backend, acceptedFilesByBackend);
+}
+
+function resolvedTarget(
+  identity: SymbolIdentity,
+  backend: LanguageBackend,
+  acceptedFilesByBackend: ReadonlyMap<LanguageBackend, readonly ResolvedPath[]>,
+): ResolvedCommandTarget {
+  return { identity, backend, files: acceptedFilesByBackend.get(backend) ?? [] };
 }
 
 async function validateExactMissingPath(
@@ -90,12 +115,13 @@ async function collectCandidates(
   acceptedFilesByBackend: ReadonlyMap<LanguageBackend, readonly ResolvedPath[]>,
   pattern: SymbolTargetPattern,
   containingLine: number | undefined,
-): Promise<readonly SymbolTargetCandidate[]> {
-  const candidates: SymbolTargetCandidate[] = [];
+): Promise<readonly OwnedCandidate[]> {
+  const ownedCandidates: OwnedCandidate[] = [];
   for (const [backend, accepted] of acceptedFilesByBackend) {
-    candidates.push(...(await backend.findTargetCandidates(accepted, pattern, { containingLine })));
+    const candidates = await backend.findTargetCandidates(accepted, pattern, { containingLine });
+    ownedCandidates.push(...candidates.map((candidate) => ({ candidate, backend })));
   }
-  return candidates;
+  return ownedCandidates;
 }
 
 function collapsedOverloadIdentity(

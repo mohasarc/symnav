@@ -12,6 +12,7 @@ import {
   AmbiguousLineTargetError,
   AmbiguousOverviewError,
   AmbiguousOverviewTargetError,
+  InvalidOverviewExpansionRequestError,
   OverviewTargetNotFoundError,
 } from "./errors.js";
 import type { OverviewExpansionRequest } from "./overview-expansion-result.js";
@@ -63,6 +64,20 @@ function expandRequest(
   }).expand();
 }
 
+function construct(request: OverviewExpansionRequest): OverviewExpander {
+  return new OverviewExpander({ file: { file: "src/file.ts", entries: [] }, request });
+}
+
+function thrownValidationReason(request: OverviewExpansionRequest): string {
+  try {
+    construct(request);
+  } catch (err) {
+    if (err instanceof InvalidOverviewExpansionRequestError) return err.reason;
+    throw err;
+  }
+  throw new Error("Expected construction to throw InvalidOverviewExpansionRequestError");
+}
+
 function thrownCandidateHeaders(thunk: () => void): readonly string[] {
   try {
     thunk();
@@ -74,6 +89,28 @@ function thrownCandidateHeaders(thunk: () => void): readonly string[] {
   }
   throw new Error("Expected thunk to throw an ambiguous overview error");
 }
+
+describe("OverviewExpander request validation", () => {
+  it.each([-1, 1.5, Number.NaN])("rejects depth %s at construction", (depth) => {
+    expect(thrownValidationReason({ depth, at: undefined, line: undefined })).toBe(
+      `invalid overview request: depth must be a non-negative integer, got ${depth}`,
+    );
+  });
+
+  it.each([0, -3, 2.5])("rejects line %s at construction", (line) => {
+    expect(thrownValidationReason({ depth: 0, at: undefined, line })).toBe(
+      `invalid overview request: line must be a positive integer, got ${line}`,
+    );
+  });
+
+  it("constructs at depth 0 without a line", () => {
+    expect(() => construct({ depth: 0, at: undefined, line: undefined })).not.toThrow();
+  });
+
+  it("constructs with positive integer depth and line", () => {
+    expect(() => construct({ depth: 2, at: undefined, line: 5 })).not.toThrow();
+  });
+});
 
 describe("OverviewExpander depth", () => {
   it("renders symbol children and fold headers at depth 0", () => {

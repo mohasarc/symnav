@@ -39,6 +39,38 @@ describe("SymbolTargetErrorRenderer", () => {
     );
   });
 
+  it("prefixes every line of a wrapped signature with its candidate's glyph", () => {
+    const error = new AmbiguousSymbolTargetError(parseSymbolTargetPattern("charge"), [
+      candidate(
+        "src/stripe.ts",
+        ["charge"],
+        ["export function charge(", "  amount: number,", "): Promise<Receipt>"],
+      ),
+      candidate(
+        "src/paypal.ts",
+        ["charge"],
+        ["export function charge(", "  amount: Money,", "): Promise<Invoice>"],
+      ),
+    ]);
+
+    expect(SymbolTargetErrorRenderer.render(error)).toBe(
+      [
+        'Cannot answer: symbol target "charge" is ambiguous.',
+        "",
+        "Candidates",
+        "├── src/stripe.ts::charge",
+        "│   export function charge(",
+        "│     amount: number,",
+        "│   ): Promise<Receipt>",
+        "└── src/paypal.ts::charge",
+        "    export function charge(",
+        "      amount: Money,",
+        "    ): Promise<Invoice>",
+        "",
+      ].join("\n"),
+    );
+  });
+
   it("leaves other symbol-target errors unrendered", () => {
     const error = new SymbolTargetNotFoundError(parseSymbolTargetPattern("parse"));
 

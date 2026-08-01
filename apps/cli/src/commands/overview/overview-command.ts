@@ -1,6 +1,11 @@
 import type { NavigationDiagnostic, OverviewExpansionResult } from "@symnav/core";
 import { OverviewExpander, OverviewTree } from "@symnav/core";
-import { renderOverviewError, renderOverviewJson, renderOverviewText } from "@symnav/renderer";
+import {
+  renderOverviewError,
+  renderOverviewJson,
+  renderOverviewText,
+  stripHeaderEllipsis,
+} from "@symnav/renderer";
 import type { Command, CommandContext } from "../../command.js";
 import { classifyArgKind, lengthBucketOf } from "../../telemetry/arg-shape.js";
 
@@ -56,7 +61,7 @@ function overviewRequestFrom(args: OverviewArgs): {
 } {
   return {
     depth: depthFrom(args.depth),
-    at: args.at,
+    at: args.at === undefined ? undefined : stripHeaderEllipsis(args.at),
     line: lineFrom(args.line),
   };
 }

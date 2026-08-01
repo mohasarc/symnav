@@ -70,6 +70,24 @@ describe("symnav overview e2e (targeting)", () => {
     expect(r.stdout).not.toContain("beta");
   });
 
+  it("targets a fold via its rendered capped header line", () => {
+    const longHeaderLine =
+      'describe("a very long suite title that overflows the eighty character header render cap", () => {';
+    expect(longHeaderLine.length).toBeGreaterThan(80);
+    const cappedLabel = longHeaderLine.slice(0, 79) + "…";
+
+    const listing = runOverview(["overview", "long-header.ts"]);
+    expect(listing.stderr).toBe("");
+    expect(listing.status).toBe(0);
+    expect(listing.stdout).toContain(cappedLabel);
+    expect(listing.stdout).not.toContain("longHelper");
+
+    const r = runOverview(["overview", "long-header.ts", "--at", cappedLabel, "--depth", "1"]);
+    expect(r.stderr).toBe("");
+    expect(r.status).toBe(0);
+    expect(r.stdout).toContain("2: longHelper");
+  });
+
   it("prints target candidates for ambiguous header text", () => {
     const r = runOverview(["overview", "targeted-expansion.ts", "--at", "describe"]);
 

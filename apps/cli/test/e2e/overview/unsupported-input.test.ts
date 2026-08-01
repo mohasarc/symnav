@@ -14,7 +14,7 @@ describe("symnav overview unsupported inputs", () => {
   });
 
   it("reports extensionless inputs as unsupported source files", () => {
-    const result = runSymnavBinary(["overview", "extensionless"], { cwd: fixtureRoot });
+    const result = runOverview(["overview", "extensionless"]);
 
     expect(result.stdout).toBe("");
     expect(result.status).toBe(1);
@@ -24,7 +24,7 @@ describe("symnav overview unsupported inputs", () => {
   });
 
   it("reports non-TypeScript inputs as unsupported source files", () => {
-    const result = runSymnavBinary(["overview", "unsupported.md"], { cwd: fixtureRoot });
+    const result = runOverview(["overview", "unsupported.md"]);
 
     expect(result.stdout).toBe("");
     expect(result.status).toBe(1);

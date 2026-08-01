@@ -441,3 +441,62 @@ describe("OverviewExpander target selection", () => {
     ]);
   });
 });
+
+describe("OverviewExpander identity stability across expansion", () => {
+  const entries = [
+    fold('describe("alpha", () => {', {
+      range: { startLine: 1, endLine: 6 },
+      children: [
+        symbol("dup", {
+          range: { startLine: 2, endLine: 5 },
+          identity: { file: "src/file.ts", segments: [{ name: "dup", disambiguator: 1 }] },
+          children: [
+            fold("if (flag) {", {
+              range: { startLine: 3, endLine: 4 },
+              children: [symbol("hidden", { range: { startLine: 4, endLine: 4 } })],
+            }),
+          ],
+        }),
+      ],
+    }),
+    fold('describe("beta", () => {', {
+      range: { startLine: 8, endLine: 11 },
+      children: [
+        symbol("dup", {
+          range: { startLine: 9, endLine: 10 },
+          identity: { file: "src/file.ts", segments: [{ name: "dup", disambiguator: 2 }] },
+        }),
+      ],
+    }),
+  ];
+
+  it("preserves identity segments through depth pruning", () => {
+    const result = expandRequest(entries, { depth: 1, at: undefined, line: undefined });
+    const survivors = OverviewTree.walkSymbols(result.entries);
+
+    expect(survivors.map((survivor) => survivor.identity.segments)).toEqual([
+      [{ name: "dup", disambiguator: 1 }],
+      [{ name: "dup", disambiguator: 2 }],
+    ]);
+  });
+
+  it("shows a targeted fold's symbol under its file-global disambiguator", () => {
+    const result = expandRequest(entries, { depth: 1, at: 'describe("beta"', line: undefined });
+    const shown = OverviewTree.walkSymbols(result.entries);
+
+    expect(shown).toHaveLength(1);
+    expect(shown[0]!.identity.segments).toEqual([{ name: "dup", disambiguator: 2 }]);
+  });
+
+  it("preserves identity segments under line and at subtree selection", () => {
+    const byLine = expandRequest(entries, { depth: 1, at: undefined, line: 11 });
+    expect(
+      OverviewTree.walkSymbols(byLine.entries).map((shown) => shown.identity.segments),
+    ).toEqual([[{ name: "dup", disambiguator: 2 }]]);
+
+    const byAt = expandRequest(entries, { depth: 0, at: "dup#2", line: undefined });
+    expect(OverviewTree.walkSymbols(byAt.entries).map((shown) => shown.identity.segments)).toEqual([
+      [{ name: "dup", disambiguator: 2 }],
+    ]);
+  });
+});

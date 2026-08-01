@@ -62,7 +62,7 @@ export class InvalidOverviewExpansionRequestError extends UserFacingError {
 export class AmbiguousLineTargetError extends UserFacingError {
   constructor(
     private readonly line: number,
-    readonly candidates: readonly OverviewExpansionCandidate[] = [],
+    readonly candidates: readonly OverviewExpansionCandidate[],
   ) {
     super();
     this.name = "AmbiguousLineTargetError";
@@ -73,7 +73,6 @@ export class AmbiguousLineTargetError extends UserFacingError {
   }
 
   override render(): string {
-    if (this.candidates.length === 0) return super.render();
     return renderCandidateError(this.reason, this.candidates);
   }
 }
@@ -99,6 +98,5 @@ function formatRequest(request: OverviewExpansionRequest): string {
     return `--at ${JSON.stringify(request.at)} on line ${request.line}`;
   }
   if (request.at !== undefined) return `--at ${JSON.stringify(request.at)}`;
-  if (request.line !== undefined) return `line ${request.line}`;
-  return "overview";
+  return `line ${request.line}`;
 }

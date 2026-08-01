@@ -34,7 +34,7 @@ function fold(
     type: "fold",
     foldKind: "call",
     range: partial.range ?? { startLine: 1, endLine: 3 },
-    header: partial.header ?? signature(1, 'describe("x", () => {'),
+    header: partial.header ?? header(1, 'describe("x", () => {'),
     children: partial.children ?? [],
   };
 }
@@ -48,11 +48,11 @@ function reExport(
     exportedNames: [],
     sourceModule: "./core",
     range: partial.range ?? { startLine: 1, endLine: 1 },
-    header: partial.header ?? signature(1, 'export * from "./core";'),
+    header: partial.header ?? header(1, 'export * from "./core";'),
   };
 }
 
-function signature(startLine: number, ...lines: string[]): Header {
+function header(startLine: number, ...lines: string[]): Header {
   return { startLine, lines };
 }
 
@@ -87,7 +87,7 @@ describe("renderOverviewText", () => {
           kind: "function",
           segments: [{ name: "greet" }],
           range: { startLine: 4, endLine: 4 },
-          header: signature(4, "function greet(name: string): void"),
+          header: header(4, "function greet(name: string): void"),
         }),
       ],
     });
@@ -111,7 +111,7 @@ describe("renderOverviewText", () => {
           kind: "function",
           segments: [{ name: "greet" }],
           range: { startLine: 4, endLine: 4 },
-          header: signature(4, "function greet(): void"),
+          header: header(4, "function greet(): void"),
         }),
       ],
     });
@@ -126,7 +126,7 @@ describe("renderOverviewText", () => {
           kind: "function",
           segments: [{ name: "configure" }],
           range: { startLine: 10, endLine: 14 },
-          header: signature(10, "function configure(", "  host: string,", "): void"),
+          header: header(10, "function configure(", "  host: string,", "): void"),
         }),
       ],
     });
@@ -151,7 +151,7 @@ describe("renderOverviewText", () => {
           kind: "function",
           segments: [{ name: "wide" }],
           range: { startLine: 1, endLine: HEADER_CAP_LINES },
-          header: signature(1, ...lines),
+          header: header(1, ...lines),
         }),
       ],
     });
@@ -171,7 +171,7 @@ describe("renderOverviewText", () => {
           kind: "function",
           segments: [{ name: "wide" }],
           range: { startLine: 1, endLine: lines.length },
-          header: signature(1, ...lines),
+          header: header(1, ...lines),
         }),
       ],
     });
@@ -188,19 +188,19 @@ describe("renderOverviewText", () => {
           kind: "variable",
           segments: [{ name: "A" }],
           range: { startLine: 1, endLine: 1 },
-          header: signature(1, "const A: number"),
+          header: header(1, "const A: number"),
         }),
         decl({
           kind: "variable",
           segments: [{ name: "B" }],
           range: { startLine: 3, endLine: 3 },
-          header: signature(3, "const B: number"),
+          header: header(3, "const B: number"),
         }),
         decl({
           kind: "variable",
           segments: [{ name: "C" }],
           range: { startLine: 5, endLine: 5 },
-          header: signature(5, "const C: number"),
+          header: header(5, "const C: number"),
         }),
       ],
     });
@@ -229,25 +229,25 @@ describe("renderOverviewText", () => {
           kind: "class",
           segments: [{ name: "CheckoutService" }],
           range: { startLine: 12, endLine: 96 },
-          header: signature(12, "class CheckoutService"),
+          header: header(12, "class CheckoutService"),
           children: [
             decl({
               kind: "constructor",
               segments: [{ name: "CheckoutService" }, { name: "constructor" }],
               range: { startLine: 24, endLine: 34 },
-              header: signature(24, "constructor(p: P, i: I)"),
+              header: header(24, "constructor(p: P, i: I)"),
             }),
             decl({
               kind: "method",
               segments: [{ name: "CheckoutService" }, { name: "processPayment" }],
               range: { startLine: 42, endLine: 78 },
-              header: signature(42, "async processPayment(order: Order): Promise<Receipt>"),
+              header: header(42, "async processPayment(order: Order): Promise<Receipt>"),
             }),
             decl({
               kind: "method",
               segments: [{ name: "CheckoutService" }, { name: "validateOrder" }],
               range: { startLine: 80, endLine: 94 },
-              header: signature(80, "private validateOrder(order: Order): void"),
+              header: header(80, "private validateOrder(order: Order): void"),
             }),
           ],
         }),
@@ -278,13 +278,13 @@ describe("renderOverviewText", () => {
           kind: "class",
           segments: [{ name: "Server" }],
           range: { startLine: 1, endLine: 10 },
-          header: signature(1, "class Server"),
+          header: header(1, "class Server"),
           children: [
             decl({
               kind: "method",
               segments: [{ name: "Server" }, { name: "start" }],
               range: { startLine: 2, endLine: 6 },
-              header: signature(2, "start(", "  host: string,", "): void"),
+              header: header(2, "start(", "  host: string,", "): void"),
             }),
           ],
         }),
@@ -312,19 +312,19 @@ describe("renderOverviewText", () => {
           kind: "namespace",
           segments: [{ name: "Outer" }],
           range: { startLine: 1, endLine: 50 },
-          header: signature(1, "namespace Outer"),
+          header: header(1, "namespace Outer"),
           children: [
             decl({
               kind: "class",
               segments: [{ name: "Outer" }, { name: "Inner" }],
               range: { startLine: 5, endLine: 40 },
-              header: signature(5, "class Inner"),
+              header: header(5, "class Inner"),
               children: [
                 decl({
                   kind: "method",
                   segments: [{ name: "Outer" }, { name: "Inner" }, { name: "method" }],
                   range: { startLine: 10, endLine: 20 },
-                  header: signature(10, "method(): void"),
+                  header: header(10, "method(): void"),
                 }),
               ],
             }),
@@ -354,13 +354,13 @@ describe("renderOverviewText", () => {
           kind: "variable",
           segments: [{ name: "single" }],
           range: { startLine: 8, endLine: 8 },
-          header: signature(8, "const single: number"),
+          header: header(8, "const single: number"),
         }),
         decl({
           kind: "function",
           segments: [{ name: "multi" }],
           range: { startLine: 12, endLine: 96 },
-          header: signature(12, "function multi(): void"),
+          header: header(12, "function multi(): void"),
         }),
       ],
     });
@@ -400,13 +400,13 @@ describe("renderOverviewText", () => {
       entries: [
         fold({
           range: { startLine: 1, endLine: 3 },
-          header: signature(1, 'describe("x", () => {'),
+          header: header(1, 'describe("x", () => {'),
           children: [
             decl({
               kind: "variable",
               segments: [{ name: "helper" }],
               range: { startLine: 2, endLine: 2 },
-              header: signature(2, "const helper = () => …"),
+              header: header(2, "const helper = () => …"),
             }),
           ],
         }),
@@ -430,13 +430,13 @@ describe("renderOverviewText", () => {
       entries: [
         fold({
           range: { startLine: 1, endLine: 6 },
-          header: signature(1, "if (", "  flag &&", ") {"),
+          header: header(1, "if (", "  flag &&", ") {"),
           children: [
             decl({
               kind: "function",
               segments: [{ name: "insideIf" }],
               range: { startLine: 5, endLine: 5 },
-              header: signature(5, "function insideIf(): void"),
+              header: header(5, "function insideIf(): void"),
             }),
           ],
         }),
@@ -462,11 +462,11 @@ describe("renderOverviewText", () => {
       entries: [
         fold({
           range: { startLine: 1, endLine: 4 },
-          header: signature(1, "while (", ") {"),
+          header: header(1, "while (", ") {"),
         }),
         fold({
           range: { startLine: 6, endLine: 8 },
-          header: signature(6, "block {"),
+          header: header(6, "block {"),
         }),
       ],
     });
@@ -484,7 +484,7 @@ describe("renderOverviewText", () => {
       entries: [
         reExport({
           range: { startLine: 1, endLine: 3 },
-          header: signature(1, "export {", "  A,", '} from "./api";'),
+          header: header(1, "export {", "  A,", '} from "./api";'),
         }),
       ],
     });
@@ -507,7 +507,7 @@ describe("renderOverviewText", () => {
       entries: [
         fold({
           range: { startLine: 1, endLine: lines.length + 1 },
-          header: signature(1, ...lines),
+          header: header(1, ...lines),
         }),
       ],
     });
@@ -521,7 +521,7 @@ describe("renderOverviewText", () => {
     const label = `call(${"a".repeat(100)}) {`;
     const result = overviewResult({
       file: "src/fold.ts",
-      entries: [fold({ range: { startLine: 1, endLine: 3 }, header: signature(1, label) })],
+      entries: [fold({ range: { startLine: 1, endLine: 3 }, header: header(1, label) })],
     });
 
     const cappedLabel = label.slice(0, HEADER_CAP_LINE_LENGTH - 1) + HEADER_ELLIPSIS;
@@ -535,7 +535,7 @@ describe("renderOverviewText", () => {
     const label = "y".repeat(HEADER_CAP_LINE_LENGTH);
     const result = overviewResult({
       file: "src/fold.ts",
-      entries: [fold({ range: { startLine: 1, endLine: 3 }, header: signature(1, label) })],
+      entries: [fold({ range: { startLine: 1, endLine: 3 }, header: header(1, label) })],
     });
 
     const output = renderOverviewText(result);
@@ -551,7 +551,7 @@ describe("renderOverviewText", () => {
       entries: [
         reExport({
           range: { startLine: 1, endLine: 3 },
-          header: signature(1, label, continuation, '} from "./api";'),
+          header: header(1, label, continuation, '} from "./api";'),
         }),
       ],
     });
@@ -578,7 +578,7 @@ describe("renderOverviewText", () => {
           kind: "function",
           segments: [{ name: "wide" }],
           range: { startLine: 1, endLine: 1 },
-          header: signature(1, longSignature),
+          header: header(1, longSignature),
         }),
       ],
     });
@@ -594,7 +594,7 @@ describe("renderOverviewText", () => {
       entries: [
         reExport({
           range: { startLine: 1, endLine: 1 },
-          header: signature(1, 'export * from "./core";'),
+          header: header(1, 'export * from "./core";'),
         }),
       ],
     });

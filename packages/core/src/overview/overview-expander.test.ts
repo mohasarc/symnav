@@ -1,12 +1,9 @@
 import { describe, expect, it } from "vitest";
 
 import type {
-  FoldOverviewNode,
   OverviewFileEntries,
   OverviewNode,
-  SymbolOverviewNode,
 } from "../intermediate-representation/overview-tree.js";
-import type { Header } from "../intermediate-representation/types.js";
 import { OverviewTree } from "../intermediate-representation/overview-tree.js";
 import { OverviewExpander } from "./overview-expander.js";
 import {
@@ -16,50 +13,16 @@ import {
   InvalidOverviewExpansionRequestError,
   OverviewTargetNotFoundError,
 } from "./errors.js";
-import type { OverviewExpansionRequest } from "./overview-expansion-result.js";
-
-function symbol(
-  name: string,
-  partial: Partial<Pick<SymbolOverviewNode, "range" | "header" | "children">> = {},
-): SymbolOverviewNode {
-  const range = partial.range ?? { startLine: 1, endLine: 1 };
-  return {
-    type: "symbol",
-    identity: { file: "src/file.ts", segments: [{ name }] },
-    kind: { role: "value", nativeLabel: "function" },
-    range,
-    header: partial.header ?? signature(range.startLine, `function ${name}(): void`),
-    children: partial.children ?? [],
-  };
-}
-
-function fold(
-  header: string,
-  partial: Partial<Pick<FoldOverviewNode, "range" | "children" | "headerVariants">> = {},
-): FoldOverviewNode {
-  const node: FoldOverviewNode = {
-    type: "fold",
-    foldKind: "block",
-    range: partial.range ?? { startLine: 1, endLine: 3 },
-    header: signature(partial.range?.startLine ?? 1, header),
-    children: partial.children ?? [],
-  };
-  if (partial.headerVariants === undefined) return node;
-  return { ...node, headerVariants: partial.headerVariants };
-}
-
-function signature(startLine: number, ...lines: string[]): Header {
-  return { startLine, lines };
-}
-
-function expand(entries: readonly OverviewNode[], depth: number): readonly OverviewNode[] {
-  return expandRequest(entries, { depth, at: undefined, line: undefined }).entries;
-}
+import type {
+  OverviewExpansionRequest,
+  OverviewExpansionResult,
+} from "./overview-expansion-result.js";
+import { fold, symbol } from "./overview-node-builders.js";
 
 function expandRequest(
   entries: readonly OverviewNode[],
   request: OverviewExpansionRequest,
-): OverviewFileEntries {
+): OverviewExpansionResult {
   const file: OverviewFileEntries = { file: "src/file.ts", entries };
   return new OverviewExpander({
     file,
@@ -130,7 +93,7 @@ describe("OverviewExpander depth", () => {
       }),
     ];
 
-    expect(expand(entries, 0)).toEqual([
+    expect(expandRequest(entries, { depth: 0, at: undefined, line: undefined }).entries).toEqual([
       symbol("outer", {
         range: { startLine: 1, endLine: 10 },
         children: [
@@ -158,7 +121,7 @@ describe("OverviewExpander depth", () => {
       }),
     ];
 
-    expect(expand(entries, 1)).toEqual([
+    expect(expandRequest(entries, { depth: 1, at: undefined, line: undefined }).entries).toEqual([
       fold('describe("outer", () => {', {
         range: { startLine: 1, endLine: 8 },
         children: [
@@ -185,7 +148,7 @@ describe("OverviewExpander depth", () => {
       }),
     ];
 
-    expect(expand(entries, 2)).toEqual([
+    expect(expandRequest(entries, { depth: 2, at: undefined, line: undefined }).entries).toEqual([
       fold('describe("outer", () => {', {
         range: { startLine: 1, endLine: 8 },
         children: [
@@ -221,7 +184,7 @@ describe("OverviewExpander depth", () => {
       }),
     ];
 
-    expect(expand(entries, 1)).toEqual([
+    expect(expandRequest(entries, { depth: 1, at: undefined, line: undefined }).entries).toEqual([
       fold('describe("outer", () => {', {
         range: { startLine: 1, endLine: 12 },
         children: [

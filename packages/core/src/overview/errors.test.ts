@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 
-import type { OverviewNode } from "../intermediate-representation/overview-tree.js";
 import {
   AmbiguousLineTargetError,
   AmbiguousOverviewError,
@@ -9,20 +8,13 @@ import {
   OverviewTargetNotFoundError,
 } from "./errors.js";
 import type { OverviewExpansionCandidate } from "./overview-expansion-result.js";
-
-const node: OverviewNode = {
-  type: "fold",
-  foldKind: "call",
-  range: { startLine: 1, endLine: 3 },
-  header: { startLine: 1, lines: ['describe("x", () => {'] },
-  children: [],
-};
+import { fold } from "./overview-node-builders.js";
 
 function candidate(header: string, startLine: number, endLine: number): OverviewExpansionCandidate {
   return {
     header,
     range: { startLine, endLine },
-    node,
+    node: fold('describe("x", () => {'),
   };
 }
 

@@ -26,7 +26,10 @@ export const overviewCommand: Command<OverviewExpansionResult, OverviewArgs> = {
     };
   },
   countResults(result: OverviewExpansionResult) {
-    return { symbols: OverviewTree.walkSymbols(result.entries).length };
+    return {
+      symbols: result.totalSymbolCount,
+      shownSymbols: OverviewTree.walkSymbols(result.entries).length,
+    };
   },
   diagnostics(result: OverviewExpansionResult): readonly NavigationDiagnostic[] {
     return result.diagnostics ?? [];

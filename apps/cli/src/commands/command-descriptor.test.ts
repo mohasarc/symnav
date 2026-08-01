@@ -114,15 +114,15 @@ describe("command telemetry descriptors", () => {
     });
   });
 
-  it("counts overview result symbols recursively", () => {
+  it("counts total symbols from the full tree and shown symbols from the expanded entries", () => {
     const result: OverviewExpansionResult = {
       file: "src/a.ts",
       entries: [symbol("top", [symbol("nested", [symbol("leaf")])]), symbol("other")],
       request: { depth: 0, at: undefined, line: undefined },
-      totalSymbolCount: 4,
+      totalSymbolCount: 6,
     };
 
-    expect(overviewCommand.countResults(result)).toEqual({ symbols: 4 });
+    expect(overviewCommand.countResults(result)).toEqual({ symbols: 6, shownSymbols: 4 });
   });
 
   it("counts resolve result symbols and files", () => {

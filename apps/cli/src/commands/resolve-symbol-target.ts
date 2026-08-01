@@ -40,7 +40,7 @@ export async function resolveSymbolTargetForCommand(
 ): Promise<ResolvedCommandTarget> {
   const pattern = parseSymbolTargetPattern(args.rawTarget);
   const files = await args.workspace.enumerate();
-  await validateExactMissingPath(args, files, pattern.fileSuffix);
+  await throwIfPathlikeSuffixUnresolvable(args, files, pattern.fileSuffix);
   const acceptedFilesByBackend = groupFilesByAcceptingBackend(args.router, files);
   if (acceptedFilesByBackend.size === 0) {
     throw new NoSupportedFilesError();
@@ -76,7 +76,7 @@ function resolvedTarget(
   return { identity, backend, files: acceptedFilesByBackend.get(backend) ?? [] };
 }
 
-async function validateExactMissingPath(
+async function throwIfPathlikeSuffixUnresolvable(
   args: ResolveSymbolTargetForCommandArgs,
   files: readonly ResolvedPath[],
   fileSuffix: string | undefined,

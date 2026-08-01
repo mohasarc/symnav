@@ -3,7 +3,7 @@ import type {
   OverviewNode,
 } from "../intermediate-representation/overview-tree.js";
 import type { LineRange } from "../intermediate-representation/types.js";
-import type { SymbolPathSegment } from "../intermediate-representation/symbol-identity.js";
+import { formatSymbolPath } from "../intermediate-representation/canonical-identity.js";
 import {
   AmbiguousLineTargetError,
   AmbiguousOverviewTargetError,
@@ -124,22 +124,13 @@ function headerFor(node: OverviewNode): string {
 }
 
 function labelFor(node: OverviewNode): string {
-  if (node.type === "symbol") return formatSegments(node.identity.segments);
+  if (node.type === "symbol") return formatSymbolPath(node.identity.segments);
   return node.header.lines[0] ?? "";
 }
 
 function formatRange(range: LineRange): string {
   if (range.startLine === range.endLine) return `${range.startLine}`;
   return `${range.startLine}-${range.endLine}`;
-}
-
-function formatSegments(segments: readonly SymbolPathSegment[]): string {
-  return segments.map(formatSegment).join("::");
-}
-
-function formatSegment(segment: SymbolPathSegment): string {
-  if (segment.disambiguator === undefined) return segment.name;
-  return `${segment.name}#${segment.disambiguator}`;
 }
 
 function searchableHeaders(header: string): readonly string[] {

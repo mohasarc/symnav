@@ -81,6 +81,7 @@ export { isPositiveInteger } from "./validation/is-positive-integer.js";
 export {
   InvalidSymbolIdError,
   formatSymbolIdentity,
+  formatSymbolPath,
   parseSymbolIdentity,
 } from "./intermediate-representation/canonical-identity.js";
 export { splitHeaderLines } from "./intermediate-representation/split-header-lines.js";

@@ -119,10 +119,21 @@ async function collectCandidates(
 ): Promise<readonly OwnedCandidate[]> {
   const ownedCandidates: OwnedCandidate[] = [];
   for (const [backend, accepted] of acceptedFilesByBackend) {
-    const candidates = await backend.findTargetCandidates(accepted, pattern, { containingLine });
+    const searchFiles = filesMatchingSuffix(accepted, pattern.fileSuffix);
+    const candidates = await backend.findTargetCandidates(searchFiles, pattern, { containingLine });
     ownedCandidates.push(...candidates.map((candidate) => ({ candidate, backend })));
   }
   return ownedCandidates;
+}
+
+function filesMatchingSuffix(
+  files: readonly ResolvedPath[],
+  fileSuffix: string | undefined,
+): readonly ResolvedPath[] {
+  if (fileSuffix === undefined) {
+    return files;
+  }
+  return files.filter((file) => fileSuffixMatches(file.relative, fileSuffix));
 }
 
 function collapsedOverloadIdentity(

@@ -135,6 +135,26 @@ describe("resolveSymbolTargetForCommand across backends", () => {
     expect(relativeFiles(resolved)).toEqual(["src/beta.zz"]);
   });
 
+  it("hands only suffix-matching files to findTargetCandidates for a file-suffix pattern", async () => {
+    const typescriptBackend = typescriptFake([candidateFor("src/alpha.ts", [{ name: "walk" }])]);
+    const router = new BackendRouter([typescriptBackend, zetaFake([])]);
+
+    const resolved = await resolveWith(router, "alpha.ts::walk");
+
+    expect(typescriptBackend.targetCandidateCalls).toEqual([["src/alpha.ts"]]);
+    expect(relativeFiles(resolved)).toEqual(["src/alpha.ts", "src/gamma.ts"]);
+  });
+
+  it("hands all accepted files to findTargetCandidates for a bare-name pattern", async () => {
+    const typescriptBackend = typescriptFake([candidateFor("src/alpha.ts", [{ name: "walk" }])]);
+    const router = new BackendRouter([typescriptBackend, zetaFake([])]);
+
+    const resolved = await resolveWith(router, "walk");
+
+    expect(typescriptBackend.targetCandidateCalls).toEqual([["src/alpha.ts", "src/gamma.ts"]]);
+    expect(relativeFiles(resolved)).toEqual(["src/alpha.ts", "src/gamma.ts"]);
+  });
+
   it("keeps the full backend-accepted file list for a file-suffix pattern", async () => {
     const router = new BackendRouter([
       typescriptFake([candidateFor("src/alpha.ts", [{ name: "walk" }])]),

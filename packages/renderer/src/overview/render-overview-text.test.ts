@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import type {
   FoldOverviewNode,
-  OverviewFileEntries,
+  OverviewExpansionResult,
   ReExportOverviewNode,
   Header,
   SymbolOverviewNode,
@@ -56,6 +56,12 @@ function signature(startLine: number, ...lines: string[]): Header {
   return { startLine, lines };
 }
 
+function overviewResult(
+  partial: Omit<OverviewExpansionResult, "request">,
+): OverviewExpansionResult {
+  return { ...partial, request: { depth: 0, at: undefined, line: undefined } };
+}
+
 function assertSingleTrailingNewline(output: string): void {
   expect(output.endsWith("\n")).toBe(true);
   expect(output.endsWith("\n\n")).toBe(false);
@@ -63,14 +69,14 @@ function assertSingleTrailingNewline(output: string): void {
 
 describe("renderOverviewText", () => {
   it("renders an empty file with the file path header and `(no symbols)` directly under", () => {
-    const file: OverviewFileEntries = { file: "src/empty.ts", entries: [] };
+    const file = overviewResult({ file: "src/empty.ts", entries: [] });
     const output = renderOverviewText(file);
     expect(output).toBe("Overview: src/empty.ts\n(no symbols)\n");
     assertSingleTrailingNewline(output);
   });
 
   it("renders a single top-level function as the file's only tree child", () => {
-    const file: OverviewFileEntries = {
+    const file = overviewResult({
       file: "src/file.ts",
       entries: [
         decl({
@@ -80,7 +86,7 @@ describe("renderOverviewText", () => {
           header: signature(4, "function greet(name: string): void"),
         }),
       ],
-    };
+    });
     const output = renderOverviewText(file);
     expect(output).toBe(
       [
@@ -94,7 +100,7 @@ describe("renderOverviewText", () => {
   });
 
   it("ends with exactly one trailing newline for non-empty output", () => {
-    const file: OverviewFileEntries = {
+    const file = overviewResult({
       file: "src/file.ts",
       entries: [
         decl({
@@ -104,12 +110,12 @@ describe("renderOverviewText", () => {
           header: signature(4, "function greet(): void"),
         }),
       ],
-    };
+    });
     assertSingleTrailingNewline(renderOverviewText(file));
   });
 
   it("numbers each line of a multi-line signature from startLine and preserves indentation", () => {
-    const file: OverviewFileEntries = {
+    const file = overviewResult({
       file: "src/file.ts",
       entries: [
         decl({
@@ -119,7 +125,7 @@ describe("renderOverviewText", () => {
           header: signature(10, "function configure(", "  host: string,", "): void"),
         }),
       ],
-    };
+    });
     expect(renderOverviewText(file)).toBe(
       [
         "Overview: src/file.ts",
@@ -134,7 +140,7 @@ describe("renderOverviewText", () => {
 
   it("returns signature lines at or under HEADER_CAP_LINES unchanged", () => {
     const lines = Array.from({ length: HEADER_CAP_LINES }, (_, i) => `line ${i}`);
-    const file: OverviewFileEntries = {
+    const file = overviewResult({
       file: "src/file.ts",
       entries: [
         decl({
@@ -144,7 +150,7 @@ describe("renderOverviewText", () => {
           header: signature(1, ...lines),
         }),
       ],
-    };
+    });
     const output = renderOverviewText(file);
     for (let i = 0; i < lines.length; i += 1) {
       expect(output).toContain(`${i + 1} line ${i}\n`);
@@ -154,7 +160,7 @@ describe("renderOverviewText", () => {
 
   it("caps an oversized signature by line count with a final elision marker", () => {
     const lines = Array.from({ length: HEADER_CAP_LINES + 5 }, (_, i) => `line ${i}`);
-    const file: OverviewFileEntries = {
+    const file = overviewResult({
       file: "src/file.ts",
       entries: [
         decl({
@@ -164,14 +170,14 @@ describe("renderOverviewText", () => {
           header: signature(1, ...lines),
         }),
       ],
-    };
+    });
     const output = renderOverviewText(file);
     expect(output).toContain(`${HEADER_CAP_LINES} ${HEADER_ELLIPSIS}\n`);
     expect(output).not.toContain(`line ${HEADER_CAP_LINES}`);
   });
 
   it("renders multiple top-level entries as tree children of the file path", () => {
-    const file: OverviewFileEntries = {
+    const file = overviewResult({
       file: "src/file.ts",
       entries: [
         decl({
@@ -193,7 +199,7 @@ describe("renderOverviewText", () => {
           header: signature(5, "const C: number"),
         }),
       ],
-    };
+    });
     expect(renderOverviewText(file)).toBe(
       [
         "Overview: src/file.ts",
@@ -212,7 +218,7 @@ describe("renderOverviewText", () => {
   });
 
   it("renders a class with three methods using `├──`/`└──` and `│   `/`    ` continuations", () => {
-    const file: OverviewFileEntries = {
+    const file = overviewResult({
       file: "src/checkout.ts",
       entries: [
         decl({
@@ -242,7 +248,7 @@ describe("renderOverviewText", () => {
           ],
         }),
       ],
-    };
+    });
     expect(renderOverviewText(file)).toBe(
       [
         "Overview: src/checkout.ts",
@@ -261,7 +267,7 @@ describe("renderOverviewText", () => {
   });
 
   it("numbers a nested symbol's multi-line signature under its continuation glyph", () => {
-    const file: OverviewFileEntries = {
+    const file = overviewResult({
       file: "src/server.ts",
       entries: [
         decl({
@@ -279,7 +285,7 @@ describe("renderOverviewText", () => {
           ],
         }),
       ],
-    };
+    });
     expect(renderOverviewText(file)).toBe(
       [
         "Overview: src/server.ts",
@@ -295,7 +301,7 @@ describe("renderOverviewText", () => {
   });
 
   it("renders three-deep nesting using `    ` under a closed branch", () => {
-    const file: OverviewFileEntries = {
+    const file = overviewResult({
       file: "src/nested.ts",
       entries: [
         decl({
@@ -321,7 +327,7 @@ describe("renderOverviewText", () => {
           ],
         }),
       ],
-    };
+    });
     expect(renderOverviewText(file)).toBe(
       [
         "Overview: src/nested.ts",
@@ -337,7 +343,7 @@ describe("renderOverviewText", () => {
   });
 
   it("formats single-line ranges as `N` and multi-line ranges as `N-M`", () => {
-    const file: OverviewFileEntries = {
+    const file = overviewResult({
       file: "src/file.ts",
       entries: [
         decl({
@@ -353,14 +359,14 @@ describe("renderOverviewText", () => {
           header: signature(12, "function multi(): void"),
         }),
       ],
-    };
+    });
     const output = renderOverviewText(file);
     expect(output).toContain("8: single\n");
     expect(output).toContain("12-96: multi\n");
   });
 
   it("includes ancestor names joined by `::` in nested symbol paths", () => {
-    const file: OverviewFileEntries = {
+    const file = overviewResult({
       file: "src/nested.ts",
       entries: [
         decl({
@@ -380,12 +386,12 @@ describe("renderOverviewText", () => {
           ],
         }),
       ],
-    };
+    });
     expect(renderOverviewText(file)).toContain("Outer::Inner::deep");
   });
 
   it("renders fold nodes as header-only tree entries with nested symbols", () => {
-    const file: OverviewFileEntries = {
+    const file = overviewResult({
       file: "src/fold.ts",
       entries: [
         fold({
@@ -401,7 +407,7 @@ describe("renderOverviewText", () => {
           ],
         }),
       ],
-    };
+    });
 
     expect(renderOverviewText(file)).toBe(
       [
@@ -415,7 +421,7 @@ describe("renderOverviewText", () => {
   });
 
   it("renders a multi-line fold header as numbered continuation lines inside the tree", () => {
-    const file: OverviewFileEntries = {
+    const file = overviewResult({
       file: "src/fold.ts",
       entries: [
         fold({
@@ -431,7 +437,7 @@ describe("renderOverviewText", () => {
           ],
         }),
       ],
-    };
+    });
 
     expect(renderOverviewText(file)).toBe(
       [
@@ -447,7 +453,7 @@ describe("renderOverviewText", () => {
   });
 
   it("renders a nested multi-line fold header under the open-branch continuation glyph", () => {
-    const file: OverviewFileEntries = {
+    const file = overviewResult({
       file: "src/fold.ts",
       entries: [
         fold({
@@ -459,7 +465,7 @@ describe("renderOverviewText", () => {
           header: signature(6, "block {"),
         }),
       ],
-    };
+    });
 
     expect(renderOverviewText(file)).toBe(
       ["Overview: src/fold.ts", "├── 1-4: while (", "│   2 ) {", "│", "└── 6-8: block {", ""].join(
@@ -469,7 +475,7 @@ describe("renderOverviewText", () => {
   });
 
   it("renders a multi-line re-export header as numbered continuation lines", () => {
-    const file: OverviewFileEntries = {
+    const file = overviewResult({
       file: "src/index.ts",
       entries: [
         reExport({
@@ -477,7 +483,7 @@ describe("renderOverviewText", () => {
           header: signature(1, "export {", "  A,", '} from "./api";'),
         }),
       ],
-    };
+    });
 
     expect(renderOverviewText(file)).toBe(
       [
@@ -492,7 +498,7 @@ describe("renderOverviewText", () => {
 
   it("caps fold continuation lines at HEADER_CAP_LINES with a final elision marker", () => {
     const lines = Array.from({ length: HEADER_CAP_LINES + 5 }, (_, i) => `condition ${i} &&`);
-    const file: OverviewFileEntries = {
+    const file = overviewResult({
       file: "src/fold.ts",
       entries: [
         fold({
@@ -500,7 +506,7 @@ describe("renderOverviewText", () => {
           header: signature(1, ...lines),
         }),
       ],
-    };
+    });
 
     const output = renderOverviewText(file);
     expect(output).toContain(`${HEADER_CAP_LINES} ${HEADER_ELLIPSIS}\n`);
@@ -509,10 +515,10 @@ describe("renderOverviewText", () => {
 
   it("caps an over-length fold label at HEADER_CAP_LINE_LENGTH with a final elision marker", () => {
     const label = `call(${"a".repeat(100)}) {`;
-    const file: OverviewFileEntries = {
+    const file = overviewResult({
       file: "src/fold.ts",
       entries: [fold({ range: { startLine: 1, endLine: 3 }, header: signature(1, label) })],
-    };
+    });
 
     const cappedLabel = label.slice(0, HEADER_CAP_LINE_LENGTH - 1) + HEADER_ELLIPSIS;
     expect(cappedLabel).toHaveLength(HEADER_CAP_LINE_LENGTH);
@@ -523,10 +529,10 @@ describe("renderOverviewText", () => {
 
   it("renders a fold label of exactly HEADER_CAP_LINE_LENGTH characters untouched", () => {
     const label = "y".repeat(HEADER_CAP_LINE_LENGTH);
-    const file: OverviewFileEntries = {
+    const file = overviewResult({
       file: "src/fold.ts",
       entries: [fold({ range: { startLine: 1, endLine: 3 }, header: signature(1, label) })],
-    };
+    });
 
     const output = renderOverviewText(file);
     expect(output).toContain(`└── 1-3: ${label}\n`);
@@ -536,7 +542,7 @@ describe("renderOverviewText", () => {
   it("caps over-length re-export label and continuation lines", () => {
     const label = `export { ${"A".repeat(100)}`;
     const continuation = `  ${"B".repeat(100)},`;
-    const file: OverviewFileEntries = {
+    const file = overviewResult({
       file: "src/index.ts",
       entries: [
         reExport({
@@ -544,7 +550,7 @@ describe("renderOverviewText", () => {
           header: signature(1, label, continuation, '} from "./api";'),
         }),
       ],
-    };
+    });
 
     const cappedLabel = label.slice(0, HEADER_CAP_LINE_LENGTH - 1) + HEADER_ELLIPSIS;
     const cappedContinuation = continuation.slice(0, HEADER_CAP_LINE_LENGTH - 1) + HEADER_ELLIPSIS;
@@ -561,7 +567,7 @@ describe("renderOverviewText", () => {
 
   it("renders over-length symbol header lines untouched", () => {
     const longSignature = `function wide(${"a".repeat(100)}): void`;
-    const file: OverviewFileEntries = {
+    const file = overviewResult({
       file: "src/file.ts",
       entries: [
         decl({
@@ -571,7 +577,7 @@ describe("renderOverviewText", () => {
           header: signature(1, longSignature),
         }),
       ],
-    };
+    });
 
     const output = renderOverviewText(file);
     expect(output).toContain(`1 ${longSignature}\n`);
@@ -579,7 +585,7 @@ describe("renderOverviewText", () => {
   });
 
   it("renders re-export nodes as header-only tree entries", () => {
-    const file: OverviewFileEntries = {
+    const file = overviewResult({
       file: "src/index.ts",
       entries: [
         reExport({
@@ -587,7 +593,7 @@ describe("renderOverviewText", () => {
           header: signature(1, 'export * from "./core";'),
         }),
       ],
-    };
+    });
 
     expect(renderOverviewText(file)).toBe(
       ["Overview: src/index.ts", '└── 1: export * from "./core";', ""].join("\n"),

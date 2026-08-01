@@ -1,7 +1,7 @@
-import type { OverviewFileEntries } from "@symnav/core";
+import type { OverviewExpansionResult } from "@symnav/core";
 
-export function renderOverviewJson(file: OverviewFileEntries): string {
-  return JSON.stringify(file, sortedKeyReplacer, 2) + "\n";
+export function renderOverviewJson(result: OverviewExpansionResult): string {
+  return JSON.stringify(result, sortedKeyReplacer, 2) + "\n";
 }
 
 function sortedKeyReplacer(_key: string, value: unknown): unknown {

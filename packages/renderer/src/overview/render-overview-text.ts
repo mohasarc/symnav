@@ -1,4 +1,4 @@
-import type { Header, OverviewFileEntries, OverviewNode } from "@symnav/core";
+import type { Header, OverviewExpansionResult, OverviewNode } from "@symnav/core";
 
 import { formatHeadLine, formatIdentityPath, treeGlyphsFor } from "../shared/render-format.js";
 import { formatEmptyOverview, formatOverviewHeader, formatHeaderLine } from "./overview-format.js";
@@ -6,11 +6,11 @@ import { capHeaderLineLength, capHeaderLines } from "./header-cap.js";
 
 const TOP_LEVEL_SEPARATOR = "│\n";
 
-export function renderOverviewText(file: OverviewFileEntries): string {
-  if (file.entries.length === 0) {
-    return formatEmptyOverview(file.file);
+export function renderOverviewText(result: OverviewExpansionResult): string {
+  if (result.entries.length === 0) {
+    return formatEmptyOverview(result.file);
   }
-  return formatOverviewHeader(file.file) + renderTopLevelChildren(file.entries);
+  return formatOverviewHeader(result.file) + renderTopLevelChildren(result.entries);
 }
 
 function renderTopLevelChildren(children: readonly OverviewNode[]): string {

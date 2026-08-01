@@ -30,8 +30,8 @@ export class OverviewExpander {
   expand(): OverviewExpansionResult {
     const entries =
       this.request.at === undefined && this.request.line === undefined
-        ? expandNodes(this.file.entries, this.request.depth)
-        : [expandNode(this.selectTarget().node, this.request.depth)];
+        ? OverviewExpander.expandNodes(this.file.entries, this.request.depth)
+        : [OverviewExpander.expandNode(this.selectTarget().node, this.request.depth)];
 
     const result: OverviewExpansionResult = {
       file: this.file.file,
@@ -43,8 +43,8 @@ export class OverviewExpander {
   }
 
   private selectTarget(): OverviewExpansionCandidate {
-    const candidates = collectCandidates(this.file.entries).filter((candidate) =>
-      matchesRequest(candidate, this.request),
+    const candidates = OverviewExpander.collectCandidates(this.file.entries).filter((candidate) =>
+      this.matchesRequest(candidate),
     );
 
     if (candidates.length === 0) {
@@ -58,83 +58,91 @@ export class OverviewExpander {
     }
     throw new AmbiguousOverviewTargetError(candidates);
   }
-}
 
-function expandNodes(
-  nodes: readonly OverviewNode[],
-  remainingFoldDepth: number,
-): readonly OverviewNode[] {
-  return nodes.map((node) => expandNode(node, remainingFoldDepth));
-}
-
-function expandNode(node: OverviewNode, remainingFoldDepth: number): OverviewNode {
-  if (node.type === "re-export") {
-    return node;
+  private matchesRequest(candidate: OverviewExpansionCandidate): boolean {
+    return this.matchesAt(candidate) && this.matchesLine(candidate.range);
   }
-  if (node.type === "fold") {
-    if (remainingFoldDepth <= 0) {
-      return { ...node, children: [] };
+
+  private matchesAt(candidate: OverviewExpansionCandidate): boolean {
+    const at = this.request.at;
+    return (
+      at === undefined ||
+      OverviewExpander.searchableHeaders(candidate.header).some((header) => header.includes(at))
+    );
+  }
+
+  private matchesLine(range: LineRange): boolean {
+    const line = this.request.line;
+    return line === undefined || (range.startLine <= line && line <= range.endLine);
+  }
+
+  private static expandNodes(
+    nodes: readonly OverviewNode[],
+    remainingFoldDepth: number,
+  ): readonly OverviewNode[] {
+    return nodes.map((node) => OverviewExpander.expandNode(node, remainingFoldDepth));
+  }
+
+  private static expandNode(node: OverviewNode, remainingFoldDepth: number): OverviewNode {
+    if (node.type === "re-export") {
+      return node;
     }
-    return { ...node, children: expandNodes(node.children, remainingFoldDepth - 1) };
+    if (node.type === "fold") {
+      if (remainingFoldDepth <= 0) {
+        return { ...node, children: [] };
+      }
+      return {
+        ...node,
+        children: OverviewExpander.expandNodes(node.children, remainingFoldDepth - 1),
+      };
+    }
+    return { ...node, children: OverviewExpander.expandNodes(node.children, remainingFoldDepth) };
   }
-  return { ...node, children: expandNodes(node.children, remainingFoldDepth) };
-}
 
-function collectCandidates(nodes: readonly OverviewNode[]): readonly OverviewExpansionCandidate[] {
-  const candidates: OverviewExpansionCandidate[] = [];
-  for (const node of nodes) {
-    collectCandidate(node, candidates);
+  private static collectCandidates(
+    nodes: readonly OverviewNode[],
+  ): readonly OverviewExpansionCandidate[] {
+    const candidates: OverviewExpansionCandidate[] = [];
+    for (const node of nodes) {
+      OverviewExpander.collectCandidate(node, candidates);
+    }
+    return candidates;
   }
-  return candidates;
-}
 
-function collectCandidate(node: OverviewNode, candidates: OverviewExpansionCandidate[]): void {
-  candidates.push({
-    header: headerFor(node),
-    range: node.range,
-    node,
-  });
-  if (node.type === "re-export") {
-    return;
+  private static collectCandidate(
+    node: OverviewNode,
+    candidates: OverviewExpansionCandidate[],
+  ): void {
+    candidates.push({
+      header: OverviewExpander.headerFor(node),
+      range: node.range,
+      node,
+    });
+    if (node.type === "re-export") {
+      return;
+    }
+    for (const child of node.children) {
+      OverviewExpander.collectCandidate(child, candidates);
+    }
   }
-  for (const child of node.children) {
-    collectCandidate(child, candidates);
+
+  private static headerFor(node: OverviewNode): string {
+    return `${OverviewExpander.formatRange(node.range)}: ${OverviewExpander.labelFor(node)}`;
   }
-}
 
-function matchesRequest(
-  candidate: OverviewExpansionCandidate,
-  request: OverviewExpansionRequest,
-): boolean {
-  return matchesAt(candidate, request.at) && matchesLine(candidate.range, request.line);
-}
+  private static labelFor(node: OverviewNode): string {
+    if (node.type === "symbol") return formatSymbolPath(node.identity.segments);
+    return node.header.lines[0] ?? "";
+  }
 
-function matchesAt(candidate: OverviewExpansionCandidate, at: string | undefined): boolean {
-  return (
-    at === undefined || searchableHeaders(candidate.header).some((header) => header.includes(at))
-  );
-}
+  private static formatRange(range: LineRange): string {
+    if (range.startLine === range.endLine) return `${range.startLine}`;
+    return `${range.startLine}-${range.endLine}`;
+  }
 
-function matchesLine(range: LineRange, line: number | undefined): boolean {
-  return line === undefined || (range.startLine <= line && line <= range.endLine);
-}
-
-function headerFor(node: OverviewNode): string {
-  return `${formatRange(node.range)}: ${labelFor(node)}`;
-}
-
-function labelFor(node: OverviewNode): string {
-  if (node.type === "symbol") return formatSymbolPath(node.identity.segments);
-  return node.header.lines[0] ?? "";
-}
-
-function formatRange(range: LineRange): string {
-  if (range.startLine === range.endLine) return `${range.startLine}`;
-  return `${range.startLine}-${range.endLine}`;
-}
-
-function searchableHeaders(header: string): readonly string[] {
-  const callbackTail = ", () => {";
-  if (!header.endsWith(callbackTail)) return [header];
-  return [header, `${header.slice(0, -callbackTail.length)})`];
+  private static searchableHeaders(header: string): readonly string[] {
+    const callbackTail = ", () => {";
+    if (!header.endsWith(callbackTail)) return [header];
+    return [header, `${header.slice(0, -callbackTail.length)})`];
+  }
 }

@@ -113,6 +113,13 @@ describe("symnav def e2e (pattern targets)", () => {
     );
   });
 
+  it("narrows an ambiguous bare name to the declaration containing --line", () => {
+    const r = runDef(["def", "charge", "--line", "2"]);
+    expect(r.stderr).toBe("");
+    expect(r.status).toBe(0);
+    expect(r.stdout).toContain("Definition: PaymentProvider::charge");
+  });
+
   it("resolves a copied candidate id exactly", () => {
     const r = runDef(["def", "src/pattern/json.ts::parse"]);
     expect(r.stderr).toBe("");

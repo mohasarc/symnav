@@ -27,6 +27,14 @@ const FIXTURE: Record<string, string> = {
     "}",
     "",
   ].join("\n"),
+  "/repo/src/spaced.ts": [
+    "export function pad(): void {}",
+    "",
+    "export function parse(input: number): string {",
+    "  return String(input);",
+    "}",
+    "",
+  ].join("\n"),
   "/repo/src/control-flow.ts": [
     "export function outer(flag: boolean): void {",
     "  if (flag) {",
@@ -123,6 +131,17 @@ describe("findTargetCandidates", () => {
     });
 
     expect(candidates).toEqual([]);
+  });
+
+  it("keeps only the candidate whose declaration range contains the supplied line", async () => {
+    const candidates = await findTargetCandidates({
+      index: new WorkspaceDeclarationIndex(fsWithFixture()),
+      files: pathsFor(["src/json.ts", "src/spaced.ts"]),
+      pattern: parseSymbolTargetPattern("parse"),
+      options: { containingLine: 4 },
+    });
+
+    expect(sortedCanonicalIds(candidates)).toEqual(["src/spaced.ts::parse"]);
   });
 
   it("returns an empty list for zero matches without throwing", async () => {

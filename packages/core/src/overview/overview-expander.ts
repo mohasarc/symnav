@@ -86,7 +86,7 @@ export class OverviewExpander {
     const at = this.request.at;
     return (
       at === undefined ||
-      OverviewExpander.searchableHeaders(candidate.header).some((header) => header.includes(at))
+      OverviewExpander.searchableTexts(candidate.node).some((text) => text.includes(at))
     );
   }
 
@@ -159,9 +159,14 @@ export class OverviewExpander {
     return `${range.startLine}-${range.endLine}`;
   }
 
-  private static searchableHeaders(header: string): readonly string[] {
-    const callbackTail = ", () => {";
-    if (!header.endsWith(callbackTail)) return [header];
-    return [header, `${header.slice(0, -callbackTail.length)})`];
+  private static searchableTexts(node: OverviewNode): readonly string[] {
+    const header = OverviewExpander.headerFor(node);
+    if (node.type !== "fold" || node.headerVariants === undefined) return [header];
+    return [
+      header,
+      ...node.headerVariants.map(
+        (variant) => `${OverviewExpander.formatRange(node.range)}: ${variant}`,
+      ),
+    ];
   }
 }

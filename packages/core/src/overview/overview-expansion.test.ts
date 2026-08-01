@@ -34,15 +34,17 @@ function symbol(
 
 function fold(
   header: string,
-  partial: Partial<Pick<FoldOverviewNode, "range" | "children">> = {},
+  partial: Partial<Pick<FoldOverviewNode, "range" | "children" | "headerVariants">> = {},
 ): FoldOverviewNode {
-  return {
+  const node: FoldOverviewNode = {
     type: "fold",
     foldKind: "block",
     range: partial.range ?? { startLine: 1, endLine: 3 },
     header: signature(partial.range?.startLine ?? 1, header),
     children: partial.children ?? [],
   };
+  if (partial.headerVariants === undefined) return node;
+  return { ...node, headerVariants: partial.headerVariants };
 }
 
 function signature(startLine: number, ...lines: string[]): Header {
@@ -251,6 +253,7 @@ describe("OverviewExpander target selection", () => {
       }),
       fold('describe("cursor", () => {', {
         range: { startLine: 5, endLine: 9 },
+        headerVariants: ['describe("cursor")'],
         children: [
           symbol("cursorHelper", { range: { startLine: 6, endLine: 6 } }),
           fold("if (enabled) {", {
@@ -269,6 +272,7 @@ describe("OverviewExpander target selection", () => {
       entries: [
         fold('describe("cursor", () => {', {
           range: { startLine: 5, endLine: 9 },
+          headerVariants: ['describe("cursor")'],
           children: [
             symbol("cursorHelper", { range: { startLine: 6, endLine: 6 } }),
             fold("if (enabled) {", {
@@ -279,6 +283,67 @@ describe("OverviewExpander target selection", () => {
         }),
       ],
     });
+  });
+
+  it("matches a fold against its backend-provided header variants", () => {
+    const entries = [
+      fold('describe("beta", async () => {', {
+        range: { startLine: 1, endLine: 3 },
+        headerVariants: ['describe("beta")'],
+        children: [symbol("betaHelper", { range: { startLine: 2, endLine: 2 } })],
+      }),
+    ];
+
+    expect(
+      expandRequest(entries, { depth: 1, at: 'describe("beta")', line: undefined }).entries,
+    ).toEqual([
+      fold('describe("beta", async () => {', {
+        range: { startLine: 1, endLine: 3 },
+        headerVariants: ['describe("beta")'],
+        children: [symbol("betaHelper", { range: { startLine: 2, endLine: 2 } })],
+      }),
+    ]);
+  });
+
+  it("matches a copied full line built from a header variant", () => {
+    const entries = [
+      fold('describe("beta", async () => {', {
+        range: { startLine: 1, endLine: 3 },
+        headerVariants: ['describe("beta")'],
+      }),
+    ];
+
+    expect(
+      expandRequest(entries, { depth: 0, at: '1-3: describe("beta")', line: undefined }).entries,
+    ).toEqual([
+      fold('describe("beta", async () => {', {
+        range: { startLine: 1, endLine: 3 },
+        headerVariants: ['describe("beta")'],
+      }),
+    ]);
+  });
+
+  it("requires the open form when a fold carries no variants", () => {
+    const entries = [
+      fold('describe("beta", () => {', {
+        range: { startLine: 1, endLine: 3 },
+      }),
+    ];
+
+    expect(() =>
+      expandRequest(entries, { depth: 0, at: 'describe("beta")', line: undefined }),
+    ).toThrow(OverviewTargetNotFoundError);
+  });
+
+  it("matches symbol nodes by their identity header", () => {
+    const entries = [
+      symbol("alpha", { range: { startLine: 1, endLine: 2 } }),
+      symbol("beta", { range: { startLine: 4, endLine: 5 } }),
+    ];
+
+    expect(expandRequest(entries, { depth: 0, at: "alpha", line: undefined }).entries).toEqual([
+      symbol("alpha", { range: { startLine: 1, endLine: 2 } }),
+    ]);
   });
 
   it("returns candidates for a line-only match instead of picking an innermost node", () => {
@@ -353,9 +418,11 @@ describe("OverviewExpander target selection", () => {
     const entries = [
       fold('describe("cursor", () => {', {
         range: { startLine: 1, endLine: 1 },
+        headerVariants: ['describe("cursor")'],
       }),
       fold('describe("cursor nested", () => {', {
         range: { startLine: 1, endLine: 1 },
+        headerVariants: ['describe("cursor nested")'],
       }),
     ];
 
@@ -367,6 +434,7 @@ describe("OverviewExpander target selection", () => {
     ).toEqual([
       fold('describe("cursor nested", () => {', {
         range: { startLine: 1, endLine: 1 },
+        headerVariants: ['describe("cursor nested")'],
       }),
     ]);
   });

@@ -8,7 +8,7 @@ import { resolveSymbolTargetForCommand } from "../resolve-symbol-target.js";
 
 export interface RefsArgs {
   readonly target: string;
-  readonly line: number | undefined;
+  readonly line: number | string | undefined;
   readonly page: number | undefined;
   readonly pageSize: number | undefined;
   readonly all: boolean;
@@ -37,7 +37,7 @@ export const refsCommand: Command<RefsResult, RefsArgs> = {
       router: ctx.router,
       cwd: ctx.cwd,
       rawTarget: ctx.args.target,
-      containingLine: ctx.args.line,
+      line: ctx.args.line,
     });
     const references = await resolved.backend.findReferences(resolved.files, resolved.identity);
     return new RefsResultBuilder({

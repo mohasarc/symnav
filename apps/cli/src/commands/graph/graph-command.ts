@@ -17,7 +17,7 @@ import { resolveSymbolTargetForCommand } from "../resolve-symbol-target.js";
 
 export interface GraphArgs {
   readonly target: string;
-  readonly line: number | undefined;
+  readonly line: number | string | undefined;
   readonly incoming: boolean;
   readonly outgoing: boolean;
   readonly depth: number | string | undefined;
@@ -49,7 +49,7 @@ export const graphCommand: Command<GraphResult, GraphArgs> = {
       router: ctx.router,
       cwd: ctx.cwd,
       rawTarget: ctx.args.target,
-      containingLine: ctx.args.line,
+      line: ctx.args.line,
     });
     const identity = resolved.identity;
     const backend = resolved.backend;

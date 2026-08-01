@@ -5,7 +5,11 @@ import type {
   SymbolTargetCandidate,
   SymbolTargetPattern,
 } from "@symnav/core";
-import { formatSymbolIdentity, symbolTargetMatches } from "@symnav/core";
+import {
+  formatSymbolIdentity,
+  symbolTargetMatches,
+  validateResolveSymbolTargetOptions,
+} from "@symnav/core";
 
 import type { WorkspaceDeclarationIndex } from "../identity/workspace-declaration-index.js";
 
@@ -19,6 +23,7 @@ export interface FindTargetCandidatesArgs {
 export async function findTargetCandidates(
   args: FindTargetCandidatesArgs,
 ): Promise<readonly SymbolTargetCandidate[]> {
+  validateResolveSymbolTargetOptions(args.options);
   args.index.ensureFiles(args.files);
   const candidates: SymbolTargetCandidate[] = [];
   for (const file of args.files) {

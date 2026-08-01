@@ -9,10 +9,12 @@ import type {
 } from "@symnav/core";
 import {
   AmbiguousSymbolTargetError,
+  InvalidSymbolTargetRequestError,
   NoSupportedFilesError,
   SymbolTargetNotFoundError,
   fileSuffixMatches,
   formatSymbolIdentity,
+  isPositiveInteger,
   parseSymbolTargetPattern,
 } from "@symnav/core";
 
@@ -21,7 +23,7 @@ export interface ResolveSymbolTargetForCommandArgs {
   readonly router: BackendRouter;
   readonly cwd: string;
   readonly rawTarget: string;
-  readonly containingLine: number | undefined;
+  readonly line: number | string | undefined;
 }
 
 export interface ResolvedCommandTarget {
@@ -38,6 +40,7 @@ interface OwnedCandidate {
 export async function resolveSymbolTargetForCommand(
   args: ResolveSymbolTargetForCommandArgs,
 ): Promise<ResolvedCommandTarget> {
+  const containingLine = containingLineFrom(args.line);
   const pattern = parseSymbolTargetPattern(args.rawTarget);
   const files = await args.workspace.enumerate();
   await throwIfPathlikeSuffixUnresolvable(args, files, pattern.fileSuffix);
@@ -45,11 +48,7 @@ export async function resolveSymbolTargetForCommand(
   if (acceptedFilesByBackend.size === 0) {
     throw new NoSupportedFilesError();
   }
-  const ownedCandidates = await collectCandidates(
-    acceptedFilesByBackend,
-    pattern,
-    args.containingLine,
-  );
+  const ownedCandidates = await collectCandidates(acceptedFilesByBackend, pattern, containingLine);
   const sortedOwnedCandidates = [...ownedCandidates].sort((left, right) =>
     left.candidate.canonicalId.localeCompare(right.candidate.canonicalId),
   );
@@ -66,6 +65,17 @@ export async function resolveSymbolTargetForCommand(
     return resolvedTarget(collapsedIdentity, winner.backend, acceptedFilesByBackend);
   }
   return resolvedTarget(winner.candidate.symbol.identity, winner.backend, acceptedFilesByBackend);
+}
+
+function containingLineFrom(line: ResolveSymbolTargetForCommandArgs["line"]): number | undefined {
+  if (line === undefined) {
+    return undefined;
+  }
+  const numericLine = typeof line === "number" ? line : Number(line);
+  if (!isPositiveInteger(numericLine)) {
+    throw new InvalidSymbolTargetRequestError(`line must be a positive integer, got ${line}`);
+  }
+  return numericLine;
 }
 
 function resolvedTarget(

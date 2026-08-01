@@ -79,7 +79,7 @@ function resolveWith(router: BackendRouter, rawTarget: string): Promise<Resolved
     router,
     cwd: "/repo",
     rawTarget,
-    containingLine: undefined,
+    line: undefined,
   });
 }
 
@@ -196,6 +196,46 @@ describe("resolveSymbolTargetForCommand across backends", () => {
     expect(context.stderr.text()).toBe(
       "Cannot answer: workspace contains no files supported by any language backend.\n",
     );
+    expect(context.exitCodes).toEqual([1]);
+  });
+
+  it("rejects a malformed --line value echoing the raw input", async () => {
+    const context = createFakeProgramContext({ cwd: "/repo" });
+
+    await runCommand(defCommand, {
+      context,
+      dependencies: fakeDependencies({
+        fs: new InMemoryFileSystem({ "/repo/.git/HEAD": "ref: refs/heads/main\n" }),
+        backends: () => [typescriptFake([candidateFor("src/alpha.ts", [{ name: "walk" }])])],
+      }),
+      cwdOverride: undefined,
+      json: false,
+      args: { target: "walk", line: "abc" },
+    });
+
+    expect(context.stdout.text()).toBe("");
+    expect(context.stderr.text()).toBe(
+      "Cannot answer: line must be a positive integer, got abc.\n",
+    );
+    expect(context.exitCodes).toEqual([1]);
+  });
+
+  it("rejects a non-positive --line value echoing the raw input", async () => {
+    const context = createFakeProgramContext({ cwd: "/repo" });
+
+    await runCommand(defCommand, {
+      context,
+      dependencies: fakeDependencies({
+        fs: new InMemoryFileSystem({ "/repo/.git/HEAD": "ref: refs/heads/main\n" }),
+        backends: () => [typescriptFake([candidateFor("src/alpha.ts", [{ name: "walk" }])])],
+      }),
+      cwdOverride: undefined,
+      json: false,
+      args: { target: "walk", line: "0" },
+    });
+
+    expect(context.stdout.text()).toBe("");
+    expect(context.stderr.text()).toBe("Cannot answer: line must be a positive integer, got 0.\n");
     expect(context.exitCodes).toEqual([1]);
   });
 

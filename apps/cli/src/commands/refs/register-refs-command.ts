@@ -37,7 +37,7 @@ export function registerRefsCommand(
         json: options.json,
         args: {
           target,
-          line: options.line === undefined ? undefined : Number(options.line),
+          line: options.line,
           page: options.page === undefined ? undefined : Number(options.page),
           pageSize: options.pageSize === undefined ? undefined : Number(options.pageSize),
           all: options.all,

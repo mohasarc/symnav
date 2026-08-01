@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   InMemoryFileSystem,
+  InvalidSymbolTargetRequestError,
   parseSymbolTargetPattern,
   type ResolvedPath,
   type SymbolTargetCandidate,
@@ -100,6 +101,17 @@ describe("findTargetCandidates", () => {
 
     expect(candidates).toHaveLength(1);
     expect(candidates[0]!.symbol.identity.file).toBe("src/helpers.ts");
+  });
+
+  it("rejects a non-positive containingLine before searching", async () => {
+    await expect(
+      findTargetCandidates({
+        index: new WorkspaceDeclarationIndex(fsWithFixture()),
+        files: ALL_FILES,
+        pattern: parseSymbolTargetPattern("helper"),
+        options: { containingLine: 0 },
+      }),
+    ).rejects.toBeInstanceOf(InvalidSymbolTargetRequestError);
   });
 
   it("drops candidates whose declaration range excludes the supplied line", async () => {

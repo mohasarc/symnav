@@ -11,7 +11,7 @@ import { resolveSymbolTargetForCommand } from "../resolve-symbol-target.js";
 
 export interface DefArgs {
   readonly target: string;
-  readonly line: number | undefined;
+  readonly line: number | string | undefined;
 }
 
 export const defCommand: Command<DefinitionResult, DefArgs> = {
@@ -32,7 +32,7 @@ export const defCommand: Command<DefinitionResult, DefArgs> = {
       router: ctx.router,
       cwd: ctx.cwd,
       rawTarget: ctx.args.target,
-      containingLine: ctx.args.line,
+      line: ctx.args.line,
     });
     const symbols = await resolved.backend.findDefinitions(resolved.files, resolved.identity);
     return { identity: resolved.identity, symbols };

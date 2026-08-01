@@ -24,7 +24,7 @@ export function registerDefCommand(
         json: options.json,
         args: {
           target,
-          line: options.line === undefined ? undefined : Number(options.line),
+          line: options.line,
         },
       });
     });

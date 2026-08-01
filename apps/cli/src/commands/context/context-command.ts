@@ -9,7 +9,7 @@ import { resolveSymbolTargetForCommand } from "../resolve-symbol-target.js";
 
 export interface ContextArgs {
   readonly target: string;
-  readonly line: number | undefined;
+  readonly line: number | string | undefined;
 }
 
 export const contextCommand: Command<ContextResult, ContextArgs> = {
@@ -35,7 +35,7 @@ export const contextCommand: Command<ContextResult, ContextArgs> = {
       router: ctx.router,
       cwd: ctx.cwd,
       rawTarget: ctx.args.target,
-      containingLine: ctx.args.line,
+      line: ctx.args.line,
     });
     const identity = resolved.identity;
     const backend = resolved.backend;

@@ -41,7 +41,7 @@ export function registerGraphCommand(
         json: options.json,
         args: {
           target,
-          line: options.line === undefined ? undefined : Number(options.line),
+          line: options.line,
           incoming: options.incoming,
           outgoing: options.outgoing,
           depth: options.depth,

@@ -19,42 +19,42 @@ export interface ExpandOverviewArgs {
 }
 
 export class OverviewExpander {
-  readonly #file: OverviewFileEntries;
-  readonly #request: OverviewExpansionRequest;
+  private readonly file: OverviewFileEntries;
+  private readonly request: OverviewExpansionRequest;
 
   constructor(args: ExpandOverviewArgs) {
-    this.#file = args.file;
-    this.#request = args.request;
+    this.file = args.file;
+    this.request = args.request;
   }
 
   expand(): OverviewExpansionResult {
     const entries =
-      this.#request.at === undefined && this.#request.line === undefined
-        ? expandNodes(this.#file.entries, this.#request.depth)
-        : [expandNode(this.selectTarget().node, this.#request.depth)];
+      this.request.at === undefined && this.request.line === undefined
+        ? expandNodes(this.file.entries, this.request.depth)
+        : [expandNode(this.selectTarget().node, this.request.depth)];
 
     const result: OverviewExpansionResult = {
-      file: this.#file.file,
+      file: this.file.file,
       entries,
-      request: this.#request,
+      request: this.request,
     };
-    if (this.#file.diagnostics === undefined) return result;
-    return { ...result, diagnostics: this.#file.diagnostics };
+    if (this.file.diagnostics === undefined) return result;
+    return { ...result, diagnostics: this.file.diagnostics };
   }
 
   private selectTarget(): OverviewExpansionCandidate {
-    const candidates = collectCandidates(this.#file.entries).filter((candidate) =>
-      matchesRequest(candidate, this.#request),
+    const candidates = collectCandidates(this.file.entries).filter((candidate) =>
+      matchesRequest(candidate, this.request),
     );
 
     if (candidates.length === 0) {
-      throw new OverviewTargetNotFoundError(this.#request);
+      throw new OverviewTargetNotFoundError(this.request);
     }
     if (candidates.length === 1) {
       return candidates[0]!;
     }
-    if (this.#request.at === undefined && this.#request.line !== undefined) {
-      throw new AmbiguousLineTargetError(this.#request.line, candidates);
+    if (this.request.at === undefined && this.request.line !== undefined) {
+      throw new AmbiguousLineTargetError(this.request.line, candidates);
     }
     throw new AmbiguousOverviewTargetError(candidates);
   }

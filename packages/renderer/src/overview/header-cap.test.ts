@@ -6,6 +6,7 @@ import {
   HEADER_ELLIPSIS,
   capHeaderLines,
   capHeaderLineLength,
+  stripHeaderEllipsis,
 } from "./header-cap.js";
 
 describe("capHeaderLines", () => {
@@ -40,5 +41,25 @@ describe("capHeaderLineLength", () => {
 
     expect(capped).toHaveLength(HEADER_CAP_LINE_LENGTH);
     expect(capped).toBe("x".repeat(HEADER_CAP_LINE_LENGTH - 1) + HEADER_ELLIPSIS);
+  });
+});
+
+describe("stripHeaderEllipsis", () => {
+  it("strips one trailing elision marker", () => {
+    expect(stripHeaderEllipsis(`describe("long${HEADER_ELLIPSIS}`)).toBe('describe("long');
+  });
+
+  it("returns plain text unchanged", () => {
+    expect(stripHeaderEllipsis('describe("plain")')).toBe('describe("plain")');
+  });
+
+  it("leaves a mid-string elision marker in place", () => {
+    expect(stripHeaderEllipsis(`const helper = () => ${HEADER_ELLIPSIS};`)).toBe(
+      `const helper = () => ${HEADER_ELLIPSIS};`,
+    );
+  });
+
+  it("strips a lone elision marker to the empty string", () => {
+    expect(stripHeaderEllipsis(HEADER_ELLIPSIS)).toBe("");
   });
 });

@@ -15,3 +15,10 @@ export function capHeaderLineLength(line: string): string {
   }
   return line.slice(0, HEADER_CAP_LINE_LENGTH - 1) + HEADER_ELLIPSIS;
 }
+
+export function stripHeaderEllipsis(text: string): string {
+  if (!text.endsWith(HEADER_ELLIPSIS)) {
+    return text;
+  }
+  return text.slice(0, -HEADER_ELLIPSIS.length);
+}

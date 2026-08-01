@@ -18,17 +18,29 @@ const FIXTURE: Record<string, string> = {
     "export function helper(): void {}",
     "",
   ].join("\n"),
+  "/repo/src/extra.ts": "export function extra(): void {}\n",
+  "/repo/src/same-line.ts": "export function first(): void {} export function second(): void {}\n",
 };
 
-const FILES: readonly ResolvedPath[] = [
-  { relative: "src/service.ts", absolute: "/repo/src/service.ts" },
-];
+const SERVICE: ResolvedPath = { relative: "src/service.ts", absolute: "/repo/src/service.ts" };
+const EXTRA: ResolvedPath = { relative: "src/extra.ts", absolute: "/repo/src/extra.ts" };
+const SAME_LINE: ResolvedPath = {
+  relative: "src/same-line.ts",
+  absolute: "/repo/src/same-line.ts",
+};
 
-function index(): WorkspaceDeclarationIndex {
-  return new WorkspaceDeclarationIndex({
-    fs: new InMemoryFileSystem(FIXTURE),
-    files: FILES,
-  });
+function index(files: readonly ResolvedPath[] = [SERVICE]): WorkspaceDeclarationIndex {
+  const indexed = new WorkspaceDeclarationIndex(new InMemoryFileSystem(FIXTURE));
+  indexed.ensureFiles(files);
+  return indexed;
+}
+
+function leafNames(
+  declarations: readonly { identity: { segments: readonly { name: string }[] } }[],
+) {
+  return declarations.map(
+    (declaration) => declaration.identity.segments[declaration.identity.segments.length - 1]!.name,
+  );
 }
 
 describe("WorkspaceDeclarationIndex", () => {
@@ -73,5 +85,38 @@ describe("WorkspaceDeclarationIndex", () => {
       .getFunctionOrThrow("outside");
 
     expect(index().declarationAt(outside)).toBeUndefined();
+  });
+
+  it("returns the flattened declaration list for an ensured file", () => {
+    expect(leafNames(index().declarationsIn("src/service.ts")!)).toEqual([
+      "Service",
+      "run",
+      "helper",
+    ]);
+  });
+
+  it("returns undefined for a never-ensured file", () => {
+    expect(index().declarationsIn("src/extra.ts")).toBeUndefined();
+  });
+
+  it("adds only new files on a second ensureFiles call and preserves existing lookups", () => {
+    const indexed = index([SERVICE]);
+    const serviceDeclarations = indexed.declarationsIn("src/service.ts");
+
+    indexed.ensureFiles([SERVICE, EXTRA]);
+
+    expect(indexed.declarationsIn("src/service.ts")).toBe(serviceDeclarations);
+    expect(leafNames(indexed.declarationsIn("src/extra.ts")!)).toEqual(["extra"]);
+    expect(indexed.locate({ file: "src/service.ts", segments: [{ name: "helper" }] })).toHaveLength(
+      1,
+    );
+    expect(indexed.locate({ file: "src/extra.ts", segments: [{ name: "extra" }] })).toHaveLength(1);
+  });
+
+  it("keeps both declarations that start on the same line", () => {
+    expect(leafNames(index([SAME_LINE]).declarationsIn("src/same-line.ts")!)).toEqual([
+      "first",
+      "second",
+    ]);
   });
 });

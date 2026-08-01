@@ -1,17 +1,16 @@
 import type {
-  FileSystem,
   ResolvedPath,
   ResolveSymbolTargetOptions,
   SymbolOverviewNode,
   SymbolTargetCandidate,
   SymbolTargetPattern,
 } from "@symnav/core";
-import { formatSymbolIdentity, symbolTargetMatches, OverviewTree } from "@symnav/core";
+import { formatSymbolIdentity, symbolTargetMatches } from "@symnav/core";
 
-import { loadFileEntries } from "../extract/load-file-entries.js";
+import type { WorkspaceDeclarationIndex } from "../identity/workspace-declaration-index.js";
 
 export interface FindTargetCandidatesArgs {
-  readonly fs: FileSystem;
+  readonly index: WorkspaceDeclarationIndex;
   readonly files: readonly ResolvedPath[];
   readonly pattern: SymbolTargetPattern;
   readonly options: ResolveSymbolTargetOptions;
@@ -20,9 +19,10 @@ export interface FindTargetCandidatesArgs {
 export async function findTargetCandidates(
   args: FindTargetCandidatesArgs,
 ): Promise<readonly SymbolTargetCandidate[]> {
+  args.index.ensureFiles(args.files);
   const candidates: SymbolTargetCandidate[] = [];
   for (const file of args.files) {
-    for (const symbol of OverviewTree.walkSymbols(loadFileEntries(args.fs, file).entries)) {
+    for (const symbol of args.index.declarationsIn(file.relative) ?? []) {
       if (!symbolTargetMatches(args.pattern, symbol.identity)) continue;
       if (!matchesLine(args.options.containingLine, symbol)) continue;
       candidates.push({

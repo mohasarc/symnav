@@ -11,24 +11,24 @@ import type {
   CallEdge,
   CallSite,
   EdgeConfidence,
-  FileSystem,
   ResolvedPath,
   SymbolOverviewNode,
   SymbolIdentity,
 } from "@symnav/core";
 
 import { DeclarationLocator } from "../identity/locate-declarations.js";
-import { WorkspaceDeclarationIndex } from "../identity/workspace-declaration-index.js";
+import type { WorkspaceDeclarationIndex } from "../identity/workspace-declaration-index.js";
 
 const DYNAMIC_DISPATCH_REASON = "dynamic dispatch: exact callee not statically resolvable";
 
 export interface FindCalleesArgs {
-  readonly fs: FileSystem;
+  readonly index: WorkspaceDeclarationIndex;
   readonly files: readonly ResolvedPath[];
   readonly identity: SymbolIdentity;
 }
 
 export async function findCallees(args: FindCalleesArgs): Promise<readonly CallEdge[]> {
+  args.index.ensureFiles(args.files);
   return new CalleeFinder(args).find();
 }
 
@@ -47,7 +47,7 @@ class CalleeFinder {
   private readonly index: WorkspaceDeclarationIndex;
 
   constructor(private readonly args: FindCalleesArgs) {
-    this.index = new WorkspaceDeclarationIndex(args);
+    this.index = args.index;
   }
 
   find(): readonly CallEdge[] {

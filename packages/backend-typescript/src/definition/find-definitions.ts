@@ -7,13 +7,13 @@ import {
   type ModuleDeclaration,
   type SourceFile,
 } from "ts-morph";
-import type { FileSystem, ResolvedPath, SymbolOverviewNode, SymbolIdentity } from "@symnav/core";
+import type { ResolvedPath, SymbolOverviewNode, SymbolIdentity } from "@symnav/core";
 
 import { DeclarationLocator, type LocatedDeclaration } from "../identity/locate-declarations.js";
-import { WorkspaceDeclarationIndex } from "../identity/workspace-declaration-index.js";
+import type { WorkspaceDeclarationIndex } from "../identity/workspace-declaration-index.js";
 
 export interface FindDefinitionsArgs {
-  readonly fs: FileSystem;
+  readonly index: WorkspaceDeclarationIndex;
   readonly files: readonly ResolvedPath[];
   readonly identity: SymbolIdentity;
 }
@@ -21,6 +21,7 @@ export interface FindDefinitionsArgs {
 export async function findDefinitions(
   args: FindDefinitionsArgs,
 ): Promise<readonly SymbolOverviewNode[]> {
+  args.index.ensureFiles(args.files);
   return new DefinitionFinder(args).find();
 }
 
@@ -28,7 +29,7 @@ class DefinitionFinder {
   private readonly index: WorkspaceDeclarationIndex;
 
   constructor(private readonly args: FindDefinitionsArgs) {
-    this.index = new WorkspaceDeclarationIndex(args);
+    this.index = args.index;
   }
 
   async find(): Promise<readonly SymbolOverviewNode[]> {

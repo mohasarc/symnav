@@ -9,24 +9,24 @@ import type {
   CallEdge,
   CallSite,
   EdgeConfidence,
-  FileSystem,
   ResolvedPath,
   SymbolOverviewNode,
   SymbolIdentity,
 } from "@symnav/core";
 
 import { DeclarationLocator } from "../identity/locate-declarations.js";
-import { WorkspaceDeclarationIndex } from "../identity/workspace-declaration-index.js";
+import type { WorkspaceDeclarationIndex } from "../identity/workspace-declaration-index.js";
 
 const DYNAMIC_DISPATCH_REASON = "dynamic dispatch: call target not statically resolvable";
 
 export interface FindCallersArgs {
-  readonly fs: FileSystem;
+  readonly index: WorkspaceDeclarationIndex;
   readonly files: readonly ResolvedPath[];
   readonly identity: SymbolIdentity;
 }
 
 export async function findCallers(args: FindCallersArgs): Promise<readonly CallEdge[]> {
+  args.index.ensureFiles(args.files);
   return new CallerFinder(args).find();
 }
 
@@ -39,7 +39,7 @@ class CallerFinder {
   private readonly index: WorkspaceDeclarationIndex;
 
   constructor(private readonly args: FindCallersArgs) {
-    this.index = new WorkspaceDeclarationIndex(args);
+    this.index = args.index;
   }
 
   find(): readonly CallEdge[] {

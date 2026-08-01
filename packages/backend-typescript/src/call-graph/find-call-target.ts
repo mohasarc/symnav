@@ -1,15 +1,15 @@
 import type {
   CallTargetResolution,
-  FileSystem,
   ResolvedPath,
   SymbolOverviewNode,
   SymbolIdentity,
 } from "@symnav/core";
 
+import type { WorkspaceDeclarationIndex } from "../identity/workspace-declaration-index.js";
 import { findDefinitions } from "../definition/find-definitions.js";
 
 export interface FindCallTargetArgs {
-  readonly fs: FileSystem;
+  readonly index: WorkspaceDeclarationIndex;
   readonly files: readonly ResolvedPath[];
   readonly identity: SymbolIdentity;
 }

@@ -6,6 +6,7 @@ import {
   type SymbolTargetCandidate,
 } from "@symnav/core";
 
+import { WorkspaceDeclarationIndex } from "../identity/workspace-declaration-index.js";
 import { findTargetCandidates } from "./resolve-symbol-target.js";
 
 const FIXTURE: Record<string, string> = {
@@ -58,7 +59,7 @@ function sortedCanonicalIds(candidates: readonly SymbolTargetCandidate[]): reado
 describe("findTargetCandidates", () => {
   it("returns the one candidate matching a unique bare-name pattern", async () => {
     const candidates = await findTargetCandidates({
-      fs: fsWithFixture(),
+      index: new WorkspaceDeclarationIndex(fsWithFixture()),
       files: ALL_FILES,
       pattern: parseSymbolTargetPattern("helper"),
       options: { containingLine: undefined },
@@ -75,7 +76,7 @@ describe("findTargetCandidates", () => {
 
   it("walks through fold nodes while returning only declaration symbols", async () => {
     const candidates = await findTargetCandidates({
-      fs: fsWithFixture(),
+      index: new WorkspaceDeclarationIndex(fsWithFixture()),
       files: ALL_FILES,
       pattern: parseSymbolTargetPattern("insideIf"),
       options: { containingLine: undefined },
@@ -91,7 +92,7 @@ describe("findTargetCandidates", () => {
 
   it("keeps a candidate when the supplied line is inside its declaration range", async () => {
     const candidates = await findTargetCandidates({
-      fs: fsWithFixture(),
+      index: new WorkspaceDeclarationIndex(fsWithFixture()),
       files: ALL_FILES,
       pattern: parseSymbolTargetPattern("helper"),
       options: { containingLine: 2 },
@@ -103,7 +104,7 @@ describe("findTargetCandidates", () => {
 
   it("drops candidates whose declaration range excludes the supplied line", async () => {
     const candidates = await findTargetCandidates({
-      fs: fsWithFixture(),
+      index: new WorkspaceDeclarationIndex(fsWithFixture()),
       files: ALL_FILES,
       pattern: parseSymbolTargetPattern("helper"),
       options: { containingLine: 99 },
@@ -114,7 +115,7 @@ describe("findTargetCandidates", () => {
 
   it("returns an empty list for zero matches without throwing", async () => {
     const candidates = await findTargetCandidates({
-      fs: fsWithFixture(),
+      index: new WorkspaceDeclarationIndex(fsWithFixture()),
       files: ALL_FILES,
       pattern: parseSymbolTargetPattern("missing"),
       options: { containingLine: undefined },
@@ -125,7 +126,7 @@ describe("findTargetCandidates", () => {
 
   it("returns every matching declaration candidate in any order", async () => {
     const candidates = await findTargetCandidates({
-      fs: fsWithFixture(),
+      index: new WorkspaceDeclarationIndex(fsWithFixture()),
       files: ALL_FILES,
       pattern: parseSymbolTargetPattern("parse"),
       options: { containingLine: undefined },

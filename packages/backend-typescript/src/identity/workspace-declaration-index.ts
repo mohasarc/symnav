@@ -6,11 +6,6 @@ import { extractFileEntries } from "../extract/extract-file-entries.js";
 import { WorkspaceFileSystemHost } from "../typescript-backend/workspace-file-system-host.js";
 import { DeclarationLocator, type LocatedDeclaration } from "./locate-declarations.js";
 
-export interface WorkspaceDeclarationIndexArgs {
-  readonly fs: FileSystem;
-  readonly files: readonly ResolvedPath[];
-}
-
 export interface IndexedDeclaration {
   readonly declaration: SymbolOverviewNode;
   readonly file: ResolvedPath;
@@ -22,11 +17,22 @@ export class WorkspaceDeclarationIndex {
   private readonly relativePathByAbsolute = new Map<string, string>();
   private readonly declarationsByIdentity = new Map<string, IndexedDeclaration>();
   private readonly declarationsByLocation = new Map<string, Map<number, SymbolOverviewNode>>();
+  private readonly declarationsByFile = new Map<string, readonly SymbolOverviewNode[]>();
 
-  constructor(private readonly args: WorkspaceDeclarationIndexArgs) {
-    this.project = new Project({ fileSystem: new WorkspaceFileSystemHost(args.fs) });
-    this.loadWorkspaceFiles();
-    this.indexAllDeclarations();
+  constructor(fs: FileSystem) {
+    this.project = new Project({ fileSystem: new WorkspaceFileSystemHost(fs) });
+  }
+
+  ensureFiles(files: readonly ResolvedPath[]): void {
+    for (const path of files) {
+      if (this.fileByRelativePath.has(path.relative)) {
+        continue;
+      }
+      const sourceFile = this.project.addSourceFileAtPath(path.absolute);
+      this.fileByRelativePath.set(path.relative, path);
+      this.relativePathByAbsolute.set(path.absolute, path.relative);
+      this.indexDeclarations(sourceFile, path);
+    }
   }
 
   sourceFile(relativePath: string): SourceFile | undefined {
@@ -51,32 +57,27 @@ export class WorkspaceDeclarationIndex {
     return this.declarationsByIdentity.get(DeclarationLocator.identityKey(identity));
   }
 
+  declarationsIn(relativePath: string): readonly SymbolOverviewNode[] | undefined {
+    return this.declarationsByFile.get(relativePath);
+  }
+
   relativePathOf(sourceFile: SourceFile): string | undefined {
     return this.relativePathByAbsolute.get(sourceFile.getFilePath());
   }
 
-  private loadWorkspaceFiles(): void {
-    for (const path of this.args.files) {
-      this.project.addSourceFileAtPath(path.absolute);
-      this.fileByRelativePath.set(path.relative, path);
-      this.relativePathByAbsolute.set(path.absolute, path.relative);
+  private indexDeclarations(sourceFile: SourceFile, path: ResolvedPath): void {
+    const byLine = new Map<number, SymbolOverviewNode>();
+    const declarations: SymbolOverviewNode[] = [];
+    const { entries } = extractFileEntries({ sourceFile, filePath: path.relative });
+    for (const declaration of OverviewTree.walkSymbols(entries)) {
+      declarations.push(declaration);
+      this.declarationsByIdentity.set(DeclarationLocator.identityKey(declaration.identity), {
+        declaration,
+        file: path,
+      });
+      byLine.set(declaration.range.startLine, declaration);
     }
-  }
-
-  private indexAllDeclarations(): void {
-    for (const [relative, path] of this.fileByRelativePath) {
-      const sourceFile = this.project.getSourceFile(path.absolute);
-      if (!sourceFile) continue;
-      const byLine = new Map<number, SymbolOverviewNode>();
-      const { entries } = extractFileEntries({ sourceFile, filePath: relative });
-      for (const declaration of OverviewTree.walkSymbols(entries)) {
-        this.declarationsByIdentity.set(DeclarationLocator.identityKey(declaration.identity), {
-          declaration,
-          file: path,
-        });
-        byLine.set(declaration.range.startLine, declaration);
-      }
-      this.declarationsByLocation.set(relative, byLine);
-    }
+    this.declarationsByLocation.set(path.relative, byLine);
+    this.declarationsByFile.set(path.relative, declarations);
   }
 }

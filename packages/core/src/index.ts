@@ -20,7 +20,7 @@ export type {
   OverviewExpansionCandidate,
   OverviewExpansionRequest,
   OverviewExpansionResult,
-} from "./overview/overview-query.js";
+} from "./overview/overview-expansion-result.js";
 export {
   AmbiguousLineTargetError,
   AmbiguousOverviewTargetError,

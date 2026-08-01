@@ -1,14 +1,8 @@
 import { describe, expect, it } from "vitest";
 
 import { SymbolTargetGrammar } from "./symbol-target-pattern.js";
-import {
-  AmbiguousSymbolTargetError,
-  SymbolTargetNotFoundError,
-  type SymbolTargetCandidate,
-} from "./symbol-target-result.js";
-import type { SymbolIdentity } from "../intermediate-representation/symbol-identity.js";
-import type { Header } from "../intermediate-representation/types.js";
-import type { SymbolOverviewNode } from "../intermediate-representation/overview-tree.js";
+import { candidate } from "./symbol-target-builders.js";
+import { AmbiguousSymbolTargetError, SymbolTargetNotFoundError } from "./symbol-target-result.js";
 
 describe("SymbolTargetNotFoundError", () => {
   it("names the missing target in its reason", () => {
@@ -40,24 +34,3 @@ describe("AmbiguousSymbolTargetError", () => {
     expect(error.candidates).toBe(candidates);
   });
 });
-
-function identity(file: string, ...names: readonly string[]): SymbolIdentity {
-  return { file, segments: names.map((name) => ({ name })) };
-}
-
-function candidate(
-  file: string,
-  names: readonly string[],
-  headerLines: readonly string[],
-): SymbolTargetCandidate {
-  const header: Header = { startLine: 1, lines: headerLines };
-  const symbol: SymbolOverviewNode = {
-    type: "symbol",
-    identity: identity(file, ...names),
-    kind: { role: "callable", nativeLabel: "function" },
-    range: { startLine: 1, endLine: 1 },
-    header,
-    children: [],
-  };
-  return { symbol, canonicalId: `${file}::${names.join("::")}`, header };
-}

@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 
 import { SymbolTargetGrammar } from "./symbol-target-pattern.js";
+import { identity } from "./symbol-target-builders.js";
 import { InvalidSymbolIdError } from "../intermediate-representation/canonical-identity.js";
-import type { SymbolIdentity } from "../intermediate-representation/symbol-identity.js";
 
 describe("SymbolTargetGrammar.parse", () => {
   it("parses a bare name as a segment suffix", () => {
@@ -173,7 +173,3 @@ describe("SymbolTargetGrammar.matches", () => {
     ).toBe(true);
   });
 });
-
-function identity(file: string, ...names: readonly string[]): SymbolIdentity {
-  return { file, segments: names.map((name) => ({ name })) };
-}

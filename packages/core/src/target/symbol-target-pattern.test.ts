@@ -194,16 +194,16 @@ function identity(file: string, ...names: readonly string[]): SymbolIdentity {
 function candidate(
   file: string,
   names: readonly string[],
-  signatureLines: readonly string[],
+  headerLines: readonly string[],
 ): SymbolTargetCandidate {
-  const signature: Header = { startLine: 1, lines: signatureLines };
+  const header: Header = { startLine: 1, lines: headerLines };
   const symbol: SymbolOverviewNode = {
     type: "symbol",
     identity: identity(file, ...names),
     kind: { role: "callable", nativeLabel: "function" },
     range: { startLine: 1, endLine: 1 },
-    header: signature,
+    header,
     children: [],
   };
-  return { symbol, canonicalId: `${file}::${names.join("::")}`, signature };
+  return { symbol, canonicalId: `${file}::${names.join("::")}`, header };
 }

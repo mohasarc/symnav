@@ -80,7 +80,7 @@ function extractMatchingCandidates(
       candidates.push({
         symbol,
         canonicalId: formatSymbolIdentity(symbol.identity),
-        signature: symbol.header,
+        header: symbol.header,
       });
     }
   }

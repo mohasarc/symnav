@@ -7,7 +7,7 @@ import type { SymbolTargetPattern } from "./symbol-target-pattern.js";
 export interface SymbolTargetCandidate {
   readonly symbol: SymbolOverviewNode;
   readonly canonicalId: string;
-  readonly signature: Header;
+  readonly header: Header;
 }
 
 export class SymbolTargetNotFoundError extends UserFacingError {
@@ -52,9 +52,9 @@ export class AmbiguousSymbolTargetError extends UserFacingError {
 
 function candidateLines(candidate: SymbolTargetCandidate, isLast: boolean): string[] {
   const idPrefix = isLast ? "└── " : "├── ";
-  const signaturePrefix = isLast ? "    " : "│   ";
+  const headerPrefix = isLast ? "    " : "│   ";
   return [
     `${idPrefix}${candidate.canonicalId}`,
-    ...candidate.signature.lines.map((line) => `${signaturePrefix}${line}`),
+    ...candidate.header.lines.map((line) => `${headerPrefix}${line}`),
   ];
 }

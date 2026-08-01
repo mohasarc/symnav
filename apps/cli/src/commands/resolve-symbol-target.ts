@@ -11,11 +11,10 @@ import {
   AmbiguousSymbolTargetError,
   InvalidSymbolTargetRequestError,
   NoSupportedFilesError,
+  SymbolTargetGrammar,
   SymbolTargetNotFoundError,
-  fileSuffixMatches,
   formatSymbolIdentity,
   isPositiveInteger,
-  parseSymbolTargetPattern,
 } from "@symnav/core";
 
 export interface ResolveSymbolTargetForCommandArgs {
@@ -41,7 +40,7 @@ export async function resolveSymbolTargetForCommand(
   args: ResolveSymbolTargetForCommandArgs,
 ): Promise<ResolvedCommandTarget> {
   const containingLine = containingLineFrom(args.line);
-  const pattern = parseSymbolTargetPattern(args.rawTarget);
+  const pattern = SymbolTargetGrammar.parse(args.rawTarget);
   const files = await args.workspace.enumerate();
   await throwIfPathlikeSuffixUnresolvable(args, files, pattern.fileSuffix);
   const acceptedFilesByBackend = groupFilesByAcceptingBackend(args.router, files);
@@ -93,7 +92,7 @@ async function throwIfPathlikeSuffixUnresolvable(
 ): Promise<void> {
   if (
     fileSuffix === undefined ||
-    files.some((file) => fileSuffixMatches(file.relative, fileSuffix))
+    files.some((file) => SymbolTargetGrammar.fileSuffixMatches(file.relative, fileSuffix))
   ) {
     return;
   }
@@ -143,7 +142,7 @@ function filesMatchingSuffix(
   if (fileSuffix === undefined) {
     return files;
   }
-  return files.filter((file) => fileSuffixMatches(file.relative, fileSuffix));
+  return files.filter((file) => SymbolTargetGrammar.fileSuffixMatches(file.relative, fileSuffix));
 }
 
 function collapsedOverloadIdentity(

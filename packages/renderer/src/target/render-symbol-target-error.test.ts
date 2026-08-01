@@ -9,14 +9,14 @@ import type {
 import {
   AmbiguousSymbolTargetError,
   SymbolTargetNotFoundError,
-  parseSymbolTargetPattern,
+  SymbolTargetGrammar,
 } from "@symnav/core";
 
 import { SymbolTargetErrorRenderer } from "./render-symbol-target-error.js";
 
 describe("SymbolTargetErrorRenderer", () => {
   it("renders the ambiguity statement and candidate tree exactly", () => {
-    const error = new AmbiguousSymbolTargetError(parseSymbolTargetPattern("parse"), [
+    const error = new AmbiguousSymbolTargetError(SymbolTargetGrammar.parse("parse"), [
       candidate("src/json.ts", ["parse"], ["export function parse(input: string): JsonValue"]),
       candidate(
         "src/query.ts",
@@ -40,7 +40,7 @@ describe("SymbolTargetErrorRenderer", () => {
   });
 
   it("prefixes every line of a wrapped signature with its candidate's glyph", () => {
-    const error = new AmbiguousSymbolTargetError(parseSymbolTargetPattern("charge"), [
+    const error = new AmbiguousSymbolTargetError(SymbolTargetGrammar.parse("charge"), [
       candidate(
         "src/stripe.ts",
         ["charge"],
@@ -72,7 +72,7 @@ describe("SymbolTargetErrorRenderer", () => {
   });
 
   it("leaves other symbol-target errors unrendered", () => {
-    const error = new SymbolTargetNotFoundError(parseSymbolTargetPattern("parse"));
+    const error = new SymbolTargetNotFoundError(SymbolTargetGrammar.parse("parse"));
 
     expect(SymbolTargetErrorRenderer.render(error)).toBeUndefined();
   });

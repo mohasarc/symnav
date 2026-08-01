@@ -85,11 +85,7 @@ export {
   formatSymbolPath,
 } from "./intermediate-representation/canonical-identity.js";
 export type { SymbolTargetPattern } from "./target/symbol-target-pattern.js";
-export {
-  fileSuffixMatches,
-  parseSymbolTargetPattern,
-  symbolTargetMatches,
-} from "./target/symbol-target-pattern.js";
+export { SymbolTargetGrammar } from "./target/symbol-target-pattern.js";
 export type { SymbolTargetCandidate } from "./target/symbol-target-result.js";
 export {
   AmbiguousSymbolTargetError,

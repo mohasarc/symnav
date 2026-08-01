@@ -9,7 +9,7 @@ import type {
   SymbolTargetCandidate,
   SymbolTargetPattern,
 } from "@symnav/core";
-import { symbolTargetMatches } from "@symnav/core";
+import { SymbolTargetGrammar } from "@symnav/core";
 
 export interface FakeLanguageBackendOptions {
   accept?: (filePath: string) => boolean;
@@ -49,7 +49,7 @@ export class FakeLanguageBackend implements LanguageBackend {
   ): Promise<readonly SymbolTargetCandidate[]> {
     this.targetCandidateCalls.push(files.map((file) => file.relative));
     return this.targetCandidates.filter((candidate) =>
-      symbolTargetMatches(pattern, candidate.symbol.identity),
+      SymbolTargetGrammar.matches(pattern, candidate.symbol.identity),
     );
   }
 

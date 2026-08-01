@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { InvalidSymbolIdError, formatSymbolIdentity } from "./canonical-identity.js";
 import type { SymbolIdentity } from "./symbol-identity.js";
-import { parseSymbolTargetPattern } from "../target/symbol-target-pattern.js";
+import { SymbolTargetGrammar } from "../target/symbol-target-pattern.js";
 
 describe("formatSymbolIdentity", () => {
   it("formats an identity with no disambiguators", () => {
@@ -49,7 +49,7 @@ describe("canonical-identity codec round-trip", () => {
 
   for (const id of valid) {
     it(`round-trips ${id}`, () => {
-      const pattern = parseSymbolTargetPattern(id);
+      const pattern = SymbolTargetGrammar.parse(id);
       expect(
         formatSymbolIdentity({ file: pattern.fileSuffix!, segments: pattern.segmentSuffix }),
       ).toBe(id);
@@ -60,7 +60,7 @@ describe("canonical-identity codec round-trip", () => {
 describe("private field segment names", () => {
   it("round-trips private field names with and without a disambiguator", () => {
     for (const id of ["src/foo.ts::C::#secret", "src/foo.ts::C::#secret#2"]) {
-      const pattern = parseSymbolTargetPattern(id);
+      const pattern = SymbolTargetGrammar.parse(id);
       expect(
         formatSymbolIdentity({ file: pattern.fileSuffix!, segments: pattern.segmentSuffix }),
       ).toBe(id);
@@ -77,7 +77,7 @@ describe("formatSymbolIdentity file-portion boundary", () => {
 
   it("permits a single colon in the file portion and round-trips it", () => {
     const id = formatSymbolIdentity({ file: "C:/proj/a.ts", segments: [{ name: "Foo" }] });
-    const pattern = parseSymbolTargetPattern(id);
+    const pattern = SymbolTargetGrammar.parse(id);
     expect(pattern.fileSuffix).toBe("C:/proj/a.ts");
     expect(pattern.segmentSuffix).toEqual([{ name: "Foo" }]);
   });

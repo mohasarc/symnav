@@ -7,7 +7,7 @@ import type {
 } from "@symnav/core";
 import {
   formatSymbolIdentity,
-  symbolTargetMatches,
+  SymbolTargetGrammar,
   validateResolveSymbolTargetOptions,
 } from "@symnav/core";
 
@@ -28,7 +28,7 @@ export async function findTargetCandidates(
   const candidates: SymbolTargetCandidate[] = [];
   for (const file of args.files) {
     for (const symbol of args.index.declarationsIn(file.relative) ?? []) {
-      if (!symbolTargetMatches(args.pattern, symbol.identity)) continue;
+      if (!SymbolTargetGrammar.matches(args.pattern, symbol.identity)) continue;
       if (!matchesLine(args.options.containingLine, symbol)) continue;
       candidates.push({
         symbol,

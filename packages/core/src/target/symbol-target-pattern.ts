@@ -14,62 +14,64 @@ export interface SymbolTargetPattern {
   readonly segmentSuffix: readonly SymbolPathSegment[];
 }
 
-export function parseSymbolTargetPattern(raw: string): SymbolTargetPattern {
-  if (raw.length === 0) {
-    throw new InvalidSymbolIdError("empty input", raw);
+export class SymbolTargetGrammar {
+  static parse(raw: string): SymbolTargetPattern {
+    if (raw.length === 0) {
+      throw new InvalidSymbolIdError("empty input", raw);
+    }
+    const parts = raw.split(SEGMENT_SEPARATOR);
+    const fileSuffix = SymbolTargetGrammar.fileSuffixFrom(parts);
+    const segmentParts = fileSuffix === undefined ? parts : parts.slice(1);
+    if (segmentParts.length === 0) {
+      throw new InvalidSymbolIdError("empty symbol target", raw);
+    }
+    return {
+      raw,
+      fileSuffix,
+      segmentSuffix: segmentParts.map((segment) => parseSegment(segment, raw)),
+    };
   }
-  const parts = raw.split(SEGMENT_SEPARATOR);
-  const fileSuffix = fileSuffixFrom(parts);
-  const segmentParts = fileSuffix === undefined ? parts : parts.slice(1);
-  if (segmentParts.length === 0) {
-    throw new InvalidSymbolIdError("empty symbol target", raw);
-  }
-  return {
-    raw,
-    fileSuffix,
-    segmentSuffix: segmentParts.map((segment) => parseSegment(segment, raw)),
-  };
-}
 
-export function symbolTargetMatches(
-  pattern: SymbolTargetPattern,
-  identity: SymbolIdentity,
-): boolean {
-  if (pattern.fileSuffix !== undefined && !fileSuffixMatches(identity.file, pattern.fileSuffix)) {
-    return false;
+  static matches(pattern: SymbolTargetPattern, identity: SymbolIdentity): boolean {
+    if (
+      pattern.fileSuffix !== undefined &&
+      !SymbolTargetGrammar.fileSuffixMatches(identity.file, pattern.fileSuffix)
+    ) {
+      return false;
+    }
+    if (pattern.segmentSuffix.length > identity.segments.length) {
+      return false;
+    }
+    const identitySuffix = identity.segments.slice(
+      identity.segments.length - pattern.segmentSuffix.length,
+    );
+    return identitySuffix.every((segment, index) =>
+      SymbolTargetGrammar.segmentMatches(pattern.segmentSuffix[index]!, segment),
+    );
   }
-  if (pattern.segmentSuffix.length > identity.segments.length) {
-    return false;
-  }
-  const identitySuffix = identity.segments.slice(
-    identity.segments.length - pattern.segmentSuffix.length,
-  );
-  return identitySuffix.every((segment, index) =>
-    segmentMatches(pattern.segmentSuffix[index]!, segment),
-  );
-}
 
-export function fileSuffixMatches(file: string, suffix: string): boolean {
-  if (file === suffix) {
-    return true;
+  static fileSuffixMatches(file: string, suffix: string): boolean {
+    if (file === suffix) {
+      return true;
+    }
+    return file.endsWith(`/${suffix}`);
   }
-  return file.endsWith(`/${suffix}`);
-}
 
-function fileSuffixFrom(parts: readonly string[]): string | undefined {
-  if (parts.length < 2) {
+  private static fileSuffixFrom(parts: readonly string[]): string | undefined {
+    if (parts.length < 2) {
+      return undefined;
+    }
+    const first = parts[0]!;
+    if (first.includes("/") || first.includes("\\") || first.includes(".")) {
+      return first;
+    }
     return undefined;
   }
-  const first = parts[0]!;
-  if (first.includes("/") || first.includes("\\") || first.includes(".")) {
-    return first;
-  }
-  return undefined;
-}
 
-function segmentMatches(pattern: SymbolPathSegment, candidate: SymbolPathSegment): boolean {
-  if (pattern.name !== candidate.name) {
-    return false;
+  private static segmentMatches(pattern: SymbolPathSegment, candidate: SymbolPathSegment): boolean {
+    if (pattern.name !== candidate.name) {
+      return false;
+    }
+    return pattern.disambiguator === undefined || pattern.disambiguator === candidate.disambiguator;
   }
-  return pattern.disambiguator === undefined || pattern.disambiguator === candidate.disambiguator;
 }

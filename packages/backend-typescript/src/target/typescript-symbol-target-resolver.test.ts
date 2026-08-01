@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   InMemoryFileSystem,
   InvalidSymbolTargetRequestError,
-  parseSymbolTargetPattern,
+  SymbolTargetGrammar,
   type ResolvedPath,
   type SymbolTargetCandidate,
 } from "@symnav/core";
@@ -70,7 +70,7 @@ describe("findTargetCandidates", () => {
     const candidates = await findTargetCandidates({
       index: new WorkspaceDeclarationIndex(fsWithFixture()),
       files: ALL_FILES,
-      pattern: parseSymbolTargetPattern("helper"),
+      pattern: SymbolTargetGrammar.parse("helper"),
       options: { containingLine: undefined },
     });
 
@@ -87,7 +87,7 @@ describe("findTargetCandidates", () => {
     const candidates = await findTargetCandidates({
       index: new WorkspaceDeclarationIndex(fsWithFixture()),
       files: ALL_FILES,
-      pattern: parseSymbolTargetPattern("insideIf"),
+      pattern: SymbolTargetGrammar.parse("insideIf"),
       options: { containingLine: undefined },
     });
 
@@ -103,7 +103,7 @@ describe("findTargetCandidates", () => {
     const candidates = await findTargetCandidates({
       index: new WorkspaceDeclarationIndex(fsWithFixture()),
       files: ALL_FILES,
-      pattern: parseSymbolTargetPattern("helper"),
+      pattern: SymbolTargetGrammar.parse("helper"),
       options: { containingLine: 2 },
     });
 
@@ -116,7 +116,7 @@ describe("findTargetCandidates", () => {
       findTargetCandidates({
         index: new WorkspaceDeclarationIndex(fsWithFixture()),
         files: ALL_FILES,
-        pattern: parseSymbolTargetPattern("helper"),
+        pattern: SymbolTargetGrammar.parse("helper"),
         options: { containingLine: 0 },
       }),
     ).rejects.toBeInstanceOf(InvalidSymbolTargetRequestError);
@@ -126,7 +126,7 @@ describe("findTargetCandidates", () => {
     const candidates = await findTargetCandidates({
       index: new WorkspaceDeclarationIndex(fsWithFixture()),
       files: ALL_FILES,
-      pattern: parseSymbolTargetPattern("helper"),
+      pattern: SymbolTargetGrammar.parse("helper"),
       options: { containingLine: 99 },
     });
 
@@ -137,7 +137,7 @@ describe("findTargetCandidates", () => {
     const candidates = await findTargetCandidates({
       index: new WorkspaceDeclarationIndex(fsWithFixture()),
       files: pathsFor(["src/json.ts", "src/spaced.ts"]),
-      pattern: parseSymbolTargetPattern("parse"),
+      pattern: SymbolTargetGrammar.parse("parse"),
       options: { containingLine: 4 },
     });
 
@@ -148,7 +148,7 @@ describe("findTargetCandidates", () => {
     const candidates = await findTargetCandidates({
       index: new WorkspaceDeclarationIndex(fsWithFixture()),
       files: ALL_FILES,
-      pattern: parseSymbolTargetPattern("missing"),
+      pattern: SymbolTargetGrammar.parse("missing"),
       options: { containingLine: undefined },
     });
 
@@ -159,7 +159,7 @@ describe("findTargetCandidates", () => {
     const candidates = await findTargetCandidates({
       index: new WorkspaceDeclarationIndex(fsWithFixture()),
       files: ALL_FILES,
-      pattern: parseSymbolTargetPattern("parse"),
+      pattern: SymbolTargetGrammar.parse("parse"),
       options: { containingLine: undefined },
     });
 

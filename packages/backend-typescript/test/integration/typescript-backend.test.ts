@@ -4,7 +4,7 @@ import {
   FileNotFoundError,
   formatSymbolIdentity,
   InMemoryFileSystem,
-  parseSymbolTargetPattern,
+  SymbolTargetGrammar,
   type FileSystem,
   type ResolvedPath,
   OverviewTree,
@@ -186,7 +186,7 @@ describe("TypeScriptBackend parse sharing", () => {
 
     const candidates = await backend.findTargetCandidates(
       files,
-      parseSymbolTargetPattern("helper"),
+      SymbolTargetGrammar.parse("helper"),
       {
         containingLine: undefined,
       },

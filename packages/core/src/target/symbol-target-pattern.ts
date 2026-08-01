@@ -1,11 +1,12 @@
-import { InvalidSymbolIdError } from "../intermediate-representation/canonical-identity.js";
+import {
+  InvalidSymbolIdError,
+  SEGMENT_SEPARATOR,
+  parseSegment,
+} from "../intermediate-representation/canonical-identity.js";
 import type {
   SymbolIdentity,
   SymbolPathSegment,
 } from "../intermediate-representation/symbol-identity.js";
-
-const SEGMENT_SEPARATOR = "::";
-const DISAMBIGUATOR_PREFIX = "#";
 
 export interface SymbolTargetPattern {
   readonly raw: string;
@@ -26,7 +27,7 @@ export function parseSymbolTargetPattern(raw: string): SymbolTargetPattern {
   return {
     raw,
     fileSuffix,
-    segmentSuffix: segmentParts.map((segment) => parseTargetSegment(segment, raw)),
+    segmentSuffix: segmentParts.map((segment) => parseSegment(segment, raw)),
   };
 }
 
@@ -64,28 +65,6 @@ function fileSuffixFrom(parts: readonly string[]): string | undefined {
     return first;
   }
   return undefined;
-}
-
-function parseTargetSegment(segment: string, raw: string): SymbolPathSegment {
-  if (segment.length === 0) {
-    throw new InvalidSymbolIdError('empty path segment between "::" separators', raw);
-  }
-  const hashIndex = segment.lastIndexOf(DISAMBIGUATOR_PREFIX);
-  if (hashIndex === -1) {
-    return { name: segment };
-  }
-  const name = segment.slice(0, hashIndex);
-  const disambiguatorText = segment.slice(hashIndex + DISAMBIGUATOR_PREFIX.length);
-  if (name.length === 0) {
-    return { name: segment };
-  }
-  if (!/^[1-9][0-9]*$/.test(disambiguatorText)) {
-    throw new InvalidSymbolIdError(
-      `disambiguator must be a positive integer (got ${JSON.stringify(disambiguatorText)})`,
-      raw,
-    );
-  }
-  return { name, disambiguator: Number.parseInt(disambiguatorText, 10) };
 }
 
 function segmentMatches(pattern: SymbolPathSegment, candidate: SymbolPathSegment): boolean {

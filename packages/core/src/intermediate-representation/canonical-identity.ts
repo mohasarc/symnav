@@ -1,7 +1,7 @@
 import { UserFacingError } from "../errors.js";
 import type { SymbolIdentity, SymbolPathSegment } from "./symbol-identity.js";
 
-const SEGMENT_SEPARATOR = "::";
+export const SEGMENT_SEPARATOR = "::";
 const DISAMBIGUATOR_PREFIX = "#";
 
 export class InvalidSymbolIdError extends UserFacingError {
@@ -16,6 +16,28 @@ export class InvalidSymbolIdError extends UserFacingError {
   get reason(): string {
     return `invalid symbol id (${this.explanation}): ${JSON.stringify(this.raw)}`;
   }
+}
+
+export function parseSegment(segment: string, raw: string): SymbolPathSegment {
+  if (segment.length === 0) {
+    throw new InvalidSymbolIdError('empty path segment between "::" separators', raw);
+  }
+  const hashIndex = segment.lastIndexOf(DISAMBIGUATOR_PREFIX);
+  if (hashIndex === -1) {
+    return { name: segment };
+  }
+  const name = segment.slice(0, hashIndex);
+  const disambiguatorText = segment.slice(hashIndex + DISAMBIGUATOR_PREFIX.length);
+  if (name.length === 0) {
+    return { name: segment };
+  }
+  if (!/^[1-9][0-9]*$/.test(disambiguatorText)) {
+    throw new InvalidSymbolIdError(
+      `disambiguator must be a positive integer (got ${JSON.stringify(disambiguatorText)})`,
+      raw,
+    );
+  }
+  return { name, disambiguator: Number.parseInt(disambiguatorText, 10) };
 }
 
 export function formatSymbolIdentity(identity: SymbolIdentity): string {

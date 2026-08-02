@@ -23,92 +23,100 @@ import { FakeLanguageBackend } from "./helpers/fake-language-backend.js";
 import { createFakeProgramContext } from "./helpers/fake-program-context.js";
 import { fakeDependencies } from "./helpers/fake-program-dependencies.js";
 
-const WORKSPACE_FILES: readonly ResolvedPath[] = [
-  { relative: "src/alpha.ts", absolute: "/repo/src/alpha.ts" },
-  { relative: "src/beta.zz", absolute: "/repo/src/beta.zz" },
-  { relative: "src/gamma.ts", absolute: "/repo/src/gamma.ts" },
-];
+class ResolverScenario {
+  private static readonly WORKSPACE_FILES: readonly ResolvedPath[] = [
+    { relative: "src/alpha.ts", absolute: "/repo/src/alpha.ts" },
+    { relative: "src/beta.zz", absolute: "/repo/src/beta.zz" },
+    { relative: "src/gamma.ts", absolute: "/repo/src/gamma.ts" },
+  ];
 
-function fakeWorkspace(files: readonly ResolvedPath[]): Workspace {
-  return {
-    root: "/repo",
-    resolveInputPath: (inputPath: string) => {
-      throw new Error(`unexpected resolveInputPath: ${inputPath}`);
-    },
-    enumerate: () => Promise.resolve(files),
-  };
-}
-
-function candidateFor(file: string, segments: readonly SymbolPathSegment[]): SymbolTargetCandidate {
-  const identity: SymbolIdentity = { file, segments };
-  const header: Header = {
-    startLine: 1,
-    lines: [`declare ${segments.map((segment) => segment.name).join(".")}`],
-  };
-  return {
-    symbol: {
-      type: "symbol",
-      identity,
-      kind: { role: "callable", nativeLabel: "function" },
-      children: [],
-      range: { startLine: 1, endLine: 1 },
+  static candidateFor(file: string, segments: readonly SymbolPathSegment[]): SymbolTargetCandidate {
+    const identity: SymbolIdentity = { file, segments };
+    const header: Header = {
+      startLine: 1,
+      lines: [`declare ${segments.map((segment) => segment.name).join(".")}`],
+    };
+    return {
+      symbol: {
+        type: "symbol",
+        identity,
+        kind: { role: "callable", nativeLabel: "function" },
+        children: [],
+        range: { startLine: 1, endLine: 1 },
+        header,
+      },
+      canonicalId: formatSymbolIdentity(identity),
       header,
-    },
-    canonicalId: formatSymbolIdentity(identity),
-    header,
-  };
-}
+    };
+  }
 
-function typescriptFake(targetCandidates: readonly SymbolTargetCandidate[]): FakeLanguageBackend {
-  return new FakeLanguageBackend({
-    accept: (filePath) => filePath.endsWith(".ts"),
-    targetCandidates,
-  });
-}
+  static typescriptFake(targetCandidates: readonly SymbolTargetCandidate[]): FakeLanguageBackend {
+    return new FakeLanguageBackend({
+      accept: (filePath) => filePath.endsWith(".ts"),
+      targetCandidates,
+    });
+  }
 
-function zetaFake(targetCandidates: readonly SymbolTargetCandidate[]): FakeLanguageBackend {
-  return new FakeLanguageBackend({
-    accept: (filePath) => filePath.endsWith(".zz"),
-    targetCandidates,
-  });
-}
+  static zetaFake(targetCandidates: readonly SymbolTargetCandidate[]): FakeLanguageBackend {
+    return new FakeLanguageBackend({
+      accept: (filePath) => filePath.endsWith(".zz"),
+      targetCandidates,
+    });
+  }
 
-function resolveWith(router: BackendRouter, rawTarget: string): Promise<ResolvedCommandTarget> {
-  return CommandTargetResolver.resolve({
-    workspace: fakeWorkspace(WORKSPACE_FILES),
-    router,
-    cwd: "/repo",
-    rawTarget,
-    line: undefined,
-  });
-}
+  static resolveWith(router: BackendRouter, rawTarget: string): Promise<ResolvedCommandTarget> {
+    return CommandTargetResolver.resolve({
+      workspace: ResolverScenario.fakeWorkspace(ResolverScenario.WORKSPACE_FILES),
+      router,
+      cwd: "/repo",
+      rawTarget,
+      line: undefined,
+    });
+  }
 
-function relativeFiles(resolved: ResolvedCommandTarget): readonly string[] {
-  return resolved.files.map((file) => file.relative);
+  static relativeFiles(resolved: ResolvedCommandTarget): readonly string[] {
+    return resolved.files.map((file) => file.relative);
+  }
+
+  private static fakeWorkspace(files: readonly ResolvedPath[]): Workspace {
+    return {
+      root: "/repo",
+      resolveInputPath: (inputPath: string) => {
+        throw new Error(`unexpected resolveInputPath: ${inputPath}`);
+      },
+      enumerate: () => Promise.resolve(files),
+    };
+  }
 }
 
 describe("CommandTargetResolver.resolve across backends", () => {
   it("resolves a bare name unique to one backend while another backend's files exist", async () => {
-    const typescriptBackend = typescriptFake([candidateFor("src/alpha.ts", [{ name: "walk" }])]);
+    const typescriptBackend = ResolverScenario.typescriptFake([
+      ResolverScenario.candidateFor("src/alpha.ts", [{ name: "walk" }]),
+    ]);
     const router = new BackendRouter([
       typescriptBackend,
-      zetaFake([candidateFor("src/beta.zz", [{ name: "other" }])]),
+      ResolverScenario.zetaFake([
+        ResolverScenario.candidateFor("src/beta.zz", [{ name: "other" }]),
+      ]),
     ]);
 
-    const resolved = await resolveWith(router, "walk");
+    const resolved = await ResolverScenario.resolveWith(router, "walk");
 
     expect(resolved.identity).toEqual({ file: "src/alpha.ts", segments: [{ name: "walk" }] });
     expect(resolved.backend).toBe(typescriptBackend);
-    expect(relativeFiles(resolved)).toEqual(["src/alpha.ts", "src/gamma.ts"]);
+    expect(ResolverScenario.relativeFiles(resolved)).toEqual(["src/alpha.ts", "src/gamma.ts"]);
   });
 
   it("reports ambiguity listing candidates from both backends sorted by canonical id", async () => {
     const router = new BackendRouter([
-      zetaFake([candidateFor("src/beta.zz", [{ name: "dup" }])]),
-      typescriptFake([candidateFor("src/alpha.ts", [{ name: "dup" }])]),
+      ResolverScenario.zetaFake([ResolverScenario.candidateFor("src/beta.zz", [{ name: "dup" }])]),
+      ResolverScenario.typescriptFake([
+        ResolverScenario.candidateFor("src/alpha.ts", [{ name: "dup" }]),
+      ]),
     ]);
 
-    const error = await resolveWith(router, "dup").then(
+    const error = await ResolverScenario.resolveWith(router, "dup").then(
       () => undefined,
       (thrown: unknown) => thrown,
     );
@@ -122,57 +130,73 @@ describe("CommandTargetResolver.resolve across backends", () => {
   });
 
   it("routes a file-suffix pattern to the matching backend's candidate", async () => {
-    const zetaBackend = zetaFake([candidateFor("src/beta.zz", [{ name: "dup" }])]);
+    const zetaBackend = ResolverScenario.zetaFake([
+      ResolverScenario.candidateFor("src/beta.zz", [{ name: "dup" }]),
+    ]);
     const router = new BackendRouter([
-      typescriptFake([candidateFor("src/alpha.ts", [{ name: "dup" }])]),
+      ResolverScenario.typescriptFake([
+        ResolverScenario.candidateFor("src/alpha.ts", [{ name: "dup" }]),
+      ]),
       zetaBackend,
     ]);
 
-    const resolved = await resolveWith(router, "beta.zz::dup");
+    const resolved = await ResolverScenario.resolveWith(router, "beta.zz::dup");
 
     expect(resolved.identity).toEqual({ file: "src/beta.zz", segments: [{ name: "dup" }] });
     expect(resolved.backend).toBe(zetaBackend);
-    expect(relativeFiles(resolved)).toEqual(["src/beta.zz"]);
+    expect(ResolverScenario.relativeFiles(resolved)).toEqual(["src/beta.zz"]);
   });
 
   it("hands only suffix-matching files to findTargetCandidates for a file-suffix pattern", async () => {
-    const typescriptBackend = typescriptFake([candidateFor("src/alpha.ts", [{ name: "walk" }])]);
-    const router = new BackendRouter([typescriptBackend, zetaFake([])]);
+    const typescriptBackend = ResolverScenario.typescriptFake([
+      ResolverScenario.candidateFor("src/alpha.ts", [{ name: "walk" }]),
+    ]);
+    const router = new BackendRouter([typescriptBackend, ResolverScenario.zetaFake([])]);
 
-    const resolved = await resolveWith(router, "alpha.ts::walk");
+    const resolved = await ResolverScenario.resolveWith(router, "alpha.ts::walk");
 
     expect(typescriptBackend.targetCandidateCalls).toEqual([["src/alpha.ts"]]);
-    expect(relativeFiles(resolved)).toEqual(["src/alpha.ts", "src/gamma.ts"]);
+    expect(ResolverScenario.relativeFiles(resolved)).toEqual(["src/alpha.ts", "src/gamma.ts"]);
   });
 
   it("hands all accepted files to findTargetCandidates for a bare-name pattern", async () => {
-    const typescriptBackend = typescriptFake([candidateFor("src/alpha.ts", [{ name: "walk" }])]);
-    const router = new BackendRouter([typescriptBackend, zetaFake([])]);
+    const typescriptBackend = ResolverScenario.typescriptFake([
+      ResolverScenario.candidateFor("src/alpha.ts", [{ name: "walk" }]),
+    ]);
+    const router = new BackendRouter([typescriptBackend, ResolverScenario.zetaFake([])]);
 
-    const resolved = await resolveWith(router, "walk");
+    const resolved = await ResolverScenario.resolveWith(router, "walk");
 
     expect(typescriptBackend.targetCandidateCalls).toEqual([["src/alpha.ts", "src/gamma.ts"]]);
-    expect(relativeFiles(resolved)).toEqual(["src/alpha.ts", "src/gamma.ts"]);
+    expect(ResolverScenario.relativeFiles(resolved)).toEqual(["src/alpha.ts", "src/gamma.ts"]);
   });
 
   it("keeps the full backend-accepted file list for a file-suffix pattern", async () => {
     const router = new BackendRouter([
-      typescriptFake([candidateFor("src/alpha.ts", [{ name: "walk" }])]),
-      zetaFake([]),
+      ResolverScenario.typescriptFake([
+        ResolverScenario.candidateFor("src/alpha.ts", [{ name: "walk" }]),
+      ]),
+      ResolverScenario.zetaFake([]),
     ]);
 
-    const resolved = await resolveWith(router, "alpha.ts::walk");
+    const resolved = await ResolverScenario.resolveWith(router, "alpha.ts::walk");
 
-    expect(relativeFiles(resolved)).toEqual(["src/alpha.ts", "src/gamma.ts"]);
+    expect(ResolverScenario.relativeFiles(resolved)).toEqual(["src/alpha.ts", "src/gamma.ts"]);
   });
 
   it("throws not-found when no backend has a matching candidate", async () => {
     const router = new BackendRouter([
-      typescriptFake([candidateFor("src/alpha.ts", [{ name: "walk" }])]),
-      zetaFake([candidateFor("src/beta.zz", [{ name: "other" }])]),
+      ResolverScenario.typescriptFake([
+        ResolverScenario.candidateFor("src/alpha.ts", [{ name: "walk" }]),
+      ]),
+      ResolverScenario.zetaFake([
+        ResolverScenario.candidateFor("src/beta.zz", [{ name: "other" }]),
+      ]),
     ]);
 
-    await expect(resolveWith(router, "missing")).rejects.toBeInstanceOf(SymbolTargetNotFoundError);
+    await expect(ResolverScenario.resolveWith(router, "missing")).rejects.toBeInstanceOf(
+      SymbolTargetNotFoundError,
+    );
   });
 
   it("reports a workspace whose files no backend supports", async () => {
@@ -206,7 +230,11 @@ describe("CommandTargetResolver.resolve across backends", () => {
       context,
       dependencies: fakeDependencies({
         fs: new InMemoryFileSystem({ "/repo/.git/HEAD": "ref: refs/heads/main\n" }),
-        backends: () => [typescriptFake([candidateFor("src/alpha.ts", [{ name: "walk" }])])],
+        backends: () => [
+          ResolverScenario.typescriptFake([
+            ResolverScenario.candidateFor("src/alpha.ts", [{ name: "walk" }]),
+          ]),
+        ],
       }),
       cwdOverride: undefined,
       json: false,
@@ -227,7 +255,11 @@ describe("CommandTargetResolver.resolve across backends", () => {
       context,
       dependencies: fakeDependencies({
         fs: new InMemoryFileSystem({ "/repo/.git/HEAD": "ref: refs/heads/main\n" }),
-        backends: () => [typescriptFake([candidateFor("src/alpha.ts", [{ name: "walk" }])])],
+        backends: () => [
+          ResolverScenario.typescriptFake([
+            ResolverScenario.candidateFor("src/alpha.ts", [{ name: "walk" }]),
+          ]),
+        ],
       }),
       cwdOverride: undefined,
       json: false,
@@ -240,13 +272,13 @@ describe("CommandTargetResolver.resolve across backends", () => {
   });
 
   it("collapses overload candidates to the disambiguator-stripped identity", async () => {
-    const typescriptBackend = typescriptFake([
-      candidateFor("src/alpha.ts", [{ name: "post", disambiguator: 1 }]),
-      candidateFor("src/alpha.ts", [{ name: "post", disambiguator: 2 }]),
+    const typescriptBackend = ResolverScenario.typescriptFake([
+      ResolverScenario.candidateFor("src/alpha.ts", [{ name: "post", disambiguator: 1 }]),
+      ResolverScenario.candidateFor("src/alpha.ts", [{ name: "post", disambiguator: 2 }]),
     ]);
-    const router = new BackendRouter([typescriptBackend, zetaFake([])]);
+    const router = new BackendRouter([typescriptBackend, ResolverScenario.zetaFake([])]);
 
-    const resolved = await resolveWith(router, "post");
+    const resolved = await ResolverScenario.resolveWith(router, "post");
 
     expect(resolved.identity).toEqual({ file: "src/alpha.ts", segments: [{ name: "post" }] });
     expect(resolved.backend).toBe(typescriptBackend);

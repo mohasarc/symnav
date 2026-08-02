@@ -29,6 +29,13 @@ describe("symnav resolve e2e (regex)", () => {
     expect(parsed.files).toEqual(["src/toOrderHelpers.ts"]);
   });
 
+  it.skip("matches symbol names case-insensitively", () => {
+    const r = runResolve(["resolve", "--regex", "^toorder$"]);
+    expect(r.stderr).toBe("");
+    expect(r.status).toBe(0);
+    expect(r.stdout).toContain("toOrder");
+  });
+
   it("reports an invalid regex with the pattern stated once", () => {
     const r = runResolve(["resolve", "--regex", "["]);
     expect(r.stdout).toBe("");

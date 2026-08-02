@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { InMemoryFileSystem, type NavigationDiagnostic, UserFacingError } from "@symnav/core";
+import { InMemoryFileSystem, type ResultWithDiagnostics, UserFacingError } from "@symnav/core";
 import type { ArgShape } from "@symnav/telemetry";
 import { runCommand } from "../../../src/command.js";
 import type { Command, CommandContext } from "../../../src/command.js";
@@ -15,15 +15,18 @@ interface StubArgs {
   readonly note: string;
 }
 
-class StubCommand implements Command<string, StubArgs> {
+interface StubResult extends ResultWithDiagnostics {
+  readonly value: string;
+}
+
+class StubCommand implements Command<StubResult, StubArgs> {
   readonly name = "stub";
 
   constructor(
     private readonly options: {
-      compute?: (ctx: CommandContext<StubArgs>) => Promise<string>;
-      renderText?: (result: string) => string;
-      renderJson?: (result: string) => string;
-      diagnostics?: (result: string) => readonly NavigationDiagnostic[];
+      compute?: (ctx: CommandContext<StubArgs>) => Promise<StubResult>;
+      renderText?: (result: StubResult) => string;
+      renderJson?: (result: StubResult) => string;
     } = {},
   ) {}
 
@@ -31,33 +34,29 @@ class StubCommand implements Command<string, StubArgs> {
     return { kind: "bare", lengthBucket: args.note.length === 0 ? "empty" : "short", flags: [] };
   }
 
-  countResults(result: string): Record<string, number> {
-    return { length: result.length };
+  countResults(result: StubResult): Record<string, number> {
+    return { length: result.value.length };
   }
 
-  async compute(ctx: CommandContext<StubArgs>): Promise<string> {
+  async compute(ctx: CommandContext<StubArgs>): Promise<StubResult> {
     if (this.options.compute) {
       return this.options.compute(ctx);
     }
-    return "computed";
+    return { value: "computed" };
   }
 
-  diagnostics(result: string): readonly NavigationDiagnostic[] {
-    return this.options.diagnostics?.(result) ?? [];
-  }
-
-  renderText(result: string): string {
+  renderText(result: StubResult): string {
     if (this.options.renderText) {
       return this.options.renderText(result);
     }
-    return `text:${result}`;
+    return `text:${result.value}`;
   }
 
-  renderJson(result: string): string {
+  renderJson(result: StubResult): string {
     if (this.options.renderJson) {
       return this.options.renderJson(result);
     }
-    return `json:${result}`;
+    return `json:${result.value}`;
   }
 }
 
@@ -94,15 +93,18 @@ describe("runCommand lifecycle", () => {
     expect(context.stdout.text()).toBe("json:computed");
   });
 
-  it("writes diagnostics to stderr before stdout", async () => {
+  it("writes result diagnostics to stderr before stdout", async () => {
     const context = createFakeProgramContext({ cwd: "/repo" });
 
     await runCommand(
       new StubCommand({
-        diagnostics: () => [
-          { severity: "warning", dedupeKey: "one", message: "first" },
-          { severity: "warning", dedupeKey: "two", message: "second" },
-        ],
+        compute: async () => ({
+          value: "computed",
+          diagnostics: [
+            { severity: "warning", dedupeKey: "one", message: "first" },
+            { severity: "warning", dedupeKey: "two", message: "second" },
+          ],
+        }),
       }),
       {
         context,
@@ -118,12 +120,15 @@ describe("runCommand lifecycle", () => {
     expect(context.exitCodes).toEqual([]);
   });
 
-  it("writes diagnostics to stderr in json mode too", async () => {
+  it("writes result diagnostics to stderr in json mode too", async () => {
     const context = createFakeProgramContext({ cwd: "/repo" });
 
     await runCommand(
       new StubCommand({
-        diagnostics: () => [{ severity: "warning", dedupeKey: "one", message: "first" }],
+        compute: async () => ({
+          value: "computed",
+          diagnostics: [{ severity: "warning", dedupeKey: "one", message: "first" }],
+        }),
       }),
       {
         context,
@@ -147,7 +152,7 @@ describe("runCommand lifecycle", () => {
       new StubCommand({
         compute: async (ctx) => {
           seen = ctx;
-          return "ok";
+          return { value: "ok" };
         },
       }),
       {
@@ -247,7 +252,7 @@ describe("runCommand lifecycle", () => {
       new StubCommand({
         compute: async (ctx) => {
           seenCwd = ctx.cwd;
-          return "ok";
+          return { value: "ok" };
         },
       }),
       {

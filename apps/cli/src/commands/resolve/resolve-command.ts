@@ -14,7 +14,7 @@ import fuzzysort from "fuzzysort";
 
 import type { Command, CommandContext } from "../../command.js";
 import { classifyArgKind, lengthBucketOf } from "../../telemetry/arg-shape.js";
-import { collectNavigationDiagnostics } from "../collect-navigation-diagnostics.js";
+import { NavigationDiagnosticsCollector } from "../navigation-diagnostics-collector.js";
 import { ConflictingResolveFlagsError } from "./conflicting-resolve-flags-error.js";
 
 export interface ResolveArgs {
@@ -139,9 +139,6 @@ export const resolveCommand: Command<ResolveResult, ResolveArgs> = {
   countResults(result: ResolveResult) {
     return { symbols: result.symbols.length, files: result.files.length };
   },
-  diagnostics(result: ResolveResult) {
-    return result.diagnostics ?? [];
-  },
   async compute(ctx: CommandContext<ResolveArgs>): Promise<ResolveResult> {
     const mode = ResolveComputation.modeFrom(ctx.args);
     const options = ResolveComputation.symbolsOptionsFrom(mode, ctx.args.query);
@@ -155,14 +152,13 @@ export const resolveCommand: Command<ResolveResult, ResolveArgs> = {
     const matchingFiles = ResolveComputation.matchFilesByBasename(files, ctx.args.query, options);
     const symbolFiles = new Set(sortedSymbols.map((s) => s.identity.file));
     const filesSection = matchingFiles.filter((file) => !symbolFiles.has(file));
-    const diagnostics = await collectNavigationDiagnostics(ctx.workspace, ctx.router);
-    return {
+    const result: ResolveResult = {
       query: ctx.args.query,
       mode,
       symbols: sortedSymbols,
       files: filesSection,
-      ...(diagnostics.length > 0 && { diagnostics }),
     };
+    return NavigationDiagnosticsCollector.attach(result, ctx.workspace, ctx.router);
   },
   renderText: renderResolveText,
   renderJson: renderResolveJson,

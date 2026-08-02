@@ -4,7 +4,7 @@ import { SymbolTargetErrorRenderer, renderRefsJson, renderRefsText } from "@symn
 
 import type { Command, CommandContext } from "../../command.js";
 import { classifyArgKind, lengthBucketOf } from "../../telemetry/arg-shape.js";
-import { collectNavigationDiagnostics } from "../collect-navigation-diagnostics.js";
+import { NavigationDiagnosticsCollector } from "../navigation-diagnostics-collector.js";
 import { CommandTargetResolver } from "../resolve-symbol-target.js";
 
 export interface RefsArgs {
@@ -32,9 +32,6 @@ export const refsCommand: Command<RefsResult, RefsArgs> = {
       pages: result.pageCount,
     };
   },
-  diagnostics(result: RefsResult) {
-    return result.diagnostics ?? [];
-  },
   async compute(ctx: CommandContext<RefsArgs>): Promise<RefsResult> {
     const resolved = await CommandTargetResolver.resolve({
       workspace: ctx.workspace,
@@ -50,8 +47,7 @@ export const refsCommand: Command<RefsResult, RefsArgs> = {
       pageRequest: pageRequestFrom(ctx.args),
       fullLines: ctx.args.fullLines,
     }).build();
-    const diagnostics = await collectNavigationDiagnostics(ctx.workspace, ctx.router);
-    return { ...result, ...(diagnostics.length > 0 && { diagnostics }) };
+    return NavigationDiagnosticsCollector.attach(result, ctx.workspace, ctx.router);
   },
   renderText: renderRefsText,
   renderJson: renderRefsJson,

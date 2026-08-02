@@ -1,6 +1,5 @@
-import type { NavigationDiagnostic } from "../diagnostics/navigation-diagnostic.js";
 import type { OverviewNode } from "../intermediate-representation/overview-tree.js";
-import type { LineRange } from "../intermediate-representation/types.js";
+import type { LineRange, ResultWithDiagnostics } from "../intermediate-representation/types.js";
 
 export interface OverviewExpansionRequest {
   readonly depth: number;
@@ -14,10 +13,9 @@ export interface OverviewExpansionCandidate {
   readonly node: OverviewNode;
 }
 
-export interface OverviewExpansionResult {
+export interface OverviewExpansionResult extends ResultWithDiagnostics {
   readonly file: string;
   readonly entries: readonly OverviewNode[];
   readonly request: OverviewExpansionRequest;
   readonly totalSymbolCount: number;
-  readonly diagnostics?: readonly NavigationDiagnostic[];
 }

@@ -4,7 +4,7 @@ import { SymbolTargetErrorRenderer, renderContextJson, renderContextText } from 
 
 import type { Command, CommandContext } from "../../command.js";
 import { classifyArgKind, lengthBucketOf } from "../../telemetry/arg-shape.js";
-import { collectNavigationDiagnostics } from "../collect-navigation-diagnostics.js";
+import { NavigationDiagnosticsCollector } from "../navigation-diagnostics-collector.js";
 import { resolveCallTarget } from "../resolve-call-target.js";
 import { CommandTargetResolver } from "../resolve-symbol-target.js";
 
@@ -29,9 +29,6 @@ export const contextCommand: Command<ContextResult, ContextArgs> = {
       references: result.references.total,
       history: result.history.length,
     };
-  },
-  diagnostics(result: ContextResult) {
-    return result.diagnostics ?? [];
   },
   async compute(ctx: CommandContext<ContextArgs>): Promise<ContextResult> {
     const resolved = await CommandTargetResolver.resolve({
@@ -67,8 +64,7 @@ export const contextCommand: Command<ContextResult, ContextArgs> = {
       history,
       cap: DEFAULT_CONTEXT_CAP,
     }).build();
-    const diagnostics = await collectNavigationDiagnostics(ctx.workspace, ctx.router);
-    return { ...result, ...(diagnostics.length > 0 && { diagnostics }) };
+    return NavigationDiagnosticsCollector.attach(result, ctx.workspace, ctx.router);
   },
   renderText: renderContextText,
   renderJson: renderContextJson,

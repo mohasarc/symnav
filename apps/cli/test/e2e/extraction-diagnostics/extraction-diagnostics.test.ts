@@ -19,7 +19,6 @@ function runSymnav(args: readonly string[]) {
 
 function expectOnlyUnsupportedStatementWarning(stderr: string): void {
   expect(stderr).toBe(warning);
-  expect(stderr.trimEnd().split("\n")).toHaveLength(1);
 }
 
 beforeAll(() => {

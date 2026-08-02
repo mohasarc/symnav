@@ -148,7 +148,7 @@ describe("command telemetry descriptors", () => {
   it("counts resolve result symbols and files", () => {
     const result: ResolveResult = {
       query: "Foo",
-      fuzzy: false,
+      mode: "exact",
       symbols: [symbol("one"), symbol("two")],
       files: ["src/a.ts", "src/b.ts", "src/c.ts"],
     };

@@ -153,7 +153,7 @@ export const resolveCommand: Command<ResolveResult, ResolveArgs> = {
     const filesSection = matchingFiles.filter((file) => !symbolFiles.has(file));
     return {
       query: ctx.args.query,
-      fuzzy: mode === "fuzzy",
+      mode,
       symbols: sortedSymbols,
       files: filesSection,
     };

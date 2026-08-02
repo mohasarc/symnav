@@ -1,4 +1,4 @@
-Resolve: ^to[A-Z].*
+Resolve: ^to[A-Z].* (regex)
 
 Symbols
 └── src/converters.ts

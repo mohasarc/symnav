@@ -8,7 +8,7 @@ describe("renderResolveJson", () => {
   it("emits a parseable JSON object with the canonical keys", () => {
     const result: ResolveResult = {
       query: "Payment",
-      fuzzy: true,
+      mode: "fuzzy",
       symbols: [
         {
           type: "symbol",
@@ -30,7 +30,7 @@ describe("renderResolveJson", () => {
   it("emits keys in ResolveResult declaration order", () => {
     const result: ResolveResult = {
       query: "x",
-      fuzzy: false,
+      mode: "exact",
       symbols: [],
       files: [],
     };
@@ -39,7 +39,7 @@ describe("renderResolveJson", () => {
       [
         "{",
         '  "query": "x",',
-        '  "fuzzy": false,',
+        '  "mode": "exact",',
         '  "symbols": [],',
         '  "files": []',
         "}",

@@ -16,12 +16,12 @@ describe("symnav resolve e2e (regex)", () => {
     expect(r.status).toBe(0);
     const parsed = JSON.parse(r.stdout) as {
       query: string;
-      fuzzy: boolean;
+      mode: string;
       symbols: readonly { identity: { segments: readonly { name: string }[] } }[];
       files: readonly string[];
     };
     expect(parsed.query).toBe("^to[A-Z].*");
-    expect(parsed.fuzzy).toBe(false);
+    expect(parsed.mode).toBe("regex");
     expect(parsed.symbols.map((symbol) => symbol.identity.segments.at(-1)?.name)).toEqual([
       "toOrder",
       "toReceipt",

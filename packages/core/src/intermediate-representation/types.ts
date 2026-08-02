@@ -1,4 +1,5 @@
 import type { SymbolIdentity } from "./symbol-identity.js";
+import type { ResolveSymbolsMode } from "../backend/language-backend.js";
 import type { NavigationDiagnostic } from "../diagnostics/navigation-diagnostic.js";
 import type { SymbolOverviewNode } from "./overview-tree.js";
 
@@ -25,7 +26,7 @@ export interface ResultWithDiagnostics {
 
 export interface ResolveResult {
   readonly query: string;
-  readonly fuzzy: boolean;
+  readonly mode: ResolveSymbolsMode;
   readonly symbols: readonly SymbolOverviewNode[];
   readonly files: readonly string[];
 }

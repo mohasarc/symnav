@@ -5,7 +5,7 @@ import { formatHeadLine, formatIdentityPath, treeGlyphsFor } from "../shared/ren
 
 export function renderResolveText(result: ResolveResult): string {
   return (
-    `Resolve: ${result.query}\n` +
+    `Resolve: ${result.query} (${result.mode})\n` +
     "\n" +
     renderSymbolsSection(result.symbols) +
     "\n" +

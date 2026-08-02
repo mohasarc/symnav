@@ -248,7 +248,7 @@ symnav resolve --fuzzy Payment
 ```
 
 ```text
-Resolve: Payment
+Resolve: Payment (fuzzy)
 
 Symbols
 ├── src/checkout/CheckoutService.ts

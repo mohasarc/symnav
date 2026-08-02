@@ -1,4 +1,4 @@
-Resolve: payment
+Resolve: payment (fuzzy)
 
 Symbols
 ├── src/checkout/CheckoutService.ts

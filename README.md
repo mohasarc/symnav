@@ -6,7 +6,7 @@ A CLI for navigating TypeScript codebases by symbol.
 
 `overview`, `resolve`, `def`, and `refs` navigate symbols. `context <target>` prints one block per symbol: its definition, direct callers, direct callees, a reference summary, and recent git history.
 
-`context` is workspace-only and certain-edges-only. Callers and callees count only statically-resolved calls to non-ignored workspace files, capped at 20 per direction; overflow points at `graph`. Possible and dynamic edges (element-access dispatch, calls into `node_modules`) are dropped here — `graph` surfaces them. An ambiguous target — an interface method with multiple implementations — is refused with `Cannot answer:`; query one implementation directly.
+`context` is workspace-only and certain-edges-only. Callers and callees count only statically-resolved calls to non-ignored workspace files, capped at 20 per direction; overflow points at `graph`. Possible and dynamic edges (element-access dispatch, calls into `node_modules`) are dropped here — `graph` surfaces them. An ambiguous target is refused with `Cannot answer:`; copy one printed candidate and query that directly.
 
 Symbol commands accept suffix targets. Use the shortest target that is unique; when a target is ambiguous, copy one printed candidate.
 

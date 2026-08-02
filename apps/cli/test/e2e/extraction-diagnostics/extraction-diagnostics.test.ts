@@ -1,11 +1,10 @@
 import { join } from "node:path";
-import { beforeAll, describe, expect, it } from "vitest";
-import { fixturePath, runSymnavBinary } from "@symnav/testing";
+import { describe, expect, it } from "vitest";
 
-import { ensureFixtureGitMarker } from "../ensure-fixture-git-marker.js";
+import { FixtureRunner } from "../fixture-runner.js";
 
-const fixtureRoot = fixturePath("extraction-v2-cases");
-const cleanFixtureRoot = fixturePath("definition-cases");
+const runner = new FixtureRunner("extraction-v2-cases");
+const cleanRunner = new FixtureRunner("definition-cases");
 const snapshotsDir = new URL("./__snapshots__/", import.meta.url).pathname;
 const warningMessage =
   "skipped unrecognised statement syntax at src/unsupported-statement.ts:5 (MissingDeclaration)";
@@ -16,17 +15,12 @@ function snapshot(name: string): string {
 }
 
 function runSymnav(args: readonly string[]) {
-  return runSymnavBinary(args, { cwd: fixtureRoot });
+  return runner.run(args);
 }
 
 function expectOnlyUnsupportedStatementWarning(stderr: string): void {
   expect(stderr).toBe(warning);
 }
-
-beforeAll(() => {
-  ensureFixtureGitMarker(fixtureRoot);
-  ensureFixtureGitMarker(cleanFixtureRoot);
-});
 
 describe("symnav extraction diagnostics e2e", () => {
   it("skips known namespace export syntax silently", () => {
@@ -124,9 +118,7 @@ describe("symnav extraction diagnostics e2e", () => {
   );
 
   it("omits the diagnostics field from --json payloads on a clean project", () => {
-    const r = runSymnavBinary(["def", "src/http/Router.ts::Router::post", "--json"], {
-      cwd: cleanFixtureRoot,
-    });
+    const r = cleanRunner.run(["def", "src/http/Router.ts::Router::post", "--json"]);
 
     expect(r.stderr).toBe("");
     expect(r.status).toBe(0);

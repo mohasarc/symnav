@@ -9,7 +9,7 @@ import type { WorkspaceDeclarationIndex } from "../identity/workspace-declaratio
 import { findDefinitions } from "../definition/find-definitions.js";
 
 export interface FindCallTargetArgs {
-  readonly index: WorkspaceDeclarationIndex;
+  readonly declarationIndex: WorkspaceDeclarationIndex;
   readonly files: readonly ResolvedPath[];
   readonly identity: SymbolIdentity;
 }

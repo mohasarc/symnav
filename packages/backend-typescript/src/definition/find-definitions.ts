@@ -13,7 +13,7 @@ import { DeclarationLocator, type LocatedDeclaration } from "../identity/locate-
 import type { WorkspaceDeclarationIndex } from "../identity/workspace-declaration-index.js";
 
 export interface FindDefinitionsArgs {
-  readonly index: WorkspaceDeclarationIndex;
+  readonly declarationIndex: WorkspaceDeclarationIndex;
   readonly files: readonly ResolvedPath[];
   readonly identity: SymbolIdentity;
 }
@@ -21,19 +21,19 @@ export interface FindDefinitionsArgs {
 export async function findDefinitions(
   args: FindDefinitionsArgs,
 ): Promise<readonly SymbolOverviewNode[]> {
-  args.index.ensureFiles(args.files);
+  args.declarationIndex.ensureFiles(args.files);
   return new DefinitionFinder(args).find();
 }
 
 class DefinitionFinder {
-  private readonly index: WorkspaceDeclarationIndex;
+  private readonly declarationIndex: WorkspaceDeclarationIndex;
 
   constructor(private readonly args: FindDefinitionsArgs) {
-    this.index = args.index;
+    this.declarationIndex = args.declarationIndex;
   }
 
   async find(): Promise<readonly SymbolOverviewNode[]> {
-    const matches = this.index.locate(this.args.identity);
+    const matches = this.declarationIndex.locate(this.args.identity);
     return this.withContractImplementations(matches);
   }
 
@@ -74,11 +74,11 @@ class DefinitionFinder {
     const segments = [...enclosingTypeNames(methodNode), methodNode.getName()].map((name) => ({
       name,
     }));
-    return this.index.declarationForIdentity({ file: filePath, segments })?.declaration;
+    return this.declarationIndex.declarationForIdentity({ file: filePath, segments })?.declaration;
   }
 
   private workspaceRelativePathOf(sourceFile: SourceFile): string | undefined {
-    return this.index.relativePathOf(sourceFile);
+    return this.declarationIndex.relativePathOf(sourceFile);
   }
 }
 

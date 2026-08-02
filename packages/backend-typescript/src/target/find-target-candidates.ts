@@ -14,7 +14,7 @@ import {
 import type { WorkspaceDeclarationIndex } from "../identity/workspace-declaration-index.js";
 
 export interface FindTargetCandidatesArgs {
-  readonly index: WorkspaceDeclarationIndex;
+  readonly declarationIndex: WorkspaceDeclarationIndex;
   readonly files: readonly ResolvedPath[];
   readonly pattern: SymbolTargetPattern;
   readonly options: ResolveSymbolTargetOptions;
@@ -23,10 +23,10 @@ export interface FindTargetCandidatesArgs {
 export class TargetCandidateFinder {
   static async find(args: FindTargetCandidatesArgs): Promise<readonly SymbolTargetCandidate[]> {
     validateResolveSymbolTargetOptions(args.options);
-    args.index.ensureFiles(args.files);
+    args.declarationIndex.ensureFiles(args.files);
     const candidates: SymbolTargetCandidate[] = [];
     for (const file of args.files) {
-      for (const symbol of args.index.declarationsIn(file.relative) ?? []) {
+      for (const symbol of args.declarationIndex.declarationsIn(file.relative) ?? []) {
         if (!SymbolTargetGrammar.matches(args.pattern, symbol.identity)) continue;
         if (!TargetCandidateFinder.matchesLine(args.options.containingLine, symbol)) continue;
         candidates.push({

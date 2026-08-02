@@ -76,7 +76,7 @@ export class TypeScriptBackend implements LanguageBackend {
     options: ResolveSymbolTargetOptions,
   ): Promise<readonly SymbolTargetCandidate[]> {
     return TargetCandidateFinder.find({
-      index: this.sharedDeclarationIndex(),
+      declarationIndex: this.sharedDeclarationIndex(),
       files,
       pattern,
       options,
@@ -87,7 +87,7 @@ export class TypeScriptBackend implements LanguageBackend {
     files: readonly ResolvedPath[],
     identity: SymbolIdentity,
   ): Promise<readonly SymbolOverviewNode[]> {
-    return findDefinitions({ index: this.sharedDeclarationIndex(), files, identity });
+    return findDefinitions({ declarationIndex: this.sharedDeclarationIndex(), files, identity });
   }
 
   async findReferences(
@@ -101,21 +101,21 @@ export class TypeScriptBackend implements LanguageBackend {
     files: readonly ResolvedPath[],
     identity: SymbolIdentity,
   ): Promise<CallTargetResolution> {
-    return findCallTarget({ index: this.sharedDeclarationIndex(), files, identity });
+    return findCallTarget({ declarationIndex: this.sharedDeclarationIndex(), files, identity });
   }
 
   async findCallees(
     files: readonly ResolvedPath[],
     identity: SymbolIdentity,
   ): Promise<readonly CallEdge[]> {
-    return findCallees({ index: this.sharedDeclarationIndex(), files, identity });
+    return findCallees({ declarationIndex: this.sharedDeclarationIndex(), files, identity });
   }
 
   async findCallers(
     files: readonly ResolvedPath[],
     identity: SymbolIdentity,
   ): Promise<readonly CallEdge[]> {
-    return findCallers({ index: this.sharedDeclarationIndex(), files, identity });
+    return findCallers({ declarationIndex: this.sharedDeclarationIndex(), files, identity });
   }
 }
 

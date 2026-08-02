@@ -68,7 +68,7 @@ function sortedCanonicalIds(candidates: readonly SymbolTargetCandidate[]): reado
 describe("TargetCandidateFinder.find", () => {
   it("returns the one candidate matching a unique bare-name pattern", async () => {
     const candidates = await TargetCandidateFinder.find({
-      index: new WorkspaceDeclarationIndex(fsWithFixture()),
+      declarationIndex: new WorkspaceDeclarationIndex(fsWithFixture()),
       files: ALL_FILES,
       pattern: SymbolTargetGrammar.parse("helper"),
       options: { containingLine: undefined },
@@ -85,7 +85,7 @@ describe("TargetCandidateFinder.find", () => {
 
   it("walks through fold nodes while returning only declaration symbols", async () => {
     const candidates = await TargetCandidateFinder.find({
-      index: new WorkspaceDeclarationIndex(fsWithFixture()),
+      declarationIndex: new WorkspaceDeclarationIndex(fsWithFixture()),
       files: ALL_FILES,
       pattern: SymbolTargetGrammar.parse("insideIf"),
       options: { containingLine: undefined },
@@ -101,7 +101,7 @@ describe("TargetCandidateFinder.find", () => {
 
   it("keeps a candidate when the supplied line is inside its declaration range", async () => {
     const candidates = await TargetCandidateFinder.find({
-      index: new WorkspaceDeclarationIndex(fsWithFixture()),
+      declarationIndex: new WorkspaceDeclarationIndex(fsWithFixture()),
       files: ALL_FILES,
       pattern: SymbolTargetGrammar.parse("helper"),
       options: { containingLine: 2 },
@@ -114,7 +114,7 @@ describe("TargetCandidateFinder.find", () => {
   it("rejects a non-positive containingLine before searching", async () => {
     await expect(
       TargetCandidateFinder.find({
-        index: new WorkspaceDeclarationIndex(fsWithFixture()),
+        declarationIndex: new WorkspaceDeclarationIndex(fsWithFixture()),
         files: ALL_FILES,
         pattern: SymbolTargetGrammar.parse("helper"),
         options: { containingLine: 0 },
@@ -124,7 +124,7 @@ describe("TargetCandidateFinder.find", () => {
 
   it("drops candidates whose declaration range excludes the supplied line", async () => {
     const candidates = await TargetCandidateFinder.find({
-      index: new WorkspaceDeclarationIndex(fsWithFixture()),
+      declarationIndex: new WorkspaceDeclarationIndex(fsWithFixture()),
       files: ALL_FILES,
       pattern: SymbolTargetGrammar.parse("helper"),
       options: { containingLine: 99 },
@@ -135,7 +135,7 @@ describe("TargetCandidateFinder.find", () => {
 
   it("keeps only the candidate whose declaration range contains the supplied line", async () => {
     const candidates = await TargetCandidateFinder.find({
-      index: new WorkspaceDeclarationIndex(fsWithFixture()),
+      declarationIndex: new WorkspaceDeclarationIndex(fsWithFixture()),
       files: pathsFor(["src/json.ts", "src/spaced.ts"]),
       pattern: SymbolTargetGrammar.parse("parse"),
       options: { containingLine: 4 },
@@ -146,7 +146,7 @@ describe("TargetCandidateFinder.find", () => {
 
   it("returns an empty list for zero matches without throwing", async () => {
     const candidates = await TargetCandidateFinder.find({
-      index: new WorkspaceDeclarationIndex(fsWithFixture()),
+      declarationIndex: new WorkspaceDeclarationIndex(fsWithFixture()),
       files: ALL_FILES,
       pattern: SymbolTargetGrammar.parse("missing"),
       options: { containingLine: undefined },
@@ -157,7 +157,7 @@ describe("TargetCandidateFinder.find", () => {
 
   it("returns every matching declaration candidate in any order", async () => {
     const candidates = await TargetCandidateFinder.find({
-      index: new WorkspaceDeclarationIndex(fsWithFixture()),
+      declarationIndex: new WorkspaceDeclarationIndex(fsWithFixture()),
       files: ALL_FILES,
       pattern: SymbolTargetGrammar.parse("parse"),
       options: { containingLine: undefined },

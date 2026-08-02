@@ -1,4 +1,4 @@
-Resolve: stillVisible
+Resolve: stillVisible (exact)
 
 Symbols
 └── src/unsupported-statement.ts

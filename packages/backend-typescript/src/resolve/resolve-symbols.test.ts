@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { InMemoryFileSystem, InvalidResolveRegexError, type ResolvedPath } from "@symnav/core";
+import { InMemoryFileSystem, type ResolvedPath } from "@symnav/core";
 
 import { resolveSymbols } from "./resolve-symbols.js";
 
@@ -204,20 +204,9 @@ describe("resolveSymbols (regex)", () => {
       fs: fsWithFixture(),
       files: ALL_FILES,
       query: "^to[A-Z].*",
-      options: { mode: "regex" },
+      options: { mode: "regex", regex: /^to[A-Z].*/ },
     });
 
     expect(names(result)).toEqual(["Converter::toPayment", "toReceipt"]);
-  });
-
-  it("returns a user-facing error for an invalid regex", async () => {
-    await expect(
-      resolveSymbols({
-        fs: fsWithFixture(),
-        files: ALL_FILES,
-        query: "[",
-        options: { mode: "regex" },
-      }),
-    ).rejects.toBeInstanceOf(InvalidResolveRegexError);
   });
 });

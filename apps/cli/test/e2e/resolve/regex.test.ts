@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { runResolve, snapshot } from "./run-resolve.js";
+import { noSupportedFilesFixtureRoot, runResolve, snapshot } from "./run-resolve.js";
 
 describe("symnav resolve e2e (regex)", () => {
   it("renders symbols whose own names match the regex", async () => {
@@ -31,6 +31,15 @@ describe("symnav resolve e2e (regex)", () => {
 
   it("reports an invalid regex with the pattern stated once", () => {
     const r = runResolve(["resolve", "--regex", "["]);
+    expect(r.stdout).toBe("");
+    expect(r.stderr).toBe(
+      'Cannot answer: invalid resolve regex "[": Unterminated character class.\n',
+    );
+    expect(r.status).toBe(1);
+  });
+
+  it("reports an invalid regex even when the workspace has no supported files", () => {
+    const r = runResolve(["resolve", "--regex", "["], noSupportedFilesFixtureRoot);
     expect(r.stdout).toBe("");
     expect(r.stderr).toBe(
       'Cannot answer: invalid resolve regex "[": Unterminated character class.\n',

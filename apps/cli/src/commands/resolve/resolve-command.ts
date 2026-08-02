@@ -5,8 +5,10 @@ import type {
   ResolvedPath,
   ResolveResult,
   ResolveSymbolsMode,
+  ResolveSymbolsOptions,
   SymbolOverviewNode,
 } from "@symnav/core";
+import { compileResolveRegex } from "@symnav/core";
 import { renderResolveJson, renderResolveText, ResolveErrorRenderer } from "@symnav/renderer";
 import fuzzysort from "fuzzysort";
 
@@ -34,9 +36,10 @@ export const resolveCommand: Command<ResolveResult, ResolveArgs> = {
   },
   async compute(ctx: CommandContext<ResolveArgs>): Promise<ResolveResult> {
     const mode = resolveModeFrom(ctx.args);
+    const options = resolveSymbolsOptionsFrom(mode, ctx.args.query);
     const files = await ctx.workspace.enumerate();
     const groups = groupFilesByBackend(files, ctx.router);
-    const symbols = await collectSymbols(groups, ctx.args.query, mode);
+    const symbols = await collectSymbols(groups, ctx.args.query, options);
     const sortedSymbols = sortSymbols(symbols);
     const matchingFiles = matchFilesByBasename(files, ctx.args.query, mode);
     const symbolFiles = new Set(sortedSymbols.map((s) => s.identity.file));
@@ -60,6 +63,16 @@ function resolveModeFrom(args: ResolveArgs): ResolveSymbolsMode {
   if (args.fuzzy) return "fuzzy";
   if (args.regex) return "regex";
   return "exact";
+}
+
+function resolveSymbolsOptionsFrom(mode: ResolveSymbolsMode, query: string): ResolveSymbolsOptions {
+  if (mode === "regex") {
+    return { mode: "regex", regex: compileResolveRegex(query) };
+  }
+  if (mode === "fuzzy") {
+    return { mode: "fuzzy" };
+  }
+  return { mode: "exact" };
 }
 
 function resolveFlags(args: ResolveArgs): string[] {
@@ -87,11 +100,11 @@ function groupFilesByBackend(
 async function collectSymbols(
   groups: ReadonlyMap<LanguageBackend, readonly ResolvedPath[]>,
   query: string,
-  mode: ResolveSymbolsMode,
+  options: ResolveSymbolsOptions,
 ): Promise<SymbolOverviewNode[]> {
   const results: SymbolOverviewNode[] = [];
   for (const [backend, backendFiles] of groups) {
-    const decls = await backend.resolveSymbols(backendFiles, query, { mode });
+    const decls = await backend.resolveSymbols(backendFiles, query, options);
     results.push(...decls);
   }
   return results;

@@ -12,9 +12,10 @@ import type { ResolvedPath } from "../workspace/workspace.js";
 
 export type ResolveSymbolsMode = "exact" | "fuzzy" | "regex";
 
-export interface ResolveSymbolsOptions {
-  readonly mode: ResolveSymbolsMode;
-}
+export type ResolveSymbolsOptions =
+  | { readonly mode: "exact" }
+  | { readonly mode: "fuzzy" }
+  | { readonly mode: "regex"; readonly regex: RegExp };
 
 export interface ResolveSymbolTargetOptions {
   readonly containingLine: number | undefined;

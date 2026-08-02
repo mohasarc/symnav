@@ -1,9 +1,8 @@
-import {
-  InvalidResolveRegexError,
-  type FileSystem,
-  type ResolveSymbolsOptions,
-  type ResolvedPath,
-  type SymbolOverviewNode,
+import type {
+  FileSystem,
+  ResolveSymbolsOptions,
+  ResolvedPath,
+  SymbolOverviewNode,
 } from "@symnav/core";
 import { formatSymbolIdentity, OverviewTree } from "@symnav/core";
 import fuzzysort from "fuzzysort";
@@ -25,7 +24,7 @@ export async function resolveSymbols(
     return fuzzyMatch(candidates, args.query);
   }
   if (args.options.mode === "regex") {
-    return regexMatch(candidates, args.query);
+    return regexMatch(candidates, args.options.regex);
   }
   return exactMatch(candidates, args.query);
 }
@@ -61,22 +60,7 @@ function fuzzyMatch(
 
 function regexMatch(
   candidates: readonly SymbolOverviewNode[],
-  query: string,
+  regex: RegExp,
 ): readonly SymbolOverviewNode[] {
-  const regex = compileRegex(query);
   return candidates.filter((decl) => regex.test(OverviewTree.ownName(decl)));
-}
-
-function compileRegex(query: string): RegExp {
-  try {
-    return new RegExp(query);
-  } catch (err) {
-    throw new InvalidResolveRegexError(query, regexErrorDetail(query, err));
-  }
-}
-
-function regexErrorDetail(query: string, err: unknown): string {
-  const message = err instanceof Error ? err.message : String(err);
-  const v8Prefix = `Invalid regular expression: /${query}/: `;
-  return message.startsWith(v8Prefix) ? message.slice(v8Prefix.length) : message;
 }

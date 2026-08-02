@@ -12,10 +12,12 @@ import fuzzysort from "fuzzysort";
 
 import type { Command, CommandContext } from "../../command.js";
 import { classifyArgKind, lengthBucketOf } from "../../telemetry/arg-shape.js";
+import { ConflictingResolveFlagsError } from "./conflicting-resolve-flags-error.js";
 
 export interface ResolveArgs {
   readonly query: string;
-  readonly mode: ResolveSymbolsMode;
+  readonly fuzzy: boolean;
+  readonly regex: boolean;
 }
 
 export const resolveCommand: Command<ResolveResult, ResolveArgs> = {
@@ -24,23 +26,24 @@ export const resolveCommand: Command<ResolveResult, ResolveArgs> = {
     return {
       kind: classifyArgKind(args.query),
       lengthBucket: lengthBucketOf(args.query),
-      flags: args.mode === "exact" ? [] : [args.mode],
+      flags: resolveFlags(args),
     };
   },
   countResults(result: ResolveResult) {
     return { symbols: result.symbols.length, files: result.files.length };
   },
   async compute(ctx: CommandContext<ResolveArgs>): Promise<ResolveResult> {
+    const mode = resolveModeFrom(ctx.args);
     const files = await ctx.workspace.enumerate();
     const groups = groupFilesByBackend(files, ctx.router);
-    const symbols = await collectSymbols(groups, ctx.args.query, ctx.args.mode);
+    const symbols = await collectSymbols(groups, ctx.args.query, mode);
     const sortedSymbols = sortSymbols(symbols);
-    const matchingFiles = matchFilesByBasename(files, ctx.args.query, ctx.args.mode);
+    const matchingFiles = matchFilesByBasename(files, ctx.args.query, mode);
     const symbolFiles = new Set(sortedSymbols.map((s) => s.identity.file));
     const filesSection = matchingFiles.filter((file) => !symbolFiles.has(file));
     return {
       query: ctx.args.query,
-      fuzzy: ctx.args.mode === "fuzzy",
+      fuzzy: mode === "fuzzy",
       symbols: sortedSymbols,
       files: filesSection,
     };
@@ -48,6 +51,19 @@ export const resolveCommand: Command<ResolveResult, ResolveArgs> = {
   renderText: renderResolveText,
   renderJson: renderResolveJson,
 };
+
+function resolveModeFrom(args: ResolveArgs): ResolveSymbolsMode {
+  if (args.fuzzy && args.regex) {
+    throw new ConflictingResolveFlagsError();
+  }
+  if (args.fuzzy) return "fuzzy";
+  if (args.regex) return "regex";
+  return "exact";
+}
+
+function resolveFlags(args: ResolveArgs): string[] {
+  return [...(args.fuzzy ? ["fuzzy"] : []), ...(args.regex ? ["regex"] : [])].sort();
+}
 
 function groupFilesByBackend(
   files: readonly ResolvedPath[],

@@ -65,7 +65,7 @@ describe("command telemetry descriptors", () => {
   });
 
   it("describes resolve arguments", () => {
-    expect(resolveCommand.describeArgs({ query: "Foo", mode: "fuzzy" })).toEqual({
+    expect(resolveCommand.describeArgs({ query: "Foo", fuzzy: true, regex: false })).toEqual({
       kind: "bare",
       lengthBucket: "short",
       flags: ["fuzzy"],
@@ -73,11 +73,13 @@ describe("command telemetry descriptors", () => {
   });
 
   it("describes resolve regex arguments", () => {
-    expect(resolveCommand.describeArgs({ query: "^to[A-Z].*", mode: "regex" })).toEqual({
-      kind: "bare",
-      lengthBucket: "short",
-      flags: ["regex"],
-    });
+    expect(resolveCommand.describeArgs({ query: "^to[A-Z].*", fuzzy: false, regex: true })).toEqual(
+      {
+        kind: "bare",
+        lengthBucket: "short",
+        flags: ["regex"],
+      },
+    );
   });
 
   it("describes def arguments", () => {

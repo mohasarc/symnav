@@ -1,4 +1,3 @@
-import type { ResolveSymbolsMode } from "@symnav/core";
 import type { Command as CommanderCommand } from "commander";
 
 import { runCommand } from "../../command.js";
@@ -24,26 +23,13 @@ export function registerResolveCommand(
     .option("--regex", "match by JavaScript regex against symbol names", false)
     .option("--json", "emit JSON instead of text", false)
     .action(async (query: string, options: ResolveOptions) => {
-      if (options.fuzzy && options.regex) {
-        context.stderr.write("Cannot answer: --regex cannot be combined with --fuzzy.\n");
-        context.exit(1);
-        return;
-      }
       const cwdOverride = program.opts<{ cwd?: string }>().cwd;
       await runCommand(resolveCommand, {
         context,
         dependencies,
         cwdOverride,
         json: options.json,
-        args: { query, mode: ResolveOptionsResolver.resolveMode(options) },
+        args: { query, fuzzy: options.fuzzy, regex: options.regex },
       });
     });
-}
-
-class ResolveOptionsResolver {
-  static resolveMode(options: ResolveOptions): ResolveSymbolsMode {
-    if (options.fuzzy) return "fuzzy";
-    if (options.regex) return "regex";
-    return "exact";
-  }
 }

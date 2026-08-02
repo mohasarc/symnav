@@ -1,4 +1,4 @@
-Resolve: ^build[A-Z]
+Resolve: ^build[A-Z] (regex)
 
 Symbols
 └── src/agent-workflow.ts

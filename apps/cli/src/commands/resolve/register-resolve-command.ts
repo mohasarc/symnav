@@ -20,7 +20,7 @@ export function registerResolveCommand(
     .command("resolve <query>")
     .description("Find matching symbols and files for a name")
     .option("--fuzzy", "match by fuzzy subsequence instead of exact name", false)
-    .option("--regex", "match by JavaScript regex against symbol names", false)
+    .option("--regex", "match by JavaScript regex instead of exact name", false)
     .option("--json", "emit JSON instead of text", false)
     .action(async (query: string, options: ResolveOptions) => {
       const cwdOverride = program.opts<{ cwd?: string }>().cwd;

@@ -89,16 +89,20 @@ class ResolveComputation {
   static matchFilesByBasename(
     files: readonly ResolvedPath[],
     query: string,
-    mode: ResolveSymbolsMode,
+    options: ResolveSymbolsOptions,
   ): string[] {
     const indexed = files.map((file) => ({
       relative: file.relative,
       basename: ResolveComputation.stripExtension(posix.basename(file.relative)),
     }));
-    if (mode === "regex") {
-      return [];
+    if (options.mode === "regex") {
+      const { regex } = options;
+      return indexed
+        .filter((entry) => regex.test(entry.basename))
+        .map((entry) => entry.relative)
+        .sort(ResolveComputation.compareStringsAscending);
     }
-    if (mode === "fuzzy") {
+    if (options.mode === "fuzzy") {
       const ranked = fuzzysort.go(query, indexed, { key: "basename" });
       return ranked
         .map((result) => result.obj.relative)
@@ -144,7 +148,7 @@ export const resolveCommand: Command<ResolveResult, ResolveArgs> = {
     }
     const symbols = await ResolveComputation.collectSymbols(groups, ctx.args.query, options);
     const sortedSymbols = ResolveComputation.sortSymbols(symbols);
-    const matchingFiles = ResolveComputation.matchFilesByBasename(files, ctx.args.query, mode);
+    const matchingFiles = ResolveComputation.matchFilesByBasename(files, ctx.args.query, options);
     const symbolFiles = new Set(sortedSymbols.map((s) => s.identity.file));
     const filesSection = matchingFiles.filter((file) => !symbolFiles.has(file));
     return {

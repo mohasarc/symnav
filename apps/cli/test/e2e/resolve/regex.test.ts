@@ -26,7 +26,7 @@ describe("symnav resolve e2e (regex)", () => {
       "toOrder",
       "toReceipt",
     ]);
-    expect(parsed.files).toEqual([]);
+    expect(parsed.files).toEqual(["src/toOrderHelpers.ts"]);
   });
 
   it("reports an invalid regex with the pattern stated once", () => {

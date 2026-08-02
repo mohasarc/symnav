@@ -8,7 +8,7 @@ import type {
   ResolveSymbolsOptions,
   SymbolOverviewNode,
 } from "@symnav/core";
-import { compileResolveRegex } from "@symnav/core";
+import { compileResolveRegex, NoSupportedFilesError } from "@symnav/core";
 import { renderResolveJson, renderResolveText, ResolveErrorRenderer } from "@symnav/renderer";
 import fuzzysort from "fuzzysort";
 
@@ -39,6 +39,9 @@ export const resolveCommand: Command<ResolveResult, ResolveArgs> = {
     const options = resolveSymbolsOptionsFrom(mode, ctx.args.query);
     const files = await ctx.workspace.enumerate();
     const groups = groupFilesByBackend(files, ctx.router);
+    if (groups.size === 0) {
+      throw new NoSupportedFilesError();
+    }
     const symbols = await collectSymbols(groups, ctx.args.query, options);
     const sortedSymbols = sortSymbols(symbols);
     const matchingFiles = matchFilesByBasename(files, ctx.args.query, mode);

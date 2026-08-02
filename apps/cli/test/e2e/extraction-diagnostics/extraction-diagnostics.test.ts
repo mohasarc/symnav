@@ -5,9 +5,11 @@ import { fixturePath, runSymnavBinary } from "@symnav/testing";
 import { ensureFixtureGitMarker } from "../ensure-fixture-git-marker.js";
 
 const fixtureRoot = fixturePath("extraction-v2-cases");
+const cleanFixtureRoot = fixturePath("definition-cases");
 const snapshotsDir = new URL("./__snapshots__/", import.meta.url).pathname;
-const warning =
-  "Warning: skipped unrecognised statement syntax at src/unsupported-statement.ts:5 (MissingDeclaration)\n";
+const warningMessage =
+  "skipped unrecognised statement syntax at src/unsupported-statement.ts:5 (MissingDeclaration)";
+const warning = `Warning: ${warningMessage}\n`;
 
 function snapshot(name: string): string {
   return join(snapshotsDir, name);
@@ -23,6 +25,7 @@ function expectOnlyUnsupportedStatementWarning(stderr: string): void {
 
 beforeAll(() => {
   ensureFixtureGitMarker(fixtureRoot);
+  ensureFixtureGitMarker(cleanFixtureRoot);
 });
 
 describe("symnav extraction diagnostics e2e", () => {
@@ -102,5 +105,31 @@ describe("symnav extraction diagnostics e2e", () => {
     expectOnlyUnsupportedStatementWarning(r.stderr);
     expect(r.status).toBe(0);
     await expect(r.stdout).toMatchFileSnapshot(snapshot("graph-still-visible.expected.txt"));
+  });
+
+  it.each(["resolve", "def", "refs", "context", "graph"])(
+    "embeds diagnostics in the %s --json payload",
+    (command) => {
+      const r = runSymnav([command, "stillVisible", "--json"]);
+
+      expectOnlyUnsupportedStatementWarning(r.stderr);
+      expect(r.status).toBe(0);
+      const parsed = JSON.parse(r.stdout) as {
+        diagnostics?: readonly { severity: string; message: string }[];
+      };
+      expect(parsed.diagnostics).toEqual([
+        expect.objectContaining({ severity: "warning", message: warningMessage }),
+      ]);
+    },
+  );
+
+  it("omits the diagnostics field from --json payloads on a clean project", () => {
+    const r = runSymnavBinary(["def", "src/http/Router.ts::Router::post", "--json"], {
+      cwd: cleanFixtureRoot,
+    });
+
+    expect(r.stderr).toBe("");
+    expect(r.status).toBe(0);
+    expect(JSON.parse(r.stdout)).not.toHaveProperty("diagnostics");
   });
 });

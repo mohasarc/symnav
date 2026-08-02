@@ -7,7 +7,7 @@ import type {
   ResolveSymbolsMode,
   SymbolOverviewNode,
 } from "@symnav/core";
-import { renderResolveJson, renderResolveText } from "@symnav/renderer";
+import { renderResolveJson, renderResolveText, ResolveErrorRenderer } from "@symnav/renderer";
 import fuzzysort from "fuzzysort";
 
 import type { Command, CommandContext } from "../../command.js";
@@ -50,6 +50,7 @@ export const resolveCommand: Command<ResolveResult, ResolveArgs> = {
   },
   renderText: renderResolveText,
   renderJson: renderResolveJson,
+  renderError: ResolveErrorRenderer.render,
 };
 
 function resolveModeFrom(args: ResolveArgs): ResolveSymbolsMode {

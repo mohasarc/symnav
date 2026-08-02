@@ -60,14 +60,20 @@ describe("SymbolNotFoundError", () => {
 
 describe("InvalidResolveRegexError", () => {
   it("is a UserFacingError", () => {
-    expect(new InvalidResolveRegexError("[", "unterminated character class")).toBeInstanceOf(
+    expect(new InvalidResolveRegexError("[", "Unterminated character class")).toBeInstanceOf(
       UserFacingError,
     );
   });
 
-  it("renders a reason containing the pattern and regex parser error", () => {
-    expect(new InvalidResolveRegexError("[", "unterminated character class").reason).toBe(
-      'invalid resolve regex "[": unterminated character class',
+  it("exposes the pattern and detail as fields", () => {
+    const err = new InvalidResolveRegexError("[", "Unterminated character class");
+    expect(err.pattern).toBe("[");
+    expect(err.detail).toBe("Unterminated character class");
+  });
+
+  it("renders a reason containing the pattern and detail", () => {
+    expect(new InvalidResolveRegexError("[", "Unterminated character class").reason).toBe(
+      'invalid resolve regex "[": Unterminated character class',
     );
   });
 });

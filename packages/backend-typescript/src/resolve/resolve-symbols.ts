@@ -71,7 +71,12 @@ function compileRegex(query: string): RegExp {
   try {
     return new RegExp(query);
   } catch (err) {
-    const reason = err instanceof Error ? err.message : String(err);
-    throw new InvalidResolveRegexError(query, reason);
+    throw new InvalidResolveRegexError(query, regexErrorDetail(query, err));
   }
+}
+
+function regexErrorDetail(query: string, err: unknown): string {
+  const message = err instanceof Error ? err.message : String(err);
+  const v8Prefix = `Invalid regular expression: /${query}/: `;
+  return message.startsWith(v8Prefix) ? message.slice(v8Prefix.length) : message;
 }

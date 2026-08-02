@@ -29,6 +29,15 @@ describe("symnav resolve e2e (regex)", () => {
     expect(parsed.files).toEqual([]);
   });
 
+  it("reports an invalid regex with the pattern stated once", () => {
+    const r = runResolve(["resolve", "--regex", "["]);
+    expect(r.stdout).toBe("");
+    expect(r.stderr).toBe(
+      'Cannot answer: invalid resolve regex "[": Unterminated character class.\n',
+    );
+    expect(r.status).toBe(1);
+  });
+
   it("rejects regex and fuzzy mode together", () => {
     const r = runResolve(["resolve", "--regex", "--fuzzy", "^to[A-Z].*"]);
     expect(r.stdout).toBe("");

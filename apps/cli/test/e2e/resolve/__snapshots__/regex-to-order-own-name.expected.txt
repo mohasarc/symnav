@@ -1,4 +1,4 @@
-Resolve: toOrder
+Resolve: toOrder (regex)
 
 Symbols
 ├── src/converters.ts
@@ -9,4 +9,4 @@ Symbols
         export function ontoOrderParent(): void
 
 Files
-(none)
+└── src/toOrderHelpers.ts

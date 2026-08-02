@@ -114,7 +114,7 @@ describe("symnav resolve e2e (help)", () => {
     expect(r.stderr).toBe("");
     expect(r.status).toBe(0);
     expect(r.stdout).toContain("--regex");
-    expect(r.stdout).toContain("match by JavaScript regex against symbol names");
+    expect(r.stdout).toContain("match by JavaScript regex instead of exact name");
   });
 
   it.each<SymbolCommand>(["def", "refs", "context", "graph"])(

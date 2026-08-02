@@ -1,4 +1,4 @@
-Resolve: toInvoice
+Resolve: toInvoice (regex)
 
 Symbols
 (none)

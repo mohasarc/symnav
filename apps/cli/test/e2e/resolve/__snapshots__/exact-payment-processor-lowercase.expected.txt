@@ -1,4 +1,4 @@
-Resolve: paymentprocessor
+Resolve: paymentprocessor (exact)
 
 Symbols
 (none)

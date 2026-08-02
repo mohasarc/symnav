@@ -1,4 +1,4 @@
-Resolve: ^NoSuch
+Resolve: ^NoSuch (regex)
 
 Symbols
 (none)

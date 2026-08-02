@@ -1,3 +1,4 @@
+import type { ResolveSymbolsMode } from "@symnav/core";
 import type { Command as CommanderCommand } from "commander";
 
 import { runCommand } from "../../command.js";
@@ -34,13 +35,15 @@ export function registerResolveCommand(
         dependencies,
         cwdOverride,
         json: options.json,
-        args: { query, mode: resolveMode(options) },
+        args: { query, mode: ResolveOptionsResolver.resolveMode(options) },
       });
     });
 }
 
-function resolveMode(options: ResolveOptions): "exact" | "fuzzy" | "regex" {
-  if (options.fuzzy) return "fuzzy";
-  if (options.regex) return "regex";
-  return "exact";
+class ResolveOptionsResolver {
+  static resolveMode(options: ResolveOptions): ResolveSymbolsMode {
+    if (options.fuzzy) return "fuzzy";
+    if (options.regex) return "regex";
+    return "exact";
+  }
 }

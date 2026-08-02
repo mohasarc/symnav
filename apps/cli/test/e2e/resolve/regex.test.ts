@@ -1,23 +1,6 @@
-import { join } from "node:path";
-import { beforeAll, describe, expect, it } from "vitest";
-import { fixturePath, runSymnavBinary } from "@symnav/testing";
+import { describe, expect, it } from "vitest";
 
-import { ensureFixtureGitMarker } from "../ensure-fixture-git-marker.js";
-
-const fixtureRoot = fixturePath("resolve-cases");
-const snapshotsDir = new URL("./__snapshots__/", import.meta.url).pathname;
-
-function snapshot(name: string): string {
-  return join(snapshotsDir, name);
-}
-
-function runResolve(args: readonly string[]) {
-  return runSymnavBinary(args, { cwd: fixtureRoot });
-}
-
-beforeAll(() => {
-  ensureFixtureGitMarker(fixtureRoot);
-});
+import { runResolve, snapshot } from "./run-resolve.js";
 
 describe("symnav resolve e2e (regex)", () => {
   it("renders symbols whose own names match the regex", async () => {

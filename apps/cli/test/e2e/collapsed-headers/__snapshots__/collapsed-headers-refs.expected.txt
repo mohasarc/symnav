@@ -5,4 +5,4 @@ Page: 1/1
 Sort: path, line
 
 collapsed-headers.ts
-└── 10: return leakyFunction("visible-call");  [usage]
+└── 12: return leakyFunction("visible-call");  [usage]

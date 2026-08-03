@@ -1,5 +1,5 @@
 Definition: leakyFunction
 
 collapsed-headers.ts
-└── 4-7: leakyFunction  [implementation]
+└── 6-9: leakyFunction  [implementation]
     export function leakyFunction(input: string): string

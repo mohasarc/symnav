@@ -112,7 +112,7 @@ describe("symnav e2e (collapsed definition and reference previews)", () => {
 
     expect(r.stderr).toBe("");
     expect(r.status).toBe(0);
-    expect(r.stdout).toContain('10: return leakyFunction("visible-call");  [usage]');
+    expect(r.stdout).toContain('12: return leakyFunction("visible-call");  [usage]');
     expect(r.stdout).toContain("Total: 1");
     expect(r.stdout).not.toContain("return input.toUpperCase");
     expect(r.stdout).not.toContain("throw new Error");

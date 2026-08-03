@@ -4,9 +4,35 @@
       "children": [],
       "header": {
         "lines": [
+          "declare const z: { object(shape: object): object; string(): object }"
+        ],
+        "startLine": 1
+      },
+      "identity": {
+        "file": "collapsed-headers.ts",
+        "segments": [
+          {
+            "name": "z"
+          }
+        ]
+      },
+      "kind": {
+        "nativeLabel": "variable",
+        "role": "value"
+      },
+      "range": {
+        "endLine": 1,
+        "startLine": 1
+      },
+      "type": "symbol"
+    },
+    {
+      "children": [],
+      "header": {
+        "lines": [
           "export function leakyFunction(input: string): string"
         ],
-        "startLine": 4
+        "startLine": 6
       },
       "identity": {
         "file": "collapsed-headers.ts",
@@ -21,8 +47,8 @@
         "role": "callable"
       },
       "range": {
-        "endLine": 7,
-        "startLine": 4
+        "endLine": 9,
+        "startLine": 6
       },
       "type": "symbol"
     },
@@ -32,7 +58,7 @@
         "lines": [
           "export function callsLeakyFunction(): string"
         ],
-        "startLine": 9
+        "startLine": 11
       },
       "identity": {
         "file": "collapsed-headers.ts",
@@ -47,8 +73,8 @@
         "role": "callable"
       },
       "range": {
-        "endLine": 11,
-        "startLine": 9
+        "endLine": 13,
+        "startLine": 11
       },
       "type": "symbol"
     },
@@ -60,7 +86,7 @@
             "lines": [
               "readHeader(name: string): string"
             ],
-            "startLine": 14
+            "startLine": 16
           },
           "identity": {
             "file": "collapsed-headers.ts",
@@ -78,8 +104,8 @@
             "role": "callable"
           },
           "range": {
-            "endLine": 14,
-            "startLine": 14
+            "endLine": 16,
+            "startLine": 16
           },
           "type": "symbol"
         }
@@ -88,7 +114,7 @@
         "lines": [
           "export interface HeaderContract"
         ],
-        "startLine": 13
+        "startLine": 15
       },
       "identity": {
         "file": "collapsed-headers.ts",
@@ -103,8 +129,8 @@
         "role": "container"
       },
       "range": {
-        "endLine": 15,
-        "startLine": 13
+        "endLine": 17,
+        "startLine": 15
       },
       "type": "symbol"
     },
@@ -117,7 +143,7 @@
           "  enabled: boolean;",
           "}"
         ],
-        "startLine": 17
+        "startLine": 19
       },
       "identity": {
         "file": "collapsed-headers.ts",
@@ -132,8 +158,8 @@
         "role": "type"
       },
       "range": {
-        "endLine": 20,
-        "startLine": 17
+        "endLine": 22,
+        "startLine": 19
       },
       "type": "symbol"
     },
@@ -143,7 +169,7 @@
         "lines": [
           "export enum HeaderMode"
         ],
-        "startLine": 22
+        "startLine": 24
       },
       "identity": {
         "file": "collapsed-headers.ts",
@@ -158,8 +184,8 @@
         "role": "container"
       },
       "range": {
-        "endLine": 25,
-        "startLine": 22
+        "endLine": 27,
+        "startLine": 24
       },
       "type": "symbol"
     },
@@ -171,7 +197,7 @@
             "lines": [
               "export const defaultName = \"x-header\""
             ],
-            "startLine": 28
+            "startLine": 30
           },
           "identity": {
             "file": "collapsed-headers.ts",
@@ -189,8 +215,8 @@
             "role": "value"
           },
           "range": {
-            "endLine": 28,
-            "startLine": 28
+            "endLine": 30,
+            "startLine": 30
           },
           "type": "symbol"
         },
@@ -200,7 +226,7 @@
             "lines": [
               "export function normalizeName(name: string): string"
             ],
-            "startLine": 30
+            "startLine": 32
           },
           "identity": {
             "file": "collapsed-headers.ts",
@@ -218,8 +244,8 @@
             "role": "callable"
           },
           "range": {
-            "endLine": 32,
-            "startLine": 30
+            "endLine": 34,
+            "startLine": 32
           },
           "type": "symbol"
         }
@@ -228,7 +254,7 @@
         "lines": [
           "export namespace HeaderNamespace"
         ],
-        "startLine": 27
+        "startLine": 29
       },
       "identity": {
         "file": "collapsed-headers.ts",
@@ -243,8 +269,8 @@
         "role": "container"
       },
       "range": {
-        "endLine": 33,
-        "startLine": 27
+        "endLine": 35,
+        "startLine": 29
       },
       "type": "symbol"
     },
@@ -256,7 +282,7 @@
             "lines": [
               "private readonly prefix: string"
             ],
-            "startLine": 36
+            "startLine": 38
           },
           "identity": {
             "file": "collapsed-headers.ts",
@@ -274,8 +300,8 @@
             "role": "value"
           },
           "range": {
-            "endLine": 36,
-            "startLine": 36
+            "endLine": 38,
+            "startLine": 38
           },
           "type": "symbol"
         },
@@ -285,7 +311,7 @@
             "lines": [
               "constructor(prefix: string)"
             ],
-            "startLine": 38
+            "startLine": 40
           },
           "identity": {
             "file": "collapsed-headers.ts",
@@ -303,8 +329,8 @@
             "role": "callable"
           },
           "range": {
-            "endLine": 40,
-            "startLine": 38
+            "endLine": 42,
+            "startLine": 40
           },
           "type": "symbol"
         },
@@ -314,7 +340,7 @@
             "lines": [
               "get label(): string"
             ],
-            "startLine": 42
+            "startLine": 44
           },
           "identity": {
             "file": "collapsed-headers.ts",
@@ -332,8 +358,8 @@
             "role": "callable"
           },
           "range": {
-            "endLine": 44,
-            "startLine": 42
+            "endLine": 46,
+            "startLine": 44
           },
           "type": "symbol"
         },
@@ -343,7 +369,7 @@
             "lines": [
               "readHeader(name: string): string"
             ],
-            "startLine": 46
+            "startLine": 48
           },
           "identity": {
             "file": "collapsed-headers.ts",
@@ -361,8 +387,8 @@
             "role": "callable"
           },
           "range": {
-            "endLine": 48,
-            "startLine": 46
+            "endLine": 50,
+            "startLine": 48
           },
           "type": "symbol"
         }
@@ -371,7 +397,7 @@
         "lines": [
           "export class HeaderService implements HeaderContract"
         ],
-        "startLine": 35
+        "startLine": 37
       },
       "identity": {
         "file": "collapsed-headers.ts",
@@ -386,8 +412,8 @@
         "role": "container"
       },
       "range": {
-        "endLine": 49,
-        "startLine": 35
+        "endLine": 51,
+        "startLine": 37
       },
       "type": "symbol"
     },
@@ -397,7 +423,7 @@
         "lines": [
           "export function overloads(input: string): string"
         ],
-        "startLine": 51
+        "startLine": 53
       },
       "identity": {
         "file": "collapsed-headers.ts",
@@ -413,8 +439,8 @@
         "role": "callable"
       },
       "range": {
-        "endLine": 51,
-        "startLine": 51
+        "endLine": 53,
+        "startLine": 53
       },
       "type": "symbol"
     },
@@ -424,7 +450,7 @@
         "lines": [
           "export function overloads(input: number): number"
         ],
-        "startLine": 52
+        "startLine": 54
       },
       "identity": {
         "file": "collapsed-headers.ts",
@@ -440,8 +466,8 @@
         "role": "callable"
       },
       "range": {
-        "endLine": 52,
-        "startLine": 52
+        "endLine": 54,
+        "startLine": 54
       },
       "type": "symbol"
     },
@@ -451,7 +477,7 @@
         "lines": [
           "export function overloads(input: string | number): string | number"
         ],
-        "startLine": 53
+        "startLine": 55
       },
       "identity": {
         "file": "collapsed-headers.ts",
@@ -467,8 +493,8 @@
         "role": "callable"
       },
       "range": {
-        "endLine": 55,
-        "startLine": 53
+        "endLine": 57,
+        "startLine": 55
       },
       "type": "symbol"
     },
@@ -478,7 +504,7 @@
         "lines": [
           "export const arrowHelper = (value: string): string => …"
         ],
-        "startLine": 57
+        "startLine": 59
       },
       "identity": {
         "file": "collapsed-headers.ts",
@@ -493,8 +519,8 @@
         "role": "value"
       },
       "range": {
-        "endLine": 59,
-        "startLine": 57
+        "endLine": 61,
+        "startLine": 59
       },
       "type": "symbol"
     },
@@ -504,7 +530,7 @@
         "lines": [
           "export const functionHelper = function headerFunction(value: string): string …"
         ],
-        "startLine": 61
+        "startLine": 63
       },
       "identity": {
         "file": "collapsed-headers.ts",
@@ -519,8 +545,8 @@
         "role": "value"
       },
       "range": {
-        "endLine": 63,
-        "startLine": 61
+        "endLine": 65,
+        "startLine": 63
       },
       "type": "symbol"
     },
@@ -530,7 +556,7 @@
         "lines": [
           "export const schema = z.object(…)"
         ],
-        "startLine": 65
+        "startLine": 67
       },
       "identity": {
         "file": "collapsed-headers.ts",
@@ -545,8 +571,8 @@
         "role": "value"
       },
       "range": {
-        "endLine": 70,
-        "startLine": 65
+        "endLine": 72,
+        "startLine": 67
       },
       "type": "symbol"
     },
@@ -556,7 +582,7 @@
         "lines": [
           "export const values = […]"
         ],
-        "startLine": 72
+        "startLine": 74
       },
       "identity": {
         "file": "collapsed-headers.ts",
@@ -571,8 +597,8 @@
         "role": "value"
       },
       "range": {
-        "endLine": 75,
-        "startLine": 72
+        "endLine": 77,
+        "startLine": 74
       },
       "type": "symbol"
     },
@@ -582,7 +608,7 @@
         "lines": [
           "export const callResult = functionHelper(\"ready\")"
         ],
-        "startLine": 77
+        "startLine": 79
       },
       "identity": {
         "file": "collapsed-headers.ts",
@@ -597,8 +623,8 @@
         "role": "value"
       },
       "range": {
-        "endLine": 77,
-        "startLine": 77
+        "endLine": 79,
+        "startLine": 79
       },
       "type": "symbol"
     }

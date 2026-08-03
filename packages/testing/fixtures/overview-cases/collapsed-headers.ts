@@ -1,3 +1,5 @@
+declare const z: { object(shape: object): object; string(): object };
+
 /**
  * JSDoc that should never leak into command output.
  */

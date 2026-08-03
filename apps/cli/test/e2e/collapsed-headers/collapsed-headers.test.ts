@@ -23,13 +23,16 @@ function normalizeRecentHistory(stdout: string): string {
 }
 
 function allHeaderLines(entries: readonly OverviewNode[]): string[] {
-  return entries.flatMap((entry) => [...entry.header.lines, ...allHeaderLines(entry.children)]);
+  return entries.flatMap((entry) => [
+    ...entry.header.lines,
+    ...allHeaderLines(entry.children ?? []),
+  ]);
 }
 
 type OverviewNode = {
   type: string;
   header: { lines: readonly string[] };
-  children: readonly OverviewNode[];
+  children?: readonly OverviewNode[];
 };
 
 describe("symnav overview e2e (collapsed headers)", () => {
@@ -48,6 +51,9 @@ describe("symnav overview e2e (collapsed headers)", () => {
     expect(r.stdout).toContain("export const arrowHelper = (value: string): string => …");
     expect(r.stdout).toContain("export const schema = z.object(…)");
     expect(r.stdout).toContain("export const values = […]");
+    expect(r.stdout).toContain("export { bareExported };");
+    expect(r.stdout).toContain("export default function defaultHeader(name: string): string");
+    expect(r.stdout).not.toContain("name.toLowerCase");
     expect(r.stdout).not.toContain("JSDoc that should never leak");
     expect(r.stdout).not.toContain("return input.toUpperCase");
     expect(r.stdout).not.toContain("throw new Error");
@@ -66,7 +72,7 @@ describe("symnav overview e2e (collapsed headers)", () => {
     const nodeTypes = new Set(parsed.entries.flatMap((entry) => collectNodeTypes(entry)));
     const headers = allHeaderLines(parsed.entries).join("\n");
 
-    expect(nodeTypes).toEqual(new Set(["symbol"]));
+    expect(nodeTypes).toEqual(new Set(["symbol", "re-export"]));
     expect(headers).toContain("export const arrowHelper = (value: string): string => …");
     expect(headers).toContain("export const schema = z.object(…)");
     expect(headers).toContain("export const values = […]");
@@ -121,5 +127,5 @@ describe("symnav e2e (collapsed definition and reference previews)", () => {
 });
 
 function collectNodeTypes(node: OverviewNode): string[] {
-  return [node.type, ...node.children.flatMap((child) => collectNodeTypes(child))];
+  return [node.type, ...(node.children ?? []).flatMap((child) => collectNodeTypes(child))];
 }

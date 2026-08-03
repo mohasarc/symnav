@@ -627,6 +627,75 @@
         "startLine": 79
       },
       "type": "symbol"
+    },
+    {
+      "children": [],
+      "header": {
+        "lines": [
+          "const bareExported = \"bare-exported\""
+        ],
+        "startLine": 81
+      },
+      "identity": {
+        "file": "collapsed-headers.ts",
+        "segments": [
+          {
+            "name": "bareExported"
+          }
+        ]
+      },
+      "kind": {
+        "nativeLabel": "variable",
+        "role": "value"
+      },
+      "range": {
+        "endLine": 81,
+        "startLine": 81
+      },
+      "type": "symbol"
+    },
+    {
+      "exportKind": "named",
+      "exportedNames": [
+        "bareExported"
+      ],
+      "header": {
+        "lines": [
+          "export { bareExported };"
+        ],
+        "startLine": 83
+      },
+      "range": {
+        "endLine": 83,
+        "startLine": 83
+      },
+      "type": "re-export"
+    },
+    {
+      "children": [],
+      "header": {
+        "lines": [
+          "export default function defaultHeader(name: string): string"
+        ],
+        "startLine": 85
+      },
+      "identity": {
+        "file": "collapsed-headers.ts",
+        "segments": [
+          {
+            "name": "defaultHeader"
+          }
+        ]
+      },
+      "kind": {
+        "nativeLabel": "function-implementation",
+        "role": "callable"
+      },
+      "range": {
+        "endLine": 87,
+        "startLine": 85
+      },
+      "type": "symbol"
     }
   ],
   "file": "collapsed-headers.ts",

@@ -61,5 +61,13 @@ Overview: collapsed-headers.ts
 ├── 74-77: values
 │   74 export const values = […]
 │
-└── 79: callResult
-    79 export const callResult = functionHelper("ready")
+├── 79: callResult
+│   79 export const callResult = functionHelper("ready")
+│
+├── 81: bareExported
+│   81 const bareExported = "bare-exported"
+│
+├── 83: export { bareExported };
+│
+└── 85-87: defaultHeader
+    85 export default function defaultHeader(name: string): string

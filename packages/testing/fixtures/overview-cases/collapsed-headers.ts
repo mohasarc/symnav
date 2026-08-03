@@ -77,3 +77,11 @@ export const values = [
 ];
 
 export const callResult = functionHelper("ready");
+
+const bareExported = "bare-exported";
+
+export { bareExported };
+
+export default function defaultHeader(name: string): string {
+  return name.toLowerCase();
+}

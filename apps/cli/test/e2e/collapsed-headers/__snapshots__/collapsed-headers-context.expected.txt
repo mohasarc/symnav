@@ -21,4 +21,8 @@ Kinds: usage 1
 Run: symnav refs collapsed-headers.ts::leakyFunction
 
 Recent History
-<git history>
+1. aef8c3a 2023-02-15 Header Bot
+   hide throw inside leaky function body
+
+2. 477b0c4 2023-01-10 Header Bot
+   add overview fixtures

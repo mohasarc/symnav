@@ -15,13 +15,6 @@ function runSymnav(args: readonly string[]) {
   return runner.run(args);
 }
 
-function normalizeRecentHistory(stdout: string): string {
-  const marker = "\nRecent History\n";
-  const markerIndex = stdout.indexOf(marker);
-  if (markerIndex === -1) return stdout;
-  return `${stdout.slice(0, markerIndex)}${marker}<git history>\n`;
-}
-
 function allHeaderLines(entries: readonly OverviewNode[]): string[] {
   return entries.flatMap((entry) => [
     ...entry.header.lines,
@@ -108,9 +101,7 @@ describe("symnav e2e (collapsed definition and reference previews)", () => {
     expect(r.stdout).toContain('return leakyFunction("visible-call");');
     expect(r.stdout).not.toContain("JSDoc that should never leak");
     expect(r.stdout).not.toContain("throw new Error");
-    await expect(normalizeRecentHistory(r.stdout)).toMatchFileSnapshot(
-      snapshot("collapsed-headers-context.expected.txt"),
-    );
+    await expect(r.stdout).toMatchFileSnapshot(snapshot("collapsed-headers-context.expected.txt"));
   });
 
   it("renders the real call reference without treating declaration body as a reference", async () => {

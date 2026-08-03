@@ -44,6 +44,7 @@ describe("symnav overview e2e (fold tree)", () => {
     expect(r.stdout).toContain("55-58: {");
     expect(r.stdout).toContain("60-63: values.map((value) => {");
     expect(r.stdout).toContain("67-70: if (flag) {");
+    expect(r.stdout).toContain("initializerHost::initializerNestedDeclaration");
     expect(r.stdout).not.toContain("branchValue");
     expect(r.stdout).not.toContain("loopValue");
     expect(r.stdout).not.toContain("callbackValue");

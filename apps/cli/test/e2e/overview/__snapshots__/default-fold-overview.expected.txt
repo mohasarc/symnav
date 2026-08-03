@@ -44,8 +44,13 @@ Overview: default-fold-overview.ts
 │   └── 73-75: FoldMemberHost::memberValue
 │       73 private memberValue(): string
 │
-└── 78-84: outerDeclaration
-    78 export function outerDeclaration(): void
-    ├── 79-81: outerDeclaration::nestedDeclaration
-    │   79 function nestedDeclaration(): string
-    └── 83: tap(nestedDeclaration());
+├── 78-84: outerDeclaration
+│   78 export function outerDeclaration(): void
+│   ├── 79-81: outerDeclaration::nestedDeclaration
+│   │   79 function nestedDeclaration(): string
+│   └── 83: tap(nestedDeclaration());
+│
+└── 86-92: initializerHost
+    86 export const initializerHost = (): string => …
+    └── 87-89: initializerHost::initializerNestedDeclaration
+        87 function initializerNestedDeclaration(): string

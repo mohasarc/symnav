@@ -82,3 +82,11 @@ export function outerDeclaration(): void {
 
   tap(nestedDeclaration());
 }
+
+export const initializerHost = (): string => {
+  function initializerNestedDeclaration(): string {
+    return "initializer-nested";
+  }
+
+  return initializerNestedDeclaration();
+};

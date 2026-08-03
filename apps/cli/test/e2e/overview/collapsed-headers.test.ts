@@ -1,10 +1,9 @@
 import { join } from "node:path";
-import { beforeAll, describe, expect, it } from "vitest";
-import { fixturePath, runSymnavBinary } from "@symnav/testing";
+import { describe, expect, it } from "vitest";
 
-import { ensureFixtureGitMarker } from "../ensure-fixture-git-marker.js";
+import { FixtureRunner } from "../fixture-runner.js";
 
-const fixtureRoot = fixturePath("overview-cases");
+const runner = new FixtureRunner("overview-cases");
 const snapshotsDir = new URL("./__snapshots__/", import.meta.url).pathname;
 const leakyFunctionId = "collapsed-headers.ts::leakyFunction";
 
@@ -13,7 +12,7 @@ function snapshot(name: string): string {
 }
 
 function runSymnav(args: readonly string[]) {
-  return runSymnavBinary(args, { cwd: fixtureRoot });
+  return runner.run(args);
 }
 
 function normalizeRecentHistory(stdout: string): string {
@@ -32,10 +31,6 @@ type OverviewNode = {
   header: { lines: readonly string[] };
   children: readonly OverviewNode[];
 };
-
-beforeAll(() => {
-  ensureFixtureGitMarker(fixtureRoot);
-});
 
 describe("symnav overview e2e (collapsed headers)", () => {
   it("renders collapsed text headers without leaking declarations or initializer bodies", async () => {

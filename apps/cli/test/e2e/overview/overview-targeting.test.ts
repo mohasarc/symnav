@@ -148,24 +148,24 @@ describe("symnav overview e2e (targeting)", () => {
   });
 
   it("narrows a line-only target to one candidate", () => {
-    const r = runOverview(["overview", "line-narrowing.ts", "--line", "8", "--depth", "1"]);
+    const r = runOverview(["overview", "line-narrowing.ts", "--line", "10", "--depth", "1"]);
 
     expect(r.stderr).toBe("");
     expect(r.status).toBe(0);
-    expect(r.stdout).toContain('8-10: describe("repeated", () => {');
-    expect(r.stdout).toContain("9: secondHelper");
+    expect(r.stdout).toContain('10-12: describe("repeated", () => {');
+    expect(r.stdout).toContain("11: secondHelper");
     expect(r.stdout).not.toContain("firstHelper");
   });
 
   it("keeps same-line targets ambiguous under line-only narrowing", async () => {
-    const r = runOverview(["overview", "line-narrowing.ts", "--line", "12"]);
+    const r = runOverview(["overview", "line-narrowing.ts", "--line", "14"]);
 
     expect(r.stdout).toBe("");
     expect(r.status).toBe(1);
     expect(r.stderr).toContain(
-      "Cannot answer: line 12 matches multiple overview nodes; use --at with copied header text.",
+      "Cannot answer: line 14 matches multiple overview nodes; use --at with copied header text.",
     );
-    expect(r.stderr).toContain('12: describe("inline", () => {');
+    expect(r.stderr).toContain('14: describe("inline", () => {');
     await expect(r.stderr).toMatchFileSnapshot(
       snapshot("line-narrowing-ambiguous-line.expected.err"),
     );
@@ -176,7 +176,7 @@ describe("symnav overview e2e (targeting)", () => {
       "overview",
       "line-narrowing.ts",
       "--line",
-      "12",
+      "14",
       "--at",
       'describe("inline")',
       "--depth",
@@ -185,7 +185,7 @@ describe("symnav overview e2e (targeting)", () => {
 
     expect(r.stderr).toBe("");
     expect(r.status).toBe(0);
-    expect(r.stdout).toContain("12: inlineHelper");
+    expect(r.stdout).toContain("14: inlineHelper");
   });
 
   it("uses line and header text to select one duplicate header", () => {
@@ -193,7 +193,7 @@ describe("symnav overview e2e (targeting)", () => {
       "overview",
       "line-narrowing.ts",
       "--line",
-      "8",
+      "10",
       "--at",
       "repeated",
       "--depth",
@@ -202,8 +202,8 @@ describe("symnav overview e2e (targeting)", () => {
 
     expect(r.stderr).toBe("");
     expect(r.status).toBe(0);
-    expect(r.stdout).toContain('8-10: describe("repeated", () => {');
-    expect(r.stdout).toContain("9: secondHelper");
+    expect(r.stdout).toContain('10-12: describe("repeated", () => {');
+    expect(r.stdout).toContain("11: secondHelper");
     expect(r.stdout).not.toContain("firstHelper");
   });
 
@@ -236,7 +236,7 @@ describe("symnav overview e2e (targeting)", () => {
       "overview",
       "line-narrowing.ts",
       "--line",
-      "8",
+      "10",
       "--depth",
       "1",
       "--json",
@@ -250,7 +250,7 @@ describe("symnav overview e2e (targeting)", () => {
       readonly entries: readonly { readonly header: { readonly lines: readonly string[] } }[];
     };
     expect(parsed.file).toBe("line-narrowing.ts");
-    expect(parsed.request).toEqual({ depth: 1, line: 8 });
+    expect(parsed.request).toEqual({ depth: 1, line: 10 });
     expect(parsed.entries).toHaveLength(1);
     expect(parsed.entries[0]?.header.lines).toEqual(['describe("repeated", () => {']);
   });
@@ -260,7 +260,7 @@ describe("symnav overview e2e (targeting)", () => {
       "overview",
       "line-narrowing.ts",
       "--line",
-      "8",
+      "10",
       "--at",
       "repeated",
       "--depth",
@@ -276,7 +276,7 @@ describe("symnav overview e2e (targeting)", () => {
       readonly entries: readonly { readonly header: { readonly lines: readonly string[] } }[];
     };
     expect(parsed.file).toBe("line-narrowing.ts");
-    expect(parsed.request).toEqual({ at: "repeated", depth: 1, line: 8 });
+    expect(parsed.request).toEqual({ at: "repeated", depth: 1, line: 10 });
     expect(parsed.entries).toHaveLength(1);
     expect(parsed.entries[0]?.header.lines).toEqual(['describe("repeated", () => {']);
   });

@@ -1,3 +1,5 @@
+declare function describe(name: string, body: () => void): void;
+
 describe("repeated", () => {
   const firstHelper = () => {
     const firstNested = 1;

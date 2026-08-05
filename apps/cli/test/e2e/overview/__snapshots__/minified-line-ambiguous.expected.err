@@ -1,7 +1,7 @@
-Cannot answer: line 1 matches multiple overview nodes; use --at with copied header text.
+Cannot answer: line 3 matches multiple overview nodes; use --at with copied header text.
 
 Candidates
-├── 1: describe("alpha", () => {
-├── 1: describe("beta", () => {
-├── 1: betaHelper
-└── 1: describe("gamma", () => {
+├── 3: describe("alpha", () => {
+├── 3: describe("beta", () => {
+├── 3: betaHelper
+└── 3: describe("gamma", () => {

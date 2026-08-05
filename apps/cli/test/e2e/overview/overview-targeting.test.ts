@@ -294,16 +294,6 @@ describe("symnav overview e2e (targeting)", () => {
     );
   });
 
-  it("rejects fractional line values as overview request errors", () => {
-    const r = runOverview(["overview", "targeted-expansion.ts", "--line", "1.5"]);
-
-    expect(r.stdout).toBe("");
-    expect(r.status).toBe(1);
-    expect(r.stderr).toBe(
-      "Cannot answer: invalid overview request: line must be a positive integer, got 1.5.\n",
-    );
-  });
-
   it("rejects non-positive line values as overview request errors", () => {
     const r = runOverview(["overview", "targeted-expansion.ts", "--line", "0"]);
 

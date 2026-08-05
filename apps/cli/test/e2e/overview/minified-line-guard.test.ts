@@ -1,12 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { runOverview } from "./run-overview.js";
-
-const snapshotsDir = new URL("./__snapshots__/", import.meta.url).pathname;
-
-function snapshot(name: string): string {
-  return new URL(name, `file://${snapshotsDir}`).pathname;
-}
+import { runOverview, snapshot } from "./run-overview.js";
 
 describe("symnav overview e2e (minified line guard)", () => {
   it("rejects a shared line target with a self-explaining candidate error", async () => {

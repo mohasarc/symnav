@@ -9,7 +9,7 @@ describe("repeated", () => {
   const secondHelper = () => 2;
 });
 
-describe("inline", () => {}); describe("inline", () => {});
+describe("inline", () => {}); describe("inline", () => { const inlineHelper = () => 3; void inlineHelper; });
 
 export function host(flag: boolean): void {
   if (flag) {

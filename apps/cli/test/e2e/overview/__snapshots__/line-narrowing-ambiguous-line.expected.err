@@ -2,4 +2,5 @@ Cannot answer: line 12 matches multiple overview nodes; use --at with copied hea
 
 Candidates
 ├── 12: describe("inline", () => {
-└── 12: describe("inline", () => {
+├── 12: describe("inline", () => {
+└── 12: inlineHelper

@@ -171,6 +171,23 @@ describe("symnav overview e2e (targeting)", () => {
     );
   });
 
+  it.skip("expands one of two identical same-line folds (no selector distinguishes them today)", () => {
+    const r = runOverview([
+      "overview",
+      "line-narrowing.ts",
+      "--line",
+      "12",
+      "--at",
+      'describe("inline")',
+      "--depth",
+      "1",
+    ]);
+
+    expect(r.stderr).toBe("");
+    expect(r.status).toBe(0);
+    expect(r.stdout).toContain("12: inlineHelper");
+  });
+
   it("uses line and header text to select one duplicate header", () => {
     const r = runOverview([
       "overview",

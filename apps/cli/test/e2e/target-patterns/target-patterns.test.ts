@@ -299,6 +299,30 @@ describe("target-pattern fold node rejection", () => {
   );
 });
 
+describe("target-pattern error vocabulary", () => {
+  it.skip.each(symbolCommands)(
+    "%s reports an empty segment as a target-pattern error (speaks retired symbol-id vocabulary today)",
+    (command) => {
+      const result = runCommand(command, ["::charge"]);
+      expect(result.status).toBe(1);
+      expect(result.stdout).toBe("");
+      expect(result.stderr).toBe(
+        'Cannot answer: invalid symbol target (empty path segment between "::" separators): "::charge".\n',
+      );
+    },
+  );
+
+  it.skip.each(symbolCommands)(
+    "%s reports a slashless missing-file suffix like a slashed one (reports not found today)",
+    (command) => {
+      const result = runCommand(command, ["missing.ts::charge"]);
+      expect(result.status).toBe(1);
+      expect(result.stdout).toBe("");
+      expect(result.stderr).toBe("Cannot answer: file not found: missing.ts.\n");
+    },
+  );
+});
+
 describe("target-pattern ambiguity hints", () => {
   it.skip.each(symbolCommands)(
     "%s points at the way out of an ambiguous target (candidate list ends without a hint today)",

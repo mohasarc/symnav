@@ -285,4 +285,28 @@ describe("target-pattern fold node rejection", () => {
     expect(result.stderr).toBe('Cannot answer: no symbol target "describe(\\"x\\")" found.\n');
     expect(result.stderr).not.toContain("Invalid symbol id");
   });
+
+  it.skip.each(symbolCommands)(
+    "%s names a copied fold header as a fold node (reports a plain not-found today)",
+    (command) => {
+      const result = runCommand(command, ['describe("x")']);
+      expect(result.status).toBe(1);
+      expect(result.stdout).toBe("");
+      expect(result.stderr).toBe(
+        'Cannot answer: describe("x") is a fold node, not a symbol; use overview --at for fold headers.\n',
+      );
+    },
+  );
+});
+
+describe("target-pattern ambiguity hints", () => {
+  it.skip.each(symbolCommands)(
+    "%s points at the way out of an ambiguous target (candidate list ends without a hint today)",
+    (command) => {
+      const result = runCommand(command, ["PaymentProcessor::charge"]);
+      expect(result.status).toBe(1);
+      expect(result.stdout).toBe("");
+      expect(result.stderr).toContain("copy a candidate id, or narrow with --line");
+    },
+  );
 });

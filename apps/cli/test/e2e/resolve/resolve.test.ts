@@ -1,11 +1,10 @@
 import { describe, expect, it } from "vitest";
 
 import { runResolve, snapshot } from "./run-resolve.js";
+import type { JsonSymbol } from "../json-identity.js";
 
 interface JsonResolveResult {
-  symbols: readonly {
-    identity: { file: string; segments: readonly { name: string }[] };
-  }[];
+  symbols: readonly JsonSymbol[];
 }
 
 describe("symnav resolve e2e (exact)", () => {

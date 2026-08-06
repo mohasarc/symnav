@@ -3,6 +3,7 @@ import { beforeAll, describe, expect, it } from "vitest";
 import { fixturePath, runSymnavBinary } from "@symnav/testing";
 
 import { ensureFixtureGitMarker } from "../ensure-fixture-git-marker.js";
+import type { JsonIdentity } from "../json-identity.js";
 
 const fixtureRoot = fixturePath("definition-cases");
 const snapshotsDir = new URL("./__snapshots__/", import.meta.url).pathname;
@@ -16,9 +17,9 @@ function runDef(args: readonly string[]) {
 }
 
 interface JsonDefResult {
-  identity: { file: string; segments: readonly { name: string }[] };
+  identity: JsonIdentity;
   symbols: readonly {
-    identity: { file: string; segments: readonly { name: string }[] };
+    identity: JsonIdentity;
     range: { startLine: number; endLine: number };
   }[];
 }

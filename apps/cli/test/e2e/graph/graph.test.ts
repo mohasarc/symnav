@@ -5,6 +5,7 @@ import { beforeAll, describe, expect, it } from "vitest";
 import { fixturePath, runSymnavBinary } from "@symnav/testing";
 
 import { ensureFixtureGitMarker } from "../ensure-fixture-git-marker.js";
+import type { JsonIdentity, JsonSymbol } from "../json-identity.js";
 
 const fixtureRoot = fixturePath("graph-cases");
 const snapshotsDir = new URL("./__snapshots__/", import.meta.url).pathname;
@@ -24,7 +25,7 @@ function runGraph(args: readonly string[], env?: NodeJS.ProcessEnv) {
 }
 
 interface JsonGraphResult {
-  identity: { file: string; segments: readonly { name: string }[] };
+  identity: JsonIdentity;
   direction: string;
   incoming?: { totalPathCount: number; paths: readonly JsonGraphPath[] };
   outgoing?: { totalPathCount: number; paths: readonly JsonGraphPath[] };
@@ -34,7 +35,7 @@ interface JsonGraphResult {
 
 interface JsonGraphPath {
   steps: readonly {
-    symbol: { identity: { file: string; segments: readonly { name: string }[] } };
+    symbol: JsonSymbol;
     confidence: string;
   }[];
 }

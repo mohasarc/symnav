@@ -5,6 +5,7 @@ import { beforeAll, describe, expect, it } from "vitest";
 import { fixturePath, runSymnavBinary } from "@symnav/testing";
 
 import { ensureFixtureGitMarker } from "../ensure-fixture-git-marker.js";
+import type { JsonIdentity, JsonSymbol } from "../json-identity.js";
 
 const fixtureRoot = fixturePath("context-cases");
 const snapshotsDir = new URL("./__snapshots__/", import.meta.url).pathname;
@@ -20,13 +21,13 @@ function runContext(args: readonly string[], env?: NodeJS.ProcessEnv) {
 }
 
 interface JsonEdge {
-  symbol: { identity: { file: string; segments: readonly { name: string }[] } };
+  symbol: JsonSymbol;
   sites: readonly { line: number; previewSource: string }[];
   confidence: string;
 }
 
 interface JsonContextResult {
-  identity: { file: string; segments: readonly { name: string }[] };
+  identity: JsonIdentity;
   callers: { sortedEdges: readonly JsonEdge[]; omittedCertainEdgeCount: number };
   callees: { sortedEdges: readonly JsonEdge[]; omittedCertainEdgeCount: number };
   references: { total: number; kindCounts: Record<string, number> };

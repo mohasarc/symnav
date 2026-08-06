@@ -3,6 +3,7 @@ import { beforeAll, describe, expect, it } from "vitest";
 import { fixturePath, runSymnavBinary } from "@symnav/testing";
 
 import { ensureFixtureGitMarker } from "../ensure-fixture-git-marker.js";
+import type { JsonIdentity } from "../json-identity.js";
 
 const fixtureRoot = fixturePath("refs-cases");
 const snapshotsDir = new URL("./__snapshots__/", import.meta.url).pathname;
@@ -28,7 +29,7 @@ interface JsonReference {
 }
 
 interface JsonRefsResult {
-  identity: { file: string; segments: readonly { name: string }[] };
+  identity: JsonIdentity;
   total: number;
   kindCounts: Record<string, number>;
   page: number;

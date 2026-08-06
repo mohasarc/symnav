@@ -1,0 +1,9 @@
+Resolve: ^toOrder$ (regex)
+
+Symbols
+└── src/converters.ts
+    └── 2: Converter::toOrder
+        toOrder(): void
+
+Files
+(none)

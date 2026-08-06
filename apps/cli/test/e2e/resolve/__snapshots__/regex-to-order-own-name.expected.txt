@@ -1,4 +1,4 @@
-Resolve: toOrder (regex)
+Resolve: ^(?:on)?toOrder (regex)
 
 Symbols
 ├── src/converters.ts

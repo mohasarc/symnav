@@ -57,12 +57,21 @@ describe("symnav resolve e2e (regex)", () => {
   });
 
   it("matches own names without matching parent-only canonical id segments", async () => {
-    const r = runResolve(["resolve", "--regex", "toOrder"]);
+    const r = runResolve(["resolve", "--regex", "^(?:on)?toOrder"]);
     expect(r.stderr).toBe("");
     expect(r.status).toBe(0);
     await expect(r.stdout).toMatchFileSnapshot(snapshot("regex-to-order-own-name.expected.txt"));
     expect(r.stdout).toContain("Converter::toOrder");
     expect(r.stdout).not.toContain("receiptOnly");
+  });
+
+  it("anchors the pattern to the whole own name", async () => {
+    const r = runResolve(["resolve", "--regex", "^toOrder$"]);
+    expect(r.stderr).toBe("");
+    expect(r.status).toBe(0);
+    await expect(r.stdout).toMatchFileSnapshot(snapshot("regex-to-order-anchored.expected.txt"));
+    expect(r.stdout).not.toContain("ontoOrderParent");
+    expect(r.stdout).not.toContain("toOrderHelpers");
   });
 
   it("does not match source text when no symbol own name matches", async () => {

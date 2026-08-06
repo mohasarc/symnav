@@ -1,5 +1,6 @@
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
+import { SEGMENT_SEPARATOR, parseSegment } from "@symnav/core";
 
 import { FixtureRunner } from "../fixture-runner.js";
 import type { JsonIdentity } from "../json-identity.js";
@@ -47,10 +48,10 @@ function runJson(command: SymbolCommand, target: string): JsonCommandResult {
 }
 
 function expectIdentity(identity: JsonIdentity, canonicalId: string): void {
-  const [file, ...segments] = canonicalId.split("::");
+  const [file, ...segments] = canonicalId.split(SEGMENT_SEPARATOR);
   expect(identity).toEqual({
     file,
-    segments: segments.map((name) => ({ name })),
+    segments: segments.map((segment) => parseSegment(segment, canonicalId)),
   });
 }
 

@@ -12,6 +12,7 @@ const helperId = "src/unique/helper.ts::helper";
 const orderChargeId = "src/domain/orders.ts::PaymentProcessor::charge";
 const insideFoldId = "src/folded/folded.ts::insideFold";
 const formatChargeId = "src/domain/orders.ts::PaymentProcessor::charge::formatCharge";
+const routerPostId = "src/routing/router.ts::Router::post";
 
 type SymbolCommand = "def" | "refs" | "context" | "graph";
 
@@ -23,6 +24,17 @@ const sharedTargets = [
   ["insideFold", insideFoldId],
   ["formatCharge", formatChargeId],
 ] as const;
+
+const overloadTargets = [
+  ["routing/router.ts::Router::post#1", `${routerPostId}#1`],
+  ["post", routerPostId],
+] as const;
+
+const symbolCommands: readonly SymbolCommand[] = ["def", "refs", "context", "graph"];
+
+const overloadCases = symbolCommands.flatMap((command) =>
+  overloadTargets.map(([target, canonicalId]) => [command, target, canonicalId] as const),
+);
 
 interface JsonResolvedTarget {
   identity: JsonIdentity;
@@ -107,6 +119,25 @@ describe("target-pattern symbol commands", () => {
     expect(parsed.incoming.totalPathCount + parsed.outgoing.totalPathCount).toBeGreaterThan(0);
   });
 
+  it.each(overloadCases)("%s resolves overload target %s", (command, target, canonicalId) => {
+    const parsed = runJson<JsonResolvedTarget>(command, [target]);
+    expectIdentity(parsed.identity, canonicalId);
+  });
+
+  it.each(symbolCommands)("%s rejects a target inside an ignored file", (command) => {
+    const result = runCommand(command, ["src/ignored-stuff.ts::HiddenProcessor"]);
+    expect(result.status).toBe(1);
+    expect(result.stdout).toBe("");
+    expect(result.stderr).toBe("Cannot answer: src/ignored-stuff.ts is ignored by .gitignore.\n");
+  });
+
+  it.each(symbolCommands)("%s rejects a path-like suffix naming a missing file", (command) => {
+    const result = runCommand(command, ["src/missing.ts::charge"]);
+    expect(result.status).toBe(1);
+    expect(result.stdout).toBe("");
+    expect(result.stderr).toBe("Cannot answer: file not found: src/missing.ts.\n");
+  });
+
   it("renders JSON identity for a unique def pattern", () => {
     const parsed = runJson<JsonDefResult>("def", ["orders.ts::PaymentProcessor::charge"]);
     expectIdentity(parsed.identity, orderChargeId);
@@ -136,7 +167,7 @@ describe("target-pattern symbol commands", () => {
     ]);
   });
 
-  it.each<SymbolCommand>(["def", "refs", "context", "graph"])(
+  it.each(symbolCommands)(
     "%s rejects ambiguous basename suffixes with the shared candidate output",
     async (command) => {
       const result = runCommand(command, ["orders.ts::charge"]);
@@ -148,7 +179,7 @@ describe("target-pattern symbol commands", () => {
     },
   );
 
-  it.each<SymbolCommand>(["def", "refs", "context", "graph"])(
+  it.each(symbolCommands)(
     "%s rejects ambiguous segment suffixes with the shared candidate output",
     async (command) => {
       const result = runCommand(command, ["PaymentProcessor::charge"]);
@@ -160,15 +191,12 @@ describe("target-pattern symbol commands", () => {
     },
   );
 
-  it.each<SymbolCommand>(["def", "refs", "context", "graph"])(
-    "%s names the raw target pattern for not-found targets",
-    (command) => {
-      const result = runCommand(command, ["missing"]);
-      expect(result.status).toBe(1);
-      expect(result.stdout).toBe("");
-      expect(result.stderr).toBe('Cannot answer: no symbol target "missing" found.\n');
-    },
-  );
+  it.each(symbolCommands)("%s names the raw target pattern for not-found targets", (command) => {
+    const result = runCommand(command, ["missing"]);
+    expect(result.status).toBe(1);
+    expect(result.stdout).toBe("");
+    expect(result.stderr).toBe('Cannot answer: no symbol target "missing" found.\n');
+  });
 
   it("treats former malformed ids as target patterns", () => {
     const result = runCommand("def", ["not_an_id"]);
@@ -177,16 +205,13 @@ describe("target-pattern symbol commands", () => {
     expect(result.stderr).toBe('Cannot answer: no symbol target "not_an_id" found.\n');
   });
 
-  it.each<SymbolCommand>(["def", "refs", "context", "graph"])(
-    "%s help exposes line narrowing",
-    (command) => {
-      const result = runCommand(command, ["--help"]);
-      expect(result.status).toBe(0);
-      expect(result.stderr).toBe("");
-      expect(result.stdout).toContain("--line <n>");
-      expect(result.stdout).toContain("narrow target matches to declarations containing this line");
-    },
-  );
+  it.each(symbolCommands)("%s help exposes line narrowing", (command) => {
+    const result = runCommand(command, ["--help"]);
+    expect(result.status).toBe(0);
+    expect(result.stderr).toBe("");
+    expect(result.stdout).toContain("--line <n>");
+    expect(result.stdout).toContain("narrow target matches to declarations containing this line");
+  });
 });
 
 describe("target-pattern line narrowing", () => {
@@ -208,7 +233,7 @@ describe("target-pattern line narrowing", () => {
     expectIdentity(parsed.root.identity, orderChargeId);
   });
 
-  it.each<SymbolCommand>(["def", "refs", "context", "graph"])(
+  it.each(symbolCommands)(
     "%s names the raw target when line narrowing removes all candidates",
     (command) => {
       const result = runCommand(command, ["PaymentProcessor::charge", "--line", "99"]);
@@ -222,14 +247,11 @@ describe("target-pattern line narrowing", () => {
 });
 
 describe("target-pattern fold node rejection", () => {
-  it.each<SymbolCommand>(["def", "refs", "context", "graph"])(
-    "%s rejects copied fold headers as non-symbol targets",
-    (command) => {
-      const result = runCommand(command, ['describe("x")']);
-      expect(result.status).toBe(1);
-      expect(result.stdout).toBe("");
-      expect(result.stderr).toBe('Cannot answer: no symbol target "describe(\\"x\\")" found.\n');
-      expect(result.stderr).not.toContain("Invalid symbol id");
-    },
-  );
+  it.each(symbolCommands)("%s rejects copied fold headers as non-symbol targets", (command) => {
+    const result = runCommand(command, ['describe("x")']);
+    expect(result.status).toBe(1);
+    expect(result.stdout).toBe("");
+    expect(result.stderr).toBe('Cannot answer: no symbol target "describe(\\"x\\")" found.\n');
+    expect(result.stderr).not.toContain("Invalid symbol id");
+  });
 });

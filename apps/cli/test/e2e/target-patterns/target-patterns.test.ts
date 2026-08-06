@@ -14,15 +14,36 @@ const insideFoldId = "src/folded/folded.ts::insideFold";
 
 type SymbolCommand = "def" | "refs" | "context" | "graph";
 
-interface JsonCommandResult {
+const sharedTargets = [
+  ["helper", helperId],
+  ["domain/orders.ts::charge", orderChargeId],
+  ["orders.ts::PaymentProcessor::charge", orderChargeId],
+  [orderChargeId, orderChargeId],
+  ["insideFold", insideFoldId],
+] as const;
+
+interface JsonResolvedTarget {
   identity: JsonIdentity;
-  root?: { identity: JsonIdentity };
-  symbols?: readonly unknown[];
-  references?: readonly JsonReference[] | { total: number };
-  callers?: { sortedEdges: readonly unknown[] };
-  callees?: { sortedEdges: readonly unknown[] };
-  incoming?: { totalPathCount: number; paths: readonly { steps: readonly unknown[] }[] };
-  outgoing?: { totalPathCount: number; paths: readonly { steps: readonly unknown[] }[] };
+}
+
+interface JsonDefResult extends JsonResolvedTarget {
+  symbols: readonly unknown[];
+}
+
+interface JsonRefsResult extends JsonResolvedTarget {
+  references: readonly JsonReference[];
+}
+
+interface JsonContextResult extends JsonResolvedTarget {
+  references: { total: number };
+  callers: { sortedEdges: readonly unknown[] };
+  callees: { sortedEdges: readonly unknown[] };
+}
+
+interface JsonGraphResult extends JsonResolvedTarget {
+  root: { identity: JsonIdentity };
+  incoming: { totalPathCount: number };
+  outgoing: { totalPathCount: number };
 }
 
 interface JsonReference {
@@ -40,11 +61,11 @@ function runCommand(command: SymbolCommand, args: readonly string[]) {
   return fixtureRunner.run([command, ...args]);
 }
 
-function runJson(command: SymbolCommand, target: string): JsonCommandResult {
-  const result = runCommand(command, [target, "--json"]);
+function runJson<Result>(command: SymbolCommand, args: readonly string[]): Result {
+  const result = runCommand(command, [...args, "--json"]);
   expect(result.stderr).toBe("");
   expect(result.status).toBe(0);
-  return JSON.parse(result.stdout) as JsonCommandResult;
+  return JSON.parse(result.stdout) as Result;
 }
 
 function expectIdentity(identity: JsonIdentity, canonicalId: string): void {
@@ -55,62 +76,43 @@ function expectIdentity(identity: JsonIdentity, canonicalId: string): void {
   });
 }
 
-function expectCommandResolved(command: SymbolCommand, target: string, canonicalId: string): void {
-  const parsed = runJson(command, target);
-  expectIdentity(parsed.identity, canonicalId);
-
-  if (command === "def") {
-    expect(parsed.symbols?.length).toBeGreaterThan(0);
-  }
-
-  if (command === "refs") {
-    expect(Array.isArray(parsed.references)).toBe(true);
-    expect((parsed.references as readonly unknown[]).length).toBeGreaterThan(0);
-  }
-
-  if (command === "context") {
-    expect(parsed.references).toMatchObject({ total: expect.any(Number) });
-    expect((parsed.references as { total: number }).total).toBeGreaterThan(0);
-    expect(
-      (parsed.callers?.sortedEdges.length ?? 0) + (parsed.callees?.sortedEdges.length ?? 0),
-    ).toBeGreaterThan(0);
-  }
-
-  if (command === "graph") {
-    expect(parsed.root).toBeDefined();
-    expectIdentity(parsed.root!.identity, canonicalId);
-    expect(
-      (parsed.incoming?.totalPathCount ?? 0) + (parsed.outgoing?.totalPathCount ?? 0),
-    ).toBeGreaterThan(0);
-  }
-}
-
 describe("target-pattern symbol commands", () => {
-  it.each<SymbolCommand>(["def", "refs", "context", "graph"])(
-    "%s resolves shared suffix-pattern targets",
-    (command) => {
-      const cases = [
-        ["helper", helperId],
-        ["domain/orders.ts::charge", orderChargeId],
-        ["orders.ts::PaymentProcessor::charge", orderChargeId],
-        [orderChargeId, orderChargeId],
-        ["insideFold", insideFoldId],
-      ] as const;
+  it.each(sharedTargets)("def resolves %s", (target, canonicalId) => {
+    const parsed = runJson<JsonDefResult>("def", [target]);
+    expectIdentity(parsed.identity, canonicalId);
+    expect(parsed.symbols.length).toBeGreaterThan(0);
+  });
 
-      for (const [target, canonicalId] of cases) {
-        expectCommandResolved(command, target, canonicalId);
-      }
-    },
-  );
+  it.each(sharedTargets)("refs resolves %s", (target, canonicalId) => {
+    const parsed = runJson<JsonRefsResult>("refs", [target]);
+    expectIdentity(parsed.identity, canonicalId);
+    expect(parsed.references.length).toBeGreaterThan(0);
+  });
+
+  it.each(sharedTargets)("context resolves %s", (target, canonicalId) => {
+    const parsed = runJson<JsonContextResult>("context", [target]);
+    expectIdentity(parsed.identity, canonicalId);
+    expect(parsed.references.total).toBeGreaterThan(0);
+    expect(parsed.callers.sortedEdges.length + parsed.callees.sortedEdges.length).toBeGreaterThan(
+      0,
+    );
+  });
+
+  it.each(sharedTargets)("graph resolves %s", (target, canonicalId) => {
+    const parsed = runJson<JsonGraphResult>("graph", [target]);
+    expectIdentity(parsed.identity, canonicalId);
+    expectIdentity(parsed.root.identity, canonicalId);
+    expect(parsed.incoming.totalPathCount + parsed.outgoing.totalPathCount).toBeGreaterThan(0);
+  });
 
   it("renders JSON identity for a unique def pattern", () => {
-    const parsed = runJson("def", "orders.ts::PaymentProcessor::charge");
+    const parsed = runJson<JsonDefResult>("def", ["orders.ts::PaymentProcessor::charge"]);
     expectIdentity(parsed.identity, orderChargeId);
     expect(parsed.symbols).toHaveLength(1);
   });
 
   it("keeps refs sorted for suffix-pattern targets", () => {
-    const parsed = runJson("refs", "helper");
+    const parsed = runJson<JsonRefsResult>("refs", ["helper"]);
     expectIdentity(parsed.identity, helperId);
     expect(parsed.references).toEqual([
       {
@@ -186,21 +188,23 @@ describe("target-pattern symbol commands", () => {
 });
 
 describe("target-pattern line narrowing", () => {
-  it.each<SymbolCommand>(["def", "refs", "context", "graph"])(
+  it.each<SymbolCommand>(["def", "refs", "context"])(
     "%s narrows an ambiguous target to a declaration containing the requested line",
     (command) => {
-      const result = runCommand(command, ["PaymentProcessor::charge", "--line", "5", "--json"]);
-      expect(result.stderr).toBe("");
-      expect(result.status).toBe(0);
-
-      const parsed = JSON.parse(result.stdout) as JsonCommandResult;
+      const parsed = runJson<JsonResolvedTarget>(command, [
+        "PaymentProcessor::charge",
+        "--line",
+        "5",
+      ]);
       expectIdentity(parsed.identity, orderChargeId);
-      if (command === "graph") {
-        expect(parsed.root).toBeDefined();
-        expectIdentity(parsed.root!.identity, orderChargeId);
-      }
     },
   );
+
+  it("graph narrows an ambiguous target to a declaration containing the requested line", () => {
+    const parsed = runJson<JsonGraphResult>("graph", ["PaymentProcessor::charge", "--line", "5"]);
+    expectIdentity(parsed.identity, orderChargeId);
+    expectIdentity(parsed.root.identity, orderChargeId);
+  });
 
   it.each<SymbolCommand>(["def", "refs", "context", "graph"])(
     "%s names the raw target when line narrowing removes all candidates",

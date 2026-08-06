@@ -1,0 +1,14 @@
+Cannot answer: symbol target "charge$" is ambiguous.
+
+Candidates
+├── src/adapters/orders.ts::charge
+│   export function charge(amount: number): string
+├── src/domain/invoices.ts::PaymentProcessor::charge
+│   charge(
+│     amount: number,
+│     currency?: string,
+│     idempotencyKey?: string,
+│     metadata?: Record<string, string>,
+│   ): string
+└── src/domain/orders.ts::PaymentProcessor::charge
+    charge(amount: number): string

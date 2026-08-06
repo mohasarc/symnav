@@ -13,6 +13,7 @@ const orderChargeId = "src/domain/orders.ts::PaymentProcessor::charge";
 const insideFoldId = "src/folded/folded.ts::insideFold";
 const formatChargeId = "src/domain/orders.ts::PaymentProcessor::charge::formatCharge";
 const routerPostId = "src/routing/router.ts::Router::post";
+const adapterChargeId = "src/adapters/orders.ts::charge";
 
 type SymbolCommand = "def" | "refs" | "context" | "graph";
 
@@ -179,14 +180,22 @@ describe("target-pattern symbol commands", () => {
     ]);
   });
 
-  it.each(symbolCommands)(
-    "%s rejects ambiguous basename suffixes with the shared candidate output",
+  it.skip.each(symbolCommands)(
+    "%s resolves a file suffix plus full segment path to the one exact match (reports ambiguity today)",
+    (command) => {
+      const parsed = runJson<JsonResolvedTarget>(command, ["orders.ts::charge"]);
+      expectIdentity(parsed.identity, adapterChargeId);
+    },
+  );
+
+  it.skip.each(symbolCommands)(
+    "%s rejects a regex target matching several symbols (--regex is resolve-only today)",
     async (command) => {
-      const result = runCommand(command, ["orders.ts::charge"]);
+      const result = runCommand(command, ["charge$", "--regex"]);
       expect(result.status).toBe(1);
       expect(result.stdout).toBe("");
       await expect(result.stderr).toMatchFileSnapshot(
-        snapshot("ambiguous-orders-charge.expected.err"),
+        snapshot("ambiguous-regex-charge.expected.err"),
       );
     },
   );

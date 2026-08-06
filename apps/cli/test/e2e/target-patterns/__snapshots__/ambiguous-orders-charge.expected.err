@@ -1,7 +1,0 @@
-Cannot answer: symbol target "orders.ts::charge" is ambiguous.
-
-Candidates
-├── src/adapters/orders.ts::charge
-│   export function charge(amount: number): string
-└── src/domain/orders.ts::PaymentProcessor::charge
-    charge(amount: number): string

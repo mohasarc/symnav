@@ -11,6 +11,7 @@ const snapshotsDir = new URL("./__snapshots__/", import.meta.url).pathname;
 const helperId = "src/unique/helper.ts::helper";
 const orderChargeId = "src/domain/orders.ts::PaymentProcessor::charge";
 const insideFoldId = "src/folded/folded.ts::insideFold";
+const formatChargeId = "src/domain/orders.ts::PaymentProcessor::charge::formatCharge";
 
 type SymbolCommand = "def" | "refs" | "context" | "graph";
 
@@ -20,6 +21,7 @@ const sharedTargets = [
   ["orders.ts::PaymentProcessor::charge", orderChargeId],
   [orderChargeId, orderChargeId],
   ["insideFold", insideFoldId],
+  ["formatCharge", formatChargeId],
 ] as const;
 
 interface JsonResolvedTarget {

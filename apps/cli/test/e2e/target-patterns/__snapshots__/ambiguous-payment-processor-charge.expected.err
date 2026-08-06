@@ -2,6 +2,11 @@ Cannot answer: symbol target "PaymentProcessor::charge" is ambiguous.
 
 Candidates
 ├── src/domain/invoices.ts::PaymentProcessor::charge
-│   charge(amount: number): string
+│   charge(
+│     amount: number,
+│     currency?: string,
+│     idempotencyKey?: string,
+│     metadata?: Record<string, string>,
+│   ): string
 └── src/domain/orders.ts::PaymentProcessor::charge
     charge(amount: number): string

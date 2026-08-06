@@ -1,10 +1,9 @@
 import { join } from "node:path";
-import { beforeAll, describe, expect, it } from "vitest";
-import { fixturePath, runSymnavBinary } from "@symnav/testing";
+import { describe, expect, it } from "vitest";
 
-import { ensureFixtureGitMarker } from "../ensure-fixture-git-marker.js";
+import { FixtureRunner } from "../fixture-runner.js";
 
-const fixtureRoot = fixturePath("target-pattern-cases");
+const fixtureRunner = new FixtureRunner("target-pattern-cases");
 const snapshotsDir = new URL("./__snapshots__/", import.meta.url).pathname;
 
 const helperId = "src/unique/helper.ts::helper";
@@ -40,12 +39,8 @@ function snapshot(name: string): string {
   return join(snapshotsDir, name);
 }
 
-function runSymnav(args: readonly string[]) {
-  return runSymnavBinary(args, { cwd: fixtureRoot });
-}
-
 function runCommand(command: SymbolCommand, args: readonly string[]) {
-  return runSymnav([command, ...args]);
+  return fixtureRunner.run([command, ...args]);
 }
 
 function runJson(command: SymbolCommand, target: string): JsonCommandResult {
@@ -92,10 +87,6 @@ function expectCommandResolved(command: SymbolCommand, target: string, canonical
     ).toBeGreaterThan(0);
   }
 }
-
-beforeAll(() => {
-  ensureFixtureGitMarker(fixtureRoot);
-});
 
 describe("target-pattern symbol commands", () => {
   it.each<SymbolCommand>(["def", "refs", "context", "graph"])(

@@ -66,6 +66,7 @@ interface JsonReference {
   line: number;
   kind: string;
   matchStart: number;
+  enclosingSymbol?: JsonIdentity;
 }
 
 function snapshot(name: string): string {
@@ -199,6 +200,14 @@ describe("target-pattern symbol commands", () => {
       );
     },
   );
+
+  it.skip("attributes each reference to its enclosing symbol (refs payload carries no owner today)", () => {
+    const parsed = runJson<JsonRefsResult>("refs", ["helper"]);
+    expect(parsed.references.map((reference) => reference.enclosingSymbol)).toEqual([
+      undefined,
+      { file: "src/calls.ts", segments: [{ name: "useUniqueHelper" }] },
+    ]);
+  });
 
   it.each(symbolCommands)(
     "%s rejects ambiguous segment suffixes with the shared candidate output",

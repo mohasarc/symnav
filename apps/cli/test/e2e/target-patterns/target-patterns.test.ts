@@ -2,6 +2,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 import { FixtureRunner } from "../fixture-runner.js";
+import type { JsonIdentity } from "../json-identity.js";
 
 const fixtureRunner = new FixtureRunner("target-pattern-cases");
 const snapshotsDir = new URL("./__snapshots__/", import.meta.url).pathname;
@@ -11,11 +12,6 @@ const orderChargeId = "src/domain/orders.ts::PaymentProcessor::charge";
 const insideFoldId = "src/folded/folded.ts::insideFold";
 
 type SymbolCommand = "def" | "refs" | "context" | "graph";
-
-interface JsonIdentity {
-  file: string;
-  segments: readonly { name: string }[];
-}
 
 interface JsonCommandResult {
   identity: JsonIdentity;

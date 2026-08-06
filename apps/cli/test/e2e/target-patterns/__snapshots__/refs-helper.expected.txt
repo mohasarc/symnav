@@ -1,0 +1,9 @@
+References: helper
+Total: 2
+Kinds: usage 1, import 1
+Page: 1/1
+Sort: path, line
+
+src/calls.ts
+├── 4: import { helper } from "./unique/helper";  [import]
+└── 21: return helper();  [usage]

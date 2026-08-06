@@ -138,6 +138,18 @@ describe("target-pattern symbol commands", () => {
     expect(result.stderr).toBe("Cannot answer: file not found: src/missing.ts.\n");
   });
 
+  it.each(symbolCommands)(
+    "%s prints the same text for a bare name and its canonical id",
+    async (command) => {
+      const bareName = runCommand(command, ["helper"]);
+      const canonicalId = runCommand(command, [helperId]);
+      expect(bareName.stderr).toBe("");
+      expect(bareName.status).toBe(0);
+      expect(canonicalId.stdout).toBe(bareName.stdout);
+      await expect(bareName.stdout).toMatchFileSnapshot(snapshot(`${command}-helper.expected.txt`));
+    },
+  );
+
   it("renders JSON identity for a unique def pattern", () => {
     const parsed = runJson<JsonDefResult>("def", ["orders.ts::PaymentProcessor::charge"]);
     expectIdentity(parsed.identity, orderChargeId);

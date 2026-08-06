@@ -4,6 +4,7 @@ import { SEGMENT_SEPARATOR, parseSegment } from "@symnav/core";
 
 import { FixtureRunner } from "../fixture-runner.js";
 import type { JsonIdentity } from "../json-identity.js";
+import { type SymbolCommand, symbolCommands } from "../symbol-command.js";
 
 const fixtureRunner = new FixtureRunner("target-pattern-cases");
 const snapshotsDir = new URL("./__snapshots__/", import.meta.url).pathname;
@@ -14,8 +15,6 @@ const insideFoldId = "src/folded/folded.ts::insideFold";
 const formatChargeId = "src/domain/orders.ts::PaymentProcessor::charge::formatCharge";
 const routerPostId = "src/routing/router.ts::Router::post";
 const adapterChargeId = "src/adapters/orders.ts::charge";
-
-type SymbolCommand = "def" | "refs" | "context" | "graph";
 
 const sharedTargets = [
   ["helper", helperId],
@@ -30,8 +29,6 @@ const overloadTargets = [
   ["routing/router.ts::Router::post#1", `${routerPostId}#1`],
   ["post", routerPostId],
 ] as const;
-
-const symbolCommands: readonly SymbolCommand[] = ["def", "refs", "context", "graph"];
 
 const overloadCases = symbolCommands.flatMap((command) =>
   overloadTargets.map(([target, canonicalId]) => [command, target, canonicalId] as const),

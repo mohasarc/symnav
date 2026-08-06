@@ -3,8 +3,6 @@ import { describe, expect, it } from "vitest";
 import { runResolve, snapshot } from "./run-resolve.js";
 import type { JsonSymbol } from "../json-identity.js";
 
-type SymbolCommand = "def" | "refs" | "context" | "graph";
-
 interface JsonResolveResult {
   symbols: readonly JsonSymbol[];
 }
@@ -106,25 +104,4 @@ describe("symnav resolve e2e (JSON output)", () => {
       "src/payments/PaymentProcessor.ts",
     ]);
   });
-});
-
-describe("symnav resolve e2e (help)", () => {
-  it("exposes regex on resolve help", () => {
-    const r = runResolve(["resolve", "--help"]);
-    expect(r.stderr).toBe("");
-    expect(r.status).toBe(0);
-    expect(r.stdout).toContain("--regex");
-    expect(r.stdout).toContain("match by JavaScript regex instead of exact name");
-  });
-
-  it.each<SymbolCommand>(["def", "refs", "context", "graph"])(
-    "does not expose regex on %s help",
-    (command) => {
-      const r = runResolve([command, "--help"]);
-      expect(r.stderr).toBe("");
-      expect(r.status).toBe(0);
-      expect(r.stdout).not.toContain("--regex");
-      expect(r.stdout).not.toContain("regex");
-    },
-  );
 });

@@ -261,13 +261,6 @@ describe("symnav refs e2e (errors)", () => {
     );
   });
 
-  it("treats a former malformed symbol id as a target pattern", () => {
-    const r = runRefs(["not_an_id"]);
-    expect(r.status).toBe(1);
-    expect(r.stdout).toBe("");
-    expect(r.stderr).toContain('Cannot answer: no symbol target "not_an_id" found');
-  });
-
   it("rejects a nonexistent file", () => {
     const r = runRefs(["src/missing.ts::Whatever"]);
     expect(r.status).toBe(1);

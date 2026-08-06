@@ -265,6 +265,16 @@ describe("target-pattern line narrowing", () => {
       );
     },
   );
+
+  it.skip.each(symbolCommands)(
+    "%s separates a line-filtered target from a never-matched one (both report not found today)",
+    (command) => {
+      const result = runCommand(command, ["helper", "--line", "99"]);
+      expect(result.status).toBe(1);
+      expect(result.stdout).toBe("");
+      expect(result.stderr).toBe('Cannot answer: no symbol target "helper" matching line 99.\n');
+    },
+  );
 });
 
 describe("target-pattern fold node rejection", () => {

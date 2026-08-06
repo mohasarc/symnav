@@ -10,6 +10,7 @@ const snapshotsDir = new URL("./__snapshots__/", import.meta.url).pathname;
 const processorId = "src/payments/PaymentProcessor.ts::PaymentProcessor";
 const controlFlowTargetId = "src/control-flow/ControlFlowTarget.ts::controlFlowTarget";
 const foldedInnerId = "src/folded-symbols.ts::foldedRoot::foldedInner";
+const foldedNestedId = "src/folded-symbols.ts::foldedHost::foldedNested";
 
 function snapshot(name: string): string {
   return join(snapshotsDir, name);
@@ -141,6 +142,22 @@ describe("symnav refs e2e (default output)", () => {
     expect(parsed.references.map((reference) => reference.previewSource.trim())).toEqual([
       "return foldedInner();",
     ]);
+  });
+
+  it("accepts a folded declaration inside a variable initializer as the target", () => {
+    const r = runRefs([foldedNestedId, "--json"]);
+    expect(r.stderr).toBe("");
+    expect(r.status).toBe(0);
+    const parsed = parseJsonRefs(r.stdout);
+    expect(parsed.identity).toEqual({
+      file: "src/folded-symbols.ts",
+      segments: [{ name: "foldedHost" }, { name: "foldedNested" }],
+    });
+    expect(parsed.identity.segments.map((segment) => segment.name)).not.toContain("if");
+    expect(parsed.total).toBe(1);
+    expect(
+      parsed.references.map((reference) => [reference.line, reference.previewSource.trim()]),
+    ).toEqual([[23, "return foldedNested();"]]);
   });
 });
 

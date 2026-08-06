@@ -14,6 +14,7 @@ const chainRootId = "src/chain.ts::chainRoot";
 const cycleId = "src/cycle.ts::cycleA";
 const dynamicRootId = "src/dynamic.ts::dynamicRoot";
 const foldedInnerId = "src/folded-symbols.ts::foldedRoot::foldedInner";
+const foldedNestedId = "src/folded-symbols.ts::foldedHost::foldedNested";
 const isolatedId = "src/isolated.ts::isolatedLeaf";
 
 function snapshot(name: string): string {
@@ -139,6 +140,32 @@ describe("symnav graph e2e (default output)", () => {
     ]);
     expect(parsed.outgoing?.paths[0]!.steps[0]!.confidence).toBe("certain");
     expect(parsed.identity.segments.map((segment) => segment.name)).not.toContain("if");
+  });
+
+  it("uses a folded declaration inside a variable initializer as the graph root", () => {
+    const r = runGraph([foldedNestedId, "--outgoing", "--depth", "2", "--json"]);
+    expect(r.stderr).toBe("");
+    expect(r.status).toBe(0);
+    const parsed = JSON.parse(r.stdout) as JsonGraphResult;
+    expect(parsed.identity).toEqual({
+      file: "src/folded-symbols.ts",
+      segments: [{ name: "foldedHost" }, { name: "foldedNested" }],
+    });
+    expect(parsed.outgoing?.paths).toHaveLength(1);
+    expect(parsed.outgoing?.paths[0]!.steps.map((step) => step.symbol.identity)).toEqual([
+      { file: "src/folded-symbols.ts", segments: [{ name: "foldedLeaf" }] },
+    ]);
+    expect(parsed.identity.segments.map((segment) => segment.name)).not.toContain("if");
+  });
+
+  it.skip("names the enclosing initializer as the incoming caller, not the file's first declaration (reports foldedRoot today)", () => {
+    const r = runGraph([foldedNestedId, "--incoming", "--depth", "1", "--json"]);
+    expect(r.stderr).toBe("");
+    expect(r.status).toBe(0);
+    const parsed = JSON.parse(r.stdout) as JsonGraphResult;
+    expect(parsed.incoming?.paths[0]!.steps.map((step) => step.symbol.identity)).toEqual([
+      { file: "src/folded-symbols.ts", segments: [{ name: "foldedHost" }] },
+    ]);
   });
 });
 

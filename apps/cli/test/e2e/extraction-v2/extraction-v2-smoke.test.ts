@@ -1,10 +1,9 @@
 import { join } from "node:path";
-import { beforeAll, describe, expect, it } from "vitest";
-import { fixturePath, runSymnavBinary } from "@symnav/testing";
+import { describe, expect, it } from "vitest";
 
-import { ensureFixtureGitMarker } from "../ensure-fixture-git-marker.js";
+import { FixtureRunner } from "../fixture-runner.js";
 
-const fixtureRoot = fixturePath("extraction-v2-cases");
+const fixtureRunner = new FixtureRunner("extraction-v2-cases");
 const snapshotsDir = new URL("./__snapshots__/", import.meta.url).pathname;
 const buildWorkflowId = "src/agent-workflow.ts::buildWorkflow";
 const unsupportedStatementWarning =
@@ -34,7 +33,7 @@ function snapshot(name: string): string {
 }
 
 function runSymnav(args: readonly string[]) {
-  return runSymnavBinary(args, { cwd: fixtureRoot });
+  return fixtureRunner.run(args);
 }
 
 function expectIdentity(identity: JsonIdentity, canonicalId: string): void {
@@ -63,10 +62,6 @@ function copiedCandidate(stderr: string): string {
 function expectUnsupportedStatementWarning(stderr: string): void {
   expect(stderr).toBe(unsupportedStatementWarning);
 }
-
-beforeAll(() => {
-  ensureFixtureGitMarker(fixtureRoot);
-});
 
 describe("symnav extraction v2 workflow smoke", () => {
   it("renders compact overview and expands a copied fold header", async () => {

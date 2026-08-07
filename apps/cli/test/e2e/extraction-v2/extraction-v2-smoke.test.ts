@@ -11,16 +11,18 @@ const buildWorkflowId = "src/agent-workflow.ts::buildWorkflow";
 const unsupportedStatementWarning =
   "Warning: skipped unrecognised statement syntax at src/unsupported-statement.ts:5 (MissingDeclaration)\n";
 
-interface JsonContextResult {
+interface JsonResolvedTarget {
   identity: JsonIdentity;
+}
+
+interface JsonContextResult extends JsonResolvedTarget {
   definitions: readonly unknown[];
   callers: unknown;
   callees: unknown;
   references: { total: number };
 }
 
-interface JsonGraphResult {
-  identity: JsonIdentity;
+interface JsonGraphResult extends JsonResolvedTarget {
   root: { identity: JsonIdentity };
   outgoing: { totalPathCount: number; paths: readonly unknown[] };
 }

@@ -4,6 +4,7 @@ import { SymbolTargetErrorRenderer, renderRefsJson, renderRefsText } from "@symn
 
 import type { Command, CommandContext } from "../../command.js";
 import { classifyArgKind, lengthBucketOf } from "../../telemetry/arg-shape.js";
+import { NavigationDiagnosticsCollector } from "../navigation-diagnostics-collector.js";
 import { CommandTargetResolver } from "../resolve-symbol-target.js";
 
 export interface RefsArgs {
@@ -40,12 +41,13 @@ export const refsCommand: Command<RefsResult, RefsArgs> = {
       line: ctx.args.line,
     });
     const references = await resolved.backend.findReferences(resolved.files, resolved.identity);
-    return new RefsResultBuilder({
+    const result = new RefsResultBuilder({
       identity: resolved.identity,
       references,
       pageRequest: pageRequestFrom(ctx.args),
       fullLines: ctx.args.fullLines,
     }).build();
+    return NavigationDiagnosticsCollector.attach(result, ctx.workspace, ctx.router);
   },
   renderText: renderRefsText,
   renderJson: renderRefsJson,

@@ -1,0 +1,3 @@
+Overview: src/unsupported-statement.ts
+└── 1-3: stillVisible
+    1 export function stillVisible(): string

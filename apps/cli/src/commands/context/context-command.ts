@@ -4,6 +4,7 @@ import { SymbolTargetErrorRenderer, renderContextJson, renderContextText } from 
 
 import type { Command, CommandContext } from "../../command.js";
 import { classifyArgKind, lengthBucketOf } from "../../telemetry/arg-shape.js";
+import { NavigationDiagnosticsCollector } from "../navigation-diagnostics-collector.js";
 import { resolveCallTarget } from "../resolve-call-target.js";
 import { CommandTargetResolver } from "../resolve-symbol-target.js";
 
@@ -53,7 +54,7 @@ export const contextCommand: Command<ContextResult, ContextArgs> = {
       limit: 5,
     });
 
-    return new ContextResultBuilder({
+    const result = new ContextResultBuilder({
       identity,
       target,
       definitions,
@@ -63,6 +64,7 @@ export const contextCommand: Command<ContextResult, ContextArgs> = {
       history,
       cap: DEFAULT_CONTEXT_CAP,
     }).build();
+    return NavigationDiagnosticsCollector.attach(result, ctx.workspace, ctx.router);
   },
   renderText: renderContextText,
   renderJson: renderContextJson,

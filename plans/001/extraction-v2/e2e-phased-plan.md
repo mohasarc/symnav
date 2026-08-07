@@ -407,6 +407,11 @@ Goal: add one compact e2e suite that proves the implemented permutations compose
 
 1. `test(e2e): add extraction v2 workflow smoke`
 
+## Backlog
+
+- Navigation diagnostics double the extraction cost per invocation: the post-compute sweep re-enumerates and re-parses the whole workspace with a fresh ts-morph project after the command's own resolution already parsed the files it needed. Accepted for phase 1; fold diagnostics into the backend navigation methods so the first parse surfaces them.
+- Diagnostics only surface after a successful compute; `runCommand`'s error path skips them. When extraction skipped the very symbol a command targets, resolution fails and the relevant warning never prints. Needs e2e coverage plus a decision on surfacing diagnostics alongside command errors.
+
 ## Done when
 
 - Every phase above has landed as its own focused PR or commit group.

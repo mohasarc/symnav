@@ -24,14 +24,14 @@ export interface ResultWithDiagnostics {
   readonly diagnostics?: readonly NavigationDiagnostic[];
 }
 
-export interface ResolveResult {
+export interface ResolveResult extends ResultWithDiagnostics {
   readonly query: string;
   readonly mode: ResolveSymbolsMode;
   readonly symbols: readonly SymbolOverviewNode[];
   readonly files: readonly string[];
 }
 
-export interface DefinitionResult {
+export interface DefinitionResult extends ResultWithDiagnostics {
   readonly identity: SymbolIdentity;
   readonly symbols: readonly SymbolOverviewNode[];
 }

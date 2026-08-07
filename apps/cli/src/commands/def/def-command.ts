@@ -7,6 +7,7 @@ import {
 
 import type { Command, CommandContext } from "../../command.js";
 import { classifyArgKind, lengthBucketOf } from "../../telemetry/arg-shape.js";
+import { NavigationDiagnosticsCollector } from "../navigation-diagnostics-collector.js";
 import { CommandTargetResolver } from "../resolve-symbol-target.js";
 
 export interface DefArgs {
@@ -35,7 +36,8 @@ export const defCommand: Command<DefinitionResult, DefArgs> = {
       line: ctx.args.line,
     });
     const symbols = await resolved.backend.findDefinitions(resolved.files, resolved.identity);
-    return { identity: resolved.identity, symbols };
+    const result: DefinitionResult = { identity: resolved.identity, symbols };
+    return NavigationDiagnosticsCollector.attach(result, ctx.workspace, ctx.router);
   },
   renderText: renderDefinitionText,
   renderJson: renderDefinitionJson,

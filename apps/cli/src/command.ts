@@ -2,8 +2,8 @@ import {
   BackendRouter,
   createWorkspace,
   type GitHistory,
-  type NavigationDiagnostic,
   type NavigationDiagnosticSeverity,
+  type ResultWithDiagnostics,
   UserFacingError,
   type Workspace,
 } from "@symnav/core";
@@ -31,18 +31,17 @@ export interface CommandInvocation<Args> {
   args: Args;
 }
 
-export interface Command<Result, Args> {
+export interface Command<Result extends ResultWithDiagnostics, Args> {
   readonly name: string;
   describeArgs(args: Args): ArgShape;
   countResults(result: Result): Record<string, number>;
-  diagnostics?(result: Result): readonly NavigationDiagnostic[];
   compute(ctx: CommandContext<Args>): Promise<Result>;
   renderText(result: Result): string;
   renderJson(result: Result): string;
   renderError?(err: unknown): string | undefined;
 }
 
-export async function runCommand<Result, Args>(
+export async function runCommand<Result extends ResultWithDiagnostics, Args>(
   command: Command<Result, Args>,
   invocation: CommandInvocation<Args>,
 ): Promise<void> {
@@ -57,7 +56,7 @@ export async function runCommand<Result, Args>(
     const router = new BackendRouter(dependencies.backends());
     const result = await command.compute({ workspace, router, git: dependencies.git, cwd, args });
     const rendered = json ? command.renderJson(result) : command.renderText(result);
-    for (const diagnostic of command.diagnostics?.(result) ?? []) {
+    for (const diagnostic of result.diagnostics ?? []) {
       context.stderr.write(`${severityPrefixes[diagnostic.severity]}: ${diagnostic.message}\n`);
     }
     context.stdout.write(rendered);
@@ -95,7 +94,7 @@ export async function runCommand<Result, Args>(
   }
 }
 
-function recordTelemetry<Result, Args>(
+function recordTelemetry<Result extends ResultWithDiagnostics, Args>(
   command: Command<Result, Args>,
   dependencies: ProgramDependencies,
   input: {
@@ -152,7 +151,7 @@ function argShapeFor(shape: ArgShape, json: boolean): ArgShape {
   return { ...shape, flags };
 }
 
-function handleError<Result, Args>(
+function handleError<Result extends ResultWithDiagnostics, Args>(
   context: ProgramContext,
   command: Command<Result, Args>,
   err: unknown,

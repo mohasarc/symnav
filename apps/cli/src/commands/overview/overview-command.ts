@@ -1,4 +1,4 @@
-import type { NavigationDiagnostic, OverviewExpansionResult } from "@symnav/core";
+import type { OverviewExpansionResult } from "@symnav/core";
 import { OverviewExpander, OverviewTree } from "@symnav/core";
 import {
   OverviewErrorRenderer,
@@ -30,9 +30,6 @@ export const overviewCommand: Command<OverviewExpansionResult, OverviewArgs> = {
       symbols: result.totalSymbolCount,
       shownSymbols: OverviewTree.walkSymbols(result.entries).length,
     };
-  },
-  diagnostics(result: OverviewExpansionResult): readonly NavigationDiagnostic[] {
-    return result.diagnostics ?? [];
   },
   async compute(ctx: CommandContext<OverviewArgs>): Promise<OverviewExpansionResult> {
     const request = overviewRequestFrom(ctx.args);

@@ -1,0 +1,9 @@
+Resolve: stillVisible (exact)
+
+Symbols
+└── src/unsupported-statement.ts
+    └── 1-3: stillVisible
+        export function stillVisible(): string
+
+Files
+(none)

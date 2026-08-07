@@ -14,6 +14,7 @@ import fuzzysort from "fuzzysort";
 
 import type { Command, CommandContext } from "../../command.js";
 import { classifyArgKind, lengthBucketOf } from "../../telemetry/arg-shape.js";
+import { NavigationDiagnosticsCollector } from "../navigation-diagnostics-collector.js";
 import { ConflictingResolveFlagsError } from "./conflicting-resolve-flags-error.js";
 
 export interface ResolveArgs {
@@ -151,12 +152,13 @@ export const resolveCommand: Command<ResolveResult, ResolveArgs> = {
     const matchingFiles = ResolveComputation.matchFilesByBasename(files, ctx.args.query, options);
     const symbolFiles = new Set(sortedSymbols.map((s) => s.identity.file));
     const filesSection = matchingFiles.filter((file) => !symbolFiles.has(file));
-    return {
+    const result: ResolveResult = {
       query: ctx.args.query,
       mode,
       symbols: sortedSymbols,
       files: filesSection,
     };
+    return NavigationDiagnosticsCollector.attach(result, ctx.workspace, ctx.router);
   },
   renderText: renderResolveText,
   renderJson: renderResolveJson,

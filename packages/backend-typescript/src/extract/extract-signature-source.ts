@@ -1,11 +1,14 @@
-import { Node } from "ts-morph";
+import { Node, SyntaxKind, type ExportAssignment, type PropertyDeclaration } from "ts-morph";
+
+import { collapseInitializerSource } from "./collapse-initializer-source.js";
 
 export function extractSignatureSource(node: Node): string {
   return dedentContinuationLines(rawSignatureSource(node), ambientIndentation(node));
 }
 
 function rawSignatureSource(node: Node): string {
-  if (Node.isExportAssignment(node)) return node.getExpression().getText();
+  if (Node.isExportAssignment(node)) return exportAssignmentSignature(node);
+  if (Node.isPropertyDeclaration(node)) return propertySignature(node);
   if (Node.isTypeAliasDeclaration(node)) return cutBeforeTerminator(node);
   if (
     Node.isClassDeclaration(node) ||
@@ -16,6 +19,26 @@ function rawSignatureSource(node: Node): string {
     return cutBeforeOpeningBrace(node);
   }
   return cutBeforeBodyOrTerminator(node);
+}
+
+function exportAssignmentSignature(node: ExportAssignment): string {
+  const keyword = node.isExportEquals() ? "export =" : "export default";
+  return `${keyword} ${collapseInitializerSource(node.getExpression())}`;
+}
+
+function propertySignature(node: PropertyDeclaration): string {
+  const initializer = node.getInitializer();
+  if (!initializer) return cutBeforeTerminator(node);
+  return `${headBeforeInitializer(node, initializer)} = ${collapseInitializerSource(initializer)}`;
+}
+
+function headBeforeInitializer(node: Node, initializer: Node): string {
+  return node
+    .getText()
+    .slice(0, initializer.getStart() - node.getStart())
+    .trimEnd()
+    .replace(/\s*=$/, "")
+    .trimEnd();
 }
 
 function ambientIndentation(node: Node): number {
@@ -40,6 +63,11 @@ function stripLeading(line: string, max: number): string {
 }
 
 function cutBeforeOpeningBrace(node: Node): string {
+  const openingBrace = node.getFirstChildByKind(SyntaxKind.OpenBraceToken);
+  if (openingBrace) {
+    const text = node.getText();
+    return text.slice(0, openingBrace.getStart() - node.getStart()).trimEnd();
+  }
   const text = node.getText();
   const brace = text.indexOf("{");
   return brace === -1 ? text.trimEnd() : text.slice(0, brace).trimEnd();

@@ -1,0 +1,4 @@
+Overview: fold-tree.ts
+└── 1-5: describe("x", () => {
+    └── 2-4: helper
+        2 const helper = () => …

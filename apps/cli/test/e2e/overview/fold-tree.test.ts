@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { runOverview } from "./run-overview.js";
 
 describe("symnav overview e2e (fold tree)", () => {
-  it("renders folded call headers without opening them at depth zero", () => {
+  it("renders folded call headers without opening them at depth zero", async () => {
     const r = runOverview(["overview", "fold-tree.ts", "--depth", "0"]);
 
     expect(r.stderr).toBe("");
@@ -12,9 +12,12 @@ describe("symnav overview e2e (fold tree)", () => {
     expect(r.stdout).not.toContain("2-4: helper");
     expect(r.stdout).not.toContain("2 const helper = () => …");
     expect(r.stdout).not.toContain("return 1");
+    await expect(r.stdout).toMatchFileSnapshot(
+      new URL("./__snapshots__/fold-tree-depth-0.expected.txt", import.meta.url).pathname,
+    );
   });
 
-  it("renders one child level inside folded call headers at depth one", () => {
+  it("renders one child level inside folded call headers at depth one", async () => {
     const r = runOverview(["overview", "fold-tree.ts", "--depth", "1"]);
 
     expect(r.stderr).toBe("");
@@ -23,6 +26,9 @@ describe("symnav overview e2e (fold tree)", () => {
     expect(r.stdout).toContain("2-4: helper");
     expect(r.stdout).toContain("2 const helper = () => …");
     expect(r.stdout).not.toContain("return 1");
+    await expect(r.stdout).toMatchFileSnapshot(
+      new URL("./__snapshots__/fold-tree-depth-1.expected.txt", import.meta.url).pathname,
+    );
   });
 
   it("renders barrel re-export edges without loading target files", () => {

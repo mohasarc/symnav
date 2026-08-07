@@ -409,7 +409,7 @@ Goal: add one compact e2e suite that proves the implemented permutations compose
 
 ## Phase 9 - Uniform Overview Depth
 
-Goal: make `overview --depth` apply uniformly to declaration nodes, fold nodes, and re-export nodes. A depth value describes how many child tree levels are shown under each rendered node, not how many fold interiors are opened.
+Goal: make `overview --depth` apply uniformly to declaration nodes and fold nodes. A depth value describes how many child tree levels are shown under each rendered node, not how many fold interiors are opened. Re-export nodes have no children, so depth never affects them.
 
 ### Test files
 
@@ -422,7 +422,7 @@ Goal: make `overview --depth` apply uniformly to declaration nodes, fold nodes, 
 | Command | Expected |
 | --- | --- |
 | `overview <file> --depth 0` | renders only top-level declarations, fold headers, and re-export nodes; class members, function-local declarations, and fold children are hidden |
-| `overview <file> --depth 1` | renders one child level inside any top-level declaration, fold, or re-export node |
+| `overview <file> --depth 1` | renders one child level inside any top-level declaration or fold |
 | `overview <file> --depth 2` | renders two child levels inside nested declarations/folds |
 | `overview <file> --at '<class header>' --depth 0` | renders only the targeted class declaration itself |
 | `overview <file> --at '<class header>' --depth 1` | renders the targeted class and one level of members |
@@ -436,7 +436,7 @@ Goal: make `overview --depth` apply uniformly to declaration nodes, fold nodes, 
 - Depth semantics are the same for full-file overview and targeted overview.
 - Existing `--at` and `--line` candidate matching still searches the full extracted tree, not the depth-trimmed tree.
 - Existing invalid depth validation remains unchanged.
-- Default overview behavior remains the existing depth-0 shallow view.
+- Default depth stays 0, but what 0 renders changes: previously all symbol children with folds closed, now top-level entries only. Docs describing the old default need updating.
 - Help text does not need wording changes unless existing prose says depth applies only to folds.
 
 ### Implementation notes

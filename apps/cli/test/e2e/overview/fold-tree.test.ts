@@ -104,4 +104,30 @@ describe("symnav overview e2e (fold tree)", () => {
         .pathname,
     );
   });
+
+  it("opens a fold header inside a class member at depth two", async () => {
+    const r = runOverview(["overview", "default-fold-overview.ts", "--depth", "2"]);
+
+    expect(r.stderr).toBe("");
+    expect(r.status).toBe(0);
+    expect(r.stdout).toContain("67-70: if (flag) {");
+    expect(r.stdout).not.toContain("FoldMemberHost::run::memberBranchValue");
+    await expect(r.stdout).toMatchFileSnapshot(
+      new URL("./__snapshots__/default-fold-overview-depth-2.expected.txt", import.meta.url)
+        .pathname,
+    );
+  });
+
+  it("opens a fold interior inside a class member at depth three", async () => {
+    const r = runOverview(["overview", "default-fold-overview.ts", "--depth", "3"]);
+
+    expect(r.stderr).toBe("");
+    expect(r.status).toBe(0);
+    expect(r.stdout).toContain("67-70: if (flag) {");
+    expect(r.stdout).toContain("FoldMemberHost::run::memberBranchValue");
+    await expect(r.stdout).toMatchFileSnapshot(
+      new URL("./__snapshots__/default-fold-overview-depth-3.expected.txt", import.meta.url)
+        .pathname,
+    );
+  });
 });

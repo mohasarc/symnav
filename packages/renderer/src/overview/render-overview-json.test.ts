@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import type {
   FoldOverviewNode,
-  OverviewFileEntries,
+  OverviewExpansionResult,
   OverviewNode,
   SymbolKind,
   SymbolOverviewNode,
@@ -39,9 +39,19 @@ function fold(children: readonly OverviewNode[] = []): FoldOverviewNode {
   });
 }
 
+function overviewResult(
+  partial: Omit<OverviewExpansionResult, "request" | "totalSymbolCount">,
+): OverviewExpansionResult {
+  return {
+    ...partial,
+    request: { depth: 0, at: undefined, line: undefined },
+    totalSymbolCount: 0,
+  };
+}
+
 describe("renderOverviewJson", () => {
   it("mirrors overview entries verbatim with `children` always present on leaf decls", () => {
-    const file: OverviewFileEntries = {
+    const result = overviewResult({
       file: "src/file.ts",
       entries: [
         decl({
@@ -51,8 +61,8 @@ describe("renderOverviewJson", () => {
           header: { startLine: 4, lines: ["function leaf(): void"] },
         }),
       ],
-    };
-    const parsed = JSON.parse(renderOverviewJson(file));
+    });
+    const parsed = JSON.parse(renderOverviewJson(result));
     expect(parsed).toEqual({
       file: "src/file.ts",
       entries: [
@@ -65,19 +75,20 @@ describe("renderOverviewJson", () => {
           children: [],
         },
       ],
+      request: { depth: 0 },
     });
   });
 
   it("emits a discriminant for symbol and fold entries", () => {
-    const file: OverviewFileEntries = {
+    const result = overviewResult({
       file: "src/file.ts",
       entries: [
         decl({ kind: { role: "callable", nativeLabel: "function" }, segments: [{ name: "leaf" }] }),
         fold(),
       ],
-    };
+    });
 
-    const parsed = JSON.parse(renderOverviewJson(file)) as OverviewFileEntries;
+    const parsed = JSON.parse(renderOverviewJson(result)) as OverviewExpansionResult;
 
     expect(parsed.entries.map((entry) => entry.type)).toEqual(["symbol", "fold"]);
   });
@@ -103,12 +114,12 @@ describe("renderOverviewJson", () => {
       range: { startLine: 7, endLine: 7 },
       header: { startLine: 7, lines: ["export { a };"] },
     });
-    const file: OverviewFileEntries = {
+    const result = overviewResult({
       file: "src/file.ts",
       entries: [foldEntry, specifierLessReExport],
-    };
+    });
 
-    const parsed = JSON.parse(renderOverviewJson(file)) as OverviewFileEntries;
+    const parsed = JSON.parse(renderOverviewJson(result)) as OverviewExpansionResult;
 
     expect(parsed).toEqual({
       file: "src/file.ts",
@@ -137,12 +148,13 @@ describe("renderOverviewJson", () => {
           header: { startLine: 7, lines: ["export { a };"] },
         },
       ],
+      request: { depth: 0 },
     });
     expect(parsed.entries[1]).not.toHaveProperty("sourceModule");
   });
 
   it("emits 2-space-indented output with a trailing newline", () => {
-    const file: OverviewFileEntries = {
+    const result = overviewResult({
       file: "src/file.ts",
       entries: [
         decl({
@@ -151,8 +163,8 @@ describe("renderOverviewJson", () => {
           header: { startLine: 1, lines: ["function leaf(): void"] },
         }),
       ],
-    };
-    const output = renderOverviewJson(file);
+    });
+    const output = renderOverviewJson(result);
     expect(output.endsWith("\n")).toBe(true);
     expect(output.endsWith("\n\n")).toBe(false);
 
@@ -162,7 +174,7 @@ describe("renderOverviewJson", () => {
   });
 
   it("emits the header object with its startLine and lines", () => {
-    const file: OverviewFileEntries = {
+    const result = overviewResult({
       file: "src/file.ts",
       entries: [
         decl({
@@ -175,8 +187,8 @@ describe("renderOverviewJson", () => {
           },
         }),
       ],
-    };
-    const parsed = JSON.parse(renderOverviewJson(file)) as OverviewFileEntries;
+    });
+    const parsed = JSON.parse(renderOverviewJson(result)) as OverviewExpansionResult;
     expect(parsed.entries[0]?.header).toEqual({
       startLine: 10,
       lines: ["function configure(", "  host: string,", "): void"],
@@ -184,7 +196,7 @@ describe("renderOverviewJson", () => {
   });
 
   it("includes diagnostics in the payload when the result carries them", () => {
-    const file: OverviewFileEntries = {
+    const result = overviewResult({
       file: "src/file.ts",
       entries: [],
       diagnostics: [
@@ -194,8 +206,8 @@ describe("renderOverviewJson", () => {
           message: "skipped unrecognised statement syntax at src/file.ts:1 (Identifier)",
         },
       ],
-    };
-    const parsed = JSON.parse(renderOverviewJson(file)) as OverviewFileEntries;
+    });
+    const parsed = JSON.parse(renderOverviewJson(result)) as OverviewExpansionResult;
     expect(parsed.diagnostics).toEqual([
       {
         severity: "warning",
@@ -205,26 +217,38 @@ describe("renderOverviewJson", () => {
     ]);
   });
 
-  it("renders identical bytes for identical IR across two calls", () => {
-    const build = (): OverviewFileEntries => ({
+  it("keeps totalSymbolCount off the wire", () => {
+    const result = overviewResult({
       file: "src/file.ts",
       entries: [
-        decl({
-          kind: { role: "container", nativeLabel: "class" },
-          segments: [{ name: "C" }],
-          range: { startLine: 1, endLine: 10 },
-          header: { startLine: 1, lines: ["class C"] },
-          children: [
-            decl({
-              kind: { role: "callable", nativeLabel: "method" },
-              segments: [{ name: "C" }, { name: "m" }],
-              range: { startLine: 2, endLine: 4 },
-              header: { startLine: 2, lines: ["m(): void"] },
-            }),
-          ],
-        }),
+        decl({ kind: { role: "callable", nativeLabel: "function" }, segments: [{ name: "leaf" }] }),
       ],
     });
+    const parsed = JSON.parse(renderOverviewJson(result)) as Record<string, unknown>;
+    expect(parsed).not.toHaveProperty("totalSymbolCount");
+  });
+
+  it("renders identical bytes for identical IR across two calls", () => {
+    const build = (): OverviewExpansionResult =>
+      overviewResult({
+        file: "src/file.ts",
+        entries: [
+          decl({
+            kind: { role: "container", nativeLabel: "class" },
+            segments: [{ name: "C" }],
+            range: { startLine: 1, endLine: 10 },
+            header: { startLine: 1, lines: ["class C"] },
+            children: [
+              decl({
+                kind: { role: "callable", nativeLabel: "method" },
+                segments: [{ name: "C" }, { name: "m" }],
+                range: { startLine: 2, endLine: 4 },
+                header: { startLine: 2, lines: ["m(): void"] },
+              }),
+            ],
+          }),
+        ],
+      });
     expect(renderOverviewJson(build())).toBe(renderOverviewJson(build()));
   });
 });

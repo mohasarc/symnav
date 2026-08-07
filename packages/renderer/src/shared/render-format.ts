@@ -1,4 +1,4 @@
-import type { LineRange, SymbolIdentity, SymbolPathSegment } from "@symnav/core";
+import { formatSymbolPath, type LineRange, type SymbolIdentity } from "@symnav/core";
 
 const TREE_BRANCH = "├── ";
 const TREE_LAST = "└── ";
@@ -17,7 +17,7 @@ export function formatHeadLine(prefix: string, range: LineRange, path: string): 
 }
 
 export function formatIdentityPath(identity: SymbolIdentity): string {
-  return identity.segments.map(formatIdentitySegment).join("::");
+  return formatSymbolPath(identity.segments);
 }
 
 export function treeGlyphsFor(isLast: boolean): {
@@ -28,11 +28,4 @@ export function treeGlyphsFor(isLast: boolean): {
     branchGlyph: isLast ? TREE_LAST : TREE_BRANCH,
     continuationGlyph: isLast ? TREE_SPACE : TREE_VERTICAL,
   };
-}
-
-function formatIdentitySegment(segment: SymbolPathSegment): string {
-  if (segment.disambiguator === undefined) {
-    return segment.name;
-  }
-  return `${segment.name}#${segment.disambiguator}`;
 }

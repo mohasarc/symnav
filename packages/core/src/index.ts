@@ -17,6 +17,20 @@ export type {
 } from "./intermediate-representation/overview-tree.js";
 export { OverviewTree } from "./intermediate-representation/overview-tree.js";
 export type {
+  OverviewExpansionCandidate,
+  OverviewExpansionRequest,
+  OverviewExpansionResult,
+} from "./overview/overview-expansion-result.js";
+export {
+  AmbiguousLineTargetError,
+  AmbiguousOverviewError,
+  AmbiguousOverviewTargetError,
+  InvalidOverviewExpansionRequestError,
+  OverviewTargetNotFoundError,
+} from "./overview/errors.js";
+export type { ExpandOverviewArgs } from "./overview/overview-expander.js";
+export { OverviewExpander } from "./overview/overview-expander.js";
+export type {
   NavigationDiagnosticSeverity,
   NavigationDiagnostic,
   DiagnosticSink,
@@ -68,6 +82,7 @@ export { isPositiveInteger } from "./validation/is-positive-integer.js";
 export {
   InvalidSymbolIdError,
   formatSymbolIdentity,
+  formatSymbolPath,
   parseSymbolIdentity,
 } from "./intermediate-representation/canonical-identity.js";
 export { splitHeaderLines } from "./intermediate-representation/split-header-lines.js";

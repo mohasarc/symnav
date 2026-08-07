@@ -1,21 +1,10 @@
-import { beforeAll, describe, expect, it } from "vitest";
-import { fixturePath, runSymnavBinary } from "@symnav/testing";
+import { describe, expect, it } from "vitest";
 
-import { ensureFixtureGitMarker } from "../ensure-fixture-git-marker.js";
-
-const fixtureRoot = fixturePath("overview-cases");
-
-function runOverview(args: readonly string[]) {
-  return runSymnavBinary(args, { cwd: fixtureRoot });
-}
-
-beforeAll(() => {
-  ensureFixtureGitMarker(fixtureRoot);
-});
+import { runOverview } from "./run-overview.js";
 
 describe("symnav overview e2e (fold tree)", () => {
   it("renders folded call headers and nested declarations without callback body lines", () => {
-    const r = runOverview(["overview", "fold-tree.ts"]);
+    const r = runOverview(["overview", "fold-tree.ts", "--depth", "1"]);
 
     expect(r.stderr).toBe("");
     expect(r.status).toBe(0);

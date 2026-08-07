@@ -39,6 +39,7 @@ export interface Command<Result, Args> {
   compute(ctx: CommandContext<Args>): Promise<Result>;
   renderText(result: Result): string;
   renderJson(result: Result): string;
+  renderError?(err: unknown): string | undefined;
 }
 
 export async function runCommand<Result, Args>(
@@ -90,7 +91,7 @@ export async function runCommand<Result, Args>(
       });
     }
 
-    handleError(context, err);
+    handleError(context, command, err);
   }
 }
 
@@ -151,9 +152,13 @@ function argShapeFor(shape: ArgShape, json: boolean): ArgShape {
   return { ...shape, flags };
 }
 
-function handleError(context: ProgramContext, err: unknown): void {
+function handleError<Result, Args>(
+  context: ProgramContext,
+  command: Command<Result, Args>,
+  err: unknown,
+): void {
   if (err instanceof UserFacingError) {
-    context.stderr.write(err.render());
+    context.stderr.write(command.renderError?.(err) ?? err.render());
     context.exit(1);
     return;
   }

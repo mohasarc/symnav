@@ -21,6 +21,7 @@ import {
 
 import { reportUnrecognisedNode } from "./extraction-diagnostics.js";
 import { FoldHeaderExtractor } from "./extract-fold-header.js";
+import { FoldHeaderVariantsExtractor } from "./extract-fold-header-variants.js";
 import { ReExportEntryExtractor } from "./extract-re-export-entry.js";
 import { extractSignatureSource } from "./extract-signature-source.js";
 import { extractVariableSignature } from "./extract-variable-signature.js";
@@ -169,15 +170,16 @@ export class OverviewChildrenExtractor {
     if (Node.isTryStatement(node)) {
       return this.tryFoldNodes(node, symbolSegments);
     }
-    return [
-      {
-        type: "fold",
-        foldKind,
-        range: OverviewChildrenExtractor.nodeRange(node),
-        header: FoldHeaderExtractor.extract(node),
-        children: this.foldChildren(node, symbolSegments),
-      },
-    ];
+    const fold: FoldOverviewNode = {
+      type: "fold",
+      foldKind,
+      range: OverviewChildrenExtractor.nodeRange(node),
+      header: FoldHeaderExtractor.extract(node),
+      children: this.foldChildren(node, symbolSegments),
+    };
+    const headerVariants = FoldHeaderVariantsExtractor.extract(node);
+    if (headerVariants.length === 0) return [fold];
+    return [{ ...fold, headerVariants }];
   }
 
   private tryFoldNodes(

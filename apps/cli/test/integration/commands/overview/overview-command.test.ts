@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { InMemoryFileSystem, type OverviewFileEntries } from "@symnav/core";
+import {
+  InMemoryFileSystem,
+  type OverviewExpansionResult,
+  type OverviewFileEntries,
+} from "@symnav/core";
 import { buildProgram } from "../../../../src/program.js";
 import { FakeLanguageBackend } from "../helpers/fake-language-backend.js";
 import { fakeDependencies } from "../helpers/fake-program-dependencies.js";
@@ -77,8 +81,11 @@ describe("symnav overview happy path", () => {
 
     expect(r.stderr).toBe("");
     expect(r.exitCodes).toEqual([]);
-    const parsed = JSON.parse(r.stdout) as OverviewFileEntries;
-    expect(parsed).toEqual(entries);
+    const parsed = JSON.parse(r.stdout) as OverviewExpansionResult;
+    expect(parsed).toEqual({
+      ...entries,
+      request: { depth: 0 },
+    });
   });
 
   it("--cwd overrides startDir for root detection and relative-path resolution", async () => {

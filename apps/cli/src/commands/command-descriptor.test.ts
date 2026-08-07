@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import type {
   DefinitionResult,
   GraphResult,
-  OverviewFileEntries,
+  OverviewExpansionResult,
   RefsResult,
   ResolveResult,
   SymbolOverviewNode,
@@ -35,10 +35,32 @@ describe("command telemetry descriptors", () => {
   });
 
   it("describes overview arguments", () => {
-    expect(overviewCommand.describeArgs({ file: "src/a.ts" })).toEqual({
+    expect(
+      overviewCommand.describeArgs({
+        file: "src/a.ts",
+        depth: undefined,
+        at: undefined,
+        line: undefined,
+      }),
+    ).toEqual({
       kind: "path",
       lengthBucket: "short",
       flags: [],
+    });
+  });
+
+  it("describes overview expansion flags", () => {
+    expect(
+      overviewCommand.describeArgs({
+        file: "src/a.ts",
+        depth: "2",
+        at: "describe",
+        line: "10",
+      }),
+    ).toEqual({
+      kind: "path",
+      lengthBucket: "short",
+      flags: ["depth", "at", "line"],
     });
   });
 
@@ -92,13 +114,15 @@ describe("command telemetry descriptors", () => {
     });
   });
 
-  it("counts overview result symbols recursively", () => {
-    const result: OverviewFileEntries = {
+  it("counts total symbols from the full tree and shown symbols from the expanded entries", () => {
+    const result: OverviewExpansionResult = {
       file: "src/a.ts",
       entries: [symbol("top", [symbol("nested", [symbol("leaf")])]), symbol("other")],
+      request: { depth: 0, at: undefined, line: undefined },
+      totalSymbolCount: 6,
     };
 
-    expect(overviewCommand.countResults(result)).toEqual({ symbols: 4 });
+    expect(overviewCommand.countResults(result)).toEqual({ symbols: 6, shownSymbols: 4 });
   });
 
   it("counts resolve result symbols and files", () => {

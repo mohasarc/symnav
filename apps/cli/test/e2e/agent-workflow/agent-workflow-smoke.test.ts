@@ -98,11 +98,6 @@ describe("symnav agent workflow smoke", () => {
     expect(overview.stdout).not.toContain("Workflow JSDoc should not leak");
     expect(overview.stdout).not.toContain("privateWorkflowSecret");
     expect(overview.stdout).not.toContain("return finalizeWorkflow");
-    expect(overview.stdout).toContain("for (const step of plan.steps) {");
-    expect(overview.stdout).toContain("for (let index = 0; index < parts.length; index += 1) {");
-    expect(overview.stdout).toContain("while (parts.length > 3) {");
-    expect(overview.stdout).toContain("switch (plan.title) {");
-    expect(overview.stdout).toContain("workflowAuditor::auditStep");
     expect(overview.stdout).toContain(
       [
         "│   108 export function describeWorkflowPlan(",
@@ -115,6 +110,17 @@ describe("symnav agent workflow smoke", () => {
     await expect(overview.stdout).toMatchFileSnapshot(
       snapshot("agent-workflow-overview.expected.txt"),
     );
+
+    const oneLevelDeeper = runSymnav(["overview", "src/agent-workflow.ts", "--depth", "1"]);
+    expect(oneLevelDeeper.stderr).toBe("");
+    expect(oneLevelDeeper.status).toBe(0);
+    expect(oneLevelDeeper.stdout).toContain("for (const step of plan.steps) {");
+    expect(oneLevelDeeper.stdout).toContain(
+      "for (let index = 0; index < parts.length; index += 1) {",
+    );
+    expect(oneLevelDeeper.stdout).toContain("while (parts.length > 3) {");
+    expect(oneLevelDeeper.stdout).toContain("switch (plan.title) {");
+    expect(oneLevelDeeper.stdout).toContain("workflowAuditor::auditStep");
 
     const overviewJson = runSymnav(["overview", "src/agent-workflow.ts", "--json"]);
     expect(overviewJson.stderr).toBe("");

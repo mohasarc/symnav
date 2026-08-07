@@ -13,6 +13,24 @@ describe("symnav resolve e2e (exact)", () => {
     expect(r.stderr).toBe("");
     expect(r.status).toBe(0);
     await expect(r.stdout).toMatchFileSnapshot(snapshot("exact-payment-processor.expected.txt"));
+    expect(r.stdout).not.toContain("PayProcessor");
+  });
+
+  it("does not case-normalize or fuzzy-match exact queries", async () => {
+    const r = runResolve(["resolve", "paymentprocessor"]);
+    expect(r.stderr).toBe("");
+    expect(r.status).toBe(0);
+    await expect(r.stdout).toMatchFileSnapshot(
+      snapshot("exact-payment-processor-lowercase.expected.txt"),
+    );
+  });
+
+  it.skip("names the broader matching modes on an empty exact result (ends on (none) today)", () => {
+    const r = runResolve(["resolve", "paymentprocessor"]);
+    expect(r.status).toBe(0);
+    expect(r.stdout).toContain(
+      "No exact match; try --fuzzy for approximate names, or --regex for a pattern.",
+    );
   });
 
   it("renders no-match with empty sections under headers", async () => {
@@ -71,6 +89,7 @@ describe("symnav resolve e2e (fuzzy)", () => {
     expect(r.stderr).toBe("");
     expect(r.status).toBe(0);
     await expect(r.stdout).toMatchFileSnapshot(snapshot("fuzzy-payment.expected.txt"));
+    expect(r.stdout).not.toContain("PayProcessor");
   });
 });
 
@@ -89,6 +108,7 @@ describe("symnav resolve e2e (JSON output)", () => {
     expect(parsed.mode).toBe("exact");
     expect(parsed.files).toEqual([]);
     expect(parsed.symbols.map((s) => s.identity.file)).toEqual([
+      "src/exact-fuzzy-regression.ts",
       "src/payments/PaymentProcessor.ts",
     ]);
   });

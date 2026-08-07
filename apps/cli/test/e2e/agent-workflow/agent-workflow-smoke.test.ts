@@ -208,10 +208,32 @@ describe("symnav agent workflow smoke", () => {
     expect(walkedKeys).toEqual(allReferences().map(referenceKey));
   });
 
-  it.skip("names the enclosing symbol of each reference (refs output carries no owner today)", () => {
-    const references = runReferencesPage(1);
-    expect(references.stdout).toContain(
-      "31: return buildWorkflow(defaultWorkflowInput());  [usage in BuildCoordinator::run]",
+  it.skip("nests every reference under its enclosing symbols (refs lists them flat under the file today)", () => {
+    const references = runSymnav(["refs", buildWorkflowSuffixTarget, "--all"]);
+    expect(references.stdout).toBe(
+      [
+        "References: buildWorkflow",
+        "Total: 5",
+        "Kinds: usage 4, export 1",
+        "Page: 1/1",
+        "Sort: path, line",
+        "",
+        "src/",
+        "├── agent-workflow-barrel.ts",
+        '│   └── 1: export { buildWorkflow, workflowFactory } from "./agent-workflow";  [export]',
+        "└── agent-workflow.ts",
+        "    ├── 29-33: BuildCoordinator",
+        "    │   └── 30-32: BuildCoordinator::run",
+        "    │       └── 31: return buildWorkflow(defaultWorkflowInput());  [usage]",
+        "    ├── 88-90: runAgentWorkflow",
+        "    │   └── 89: return buildWorkflow(defaultWorkflowInput());  [usage]",
+        "    ├── 92-96: previewAgentWorkflow",
+        "    │   └── 93: previewAgentWorkflow::plan",
+        '    │       └── 93: const plan = buildWorkflow({ ...defaultWorkflowInput(), mode: "draft" });  [usage]',
+        "    └── 98: workflowFactory",
+        "        └── 98: …workflowFactory = (input: WorkflowInput): WorkflowPlan => buildWorkflow(input);  [usage]",
+        "",
+      ].join("\n"),
     );
   });
 

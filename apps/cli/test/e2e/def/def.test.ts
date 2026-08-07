@@ -3,6 +3,7 @@ import { beforeAll, describe, expect, it } from "vitest";
 import { fixturePath, runSymnavBinary } from "@symnav/testing";
 
 import { ensureFixtureGitMarker } from "../ensure-fixture-git-marker.js";
+import type { JsonIdentity } from "../json-identity.js";
 
 const fixtureRoot = fixturePath("definition-cases");
 const snapshotsDir = new URL("./__snapshots__/", import.meta.url).pathname;
@@ -13,6 +14,14 @@ function snapshot(name: string): string {
 
 function runDef(args: readonly string[]) {
   return runSymnavBinary(args, { cwd: fixtureRoot });
+}
+
+interface JsonDefResult {
+  identity: JsonIdentity;
+  symbols: readonly {
+    identity: JsonIdentity;
+    range: { startLine: number; endLine: number };
+  }[];
 }
 
 beforeAll(() => {
@@ -86,7 +95,27 @@ describe("symnav def e2e (errors and empty results)", () => {
     const r = runDef(["def", "src/control-flow/LocalDeclarations.ts::outer::insideLoop"]);
     expect(r.stderr).toBe("");
     expect(r.status).toBe(0);
-    expect(r.stdout).toContain("insideLoop");
+    expect(r.stdout).toContain("src/control-flow/LocalDeclarations.ts");
+    expect(r.stdout).toContain("8: outer::insideLoop");
+    expect(r.stdout).toContain("const insideLoop = item");
+    expect(r.stdout).not.toContain("for::insideLoop");
+  });
+
+  it("emits declaration-only identities for definitions nested inside folds", () => {
+    const r = runDef(["def", "src/control-flow/LocalDeclarations.ts::outer::insideLoop", "--json"]);
+    expect(r.stderr).toBe("");
+    expect(r.status).toBe(0);
+    const parsed = JSON.parse(r.stdout) as JsonDefResult;
+    expect(parsed.identity).toEqual({
+      file: "src/control-flow/LocalDeclarations.ts",
+      segments: [{ name: "outer" }, { name: "insideLoop" }],
+    });
+    expect(parsed.symbols).toHaveLength(1);
+    expect(parsed.symbols[0]!.identity.segments).toEqual([
+      { name: "outer" },
+      { name: "insideLoop" },
+    ]);
+    expect(parsed.symbols[0]!.range).toEqual({ startLine: 8, endLine: 8 });
   });
 });
 

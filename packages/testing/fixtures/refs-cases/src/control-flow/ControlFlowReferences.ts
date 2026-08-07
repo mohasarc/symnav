@@ -15,4 +15,10 @@ export function callThroughControlFlow(items: readonly string[], enabled: boolea
     controlFlowTarget();
     break;
   }
+
+  items.forEach((item) => {
+    if (item.length > 0) {
+      controlFlowTarget();
+    }
+  });
 }

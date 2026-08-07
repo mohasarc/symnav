@@ -72,13 +72,15 @@ describe("symnav overview e2e (happy path)", () => {
   });
 
   it("renders declarations nested inside executable control-flow blocks", async () => {
-    const r = runOverview(["overview", "control-flow-declarations.ts", "--depth", "1"]);
+    const r = runOverview(["overview", "control-flow-declarations.ts", "--depth", "2"]);
     expect(r.stderr).toBe("");
     expect(r.status).toBe(0);
     expect(r.stdout).toContain("if (flag) {");
     expect(r.stdout).toContain("for (const item of items) {");
     expect(r.stdout).toContain("outer::insideIf");
     expect(r.stdout).toContain("outer::insideLoop");
+    expect(r.stdout).not.toContain("outer::if");
+    expect(r.stdout).not.toContain("outer::for");
   });
 });
 

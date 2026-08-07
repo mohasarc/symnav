@@ -1,7 +1,66 @@
 {
   "entries": [
     {
-      "children": [],
+      "children": [
+        {
+          "children": [],
+          "header": {
+            "lines": [
+              "greet(name: string): string"
+            ],
+            "startLine": 2
+          },
+          "identity": {
+            "file": "class-with-methods.ts",
+            "segments": [
+              {
+                "name": "Greeter"
+              },
+              {
+                "name": "greet"
+              }
+            ]
+          },
+          "kind": {
+            "nativeLabel": "method-implementation",
+            "role": "callable"
+          },
+          "range": {
+            "endLine": 4,
+            "startLine": 2
+          },
+          "type": "symbol"
+        },
+        {
+          "children": [],
+          "header": {
+            "lines": [
+              "shout(name: string): string"
+            ],
+            "startLine": 6
+          },
+          "identity": {
+            "file": "class-with-methods.ts",
+            "segments": [
+              {
+                "name": "Greeter"
+              },
+              {
+                "name": "shout"
+              }
+            ]
+          },
+          "kind": {
+            "nativeLabel": "method-implementation",
+            "role": "callable"
+          },
+          "range": {
+            "endLine": 8,
+            "startLine": 6
+          },
+          "type": "symbol"
+        }
+      ],
       "header": {
         "lines": [
           "export class Greeter"
@@ -29,6 +88,6 @@
   ],
   "file": "class-with-methods.ts",
   "request": {
-    "depth": 0
+    "depth": 1
   }
 }

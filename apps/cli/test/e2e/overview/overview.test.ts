@@ -28,11 +28,23 @@ function applyOrderedReplacements(
 }
 
 describe("symnav overview e2e (happy path)", () => {
-  it("renders class-with-methods.ts", async () => {
+  it("renders class-with-methods.ts members at depth one", async () => {
+    const r = runOverview(["overview", "class-with-methods.ts", "--depth", "1"]);
+    expect(r.stderr).toBe("");
+    expect(r.status).toBe(0);
+    expect(r.stdout).toContain("Greeter::greet");
+    expect(r.stdout).toContain("Greeter::shout");
+    await expect(r.stdout).toMatchFileSnapshot(snapshot("class-with-methods.expected.txt"));
+  });
+
+  it("renders class-with-methods.ts without members at depth zero", async () => {
     const r = runOverview(["overview", "class-with-methods.ts"]);
     expect(r.stderr).toBe("");
     expect(r.status).toBe(0);
-    await expect(r.stdout).toMatchFileSnapshot(snapshot("class-with-methods.expected.txt"));
+    expect(r.stdout).toContain("1-9: Greeter");
+    expect(r.stdout).not.toContain("Greeter::greet");
+    expect(r.stdout).not.toContain("Greeter::shout");
+    await expect(r.stdout).toMatchFileSnapshot(snapshot("class-with-methods-depth-0.expected.txt"));
   });
 
   it("renders top-level-functions.ts", async () => {
@@ -120,11 +132,25 @@ describe("symnav overview e2e (user errors)", () => {
 });
 
 describe("symnav overview e2e (JSON output)", () => {
-  it("renders class-with-methods.ts as JSON", async () => {
-    const r = runOverview(["overview", "class-with-methods.ts", "--json"]);
+  it("renders class-with-methods.ts members as JSON at depth one", async () => {
+    const r = runOverview(["overview", "class-with-methods.ts", "--depth", "1", "--json"]);
     expect(r.stderr).toBe("");
     expect(r.status).toBe(0);
     await expect(r.stdout).toMatchFileSnapshot(snapshot("class-with-methods.expected.json"));
+  });
+
+  it("renders class-with-methods.ts with empty children as JSON at depth zero", async () => {
+    const r = runOverview(["overview", "class-with-methods.ts", "--json"]);
+    expect(r.stderr).toBe("");
+    expect(r.status).toBe(0);
+    const parsed = JSON.parse(r.stdout) as {
+      readonly entries: readonly { readonly children: readonly unknown[] }[];
+    };
+    expect(parsed.entries).toHaveLength(1);
+    expect(parsed.entries[0]?.children).toEqual([]);
+    await expect(r.stdout).toMatchFileSnapshot(
+      snapshot("class-with-methods-depth-0.expected.json"),
+    );
   });
 
   it("renders multi-line-signature.ts as JSON", async () => {

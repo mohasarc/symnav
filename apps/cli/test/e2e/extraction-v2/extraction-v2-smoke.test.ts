@@ -8,11 +8,22 @@ import type { JsonIdentity } from "../json-identity.js";
 const fixtureRunner = new FixtureRunner("extraction-v2-cases");
 const snapshotsDir = new URL("./__snapshots__/", import.meta.url).pathname;
 const buildWorkflowId = "src/agent-workflow.ts::buildWorkflow";
+const buildWorkflowSuffixTarget = "agent-workflow.ts::buildWorkflow";
 const unsupportedStatementWarning =
   "Warning: skipped unrecognised statement syntax at src/unsupported-statement.ts:5 (MissingDeclaration)\n";
 
 interface JsonResolvedTarget {
   identity: JsonIdentity;
+}
+
+interface JsonReference {
+  file: string;
+  line: number;
+  matchStart: number;
+}
+
+interface JsonRefsResult extends JsonResolvedTarget {
+  references: readonly JsonReference[];
 }
 
 interface JsonContextResult extends JsonResolvedTarget {
@@ -34,6 +45,34 @@ function snapshot(name: string): string {
 
 function runSymnav(args: readonly string[]) {
   return fixtureRunner.run(args);
+}
+
+function runReferencesPage(page: number) {
+  return runSymnav(["refs", buildWorkflowSuffixTarget, "--page-size", "2", "--page", String(page)]);
+}
+
+function referencesOnPage(page: number): readonly JsonReference[] {
+  const result = runSymnav([
+    "refs",
+    buildWorkflowSuffixTarget,
+    "--page-size",
+    "2",
+    "--page",
+    String(page),
+    "--json",
+  ]);
+  expect(result.status).toBe(0);
+  return (JSON.parse(result.stdout) as JsonRefsResult).references;
+}
+
+function allReferences(): readonly JsonReference[] {
+  const result = runSymnav(["refs", buildWorkflowSuffixTarget, "--all", "--json"]);
+  expect(result.status).toBe(0);
+  return (JSON.parse(result.stdout) as JsonRefsResult).references;
+}
+
+function referenceKey(reference: JsonReference): string {
+  return `${reference.file}:${reference.line}:${reference.matchStart}`;
 }
 
 function copiedHeader(stdout: string, text: string): string {
@@ -123,29 +162,26 @@ describe("symnav extraction v2 workflow smoke", () => {
     expect(copiedDefinition.stdout).toContain("Definition: AgentBuilder::buildTask");
   });
 
-  it("keeps suffix-target pagination stable across runs", async () => {
-    const firstReferences = runSymnav([
-      "refs",
-      "agent-workflow.ts::buildWorkflow",
-      "--page-size",
-      "2",
-    ]);
-    const secondReferences = runSymnav([
-      "refs",
-      "agent-workflow.ts::buildWorkflow",
-      "--page-size",
-      "2",
-    ]);
+  it("walks every suffix-target page and repeats byte-identically", async () => {
+    const firstReferences = runReferencesPage(1);
+    const secondReferences = runReferencesPage(1);
     expectUnsupportedStatementWarning(firstReferences.stderr);
     expectUnsupportedStatementWarning(secondReferences.stderr);
     expect(firstReferences.status).toBe(0);
     expect(secondReferences.status).toBe(0);
     expect(secondReferences.stdout).toBe(firstReferences.stdout);
     expect(firstReferences.stdout).toContain("References: buildWorkflow");
-    expect(firstReferences.stdout).toContain("Page: 1/");
+    expect(firstReferences.stdout).toContain("Page: 1/3");
     await expect(firstReferences.stdout).toMatchFileSnapshot(
       snapshot("agent-workflow-refs-page-1.expected.txt"),
     );
+
+    const pages = [1, 2, 3].map((page) => referencesOnPage(page));
+    expect(pages.map((page) => page.length)).toEqual([2, 2, 1]);
+
+    const walkedKeys = pages.flat().map(referenceKey);
+    expect(new Set(walkedKeys).size).toBe(walkedKeys.length);
+    expect(walkedKeys).toEqual(allReferences().map(referenceKey));
   });
 
   it("keeps JSON outputs parseable and routes diagnostics to stderr", () => {

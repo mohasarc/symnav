@@ -50,8 +50,8 @@ export class OverviewExpander {
   expand(): OverviewExpansionResult {
     const entries =
       this.request.at === undefined && this.request.line === undefined
-        ? OverviewExpander.expandNodes(this.file.entries, this.request.depth)
-        : [OverviewExpander.expandNode(this.selectTarget().node, this.request.depth)];
+        ? OverviewExpander.trimNodes(this.file.entries, this.request.depth)
+        : [OverviewExpander.trimNode(this.selectTarget().node, this.request.depth)];
 
     const result: OverviewExpansionResult = {
       file: this.file.file,
@@ -97,14 +97,14 @@ export class OverviewExpander {
     return line === undefined || (range.startLine <= line && line <= range.endLine);
   }
 
-  private static expandNodes(
+  private static trimNodes(
     nodes: readonly OverviewNode[],
     remainingChildLevels: number,
   ): readonly OverviewNode[] {
-    return nodes.map((node) => OverviewExpander.expandNode(node, remainingChildLevels));
+    return nodes.map((node) => OverviewExpander.trimNode(node, remainingChildLevels));
   }
 
-  private static expandNode(node: OverviewNode, remainingChildLevels: number): OverviewNode {
+  private static trimNode(node: OverviewNode, remainingChildLevels: number): OverviewNode {
     if (node.type === "re-export") {
       return node;
     }
@@ -113,7 +113,7 @@ export class OverviewExpander {
     }
     return {
       ...node,
-      children: OverviewExpander.expandNodes(node.children, remainingChildLevels - 1),
+      children: OverviewExpander.trimNodes(node.children, remainingChildLevels - 1),
     };
   }
 

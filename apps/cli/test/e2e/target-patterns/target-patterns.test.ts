@@ -1,7 +1,7 @@
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { SEGMENT_SEPARATOR, parseSegment } from "@symnav/core";
 
+import { expectIdentity } from "../expect-identity.js";
 import { FixtureRunner } from "../fixture-runner.js";
 import type { JsonIdentity } from "../json-identity.js";
 import { type SymbolCommand, symbolCommands } from "../symbol-command.js";
@@ -79,14 +79,6 @@ function runJson<Result>(command: SymbolCommand, args: readonly string[]): Resul
   expect(result.stderr).toBe("");
   expect(result.status).toBe(0);
   return JSON.parse(result.stdout) as Result;
-}
-
-function expectIdentity(identity: JsonIdentity, canonicalId: string): void {
-  const [file, ...segments] = canonicalId.split(SEGMENT_SEPARATOR);
-  expect(identity).toEqual({
-    file,
-    segments: segments.map((segment) => parseSegment(segment, canonicalId)),
-  });
 }
 
 describe("target-pattern symbol commands", () => {

@@ -1,18 +1,15 @@
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
+import { expectIdentity } from "../expect-identity.js";
 import { FixtureRunner } from "../fixture-runner.js";
+import type { JsonIdentity } from "../json-identity.js";
 
 const fixtureRunner = new FixtureRunner("extraction-v2-cases");
 const snapshotsDir = new URL("./__snapshots__/", import.meta.url).pathname;
 const buildWorkflowId = "src/agent-workflow.ts::buildWorkflow";
 const unsupportedStatementWarning =
   "Warning: skipped unrecognised statement syntax at src/unsupported-statement.ts:5 (MissingDeclaration)\n";
-
-interface JsonIdentity {
-  file: string;
-  segments: readonly { name: string }[];
-}
 
 interface JsonContextResult {
   identity: JsonIdentity;
@@ -34,14 +31,6 @@ function snapshot(name: string): string {
 
 function runSymnav(args: readonly string[]) {
   return fixtureRunner.run(args);
-}
-
-function expectIdentity(identity: JsonIdentity, canonicalId: string): void {
-  const [file, ...segments] = canonicalId.split("::");
-  expect(identity).toEqual({
-    file,
-    segments: segments.map((name) => ({ name })),
-  });
 }
 
 function copiedHeader(stdout: string, text: string): string {

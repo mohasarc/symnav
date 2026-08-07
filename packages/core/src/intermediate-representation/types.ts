@@ -1,4 +1,5 @@
 import type { SymbolIdentity } from "./symbol-identity.js";
+import type { NavigationDiagnostic } from "../diagnostics/navigation-diagnostic.js";
 
 export type SymbolRole = "container" | "callable" | "value" | "type";
 
@@ -25,7 +26,11 @@ export interface SymbolDecl {
   readonly children: readonly SymbolDecl[];
 }
 
-export interface OverviewFileSymbols {
+export interface ResultWithDiagnostics {
+  readonly diagnostics?: readonly NavigationDiagnostic[];
+}
+
+export interface OverviewFileSymbols extends ResultWithDiagnostics {
   readonly file: string; // workspace-relative, POSIX separators
   readonly symbols: readonly SymbolDecl[]; // top-level entries, source order
 }

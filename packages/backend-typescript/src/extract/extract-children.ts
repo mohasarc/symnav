@@ -8,9 +8,16 @@ import {
   type VariableDeclarationKind,
   type VariableStatement,
 } from "ts-morph";
-import type { LineRange, Signature, SymbolDecl, SymbolIdentity } from "@symnav/core";
+import type {
+  DiagnosticSink,
+  LineRange,
+  Signature,
+  SymbolDecl,
+  SymbolIdentity,
+} from "@symnav/core";
 import { splitSignatureLines } from "@symnav/core";
 
+import { reportUnrecognisedNode } from "./extraction-diagnostics.js";
 import { extractSignatureSource } from "./extract-signature-source.js";
 import { nodeKind } from "./node-kind.js";
 import { refineLabel } from "./refine-label.js";
@@ -19,10 +26,15 @@ import { roleOf } from "./typescript-symbol-kind.js";
 export interface ExtractionScope {
   readonly file: string;
   readonly ancestorNames: readonly string[];
+  readonly diagnostics?: DiagnosticSink | undefined;
 }
 
 function childScope(parent: ExtractionScope, name: string): ExtractionScope {
-  return { file: parent.file, ancestorNames: [...parent.ancestorNames, name] };
+  return {
+    file: parent.file,
+    ancestorNames: [...parent.ancestorNames, name],
+    diagnostics: parent.diagnostics,
+  };
 }
 
 function identityFor(scope: ExtractionScope, name: string): SymbolIdentity {
@@ -62,6 +74,7 @@ export function extractStatementDecls(
 const IGNORED_STATEMENT_KINDS: ReadonlySet<SyntaxKind> = new Set([
   SyntaxKind.ImportDeclaration,
   SyntaxKind.ExportDeclaration,
+  SyntaxKind.NamespaceExportDeclaration,
   SyntaxKind.ImportEqualsDeclaration,
   SyntaxKind.EmptyStatement,
   SyntaxKind.ExpressionStatement,
@@ -92,7 +105,8 @@ function toMemberDecl(member: Node, scope: ExtractionScope): SymbolDecl[] {
   const kind = nodeKind(member);
   if (!kind) {
     if (IGNORED_MEMBER_KINDS.has(member.getKind())) return [];
-    throw new Error(`Unrecognised class/interface member kind: ${member.getKindName()}`);
+    reportUnrecognisedMember(member, scope);
+    return [];
   }
   return expandOverloads(member).map((node) => buildMemberDecl(node, kind, scope));
 }
@@ -128,7 +142,8 @@ function toStatementDecl(stmt: Node, scope: ExtractionScope): SymbolDecl[] {
   const kind = nodeKind(stmt);
   if (!kind) {
     if (IGNORED_STATEMENT_KINDS.has(stmt.getKind())) return [];
-    throw new Error(`Unrecognised top-level statement kind: ${stmt.getKindName()}`);
+    reportUnrecognisedStatement(stmt, scope);
+    return [];
   }
   if (Node.isVariableStatement(stmt)) {
     return expandVariableStatement(stmt, scope);
@@ -209,4 +224,24 @@ function nodeRange(node: Node): LineRange {
     startLine: node.getStartLineNumber(),
     endLine: node.getEndLineNumber(),
   };
+}
+
+function reportUnrecognisedStatement(stmt: Node, scope: ExtractionScope): void {
+  if (!scope.diagnostics) return;
+  reportUnrecognisedNode({
+    sink: scope.diagnostics,
+    node: stmt,
+    filePath: scope.file,
+    category: "statement",
+  });
+}
+
+function reportUnrecognisedMember(member: Node, scope: ExtractionScope): void {
+  if (!scope.diagnostics) return;
+  reportUnrecognisedNode({
+    sink: scope.diagnostics,
+    node: member,
+    filePath: scope.file,
+    category: "member",
+  });
 }

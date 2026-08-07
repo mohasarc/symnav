@@ -187,6 +187,12 @@ describe("extractFileSymbols", () => {
     expect(result.symbols).toEqual([]);
   });
 
+  it("ignores namespace exports and keeps following declarations", () => {
+    const source = ["export as namespace katex;", "export function render() {}"].join("\n");
+    const result = symbolsOf(source);
+    expect(result.symbols.map((symbol) => ownName(symbol))).toEqual(["render"]);
+  });
+
   it("ignores expression statements and empty statements at the top level", () => {
     const source = ["sideEffect();", ";"].join("\n");
     const result = symbolsOf(source);

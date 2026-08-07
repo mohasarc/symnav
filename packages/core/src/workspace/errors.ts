@@ -33,6 +33,17 @@ export class IgnoredFileError extends UserFacingError {
   }
 }
 
+export class DirectoryInputError extends UserFacingError {
+  constructor(private readonly inputPath: string) {
+    super();
+    this.name = "DirectoryInputError";
+  }
+
+  get reason(): string {
+    return `${this.inputPath} is a directory; expected a source file`;
+  }
+}
+
 export class UnreadableDirectoryWarningCandidateError extends UserFacingError {
   constructor(
     private readonly directory: string,

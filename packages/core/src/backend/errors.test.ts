@@ -12,6 +12,12 @@ describe("UnsupportedFileError", () => {
   it("renders a reason citing the extension and input path", () => {
     expect(new UnsupportedFileError("README.md").reason).toBe("cannot read .md files (README.md)");
   });
+
+  it("renders a specific reason for extensionless files", () => {
+    expect(new UnsupportedFileError("README").reason).toBe(
+      "README has no file extension; expected a source file",
+    );
+  });
 });
 
 describe("SymbolNotFoundError", () => {

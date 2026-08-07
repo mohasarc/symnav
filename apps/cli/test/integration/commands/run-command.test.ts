@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { InMemoryFileSystem, UserFacingError } from "@symnav/core";
+import { InMemoryFileSystem, type NavigationDiagnostic, UserFacingError } from "@symnav/core";
 import type { ArgShape } from "@symnav/telemetry";
 import { runCommand } from "../../../src/command.js";
 import type { Command, CommandContext } from "../../../src/command.js";
@@ -23,6 +23,7 @@ class StubCommand implements Command<string, StubArgs> {
       compute?: (ctx: CommandContext<StubArgs>) => Promise<string>;
       renderText?: (result: string) => string;
       renderJson?: (result: string) => string;
+      diagnostics?: (result: string) => readonly NavigationDiagnostic[];
     } = {},
   ) {}
 
@@ -39,6 +40,10 @@ class StubCommand implements Command<string, StubArgs> {
       return this.options.compute(ctx);
     }
     return "computed";
+  }
+
+  diagnostics(result: string): readonly NavigationDiagnostic[] {
+    return this.options.diagnostics?.(result) ?? [];
   }
 
   renderText(result: string): string {
@@ -86,6 +91,50 @@ describe("runCommand lifecycle", () => {
       args: stubArgs("hi"),
     });
 
+    expect(context.stdout.text()).toBe("json:computed");
+  });
+
+  it("writes diagnostics to stderr before stdout", async () => {
+    const context = createFakeProgramContext({ cwd: "/repo" });
+
+    await runCommand(
+      new StubCommand({
+        diagnostics: () => [
+          { severity: "warning", dedupeKey: "one", message: "first" },
+          { severity: "warning", dedupeKey: "two", message: "second" },
+        ],
+      }),
+      {
+        context,
+        dependencies: fakeDependencies(),
+        cwdOverride: undefined,
+        json: false,
+        args: stubArgs("hi"),
+      },
+    );
+
+    expect(context.stderr.text()).toBe("Warning: first\nWarning: second\n");
+    expect(context.stdout.text()).toBe("text:computed");
+    expect(context.exitCodes).toEqual([]);
+  });
+
+  it("writes diagnostics to stderr in json mode too", async () => {
+    const context = createFakeProgramContext({ cwd: "/repo" });
+
+    await runCommand(
+      new StubCommand({
+        diagnostics: () => [{ severity: "warning", dedupeKey: "one", message: "first" }],
+      }),
+      {
+        context,
+        dependencies: fakeDependencies(),
+        cwdOverride: undefined,
+        json: true,
+        args: stubArgs("hi"),
+      },
+    );
+
+    expect(context.stderr.text()).toBe("Warning: first\n");
     expect(context.stdout.text()).toBe("json:computed");
   });
 

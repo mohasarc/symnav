@@ -1,4 +1,4 @@
-import type { OverviewFileSymbols, SymbolDecl } from "@symnav/core";
+import type { NavigationDiagnostic, OverviewFileSymbols, SymbolDecl } from "@symnav/core";
 import { renderOverviewJson, renderOverviewText } from "@symnav/renderer";
 import type { Command, CommandContext } from "../../command.js";
 import { classifyArgKind, lengthBucketOf } from "../../telemetry/arg-shape.js";
@@ -18,6 +18,9 @@ export const overviewCommand: Command<OverviewFileSymbols, OverviewArgs> = {
   },
   countResults(result: OverviewFileSymbols) {
     return { symbols: countSymbols(result.symbols) };
+  },
+  diagnostics(result: OverviewFileSymbols): readonly NavigationDiagnostic[] {
+    return result.diagnostics ?? [];
   },
   async compute(ctx: CommandContext<OverviewArgs>): Promise<OverviewFileSymbols> {
     const path = await ctx.workspace.resolveInputPath(ctx.args.file, ctx.cwd);

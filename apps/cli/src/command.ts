@@ -2,9 +2,15 @@ import {
   BackendRouter,
   createWorkspace,
   type GitHistory,
+  type NavigationDiagnostic,
+  type NavigationDiagnosticSeverity,
   UserFacingError,
   type Workspace,
 } from "@symnav/core";
+
+const severityPrefixes: Record<NavigationDiagnosticSeverity, string> = {
+  warning: "Warning",
+};
 import type { ArgShape, OutcomeReport } from "@symnav/telemetry";
 import type { ProgramContext } from "./program-context.js";
 import type { ProgramDependencies } from "./program-dependencies.js";
@@ -29,6 +35,7 @@ export interface Command<Result, Args> {
   readonly name: string;
   describeArgs(args: Args): ArgShape;
   countResults(result: Result): Record<string, number>;
+  diagnostics?(result: Result): readonly NavigationDiagnostic[];
   compute(ctx: CommandContext<Args>): Promise<Result>;
   renderText(result: Result): string;
   renderJson(result: Result): string;
@@ -49,6 +56,9 @@ export async function runCommand<Result, Args>(
     const router = new BackendRouter(dependencies.backends());
     const result = await command.compute({ workspace, router, git: dependencies.git, cwd, args });
     const rendered = json ? command.renderJson(result) : command.renderText(result);
+    for (const diagnostic of command.diagnostics?.(result) ?? []) {
+      context.stderr.write(`${severityPrefixes[diagnostic.severity]}: ${diagnostic.message}\n`);
+    }
     context.stdout.write(rendered);
 
     if (dependencies.telemetryEnabled) {

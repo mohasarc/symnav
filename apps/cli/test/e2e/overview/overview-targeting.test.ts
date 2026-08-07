@@ -195,6 +195,16 @@ describe("symnav overview e2e (targeting)", () => {
     expect(r.stdout).toContain("Greeter::shout");
   });
 
+  it.skip("targets a class by its bare name (matches its members too and reports ambiguous today)", () => {
+    const r = runOverview(["overview", "class-with-methods.ts", "--at", "Greeter", "--depth", "1"]);
+
+    expect(r.stderr).toBe("");
+    expect(r.status).toBe(0);
+    expect(r.stdout).toContain("1-9: Greeter");
+    expect(r.stdout).toContain("Greeter::greet");
+    expect(r.stdout).toContain("Greeter::shout");
+  });
+
   it("prints target candidates for ambiguous header text", async () => {
     const r = runOverview(["overview", "targeted-expansion.ts", "--at", "describe"]);
 

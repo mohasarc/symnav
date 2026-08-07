@@ -1,0 +1,11 @@
+Resolve: ^to[A-Z].* (regex)
+
+Symbols
+└── src/converters.ts
+    ├── 2: Converter::toOrder
+    │   toOrder(): void
+    └── 5: toReceipt
+        export function toReceipt(): void
+
+Files
+└── src/toOrderHelpers.ts

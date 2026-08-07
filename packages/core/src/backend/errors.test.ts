@@ -2,7 +2,12 @@ import { describe, expect, it } from "vitest";
 
 import { UserFacingError } from "../errors.js";
 import type { SymbolIdentity } from "../intermediate-representation/symbol-identity.js";
-import { NoSupportedFilesError, SymbolNotFoundError, UnsupportedFileError } from "./errors.js";
+import {
+  InvalidResolveRegexError,
+  NoSupportedFilesError,
+  SymbolNotFoundError,
+  UnsupportedFileError,
+} from "./errors.js";
 
 describe("UnsupportedFileError", () => {
   it("is a UserFacingError", () => {
@@ -49,6 +54,26 @@ describe("SymbolNotFoundError", () => {
   it("renders a reason containing the formatted canonical ID", () => {
     expect(new SymbolNotFoundError(identity).reason).toBe(
       "no symbol src/payments/PaymentProcessor.ts::PaymentProcessor::charge found",
+    );
+  });
+});
+
+describe("InvalidResolveRegexError", () => {
+  it("is a UserFacingError", () => {
+    expect(new InvalidResolveRegexError("[", "Unterminated character class")).toBeInstanceOf(
+      UserFacingError,
+    );
+  });
+
+  it("exposes the pattern and detail as fields", () => {
+    const err = new InvalidResolveRegexError("[", "Unterminated character class");
+    expect(err.pattern).toBe("[");
+    expect(err.detail).toBe("Unterminated character class");
+  });
+
+  it("renders a reason containing the pattern and detail", () => {
+    expect(new InvalidResolveRegexError("[", "Unterminated character class").reason).toBe(
+      'invalid resolve regex "[": Unterminated character class',
     );
   });
 });

@@ -10,9 +10,12 @@ import type { SymbolTargetPattern } from "../target/symbol-target-pattern.js";
 import type { SymbolTargetCandidate } from "../target/symbol-target-result.js";
 import type { ResolvedPath } from "../workspace/workspace.js";
 
-export interface ResolveSymbolsOptions {
-  readonly fuzzy: boolean;
-}
+export type ResolveSymbolsMode = "exact" | "fuzzy" | "regex";
+
+export type ResolveSymbolsOptions =
+  | { readonly mode: "exact" }
+  | { readonly mode: "fuzzy" }
+  | { readonly mode: "regex"; readonly regex: RegExp };
 
 export interface ResolveSymbolTargetOptions {
   readonly containingLine: number | undefined;

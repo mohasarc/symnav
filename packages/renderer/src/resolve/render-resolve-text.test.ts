@@ -29,7 +29,7 @@ describe("renderResolveText", () => {
   it("renders the canonical multi-file Payment example", () => {
     const result: ResolveResult = {
       query: "Payment",
-      fuzzy: true,
+      mode: "fuzzy",
       symbols: [
         decl({
           file: "src/checkout/CheckoutService.ts",
@@ -61,7 +61,7 @@ describe("renderResolveText", () => {
     const output = renderResolveText(result);
     expect(output).toBe(
       [
-        "Resolve: Payment",
+        "Resolve: Payment (fuzzy)",
         "",
         "Symbols",
         "├── src/checkout/CheckoutService.ts",
@@ -84,33 +84,40 @@ describe("renderResolveText", () => {
   it("renders empty sections under their headers when there are no matches", () => {
     const result: ResolveResult = {
       query: "Nope",
-      fuzzy: false,
+      mode: "regex",
       symbols: [],
       files: [],
     };
     expect(renderResolveText(result)).toBe(
-      ["Resolve: Nope", "", "Symbols", "(none)", "", "Files", "(none)", ""].join("\n"),
+      ["Resolve: Nope (regex)", "", "Symbols", "(none)", "", "Files", "(none)", ""].join("\n"),
     );
   });
 
   it("renders only the Files section when no symbol matches", () => {
     const result: ResolveResult = {
       query: "Payment",
-      fuzzy: true,
+      mode: "fuzzy",
       symbols: [],
       files: ["src/Payment.ts"],
     };
     expect(renderResolveText(result)).toBe(
-      ["Resolve: Payment", "", "Symbols", "(none)", "", "Files", "└── src/Payment.ts", ""].join(
-        "\n",
-      ),
+      [
+        "Resolve: Payment (fuzzy)",
+        "",
+        "Symbols",
+        "(none)",
+        "",
+        "Files",
+        "└── src/Payment.ts",
+        "",
+      ].join("\n"),
     );
   });
 
   it("emits `name#N` segments for disambiguated overloads", () => {
     const result: ResolveResult = {
       query: "post",
-      fuzzy: false,
+      mode: "exact",
       symbols: [
         decl({
           file: "src/http/Router.ts",
@@ -133,7 +140,7 @@ describe("renderResolveText", () => {
     };
     expect(renderResolveText(result)).toBe(
       [
-        "Resolve: post",
+        "Resolve: post (exact)",
         "",
         "Symbols",
         "└── src/http/Router.ts",
@@ -152,7 +159,7 @@ describe("renderResolveText", () => {
   it("groups multiple symbols in the same file under one file branch", () => {
     const result: ResolveResult = {
       query: "charge",
-      fuzzy: false,
+      mode: "exact",
       symbols: [
         decl({
           file: "src/payments/PaymentProcessor.ts",
@@ -175,7 +182,7 @@ describe("renderResolveText", () => {
     };
     expect(renderResolveText(result)).toBe(
       [
-        "Resolve: charge",
+        "Resolve: charge (exact)",
         "",
         "Symbols",
         "└── src/payments/PaymentProcessor.ts",

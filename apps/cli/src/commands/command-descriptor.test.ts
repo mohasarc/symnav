@@ -65,11 +65,21 @@ describe("command telemetry descriptors", () => {
   });
 
   it("describes resolve arguments", () => {
-    expect(resolveCommand.describeArgs({ query: "Foo", fuzzy: true })).toEqual({
+    expect(resolveCommand.describeArgs({ query: "Foo", fuzzy: true, regex: false })).toEqual({
       kind: "bare",
       lengthBucket: "short",
       flags: ["fuzzy"],
     });
+  });
+
+  it("describes resolve regex arguments", () => {
+    expect(resolveCommand.describeArgs({ query: "^to[A-Z].*", fuzzy: false, regex: true })).toEqual(
+      {
+        kind: "bare",
+        lengthBucket: "short",
+        flags: ["regex"],
+      },
+    );
   });
 
   it("describes def arguments", () => {
@@ -138,7 +148,7 @@ describe("command telemetry descriptors", () => {
   it("counts resolve result symbols and files", () => {
     const result: ResolveResult = {
       query: "Foo",
-      fuzzy: false,
+      mode: "exact",
       symbols: [symbol("one"), symbol("two")],
       files: ["src/a.ts", "src/b.ts", "src/c.ts"],
     };

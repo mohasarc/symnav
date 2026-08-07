@@ -24,7 +24,7 @@ import { findDefinitions } from "../definition/find-definitions.js";
 import { loadFileEntries } from "../extract/load-file-entries.js";
 import { WorkspaceDeclarationIndex } from "../identity/workspace-declaration-index.js";
 import { ReferenceFinder } from "../references/find-references.js";
-import { resolveSymbols } from "../resolve/resolve-symbols.js";
+import { SymbolResolver } from "../resolve/resolve-symbols.js";
 import { TargetCandidateFinder } from "../target/find-target-candidates.js";
 
 export class TypeScriptBackend implements LanguageBackend {
@@ -67,7 +67,7 @@ export class TypeScriptBackend implements LanguageBackend {
     query: string,
     options: ResolveSymbolsOptions,
   ): Promise<readonly SymbolOverviewNode[]> {
-    return resolveSymbols({ fs: this.fs, files, query, options });
+    return SymbolResolver.resolveSymbols({ fs: this.fs, files, query, options });
   }
 
   async findTargetCandidates(

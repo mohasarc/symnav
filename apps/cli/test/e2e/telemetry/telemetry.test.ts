@@ -19,6 +19,7 @@ interface UsageEventLine {
     readonly flags: readonly string[];
   };
   readonly resultCounts?: Readonly<Record<string, number>>;
+  readonly errorReason?: string;
 }
 
 beforeAll(() => {
@@ -81,6 +82,26 @@ describe("symnav telemetry e2e", () => {
     expect(enabled.status).toBe(disabled.status);
     expect(enabled.stdout).toBe(disabled.stdout);
     expect(enabled.stderr).toBe(disabled.stderr);
+  });
+
+  it("records a user_error outcome when resolve flags conflict", () => {
+    const stateDir = newStateDir();
+    const result = runSymnavBinary(["resolve", "--regex", "--fuzzy", "query"], {
+      cwd: fixtureRoot,
+      env: { SYMNAV_STATE_DIR: stateDir, SYMNAV_TELEMETRY: "1" },
+    });
+
+    expect(result.stdout).toBe("");
+    expect(result.stderr).toBe("Cannot answer: --regex cannot be combined with --fuzzy.\n");
+    expect(result.status).toBe(1);
+
+    const event = JSON.parse(singleUsageLine(stateDir)) as UsageEventLine;
+    expect(event).toMatchObject({
+      command: "resolve",
+      outcome: "user_error",
+      errorReason: "ConflictingResolveFlagsError",
+      argShape: { flags: ["fuzzy", "regex"] },
+    });
   });
 
   it("reports enabled runs through stats json", () => {

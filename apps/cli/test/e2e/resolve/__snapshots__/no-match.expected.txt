@@ -1,4 +1,4 @@
-Resolve: NoSuchSymbol
+Resolve: NoSuchSymbol (exact)
 
 Symbols
 (none)

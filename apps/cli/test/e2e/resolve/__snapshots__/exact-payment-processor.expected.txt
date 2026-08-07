@@ -1,4 +1,4 @@
-Resolve: PaymentProcessor
+Resolve: PaymentProcessor (exact)
 
 Symbols
 └── src/payments/PaymentProcessor.ts

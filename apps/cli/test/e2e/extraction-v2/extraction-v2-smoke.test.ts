@@ -24,6 +24,7 @@ interface JsonContextResult extends JsonResolvedTarget {
 
 interface JsonGraphResult extends JsonResolvedTarget {
   root: { identity: JsonIdentity };
+  incoming: { totalPathCount: number; paths: readonly unknown[] };
   outgoing: { totalPathCount: number; paths: readonly unknown[] };
 }
 
@@ -166,5 +167,13 @@ describe("symnav extraction v2 workflow smoke", () => {
     expectIdentity(parsedGraph.root.identity, buildWorkflowId);
     expect(parsedGraph.outgoing.totalPathCount).toBeGreaterThan(0);
     expect(parsedGraph.outgoing.paths.length).toBeGreaterThan(0);
+
+    const incomingGraph = runSymnav(["graph", "buildWorkflow", "--incoming", "--json"]);
+    expectUnsupportedStatementWarning(incomingGraph.stderr);
+    expect(incomingGraph.status).toBe(0);
+    const parsedIncomingGraph = JSON.parse(incomingGraph.stdout) as JsonGraphResult;
+    expectIdentity(parsedIncomingGraph.identity, buildWorkflowId);
+    expect(parsedIncomingGraph.incoming.totalPathCount).toBe(4);
+    expect(parsedIncomingGraph.incoming.paths.length).toBe(4);
   });
 });

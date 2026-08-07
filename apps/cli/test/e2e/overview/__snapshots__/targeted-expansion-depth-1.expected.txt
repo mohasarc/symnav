@@ -1,0 +1,15 @@
+Overview: targeted-expansion.ts
+├── 1-3: describe("setup", () => {
+│   └── 2: setupHelper
+│       2 const setupHelper = () => 1
+│
+├── 5-11: describe("cursor", () => {
+│   ├── 6: cursorHelper
+│   │   6 const cursorHelper = () => 2
+│   └── 8-10: describe("nested", () => {
+│
+└── 13-18: action
+    13 export function action(flag: boolean): void
+    └── 14-17: if (flag) {
+        └── 15: action::branchValue
+            15 const branchValue = 1

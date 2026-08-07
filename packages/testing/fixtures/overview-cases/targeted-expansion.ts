@@ -6,7 +6,7 @@ describe("cursor", () => {
   const cursorHelper = () => 2;
 
   describe("nested", () => {
-    const nestedHelper = () => 3;
+    const innerHelper = () => 3;
   });
 });
 

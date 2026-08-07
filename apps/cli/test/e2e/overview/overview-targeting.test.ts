@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
 
-import { runOverview } from "./run-overview.js";
+import { runOverview, snapshot } from "./run-overview.js";
 
 describe("symnav overview e2e (targeting)", () => {
-  it("renders collapsed fold interiors by default", () => {
+  it("renders copied fold headers without opening fold internals by default", async () => {
     const r = runOverview(["overview", "targeted-expansion.ts"]);
 
     expect(r.stderr).toBe("");
@@ -15,6 +15,32 @@ describe("symnav overview e2e (targeting)", () => {
     expect(r.stdout).not.toContain("setupHelper");
     expect(r.stdout).not.toContain("cursorHelper");
     expect(r.stdout).not.toContain("branchValue");
+    await expect(r.stdout).toMatchFileSnapshot(snapshot("targeted-expansion-depth-0.expected.txt"));
+  });
+
+  it("opens one fold level globally", async () => {
+    const r = runOverview(["overview", "targeted-expansion.ts", "--depth", "1"]);
+
+    expect(r.stderr).toBe("");
+    expect(r.status).toBe(0);
+    expect(r.stdout).toContain("2: setupHelper");
+    expect(r.stdout).toContain("6: cursorHelper");
+    expect(r.stdout).toContain('8-10: describe("nested", () => {');
+    expect(r.stdout).toContain("15: action::branchValue");
+    expect(r.stdout).not.toContain("9: innerHelper");
+    await expect(r.stdout).toMatchFileSnapshot(snapshot("targeted-expansion-depth-1.expected.txt"));
+  });
+
+  it("opens nested fold levels globally", async () => {
+    const r = runOverview(["overview", "targeted-expansion.ts", "--depth", "2"]);
+
+    expect(r.stderr).toBe("");
+    expect(r.status).toBe(0);
+    expect(r.stdout).toContain("2: setupHelper");
+    expect(r.stdout).toContain("6: cursorHelper");
+    expect(r.stdout).toContain("9: innerHelper");
+    expect(r.stdout).toContain("15: action::branchValue");
+    await expect(r.stdout).toMatchFileSnapshot(snapshot("targeted-expansion-depth-2.expected.txt"));
   });
 
   it("expands a copied fold header target", () => {
@@ -33,7 +59,7 @@ describe("symnav overview e2e (targeting)", () => {
     expect(r.stdout).toContain("6: cursorHelper");
     expect(r.stdout).toContain('8-10: describe("nested", () => {');
     expect(r.stdout).not.toContain('describe("setup"');
-    expect(r.stdout).not.toContain("nestedHelper");
+    expect(r.stdout).not.toContain("innerHelper");
   });
 
   it("targets an async callback fold by its closed call form", () => {
@@ -88,7 +114,18 @@ describe("symnav overview e2e (targeting)", () => {
     expect(r.stdout).toContain("2: longHelper");
   });
 
-  it("prints target candidates for ambiguous header text", () => {
+  it("targets a nested fold by copied header substring", () => {
+    const r = runOverview(["overview", "targeted-expansion.ts", "--at", "nested", "--depth", "1"]);
+
+    expect(r.stderr).toBe("");
+    expect(r.status).toBe(0);
+    expect(r.stdout).toContain('8-10: describe("nested", () => {');
+    expect(r.stdout).toContain("9: innerHelper");
+    expect(r.stdout).not.toContain('describe("setup"');
+    expect(r.stdout).not.toContain('describe("cursor"');
+  });
+
+  it("prints target candidates for ambiguous header text", async () => {
     const r = runOverview(["overview", "targeted-expansion.ts", "--at", "describe"]);
 
     expect(r.stdout).toBe("");
@@ -97,6 +134,77 @@ describe("symnav overview e2e (targeting)", () => {
     expect(r.stderr).toContain('1-3: describe("setup", () => {');
     expect(r.stderr).toContain('5-11: describe("cursor", () => {');
     expect(r.stderr).toContain('8-10: describe("nested", () => {');
+    await expect(r.stderr).toMatchFileSnapshot(
+      snapshot("targeted-expansion-ambiguous-at.expected.err"),
+    );
+  });
+
+  it("reports missing target text", () => {
+    const r = runOverview(["overview", "targeted-expansion.ts", "--at", "missing"]);
+
+    expect(r.stdout).toBe("");
+    expect(r.status).toBe(1);
+    expect(r.stderr).toBe('Cannot answer: no overview target matching --at "missing".\n');
+  });
+
+  it("narrows a line-only target to one candidate", () => {
+    const r = runOverview(["overview", "line-narrowing.ts", "--line", "10", "--depth", "1"]);
+
+    expect(r.stderr).toBe("");
+    expect(r.status).toBe(0);
+    expect(r.stdout).toContain('10-12: describe("repeated", () => {');
+    expect(r.stdout).toContain("11: secondHelper");
+    expect(r.stdout).not.toContain("firstHelper");
+  });
+
+  it("keeps same-line targets ambiguous under line-only narrowing", async () => {
+    const r = runOverview(["overview", "line-narrowing.ts", "--line", "14"]);
+
+    expect(r.stdout).toBe("");
+    expect(r.status).toBe(1);
+    expect(r.stderr).toContain(
+      "Cannot answer: line 14 matches multiple overview nodes; use --at with copied header text.",
+    );
+    expect(r.stderr).toContain('14: describe("inline", () => {');
+    await expect(r.stderr).toMatchFileSnapshot(
+      snapshot("line-narrowing-ambiguous-line.expected.err"),
+    );
+  });
+
+  it.skip("expands one of two identical same-line folds (no selector distinguishes them today)", () => {
+    const r = runOverview([
+      "overview",
+      "line-narrowing.ts",
+      "--line",
+      "14",
+      "--at",
+      'describe("inline")',
+      "--depth",
+      "1",
+    ]);
+
+    expect(r.stderr).toBe("");
+    expect(r.status).toBe(0);
+    expect(r.stdout).toContain("14: inlineHelper");
+  });
+
+  it("uses line and header text to select one duplicate header", () => {
+    const r = runOverview([
+      "overview",
+      "line-narrowing.ts",
+      "--line",
+      "10",
+      "--at",
+      "repeated",
+      "--depth",
+      "1",
+    ]);
+
+    expect(r.stderr).toBe("");
+    expect(r.status).toBe(0);
+    expect(r.stdout).toContain('10-12: describe("repeated", () => {');
+    expect(r.stdout).toContain("11: secondHelper");
+    expect(r.stdout).not.toContain("firstHelper");
   });
 
   it("includes expansion request metadata in JSON output", () => {
@@ -121,6 +229,56 @@ describe("symnav overview e2e (targeting)", () => {
     expect(parsed.request).toEqual({ depth: 1, at: 'describe("cursor")' });
     expect(parsed.entries).toHaveLength(1);
     expect(parsed.entries[0]?.header.lines).toEqual(['describe("cursor", () => {']);
+  });
+
+  it("includes line request metadata in JSON output", () => {
+    const r = runOverview([
+      "overview",
+      "line-narrowing.ts",
+      "--line",
+      "10",
+      "--depth",
+      "1",
+      "--json",
+    ]);
+
+    expect(r.stderr).toBe("");
+    expect(r.status).toBe(0);
+    const parsed = JSON.parse(r.stdout) as {
+      readonly file: string;
+      readonly request: { readonly depth: number; readonly line: number };
+      readonly entries: readonly { readonly header: { readonly lines: readonly string[] } }[];
+    };
+    expect(parsed.file).toBe("line-narrowing.ts");
+    expect(parsed.request).toEqual({ depth: 1, line: 10 });
+    expect(parsed.entries).toHaveLength(1);
+    expect(parsed.entries[0]?.header.lines).toEqual(['describe("repeated", () => {']);
+  });
+
+  it("includes combined line and header request metadata in JSON output", () => {
+    const r = runOverview([
+      "overview",
+      "line-narrowing.ts",
+      "--line",
+      "10",
+      "--at",
+      "repeated",
+      "--depth",
+      "1",
+      "--json",
+    ]);
+
+    expect(r.stderr).toBe("");
+    expect(r.status).toBe(0);
+    const parsed = JSON.parse(r.stdout) as {
+      readonly file: string;
+      readonly request: { readonly at: string; readonly depth: number; readonly line: number };
+      readonly entries: readonly { readonly header: { readonly lines: readonly string[] } }[];
+    };
+    expect(parsed.file).toBe("line-narrowing.ts");
+    expect(parsed.request).toEqual({ at: "repeated", depth: 1, line: 10 });
+    expect(parsed.entries).toHaveLength(1);
+    expect(parsed.entries[0]?.header.lines).toEqual(['describe("repeated", () => {']);
   });
 
   it("rejects malformed depth values as overview request errors", () => {

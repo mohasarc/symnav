@@ -227,6 +227,16 @@ describe("symnav overview e2e (targeting)", () => {
     expect(r.stderr).toBe('Cannot answer: no overview target matching --at "missing".\n');
   });
 
+  it("renders children of a line-narrowed target at depth one", () => {
+    const r = runOverview(["overview", "line-narrowing.ts", "--line", "10", "--depth", "1"]);
+
+    expect(r.stderr).toBe("");
+    expect(r.status).toBe(0);
+    expect(r.stdout).toContain('10-12: describe("repeated", () => {');
+    expect(r.stdout).toContain("11: secondHelper");
+    expect(r.stdout).not.toContain("firstHelper");
+  });
+
   it("narrows a line-only target to one candidate", () => {
     const r = runOverview(["overview", "line-narrowing.ts", "--line", "10", "--depth", "0"]);
 
@@ -266,6 +276,25 @@ describe("symnav overview e2e (targeting)", () => {
     expect(r.stderr).toBe("");
     expect(r.status).toBe(0);
     expect(r.stdout).toContain("14: inlineHelper");
+  });
+
+  it("renders children of a line and header selected duplicate at depth one", () => {
+    const r = runOverview([
+      "overview",
+      "line-narrowing.ts",
+      "--line",
+      "10",
+      "--at",
+      "repeated",
+      "--depth",
+      "1",
+    ]);
+
+    expect(r.stderr).toBe("");
+    expect(r.status).toBe(0);
+    expect(r.stdout).toContain('10-12: describe("repeated", () => {');
+    expect(r.stdout).toContain("11: secondHelper");
+    expect(r.stdout).not.toContain("firstHelper");
   });
 
   it("uses line and header text to select one duplicate header", () => {

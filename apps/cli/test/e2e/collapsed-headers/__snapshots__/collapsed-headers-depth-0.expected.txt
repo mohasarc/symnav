@@ -10,8 +10,6 @@ Overview: collapsed-headers.ts
 │
 ├── 15-17: HeaderContract
 │   15 export interface HeaderContract
-│   └── 16: HeaderContract::readHeader
-│       16 readHeader(name: string): string
 │
 ├── 19-22: HeaderAlias
 │   19 export type HeaderAlias = {
@@ -24,21 +22,9 @@ Overview: collapsed-headers.ts
 │
 ├── 29-35: HeaderNamespace
 │   29 export namespace HeaderNamespace
-│   ├── 30: HeaderNamespace::defaultName
-│   │   30 export const defaultName = "x-header"
-│   └── 32-34: HeaderNamespace::normalizeName
-│       32 export function normalizeName(name: string): string
 │
 ├── 37-51: HeaderService
 │   37 export class HeaderService implements HeaderContract
-│   ├── 38: HeaderService::prefix
-│   │   38 private readonly prefix: string
-│   ├── 40-42: HeaderService::constructor
-│   │   40 constructor(prefix: string)
-│   ├── 44-46: HeaderService::label
-│   │   44 get label(): string
-│   └── 48-50: HeaderService::readHeader
-│       48 readHeader(name: string): string
 │
 ├── 53: overloads#1
 │   53 export function overloads(input: string): string

@@ -79,37 +79,7 @@
       "type": "symbol"
     },
     {
-      "children": [
-        {
-          "children": [],
-          "header": {
-            "lines": [
-              "readHeader(name: string): string"
-            ],
-            "startLine": 16
-          },
-          "identity": {
-            "file": "collapsed-headers.ts",
-            "segments": [
-              {
-                "name": "HeaderContract"
-              },
-              {
-                "name": "readHeader"
-              }
-            ]
-          },
-          "kind": {
-            "nativeLabel": "method-declaration",
-            "role": "callable"
-          },
-          "range": {
-            "endLine": 16,
-            "startLine": 16
-          },
-          "type": "symbol"
-        }
-      ],
+      "children": [],
       "header": {
         "lines": [
           "export interface HeaderContract"
@@ -190,66 +160,7 @@
       "type": "symbol"
     },
     {
-      "children": [
-        {
-          "children": [],
-          "header": {
-            "lines": [
-              "export const defaultName = \"x-header\""
-            ],
-            "startLine": 30
-          },
-          "identity": {
-            "file": "collapsed-headers.ts",
-            "segments": [
-              {
-                "name": "HeaderNamespace"
-              },
-              {
-                "name": "defaultName"
-              }
-            ]
-          },
-          "kind": {
-            "nativeLabel": "variable",
-            "role": "value"
-          },
-          "range": {
-            "endLine": 30,
-            "startLine": 30
-          },
-          "type": "symbol"
-        },
-        {
-          "children": [],
-          "header": {
-            "lines": [
-              "export function normalizeName(name: string): string"
-            ],
-            "startLine": 32
-          },
-          "identity": {
-            "file": "collapsed-headers.ts",
-            "segments": [
-              {
-                "name": "HeaderNamespace"
-              },
-              {
-                "name": "normalizeName"
-              }
-            ]
-          },
-          "kind": {
-            "nativeLabel": "function-implementation",
-            "role": "callable"
-          },
-          "range": {
-            "endLine": 34,
-            "startLine": 32
-          },
-          "type": "symbol"
-        }
-      ],
+      "children": [],
       "header": {
         "lines": [
           "export namespace HeaderNamespace"
@@ -275,124 +186,7 @@
       "type": "symbol"
     },
     {
-      "children": [
-        {
-          "children": [],
-          "header": {
-            "lines": [
-              "private readonly prefix: string"
-            ],
-            "startLine": 38
-          },
-          "identity": {
-            "file": "collapsed-headers.ts",
-            "segments": [
-              {
-                "name": "HeaderService"
-              },
-              {
-                "name": "prefix"
-              }
-            ]
-          },
-          "kind": {
-            "nativeLabel": "property",
-            "role": "value"
-          },
-          "range": {
-            "endLine": 38,
-            "startLine": 38
-          },
-          "type": "symbol"
-        },
-        {
-          "children": [],
-          "header": {
-            "lines": [
-              "constructor(prefix: string)"
-            ],
-            "startLine": 40
-          },
-          "identity": {
-            "file": "collapsed-headers.ts",
-            "segments": [
-              {
-                "name": "HeaderService"
-              },
-              {
-                "name": "constructor"
-              }
-            ]
-          },
-          "kind": {
-            "nativeLabel": "constructor-implementation",
-            "role": "callable"
-          },
-          "range": {
-            "endLine": 42,
-            "startLine": 40
-          },
-          "type": "symbol"
-        },
-        {
-          "children": [],
-          "header": {
-            "lines": [
-              "get label(): string"
-            ],
-            "startLine": 44
-          },
-          "identity": {
-            "file": "collapsed-headers.ts",
-            "segments": [
-              {
-                "name": "HeaderService"
-              },
-              {
-                "name": "label"
-              }
-            ]
-          },
-          "kind": {
-            "nativeLabel": "getter",
-            "role": "callable"
-          },
-          "range": {
-            "endLine": 46,
-            "startLine": 44
-          },
-          "type": "symbol"
-        },
-        {
-          "children": [],
-          "header": {
-            "lines": [
-              "readHeader(name: string): string"
-            ],
-            "startLine": 48
-          },
-          "identity": {
-            "file": "collapsed-headers.ts",
-            "segments": [
-              {
-                "name": "HeaderService"
-              },
-              {
-                "name": "readHeader"
-              }
-            ]
-          },
-          "kind": {
-            "nativeLabel": "method-implementation",
-            "role": "callable"
-          },
-          "range": {
-            "endLine": 50,
-            "startLine": 48
-          },
-          "type": "symbol"
-        }
-      ],
+      "children": [],
       "header": {
         "lines": [
           "export class HeaderService implements HeaderContract"
@@ -700,6 +494,6 @@
   ],
   "file": "collapsed-headers.ts",
   "request": {
-    "depth": 1
+    "depth": 0
   }
 }

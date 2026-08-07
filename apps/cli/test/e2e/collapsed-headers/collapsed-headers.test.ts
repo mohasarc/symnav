@@ -30,10 +30,18 @@ type OverviewNode = {
 
 describe("symnav overview e2e (collapsed headers)", () => {
   it("renders collapsed text headers without leaking declarations or initializer bodies", async () => {
-    const r = runSymnav(["overview", "collapsed-headers.ts"]);
+    const r = runSymnav(["overview", "collapsed-headers.ts", "--depth", "1"]);
 
     expect(r.stderr).toBe("");
     expect(r.status).toBe(0);
+    expect(r.stdout).toContain("HeaderContract::readHeader");
+    expect(r.stdout).toContain("HeaderNamespace::defaultName");
+    expect(r.stdout).toContain("HeaderNamespace::normalizeName");
+    expect(r.stdout).toContain("HeaderService::prefix");
+    expect(r.stdout).toContain("HeaderService::constructor");
+    expect(r.stdout).toContain("HeaderService::label");
+    expect(r.stdout).toContain("HeaderService::readHeader");
+    expect(r.stdout).toContain("get label(): string");
     expect(r.stdout).toContain("export function leakyFunction(input: string): string");
     expect(r.stdout).toContain("export class HeaderService implements HeaderContract");
     expect(r.stdout).toContain("export interface HeaderContract");
@@ -56,8 +64,23 @@ describe("symnav overview e2e (collapsed headers)", () => {
     await expect(r.stdout).toMatchFileSnapshot(snapshot("collapsed-headers.expected.txt"));
   });
 
+  it("renders top-level collapsed text headers only at depth zero", async () => {
+    const r = runSymnav(["overview", "collapsed-headers.ts"]);
+
+    expect(r.stderr).toBe("");
+    expect(r.status).toBe(0);
+    expect(r.stdout).toContain("export class HeaderService implements HeaderContract");
+    expect(r.stdout).toContain("export interface HeaderContract");
+    expect(r.stdout).toContain("export namespace HeaderNamespace");
+    expect(r.stdout).not.toContain("HeaderContract::readHeader");
+    expect(r.stdout).not.toContain("HeaderNamespace::defaultName");
+    expect(r.stdout).not.toContain("HeaderService::label");
+    expect(r.stdout).not.toContain("HeaderService::readHeader");
+    await expect(r.stdout).toMatchFileSnapshot(snapshot("collapsed-headers-depth-0.expected.txt"));
+  });
+
   it("renders collapsed JSON headers with discriminated node types", async () => {
-    const r = runSymnav(["overview", "collapsed-headers.ts", "--json"]);
+    const r = runSymnav(["overview", "collapsed-headers.ts", "--depth", "1", "--json"]);
 
     expect(r.stderr).toBe("");
     expect(r.status).toBe(0);
@@ -66,6 +89,8 @@ describe("symnav overview e2e (collapsed headers)", () => {
     const headers = allHeaderLines(parsed.entries).join("\n");
 
     expect(nodeTypes).toEqual(new Set(["symbol", "re-export"]));
+    expect(headers).toContain("readHeader(name: string): string");
+    expect(headers).toContain("get label(): string");
     expect(headers).toContain("export const arrowHelper = (value: string): string => …");
     expect(headers).toContain("export const schema = z.object(…)");
     expect(headers).toContain("export const values = […]");
@@ -75,6 +100,20 @@ describe("symnav overview e2e (collapsed headers)", () => {
     expect(headers).not.toContain("privateKey");
     expect(headers).not.toContain("array-body-alpha");
     await expect(r.stdout).toMatchFileSnapshot(snapshot("collapsed-headers.expected.json"));
+  });
+
+  it("renders every top-level JSON node without children at depth zero", async () => {
+    const r = runSymnav(["overview", "collapsed-headers.ts", "--json"]);
+
+    expect(r.stderr).toBe("");
+    expect(r.status).toBe(0);
+    const parsed = JSON.parse(r.stdout) as { entries: readonly OverviewNode[] };
+
+    expect(parsed.entries.length).toBeGreaterThan(0);
+    for (const entry of parsed.entries) {
+      expect(entry.children ?? []).toEqual([]);
+    }
+    await expect(r.stdout).toMatchFileSnapshot(snapshot("collapsed-headers-depth-0.expected.json"));
   });
 });
 

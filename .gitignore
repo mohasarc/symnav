@@ -1,5 +1,7 @@
 .agents/skills/*
 !.agents/skills/*+/
+!.agents/skills/symnav
+!.agents/skills/symnav-benchmark-analysis
 
 skills-lock.json
 

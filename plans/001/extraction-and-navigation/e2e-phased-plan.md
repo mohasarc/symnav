@@ -1,6 +1,6 @@
-# Extraction V2 E2E Coverage Plan
+# Extraction E2E Coverage Plan
 
-This plan adds end-to-end coverage for the user-facing behavior delivered by extraction-v2 phases 1-8. It does not replace unit or integration tests that already own backend details. E2E tests here prove command wiring, fixture workspace behavior, renderer output, stdout/stderr routing, JSON shape, help text, and cross-command target resolution.
+This plan adds end-to-end coverage for the user-facing behavior delivered by extraction phases 1-8. It does not replace unit or integration tests that already own backend details. E2E tests here prove command wiring, fixture workspace behavior, renderer output, stdout/stderr routing, JSON shape, help text, and cross-command target resolution.
 
 Use existing e2e conventions:
 
@@ -33,7 +33,7 @@ Goal: prove unsupported extraction warnings are non-fatal and input-file errors 
   - `extensionless` with TypeScript-looking content.
   - `unsupported.md`.
   - `src/rules/` directory already used by existing test; keep it.
-- Add `packages/testing/fixtures/extraction-v2-cases/`:
+- Add `packages/testing/fixtures/extraction-diagnostics-cases/`:
   - `package.json`.
   - `dot-git/HEAD`.
   - `src/known-ignored-namespace-export.ts`:
@@ -53,14 +53,14 @@ Goal: prove unsupported extraction warnings are non-fatal and input-file errors 
 | `overview src/rules` | `overview-cases` | exit 1, stdout empty, stderr exactly `Cannot answer: src/rules is a directory; expected a TypeScript source file.` |
 | `overview extensionless` | `overview-cases` | exit 1, stdout empty, stderr names `extensionless` and says expected TypeScript source file |
 | `overview unsupported.md` | `overview-cases` | exit 1, stdout empty, stderr names unsupported extension |
-| `overview src/known-ignored-namespace-export.ts` | `extraction-v2-cases` | exit 0, stderr empty, stdout includes `render`, stdout excludes namespace export diagnostic |
-| `overview src/unsupported-statement.ts` | `extraction-v2-cases` | exit 0, stdout includes `stillVisible`, stderr contains one warning with file path and line |
-| `overview src/unsupported-statement.ts --json` | `extraction-v2-cases` | exit 0, stderr contains same warning, stdout parses as JSON and includes supported entry |
-| `resolve stillVisible` | `extraction-v2-cases` | exit 0, stderr contains same warning once, stdout includes candidate |
-| `def stillVisible` | `extraction-v2-cases` | exit 0, stderr contains same warning once, stdout includes definition |
-| `refs stillVisible` | `extraction-v2-cases` | exit 0, stderr contains same warning once, stdout remains refs output |
-| `context stillVisible` | `extraction-v2-cases` | exit 0, stderr contains same warning once, stdout includes context sections |
-| `graph stillVisible` | `extraction-v2-cases` | exit 0, stderr contains same warning once, stdout includes graph sections |
+| `overview src/known-ignored-namespace-export.ts` | `extraction-diagnostics-cases` | exit 0, stderr empty, stdout includes `render`, stdout excludes namespace export diagnostic |
+| `overview src/unsupported-statement.ts` | `extraction-diagnostics-cases` | exit 0, stdout includes `stillVisible`, stderr contains one warning with file path and line |
+| `overview src/unsupported-statement.ts --json` | `extraction-diagnostics-cases` | exit 0, stderr contains same warning, stdout parses as JSON and includes supported entry |
+| `resolve stillVisible` | `extraction-diagnostics-cases` | exit 0, stderr contains same warning once, stdout includes candidate |
+| `def stillVisible` | `extraction-diagnostics-cases` | exit 0, stderr contains same warning once, stdout includes definition |
+| `refs stillVisible` | `extraction-diagnostics-cases` | exit 0, stderr contains same warning once, stdout remains refs output |
+| `context stillVisible` | `extraction-diagnostics-cases` | exit 0, stderr contains same warning once, stdout includes context sections |
+| `graph stillVisible` | `extraction-diagnostics-cases` | exit 0, stderr contains same warning once, stdout includes graph sections |
 
 ### Assertions
 
@@ -361,7 +361,7 @@ Goal: cover changed help examples/options that are runtime CLI behavior. Do not 
 
 ### Commit plan
 
-1. `test(e2e): cover extraction v2 help surface`
+1. `test(e2e): cover extraction help surface`
 
 ## Phase 8 - Cross-Phase Smoke Matrix
 
@@ -369,12 +369,12 @@ Goal: add one compact e2e suite that proves the implemented permutations compose
 
 ### Test files
 
-- Add `apps/cli/test/e2e/extraction-v2/extraction-v2-smoke.test.ts`.
-- Add snapshots under `apps/cli/test/e2e/extraction-v2/__snapshots__/`.
+- Add `apps/cli/test/e2e/agent-workflow/agent-workflow-smoke.test.ts`.
+- Add snapshots under `apps/cli/test/e2e/agent-workflow/__snapshots__/`.
 
 ### Fixtures
 
-- Add `packages/testing/fixtures/extraction-v2-cases/src/agent-workflow.ts`:
+- Add `packages/testing/fixtures/agent-workflow-cases/src/agent-workflow.ts`:
   - collapsed headers.
   - fold headers.
   - nested declaration behind fold.
@@ -405,7 +405,7 @@ Goal: add one compact e2e suite that proves the implemented permutations compose
 
 ### Commit plan
 
-1. `test(e2e): add extraction v2 workflow smoke`
+1. `test(e2e): add agent workflow smoke`
 
 ## Backlog
 
@@ -424,7 +424,7 @@ Goal: add one compact e2e suite that proves the implemented permutations compose
   - overview depth, `--at`, `--line`, ambiguity, not-found, same-line guards, and JSON request metadata.
   - suffix-pattern targets for def, refs, context, and graph, including bare names, file suffixes, segment suffixes, full ids, ambiguity, not-found, line narrowing, folded-symbol traversal, and fold-node rejection.
   - resolve exact, fuzzy, regex text, regex JSON, invalid regex, fuzzy/regex conflict, and own-name matching.
-  - CLI help surface changed by extraction-v2.
+  - CLI help surface changed by extraction.
 - No source or test implementation is modified by this planning PR.
 - Each implementation PR runs:
 

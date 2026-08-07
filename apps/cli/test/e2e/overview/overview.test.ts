@@ -61,11 +61,27 @@ describe("symnav overview e2e (happy path)", () => {
     await expect(r.stdout).toMatchFileSnapshot(snapshot("top-level-constants.expected.txt"));
   });
 
-  it("renders nested-symbols.ts", async () => {
+  it("renders nested-symbols.ts three levels deep at depth two", async () => {
+    const r = runOverview(["overview", "nested-symbols.ts", "--depth", "2"]);
+    expect(r.stderr).toBe("");
+    expect(r.status).toBe(0);
+    expect(r.stdout).toContain("Outer::Inner");
+    expect(r.stdout).toContain("Outer::Inner::method");
+    expect(r.stdout).toContain("Shape::width");
+    expect(r.stdout).toContain("Shape::height");
+    await expect(r.stdout).toMatchFileSnapshot(snapshot("nested-symbols.expected.txt"));
+  });
+
+  it("renders nested-symbols.ts without nesting at depth zero", async () => {
     const r = runOverview(["overview", "nested-symbols.ts"]);
     expect(r.stderr).toBe("");
     expect(r.status).toBe(0);
-    await expect(r.stdout).toMatchFileSnapshot(snapshot("nested-symbols.expected.txt"));
+    expect(r.stdout).toContain("1-5: Outer");
+    expect(r.stdout).toContain("7-10: Shape");
+    expect(r.stdout).toContain("12-16: Color");
+    expect(r.stdout).not.toContain("Outer::Inner");
+    expect(r.stdout).not.toContain("Shape::width");
+    await expect(r.stdout).toMatchFileSnapshot(snapshot("nested-symbols-depth-0.expected.txt"));
   });
 
   it("renders multi-line-signature.ts", async () => {

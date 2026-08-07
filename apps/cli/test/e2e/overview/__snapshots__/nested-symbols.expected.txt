@@ -1,9 +1,17 @@
 Overview: nested-symbols.ts
 ├── 1-5: Outer
 │   1 export namespace Outer
+│   └── 2-4: Outer::Inner
+│       2 export class Inner
+│       └── 3: Outer::Inner::method
+│           3 method(): void
 │
 ├── 7-10: Shape
 │   7 export interface Shape
+│   ├── 8: Shape::width
+│   │   8 width: number
+│   └── 9: Shape::height
+│       9 height: number
 │
 └── 12-16: Color
     12 export enum Color

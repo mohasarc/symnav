@@ -1,14 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { fixturePath, runSymnavBinary } from "@symnav/testing";
 
-const fixtureRoot = fixturePath("trivial-project");
+import { FixtureRunner } from "../fixture-runner.js";
 
-function runHelp(args: readonly string[]) {
-  return runSymnavBinary(args, { cwd: fixtureRoot });
-}
+const fixtureRunner = new FixtureRunner("resolve-cases");
 
 function expectSuccessfulHelp(args: readonly string[]): string {
-  const result = runHelp(args);
+  const result = fixtureRunner.run(args);
   expect(result.stderr).toBe("");
   expect(result.status).toBe(0);
   return result.stdout;

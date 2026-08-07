@@ -1,13 +1,13 @@
 import type { SourceFile } from "ts-morph";
-import { assignDisambiguators, type DiagnosticSink, type OverviewFileSymbols } from "@symnav/core";
+import { assignDisambiguators, type DiagnosticSink, type OverviewFileEntries } from "@symnav/core";
 
 import { extractStatementDecls } from "./extract-children.js";
 
-export function extractFileSymbols(args: {
+export function extractFileEntries(args: {
   sourceFile: SourceFile;
   filePath: string;
   diagnostics?: DiagnosticSink | undefined;
-}): OverviewFileSymbols {
+}): OverviewFileEntries {
   const topLevel = extractStatementDecls(args.sourceFile.getStatements(), {
     file: args.filePath,
     ancestorNames: [],
@@ -15,6 +15,6 @@ export function extractFileSymbols(args: {
   });
   return {
     file: args.filePath,
-    symbols: assignDisambiguators(topLevel),
+    entries: assignDisambiguators(topLevel),
   };
 }

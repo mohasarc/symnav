@@ -4,12 +4,18 @@ import {
   FileNotFoundError,
   InMemoryFileSystem,
   type FileSystem,
+  type OverviewNode,
   type ResolvedPath,
+  OverviewTree,
 } from "@symnav/core";
 
-import { extractFileSymbols } from "../../src/extract/extract-file-symbols.js";
+import { extractFileEntries } from "../../src/extract/extract-file-entries.js";
 import { TypeScriptBackend } from "../../src/typescript-backend/typescript-backend.js";
 import { parseTypeScriptSource } from "../helpers/parse-typescript-source.js";
+
+function symbolChildrenOf(node: OverviewNode | undefined): readonly OverviewNode[] {
+  return node?.type === "symbol" ? node.children : [];
+}
 
 function backendOver(files: Record<string, string>): {
   backend: TypeScriptBackend;
@@ -80,13 +86,13 @@ describe("TypeScriptBackend.accepts", () => {
   });
 });
 
-describe("TypeScriptBackend.fileSymbols", () => {
+describe("TypeScriptBackend.fileEntries", () => {
   const source = ["export class Greeter {", "  hello(): string { return 'hi'; }", "}"].join("\n");
 
-  it("produces IR matching extractFileSymbols over the same source", async () => {
+  it("produces IR matching extractFileEntries over the same source", async () => {
     const { backend, path } = backendOver({ "/repo/src/x.ts": source });
-    const result = await backend.fileSymbols(path("src/x.ts"));
-    const expected = extractFileSymbols({
+    const result = await backend.fileEntries(path("src/x.ts"));
+    const expected = extractFileEntries({
       sourceFile: parseTypeScriptSource(source),
       filePath: "src/x.ts",
     });
@@ -95,7 +101,7 @@ describe("TypeScriptBackend.fileSymbols", () => {
 
   it("returns file as the workspace-relative POSIX path", async () => {
     const { backend, path } = backendOver({ "/repo/src/nested/y.ts": source });
-    const result = await backend.fileSymbols(path("src/nested/y.ts"));
+    const result = await backend.fileEntries(path("src/nested/y.ts"));
     expect(result.file).toBe("src/nested/y.ts");
   });
 
@@ -106,13 +112,13 @@ describe("TypeScriptBackend.fileSymbols", () => {
     });
     const counting = new CountingFileSystem(inner);
     const backend = new TypeScriptBackend(counting);
-    await backend.fileSymbols({ relative: "src/x.ts", absolute: "/repo/src/x.ts" });
+    await backend.fileEntries({ relative: "src/x.ts", absolute: "/repo/src/x.ts" });
     expect(counting.readFileCalls).toContain("/repo/src/x.ts");
   });
 
   it("on a nonexistent file throws FileNotFoundError", async () => {
     const { backend, path } = backendOver({});
-    await expect(backend.fileSymbols(path("src/missing.ts"))).rejects.toBeInstanceOf(
+    await expect(backend.fileEntries(path("src/missing.ts"))).rejects.toBeInstanceOf(
       FileNotFoundError,
     );
   });
@@ -124,9 +130,9 @@ describe("TypeScriptBackend.fileSymbols", () => {
       "}",
     ].join("\n");
     const { backend, path } = backendOver({ "/repo/src/greeting.tsx": tsxSource });
-    const result = await backend.fileSymbols(path("src/greeting.tsx"));
+    const result = await backend.fileEntries(path("src/greeting.tsx"));
     expect(
-      result.symbols.map((s) => [
+      OverviewTree.walkSymbols(result.entries).map((s) => [
         s.kind.nativeLabel,
         s.identity.segments[s.identity.segments.length - 1]?.name,
       ]),
@@ -145,9 +151,11 @@ describe("TypeScriptBackend.fileSymbols", () => {
     const { backend, path } = backendOver({
       "/repo/src/control-flow.ts": sourceWithLocalDeclarations,
     });
-    const result = await backend.fileSymbols(path("src/control-flow.ts"));
+    const result = await backend.fileEntries(path("src/control-flow.ts"));
     expect(
-      result.symbols[0]?.children.map((symbol) => symbol.identity.segments.at(-1)?.name),
+      OverviewTree.walkSymbols(symbolChildrenOf(result.entries[0])).map(
+        (symbol) => symbol.identity.segments.at(-1)?.name,
+      ),
     ).toEqual(["insideIf"]);
   });
 });

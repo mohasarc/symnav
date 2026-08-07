@@ -1,7 +1,9 @@
-import type { SymbolDecl } from "@symnav/core";
+import type { SymbolOverviewNode } from "@symnav/core";
 
-export function groupByFile(symbols: readonly SymbolDecl[]): Map<string, SymbolDecl[]> {
-  const map = new Map<string, SymbolDecl[]>();
+export function groupByFile(
+  symbols: readonly SymbolOverviewNode[],
+): Map<string, SymbolOverviewNode[]> {
+  const map = new Map<string, SymbolOverviewNode[]>();
   for (const symbol of symbols) {
     const file = symbol.identity.file;
     const bucket = map.get(file);

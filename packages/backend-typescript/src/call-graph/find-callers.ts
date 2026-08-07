@@ -11,7 +11,7 @@ import type {
   EdgeConfidence,
   FileSystem,
   ResolvedPath,
-  SymbolDecl,
+  SymbolOverviewNode,
   SymbolIdentity,
 } from "@symnav/core";
 
@@ -99,7 +99,7 @@ class CallerFinder {
       .map((entry: ReferencedSymbolEntry) => entry.getNode());
   }
 
-  private enclosingSymbolOf(referenceNode: Node): SymbolDecl | undefined {
+  private enclosingSymbolOf(referenceNode: Node): SymbolOverviewNode | undefined {
     let ancestor = referenceNode.getParent();
     while (ancestor) {
       const declaration = this.index.declarationAt(ancestor);
@@ -126,7 +126,7 @@ class CallerFinder {
 }
 
 interface MutableEdge {
-  symbol: SymbolDecl;
+  symbol: SymbolOverviewNode;
   confidence: EdgeConfidence;
   reason: string | undefined;
   sites: CallSite[];

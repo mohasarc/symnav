@@ -1,26 +1,28 @@
 import { describe, expect, it } from "vitest";
 
-import type { OverviewFileSymbols, Signature, SymbolDecl } from "@symnav/core";
+import { OverviewTree } from "@symnav/core";
+import type { OverviewFileEntries, Header, SymbolOverviewNode } from "@symnav/core";
 
 import { renderOverviewText } from "./render-overview-text.js";
-import { SIGNATURE_CAP_LINES, SIGNATURE_ELLIPSIS } from "./signature-cap.js";
+import { HEADER_CAP_LINES, HEADER_ELLIPSIS } from "./header-cap.js";
 
-type DeclPartial = Pick<SymbolDecl["identity"], "segments"> &
-  Partial<Pick<SymbolDecl, "range" | "signature" | "children">> & {
+type DeclPartial = Pick<SymbolOverviewNode["identity"], "segments"> &
+  Partial<Pick<SymbolOverviewNode, "range" | "header" | "children">> & {
     readonly kind: string;
   };
 
-function decl(partial: DeclPartial, file: string = "src/file.ts"): SymbolDecl {
+function decl(partial: DeclPartial, file: string = "src/file.ts"): SymbolOverviewNode {
   return {
+    type: "symbol",
     identity: { file, segments: partial.segments },
     kind: { role: "value", nativeLabel: partial.kind },
     range: partial.range ?? { startLine: 1, endLine: 1 },
-    signature: partial.signature ?? { startLine: 1, lines: [""] },
+    header: partial.header ?? { startLine: 1, lines: [""] },
     children: partial.children ?? [],
   };
 }
 
-function signature(startLine: number, ...lines: string[]): Signature {
+function signature(startLine: number, ...lines: string[]): Header {
   return { startLine, lines };
 }
 
@@ -31,21 +33,21 @@ function assertSingleTrailingNewline(output: string): void {
 
 describe("renderOverviewText", () => {
   it("renders an empty file with the file path header and `(no symbols)` directly under", () => {
-    const file: OverviewFileSymbols = { file: "src/empty.ts", symbols: [] };
+    const file: OverviewFileEntries = { file: "src/empty.ts", entries: [] };
     const output = renderOverviewText(file);
     expect(output).toBe("Overview: src/empty.ts\n(no symbols)\n");
     assertSingleTrailingNewline(output);
   });
 
   it("renders a single top-level function as the file's only tree child", () => {
-    const file: OverviewFileSymbols = {
+    const file: OverviewFileEntries = {
       file: "src/file.ts",
-      symbols: [
+      entries: [
         decl({
           kind: "function",
           segments: [{ name: "greet" }],
           range: { startLine: 4, endLine: 4 },
-          signature: signature(4, "function greet(name: string): void"),
+          header: signature(4, "function greet(name: string): void"),
         }),
       ],
     };
@@ -62,14 +64,14 @@ describe("renderOverviewText", () => {
   });
 
   it("ends with exactly one trailing newline for non-empty output", () => {
-    const file: OverviewFileSymbols = {
+    const file: OverviewFileEntries = {
       file: "src/file.ts",
-      symbols: [
+      entries: [
         decl({
           kind: "function",
           segments: [{ name: "greet" }],
           range: { startLine: 4, endLine: 4 },
-          signature: signature(4, "function greet(): void"),
+          header: signature(4, "function greet(): void"),
         }),
       ],
     };
@@ -77,14 +79,14 @@ describe("renderOverviewText", () => {
   });
 
   it("numbers each line of a multi-line signature from startLine and preserves indentation", () => {
-    const file: OverviewFileSymbols = {
+    const file: OverviewFileEntries = {
       file: "src/file.ts",
-      symbols: [
+      entries: [
         decl({
           kind: "function",
           segments: [{ name: "configure" }],
           range: { startLine: 10, endLine: 14 },
-          signature: signature(10, "function configure(", "  host: string,", "): void"),
+          header: signature(10, "function configure(", "  host: string,", "): void"),
         }),
       ],
     };
@@ -100,16 +102,16 @@ describe("renderOverviewText", () => {
     );
   });
 
-  it("returns signature lines at or under SIGNATURE_CAP_LINES unchanged", () => {
-    const lines = Array.from({ length: SIGNATURE_CAP_LINES }, (_, i) => `line ${i}`);
-    const file: OverviewFileSymbols = {
+  it("returns signature lines at or under HEADER_CAP_LINES unchanged", () => {
+    const lines = Array.from({ length: HEADER_CAP_LINES }, (_, i) => `line ${i}`);
+    const file: OverviewFileEntries = {
       file: "src/file.ts",
-      symbols: [
+      entries: [
         decl({
           kind: "function",
           segments: [{ name: "wide" }],
-          range: { startLine: 1, endLine: SIGNATURE_CAP_LINES },
-          signature: signature(1, ...lines),
+          range: { startLine: 1, endLine: HEADER_CAP_LINES },
+          header: signature(1, ...lines),
         }),
       ],
     };
@@ -117,48 +119,48 @@ describe("renderOverviewText", () => {
     for (let i = 0; i < lines.length; i += 1) {
       expect(output).toContain(`${i + 1} line ${i}\n`);
     }
-    expect(output).not.toContain(SIGNATURE_ELLIPSIS);
+    expect(output).not.toContain(HEADER_ELLIPSIS);
   });
 
   it("caps an oversized signature by line count with a final elision marker", () => {
-    const lines = Array.from({ length: SIGNATURE_CAP_LINES + 5 }, (_, i) => `line ${i}`);
-    const file: OverviewFileSymbols = {
+    const lines = Array.from({ length: HEADER_CAP_LINES + 5 }, (_, i) => `line ${i}`);
+    const file: OverviewFileEntries = {
       file: "src/file.ts",
-      symbols: [
+      entries: [
         decl({
           kind: "function",
           segments: [{ name: "wide" }],
           range: { startLine: 1, endLine: lines.length },
-          signature: signature(1, ...lines),
+          header: signature(1, ...lines),
         }),
       ],
     };
     const output = renderOverviewText(file);
-    expect(output).toContain(`${SIGNATURE_CAP_LINES} ${SIGNATURE_ELLIPSIS}\n`);
-    expect(output).not.toContain(`line ${SIGNATURE_CAP_LINES}`);
+    expect(output).toContain(`${HEADER_CAP_LINES} ${HEADER_ELLIPSIS}\n`);
+    expect(output).not.toContain(`line ${HEADER_CAP_LINES}`);
   });
 
   it("renders multiple top-level entries as tree children of the file path", () => {
-    const file: OverviewFileSymbols = {
+    const file: OverviewFileEntries = {
       file: "src/file.ts",
-      symbols: [
+      entries: [
         decl({
           kind: "variable",
           segments: [{ name: "A" }],
           range: { startLine: 1, endLine: 1 },
-          signature: signature(1, "const A: number"),
+          header: signature(1, "const A: number"),
         }),
         decl({
           kind: "variable",
           segments: [{ name: "B" }],
           range: { startLine: 3, endLine: 3 },
-          signature: signature(3, "const B: number"),
+          header: signature(3, "const B: number"),
         }),
         decl({
           kind: "variable",
           segments: [{ name: "C" }],
           range: { startLine: 5, endLine: 5 },
-          signature: signature(5, "const C: number"),
+          header: signature(5, "const C: number"),
         }),
       ],
     };
@@ -180,32 +182,32 @@ describe("renderOverviewText", () => {
   });
 
   it("renders a class with three methods using `├──`/`└──` and `│   `/`    ` continuations", () => {
-    const file: OverviewFileSymbols = {
+    const file: OverviewFileEntries = {
       file: "src/checkout.ts",
-      symbols: [
+      entries: [
         decl({
           kind: "class",
           segments: [{ name: "CheckoutService" }],
           range: { startLine: 12, endLine: 96 },
-          signature: signature(12, "class CheckoutService"),
+          header: signature(12, "class CheckoutService"),
           children: [
             decl({
               kind: "constructor",
               segments: [{ name: "CheckoutService" }, { name: "constructor" }],
               range: { startLine: 24, endLine: 34 },
-              signature: signature(24, "constructor(p: P, i: I)"),
+              header: signature(24, "constructor(p: P, i: I)"),
             }),
             decl({
               kind: "method",
               segments: [{ name: "CheckoutService" }, { name: "processPayment" }],
               range: { startLine: 42, endLine: 78 },
-              signature: signature(42, "async processPayment(order: Order): Promise<Receipt>"),
+              header: signature(42, "async processPayment(order: Order): Promise<Receipt>"),
             }),
             decl({
               kind: "method",
               segments: [{ name: "CheckoutService" }, { name: "validateOrder" }],
               range: { startLine: 80, endLine: 94 },
-              signature: signature(80, "private validateOrder(order: Order): void"),
+              header: signature(80, "private validateOrder(order: Order): void"),
             }),
           ],
         }),
@@ -229,20 +231,20 @@ describe("renderOverviewText", () => {
   });
 
   it("numbers a nested symbol's multi-line signature under its continuation glyph", () => {
-    const file: OverviewFileSymbols = {
+    const file: OverviewFileEntries = {
       file: "src/server.ts",
-      symbols: [
+      entries: [
         decl({
           kind: "class",
           segments: [{ name: "Server" }],
           range: { startLine: 1, endLine: 10 },
-          signature: signature(1, "class Server"),
+          header: signature(1, "class Server"),
           children: [
             decl({
               kind: "method",
               segments: [{ name: "Server" }, { name: "start" }],
               range: { startLine: 2, endLine: 6 },
-              signature: signature(2, "start(", "  host: string,", "): void"),
+              header: signature(2, "start(", "  host: string,", "): void"),
             }),
           ],
         }),
@@ -263,26 +265,26 @@ describe("renderOverviewText", () => {
   });
 
   it("renders three-deep nesting using `    ` under a closed branch", () => {
-    const file: OverviewFileSymbols = {
+    const file: OverviewFileEntries = {
       file: "src/nested.ts",
-      symbols: [
+      entries: [
         decl({
           kind: "namespace",
           segments: [{ name: "Outer" }],
           range: { startLine: 1, endLine: 50 },
-          signature: signature(1, "namespace Outer"),
+          header: signature(1, "namespace Outer"),
           children: [
             decl({
               kind: "class",
               segments: [{ name: "Outer" }, { name: "Inner" }],
               range: { startLine: 5, endLine: 40 },
-              signature: signature(5, "class Inner"),
+              header: signature(5, "class Inner"),
               children: [
                 decl({
                   kind: "method",
                   segments: [{ name: "Outer" }, { name: "Inner" }, { name: "method" }],
                   range: { startLine: 10, endLine: 20 },
-                  signature: signature(10, "method(): void"),
+                  header: signature(10, "method(): void"),
                 }),
               ],
             }),
@@ -305,20 +307,20 @@ describe("renderOverviewText", () => {
   });
 
   it("formats single-line ranges as `N` and multi-line ranges as `N-M`", () => {
-    const file: OverviewFileSymbols = {
+    const file: OverviewFileEntries = {
       file: "src/file.ts",
-      symbols: [
+      entries: [
         decl({
           kind: "variable",
           segments: [{ name: "single" }],
           range: { startLine: 8, endLine: 8 },
-          signature: signature(8, "const single: number"),
+          header: signature(8, "const single: number"),
         }),
         decl({
           kind: "function",
           segments: [{ name: "multi" }],
           range: { startLine: 12, endLine: 96 },
-          signature: signature(12, "function multi(): void"),
+          header: signature(12, "function multi(): void"),
         }),
       ],
     };
@@ -328,9 +330,9 @@ describe("renderOverviewText", () => {
   });
 
   it("includes ancestor names joined by `::` in nested symbol paths", () => {
-    const file: OverviewFileSymbols = {
+    const file: OverviewFileEntries = {
       file: "src/nested.ts",
-      symbols: [
+      entries: [
         decl({
           kind: "namespace",
           segments: [{ name: "Outer" }],
@@ -350,5 +352,71 @@ describe("renderOverviewText", () => {
       ],
     };
     expect(renderOverviewText(file)).toContain("Outer::Inner::deep");
+  });
+
+  it("renders fold-nested symbols at the containing nesting level, hiding the fold itself", () => {
+    const file: OverviewFileEntries = {
+      file: "src/folds.ts",
+      entries: [
+        decl({
+          kind: "function",
+          segments: [{ name: "outer" }],
+          range: { startLine: 1, endLine: 5 },
+          header: signature(1, "function outer(): void"),
+          children: [
+            OverviewTree.fold({
+              foldKind: "conditional",
+              range: { startLine: 2, endLine: 4 },
+              header: signature(2, "if (enabled)"),
+              children: [
+                decl({
+                  kind: "function",
+                  segments: [{ name: "outer" }, { name: "insideIf" }],
+                  range: { startLine: 3, endLine: 3 },
+                  header: signature(3, "function insideIf(): void"),
+                }),
+              ],
+            }),
+          ],
+        }),
+      ],
+    };
+    const output = renderOverviewText(file);
+    expect(output).toBe(
+      [
+        "Overview: src/folds.ts",
+        "└── 1-5: outer",
+        "    1 function outer(): void",
+        "    └── 3: outer::insideIf",
+        "        3 function insideIf(): void",
+        "",
+      ].join("\n"),
+    );
+    expect(output).not.toContain("if (enabled)");
+  });
+
+  it("drops re-export entries from the rendered tree", () => {
+    const file: OverviewFileEntries = {
+      file: "src/re-exports.ts",
+      entries: [
+        OverviewTree.reExport({
+          exportKind: "named",
+          exportedNames: ["m"],
+          sourceModule: "./other.js",
+          range: { startLine: 1, endLine: 1 },
+          header: signature(1, "export { m } from './other.js'"),
+        }),
+        decl({
+          kind: "function",
+          segments: [{ name: "kept" }],
+          range: { startLine: 2, endLine: 2 },
+          header: signature(2, "function kept(): void"),
+        }),
+      ],
+    };
+    const output = renderOverviewText(file);
+    expect(output).toBe(
+      ["Overview: src/re-exports.ts", "└── 2: kept", "    2 function kept(): void", ""].join("\n"),
+    );
   });
 });

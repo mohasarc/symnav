@@ -2,13 +2,20 @@ export type {
   SymbolRole,
   SymbolKind,
   LineRange,
-  Signature,
-  SymbolDecl,
-  OverviewFileSymbols,
+  Header,
   ResultWithDiagnostics,
   ResolveResult,
   DefinitionResult,
 } from "./intermediate-representation/types.js";
+export type {
+  FoldOverviewNode,
+  OverviewFileEntries,
+  OverviewNode,
+  OverviewNodeBase,
+  ReExportOverviewNode,
+  SymbolOverviewNode,
+} from "./intermediate-representation/overview-tree.js";
+export { OverviewTree } from "./intermediate-representation/overview-tree.js";
 export type {
   NavigationDiagnosticSeverity,
   NavigationDiagnostic,
@@ -63,7 +70,7 @@ export {
   formatSymbolIdentity,
   parseSymbolIdentity,
 } from "./intermediate-representation/canonical-identity.js";
-export { splitSignatureLines } from "./intermediate-representation/split-signature-lines.js";
+export { splitHeaderLines } from "./intermediate-representation/split-header-lines.js";
 export { assignDisambiguators } from "./intermediate-representation/assign-disambiguators.js";
 export type { FileSystem } from "./workspace/file-system.js";
 export { NodeFileSystem } from "./workspace/node-file-system.js";

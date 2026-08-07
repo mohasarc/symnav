@@ -1,83 +1,96 @@
 import type { SymbolPathSegment } from "./symbol-identity.js";
-import type { SymbolDecl } from "./types.js";
+import { OverviewTree, type OverviewNode, type SymbolOverviewNode } from "./overview-tree.js";
 
-export function assignDisambiguators(siblings: readonly SymbolDecl[]): readonly SymbolDecl[] {
-  const occurrencesByName = countByOwnName(siblings);
+export function assignDisambiguators(siblings: readonly OverviewNode[]): readonly OverviewNode[] {
+  const occurrencesByName = countByOwnName(OverviewTree.scopeSymbols(siblings));
   const assignedCountsByName = new Map<string, number>();
-  return siblings.map((sibling) => {
-    const ownName = ownNameOf(sibling);
-    const totalForName = occurrencesByName.get(ownName) ?? 0;
-    const nextDisambiguator =
-      totalForName >= 2 ? (assignedCountsByName.get(ownName) ?? 0) + 1 : undefined;
-    if (nextDisambiguator !== undefined) {
-      assignedCountsByName.set(ownName, nextDisambiguator);
-    }
-    return withDisambiguatedIdentity(sibling, nextDisambiguator);
-  });
+  return siblings.map((sibling) =>
+    assignWithinScope(sibling, occurrencesByName, assignedCountsByName),
+  );
 }
 
-function ownNameOf(decl: SymbolDecl): string {
-  const segments = decl.identity.segments;
-  const last = segments[segments.length - 1];
-  if (!last) {
-    throw new Error("symbol identity has empty path");
-  }
-  return last.name;
-}
-
-function countByOwnName(siblings: readonly SymbolDecl[]): Map<string, number> {
+function countByOwnName(symbols: readonly SymbolOverviewNode[]): Map<string, number> {
   const counts = new Map<string, number>();
-  for (const sibling of siblings) {
-    const name = ownNameOf(sibling);
+  for (const symbol of symbols) {
+    const name = OverviewTree.ownName(symbol);
     counts.set(name, (counts.get(name) ?? 0) + 1);
   }
   return counts;
 }
 
-function withDisambiguatedIdentity(
-  decl: SymbolDecl,
+function assignWithinScope(
+  node: OverviewNode,
+  occurrencesByName: ReadonlyMap<string, number>,
+  assignedCountsByName: Map<string, number>,
+): OverviewNode {
+  if (node.type === "re-export") {
+    return node;
+  }
+  if (node.type === "fold") {
+    return {
+      ...node,
+      children: node.children.map((child) =>
+        assignWithinScope(child, occurrencesByName, assignedCountsByName),
+      ),
+    };
+  }
+  const name = OverviewTree.ownName(node);
+  const totalForName = occurrencesByName.get(name) ?? 0;
+  const disambiguator = totalForName >= 2 ? (assignedCountsByName.get(name) ?? 0) + 1 : undefined;
+  if (disambiguator !== undefined) {
+    assignedCountsByName.set(name, disambiguator);
+  }
+  return disambiguatedSymbol(node, disambiguator);
+}
+
+function disambiguatedSymbol(
+  symbol: SymbolOverviewNode,
   disambiguator: number | undefined,
-): SymbolDecl {
-  const updatedLeaf = updatedLeafSegment(decl.identity.segments, disambiguator);
-  const depth = decl.identity.segments.length - 1;
-  const childrenWithUpdatedPrefix =
+): SymbolOverviewNode {
+  const leafIndex = symbol.identity.segments.length - 1;
+  const children =
     disambiguator === undefined
-      ? decl.children
-      : decl.children.map((child) => stampSegmentDisambiguator(child, depth, disambiguator));
+      ? symbol.children
+      : symbol.children.map((child) => stampAncestorDisambiguator(child, leafIndex, disambiguator));
   return {
-    ...decl,
-    identity: { ...decl.identity, segments: updatedLeaf },
-    children: assignDisambiguators(childrenWithUpdatedPrefix),
+    ...symbol,
+    identity: {
+      ...symbol.identity,
+      segments: withLeafDisambiguator(symbol.identity.segments, disambiguator),
+    },
+    children: assignDisambiguators(children),
   };
 }
 
-function stampSegmentDisambiguator(
-  decl: SymbolDecl,
+function stampAncestorDisambiguator(
+  node: OverviewNode,
   index: number,
   disambiguator: number,
-): SymbolDecl {
-  const stampedSegments = decl.identity.segments.map((segment, position) =>
+): OverviewNode {
+  if (node.type === "re-export") {
+    return node;
+  }
+  const children = node.children.map((child) =>
+    stampAncestorDisambiguator(child, index, disambiguator),
+  );
+  if (node.type === "fold") {
+    return { ...node, children };
+  }
+  const segments = node.identity.segments.map((segment, position) =>
     position === index ? { name: segment.name, disambiguator } : segment,
   );
-  return {
-    ...decl,
-    identity: { ...decl.identity, segments: stampedSegments },
-    children: decl.children.map((child) => stampSegmentDisambiguator(child, index, disambiguator)),
-  };
+  return { ...node, identity: { ...node.identity, segments }, children };
 }
 
-function updatedLeafSegment(
+function withLeafDisambiguator(
   path: readonly SymbolPathSegment[],
   disambiguator: number | undefined,
 ): readonly SymbolPathSegment[] {
-  if (path.length === 0) {
-    throw new Error("symbol identity has empty path");
+  const leaf = path[path.length - 1];
+  if (!leaf) {
+    return path;
   }
-  const leadingSegments = path.slice(0, -1);
-  const lastSegment = path[path.length - 1]!;
-  const updatedLast: SymbolPathSegment =
-    disambiguator === undefined
-      ? { name: lastSegment.name }
-      : { name: lastSegment.name, disambiguator };
-  return [...leadingSegments, updatedLast];
+  const updatedLeaf: SymbolPathSegment =
+    disambiguator === undefined ? { name: leaf.name } : { name: leaf.name, disambiguator };
+  return [...path.slice(0, -1), updatedLeaf];
 }

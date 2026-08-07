@@ -1,8 +1,8 @@
 import type { EdgeConfidence } from "../intermediate-representation/call-edge.js";
-import type { SymbolDecl } from "../intermediate-representation/types.js";
+import type { SymbolOverviewNode } from "../intermediate-representation/overview-tree.js";
 
 export interface GraphPathStep {
-  readonly symbol: SymbolDecl;
+  readonly symbol: SymbolOverviewNode;
   readonly confidence: EdgeConfidence;
   readonly reason?: string;
   readonly closesCycle: boolean;

@@ -1,6 +1,6 @@
-import type { SymbolDecl } from "./types.js";
+import type { SymbolOverviewNode } from "./overview-tree.js";
 
 export type CallTargetResolution =
-  | { readonly outcome: "resolved"; readonly target: SymbolDecl }
-  | { readonly outcome: "ambiguous"; readonly candidates: readonly SymbolDecl[] }
+  | { readonly outcome: "resolved"; readonly target: SymbolOverviewNode }
+  | { readonly outcome: "ambiguous"; readonly candidates: readonly SymbolOverviewNode[] }
   | { readonly outcome: "not-found" };

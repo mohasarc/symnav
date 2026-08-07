@@ -2,7 +2,8 @@ import type { CallEdge } from "../intermediate-representation/call-edge.js";
 import type { CallTargetResolution } from "../intermediate-representation/call-target.js";
 import type { SymbolReference } from "../intermediate-representation/references.js";
 import type { SymbolIdentity } from "../intermediate-representation/symbol-identity.js";
-import type { OverviewFileSymbols, SymbolDecl } from "../intermediate-representation/types.js";
+import type { OverviewFileEntries } from "../intermediate-representation/overview-tree.js";
+import type { SymbolOverviewNode } from "../intermediate-representation/overview-tree.js";
 import type { ResolvedPath } from "../workspace/workspace.js";
 
 export interface ResolveSymbolsOptions {
@@ -11,16 +12,16 @@ export interface ResolveSymbolsOptions {
 
 export interface LanguageBackend {
   accepts(filePath: string): boolean;
-  fileSymbols(path: ResolvedPath): Promise<OverviewFileSymbols>;
+  fileEntries(path: ResolvedPath): Promise<OverviewFileEntries>;
   resolveSymbols(
     files: readonly ResolvedPath[],
     query: string,
     options: ResolveSymbolsOptions,
-  ): Promise<readonly SymbolDecl[]>;
+  ): Promise<readonly SymbolOverviewNode[]>;
   findDefinitions(
     files: readonly ResolvedPath[],
     identity: SymbolIdentity,
-  ): Promise<readonly SymbolDecl[]>;
+  ): Promise<readonly SymbolOverviewNode[]>;
   findReferences(
     files: readonly ResolvedPath[],
     identity: SymbolIdentity,

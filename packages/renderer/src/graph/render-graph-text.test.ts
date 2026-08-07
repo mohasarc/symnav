@@ -6,7 +6,7 @@ import type {
   GraphPath,
   GraphPathStep,
   GraphResult,
-  SymbolDecl,
+  SymbolOverviewNode,
   SymbolPathSegment,
 } from "@symnav/core";
 
@@ -17,7 +17,7 @@ interface DeclInput {
   readonly segments: readonly SymbolPathSegment[];
   readonly startLine: number;
   readonly endLine: number;
-  readonly signature: readonly string[];
+  readonly header: readonly string[];
 }
 
 interface GraphResultOverrides {
@@ -31,18 +31,19 @@ interface GraphResultOverrides {
   readonly repeatedSymbolCount?: GraphResult["repeatedSymbolCount"];
 }
 
-function decl(input: DeclInput): SymbolDecl {
+function decl(input: DeclInput): SymbolOverviewNode {
   return {
+    type: "symbol",
     identity: { file: input.file, segments: input.segments },
     kind: { role: "callable", nativeLabel: "function-implementation" },
     range: { startLine: input.startLine, endLine: input.endLine },
-    signature: { startLine: input.startLine, lines: input.signature },
+    header: { startLine: input.startLine, lines: input.header },
     children: [],
   };
 }
 
 function step(
-  symbol: SymbolDecl,
+  symbol: SymbolOverviewNode,
   options: {
     readonly confidence?: EdgeConfidence;
     readonly reason?: string;
@@ -61,7 +62,7 @@ function path(...steps: readonly GraphPathStep[]): GraphPath {
   return { steps };
 }
 
-function graphResult(root: SymbolDecl, overrides: GraphResultOverrides = {}): GraphResult {
+function graphResult(root: SymbolOverviewNode, overrides: GraphResultOverrides = {}): GraphResult {
   return {
     identity: root.identity,
     root,
@@ -84,7 +85,7 @@ const root = decl({
   segments: [{ name: "CheckoutService" }, { name: "processPayment" }],
   startLine: 42,
   endLine: 78,
-  signature: ["async processPayment(order: Order): Promise<Receipt>"],
+  header: ["async processPayment(order: Order): Promise<Receipt>"],
 });
 
 describe("renderGraphText", () => {
@@ -94,42 +95,42 @@ describe("renderGraphText", () => {
       segments: [{ name: "CheckoutController" }, { name: "submitOrder" }],
       startLine: 58,
       endLine: 72,
-      signature: ["submitOrder(req: Request): Promise<Response>"],
+      header: ["submitOrder(req: Request): Promise<Response>"],
     });
     const routes = decl({
       file: "src/api/routes.ts",
       segments: [{ name: "registerCheckoutRoutes" }],
       startLine: 14,
       endLine: 20,
-      signature: ["function registerCheckoutRoutes(router: Router): void"],
+      header: ["function registerCheckoutRoutes(router: Router): void"],
     });
     const charge = decl({
       file: "src/payments/PaymentProcessor.ts",
       segments: [{ name: "PaymentProcessor" }, { name: "charge" }],
       startLine: 22,
       endLine: 36,
-      signature: ["static async charge(order: Order): Promise<Payment>"],
+      header: ["static async charge(order: Order): Promise<Payment>"],
     });
     const capture = decl({
       file: "src/payments/GatewayClient.ts",
       segments: [{ name: "GatewayClient" }, { name: "capture" }],
       startLine: 31,
       endLine: 46,
-      signature: ["capture(payment: Payment): Promise<CaptureResult>"],
+      header: ["capture(payment: Payment): Promise<CaptureResult>"],
     });
     const markPaid = decl({
       file: "src/orders/OrderRepository.ts",
       segments: [{ name: "OrderRepository" }, { name: "markPaid" }],
       startLine: 65,
       endLine: 81,
-      signature: ["markPaid(orderId: string): Promise<void>"],
+      header: ["markPaid(orderId: string): Promise<void>"],
     });
     const transaction = decl({
       file: "src/database/Database.ts",
       segments: [{ name: "Database" }, { name: "transaction" }],
       startLine: 18,
       endLine: 34,
-      signature: ["transaction<T>(callback: TransactionCallback<T>): Promise<T>"],
+      header: ["transaction<T>(callback: TransactionCallback<T>): Promise<T>"],
     });
 
     const graph = graphResult(root, {
@@ -187,14 +188,14 @@ describe("renderGraphText", () => {
       segments: [{ name: "DynamicRouter" }, { name: "dispatch" }],
       startLine: 44,
       endLine: 58,
-      signature: ["dispatch(action: string): Promise<void>"],
+      header: ["dispatch(action: string): Promise<void>"],
     });
     const cycle = decl({
       file: "src/checkout/CheckoutService.ts",
       segments: [{ name: "CheckoutService" }, { name: "processPayment" }],
       startLine: 42,
       endLine: 78,
-      signature: ["async processPayment(order: Order): Promise<Receipt>"],
+      header: ["async processPayment(order: Order): Promise<Receipt>"],
     });
     const graph = graphResult(root, {
       omitIncoming: true,
@@ -221,14 +222,14 @@ describe("renderGraphText", () => {
       segments: [{ name: "PaymentProcessor" }, { name: "charge" }],
       startLine: 22,
       endLine: 36,
-      signature: ["charge(): void"],
+      header: ["charge(): void"],
     });
     const refund = decl({
       file: "src/payments/PaymentProcessor.ts",
       segments: [{ name: "PaymentProcessor" }, { name: "refund" }],
       startLine: 40,
       endLine: 45,
-      signature: ["refund(): void"],
+      header: ["refund(): void"],
     });
     const graph = graphResult(root, {
       omitIncoming: true,
@@ -253,21 +254,21 @@ describe("renderGraphText", () => {
       segments: [{ name: "firstSameFile" }],
       startLine: 10,
       endLine: 12,
-      signature: ["function firstSameFile(): void"],
+      header: ["function firstSameFile(): void"],
     });
     const otherFile = decl({
       file: "src/other.ts",
       segments: [{ name: "otherFile" }],
       startLine: 20,
       endLine: 22,
-      signature: ["function otherFile(): void"],
+      header: ["function otherFile(): void"],
     });
     const secondSameFile = decl({
       file: "src/shared.ts",
       segments: [{ name: "secondSameFile" }],
       startLine: 30,
       endLine: 32,
-      signature: ["function secondSameFile(): void"],
+      header: ["function secondSameFile(): void"],
     });
     const graph = graphResult(root, {
       omitIncoming: true,

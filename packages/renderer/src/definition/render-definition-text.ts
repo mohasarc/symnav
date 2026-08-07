@@ -1,4 +1,4 @@
-import type { DefinitionResult, SymbolDecl } from "@symnav/core";
+import type { DefinitionResult, SymbolOverviewNode } from "@symnav/core";
 
 import { groupByFile } from "../shared/group-symbols-by-file.js";
 import { formatIdentityPath, formatRange, treeGlyphsFor } from "../shared/render-format.js";
@@ -12,12 +12,12 @@ export function renderDefinitionText(result: DefinitionResult): string {
   return header + renderFileGroups(result.symbols);
 }
 
-function renderFileGroups(symbols: readonly SymbolDecl[]): string {
+function renderFileGroups(symbols: readonly SymbolOverviewNode[]): string {
   const groups = groupByFile(symbols);
   return [...groups.entries()].map(([file, group]) => renderFileGroup(file, group)).join("\n");
 }
 
-function renderFileGroup(file: string, symbols: readonly SymbolDecl[]): string {
+function renderFileGroup(file: string, symbols: readonly SymbolOverviewNode[]): string {
   const header = `${file}\n`;
   const entries = symbols
     .map((symbol, index) => renderSymbolEntry(symbol, index === symbols.length - 1))
@@ -25,11 +25,11 @@ function renderFileGroup(file: string, symbols: readonly SymbolDecl[]): string {
   return header + entries;
 }
 
-function renderSymbolEntry(symbol: SymbolDecl, isLast: boolean): string {
+function renderSymbolEntry(symbol: SymbolOverviewNode, isLast: boolean): string {
   const { branchGlyph, continuationGlyph } = treeGlyphsFor(isLast);
   const tag = bracketTagFor(symbol.kind.nativeLabel);
   const tagSuffix = tag === undefined ? "" : `  [${tag}]`;
   const head = `${branchGlyph}${formatRange(symbol.range)}: ${formatIdentityPath(symbol.identity)}${tagSuffix}\n`;
-  const sig = symbol.signature.lines.map((line) => `${continuationGlyph}${line}\n`).join("");
+  const sig = symbol.header.lines.map((line) => `${continuationGlyph}${line}\n`).join("");
   return head + sig;
 }

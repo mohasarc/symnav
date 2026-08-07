@@ -1,5 +1,6 @@
 import type { SymbolIdentity } from "./symbol-identity.js";
 import type { NavigationDiagnostic } from "../diagnostics/navigation-diagnostic.js";
+import type { SymbolOverviewNode } from "./overview-tree.js";
 
 export type SymbolRole = "container" | "callable" | "value" | "type";
 
@@ -13,36 +14,23 @@ export interface LineRange {
   readonly endLine: number; // 1-based, inclusive; equals startLine for single-line decls
 }
 
-export interface Signature {
+export interface Header {
   readonly startLine: number; // 1-based source line of lines[0]
   readonly lines: readonly string[]; // each element single-line, no "\n"
-}
-
-export interface SymbolDecl {
-  readonly identity: SymbolIdentity;
-  readonly kind: SymbolKind;
-  readonly range: LineRange;
-  readonly signature: Signature;
-  readonly children: readonly SymbolDecl[];
 }
 
 export interface ResultWithDiagnostics {
   readonly diagnostics?: readonly NavigationDiagnostic[];
 }
 
-export interface OverviewFileSymbols extends ResultWithDiagnostics {
-  readonly file: string; // workspace-relative, POSIX separators
-  readonly symbols: readonly SymbolDecl[]; // top-level entries, source order
-}
-
 export interface ResolveResult {
   readonly query: string;
   readonly fuzzy: boolean;
-  readonly symbols: readonly SymbolDecl[];
+  readonly symbols: readonly SymbolOverviewNode[];
   readonly files: readonly string[];
 }
 
 export interface DefinitionResult {
   readonly identity: SymbolIdentity;
-  readonly symbols: readonly SymbolDecl[];
+  readonly symbols: readonly SymbolOverviewNode[];
 }

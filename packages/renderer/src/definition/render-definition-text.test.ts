@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import type { DefinitionResult, Signature, SymbolDecl, SymbolPathSegment } from "@symnav/core";
+import type { DefinitionResult, Header, SymbolOverviewNode, SymbolPathSegment } from "@symnav/core";
 
 import { renderDefinitionText } from "./render-definition-text.js";
 
@@ -10,16 +10,17 @@ interface DeclInput {
   readonly nativeLabel: string;
   readonly startLine: number;
   readonly endLine: number;
-  readonly signature: readonly string[];
+  readonly header: readonly string[];
 }
 
-function decl(input: DeclInput): SymbolDecl {
-  const sig: Signature = { startLine: input.startLine, lines: input.signature };
+function decl(input: DeclInput): SymbolOverviewNode {
+  const sig: Header = { startLine: input.startLine, lines: input.header };
   return {
+    type: "symbol",
     identity: { file: input.file, segments: input.segments },
     kind: { role: "callable", nativeLabel: input.nativeLabel },
     range: { startLine: input.startLine, endLine: input.endLine },
-    signature: sig,
+    header: sig,
     children: [],
   };
 }
@@ -35,7 +36,7 @@ describe("renderDefinitionText", () => {
           nativeLabel: "method-overload-signature",
           startLine: 4,
           endLine: 4,
-          signature: ["post(path: string, handler: Handler): void"],
+          header: ["post(path: string, handler: Handler): void"],
         }),
         decl({
           file: "src/http/Router.ts",
@@ -43,7 +44,7 @@ describe("renderDefinitionText", () => {
           nativeLabel: "method-overload-signature",
           startLine: 5,
           endLine: 5,
-          signature: ["post(path: RegExp, handler: Handler): void"],
+          header: ["post(path: RegExp, handler: Handler): void"],
         }),
         decl({
           file: "src/http/Router.ts",
@@ -51,7 +52,7 @@ describe("renderDefinitionText", () => {
           nativeLabel: "method-implementation",
           startLine: 6,
           endLine: 9,
-          signature: ["post(path: string | RegExp, handler: Handler): void"],
+          header: ["post(path: string | RegExp, handler: Handler): void"],
         }),
       ],
     };
@@ -84,7 +85,7 @@ describe("renderDefinitionText", () => {
           nativeLabel: "method-declaration",
           startLine: 2,
           endLine: 2,
-          signature: ["charge(orderId: string): Promise<string>"],
+          header: ["charge(orderId: string): Promise<string>"],
         }),
         decl({
           file: "src/payments/StripeProvider.ts",
@@ -92,7 +93,7 @@ describe("renderDefinitionText", () => {
           nativeLabel: "method-implementation",
           startLine: 4,
           endLine: 6,
-          signature: ["async charge(orderId: string): Promise<string>"],
+          header: ["async charge(orderId: string): Promise<string>"],
         }),
         decl({
           file: "src/payments/PaypalProvider.ts",
@@ -100,7 +101,7 @@ describe("renderDefinitionText", () => {
           nativeLabel: "method-implementation",
           startLine: 4,
           endLine: 6,
-          signature: ["async charge(orderId: string): Promise<string>"],
+          header: ["async charge(orderId: string): Promise<string>"],
         }),
       ],
     };
@@ -147,7 +148,7 @@ describe("renderDefinitionText", () => {
           nativeLabel: "variable",
           startLine: 1,
           endLine: 1,
-          signature: ["const PI = 3.14"],
+          header: ["const PI = 3.14"],
         }),
       ],
     };

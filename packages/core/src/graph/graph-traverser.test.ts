@@ -6,24 +6,26 @@ import type { CallTargetResolution } from "../intermediate-representation/call-t
 import { formatSymbolIdentity } from "../intermediate-representation/canonical-identity.js";
 import type { SymbolReference } from "../intermediate-representation/references.js";
 import type { SymbolIdentity } from "../intermediate-representation/symbol-identity.js";
-import type { OverviewFileSymbols, SymbolDecl } from "../intermediate-representation/types.js";
+import type { OverviewFileEntries } from "../intermediate-representation/overview-tree.js";
+import type { SymbolOverviewNode } from "../intermediate-representation/overview-tree.js";
 import type { ResolvedPath } from "../workspace/workspace.js";
 import { GraphTraverser } from "./graph-traverser.js";
 
 const files: readonly ResolvedPath[] = [];
 
-function symbol(name: string, file = `src/${name}.ts`): SymbolDecl {
+function symbol(name: string, file = `src/${name}.ts`): SymbolOverviewNode {
   return {
+    type: "symbol",
     identity: { file, segments: [{ name }] },
     kind: { role: "callable", nativeLabel: "function" },
     range: { startLine: 1, endLine: 1 },
-    signature: { startLine: 1, lines: [`function ${name}()`] },
+    header: { startLine: 1, lines: [`function ${name}()`] },
     children: [],
   };
 }
 
 function edge(
-  symbolDecl: SymbolDecl,
+  symbolDecl: SymbolOverviewNode,
   confidence: EdgeConfidence = "certain",
   reason?: string,
 ): CallEdge {
@@ -43,11 +45,13 @@ function edge(
   };
 }
 
-function ids(pathSymbols: readonly SymbolDecl[]): readonly string[] {
+function ids(pathSymbols: readonly SymbolOverviewNode[]): readonly string[] {
   return pathSymbols.map((each) => formatSymbolIdentity(each.identity));
 }
 
-function pathIds(paths: readonly { readonly steps: readonly { readonly symbol: SymbolDecl }[] }[]) {
+function pathIds(
+  paths: readonly { readonly steps: readonly { readonly symbol: SymbolOverviewNode }[] }[],
+) {
   return paths.map((path) => ids(path.steps.map((step) => step.symbol)));
 }
 
@@ -55,11 +59,11 @@ class FakeLanguageBackend implements LanguageBackend {
   private readonly callees = new Map<string, readonly CallEdge[]>();
   private readonly callers = new Map<string, readonly CallEdge[]>();
 
-  setCallees(symbolDecl: SymbolDecl, edges: readonly CallEdge[]): void {
+  setCallees(symbolDecl: SymbolOverviewNode, edges: readonly CallEdge[]): void {
     this.callees.set(formatSymbolIdentity(symbolDecl.identity), edges);
   }
 
-  setCallers(symbolDecl: SymbolDecl, edges: readonly CallEdge[]): void {
+  setCallers(symbolDecl: SymbolOverviewNode, edges: readonly CallEdge[]): void {
     this.callers.set(formatSymbolIdentity(symbolDecl.identity), edges);
   }
 
@@ -67,7 +71,7 @@ class FakeLanguageBackend implements LanguageBackend {
     throw new Error("not implemented");
   }
 
-  fileSymbols(): Promise<OverviewFileSymbols> {
+  fileEntries(): Promise<OverviewFileEntries> {
     throw new Error("not implemented");
   }
 
@@ -75,14 +79,14 @@ class FakeLanguageBackend implements LanguageBackend {
     _files: readonly ResolvedPath[],
     _query: string,
     _options: ResolveSymbolsOptions,
-  ): Promise<readonly SymbolDecl[]> {
+  ): Promise<readonly SymbolOverviewNode[]> {
     throw new Error("not implemented");
   }
 
   findDefinitions(
     _files: readonly ResolvedPath[],
     _identity: SymbolIdentity,
-  ): Promise<readonly SymbolDecl[]> {
+  ): Promise<readonly SymbolOverviewNode[]> {
     throw new Error("not implemented");
   }
 
@@ -115,7 +119,11 @@ class FakeLanguageBackend implements LanguageBackend {
   }
 }
 
-function traverser(backend: LanguageBackend, root: SymbolDecl, depth: number): GraphTraverser {
+function traverser(
+  backend: LanguageBackend,
+  root: SymbolOverviewNode,
+  depth: number,
+): GraphTraverser {
   return new GraphTraverser({ backend, files, root, depth });
 }
 

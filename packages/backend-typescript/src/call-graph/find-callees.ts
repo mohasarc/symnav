@@ -13,7 +13,7 @@ import type {
   EdgeConfidence,
   FileSystem,
   ResolvedPath,
-  SymbolDecl,
+  SymbolOverviewNode,
   SymbolIdentity,
 } from "@symnav/core";
 
@@ -33,7 +33,7 @@ export async function findCallees(args: FindCalleesArgs): Promise<readonly CallE
 }
 
 interface ResolvedCallee {
-  readonly symbol: SymbolDecl;
+  readonly symbol: SymbolOverviewNode;
   readonly confidence: EdgeConfidence;
   readonly reason?: string;
 }
@@ -110,20 +110,20 @@ class CalleeFinder {
     return this.resolveCalled(call);
   }
 
-  private resolveDynamicCandidates(expression: Node): readonly SymbolDecl[] {
+  private resolveDynamicCandidates(expression: Node): readonly SymbolOverviewNode[] {
     const unwrapped = withoutParentheses(expression);
     if (Node.isElementAccessExpression(unwrapped)) {
       return uniqueSymbols(
         this.elementAccessCandidates(unwrapped)
           .map((candidate) => this.workspaceSymbolForDefinitionsOf(candidate.node))
-          .filter((symbol): symbol is SymbolDecl => symbol !== undefined),
+          .filter((symbol): symbol is SymbolOverviewNode => symbol !== undefined),
       );
     }
     if (Node.isConditionalExpression(unwrapped)) {
       return uniqueSymbols(
         [unwrapped.getWhenTrue(), unwrapped.getWhenFalse()]
           .map((candidate) => this.workspaceSymbolForDefinitionsOf(withoutParentheses(candidate)))
-          .filter((symbol): symbol is SymbolDecl => symbol !== undefined),
+          .filter((symbol): symbol is SymbolOverviewNode => symbol !== undefined),
       );
     }
     return [];
@@ -193,7 +193,7 @@ class CalleeFinder {
     return this.resolveDynamic(call);
   }
 
-  private resolveConcreteElementAccess(expression: Node): SymbolDecl | undefined {
+  private resolveConcreteElementAccess(expression: Node): SymbolOverviewNode | undefined {
     if (!Node.isElementAccessExpression(expression)) return undefined;
     const memberName = literalMemberName(expression.getArgumentExpression());
     if (!memberName) return undefined;
@@ -224,7 +224,7 @@ class CalleeFinder {
     return { symbol: resolved, confidence: "possible", reason: DYNAMIC_DISPATCH_REASON };
   }
 
-  private workspaceSymbolForDefinitionsOf(node: Node): SymbolDecl | undefined {
+  private workspaceSymbolForDefinitionsOf(node: Node): SymbolOverviewNode | undefined {
     for (const declaration of definitionNodesOf(node)) {
       const symbol = this.workspaceSymbolFor(declaration);
       if (symbol) return symbol;
@@ -232,7 +232,7 @@ class CalleeFinder {
     return undefined;
   }
 
-  private workspaceSymbolFor(node: Node): SymbolDecl | undefined {
+  private workspaceSymbolFor(node: Node): SymbolOverviewNode | undefined {
     return this.index.declarationAt(node);
   }
 
@@ -253,7 +253,7 @@ class CalleeFinder {
 }
 
 interface MutableEdge {
-  symbol: SymbolDecl;
+  symbol: SymbolOverviewNode;
   confidence: EdgeConfidence;
   reason: string | undefined;
   sites: CallSite[];
@@ -374,15 +374,15 @@ function withoutParentheses(node: Node): Node {
   return current;
 }
 
-function uniqueSymbols(symbols: readonly SymbolDecl[]): readonly SymbolDecl[] {
-  const byKey = new Map<string, SymbolDecl>();
+function uniqueSymbols(symbols: readonly SymbolOverviewNode[]): readonly SymbolOverviewNode[] {
+  const byKey = new Map<string, SymbolOverviewNode>();
   for (const symbol of symbols) {
     byKey.set(DeclarationLocator.identityKey(symbol.identity), symbol);
   }
-  return [...byKey.values()].sort(compareSymbolDecls);
+  return [...byKey.values()].sort(compareSymbolOverviewNodes);
 }
 
-function compareSymbolDecls(a: SymbolDecl, b: SymbolDecl): number {
+function compareSymbolOverviewNodes(a: SymbolOverviewNode, b: SymbolOverviewNode): number {
   if (a.identity.file !== b.identity.file) return a.identity.file < b.identity.file ? -1 : 1;
   if (a.range.startLine !== b.range.startLine) return a.range.startLine - b.range.startLine;
   const aKey = DeclarationLocator.identityKey(a.identity);

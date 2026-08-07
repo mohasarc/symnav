@@ -2,10 +2,10 @@ import { describe, expect, it } from "vitest";
 import type {
   DefinitionResult,
   GraphResult,
-  OverviewFileSymbols,
+  OverviewFileEntries,
   RefsResult,
   ResolveResult,
-  SymbolDecl,
+  SymbolOverviewNode,
 } from "@symnav/core";
 import { defCommand } from "./def/def-command.js";
 import { graphCommand } from "./graph/graph-command.js";
@@ -13,11 +13,15 @@ import { overviewCommand } from "./overview/overview-command.js";
 import { refsCommand } from "./refs/refs-command.js";
 import { resolveCommand } from "./resolve/resolve-command.js";
 
-const symbol = (name: string, children: readonly SymbolDecl[] = []): SymbolDecl => ({
+const symbol = (
+  name: string,
+  children: readonly SymbolOverviewNode[] = [],
+): SymbolOverviewNode => ({
+  type: "symbol",
   identity: { file: "src/a.ts", segments: [{ name }] },
   kind: { role: "callable", nativeLabel: "function" },
   range: { startLine: 1, endLine: 1 },
-  signature: { startLine: 1, lines: [`function ${name}(): void`] },
+  header: { startLine: 1, lines: [`function ${name}(): void`] },
   children,
 });
 
@@ -89,9 +93,9 @@ describe("command telemetry descriptors", () => {
   });
 
   it("counts overview result symbols recursively", () => {
-    const result: OverviewFileSymbols = {
+    const result: OverviewFileEntries = {
       file: "src/a.ts",
-      symbols: [symbol("top", [symbol("nested", [symbol("leaf")])]), symbol("other")],
+      entries: [symbol("top", [symbol("nested", [symbol("leaf")])]), symbol("other")],
     };
 
     expect(overviewCommand.countResults(result)).toEqual({ symbols: 4 });

@@ -5,7 +5,7 @@ import type {
   ContextResult,
   HistoryEntry,
   ReferenceKind,
-  SymbolDecl,
+  SymbolOverviewNode,
 } from "@symnav/core";
 import { formatSymbolIdentity } from "@symnav/core";
 
@@ -56,7 +56,7 @@ class ContextTextRenderer {
     return [head, ...sections].join("\n");
   }
 
-  private static renderDefinition(definitions: readonly SymbolDecl[]): string {
+  private static renderDefinition(definitions: readonly SymbolOverviewNode[]): string {
     if (definitions.length === 0) {
       return `Definition\n${ContextTextRenderer.NONE}`;
     }
@@ -66,7 +66,10 @@ class ContextTextRenderer {
     return `Definition\n${groups}`;
   }
 
-  private static renderDefinitionFileGroup(file: string, symbols: readonly SymbolDecl[]): string {
+  private static renderDefinitionFileGroup(
+    file: string,
+    symbols: readonly SymbolOverviewNode[],
+  ): string {
     const entries = symbols
       .map((symbol, index) =>
         ContextTextRenderer.renderDefinitionEntry(symbol, index === symbols.length - 1),
@@ -75,14 +78,12 @@ class ContextTextRenderer {
     return `${file}\n${entries}`;
   }
 
-  private static renderDefinitionEntry(symbol: SymbolDecl, isLast: boolean): string {
+  private static renderDefinitionEntry(symbol: SymbolOverviewNode, isLast: boolean): string {
     const { branchGlyph, continuationGlyph } = treeGlyphsFor(isLast);
     const tag = bracketTagFor(symbol.kind.nativeLabel);
     const tagSuffix = tag === undefined ? "" : `  [${tag}]`;
     const head = `${branchGlyph}${formatRange(symbol.range)}: ${formatIdentityPath(symbol.identity)}${tagSuffix}\n`;
-    const signature = symbol.signature.lines
-      .map((line) => `${continuationGlyph}${line}\n`)
-      .join("");
+    const signature = symbol.header.lines.map((line) => `${continuationGlyph}${line}\n`).join("");
     return head + signature;
   }
 
@@ -168,7 +169,7 @@ class ContextTextRenderer {
   }
 
   private static calleePreview(edge: CallEdge): readonly string[] {
-    return edge.symbol.signature.lines;
+    return edge.symbol.header.lines;
   }
 
   private static renderReferences(references: ContextReferenceSummary, id: string): string {

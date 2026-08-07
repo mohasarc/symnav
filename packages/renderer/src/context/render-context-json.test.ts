@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import type { ContextResult, ReferenceKind, SymbolDecl } from "@symnav/core";
+import type { ContextResult, ReferenceKind, SymbolOverviewNode } from "@symnav/core";
 
 import { renderContextJson } from "./render-context-json.js";
 
@@ -10,14 +10,15 @@ function emptyKindCounts(): Record<ReferenceKind, number> {
 
 describe("renderContextJson", () => {
   it("serializes the result verbatim with a trailing newline", () => {
-    const target: SymbolDecl = {
+    const target: SymbolOverviewNode = {
+      type: "symbol",
       identity: {
         file: "src/checkout/CheckoutService.ts",
         segments: [{ name: "CheckoutService" }, { name: "processPayment" }],
       },
       kind: { role: "callable", nativeLabel: "method-implementation" },
       range: { startLine: 42, endLine: 78 },
-      signature: { startLine: 42, lines: ["async processPayment(order: Order): Promise<Receipt>"] },
+      header: { startLine: 42, lines: ["async processPayment(order: Order): Promise<Receipt>"] },
       children: [],
     };
     const result: ContextResult = {
@@ -28,13 +29,14 @@ describe("renderContextJson", () => {
         sortedEdges: [
           {
             symbol: {
+              type: "symbol",
               identity: {
                 file: "src/api/CheckoutController.ts",
                 segments: [{ name: "CheckoutController" }, { name: "submitOrder" }],
               },
               kind: { role: "callable", nativeLabel: "method-implementation" },
               range: { startLine: 58, endLine: 72 },
-              signature: { startLine: 58, lines: ["async submitOrder(): Promise<void>"] },
+              header: { startLine: 58, lines: ["async submitOrder(): Promise<void>"] },
               children: [],
             },
             sites: [

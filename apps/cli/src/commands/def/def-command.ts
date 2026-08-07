@@ -2,7 +2,7 @@ import type {
   DefinitionResult,
   LanguageBackend,
   ResolvedPath,
-  SymbolDecl,
+  SymbolOverviewNode,
   SymbolIdentity,
 } from "@symnav/core";
 import { parseSymbolIdentity } from "@symnav/core";
@@ -43,7 +43,7 @@ async function callOwningBackend(
   backend: LanguageBackend,
   files: readonly ResolvedPath[],
   identity: SymbolIdentity,
-): Promise<readonly SymbolDecl[]> {
+): Promise<readonly SymbolOverviewNode[]> {
   const accepted = files.filter((file) => backend.accepts(file.relative));
   return backend.findDefinitions(accepted, identity);
 }

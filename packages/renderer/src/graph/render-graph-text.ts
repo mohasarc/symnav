@@ -1,4 +1,9 @@
-import type { GraphDirectionPage, GraphPathStep, GraphResult, SymbolDecl } from "@symnav/core";
+import type {
+  GraphDirectionPage,
+  GraphPathStep,
+  GraphResult,
+  SymbolOverviewNode,
+} from "@symnav/core";
 
 import { formatIdentityPath, formatRange, treeGlyphsFor } from "../shared/render-format.js";
 import type { GraphPathTreeNode } from "./graph-path-tree.js";
@@ -36,7 +41,7 @@ class GraphTextRenderer {
   private static renderDirection(
     header: string,
     label: GraphDirectionLabel,
-    root: SymbolDecl,
+    root: SymbolOverviewNode,
     page: GraphDirectionPage,
   ): string {
     const tree = buildGraphPathTree(page.paths);
@@ -44,12 +49,12 @@ class GraphTextRenderer {
   }
 
   private static renderRoot(
-    root: SymbolDecl,
+    root: SymbolOverviewNode,
     children: readonly GraphPathTreeNode[],
     label: GraphDirectionLabel,
   ): string {
     const head = `└── ${formatRange(root.range)}: ${formatIdentityPath(root.identity)}\n`;
-    const signatures = root.signature.lines.map((line) => `    ${line}\n`).join("");
+    const signatures = root.header.lines.map((line) => `    ${line}\n`).join("");
     return head + signatures + GraphTextRenderer.renderChildren(children, "    ", label);
   }
 
@@ -96,7 +101,7 @@ class GraphTextRenderer {
     const tag = GraphTextRenderer.renderStepTag(node.step, label);
     const head = `${prefix}${branchGlyph}${formatRange(node.step.symbol.range)}: ${formatIdentityPath(node.step.symbol.identity)}${tag}\n`;
     const signaturePrefix = `${prefix}${continuationGlyph}`;
-    const signatures = node.step.symbol.signature.lines
+    const signatures = node.step.symbol.header.lines
       .map((line) => `${signaturePrefix}${line}\n`)
       .join("");
     if (node.step.closesCycle) {

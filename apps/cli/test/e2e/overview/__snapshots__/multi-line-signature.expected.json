@@ -1,8 +1,16 @@
 {
-  "file": "multi-line-signature.ts",
-  "symbols": [
+  "entries": [
     {
       "children": [],
+      "header": {
+        "lines": [
+          "export function configure(",
+          "  host: string,",
+          "  port: number,",
+          "): void"
+        ],
+        "startLine": 1
+      },
       "identity": {
         "file": "multi-line-signature.ts",
         "segments": [
@@ -19,20 +27,21 @@
         "endLine": 7,
         "startLine": 1
       },
-      "signature": {
-        "lines": [
-          "export function configure(",
-          "  host: string,",
-          "  port: number,",
-          "): void"
-        ],
-        "startLine": 1
-      }
+      "type": "symbol"
     },
     {
       "children": [
         {
           "children": [],
+          "header": {
+            "lines": [
+              "start(",
+              "  host: string,",
+              "  port: number,",
+              "): void"
+            ],
+            "startLine": 10
+          },
           "identity": {
             "file": "multi-line-signature.ts",
             "segments": [
@@ -52,17 +61,15 @@
             "endLine": 16,
             "startLine": 10
           },
-          "signature": {
-            "lines": [
-              "start(",
-              "  host: string,",
-              "  port: number,",
-              "): void"
-            ],
-            "startLine": 10
-          }
+          "type": "symbol"
         }
       ],
+      "header": {
+        "lines": [
+          "export class Server"
+        ],
+        "startLine": 9
+      },
       "identity": {
         "file": "multi-line-signature.ts",
         "segments": [
@@ -79,12 +86,8 @@
         "endLine": 17,
         "startLine": 9
       },
-      "signature": {
-        "lines": [
-          "export class Server"
-        ],
-        "startLine": 9
-      }
+      "type": "symbol"
     }
-  ]
+  ],
+  "file": "multi-line-signature.ts"
 }

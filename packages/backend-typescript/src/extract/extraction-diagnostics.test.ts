@@ -1,10 +1,14 @@
 import { Node, SyntaxKind, type ClassDeclaration } from "ts-morph";
 import { describe, expect, it } from "vitest";
-import { CollectingDiagnosticSink } from "@symnav/core";
+import { CollectingDiagnosticSink, OverviewTree, type OverviewNode } from "@symnav/core";
 
 import { parseTypeScriptSource } from "../../test/helpers/parse-typescript-source.js";
 import { extractStatementDecls } from "./extract-children.js";
-import { extractFileSymbols } from "./extract-file-symbols.js";
+import { extractFileEntries } from "./extract-file-entries.js";
+
+function symbolChildrenOf(node: OverviewNode | undefined): readonly OverviewNode[] {
+  return node?.type === "symbol" ? node.children : [];
+}
 
 describe("extraction diagnostics", () => {
   it("reports an unrecognised statement kind once per file and kind", () => {
@@ -38,15 +42,17 @@ describe("extraction diagnostics", () => {
     );
     const diagnostics = new CollectingDiagnosticSink();
 
-    const result = extractFileSymbols({
+    const result = extractFileEntries({
       sourceFile,
       filePath: "src/input.ts",
       diagnostics,
     });
 
-    expect(result.symbols.map((symbol) => symbol.identity.segments.at(-1)?.name)).toEqual([
-      "render",
-    ]);
+    expect(
+      OverviewTree.walkSymbols(result.entries).map(
+        (symbol) => symbol.identity.segments.at(-1)?.name,
+      ),
+    ).toEqual(["render"]);
     expect(diagnostics.diagnostics()).toEqual([]);
   });
 
@@ -61,14 +67,16 @@ describe("extraction diagnostics", () => {
     replaceMembers(box, [unhandled, unhandled, render]);
     const diagnostics = new CollectingDiagnosticSink();
 
-    const result = extractFileSymbols({
+    const result = extractFileEntries({
       sourceFile,
       filePath: "src/input.ts",
       diagnostics,
     });
 
     expect(
-      result.symbols[0]?.children.map((symbol) => symbol.identity.segments.at(-1)?.name),
+      OverviewTree.walkSymbols(symbolChildrenOf(result.entries[0])).map(
+        (symbol) => symbol.identity.segments.at(-1)?.name,
+      ),
     ).toEqual(["render"]);
     expect(diagnostics.diagnostics()).toEqual([
       {

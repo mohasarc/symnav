@@ -2,41 +2,41 @@ import type {
   CallEdge,
   CallTargetResolution,
   LanguageBackend,
-  OverviewFileSymbols,
+  OverviewFileEntries,
   SymbolReference,
   ResolvedPath,
-  SymbolDecl,
+  SymbolOverviewNode,
 } from "@symnav/core";
 
 export interface FakeLanguageBackendOptions {
   accept?: (filePath: string) => boolean;
-  symbols?: (filePath: string) => OverviewFileSymbols;
+  entries?: (filePath: string) => OverviewFileEntries;
 }
 
 export class FakeLanguageBackend implements LanguageBackend {
   readonly calls: string[] = [];
   private readonly acceptFn: (filePath: string) => boolean;
-  private readonly symbolsFn: (filePath: string) => OverviewFileSymbols;
+  private readonly entriesFn: (filePath: string) => OverviewFileEntries;
 
   constructor(options: FakeLanguageBackendOptions = {}) {
     this.acceptFn = options.accept ?? (() => true);
-    this.symbolsFn = options.symbols ?? ((filePath: string) => ({ file: filePath, symbols: [] }));
+    this.entriesFn = options.entries ?? ((filePath: string) => ({ file: filePath, entries: [] }));
   }
 
   accepts(filePath: string): boolean {
     return this.acceptFn(filePath);
   }
 
-  async fileSymbols(path: ResolvedPath): Promise<OverviewFileSymbols> {
+  async fileEntries(path: ResolvedPath): Promise<OverviewFileEntries> {
     this.calls.push(path.relative);
-    return this.symbolsFn(path.relative);
+    return this.entriesFn(path.relative);
   }
 
-  async resolveSymbols(): Promise<readonly SymbolDecl[]> {
+  async resolveSymbols(): Promise<readonly SymbolOverviewNode[]> {
     return [];
   }
 
-  async findDefinitions(): Promise<readonly SymbolDecl[]> {
+  async findDefinitions(): Promise<readonly SymbolOverviewNode[]> {
     return [];
   }
 

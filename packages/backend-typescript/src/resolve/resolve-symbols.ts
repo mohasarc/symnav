@@ -1,7 +1,13 @@
-import type { FileSystem, ResolveSymbolsOptions, ResolvedPath, SymbolDecl } from "@symnav/core";
+import type {
+  FileSystem,
+  ResolveSymbolsOptions,
+  ResolvedPath,
+  SymbolOverviewNode,
+} from "@symnav/core";
+import { OverviewTree } from "@symnav/core";
 import fuzzysort from "fuzzysort";
 
-import { loadFileSymbols } from "../extract/load-file-symbols.js";
+import { loadFileEntries } from "../extract/load-file-entries.js";
 
 export interface ResolveSymbolsArgs {
   readonly fs: FileSystem;
@@ -10,7 +16,9 @@ export interface ResolveSymbolsArgs {
   readonly options: ResolveSymbolsOptions;
 }
 
-export async function resolveSymbols(args: ResolveSymbolsArgs): Promise<readonly SymbolDecl[]> {
+export async function resolveSymbols(
+  args: ResolveSymbolsArgs,
+): Promise<readonly SymbolOverviewNode[]> {
   const candidates = extractAllSymbols(args.fs, args.files);
   if (args.options.fuzzy) {
     return fuzzyMatch(candidates, args.query);
@@ -18,33 +26,29 @@ export async function resolveSymbols(args: ResolveSymbolsArgs): Promise<readonly
   return exactMatch(candidates, args.query);
 }
 
-function extractAllSymbols(fs: FileSystem, files: readonly ResolvedPath[]): readonly SymbolDecl[] {
-  const all: SymbolDecl[] = [];
+function extractAllSymbols(
+  fs: FileSystem,
+  files: readonly ResolvedPath[],
+): readonly SymbolOverviewNode[] {
+  const all: SymbolOverviewNode[] = [];
   for (const file of files) {
-    const { symbols } = loadFileSymbols(fs, file);
-    collectAll(symbols, all);
+    all.push(...OverviewTree.walkSymbols(loadFileEntries(fs, file).entries));
   }
   return all;
 }
 
-function collectAll(symbols: readonly SymbolDecl[], out: SymbolDecl[]): void {
-  for (const symbol of symbols) {
-    out.push(symbol);
-    collectAll(symbol.children, out);
-  }
+function exactMatch(
+  candidates: readonly SymbolOverviewNode[],
+  query: string,
+): readonly SymbolOverviewNode[] {
+  return candidates.filter((decl) => OverviewTree.ownName(decl) === query);
 }
 
-function ownName(decl: SymbolDecl): string {
-  const segment = decl.identity.segments[decl.identity.segments.length - 1];
-  return segment?.name ?? "";
-}
-
-function exactMatch(candidates: readonly SymbolDecl[], query: string): readonly SymbolDecl[] {
-  return candidates.filter((decl) => ownName(decl) === query);
-}
-
-function fuzzyMatch(candidates: readonly SymbolDecl[], query: string): readonly SymbolDecl[] {
-  const indexed = candidates.map((decl) => ({ decl, name: ownName(decl) }));
+function fuzzyMatch(
+  candidates: readonly SymbolOverviewNode[],
+  query: string,
+): readonly SymbolOverviewNode[] {
+  const indexed = candidates.map((decl) => ({ decl, name: OverviewTree.ownName(decl) }));
   const results = fuzzysort.go(query, indexed, { key: "name" });
   return results.map((result) => result.obj.decl);
 }

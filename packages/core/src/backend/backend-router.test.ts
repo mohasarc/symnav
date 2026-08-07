@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { BackendRouter } from "./backend-router.js";
 import { UnsupportedFileError } from "./errors.js";
 import type { LanguageBackend } from "./language-backend.js";
-import type { OverviewFileSymbols } from "../intermediate-representation/types.js";
+import type { OverviewFileEntries } from "../intermediate-representation/overview-tree.js";
 import type { ResolvedPath } from "../workspace/workspace.js";
 
 function fakeBackend(
@@ -13,8 +13,8 @@ function fakeBackend(
   return {
     label,
     accepts,
-    fileSymbols(path: ResolvedPath): Promise<OverviewFileSymbols> {
-      return Promise.resolve({ file: path.relative, symbols: [] });
+    fileEntries(path: ResolvedPath): Promise<OverviewFileEntries> {
+      return Promise.resolve({ file: path.relative, entries: [] });
     },
     resolveSymbols() {
       return Promise.resolve([]);

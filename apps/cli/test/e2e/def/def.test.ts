@@ -61,13 +61,6 @@ describe("symnav def e2e (multi-implementation)", () => {
 });
 
 describe("symnav def e2e (errors and empty results)", () => {
-  it("treats a former malformed symbol id as a target pattern", () => {
-    const r = runDef(["def", "not_an_id"]);
-    expect(r.status).toBe(1);
-    expect(r.stdout).toBe("");
-    expect(r.stderr).toContain('Cannot answer: no symbol target "not_an_id" found');
-  });
-
   it("rejects a nonexistent file with FileNotFoundError", () => {
     const r = runDef(["def", "src/missing.ts::Whatever"]);
     expect(r.status).toBe(1);
@@ -116,46 +109,6 @@ describe("symnav def e2e (errors and empty results)", () => {
       { name: "insideLoop" },
     ]);
     expect(parsed.symbols[0]!.range).toEqual({ startLine: 8, endLine: 8 });
-  });
-});
-
-describe("symnav def e2e (pattern targets)", () => {
-  it("resolves a unique bare-name target", () => {
-    const r = runDef(["def", "helper"]);
-    expect(r.stderr).toBe("");
-    expect(r.status).toBe(0);
-    expect(r.stdout).toContain("Definition: helper");
-    expect(r.stdout).toContain("src/pattern/helper.ts");
-    expect(r.stdout).toContain("export function helper(): string");
-  });
-
-  it("lists ambiguous target candidates with canonical ids", () => {
-    const r = runDef(["def", "parse"]);
-    expect(r.status).toBe(1);
-    expect(r.stdout).toBe("");
-    expect(r.stderr).toContain('Cannot answer: symbol target "parse" is ambiguous.');
-    expect(r.stderr).toContain("src/pattern/json.ts::parse");
-    expect(r.stderr).toContain("export function parse(input: string): unknown");
-    expect(r.stderr).toContain("src/pattern/query.ts::parse");
-    expect(r.stderr).toContain(
-      "export function parse(input: URLSearchParams): Record<string, string>",
-    );
-  });
-
-  it("narrows an ambiguous bare name to the declaration containing --line", () => {
-    const r = runDef(["def", "charge", "--line", "2"]);
-    expect(r.stderr).toBe("");
-    expect(r.status).toBe(0);
-    expect(r.stdout).toContain("Definition: PaymentProvider::charge");
-  });
-
-  it("resolves a copied candidate id exactly", () => {
-    const r = runDef(["def", "src/pattern/json.ts::parse"]);
-    expect(r.stderr).toBe("");
-    expect(r.status).toBe(0);
-    expect(r.stdout).toContain("Definition: parse");
-    expect(r.stdout).toContain("src/pattern/json.ts");
-    expect(r.stdout).toContain("export function parse(input: string): unknown");
   });
 });
 

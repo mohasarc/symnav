@@ -81,8 +81,10 @@ export { InvalidPageRequestError, PageOutOfRangeError } from "./pagination/error
 export { isPositiveInteger } from "./validation/is-positive-integer.js";
 export {
   InvalidSymbolIdError,
+  SEGMENT_SEPARATOR,
   formatSymbolIdentity,
   formatSymbolPath,
+  parseSegment,
 } from "./intermediate-representation/canonical-identity.js";
 export type { SymbolTargetPattern } from "./target/symbol-target-pattern.js";
 export { SymbolTargetGrammar } from "./target/symbol-target-pattern.js";

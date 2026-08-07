@@ -1,3 +1,3 @@
 export function helper(): string {
-  return "ready";
+  return "unique-helper";
 }

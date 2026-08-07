@@ -1,0 +1,5 @@
+Definition: helper
+
+src/unique/helper.ts
+└── 1-3: helper  [implementation]
+    export function helper(): string

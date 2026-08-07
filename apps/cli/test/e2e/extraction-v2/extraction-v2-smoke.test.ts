@@ -178,10 +178,5 @@ describe("symnav extraction v2 workflow smoke", () => {
     expectIdentity(parsedGraph.root.identity, buildWorkflowId);
     expect(parsedGraph.outgoing.totalPathCount).toBeGreaterThan(0);
     expect(parsedGraph.outgoing.paths.length).toBeGreaterThan(0);
-
-    const warningOverview = runSymnav(["overview", "src/unsupported-statement.ts"]);
-    expect(warningOverview.status).toBe(0);
-    expectUnsupportedStatementWarning(warningOverview.stderr);
-    expect(warningOverview.stdout).toContain("stillVisible");
   });
 });

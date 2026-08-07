@@ -44,8 +44,8 @@ describe("symnav overview e2e (fold tree)", () => {
     expect(r.stdout).not.toContain("(no symbols)");
   });
 
-  it("renders default fold headers without opening fold interiors", async () => {
-    const r = runOverview(["overview", "default-fold-overview.ts"]);
+  it("renders only top-level folds and declarations at depth zero", async () => {
+    const r = runOverview(["overview", "default-fold-overview.ts", "--depth", "0"]);
 
     expect(r.stderr).toBe("");
     expect(r.status).toBe(0);
@@ -60,28 +60,22 @@ describe("symnav overview e2e (fold tree)", () => {
     expect(r.stdout).toContain("50-53: finally {");
     expect(r.stdout).toContain("55-58: {");
     expect(r.stdout).toContain("60-63: values.map((value) => {");
-    expect(r.stdout).not.toContain("branchValue");
-    expect(r.stdout).not.toContain("loopValue");
-    expect(r.stdout).not.toContain("callbackValue");
-    await expect(r.stdout).toMatchFileSnapshot(
-      new URL("./__snapshots__/default-fold-overview.expected.txt", import.meta.url).pathname,
-    );
-  });
-
-  it("renders only top-level folds and declarations at depth zero", async () => {
-    const r = runOverview(["overview", "default-fold-overview.ts", "--depth", "0"]);
-
-    expect(r.stderr).toBe("");
-    expect(r.status).toBe(0);
-    expect(r.stdout).toContain("10-13: if (flag) {");
     expect(r.stdout).toContain("65-76: FoldMemberHost");
     expect(r.stdout).toContain("78-84: outerDeclaration");
     expect(r.stdout).not.toContain("branchValue");
+    expect(r.stdout).not.toContain("loopValue");
+    expect(r.stdout).not.toContain("callbackValue");
     expect(r.stdout).not.toContain("FoldMemberHost::run");
     expect(r.stdout).not.toContain("outerDeclaration::nestedDeclaration");
     expect(r.stdout).not.toContain("initializerHost::initializerNestedDeclaration");
     await expect(r.stdout).toMatchFileSnapshot(
       new URL("./__snapshots__/default-fold-overview.expected.txt", import.meta.url).pathname,
+    );
+  });
+
+  it("defaults to explicit depth zero", () => {
+    expect(runOverview(["overview", "default-fold-overview.ts"]).stdout).toBe(
+      runOverview(["overview", "default-fold-overview.ts", "--depth", "0"]).stdout,
     );
   });
 

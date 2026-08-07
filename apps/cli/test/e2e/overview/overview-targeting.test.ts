@@ -3,21 +3,6 @@ import { describe, expect, it } from "vitest";
 import { runOverview, snapshot } from "./run-overview.js";
 
 describe("symnav overview e2e (targeting)", () => {
-  it("renders copied fold headers without opening fold internals by default", async () => {
-    const r = runOverview(["overview", "targeted-expansion.ts"]);
-
-    expect(r.stderr).toBe("");
-    expect(r.status).toBe(0);
-    expect(r.stdout).toContain('1-3: describe("setup", () => {');
-    expect(r.stdout).toContain('5-11: describe("cursor", () => {');
-    expect(r.stdout).toContain("13-18: action");
-    expect(r.stdout).not.toContain("setupHelper");
-    expect(r.stdout).not.toContain("cursorHelper");
-    expect(r.stdout).not.toContain("14-17: if (flag) {");
-    expect(r.stdout).not.toContain("branchValue");
-    await expect(r.stdout).toMatchFileSnapshot(snapshot("targeted-expansion-depth-0.expected.txt"));
-  });
-
   it("renders only top-level nodes at explicit depth zero", async () => {
     const r = runOverview(["overview", "targeted-expansion.ts", "--depth", "0"]);
 
@@ -32,6 +17,12 @@ describe("symnav overview e2e (targeting)", () => {
     expect(r.stdout).not.toContain("14-17: if (flag) {");
     expect(r.stdout).not.toContain("branchValue");
     await expect(r.stdout).toMatchFileSnapshot(snapshot("targeted-expansion-depth-0.expected.txt"));
+  });
+
+  it("defaults to explicit depth zero", () => {
+    expect(runOverview(["overview", "targeted-expansion.ts"]).stdout).toBe(
+      runOverview(["overview", "targeted-expansion.ts", "--depth", "0"]).stdout,
+    );
   });
 
   it("renders one child level globally at depth one", async () => {

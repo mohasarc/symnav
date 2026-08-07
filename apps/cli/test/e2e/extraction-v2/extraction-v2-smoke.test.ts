@@ -184,6 +184,13 @@ describe("symnav extraction v2 workflow smoke", () => {
     expect(walkedKeys).toEqual(allReferences().map(referenceKey));
   });
 
+  it.skip("names the enclosing symbol of each reference (refs output carries no owner today)", () => {
+    const references = runReferencesPage(1);
+    expect(references.stdout).toContain(
+      "31: return buildWorkflow(defaultWorkflowInput());  [usage in BuildCoordinator::run]",
+    );
+  });
+
   it("keeps JSON outputs parseable and routes diagnostics to stderr", () => {
     const context = runSymnav(["context", "buildWorkflow", "--json"]);
     expectUnsupportedStatementWarning(context.stderr);

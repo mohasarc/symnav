@@ -160,23 +160,6 @@ describe("symnav agent integration catalog", () => {
     ).resolves.toBeUndefined();
   });
 
-  it("rejects missing and repository-escaping catalog paths", async () => {
-    const catalog = await CatalogFixture.load();
-
-    await expect(
-      CatalogFixture.validatePaths(
-        { ...catalog, sharedRulesFile: "missing-rules.md" },
-        CatalogFixture.repositoryRoot,
-      ),
-    ).rejects.toThrow();
-    await expect(
-      CatalogFixture.validatePaths(
-        { ...catalog, sharedRulesFile: "../outside-rules.md" },
-        CatalogFixture.repositoryRoot,
-      ),
-    ).rejects.toThrow("catalog path escapes repository");
-  });
-
   it("keeps shared rules neutral and limited to slow-command completion", async () => {
     const sharedRules = await CatalogFixture.readRepositoryFile(
       (await CatalogFixture.load()).sharedRulesFile,

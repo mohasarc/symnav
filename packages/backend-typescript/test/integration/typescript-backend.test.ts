@@ -4,6 +4,7 @@ import {
   FileNotFoundError,
   formatSymbolIdentity,
   InMemoryFileSystem,
+  SymbolTargetGrammar,
   type FileSystem,
   type ResolvedPath,
   OverviewTree,
@@ -159,6 +160,47 @@ describe("TypeScriptBackend.fileEntries", () => {
         formatSymbolIdentity(symbol.identity),
       ),
     ).toEqual(["src/control-flow.ts::outer::insideIf"]);
+  });
+});
+
+describe("TypeScriptBackend parse sharing", () => {
+  it("reads each workspace file at most once across findTargetCandidates and findDefinitions", async () => {
+    const inner = new InMemoryFileSystem({
+      "/repo/.git/HEAD": "ref: refs/heads/main\n",
+      "/repo/src/lib.ts": "export function helper(): void {}\n",
+      "/repo/src/app.ts": [
+        'import { helper } from "./lib.js";',
+        "",
+        "export function main(): void {",
+        "  helper();",
+        "}",
+        "",
+      ].join("\n"),
+    });
+    const counting = new CountingFileSystem(inner);
+    const backend = new TypeScriptBackend(counting);
+    const files: readonly ResolvedPath[] = [
+      { relative: "src/app.ts", absolute: "/repo/src/app.ts" },
+      { relative: "src/lib.ts", absolute: "/repo/src/lib.ts" },
+    ];
+
+    const candidates = await backend.findTargetCandidates(
+      files,
+      SymbolTargetGrammar.parse("helper"),
+      {
+        containingLine: undefined,
+      },
+    );
+    const definitions = await backend.findDefinitions(files, {
+      file: "src/lib.ts",
+      segments: [{ name: "helper" }],
+    });
+
+    expect(candidates).toHaveLength(1);
+    expect(definitions).toHaveLength(1);
+    const sourceReads = counting.readFileCalls.filter((path) => path.startsWith("/repo/src/"));
+    expect(new Set(sourceReads)).toEqual(new Set(["/repo/src/app.ts", "/repo/src/lib.ts"]));
+    expect(sourceReads).toHaveLength(2);
   });
 });
 

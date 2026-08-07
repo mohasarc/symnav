@@ -7,10 +7,13 @@ import type {
   LanguageBackend,
   OverviewFileEntries,
   SymbolReference,
+  ResolveSymbolTargetOptions,
   ResolveSymbolsOptions,
   ResolvedPath,
   SymbolOverviewNode,
   SymbolIdentity,
+  SymbolTargetCandidate,
+  SymbolTargetPattern,
 } from "@symnav/core";
 import { CollectingDiagnosticSink, FileNotFoundError } from "@symnav/core";
 
@@ -19,8 +22,10 @@ import { findCallers } from "../call-graph/find-callers.js";
 import { findCallTarget } from "../call-graph/find-call-target.js";
 import { findDefinitions } from "../definition/find-definitions.js";
 import { loadFileEntries } from "../extract/load-file-entries.js";
+import { WorkspaceDeclarationIndex } from "../identity/workspace-declaration-index.js";
 import { ReferenceFinder } from "../references/find-references.js";
 import { resolveSymbols } from "../resolve/resolve-symbols.js";
+import { TargetCandidateFinder } from "../target/find-target-candidates.js";
 
 export class TypeScriptBackend implements LanguageBackend {
   static readonly extensions: readonly string[] = [".d.ts", ".ts", ".tsx", ".mts", ".cts"];
@@ -35,7 +40,14 @@ export class TypeScriptBackend implements LanguageBackend {
     return false;
   }
 
+  private declarationIndex: WorkspaceDeclarationIndex | undefined;
+
   constructor(private readonly fs: FileSystem) {}
+
+  private sharedDeclarationIndex(): WorkspaceDeclarationIndex {
+    this.declarationIndex ??= new WorkspaceDeclarationIndex(this.fs);
+    return this.declarationIndex;
+  }
 
   accepts(filePath: string): boolean {
     return TypeScriptBackend.accepts(filePath);
@@ -58,11 +70,24 @@ export class TypeScriptBackend implements LanguageBackend {
     return resolveSymbols({ fs: this.fs, files, query, options });
   }
 
+  async findTargetCandidates(
+    files: readonly ResolvedPath[],
+    pattern: SymbolTargetPattern,
+    options: ResolveSymbolTargetOptions,
+  ): Promise<readonly SymbolTargetCandidate[]> {
+    return TargetCandidateFinder.find({
+      declarationIndex: this.sharedDeclarationIndex(),
+      files,
+      pattern,
+      options,
+    });
+  }
+
   async findDefinitions(
     files: readonly ResolvedPath[],
     identity: SymbolIdentity,
   ): Promise<readonly SymbolOverviewNode[]> {
-    return findDefinitions({ fs: this.fs, files, identity });
+    return findDefinitions({ declarationIndex: this.sharedDeclarationIndex(), files, identity });
   }
 
   async findReferences(
@@ -76,21 +101,21 @@ export class TypeScriptBackend implements LanguageBackend {
     files: readonly ResolvedPath[],
     identity: SymbolIdentity,
   ): Promise<CallTargetResolution> {
-    return findCallTarget({ fs: this.fs, files, identity });
+    return findCallTarget({ declarationIndex: this.sharedDeclarationIndex(), files, identity });
   }
 
   async findCallees(
     files: readonly ResolvedPath[],
     identity: SymbolIdentity,
   ): Promise<readonly CallEdge[]> {
-    return findCallees({ fs: this.fs, files, identity });
+    return findCallees({ declarationIndex: this.sharedDeclarationIndex(), files, identity });
   }
 
   async findCallers(
     files: readonly ResolvedPath[],
     identity: SymbolIdentity,
   ): Promise<readonly CallEdge[]> {
-    return findCallers({ fs: this.fs, files, identity });
+    return findCallers({ declarationIndex: this.sharedDeclarationIndex(), files, identity });
   }
 }
 

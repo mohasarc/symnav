@@ -11,24 +11,24 @@ import type {
   CallEdge,
   CallSite,
   EdgeConfidence,
-  FileSystem,
   ResolvedPath,
   SymbolOverviewNode,
   SymbolIdentity,
 } from "@symnav/core";
 
 import { DeclarationLocator } from "../identity/locate-declarations.js";
-import { WorkspaceDeclarationIndex } from "../identity/workspace-declaration-index.js";
+import type { WorkspaceDeclarationIndex } from "../identity/workspace-declaration-index.js";
 
 const DYNAMIC_DISPATCH_REASON = "dynamic dispatch: exact callee not statically resolvable";
 
 export interface FindCalleesArgs {
-  readonly fs: FileSystem;
+  readonly declarationIndex: WorkspaceDeclarationIndex;
   readonly files: readonly ResolvedPath[];
   readonly identity: SymbolIdentity;
 }
 
 export async function findCallees(args: FindCalleesArgs): Promise<readonly CallEdge[]> {
+  args.declarationIndex.ensureFiles(args.files);
   return new CalleeFinder(args).find();
 }
 
@@ -44,10 +44,10 @@ interface DynamicCandidate {
 }
 
 class CalleeFinder {
-  private readonly index: WorkspaceDeclarationIndex;
+  private readonly declarationIndex: WorkspaceDeclarationIndex;
 
   constructor(private readonly args: FindCalleesArgs) {
-    this.index = new WorkspaceDeclarationIndex(args);
+    this.declarationIndex = args.declarationIndex;
   }
 
   find(): readonly CallEdge[] {
@@ -57,7 +57,7 @@ class CalleeFinder {
   }
 
   private targetBodyNode(): Node | undefined {
-    const matches = this.index.locate(this.args.identity);
+    const matches = this.declarationIndex.locate(this.args.identity);
     const withBody = matches.find((match) => carriesBody(match.node));
     return (withBody ?? matches[0])?.node;
   }
@@ -233,12 +233,12 @@ class CalleeFinder {
   }
 
   private workspaceSymbolFor(node: Node): SymbolOverviewNode | undefined {
-    return this.index.declarationAt(node);
+    return this.declarationIndex.declarationAt(node);
   }
 
   private siteFor(node: Node): CallSite {
     const sourceFile = node.getSourceFile();
-    const relative = this.index.relativePathOf(sourceFile) ?? "";
+    const relative = this.declarationIndex.relativePathOf(sourceFile) ?? "";
     const { line, character } = sourceFile.compilerNode.getLineAndCharacterOfPosition(
       node.getStart(),
     );

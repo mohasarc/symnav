@@ -103,6 +103,16 @@ describe("symnav graph e2e (default output)", () => {
     expect(r.status).toBe(0);
     await expect(r.stdout).toMatchFileSnapshot(snapshot("isolated.expected.txt"));
   });
+
+  it("resolves a unique bare-name target through the shared resolver", () => {
+    const r = runGraph(["hub", "--json"]);
+    expect(r.stderr).toBe("");
+    expect(r.status).toBe(0);
+    const parsed = JSON.parse(r.stdout) as JsonGraphResult;
+    expect(parsed.identity).toEqual({ file: "src/hub.ts", segments: [{ name: "hub" }] });
+    expect(parsed.incoming?.totalPathCount).toBe(3);
+    expect(parsed.outgoing?.totalPathCount).toBe(3);
+  });
 });
 
 describe("symnav graph e2e (errors)", () => {

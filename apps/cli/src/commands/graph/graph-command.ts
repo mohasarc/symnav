@@ -7,16 +7,17 @@ import {
   InvalidGraphRequestError,
   MAX_GRAPH_DEPTH,
   isPositiveInteger,
-  parseSymbolIdentity,
 } from "@symnav/core";
-import { renderGraphJson, renderGraphText } from "@symnav/renderer";
+import { SymbolTargetErrorRenderer, renderGraphJson, renderGraphText } from "@symnav/renderer";
 
 import type { Command, CommandContext } from "../../command.js";
 import { classifyArgKind, lengthBucketOf } from "../../telemetry/arg-shape.js";
 import { resolveCallTarget } from "../resolve-call-target.js";
+import { CommandTargetResolver } from "../resolve-symbol-target.js";
 
 export interface GraphArgs {
-  readonly symbolId: string;
+  readonly target: string;
+  readonly line: number | string | undefined;
   readonly incoming: boolean;
   readonly outgoing: boolean;
   readonly depth: number | string | undefined;
@@ -29,8 +30,8 @@ export const graphCommand: Command<GraphResult, GraphArgs> = {
   name: "graph",
   describeArgs(args: GraphArgs) {
     return {
-      kind: classifyArgKind(args.symbolId),
-      lengthBucket: lengthBucketOf(args.symbolId),
+      kind: classifyArgKind(args.target),
+      lengthBucket: lengthBucketOf(args.target),
       flags: graphFlags(args),
     };
   },
@@ -43,15 +44,19 @@ export const graphCommand: Command<GraphResult, GraphArgs> = {
   },
   async compute(ctx: CommandContext<GraphArgs>): Promise<GraphResult> {
     const request = graphRequestFrom(ctx.args);
-    const identity = parseSymbolIdentity(ctx.args.symbolId);
-    await ctx.workspace.resolveInputPath(identity.file, ctx.cwd);
-    const files = await ctx.workspace.enumerate();
-    const backend = ctx.router.findOrThrow(identity.file);
-    const accepted = files.filter((file) => backend.accepts(file.relative));
-    const root = await resolveCallTarget(backend, accepted, identity);
+    const resolved = await CommandTargetResolver.resolve({
+      workspace: ctx.workspace,
+      router: ctx.router,
+      cwd: ctx.cwd,
+      rawTarget: ctx.args.target,
+      line: ctx.args.line,
+    });
+    const identity = resolved.identity;
+    const backend = resolved.backend;
+    const root = await resolveCallTarget(backend, resolved.files, identity);
     const traverser = new GraphTraverser({
       backend,
-      files: accepted,
+      files: resolved.files,
       root,
       depth: request.depth,
     });
@@ -74,6 +79,7 @@ export const graphCommand: Command<GraphResult, GraphArgs> = {
   },
   renderText: renderGraphText,
   renderJson: renderGraphJson,
+  renderError: SymbolTargetErrorRenderer.render,
 };
 
 interface GraphRequest {
@@ -135,6 +141,7 @@ function graphFlags(args: GraphArgs): string[] {
     ...(args.all ? ["all"] : []),
     ...(args.depth !== undefined ? ["depth"] : []),
     ...(args.incoming ? ["incoming"] : []),
+    ...(args.line !== undefined ? ["line"] : []),
     ...(args.outgoing ? ["outgoing"] : []),
     ...(args.page !== undefined ? ["page"] : []),
     ...(args.pageSize !== undefined ? ["page-size"] : []),

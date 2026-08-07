@@ -1,49 +1,43 @@
-import type {
-  DefinitionResult,
-  LanguageBackend,
-  ResolvedPath,
-  SymbolOverviewNode,
-  SymbolIdentity,
-} from "@symnav/core";
-import { parseSymbolIdentity } from "@symnav/core";
-import { renderDefinitionJson, renderDefinitionText } from "@symnav/renderer";
+import type { DefinitionResult } from "@symnav/core";
+import {
+  SymbolTargetErrorRenderer,
+  renderDefinitionJson,
+  renderDefinitionText,
+} from "@symnav/renderer";
 
 import type { Command, CommandContext } from "../../command.js";
 import { classifyArgKind, lengthBucketOf } from "../../telemetry/arg-shape.js";
+import { CommandTargetResolver } from "../resolve-symbol-target.js";
 
 export interface DefArgs {
-  readonly symbolId: string;
+  readonly target: string;
+  readonly line: number | string | undefined;
 }
 
 export const defCommand: Command<DefinitionResult, DefArgs> = {
   name: "def",
   describeArgs(args: DefArgs) {
     return {
-      kind: classifyArgKind(args.symbolId),
-      lengthBucket: lengthBucketOf(args.symbolId),
-      flags: [],
+      kind: classifyArgKind(args.target),
+      lengthBucket: lengthBucketOf(args.target),
+      flags: args.line === undefined ? [] : ["line"],
     };
   },
   countResults(result: DefinitionResult) {
     return { definitions: result.symbols.length };
   },
   async compute(ctx: CommandContext<DefArgs>): Promise<DefinitionResult> {
-    const identity = parseSymbolIdentity(ctx.args.symbolId);
-    await ctx.workspace.resolveInputPath(identity.file, ctx.cwd);
-    const files = await ctx.workspace.enumerate();
-    const owningBackend = ctx.router.findOrThrow(identity.file);
-    const symbols = await callOwningBackend(owningBackend, files, identity);
-    return { identity, symbols };
+    const resolved = await CommandTargetResolver.resolve({
+      workspace: ctx.workspace,
+      router: ctx.router,
+      cwd: ctx.cwd,
+      rawTarget: ctx.args.target,
+      line: ctx.args.line,
+    });
+    const symbols = await resolved.backend.findDefinitions(resolved.files, resolved.identity);
+    return { identity: resolved.identity, symbols };
   },
   renderText: renderDefinitionText,
   renderJson: renderDefinitionJson,
+  renderError: SymbolTargetErrorRenderer.render,
 };
-
-async function callOwningBackend(
-  backend: LanguageBackend,
-  files: readonly ResolvedPath[],
-  identity: SymbolIdentity,
-): Promise<readonly SymbolOverviewNode[]> {
-  const accepted = files.filter((file) => backend.accepts(file.relative));
-  return backend.findDefinitions(accepted, identity);
-}

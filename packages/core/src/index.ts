@@ -83,8 +83,18 @@ export {
   InvalidSymbolIdError,
   formatSymbolIdentity,
   formatSymbolPath,
-  parseSymbolIdentity,
 } from "./intermediate-representation/canonical-identity.js";
+export type { SymbolTargetPattern } from "./target/symbol-target-pattern.js";
+export { SymbolTargetGrammar } from "./target/symbol-target-pattern.js";
+export type { SymbolTargetCandidate } from "./target/symbol-target-result.js";
+export {
+  AmbiguousSymbolTargetError,
+  SymbolTargetNotFoundError,
+} from "./target/symbol-target-result.js";
+export {
+  InvalidSymbolTargetRequestError,
+  validateResolveSymbolTargetOptions,
+} from "./target/validate-resolve-symbol-target-options.js";
 export { splitHeaderLines } from "./intermediate-representation/split-header-lines.js";
 export { assignDisambiguators } from "./intermediate-representation/assign-disambiguators.js";
 export type { FileSystem } from "./workspace/file-system.js";
@@ -92,11 +102,16 @@ export { NodeFileSystem } from "./workspace/node-file-system.js";
 export type { ResolvedPath, Workspace } from "./workspace/workspace.js";
 export { createWorkspace } from "./workspace/workspace.js";
 export { InMemoryFileSystem } from "./workspace/in-memory/in-memory-file-system.js";
-export type { LanguageBackend, ResolveSymbolsOptions } from "./backend/language-backend.js";
+export type {
+  LanguageBackend,
+  ResolveSymbolsOptions,
+  ResolveSymbolTargetOptions,
+} from "./backend/language-backend.js";
 export { BackendRouter } from "./backend/backend-router.js";
 export { UserFacingError } from "./errors.js";
 export {
   AmbiguousSymbolError,
+  NoSupportedFilesError,
   SymbolNotFoundError,
   UnsupportedFileError,
 } from "./backend/errors.js";

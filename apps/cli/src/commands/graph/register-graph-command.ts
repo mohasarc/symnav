@@ -6,6 +6,7 @@ import type { ProgramDependencies } from "../../program-dependencies.js";
 import { graphCommand } from "./graph-command.js";
 
 interface GraphOptions {
+  readonly line?: string;
   readonly incoming: boolean;
   readonly outgoing: boolean;
   readonly depth?: string;
@@ -21,8 +22,9 @@ export function registerGraphCommand(
   dependencies: ProgramDependencies,
 ): void {
   program
-    .command("graph <symbol-id>")
+    .command("graph <target>")
     .description("Show call paths around a symbol")
+    .option("--line <n>", "narrow target matches to declarations containing this line")
     .option("--incoming", "show caller paths only", false)
     .option("--outgoing", "show callee paths only", false)
     .option("--depth <n>", "maximum call depth")
@@ -30,7 +32,7 @@ export function registerGraphCommand(
     .option("--page-size <n>", "graph paths per page")
     .option("--all", "show every graph path on one page", false)
     .option("--json", "emit JSON instead of text", false)
-    .action(async (symbolId: string, options: GraphOptions) => {
+    .action(async (target: string, options: GraphOptions) => {
       const cwdOverride = program.opts<{ cwd?: string }>().cwd;
       await runCommand(graphCommand, {
         context,
@@ -38,7 +40,8 @@ export function registerGraphCommand(
         cwdOverride,
         json: options.json,
         args: {
-          symbolId,
+          target,
+          line: options.line,
           incoming: options.incoming,
           outgoing: options.outgoing,
           depth: options.depth,

@@ -1,1 +1,1 @@
-Cannot answer: no symbol src/hub.ts::missing found.
+Cannot answer: no symbol target "src/hub.ts::missing" found.

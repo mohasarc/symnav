@@ -1,12 +1,14 @@
 import type { PageRequest, RefsResult } from "@symnav/core";
-import { RefsResultBuilder, parseSymbolIdentity } from "@symnav/core";
-import { renderRefsJson, renderRefsText } from "@symnav/renderer";
+import { RefsResultBuilder } from "@symnav/core";
+import { SymbolTargetErrorRenderer, renderRefsJson, renderRefsText } from "@symnav/renderer";
 
 import type { Command, CommandContext } from "../../command.js";
 import { classifyArgKind, lengthBucketOf } from "../../telemetry/arg-shape.js";
+import { CommandTargetResolver } from "../resolve-symbol-target.js";
 
 export interface RefsArgs {
-  readonly symbolId: string;
+  readonly target: string;
+  readonly line: number | string | undefined;
   readonly page: number | undefined;
   readonly pageSize: number | undefined;
   readonly all: boolean;
@@ -17,8 +19,8 @@ export const refsCommand: Command<RefsResult, RefsArgs> = {
   name: "refs",
   describeArgs(args: RefsArgs) {
     return {
-      kind: classifyArgKind(args.symbolId),
-      lengthBucket: lengthBucketOf(args.symbolId),
+      kind: classifyArgKind(args.target),
+      lengthBucket: lengthBucketOf(args.target),
       flags: refsFlags(args),
     };
   },
@@ -30,14 +32,16 @@ export const refsCommand: Command<RefsResult, RefsArgs> = {
     };
   },
   async compute(ctx: CommandContext<RefsArgs>): Promise<RefsResult> {
-    const identity = parseSymbolIdentity(ctx.args.symbolId);
-    await ctx.workspace.resolveInputPath(identity.file, ctx.cwd);
-    const files = await ctx.workspace.enumerate();
-    const backend = ctx.router.findOrThrow(identity.file);
-    const accepted = files.filter((file) => backend.accepts(file.relative));
-    const references = await backend.findReferences(accepted, identity);
+    const resolved = await CommandTargetResolver.resolve({
+      workspace: ctx.workspace,
+      router: ctx.router,
+      cwd: ctx.cwd,
+      rawTarget: ctx.args.target,
+      line: ctx.args.line,
+    });
+    const references = await resolved.backend.findReferences(resolved.files, resolved.identity);
     return new RefsResultBuilder({
-      identity,
+      identity: resolved.identity,
       references,
       pageRequest: pageRequestFrom(ctx.args),
       fullLines: ctx.args.fullLines,
@@ -45,6 +49,7 @@ export const refsCommand: Command<RefsResult, RefsArgs> = {
   },
   renderText: renderRefsText,
   renderJson: renderRefsJson,
+  renderError: SymbolTargetErrorRenderer.render,
 };
 
 function pageRequestFrom(args: RefsArgs): PageRequest {
@@ -59,6 +64,7 @@ function refsFlags(args: RefsArgs): string[] {
   return [
     ...(args.all ? ["all"] : []),
     ...(args.fullLines ? ["full-lines"] : []),
+    ...(args.line !== undefined ? ["line"] : []),
     ...(args.page !== undefined ? ["page"] : []),
     ...(args.pageSize !== undefined ? ["page-size"] : []),
   ].sort();

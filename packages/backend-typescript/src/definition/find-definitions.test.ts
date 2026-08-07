@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { InMemoryFileSystem, type ResolvedPath, type SymbolOverviewNode } from "@symnav/core";
 
+import { WorkspaceDeclarationIndex } from "../identity/workspace-declaration-index.js";
 import { findDefinitions } from "./find-definitions.js";
 
 const FIXTURE: Record<string, string> = {
@@ -127,7 +128,7 @@ function labelsAndFiles(
 describe("findDefinitions", () => {
   it("returns a single match for a unique top-level value", async () => {
     const result = await findDefinitions({
-      fs: fsWithFixture(),
+      declarationIndex: new WorkspaceDeclarationIndex(fsWithFixture()),
       files: ALL_FILES,
       identity: { file: "src/util/constants.ts", segments: [{ name: "MAX_RETRIES" }] },
     });
@@ -143,7 +144,7 @@ describe("findDefinitions", () => {
 
   it("returns all overloads + implementation when the leaf has no disambiguator", async () => {
     const result = await findDefinitions({
-      fs: fsWithFixture(),
+      declarationIndex: new WorkspaceDeclarationIndex(fsWithFixture()),
       files: ALL_FILES,
       identity: { file: "src/http/Router.ts", segments: [{ name: "Router" }, { name: "post" }] },
     });
@@ -160,7 +161,7 @@ describe("findDefinitions", () => {
 
   it("returns exactly one symbol when the leaf disambiguator is supplied", async () => {
     const result = await findDefinitions({
-      fs: fsWithFixture(),
+      declarationIndex: new WorkspaceDeclarationIndex(fsWithFixture()),
       files: ALL_FILES,
       identity: {
         file: "src/http/Router.ts",
@@ -179,7 +180,7 @@ describe("findDefinitions", () => {
 
   it("returns the interface declaration plus every implementation across files", async () => {
     const result = await findDefinitions({
-      fs: fsWithFixture(),
+      declarationIndex: new WorkspaceDeclarationIndex(fsWithFixture()),
       files: ALL_FILES,
       identity: {
         file: "src/payments/PaymentProvider.ts",
@@ -206,7 +207,7 @@ describe("findDefinitions", () => {
 
   it("returns the abstract method plus every concrete override across subclasses", async () => {
     const result = await findDefinitions({
-      fs: fsWithFixture(),
+      declarationIndex: new WorkspaceDeclarationIndex(fsWithFixture()),
       files: ALL_FILES,
       identity: {
         file: "src/shapes/Shape.ts",
@@ -223,7 +224,7 @@ describe("findDefinitions", () => {
 
   it("returns no symbols when the path matches no symbol in the file", async () => {
     const result = await findDefinitions({
-      fs: fsWithFixture(),
+      declarationIndex: new WorkspaceDeclarationIndex(fsWithFixture()),
       files: ALL_FILES,
       identity: {
         file: "src/util/constants.ts",
@@ -235,7 +236,7 @@ describe("findDefinitions", () => {
 
   it("returns definitions for declarations nested inside executable control-flow blocks", async () => {
     const result = await findDefinitions({
-      fs: fsWithFixture(),
+      declarationIndex: new WorkspaceDeclarationIndex(fsWithFixture()),
       files: ALL_FILES,
       identity: {
         file: "src/control-flow/LocalDeclarations.ts",

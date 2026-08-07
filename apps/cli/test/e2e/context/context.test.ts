@@ -54,6 +54,18 @@ describe("symnav context e2e (default output)", () => {
     const r = runContext([computeId]);
     expect(r.stdout).toContain("[implementation]");
   });
+
+  it("resolves a unique bare-name target through the shared resolver", () => {
+    const r = runContext(["compute", "--json"]);
+    expect(r.stderr).toBe("");
+    expect(r.status).toBe(0);
+    const parsed = JSON.parse(r.stdout) as JsonContextResult;
+    expect(parsed.identity).toEqual({
+      file: "src/math/calculator.ts",
+      segments: [{ name: "compute" }],
+    });
+    expect(parsed.references.total).toBe(4);
+  });
 });
 
 describe("symnav context e2e (contract resolution)", () => {
@@ -146,7 +158,7 @@ describe("symnav context e2e (errors)", () => {
     expect(r.status).toBe(1);
     expect(r.stdout).toBe("");
     expect(r.stderr).toContain(
-      "Cannot answer: no symbol src/math/calculator.ts::nonexistent found",
+      'Cannot answer: no symbol target "src/math/calculator.ts::nonexistent" found',
     );
   });
 

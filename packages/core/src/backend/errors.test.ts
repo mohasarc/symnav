@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { UserFacingError } from "../errors.js";
 import type { SymbolIdentity } from "../intermediate-representation/symbol-identity.js";
-import { SymbolNotFoundError, UnsupportedFileError } from "./errors.js";
+import { NoSupportedFilesError, SymbolNotFoundError, UnsupportedFileError } from "./errors.js";
 
 describe("UnsupportedFileError", () => {
   it("is a UserFacingError", () => {
@@ -16,6 +16,22 @@ describe("UnsupportedFileError", () => {
   it("renders a specific reason for extensionless files", () => {
     expect(new UnsupportedFileError("README").reason).toBe(
       "README has no file extension; expected a source file",
+    );
+  });
+});
+
+describe("NoSupportedFilesError", () => {
+  it("is a UserFacingError", () => {
+    expect(new NoSupportedFilesError()).toBeInstanceOf(UserFacingError);
+  });
+
+  it("carries its class name", () => {
+    expect(new NoSupportedFilesError().name).toBe("NoSupportedFilesError");
+  });
+
+  it("renders a reason naming the missing backend support", () => {
+    expect(new NoSupportedFilesError().reason).toBe(
+      "workspace contains no files supported by any language backend",
     );
   });
 });

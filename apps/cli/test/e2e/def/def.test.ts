@@ -52,11 +52,11 @@ describe("symnav def e2e (multi-implementation)", () => {
 });
 
 describe("symnav def e2e (errors and empty results)", () => {
-  it("rejects a malformed symbol id with InvalidSymbolIdError", () => {
+  it("treats a former malformed symbol id as a target pattern", () => {
     const r = runDef(["def", "not_an_id"]);
     expect(r.status).toBe(1);
     expect(r.stdout).toBe("");
-    expect(r.stderr).toContain("Cannot answer: invalid symbol id");
+    expect(r.stderr).toContain('Cannot answer: no symbol target "not_an_id" found');
   });
 
   it("rejects a nonexistent file with FileNotFoundError", () => {
@@ -73,11 +73,13 @@ describe("symnav def e2e (errors and empty results)", () => {
     expect(r.stderr).toContain("ignored");
   });
 
-  it("renders the no-matches notice when the symbol path matches nothing in the file", async () => {
+  it("rejects a symbol path that matches nothing in the file", () => {
     const r = runDef(["def", "src/namespace-merge/Box.ts::Box::ghost"]);
-    expect(r.stderr).toBe("");
-    expect(r.status).toBe(0);
-    await expect(r.stdout).toMatchFileSnapshot(snapshot("no-match.expected.txt"));
+    expect(r.status).toBe(1);
+    expect(r.stdout).toBe("");
+    expect(r.stderr).toContain(
+      'Cannot answer: no symbol target "src/namespace-merge/Box.ts::Box::ghost" found',
+    );
   });
 
   it("returns definitions for declarations nested inside executable control-flow blocks", () => {
@@ -85,6 +87,46 @@ describe("symnav def e2e (errors and empty results)", () => {
     expect(r.stderr).toBe("");
     expect(r.status).toBe(0);
     expect(r.stdout).toContain("insideLoop");
+  });
+});
+
+describe("symnav def e2e (pattern targets)", () => {
+  it("resolves a unique bare-name target", () => {
+    const r = runDef(["def", "helper"]);
+    expect(r.stderr).toBe("");
+    expect(r.status).toBe(0);
+    expect(r.stdout).toContain("Definition: helper");
+    expect(r.stdout).toContain("src/pattern/helper.ts");
+    expect(r.stdout).toContain("export function helper(): string");
+  });
+
+  it("lists ambiguous target candidates with canonical ids", () => {
+    const r = runDef(["def", "parse"]);
+    expect(r.status).toBe(1);
+    expect(r.stdout).toBe("");
+    expect(r.stderr).toContain('Cannot answer: symbol target "parse" is ambiguous.');
+    expect(r.stderr).toContain("src/pattern/json.ts::parse");
+    expect(r.stderr).toContain("export function parse(input: string): unknown");
+    expect(r.stderr).toContain("src/pattern/query.ts::parse");
+    expect(r.stderr).toContain(
+      "export function parse(input: URLSearchParams): Record<string, string>",
+    );
+  });
+
+  it("narrows an ambiguous bare name to the declaration containing --line", () => {
+    const r = runDef(["def", "charge", "--line", "2"]);
+    expect(r.stderr).toBe("");
+    expect(r.status).toBe(0);
+    expect(r.stdout).toContain("Definition: PaymentProvider::charge");
+  });
+
+  it("resolves a copied candidate id exactly", () => {
+    const r = runDef(["def", "src/pattern/json.ts::parse"]);
+    expect(r.stderr).toBe("");
+    expect(r.status).toBe(0);
+    expect(r.stdout).toContain("Definition: parse");
+    expect(r.stdout).toContain("src/pattern/json.ts");
+    expect(r.stdout).toContain("export function parse(input: string): unknown");
   });
 });
 

@@ -1,13 +1,21 @@
 import { describe, expect, it } from "vitest";
 
-import type { LanguageBackend, ResolveSymbolsOptions } from "../backend/language-backend.js";
+import type {
+  LanguageBackend,
+  ResolveSymbolsOptions,
+  ResolveSymbolTargetOptions,
+} from "../backend/language-backend.js";
 import type { CallEdge, EdgeConfidence } from "../intermediate-representation/call-edge.js";
 import type { CallTargetResolution } from "../intermediate-representation/call-target.js";
 import { formatSymbolIdentity } from "../intermediate-representation/canonical-identity.js";
 import type { SymbolReference } from "../intermediate-representation/references.js";
 import type { SymbolIdentity } from "../intermediate-representation/symbol-identity.js";
-import type { OverviewFileEntries } from "../intermediate-representation/overview-tree.js";
-import type { SymbolOverviewNode } from "../intermediate-representation/overview-tree.js";
+import type {
+  OverviewFileEntries,
+  SymbolOverviewNode,
+} from "../intermediate-representation/overview-tree.js";
+import type { SymbolTargetPattern } from "../target/symbol-target-pattern.js";
+import type { SymbolTargetCandidate } from "../target/symbol-target-result.js";
 import type { ResolvedPath } from "../workspace/workspace.js";
 import { GraphTraverser } from "./graph-traverser.js";
 
@@ -80,6 +88,14 @@ class FakeLanguageBackend implements LanguageBackend {
     _query: string,
     _options: ResolveSymbolsOptions,
   ): Promise<readonly SymbolOverviewNode[]> {
+    throw new Error("not implemented");
+  }
+
+  findTargetCandidates(
+    _files: readonly ResolvedPath[],
+    _pattern: SymbolTargetPattern,
+    _options: ResolveSymbolTargetOptions,
+  ): Promise<readonly SymbolTargetCandidate[]> {
     throw new Error("not implemented");
   }
 

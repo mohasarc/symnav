@@ -1,7 +1,7 @@
 import { UserFacingError } from "../errors.js";
 import type { SymbolIdentity, SymbolPathSegment } from "./symbol-identity.js";
 
-const SEGMENT_SEPARATOR = "::";
+export const SEGMENT_SEPARATOR = "::";
 const DISAMBIGUATOR_PREFIX = "#";
 
 export class InvalidSymbolIdError extends UserFacingError {
@@ -18,25 +18,7 @@ export class InvalidSymbolIdError extends UserFacingError {
   }
 }
 
-export function parseSymbolIdentity(raw: string): SymbolIdentity {
-  if (raw.length === 0) {
-    throw new InvalidSymbolIdError("empty input", raw);
-  }
-  const firstSeparator = raw.indexOf(SEGMENT_SEPARATOR);
-  if (firstSeparator === -1) {
-    throw new InvalidSymbolIdError("missing `::` separator", raw);
-  }
-  const file = raw.slice(0, firstSeparator);
-  const rest = raw.slice(firstSeparator + SEGMENT_SEPARATOR.length);
-  if (file.length === 0) {
-    throw new InvalidSymbolIdError("empty file portion", raw);
-  }
-  const segmentStrings = rest.split(SEGMENT_SEPARATOR);
-  const segments = segmentStrings.map((segment) => parseSegment(segment, raw));
-  return { file, segments };
-}
-
-function parseSegment(segment: string, raw: string): SymbolPathSegment {
+export function parseSegment(segment: string, raw: string): SymbolPathSegment {
   if (segment.length === 0) {
     throw new InvalidSymbolIdError('empty path segment between "::" separators', raw);
   }

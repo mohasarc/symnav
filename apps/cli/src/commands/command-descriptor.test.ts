@@ -73,17 +73,26 @@ describe("command telemetry descriptors", () => {
   });
 
   it("describes def arguments", () => {
-    expect(defCommand.describeArgs({ symbolId: "a.ts::Foo" })).toEqual({
+    expect(defCommand.describeArgs({ target: "a.ts::Foo", line: undefined })).toEqual({
       kind: "symbol_id",
       lengthBucket: "short",
       flags: [],
     });
   });
 
+  it("describes def line narrowing", () => {
+    expect(defCommand.describeArgs({ target: "a.ts::Foo", line: 4 })).toEqual({
+      kind: "symbol_id",
+      lengthBucket: "short",
+      flags: ["line"],
+    });
+  });
+
   it("describes refs arguments", () => {
     expect(
       refsCommand.describeArgs({
-        symbolId: "a.ts::Foo",
+        target: "a.ts::Foo",
+        line: 8,
         page: 2,
         pageSize: undefined,
         all: true,
@@ -92,14 +101,15 @@ describe("command telemetry descriptors", () => {
     ).toEqual({
       kind: "symbol_id",
       lengthBucket: "short",
-      flags: ["all", "page"],
+      flags: ["all", "line", "page"],
     });
   });
 
   it("describes graph arguments", () => {
     expect(
       graphCommand.describeArgs({
-        symbolId: "a.ts::Foo",
+        target: "a.ts::Foo",
+        line: 9,
         incoming: true,
         outgoing: false,
         depth: 2,
@@ -110,7 +120,7 @@ describe("command telemetry descriptors", () => {
     ).toEqual({
       kind: "symbol_id",
       lengthBucket: "short",
-      flags: ["all", "depth", "incoming", "page-size"],
+      flags: ["all", "depth", "incoming", "line", "page-size"],
     });
   });
 

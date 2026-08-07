@@ -9,24 +9,24 @@ import type {
   CallEdge,
   CallSite,
   EdgeConfidence,
-  FileSystem,
   ResolvedPath,
   SymbolOverviewNode,
   SymbolIdentity,
 } from "@symnav/core";
 
 import { DeclarationLocator } from "../identity/locate-declarations.js";
-import { WorkspaceDeclarationIndex } from "../identity/workspace-declaration-index.js";
+import type { WorkspaceDeclarationIndex } from "../identity/workspace-declaration-index.js";
 
 const DYNAMIC_DISPATCH_REASON = "dynamic dispatch: call target not statically resolvable";
 
 export interface FindCallersArgs {
-  readonly fs: FileSystem;
+  readonly declarationIndex: WorkspaceDeclarationIndex;
   readonly files: readonly ResolvedPath[];
   readonly identity: SymbolIdentity;
 }
 
 export async function findCallers(args: FindCallersArgs): Promise<readonly CallEdge[]> {
+  args.declarationIndex.ensureFiles(args.files);
   return new CallerFinder(args).find();
 }
 
@@ -36,10 +36,10 @@ interface CallPosition {
 }
 
 class CallerFinder {
-  private readonly index: WorkspaceDeclarationIndex;
+  private readonly declarationIndex: WorkspaceDeclarationIndex;
 
   constructor(private readonly args: FindCallersArgs) {
-    this.index = new WorkspaceDeclarationIndex(args);
+    this.declarationIndex = args.declarationIndex;
   }
 
   find(): readonly CallEdge[] {
@@ -49,7 +49,7 @@ class CallerFinder {
   }
 
   private targetDeclarationNodes(): readonly Node[] {
-    return this.index.locate(this.args.identity).map((located) => located.node);
+    return this.declarationIndex.locate(this.args.identity).map((located) => located.node);
   }
 
   private edgesFrom(declarationNodes: readonly Node[]): readonly CallEdge[] {
@@ -103,7 +103,7 @@ class CallerFinder {
     let ancestor = referenceNode.getParent();
     let nearestValue: SymbolOverviewNode | undefined;
     while (ancestor) {
-      const declaration = this.index.declarationAt(ancestor);
+      const declaration = this.declarationIndex.declarationAt(ancestor);
       if (declaration) {
         if (declaration.kind.role !== "value") return declaration;
         nearestValue = declaration;
@@ -115,7 +115,7 @@ class CallerFinder {
 
   private siteFor(node: Node): CallSite {
     const sourceFile = node.getSourceFile();
-    const relative = this.index.relativePathOf(sourceFile) ?? "";
+    const relative = this.declarationIndex.relativePathOf(sourceFile) ?? "";
     const { line, character } = sourceFile.compilerNode.getLineAndCharacterOfPosition(
       node.getStart(),
     );

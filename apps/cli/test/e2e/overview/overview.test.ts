@@ -84,10 +84,12 @@ describe("symnav overview e2e (happy path)", () => {
     await expect(r.stdout).toMatchFileSnapshot(snapshot("empty.expected.txt"));
   });
 
-  it.skip("renders declarations nested inside executable control-flow blocks", async () => {
+  it("renders declarations nested inside executable control-flow blocks", async () => {
     const r = runSymnavOverview(["overview", "control-flow-declarations.ts"], fixtureRoot);
     expect(r.stderr).toBe("");
     expect(r.status).toBe(0);
+    expect(r.stdout).toContain("if (flag) {");
+    expect(r.stdout).toContain("for (const item of items) {");
     expect(r.stdout).toContain("outer::insideIf");
     expect(r.stdout).toContain("outer::insideLoop");
   });

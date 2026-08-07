@@ -108,7 +108,7 @@ describe("resolveSymbols (exact)", () => {
     );
   });
 
-  it.skip("finds declarations nested inside executable control-flow blocks", async () => {
+  it("finds declarations nested inside executable control-flow blocks", async () => {
     const result = await resolveSymbols({
       fs: fsWithFixture(),
       files: ALL_FILES,
@@ -116,6 +116,24 @@ describe("resolveSymbols (exact)", () => {
       options: { fuzzy: false },
     });
     expect(names(result)).toEqual(["outer::insideIf"]);
+    expect(result[0]?.identity).toEqual({
+      file: "src/control-flow/LocalDeclarations.ts",
+      segments: [{ name: "outer" }, { name: "insideIf" }],
+    });
+  });
+
+  it("finds declarations nested inside folds by full canonical id", async () => {
+    const result = await resolveSymbols({
+      fs: fsWithFixture(),
+      files: ALL_FILES,
+      query: "src/control-flow/LocalDeclarations.ts::outer::insideIf",
+      options: { fuzzy: false },
+    });
+    expect(names(result)).toEqual(["outer::insideIf"]);
+    expect(result[0]?.identity).toEqual({
+      file: "src/control-flow/LocalDeclarations.ts",
+      segments: [{ name: "outer" }, { name: "insideIf" }],
+    });
   });
 
   it("surfaces every occurrence of a name across files", async () => {

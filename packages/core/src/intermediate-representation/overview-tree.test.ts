@@ -63,6 +63,21 @@ describe("OverviewTree.directSymbolChildren", () => {
   });
 });
 
+describe("OverviewTree.directFolds", () => {
+  it("keeps direct folds and drops symbol and re-export siblings without descending", () => {
+    const nestedFold = fold([]);
+    const direct = fold([]);
+
+    expect(OverviewTree.directFolds([symbol("holder", [nestedFold]), direct, reExport()])).toEqual([
+      direct,
+    ]);
+  });
+
+  it("returns no folds for an empty node list", () => {
+    expect(OverviewTree.directFolds([])).toEqual([]);
+  });
+});
+
 describe("OverviewTree.scopeSymbols", () => {
   it("flattens symbols behind folds into the containing scope, stopping at symbols", () => {
     const inner = symbol("inner");

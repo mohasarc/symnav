@@ -4,7 +4,7 @@ import type {
   ResolvedPath,
   SymbolOverviewNode,
 } from "@symnav/core";
-import { OverviewTree } from "@symnav/core";
+import { formatSymbolIdentity, OverviewTree } from "@symnav/core";
 import fuzzysort from "fuzzysort";
 
 import { loadFileEntries } from "../extract/load-file-entries.js";
@@ -41,7 +41,9 @@ function exactMatch(
   candidates: readonly SymbolOverviewNode[],
   query: string,
 ): readonly SymbolOverviewNode[] {
-  return candidates.filter((decl) => OverviewTree.ownName(decl) === query);
+  return candidates.filter(
+    (decl) => OverviewTree.ownName(decl) === query || formatSymbolIdentity(decl.identity) === query,
+  );
 }
 
 function fuzzyMatch(

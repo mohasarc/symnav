@@ -233,7 +233,7 @@ describe("findDefinitions", () => {
     expect(result).toEqual([]);
   });
 
-  it.skip("returns definitions for declarations nested inside executable control-flow blocks", async () => {
+  it("returns definitions for declarations nested inside executable control-flow blocks", async () => {
     const result = await findDefinitions({
       fs: fsWithFixture(),
       files: ALL_FILES,
@@ -250,5 +250,9 @@ describe("findDefinitions", () => {
         disambiguator: undefined,
       },
     ]);
+    expect(result[0]?.identity).toEqual({
+      file: "src/control-flow/LocalDeclarations.ts",
+      segments: [{ name: "outer" }, { name: "insideLoop" }],
+    });
   });
 });

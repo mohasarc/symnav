@@ -1,10 +1,15 @@
 import { describe, expect, it } from "vitest";
 
-import { OverviewTree } from "@symnav/core";
-import type { OverviewFileEntries, Header, SymbolOverviewNode } from "@symnav/core";
+import type {
+  FoldOverviewNode,
+  OverviewFileEntries,
+  ReExportOverviewNode,
+  Header,
+  SymbolOverviewNode,
+} from "@symnav/core";
 
 import { renderOverviewText } from "./render-overview-text.js";
-import { HEADER_CAP_LINES, HEADER_ELLIPSIS } from "./header-cap.js";
+import { HEADER_CAP_LINES, HEADER_CAP_LINE_LENGTH, HEADER_ELLIPSIS } from "./header-cap.js";
 
 type DeclPartial = Pick<SymbolOverviewNode["identity"], "segments"> &
   Partial<Pick<SymbolOverviewNode, "range" | "header" | "children">> & {
@@ -19,6 +24,31 @@ function decl(partial: DeclPartial, file: string = "src/file.ts"): SymbolOvervie
     range: partial.range ?? { startLine: 1, endLine: 1 },
     header: partial.header ?? { startLine: 1, lines: [""] },
     children: partial.children ?? [],
+  };
+}
+
+function fold(
+  partial: Partial<Pick<FoldOverviewNode, "range" | "header" | "children">> = {},
+): FoldOverviewNode {
+  return {
+    type: "fold",
+    foldKind: "call",
+    range: partial.range ?? { startLine: 1, endLine: 3 },
+    header: partial.header ?? signature(1, 'describe("x", () => {'),
+    children: partial.children ?? [],
+  };
+}
+
+function reExport(
+  partial: Partial<Pick<ReExportOverviewNode, "range" | "header">> = {},
+): ReExportOverviewNode {
+  return {
+    type: "re-export",
+    exportKind: "star",
+    exportedNames: [],
+    sourceModule: "./core",
+    range: partial.range ?? { startLine: 1, endLine: 1 },
+    header: partial.header ?? signature(1, 'export * from "./core";'),
   };
 }
 
@@ -354,69 +384,213 @@ describe("renderOverviewText", () => {
     expect(renderOverviewText(file)).toContain("Outer::Inner::deep");
   });
 
-  it("renders fold-nested symbols at the containing nesting level, hiding the fold itself", () => {
+  it("renders fold nodes as header-only tree entries with nested symbols", () => {
     const file: OverviewFileEntries = {
-      file: "src/folds.ts",
+      file: "src/fold.ts",
       entries: [
-        decl({
-          kind: "function",
-          segments: [{ name: "outer" }],
-          range: { startLine: 1, endLine: 5 },
-          header: signature(1, "function outer(): void"),
+        fold({
+          range: { startLine: 1, endLine: 3 },
+          header: signature(1, 'describe("x", () => {'),
           children: [
-            OverviewTree.fold({
-              foldKind: "conditional",
-              range: { startLine: 2, endLine: 4 },
-              header: signature(2, "if (enabled)"),
-              children: [
-                decl({
-                  kind: "function",
-                  segments: [{ name: "outer" }, { name: "insideIf" }],
-                  range: { startLine: 3, endLine: 3 },
-                  header: signature(3, "function insideIf(): void"),
-                }),
-              ],
+            decl({
+              kind: "variable",
+              segments: [{ name: "helper" }],
+              range: { startLine: 2, endLine: 2 },
+              header: signature(2, "const helper = () => …"),
             }),
           ],
         }),
       ],
     };
-    const output = renderOverviewText(file);
-    expect(output).toBe(
+
+    expect(renderOverviewText(file)).toBe(
       [
-        "Overview: src/folds.ts",
-        "└── 1-5: outer",
-        "    1 function outer(): void",
-        "    └── 3: outer::insideIf",
-        "        3 function insideIf(): void",
+        "Overview: src/fold.ts",
+        '└── 1-3: describe("x", () => {',
+        "    └── 2: helper",
+        "        2 const helper = () => …",
         "",
       ].join("\n"),
     );
-    expect(output).not.toContain("if (enabled)");
   });
 
-  it("drops re-export entries from the rendered tree", () => {
+  it("renders a multi-line fold header as numbered continuation lines inside the tree", () => {
     const file: OverviewFileEntries = {
-      file: "src/re-exports.ts",
+      file: "src/fold.ts",
       entries: [
-        OverviewTree.reExport({
-          exportKind: "named",
-          exportedNames: ["m"],
-          sourceModule: "./other.js",
-          range: { startLine: 1, endLine: 1 },
-          header: signature(1, "export { m } from './other.js'"),
-        }),
-        decl({
-          kind: "function",
-          segments: [{ name: "kept" }],
-          range: { startLine: 2, endLine: 2 },
-          header: signature(2, "function kept(): void"),
+        fold({
+          range: { startLine: 1, endLine: 6 },
+          header: signature(1, "if (", "  flag &&", ") {"),
+          children: [
+            decl({
+              kind: "function",
+              segments: [{ name: "insideIf" }],
+              range: { startLine: 5, endLine: 5 },
+              header: signature(5, "function insideIf(): void"),
+            }),
+          ],
         }),
       ],
     };
+
+    expect(renderOverviewText(file)).toBe(
+      [
+        "Overview: src/fold.ts",
+        "└── 1-6: if (",
+        "    2   flag &&",
+        "    3 ) {",
+        "    └── 5: insideIf",
+        "        5 function insideIf(): void",
+        "",
+      ].join("\n"),
+    );
+  });
+
+  it("renders a nested multi-line fold header under the open-branch continuation glyph", () => {
+    const file: OverviewFileEntries = {
+      file: "src/fold.ts",
+      entries: [
+        fold({
+          range: { startLine: 1, endLine: 4 },
+          header: signature(1, "while (", ") {"),
+        }),
+        fold({
+          range: { startLine: 6, endLine: 8 },
+          header: signature(6, "block {"),
+        }),
+      ],
+    };
+
+    expect(renderOverviewText(file)).toBe(
+      ["Overview: src/fold.ts", "├── 1-4: while (", "│   2 ) {", "│", "└── 6-8: block {", ""].join(
+        "\n",
+      ),
+    );
+  });
+
+  it("renders a multi-line re-export header as numbered continuation lines", () => {
+    const file: OverviewFileEntries = {
+      file: "src/index.ts",
+      entries: [
+        reExport({
+          range: { startLine: 1, endLine: 3 },
+          header: signature(1, "export {", "  A,", '} from "./api";'),
+        }),
+      ],
+    };
+
+    expect(renderOverviewText(file)).toBe(
+      [
+        "Overview: src/index.ts",
+        "└── 1-3: export {",
+        "    2   A,",
+        '    3 } from "./api";',
+        "",
+      ].join("\n"),
+    );
+  });
+
+  it("caps fold continuation lines at HEADER_CAP_LINES with a final elision marker", () => {
+    const lines = Array.from({ length: HEADER_CAP_LINES + 5 }, (_, i) => `condition ${i} &&`);
+    const file: OverviewFileEntries = {
+      file: "src/fold.ts",
+      entries: [
+        fold({
+          range: { startLine: 1, endLine: lines.length + 1 },
+          header: signature(1, ...lines),
+        }),
+      ],
+    };
+
     const output = renderOverviewText(file);
-    expect(output).toBe(
-      ["Overview: src/re-exports.ts", "└── 2: kept", "    2 function kept(): void", ""].join("\n"),
+    expect(output).toContain(`${HEADER_CAP_LINES} ${HEADER_ELLIPSIS}\n`);
+    expect(output).not.toContain(`condition ${HEADER_CAP_LINES}`);
+  });
+
+  it("caps an over-length fold label at HEADER_CAP_LINE_LENGTH with a final elision marker", () => {
+    const label = `call(${"a".repeat(100)}) {`;
+    const file: OverviewFileEntries = {
+      file: "src/fold.ts",
+      entries: [fold({ range: { startLine: 1, endLine: 3 }, header: signature(1, label) })],
+    };
+
+    const cappedLabel = label.slice(0, HEADER_CAP_LINE_LENGTH - 1) + HEADER_ELLIPSIS;
+    expect(cappedLabel).toHaveLength(HEADER_CAP_LINE_LENGTH);
+    expect(renderOverviewText(file)).toBe(
+      ["Overview: src/fold.ts", `└── 1-3: ${cappedLabel}`, ""].join("\n"),
+    );
+  });
+
+  it("renders a fold label of exactly HEADER_CAP_LINE_LENGTH characters untouched", () => {
+    const label = "y".repeat(HEADER_CAP_LINE_LENGTH);
+    const file: OverviewFileEntries = {
+      file: "src/fold.ts",
+      entries: [fold({ range: { startLine: 1, endLine: 3 }, header: signature(1, label) })],
+    };
+
+    const output = renderOverviewText(file);
+    expect(output).toContain(`└── 1-3: ${label}\n`);
+    expect(output).not.toContain(HEADER_ELLIPSIS);
+  });
+
+  it("caps over-length re-export label and continuation lines", () => {
+    const label = `export { ${"A".repeat(100)}`;
+    const continuation = `  ${"B".repeat(100)},`;
+    const file: OverviewFileEntries = {
+      file: "src/index.ts",
+      entries: [
+        reExport({
+          range: { startLine: 1, endLine: 3 },
+          header: signature(1, label, continuation, '} from "./api";'),
+        }),
+      ],
+    };
+
+    const cappedLabel = label.slice(0, HEADER_CAP_LINE_LENGTH - 1) + HEADER_ELLIPSIS;
+    const cappedContinuation = continuation.slice(0, HEADER_CAP_LINE_LENGTH - 1) + HEADER_ELLIPSIS;
+    expect(renderOverviewText(file)).toBe(
+      [
+        "Overview: src/index.ts",
+        `└── 1-3: ${cappedLabel}`,
+        `    2 ${cappedContinuation}`,
+        '    3 } from "./api";',
+        "",
+      ].join("\n"),
+    );
+  });
+
+  it("renders over-length symbol header lines untouched", () => {
+    const longSignature = `function wide(${"a".repeat(100)}): void`;
+    const file: OverviewFileEntries = {
+      file: "src/file.ts",
+      entries: [
+        decl({
+          kind: "function",
+          segments: [{ name: "wide" }],
+          range: { startLine: 1, endLine: 1 },
+          header: signature(1, longSignature),
+        }),
+      ],
+    };
+
+    const output = renderOverviewText(file);
+    expect(output).toContain(`1 ${longSignature}\n`);
+    expect(output).not.toContain(HEADER_ELLIPSIS);
+  });
+
+  it("renders re-export nodes as header-only tree entries", () => {
+    const file: OverviewFileEntries = {
+      file: "src/index.ts",
+      entries: [
+        reExport({
+          range: { startLine: 1, endLine: 1 },
+          header: signature(1, 'export * from "./core";'),
+        }),
+      ],
+    };
+
+    expect(renderOverviewText(file)).toBe(
+      ["Overview: src/index.ts", '└── 1: export * from "./core";', ""].join("\n"),
     );
   });
 });

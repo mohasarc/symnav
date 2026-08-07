@@ -121,6 +121,13 @@ describe("symnav agent workflow smoke", () => {
     expect(oneLevelDeeper.stdout).toContain("while (parts.length > 3) {");
     expect(oneLevelDeeper.stdout).toContain("switch (plan.title) {");
     expect(oneLevelDeeper.stdout).toContain("workflowAuditor::auditStep");
+    expect(oneLevelDeeper.stdout).toContain("WorkflowRouter::dispatch#1");
+    expect(oneLevelDeeper.stdout).toContain("WorkflowRouter::dispatch#2");
+    expect(oneLevelDeeper.stdout).toContain("WorkflowRouter::dispatch#3");
+    expect(oneLevelDeeper.stdout).toContain("describeWorkflowPlan::summary");
+    await expect(oneLevelDeeper.stdout).toMatchFileSnapshot(
+      snapshot("agent-workflow-overview-depth-1.expected.txt"),
+    );
 
     const overviewJson = runSymnav(["overview", "src/agent-workflow.ts", "--json"]);
     expect(overviewJson.stderr).toBe("");

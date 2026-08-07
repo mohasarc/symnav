@@ -17,8 +17,8 @@ interface JsonResolvedTarget {
 
 interface JsonContextResult extends JsonResolvedTarget {
   definitions: readonly unknown[];
-  callers: unknown;
-  callees: unknown;
+  callers: { sortedEdges: readonly unknown[] };
+  callees: { sortedEdges: readonly unknown[] };
   references: { total: number };
 }
 
@@ -154,8 +154,8 @@ describe("symnav extraction v2 workflow smoke", () => {
     const parsedContext = JSON.parse(context.stdout) as JsonContextResult;
     expectIdentity(parsedContext.identity, buildWorkflowId);
     expect(parsedContext.definitions.length).toBeGreaterThan(0);
-    expect(parsedContext.callers).toBeDefined();
-    expect(parsedContext.callees).toBeDefined();
+    expect(parsedContext.callers.sortedEdges).toHaveLength(4);
+    expect(parsedContext.callees.sortedEdges).toHaveLength(4);
     expect(parsedContext.references.total).toBeGreaterThan(0);
 
     const graph = runSymnav(["graph", "buildWorkflow", "--outgoing", "--depth", "2", "--json"]);

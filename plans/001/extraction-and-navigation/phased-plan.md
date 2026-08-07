@@ -1,4 +1,4 @@
-# Extraction V2 and Agent-Facing Navigation Fixes
+# Extraction and Agent-Facing Navigation Fixes
 
 Post-v1 plan for a fold-tree `overview`, cleaned signature previews, robust extraction, suffix-pattern targets, and regex resolve, based on the recovered discussion in [`temp/recovered-session-d99673df-verbatim.md`](../../../temp/recovered-session-d99673df-verbatim.md) and the candidate note in [`temp/v2-candidates.md`](../../../temp/v2-candidates.md).
 

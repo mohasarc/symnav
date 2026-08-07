@@ -1,0 +1,39 @@
+Context: buildWorkflow
+File: src/agent-workflow.ts
+Lines: 58-63
+
+Definition
+src/agent-workflow.ts
+└── 58-63: buildWorkflow  [implementation]
+    export function buildWorkflow(input: WorkflowInput = defaultWorkflowInput()): WorkflowPlan
+
+Callers
+src/agent-workflow.ts
+├── 30-32: BuildCoordinator::run  [call]
+│       return buildWorkflow(defaultWorkflowInput());
+├── 88-90: runAgentWorkflow  [call]
+│     return buildWorkflow(defaultWorkflowInput());
+├── 92-96: previewAgentWorkflow  [call]
+│     const plan = buildWorkflow({ ...defaultWorkflowInput(), mode: "draft" });
+└── 98: workflowFactory  [call]
+    export const workflowFactory = (input: WorkflowInput): WorkflowPlan => buildWorkflow(input);
+
+Callees
+src/agent-workflow.ts
+├── 17-21: defaultWorkflowInput  [call]
+│   const defaultWorkflowInput = (): WorkflowInput => …
+├── 65-71: createPlan  [call]
+│   function createPlan(input: WorkflowInput): WorkflowPlan
+├── 77-79: resolveAgent  [call]
+│   function resolveAgent(agentId: string): string
+└── 81-86: finalizeWorkflow  [call]
+    function finalizeWorkflow(plan: WorkflowPlan, assignedAgent: string): WorkflowPlan
+
+References
+Total: 5
+Kinds: usage 4, export 1
+Run: symnav refs src/agent-workflow.ts::buildWorkflow
+
+Recent History
+1. 67379df 2023-01-10 Workflow Bot
+   add the agent workflow

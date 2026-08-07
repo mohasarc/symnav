@@ -1,0 +1,15 @@
+Resolve: ^build[A-Z] (regex)
+
+Symbols
+└── src/agent-workflow.ts
+    ├── 36-38: AgentBuilder::buildTask
+    │   buildTask(step: string): string
+    ├── 42-44: WorkflowBuilder::buildTask
+    │   buildTask(step: string): string
+    ├── 48-50: buildNestedWorkflowAudit
+    │   function buildNestedWorkflowAudit(input: WorkflowInput): string
+    └── 58-63: buildWorkflow
+        export function buildWorkflow(input: WorkflowInput = defaultWorkflowInput()): WorkflowPlan
+
+Files
+(none)

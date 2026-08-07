@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 
 import { FixtureRunner } from "../fixture-runner.js";
 
-const runner = new FixtureRunner("extraction-v2-cases");
+const runner = new FixtureRunner("extraction-diagnostics-cases");
 const cleanRunner = new FixtureRunner("definition-cases");
 const snapshotsDir = new URL("./__snapshots__/", import.meta.url).pathname;
 const warningMessage =

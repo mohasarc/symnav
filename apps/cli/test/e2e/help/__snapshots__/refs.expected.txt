@@ -1,0 +1,12 @@
+Usage: symnav refs [options] <target>
+
+List references to a symbol across the workspace
+
+Options:
+  --line <n>       narrow target matches to declarations containing this line
+  --page <n>       page of references to show
+  --page-size <n>  references per page
+  --all            show every reference on one page (default: false)
+  --full-lines     emit source lines verbatim, untrimmed (default: false)
+  --json           emit JSON instead of text (default: false)
+  -h, --help       display help for command

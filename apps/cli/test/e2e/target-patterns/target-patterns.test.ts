@@ -231,14 +231,6 @@ describe("target-pattern symbol commands", () => {
     expect(result.stdout).toBe("");
     expect(result.stderr).toBe('Cannot answer: no symbol target "not_an_id" found.\n');
   });
-
-  it.each(symbolCommands)("%s help exposes line narrowing", (command) => {
-    const result = runCommand(command, ["--help"]);
-    expect(result.status).toBe(0);
-    expect(result.stderr).toBe("");
-    expect(result.stdout).toContain("--line <n>");
-    expect(result.stdout).toContain("narrow target matches to declarations containing this line");
-  });
 });
 
 describe("target-pattern line narrowing", () => {

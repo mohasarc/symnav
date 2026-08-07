@@ -1,0 +1,9 @@
+Usage: symnav resolve [options] <query>
+
+Find matching symbols and files for a name
+
+Options:
+  --fuzzy     match by fuzzy subsequence instead of exact name (default: false)
+  --regex     match by JavaScript regex instead of exact name (default: false)
+  --json      emit JSON instead of text (default: false)
+  -h, --help  display help for command

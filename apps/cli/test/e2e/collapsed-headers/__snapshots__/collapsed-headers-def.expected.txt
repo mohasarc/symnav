@@ -1,0 +1,5 @@
+Definition: leakyFunction
+
+collapsed-headers.ts
+└── 6-9: leakyFunction  [implementation]
+    export function leakyFunction(input: string): string

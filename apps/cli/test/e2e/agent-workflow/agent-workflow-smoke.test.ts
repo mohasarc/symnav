@@ -5,12 +5,10 @@ import { expectIdentity } from "../expect-identity.js";
 import { FixtureRunner } from "../fixture-runner.js";
 import type { JsonIdentity } from "../json-identity.js";
 
-const fixtureRunner = new FixtureRunner("extraction-v2-cases");
+const fixtureRunner = new FixtureRunner("agent-workflow-cases");
 const snapshotsDir = new URL("./__snapshots__/", import.meta.url).pathname;
 const buildWorkflowId = "src/agent-workflow.ts::buildWorkflow";
 const buildWorkflowSuffixTarget = "agent-workflow.ts::buildWorkflow";
-const unsupportedStatementWarning =
-  "Warning: skipped unrecognised statement syntax at src/unsupported-statement.ts:5 (MissingDeclaration)\n";
 
 interface JsonResolvedTarget {
   identity: JsonIdentity;
@@ -90,11 +88,7 @@ function copiedCandidate(stderr: string): string {
   return candidate;
 }
 
-function expectUnsupportedStatementWarning(stderr: string): void {
-  expect(stderr).toBe(unsupportedStatementWarning);
-}
-
-describe("symnav extraction v2 workflow smoke", () => {
+describe("symnav agent workflow smoke", () => {
   it("renders compact overview and expands a copied fold header", async () => {
     const overview = runSymnav(["overview", "src/agent-workflow.ts"]);
     expect(overview.stderr).toBe("");
@@ -132,7 +126,7 @@ describe("symnav extraction v2 workflow smoke", () => {
 
   it("resolves own-name regex matches and follows a copied ambiguity candidate", async () => {
     const resolved = runSymnav(["resolve", "--regex", "^build[A-Z]"]);
-    expectUnsupportedStatementWarning(resolved.stderr);
+    expect(resolved.stderr).toBe("");
     expect(resolved.status).toBe(0);
     expect(resolved.stdout).toContain("src/agent-workflow.ts");
     expect(resolved.stdout).toContain("buildWorkflow");
@@ -144,7 +138,7 @@ describe("symnav extraction v2 workflow smoke", () => {
     );
 
     const uniqueDefinition = runSymnav(["def", "buildWorkflow"]);
-    expectUnsupportedStatementWarning(uniqueDefinition.stderr);
+    expect(uniqueDefinition.stderr).toBe("");
     expect(uniqueDefinition.status).toBe(0);
     expect(uniqueDefinition.stdout).toContain("Definition: buildWorkflow");
     expect(uniqueDefinition.stdout).toContain("export function buildWorkflow(");
@@ -157,7 +151,7 @@ describe("symnav extraction v2 workflow smoke", () => {
     );
 
     const copiedDefinition = runSymnav(["def", copiedCandidate(ambiguousDefinition.stderr)]);
-    expectUnsupportedStatementWarning(copiedDefinition.stderr);
+    expect(copiedDefinition.stderr).toBe("");
     expect(copiedDefinition.status).toBe(0);
     expect(copiedDefinition.stdout).toContain("Definition: AgentBuilder::buildTask");
   });
@@ -165,8 +159,8 @@ describe("symnav extraction v2 workflow smoke", () => {
   it("walks every suffix-target page and repeats byte-identically", async () => {
     const firstReferences = runReferencesPage(1);
     const secondReferences = runReferencesPage(1);
-    expectUnsupportedStatementWarning(firstReferences.stderr);
-    expectUnsupportedStatementWarning(secondReferences.stderr);
+    expect(firstReferences.stderr).toBe("");
+    expect(secondReferences.stderr).toBe("");
     expect(firstReferences.status).toBe(0);
     expect(secondReferences.status).toBe(0);
     expect(secondReferences.stdout).toBe(firstReferences.stdout);
@@ -191,9 +185,9 @@ describe("symnav extraction v2 workflow smoke", () => {
     );
   });
 
-  it("keeps JSON outputs parseable and routes diagnostics to stderr", () => {
+  it("keeps context and graph JSON parseable with a clean stderr", () => {
     const context = runSymnav(["context", "buildWorkflow", "--json"]);
-    expectUnsupportedStatementWarning(context.stderr);
+    expect(context.stderr).toBe("");
     expect(context.status).toBe(0);
     const parsedContext = JSON.parse(context.stdout) as JsonContextResult;
     expectIdentity(parsedContext.identity, buildWorkflowId);
@@ -203,7 +197,7 @@ describe("symnav extraction v2 workflow smoke", () => {
     expect(parsedContext.references.total).toBeGreaterThan(0);
 
     const graph = runSymnav(["graph", "buildWorkflow", "--outgoing", "--depth", "2", "--json"]);
-    expectUnsupportedStatementWarning(graph.stderr);
+    expect(graph.stderr).toBe("");
     expect(graph.status).toBe(0);
     const parsedGraph = JSON.parse(graph.stdout) as JsonGraphResult;
     expectIdentity(parsedGraph.identity, buildWorkflowId);
@@ -212,7 +206,7 @@ describe("symnav extraction v2 workflow smoke", () => {
     expect(parsedGraph.outgoing.paths.length).toBeGreaterThan(0);
 
     const incomingGraph = runSymnav(["graph", "buildWorkflow", "--incoming", "--json"]);
-    expectUnsupportedStatementWarning(incomingGraph.stderr);
+    expect(incomingGraph.stderr).toBe("");
     expect(incomingGraph.status).toBe(0);
     const parsedIncomingGraph = JSON.parse(incomingGraph.stdout) as JsonGraphResult;
     expectIdentity(parsedIncomingGraph.identity, buildWorkflowId);

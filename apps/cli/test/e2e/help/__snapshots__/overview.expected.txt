@@ -3,7 +3,7 @@ Usage: symnav overview [options] <file>
 Print a one-screen overview of a file's symbols
 
 Options:
-  --depth <n>  number of fold levels to expand
+  --depth <n>  number of child tree levels to render
   --at <text>  expand the overview node whose header contains text
   --line <n>   narrow overview target candidates to a source line
   --json       emit JSON instead of text (default: false)

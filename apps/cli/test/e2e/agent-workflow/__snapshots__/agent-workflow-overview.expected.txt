@@ -70,5 +70,37 @@ Overview: src/agent-workflow.ts
 │   └── 93: previewAgentWorkflow::plan
 │       93 const plan = buildWorkflow(…)
 │
-└── 98: workflowFactory
-    98 export const workflowFactory = (input: WorkflowInput): WorkflowPlan => …
+├── 98: workflowFactory
+│   98 export const workflowFactory = (input: WorkflowInput): WorkflowPlan => …
+│
+├── 100-106: WorkflowRouter
+│   100 export class WorkflowRouter
+│   ├── 101: WorkflowRouter::dispatch#1
+│   │   101 dispatch(step: string): string
+│   ├── 102: WorkflowRouter::dispatch#2
+│   │   102 dispatch(step: string, agentId: string): string
+│   └── 103-105: WorkflowRouter::dispatch#3
+│       103 dispatch(step: string, agentId?: string): string
+│
+├── 108-116: describeWorkflowPlan
+│   108 export function describeWorkflowPlan(
+│   109   plan: WorkflowPlan,
+│   110   assignedAgent: string,
+│   111   includeSteps: boolean,
+│   112 ): string
+│   └── 113: describeWorkflowPlan::summary
+│       113 const summary = `${plan.title} @ ${assignedAgent}`
+│
+├── 118-124: workflowAuditor
+│   118 export const workflowAuditor = (plan: WorkflowPlan): string => …
+│   └── 119-121: workflowAuditor::auditStep
+│       119 function auditStep(step: string): string
+│
+└── 126-147: summarizeWorkflowSteps
+    126 export function summarizeWorkflowSteps(plan: WorkflowPlan): string
+    ├── 127: summarizeWorkflowSteps::parts
+    │   127 const parts: string[] = []
+    ├── 129-131: for (const step of plan.steps) {
+    ├── 133-135: for (let index = 0; index < parts.length; index += 1) {
+    ├── 137-139: while (parts.length > 3) {
+    └── 141-146: switch (plan.title) {

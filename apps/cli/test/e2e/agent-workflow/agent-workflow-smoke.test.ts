@@ -98,6 +98,20 @@ describe("symnav agent workflow smoke", () => {
     expect(overview.stdout).not.toContain("Workflow JSDoc should not leak");
     expect(overview.stdout).not.toContain("privateWorkflowSecret");
     expect(overview.stdout).not.toContain("return finalizeWorkflow");
+    expect(overview.stdout).toContain("for (const step of plan.steps) {");
+    expect(overview.stdout).toContain("for (let index = 0; index < parts.length; index += 1) {");
+    expect(overview.stdout).toContain("while (parts.length > 3) {");
+    expect(overview.stdout).toContain("switch (plan.title) {");
+    expect(overview.stdout).toContain("workflowAuditor::auditStep");
+    expect(overview.stdout).toContain(
+      [
+        "│   108 export function describeWorkflowPlan(",
+        "│   109   plan: WorkflowPlan,",
+        "│   110   assignedAgent: string,",
+        "│   111   includeSteps: boolean,",
+        "│   112 ): string",
+      ].join("\n"),
+    );
     await expect(overview.stdout).toMatchFileSnapshot(
       snapshot("agent-workflow-overview.expected.txt"),
     );
@@ -154,6 +168,22 @@ describe("symnav agent workflow smoke", () => {
     expect(copiedDefinition.stderr).toBe("");
     expect(copiedDefinition.status).toBe(0);
     expect(copiedDefinition.stdout).toContain("Definition: AgentBuilder::buildTask");
+
+    const overloadDefinition = runSymnav(["def", "WorkflowRouter::dispatch#1", "--json"]);
+    expect(overloadDefinition.stderr).toBe("");
+    expect(overloadDefinition.status).toBe(0);
+    expectIdentity(
+      (JSON.parse(overloadDefinition.stdout) as JsonResolvedTarget).identity,
+      "src/agent-workflow.ts::WorkflowRouter::dispatch#1",
+    );
+
+    const initializerNestedDefinition = runSymnav(["def", "auditStep", "--json"]);
+    expect(initializerNestedDefinition.stderr).toBe("");
+    expect(initializerNestedDefinition.status).toBe(0);
+    expectIdentity(
+      (JSON.parse(initializerNestedDefinition.stdout) as JsonResolvedTarget).identity,
+      "src/agent-workflow.ts::workflowAuditor::auditStep",
+    );
   });
 
   it("walks every suffix-target page and repeats byte-identically", async () => {

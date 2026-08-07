@@ -96,3 +96,52 @@ export function previewAgentWorkflow(): string {
 }
 
 export const workflowFactory = (input: WorkflowInput): WorkflowPlan => buildWorkflow(input);
+
+export class WorkflowRouter {
+  dispatch(step: string): string;
+  dispatch(step: string, agentId: string): string;
+  dispatch(step: string, agentId?: string): string {
+    return agentId === undefined ? step : `${agentId}:${step}`;
+  }
+}
+
+export function describeWorkflowPlan(
+  plan: WorkflowPlan,
+  assignedAgent: string,
+  includeSteps: boolean,
+): string {
+  const summary = `${plan.title} @ ${assignedAgent}`;
+
+  return includeSteps ? `${summary} [${plan.steps.join(",")}]` : summary;
+}
+
+export const workflowAuditor = (plan: WorkflowPlan): string => {
+  function auditStep(step: string): string {
+    return `${plan.agentId}:${step}`;
+  }
+
+  return plan.steps.map(auditStep).join("|");
+};
+
+export function summarizeWorkflowSteps(plan: WorkflowPlan): string {
+  const parts: string[] = [];
+
+  for (const step of plan.steps) {
+    parts.push(step);
+  }
+
+  for (let index = 0; index < parts.length; index += 1) {
+    parts[index] = parts[index].toUpperCase();
+  }
+
+  while (parts.length > 3) {
+    parts.pop();
+  }
+
+  switch (plan.title) {
+    case "draft workflow":
+      return parts.join("-");
+    default:
+      return parts.join("+");
+  }
+}

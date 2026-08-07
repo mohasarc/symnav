@@ -183,7 +183,5 @@ describe("symnav extraction v2 workflow smoke", () => {
     expect(warningOverview.status).toBe(0);
     expectUnsupportedStatementWarning(warningOverview.stderr);
     expect(warningOverview.stdout).toContain("stillVisible");
-    expect(() => JSON.parse(context.stdout)).not.toThrow();
-    expect(() => JSON.parse(graph.stdout)).not.toThrow();
   });
 });

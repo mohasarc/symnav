@@ -2,6 +2,32 @@ import { describe, expect, it } from "vitest";
 
 import { runOverview, snapshot } from "./run-overview.js";
 
+interface JsonOverviewNode {
+  readonly type: string;
+  readonly children: readonly JsonOverviewNode[];
+  readonly header: { readonly lines: readonly string[] };
+  readonly range: { readonly startLine: number; readonly endLine: number };
+}
+
+interface JsonOverviewSymbolNode extends JsonOverviewNode {
+  readonly identity: { readonly segments: readonly { readonly name: string }[] };
+  readonly kind: { readonly role: string };
+}
+
+interface JsonOverviewResult {
+  readonly file: string;
+  readonly request: { readonly at?: string; readonly depth: number; readonly line?: number };
+  readonly entries: readonly JsonOverviewNode[];
+}
+
+function parseOverview(stdout: string): JsonOverviewResult {
+  return JSON.parse(stdout) as JsonOverviewResult;
+}
+
+function symbolChildrenOf(node: JsonOverviewNode | undefined): readonly JsonOverviewSymbolNode[] {
+  return (node?.children ?? []) as readonly JsonOverviewSymbolNode[];
+}
+
 describe("symnav overview e2e (targeting)", () => {
   it("renders only top-level nodes at explicit depth zero", async () => {
     const r = runOverview(["overview", "targeted-expansion.ts", "--depth", "0"]);
@@ -320,26 +346,14 @@ describe("symnav overview e2e (targeting)", () => {
 
     expect(r.stderr).toBe("");
     expect(r.status).toBe(0);
-    const parsed = JSON.parse(r.stdout) as {
-      readonly request: { readonly depth: number; readonly at: string };
-      readonly entries: readonly {
-        readonly children: readonly {
-          readonly type: string;
-          readonly children: readonly unknown[];
-          readonly header: { readonly lines: readonly string[] };
-          readonly range: { readonly startLine: number; readonly endLine: number };
-          readonly identity?: { readonly segments: readonly { readonly name: string }[] };
-          readonly kind?: { readonly role: string };
-        }[];
-      }[];
-    };
+    const parsed = parseOverview(r.stdout);
     expect(parsed.request).toEqual({ depth: 1, at: 'describe("cursor")' });
     expect(parsed.entries).toHaveLength(1);
 
-    const [symbolChild, foldChild] = parsed.entries[0]?.children ?? [];
+    const [symbolChild, foldChild] = symbolChildrenOf(parsed.entries[0]);
     expect(symbolChild?.type).toBe("symbol");
-    expect(symbolChild?.identity?.segments).toEqual([{ name: "cursorHelper" }]);
-    expect(symbolChild?.kind?.role).toBe("value");
+    expect(symbolChild?.identity.segments).toEqual([{ name: "cursorHelper" }]);
+    expect(symbolChild?.kind.role).toBe("value");
     expect(symbolChild?.range).toEqual({ startLine: 6, endLine: 6 });
     expect(symbolChild?.children).toEqual([]);
     expect(foldChild?.type).toBe("fold");
@@ -361,14 +375,7 @@ describe("symnav overview e2e (targeting)", () => {
 
     expect(r.stderr).toBe("");
     expect(r.status).toBe(0);
-    const parsed = JSON.parse(r.stdout) as {
-      readonly file: string;
-      readonly request: { readonly depth: number; readonly at: string };
-      readonly entries: readonly {
-        readonly children: readonly unknown[];
-        readonly header: { readonly lines: readonly string[] };
-      }[];
-    };
+    const parsed = parseOverview(r.stdout);
     expect(parsed.file).toBe("targeted-expansion.ts");
     expect(parsed.request).toEqual({ depth: 0, at: 'describe("cursor")' });
     expect(parsed.entries).toHaveLength(1);
@@ -389,20 +396,13 @@ describe("symnav overview e2e (targeting)", () => {
 
     expect(r.stderr).toBe("");
     expect(r.status).toBe(0);
-    const parsed = JSON.parse(r.stdout) as {
-      readonly entries: readonly {
-        readonly children: readonly {
-          readonly children: readonly unknown[];
-          readonly identity: { readonly segments: readonly { readonly name: string }[] };
-        }[];
-      }[];
-    };
+    const parsed = parseOverview(r.stdout);
     expect(parsed.entries).toHaveLength(1);
-    expect(parsed.entries[0]?.children.map((child) => child.identity.segments)).toEqual([
+    expect(symbolChildrenOf(parsed.entries[0]).map((child) => child.identity.segments)).toEqual([
       [{ name: "Greeter" }, { name: "greet" }],
       [{ name: "Greeter" }, { name: "shout" }],
     ]);
-    expect(parsed.entries[0]?.children.map((child) => child.children)).toEqual([[], []]);
+    expect(symbolChildrenOf(parsed.entries[0]).map((child) => child.children)).toEqual([[], []]);
   });
 
   it("mirrors class target depth trimming in JSON output", () => {
@@ -418,15 +418,11 @@ describe("symnav overview e2e (targeting)", () => {
 
     expect(r.stderr).toBe("");
     expect(r.status).toBe(0);
-    const parsed = JSON.parse(r.stdout) as {
-      readonly entries: readonly {
-        readonly children: readonly unknown[];
-        readonly identity: { readonly segments: readonly { readonly name: string }[] };
-      }[];
-    };
+    const parsed = parseOverview(r.stdout);
+    const [entry] = parsed.entries as readonly JsonOverviewSymbolNode[];
     expect(parsed.entries).toHaveLength(1);
-    expect(parsed.entries[0]?.identity.segments).toEqual([{ name: "Greeter" }]);
-    expect(parsed.entries[0]?.children).toEqual([]);
+    expect(entry?.identity.segments).toEqual([{ name: "Greeter" }]);
+    expect(entry?.children).toEqual([]);
   });
 
   it("includes line request metadata with children in JSON output at depth one", () => {
@@ -442,17 +438,10 @@ describe("symnav overview e2e (targeting)", () => {
 
     expect(r.stderr).toBe("");
     expect(r.status).toBe(0);
-    const parsed = JSON.parse(r.stdout) as {
-      readonly request: { readonly depth: number; readonly line: number };
-      readonly entries: readonly {
-        readonly children: readonly {
-          readonly identity: { readonly segments: readonly { readonly name: string }[] };
-        }[];
-      }[];
-    };
+    const parsed = parseOverview(r.stdout);
     expect(parsed.request).toEqual({ depth: 1, line: 10 });
     expect(parsed.entries).toHaveLength(1);
-    expect(parsed.entries[0]?.children.map((child) => child.identity.segments)).toEqual([
+    expect(symbolChildrenOf(parsed.entries[0]).map((child) => child.identity.segments)).toEqual([
       [{ name: "secondHelper" }],
     ]);
   });
@@ -470,14 +459,7 @@ describe("symnav overview e2e (targeting)", () => {
 
     expect(r.stderr).toBe("");
     expect(r.status).toBe(0);
-    const parsed = JSON.parse(r.stdout) as {
-      readonly file: string;
-      readonly request: { readonly depth: number; readonly line: number };
-      readonly entries: readonly {
-        readonly children: readonly unknown[];
-        readonly header: { readonly lines: readonly string[] };
-      }[];
-    };
+    const parsed = parseOverview(r.stdout);
     expect(parsed.file).toBe("line-narrowing.ts");
     expect(parsed.request).toEqual({ depth: 0, line: 10 });
     expect(parsed.entries).toHaveLength(1);
@@ -500,17 +482,10 @@ describe("symnav overview e2e (targeting)", () => {
 
     expect(r.stderr).toBe("");
     expect(r.status).toBe(0);
-    const parsed = JSON.parse(r.stdout) as {
-      readonly request: { readonly at: string; readonly depth: number; readonly line: number };
-      readonly entries: readonly {
-        readonly children: readonly {
-          readonly identity: { readonly segments: readonly { readonly name: string }[] };
-        }[];
-      }[];
-    };
+    const parsed = parseOverview(r.stdout);
     expect(parsed.request).toEqual({ at: "repeated", depth: 1, line: 10 });
     expect(parsed.entries).toHaveLength(1);
-    expect(parsed.entries[0]?.children.map((child) => child.identity.segments)).toEqual([
+    expect(symbolChildrenOf(parsed.entries[0]).map((child) => child.identity.segments)).toEqual([
       [{ name: "secondHelper" }],
     ]);
   });
@@ -530,14 +505,7 @@ describe("symnav overview e2e (targeting)", () => {
 
     expect(r.stderr).toBe("");
     expect(r.status).toBe(0);
-    const parsed = JSON.parse(r.stdout) as {
-      readonly file: string;
-      readonly request: { readonly at: string; readonly depth: number; readonly line: number };
-      readonly entries: readonly {
-        readonly children: readonly unknown[];
-        readonly header: { readonly lines: readonly string[] };
-      }[];
-    };
+    const parsed = parseOverview(r.stdout);
     expect(parsed.file).toBe("line-narrowing.ts");
     expect(parsed.request).toEqual({ at: "repeated", depth: 0, line: 10 });
     expect(parsed.entries).toHaveLength(1);

@@ -197,6 +197,52 @@ describe("OverviewExpander depth", () => {
       }),
     ]);
   });
+
+  it("reaches a fold nested under two symbols at depth 3", () => {
+    const entries = [
+      fold('describe("outer", () => {', {
+        range: { startLine: 1, endLine: 12 },
+        children: [
+          symbol("outerSymbol", {
+            range: { startLine: 2, endLine: 10 },
+            children: [
+              symbol("innerSymbol", {
+                range: { startLine: 3, endLine: 9 },
+                children: [
+                  fold("if (flag) {", {
+                    range: { startLine: 4, endLine: 8 },
+                    children: [symbol("insideFold", { range: { startLine: 5, endLine: 5 } })],
+                  }),
+                ],
+              }),
+            ],
+          }),
+        ],
+      }),
+    ];
+
+    expect(expandRequest(entries, { depth: 3, at: undefined, line: undefined }).entries).toEqual([
+      fold('describe("outer", () => {', {
+        range: { startLine: 1, endLine: 12 },
+        children: [
+          symbol("outerSymbol", {
+            range: { startLine: 2, endLine: 10 },
+            children: [
+              symbol("innerSymbol", {
+                range: { startLine: 3, endLine: 9 },
+                children: [
+                  fold("if (flag) {", {
+                    range: { startLine: 4, endLine: 8 },
+                    children: [],
+                  }),
+                ],
+              }),
+            ],
+          }),
+        ],
+      }),
+    ]);
+  });
 });
 
 describe("OverviewExpander totalSymbolCount", () => {

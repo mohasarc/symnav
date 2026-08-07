@@ -1,0 +1,23 @@
+Graph: buildWorkflow
+File: src/agent-workflow.ts
+Lines: 58-63
+Depth: 2
+Direction: outgoing
+Edges: calls
+
+Outgoing
+src/agent-workflow.ts
+└── 58-63: buildWorkflow
+    export function buildWorkflow(input: WorkflowInput = defaultWorkflowInput()): WorkflowPlan
+    └── src/agent-workflow.ts
+        ├── 17-21: defaultWorkflowInput  [callee]
+        │   const defaultWorkflowInput = (): WorkflowInput => …
+        ├── 81-86: finalizeWorkflow  [callee]
+        │   function finalizeWorkflow(plan: WorkflowPlan, assignedAgent: string): WorkflowPlan
+        ├── 77-79: resolveAgent  [callee]
+        │   function resolveAgent(agentId: string): string
+        └── 65-71: createPlan  [callee]
+            function createPlan(input: WorkflowInput): WorkflowPlan
+            └── src/agent-workflow.ts
+                └── 73-75: normalizeStep  [callee]
+                    function normalizeStep(step: string): string

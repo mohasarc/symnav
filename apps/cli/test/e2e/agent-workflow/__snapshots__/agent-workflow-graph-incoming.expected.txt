@@ -1,0 +1,20 @@
+Graph: buildWorkflow
+File: src/agent-workflow.ts
+Lines: 58-63
+Depth: 1
+Direction: incoming
+Edges: calls
+
+Incoming
+src/agent-workflow.ts
+└── 58-63: buildWorkflow
+    export function buildWorkflow(input: WorkflowInput = defaultWorkflowInput()): WorkflowPlan
+    └── src/agent-workflow.ts
+        ├── 30-32: BuildCoordinator::run  [caller]
+        │   run(): WorkflowPlan
+        ├── 92-96: previewAgentWorkflow  [caller]
+        │   export function previewAgentWorkflow(): string
+        ├── 88-90: runAgentWorkflow  [caller]
+        │   export function runAgentWorkflow(): WorkflowPlan
+        └── 98: workflowFactory  [caller]
+            export const workflowFactory = (input: WorkflowInput): WorkflowPlan => …

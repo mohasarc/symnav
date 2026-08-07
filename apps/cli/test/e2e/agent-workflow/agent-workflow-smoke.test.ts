@@ -213,4 +213,27 @@ describe("symnav agent workflow smoke", () => {
     expect(parsedIncomingGraph.incoming.totalPathCount).toBe(4);
     expect(parsedIncomingGraph.incoming.paths.length).toBe(4);
   });
+
+  it("renders context and both graph directions", async () => {
+    const context = runSymnav(["context", "buildWorkflow"]);
+    expect(context.stderr).toBe("");
+    expect(context.status).toBe(0);
+    await expect(context.stdout).toMatchFileSnapshot(
+      snapshot("agent-workflow-context.expected.txt"),
+    );
+
+    const outgoingGraph = runSymnav(["graph", "buildWorkflow", "--outgoing", "--depth", "2"]);
+    expect(outgoingGraph.stderr).toBe("");
+    expect(outgoingGraph.status).toBe(0);
+    await expect(outgoingGraph.stdout).toMatchFileSnapshot(
+      snapshot("agent-workflow-graph-outgoing.expected.txt"),
+    );
+
+    const incomingGraph = runSymnav(["graph", "buildWorkflow", "--incoming"]);
+    expect(incomingGraph.stderr).toBe("");
+    expect(incomingGraph.status).toBe(0);
+    await expect(incomingGraph.stdout).toMatchFileSnapshot(
+      snapshot("agent-workflow-graph-incoming.expected.txt"),
+    );
+  });
 });

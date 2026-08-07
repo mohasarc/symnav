@@ -1,0 +1,7 @@
+Cannot answer: symbol target "buildTask" is ambiguous.
+
+Candidates
+├── src/agent-workflow.ts::AgentBuilder::buildTask
+│   buildTask(step: string): string
+└── src/agent-workflow.ts::WorkflowBuilder::buildTask
+    buildTask(step: string): string

@@ -112,7 +112,9 @@ describe("symnav extraction v2 workflow smoke", () => {
     const ambiguousDefinition = runSymnav(["def", "buildTask"]);
     expect(ambiguousDefinition.status).toBe(1);
     expect(ambiguousDefinition.stdout).toBe("");
-    expect(ambiguousDefinition.stderr).toContain('symbol target "buildTask" is ambiguous');
+    await expect(ambiguousDefinition.stderr).toMatchFileSnapshot(
+      snapshot("ambiguous-build-task.expected.err"),
+    );
 
     const copiedDefinition = runSymnav(["def", copiedCandidate(ambiguousDefinition.stderr)]);
     expectUnsupportedStatementWarning(copiedDefinition.stderr);

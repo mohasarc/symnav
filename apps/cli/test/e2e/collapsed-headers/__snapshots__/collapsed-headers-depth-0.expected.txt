@@ -1,0 +1,59 @@
+Overview: collapsed-headers.ts
+├── 1: z
+│   1 declare const z: { object(shape: object): object; string(): object }
+│
+├── 6-9: leakyFunction
+│   6 export function leakyFunction(input: string): string
+│
+├── 11-13: callsLeakyFunction
+│   11 export function callsLeakyFunction(): string
+│
+├── 15-17: HeaderContract
+│   15 export interface HeaderContract
+│
+├── 19-22: HeaderAlias
+│   19 export type HeaderAlias = {
+│   20   name: string;
+│   21   enabled: boolean;
+│   22 }
+│
+├── 24-27: HeaderMode
+│   24 export enum HeaderMode
+│
+├── 29-35: HeaderNamespace
+│   29 export namespace HeaderNamespace
+│
+├── 37-51: HeaderService
+│   37 export class HeaderService implements HeaderContract
+│
+├── 53: overloads#1
+│   53 export function overloads(input: string): string
+│
+├── 54: overloads#2
+│   54 export function overloads(input: number): number
+│
+├── 55-57: overloads#3
+│   55 export function overloads(input: string | number): string | number
+│
+├── 59-61: arrowHelper
+│   59 export const arrowHelper = (value: string): string => …
+│
+├── 63-65: functionHelper
+│   63 export const functionHelper = function headerFunction(value: string): string …
+│
+├── 67-72: schema
+│   67 export const schema = z.object(…)
+│
+├── 74-77: values
+│   74 export const values = […]
+│
+├── 79: callResult
+│   79 export const callResult = functionHelper("ready")
+│
+├── 81: bareExported
+│   81 const bareExported = "bare-exported"
+│
+├── 83: export { bareExported };
+│
+└── 85-87: defaultHeader
+    85 export default function defaultHeader(name: string): string

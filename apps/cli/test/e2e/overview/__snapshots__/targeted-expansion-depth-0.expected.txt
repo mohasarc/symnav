@@ -5,4 +5,3 @@ Overview: targeted-expansion.ts
 │
 └── 13-18: action
     13 export function action(flag: boolean): void
-    └── 14-17: if (flag) {

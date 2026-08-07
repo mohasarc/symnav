@@ -1,0 +1,3 @@
+Overview: class-with-methods.ts
+└── 1-9: Greeter
+    1 export class Greeter

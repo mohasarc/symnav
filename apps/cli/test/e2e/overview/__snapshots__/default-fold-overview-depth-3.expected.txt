@@ -1,0 +1,92 @@
+Overview: default-fold-overview.ts
+├── 1: flag
+│   1 declare const flag: boolean
+│
+├── 2: values
+│   2 declare const values: readonly string[]
+│
+├── 3: mode
+│   3 declare const mode: "read" | "write"
+│
+├── 4: tap
+│   4 declare function tap(value: string): void
+│
+├── 6: topLevelValue
+│   6 export const topLevelValue = "root"
+│
+├── 8: tap(topLevelValue);
+│
+├── 10-13: if (flag) {
+│   ├── 11: branchValue
+│   │   11 const branchValue = "branch"
+│   └── 12: tap(branchValue);
+│
+├── 15-18: for (const value of values) {
+│   ├── 16: loopValue
+│   │   16 const loopValue = value.toUpperCase()
+│   └── 17: tap(loopValue);
+│
+├── 20-23: for (let index = 0; index < values.length; index += 1) {
+│   ├── 21: indexedValue
+│   │   21 const indexedValue = values[index]
+│   └── 22: tap(indexedValue);
+│
+├── 25-29: while (flag) {
+│   ├── 26: whileValue
+│   │   26 const whileValue = values[0]
+│   └── 27: tap(whileValue);
+│
+├── 31-42: switch (mode) {
+│   ├── 32-36: case "read":
+│   │   ├── 33: readMode
+│   │   │   33 const readMode = "read"
+│   │   └── 34: tap(readMode);
+│   └── 37-41: case "write":
+│       ├── 38: writeMode
+│       │   38 const writeMode = "write"
+│       └── 39: tap(writeMode);
+│
+├── 44-47: try {
+│   ├── 45: tryValue
+│   │   45 const tryValue = "try"
+│   └── 46: tap(tryValue);
+│
+├── 47-50: catch (error) {
+│   └── 48: caughtError
+│       48 const caughtError = error
+│
+├── 50-53: finally {
+│   ├── 51: cleanupValue
+│   │   51 const cleanupValue = "cleanup"
+│   └── 52: tap(cleanupValue);
+│
+├── 55-58: {
+│   ├── 56: blockValue
+│   │   56 const blockValue = "block"
+│   └── 57: tap(blockValue);
+│
+├── 60-63: values.map((value) => {
+│   └── 61: callbackValue
+│       61 const callbackValue = value.toLowerCase()
+│
+├── 65-76: FoldMemberHost
+│   65 export class FoldMemberHost
+│   ├── 66-71: FoldMemberHost::run
+│   │   66 run(): void
+│   │   └── 67-70: if (flag) {
+│   │       ├── 68: FoldMemberHost::run::memberBranchValue
+│   │       │   68 const memberBranchValue = this.memberValue()
+│   │       └── 69: tap(memberBranchValue);
+│   └── 73-75: FoldMemberHost::memberValue
+│       73 private memberValue(): string
+│
+├── 78-84: outerDeclaration
+│   78 export function outerDeclaration(): void
+│   ├── 79-81: outerDeclaration::nestedDeclaration
+│   │   79 function nestedDeclaration(): string
+│   └── 83: tap(nestedDeclaration());
+│
+└── 86-92: initializerHost
+    86 export const initializerHost = (): string => …
+    └── 87-89: initializerHost::initializerNestedDeclaration
+        87 function initializerNestedDeclaration(): string

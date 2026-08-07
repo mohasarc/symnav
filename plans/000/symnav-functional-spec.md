@@ -399,10 +399,29 @@ Show the symbol structure of a file.
 Default depth:
 
 ```text
-all
+0
 ```
 
-Example:
+`--depth n` renders n child levels below each top-level entry. Every node type charges the
+same: class members, function-local declarations, and fold interiors all cost one level.
+Default output is top-level entries only.
+
+Example, `overview src/checkout/CheckoutService.ts`:
+
+```text
+Overview: src/checkout/CheckoutService.ts
+
+8: MAX_RETRY_ATTEMPTS
+8: const MAX_RETRY_ATTEMPTS: number
+
+12-96: CheckoutService
+12: class CheckoutService
+
+98-112: createReceipt
+98: function createReceipt(order: Order, payment: Payment): Receipt
+```
+
+Same file at `--depth 1`:
 
 ```text
 Overview: src/checkout/CheckoutService.ts

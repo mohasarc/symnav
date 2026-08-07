@@ -1,0 +1,102 @@
+{
+  "schemaVersion": 1,
+  "sharedRulesFile": ".agents/integrations/symnav/shared-rules.md",
+  "bundles": [
+    {
+      "id": "full",
+      "skillDirectory": ".agents/skills/symnav",
+      "rulesFile": ".agents/integrations/symnav/full/rules.md",
+      "allowedCommands": ["overview", "resolve", "def", "refs", "context", "graph"],
+      "claudeSettingsFile": ".agents/integrations/symnav/full/claude-settings.json",
+      "claudeHookFile": ".agents/integrations/symnav/full/symnav-nudge.js"
+    },
+    {
+      "id": "overview",
+      "skillDirectory": ".agents/integrations/symnav/variants/overview/skill",
+      "rulesFile": ".agents/integrations/symnav/variants/overview/rules.md",
+      "allowedCommands": ["overview"],
+      "claudeSettingsFile": ".agents/integrations/symnav/variants/overview/claude-settings.json",
+      "claudeHookFile": ".agents/integrations/symnav/variants/overview/symnav-nudge.js"
+    },
+    {
+      "id": "resolve",
+      "skillDirectory": ".agents/integrations/symnav/variants/resolve/skill",
+      "rulesFile": ".agents/integrations/symnav/variants/resolve/rules.md",
+      "allowedCommands": ["resolve"],
+      "claudeSettingsFile": ".agents/integrations/symnav/variants/resolve/claude-settings.json",
+      "claudeHookFile": ".agents/integrations/symnav/variants/resolve/symnav-nudge.js"
+    },
+    {
+      "id": "def",
+      "skillDirectory": ".agents/integrations/symnav/variants/def/skill",
+      "rulesFile": ".agents/integrations/symnav/variants/def/rules.md",
+      "allowedCommands": ["def"],
+      "claudeSettingsFile": ".agents/integrations/symnav/variants/def/claude-settings.json",
+      "claudeHookFile": ".agents/integrations/symnav/variants/def/symnav-nudge.js"
+    },
+    {
+      "id": "refs",
+      "skillDirectory": ".agents/integrations/symnav/variants/refs/skill",
+      "rulesFile": ".agents/integrations/symnav/variants/refs/rules.md",
+      "allowedCommands": ["refs"],
+      "claudeSettingsFile": ".agents/integrations/symnav/variants/refs/claude-settings.json",
+      "claudeHookFile": ".agents/integrations/symnav/variants/refs/symnav-nudge.js"
+    },
+    {
+      "id": "context",
+      "skillDirectory": ".agents/integrations/symnav/variants/context/skill",
+      "rulesFile": ".agents/integrations/symnav/variants/context/rules.md",
+      "allowedCommands": ["context"],
+      "claudeSettingsFile": ".agents/integrations/symnav/variants/context/claude-settings.json",
+      "claudeHookFile": ".agents/integrations/symnav/variants/context/symnav-nudge.js"
+    },
+    {
+      "id": "graph",
+      "skillDirectory": ".agents/integrations/symnav/variants/graph/skill",
+      "rulesFile": ".agents/integrations/symnav/variants/graph/rules.md",
+      "allowedCommands": ["graph"],
+      "claudeSettingsFile": ".agents/integrations/symnav/variants/graph/claude-settings.json",
+      "claudeHookFile": ".agents/integrations/symnav/variants/graph/symnav-nudge.js"
+    },
+    {
+      "id": "overview-refs",
+      "skillDirectory": ".agents/integrations/symnav/variants/overview-refs/skill",
+      "rulesFile": ".agents/integrations/symnav/variants/overview-refs/rules.md",
+      "allowedCommands": ["overview", "refs"],
+      "claudeSettingsFile": ".agents/integrations/symnav/variants/overview-refs/claude-settings.json",
+      "claudeHookFile": ".agents/integrations/symnav/variants/overview-refs/symnav-nudge.js"
+    },
+    {
+      "id": "overview-context",
+      "skillDirectory": ".agents/integrations/symnav/variants/overview-context/skill",
+      "rulesFile": ".agents/integrations/symnav/variants/overview-context/rules.md",
+      "allowedCommands": ["overview", "context"],
+      "claudeSettingsFile": ".agents/integrations/symnav/variants/overview-context/claude-settings.json",
+      "claudeHookFile": ".agents/integrations/symnav/variants/overview-context/symnav-nudge.js"
+    },
+    {
+      "id": "overview-def",
+      "skillDirectory": ".agents/integrations/symnav/variants/overview-def/skill",
+      "rulesFile": ".agents/integrations/symnav/variants/overview-def/rules.md",
+      "allowedCommands": ["overview", "def"],
+      "claudeSettingsFile": ".agents/integrations/symnav/variants/overview-def/claude-settings.json",
+      "claudeHookFile": ".agents/integrations/symnav/variants/overview-def/symnav-nudge.js"
+    },
+    {
+      "id": "overview-graph",
+      "skillDirectory": ".agents/integrations/symnav/variants/overview-graph/skill",
+      "rulesFile": ".agents/integrations/symnav/variants/overview-graph/rules.md",
+      "allowedCommands": ["overview", "graph"],
+      "claudeSettingsFile": ".agents/integrations/symnav/variants/overview-graph/claude-settings.json",
+      "claudeHookFile": ".agents/integrations/symnav/variants/overview-graph/symnav-nudge.js"
+    },
+    {
+      "id": "resolve-graph",
+      "skillDirectory": ".agents/integrations/symnav/variants/resolve-graph/skill",
+      "rulesFile": ".agents/integrations/symnav/variants/resolve-graph/rules.md",
+      "allowedCommands": ["resolve", "graph"],
+      "claudeSettingsFile": ".agents/integrations/symnav/variants/resolve-graph/claude-settings.json",
+      "claudeHookFile": ".agents/integrations/symnav/variants/resolve-graph/symnav-nudge.js"
+    }
+  ]
+}

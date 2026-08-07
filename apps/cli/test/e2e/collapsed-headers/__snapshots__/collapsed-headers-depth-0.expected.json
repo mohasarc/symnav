@@ -1,0 +1,499 @@
+{
+  "entries": [
+    {
+      "children": [],
+      "header": {
+        "lines": [
+          "declare const z: { object(shape: object): object; string(): object }"
+        ],
+        "startLine": 1
+      },
+      "identity": {
+        "file": "collapsed-headers.ts",
+        "segments": [
+          {
+            "name": "z"
+          }
+        ]
+      },
+      "kind": {
+        "nativeLabel": "variable",
+        "role": "value"
+      },
+      "range": {
+        "endLine": 1,
+        "startLine": 1
+      },
+      "type": "symbol"
+    },
+    {
+      "children": [],
+      "header": {
+        "lines": [
+          "export function leakyFunction(input: string): string"
+        ],
+        "startLine": 6
+      },
+      "identity": {
+        "file": "collapsed-headers.ts",
+        "segments": [
+          {
+            "name": "leakyFunction"
+          }
+        ]
+      },
+      "kind": {
+        "nativeLabel": "function-implementation",
+        "role": "callable"
+      },
+      "range": {
+        "endLine": 9,
+        "startLine": 6
+      },
+      "type": "symbol"
+    },
+    {
+      "children": [],
+      "header": {
+        "lines": [
+          "export function callsLeakyFunction(): string"
+        ],
+        "startLine": 11
+      },
+      "identity": {
+        "file": "collapsed-headers.ts",
+        "segments": [
+          {
+            "name": "callsLeakyFunction"
+          }
+        ]
+      },
+      "kind": {
+        "nativeLabel": "function-implementation",
+        "role": "callable"
+      },
+      "range": {
+        "endLine": 13,
+        "startLine": 11
+      },
+      "type": "symbol"
+    },
+    {
+      "children": [],
+      "header": {
+        "lines": [
+          "export interface HeaderContract"
+        ],
+        "startLine": 15
+      },
+      "identity": {
+        "file": "collapsed-headers.ts",
+        "segments": [
+          {
+            "name": "HeaderContract"
+          }
+        ]
+      },
+      "kind": {
+        "nativeLabel": "interface",
+        "role": "container"
+      },
+      "range": {
+        "endLine": 17,
+        "startLine": 15
+      },
+      "type": "symbol"
+    },
+    {
+      "children": [],
+      "header": {
+        "lines": [
+          "export type HeaderAlias = {",
+          "  name: string;",
+          "  enabled: boolean;",
+          "}"
+        ],
+        "startLine": 19
+      },
+      "identity": {
+        "file": "collapsed-headers.ts",
+        "segments": [
+          {
+            "name": "HeaderAlias"
+          }
+        ]
+      },
+      "kind": {
+        "nativeLabel": "type-alias",
+        "role": "type"
+      },
+      "range": {
+        "endLine": 22,
+        "startLine": 19
+      },
+      "type": "symbol"
+    },
+    {
+      "children": [],
+      "header": {
+        "lines": [
+          "export enum HeaderMode"
+        ],
+        "startLine": 24
+      },
+      "identity": {
+        "file": "collapsed-headers.ts",
+        "segments": [
+          {
+            "name": "HeaderMode"
+          }
+        ]
+      },
+      "kind": {
+        "nativeLabel": "enum",
+        "role": "container"
+      },
+      "range": {
+        "endLine": 27,
+        "startLine": 24
+      },
+      "type": "symbol"
+    },
+    {
+      "children": [],
+      "header": {
+        "lines": [
+          "export namespace HeaderNamespace"
+        ],
+        "startLine": 29
+      },
+      "identity": {
+        "file": "collapsed-headers.ts",
+        "segments": [
+          {
+            "name": "HeaderNamespace"
+          }
+        ]
+      },
+      "kind": {
+        "nativeLabel": "namespace",
+        "role": "container"
+      },
+      "range": {
+        "endLine": 35,
+        "startLine": 29
+      },
+      "type": "symbol"
+    },
+    {
+      "children": [],
+      "header": {
+        "lines": [
+          "export class HeaderService implements HeaderContract"
+        ],
+        "startLine": 37
+      },
+      "identity": {
+        "file": "collapsed-headers.ts",
+        "segments": [
+          {
+            "name": "HeaderService"
+          }
+        ]
+      },
+      "kind": {
+        "nativeLabel": "class",
+        "role": "container"
+      },
+      "range": {
+        "endLine": 51,
+        "startLine": 37
+      },
+      "type": "symbol"
+    },
+    {
+      "children": [],
+      "header": {
+        "lines": [
+          "export function overloads(input: string): string"
+        ],
+        "startLine": 53
+      },
+      "identity": {
+        "file": "collapsed-headers.ts",
+        "segments": [
+          {
+            "disambiguator": 1,
+            "name": "overloads"
+          }
+        ]
+      },
+      "kind": {
+        "nativeLabel": "function-overload-signature",
+        "role": "callable"
+      },
+      "range": {
+        "endLine": 53,
+        "startLine": 53
+      },
+      "type": "symbol"
+    },
+    {
+      "children": [],
+      "header": {
+        "lines": [
+          "export function overloads(input: number): number"
+        ],
+        "startLine": 54
+      },
+      "identity": {
+        "file": "collapsed-headers.ts",
+        "segments": [
+          {
+            "disambiguator": 2,
+            "name": "overloads"
+          }
+        ]
+      },
+      "kind": {
+        "nativeLabel": "function-overload-signature",
+        "role": "callable"
+      },
+      "range": {
+        "endLine": 54,
+        "startLine": 54
+      },
+      "type": "symbol"
+    },
+    {
+      "children": [],
+      "header": {
+        "lines": [
+          "export function overloads(input: string | number): string | number"
+        ],
+        "startLine": 55
+      },
+      "identity": {
+        "file": "collapsed-headers.ts",
+        "segments": [
+          {
+            "disambiguator": 3,
+            "name": "overloads"
+          }
+        ]
+      },
+      "kind": {
+        "nativeLabel": "function-implementation",
+        "role": "callable"
+      },
+      "range": {
+        "endLine": 57,
+        "startLine": 55
+      },
+      "type": "symbol"
+    },
+    {
+      "children": [],
+      "header": {
+        "lines": [
+          "export const arrowHelper = (value: string): string => …"
+        ],
+        "startLine": 59
+      },
+      "identity": {
+        "file": "collapsed-headers.ts",
+        "segments": [
+          {
+            "name": "arrowHelper"
+          }
+        ]
+      },
+      "kind": {
+        "nativeLabel": "variable",
+        "role": "value"
+      },
+      "range": {
+        "endLine": 61,
+        "startLine": 59
+      },
+      "type": "symbol"
+    },
+    {
+      "children": [],
+      "header": {
+        "lines": [
+          "export const functionHelper = function headerFunction(value: string): string …"
+        ],
+        "startLine": 63
+      },
+      "identity": {
+        "file": "collapsed-headers.ts",
+        "segments": [
+          {
+            "name": "functionHelper"
+          }
+        ]
+      },
+      "kind": {
+        "nativeLabel": "variable",
+        "role": "value"
+      },
+      "range": {
+        "endLine": 65,
+        "startLine": 63
+      },
+      "type": "symbol"
+    },
+    {
+      "children": [],
+      "header": {
+        "lines": [
+          "export const schema = z.object(…)"
+        ],
+        "startLine": 67
+      },
+      "identity": {
+        "file": "collapsed-headers.ts",
+        "segments": [
+          {
+            "name": "schema"
+          }
+        ]
+      },
+      "kind": {
+        "nativeLabel": "variable",
+        "role": "value"
+      },
+      "range": {
+        "endLine": 72,
+        "startLine": 67
+      },
+      "type": "symbol"
+    },
+    {
+      "children": [],
+      "header": {
+        "lines": [
+          "export const values = […]"
+        ],
+        "startLine": 74
+      },
+      "identity": {
+        "file": "collapsed-headers.ts",
+        "segments": [
+          {
+            "name": "values"
+          }
+        ]
+      },
+      "kind": {
+        "nativeLabel": "variable",
+        "role": "value"
+      },
+      "range": {
+        "endLine": 77,
+        "startLine": 74
+      },
+      "type": "symbol"
+    },
+    {
+      "children": [],
+      "header": {
+        "lines": [
+          "export const callResult = functionHelper(\"ready\")"
+        ],
+        "startLine": 79
+      },
+      "identity": {
+        "file": "collapsed-headers.ts",
+        "segments": [
+          {
+            "name": "callResult"
+          }
+        ]
+      },
+      "kind": {
+        "nativeLabel": "variable",
+        "role": "value"
+      },
+      "range": {
+        "endLine": 79,
+        "startLine": 79
+      },
+      "type": "symbol"
+    },
+    {
+      "children": [],
+      "header": {
+        "lines": [
+          "const bareExported = \"bare-exported\""
+        ],
+        "startLine": 81
+      },
+      "identity": {
+        "file": "collapsed-headers.ts",
+        "segments": [
+          {
+            "name": "bareExported"
+          }
+        ]
+      },
+      "kind": {
+        "nativeLabel": "variable",
+        "role": "value"
+      },
+      "range": {
+        "endLine": 81,
+        "startLine": 81
+      },
+      "type": "symbol"
+    },
+    {
+      "exportKind": "named",
+      "exportedNames": [
+        "bareExported"
+      ],
+      "header": {
+        "lines": [
+          "export { bareExported };"
+        ],
+        "startLine": 83
+      },
+      "range": {
+        "endLine": 83,
+        "startLine": 83
+      },
+      "type": "re-export"
+    },
+    {
+      "children": [],
+      "header": {
+        "lines": [
+          "export default function defaultHeader(name: string): string"
+        ],
+        "startLine": 85
+      },
+      "identity": {
+        "file": "collapsed-headers.ts",
+        "segments": [
+          {
+            "name": "defaultHeader"
+          }
+        ]
+      },
+      "kind": {
+        "nativeLabel": "function-implementation",
+        "role": "callable"
+      },
+      "range": {
+        "endLine": 87,
+        "startLine": 85
+      },
+      "type": "symbol"
+    }
+  ],
+  "file": "collapsed-headers.ts",
+  "request": {
+    "depth": 0
+  }
+}

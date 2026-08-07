@@ -28,11 +28,23 @@ function applyOrderedReplacements(
 }
 
 describe("symnav overview e2e (happy path)", () => {
-  it("renders class-with-methods.ts", async () => {
+  it("renders class-with-methods.ts members at depth one", async () => {
+    const r = runOverview(["overview", "class-with-methods.ts", "--depth", "1"]);
+    expect(r.stderr).toBe("");
+    expect(r.status).toBe(0);
+    expect(r.stdout).toContain("Greeter::greet");
+    expect(r.stdout).toContain("Greeter::shout");
+    await expect(r.stdout).toMatchFileSnapshot(snapshot("class-with-methods.expected.txt"));
+  });
+
+  it("renders class-with-methods.ts without members at depth zero", async () => {
     const r = runOverview(["overview", "class-with-methods.ts"]);
     expect(r.stderr).toBe("");
     expect(r.status).toBe(0);
-    await expect(r.stdout).toMatchFileSnapshot(snapshot("class-with-methods.expected.txt"));
+    expect(r.stdout).toContain("1-9: Greeter");
+    expect(r.stdout).not.toContain("Greeter::greet");
+    expect(r.stdout).not.toContain("Greeter::shout");
+    await expect(r.stdout).toMatchFileSnapshot(snapshot("class-with-methods-depth-0.expected.txt"));
   });
 
   it("renders top-level-functions.ts", async () => {
@@ -49,18 +61,55 @@ describe("symnav overview e2e (happy path)", () => {
     await expect(r.stdout).toMatchFileSnapshot(snapshot("top-level-constants.expected.txt"));
   });
 
-  it("renders nested-symbols.ts", async () => {
-    const r = runOverview(["overview", "nested-symbols.ts"]);
+  it("renders nested-symbols.ts three levels deep at depth two", async () => {
+    const r = runOverview(["overview", "nested-symbols.ts", "--depth", "2"]);
     expect(r.stderr).toBe("");
     expect(r.status).toBe(0);
+    expect(r.stdout).toContain("Outer::Inner");
+    expect(r.stdout).toContain("Outer::Inner::method");
+    expect(r.stdout).toContain("Shape::width");
+    expect(r.stdout).toContain("Shape::height");
     await expect(r.stdout).toMatchFileSnapshot(snapshot("nested-symbols.expected.txt"));
   });
 
-  it("renders multi-line-signature.ts", async () => {
+  it("renders nested-symbols.ts without nesting at depth zero", async () => {
+    const r = runOverview(["overview", "nested-symbols.ts"]);
+    expect(r.stderr).toBe("");
+    expect(r.status).toBe(0);
+    expect(r.stdout).toContain("1-5: Outer");
+    expect(r.stdout).toContain("7-10: Shape");
+    expect(r.stdout).toContain("12-16: Color");
+    expect(r.stdout).not.toContain("Outer::Inner");
+    expect(r.stdout).not.toContain("Shape::width");
+    await expect(r.stdout).toMatchFileSnapshot(snapshot("nested-symbols-depth-0.expected.txt"));
+  });
+
+  it("renders a multi-line member signature at depth one", async () => {
+    const r = runOverview(["overview", "multi-line-signature.ts", "--depth", "1"]);
+    expect(r.stderr).toBe("");
+    expect(r.status).toBe(0);
+    expect(r.stdout).toContain("10-16: Server::start");
+    expect(r.stdout).toContain(
+      [
+        "        10 start(",
+        "        11   host: string,",
+        "        12   port: number,",
+        "        13 ): void",
+      ].join("\n"),
+    );
+    await expect(r.stdout).toMatchFileSnapshot(snapshot("multi-line-signature.expected.txt"));
+  });
+
+  it("renders only top-level multi-line signatures at depth zero", async () => {
     const r = runOverview(["overview", "multi-line-signature.ts"]);
     expect(r.stderr).toBe("");
     expect(r.status).toBe(0);
-    await expect(r.stdout).toMatchFileSnapshot(snapshot("multi-line-signature.expected.txt"));
+    expect(r.stdout).toContain("1-7: configure");
+    expect(r.stdout).toContain("9-17: Server");
+    expect(r.stdout).not.toContain("Server::start");
+    await expect(r.stdout).toMatchFileSnapshot(
+      snapshot("multi-line-signature-depth-0.expected.txt"),
+    );
   });
 
   it("renders empty.ts as no symbols", async () => {
@@ -120,15 +169,29 @@ describe("symnav overview e2e (user errors)", () => {
 });
 
 describe("symnav overview e2e (JSON output)", () => {
-  it("renders class-with-methods.ts as JSON", async () => {
-    const r = runOverview(["overview", "class-with-methods.ts", "--json"]);
+  it("renders class-with-methods.ts members as JSON at depth one", async () => {
+    const r = runOverview(["overview", "class-with-methods.ts", "--depth", "1", "--json"]);
     expect(r.stderr).toBe("");
     expect(r.status).toBe(0);
     await expect(r.stdout).toMatchFileSnapshot(snapshot("class-with-methods.expected.json"));
   });
 
-  it("renders multi-line-signature.ts as JSON", async () => {
-    const r = runOverview(["overview", "multi-line-signature.ts", "--json"]);
+  it("renders class-with-methods.ts with empty children as JSON at depth zero", async () => {
+    const r = runOverview(["overview", "class-with-methods.ts", "--json"]);
+    expect(r.stderr).toBe("");
+    expect(r.status).toBe(0);
+    const parsed = JSON.parse(r.stdout) as {
+      readonly entries: readonly { readonly children: readonly unknown[] }[];
+    };
+    expect(parsed.entries).toHaveLength(1);
+    expect(parsed.entries[0]?.children).toEqual([]);
+    await expect(r.stdout).toMatchFileSnapshot(
+      snapshot("class-with-methods-depth-0.expected.json"),
+    );
+  });
+
+  it("renders a multi-line member signature as JSON at depth one", async () => {
+    const r = runOverview(["overview", "multi-line-signature.ts", "--depth", "1", "--json"]);
     expect(r.stderr).toBe("");
     expect(r.status).toBe(0);
     await expect(r.stdout).toMatchFileSnapshot(snapshot("multi-line-signature.expected.json"));

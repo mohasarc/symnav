@@ -1,0 +1,9 @@
+Overview: nested-symbols.ts
+├── 1-5: Outer
+│   1 export namespace Outer
+│
+├── 7-10: Shape
+│   7 export interface Shape
+│
+└── 12-16: Color
+    12 export enum Color

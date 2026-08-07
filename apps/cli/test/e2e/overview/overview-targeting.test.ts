@@ -2,23 +2,56 @@ import { describe, expect, it } from "vitest";
 
 import { runOverview, snapshot } from "./run-overview.js";
 
+interface JsonOverviewNode {
+  readonly type: string;
+  readonly children: readonly JsonOverviewNode[];
+  readonly header: { readonly lines: readonly string[] };
+  readonly range: { readonly startLine: number; readonly endLine: number };
+}
+
+interface JsonOverviewSymbolNode extends JsonOverviewNode {
+  readonly identity: { readonly segments: readonly { readonly name: string }[] };
+  readonly kind: { readonly role: string };
+}
+
+interface JsonOverviewResult {
+  readonly file: string;
+  readonly request: { readonly at?: string; readonly depth: number; readonly line?: number };
+  readonly entries: readonly JsonOverviewNode[];
+}
+
+function parseOverview(stdout: string): JsonOverviewResult {
+  return JSON.parse(stdout) as JsonOverviewResult;
+}
+
+function symbolChildrenOf(node: JsonOverviewNode | undefined): readonly JsonOverviewSymbolNode[] {
+  return (node?.children ?? []) as readonly JsonOverviewSymbolNode[];
+}
+
 describe("symnav overview e2e (targeting)", () => {
-  it("renders copied fold headers without opening fold internals by default", async () => {
-    const r = runOverview(["overview", "targeted-expansion.ts"]);
+  it("renders only top-level nodes at explicit depth zero", async () => {
+    const r = runOverview(["overview", "targeted-expansion.ts", "--depth", "0"]);
 
     expect(r.stderr).toBe("");
     expect(r.status).toBe(0);
     expect(r.stdout).toContain('1-3: describe("setup", () => {');
     expect(r.stdout).toContain('5-11: describe("cursor", () => {');
     expect(r.stdout).toContain("13-18: action");
-    expect(r.stdout).toContain("14-17: if (flag) {");
     expect(r.stdout).not.toContain("setupHelper");
     expect(r.stdout).not.toContain("cursorHelper");
+    expect(r.stdout).not.toContain('8-10: describe("nested", () => {');
+    expect(r.stdout).not.toContain("14-17: if (flag) {");
     expect(r.stdout).not.toContain("branchValue");
     await expect(r.stdout).toMatchFileSnapshot(snapshot("targeted-expansion-depth-0.expected.txt"));
   });
 
-  it("opens one fold level globally", async () => {
+  it("defaults to explicit depth zero", () => {
+    expect(runOverview(["overview", "targeted-expansion.ts"]).stdout).toBe(
+      runOverview(["overview", "targeted-expansion.ts", "--depth", "0"]).stdout,
+    );
+  });
+
+  it("renders one child level globally at depth one", async () => {
     const r = runOverview(["overview", "targeted-expansion.ts", "--depth", "1"]);
 
     expect(r.stderr).toBe("");
@@ -26,12 +59,13 @@ describe("symnav overview e2e (targeting)", () => {
     expect(r.stdout).toContain("2: setupHelper");
     expect(r.stdout).toContain("6: cursorHelper");
     expect(r.stdout).toContain('8-10: describe("nested", () => {');
-    expect(r.stdout).toContain("15: action::branchValue");
+    expect(r.stdout).toContain("14-17: if (flag) {");
     expect(r.stdout).not.toContain("9: innerHelper");
+    expect(r.stdout).not.toContain("15: action::branchValue");
     await expect(r.stdout).toMatchFileSnapshot(snapshot("targeted-expansion-depth-1.expected.txt"));
   });
 
-  it("opens nested fold levels globally", async () => {
+  it("renders two child levels globally at depth two", async () => {
     const r = runOverview(["overview", "targeted-expansion.ts", "--depth", "2"]);
 
     expect(r.stderr).toBe("");
@@ -43,7 +77,26 @@ describe("symnav overview e2e (targeting)", () => {
     await expect(r.stdout).toMatchFileSnapshot(snapshot("targeted-expansion-depth-2.expected.txt"));
   });
 
-  it("expands a copied fold header target", () => {
+  it("renders only a copied fold header target at depth zero", () => {
+    const r = runOverview([
+      "overview",
+      "targeted-expansion.ts",
+      "--at",
+      'describe("cursor")',
+      "--depth",
+      "0",
+    ]);
+
+    expect(r.stderr).toBe("");
+    expect(r.status).toBe(0);
+    expect(r.stdout).toContain('5-11: describe("cursor", () => {');
+    expect(r.stdout).not.toContain("6: cursorHelper");
+    expect(r.stdout).not.toContain('8-10: describe("nested", () => {');
+    expect(r.stdout).not.toContain('describe("setup"');
+    expect(r.stdout).not.toContain("innerHelper");
+  });
+
+  it("renders one child level inside a copied fold header target at depth one", () => {
     const r = runOverview([
       "overview",
       "targeted-expansion.ts",
@@ -114,15 +167,59 @@ describe("symnav overview e2e (targeting)", () => {
     expect(r.stdout).toContain("2: longHelper");
   });
 
-  it("targets a nested fold by copied header substring", () => {
-    const r = runOverview(["overview", "targeted-expansion.ts", "--at", "nested", "--depth", "1"]);
+  it("targets a nested fold by copied header substring before trimming depth", () => {
+    const r = runOverview(["overview", "targeted-expansion.ts", "--at", "nested", "--depth", "0"]);
 
     expect(r.stderr).toBe("");
     expect(r.status).toBe(0);
     expect(r.stdout).toContain('8-10: describe("nested", () => {');
-    expect(r.stdout).toContain("9: innerHelper");
+    expect(r.stdout).not.toContain("9: innerHelper");
     expect(r.stdout).not.toContain('describe("setup"');
     expect(r.stdout).not.toContain('describe("cursor"');
+  });
+
+  it("renders only a copied class header target at depth zero", () => {
+    const r = runOverview([
+      "overview",
+      "class-with-methods.ts",
+      "--at",
+      "1-9: Greeter",
+      "--depth",
+      "0",
+    ]);
+
+    expect(r.stderr).toBe("");
+    expect(r.status).toBe(0);
+    expect(r.stdout).toContain("1-9: Greeter");
+    expect(r.stdout).not.toContain("Greeter::greet");
+    expect(r.stdout).not.toContain("Greeter::shout");
+  });
+
+  it("renders one member level inside a copied class header target at depth one", () => {
+    const r = runOverview([
+      "overview",
+      "class-with-methods.ts",
+      "--at",
+      "1-9: Greeter",
+      "--depth",
+      "1",
+    ]);
+
+    expect(r.stderr).toBe("");
+    expect(r.status).toBe(0);
+    expect(r.stdout).toContain("1-9: Greeter");
+    expect(r.stdout).toContain("Greeter::greet");
+    expect(r.stdout).toContain("Greeter::shout");
+  });
+
+  it.skip("targets a class by its bare name (matches its members too and reports ambiguous today)", () => {
+    const r = runOverview(["overview", "class-with-methods.ts", "--at", "Greeter", "--depth", "1"]);
+
+    expect(r.stderr).toBe("");
+    expect(r.status).toBe(0);
+    expect(r.stdout).toContain("1-9: Greeter");
+    expect(r.stdout).toContain("Greeter::greet");
+    expect(r.stdout).toContain("Greeter::shout");
   });
 
   it("prints target candidates for ambiguous header text", async () => {
@@ -147,13 +244,23 @@ describe("symnav overview e2e (targeting)", () => {
     expect(r.stderr).toBe('Cannot answer: no overview target matching --at "missing".\n');
   });
 
-  it("narrows a line-only target to one candidate", () => {
+  it("renders children of a line-narrowed target at depth one", () => {
     const r = runOverview(["overview", "line-narrowing.ts", "--line", "10", "--depth", "1"]);
 
     expect(r.stderr).toBe("");
     expect(r.status).toBe(0);
     expect(r.stdout).toContain('10-12: describe("repeated", () => {');
     expect(r.stdout).toContain("11: secondHelper");
+    expect(r.stdout).not.toContain("firstHelper");
+  });
+
+  it("narrows a line-only target to one candidate", () => {
+    const r = runOverview(["overview", "line-narrowing.ts", "--line", "10", "--depth", "0"]);
+
+    expect(r.stderr).toBe("");
+    expect(r.status).toBe(0);
+    expect(r.stdout).toContain('10-12: describe("repeated", () => {');
+    expect(r.stdout).not.toContain("11: secondHelper");
     expect(r.stdout).not.toContain("firstHelper");
   });
 
@@ -188,7 +295,7 @@ describe("symnav overview e2e (targeting)", () => {
     expect(r.stdout).toContain("14: inlineHelper");
   });
 
-  it("uses line and header text to select one duplicate header", () => {
+  it("renders children of a line and header selected duplicate at depth one", () => {
     const r = runOverview([
       "overview",
       "line-narrowing.ts",
@@ -207,7 +314,26 @@ describe("symnav overview e2e (targeting)", () => {
     expect(r.stdout).not.toContain("firstHelper");
   });
 
-  it("includes expansion request metadata in JSON output", () => {
+  it("uses line and header text to select one duplicate header", () => {
+    const r = runOverview([
+      "overview",
+      "line-narrowing.ts",
+      "--line",
+      "10",
+      "--at",
+      "repeated",
+      "--depth",
+      "0",
+    ]);
+
+    expect(r.stderr).toBe("");
+    expect(r.status).toBe(0);
+    expect(r.stdout).toContain('10-12: describe("repeated", () => {');
+    expect(r.stdout).not.toContain("11: secondHelper");
+    expect(r.stdout).not.toContain("firstHelper");
+  });
+
+  it("serializes nested child nodes in JSON output at depth one", () => {
     const r = runOverview([
       "overview",
       "targeted-expansion.ts",
@@ -220,18 +346,86 @@ describe("symnav overview e2e (targeting)", () => {
 
     expect(r.stderr).toBe("");
     expect(r.status).toBe(0);
-    const parsed = JSON.parse(r.stdout) as {
-      readonly file: string;
-      readonly request: { readonly depth: number; readonly at: string };
-      readonly entries: readonly { readonly header: { readonly lines: readonly string[] } }[];
-    };
-    expect(parsed.file).toBe("targeted-expansion.ts");
+    const parsed = parseOverview(r.stdout);
     expect(parsed.request).toEqual({ depth: 1, at: 'describe("cursor")' });
     expect(parsed.entries).toHaveLength(1);
-    expect(parsed.entries[0]?.header.lines).toEqual(['describe("cursor", () => {']);
+
+    const [symbolChild, foldChild] = symbolChildrenOf(parsed.entries[0]);
+    expect(symbolChild?.type).toBe("symbol");
+    expect(symbolChild?.identity.segments).toEqual([{ name: "cursorHelper" }]);
+    expect(symbolChild?.kind.role).toBe("value");
+    expect(symbolChild?.range).toEqual({ startLine: 6, endLine: 6 });
+    expect(symbolChild?.children).toEqual([]);
+    expect(foldChild?.type).toBe("fold");
+    expect(foldChild?.header.lines).toEqual(['describe("nested", () => {']);
+    expect(foldChild?.range).toEqual({ startLine: 8, endLine: 10 });
+    expect(foldChild?.children).toEqual([]);
   });
 
-  it("includes line request metadata in JSON output", () => {
+  it("includes expansion request metadata in JSON output", () => {
+    const r = runOverview([
+      "overview",
+      "targeted-expansion.ts",
+      "--at",
+      'describe("cursor")',
+      "--depth",
+      "0",
+      "--json",
+    ]);
+
+    expect(r.stderr).toBe("");
+    expect(r.status).toBe(0);
+    const parsed = parseOverview(r.stdout);
+    expect(parsed.file).toBe("targeted-expansion.ts");
+    expect(parsed.request).toEqual({ depth: 0, at: 'describe("cursor")' });
+    expect(parsed.entries).toHaveLength(1);
+    expect(parsed.entries[0]?.header.lines).toEqual(['describe("cursor", () => {']);
+    expect(parsed.entries[0]?.children).toEqual([]);
+  });
+
+  it("serializes class members in JSON output at depth one", () => {
+    const r = runOverview([
+      "overview",
+      "class-with-methods.ts",
+      "--at",
+      "1-9: Greeter",
+      "--depth",
+      "1",
+      "--json",
+    ]);
+
+    expect(r.stderr).toBe("");
+    expect(r.status).toBe(0);
+    const parsed = parseOverview(r.stdout);
+    expect(parsed.entries).toHaveLength(1);
+    expect(symbolChildrenOf(parsed.entries[0]).map((child) => child.identity.segments)).toEqual([
+      [{ name: "Greeter" }, { name: "greet" }],
+      [{ name: "Greeter" }, { name: "shout" }],
+    ]);
+    expect(symbolChildrenOf(parsed.entries[0]).map((child) => child.children)).toEqual([[], []]);
+  });
+
+  it("mirrors class target depth trimming in JSON output", () => {
+    const r = runOverview([
+      "overview",
+      "class-with-methods.ts",
+      "--at",
+      "1-9: Greeter",
+      "--depth",
+      "0",
+      "--json",
+    ]);
+
+    expect(r.stderr).toBe("");
+    expect(r.status).toBe(0);
+    const parsed = parseOverview(r.stdout);
+    const [entry] = parsed.entries as readonly JsonOverviewSymbolNode[];
+    expect(parsed.entries).toHaveLength(1);
+    expect(entry?.identity.segments).toEqual([{ name: "Greeter" }]);
+    expect(entry?.children).toEqual([]);
+  });
+
+  it("includes line request metadata with children in JSON output at depth one", () => {
     const r = runOverview([
       "overview",
       "line-narrowing.ts",
@@ -244,18 +438,36 @@ describe("symnav overview e2e (targeting)", () => {
 
     expect(r.stderr).toBe("");
     expect(r.status).toBe(0);
-    const parsed = JSON.parse(r.stdout) as {
-      readonly file: string;
-      readonly request: { readonly depth: number; readonly line: number };
-      readonly entries: readonly { readonly header: { readonly lines: readonly string[] } }[];
-    };
-    expect(parsed.file).toBe("line-narrowing.ts");
+    const parsed = parseOverview(r.stdout);
     expect(parsed.request).toEqual({ depth: 1, line: 10 });
     expect(parsed.entries).toHaveLength(1);
-    expect(parsed.entries[0]?.header.lines).toEqual(['describe("repeated", () => {']);
+    expect(symbolChildrenOf(parsed.entries[0]).map((child) => child.identity.segments)).toEqual([
+      [{ name: "secondHelper" }],
+    ]);
   });
 
-  it("includes combined line and header request metadata in JSON output", () => {
+  it("includes line request metadata in JSON output", () => {
+    const r = runOverview([
+      "overview",
+      "line-narrowing.ts",
+      "--line",
+      "10",
+      "--depth",
+      "0",
+      "--json",
+    ]);
+
+    expect(r.stderr).toBe("");
+    expect(r.status).toBe(0);
+    const parsed = parseOverview(r.stdout);
+    expect(parsed.file).toBe("line-narrowing.ts");
+    expect(parsed.request).toEqual({ depth: 0, line: 10 });
+    expect(parsed.entries).toHaveLength(1);
+    expect(parsed.entries[0]?.header.lines).toEqual(['describe("repeated", () => {']);
+    expect(parsed.entries[0]?.children).toEqual([]);
+  });
+
+  it("includes combined request metadata with children in JSON output at depth one", () => {
     const r = runOverview([
       "overview",
       "line-narrowing.ts",
@@ -270,15 +482,35 @@ describe("symnav overview e2e (targeting)", () => {
 
     expect(r.stderr).toBe("");
     expect(r.status).toBe(0);
-    const parsed = JSON.parse(r.stdout) as {
-      readonly file: string;
-      readonly request: { readonly at: string; readonly depth: number; readonly line: number };
-      readonly entries: readonly { readonly header: { readonly lines: readonly string[] } }[];
-    };
-    expect(parsed.file).toBe("line-narrowing.ts");
+    const parsed = parseOverview(r.stdout);
     expect(parsed.request).toEqual({ at: "repeated", depth: 1, line: 10 });
     expect(parsed.entries).toHaveLength(1);
+    expect(symbolChildrenOf(parsed.entries[0]).map((child) => child.identity.segments)).toEqual([
+      [{ name: "secondHelper" }],
+    ]);
+  });
+
+  it("includes combined line and header request metadata in JSON output", () => {
+    const r = runOverview([
+      "overview",
+      "line-narrowing.ts",
+      "--line",
+      "10",
+      "--at",
+      "repeated",
+      "--depth",
+      "0",
+      "--json",
+    ]);
+
+    expect(r.stderr).toBe("");
+    expect(r.status).toBe(0);
+    const parsed = parseOverview(r.stdout);
+    expect(parsed.file).toBe("line-narrowing.ts");
+    expect(parsed.request).toEqual({ at: "repeated", depth: 0, line: 10 });
+    expect(parsed.entries).toHaveLength(1);
     expect(parsed.entries[0]?.header.lines).toEqual(['describe("repeated", () => {']);
+    expect(parsed.entries[0]?.children).toEqual([]);
   });
 
   it("rejects malformed depth values as overview request errors", () => {

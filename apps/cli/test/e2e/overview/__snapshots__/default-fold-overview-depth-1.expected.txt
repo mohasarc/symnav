@@ -67,10 +67,6 @@ Overview: default-fold-overview.ts
 │   65 export class FoldMemberHost
 │   ├── 66-71: FoldMemberHost::run
 │   │   66 run(): void
-│   │   └── 67-70: if (flag) {
-│   │       ├── 68: FoldMemberHost::run::memberBranchValue
-│   │       │   68 const memberBranchValue = this.memberValue()
-│   │       └── 69: tap(memberBranchValue);
 │   └── 73-75: FoldMemberHost::memberValue
 │       73 private memberValue(): string
 │

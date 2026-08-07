@@ -1,0 +1,34 @@
+{
+  "entries": [
+    {
+      "children": [],
+      "header": {
+        "lines": [
+          "export class Greeter"
+        ],
+        "startLine": 1
+      },
+      "identity": {
+        "file": "class-with-methods.ts",
+        "segments": [
+          {
+            "name": "Greeter"
+          }
+        ]
+      },
+      "kind": {
+        "nativeLabel": "class",
+        "role": "container"
+      },
+      "range": {
+        "endLine": 9,
+        "startLine": 1
+      },
+      "type": "symbol"
+    }
+  ],
+  "file": "class-with-methods.ts",
+  "request": {
+    "depth": 0
+  }
+}

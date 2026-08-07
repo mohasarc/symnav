@@ -91,6 +91,6 @@
   ],
   "file": "multi-line-signature.ts",
   "request": {
-    "depth": 0
+    "depth": 1
   }
 }

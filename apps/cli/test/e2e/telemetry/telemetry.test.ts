@@ -46,7 +46,7 @@ describe("symnav telemetry e2e", () => {
         lengthBucket: "medium",
         flags: [],
       },
-      resultCounts: { symbols: 3, shownSymbols: 3 },
+      resultCounts: { symbols: 3, shownSymbols: 1 },
     });
     expect(line).not.toContain("class-with-methods.ts");
     expect(line).not.toContain("Greeter");

@@ -1,0 +1,10 @@
+Usage: symnav overview [options] <file>
+
+Print a one-screen overview of a file's symbols
+
+Options:
+  --depth <n>  number of fold levels to expand
+  --at <text>  expand the overview node whose header contains text
+  --line <n>   narrow overview target candidates to a source line
+  --json       emit JSON instead of text (default: false)
+  -h, --help   display help for command

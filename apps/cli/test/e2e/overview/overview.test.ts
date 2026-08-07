@@ -84,11 +84,32 @@ describe("symnav overview e2e (happy path)", () => {
     await expect(r.stdout).toMatchFileSnapshot(snapshot("nested-symbols-depth-0.expected.txt"));
   });
 
-  it("renders multi-line-signature.ts", async () => {
+  it("renders a multi-line member signature at depth one", async () => {
+    const r = runOverview(["overview", "multi-line-signature.ts", "--depth", "1"]);
+    expect(r.stderr).toBe("");
+    expect(r.status).toBe(0);
+    expect(r.stdout).toContain("10-16: Server::start");
+    expect(r.stdout).toContain(
+      [
+        "        10 start(",
+        "        11   host: string,",
+        "        12   port: number,",
+        "        13 ): void",
+      ].join("\n"),
+    );
+    await expect(r.stdout).toMatchFileSnapshot(snapshot("multi-line-signature.expected.txt"));
+  });
+
+  it("renders only top-level multi-line signatures at depth zero", async () => {
     const r = runOverview(["overview", "multi-line-signature.ts"]);
     expect(r.stderr).toBe("");
     expect(r.status).toBe(0);
-    await expect(r.stdout).toMatchFileSnapshot(snapshot("multi-line-signature.expected.txt"));
+    expect(r.stdout).toContain("1-7: configure");
+    expect(r.stdout).toContain("9-17: Server");
+    expect(r.stdout).not.toContain("Server::start");
+    await expect(r.stdout).toMatchFileSnapshot(
+      snapshot("multi-line-signature-depth-0.expected.txt"),
+    );
   });
 
   it("renders empty.ts as no symbols", async () => {
@@ -169,8 +190,8 @@ describe("symnav overview e2e (JSON output)", () => {
     );
   });
 
-  it("renders multi-line-signature.ts as JSON", async () => {
-    const r = runOverview(["overview", "multi-line-signature.ts", "--json"]);
+  it("renders a multi-line member signature as JSON at depth one", async () => {
+    const r = runOverview(["overview", "multi-line-signature.ts", "--depth", "1", "--json"]);
     expect(r.stderr).toBe("");
     expect(r.status).toBe(0);
     await expect(r.stdout).toMatchFileSnapshot(snapshot("multi-line-signature.expected.json"));

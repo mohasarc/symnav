@@ -120,14 +120,12 @@ export type {
   ResolveSymbolsOptions,
   SymbolTargetQuery,
 } from "./backend/language-backend.js";
-export { compileResolveRegex } from "./backend/compile-resolve-regex.js";
 export { compileRegex } from "./backend/compile-regex.js";
 export { BackendRouter } from "./backend/backend-router.js";
 export { UserFacingError } from "./errors.js";
 export {
   AmbiguousSymbolError,
   InvalidRegexError,
-  InvalidResolveRegexError,
   NoSupportedFilesError,
   SymbolNotFoundError,
   UnsupportedFileError,

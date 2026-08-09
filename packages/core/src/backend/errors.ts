@@ -59,20 +59,6 @@ export class AmbiguousSymbolError extends UserFacingError {
   }
 }
 
-export class InvalidResolveRegexError extends UserFacingError {
-  constructor(
-    readonly pattern: string,
-    readonly detail: string,
-  ) {
-    super();
-    this.name = "InvalidResolveRegexError";
-  }
-
-  get reason(): string {
-    return `invalid resolve regex ${JSON.stringify(this.pattern)}: ${this.detail}`;
-  }
-}
-
 export type RegexSubject = "resolve" | "symbol target";
 
 export class InvalidRegexError extends UserFacingError {

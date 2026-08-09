@@ -8,8 +8,8 @@ import type {
   ResolveSymbolsOptions,
   SymbolOverviewNode,
 } from "@symnav/core";
-import { compileResolveRegex, NoSupportedFilesError } from "@symnav/core";
-import { renderResolveJson, renderResolveText, ResolveErrorRenderer } from "@symnav/renderer";
+import { compileRegex, NoSupportedFilesError } from "@symnav/core";
+import { renderResolveJson, renderResolveText } from "@symnav/renderer";
 import fuzzysort from "fuzzysort";
 
 import type { Command, CommandContext } from "../../command.js";
@@ -35,7 +35,7 @@ class ResolveComputation {
 
   static symbolsOptionsFrom(mode: ResolveSymbolsMode, query: string): ResolveSymbolsOptions {
     if (mode === "regex") {
-      return { mode: "regex", regex: compileResolveRegex(query) };
+      return { mode: "regex", regex: compileRegex(query, "resolve") };
     }
     if (mode === "fuzzy") {
       return { mode: "fuzzy" };
@@ -162,5 +162,4 @@ export const resolveCommand: Command<ResolveResult, ResolveArgs> = {
   },
   renderText: renderResolveText,
   renderJson: renderResolveJson,
-  renderError: ResolveErrorRenderer.render,
 };

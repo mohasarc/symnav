@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { UserFacingError } from "../errors.js";
 import type { SymbolIdentity } from "../intermediate-representation/symbol-identity.js";
 import {
-  InvalidResolveRegexError,
+  InvalidRegexError,
   NoSupportedFilesError,
   SymbolNotFoundError,
   UnsupportedFileError,
@@ -58,21 +58,22 @@ describe("SymbolNotFoundError", () => {
   });
 });
 
-describe("InvalidResolveRegexError", () => {
+describe("InvalidRegexError", () => {
   it("is a UserFacingError", () => {
-    expect(new InvalidResolveRegexError("[", "Unterminated character class")).toBeInstanceOf(
+    expect(new InvalidRegexError("resolve", "[", "Unterminated character class")).toBeInstanceOf(
       UserFacingError,
     );
   });
 
-  it("exposes the pattern and detail as fields", () => {
-    const err = new InvalidResolveRegexError("[", "Unterminated character class");
+  it("exposes the subject, pattern, and detail as fields", () => {
+    const err = new InvalidRegexError("resolve", "[", "Unterminated character class");
+    expect(err.subject).toBe("resolve");
     expect(err.pattern).toBe("[");
     expect(err.detail).toBe("Unterminated character class");
   });
 
   it("renders a reason containing the pattern and detail", () => {
-    expect(new InvalidResolveRegexError("[", "Unterminated character class").reason).toBe(
+    expect(new InvalidRegexError("resolve", "[", "Unterminated character class").reason).toBe(
       'invalid resolve regex "[": Unterminated character class',
     );
   });

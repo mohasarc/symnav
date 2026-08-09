@@ -158,6 +158,14 @@ describe("symnav refs e2e (default output)", () => {
     expect(
       parsed.references.map((reference) => [reference.line, reference.previewSource.trim()]),
     ).toEqual([[23, "return foldedNested();"]]);
+    expect(Object.keys(parsed.references[0]!).sort()).toEqual([
+      "file",
+      "kind",
+      "line",
+      "matchEnd",
+      "matchStart",
+      "previewSource",
+    ]);
   });
 });
 

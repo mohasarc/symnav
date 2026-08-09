@@ -16,6 +16,9 @@ const CALL_GRAPH_CASES: Record<string, string> = {
     "export function mentionedNotCalled(): void {}",
     "export function calledFromFunctionValuedConst(): void {}",
     "export function calledFromTopLevelHandler(): void {}",
+    "export function calledFromSetter(): void {}",
+    "export function calledFromDefaultArrow(): void {}",
+    "export function calledFromDefaultFunction(): void {}",
     "",
   ].join("\n"),
   "/repo/src/callers/file-a.ts": [
@@ -106,16 +109,45 @@ const CALL_GRAPH_CASES: Record<string, string> = {
     "};",
     "",
   ].join("\n"),
+  "/repo/src/callers/setter.ts": [
+    'import { calledFromSetter } from "./targets.js";',
+    "",
+    "export class SetterHost {",
+    "  set value(next: number) {",
+    "    calledFromSetter();",
+    "  }",
+    "}",
+    "",
+  ].join("\n"),
+  "/repo/src/callers/default-arrow.ts": [
+    'import { calledFromDefaultArrow } from "./targets.js";',
+    "",
+    "export default () => {",
+    "  calledFromDefaultArrow();",
+    "};",
+    "",
+  ].join("\n"),
+  "/repo/src/callers/default-function.ts": [
+    'import { calledFromDefaultFunction } from "./targets.js";',
+    "",
+    "export default (function () {",
+    "  calledFromDefaultFunction();",
+    "});",
+    "",
+  ].join("\n"),
 };
 
 const ALL_FILES: readonly ResolvedPath[] = [
   "src/callers/dynamic.ts",
+  "src/callers/default-arrow.ts",
+  "src/callers/default-function.ts",
   "src/callers/file-a.ts",
   "src/callers/file-b.ts",
   "src/callers/function-valued-const.ts",
   "src/callers/mentions.ts",
   "src/callers/nested.ts",
   "src/callers/sample.test.ts",
+  "src/callers/setter.ts",
   "src/callers/targets.ts",
   "src/callers/top-level-handler.ts",
   "src/callers/twice.ts",
@@ -194,6 +226,27 @@ describe("TypeScriptBackend.findCallers", () => {
     expect(edges[0]!.symbol.identity).toEqual({
       file: "src/callers/top-level-handler.ts",
       segments: [{ name: "handler" }],
+    });
+  });
+
+  it("attributes a call inside a setter to the setter declaration", async () => {
+    const edges = await callersOf("calledFromSetter");
+    expect(edges).toHaveLength(1);
+    expect(edges[0]!.symbol.identity).toEqual({
+      file: "src/callers/setter.ts",
+      segments: [{ name: "SetterHost" }, { name: "value" }],
+    });
+  });
+
+  it.each([
+    ["calledFromDefaultArrow", "src/callers/default-arrow.ts"],
+    ["calledFromDefaultFunction", "src/callers/default-function.ts"],
+  ])("attributes %s to the default export declaration", async (target, file) => {
+    const edges = await callersOf(target);
+    expect(edges).toHaveLength(1);
+    expect(edges[0]!.symbol.identity).toEqual({
+      file,
+      segments: [{ name: "default" }],
     });
   });
 

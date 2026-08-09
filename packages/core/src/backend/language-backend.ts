@@ -17,10 +17,6 @@ export type ResolveSymbolsOptions =
   | { readonly mode: "fuzzy" }
   | { readonly mode: "regex"; readonly regex: RegExp };
 
-export interface ResolveSymbolTargetOptions {
-  readonly containingLine: number | undefined;
-}
-
 export interface LanguageBackend {
   accepts(filePath: string): boolean;
   fileEntries(path: ResolvedPath): Promise<OverviewFileEntries>;
@@ -32,7 +28,6 @@ export interface LanguageBackend {
   findTargetCandidates(
     files: readonly ResolvedPath[],
     pattern: SymbolTargetPattern,
-    options: ResolveSymbolTargetOptions,
   ): Promise<readonly SymbolTargetCandidate[]>;
   findDefinitions(
     files: readonly ResolvedPath[],

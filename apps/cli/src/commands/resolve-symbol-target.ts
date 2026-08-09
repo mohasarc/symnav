@@ -52,9 +52,16 @@ export class CommandTargetResolver {
     const ownedCandidates = await CommandTargetResolver.collectCandidates(
       acceptedFilesByBackend,
       pattern,
-      containingLine,
     );
-    const sortedOwnedCandidates = [...ownedCandidates].sort((left, right) =>
+    const lineMatchedCandidates =
+      containingLine === undefined
+        ? ownedCandidates
+        : ownedCandidates.filter(
+            ({ candidate }) =>
+              containingLine >= candidate.symbol.range.startLine &&
+              containingLine <= candidate.symbol.range.endLine,
+          );
+    const sortedOwnedCandidates = [...lineMatchedCandidates].sort((left, right) =>
       left.candidate.canonicalId.localeCompare(right.candidate.canonicalId),
     );
     if (sortedOwnedCandidates.length === 0) {
@@ -143,14 +150,11 @@ export class CommandTargetResolver {
   private static async collectCandidates(
     acceptedFilesByBackend: ReadonlyMap<LanguageBackend, readonly ResolvedPath[]>,
     pattern: SymbolTargetPattern,
-    containingLine: number | undefined,
   ): Promise<readonly OwnedCandidate[]> {
     const ownedCandidates: OwnedCandidate[] = [];
     for (const [backend, accepted] of acceptedFilesByBackend) {
       const searchFiles = CommandTargetResolver.filesMatchingSuffix(accepted, pattern.fileSuffix);
-      const candidates = await backend.findTargetCandidates(searchFiles, pattern, {
-        containingLine,
-      });
+      const candidates = await backend.findTargetCandidates(searchFiles, pattern);
       ownedCandidates.push(...candidates.map((candidate) => ({ candidate, backend })));
     }
     return ownedCandidates;

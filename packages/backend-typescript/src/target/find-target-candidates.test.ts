@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
   InMemoryFileSystem,
-  InvalidSymbolTargetRequestError,
   SymbolTargetGrammar,
   type ResolvedPath,
   type SymbolTargetCandidate,
@@ -71,7 +70,6 @@ describe("TargetCandidateFinder.find", () => {
       declarationIndex: new WorkspaceDeclarationIndex(fsWithFixture()),
       files: ALL_FILES,
       pattern: SymbolTargetGrammar.parse("helper"),
-      options: { containingLine: undefined },
     });
 
     expect(candidates).toHaveLength(1);
@@ -88,7 +86,6 @@ describe("TargetCandidateFinder.find", () => {
       declarationIndex: new WorkspaceDeclarationIndex(fsWithFixture()),
       files: ALL_FILES,
       pattern: SymbolTargetGrammar.parse("insideIf"),
-      options: { containingLine: undefined },
     });
 
     expect(candidates).toHaveLength(1);
@@ -99,57 +96,11 @@ describe("TargetCandidateFinder.find", () => {
     });
   });
 
-  it("keeps a candidate when the supplied line is inside its declaration range", async () => {
-    const candidates = await TargetCandidateFinder.find({
-      declarationIndex: new WorkspaceDeclarationIndex(fsWithFixture()),
-      files: ALL_FILES,
-      pattern: SymbolTargetGrammar.parse("helper"),
-      options: { containingLine: 2 },
-    });
-
-    expect(candidates).toHaveLength(1);
-    expect(candidates[0]!.symbol.identity.file).toBe("src/helpers.ts");
-  });
-
-  it("rejects a non-positive containingLine before searching", async () => {
-    await expect(
-      TargetCandidateFinder.find({
-        declarationIndex: new WorkspaceDeclarationIndex(fsWithFixture()),
-        files: ALL_FILES,
-        pattern: SymbolTargetGrammar.parse("helper"),
-        options: { containingLine: 0 },
-      }),
-    ).rejects.toBeInstanceOf(InvalidSymbolTargetRequestError);
-  });
-
-  it("drops candidates whose declaration range excludes the supplied line", async () => {
-    const candidates = await TargetCandidateFinder.find({
-      declarationIndex: new WorkspaceDeclarationIndex(fsWithFixture()),
-      files: ALL_FILES,
-      pattern: SymbolTargetGrammar.parse("helper"),
-      options: { containingLine: 99 },
-    });
-
-    expect(candidates).toEqual([]);
-  });
-
-  it("keeps only the candidate whose declaration range contains the supplied line", async () => {
-    const candidates = await TargetCandidateFinder.find({
-      declarationIndex: new WorkspaceDeclarationIndex(fsWithFixture()),
-      files: pathsFor(["src/json.ts", "src/spaced.ts"]),
-      pattern: SymbolTargetGrammar.parse("parse"),
-      options: { containingLine: 4 },
-    });
-
-    expect(sortedCanonicalIds(candidates)).toEqual(["src/spaced.ts::parse"]);
-  });
-
   it("returns an empty list for zero matches without throwing", async () => {
     const candidates = await TargetCandidateFinder.find({
       declarationIndex: new WorkspaceDeclarationIndex(fsWithFixture()),
       files: ALL_FILES,
       pattern: SymbolTargetGrammar.parse("missing"),
-      options: { containingLine: undefined },
     });
 
     expect(candidates).toEqual([]);
@@ -160,7 +111,6 @@ describe("TargetCandidateFinder.find", () => {
       declarationIndex: new WorkspaceDeclarationIndex(fsWithFixture()),
       files: ALL_FILES,
       pattern: SymbolTargetGrammar.parse("parse"),
-      options: { containingLine: undefined },
     });
 
     expect(sortedCanonicalIds(candidates)).toEqual(["src/json.ts::parse", "src/query.ts::parse"]);

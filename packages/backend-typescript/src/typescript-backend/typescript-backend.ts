@@ -7,7 +7,6 @@ import type {
   LanguageBackend,
   OverviewFileEntries,
   SymbolReference,
-  ResolveSymbolTargetOptions,
   ResolveSymbolsOptions,
   ResolvedPath,
   SymbolOverviewNode,
@@ -73,13 +72,11 @@ export class TypeScriptBackend implements LanguageBackend {
   async findTargetCandidates(
     files: readonly ResolvedPath[],
     pattern: SymbolTargetPattern,
-    options: ResolveSymbolTargetOptions,
   ): Promise<readonly SymbolTargetCandidate[]> {
     return TargetCandidateFinder.find({
       declarationIndex: this.sharedDeclarationIndex(),
       files,
       pattern,
-      options,
     });
   }
 

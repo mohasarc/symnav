@@ -1,10 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import type {
-  LanguageBackend,
-  ResolveSymbolsOptions,
-  ResolveSymbolTargetOptions,
-} from "../backend/language-backend.js";
+import type { LanguageBackend, ResolveSymbolsOptions } from "../backend/language-backend.js";
 import type { CallEdge, EdgeConfidence } from "../intermediate-representation/call-edge.js";
 import type { CallTargetResolution } from "../intermediate-representation/call-target.js";
 import { formatSymbolIdentity } from "../intermediate-representation/canonical-identity.js";
@@ -94,7 +90,6 @@ class FakeLanguageBackend implements LanguageBackend {
   findTargetCandidates(
     _files: readonly ResolvedPath[],
     _pattern: SymbolTargetPattern,
-    _options: ResolveSymbolTargetOptions,
   ): Promise<readonly SymbolTargetCandidate[]> {
     throw new Error("not implemented");
   }

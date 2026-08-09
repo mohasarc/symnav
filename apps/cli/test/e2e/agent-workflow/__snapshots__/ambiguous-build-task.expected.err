@@ -5,3 +5,5 @@ Candidates
 │   buildTask(step: string): string
 └── src/agent-workflow.ts::WorkflowBuilder::buildTask
     buildTask(step: string): string
+
+Copy a candidate id, or narrow with --line.

@@ -3,6 +3,7 @@ Usage: symnav context [options] <target>
 Show a symbol's definition, callers, callees, references, and recent history
 
 Options:
-  --line <n>  narrow target matches to declarations containing this line
-  --json      emit JSON instead of text (default: false)
-  -h, --help  display help for command
+  --line <n>   narrow target matches to declarations containing this line
+  --regex      match full canonical symbol ids by JavaScript regex (default: false)
+  --json       emit JSON instead of text (default: false)
+  -h, --help   display help for command

@@ -8,6 +8,7 @@ import type {
   SymbolOverviewNode,
 } from "@symnav/core";
 import { defCommand } from "./def/def-command.js";
+import { contextCommand } from "./context/context-command.js";
 import { graphCommand } from "./graph/graph-command.js";
 import { overviewCommand } from "./overview/overview-command.js";
 import { refsCommand } from "./refs/refs-command.js";
@@ -31,6 +32,7 @@ describe("command telemetry descriptors", () => {
     expect(resolveCommand.name).toBe("resolve");
     expect(defCommand.name).toBe("def");
     expect(refsCommand.name).toBe("refs");
+    expect(contextCommand.name).toBe("context");
     expect(graphCommand.name).toBe("graph");
   });
 
@@ -83,7 +85,7 @@ describe("command telemetry descriptors", () => {
   });
 
   it("describes def arguments", () => {
-    expect(defCommand.describeArgs({ target: "a.ts::Foo", line: undefined })).toEqual({
+    expect(defCommand.describeArgs({ target: "a.ts::Foo", line: undefined, regex: false })).toEqual({
       kind: "symbol_id",
       lengthBucket: "short",
       flags: [],
@@ -91,7 +93,7 @@ describe("command telemetry descriptors", () => {
   });
 
   it("describes def line narrowing", () => {
-    expect(defCommand.describeArgs({ target: "a.ts::Foo", line: 4 })).toEqual({
+    expect(defCommand.describeArgs({ target: "a.ts::Foo", line: 4, regex: false })).toEqual({
       kind: "symbol_id",
       lengthBucket: "short",
       flags: ["line"],
@@ -103,6 +105,7 @@ describe("command telemetry descriptors", () => {
       refsCommand.describeArgs({
         target: "a.ts::Foo",
         line: 8,
+        regex: false,
         page: 2,
         pageSize: undefined,
         all: true,
@@ -120,6 +123,7 @@ describe("command telemetry descriptors", () => {
       graphCommand.describeArgs({
         target: "a.ts::Foo",
         line: 9,
+        regex: false,
         incoming: true,
         outgoing: false,
         depth: 2,
@@ -131,6 +135,45 @@ describe("command telemetry descriptors", () => {
       kind: "symbol_id",
       lengthBucket: "short",
       flags: ["all", "depth", "incoming", "line", "page-size"],
+    });
+  });
+
+  it.each([
+    ["def", defCommand, { target: "^src/.+::Foo$", line: undefined, regex: true }],
+    [
+      "refs",
+      refsCommand,
+      {
+        target: "^src/.+::Foo$",
+        line: undefined,
+        regex: true,
+        page: undefined,
+        pageSize: undefined,
+        all: false,
+        fullLines: false,
+      },
+    ],
+    ["context", contextCommand, { target: "^src/.+::Foo$", line: undefined, regex: true }],
+    [
+      "graph",
+      graphCommand,
+      {
+        target: "^src/.+::Foo$",
+        line: undefined,
+        regex: true,
+        incoming: false,
+        outgoing: false,
+        depth: undefined,
+        page: undefined,
+        pageSize: undefined,
+        all: false,
+      },
+    ],
+  ] as const)("describes %s regex without recording pattern content", (_name, command, args) => {
+    expect(command.describeArgs(args)).toEqual({
+      kind: "symbol_id",
+      lengthBucket: "short",
+      flags: ["regex"],
     });
   });
 

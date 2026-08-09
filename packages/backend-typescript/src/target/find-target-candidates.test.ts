@@ -43,6 +43,14 @@ const FIXTURE: Record<string, string> = {
     "}",
     "",
   ].join("\n"),
+  "/repo/src/router.ts": [
+    "export class Router {",
+    "  post(path: string): void;",
+    "  post(path: RegExp): void;",
+    "  post(path: string | RegExp): void {}",
+    "}",
+    "",
+  ].join("\n"),
 };
 
 const ALL_FILES = pathsFor([
@@ -50,7 +58,16 @@ const ALL_FILES = pathsFor([
   "src/helpers.ts",
   "src/json.ts",
   "src/query.ts",
+  "src/router.ts",
 ]);
+
+function regularQuery(raw: string) {
+  return { mode: "regular", pattern: SymbolTargetGrammar.parse(raw) } as const;
+}
+
+function regexQuery(raw: string) {
+  return { mode: "regex", raw, regex: new RegExp(raw) } as const;
+}
 
 function pathsFor(relativePaths: readonly string[]): readonly ResolvedPath[] {
   return relativePaths.map((relative) => ({ relative, absolute: `/repo/${relative}` }));
@@ -69,7 +86,7 @@ describe("TargetCandidateFinder.find", () => {
     const candidates = await TargetCandidateFinder.find({
       declarationIndex: new WorkspaceDeclarationIndex(fsWithFixture()),
       files: ALL_FILES,
-      pattern: SymbolTargetGrammar.parse("helper"),
+      query: regularQuery("helper"),
     });
 
     expect(candidates).toHaveLength(1);
@@ -85,7 +102,7 @@ describe("TargetCandidateFinder.find", () => {
     const candidates = await TargetCandidateFinder.find({
       declarationIndex: new WorkspaceDeclarationIndex(fsWithFixture()),
       files: ALL_FILES,
-      pattern: SymbolTargetGrammar.parse("insideIf"),
+      query: regularQuery("insideIf"),
     });
 
     expect(candidates).toHaveLength(1);
@@ -100,7 +117,7 @@ describe("TargetCandidateFinder.find", () => {
     const candidates = await TargetCandidateFinder.find({
       declarationIndex: new WorkspaceDeclarationIndex(fsWithFixture()),
       files: ALL_FILES,
-      pattern: SymbolTargetGrammar.parse("missing"),
+      query: regularQuery("missing"),
     });
 
     expect(candidates).toEqual([]);
@@ -110,9 +127,49 @@ describe("TargetCandidateFinder.find", () => {
     const candidates = await TargetCandidateFinder.find({
       declarationIndex: new WorkspaceDeclarationIndex(fsWithFixture()),
       files: ALL_FILES,
-      pattern: SymbolTargetGrammar.parse("parse"),
+      query: regularQuery("parse"),
     });
 
     expect(sortedCanonicalIds(candidates)).toEqual(["src/json.ts::parse", "src/query.ts::parse"]);
+  });
+
+  it("matches regex queries against full canonical ids including paths and nested segments", async () => {
+    const candidates = await TargetCandidateFinder.find({
+      declarationIndex: new WorkspaceDeclarationIndex(fsWithFixture()),
+      files: ALL_FILES,
+      query: regexQuery("^src/control-flow\\.ts::outer::insideIf$"),
+    });
+
+    expect(sortedCanonicalIds(candidates)).toEqual(["src/control-flow.ts::outer::insideIf"]);
+  });
+
+  it("matches regex queries against overload disambiguators", async () => {
+    const candidates = await TargetCandidateFinder.find({
+      declarationIndex: new WorkspaceDeclarationIndex(fsWithFixture()),
+      files: ALL_FILES,
+      query: regexQuery("Router::post#2$"),
+    });
+
+    expect(sortedCanonicalIds(candidates)).toEqual(["src/router.ts::Router::post#2"]);
+  });
+
+  it("matches regex queries case-sensitively", async () => {
+    const candidates = await TargetCandidateFinder.find({
+      declarationIndex: new WorkspaceDeclarationIndex(fsWithFixture()),
+      files: ALL_FILES,
+      query: regexQuery("HELPER$"),
+    });
+
+    expect(candidates).toEqual([]);
+  });
+
+  it("does not regex-match headers, signatures, previews, or source text", async () => {
+    const candidates = await TargetCandidateFinder.find({
+      declarationIndex: new WorkspaceDeclarationIndex(fsWithFixture()),
+      files: ALL_FILES,
+      query: regexQuery("export function|return \\\"ok\\\"|string"),
+    });
+
+    expect(candidates).toEqual([]);
   });
 });

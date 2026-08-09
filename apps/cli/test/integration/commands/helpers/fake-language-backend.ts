@@ -7,7 +7,7 @@ import type {
   ResolvedPath,
   SymbolOverviewNode,
   SymbolTargetCandidate,
-  SymbolTargetPattern,
+  SymbolTargetQuery,
 } from "@symnav/core";
 import { SymbolTargetGrammar } from "@symnav/core";
 
@@ -45,11 +45,14 @@ export class FakeLanguageBackend implements LanguageBackend {
 
   async findTargetCandidates(
     files: readonly ResolvedPath[],
-    pattern: SymbolTargetPattern,
+    query: SymbolTargetQuery,
   ): Promise<readonly SymbolTargetCandidate[]> {
     this.targetCandidateCalls.push(files.map((file) => file.relative));
     return this.targetCandidates.filter(
-      (candidate) => SymbolTargetGrammar.match(pattern, candidate.symbol.identity) !== undefined,
+      (candidate) =>
+        query.mode === "regex"
+          ? query.regex.test(candidate.canonicalId)
+          : SymbolTargetGrammar.match(query.pattern, candidate.symbol.identity) !== undefined,
     );
   }
 

@@ -134,6 +134,7 @@ class ResolverScenario {
     rawTarget: string,
     line: number | string | undefined = undefined,
     files: readonly ResolvedPath[] = ResolverScenario.WORKSPACE_FILES,
+    regex = false,
   ): Promise<ResolvedCommandTarget> {
     return CommandTargetResolver.resolve({
       workspace: ResolverScenario.fakeWorkspace(files),
@@ -141,6 +142,7 @@ class ResolverScenario {
       cwd: "/repo",
       rawTarget,
       line,
+      regex,
     });
   }
 
@@ -288,6 +290,95 @@ describe("CommandTargetResolver.resolve across backends", () => {
     expect(resolved.identity.file).toBe("src/beta.zz");
     expect(typescriptBackend.targetCandidateCalls).toHaveLength(1);
     expect(zetaBackend.targetCandidateCalls).toHaveLength(1);
+  });
+
+  it("combines and sorts regex candidates from every backend", async () => {
+    const router = new BackendRouter([
+      ResolverScenario.zetaFake([ResolverScenario.candidateFor("src/beta.zz", [{ name: "walk" }])]),
+      ResolverScenario.typescriptFake([
+        ResolverScenario.candidateFor("src/alpha.ts", [{ name: "walk" }]),
+      ]),
+    ]);
+
+    const error = await ResolverScenario.resolveWith(
+      router,
+      "walk$",
+      undefined,
+      ResolverScenario.WORKSPACE_FILES,
+      true,
+    ).then(
+      () => undefined,
+      (thrown: unknown) => thrown,
+    );
+
+    expect(error).toBeInstanceOf(AmbiguousSymbolTargetError);
+    expect(
+      (error as AmbiguousSymbolTargetError).candidates.map((candidate) => candidate.canonicalId),
+    ).toEqual(["src/alpha.ts::walk", "src/beta.zz::walk"]);
+  });
+
+  it("line-narrows regex candidates before resolving the result", async () => {
+    const nested = ResolverScenario.candidateFor(
+      "src/alpha.ts",
+      [{ name: "Namespace" }, { name: "walk" }],
+      { startLine: 2, endLine: 4 },
+    );
+    const bare = ResolverScenario.candidateFor("src/beta.zz", [{ name: "walk" }], {
+      startLine: 8,
+      endLine: 12,
+    });
+    const router = new BackendRouter([
+      ResolverScenario.typescriptFake([nested]),
+      ResolverScenario.zetaFake([bare]),
+    ]);
+
+    const resolved = await ResolverScenario.resolveWith(
+      router,
+      "walk$",
+      3,
+      ResolverScenario.WORKSPACE_FILES,
+      true,
+    );
+
+    expect(resolved.identity).toEqual(nested.symbol.identity);
+  });
+
+  it("never specificity-ranks regex candidates", async () => {
+    const nested = ResolverScenario.candidateFor("src/alpha.ts", [
+      { name: "Namespace" },
+      { name: "walk" },
+    ]);
+    const bare = ResolverScenario.candidateFor("src/gamma.ts", [{ name: "walk" }]);
+    const router = new BackendRouter([ResolverScenario.typescriptFake([nested, bare])]);
+
+    const resolution = ResolverScenario.resolveWith(
+      router,
+      "walk$",
+      undefined,
+      ResolverScenario.WORKSPACE_FILES,
+      true,
+    );
+
+    await expect(resolution).rejects.toBeInstanceOf(AmbiguousSymbolTargetError);
+  });
+
+  it("keeps multiple overload regex matches ambiguous", async () => {
+    const router = new BackendRouter([
+      ResolverScenario.typescriptFake([
+        ResolverScenario.candidateFor("src/alpha.ts", [{ name: "post", disambiguator: 1 }]),
+        ResolverScenario.candidateFor("src/alpha.ts", [{ name: "post", disambiguator: 2 }]),
+      ]),
+    ]);
+
+    const resolution = ResolverScenario.resolveWith(
+      router,
+      "post#\\d$",
+      undefined,
+      ResolverScenario.WORKSPACE_FILES,
+      true,
+    );
+
+    await expect(resolution).rejects.toBeInstanceOf(AmbiguousSymbolTargetError);
   });
 
   it("reports not-found when the target never matched before line filtering", async () => {

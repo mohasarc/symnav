@@ -4,6 +4,7 @@ Show call paths around a symbol
 
 Options:
   --line <n>       narrow target matches to declarations containing this line
+  --regex          match full canonical symbol ids by JavaScript regex (default: false)
   --incoming       show caller paths only (default: false)
   --outgoing       show callee paths only (default: false)
   --depth <n>      maximum call depth

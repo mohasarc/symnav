@@ -1,0 +1,130 @@
+# SymNav Feature Ideas — Brainstorming Extract
+
+## Status of this document
+
+This is a catalog of high-level feature ideas extracted from a brainstorming session. Nothing here is a final shape, a commitment, or a design. Each entry is a hypothesis about what information could help a coding agent, to be examined and brainstormed further before any decision about what to build. Command names, output shapes, and examples used during the session are illustrative placeholders only.
+
+The guiding thesis behind all of these: reduce premature closure by putting missing codebase facts in front of the agent at the decision point, before it commits to a solution. Every idea below is a candidate way of doing that.
+
+A useful classification that emerged: some ideas rest on **compiler truth** (deterministic, exact, language-dependent) and some on **statistical evidence** (thresholds and percentages, honest about being probabilistic, often language-independent). The session's recurring observation was that the least clever ideas tend to be the most robust.
+
+---
+
+## Tier 1 — Strongest candidates from the session
+
+These three were repeatedly replayed against the benchmark tasks and covered the most failure shapes.
+
+### 1. Co-change siblings (evolutionary coupling)
+
+Mine git history to answer: when this file/symbol changes, what else historically changes in the same commits? Output is a ranked list with co-change percentages — effectively the checklist nobody hands you for propagation-shaped changes.
+
+- Question answered: "What else must probably change with this edit?"
+- Basis: statistical (commit counting). Language-independent — works even where the semantic backend has no coverage.
+- Targets: incomplete propagation, symmetric behavior (serialize/deserialize), policy-shaped changes with no type links (the sandbox task), cross-file contracts (the telemetry task).
+- Known caveats to explore: backward-looking (no history for new code), stale couplings, needs recency weighting / large-commit discounting / noise floors; benchmark harnesses must strip future history while preserving past history.
+
+### 2. Two-endpoint path queries
+
+Replace "expand a neighborhood around one symbol" with "connect two symbols": given a symptom location and a suspect, return the small set of bounded call paths between them.
+
+- Question answered: "How does the symptom reach the suspect?" / "What stages sit between these two points?"
+- Basis: compiler truth (call graph + path search), reusing the certain/possible edge distinction that already exists.
+- Targets: pipeline bugs where the fix is upstream of the symptom (brackets, Unicode tasks); repairs the observed interface failure of the current `graph` command (1.1% usage) by asking for a line instead of a ball.
+- Known caveats to explore: needs both endpoints resolvable; dynamic dispatch gaps; needs hub-node penalties and hop caps to stay decision-relevant.
+
+### 3. Enriched orientation (annotated overview)
+
+Keep `overview` as the entry point — it's the only command with credible causal evidence and the only one that demands nothing the agent doesn't have — but annotate the skeleton with facts computed from repo-wide indexes: fan-in/fan-out counts, family membership ("one of 12 implementations of X"), producer/consumer roles, membership-tracking state.
+
+- Question answered: "What kind of thing am I looking at, and what kind of edit am I about to make?"
+- Basis: mixed — counts and type indexes are deterministic; "family" thresholds are tuned heuristics.
+- Targets: set-completeness reasoning (autocomplete task), shared-helper-vs-local-fix risk, raising the salience of relationships at the moment the agent is already reading.
+- Key design principle: delivers information at a moment the agent already initiates, sidestepping the bootstrapping problem (an agent with a wrong mental model can't formulate the query that would correct it).
+
+---
+
+## Tier 2 — Graph-structural ideas
+
+Deterministic computations over the reference/call graph.
+
+### 4. Cycle / knot detection (strongly connected components)
+
+Surface groups of symbols that form circular dependencies — units of behavior wearing several names that cannot be changed independently. Warns against local fixes inside a knot; identifies external entry points where a fix can legitimately land.
+
+### 5. Fan-in / fan-out ranking
+
+Per-symbol dependency counts, ideally split src/test. High fan-in = load-bearing (edit is a de facto API change); high fan-out = orchestrator. Cheapest idea in the catalog; likely delivered as annotation (see #3) rather than a command.
+
+### 6. Blast radius (backward/forward cones)
+
+Transitive reachability from a symbol: forward cone = everything this change could affect; backward cone = every possible origin of a value (provenance/precedence debugging). Only useful bounded and with join points highlighted — raw cones explode.
+
+### 7. Chokepoints, dominators, mandatory paths
+
+Symbols every path between subsystems (or from an entry point) must cross — central validation, guards, invariant boundaries. Standard compiler algorithms applied at repo scale.
+
+### 8. Layering / depth map
+
+Distance-from-entry-points as an architectural layering signal; edges that skip many layers flagged as suspicious.
+
+---
+
+## Tier 3 — Population / statistical ideas
+
+Facts about the codebase as a population of symbols.
+
+### 9. Family and structural-twin detection
+
+Find sets of symbols with parallel roles: implementations of an interface, members of a union/visitor, symbols with near-identical edge patterns (same callers/callees/types). The raw material for completeness reasoning and for #10.
+
+### 10. Convention anomaly detection
+
+Within a family, compute what most members share and flag the exceptions ("23 of 24 handlers call checkPermission(); this one doesn't"). Dual use: the anomaly may be the bug; the majority pattern is the template for new code. Noisiest idea in the catalog — false conventions are worse than silence; likely built after co-change, which provides tuning ground truth.
+
+### 11. Canonical pattern retrieval
+
+Point the agent at the place the repository already solved an analogous problem, so it reuses the project's convention instead of inventing a locally plausible one. Non-magic version: surface structural analogies and historical footprints (e.g., the existing control-character rendering pair in the Unicode task) rather than semantic similarity.
+
+### 12. Reference locality
+
+Fraction of a symbol's references that stay within its own file/package. Low locality = public contract (edits need propagation); high = implementation detail. Cheap annotation candidate.
+
+### 13. Real module map (clustering vs. directory layout)
+
+Community detection on the reference graph to reveal behavioral modules, compared against the directory tree; the disagreements and the bridge edges between clusters are the payload (the bracket task's decisive seam, delivered without the lucky double-overview). Caveats: boundary stability across algorithm knobs; label clusters only by dominant directory + bridges, never invented names.
+
+### 14. Churn × fan-in hotspots
+
+Join history with structure: heavily-changed, load-bearing symbols as risk/defect-density signals.
+
+---
+
+## Tier 4 — Trajectory-shaping ideas (when/how, not what)
+
+Ideas about delivery and timing rather than new analyses. Largely orthogonal to Tiers 1–3.
+
+### 15. Annotation-first delivery
+
+General principle extracted from the session: prefer enriching outputs the agent already requests over adding views it must know to ask for. Pull-based commands aimed at completeness/provenance tend to arrive after the agent has a theory — too late.
+
+### 16. Pre-finalization audit / checkpoint
+
+Before a patch is finalized, automatically check the diff against the facts above: co-change siblings not touched, family members not updated, symmetric pairs left unaligned. The "what did this patch miss?" question as a semantic audit step.
+
+### 17. Next-question recommendations
+
+Map agent situations to the concept that answers them ("where did this value come from?" → provenance; "what must change together?" → siblings) and embed recommendations in existing output, rather than requiring the agent to know the taxonomy.
+
+### 18. Persistent compressed codebase maps
+
+Compute-once, cache, and reuse repo-level artifacts (module map, family index, co-change table) so orientation cost amortizes across tasks.
+
+---
+
+## Cross-cutting design principles from the session
+
+- **Deterministic where the compiler can promise, statistical where history can testify** — and label which is which in output, reusing the existing certain/possible honesty mechanism.
+- **Every heuristic knob should point at an observed failure**: hub penalties kill test-caller floods; large-commit discounts kill reformat pollution; family thresholds kill mock-class false alarms.
+- **History proposes, structure confirms**: statistical features name suspects cheaply; compiler-truth features then map each suspect precisely. Neither class finishes hard propagation tasks alone.
+- **Compact by construction**: prefer outputs that are inherently small (paths, ranked lists, annotations) over outputs that grow with the codebase (neighborhoods, cones).
+- **Honest limits**: none of these address persistence/give-up failures, prompt-ambiguity failures, or facts that live outside source and history (runtime behavior, prose requirements). The claim is conditional uplift on statically-recoverable-fact tasks, not universal improvement.

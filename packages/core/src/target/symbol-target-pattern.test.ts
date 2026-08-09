@@ -67,9 +67,9 @@ describe("SymbolTargetGrammar.parse", () => {
 
   it.each([
     ["", "empty input"],
-    ['::charge', 'empty path segment between "::" separators'],
-    ['a::::b', 'empty path segment between "::" separators'],
-    ['a::b::', 'empty path segment between "::" separators'],
+    ["::charge", 'empty path segment between "::" separators'],
+    ["a::::b", 'empty path segment between "::" separators'],
+    ["a::b::", 'empty path segment between "::" separators'],
     ["a::b#0", 'disambiguator must be a positive integer (got "0")'],
     ["a::b#-1", 'disambiguator must be a positive integer (got "-1")'],
     ["a::b#abc", 'disambiguator must be a positive integer (got "abc")'],

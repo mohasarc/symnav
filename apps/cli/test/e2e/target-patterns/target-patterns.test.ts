@@ -290,17 +290,14 @@ describe("target-pattern fold node rejection", () => {
 });
 
 describe("target-pattern error vocabulary", () => {
-  it.each(symbolCommands)(
-    "%s reports an empty segment as a target-pattern error",
-    (command) => {
-      const result = runCommand(command, ["::charge"]);
-      expect(result.status).toBe(1);
-      expect(result.stdout).toBe("");
-      expect(result.stderr).toBe(
-        'Cannot answer: invalid symbol target (empty path segment between "::" separators): "::charge".\n',
-      );
-    },
-  );
+  it.each(symbolCommands)("%s reports an empty segment as a target-pattern error", (command) => {
+    const result = runCommand(command, ["::charge"]);
+    expect(result.status).toBe(1);
+    expect(result.stdout).toBe("");
+    expect(result.stderr).toBe(
+      'Cannot answer: invalid symbol target (empty path segment between "::" separators): "::charge".\n',
+    );
+  });
 
   it.each(symbolCommands)(
     "%s reports a slashless missing-file suffix like a slashed one",
@@ -314,13 +311,10 @@ describe("target-pattern error vocabulary", () => {
 });
 
 describe("target-pattern ambiguity hints", () => {
-  it.each(symbolCommands)(
-    "%s points at the way out of an ambiguous target",
-    (command) => {
-      const result = runCommand(command, ["PaymentProcessor::charge"]);
-      expect(result.status).toBe(1);
-      expect(result.stdout).toBe("");
-      expect(result.stderr).toContain("Copy a candidate id, or narrow with --line.");
-    },
-  );
+  it.each(symbolCommands)("%s points at the way out of an ambiguous target", (command) => {
+    const result = runCommand(command, ["PaymentProcessor::charge"]);
+    expect(result.status).toBe(1);
+    expect(result.stdout).toBe("");
+    expect(result.stderr).toContain("Copy a candidate id, or narrow with --line.");
+  });
 });

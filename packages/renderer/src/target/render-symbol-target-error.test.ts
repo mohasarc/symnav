@@ -6,10 +6,7 @@ import type {
   SymbolOverviewNode,
   SymbolTargetCandidate,
 } from "@symnav/core";
-import {
-  AmbiguousSymbolTargetError,
-  SymbolTargetNotFoundError,
-} from "@symnav/core";
+import { AmbiguousSymbolTargetError, SymbolTargetNotFoundError } from "@symnav/core";
 
 import { SymbolTargetErrorRenderer } from "./render-symbol-target-error.js";
 

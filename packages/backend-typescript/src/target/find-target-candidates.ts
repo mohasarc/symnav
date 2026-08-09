@@ -1,8 +1,4 @@
-import type {
-  ResolvedPath,
-  SymbolTargetCandidate,
-  SymbolTargetPattern,
-} from "@symnav/core";
+import type { ResolvedPath, SymbolTargetCandidate, SymbolTargetPattern } from "@symnav/core";
 import { formatSymbolIdentity, SymbolTargetGrammar } from "@symnav/core";
 
 import type { WorkspaceDeclarationIndex } from "../identity/workspace-declaration-index.js";

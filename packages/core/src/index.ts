@@ -91,6 +91,8 @@ export { SymbolTargetGrammar } from "./target/symbol-target-pattern.js";
 export type { SymbolTargetCandidate } from "./target/symbol-target-result.js";
 export {
   AmbiguousSymbolTargetError,
+  InvalidSymbolTargetError,
+  SymbolTargetLineMismatchError,
   SymbolTargetNotFoundError,
 } from "./target/symbol-target-result.js";
 export { splitHeaderLines } from "./intermediate-representation/split-header-lines.js";

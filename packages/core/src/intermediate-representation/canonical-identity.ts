@@ -6,8 +6,8 @@ const DISAMBIGUATOR_PREFIX = "#";
 
 export class InvalidSymbolIdError extends UserFacingError {
   constructor(
-    private readonly explanation: string,
-    private readonly raw: string,
+    readonly explanation: string,
+    readonly raw: string,
   ) {
     super();
     this.name = "InvalidSymbolIdError";

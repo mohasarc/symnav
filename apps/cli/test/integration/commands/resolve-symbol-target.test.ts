@@ -212,7 +212,7 @@ describe("CommandTargetResolver.resolve across backends", () => {
     );
   });
 
-  it("reports line mismatch only after collecting syntax matches across every backend", async () => {
+  it("filters by line after collecting syntax matches across every backend", async () => {
     const typescriptBackend = ResolverScenario.typescriptFake([
       ResolverScenario.candidateFor("src/alpha.ts", [{ name: "walk" }], {
         startLine: 2,

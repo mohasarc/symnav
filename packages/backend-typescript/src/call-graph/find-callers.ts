@@ -103,7 +103,7 @@ class CallerFinder {
     let ancestor = referenceNode.getParent();
     let nearestValue: SymbolOverviewNode | undefined;
     while (ancestor) {
-      const declaration = this.declarationIndex.declarationAt(ancestor);
+      const declaration = this.declarationIndex.declarationForNode(ancestor);
       if (declaration) {
         if (declaration.kind.role !== "value") return declaration;
         nearestValue = declaration;

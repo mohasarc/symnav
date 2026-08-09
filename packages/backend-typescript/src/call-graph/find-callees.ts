@@ -233,7 +233,7 @@ class CalleeFinder {
   }
 
   private workspaceSymbolFor(node: Node): SymbolOverviewNode | undefined {
-    return this.declarationIndex.declarationAt(node);
+    return this.declarationIndex.declarationForNode(node);
   }
 
   private siteFor(node: Node): CallSite {

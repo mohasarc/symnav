@@ -16,7 +16,6 @@ export class WorkspaceDeclarationIndex {
   private readonly fileByRelativePath = new Map<string, ResolvedPath>();
   private readonly relativePathByAbsolute = new Map<string, string>();
   private readonly declarationsByIdentity = new Map<string, IndexedDeclaration>();
-  private readonly declarationsByLocation = new Map<string, Map<number, SymbolOverviewNode>>();
   private readonly declarationsByNode = new WeakMap<Node["compilerNode"], SymbolOverviewNode>();
   private readonly declarationsByFile = new Map<string, readonly SymbolOverviewNode[]>();
 
@@ -48,12 +47,6 @@ export class WorkspaceDeclarationIndex {
     return new DeclarationLocator(sourceFile).locate(identity);
   }
 
-  declarationAt(node: Node): SymbolOverviewNode | undefined {
-    const relative = this.relativePathOf(node.getSourceFile());
-    if (!relative) return undefined;
-    return this.declarationsByLocation.get(relative)?.get(node.getStartLineNumber());
-  }
-
   declarationForNode(node: Node): SymbolOverviewNode | undefined {
     return this.declarationsByNode.get(node.compilerNode);
   }
@@ -71,7 +64,6 @@ export class WorkspaceDeclarationIndex {
   }
 
   private indexDeclarations(sourceFile: SourceFile, path: ResolvedPath): void {
-    const byLine = new Map<number, SymbolOverviewNode>();
     const declarations: SymbolOverviewNode[] = [];
     const locator = new DeclarationLocator(sourceFile);
     const { entries } = extractFileEntries({ sourceFile, filePath: path.relative });
@@ -81,12 +73,10 @@ export class WorkspaceDeclarationIndex {
         declaration,
         file: path,
       });
-      byLine.set(declaration.range.startLine, declaration);
       for (const located of locator.locate(declaration.identity)) {
         this.declarationsByNode.set(located.node.compilerNode, declaration);
       }
     }
-    this.declarationsByLocation.set(path.relative, byLine);
     this.declarationsByFile.set(path.relative, declarations);
   }
 }

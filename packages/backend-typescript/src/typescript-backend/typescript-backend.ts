@@ -12,7 +12,7 @@ import type {
   SymbolOverviewNode,
   SymbolIdentity,
   SymbolTargetCandidate,
-  SymbolTargetPattern,
+  SymbolTargetQuery,
 } from "@symnav/core";
 import { CollectingDiagnosticSink, FileNotFoundError } from "@symnav/core";
 
@@ -71,12 +71,12 @@ export class TypeScriptBackend implements LanguageBackend {
 
   async findTargetCandidates(
     files: readonly ResolvedPath[],
-    pattern: SymbolTargetPattern,
+    query: SymbolTargetQuery,
   ): Promise<readonly SymbolTargetCandidate[]> {
     return TargetCandidateFinder.find({
       declarationIndex: this.sharedDeclarationIndex(),
       files,
-      pattern,
+      query,
     });
   }
 

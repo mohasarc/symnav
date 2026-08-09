@@ -1,4 +1,4 @@
-import type { ResolvedPath, SymbolTargetCandidate, SymbolTargetPattern } from "@symnav/core";
+import type { ResolvedPath, SymbolTargetCandidate, SymbolTargetQuery } from "@symnav/core";
 import { formatSymbolIdentity, SymbolTargetGrammar } from "@symnav/core";
 
 import type { WorkspaceDeclarationIndex } from "../identity/workspace-declaration-index.js";
@@ -6,7 +6,7 @@ import type { WorkspaceDeclarationIndex } from "../identity/workspace-declaratio
 export interface FindTargetCandidatesArgs {
   readonly declarationIndex: WorkspaceDeclarationIndex;
   readonly files: readonly ResolvedPath[];
-  readonly pattern: SymbolTargetPattern;
+  readonly query: SymbolTargetQuery;
 }
 
 export class TargetCandidateFinder {
@@ -15,14 +15,26 @@ export class TargetCandidateFinder {
     const candidates: SymbolTargetCandidate[] = [];
     for (const file of args.files) {
       for (const symbol of args.declarationIndex.declarationsIn(file.relative) ?? []) {
-        if (SymbolTargetGrammar.match(args.pattern, symbol.identity) === undefined) continue;
+        const canonicalId = formatSymbolIdentity(symbol.identity);
+        if (!TargetCandidateFinder.matches(args.query, canonicalId, symbol.identity)) continue;
         candidates.push({
           symbol,
-          canonicalId: formatSymbolIdentity(symbol.identity),
+          canonicalId,
           header: symbol.header,
         });
       }
     }
     return candidates;
+  }
+
+  private static matches(
+    query: SymbolTargetQuery,
+    canonicalId: string,
+    identity: SymbolTargetCandidate["symbol"]["identity"],
+  ): boolean {
+    if (query.mode === "regex") {
+      return query.regex.test(canonicalId);
+    }
+    return SymbolTargetGrammar.match(query.pattern, identity) !== undefined;
   }
 }

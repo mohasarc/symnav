@@ -6,7 +6,10 @@ import type { SymbolIdentity } from "../intermediate-representation/symbol-ident
 import { isPositiveInteger } from "../validation/is-positive-integer.js";
 import type { ResolvedPath, Workspace } from "../workspace/workspace.js";
 import { SymbolTargetGrammar } from "./symbol-target-pattern.js";
-import type { SymbolTargetPattern } from "./symbol-target-pattern.js";
+import type {
+  SymbolTargetPattern,
+  SymbolTargetSpecificity,
+} from "./symbol-target-pattern.js";
 import {
   AmbiguousSymbolTargetError,
   InvalidSymbolTargetRequestError,
@@ -32,6 +35,11 @@ export interface ResolvedCommandTarget {
 interface OwnedCandidate {
   readonly candidate: SymbolTargetCandidate;
   readonly backend: LanguageBackend;
+}
+
+interface OwnedCandidateMatch {
+  readonly ownedCandidate: OwnedCandidate;
+  readonly specificity: SymbolTargetSpecificity;
 }
 
 export class CommandTargetResolver {
@@ -62,12 +70,16 @@ export class CommandTargetResolver {
               containingLine >= candidate.symbol.range.startLine &&
               containingLine <= candidate.symbol.range.endLine,
           );
-    const sortedOwnedCandidates = [...lineMatchedCandidates].sort((left, right) =>
-      left.candidate.canonicalId.localeCompare(right.candidate.canonicalId),
-    );
-    if (sortedOwnedCandidates.length === 0 && containingLine !== undefined) {
+    if (lineMatchedCandidates.length === 0 && containingLine !== undefined) {
       throw new SymbolTargetLineMismatchError(args.rawTarget, containingLine);
     }
+    const strongestOwnedCandidates = CommandTargetResolver.nonDominatedCandidates(
+      lineMatchedCandidates,
+      pattern,
+    );
+    const sortedOwnedCandidates = [...strongestOwnedCandidates].sort((left, right) =>
+      left.candidate.canonicalId.localeCompare(right.candidate.canonicalId),
+    );
     const winner = sortedOwnedCandidates[0]!;
     if (sortedOwnedCandidates.length > 1) {
       const sortedCandidates = sortedOwnedCandidates.map((owned) => owned.candidate);
@@ -167,6 +179,27 @@ export class CommandTargetResolver {
       return files;
     }
     return files.filter((file) => SymbolTargetGrammar.fileSuffixMatches(file.relative, fileSuffix));
+  }
+
+  private static nonDominatedCandidates(
+    candidates: readonly OwnedCandidate[],
+    pattern: SymbolTargetPattern,
+  ): readonly OwnedCandidate[] {
+    const candidateMatches: OwnedCandidateMatch[] = [];
+    for (const ownedCandidate of candidates) {
+      const match = SymbolTargetGrammar.match(pattern, ownedCandidate.candidate.symbol.identity);
+      if (match !== undefined) {
+        candidateMatches.push({ ownedCandidate, specificity: match.specificity });
+      }
+    }
+    return candidateMatches
+      .filter(
+        (candidateMatch) =>
+          !candidateMatches.some((otherMatch) =>
+            SymbolTargetGrammar.dominates(otherMatch.specificity, candidateMatch.specificity),
+          ),
+      )
+      .map((candidateMatch) => candidateMatch.ownedCandidate);
   }
 
   private static collapsedOverloadIdentity(

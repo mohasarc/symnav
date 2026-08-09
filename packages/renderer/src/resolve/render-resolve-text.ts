@@ -4,12 +4,17 @@ import { groupByFile } from "../shared/group-symbols-by-file.js";
 import { formatHeadLine, formatIdentityPath, treeGlyphsFor } from "../shared/render-format.js";
 
 export function renderResolveText(result: ResolveResult): string {
+  const emptyExactGuidance =
+    result.mode === "exact" && result.symbols.length === 0 && result.files.length === 0
+      ? "No exact match; try --fuzzy for approximate names, or --regex for a pattern.\n"
+      : "";
   return (
     `Resolve: ${result.query} (${result.mode})\n` +
     "\n" +
     renderSymbolsSection(result.symbols) +
     "\n" +
-    renderFilesSection(result.files)
+    renderFilesSection(result.files) +
+    emptyExactGuidance
   );
 }
 

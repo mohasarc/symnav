@@ -113,9 +113,7 @@ describe("renderResolveText", () => {
         files: [],
       };
       expect(renderResolveText(result)).toBe(
-        [`Resolve: Nope (${mode})`, "", "Symbols", "(none)", "", "Files", "(none)", ""].join(
-          "\n",
-        ),
+        [`Resolve: Nope (${mode})`, "", "Symbols", "(none)", "", "Files", "(none)", ""].join("\n"),
       );
     },
   );

@@ -74,10 +74,20 @@ export class OverviewExpander {
     if (candidates.length === 1) {
       return candidates[0]!;
     }
-    if (this.request.at === undefined && this.request.line !== undefined) {
-      throw new AmbiguousLineTargetError(this.request.line, candidates);
+    const exactLabelCandidates =
+      this.request.at === undefined
+        ? []
+        : candidates.filter(
+            (candidate) => OverviewExpander.labelFor(candidate.node) === this.request.at,
+          );
+    if (exactLabelCandidates.length === 1) {
+      return exactLabelCandidates[0]!;
     }
-    throw new AmbiguousOverviewTargetError(candidates);
+    const preferredCandidates = exactLabelCandidates.length > 0 ? exactLabelCandidates : candidates;
+    if (this.request.at === undefined && this.request.line !== undefined) {
+      throw new AmbiguousLineTargetError(this.request.line, preferredCandidates);
+    }
+    throw new AmbiguousOverviewTargetError(preferredCandidates);
   }
 
   private matchesRequest(candidate: OverviewExpansionCandidate): boolean {

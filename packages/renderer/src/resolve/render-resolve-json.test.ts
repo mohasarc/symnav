@@ -27,7 +27,7 @@ describe("renderResolveJson", () => {
     expect(parsed).toEqual(result);
   });
 
-  it("emits keys in ResolveResult declaration order", () => {
+  it("keeps empty exact results as byte-identical structured data without guidance", () => {
     const result: ResolveResult = {
       query: "x",
       mode: "exact",
@@ -46,5 +46,6 @@ describe("renderResolveJson", () => {
         "",
       ].join("\n"),
     );
+    expect(json).not.toContain("No exact match");
   });
 });

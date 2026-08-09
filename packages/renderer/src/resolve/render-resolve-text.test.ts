@@ -81,16 +81,72 @@ describe("renderResolveText", () => {
     );
   });
 
-  it("renders empty sections under their headers when there are no matches", () => {
+  it("guides empty exact results toward broader matching modes", () => {
     const result: ResolveResult = {
       query: "Nope",
-      mode: "regex",
+      mode: "exact",
       symbols: [],
       files: [],
     };
     expect(renderResolveText(result)).toBe(
-      ["Resolve: Nope (regex)", "", "Symbols", "(none)", "", "Files", "(none)", ""].join("\n"),
+      [
+        "Resolve: Nope (exact)",
+        "",
+        "Symbols",
+        "(none)",
+        "",
+        "Files",
+        "(none)",
+        "No exact match; try --fuzzy for approximate names, or --regex for a pattern.",
+        "",
+      ].join("\n"),
     );
+  });
+
+  it.each(["fuzzy", "regex"] as const)(
+    "renders empty %s sections without exact-match guidance",
+    (mode) => {
+      const result: ResolveResult = {
+        query: "Nope",
+        mode,
+        symbols: [],
+        files: [],
+      };
+      expect(renderResolveText(result)).toBe(
+        [`Resolve: Nope (${mode})`, "", "Symbols", "(none)", "", "Files", "(none)", ""].join(
+          "\n",
+        ),
+      );
+    },
+  );
+
+  it("omits exact-match guidance when a symbol matches", () => {
+    const result: ResolveResult = {
+      query: "Payment",
+      mode: "exact",
+      symbols: [
+        decl({
+          file: "src/payments/Payment.ts",
+          segments: [{ name: "Payment" }],
+          kind: "interface",
+          startLine: 1,
+          endLine: 3,
+          header: ["interface Payment"],
+        }),
+      ],
+      files: [],
+    };
+    expect(renderResolveText(result)).not.toContain("No exact match");
+  });
+
+  it("omits exact-match guidance when a file matches", () => {
+    const result: ResolveResult = {
+      query: "Payment",
+      mode: "exact",
+      symbols: [],
+      files: ["src/Payment.ts"],
+    };
+    expect(renderResolveText(result)).not.toContain("No exact match");
   });
 
   it("renders only the Files section when no symbol matches", () => {

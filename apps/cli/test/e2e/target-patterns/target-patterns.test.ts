@@ -256,7 +256,7 @@ describe("target-pattern line narrowing", () => {
     },
   );
 
-  it.skip.each(symbolCommands)(
+  it.each(symbolCommands)(
     "%s separates a line-filtered target from a never-matched one (both report not found today)",
     (command) => {
       const result = runCommand(command, ["helper", "--line", "99"]);
@@ -290,7 +290,7 @@ describe("target-pattern fold node rejection", () => {
 });
 
 describe("target-pattern error vocabulary", () => {
-  it.skip.each(symbolCommands)(
+  it.each(symbolCommands)(
     "%s reports an empty segment as a target-pattern error (speaks retired symbol-id vocabulary today)",
     (command) => {
       const result = runCommand(command, ["::charge"]);
@@ -302,7 +302,7 @@ describe("target-pattern error vocabulary", () => {
     },
   );
 
-  it.skip.each(symbolCommands)(
+  it.each(symbolCommands)(
     "%s reports a slashless missing-file suffix like a slashed one (reports not found today)",
     (command) => {
       const result = runCommand(command, ["missing.ts::charge"]);
@@ -314,7 +314,7 @@ describe("target-pattern error vocabulary", () => {
 });
 
 describe("target-pattern ambiguity hints", () => {
-  it.skip.each(symbolCommands)(
+  it.each(symbolCommands)(
     "%s points at the way out of an ambiguous target (candidate list ends without a hint today)",
     (command) => {
       const result = runCommand(command, ["PaymentProcessor::charge"]);

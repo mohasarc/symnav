@@ -93,4 +93,10 @@ describe("InvalidSymbolIdError reasons", () => {
       expect((err as InvalidSymbolIdError).reason).toContain('file portion must not contain "::"');
     }
   });
+
+  it("exposes the explanation and raw input for safe vocabulary translation", () => {
+    const error = new InvalidSymbolIdError("empty input", "");
+
+    expect(error).toEqual(expect.objectContaining({ explanation: "empty input", raw: "" }));
+  });
 });

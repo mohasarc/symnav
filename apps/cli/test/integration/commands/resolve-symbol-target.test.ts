@@ -2,7 +2,9 @@ import { describe, expect, it } from "vitest";
 import {
   AmbiguousSymbolTargetError,
   BackendRouter,
+  FileNotFoundError,
   InMemoryFileSystem,
+  SymbolTargetLineMismatchError,
   SymbolTargetNotFoundError,
   formatSymbolIdentity,
 } from "@symnav/core";
@@ -24,13 +26,20 @@ import { createFakeProgramContext } from "./helpers/fake-program-context.js";
 import { fakeDependencies } from "./helpers/fake-program-dependencies.js";
 
 class ResolverScenario {
-  private static readonly WORKSPACE_FILES: readonly ResolvedPath[] = [
+  static readonly WORKSPACE_FILES: readonly ResolvedPath[] = [
     { relative: "src/alpha.ts", absolute: "/repo/src/alpha.ts" },
     { relative: "src/beta.zz", absolute: "/repo/src/beta.zz" },
     { relative: "src/gamma.ts", absolute: "/repo/src/gamma.ts" },
   ];
 
-  static candidateFor(file: string, segments: readonly SymbolPathSegment[]): SymbolTargetCandidate {
+  static candidateFor(
+    file: string,
+    segments: readonly SymbolPathSegment[],
+    range: { readonly startLine: number; readonly endLine: number } = {
+      startLine: 1,
+      endLine: 1,
+    },
+  ): SymbolTargetCandidate {
     const identity: SymbolIdentity = { file, segments };
     const header: Header = {
       startLine: 1,
@@ -42,7 +51,7 @@ class ResolverScenario {
         identity,
         kind: { role: "callable", nativeLabel: "function" },
         children: [],
-        range: { startLine: 1, endLine: 1 },
+        range,
         header,
       },
       canonicalId: formatSymbolIdentity(identity),
@@ -64,13 +73,17 @@ class ResolverScenario {
     });
   }
 
-  static resolveWith(router: BackendRouter, rawTarget: string): Promise<ResolvedCommandTarget> {
+  static resolveWith(
+    router: BackendRouter,
+    rawTarget: string,
+    line: number | string | undefined = undefined,
+  ): Promise<ResolvedCommandTarget> {
     return CommandTargetResolver.resolve({
       workspace: ResolverScenario.fakeWorkspace(ResolverScenario.WORKSPACE_FILES),
       router,
       cwd: "/repo",
       rawTarget,
-      line: undefined,
+      line,
     });
   }
 
@@ -198,6 +211,129 @@ describe("CommandTargetResolver.resolve across backends", () => {
       SymbolTargetNotFoundError,
     );
   });
+
+  it("reports line mismatch only after collecting syntax matches across every backend", async () => {
+    const typescriptBackend = ResolverScenario.typescriptFake([
+      ResolverScenario.candidateFor("src/alpha.ts", [{ name: "walk" }], {
+        startLine: 2,
+        endLine: 4,
+      }),
+    ]);
+    const zetaBackend = ResolverScenario.zetaFake([
+      ResolverScenario.candidateFor("src/beta.zz", [{ name: "walk" }], {
+        startLine: 8,
+        endLine: 12,
+      }),
+    ]);
+    const router = new BackendRouter([typescriptBackend, zetaBackend]);
+
+    const resolved = await ResolverScenario.resolveWith(router, "walk", 9);
+
+    expect(resolved.backend).toBe(zetaBackend);
+    expect(resolved.identity.file).toBe("src/beta.zz");
+    expect(typescriptBackend.targetCandidateCalls).toHaveLength(1);
+    expect(zetaBackend.targetCandidateCalls).toHaveLength(1);
+  });
+
+  it("reports not-found when the target never matched before line filtering", async () => {
+    const router = new BackendRouter([
+      ResolverScenario.typescriptFake([
+        ResolverScenario.candidateFor("src/alpha.ts", [{ name: "walk" }]),
+      ]),
+    ]);
+
+    await expect(ResolverScenario.resolveWith(router, "missing", 99)).rejects.toBeInstanceOf(
+      SymbolTargetNotFoundError,
+    );
+  });
+
+  it("reports line mismatch when line filtering removes syntax matches", async () => {
+    const router = new BackendRouter([
+      ResolverScenario.typescriptFake([
+        ResolverScenario.candidateFor("src/alpha.ts", [{ name: "walk" }]),
+      ]),
+    ]);
+
+    const error = await ResolverScenario.resolveWith(router, "walk", 99).then(
+      () => undefined,
+      (thrown: unknown) => thrown,
+    );
+
+    expect(error).toBeInstanceOf(SymbolTargetLineMismatchError);
+    expect((error as SymbolTargetLineMismatchError).reason).toBe(
+      'no symbol target "walk" matching line 99',
+    );
+  });
+
+  it("preserves ambiguity after line filtering when several candidates contain the line", async () => {
+    const router = new BackendRouter([
+      ResolverScenario.typescriptFake([
+        ResolverScenario.candidateFor("src/alpha.ts", [{ name: "walk" }], {
+          startLine: 1,
+          endLine: 5,
+        }),
+      ]),
+      ResolverScenario.zetaFake([
+        ResolverScenario.candidateFor("src/beta.zz", [{ name: "walk" }], {
+          startLine: 2,
+          endLine: 6,
+        }),
+      ]),
+    ]);
+
+    await expect(ResolverScenario.resolveWith(router, "walk", 3)).rejects.toBeInstanceOf(
+      AmbiguousSymbolTargetError,
+    );
+  });
+
+  it("validates unmatched slashless file suffixes as workspace input paths", async () => {
+    const resolveInputPathCalls: string[] = [];
+    const workspace: Workspace = {
+      root: "/repo",
+      enumerate: () => Promise.resolve(ResolverScenario.WORKSPACE_FILES),
+      resolveInputPath: (inputPath: string) => {
+        resolveInputPathCalls.push(inputPath);
+        throw new FileNotFoundError(inputPath);
+      },
+    };
+
+    const resolution = CommandTargetResolver.resolve({
+      workspace,
+      router: new BackendRouter([ResolverScenario.typescriptFake([])]),
+      cwd: "/repo",
+      rawTarget: "missing.ts::walk",
+      line: undefined,
+    });
+
+    await expect(resolution).rejects.toEqual(new FileNotFoundError("missing.ts"));
+    expect(resolveInputPathCalls).toEqual(["missing.ts"]);
+  });
+
+  it.each(["src/missing.ts", "src\\missing.ts"])(
+    "keeps unmatched path-like suffix %s behind workspace input validation",
+    async (fileSuffix) => {
+      const resolveInputPathCalls: string[] = [];
+      const workspace: Workspace = {
+        root: "/repo",
+        enumerate: () => Promise.resolve(ResolverScenario.WORKSPACE_FILES),
+        resolveInputPath: (inputPath: string) => {
+          resolveInputPathCalls.push(inputPath);
+          throw new FileNotFoundError(inputPath);
+        },
+      };
+
+      await expect(
+        CommandTargetResolver.resolve({
+          workspace,
+          router: new BackendRouter([ResolverScenario.typescriptFake([])]),
+          cwd: "/repo",
+          rawTarget: `${fileSuffix}::walk`,
+          line: undefined,
+        }),
+      ).rejects.toBeInstanceOf(FileNotFoundError);
+      expect(resolveInputPathCalls).toEqual([fileSuffix]);
+    },
+  );
 
   it("reports a workspace whose files no backend supports", async () => {
     const context = createFakeProgramContext({ cwd: "/repo" });

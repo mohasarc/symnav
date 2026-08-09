@@ -10,3 +10,5 @@ Candidates
 │   ): string
 └── src/domain/orders.ts::PaymentProcessor::charge
     charge(amount: number): string
+
+Copy a candidate id, or narrow with --line.

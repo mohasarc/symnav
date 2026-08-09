@@ -2,7 +2,11 @@ import { describe, expect, it } from "vitest";
 
 import { SymbolTargetGrammar } from "./symbol-target-pattern.js";
 import { identity } from "./symbol-target-builders.js";
-import { InvalidSymbolIdError } from "../intermediate-representation/canonical-identity.js";
+import {
+  InvalidSymbolIdError,
+  parseSegment,
+} from "../intermediate-representation/canonical-identity.js";
+import { InvalidSymbolTargetError } from "./symbol-target-result.js";
 
 describe("SymbolTargetGrammar.parse", () => {
   it("parses a bare name as a segment suffix", () => {
@@ -61,28 +65,22 @@ describe("SymbolTargetGrammar.parse", () => {
     });
   });
 
-  it("rejects empty input", () => {
-    expect(() => SymbolTargetGrammar.parse("")).toThrow(InvalidSymbolIdError);
-  });
-
-  it("rejects empty interior segments (`a::::b`)", () => {
-    expect(() => SymbolTargetGrammar.parse("a::::b")).toThrow(InvalidSymbolIdError);
-  });
-
-  it("rejects trailing empty segment (`a::b::`)", () => {
-    expect(() => SymbolTargetGrammar.parse("a::b::")).toThrow(InvalidSymbolIdError);
-  });
-
-  it("rejects zero disambiguator (`a::b#0`)", () => {
-    expect(() => SymbolTargetGrammar.parse("a::b#0")).toThrow(InvalidSymbolIdError);
-  });
-
-  it("rejects negative disambiguator (`a::b#-1`)", () => {
-    expect(() => SymbolTargetGrammar.parse("a::b#-1")).toThrow(InvalidSymbolIdError);
-  });
-
-  it("rejects non-numeric disambiguator (`a::b#abc`)", () => {
-    expect(() => SymbolTargetGrammar.parse("a::b#abc")).toThrow(InvalidSymbolIdError);
+  it.each([
+    ["", "empty input"],
+    ['::charge', 'empty path segment between "::" separators'],
+    ['a::::b', 'empty path segment between "::" separators'],
+    ['a::b::', 'empty path segment between "::" separators'],
+    ["a::b#0", 'disambiguator must be a positive integer (got "0")'],
+    ["a::b#-1", 'disambiguator must be a positive integer (got "-1")'],
+    ["a::b#abc", 'disambiguator must be a positive integer (got "abc")'],
+  ])("rejects malformed target %s with target vocabulary", (raw, explanation) => {
+    expect(() => SymbolTargetGrammar.parse(raw)).toThrowError(
+      expect.objectContaining({
+        explanation,
+        raw,
+      }),
+    );
+    expect(() => SymbolTargetGrammar.parse(raw)).toThrow(InvalidSymbolTargetError);
   });
 });
 
@@ -91,10 +89,10 @@ describe("SymbolTargetGrammar.parse error reasons", () => {
     try {
       thrower();
     } catch (err) {
-      if (err instanceof InvalidSymbolIdError) return err.reason;
+      if (err instanceof InvalidSymbolTargetError) return err.reason;
       throw err;
     }
-    throw new Error("expected InvalidSymbolIdError to be thrown");
+    throw new Error("expected InvalidSymbolTargetError to be thrown");
   }
 
   it("names empty input", () => {
@@ -115,6 +113,12 @@ describe("SymbolTargetGrammar.parse error reasons", () => {
 
   it("echoes the raw offending input", () => {
     expect(reasonOf(() => SymbolTargetGrammar.parse("a::b#abc"))).toContain("a::b#abc");
+  });
+});
+
+describe("canonical symbol id segment parsing", () => {
+  it("keeps canonical-id parse failures separate from target failures", () => {
+    expect(() => parseSegment("", "src/a.ts::")).toThrow(InvalidSymbolIdError);
   });
 });
 

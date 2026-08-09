@@ -187,9 +187,6 @@ describe("TypeScriptBackend parse sharing", () => {
     const candidates = await backend.findTargetCandidates(
       files,
       SymbolTargetGrammar.parse("helper"),
-      {
-        containingLine: undefined,
-      },
     );
     const definitions = await backend.findDefinitions(files, {
       file: "src/lib.ts",

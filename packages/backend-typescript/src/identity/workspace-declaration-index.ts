@@ -17,6 +17,7 @@ export class WorkspaceDeclarationIndex {
   private readonly relativePathByAbsolute = new Map<string, string>();
   private readonly declarationsByIdentity = new Map<string, IndexedDeclaration>();
   private readonly declarationsByLocation = new Map<string, Map<number, SymbolOverviewNode>>();
+  private readonly declarationsByNode = new WeakMap<Node["compilerNode"], SymbolOverviewNode>();
   private readonly declarationsByFile = new Map<string, readonly SymbolOverviewNode[]>();
 
   constructor(fs: FileSystem) {
@@ -53,6 +54,10 @@ export class WorkspaceDeclarationIndex {
     return this.declarationsByLocation.get(relative)?.get(node.getStartLineNumber());
   }
 
+  declarationForNode(node: Node): SymbolOverviewNode | undefined {
+    return this.declarationsByNode.get(node.compilerNode);
+  }
+
   declarationForIdentity(identity: SymbolIdentity): IndexedDeclaration | undefined {
     return this.declarationsByIdentity.get(DeclarationLocator.identityKey(identity));
   }
@@ -68,6 +73,7 @@ export class WorkspaceDeclarationIndex {
   private indexDeclarations(sourceFile: SourceFile, path: ResolvedPath): void {
     const byLine = new Map<number, SymbolOverviewNode>();
     const declarations: SymbolOverviewNode[] = [];
+    const locator = new DeclarationLocator(sourceFile);
     const { entries } = extractFileEntries({ sourceFile, filePath: path.relative });
     for (const declaration of OverviewTree.walkSymbols(entries)) {
       declarations.push(declaration);
@@ -76,6 +82,9 @@ export class WorkspaceDeclarationIndex {
         file: path,
       });
       byLine.set(declaration.range.startLine, declaration);
+      for (const located of locator.locate(declaration.identity)) {
+        this.declarationsByNode.set(located.node.compilerNode, declaration);
+      }
     }
     this.declarationsByLocation.set(path.relative, byLine);
     this.declarationsByFile.set(path.relative, declarations);

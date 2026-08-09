@@ -133,9 +133,10 @@ class ResolverScenario {
     router: BackendRouter,
     rawTarget: string,
     line: number | string | undefined = undefined,
+    files: readonly ResolvedPath[] = ResolverScenario.WORKSPACE_FILES,
   ): Promise<ResolvedCommandTarget> {
     return CommandTargetResolver.resolve({
-      workspace: ResolverScenario.fakeWorkspace(ResolverScenario.WORKSPACE_FILES),
+      workspace: ResolverScenario.fakeWorkspace(files),
       router,
       cwd: "/repo",
       rawTarget,
@@ -338,6 +339,101 @@ describe("CommandTargetResolver.resolve across backends", () => {
     await expect(ResolverScenario.resolveWith(router, "walk", 3)).rejects.toBeInstanceOf(
       AmbiguousSymbolTargetError,
     );
+  });
+
+  it.each([
+    ["typescript first", ["typescript", "zeta"]],
+    ["zeta first", ["zeta", "typescript"]],
+  ] as const)(
+    "selects the full symbol path across backends with %s",
+    async (_label, backendOrder) => {
+      const typescriptBackend = ResolverScenario.typescriptFake([
+        ResolverScenario.candidateFor("src/alpha.ts", [{ name: "Namespace" }, { name: "walk" }]),
+      ]);
+      const zetaBackend = ResolverScenario.zetaFake([
+        ResolverScenario.candidateFor("src/beta.zz", [{ name: "walk" }]),
+      ]);
+      const backends = backendOrder.map((kind) =>
+        kind === "typescript" ? typescriptBackend : zetaBackend,
+      );
+
+      const resolved = await ResolverScenario.resolveWith(new BackendRouter(backends), "walk");
+
+      expect(resolved.backend).toBe(zetaBackend);
+      expect(resolved.identity).toEqual({ file: "src/beta.zz", segments: [{ name: "walk" }] });
+    },
+  );
+
+  it("selects an exact file path over a proper file suffix", async () => {
+    const exact = ResolverScenario.candidateFor("src/alpha.ts", [{ name: "walk" }]);
+    const suffix = ResolverScenario.candidateFor("nested/src/alpha.ts", [{ name: "walk" }]);
+    const router = new BackendRouter([ResolverScenario.typescriptFake([suffix, exact])]);
+
+    const resolved = await ResolverScenario.resolveWith(router, "src/alpha.ts::walk", undefined, [
+      { relative: "src/alpha.ts", absolute: "/repo/src/alpha.ts" },
+      { relative: "nested/src/alpha.ts", absolute: "/repo/nested/src/alpha.ts" },
+    ]);
+
+    expect(resolved.identity).toEqual(exact.symbol.identity);
+  });
+
+  it("keeps crossed symbol and file specificity ambiguous in canonical-id order", async () => {
+    const router = new BackendRouter([
+      ResolverScenario.typescriptFake([
+        ResolverScenario.candidateFor("orders.ts", [
+          { name: "PaymentProcessor" },
+          { name: "charge" },
+        ]),
+        ResolverScenario.candidateFor("src/orders.ts", [{ name: "charge" }]),
+      ]),
+    ]);
+
+    const error = await ResolverScenario.resolveWith(router, "orders.ts::charge", undefined, [
+      { relative: "orders.ts", absolute: "/repo/orders.ts" },
+      { relative: "src/orders.ts", absolute: "/repo/src/orders.ts" },
+    ]).then(
+      () => undefined,
+      (thrown: unknown) => thrown,
+    );
+
+    expect(error).toBeInstanceOf(AmbiguousSymbolTargetError);
+    expect(
+      (error as AmbiguousSymbolTargetError).candidates.map((candidate) => candidate.canonicalId),
+    ).toEqual(["orders.ts::PaymentProcessor::charge", "src/orders.ts::charge"]);
+  });
+
+  it("ranks only candidates retained by line filtering", async () => {
+    const weakerLineMatch = ResolverScenario.candidateFor(
+      "src/alpha.ts",
+      [{ name: "Namespace" }, { name: "walk" }],
+      { startLine: 10, endLine: 12 },
+    );
+    const strongerLineMismatch = ResolverScenario.candidateFor("src/gamma.ts", [{ name: "walk" }], {
+      startLine: 20,
+      endLine: 22,
+    });
+    const router = new BackendRouter([
+      ResolverScenario.typescriptFake([strongerLineMismatch, weakerLineMatch]),
+    ]);
+
+    const resolved = await ResolverScenario.resolveWith(router, "walk", 11);
+
+    expect(resolved.identity).toEqual(weakerLineMatch.symbol.identity);
+  });
+
+  it("collapses overload siblings only after removing dominated matches", async () => {
+    const typescriptBackend = ResolverScenario.typescriptFake([
+      ResolverScenario.candidateFor("src/alpha.ts", [{ name: "Namespace" }, { name: "post" }]),
+      ResolverScenario.candidateFor("src/gamma.ts", [{ name: "post", disambiguator: 1 }]),
+      ResolverScenario.candidateFor("src/gamma.ts", [{ name: "post", disambiguator: 2 }]),
+    ]);
+
+    const resolved = await ResolverScenario.resolveWith(
+      new BackendRouter([typescriptBackend]),
+      "post",
+    );
+
+    expect(resolved.identity).toEqual({ file: "src/gamma.ts", segments: [{ name: "post" }] });
   });
 
   it("validates unmatched slashless file suffixes as workspace input paths", async () => {

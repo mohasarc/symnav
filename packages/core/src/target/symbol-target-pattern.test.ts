@@ -176,3 +176,86 @@ describe("SymbolTargetGrammar.matches", () => {
     ).toBe(true);
   });
 });
+
+describe("SymbolTargetGrammar.match", () => {
+  it.each([
+    [
+      "src/orders.ts::PaymentProcessor::charge",
+      identity("src/orders.ts", "PaymentProcessor", "charge"),
+      { symbolPath: "exact", filePath: "exact" },
+    ],
+    [
+      "orders.ts::charge",
+      identity("src/orders.ts", "PaymentProcessor", "charge"),
+      { symbolPath: "suffix", filePath: "suffix" },
+    ],
+    [
+      "charge",
+      identity("src/orders.ts", "PaymentProcessor", "charge"),
+      { symbolPath: "suffix", filePath: "unspecified" },
+    ],
+  ] as const)(
+    "reports specificity for %s",
+    (rawPattern, candidateIdentity, expectedSpecificity) => {
+      expect(
+        SymbolTargetGrammar.match(SymbolTargetGrammar.parse(rawPattern), candidateIdentity),
+      ).toEqual({ specificity: expectedSpecificity });
+    },
+  );
+
+  it("returns no match result for a symbol-path nonmatch", () => {
+    expect(
+      SymbolTargetGrammar.match(
+        SymbolTargetGrammar.parse("orders.ts::charge"),
+        identity("src/orders.ts", "PaymentProcessor", "refund"),
+      ),
+    ).toBeUndefined();
+  });
+
+  it("returns no match result for a file-path nonmatch", () => {
+    expect(
+      SymbolTargetGrammar.match(
+        SymbolTargetGrammar.parse("orders.ts::charge"),
+        identity("src/order-items.ts", "charge"),
+      ),
+    ).toBeUndefined();
+  });
+});
+
+describe("SymbolTargetGrammar.dominates", () => {
+  it.each([
+    [
+      { symbolPath: "exact", filePath: "exact" },
+      { symbolPath: "suffix", filePath: "suffix" },
+    ],
+    [
+      { symbolPath: "exact", filePath: "suffix" },
+      { symbolPath: "suffix", filePath: "suffix" },
+    ],
+    [
+      { symbolPath: "suffix", filePath: "exact" },
+      { symbolPath: "suffix", filePath: "suffix" },
+    ],
+    [
+      { symbolPath: "suffix", filePath: "suffix" },
+      { symbolPath: "suffix", filePath: "unspecified" },
+    ],
+  ] as const)("recognizes a match stronger in at least one dimension", (left, right) => {
+    expect(SymbolTargetGrammar.dominates(left, right)).toBe(true);
+    expect(SymbolTargetGrammar.dominates(right, left)).toBe(false);
+  });
+
+  it.each([
+    [
+      { symbolPath: "exact", filePath: "suffix" },
+      { symbolPath: "suffix", filePath: "exact" },
+    ],
+    [
+      { symbolPath: "exact", filePath: "exact" },
+      { symbolPath: "exact", filePath: "exact" },
+    ],
+  ] as const)("does not dominate incomparable or equal specificity", (left, right) => {
+    expect(SymbolTargetGrammar.dominates(left, right)).toBe(false);
+    expect(SymbolTargetGrammar.dominates(right, left)).toBe(false);
+  });
+});

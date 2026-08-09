@@ -170,8 +170,8 @@ describe("target-pattern symbol commands", () => {
     ]);
   });
 
-  it.skip.each(symbolCommands)(
-    "%s resolves a file suffix plus full segment path to the one exact match (reports ambiguity today)",
+  it.each(symbolCommands)(
+    "%s resolves a file suffix plus full segment path to the one exact match",
     (command) => {
       const parsed = runJson<JsonResolvedTarget>(command, ["orders.ts::charge"]);
       expectIdentity(parsed.identity, adapterChargeId);

@@ -284,6 +284,96 @@ describe("OverviewExpander totalSymbolCount", () => {
 });
 
 describe("OverviewExpander target selection", () => {
+  it("prefers a unique exact displayed symbol label over containing member labels", () => {
+    const entries = [
+      symbol("Greeter", {
+        range: { startLine: 1, endLine: 9 },
+        children: [
+          symbol("greet", {
+            range: { startLine: 2, endLine: 4 },
+            identity: {
+              file: "src/file.ts",
+              segments: [{ name: "Greeter" }, { name: "greet" }],
+            },
+          }),
+          symbol("shout", {
+            range: { startLine: 6, endLine: 8 },
+            identity: {
+              file: "src/file.ts",
+              segments: [{ name: "Greeter" }, { name: "shout" }],
+            },
+          }),
+        ],
+      }),
+    ];
+
+    expect(expandRequest(entries, { depth: 1, at: "Greeter", line: undefined }).entries).toEqual(
+      entries,
+    );
+  });
+
+  it("keeps several exact displayed labels ambiguous", () => {
+    const entries = [
+      fold("shared label", { range: { startLine: 1, endLine: 2 } }),
+      fold("shared label", { range: { startLine: 4, endLine: 5 } }),
+    ];
+
+    expect(() => expandRequest(entries, { depth: 0, at: "shared label", line: undefined })).toThrow(
+      AmbiguousOverviewTargetError,
+    );
+  });
+
+  it("preserves substring ambiguity and candidate ordering without an exact displayed label", () => {
+    const entries = [
+      symbol("FirstGreeter", { range: { startLine: 1, endLine: 2 } }),
+      symbol("SecondGreeter", { range: { startLine: 4, endLine: 5 } }),
+    ];
+
+    expect(
+      thrownCandidateHeaders(() =>
+        expandRequest(entries, { depth: 0, at: "Greeter", line: undefined }),
+      ),
+    ).toEqual(["1-2: FirstGreeter", "4-5: SecondGreeter"]);
+  });
+
+  it("applies line narrowing before exact displayed-label preference", () => {
+    const entries = [
+      symbol("Greeter", { range: { startLine: 1, endLine: 2 } }),
+      symbol("NestedGreeter", { range: { startLine: 4, endLine: 5 } }),
+    ];
+
+    expect(expandRequest(entries, { depth: 0, at: "Greeter", line: 4 }).entries).toEqual([
+      symbol("NestedGreeter", { range: { startLine: 4, endLine: 5 } }),
+    ]);
+  });
+
+  it("keeps copied full headers searchable without treating them as exact displayed labels", () => {
+    const entries = [
+      fold("alpha", { range: { startLine: 1, endLine: 2 } }),
+      fold("wrapper 1-2: alpha", { range: { startLine: 4, endLine: 5 } }),
+    ];
+
+    expect(() => expandRequest(entries, { depth: 0, at: "1-2: alpha", line: undefined })).toThrow(
+      AmbiguousOverviewTargetError,
+    );
+  });
+
+  it("keeps fold header variants searchable without treating them as exact displayed labels", () => {
+    const entries = [
+      fold('describe("beta", async () => {', {
+        range: { startLine: 1, endLine: 3 },
+        headerVariants: ['describe("beta")'],
+      }),
+      fold('wrapper 1-3: describe("beta")', {
+        range: { startLine: 5, endLine: 7 },
+      }),
+    ];
+
+    expect(() =>
+      expandRequest(entries, { depth: 0, at: '1-3: describe("beta")', line: undefined }),
+    ).toThrow(AmbiguousOverviewTargetError);
+  });
+
   it("selects a fold by copied header substring", () => {
     const entries = [
       fold('describe("setup", () => {', {

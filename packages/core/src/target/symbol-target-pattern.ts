@@ -12,6 +12,19 @@ export interface SymbolTargetPattern {
   readonly segmentSuffix: readonly SymbolPathSegment[];
 }
 
+export type SymbolPathSpecificity = "exact" | "suffix";
+
+export type FilePathSpecificity = "exact" | "suffix" | "unspecified";
+
+export interface SymbolTargetSpecificity {
+  readonly symbolPath: SymbolPathSpecificity;
+  readonly filePath: FilePathSpecificity;
+}
+
+export interface SymbolTargetMatch {
+  readonly specificity: SymbolTargetSpecificity;
+}
+
 export class SymbolTargetGrammar {
   static parse(raw: string): SymbolTargetPattern {
     if (raw.length === 0) {

@@ -86,7 +86,13 @@ export {
   formatSymbolPath,
   parseSegment,
 } from "./intermediate-representation/canonical-identity.js";
-export type { SymbolTargetPattern } from "./target/symbol-target-pattern.js";
+export type {
+  FilePathSpecificity,
+  SymbolPathSpecificity,
+  SymbolTargetMatch,
+  SymbolTargetPattern,
+  SymbolTargetSpecificity,
+} from "./target/symbol-target-pattern.js";
 export { SymbolTargetGrammar } from "./target/symbol-target-pattern.js";
 export type {
   ResolvedCommandTarget,

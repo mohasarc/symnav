@@ -65,17 +65,19 @@ export class WorkspaceDeclarationIndex {
 
   private indexDeclarations(sourceFile: SourceFile, path: ResolvedPath): void {
     const declarations: SymbolOverviewNode[] = [];
-    const locator = new DeclarationLocator(sourceFile);
-    const { entries } = extractFileEntries({ sourceFile, filePath: path.relative });
+    const { entries } = extractFileEntries({
+      sourceFile,
+      filePath: path.relative,
+      onDeclaration: (declaration, node) => {
+        this.declarationsByNode.set(node.compilerNode, declaration);
+      },
+    });
     for (const declaration of OverviewTree.walkSymbols(entries)) {
       declarations.push(declaration);
       this.declarationsByIdentity.set(DeclarationLocator.identityKey(declaration.identity), {
         declaration,
         file: path,
       });
-      for (const located of locator.locate(declaration.identity)) {
-        this.declarationsByNode.set(located.node.compilerNode, declaration);
-      }
     }
     this.declarationsByFile.set(path.relative, declarations);
   }

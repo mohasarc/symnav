@@ -54,10 +54,16 @@ export class OverviewChildrenExtractor {
 
   private readonly file: string;
   private readonly diagnostics: DiagnosticSink | undefined;
+  private readonly onDeclarationNode: ((node: Node) => void) | undefined;
 
-  constructor(args: { file: string; diagnostics?: DiagnosticSink | undefined }) {
+  constructor(args: {
+    file: string;
+    diagnostics?: DiagnosticSink | undefined;
+    onDeclarationNode?: (node: Node) => void;
+  }) {
     this.file = args.file;
     this.diagnostics = args.diagnostics;
+    this.onDeclarationNode = args.onDeclarationNode;
   }
 
   extract(nodes: readonly Node[]): readonly OverviewNode[] {
@@ -122,6 +128,7 @@ export class OverviewChildrenExtractor {
     symbolSegments: readonly SymbolPathSegment[];
   }): SymbolOverviewNode {
     const { node, kind, symbolSegments } = args;
+    this.onDeclarationNode?.(node);
     const range = OverviewChildrenExtractor.nodeRange(node);
     const name = OverviewChildrenExtractor.nodeName(node);
     const refined = refineLabel(node, kind);
@@ -301,6 +308,7 @@ export class OverviewChildrenExtractor {
     const declList = statement.getDeclarationList();
     const range = OverviewChildrenExtractor.nodeRange(statement);
     return declList.getDeclarations().map((decl) => {
+      this.onDeclarationNode?.(decl);
       const childSegments = [...symbolSegments, { name: decl.getName() }];
       return {
         type: "symbol",

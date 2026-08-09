@@ -6,9 +6,14 @@ import type { SymbolIdentity } from "../intermediate-representation/symbol-ident
 import { isPositiveInteger } from "../validation/is-positive-integer.js";
 import type { ResolvedPath, Workspace } from "../workspace/workspace.js";
 import { SymbolTargetGrammar } from "./symbol-target-pattern.js";
-import type { SymbolTargetPattern, SymbolTargetSpecificity } from "./symbol-target-pattern.js";
+import type {
+  SymbolTargetPattern,
+  SymbolTargetQuery,
+  SymbolTargetSpecificity,
+} from "./symbol-target-pattern.js";
 import {
   AmbiguousSymbolTargetError,
+  compileRegex,
   InvalidSymbolTargetRequestError,
   SymbolTargetLineMismatchError,
   SymbolTargetNotFoundError,
@@ -21,6 +26,7 @@ export interface ResolveSymbolTargetForCommandArgs {
   readonly cwd: string;
   readonly rawTarget: string;
   readonly line: number | string | undefined;
+  readonly regex: boolean;
 }
 
 export interface ResolvedCommandTarget {
@@ -42,9 +48,15 @@ interface OwnedCandidateMatch {
 export class CommandTargetResolver {
   static async resolve(args: ResolveSymbolTargetForCommandArgs): Promise<ResolvedCommandTarget> {
     const containingLine = CommandTargetResolver.containingLineFrom(args.line);
-    const pattern = SymbolTargetGrammar.parse(args.rawTarget);
+    const query = CommandTargetResolver.queryFrom(args);
     const files = await args.workspace.enumerate();
-    await CommandTargetResolver.throwIfFileSuffixUnresolvable(args, files, pattern.fileSuffix);
+    if (query.mode === "regular") {
+      await CommandTargetResolver.throwIfFileSuffixUnresolvable(
+        args,
+        files,
+        query.pattern.fileSuffix,
+      );
+    }
     const acceptedFilesByBackend = CommandTargetResolver.groupFilesByAcceptingBackend(
       args.router,
       files,
@@ -54,7 +66,7 @@ export class CommandTargetResolver {
     }
     const ownedCandidates = await CommandTargetResolver.collectCandidates(
       acceptedFilesByBackend,
-      pattern,
+      query,
     );
     if (ownedCandidates.length === 0) {
       throw new SymbolTargetNotFoundError(args.rawTarget);
@@ -70,20 +82,20 @@ export class CommandTargetResolver {
     if (lineMatchedCandidates.length === 0 && containingLine !== undefined) {
       throw new SymbolTargetLineMismatchError(args.rawTarget, containingLine);
     }
-    const strongestOwnedCandidates = CommandTargetResolver.nonDominatedCandidates(
-      lineMatchedCandidates,
-      pattern,
-    );
-    const sortedOwnedCandidates = [...strongestOwnedCandidates].sort((left, right) =>
+    const selectedOwnedCandidates =
+      query.mode === "regex"
+        ? lineMatchedCandidates
+        : CommandTargetResolver.nonDominatedCandidates(lineMatchedCandidates, query.pattern);
+    const sortedOwnedCandidates = [...selectedOwnedCandidates].sort((left, right) =>
       left.candidate.canonicalId.localeCompare(right.candidate.canonicalId),
     );
     const winner = sortedOwnedCandidates[0]!;
     if (sortedOwnedCandidates.length > 1) {
       const sortedCandidates = sortedOwnedCandidates.map((owned) => owned.candidate);
-      const collapsedIdentity = CommandTargetResolver.collapsedOverloadIdentity(
-        sortedCandidates,
-        pattern,
-      );
+      const collapsedIdentity =
+        query.mode === "regular"
+          ? CommandTargetResolver.collapsedOverloadIdentity(sortedCandidates, query.pattern)
+          : undefined;
       if (collapsedIdentity === undefined) {
         throw new AmbiguousSymbolTargetError(args.rawTarget, sortedCandidates);
       }
@@ -98,6 +110,17 @@ export class CommandTargetResolver {
       winner.backend,
       acceptedFilesByBackend,
     );
+  }
+
+  private static queryFrom(args: ResolveSymbolTargetForCommandArgs): SymbolTargetQuery {
+    if (args.regex) {
+      return {
+        mode: "regex",
+        raw: args.rawTarget,
+        regex: compileRegex(args.rawTarget, "symbol target"),
+      };
+    }
+    return { mode: "regular", pattern: SymbolTargetGrammar.parse(args.rawTarget) };
   }
 
   private static containingLineFrom(
@@ -157,12 +180,13 @@ export class CommandTargetResolver {
 
   private static async collectCandidates(
     acceptedFilesByBackend: ReadonlyMap<LanguageBackend, readonly ResolvedPath[]>,
-    pattern: SymbolTargetPattern,
+    query: SymbolTargetQuery,
   ): Promise<readonly OwnedCandidate[]> {
     const ownedCandidates: OwnedCandidate[] = [];
     for (const [backend, accepted] of acceptedFilesByBackend) {
-      const searchFiles = CommandTargetResolver.filesMatchingSuffix(accepted, pattern.fileSuffix);
-      const candidates = await backend.findTargetCandidates(searchFiles, pattern);
+      const fileSuffix = query.mode === "regular" ? query.pattern.fileSuffix : undefined;
+      const searchFiles = CommandTargetResolver.filesMatchingSuffix(accepted, fileSuffix);
+      const candidates = await backend.findTargetCandidates(searchFiles, query);
       ownedCandidates.push(...candidates.map((candidate) => ({ candidate, backend })));
     }
     return ownedCandidates;

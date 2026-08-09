@@ -91,6 +91,7 @@ export { SymbolTargetGrammar } from "./target/symbol-target-pattern.js";
 export type { SymbolTargetCandidate } from "./target/symbol-target-result.js";
 export {
   AmbiguousSymbolTargetError,
+  InvalidSymbolTargetRequestError,
   InvalidSymbolTargetError,
   SymbolTargetLineMismatchError,
   SymbolTargetNotFoundError,

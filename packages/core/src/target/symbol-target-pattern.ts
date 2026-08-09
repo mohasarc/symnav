@@ -7,6 +7,7 @@ import type {
   SymbolIdentity,
   SymbolPathSegment,
 } from "../intermediate-representation/symbol-identity.js";
+import { InvalidSymbolTargetError } from "./symbol-target-result.js";
 
 export interface SymbolTargetPattern {
   readonly raw: string;
@@ -17,18 +18,19 @@ export interface SymbolTargetPattern {
 export class SymbolTargetGrammar {
   static parse(raw: string): SymbolTargetPattern {
     if (raw.length === 0) {
-      throw new InvalidSymbolIdError("empty input", raw);
+      throw new InvalidSymbolTargetError("empty input", raw);
     }
     const parts = raw.split(SEGMENT_SEPARATOR);
     const fileSuffix = SymbolTargetGrammar.fileSuffixFrom(parts);
     const segmentParts = fileSuffix === undefined ? parts : parts.slice(1);
     if (segmentParts.length === 0) {
-      throw new InvalidSymbolIdError("empty symbol target", raw);
+      throw new InvalidSymbolTargetError("empty symbol target", raw);
     }
+    const segmentSuffix = SymbolTargetGrammar.parseSegments(segmentParts, raw);
     return {
       raw,
       fileSuffix,
-      segmentSuffix: segmentParts.map((segment) => parseSegment(segment, raw)),
+      segmentSuffix,
     };
   }
 
@@ -66,6 +68,20 @@ export class SymbolTargetGrammar {
       return first;
     }
     return undefined;
+  }
+
+  private static parseSegments(
+    segmentParts: readonly string[],
+    raw: string,
+  ): readonly SymbolPathSegment[] {
+    try {
+      return segmentParts.map((segment) => parseSegment(segment, raw));
+    } catch (err) {
+      if (err instanceof InvalidSymbolIdError) {
+        throw new InvalidSymbolTargetError(err.explanation, err.raw);
+      }
+      throw err;
+    }
   }
 
   private static segmentMatches(pattern: SymbolPathSegment, candidate: SymbolPathSegment): boolean {

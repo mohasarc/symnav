@@ -12,6 +12,7 @@ import {
   InvalidSymbolTargetRequestError,
   NoSupportedFilesError,
   SymbolTargetGrammar,
+  SymbolTargetLineMismatchError,
   SymbolTargetNotFoundError,
   formatSymbolIdentity,
   isPositiveInteger,
@@ -41,7 +42,7 @@ export class CommandTargetResolver {
     const containingLine = CommandTargetResolver.containingLineFrom(args.line);
     const pattern = SymbolTargetGrammar.parse(args.rawTarget);
     const files = await args.workspace.enumerate();
-    await CommandTargetResolver.throwIfPathlikeSuffixUnresolvable(args, files, pattern.fileSuffix);
+    await CommandTargetResolver.throwIfFileSuffixUnresolvable(args, files, pattern.fileSuffix);
     const acceptedFilesByBackend = CommandTargetResolver.groupFilesByAcceptingBackend(
       args.router,
       files,
@@ -53,6 +54,9 @@ export class CommandTargetResolver {
       acceptedFilesByBackend,
       pattern,
     );
+    if (ownedCandidates.length === 0) {
+      throw new SymbolTargetNotFoundError(args.rawTarget);
+    }
     const lineMatchedCandidates =
       containingLine === undefined
         ? ownedCandidates
@@ -64,8 +68,8 @@ export class CommandTargetResolver {
     const sortedOwnedCandidates = [...lineMatchedCandidates].sort((left, right) =>
       left.candidate.canonicalId.localeCompare(right.candidate.canonicalId),
     );
-    if (sortedOwnedCandidates.length === 0) {
-      throw new SymbolTargetNotFoundError(pattern);
+    if (sortedOwnedCandidates.length === 0 && containingLine !== undefined) {
+      throw new SymbolTargetLineMismatchError(args.rawTarget, containingLine);
     }
     const winner = sortedOwnedCandidates[0]!;
     if (sortedOwnedCandidates.length > 1) {
@@ -75,7 +79,7 @@ export class CommandTargetResolver {
         pattern,
       );
       if (collapsedIdentity === undefined) {
-        throw new AmbiguousSymbolTargetError(pattern, sortedCandidates);
+        throw new AmbiguousSymbolTargetError(args.rawTarget, sortedCandidates);
       }
       return CommandTargetResolver.resolvedTarget(
         collapsedIdentity,
@@ -111,7 +115,7 @@ export class CommandTargetResolver {
     return { identity, backend, files: acceptedFilesByBackend.get(backend) ?? [] };
   }
 
-  private static async throwIfPathlikeSuffixUnresolvable(
+  private static async throwIfFileSuffixUnresolvable(
     args: ResolveSymbolTargetForCommandArgs,
     files: readonly ResolvedPath[],
     fileSuffix: string | undefined,
@@ -122,9 +126,7 @@ export class CommandTargetResolver {
     ) {
       return;
     }
-    if (fileSuffix.includes("/")) {
-      await args.workspace.resolveInputPath(fileSuffix, args.cwd);
-    }
+    await args.workspace.resolveInputPath(fileSuffix, args.cwd);
   }
 
   private static groupFilesByAcceptingBackend(

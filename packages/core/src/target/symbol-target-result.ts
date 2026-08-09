@@ -23,6 +23,17 @@ export class InvalidSymbolTargetError extends UserFacingError {
   }
 }
 
+export class InvalidSymbolTargetRequestError extends UserFacingError {
+  constructor(readonly explanation: string) {
+    super();
+    this.name = "InvalidSymbolTargetRequestError";
+  }
+
+  get reason(): string {
+    return this.explanation;
+  }
+}
+
 export class SymbolTargetNotFoundError extends UserFacingError {
   constructor(readonly rawTarget: string) {
     super();

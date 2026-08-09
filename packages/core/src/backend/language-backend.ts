@@ -17,6 +17,17 @@ export type ResolveSymbolsOptions =
   | { readonly mode: "fuzzy" }
   | { readonly mode: "regex"; readonly regex: RegExp };
 
+export type SymbolTargetQuery =
+  | {
+      readonly mode: "regular";
+      readonly pattern: SymbolTargetPattern;
+    }
+  | {
+      readonly mode: "regex";
+      readonly raw: string;
+      readonly regex: RegExp;
+    };
+
 export interface LanguageBackend {
   accepts(filePath: string): boolean;
   fileEntries(path: ResolvedPath): Promise<OverviewFileEntries>;
@@ -27,7 +38,7 @@ export interface LanguageBackend {
   ): Promise<readonly SymbolOverviewNode[]>;
   findTargetCandidates(
     files: readonly ResolvedPath[],
-    pattern: SymbolTargetPattern,
+    query: SymbolTargetQuery,
   ): Promise<readonly SymbolTargetCandidate[]>;
   findDefinitions(
     files: readonly ResolvedPath[],

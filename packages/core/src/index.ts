@@ -118,16 +118,19 @@ export type {
   LanguageBackend,
   ResolveSymbolsMode,
   ResolveSymbolsOptions,
+  SymbolTargetQuery,
 } from "./backend/language-backend.js";
 export { compileResolveRegex } from "./backend/compile-resolve-regex.js";
 export { BackendRouter } from "./backend/backend-router.js";
 export { UserFacingError } from "./errors.js";
 export {
   AmbiguousSymbolError,
+  InvalidRegexError,
   InvalidResolveRegexError,
   NoSupportedFilesError,
   SymbolNotFoundError,
   UnsupportedFileError,
 } from "./backend/errors.js";
+export type { RegexSubject } from "./backend/errors.js";
 export { FileNotFoundError, OutsideWorkspaceError } from "./workspace/errors.js";
 export { DirectoryInputError } from "./workspace/errors.js";

@@ -72,3 +72,20 @@ export class InvalidResolveRegexError extends UserFacingError {
     return `invalid resolve regex ${JSON.stringify(this.pattern)}: ${this.detail}`;
   }
 }
+
+export type RegexSubject = "resolve" | "symbol target";
+
+export class InvalidRegexError extends UserFacingError {
+  constructor(
+    readonly subject: RegexSubject,
+    readonly pattern: string,
+    readonly detail: string,
+  ) {
+    super();
+    this.name = "InvalidRegexError";
+  }
+
+  get reason(): string {
+    return `invalid ${this.subject} regex ${JSON.stringify(this.pattern)}: ${this.detail}`;
+  }
+}

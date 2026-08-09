@@ -1,12 +1,13 @@
-import { InvalidResolveRegexError } from "./errors.js";
+import { compileRegex } from "./compile-regex.js";
+import { InvalidRegexError, InvalidResolveRegexError } from "./errors.js";
 
 export function compileResolveRegex(pattern: string): RegExp {
   try {
-    return new RegExp(pattern);
+    return compileRegex(pattern, "resolve");
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    const v8Prefix = `Invalid regular expression: /${pattern}/: `;
-    const detail = message.startsWith(v8Prefix) ? message.slice(v8Prefix.length) : message;
-    throw new InvalidResolveRegexError(pattern, detail);
+    if (err instanceof InvalidRegexError) {
+      throw new InvalidResolveRegexError(err.pattern, err.detail);
+    }
+    throw err;
   }
 }

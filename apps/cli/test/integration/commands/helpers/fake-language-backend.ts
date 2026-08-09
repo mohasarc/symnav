@@ -48,8 +48,8 @@ export class FakeLanguageBackend implements LanguageBackend {
     pattern: SymbolTargetPattern,
   ): Promise<readonly SymbolTargetCandidate[]> {
     this.targetCandidateCalls.push(files.map((file) => file.relative));
-    return this.targetCandidates.filter((candidate) =>
-      SymbolTargetGrammar.matches(pattern, candidate.symbol.identity),
+    return this.targetCandidates.filter(
+      (candidate) => SymbolTargetGrammar.match(pattern, candidate.symbol.identity) !== undefined,
     );
   }
 

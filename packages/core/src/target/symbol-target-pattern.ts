@@ -44,22 +44,44 @@ export class SymbolTargetGrammar {
     };
   }
 
-  static matches(pattern: SymbolTargetPattern, identity: SymbolIdentity): boolean {
+  static match(
+    pattern: SymbolTargetPattern,
+    identity: SymbolIdentity,
+  ): SymbolTargetMatch | undefined {
     if (
       pattern.fileSuffix !== undefined &&
       !SymbolTargetGrammar.fileSuffixMatches(identity.file, pattern.fileSuffix)
     ) {
-      return false;
+      return undefined;
     }
     if (pattern.segmentSuffix.length > identity.segments.length) {
-      return false;
+      return undefined;
     }
     const identitySuffix = identity.segments.slice(
       identity.segments.length - pattern.segmentSuffix.length,
     );
-    return identitySuffix.every((segment, index) =>
+    const symbolPathMatches = identitySuffix.every((segment, index) =>
       SymbolTargetGrammar.segmentMatches(pattern.segmentSuffix[index]!, segment),
     );
+    if (!symbolPathMatches) {
+      return undefined;
+    }
+    return {
+      specificity: {
+        symbolPath: pattern.segmentSuffix.length === identity.segments.length ? "exact" : "suffix",
+        filePath: SymbolTargetGrammar.filePathSpecificity(pattern.fileSuffix, identity.file),
+      },
+    };
+  }
+
+  static dominates(left: SymbolTargetSpecificity, right: SymbolTargetSpecificity): boolean {
+    const leftSymbolPath = SymbolTargetGrammar.symbolPathSpecificityRank(left.symbolPath);
+    const rightSymbolPath = SymbolTargetGrammar.symbolPathSpecificityRank(right.symbolPath);
+    const leftFilePath = SymbolTargetGrammar.filePathSpecificityRank(left.filePath);
+    const rightFilePath = SymbolTargetGrammar.filePathSpecificityRank(right.filePath);
+    const atLeastAsSpecific = leftSymbolPath >= rightSymbolPath && leftFilePath >= rightFilePath;
+    const moreSpecific = leftSymbolPath > rightSymbolPath || leftFilePath > rightFilePath;
+    return atLeastAsSpecific && moreSpecific;
   }
 
   static fileSuffixMatches(file: string, suffix: string): boolean {
@@ -100,5 +122,26 @@ export class SymbolTargetGrammar {
       return false;
     }
     return pattern.disambiguator === undefined || pattern.disambiguator === candidate.disambiguator;
+  }
+
+  private static filePathSpecificity(
+    fileSuffix: string | undefined,
+    identityFile: string,
+  ): FilePathSpecificity {
+    if (fileSuffix === undefined) {
+      return "unspecified";
+    }
+    return fileSuffix === identityFile ? "exact" : "suffix";
+  }
+
+  private static symbolPathSpecificityRank(specificity: SymbolPathSpecificity): number {
+    return specificity === "exact" ? 1 : 0;
+  }
+
+  private static filePathSpecificityRank(specificity: FilePathSpecificity): number {
+    if (specificity === "exact") {
+      return 2;
+    }
+    return specificity === "suffix" ? 1 : 0;
   }
 }

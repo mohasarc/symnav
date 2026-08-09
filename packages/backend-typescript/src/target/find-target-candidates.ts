@@ -15,7 +15,7 @@ export class TargetCandidateFinder {
     const candidates: SymbolTargetCandidate[] = [];
     for (const file of args.files) {
       for (const symbol of args.declarationIndex.declarationsIn(file.relative) ?? []) {
-        if (!SymbolTargetGrammar.matches(args.pattern, symbol.identity)) continue;
+        if (SymbolTargetGrammar.match(args.pattern, symbol.identity) === undefined) continue;
         candidates.push({
           symbol,
           canonicalId: formatSymbolIdentity(symbol.identity),

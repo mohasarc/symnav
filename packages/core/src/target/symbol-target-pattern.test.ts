@@ -121,59 +121,59 @@ describe("canonical symbol id segment parsing", () => {
   });
 });
 
-describe("SymbolTargetGrammar.matches", () => {
+describe("SymbolTargetGrammar.match existing cases", () => {
   it("matches by path suffix and segment suffix together", () => {
     const pattern = SymbolTargetGrammar.parse("payments/stripe.ts::StripeProvider::charge");
 
     expect(
-      SymbolTargetGrammar.matches(
+      SymbolTargetGrammar.match(
         pattern,
         identity("src/payments/stripe.ts", "StripeProvider", "charge"),
       ),
-    ).toBe(true);
+    ).toBeDefined();
     expect(
-      SymbolTargetGrammar.matches(
+      SymbolTargetGrammar.match(
         pattern,
         identity("src/payments/paypal.ts", "PaypalProvider", "charge"),
       ),
-    ).toBe(false);
+    ).toBeUndefined();
   });
 
   it("matches bare file suffixes only at path segment boundaries", () => {
     const pattern = SymbolTargetGrammar.parse("foo.ts::parse");
 
-    expect(SymbolTargetGrammar.matches(pattern, identity("src/foo.ts", "parse"))).toBe(true);
-    expect(SymbolTargetGrammar.matches(pattern, identity("src/notfoo.ts", "parse"))).toBe(false);
+    expect(SymbolTargetGrammar.match(pattern, identity("src/foo.ts", "parse"))).toBeDefined();
+    expect(SymbolTargetGrammar.match(pattern, identity("src/notfoo.ts", "parse"))).toBeUndefined();
   });
 
   it("matches multi-segment file suffixes only at path segment boundaries", () => {
     const pattern = SymbolTargetGrammar.parse("pattern/json.ts::parse");
 
-    expect(SymbolTargetGrammar.matches(pattern, identity("src/pattern/json.ts", "parse"))).toBe(
-      true,
-    );
     expect(
-      SymbolTargetGrammar.matches(pattern, identity("src/otherpattern/json.ts", "parse")),
-    ).toBe(false);
+      SymbolTargetGrammar.match(pattern, identity("src/pattern/json.ts", "parse")),
+    ).toBeDefined();
+    expect(
+      SymbolTargetGrammar.match(pattern, identity("src/otherpattern/json.ts", "parse")),
+    ).toBeUndefined();
   });
 
   it("matches nested segment suffixes without a file suffix", () => {
     const pattern = SymbolTargetGrammar.parse("PaymentProcessor::charge");
 
     expect(
-      SymbolTargetGrammar.matches(pattern, identity("src/orders.ts", "PaymentProcessor", "charge")),
-    ).toBe(true);
+      SymbolTargetGrammar.match(pattern, identity("src/orders.ts", "PaymentProcessor", "charge")),
+    ).toBeDefined();
     expect(
-      SymbolTargetGrammar.matches(pattern, identity("src/orders.ts", "PaymentProcessor", "refund")),
-    ).toBe(false);
+      SymbolTargetGrammar.match(pattern, identity("src/orders.ts", "PaymentProcessor", "refund")),
+    ).toBeUndefined();
   });
 
   it("matches full canonical ids exactly as suffix patterns", () => {
     const pattern = SymbolTargetGrammar.parse("src/orders.ts::PaymentProcessor::charge");
 
     expect(
-      SymbolTargetGrammar.matches(pattern, identity("src/orders.ts", "PaymentProcessor", "charge")),
-    ).toBe(true);
+      SymbolTargetGrammar.match(pattern, identity("src/orders.ts", "PaymentProcessor", "charge")),
+    ).toBeDefined();
   });
 });
 

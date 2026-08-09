@@ -17,6 +17,8 @@ const FIXTURE: Record<string, string> = {
     "",
     "export function helper(): void {}",
     "",
+    "export const handler = (): void => {};",
+    "",
   ].join("\n"),
   "/repo/src/extra.ts": "export function extra(): void {}\n",
   "/repo/src/same-line.ts": "export function first(): void {} export function second(): void {}\n",
@@ -54,16 +56,39 @@ describe("WorkspaceDeclarationIndex", () => {
     ]);
   });
 
-  it("finds workspace symbols by declaration node location", () => {
+  it("finds workspace symbols for exact function, method, and variable declaration nodes", () => {
     const indexed = index();
-    const sourceFile = indexed.sourceFile("src/service.ts");
-    const helperNode = sourceFile?.getFunctions().find((node) => node.getName() === "helper");
-    expect(helperNode).toBeDefined();
-    const declaration = indexed.declarationAt(helperNode!);
-    expect(declaration?.identity).toEqual({
+    const sourceFile = indexed.sourceFile("src/service.ts")!;
+
+    expect(indexed.declarationForNode(sourceFile.getFunctionOrThrow("helper"))?.identity).toEqual({
       file: "src/service.ts",
       segments: [{ name: "helper" }],
     });
+    expect(
+      indexed.declarationForNode(sourceFile.getClassOrThrow("Service").getMethodOrThrow("run"))
+        ?.identity,
+    ).toEqual({
+      file: "src/service.ts",
+      segments: [{ name: "Service" }, { name: "run" }],
+    });
+    expect(
+      indexed.declarationForNode(sourceFile.getVariableDeclarationOrThrow("handler"))?.identity,
+    ).toEqual({
+      file: "src/service.ts",
+      segments: [{ name: "handler" }],
+    });
+  });
+
+  it("does not treat arbitrary same-start nodes as declarations", () => {
+    const indexed = index();
+    const sourceFile = indexed.sourceFile("src/service.ts")!;
+    const run = sourceFile.getClassOrThrow("Service").getMethodOrThrow("run");
+    const handler = sourceFile.getVariableDeclarationOrThrow("handler");
+
+    expect(indexed.declarationForNode(sourceFile)).toBeUndefined();
+    expect(indexed.declarationForNode(run.getBodyOrThrow())).toBeUndefined();
+    expect(indexed.declarationForNode(handler.getVariableStatementOrThrow())).toBeUndefined();
+    expect(indexed.declarationForNode(handler.getInitializerOrThrow())).toBeUndefined();
   });
 
   it("returns the workspace-relative path for indexed source files", () => {
@@ -84,7 +109,7 @@ describe("WorkspaceDeclarationIndex", () => {
       .addSourceFileAtPath("/repo/src/outside.ts")
       .getFunctionOrThrow("outside");
 
-    expect(index().declarationAt(outside)).toBeUndefined();
+    expect(index().declarationForNode(outside)).toBeUndefined();
   });
 
   it("returns the flattened declaration list for an ensured file", () => {
@@ -92,6 +117,7 @@ describe("WorkspaceDeclarationIndex", () => {
       "Service",
       "run",
       "helper",
+      "handler",
     ]);
   });
 
@@ -114,9 +140,16 @@ describe("WorkspaceDeclarationIndex", () => {
   });
 
   it("keeps both declarations that start on the same line", () => {
-    expect(leafNames(index([SAME_LINE]).declarationsIn("src/same-line.ts")!)).toEqual([
-      "first",
-      "second",
-    ]);
+    const indexed = index([SAME_LINE]);
+    const sourceFile = indexed.sourceFile("src/same-line.ts")!;
+
+    expect(indexed.declarationForNode(sourceFile.getFunctionOrThrow("first"))?.identity).toEqual({
+      file: "src/same-line.ts",
+      segments: [{ name: "first" }],
+    });
+    expect(indexed.declarationForNode(sourceFile.getFunctionOrThrow("second"))?.identity).toEqual({
+      file: "src/same-line.ts",
+      segments: [{ name: "second" }],
+    });
   });
 });

@@ -96,10 +96,13 @@ const CALL_GRAPH_CASES: Record<string, string> = {
     "",
   ].join("\n"),
   "/repo/src/callers/top-level-handler.ts": [
+    "export function firstDeclaration(): void {}",
     'import { calledFromTopLevelHandler } from "./targets.js";',
     "",
     "export const handler = () => {",
-    "  calledFromTopLevelHandler();",
+    "  if (true) {",
+    "    calledFromTopLevelHandler();",
+    "  }",
     "};",
     "",
   ].join("\n"),
@@ -185,7 +188,7 @@ describe("TypeScriptBackend.findCallers", () => {
     });
   });
 
-  it("falls back to the function-valued const itself when no enclosing non-value symbol exists", async () => {
+  it("attributes a nested call in a top-level arrow initializer to the variable declaration", async () => {
     const edges = await callersOf("calledFromTopLevelHandler");
     expect(edges).toHaveLength(1);
     expect(edges[0]!.symbol.identity).toEqual({

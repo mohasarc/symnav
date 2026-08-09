@@ -245,19 +245,19 @@ describe("target-pattern line narrowing", () => {
   });
 
   it.each(symbolCommands)(
-    "%s names the raw target when line narrowing removes all candidates",
+    "%s names the raw target and line when line narrowing removes all candidates",
     (command) => {
       const result = runCommand(command, ["PaymentProcessor::charge", "--line", "99"]);
       expect(result.status).toBe(1);
       expect(result.stdout).toBe("");
       expect(result.stderr).toBe(
-        'Cannot answer: no symbol target "PaymentProcessor::charge" found.\n',
+        'Cannot answer: no symbol target "PaymentProcessor::charge" matching line 99.\n',
       );
     },
   );
 
   it.each(symbolCommands)(
-    "%s separates a line-filtered target from a never-matched one (both report not found today)",
+    "%s separates a line-filtered target from a never-matched one",
     (command) => {
       const result = runCommand(command, ["helper", "--line", "99"]);
       expect(result.status).toBe(1);
@@ -291,7 +291,7 @@ describe("target-pattern fold node rejection", () => {
 
 describe("target-pattern error vocabulary", () => {
   it.each(symbolCommands)(
-    "%s reports an empty segment as a target-pattern error (speaks retired symbol-id vocabulary today)",
+    "%s reports an empty segment as a target-pattern error",
     (command) => {
       const result = runCommand(command, ["::charge"]);
       expect(result.status).toBe(1);
@@ -303,7 +303,7 @@ describe("target-pattern error vocabulary", () => {
   );
 
   it.each(symbolCommands)(
-    "%s reports a slashless missing-file suffix like a slashed one (reports not found today)",
+    "%s reports a slashless missing-file suffix like a slashed one",
     (command) => {
       const result = runCommand(command, ["missing.ts::charge"]);
       expect(result.status).toBe(1);
@@ -315,12 +315,12 @@ describe("target-pattern error vocabulary", () => {
 
 describe("target-pattern ambiguity hints", () => {
   it.each(symbolCommands)(
-    "%s points at the way out of an ambiguous target (candidate list ends without a hint today)",
+    "%s points at the way out of an ambiguous target",
     (command) => {
       const result = runCommand(command, ["PaymentProcessor::charge"]);
       expect(result.status).toBe(1);
       expect(result.stdout).toBe("");
-      expect(result.stderr).toContain("copy a candidate id, or narrow with --line");
+      expect(result.stderr).toContain("Copy a candidate id, or narrow with --line.");
     },
   );
 });

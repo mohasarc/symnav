@@ -26,9 +26,7 @@ describe("compileRegex", () => {
       expect(invalid.subject).toBe(subject);
       expect(invalid.pattern).toBe("[");
       expect(invalid.detail).toBe("Unterminated character class");
-      expect(invalid.reason).toBe(
-        `invalid ${subject} regex "[": Unterminated character class`,
-      );
+      expect(invalid.reason).toBe(`invalid ${subject} regex "[": Unterminated character class`);
     },
   );
 });

@@ -22,7 +22,7 @@ describe("symbol target command errors", () => {
       }),
       cwdOverride: undefined,
       json: false,
-      args: { target: "helper", line: undefined },
+      args: { target: "helper", line: undefined, regex: false },
     });
 
     expect(context.stdout.text()).toBe("");
@@ -42,7 +42,7 @@ describe("symbol target command errors", () => {
       }),
       cwdOverride: undefined,
       json: false,
-      args: { target: "walk", line: "abc" },
+      args: { target: "walk", line: "abc", regex: false },
     });
 
     expect(context.stdout.text()).toBe("");
@@ -62,7 +62,7 @@ describe("symbol target command errors", () => {
       }),
       cwdOverride: undefined,
       json: false,
-      args: { target: "walk", line: "0" },
+      args: { target: "walk", line: "0", regex: false },
     });
 
     expect(context.stdout.text()).toBe("");

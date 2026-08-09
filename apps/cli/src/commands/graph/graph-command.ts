@@ -19,6 +19,7 @@ import { resolveCallTarget } from "../resolve-call-target.js";
 export interface GraphArgs {
   readonly target: string;
   readonly line: number | string | undefined;
+  readonly regex: boolean;
   readonly incoming: boolean;
   readonly outgoing: boolean;
   readonly depth: number | string | undefined;
@@ -51,6 +52,7 @@ export const graphCommand: Command<GraphResult, GraphArgs> = {
       cwd: ctx.cwd,
       rawTarget: ctx.args.target,
       line: ctx.args.line,
+      regex: ctx.args.regex,
     });
     const identity = resolved.identity;
     const backend = resolved.backend;
@@ -147,5 +149,6 @@ function graphFlags(args: GraphArgs): string[] {
     ...(args.outgoing ? ["outgoing"] : []),
     ...(args.page !== undefined ? ["page"] : []),
     ...(args.pageSize !== undefined ? ["page-size"] : []),
+    ...(args.regex ? ["regex"] : []),
   ].sort();
 }

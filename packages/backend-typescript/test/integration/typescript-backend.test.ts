@@ -184,10 +184,10 @@ describe("TypeScriptBackend parse sharing", () => {
       { relative: "src/lib.ts", absolute: "/repo/src/lib.ts" },
     ];
 
-    const candidates = await backend.findTargetCandidates(
-      files,
-      { mode: "regular", pattern: SymbolTargetGrammar.parse("helper") },
-    );
+    const candidates = await backend.findTargetCandidates(files, {
+      mode: "regular",
+      pattern: SymbolTargetGrammar.parse("helper"),
+    });
     const definitions = await backend.findDefinitions(files, {
       file: "src/lib.ts",
       segments: [{ name: "helper" }],

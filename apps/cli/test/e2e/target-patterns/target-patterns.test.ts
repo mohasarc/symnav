@@ -178,17 +178,14 @@ describe("target-pattern symbol commands", () => {
     },
   );
 
-  it.each(symbolCommands)(
-    "%s rejects a regex target matching several symbols",
-    async (command) => {
-      const result = runCommand(command, ["charge$", "--regex"]);
-      expect(result.status).toBe(1);
-      expect(result.stdout).toBe("");
-      await expect(result.stderr).toMatchFileSnapshot(
-        snapshot("ambiguous-regex-charge.expected.err"),
-      );
-    },
-  );
+  it.each(symbolCommands)("%s rejects a regex target matching several symbols", async (command) => {
+    const result = runCommand(command, ["charge$", "--regex"]);
+    expect(result.status).toBe(1);
+    expect(result.stdout).toBe("");
+    await expect(result.stderr).toMatchFileSnapshot(
+      snapshot("ambiguous-regex-charge.expected.err"),
+    );
+  });
 
   it.each(symbolCommands)("%s resolves a unique full canonical-id regex", (command) => {
     const parsed = runJson<JsonResolvedTarget>(command, [
@@ -216,9 +213,7 @@ describe("target-pattern symbol commands", () => {
     const result = runCommand(command, ["NoSuchCanonicalId$", "--regex"]);
     expect(result.status).toBe(1);
     expect(result.stdout).toBe("");
-    expect(result.stderr).toBe(
-      'Cannot answer: no symbol target "NoSuchCanonicalId$" found.\n',
-    );
+    expect(result.stderr).toBe('Cannot answer: no symbol target "NoSuchCanonicalId$" found.\n');
   });
 
   it.each(symbolCommands)("%s rejects invalid regex patterns consistently", (command) => {

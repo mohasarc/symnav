@@ -85,11 +85,13 @@ describe("command telemetry descriptors", () => {
   });
 
   it("describes def arguments", () => {
-    expect(defCommand.describeArgs({ target: "a.ts::Foo", line: undefined, regex: false })).toEqual({
-      kind: "symbol_id",
-      lengthBucket: "short",
-      flags: [],
-    });
+    expect(defCommand.describeArgs({ target: "a.ts::Foo", line: undefined, regex: false })).toEqual(
+      {
+        kind: "symbol_id",
+        lengthBucket: "short",
+        flags: [],
+      },
+    );
   });
 
   it("describes def line narrowing", () => {
@@ -138,12 +140,18 @@ describe("command telemetry descriptors", () => {
     });
   });
 
-  it.each([
-    ["def", defCommand, { target: "^src/.+::Foo$", line: undefined, regex: true }],
-    [
-      "refs",
-      refsCommand,
-      {
+  it("describes symbol regex flags without recording pattern content", () => {
+    const expected = {
+      kind: "symbol_id",
+      lengthBucket: "short",
+      flags: ["regex"],
+    } satisfies ReturnType<typeof defCommand.describeArgs>;
+
+    expect(
+      defCommand.describeArgs({ target: "^src/.+::Foo$", line: undefined, regex: true }),
+    ).toEqual(expected);
+    expect(
+      refsCommand.describeArgs({
         target: "^src/.+::Foo$",
         line: undefined,
         regex: true,
@@ -151,13 +159,13 @@ describe("command telemetry descriptors", () => {
         pageSize: undefined,
         all: false,
         fullLines: false,
-      },
-    ],
-    ["context", contextCommand, { target: "^src/.+::Foo$", line: undefined, regex: true }],
-    [
-      "graph",
-      graphCommand,
-      {
+      }),
+    ).toEqual(expected);
+    expect(
+      contextCommand.describeArgs({ target: "^src/.+::Foo$", line: undefined, regex: true }),
+    ).toEqual(expected);
+    expect(
+      graphCommand.describeArgs({
         target: "^src/.+::Foo$",
         line: undefined,
         regex: true,
@@ -167,14 +175,8 @@ describe("command telemetry descriptors", () => {
         page: undefined,
         pageSize: undefined,
         all: false,
-      },
-    ],
-  ] as const)("describes %s regex without recording pattern content", (_name, command, args) => {
-    expect(command.describeArgs(args)).toEqual({
-      kind: "symbol_id",
-      lengthBucket: "short",
-      flags: ["regex"],
-    });
+      }),
+    ).toEqual(expected);
   });
 
   it("counts total symbols from the full tree and shown symbols from the expanded entries", () => {

@@ -4,7 +4,8 @@ List references to a symbol across the workspace
 
 Options:
   --line <n>       narrow target matches to declarations containing this line
-  --regex          match full canonical symbol ids by JavaScript regex (default: false)
+  --regex          match full canonical symbol ids by JavaScript regex (default:
+                   false)
   --page <n>       page of references to show
   --page-size <n>  references per page
   --all            show every reference on one page (default: false)

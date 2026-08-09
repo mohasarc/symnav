@@ -167,7 +167,7 @@ describe("TargetCandidateFinder.find", () => {
     const candidates = await TargetCandidateFinder.find({
       declarationIndex: new WorkspaceDeclarationIndex(fsWithFixture()),
       files: ALL_FILES,
-      query: regexQuery("export function|return \\\"ok\\\"|string"),
+      query: regexQuery('export function|return \\"ok\\"|string'),
     });
 
     expect(candidates).toEqual([]);

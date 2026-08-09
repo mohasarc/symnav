@@ -13,6 +13,7 @@ import { NavigationDiagnosticsCollector } from "../navigation-diagnostics-collec
 export interface DefArgs {
   readonly target: string;
   readonly line: number | string | undefined;
+  readonly regex: boolean;
 }
 
 export const defCommand: Command<DefinitionResult, DefArgs> = {
@@ -21,7 +22,10 @@ export const defCommand: Command<DefinitionResult, DefArgs> = {
     return {
       kind: classifyArgKind(args.target),
       lengthBucket: lengthBucketOf(args.target),
-      flags: args.line === undefined ? [] : ["line"],
+      flags: [
+        ...(args.line === undefined ? [] : ["line"]),
+        ...(args.regex ? ["regex"] : []),
+      ].sort(),
     };
   },
   countResults(result: DefinitionResult) {
@@ -34,6 +38,7 @@ export const defCommand: Command<DefinitionResult, DefArgs> = {
       cwd: ctx.cwd,
       rawTarget: ctx.args.target,
       line: ctx.args.line,
+      regex: ctx.args.regex,
     });
     const symbols = await resolved.backend.findDefinitions(resolved.files, resolved.identity);
     const result: DefinitionResult = { identity: resolved.identity, symbols };

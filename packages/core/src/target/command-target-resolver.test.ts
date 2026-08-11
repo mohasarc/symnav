@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { BackendRouter } from "../backend/backend-router.js";
-import type { LanguageBackend } from "../backend/language-backend.js";
+import type { LanguageBackend, SymbolTargetQuery } from "../backend/language-backend.js";
 import { FileNotFoundError } from "../workspace/errors.js";
 import type { ResolvedPath, Workspace } from "../workspace/workspace.js";
 import type { CallEdge } from "../intermediate-representation/call-edge.js";
@@ -20,7 +20,6 @@ import type { Header } from "../intermediate-representation/types.js";
 import { CommandTargetResolver } from "./command-target-resolver.js";
 import type { ResolvedCommandTarget } from "./command-target-resolver.js";
 import { SymbolTargetGrammar } from "./symbol-target-pattern.js";
-import type { SymbolTargetPattern } from "./symbol-target-pattern.js";
 import {
   AmbiguousSymbolTargetError,
   SymbolTargetLineMismatchError,
@@ -52,11 +51,13 @@ class FakeLanguageBackend implements LanguageBackend {
 
   async findTargetCandidates(
     files: readonly ResolvedPath[],
-    pattern: SymbolTargetPattern,
+    query: SymbolTargetQuery,
   ): Promise<readonly SymbolTargetCandidate[]> {
     this.targetCandidateCalls.push(files.map((file) => file.relative));
-    return this.options.targetCandidates.filter(
-      (candidate) => SymbolTargetGrammar.match(pattern, candidate.symbol.identity) !== undefined,
+    return this.options.targetCandidates.filter((candidate) =>
+      query.mode === "regex"
+        ? query.regex.test(candidate.canonicalId)
+        : SymbolTargetGrammar.match(query.pattern, candidate.symbol.identity) !== undefined,
     );
   }
 
@@ -544,6 +545,7 @@ describe("CommandTargetResolver.resolve across backends", () => {
       cwd: "/repo",
       rawTarget: "missing.ts::walk",
       line: undefined,
+      regex: false,
     });
 
     await expect(resolution).rejects.toEqual(new FileNotFoundError("missing.ts"));
@@ -570,6 +572,7 @@ describe("CommandTargetResolver.resolve across backends", () => {
           cwd: "/repo",
           rawTarget: `${fileSuffix}::walk`,
           line: undefined,
+          regex: false,
         }),
       ).rejects.toBeInstanceOf(FileNotFoundError);
       expect(resolveInputPathCalls).toEqual([fileSuffix]);

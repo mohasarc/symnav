@@ -1,19 +1,15 @@
 import { BackendRouter } from "../backend/backend-router.js";
+import { compileRegex } from "../backend/compile-regex.js";
 import { NoSupportedFilesError } from "../backend/errors.js";
-import type { LanguageBackend } from "../backend/language-backend.js";
+import type { LanguageBackend, SymbolTargetQuery } from "../backend/language-backend.js";
 import { formatSymbolIdentity } from "../intermediate-representation/canonical-identity.js";
 import type { SymbolIdentity } from "../intermediate-representation/symbol-identity.js";
 import { isPositiveInteger } from "../validation/is-positive-integer.js";
 import type { ResolvedPath, Workspace } from "../workspace/workspace.js";
 import { SymbolTargetGrammar } from "./symbol-target-pattern.js";
-import type {
-  SymbolTargetPattern,
-  SymbolTargetQuery,
-  SymbolTargetSpecificity,
-} from "./symbol-target-pattern.js";
+import type { SymbolTargetPattern, SymbolTargetSpecificity } from "./symbol-target-pattern.js";
 import {
   AmbiguousSymbolTargetError,
-  compileRegex,
   InvalidSymbolTargetRequestError,
   SymbolTargetLineMismatchError,
   SymbolTargetNotFoundError,

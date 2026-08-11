@@ -2,7 +2,6 @@ import { UserFacingError } from "../errors.js";
 import type { SymbolIdentity, SymbolPathSegment } from "./symbol-identity.js";
 import {
   SYMBOL_DISAMBIGUATOR_PREFIX,
-  SymbolPathSegmentParseError,
   SymbolPathSegmentParser,
 } from "./symbol-path-segment-parser.js";
 
@@ -23,14 +22,11 @@ export class InvalidSymbolIdError extends UserFacingError {
 }
 
 export function parseSegment(segment: string, raw: string): SymbolPathSegment {
-  try {
-    return SymbolPathSegmentParser.parse(segment);
-  } catch (error) {
-    if (error instanceof SymbolPathSegmentParseError) {
-      throw new InvalidSymbolIdError(error.explanation, raw);
-    }
-    throw error;
+  const result = SymbolPathSegmentParser.parse(segment);
+  if (result.outcome === "invalid") {
+    throw new InvalidSymbolIdError(result.explanation, raw);
   }
+  return result.segment;
 }
 
 export function formatSymbolIdentity(identity: SymbolIdentity): string {

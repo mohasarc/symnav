@@ -76,8 +76,7 @@ describe("SymbolTargetGrammar.parse", () => {
   ])("rejects malformed target %s with target vocabulary", (raw, explanation) => {
     expect(() => SymbolTargetGrammar.parse(raw)).toThrowError(
       expect.objectContaining({
-        explanation,
-        raw,
+        reason: `invalid symbol target (${explanation}): ${JSON.stringify(raw)}`,
       }),
     );
     expect(() => SymbolTargetGrammar.parse(raw)).toThrow(InvalidSymbolTargetError);

@@ -1,11 +1,25 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, expectTypeOf, it } from "vitest";
 
 import { candidate } from "./symbol-target-builders.js";
 import {
   AmbiguousSymbolTargetError,
+  InvalidSymbolTargetError,
   SymbolTargetLineMismatchError,
   SymbolTargetNotFoundError,
 } from "./symbol-target-result.js";
+
+describe("InvalidSymbolTargetError", () => {
+  it("keeps parse failure details out of the public error contract", () => {
+    type ExposesParseFailure = InvalidSymbolTargetError extends {
+      readonly explanation: string;
+      readonly raw: string;
+    }
+      ? true
+      : false;
+
+    expectTypeOf<ExposesParseFailure>().toEqualTypeOf<false>();
+  });
+});
 
 describe("SymbolTargetNotFoundError", () => {
   it("names the missing target in its reason", () => {

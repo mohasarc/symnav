@@ -11,8 +11,8 @@ export interface SymbolTargetCandidate {
 
 export class InvalidSymbolTargetError extends UserFacingError {
   constructor(
-    readonly explanation: string,
-    readonly raw: string,
+    private readonly explanation: string,
+    private readonly raw: string,
   ) {
     super();
     this.name = "InvalidSymbolTargetError";

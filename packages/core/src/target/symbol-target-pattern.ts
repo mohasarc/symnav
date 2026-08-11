@@ -3,10 +3,7 @@ import type {
   SymbolIdentity,
   SymbolPathSegment,
 } from "../intermediate-representation/symbol-identity.js";
-import {
-  SymbolPathSegmentParseError,
-  SymbolPathSegmentParser,
-} from "../intermediate-representation/symbol-path-segment-parser.js";
+import { SymbolPathSegmentParser } from "../intermediate-representation/symbol-path-segment-parser.js";
 import { InvalidSymbolTargetError } from "./symbol-target-result.js";
 
 export interface SymbolTargetPattern {
@@ -74,14 +71,15 @@ export class SymbolTargetGrammar {
     segmentParts: readonly string[],
     raw: string,
   ): readonly SymbolPathSegment[] {
-    try {
-      return segmentParts.map((segment) => SymbolPathSegmentParser.parse(segment));
-    } catch (error) {
-      if (error instanceof SymbolPathSegmentParseError) {
-        throw new InvalidSymbolTargetError(error.explanation, raw);
-      }
-      throw error;
+    return segmentParts.map((segment) => SymbolTargetGrammar.parseSegment(segment, raw));
+  }
+
+  private static parseSegment(segment: string, raw: string): SymbolPathSegment {
+    const result = SymbolPathSegmentParser.parse(segment);
+    if (result.outcome === "invalid") {
+      throw new InvalidSymbolTargetError(result.explanation, raw);
     }
+    return result.segment;
   }
 
   private static segmentMatches(pattern: SymbolPathSegment, candidate: SymbolPathSegment): boolean {

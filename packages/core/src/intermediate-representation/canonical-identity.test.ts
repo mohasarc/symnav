@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, expectTypeOf, it } from "vitest";
 
 import { InvalidSymbolIdError, formatSymbolIdentity } from "./canonical-identity.js";
 import type { SymbolIdentity } from "./symbol-identity.js";
@@ -94,9 +94,14 @@ describe("InvalidSymbolIdError reasons", () => {
     }
   });
 
-  it("exposes the explanation and raw input for safe vocabulary translation", () => {
-    const error = new InvalidSymbolIdError("empty input", "");
+  it("keeps parse failure details out of the public error contract", () => {
+    type ExposesParseFailure = InvalidSymbolIdError extends {
+      readonly explanation: string;
+      readonly raw: string;
+    }
+      ? true
+      : false;
 
-    expect(error).toEqual(expect.objectContaining({ explanation: "empty input", raw: "" }));
+    expectTypeOf<ExposesParseFailure>().toEqualTypeOf<false>();
   });
 });

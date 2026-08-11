@@ -1,13 +1,17 @@
 import { UserFacingError } from "../errors.js";
 import type { SymbolIdentity, SymbolPathSegment } from "./symbol-identity.js";
+import {
+  SYMBOL_DISAMBIGUATOR_PREFIX,
+  SymbolPathSegmentParseError,
+  SymbolPathSegmentParser,
+} from "./symbol-path-segment-parser.js";
 
 export const SEGMENT_SEPARATOR = "::";
-const DISAMBIGUATOR_PREFIX = "#";
 
 export class InvalidSymbolIdError extends UserFacingError {
   constructor(
-    readonly explanation: string,
-    readonly raw: string,
+    private readonly explanation: string,
+    private readonly raw: string,
   ) {
     super();
     this.name = "InvalidSymbolIdError";
@@ -19,25 +23,14 @@ export class InvalidSymbolIdError extends UserFacingError {
 }
 
 export function parseSegment(segment: string, raw: string): SymbolPathSegment {
-  if (segment.length === 0) {
-    throw new InvalidSymbolIdError('empty path segment between "::" separators', raw);
+  try {
+    return SymbolPathSegmentParser.parse(segment);
+  } catch (error) {
+    if (error instanceof SymbolPathSegmentParseError) {
+      throw new InvalidSymbolIdError(error.explanation, raw);
+    }
+    throw error;
   }
-  const hashIndex = segment.lastIndexOf(DISAMBIGUATOR_PREFIX);
-  if (hashIndex === -1) {
-    return { name: segment };
-  }
-  const name = segment.slice(0, hashIndex);
-  const disambiguatorText = segment.slice(hashIndex + DISAMBIGUATOR_PREFIX.length);
-  if (name.length === 0) {
-    return { name: segment };
-  }
-  if (!/^[1-9][0-9]*$/.test(disambiguatorText)) {
-    throw new InvalidSymbolIdError(
-      `disambiguator must be a positive integer (got ${JSON.stringify(disambiguatorText)})`,
-      raw,
-    );
-  }
-  return { name, disambiguator: Number.parseInt(disambiguatorText, 10) };
 }
 
 export function formatSymbolIdentity(identity: SymbolIdentity): string {
@@ -55,5 +48,5 @@ function formatSegment(segment: SymbolPathSegment): string {
   if (segment.disambiguator === undefined) {
     return segment.name;
   }
-  return `${segment.name}${DISAMBIGUATOR_PREFIX}${segment.disambiguator}`;
+  return `${segment.name}${SYMBOL_DISAMBIGUATOR_PREFIX}${segment.disambiguator}`;
 }

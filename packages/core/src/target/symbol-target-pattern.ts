@@ -1,12 +1,12 @@
-import {
-  InvalidSymbolIdError,
-  SEGMENT_SEPARATOR,
-  parseSegment,
-} from "../intermediate-representation/canonical-identity.js";
+import { SEGMENT_SEPARATOR } from "../intermediate-representation/canonical-identity.js";
 import type {
   SymbolIdentity,
   SymbolPathSegment,
 } from "../intermediate-representation/symbol-identity.js";
+import {
+  SymbolPathSegmentParseError,
+  SymbolPathSegmentParser,
+} from "../intermediate-representation/symbol-path-segment-parser.js";
 import { InvalidSymbolTargetError } from "./symbol-target-result.js";
 
 export interface SymbolTargetPattern {
@@ -75,12 +75,12 @@ export class SymbolTargetGrammar {
     raw: string,
   ): readonly SymbolPathSegment[] {
     try {
-      return segmentParts.map((segment) => parseSegment(segment, raw));
-    } catch (err) {
-      if (err instanceof InvalidSymbolIdError) {
-        throw new InvalidSymbolTargetError(err.explanation, err.raw);
+      return segmentParts.map((segment) => SymbolPathSegmentParser.parse(segment));
+    } catch (error) {
+      if (error instanceof SymbolPathSegmentParseError) {
+        throw new InvalidSymbolTargetError(error.explanation, raw);
       }
-      throw err;
+      throw error;
     }
   }
 

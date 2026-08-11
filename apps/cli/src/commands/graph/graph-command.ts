@@ -1,6 +1,7 @@
 import type { GraphDirection, GraphResult, PageRequest } from "@symnav/core";
 import {
   DEFAULT_GRAPH_DEPTH,
+  CommandTargetResolver,
   GraphDepthExceededError,
   GraphResultBuilder,
   GraphTraverser,
@@ -14,7 +15,6 @@ import type { Command, CommandContext } from "../../command.js";
 import { classifyArgKind, lengthBucketOf } from "../../telemetry/arg-shape.js";
 import { NavigationDiagnosticsCollector } from "../navigation-diagnostics-collector.js";
 import { resolveCallTarget } from "../resolve-call-target.js";
-import { CommandTargetResolver } from "../resolve-symbol-target.js";
 
 export interface GraphArgs {
   readonly target: string;

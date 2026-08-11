@@ -1,11 +1,10 @@
 import type { PageRequest, RefsResult } from "@symnav/core";
-import { RefsResultBuilder } from "@symnav/core";
+import { CommandTargetResolver, RefsResultBuilder } from "@symnav/core";
 import { SymbolTargetErrorRenderer, renderRefsJson, renderRefsText } from "@symnav/renderer";
 
 import type { Command, CommandContext } from "../../command.js";
 import { classifyArgKind, lengthBucketOf } from "../../telemetry/arg-shape.js";
 import { NavigationDiagnosticsCollector } from "../navigation-diagnostics-collector.js";
-import { CommandTargetResolver } from "../resolve-symbol-target.js";
 
 export interface RefsArgs {
   readonly target: string;

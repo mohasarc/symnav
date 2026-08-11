@@ -88,6 +88,11 @@ export {
 } from "./intermediate-representation/canonical-identity.js";
 export type { SymbolTargetPattern } from "./target/symbol-target-pattern.js";
 export { SymbolTargetGrammar } from "./target/symbol-target-pattern.js";
+export type {
+  ResolvedCommandTarget,
+  ResolveSymbolTargetForCommandArgs,
+} from "./target/command-target-resolver.js";
+export { CommandTargetResolver } from "./target/command-target-resolver.js";
 export type { SymbolTargetCandidate } from "./target/symbol-target-result.js";
 export {
   AmbiguousSymbolTargetError,

@@ -1,22 +1,19 @@
-import type {
-  BackendRouter,
-  LanguageBackend,
-  ResolvedPath,
-  SymbolIdentity,
-  SymbolTargetCandidate,
-  SymbolTargetPattern,
-  Workspace,
-} from "@symnav/core";
+import { BackendRouter } from "../backend/backend-router.js";
+import { NoSupportedFilesError } from "../backend/errors.js";
+import type { LanguageBackend } from "../backend/language-backend.js";
+import { formatSymbolIdentity } from "../intermediate-representation/canonical-identity.js";
+import type { SymbolIdentity } from "../intermediate-representation/symbol-identity.js";
+import { isPositiveInteger } from "../validation/is-positive-integer.js";
+import type { ResolvedPath, Workspace } from "../workspace/workspace.js";
+import { SymbolTargetGrammar } from "./symbol-target-pattern.js";
+import type { SymbolTargetPattern } from "./symbol-target-pattern.js";
 import {
   AmbiguousSymbolTargetError,
   InvalidSymbolTargetRequestError,
-  NoSupportedFilesError,
-  SymbolTargetGrammar,
   SymbolTargetLineMismatchError,
   SymbolTargetNotFoundError,
-  formatSymbolIdentity,
-  isPositiveInteger,
-} from "@symnav/core";
+} from "./symbol-target-result.js";
+import type { SymbolTargetCandidate } from "./symbol-target-result.js";
 
 export interface ResolveSymbolTargetForCommandArgs {
   readonly workspace: Workspace;

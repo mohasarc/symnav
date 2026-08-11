@@ -1,4 +1,5 @@
 import type { DefinitionResult } from "@symnav/core";
+import { CommandTargetResolver } from "@symnav/core";
 import {
   SymbolTargetErrorRenderer,
   renderDefinitionJson,
@@ -8,7 +9,6 @@ import {
 import type { Command, CommandContext } from "../../command.js";
 import { classifyArgKind, lengthBucketOf } from "../../telemetry/arg-shape.js";
 import { NavigationDiagnosticsCollector } from "../navigation-diagnostics-collector.js";
-import { CommandTargetResolver } from "../resolve-symbol-target.js";
 
 export interface DefArgs {
   readonly target: string;

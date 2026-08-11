@@ -6,10 +6,7 @@ import type { SymbolIdentity } from "../intermediate-representation/symbol-ident
 import { isPositiveInteger } from "../validation/is-positive-integer.js";
 import type { ResolvedPath, Workspace } from "../workspace/workspace.js";
 import { SymbolTargetGrammar } from "./symbol-target-pattern.js";
-import type {
-  SymbolTargetPattern,
-  SymbolTargetSpecificity,
-} from "./symbol-target-pattern.js";
+import type { SymbolTargetPattern, SymbolTargetSpecificity } from "./symbol-target-pattern.js";
 import {
   AmbiguousSymbolTargetError,
   InvalidSymbolTargetRequestError,

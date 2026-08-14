@@ -29,6 +29,7 @@ export interface LanguageBackend {
     query: string,
     options: ResolveSymbolsOptions,
   ): Promise<readonly SymbolOverviewNode[]>;
+  declarations(files: readonly ResolvedPath[]): Promise<readonly SymbolOverviewNode[]>;
   findTargetCandidates(
     files: readonly ResolvedPath[],
     pattern: SymbolTargetPattern,

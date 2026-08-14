@@ -59,6 +59,20 @@ export class AmbiguousSymbolError extends UserFacingError {
   }
 }
 
+export class InvalidRegexError extends UserFacingError {
+  constructor(
+    readonly pattern: string,
+    readonly detail: string,
+  ) {
+    super();
+    this.name = "InvalidRegexError";
+  }
+
+  get reason(): string {
+    return `invalid regex ${JSON.stringify(this.pattern)}: ${this.detail}`;
+  }
+}
+
 export class InvalidResolveRegexError extends UserFacingError {
   constructor(
     readonly pattern: string,

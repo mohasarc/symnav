@@ -3,6 +3,7 @@ import {
   SEGMENT_SEPARATOR,
   parseSegment,
 } from "../intermediate-representation/canonical-identity.js";
+import { UserFacingError } from "../errors.js";
 import type {
   SymbolIdentity,
   SymbolPathSegment,
@@ -14,10 +15,29 @@ export interface SymbolTargetPattern {
   readonly segmentSuffix: readonly SymbolPathSegment[];
 }
 
+export interface SymbolTargetRank {
+  readonly symbolPath: "suffix" | "exact";
+  readonly filePath: "unspecified" | "suffix" | "exact";
+}
+
+export class InvalidSymbolTargetError extends UserFacingError {
+  constructor(
+    readonly explanation: string,
+    readonly raw: string,
+  ) {
+    super();
+    this.name = "InvalidSymbolTargetError";
+  }
+
+  get reason(): string {
+    return `invalid symbol target (${this.explanation}): ${JSON.stringify(this.raw)}`;
+  }
+}
+
 export class SymbolTargetGrammar {
   static parse(raw: string): SymbolTargetPattern {
     if (raw.length === 0) {
-      throw new InvalidSymbolIdError("empty input", raw);
+      throw new InvalidSymbolTargetError("empty input", raw);
     }
     const parts = raw.split(SEGMENT_SEPARATOR);
     const fileSuffix = SymbolTargetGrammar.fileSuffixFrom(parts);
@@ -25,11 +45,18 @@ export class SymbolTargetGrammar {
     if (segmentParts.length === 0) {
       throw new InvalidSymbolIdError("empty symbol target", raw);
     }
-    return {
-      raw,
-      fileSuffix,
-      segmentSuffix: segmentParts.map((segment) => parseSegment(segment, raw)),
-    };
+    try {
+      return {
+        raw,
+        fileSuffix,
+        segmentSuffix: segmentParts.map((segment) => parseSegment(segment, raw)),
+      };
+    } catch (error) {
+      if (error instanceof InvalidSymbolIdError) {
+        throw new InvalidSymbolTargetError(error.explanation, error.raw);
+      }
+      throw error;
+    }
   }
 
   static matches(pattern: SymbolTargetPattern, identity: SymbolIdentity): boolean {
@@ -57,6 +84,31 @@ export class SymbolTargetGrammar {
     return file.endsWith(`/${suffix}`);
   }
 
+  static rank(pattern: SymbolTargetPattern, identity: SymbolIdentity): SymbolTargetRank {
+    const symbolPath =
+      pattern.segmentSuffix.length === identity.segments.length ? "exact" : "suffix";
+    const filePath =
+      pattern.fileSuffix === undefined
+        ? "unspecified"
+        : pattern.fileSuffix === identity.file
+          ? "exact"
+          : "suffix";
+    return { symbolPath, filePath };
+  }
+
+  static compareRanks(left: SymbolTargetRank, right: SymbolTargetRank): number {
+    const symbolDifference =
+      SymbolTargetGrammar.symbolPathRank(left.symbolPath) -
+      SymbolTargetGrammar.symbolPathRank(right.symbolPath);
+    if (symbolDifference !== 0) {
+      return symbolDifference;
+    }
+    return (
+      SymbolTargetGrammar.filePathRank(left.filePath) -
+      SymbolTargetGrammar.filePathRank(right.filePath)
+    );
+  }
+
   private static fileSuffixFrom(parts: readonly string[]): string | undefined {
     if (parts.length < 2) {
       return undefined;
@@ -73,5 +125,15 @@ export class SymbolTargetGrammar {
       return false;
     }
     return pattern.disambiguator === undefined || pattern.disambiguator === candidate.disambiguator;
+  }
+
+  private static symbolPathRank(rank: SymbolTargetRank["symbolPath"]): number {
+    return rank === "exact" ? 1 : 0;
+  }
+
+  private static filePathRank(rank: SymbolTargetRank["filePath"]): number {
+    if (rank === "exact") return 2;
+    if (rank === "suffix") return 1;
+    return 0;
   }
 }

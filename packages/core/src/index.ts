@@ -86,11 +86,12 @@ export {
   formatSymbolPath,
   parseSegment,
 } from "./intermediate-representation/canonical-identity.js";
-export type { SymbolTargetPattern } from "./target/symbol-target-pattern.js";
-export { SymbolTargetGrammar } from "./target/symbol-target-pattern.js";
+export type { SymbolTargetPattern, SymbolTargetRank } from "./target/symbol-target-pattern.js";
+export { InvalidSymbolTargetError, SymbolTargetGrammar } from "./target/symbol-target-pattern.js";
 export type { SymbolTargetCandidate } from "./target/symbol-target-result.js";
 export {
   AmbiguousSymbolTargetError,
+  SymbolTargetLineMismatchError,
   SymbolTargetNotFoundError,
 } from "./target/symbol-target-result.js";
 export {

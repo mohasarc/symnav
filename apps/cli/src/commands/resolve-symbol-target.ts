@@ -5,6 +5,7 @@ import type {
   SymbolIdentity,
   SymbolTargetCandidate,
   SymbolTargetPattern,
+  SymbolTargetRank,
   Workspace,
 } from "@symnav/core";
 import {
@@ -12,6 +13,7 @@ import {
   InvalidSymbolTargetRequestError,
   NoSupportedFilesError,
   SymbolTargetGrammar,
+  SymbolTargetLineMismatchError,
   SymbolTargetNotFoundError,
   formatSymbolIdentity,
   isPositiveInteger,
@@ -34,6 +36,7 @@ export interface ResolvedCommandTarget {
 interface OwnedCandidate {
   readonly candidate: SymbolTargetCandidate;
   readonly backend: LanguageBackend;
+  readonly rank: SymbolTargetRank;
 }
 
 export class CommandTargetResolver {
@@ -41,7 +44,7 @@ export class CommandTargetResolver {
     const containingLine = CommandTargetResolver.containingLineFrom(args.line);
     const pattern = SymbolTargetGrammar.parse(args.rawTarget);
     const files = await args.workspace.enumerate();
-    await CommandTargetResolver.throwIfPathlikeSuffixUnresolvable(args, files, pattern.fileSuffix);
+    await CommandTargetResolver.throwIfFileSuffixUnresolvable(args, files, pattern.fileSuffix);
     const acceptedFilesByBackend = CommandTargetResolver.groupFilesByAcceptingBackend(
       args.router,
       files,
@@ -49,17 +52,23 @@ export class CommandTargetResolver {
     if (acceptedFilesByBackend.size === 0) {
       throw new NoSupportedFilesError();
     }
-    const ownedCandidates = await CommandTargetResolver.collectCandidates(
+    const matchedCandidates = await CommandTargetResolver.collectMatchedCandidates(
       acceptedFilesByBackend,
       pattern,
-      containingLine,
     );
-    const sortedOwnedCandidates = [...ownedCandidates].sort((left, right) =>
+    if (matchedCandidates.length === 0) {
+      throw new SymbolTargetNotFoundError(pattern.raw);
+    }
+    const lineCandidates = matchedCandidates.filter((owned) =>
+      CommandTargetResolver.matchesLine(containingLine, owned.candidate.symbol),
+    );
+    if (containingLine !== undefined && lineCandidates.length === 0) {
+      throw new SymbolTargetLineMismatchError(pattern.raw, containingLine);
+    }
+    const strongestCandidates = CommandTargetResolver.strongestCandidates(lineCandidates);
+    const sortedOwnedCandidates = [...strongestCandidates].sort((left, right) =>
       left.candidate.canonicalId.localeCompare(right.candidate.canonicalId),
     );
-    if (sortedOwnedCandidates.length === 0) {
-      throw new SymbolTargetNotFoundError(pattern);
-    }
     const winner = sortedOwnedCandidates[0]!;
     if (sortedOwnedCandidates.length > 1) {
       const sortedCandidates = sortedOwnedCandidates.map((owned) => owned.candidate);
@@ -68,7 +77,7 @@ export class CommandTargetResolver {
         pattern,
       );
       if (collapsedIdentity === undefined) {
-        throw new AmbiguousSymbolTargetError(pattern, sortedCandidates);
+        throw new AmbiguousSymbolTargetError(pattern.raw, sortedCandidates);
       }
       return CommandTargetResolver.resolvedTarget(
         collapsedIdentity,
@@ -104,7 +113,7 @@ export class CommandTargetResolver {
     return { identity, backend, files: acceptedFilesByBackend.get(backend) ?? [] };
   }
 
-  private static async throwIfPathlikeSuffixUnresolvable(
+  private static async throwIfFileSuffixUnresolvable(
     args: ResolveSymbolTargetForCommandArgs,
     files: readonly ResolvedPath[],
     fileSuffix: string | undefined,
@@ -115,9 +124,7 @@ export class CommandTargetResolver {
     ) {
       return;
     }
-    if (fileSuffix.includes("/")) {
-      await args.workspace.resolveInputPath(fileSuffix, args.cwd);
-    }
+    await args.workspace.resolveInputPath(fileSuffix, args.cwd);
   }
 
   private static groupFilesByAcceptingBackend(
@@ -140,30 +147,53 @@ export class CommandTargetResolver {
     return acceptedFilesByBackend;
   }
 
-  private static async collectCandidates(
+  private static async collectMatchedCandidates(
     acceptedFilesByBackend: ReadonlyMap<LanguageBackend, readonly ResolvedPath[]>,
     pattern: SymbolTargetPattern,
-    containingLine: number | undefined,
   ): Promise<readonly OwnedCandidate[]> {
     const ownedCandidates: OwnedCandidate[] = [];
     for (const [backend, accepted] of acceptedFilesByBackend) {
-      const searchFiles = CommandTargetResolver.filesMatchingSuffix(accepted, pattern.fileSuffix);
-      const candidates = await backend.findTargetCandidates(searchFiles, pattern, {
-        containingLine,
-      });
-      ownedCandidates.push(...candidates.map((candidate) => ({ candidate, backend })));
+      const declarations = await backend.declarations(accepted);
+      for (const symbol of declarations) {
+        if (!SymbolTargetGrammar.matches(pattern, symbol.identity)) {
+          continue;
+        }
+        ownedCandidates.push({
+          candidate: {
+            symbol,
+            canonicalId: formatSymbolIdentity(symbol.identity),
+            header: symbol.header,
+          },
+          backend,
+          rank: SymbolTargetGrammar.rank(pattern, symbol.identity),
+        });
+      }
     }
     return ownedCandidates;
   }
 
-  private static filesMatchingSuffix(
-    files: readonly ResolvedPath[],
-    fileSuffix: string | undefined,
-  ): readonly ResolvedPath[] {
-    if (fileSuffix === undefined) {
-      return files;
+  private static matchesLine(
+    containingLine: number | undefined,
+    symbol: SymbolTargetCandidate["symbol"],
+  ): boolean {
+    if (containingLine === undefined) {
+      return true;
     }
-    return files.filter((file) => SymbolTargetGrammar.fileSuffixMatches(file.relative, fileSuffix));
+    return containingLine >= symbol.range.startLine && containingLine <= symbol.range.endLine;
+  }
+
+  private static strongestCandidates(
+    candidates: readonly OwnedCandidate[],
+  ): readonly OwnedCandidate[] {
+    let strongestRank = candidates[0]!.rank;
+    for (const candidate of candidates.slice(1)) {
+      if (SymbolTargetGrammar.compareRanks(candidate.rank, strongestRank) > 0) {
+        strongestRank = candidate.rank;
+      }
+    }
+    return candidates.filter(
+      (candidate) => SymbolTargetGrammar.compareRanks(candidate.rank, strongestRank) === 0,
+    );
   }
 
   private static collapsedOverloadIdentity(

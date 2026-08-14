@@ -190,11 +190,7 @@ describe("CommandTargetResolver.resolve across backends", () => {
       ),
     ]);
 
-    const resolved = await ResolverScenario.resolveWith(
-      new BackendRouter([backend]),
-      "charge",
-      6,
-    );
+    const resolved = await ResolverScenario.resolveWith(new BackendRouter([backend]), "charge", 6);
 
     expect(resolved.identity.file).toBe("src/gamma.ts");
   });
@@ -284,7 +280,7 @@ describe("CommandTargetResolver.resolve across backends", () => {
     expect(ResolverScenario.relativeFiles(resolved)).toEqual(["src/beta.zz"]);
   });
 
-  it("hands only suffix-matching files to findTargetCandidates for a file-suffix pattern", async () => {
+  it("enumerates each backend's accepted files once for a file-suffix pattern", async () => {
     const typescriptBackend = ResolverScenario.typescriptFake([
       ResolverScenario.candidateFor("src/alpha.ts", [{ name: "walk" }]),
     ]);
@@ -292,11 +288,11 @@ describe("CommandTargetResolver.resolve across backends", () => {
 
     const resolved = await ResolverScenario.resolveWith(router, "alpha.ts::walk");
 
-    expect(typescriptBackend.targetCandidateCalls).toEqual([["src/alpha.ts"]]);
+    expect(typescriptBackend.declarationCalls).toEqual([["src/alpha.ts", "src/gamma.ts"]]);
     expect(ResolverScenario.relativeFiles(resolved)).toEqual(["src/alpha.ts", "src/gamma.ts"]);
   });
 
-  it("hands all accepted files to findTargetCandidates for a bare-name pattern", async () => {
+  it("enumerates each backend's accepted files once for a bare-name pattern", async () => {
     const typescriptBackend = ResolverScenario.typescriptFake([
       ResolverScenario.candidateFor("src/alpha.ts", [{ name: "walk" }]),
     ]);
@@ -304,7 +300,7 @@ describe("CommandTargetResolver.resolve across backends", () => {
 
     const resolved = await ResolverScenario.resolveWith(router, "walk");
 
-    expect(typescriptBackend.targetCandidateCalls).toEqual([["src/alpha.ts", "src/gamma.ts"]]);
+    expect(typescriptBackend.declarationCalls).toEqual([["src/alpha.ts", "src/gamma.ts"]]);
     expect(ResolverScenario.relativeFiles(resolved)).toEqual(["src/alpha.ts", "src/gamma.ts"]);
   });
 

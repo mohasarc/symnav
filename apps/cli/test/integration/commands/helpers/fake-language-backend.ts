@@ -46,7 +46,10 @@ export class FakeLanguageBackend implements LanguageBackend {
 
   async declarations(files: readonly ResolvedPath[]): Promise<readonly SymbolOverviewNode[]> {
     this.declarationCalls.push(files.map((file) => file.relative));
-    return this.targetCandidates.map((candidate) => candidate.symbol);
+    const suppliedFiles = new Set(files.map((file) => file.relative));
+    return this.targetCandidates
+      .map((candidate) => candidate.symbol)
+      .filter((symbol) => suppliedFiles.has(symbol.identity.file));
   }
 
   async findTargetCandidates(

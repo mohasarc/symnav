@@ -25,8 +25,9 @@ describe("symnav resolve e2e (exact)", () => {
     );
   });
 
-  it.skip("names the broader matching modes on an empty exact result (ends on (none) today)", () => {
+  it("names the broader matching modes on an empty exact result", () => {
     const r = runResolve(["resolve", "paymentprocessor"]);
+    expect(r.stderr).toBe("");
     expect(r.status).toBe(0);
     expect(r.stdout).toContain(
       "No exact match; try --fuzzy for approximate names, or --regex for a pattern.",

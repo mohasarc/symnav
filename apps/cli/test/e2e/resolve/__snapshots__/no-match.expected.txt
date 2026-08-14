@@ -5,3 +5,5 @@ Symbols
 
 Files
 (none)
+
+No exact match; try --fuzzy for approximate names, or --regex for a pattern.

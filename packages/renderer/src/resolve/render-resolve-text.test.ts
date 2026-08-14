@@ -93,6 +93,73 @@ describe("renderResolveText", () => {
     );
   });
 
+  it("guides broader matching after an empty exact result", () => {
+    const result: ResolveResult = {
+      query: "Nope",
+      mode: "exact",
+      symbols: [],
+      files: [],
+    };
+
+    expect(renderResolveText(result)).toBe(
+      [
+        "Resolve: Nope (exact)",
+        "",
+        "Symbols",
+        "(none)",
+        "",
+        "Files",
+        "(none)",
+        "",
+        "No exact match; try --fuzzy for approximate names, or --regex for a pattern.",
+        "",
+      ].join("\n"),
+    );
+  });
+
+  it.each([
+    {
+      name: "symbol-only exact",
+      result: {
+        query: "Payment",
+        mode: "exact",
+        symbols: [
+          decl({
+            file: "src/Payment.ts",
+            segments: [{ name: "Payment" }],
+            kind: "class",
+            startLine: 1,
+            endLine: 2,
+            header: ["class Payment"],
+          }),
+        ],
+        files: [],
+      },
+    },
+    {
+      name: "file-only exact",
+      result: {
+        query: "Payment",
+        mode: "exact",
+        symbols: [],
+        files: ["src/Payment.ts"],
+      },
+    },
+    {
+      name: "empty fuzzy",
+      result: { query: "Nope", mode: "fuzzy", symbols: [], files: [] },
+    },
+    {
+      name: "empty regex",
+      result: { query: "Nope", mode: "regex", symbols: [], files: [] },
+    },
+  ] satisfies readonly { readonly name: string; readonly result: ResolveResult }[])(
+    "omits exact-empty guidance for $name results",
+    ({ result }) => {
+      expect(renderResolveText(result)).not.toContain("No exact match");
+    },
+  );
+
   it("renders only the Files section when no symbol matches", () => {
     const result: ResolveResult = {
       query: "Payment",

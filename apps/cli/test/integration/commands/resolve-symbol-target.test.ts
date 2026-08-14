@@ -4,6 +4,7 @@ import {
   BackendRouter,
   InMemoryFileSystem,
   SymbolTargetNotFoundError,
+  SymbolTargetLineMismatchError,
   formatSymbolIdentity,
 } from "@symnav/core";
 import type {
@@ -30,10 +31,17 @@ class ResolverScenario {
     { relative: "src/gamma.ts", absolute: "/repo/src/gamma.ts" },
   ];
 
-  static candidateFor(file: string, segments: readonly SymbolPathSegment[]): SymbolTargetCandidate {
+  static candidateFor(
+    file: string,
+    segments: readonly SymbolPathSegment[],
+    range: { readonly startLine: number; readonly endLine: number } = {
+      startLine: 1,
+      endLine: 1,
+    },
+  ): SymbolTargetCandidate {
     const identity: SymbolIdentity = { file, segments };
     const header: Header = {
-      startLine: 1,
+      startLine: range.startLine,
       lines: [`declare ${segments.map((segment) => segment.name).join(".")}`],
     };
     return {
@@ -42,7 +50,7 @@ class ResolverScenario {
         identity,
         kind: { role: "callable", nativeLabel: "function" },
         children: [],
-        range: { startLine: 1, endLine: 1 },
+        range,
         header,
       },
       canonicalId: formatSymbolIdentity(identity),
@@ -64,13 +72,18 @@ class ResolverScenario {
     });
   }
 
-  static resolveWith(router: BackendRouter, rawTarget: string): Promise<ResolvedCommandTarget> {
+  static resolveWith(
+    router: BackendRouter,
+    rawTarget: string,
+    line: number | string | undefined = undefined,
+    files: readonly ResolvedPath[] = ResolverScenario.WORKSPACE_FILES,
+  ): Promise<ResolvedCommandTarget> {
     return CommandTargetResolver.resolve({
-      workspace: ResolverScenario.fakeWorkspace(ResolverScenario.WORKSPACE_FILES),
+      workspace: ResolverScenario.fakeWorkspace(files),
       router,
       cwd: "/repo",
       rawTarget,
-      line: undefined,
+      line,
     });
   }
 
@@ -90,6 +103,130 @@ class ResolverScenario {
 }
 
 describe("CommandTargetResolver.resolve across backends", () => {
+  it("selects a full symbol path over a proper suffix", async () => {
+    const backend = ResolverScenario.typescriptFake([
+      ResolverScenario.candidateFor("src/alpha.ts", [{ name: "charge" }]),
+      ResolverScenario.candidateFor("src/gamma.ts", [
+        { name: "PaymentProcessor" },
+        { name: "charge" },
+      ]),
+    ]);
+
+    const resolved = await ResolverScenario.resolveWith(new BackendRouter([backend]), "charge");
+
+    expect(resolved.identity).toEqual({ file: "src/alpha.ts", segments: [{ name: "charge" }] });
+  });
+
+  it("selects an exact file path over a proper suffix", async () => {
+    const files = [
+      { relative: "src/alpha.ts", absolute: "/repo/src/alpha.ts" },
+      { relative: "vendor/src/alpha.ts", absolute: "/repo/vendor/src/alpha.ts" },
+    ];
+    const backend = ResolverScenario.typescriptFake([
+      ResolverScenario.candidateFor("src/alpha.ts", [{ name: "walk" }]),
+      ResolverScenario.candidateFor("vendor/src/alpha.ts", [{ name: "walk" }]),
+    ]);
+
+    const resolved = await ResolverScenario.resolveWith(
+      new BackendRouter([backend]),
+      "src/alpha.ts::walk",
+      undefined,
+      files,
+    );
+
+    expect(resolved.identity.file).toBe("src/alpha.ts");
+  });
+
+  it("uses symbol specificity before file specificity", async () => {
+    const files = [
+      { relative: "orders.ts", absolute: "/repo/orders.ts" },
+      { relative: "src/orders.ts", absolute: "/repo/src/orders.ts" },
+    ];
+    const backend = ResolverScenario.typescriptFake([
+      ResolverScenario.candidateFor("src/orders.ts", [{ name: "charge" }]),
+      ResolverScenario.candidateFor("orders.ts", [
+        { name: "PaymentProcessor" },
+        { name: "charge" },
+      ]),
+    ]);
+
+    const resolved = await ResolverScenario.resolveWith(
+      new BackendRouter([backend]),
+      "orders.ts::charge",
+      undefined,
+      files,
+    );
+
+    expect(resolved.identity).toEqual({ file: "src/orders.ts", segments: [{ name: "charge" }] });
+  });
+
+  it("keeps equally strong candidates ambiguous in canonical-id order", async () => {
+    const backend = ResolverScenario.typescriptFake([
+      ResolverScenario.candidateFor("src/gamma.ts", [{ name: "walk" }]),
+      ResolverScenario.candidateFor("src/alpha.ts", [{ name: "walk" }]),
+    ]);
+
+    const error = await ResolverScenario.resolveWith(new BackendRouter([backend]), "walk").then(
+      () => undefined,
+      (thrown: unknown) => thrown,
+    );
+
+    expect(error).toBeInstanceOf(AmbiguousSymbolTargetError);
+    expect(
+      (error as AmbiguousSymbolTargetError).candidates.map((candidate) => candidate.canonicalId),
+    ).toEqual(["src/alpha.ts::walk", "src/gamma.ts::walk"]);
+  });
+
+  it("applies line narrowing before ranking", async () => {
+    const backend = ResolverScenario.typescriptFake([
+      ResolverScenario.candidateFor("src/alpha.ts", [{ name: "charge" }], {
+        startLine: 1,
+        endLine: 2,
+      }),
+      ResolverScenario.candidateFor(
+        "src/gamma.ts",
+        [{ name: "PaymentProcessor" }, { name: "charge" }],
+        { startLine: 5, endLine: 8 },
+      ),
+    ]);
+
+    const resolved = await ResolverScenario.resolveWith(
+      new BackendRouter([backend]),
+      "charge",
+      6,
+    );
+
+    expect(resolved.identity.file).toBe("src/gamma.ts");
+  });
+
+  it("distinguishes a line-filtered match from a missing target", async () => {
+    const backend = ResolverScenario.typescriptFake([
+      ResolverScenario.candidateFor("src/alpha.ts", [{ name: "walk" }]),
+    ]);
+
+    await expect(
+      ResolverScenario.resolveWith(new BackendRouter([backend]), "walk", 99),
+    ).rejects.toBeInstanceOf(SymbolTargetLineMismatchError);
+    await expect(
+      ResolverScenario.resolveWith(new BackendRouter([backend]), "missing", 99),
+    ).rejects.toBeInstanceOf(SymbolTargetNotFoundError);
+  });
+
+  it("collapses overload siblings only inside the strongest rank", async () => {
+    const backend = ResolverScenario.typescriptFake([
+      ResolverScenario.candidateFor("src/alpha.ts", [{ name: "post", disambiguator: 1 }]),
+      ResolverScenario.candidateFor("src/alpha.ts", [{ name: "post", disambiguator: 2 }]),
+      ResolverScenario.candidateFor("src/gamma.ts", [
+        { name: "Router" },
+        { name: "post", disambiguator: 1 },
+      ]),
+    ]);
+
+    const resolved = await ResolverScenario.resolveWith(new BackendRouter([backend]), "post");
+
+    expect(resolved.identity).toEqual({ file: "src/alpha.ts", segments: [{ name: "post" }] });
+  });
+
   it("resolves a bare name unique to one backend while another backend's files exist", async () => {
     const typescriptBackend = ResolverScenario.typescriptFake([
       ResolverScenario.candidateFor("src/alpha.ts", [{ name: "walk" }]),

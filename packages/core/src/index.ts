@@ -94,10 +94,7 @@ export {
   SymbolTargetLineMismatchError,
   SymbolTargetNotFoundError,
 } from "./target/symbol-target-result.js";
-export {
-  InvalidSymbolTargetRequestError,
-  validateResolveSymbolTargetOptions,
-} from "./target/validate-resolve-symbol-target-options.js";
+export { InvalidSymbolTargetRequestError } from "./target/invalid-symbol-target-request-error.js";
 export { splitHeaderLines } from "./intermediate-representation/split-header-lines.js";
 export { assignDisambiguators } from "./intermediate-representation/assign-disambiguators.js";
 export type { FileSystem } from "./workspace/file-system.js";
@@ -109,7 +106,6 @@ export type {
   LanguageBackend,
   ResolveSymbolsMode,
   ResolveSymbolsOptions,
-  ResolveSymbolTargetOptions,
 } from "./backend/language-backend.js";
 export { compileResolveRegex } from "./backend/compile-resolve-regex.js";
 export { BackendRouter } from "./backend/backend-router.js";

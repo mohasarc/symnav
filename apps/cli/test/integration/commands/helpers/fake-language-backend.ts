@@ -6,29 +6,25 @@ import type {
   SymbolReference,
   ResolvedPath,
   SymbolOverviewNode,
-  SymbolTargetCandidate,
-  SymbolTargetPattern,
 } from "@symnav/core";
-import { SymbolTargetGrammar } from "@symnav/core";
 
 export interface FakeLanguageBackendOptions {
   accept?: (filePath: string) => boolean;
   entries?: (filePath: string) => OverviewFileEntries;
-  targetCandidates?: readonly SymbolTargetCandidate[];
+  declarations?: readonly SymbolOverviewNode[];
 }
 
 export class FakeLanguageBackend implements LanguageBackend {
   readonly calls: string[] = [];
-  readonly targetCandidateCalls: string[][] = [];
   readonly declarationCalls: string[][] = [];
   private readonly acceptFn: (filePath: string) => boolean;
   private readonly entriesFn: (filePath: string) => OverviewFileEntries;
-  private readonly targetCandidates: readonly SymbolTargetCandidate[];
+  private readonly declarationSymbols: readonly SymbolOverviewNode[];
 
   constructor(options: FakeLanguageBackendOptions = {}) {
     this.acceptFn = options.accept ?? (() => true);
     this.entriesFn = options.entries ?? ((filePath: string) => ({ file: filePath, entries: [] }));
-    this.targetCandidates = options.targetCandidates ?? [];
+    this.declarationSymbols = options.declarations ?? [];
   }
 
   accepts(filePath: string): boolean {
@@ -47,19 +43,7 @@ export class FakeLanguageBackend implements LanguageBackend {
   async declarations(files: readonly ResolvedPath[]): Promise<readonly SymbolOverviewNode[]> {
     this.declarationCalls.push(files.map((file) => file.relative));
     const suppliedFiles = new Set(files.map((file) => file.relative));
-    return this.targetCandidates
-      .map((candidate) => candidate.symbol)
-      .filter((symbol) => suppliedFiles.has(symbol.identity.file));
-  }
-
-  async findTargetCandidates(
-    files: readonly ResolvedPath[],
-    pattern: SymbolTargetPattern,
-  ): Promise<readonly SymbolTargetCandidate[]> {
-    this.targetCandidateCalls.push(files.map((file) => file.relative));
-    return this.targetCandidates.filter((candidate) =>
-      SymbolTargetGrammar.matches(pattern, candidate.symbol.identity),
-    );
+    return this.declarationSymbols.filter((symbol) => suppliedFiles.has(symbol.identity.file));
   }
 
   async findDefinitions(): Promise<readonly SymbolOverviewNode[]> {

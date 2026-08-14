@@ -61,14 +61,14 @@ class ResolverScenario {
   static typescriptFake(targetCandidates: readonly SymbolTargetCandidate[]): FakeLanguageBackend {
     return new FakeLanguageBackend({
       accept: (filePath) => filePath.endsWith(".ts"),
-      targetCandidates,
+      declarations: targetCandidates.map((candidate) => candidate.symbol),
     });
   }
 
   static zetaFake(targetCandidates: readonly SymbolTargetCandidate[]): FakeLanguageBackend {
     return new FakeLanguageBackend({
       accept: (filePath) => filePath.endsWith(".zz"),
-      targetCandidates,
+      declarations: targetCandidates.map((candidate) => candidate.symbol),
     });
   }
 

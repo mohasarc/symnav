@@ -1,9 +1,12 @@
 import {
   Node,
+  type ArrowFunction,
   type CallExpression,
+  type FunctionExpression,
   type NewExpression,
   type ReferencedSymbolEntry,
   type SourceFile,
+  type VariableDeclaration,
 } from "ts-morph";
 import type {
   CallEdge,
@@ -101,16 +104,52 @@ class CallerFinder {
 
   private enclosingSymbolOf(referenceNode: Node): SymbolOverviewNode | undefined {
     let ancestor = referenceNode.getParent();
-    let nearestValue: SymbolOverviewNode | undefined;
     while (ancestor) {
-      const declaration = this.declarationIndex.declarationAt(ancestor);
-      if (declaration) {
-        if (declaration.kind.role !== "value") return declaration;
-        nearestValue = declaration;
-      }
+      const executionOwner = this.declaredExecutionOwnerOf(ancestor);
+      if (executionOwner) return executionOwner;
       ancestor = ancestor.getParent();
     }
-    return nearestValue;
+    return undefined;
+  }
+
+  private declaredExecutionOwnerOf(node: Node): SymbolOverviewNode | undefined {
+    const functionValuedVariable = this.functionValuedVariableOf(node);
+    if (functionValuedVariable) return this.indexedDeclarationAt(functionValuedVariable);
+    if (
+      Node.isFunctionDeclaration(node) ||
+      Node.isMethodDeclaration(node) ||
+      Node.isConstructorDeclaration(node) ||
+      Node.isGetAccessorDeclaration(node) ||
+      Node.isSetAccessorDeclaration(node)
+    ) {
+      return this.indexedDeclarationAt(node);
+    }
+    return undefined;
+  }
+
+  private functionValuedVariableOf(node: Node): VariableDeclaration | undefined {
+    if (!Node.isArrowFunction(node) && !Node.isFunctionExpression(node)) return undefined;
+    let initializer: Node = node;
+    let parent = initializer.getParent();
+    while (parent && Node.isParenthesizedExpression(parent)) {
+      initializer = parent;
+      parent = parent.getParent();
+    }
+    if (!parent || !Node.isVariableDeclaration(parent)) return undefined;
+    const functionValue = CallerFinder.unwrapFunctionValue(parent.getInitializerOrThrow());
+    return functionValue?.compilerNode === node.compilerNode ? parent : undefined;
+  }
+
+  private indexedDeclarationAt(node: Node): SymbolOverviewNode | undefined {
+    return this.declarationIndex.declarationAt(node);
+  }
+
+  private static unwrapFunctionValue(node: Node): ArrowFunction | FunctionExpression | undefined {
+    if (Node.isParenthesizedExpression(node)) {
+      return CallerFinder.unwrapFunctionValue(node.getExpression());
+    }
+    if (Node.isArrowFunction(node) || Node.isFunctionExpression(node)) return node;
+    return undefined;
   }
 
   private siteFor(node: Node): CallSite {

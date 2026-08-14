@@ -1,6 +1,7 @@
 import { Node, type SourceFile } from "ts-morph";
 import {
   OverviewTree,
+  type OverviewNode,
   type SymbolOverviewNode,
   type SymbolIdentity,
   type SymbolPathSegment,
@@ -47,6 +48,41 @@ export class DeclarationLocator {
         const node = this.locateDeclarationNode(declaration);
         return node ? [{ declaration, node }] : [];
       });
+  }
+
+  locateAll(entries: readonly OverviewNode[]): readonly LocatedDeclaration[] {
+    const declarationsByLocation = this.declarationsByLocation(entries);
+    const locatedDeclarations: LocatedDeclaration[] = [];
+    this.sourceFile.forEachDescendant((node) => {
+      if (!this.isDefinitionNode(node)) return;
+      const name = this.declarationName(node);
+      if (!name) return;
+      const location = DeclarationLocator.locationKey(node.getStartLineNumber(), name);
+      const declarations = declarationsByLocation.get(location);
+      const declaration = declarations?.shift();
+      if (declaration) locatedDeclarations.push({ declaration, node });
+    });
+    return locatedDeclarations;
+  }
+
+  private declarationsByLocation(
+    entries: readonly OverviewNode[],
+  ): Map<string, SymbolOverviewNode[]> {
+    const declarationsByLocation = new Map<string, SymbolOverviewNode[]>();
+    for (const declaration of OverviewTree.walkSymbols(entries)) {
+      const location = DeclarationLocator.locationKey(
+        declaration.range.startLine,
+        OverviewTree.ownName(declaration),
+      );
+      const declarations = declarationsByLocation.get(location) ?? [];
+      declarations.push(declaration);
+      declarationsByLocation.set(location, declarations);
+    }
+    return declarationsByLocation;
+  }
+
+  private static locationKey(line: number, name: string): string {
+    return `${line}:${name}`;
   }
 
   private ownSegmentMatches(declaration: SymbolOverviewNode, segment: SymbolPathSegment): boolean {
@@ -101,6 +137,7 @@ export class DeclarationLocator {
       Node.isMethodDeclaration(node) ||
       Node.isMethodSignature(node) ||
       Node.isGetAccessorDeclaration(node) ||
+      Node.isSetAccessorDeclaration(node) ||
       Node.isPropertyDeclaration(node) ||
       Node.isPropertySignature(node) ||
       Node.isVariableDeclaration(node)

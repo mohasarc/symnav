@@ -20,6 +20,7 @@ export interface FakeLanguageBackendOptions {
 export class FakeLanguageBackend implements LanguageBackend {
   readonly calls: string[] = [];
   readonly targetCandidateCalls: string[][] = [];
+  readonly declarationCalls: string[][] = [];
   private readonly acceptFn: (filePath: string) => boolean;
   private readonly entriesFn: (filePath: string) => OverviewFileEntries;
   private readonly targetCandidates: readonly SymbolTargetCandidate[];
@@ -41,6 +42,11 @@ export class FakeLanguageBackend implements LanguageBackend {
 
   async resolveSymbols(): Promise<readonly SymbolOverviewNode[]> {
     return [];
+  }
+
+  async declarations(files: readonly ResolvedPath[]): Promise<readonly SymbolOverviewNode[]> {
+    this.declarationCalls.push(files.map((file) => file.relative));
+    return this.targetCandidates.map((candidate) => candidate.symbol);
   }
 
   async findTargetCandidates(

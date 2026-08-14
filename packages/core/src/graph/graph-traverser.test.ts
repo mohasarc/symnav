@@ -91,6 +91,10 @@ class FakeLanguageBackend implements LanguageBackend {
     throw new Error("not implemented");
   }
 
+  declarations(): Promise<readonly SymbolOverviewNode[]> {
+    throw new Error("not implemented");
+  }
+
   findTargetCandidates(
     _files: readonly ResolvedPath[],
     _pattern: SymbolTargetPattern,

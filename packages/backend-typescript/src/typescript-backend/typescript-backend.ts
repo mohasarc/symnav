@@ -70,6 +70,12 @@ export class TypeScriptBackend implements LanguageBackend {
     return SymbolResolver.resolveSymbols({ fs: this.fs, files, query, options });
   }
 
+  async declarations(files: readonly ResolvedPath[]): Promise<readonly SymbolOverviewNode[]> {
+    const declarationIndex = this.sharedDeclarationIndex();
+    declarationIndex.ensureFiles(files);
+    return files.flatMap((file) => declarationIndex.declarationsIn(file.relative) ?? []);
+  }
+
   async findTargetCandidates(
     files: readonly ResolvedPath[],
     pattern: SymbolTargetPattern,

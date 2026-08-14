@@ -88,6 +88,11 @@ export {
 } from "./intermediate-representation/canonical-identity.js";
 export type { SymbolTargetPattern, SymbolTargetRank } from "./target/symbol-target-pattern.js";
 export { InvalidSymbolTargetError, SymbolTargetGrammar } from "./target/symbol-target-pattern.js";
+export type { SymbolTargetRequest } from "./target/symbol-target-request.js";
+export {
+  SymbolTargetRequestMatcher,
+  SymbolTargetRequestParser,
+} from "./target/symbol-target-request.js";
 export type { SymbolTargetCandidate } from "./target/symbol-target-result.js";
 export {
   AmbiguousSymbolTargetError,

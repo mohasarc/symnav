@@ -4,8 +4,7 @@ import type {
   ResolvedPath,
   SymbolIdentity,
   SymbolTargetCandidate,
-  SymbolTargetPattern,
-  SymbolTargetRank,
+  SymbolTargetRequest,
   Workspace,
 } from "@symnav/core";
 import {
@@ -15,6 +14,8 @@ import {
   SymbolTargetGrammar,
   SymbolTargetLineMismatchError,
   SymbolTargetNotFoundError,
+  SymbolTargetRequestMatcher,
+  SymbolTargetRequestParser,
   formatSymbolIdentity,
   isPositiveInteger,
 } from "@symnav/core";
@@ -25,6 +26,7 @@ export interface ResolveSymbolTargetForCommandArgs {
   readonly cwd: string;
   readonly rawTarget: string;
   readonly line: number | string | undefined;
+  readonly regex: boolean;
 }
 
 export interface ResolvedCommandTarget {
@@ -36,15 +38,14 @@ export interface ResolvedCommandTarget {
 interface OwnedCandidate {
   readonly candidate: SymbolTargetCandidate;
   readonly backend: LanguageBackend;
-  readonly rank: SymbolTargetRank;
 }
 
 export class CommandTargetResolver {
   static async resolve(args: ResolveSymbolTargetForCommandArgs): Promise<ResolvedCommandTarget> {
     const containingLine = CommandTargetResolver.containingLineFrom(args.line);
-    const pattern = SymbolTargetGrammar.parse(args.rawTarget);
+    const request = SymbolTargetRequestParser.parse(args.rawTarget, args.regex);
     const files = await args.workspace.enumerate();
-    await CommandTargetResolver.throwIfFileSuffixUnresolvable(args, files, pattern.fileSuffix);
+    await CommandTargetResolver.throwIfFileSuffixUnresolvable(args, files, request);
     const acceptedFilesByBackend = CommandTargetResolver.groupFilesByAcceptingBackend(
       args.router,
       files,
@@ -54,30 +55,30 @@ export class CommandTargetResolver {
     }
     const matchedCandidates = await CommandTargetResolver.collectMatchedCandidates(
       acceptedFilesByBackend,
-      pattern,
+      request,
     );
     if (matchedCandidates.length === 0) {
-      throw new SymbolTargetNotFoundError(pattern.raw);
+      throw new SymbolTargetNotFoundError(request.raw);
     }
     const lineCandidates = matchedCandidates.filter((owned) =>
       CommandTargetResolver.matchesLine(containingLine, owned.candidate.symbol),
     );
     if (containingLine !== undefined && lineCandidates.length === 0) {
-      throw new SymbolTargetLineMismatchError(pattern.raw, containingLine);
+      throw new SymbolTargetLineMismatchError(request.raw, containingLine);
     }
-    const strongestCandidates = CommandTargetResolver.strongestCandidates(lineCandidates);
+    const strongestCandidates = CommandTargetResolver.strongestCandidates(lineCandidates, request);
     const sortedOwnedCandidates = [...strongestCandidates].sort((left, right) =>
       left.candidate.canonicalId.localeCompare(right.candidate.canonicalId),
     );
     const winner = sortedOwnedCandidates[0]!;
     if (sortedOwnedCandidates.length > 1) {
       const sortedCandidates = sortedOwnedCandidates.map((owned) => owned.candidate);
-      const collapsedIdentity = CommandTargetResolver.collapsedOverloadIdentity(
-        sortedCandidates,
-        pattern,
-      );
+      const collapsedIdentity =
+        request.mode === "regular"
+          ? CommandTargetResolver.collapsedOverloadIdentity(sortedCandidates, request.pattern)
+          : undefined;
       if (collapsedIdentity === undefined) {
-        throw new AmbiguousSymbolTargetError(pattern.raw, sortedCandidates);
+        throw new AmbiguousSymbolTargetError(request.raw, sortedCandidates);
       }
       return CommandTargetResolver.resolvedTarget(
         collapsedIdentity,
@@ -116,8 +117,9 @@ export class CommandTargetResolver {
   private static async throwIfFileSuffixUnresolvable(
     args: ResolveSymbolTargetForCommandArgs,
     files: readonly ResolvedPath[],
-    fileSuffix: string | undefined,
+    request: SymbolTargetRequest,
   ): Promise<void> {
+    const fileSuffix = request.mode === "regular" ? request.pattern.fileSuffix : undefined;
     if (
       fileSuffix === undefined ||
       files.some((file) => SymbolTargetGrammar.fileSuffixMatches(file.relative, fileSuffix))
@@ -149,13 +151,13 @@ export class CommandTargetResolver {
 
   private static async collectMatchedCandidates(
     acceptedFilesByBackend: ReadonlyMap<LanguageBackend, readonly ResolvedPath[]>,
-    pattern: SymbolTargetPattern,
+    request: SymbolTargetRequest,
   ): Promise<readonly OwnedCandidate[]> {
     const ownedCandidates: OwnedCandidate[] = [];
     for (const [backend, accepted] of acceptedFilesByBackend) {
       const declarations = await backend.declarations(accepted);
       for (const symbol of declarations) {
-        if (!SymbolTargetGrammar.matches(pattern, symbol.identity)) {
+        if (!SymbolTargetRequestMatcher.matches(request, symbol.identity)) {
           continue;
         }
         ownedCandidates.push({
@@ -165,7 +167,6 @@ export class CommandTargetResolver {
             header: symbol.header,
           },
           backend,
-          rank: SymbolTargetGrammar.rank(pattern, symbol.identity),
         });
       }
     }
@@ -184,21 +185,30 @@ export class CommandTargetResolver {
 
   private static strongestCandidates(
     candidates: readonly OwnedCandidate[],
+    request: SymbolTargetRequest,
   ): readonly OwnedCandidate[] {
-    let strongestRank = candidates[0]!.rank;
+    if (request.mode === "regex") {
+      return candidates;
+    }
+    let strongestRank = SymbolTargetGrammar.rank(
+      request.pattern,
+      candidates[0]!.candidate.symbol.identity,
+    );
     for (const candidate of candidates.slice(1)) {
-      if (SymbolTargetGrammar.compareRanks(candidate.rank, strongestRank) > 0) {
-        strongestRank = candidate.rank;
+      const rank = SymbolTargetGrammar.rank(request.pattern, candidate.candidate.symbol.identity);
+      if (SymbolTargetGrammar.compareRanks(rank, strongestRank) > 0) {
+        strongestRank = rank;
       }
     }
-    return candidates.filter(
-      (candidate) => SymbolTargetGrammar.compareRanks(candidate.rank, strongestRank) === 0,
-    );
+    return candidates.filter((candidate) => {
+      const rank = SymbolTargetGrammar.rank(request.pattern, candidate.candidate.symbol.identity);
+      return SymbolTargetGrammar.compareRanks(rank, strongestRank) === 0;
+    });
   }
 
   private static collapsedOverloadIdentity(
     candidates: readonly SymbolTargetCandidate[],
-    pattern: SymbolTargetPattern,
+    pattern: Extract<SymbolTargetRequest, { readonly mode: "regular" }>["pattern"],
   ): SymbolIdentity | undefined {
     const leafPattern = pattern.segmentSuffix[pattern.segmentSuffix.length - 1];
     if (leafPattern?.disambiguator !== undefined) {

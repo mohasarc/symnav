@@ -10,6 +10,7 @@ import { CommandTargetResolver } from "../resolve-symbol-target.js";
 export interface RefsArgs {
   readonly target: string;
   readonly line: number | string | undefined;
+  readonly regex: boolean;
   readonly page: number | undefined;
   readonly pageSize: number | undefined;
   readonly all: boolean;
@@ -39,6 +40,7 @@ export const refsCommand: Command<RefsResult, RefsArgs> = {
       cwd: ctx.cwd,
       rawTarget: ctx.args.target,
       line: ctx.args.line,
+      regex: ctx.args.regex,
     });
     const references = await resolved.backend.findReferences(resolved.files, resolved.identity);
     const result = new RefsResultBuilder({
@@ -69,5 +71,6 @@ function refsFlags(args: RefsArgs): string[] {
     ...(args.line !== undefined ? ["line"] : []),
     ...(args.page !== undefined ? ["page"] : []),
     ...(args.pageSize !== undefined ? ["page-size"] : []),
+    ...(args.regex ? ["regex"] : []),
   ].sort();
 }

@@ -11,6 +11,7 @@ import { CommandTargetResolver } from "../resolve-symbol-target.js";
 export interface ContextArgs {
   readonly target: string;
   readonly line: number | string | undefined;
+  readonly regex: boolean;
 }
 
 export const contextCommand: Command<ContextResult, ContextArgs> = {
@@ -19,7 +20,10 @@ export const contextCommand: Command<ContextResult, ContextArgs> = {
     return {
       kind: classifyArgKind(args.target),
       lengthBucket: lengthBucketOf(args.target),
-      flags: args.line === undefined ? [] : ["line"],
+      flags: [
+        ...(args.line === undefined ? [] : ["line"]),
+        ...(args.regex ? ["regex"] : []),
+      ].sort(),
     };
   },
   countResults(result: ContextResult) {
@@ -37,6 +41,7 @@ export const contextCommand: Command<ContextResult, ContextArgs> = {
       cwd: ctx.cwd,
       rawTarget: ctx.args.target,
       line: ctx.args.line,
+      regex: ctx.args.regex,
     });
     const identity = resolved.identity;
     const backend = resolved.backend;

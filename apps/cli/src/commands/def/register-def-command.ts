@@ -14,8 +14,9 @@ export function registerDefCommand(
     .command("def <target>")
     .description("Show where a symbol is defined")
     .option("--line <n>", "narrow target matches to declarations containing this line")
+    .option("--regex", "match full canonical symbol ids by JavaScript regex", false)
     .option("--json", "emit JSON instead of text", false)
-    .action(async (target: string, options: { line?: string; json: boolean }) => {
+    .action(async (target: string, options: { line?: string; regex: boolean; json: boolean }) => {
       const cwdOverride = program.opts<{ cwd?: string }>().cwd;
       await runCommand(defCommand, {
         context,
@@ -25,6 +26,7 @@ export function registerDefCommand(
         args: {
           target,
           line: options.line,
+          regex: options.regex,
         },
       });
     });

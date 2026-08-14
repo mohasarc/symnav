@@ -149,7 +149,7 @@ describe("symnav context e2e (nested call sites)", () => {
     expect(parsed.references.total).toBe(1);
   });
 
-  it.skip("attributes a call in a variable-initializer body to that initializer, not the file's first declaration (reports foldedRoot today)", () => {
+  it("attributes a call in a variable-initializer body to that initializer", () => {
     const r = runContext([foldedNestedId, "--json"]);
     expect(r.stderr).toBe("");
     expect(r.status).toBe(0);

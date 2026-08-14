@@ -16,6 +16,15 @@ const CALL_GRAPH_CASES: Record<string, string> = {
     "export function mentionedNotCalled(): void {}",
     "export function calledFromFunctionValuedConst(): void {}",
     "export function calledFromTopLevelHandler(): void {}",
+    "export function calledFromParenthesizedArrow(): void {}",
+    "export function calledFromFunctionExpression(): void {}",
+    "export function calledFromExpressionBody(): void {}",
+    "export function calledFromOrdinaryInitializer(): number { return 1; }",
+    "export function calledFromTopLevelInitializer(): number { return 1; }",
+    "export function calledFromAnonymousCallback(): void {}",
+    "export function calledAfterUnrelatedLineOne(): void {}",
+    "export function calledFromFirstSameLineOwner(): void {}",
+    "export function calledFromSetter(): void {}",
     "",
   ].join("\n"),
   "/repo/src/callers/file-a.ts": [
@@ -103,16 +112,71 @@ const CALL_GRAPH_CASES: Record<string, string> = {
     "};",
     "",
   ].join("\n"),
+  "/repo/src/callers/function-value-shapes.ts": [
+    "export function unrelatedLineOne(): void {}",
+    'import { calledAfterUnrelatedLineOne, calledFromExpressionBody, calledFromFunctionExpression, calledFromParenthesizedArrow } from "./targets.js";',
+    "",
+    "export const afterUnrelatedLineOne = () => {",
+    "  calledAfterUnrelatedLineOne();",
+    "};",
+    "",
+    "export const parenthesizedArrow = (() => {",
+    "  calledFromParenthesizedArrow();",
+    "});",
+    "",
+    "export const functionExpression = function () {",
+    "  calledFromFunctionExpression();",
+    "};",
+    "",
+    "export const expressionBody = () => calledFromExpressionBody();",
+    "",
+  ].join("\n"),
+  "/repo/src/callers/initializer-boundaries.ts": [
+    'import { calledFromAnonymousCallback, calledFromOrdinaryInitializer, calledFromTopLevelInitializer } from "./targets.js";',
+    "",
+    "export function enclosingCallable(): void {",
+    "  const result = calledFromOrdinaryInitializer();",
+    "  [result].forEach(() => {",
+    "    calledFromAnonymousCallback();",
+    "  });",
+    "}",
+    "",
+    "export const topLevelResult = calledFromTopLevelInitializer();",
+    "",
+  ].join("\n"),
+  "/repo/src/callers/same-line-function-values.ts": [
+    'import { calledFromFirstSameLineOwner } from "./targets.js";',
+    "",
+    "export const firstSameLineOwner = () => { calledFromFirstSameLineOwner(); }, secondSameLineOwner = () => {};",
+    "",
+  ].join("\n"),
+  "/repo/src/callers/setter.ts": [
+    'import { calledFromSetter } from "./targets.js";',
+    "",
+    "export class Host {",
+    "  private stored = 0;",
+    "",
+    "  set value(next: number) {",
+    "    this.stored = next;",
+    "    calledFromSetter();",
+    "  }",
+    "}",
+    "",
+  ].join("\n"),
 };
 
 const ALL_FILES: readonly ResolvedPath[] = [
   "src/callers/dynamic.ts",
   "src/callers/file-a.ts",
   "src/callers/file-b.ts",
+  "src/callers/function-value-shapes.ts",
   "src/callers/function-valued-const.ts",
+  "src/callers/initializer-boundaries.ts",
   "src/callers/mentions.ts",
   "src/callers/nested.ts",
   "src/callers/sample.test.ts",
+  "src/callers/same-line-function-values.ts",
+  "src/callers/setter.ts",
   "src/callers/targets.ts",
   "src/callers/top-level-handler.ts",
   "src/callers/twice.ts",
@@ -176,12 +240,74 @@ describe("TypeScriptBackend.findCallers", () => {
     expect(edges).toEqual([]);
   });
 
-  it("attributes a call inside a function-valued const to the nearest enclosing non-value symbol", async () => {
+  it("attributes a call inside a local function-valued const to that const", async () => {
     const edges = await callersOf("calledFromFunctionValuedConst");
     expect(edges).toHaveLength(1);
     expect(edges[0]!.symbol.identity).toEqual({
       file: "src/callers/function-valued-const.ts",
-      segments: [{ name: "bar" }],
+      segments: [{ name: "bar" }, { name: "handler" }],
+    });
+  });
+
+  it("does not confuse a top-level execution owner with an unrelated line-one declaration", async () => {
+    const edges = await callersOf("calledAfterUnrelatedLineOne");
+    expect(edges).toHaveLength(1);
+    expect(edges[0]!.symbol.identity).toEqual({
+      file: "src/callers/function-value-shapes.ts",
+      segments: [{ name: "afterUnrelatedLineOne" }],
+    });
+  });
+
+  it("attributes a call to the correct function-valued variable when two start on one line", async () => {
+    const edges = await callersOf("calledFromFirstSameLineOwner");
+    expect(edges).toHaveLength(1);
+    expect(edges[0]!.symbol.identity).toEqual({
+      file: "src/callers/same-line-function-values.ts",
+      segments: [{ name: "firstSameLineOwner" }],
+    });
+  });
+
+  it.each([
+    ["calledFromParenthesizedArrow", "parenthesizedArrow"],
+    ["calledFromFunctionExpression", "functionExpression"],
+    ["calledFromExpressionBody", "expressionBody"],
+  ])("attributes %s to function-valued variable %s", async (target, owner) => {
+    const edges = await callersOf(target);
+    expect(edges).toHaveLength(1);
+    expect(edges[0]!.symbol.identity).toEqual({
+      file: "src/callers/function-value-shapes.ts",
+      segments: [{ name: owner }],
+    });
+  });
+
+  it("keeps an ordinary initializer call owned by its enclosing callable", async () => {
+    const edges = await callersOf("calledFromOrdinaryInitializer");
+    expect(edges).toHaveLength(1);
+    expect(edges[0]!.symbol.identity).toEqual({
+      file: "src/callers/initializer-boundaries.ts",
+      segments: [{ name: "enclosingCallable" }],
+    });
+  });
+
+  it("does not invent a caller for a top-level ordinary initializer", async () => {
+    await expect(callersOf("calledFromTopLevelInitializer")).resolves.toEqual([]);
+  });
+
+  it("keeps an anonymous callback owned by its enclosing declared callable", async () => {
+    const edges = await callersOf("calledFromAnonymousCallback");
+    expect(edges).toHaveLength(1);
+    expect(edges[0]!.symbol.identity).toEqual({
+      file: "src/callers/initializer-boundaries.ts",
+      segments: [{ name: "enclosingCallable" }],
+    });
+  });
+
+  it("attributes a call inside a setter to that setter", async () => {
+    const edges = await callersOf("calledFromSetter");
+    expect(edges).toHaveLength(1);
+    expect(edges[0]!.symbol.identity).toEqual({
+      file: "src/callers/setter.ts",
+      segments: [{ name: "Host" }, { name: "value" }],
     });
   });
 

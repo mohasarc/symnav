@@ -158,7 +158,7 @@ describe("symnav graph e2e (default output)", () => {
     expect(parsed.identity.segments.map((segment) => segment.name)).not.toContain("if");
   });
 
-  it.skip("names the enclosing initializer as the incoming caller, not the file's first declaration (reports foldedRoot today)", () => {
+  it("names the enclosing initializer as the incoming caller", () => {
     const r = runGraph([foldedNestedId, "--incoming", "--depth", "1", "--json"]);
     expect(r.stderr).toBe("");
     expect(r.status).toBe(0);

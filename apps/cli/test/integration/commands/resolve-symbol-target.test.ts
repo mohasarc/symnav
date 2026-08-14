@@ -25,7 +25,7 @@ import { createFakeProgramContext } from "./helpers/fake-program-context.js";
 import { fakeDependencies } from "./helpers/fake-program-dependencies.js";
 
 class ResolverScenario {
-  private static readonly WORKSPACE_FILES: readonly ResolvedPath[] = [
+  static readonly WORKSPACE_FILES: readonly ResolvedPath[] = [
     { relative: "src/alpha.ts", absolute: "/repo/src/alpha.ts" },
     { relative: "src/beta.zz", absolute: "/repo/src/beta.zz" },
     { relative: "src/gamma.ts", absolute: "/repo/src/gamma.ts" },
@@ -77,6 +77,7 @@ class ResolverScenario {
     rawTarget: string,
     line: number | string | undefined = undefined,
     files: readonly ResolvedPath[] = ResolverScenario.WORKSPACE_FILES,
+    regex = false,
   ): Promise<ResolvedCommandTarget> {
     return CommandTargetResolver.resolve({
       workspace: ResolverScenario.fakeWorkspace(files),
@@ -84,6 +85,7 @@ class ResolverScenario {
       cwd: "/repo",
       rawTarget,
       line,
+      regex,
     });
   }
 
@@ -346,7 +348,7 @@ describe("CommandTargetResolver.resolve across backends", () => {
       }),
       cwdOverride: undefined,
       json: false,
-      args: { target: "helper", line: undefined },
+      args: { target: "helper", line: undefined, regex: false },
     });
 
     expect(context.stdout.text()).toBe("");
@@ -371,7 +373,7 @@ describe("CommandTargetResolver.resolve across backends", () => {
       }),
       cwdOverride: undefined,
       json: false,
-      args: { target: "walk", line: "abc" },
+      args: { target: "walk", line: "abc", regex: false },
     });
 
     expect(context.stdout.text()).toBe("");
@@ -396,7 +398,7 @@ describe("CommandTargetResolver.resolve across backends", () => {
       }),
       cwdOverride: undefined,
       json: false,
-      args: { target: "walk", line: "0" },
+      args: { target: "walk", line: "0", regex: false },
     });
 
     expect(context.stdout.text()).toBe("");
@@ -415,5 +417,136 @@ describe("CommandTargetResolver.resolve across backends", () => {
 
     expect(resolved.identity).toEqual({ file: "src/alpha.ts", segments: [{ name: "post" }] });
     expect(resolved.backend).toBe(typescriptBackend);
+  });
+
+  it("resolves one regex match against a full canonical id", async () => {
+    const backend = ResolverScenario.typescriptFake([
+      ResolverScenario.candidateFor("src/alpha.ts", [{ name: "walk" }]),
+      ResolverScenario.candidateFor("src/gamma.ts", [{ name: "other" }]),
+    ]);
+
+    const resolved = await ResolverScenario.resolveWith(
+      new BackendRouter([backend]),
+      "^src/alpha\\.ts::walk$",
+      undefined,
+      ResolverScenario.WORKSPACE_FILES,
+      true,
+    );
+
+    expect(resolved.identity).toEqual({ file: "src/alpha.ts", segments: [{ name: "walk" }] });
+  });
+
+  it("reports not-found when a regex matches no canonical ids", async () => {
+    const backend = ResolverScenario.typescriptFake([
+      ResolverScenario.candidateFor("src/alpha.ts", [{ name: "walk" }]),
+    ]);
+
+    await expect(
+      ResolverScenario.resolveWith(
+        new BackendRouter([backend]),
+        "missing$",
+        undefined,
+        ResolverScenario.WORKSPACE_FILES,
+        true,
+      ),
+    ).rejects.toBeInstanceOf(SymbolTargetNotFoundError);
+  });
+
+  it("keeps every surviving regex candidate equally ambiguous", async () => {
+    const backend = ResolverScenario.typescriptFake([
+      ResolverScenario.candidateFor("src/alpha.ts", [{ name: "charge" }]),
+      ResolverScenario.candidateFor("src/gamma.ts", [
+        { name: "PaymentProcessor" },
+        { name: "charge" },
+      ]),
+    ]);
+
+    const error = await ResolverScenario.resolveWith(
+      new BackendRouter([backend]),
+      "charge$",
+      undefined,
+      ResolverScenario.WORKSPACE_FILES,
+      true,
+    ).then(
+      () => undefined,
+      (thrown: unknown) => thrown,
+    );
+
+    expect(error).toBeInstanceOf(AmbiguousSymbolTargetError);
+    expect(
+      (error as AmbiguousSymbolTargetError).candidates.map((candidate) => candidate.canonicalId),
+    ).toEqual(["src/alpha.ts::charge", "src/gamma.ts::PaymentProcessor::charge"]);
+  });
+
+  it("applies line narrowing after regex matching", async () => {
+    const backend = ResolverScenario.typescriptFake([
+      ResolverScenario.candidateFor("src/alpha.ts", [{ name: "charge" }], {
+        startLine: 1,
+        endLine: 2,
+      }),
+      ResolverScenario.candidateFor("src/gamma.ts", [{ name: "charge" }], {
+        startLine: 5,
+        endLine: 8,
+      }),
+    ]);
+
+    const resolved = await ResolverScenario.resolveWith(
+      new BackendRouter([backend]),
+      "charge$",
+      6,
+      ResolverScenario.WORKSPACE_FILES,
+      true,
+    );
+
+    expect(resolved.identity.file).toBe("src/gamma.ts");
+  });
+
+  it("reports line mismatch when narrowing removes every regex match", async () => {
+    const backend = ResolverScenario.typescriptFake([
+      ResolverScenario.candidateFor("src/alpha.ts", [{ name: "walk" }]),
+    ]);
+
+    await expect(
+      ResolverScenario.resolveWith(
+        new BackendRouter([backend]),
+        "walk$",
+        99,
+        ResolverScenario.WORKSPACE_FILES,
+        true,
+      ),
+    ).rejects.toBeInstanceOf(SymbolTargetLineMismatchError);
+  });
+
+  it("does not collapse regex matches for overload siblings", async () => {
+    const backend = ResolverScenario.typescriptFake([
+      ResolverScenario.candidateFor("src/alpha.ts", [{ name: "post", disambiguator: 1 }]),
+      ResolverScenario.candidateFor("src/alpha.ts", [{ name: "post", disambiguator: 2 }]),
+    ]);
+
+    await expect(
+      ResolverScenario.resolveWith(
+        new BackendRouter([backend]),
+        "post#(?:1|2)$",
+        undefined,
+        ResolverScenario.WORKSPACE_FILES,
+        true,
+      ),
+    ).rejects.toBeInstanceOf(AmbiguousSymbolTargetError);
+  });
+
+  it("enumerates all backend-accepted files for regex requests", async () => {
+    const typescriptBackend = ResolverScenario.typescriptFake([
+      ResolverScenario.candidateFor("src/alpha.ts", [{ name: "walk" }]),
+    ]);
+
+    await ResolverScenario.resolveWith(
+      new BackendRouter([typescriptBackend]),
+      "alpha\\.ts::walk$",
+      undefined,
+      ResolverScenario.WORKSPACE_FILES,
+      true,
+    );
+
+    expect(typescriptBackend.declarationCalls).toEqual([["src/alpha.ts", "src/gamma.ts"]]);
   });
 });

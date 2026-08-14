@@ -41,18 +41,14 @@ describe("symnav resolve e2e (regex)", () => {
   it("reports an invalid regex with the pattern stated once", () => {
     const r = runResolve(["resolve", "--regex", "["]);
     expect(r.stdout).toBe("");
-    expect(r.stderr).toBe(
-      'Cannot answer: invalid resolve regex "[": Unterminated character class.\n',
-    );
+    expect(r.stderr).toBe('Cannot answer: invalid regex "[": Unterminated character class.\n');
     expect(r.status).toBe(1);
   });
 
   it("reports an invalid regex even when the workspace has no supported files", () => {
     const r = runResolve(["resolve", "--regex", "["], noSupportedFilesFixtureRoot);
     expect(r.stdout).toBe("");
-    expect(r.stderr).toBe(
-      'Cannot answer: invalid resolve regex "[": Unterminated character class.\n',
-    );
+    expect(r.stderr).toBe('Cannot answer: invalid regex "[": Unterminated character class.\n');
     expect(r.status).toBe(1);
   });
 
@@ -91,7 +87,7 @@ describe("symnav resolve e2e (regex)", () => {
   it("rejects invalid regex syntax with the parser reason", () => {
     const r = runResolve(["resolve", "--regex", "["]);
     expect(r.stdout).toBe("");
-    expect(r.stderr).toContain('Cannot answer: invalid resolve regex "[": ');
+    expect(r.stderr).toContain('Cannot answer: invalid regex "[": ');
     expect(r.stderr).toContain("Unterminated character class");
     expect(r.status).toBe(1);
   });

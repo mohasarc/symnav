@@ -3,11 +3,33 @@ import { describe, expect, it } from "vitest";
 import { UserFacingError } from "../errors.js";
 import type { SymbolIdentity } from "../intermediate-representation/symbol-identity.js";
 import {
+  InvalidRegexError,
   InvalidResolveRegexError,
   NoSupportedFilesError,
   SymbolNotFoundError,
   UnsupportedFileError,
 } from "./errors.js";
+
+describe("InvalidRegexError", () => {
+  it("is a UserFacingError", () => {
+    expect(new InvalidRegexError("[", "Unterminated character class")).toBeInstanceOf(
+      UserFacingError,
+    );
+  });
+
+  it("exposes the pattern and detail as fields", () => {
+    const error = new InvalidRegexError("[", "Unterminated character class");
+
+    expect(error.pattern).toBe("[");
+    expect(error.detail).toBe("Unterminated character class");
+  });
+
+  it("uses shared regex vocabulary", () => {
+    expect(new InvalidRegexError("[", "Unterminated character class").reason).toBe(
+      'invalid regex "[": Unterminated character class',
+    );
+  });
+});
 
 describe("UnsupportedFileError", () => {
   it("is a UserFacingError", () => {

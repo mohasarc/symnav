@@ -14,11 +14,12 @@ describe("regex flag scope", () => {
     expect(r.stdout).toContain("match by JavaScript regex instead of exact name");
   });
 
-  it.each(symbolCommands)("does not expose regex on %s help", (command) => {
+  it.each(symbolCommands)("exposes regex without fuzzy matching on %s help", (command) => {
     const r = fixtureRunner.run([command, "--help"]);
     expect(r.stderr).toBe("");
     expect(r.status).toBe(0);
-    expect(r.stdout).not.toContain("--regex");
-    expect(r.stdout).not.toContain("regex");
+    expect(r.stdout).toContain("--regex");
+    expect(r.stdout).toContain("match full canonical symbol ids by JavaScript regex");
+    expect(r.stdout).not.toContain("--fuzzy");
   });
 });

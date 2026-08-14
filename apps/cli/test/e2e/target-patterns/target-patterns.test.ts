@@ -178,17 +178,62 @@ describe("target-pattern symbol commands", () => {
     },
   );
 
-  it.skip.each(symbolCommands)(
-    "%s rejects a regex target matching several symbols (--regex is resolve-only today)",
-    async (command) => {
-      const result = runCommand(command, ["charge$", "--regex"]);
-      expect(result.status).toBe(1);
-      expect(result.stdout).toBe("");
-      await expect(result.stderr).toMatchFileSnapshot(
-        snapshot("ambiguous-regex-charge.expected.err"),
-      );
-    },
-  );
+  it.each(symbolCommands)("%s rejects a regex target matching several symbols", async (command) => {
+    const result = runCommand(command, ["charge$", "--regex"]);
+    expect(result.status).toBe(1);
+    expect(result.stdout).toBe("");
+    await expect(result.stderr).toMatchFileSnapshot(
+      snapshot("ambiguous-regex-charge.expected.err"),
+    );
+  });
+
+  it.each(symbolCommands)("%s resolves one canonical-id regex match", (command) => {
+    const parsed = runJson<JsonResolvedTarget>(command, ["helper\\.ts::helper$", "--regex"]);
+    expectIdentity(parsed.identity, helperId);
+  });
+
+  it.each(symbolCommands)("%s reports a regex matching no canonical ids", (command) => {
+    const result = runCommand(command, ["NoSuchSymbol$", "--regex"]);
+    expect(result.status).toBe(1);
+    expect(result.stdout).toBe("");
+    expect(result.stderr).toBe('Cannot answer: no symbol target "NoSuchSymbol$" found.\n');
+  });
+
+  it.each(symbolCommands)("%s narrows regex matches by line", (command) => {
+    const parsed = runJson<JsonResolvedTarget>(command, [
+      "PaymentProcessor::charge$",
+      "--regex",
+      "--line",
+      "5",
+    ]);
+    expectIdentity(parsed.identity, orderChargeId);
+  });
+
+  it.each(symbolCommands)("%s rejects an invalid regex pattern", (command) => {
+    const result = runCommand(command, ["[", "--regex"]);
+    expect(result.status).toBe(1);
+    expect(result.stdout).toBe("");
+    expect(result.stderr).toBe('Cannot answer: invalid regex "[": Unterminated character class.\n');
+  });
+
+  it.each(symbolCommands)("%s keeps regex matching case-sensitive", (command) => {
+    const result = runCommand(command, ["HELPER$", "--regex"]);
+    expect(result.status).toBe(1);
+    expect(result.stdout).toBe("");
+    expect(result.stderr).toBe('Cannot answer: no symbol target "HELPER$" found.\n');
+  });
+
+  it.each(symbolCommands)("%s matches canonical overload disambiguators", (command) => {
+    const parsed = runJson<JsonResolvedTarget>(command, ["Router::post#2$", "--regex"]);
+    expectIdentity(parsed.identity, `${routerPostId}#2`);
+  });
+
+  it.each(symbolCommands)("%s does not regex-match declaration source text", (command) => {
+    const result = runCommand(command, ["unique-helper", "--regex"]);
+    expect(result.status).toBe(1);
+    expect(result.stdout).toBe("");
+    expect(result.stderr).toBe('Cannot answer: no symbol target "unique-helper" found.\n');
+  });
 
   it.skip("attributes each reference to its enclosing symbol (refs payload carries no owner today)", () => {
     const parsed = runJson<JsonRefsResult>("refs", ["helper"]);

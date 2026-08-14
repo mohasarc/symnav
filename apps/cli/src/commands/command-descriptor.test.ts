@@ -8,6 +8,7 @@ import type {
   SymbolOverviewNode,
 } from "@symnav/core";
 import { defCommand } from "./def/def-command.js";
+import { contextCommand } from "./context/context-command.js";
 import { graphCommand } from "./graph/graph-command.js";
 import { overviewCommand } from "./overview/overview-command.js";
 import { refsCommand } from "./refs/refs-command.js";
@@ -31,6 +32,7 @@ describe("command telemetry descriptors", () => {
     expect(resolveCommand.name).toBe("resolve");
     expect(defCommand.name).toBe("def");
     expect(refsCommand.name).toBe("refs");
+    expect(contextCommand.name).toBe("context");
     expect(graphCommand.name).toBe("graph");
   });
 
@@ -83,15 +85,17 @@ describe("command telemetry descriptors", () => {
   });
 
   it("describes def arguments", () => {
-    expect(defCommand.describeArgs({ target: "a.ts::Foo", line: undefined })).toEqual({
-      kind: "symbol_id",
-      lengthBucket: "short",
-      flags: [],
-    });
+    expect(defCommand.describeArgs({ target: "a.ts::Foo", line: undefined, regex: false })).toEqual(
+      {
+        kind: "symbol_id",
+        lengthBucket: "short",
+        flags: [],
+      },
+    );
   });
 
   it("describes def line narrowing", () => {
-    expect(defCommand.describeArgs({ target: "a.ts::Foo", line: 4 })).toEqual({
+    expect(defCommand.describeArgs({ target: "a.ts::Foo", line: 4, regex: false })).toEqual({
       kind: "symbol_id",
       lengthBucket: "short",
       flags: ["line"],
@@ -103,6 +107,7 @@ describe("command telemetry descriptors", () => {
       refsCommand.describeArgs({
         target: "a.ts::Foo",
         line: 8,
+        regex: false,
         page: 2,
         pageSize: undefined,
         all: true,
@@ -120,6 +125,7 @@ describe("command telemetry descriptors", () => {
       graphCommand.describeArgs({
         target: "a.ts::Foo",
         line: 9,
+        regex: false,
         incoming: true,
         outgoing: false,
         depth: 2,
@@ -132,6 +138,41 @@ describe("command telemetry descriptors", () => {
       lengthBucket: "short",
       flags: ["all", "depth", "incoming", "line", "page-size"],
     });
+  });
+
+  it("describes regex symbol target flags in sorted order", () => {
+    expect(defCommand.describeArgs({ target: "Foo$", line: 4, regex: true }).flags).toEqual([
+      "line",
+      "regex",
+    ]);
+    expect(
+      refsCommand.describeArgs({
+        target: "Foo$",
+        line: 4,
+        regex: true,
+        page: 2,
+        pageSize: undefined,
+        all: false,
+        fullLines: false,
+      }).flags,
+    ).toEqual(["line", "page", "regex"]);
+    expect(contextCommand.describeArgs({ target: "Foo$", line: 4, regex: true }).flags).toEqual([
+      "line",
+      "regex",
+    ]);
+    expect(
+      graphCommand.describeArgs({
+        target: "Foo$",
+        line: 4,
+        regex: true,
+        incoming: true,
+        outgoing: false,
+        depth: undefined,
+        page: undefined,
+        pageSize: undefined,
+        all: false,
+      }).flags,
+    ).toEqual(["incoming", "line", "regex"]);
   });
 
   it("counts total symbols from the full tree and shown symbols from the expanded entries", () => {

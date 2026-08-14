@@ -8,12 +8,21 @@ A CLI for navigating TypeScript codebases by symbol.
 
 `context` is workspace-only and certain-edges-only. Callers and callees count only statically-resolved calls to non-ignored workspace files, capped at 20 per direction; overflow points at `graph`. Possible and dynamic edges (element-access dispatch, calls into `node_modules`) are dropped here — `graph` surfaces them. An ambiguous target is refused with `Cannot answer:`; copy one printed candidate and query that directly.
 
-Symbol commands accept suffix targets. Use the shortest target that is unique; when a target is ambiguous, copy one printed candidate.
+`def`, `refs`, `context`, and `graph` accept structured suffix targets by default. Use the shortest target that is unique; when a target is ambiguous, copy one printed candidate.
 
 ```sh
 symnav def charge
 symnav refs PaymentProvider.ts::charge
 symnav context src/payments/PaymentProvider.ts::PaymentProvider::charge
+```
+
+Use `--regex` for a case-sensitive JavaScript regex over full canonical symbol IDs.
+
+```sh
+symnav def --regex 'PaymentProcessor::charge$'
+symnav refs --regex 'src/payments/.+::charge$'
+symnav context --regex '::build[A-Z][^:]*$'
+symnav graph --regex 'Router::dispatch#[1-3]$'
 ```
 
 `overview` starts collapsed. Expand one area by depth, copied header text, or both.

@@ -131,52 +131,6 @@ describe("SymbolTargetGrammar.parse error reasons", () => {
   });
 });
 
-describe("SymbolTargetGrammar.rank", () => {
-  it("ranks a full symbol path above a proper symbol suffix", () => {
-    const pattern = SymbolTargetGrammar.parse("charge");
-
-    expect(
-      SymbolTargetGrammar.compareRanks(
-        SymbolTargetGrammar.rank(pattern, identity("src/top-level.ts", "charge")),
-        SymbolTargetGrammar.rank(pattern, identity("src/nested.ts", "Processor", "charge")),
-      ),
-    ).toBeGreaterThan(0);
-  });
-
-  it("ranks an exact file path above a proper file suffix", () => {
-    const pattern = SymbolTargetGrammar.parse("src/orders.ts::charge");
-
-    expect(
-      SymbolTargetGrammar.compareRanks(
-        SymbolTargetGrammar.rank(pattern, identity("src/orders.ts", "charge")),
-        SymbolTargetGrammar.rank(pattern, identity("vendor/src/orders.ts", "charge")),
-      ),
-    ).toBeGreaterThan(0);
-  });
-
-  it("compares symbol specificity before file specificity", () => {
-    const pattern = SymbolTargetGrammar.parse("orders.ts::charge");
-
-    expect(
-      SymbolTargetGrammar.compareRanks(
-        SymbolTargetGrammar.rank(pattern, identity("nested/orders.ts", "charge")),
-        SymbolTargetGrammar.rank(pattern, identity("orders.ts", "Processor", "charge")),
-      ),
-    ).toBeGreaterThan(0);
-  });
-
-  it("compares equal ranks as equal", () => {
-    const pattern = SymbolTargetGrammar.parse("orders.ts::charge");
-
-    expect(
-      SymbolTargetGrammar.compareRanks(
-        SymbolTargetGrammar.rank(pattern, identity("src/orders.ts", "charge")),
-        SymbolTargetGrammar.rank(pattern, identity("vendor/orders.ts", "charge")),
-      ),
-    ).toBe(0);
-  });
-});
-
 describe("SymbolTargetGrammar.matches", () => {
   it("matches by path suffix and segment suffix together", () => {
     const pattern = SymbolTargetGrammar.parse("payments/stripe.ts::StripeProvider::charge");
@@ -221,6 +175,15 @@ describe("SymbolTargetGrammar.matches", () => {
     ).toBe(true);
     expect(
       SymbolTargetGrammar.matches(pattern, identity("src/orders.ts", "PaymentProcessor", "refund")),
+    ).toBe(false);
+  });
+
+  it("rejects a nested symbol when the target names its file", () => {
+    const pattern = SymbolTargetGrammar.parse("orders.ts::charge");
+
+    expect(SymbolTargetGrammar.matches(pattern, identity("orders.ts", "charge"))).toBe(true);
+    expect(
+      SymbolTargetGrammar.matches(pattern, identity("orders.ts", "PaymentProcessor", "charge")),
     ).toBe(false);
   });
 

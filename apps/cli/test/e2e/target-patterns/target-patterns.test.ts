@@ -18,7 +18,7 @@ const adapterChargeId = "src/adapters/orders.ts::charge";
 
 const sharedTargets = [
   ["helper", helperId],
-  ["domain/orders.ts::charge", orderChargeId],
+  ["domain/orders.ts::PaymentProcessor::charge", orderChargeId],
   ["orders.ts::PaymentProcessor::charge", orderChargeId],
   [orderChargeId, orderChargeId],
   ["insideFold", insideFoldId],
@@ -120,6 +120,15 @@ describe("target-pattern symbol commands", () => {
     expect(result.status).toBe(1);
     expect(result.stdout).toBe("");
     expect(result.stderr).toBe("Cannot answer: src/ignored-stuff.ts is ignored by .gitignore.\n");
+  });
+
+  it.each(symbolCommands)("%s rejects a file suffix reaching past a nested symbol", (command) => {
+    const result = runCommand(command, ["domain/orders.ts::charge"]);
+    expect(result.status).toBe(1);
+    expect(result.stdout).toBe("");
+    expect(result.stderr).toBe(
+      'Cannot answer: no symbol target "domain/orders.ts::charge" found.\n',
+    );
   });
 
   it.each(symbolCommands)("%s rejects a path-like suffix naming a missing file", (command) => {

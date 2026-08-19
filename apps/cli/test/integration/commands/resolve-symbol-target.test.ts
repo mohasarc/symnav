@@ -105,7 +105,7 @@ class ResolverScenario {
 }
 
 describe("CommandTargetResolver.resolve across backends", () => {
-  it("selects a full symbol path over a proper suffix", async () => {
+  it("keeps a bare name ambiguous across a top-level and a nested symbol", async () => {
     const backend = ResolverScenario.typescriptFake([
       ResolverScenario.candidateFor("src/alpha.ts", [{ name: "charge" }]),
       ResolverScenario.candidateFor("src/gamma.ts", [
@@ -114,12 +114,18 @@ describe("CommandTargetResolver.resolve across backends", () => {
       ]),
     ]);
 
-    const resolved = await ResolverScenario.resolveWith(new BackendRouter([backend]), "charge");
+    const error = await ResolverScenario.resolveWith(new BackendRouter([backend]), "charge").then(
+      () => undefined,
+      (thrown: unknown) => thrown,
+    );
 
-    expect(resolved.identity).toEqual({ file: "src/alpha.ts", segments: [{ name: "charge" }] });
+    expect(error).toBeInstanceOf(AmbiguousSymbolTargetError);
+    expect(
+      (error as AmbiguousSymbolTargetError).candidates.map((candidate) => candidate.canonicalId),
+    ).toEqual(["src/alpha.ts::charge", "src/gamma.ts::PaymentProcessor::charge"]);
   });
 
-  it("selects an exact file path over a proper suffix", async () => {
+  it("keeps a file-suffix target ambiguous when a longer path also ends with it", async () => {
     const files = [
       { relative: "src/alpha.ts", absolute: "/repo/src/alpha.ts" },
       { relative: "vendor/src/alpha.ts", absolute: "/repo/vendor/src/alpha.ts" },
@@ -129,17 +135,23 @@ describe("CommandTargetResolver.resolve across backends", () => {
       ResolverScenario.candidateFor("vendor/src/alpha.ts", [{ name: "walk" }]),
     ]);
 
-    const resolved = await ResolverScenario.resolveWith(
+    const error = await ResolverScenario.resolveWith(
       new BackendRouter([backend]),
       "src/alpha.ts::walk",
       undefined,
       files,
+    ).then(
+      () => undefined,
+      (thrown: unknown) => thrown,
     );
 
-    expect(resolved.identity.file).toBe("src/alpha.ts");
+    expect(error).toBeInstanceOf(AmbiguousSymbolTargetError);
+    expect(
+      (error as AmbiguousSymbolTargetError).candidates.map((candidate) => candidate.canonicalId),
+    ).toEqual(["src/alpha.ts::walk", "vendor/src/alpha.ts::walk"]);
   });
 
-  it("uses symbol specificity before file specificity", async () => {
+  it("resolves a target that only one canonical id ends with", async () => {
     const files = [
       { relative: "orders.ts", absolute: "/repo/orders.ts" },
       { relative: "src/orders.ts", absolute: "/repo/src/orders.ts" },
@@ -179,7 +191,7 @@ describe("CommandTargetResolver.resolve across backends", () => {
     ).toEqual(["src/alpha.ts::walk", "src/gamma.ts::walk"]);
   });
 
-  it("applies line narrowing before ranking", async () => {
+  it("narrows by line before reporting ambiguity", async () => {
     const backend = ResolverScenario.typescriptFake([
       ResolverScenario.candidateFor("src/alpha.ts", [{ name: "charge" }], {
         startLine: 1,
@@ -210,7 +222,7 @@ describe("CommandTargetResolver.resolve across backends", () => {
     ).rejects.toBeInstanceOf(SymbolTargetNotFoundError);
   });
 
-  it("collapses overload siblings only inside the strongest rank", async () => {
+  it("refuses to collapse overloads spread across distinct symbols", async () => {
     const backend = ResolverScenario.typescriptFake([
       ResolverScenario.candidateFor("src/alpha.ts", [{ name: "post", disambiguator: 1 }]),
       ResolverScenario.candidateFor("src/alpha.ts", [{ name: "post", disambiguator: 2 }]),
@@ -220,9 +232,15 @@ describe("CommandTargetResolver.resolve across backends", () => {
       ]),
     ]);
 
-    const resolved = await ResolverScenario.resolveWith(new BackendRouter([backend]), "post");
+    const error = await ResolverScenario.resolveWith(new BackendRouter([backend]), "post").then(
+      () => undefined,
+      (thrown: unknown) => thrown,
+    );
 
-    expect(resolved.identity).toEqual({ file: "src/alpha.ts", segments: [{ name: "post" }] });
+    expect(error).toBeInstanceOf(AmbiguousSymbolTargetError);
+    expect(
+      (error as AmbiguousSymbolTargetError).candidates.map((candidate) => candidate.canonicalId),
+    ).toEqual(["src/alpha.ts::post#1", "src/alpha.ts::post#2", "src/gamma.ts::Router::post#1"]);
   });
 
   it("resolves a bare name unique to one backend while another backend's files exist", async () => {

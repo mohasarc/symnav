@@ -15,11 +15,6 @@ export interface SymbolTargetPattern {
   readonly segmentSuffix: readonly SymbolPathSegment[];
 }
 
-export interface SymbolTargetRank {
-  readonly symbolPath: "suffix" | "exact";
-  readonly filePath: "unspecified" | "suffix" | "exact";
-}
-
 export class InvalidSymbolTargetError extends UserFacingError {
   constructor(
     readonly explanation: string,
@@ -60,11 +55,13 @@ export class SymbolTargetGrammar {
   }
 
   static matches(pattern: SymbolTargetPattern, identity: SymbolIdentity): boolean {
-    if (
-      pattern.fileSuffix !== undefined &&
-      !SymbolTargetGrammar.fileSuffixMatches(identity.file, pattern.fileSuffix)
-    ) {
-      return false;
+    if (pattern.fileSuffix !== undefined) {
+      if (!SymbolTargetGrammar.fileSuffixMatches(identity.file, pattern.fileSuffix)) {
+        return false;
+      }
+      if (pattern.segmentSuffix.length !== identity.segments.length) {
+        return false;
+      }
     }
     if (pattern.segmentSuffix.length > identity.segments.length) {
       return false;
@@ -84,31 +81,6 @@ export class SymbolTargetGrammar {
     return file.endsWith(`/${suffix}`);
   }
 
-  static rank(pattern: SymbolTargetPattern, identity: SymbolIdentity): SymbolTargetRank {
-    const symbolPath =
-      pattern.segmentSuffix.length === identity.segments.length ? "exact" : "suffix";
-    const filePath =
-      pattern.fileSuffix === undefined
-        ? "unspecified"
-        : pattern.fileSuffix === identity.file
-          ? "exact"
-          : "suffix";
-    return { symbolPath, filePath };
-  }
-
-  static compareRanks(left: SymbolTargetRank, right: SymbolTargetRank): number {
-    const symbolDifference =
-      SymbolTargetGrammar.symbolPathRank(left.symbolPath) -
-      SymbolTargetGrammar.symbolPathRank(right.symbolPath);
-    if (symbolDifference !== 0) {
-      return symbolDifference;
-    }
-    return (
-      SymbolTargetGrammar.filePathRank(left.filePath) -
-      SymbolTargetGrammar.filePathRank(right.filePath)
-    );
-  }
-
   private static fileSuffixFrom(parts: readonly string[]): string | undefined {
     if (parts.length < 2) {
       return undefined;
@@ -125,15 +97,5 @@ export class SymbolTargetGrammar {
       return false;
     }
     return pattern.disambiguator === undefined || pattern.disambiguator === candidate.disambiguator;
-  }
-
-  private static symbolPathRank(rank: SymbolTargetRank["symbolPath"]): number {
-    return rank === "exact" ? 1 : 0;
-  }
-
-  private static filePathRank(rank: SymbolTargetRank["filePath"]): number {
-    if (rank === "exact") return 2;
-    if (rank === "suffix") return 1;
-    return 0;
   }
 }

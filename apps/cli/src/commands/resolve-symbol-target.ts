@@ -66,8 +66,7 @@ export class CommandTargetResolver {
     if (containingLine !== undefined && lineCandidates.length === 0) {
       throw new SymbolTargetLineMismatchError(request.raw, containingLine);
     }
-    const strongestCandidates = CommandTargetResolver.strongestCandidates(lineCandidates, request);
-    const sortedOwnedCandidates = [...strongestCandidates].sort((left, right) =>
+    const sortedOwnedCandidates = [...lineCandidates].sort((left, right) =>
       left.candidate.canonicalId.localeCompare(right.candidate.canonicalId),
     );
     const winner = sortedOwnedCandidates[0]!;
@@ -181,29 +180,6 @@ export class CommandTargetResolver {
       return true;
     }
     return containingLine >= symbol.range.startLine && containingLine <= symbol.range.endLine;
-  }
-
-  private static strongestCandidates(
-    candidates: readonly OwnedCandidate[],
-    request: SymbolTargetRequest,
-  ): readonly OwnedCandidate[] {
-    if (request.mode === "regex") {
-      return candidates;
-    }
-    let strongestRank = SymbolTargetGrammar.rank(
-      request.pattern,
-      candidates[0]!.candidate.symbol.identity,
-    );
-    for (const candidate of candidates.slice(1)) {
-      const rank = SymbolTargetGrammar.rank(request.pattern, candidate.candidate.symbol.identity);
-      if (SymbolTargetGrammar.compareRanks(rank, strongestRank) > 0) {
-        strongestRank = rank;
-      }
-    }
-    return candidates.filter((candidate) => {
-      const rank = SymbolTargetGrammar.rank(request.pattern, candidate.candidate.symbol.identity);
-      return SymbolTargetGrammar.compareRanks(rank, strongestRank) === 0;
-    });
   }
 
   private static collapsedOverloadIdentity(

@@ -1,4 +1,4 @@
-import { compileRegex } from "../backend/compile-regex.js";
+import { compileRegex } from "../validation/compile-regex.js";
 import { formatSymbolIdentity } from "../intermediate-representation/canonical-identity.js";
 import type { SymbolIdentity } from "../intermediate-representation/symbol-identity.js";
 import { SymbolTargetGrammar } from "./symbol-target-pattern.js";

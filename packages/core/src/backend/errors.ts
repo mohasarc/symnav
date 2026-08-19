@@ -58,17 +58,3 @@ export class AmbiguousSymbolError extends UserFacingError {
     return `symbol ${formatSymbolIdentity(this.identity)} matches multiple implementations: ${candidateIds} — query one directly`;
   }
 }
-
-export class InvalidRegexError extends UserFacingError {
-  constructor(
-    readonly pattern: string,
-    readonly detail: string,
-  ) {
-    super();
-    this.name = "InvalidRegexError";
-  }
-
-  get reason(): string {
-    return `invalid regex ${JSON.stringify(this.pattern)}: ${this.detail}`;
-  }
-}

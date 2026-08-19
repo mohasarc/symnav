@@ -79,6 +79,7 @@ export type { PageRequest, Page } from "./pagination/paginator.js";
 export { DEFAULT_PAGE_SIZE, Paginator } from "./pagination/paginator.js";
 export { InvalidPageRequestError, PageOutOfRangeError } from "./pagination/errors.js";
 export { isPositiveInteger } from "./validation/is-positive-integer.js";
+export { InvalidRegexError, compileRegex } from "./validation/compile-regex.js";
 export {
   InvalidSymbolIdError,
   SEGMENT_SEPARATOR,
@@ -117,12 +118,10 @@ export type {
   ResolveSymbolsMode,
   ResolveSymbolsOptions,
 } from "./backend/language-backend.js";
-export { compileRegex } from "./backend/compile-regex.js";
 export { BackendRouter } from "./backend/backend-router.js";
 export { UserFacingError } from "./errors.js";
 export {
   AmbiguousSymbolError,
-  InvalidRegexError,
   NoSupportedFilesError,
   SymbolNotFoundError,
   UnsupportedFileError,

@@ -1,4 +1,18 @@
-import { InvalidRegexError } from "./errors.js";
+import { UserFacingError } from "../errors.js";
+
+export class InvalidRegexError extends UserFacingError {
+  constructor(
+    readonly pattern: string,
+    readonly detail: string,
+  ) {
+    super();
+    this.name = "InvalidRegexError";
+  }
+
+  get reason(): string {
+    return `invalid regex ${JSON.stringify(this.pattern)}: ${this.detail}`;
+  }
+}
 
 export function compileRegex(pattern: string): RegExp {
   try {

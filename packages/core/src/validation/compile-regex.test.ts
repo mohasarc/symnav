@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
-import { compileRegex } from "./compile-regex.js";
-import { InvalidRegexError } from "./errors.js";
+import { UserFacingError } from "../errors.js";
+import { InvalidRegexError, compileRegex } from "./compile-regex.js";
 
 describe("compileRegex", () => {
   it("returns a case-sensitive regular expression preserving the pattern source", () => {
@@ -25,5 +25,26 @@ describe("compileRegex", () => {
     const invalid = caught as InvalidRegexError;
     expect(invalid.pattern).toBe("[");
     expect(invalid.detail).toBe("Unterminated character class");
+  });
+});
+
+describe("InvalidRegexError", () => {
+  it("is a UserFacingError", () => {
+    expect(new InvalidRegexError("[", "Unterminated character class")).toBeInstanceOf(
+      UserFacingError,
+    );
+  });
+
+  it("exposes the pattern and detail as fields", () => {
+    const error = new InvalidRegexError("[", "Unterminated character class");
+
+    expect(error.pattern).toBe("[");
+    expect(error.detail).toBe("Unterminated character class");
+  });
+
+  it("uses shared regex vocabulary", () => {
+    expect(new InvalidRegexError("[", "Unterminated character class").reason).toBe(
+      'invalid regex "[": Unterminated character class',
+    );
   });
 });

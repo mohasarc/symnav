@@ -47,8 +47,9 @@ describe("TypeScriptBackend.declarations", () => {
 
     const declarations = await backend.declarations(FILES);
 
-    expect(declarations.map((symbol) => symbol.identity.segments.at(-1)?.name)).toEqual([
-      "included",
+    expect(declarations.map((symbol) => symbol.identity)).toEqual([
+      { file: "src/declarations.ts", segments: [{ name: "included" }] },
     ]);
+    expect(declarations.some((symbol) => symbol.identity.file === "src/other.ts")).toBe(false);
   });
 });

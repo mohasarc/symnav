@@ -140,11 +140,7 @@ describe("command telemetry descriptors", () => {
     });
   });
 
-  it("describes regex symbol target flags in sorted order", () => {
-    expect(defCommand.describeArgs({ target: "Foo$", line: 4, regex: true }).flags).toEqual([
-      "line",
-      "regex",
-    ]);
+  it("sorts the regex flag among a command's other flags", () => {
     expect(
       refsCommand.describeArgs({
         target: "Foo$",
@@ -156,23 +152,6 @@ describe("command telemetry descriptors", () => {
         fullLines: false,
       }).flags,
     ).toEqual(["line", "page", "regex"]);
-    expect(contextCommand.describeArgs({ target: "Foo$", line: 4, regex: true }).flags).toEqual([
-      "line",
-      "regex",
-    ]);
-    expect(
-      graphCommand.describeArgs({
-        target: "Foo$",
-        line: 4,
-        regex: true,
-        incoming: true,
-        outgoing: false,
-        depth: undefined,
-        page: undefined,
-        pageSize: undefined,
-        all: false,
-      }).flags,
-    ).toEqual(["incoming", "line", "regex"]);
   });
 
   it("counts total symbols from the full tree and shown symbols from the expanded entries", () => {

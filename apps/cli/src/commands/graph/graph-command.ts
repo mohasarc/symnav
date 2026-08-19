@@ -6,6 +6,7 @@ import {
   GraphTraverser,
   InvalidGraphRequestError,
   MAX_GRAPH_DEPTH,
+  SymbolTargetResolver,
   isPositiveInteger,
 } from "@symnav/core";
 import { SymbolTargetErrorRenderer, renderGraphJson, renderGraphText } from "@symnav/renderer";
@@ -14,7 +15,6 @@ import type { Command, CommandContext } from "../../command.js";
 import { classifyArgKind, lengthBucketOf } from "../../telemetry/arg-shape.js";
 import { NavigationDiagnosticsCollector } from "../navigation-diagnostics-collector.js";
 import { resolveCallTarget } from "../resolve-call-target.js";
-import { CommandTargetResolver } from "../resolve-symbol-target.js";
 
 export interface GraphArgs {
   readonly target: string;
@@ -46,7 +46,7 @@ export const graphCommand: Command<GraphResult, GraphArgs> = {
   },
   async compute(ctx: CommandContext<GraphArgs>): Promise<GraphResult> {
     const request = graphRequestFrom(ctx.args);
-    const resolved = await CommandTargetResolver.resolve({
+    const resolved = await SymbolTargetResolver.resolve({
       workspace: ctx.workspace,
       router: ctx.router,
       cwd: ctx.cwd,

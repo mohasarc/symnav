@@ -1,26 +1,22 @@
-import type {
-  BackendRouter,
-  LanguageBackend,
-  ResolvedPath,
-  SymbolIdentity,
-  SymbolTargetCandidate,
-  SymbolTargetRequest,
-  Workspace,
-} from "@symnav/core";
+import type { BackendRouter } from "../backend/backend-router.js";
+import { NoSupportedFilesError } from "../backend/errors.js";
+import type { LanguageBackend } from "../backend/language-backend.js";
+import { formatSymbolIdentity } from "../intermediate-representation/canonical-identity.js";
+import type { SymbolIdentity } from "../intermediate-representation/symbol-identity.js";
+import { isPositiveInteger } from "../validation/is-positive-integer.js";
+import type { ResolvedPath, Workspace } from "../workspace/workspace.js";
+import { InvalidSymbolTargetRequestError } from "./invalid-symbol-target-request-error.js";
+import { SymbolTargetGrammar } from "./symbol-target-pattern.js";
+import type { SymbolTargetRequest } from "./symbol-target-request.js";
+import { SymbolTargetRequestMatcher, SymbolTargetRequestParser } from "./symbol-target-request.js";
+import type { SymbolTargetCandidate } from "./symbol-target-result.js";
 import {
   AmbiguousSymbolTargetError,
-  InvalidSymbolTargetRequestError,
-  NoSupportedFilesError,
-  SymbolTargetGrammar,
   SymbolTargetLineMismatchError,
   SymbolTargetNotFoundError,
-  SymbolTargetRequestMatcher,
-  SymbolTargetRequestParser,
-  formatSymbolIdentity,
-  isPositiveInteger,
-} from "@symnav/core";
+} from "./symbol-target-result.js";
 
-export interface ResolveSymbolTargetForCommandArgs {
+export interface ResolveSymbolTargetArgs {
   readonly workspace: Workspace;
   readonly router: BackendRouter;
   readonly cwd: string;
@@ -29,7 +25,7 @@ export interface ResolveSymbolTargetForCommandArgs {
   readonly regex: boolean;
 }
 
-export interface ResolvedCommandTarget {
+export interface ResolvedSymbolTarget {
   readonly identity: SymbolIdentity;
   readonly backend: LanguageBackend;
   readonly files: readonly ResolvedPath[];
@@ -40,20 +36,20 @@ interface OwnedCandidate {
   readonly backend: LanguageBackend;
 }
 
-export class CommandTargetResolver {
-  static async resolve(args: ResolveSymbolTargetForCommandArgs): Promise<ResolvedCommandTarget> {
-    const containingLine = CommandTargetResolver.containingLineFrom(args.line);
+export class SymbolTargetResolver {
+  static async resolve(args: ResolveSymbolTargetArgs): Promise<ResolvedSymbolTarget> {
+    const containingLine = SymbolTargetResolver.containingLineFrom(args.line);
     const request = SymbolTargetRequestParser.parse(args.rawTarget, args.regex);
     const files = await args.workspace.enumerate();
-    await CommandTargetResolver.throwIfFileSuffixUnresolvable(args, files, request);
-    const acceptedFilesByBackend = CommandTargetResolver.groupFilesByAcceptingBackend(
+    await SymbolTargetResolver.throwIfFileSuffixUnresolvable(args, files, request);
+    const acceptedFilesByBackend = SymbolTargetResolver.groupFilesByAcceptingBackend(
       args.router,
       files,
     );
     if (acceptedFilesByBackend.size === 0) {
       throw new NoSupportedFilesError();
     }
-    const matchedCandidates = await CommandTargetResolver.collectMatchedCandidates(
+    const matchedCandidates = await SymbolTargetResolver.collectMatchedCandidates(
       acceptedFilesByBackend,
       request,
     );
@@ -61,7 +57,7 @@ export class CommandTargetResolver {
       throw new SymbolTargetNotFoundError(request.raw);
     }
     const lineCandidates = matchedCandidates.filter((owned) =>
-      CommandTargetResolver.matchesLine(containingLine, owned.candidate.symbol),
+      SymbolTargetResolver.matchesLine(containingLine, owned.candidate.symbol),
     );
     if (containingLine !== undefined && lineCandidates.length === 0) {
       throw new SymbolTargetLineMismatchError(request.raw, containingLine);
@@ -74,27 +70,25 @@ export class CommandTargetResolver {
       const sortedCandidates = sortedOwnedCandidates.map((owned) => owned.candidate);
       const collapsedIdentity =
         request.mode === "regular"
-          ? CommandTargetResolver.collapsedOverloadIdentity(sortedCandidates, request.pattern)
+          ? SymbolTargetResolver.collapsedOverloadIdentity(sortedCandidates, request.pattern)
           : undefined;
       if (collapsedIdentity === undefined) {
         throw new AmbiguousSymbolTargetError(request.raw, sortedCandidates);
       }
-      return CommandTargetResolver.resolvedTarget(
+      return SymbolTargetResolver.resolvedTarget(
         collapsedIdentity,
         winner.backend,
         acceptedFilesByBackend,
       );
     }
-    return CommandTargetResolver.resolvedTarget(
+    return SymbolTargetResolver.resolvedTarget(
       winner.candidate.symbol.identity,
       winner.backend,
       acceptedFilesByBackend,
     );
   }
 
-  private static containingLineFrom(
-    line: ResolveSymbolTargetForCommandArgs["line"],
-  ): number | undefined {
+  private static containingLineFrom(line: ResolveSymbolTargetArgs["line"]): number | undefined {
     if (line === undefined) {
       return undefined;
     }
@@ -109,12 +103,12 @@ export class CommandTargetResolver {
     identity: SymbolIdentity,
     backend: LanguageBackend,
     acceptedFilesByBackend: ReadonlyMap<LanguageBackend, readonly ResolvedPath[]>,
-  ): ResolvedCommandTarget {
+  ): ResolvedSymbolTarget {
     return { identity, backend, files: acceptedFilesByBackend.get(backend) ?? [] };
   }
 
   private static async throwIfFileSuffixUnresolvable(
-    args: ResolveSymbolTargetForCommandArgs,
+    args: ResolveSymbolTargetArgs,
     files: readonly ResolvedPath[],
     request: SymbolTargetRequest,
   ): Promise<void> {
@@ -191,7 +185,7 @@ export class CommandTargetResolver {
       return undefined;
     }
     const identities = candidates.map((candidate) =>
-      CommandTargetResolver.identityWithoutLeafDisambiguator(candidate.symbol.identity),
+      SymbolTargetResolver.identityWithoutLeafDisambiguator(candidate.symbol.identity),
     );
     const identityKeys = new Set(identities.map(formatSymbolIdentity));
     if (identityKeys.size !== 1) {

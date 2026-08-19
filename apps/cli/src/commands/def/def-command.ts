@@ -1,4 +1,5 @@
 import type { DefinitionResult } from "@symnav/core";
+import { SymbolTargetResolver } from "@symnav/core";
 import {
   SymbolTargetErrorRenderer,
   renderDefinitionJson,
@@ -8,7 +9,6 @@ import {
 import type { Command, CommandContext } from "../../command.js";
 import { classifyArgKind, lengthBucketOf } from "../../telemetry/arg-shape.js";
 import { NavigationDiagnosticsCollector } from "../navigation-diagnostics-collector.js";
-import { CommandTargetResolver } from "../resolve-symbol-target.js";
 
 export interface DefArgs {
   readonly target: string;
@@ -32,7 +32,7 @@ export const defCommand: Command<DefinitionResult, DefArgs> = {
     return { definitions: result.symbols.length };
   },
   async compute(ctx: CommandContext<DefArgs>): Promise<DefinitionResult> {
-    const resolved = await CommandTargetResolver.resolve({
+    const resolved = await SymbolTargetResolver.resolve({
       workspace: ctx.workspace,
       router: ctx.router,
       cwd: ctx.cwd,

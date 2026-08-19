@@ -1,12 +1,11 @@
 import type { ContextResult } from "@symnav/core";
-import { ContextResultBuilder, DEFAULT_CONTEXT_CAP } from "@symnav/core";
+import { ContextResultBuilder, DEFAULT_CONTEXT_CAP, SymbolTargetResolver } from "@symnav/core";
 import { SymbolTargetErrorRenderer, renderContextJson, renderContextText } from "@symnav/renderer";
 
 import type { Command, CommandContext } from "../../command.js";
 import { classifyArgKind, lengthBucketOf } from "../../telemetry/arg-shape.js";
 import { NavigationDiagnosticsCollector } from "../navigation-diagnostics-collector.js";
 import { resolveCallTarget } from "../resolve-call-target.js";
-import { CommandTargetResolver } from "../resolve-symbol-target.js";
 
 export interface ContextArgs {
   readonly target: string;
@@ -35,7 +34,7 @@ export const contextCommand: Command<ContextResult, ContextArgs> = {
     };
   },
   async compute(ctx: CommandContext<ContextArgs>): Promise<ContextResult> {
-    const resolved = await CommandTargetResolver.resolve({
+    const resolved = await SymbolTargetResolver.resolve({
       workspace: ctx.workspace,
       router: ctx.router,
       cwd: ctx.cwd,

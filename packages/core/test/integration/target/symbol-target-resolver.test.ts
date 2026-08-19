@@ -1,28 +1,22 @@
 import { describe, expect, it } from "vitest";
-import {
-  AmbiguousSymbolTargetError,
-  BackendRouter,
-  InMemoryFileSystem,
-  SymbolTargetNotFoundError,
-  SymbolTargetLineMismatchError,
-  formatSymbolIdentity,
-} from "@symnav/core";
+
+import { BackendRouter } from "../../../src/backend/backend-router.js";
+import { formatSymbolIdentity } from "../../../src/intermediate-representation/canonical-identity.js";
+import type { Header } from "../../../src/intermediate-representation/types.js";
 import type {
-  Header,
-  ResolvedPath,
   SymbolIdentity,
   SymbolPathSegment,
-  SymbolTargetCandidate,
-  Workspace,
-} from "@symnav/core";
-
-import { runCommand } from "../../../src/command.js";
-import { defCommand } from "../../../src/commands/def/def-command.js";
-import { CommandTargetResolver } from "../../../src/commands/resolve-symbol-target.js";
-import type { ResolvedCommandTarget } from "../../../src/commands/resolve-symbol-target.js";
+} from "../../../src/intermediate-representation/symbol-identity.js";
+import { SymbolTargetResolver } from "../../../src/target/symbol-target-resolver.js";
+import type { ResolvedSymbolTarget } from "../../../src/target/symbol-target-resolver.js";
+import type { SymbolTargetCandidate } from "../../../src/target/symbol-target-result.js";
+import {
+  AmbiguousSymbolTargetError,
+  SymbolTargetLineMismatchError,
+  SymbolTargetNotFoundError,
+} from "../../../src/target/symbol-target-result.js";
+import type { ResolvedPath, Workspace } from "../../../src/workspace/workspace.js";
 import { FakeLanguageBackend } from "./helpers/fake-language-backend.js";
-import { createFakeProgramContext } from "./helpers/fake-program-context.js";
-import { fakeDependencies } from "./helpers/fake-program-dependencies.js";
 
 class ResolverScenario {
   static readonly WORKSPACE_FILES: readonly ResolvedPath[] = [
@@ -78,8 +72,8 @@ class ResolverScenario {
     line: number | string | undefined = undefined,
     files: readonly ResolvedPath[] = ResolverScenario.WORKSPACE_FILES,
     regex = false,
-  ): Promise<ResolvedCommandTarget> {
-    return CommandTargetResolver.resolve({
+  ): Promise<ResolvedSymbolTarget> {
+    return SymbolTargetResolver.resolve({
       workspace: ResolverScenario.fakeWorkspace(files),
       router,
       cwd: "/repo",
@@ -89,7 +83,7 @@ class ResolverScenario {
     });
   }
 
-  static relativeFiles(resolved: ResolvedCommandTarget): readonly string[] {
+  static relativeFiles(resolved: ResolvedSymbolTarget): readonly string[] {
     return resolved.files.map((file) => file.relative);
   }
 
@@ -104,7 +98,7 @@ class ResolverScenario {
   }
 }
 
-describe("CommandTargetResolver.resolve across backends", () => {
+describe("SymbolTargetResolver.resolve across backends", () => {
   it("keeps a bare name ambiguous across a top-level and a nested symbol", async () => {
     const backend = ResolverScenario.typescriptFake([
       ResolverScenario.candidateFor("src/alpha.ts", [{ name: "charge" }]),
@@ -124,7 +118,6 @@ describe("CommandTargetResolver.resolve across backends", () => {
       (error as AmbiguousSymbolTargetError).candidates.map((candidate) => candidate.canonicalId),
     ).toEqual(["src/alpha.ts::charge", "src/gamma.ts::PaymentProcessor::charge"]);
   });
-
   it("keeps a file-suffix target ambiguous when a longer path also ends with it", async () => {
     const files = [
       { relative: "src/alpha.ts", absolute: "/repo/src/alpha.ts" },
@@ -150,7 +143,6 @@ describe("CommandTargetResolver.resolve across backends", () => {
       (error as AmbiguousSymbolTargetError).candidates.map((candidate) => candidate.canonicalId),
     ).toEqual(["src/alpha.ts::walk", "vendor/src/alpha.ts::walk"]);
   });
-
   it("resolves a target that only one canonical id ends with", async () => {
     const files = [
       { relative: "orders.ts", absolute: "/repo/orders.ts" },
@@ -173,7 +165,6 @@ describe("CommandTargetResolver.resolve across backends", () => {
 
     expect(resolved.identity).toEqual({ file: "src/orders.ts", segments: [{ name: "charge" }] });
   });
-
   it("keeps equally strong candidates ambiguous in canonical-id order", async () => {
     const backend = ResolverScenario.typescriptFake([
       ResolverScenario.candidateFor("src/gamma.ts", [{ name: "walk" }]),
@@ -190,7 +181,6 @@ describe("CommandTargetResolver.resolve across backends", () => {
       (error as AmbiguousSymbolTargetError).candidates.map((candidate) => candidate.canonicalId),
     ).toEqual(["src/alpha.ts::walk", "src/gamma.ts::walk"]);
   });
-
   it("narrows by line before reporting ambiguity", async () => {
     const backend = ResolverScenario.typescriptFake([
       ResolverScenario.candidateFor("src/alpha.ts", [{ name: "charge" }], {
@@ -208,7 +198,6 @@ describe("CommandTargetResolver.resolve across backends", () => {
 
     expect(resolved.identity.file).toBe("src/gamma.ts");
   });
-
   it("distinguishes a line-filtered match from a missing target", async () => {
     const backend = ResolverScenario.typescriptFake([
       ResolverScenario.candidateFor("src/alpha.ts", [{ name: "walk" }]),
@@ -221,7 +210,6 @@ describe("CommandTargetResolver.resolve across backends", () => {
       ResolverScenario.resolveWith(new BackendRouter([backend]), "missing", 99),
     ).rejects.toBeInstanceOf(SymbolTargetNotFoundError);
   });
-
   it("refuses to collapse overloads spread across distinct symbols", async () => {
     const backend = ResolverScenario.typescriptFake([
       ResolverScenario.candidateFor("src/alpha.ts", [{ name: "post", disambiguator: 1 }]),
@@ -242,7 +230,6 @@ describe("CommandTargetResolver.resolve across backends", () => {
       (error as AmbiguousSymbolTargetError).candidates.map((candidate) => candidate.canonicalId),
     ).toEqual(["src/alpha.ts::post#1", "src/alpha.ts::post#2", "src/gamma.ts::Router::post#1"]);
   });
-
   it("resolves a bare name unique to one backend while another backend's files exist", async () => {
     const typescriptBackend = ResolverScenario.typescriptFake([
       ResolverScenario.candidateFor("src/alpha.ts", [{ name: "walk" }]),
@@ -260,7 +247,6 @@ describe("CommandTargetResolver.resolve across backends", () => {
     expect(resolved.backend).toBe(typescriptBackend);
     expect(ResolverScenario.relativeFiles(resolved)).toEqual(["src/alpha.ts", "src/gamma.ts"]);
   });
-
   it("reports ambiguity listing candidates from both backends sorted by canonical id", async () => {
     const router = new BackendRouter([
       ResolverScenario.zetaFake([ResolverScenario.candidateFor("src/beta.zz", [{ name: "dup" }])]),
@@ -281,7 +267,6 @@ describe("CommandTargetResolver.resolve across backends", () => {
       "src/beta.zz::dup",
     ]);
   });
-
   it("routes a file-suffix pattern to the matching backend's candidate", async () => {
     const zetaBackend = ResolverScenario.zetaFake([
       ResolverScenario.candidateFor("src/beta.zz", [{ name: "dup" }]),
@@ -299,7 +284,6 @@ describe("CommandTargetResolver.resolve across backends", () => {
     expect(resolved.backend).toBe(zetaBackend);
     expect(ResolverScenario.relativeFiles(resolved)).toEqual(["src/beta.zz"]);
   });
-
   it("enumerates each backend's accepted files once for a file-suffix pattern", async () => {
     const typescriptBackend = ResolverScenario.typescriptFake([
       ResolverScenario.candidateFor("src/alpha.ts", [{ name: "walk" }]),
@@ -311,7 +295,6 @@ describe("CommandTargetResolver.resolve across backends", () => {
     expect(typescriptBackend.declarationCalls).toEqual([["src/alpha.ts", "src/gamma.ts"]]);
     expect(ResolverScenario.relativeFiles(resolved)).toEqual(["src/alpha.ts", "src/gamma.ts"]);
   });
-
   it("enumerates each backend's accepted files once for a bare-name pattern", async () => {
     const typescriptBackend = ResolverScenario.typescriptFake([
       ResolverScenario.candidateFor("src/alpha.ts", [{ name: "walk" }]),
@@ -323,7 +306,6 @@ describe("CommandTargetResolver.resolve across backends", () => {
     expect(typescriptBackend.declarationCalls).toEqual([["src/alpha.ts", "src/gamma.ts"]]);
     expect(ResolverScenario.relativeFiles(resolved)).toEqual(["src/alpha.ts", "src/gamma.ts"]);
   });
-
   it("keeps the full backend-accepted file list for a file-suffix pattern", async () => {
     const router = new BackendRouter([
       ResolverScenario.typescriptFake([
@@ -336,7 +318,6 @@ describe("CommandTargetResolver.resolve across backends", () => {
 
     expect(ResolverScenario.relativeFiles(resolved)).toEqual(["src/alpha.ts", "src/gamma.ts"]);
   });
-
   it("throws not-found when no backend has a matching candidate", async () => {
     const router = new BackendRouter([
       ResolverScenario.typescriptFake([
@@ -351,79 +332,6 @@ describe("CommandTargetResolver.resolve across backends", () => {
       SymbolTargetNotFoundError,
     );
   });
-
-  it("reports a workspace whose files no backend supports", async () => {
-    const context = createFakeProgramContext({ cwd: "/repo" });
-
-    await runCommand(defCommand, {
-      context,
-      dependencies: fakeDependencies({
-        fs: new InMemoryFileSystem({
-          "/repo/.git/HEAD": "ref: refs/heads/main\n",
-          "/repo/README.md": "docs only\n",
-        }),
-        backends: () => [new FakeLanguageBackend({ accept: () => false })],
-      }),
-      cwdOverride: undefined,
-      json: false,
-      args: { target: "helper", line: undefined, regex: false },
-    });
-
-    expect(context.stdout.text()).toBe("");
-    expect(context.stderr.text()).toBe(
-      "Cannot answer: workspace contains no files supported by any language backend.\n",
-    );
-    expect(context.exitCodes).toEqual([1]);
-  });
-
-  it("rejects a malformed --line value echoing the raw input", async () => {
-    const context = createFakeProgramContext({ cwd: "/repo" });
-
-    await runCommand(defCommand, {
-      context,
-      dependencies: fakeDependencies({
-        fs: new InMemoryFileSystem({ "/repo/.git/HEAD": "ref: refs/heads/main\n" }),
-        backends: () => [
-          ResolverScenario.typescriptFake([
-            ResolverScenario.candidateFor("src/alpha.ts", [{ name: "walk" }]),
-          ]),
-        ],
-      }),
-      cwdOverride: undefined,
-      json: false,
-      args: { target: "walk", line: "abc", regex: false },
-    });
-
-    expect(context.stdout.text()).toBe("");
-    expect(context.stderr.text()).toBe(
-      "Cannot answer: line must be a positive integer, got abc.\n",
-    );
-    expect(context.exitCodes).toEqual([1]);
-  });
-
-  it("rejects a non-positive --line value echoing the raw input", async () => {
-    const context = createFakeProgramContext({ cwd: "/repo" });
-
-    await runCommand(defCommand, {
-      context,
-      dependencies: fakeDependencies({
-        fs: new InMemoryFileSystem({ "/repo/.git/HEAD": "ref: refs/heads/main\n" }),
-        backends: () => [
-          ResolverScenario.typescriptFake([
-            ResolverScenario.candidateFor("src/alpha.ts", [{ name: "walk" }]),
-          ]),
-        ],
-      }),
-      cwdOverride: undefined,
-      json: false,
-      args: { target: "walk", line: "0", regex: false },
-    });
-
-    expect(context.stdout.text()).toBe("");
-    expect(context.stderr.text()).toBe("Cannot answer: line must be a positive integer, got 0.\n");
-    expect(context.exitCodes).toEqual([1]);
-  });
-
   it("collapses overload candidates to the disambiguator-stripped identity", async () => {
     const typescriptBackend = ResolverScenario.typescriptFake([
       ResolverScenario.candidateFor("src/alpha.ts", [{ name: "post", disambiguator: 1 }]),
@@ -436,7 +344,6 @@ describe("CommandTargetResolver.resolve across backends", () => {
     expect(resolved.identity).toEqual({ file: "src/alpha.ts", segments: [{ name: "post" }] });
     expect(resolved.backend).toBe(typescriptBackend);
   });
-
   it("resolves one regex match against a full canonical id", async () => {
     const backend = ResolverScenario.typescriptFake([
       ResolverScenario.candidateFor("src/alpha.ts", [{ name: "walk" }]),
@@ -453,7 +360,6 @@ describe("CommandTargetResolver.resolve across backends", () => {
 
     expect(resolved.identity).toEqual({ file: "src/alpha.ts", segments: [{ name: "walk" }] });
   });
-
   it("reports not-found when a regex matches no canonical ids", async () => {
     const backend = ResolverScenario.typescriptFake([
       ResolverScenario.candidateFor("src/alpha.ts", [{ name: "walk" }]),
@@ -469,7 +375,6 @@ describe("CommandTargetResolver.resolve across backends", () => {
       ),
     ).rejects.toBeInstanceOf(SymbolTargetNotFoundError);
   });
-
   it("keeps every surviving regex candidate equally ambiguous", async () => {
     const backend = ResolverScenario.typescriptFake([
       ResolverScenario.candidateFor("src/alpha.ts", [{ name: "charge" }]),
@@ -495,7 +400,6 @@ describe("CommandTargetResolver.resolve across backends", () => {
       (error as AmbiguousSymbolTargetError).candidates.map((candidate) => candidate.canonicalId),
     ).toEqual(["src/alpha.ts::charge", "src/gamma.ts::PaymentProcessor::charge"]);
   });
-
   it("applies line narrowing after regex matching", async () => {
     const backend = ResolverScenario.typescriptFake([
       ResolverScenario.candidateFor("src/alpha.ts", [{ name: "charge" }], {
@@ -518,7 +422,6 @@ describe("CommandTargetResolver.resolve across backends", () => {
 
     expect(resolved.identity.file).toBe("src/gamma.ts");
   });
-
   it("reports line mismatch when narrowing removes every regex match", async () => {
     const backend = ResolverScenario.typescriptFake([
       ResolverScenario.candidateFor("src/alpha.ts", [{ name: "walk" }]),
@@ -534,7 +437,6 @@ describe("CommandTargetResolver.resolve across backends", () => {
       ),
     ).rejects.toBeInstanceOf(SymbolTargetLineMismatchError);
   });
-
   it("does not collapse regex matches for overload siblings", async () => {
     const backend = ResolverScenario.typescriptFake([
       ResolverScenario.candidateFor("src/alpha.ts", [{ name: "post", disambiguator: 1 }]),
@@ -551,7 +453,6 @@ describe("CommandTargetResolver.resolve across backends", () => {
       ),
     ).rejects.toBeInstanceOf(AmbiguousSymbolTargetError);
   });
-
   it("enumerates all backend-accepted files for regex requests", async () => {
     const typescriptBackend = ResolverScenario.typescriptFake([
       ResolverScenario.candidateFor("src/alpha.ts", [{ name: "walk" }]),

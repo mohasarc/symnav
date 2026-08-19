@@ -93,6 +93,11 @@ export {
   SymbolTargetRequestMatcher,
   SymbolTargetRequestParser,
 } from "./target/symbol-target-request.js";
+export type {
+  ResolveSymbolTargetArgs,
+  ResolvedSymbolTarget,
+} from "./target/symbol-target-resolver.js";
+export { SymbolTargetResolver } from "./target/symbol-target-resolver.js";
 export type { SymbolTargetCandidate } from "./target/symbol-target-result.js";
 export {
   AmbiguousSymbolTargetError,

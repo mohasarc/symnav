@@ -170,9 +170,9 @@ export class OverviewExpander {
   }
 
   private static targetLabels(node: OverviewNode): readonly string[] {
-    if (node.type === "symbol") return [formatSymbolPath(node.identity.segments)];
-    if (node.type === "re-export") return [];
-    return [node.header.lines[0] ?? "", ...(node.headerVariants ?? [])];
+    const label = OverviewExpander.labelFor(node);
+    if (node.type !== "fold") return [label];
+    return [label, ...(node.headerVariants ?? [])];
   }
 
   private static formatRange(range: LineRange): string {

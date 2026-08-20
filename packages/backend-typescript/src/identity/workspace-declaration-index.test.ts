@@ -28,6 +28,7 @@ const FIXTURE: Record<string, string> = {
     "}",
     "",
   ].join("\n"),
+  "/repo/src/default-export.ts": "export default () => {};\n",
 };
 
 const SERVICE: ResolvedPath = { relative: "src/service.ts", absolute: "/repo/src/service.ts" };
@@ -39,6 +40,10 @@ const SAME_LINE: ResolvedPath = {
 const ACCESSORS: ResolvedPath = {
   relative: "src/accessors.ts",
   absolute: "/repo/src/accessors.ts",
+};
+const DEFAULT_EXPORT: ResolvedPath = {
+  relative: "src/default-export.ts",
+  absolute: "/repo/src/default-export.ts",
 };
 
 function index(files: readonly ResolvedPath[] = [SERVICE]): WorkspaceDeclarationIndex {
@@ -150,5 +155,14 @@ describe("WorkspaceDeclarationIndex", () => {
     expect(indexed.declarationAt(host.getSetAccessorOrThrow("value"))?.kind.nativeLabel).toBe(
       "setter",
     );
+  });
+
+  it("finds a default export assignment by its declaration node", () => {
+    const indexed = index([DEFAULT_EXPORT]);
+    const exportAssignment = indexed
+      .sourceFile("src/default-export.ts")!
+      .getExportAssignmentOrThrow(() => true);
+
+    expect(leafNames([indexed.declarationAt(exportAssignment)!])).toEqual(["default"]);
   });
 });

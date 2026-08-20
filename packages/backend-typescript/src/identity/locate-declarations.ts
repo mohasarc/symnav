@@ -121,12 +121,14 @@ export class DeclarationLocator {
       Node.isModuleDeclaration(node) ||
       Node.isPropertyDeclaration(node) ||
       Node.isPropertySignature(node) ||
-      Node.isVariableDeclaration(node)
+      Node.isVariableDeclaration(node) ||
+      Node.isExportAssignment(node)
     );
   }
 
   private declarationName(node: Node): string | undefined {
     if (Node.isConstructorDeclaration(node)) return "constructor";
+    if (Node.isExportAssignment(node)) return "default";
     if (
       Node.isFunctionDeclaration(node) ||
       Node.isClassDeclaration(node) ||

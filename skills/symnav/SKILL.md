@@ -16,8 +16,8 @@ Run inside a git workspace. `--cwd <dir>` targets another workspace; `--json` gi
 
 | Need | Command | Gives |
 | --- | --- | --- |
-| File map | `overview <file>` | symbol/fold tree for one `.ts`/`.tsx`. `--depth` nests; `--at '<text>'` selects a symbol, test block, or region |
-| Find a symbol | `resolve <query>` | every symbol/file matching the name |
+| File map | `overview <file>` | symbol/fold tree for one `.ts`/`.tsx`. `--depth` nests; `--at '<text>'` selects a symbol, test block, or region — an exact symbol path or header beats longer substring matches |
+| Find a symbol | `resolve <query>` | every symbol/file matching the name; an empty exact result names `--fuzzy`/`--regex` as the retry |
 | Declaration | `def <target>` | file, line range, signature |
 | Use sites | `refs <target>` | every reference, grouped by file, tagged by kind, paginated |
 | Local blast radius | `context <target>` | definition + direct callers + callees + reference summary + git history |

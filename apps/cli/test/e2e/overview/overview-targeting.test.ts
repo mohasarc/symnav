@@ -212,7 +212,7 @@ describe("symnav overview e2e (targeting)", () => {
     expect(r.stdout).toContain("Greeter::shout");
   });
 
-  it.skip("targets a class by its bare name (matches its members too and reports ambiguous today)", () => {
+  it("targets a class by its bare name", () => {
     const r = runOverview(["overview", "class-with-methods.ts", "--at", "Greeter", "--depth", "1"]);
 
     expect(r.stderr).toBe("");

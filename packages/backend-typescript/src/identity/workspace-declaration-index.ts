@@ -16,7 +16,7 @@ export class WorkspaceDeclarationIndex {
   private readonly fileByRelativePath = new Map<string, ResolvedPath>();
   private readonly relativePathByAbsolute = new Map<string, string>();
   private readonly declarationsByIdentity = new Map<string, IndexedDeclaration>();
-  private readonly declarationsByLocation = new Map<string, Map<number, SymbolOverviewNode>>();
+  private readonly declarationsByPosition = new Map<string, Map<number, SymbolOverviewNode>>();
   private readonly declarationsByFile = new Map<string, readonly SymbolOverviewNode[]>();
 
   constructor(fs: FileSystem) {
@@ -50,7 +50,7 @@ export class WorkspaceDeclarationIndex {
   declarationAt(node: Node): SymbolOverviewNode | undefined {
     const relative = this.relativePathOf(node.getSourceFile());
     if (!relative) return undefined;
-    return this.declarationsByLocation.get(relative)?.get(node.getStartLineNumber());
+    return this.declarationsByPosition.get(relative)?.get(node.getStart());
   }
 
   declarationForIdentity(identity: SymbolIdentity): IndexedDeclaration | undefined {
@@ -66,7 +66,7 @@ export class WorkspaceDeclarationIndex {
   }
 
   private indexDeclarations(sourceFile: SourceFile, path: ResolvedPath): void {
-    const byLine = new Map<number, SymbolOverviewNode>();
+    const byPosition = new Map<number, SymbolOverviewNode>();
     const declarations: SymbolOverviewNode[] = [];
     const { entries } = extractFileEntries({ sourceFile, filePath: path.relative });
     for (const declaration of OverviewTree.walkSymbols(entries)) {
@@ -75,9 +75,11 @@ export class WorkspaceDeclarationIndex {
         declaration,
         file: path,
       });
-      byLine.set(declaration.range.startLine, declaration);
     }
-    this.declarationsByLocation.set(path.relative, byLine);
+    for (const { declaration, node } of new DeclarationLocator(sourceFile).locateAll(entries)) {
+      byPosition.set(node.getStart(), declaration);
+    }
+    this.declarationsByPosition.set(path.relative, byPosition);
     this.declarationsByFile.set(path.relative, declarations);
   }
 }

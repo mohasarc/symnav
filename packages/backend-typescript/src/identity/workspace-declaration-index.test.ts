@@ -20,6 +20,15 @@ const FIXTURE: Record<string, string> = {
   ].join("\n"),
   "/repo/src/extra.ts": "export function extra(): void {}\n",
   "/repo/src/same-line.ts": "export function first(): void {} export function second(): void {}\n",
+  "/repo/src/accessors.ts": [
+    "export class Host {",
+    "  private stored = 0;",
+    "  get value(): number { return this.stored; }",
+    "  set value(next: number) { this.stored = next; }",
+    "}",
+    "",
+  ].join("\n"),
+  "/repo/src/default-export.ts": "export default () => {};\n",
 };
 
 const SERVICE: ResolvedPath = { relative: "src/service.ts", absolute: "/repo/src/service.ts" };
@@ -27,6 +36,14 @@ const EXTRA: ResolvedPath = { relative: "src/extra.ts", absolute: "/repo/src/ext
 const SAME_LINE: ResolvedPath = {
   relative: "src/same-line.ts",
   absolute: "/repo/src/same-line.ts",
+};
+const ACCESSORS: ResolvedPath = {
+  relative: "src/accessors.ts",
+  absolute: "/repo/src/accessors.ts",
+};
+const DEFAULT_EXPORT: ResolvedPath = {
+  relative: "src/default-export.ts",
+  absolute: "/repo/src/default-export.ts",
 };
 
 function index(files: readonly ResolvedPath[] = [SERVICE]): WorkspaceDeclarationIndex {
@@ -118,5 +135,34 @@ describe("WorkspaceDeclarationIndex", () => {
       "first",
       "second",
     ]);
+  });
+
+  it("finds each declaration node when two declarations start on the same line", () => {
+    const indexed = index([SAME_LINE]);
+    const functions = indexed.sourceFile("src/same-line.ts")!.getFunctions();
+
+    expect(indexed.declarationAt(functions[0]!)?.identity.segments).toEqual([{ name: "first" }]);
+    expect(indexed.declarationAt(functions[1]!)?.identity.segments).toEqual([{ name: "second" }]);
+  });
+
+  it("finds getter and setter symbols by their exact declaration nodes", () => {
+    const indexed = index([ACCESSORS]);
+    const host = indexed.sourceFile("src/accessors.ts")!.getClassOrThrow("Host");
+
+    expect(indexed.declarationAt(host.getGetAccessorOrThrow("value"))?.kind.nativeLabel).toBe(
+      "getter",
+    );
+    expect(indexed.declarationAt(host.getSetAccessorOrThrow("value"))?.kind.nativeLabel).toBe(
+      "setter",
+    );
+  });
+
+  it("finds a default export assignment by its declaration node", () => {
+    const indexed = index([DEFAULT_EXPORT]);
+    const exportAssignment = indexed
+      .sourceFile("src/default-export.ts")!
+      .getExportAssignmentOrThrow(() => true);
+
+    expect(leafNames([indexed.declarationAt(exportAssignment)!])).toEqual(["default"]);
   });
 });

@@ -1,5 +1,6 @@
 import {
   Node,
+  SyntaxKind,
   type CallExpression,
   type NewExpression,
   type ReferencedSymbolEntry,
@@ -100,17 +101,81 @@ class CallerFinder {
   }
 
   private enclosingSymbolOf(referenceNode: Node): SymbolOverviewNode | undefined {
+    const ancestors = CallerFinder.ownerCandidateAncestorsOf(referenceNode);
+    return this.declaredExecutionOwnerIn(ancestors) ?? this.nearestIndexedDeclarationIn(ancestors);
+  }
+
+  private static ownerCandidateAncestorsOf(referenceNode: Node): readonly Node[] {
+    const ancestors: Node[] = [];
+    let decoratedNode: Node | undefined;
     let ancestor = referenceNode.getParent();
-    let nearestValue: SymbolOverviewNode | undefined;
     while (ancestor) {
-      const declaration = this.declarationIndex.declarationAt(ancestor);
-      if (declaration) {
-        if (declaration.kind.role !== "value") return declaration;
-        nearestValue = declaration;
+      if (Node.isDecorator(ancestor)) {
+        decoratedNode = ancestor.getParent();
+      } else if (ancestor !== decoratedNode) {
+        ancestors.push(ancestor);
       }
       ancestor = ancestor.getParent();
     }
-    return nearestValue;
+    return ancestors;
+  }
+
+  private declaredExecutionOwnerIn(ancestors: readonly Node[]): SymbolOverviewNode | undefined {
+    for (const ancestor of ancestors) {
+      const owner = this.declaredExecutionOwnerOf(ancestor);
+      if (owner) return owner;
+    }
+    return undefined;
+  }
+
+  private nearestIndexedDeclarationIn(ancestors: readonly Node[]): SymbolOverviewNode | undefined {
+    for (const ancestor of ancestors) {
+      const declaration = this.indexedDeclarationAt(ancestor);
+      if (declaration) return declaration;
+    }
+    return undefined;
+  }
+
+  private declaredExecutionOwnerOf(node: Node): SymbolOverviewNode | undefined {
+    if (
+      Node.isFunctionDeclaration(node) ||
+      Node.isMethodDeclaration(node) ||
+      Node.isConstructorDeclaration(node) ||
+      Node.isGetAccessorDeclaration(node) ||
+      Node.isSetAccessorDeclaration(node)
+    ) {
+      return this.indexedDeclarationAt(node);
+    }
+    if (!Node.isArrowFunction(node) && !Node.isFunctionExpression(node)) return undefined;
+    const owner = CallerFinder.functionValueOwnerOf(node);
+    return owner && this.indexedDeclarationAt(owner);
+  }
+
+  private static functionValueOwnerOf(functionValue: Node): Node | undefined {
+    let parent = functionValue.getParent();
+    while (parent && Node.isParenthesizedExpression(parent)) {
+      parent = parent.getParent();
+    }
+    if (!parent) return undefined;
+    if (
+      Node.isVariableDeclaration(parent) ||
+      Node.isPropertyDeclaration(parent) ||
+      Node.isPropertyAssignment(parent) ||
+      Node.isExportAssignment(parent)
+    ) {
+      return parent;
+    }
+    if (
+      Node.isBinaryExpression(parent) &&
+      parent.getOperatorToken().isKind(SyntaxKind.EqualsToken)
+    ) {
+      return parent.getLeft().getSymbol()?.getDeclarations()[0];
+    }
+    return undefined;
+  }
+
+  private indexedDeclarationAt(node: Node): SymbolOverviewNode | undefined {
+    return this.declarationIndex.declarationAt(node);
   }
 
   private siteFor(node: Node): CallSite {

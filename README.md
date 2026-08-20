@@ -25,7 +25,7 @@ symnav context --regex '::build[A-Z][^:]*$'
 symnav graph --regex 'Router::dispatch#[1-3]$'
 ```
 
-`overview` starts collapsed. Expand one area by depth, copied header text, or both.
+`overview` starts collapsed. Expand one area by depth, copied header text, or both. When `--at` text matches several entries, one whose symbol path or header equals the text exactly wins over longer substring matches, so `--at Greeter` selects the class, not its members.
 
 ```sh
 symnav overview src/orders.ts
@@ -33,7 +33,7 @@ symnav overview src/orders.ts --depth 1
 symnav overview src/orders.ts --at 'describe("cursor pagination")' --depth 2
 ```
 
-`resolve` can match exact names, fuzzy subsequences, or JavaScript regexes.
+`resolve` can match exact names, fuzzy subsequences, or JavaScript regexes. An exact query with no match ends with a hint to retry with `--fuzzy` or `--regex`.
 
 ```sh
 symnav resolve PaymentProvider

@@ -1,6 +1,7 @@
 import { Node, type SourceFile } from "ts-morph";
 import {
   OverviewTree,
+  type OverviewNode,
   type SymbolOverviewNode,
   type SymbolIdentity,
   type SymbolPathSegment,
@@ -49,6 +50,41 @@ export class DeclarationLocator {
       });
   }
 
+  locateAll(entries: readonly OverviewNode[]): readonly LocatedDeclaration[] {
+    const declarationsByLineAndName = this.declarationsByLineAndName(entries);
+    const locatedDeclarations: LocatedDeclaration[] = [];
+    this.sourceFile.forEachDescendant((node) => {
+      if (!this.isDefinitionNode(node)) return;
+      const name = this.declarationName(node);
+      if (!name) return;
+      const location = DeclarationLocator.locationKey(node.getStartLineNumber(), name);
+      const declarations = declarationsByLineAndName.get(location);
+      const declaration = declarations?.shift();
+      if (declaration) locatedDeclarations.push({ declaration, node });
+    });
+    return locatedDeclarations;
+  }
+
+  private declarationsByLineAndName(
+    entries: readonly OverviewNode[],
+  ): Map<string, SymbolOverviewNode[]> {
+    const declarationsByLineAndName = new Map<string, SymbolOverviewNode[]>();
+    for (const declaration of OverviewTree.walkSymbols(entries)) {
+      const location = DeclarationLocator.locationKey(
+        declaration.range.startLine,
+        OverviewTree.ownName(declaration),
+      );
+      const declarations = declarationsByLineAndName.get(location) ?? [];
+      declarations.push(declaration);
+      declarationsByLineAndName.set(location, declarations);
+    }
+    return declarationsByLineAndName;
+  }
+
+  private static locationKey(line: number, name: string): string {
+    return `${line}:${name}`;
+  }
+
   private ownSegmentMatches(declaration: SymbolOverviewNode, segment: SymbolPathSegment): boolean {
     const own = declaration.identity.segments[declaration.identity.segments.length - 1];
     if (!own) return false;
@@ -85,12 +121,14 @@ export class DeclarationLocator {
       Node.isModuleDeclaration(node) ||
       Node.isPropertyDeclaration(node) ||
       Node.isPropertySignature(node) ||
-      Node.isVariableDeclaration(node)
+      Node.isVariableDeclaration(node) ||
+      Node.isExportAssignment(node)
     );
   }
 
   private declarationName(node: Node): string | undefined {
     if (Node.isConstructorDeclaration(node)) return "constructor";
+    if (Node.isExportAssignment(node)) return "default";
     if (
       Node.isFunctionDeclaration(node) ||
       Node.isClassDeclaration(node) ||
@@ -101,6 +139,7 @@ export class DeclarationLocator {
       Node.isMethodDeclaration(node) ||
       Node.isMethodSignature(node) ||
       Node.isGetAccessorDeclaration(node) ||
+      Node.isSetAccessorDeclaration(node) ||
       Node.isPropertyDeclaration(node) ||
       Node.isPropertySignature(node) ||
       Node.isVariableDeclaration(node)

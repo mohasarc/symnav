@@ -385,6 +385,114 @@ describe("OverviewExpander target selection", () => {
     ]);
   });
 
+  it("prefers an exact symbol label over longer symbol labels", () => {
+    const greeter = symbol("Greeter", {
+      range: { startLine: 1, endLine: 9 },
+      children: [
+        symbol("greet", {
+          range: { startLine: 2, endLine: 4 },
+          identity: {
+            file: "src/file.ts",
+            segments: [{ name: "Greeter" }, { name: "greet" }],
+          },
+        }),
+        symbol("shout", {
+          range: { startLine: 6, endLine: 8 },
+          identity: {
+            file: "src/file.ts",
+            segments: [{ name: "Greeter" }, { name: "shout" }],
+          },
+        }),
+      ],
+    });
+
+    expect(expandRequest([greeter], { depth: 1, at: "Greeter", line: undefined }).entries).toEqual([
+      greeter,
+    ]);
+  });
+
+  it("prefers an exact fold primary label over longer primary labels", () => {
+    const exact = fold("cursor", { range: { startLine: 1, endLine: 2 } });
+    const longer = fold("cursor details", { range: { startLine: 4, endLine: 5 } });
+
+    expect(
+      expandRequest([exact, longer], { depth: 0, at: "cursor", line: undefined }).entries,
+    ).toEqual([exact]);
+  });
+
+  it("prefers an exact fold header variant over longer variants", () => {
+    const exact = fold("cursor callback", {
+      range: { startLine: 1, endLine: 2 },
+      headerVariants: ["cursor"],
+    });
+    const longer = fold("cursor details callback", {
+      range: { startLine: 4, endLine: 5 },
+      headerVariants: ["cursor details"],
+    });
+
+    expect(
+      expandRequest([exact, longer], { depth: 0, at: "cursor", line: undefined }).entries,
+    ).toEqual([exact]);
+  });
+
+  it("keeps multiple exact labels ambiguous", () => {
+    const entries = [
+      fold("cursor", { range: { startLine: 1, endLine: 2 } }),
+      fold("cursor", { range: { startLine: 4, endLine: 5 } }),
+    ];
+
+    expect(() => expandRequest(entries, { depth: 0, at: "cursor", line: undefined })).toThrow(
+      AmbiguousOverviewTargetError,
+    );
+  });
+
+  it("preserves substring ambiguity when no label matches exactly", () => {
+    const entries = [
+      fold("cursor one", { range: { startLine: 1, endLine: 2 } }),
+      fold("cursor two", { range: { startLine: 4, endLine: 5 } }),
+    ];
+
+    expect(() => expandRequest(entries, { depth: 0, at: "cursor", line: undefined })).toThrow(
+      AmbiguousOverviewTargetError,
+    );
+  });
+
+  it("applies line narrowing before exact label preference", () => {
+    const exactOutsideLine = fold("cursor", { range: { startLine: 1, endLine: 2 } });
+    const substringAtLine = fold("cursor details", { range: { startLine: 4, endLine: 5 } });
+
+    expect(
+      expandRequest([exactOutsideLine, substringAtLine], {
+        depth: 0,
+        at: "cursor",
+        line: 5,
+      }).entries,
+    ).toEqual([substringAtLine]);
+  });
+
+  it("keeps copied full primary headers selectable by substring", () => {
+    const target = fold("cursor", { range: { startLine: 1, endLine: 3 } });
+
+    expect(
+      expandRequest([target], { depth: 0, at: "1-3: cursor", line: undefined }).entries,
+    ).toEqual([target]);
+  });
+
+  it("does not rank formatted range headers as exact labels", () => {
+    const formattedHeader = fold("cursor", { range: { startLine: 1, endLine: 3 } });
+    const substringHeader = fold("wrapper 1-3: cursor suffix", {
+      range: { startLine: 5, endLine: 7 },
+    });
+
+    expect(() =>
+      expandRequest([formattedHeader, substringHeader], {
+        depth: 0,
+        at: "1-3: cursor",
+        line: undefined,
+      }),
+    ).toThrow(AmbiguousOverviewTargetError);
+  });
+
   it("selects nested targets from the full tree before trimming depth", () => {
     const entries = [
       symbol("outer", {

@@ -64,9 +64,7 @@ export class OverviewExpander {
   }
 
   private selectTarget(): OverviewExpansionCandidate {
-    const candidates = OverviewExpander.collectCandidates(this.file.entries).filter((candidate) =>
-      this.matchesRequest(candidate),
-    );
+    const candidates = this.exactLabelCandidates(this.matchingCandidates());
 
     if (candidates.length === 0) {
       throw new OverviewTargetNotFoundError(this.request);
@@ -78,6 +76,24 @@ export class OverviewExpander {
       throw new AmbiguousLineTargetError(this.request.line, candidates);
     }
     throw new AmbiguousOverviewTargetError(candidates);
+  }
+
+  private matchingCandidates(): readonly OverviewExpansionCandidate[] {
+    return OverviewExpander.collectCandidates(this.file.entries).filter((candidate) =>
+      this.matchesRequest(candidate),
+    );
+  }
+
+  private exactLabelCandidates(
+    candidates: readonly OverviewExpansionCandidate[],
+  ): readonly OverviewExpansionCandidate[] {
+    const at = this.request.at;
+    if (at === undefined) return candidates;
+
+    const exactCandidates = candidates.filter((candidate) =>
+      OverviewExpander.targetLabels(candidate.node).includes(at),
+    );
+    return exactCandidates.length === 0 ? candidates : exactCandidates;
   }
 
   private matchesRequest(candidate: OverviewExpansionCandidate): boolean {
@@ -151,6 +167,12 @@ export class OverviewExpander {
   private static labelFor(node: OverviewNode): string {
     if (node.type === "symbol") return formatSymbolPath(node.identity.segments);
     return node.header.lines[0] ?? "";
+  }
+
+  private static targetLabels(node: OverviewNode): readonly string[] {
+    const label = OverviewExpander.labelFor(node);
+    if (node.type !== "fold") return [label];
+    return [label, ...(node.headerVariants ?? [])];
   }
 
   private static formatRange(range: LineRange): string {

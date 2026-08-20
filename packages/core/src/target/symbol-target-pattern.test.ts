@@ -1,8 +1,7 @@
 import { describe, expect, it } from "vitest";
 
-import { SymbolTargetGrammar } from "./symbol-target-pattern.js";
+import { InvalidSymbolTargetError, SymbolTargetGrammar } from "./symbol-target-pattern.js";
 import { identity } from "./symbol-target-builders.js";
-import { InvalidSymbolIdError } from "../intermediate-representation/canonical-identity.js";
 
 describe("SymbolTargetGrammar.parse", () => {
   it("parses a bare name as a segment suffix", () => {
@@ -62,27 +61,27 @@ describe("SymbolTargetGrammar.parse", () => {
   });
 
   it("rejects empty input", () => {
-    expect(() => SymbolTargetGrammar.parse("")).toThrow(InvalidSymbolIdError);
+    expect(() => SymbolTargetGrammar.parse("")).toThrow(InvalidSymbolTargetError);
   });
 
   it("rejects empty interior segments (`a::::b`)", () => {
-    expect(() => SymbolTargetGrammar.parse("a::::b")).toThrow(InvalidSymbolIdError);
+    expect(() => SymbolTargetGrammar.parse("a::::b")).toThrow(InvalidSymbolTargetError);
   });
 
   it("rejects trailing empty segment (`a::b::`)", () => {
-    expect(() => SymbolTargetGrammar.parse("a::b::")).toThrow(InvalidSymbolIdError);
+    expect(() => SymbolTargetGrammar.parse("a::b::")).toThrow(InvalidSymbolTargetError);
   });
 
   it("rejects zero disambiguator (`a::b#0`)", () => {
-    expect(() => SymbolTargetGrammar.parse("a::b#0")).toThrow(InvalidSymbolIdError);
+    expect(() => SymbolTargetGrammar.parse("a::b#0")).toThrow(InvalidSymbolTargetError);
   });
 
   it("rejects negative disambiguator (`a::b#-1`)", () => {
-    expect(() => SymbolTargetGrammar.parse("a::b#-1")).toThrow(InvalidSymbolIdError);
+    expect(() => SymbolTargetGrammar.parse("a::b#-1")).toThrow(InvalidSymbolTargetError);
   });
 
   it("rejects non-numeric disambiguator (`a::b#abc`)", () => {
-    expect(() => SymbolTargetGrammar.parse("a::b#abc")).toThrow(InvalidSymbolIdError);
+    expect(() => SymbolTargetGrammar.parse("a::b#abc")).toThrow(InvalidSymbolTargetError);
   });
 });
 
@@ -91,10 +90,10 @@ describe("SymbolTargetGrammar.parse error reasons", () => {
     try {
       thrower();
     } catch (err) {
-      if (err instanceof InvalidSymbolIdError) return err.reason;
+      if (err instanceof InvalidSymbolTargetError) return err.reason;
       throw err;
     }
-    throw new Error("expected InvalidSymbolIdError to be thrown");
+    throw new Error("expected InvalidSymbolTargetError to be thrown");
   }
 
   it("names empty input", () => {
@@ -115,6 +114,20 @@ describe("SymbolTargetGrammar.parse error reasons", () => {
 
   it("echoes the raw offending input", () => {
     expect(reasonOf(() => SymbolTargetGrammar.parse("a::b#abc"))).toContain("a::b#abc");
+  });
+
+  it("retains the grammar explanation and raw target", () => {
+    try {
+      SymbolTargetGrammar.parse("a::::b");
+    } catch (error) {
+      expect(error).toBeInstanceOf(InvalidSymbolTargetError);
+      expect((error as InvalidSymbolTargetError).explanation).toBe(
+        'empty path segment between "::" separators',
+      );
+      expect((error as InvalidSymbolTargetError).raw).toBe("a::::b");
+      return;
+    }
+    throw new Error("expected InvalidSymbolTargetError to be thrown");
   });
 });
 
@@ -162,6 +175,15 @@ describe("SymbolTargetGrammar.matches", () => {
     ).toBe(true);
     expect(
       SymbolTargetGrammar.matches(pattern, identity("src/orders.ts", "PaymentProcessor", "refund")),
+    ).toBe(false);
+  });
+
+  it("rejects a nested symbol when the target names its file", () => {
+    const pattern = SymbolTargetGrammar.parse("orders.ts::charge");
+
+    expect(SymbolTargetGrammar.matches(pattern, identity("orders.ts", "charge"))).toBe(true);
+    expect(
+      SymbolTargetGrammar.matches(pattern, identity("orders.ts", "PaymentProcessor", "charge")),
     ).toBe(false);
   });
 

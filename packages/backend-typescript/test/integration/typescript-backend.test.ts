@@ -4,7 +4,6 @@ import {
   FileNotFoundError,
   formatSymbolIdentity,
   InMemoryFileSystem,
-  SymbolTargetGrammar,
   type FileSystem,
   type ResolvedPath,
   OverviewTree,
@@ -164,7 +163,7 @@ describe("TypeScriptBackend.fileEntries", () => {
 });
 
 describe("TypeScriptBackend parse sharing", () => {
-  it("reads each workspace file at most once across findTargetCandidates and findDefinitions", async () => {
+  it("reads each workspace file at most once across declarations and findDefinitions", async () => {
     const inner = new InMemoryFileSystem({
       "/repo/.git/HEAD": "ref: refs/heads/main\n",
       "/repo/src/lib.ts": "export function helper(): void {}\n",
@@ -184,19 +183,13 @@ describe("TypeScriptBackend parse sharing", () => {
       { relative: "src/lib.ts", absolute: "/repo/src/lib.ts" },
     ];
 
-    const candidates = await backend.findTargetCandidates(
-      files,
-      SymbolTargetGrammar.parse("helper"),
-      {
-        containingLine: undefined,
-      },
-    );
+    const declarations = await backend.declarations(files);
     const definitions = await backend.findDefinitions(files, {
       file: "src/lib.ts",
       segments: [{ name: "helper" }],
     });
 
-    expect(candidates).toHaveLength(1);
+    expect(declarations).toHaveLength(2);
     expect(definitions).toHaveLength(1);
     const sourceReads = counting.readFileCalls.filter((path) => path.startsWith("/repo/src/"));
     expect(new Set(sourceReads)).toEqual(new Set(["/repo/src/app.ts", "/repo/src/lib.ts"]));

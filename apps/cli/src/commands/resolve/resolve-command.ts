@@ -8,7 +8,7 @@ import type {
   ResolveSymbolsOptions,
   SymbolOverviewNode,
 } from "@symnav/core";
-import { compileResolveRegex, NoSupportedFilesError } from "@symnav/core";
+import { compileRegex, NoSupportedFilesError } from "@symnav/core";
 import { renderResolveJson, renderResolveText, ResolveErrorRenderer } from "@symnav/renderer";
 import fuzzysort from "fuzzysort";
 
@@ -35,7 +35,7 @@ class ResolveComputation {
 
   static symbolsOptionsFrom(mode: ResolveSymbolsMode, query: string): ResolveSymbolsOptions {
     if (mode === "regex") {
-      return { mode: "regex", regex: compileResolveRegex(query) };
+      return { mode: "regex", regex: compileRegex(query) };
     }
     if (mode === "fuzzy") {
       return { mode: "fuzzy" };

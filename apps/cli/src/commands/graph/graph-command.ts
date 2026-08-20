@@ -6,6 +6,7 @@ import {
   GraphTraverser,
   InvalidGraphRequestError,
   MAX_GRAPH_DEPTH,
+  SymbolTargetResolver,
   isPositiveInteger,
 } from "@symnav/core";
 import { SymbolTargetErrorRenderer, renderGraphJson, renderGraphText } from "@symnav/renderer";
@@ -14,11 +15,11 @@ import type { Command, CommandContext } from "../../command.js";
 import { classifyArgKind, lengthBucketOf } from "../../telemetry/arg-shape.js";
 import { NavigationDiagnosticsCollector } from "../navigation-diagnostics-collector.js";
 import { resolveCallTarget } from "../resolve-call-target.js";
-import { CommandTargetResolver } from "../resolve-symbol-target.js";
 
 export interface GraphArgs {
   readonly target: string;
   readonly line: number | string | undefined;
+  readonly regex: boolean;
   readonly incoming: boolean;
   readonly outgoing: boolean;
   readonly depth: number | string | undefined;
@@ -45,12 +46,13 @@ export const graphCommand: Command<GraphResult, GraphArgs> = {
   },
   async compute(ctx: CommandContext<GraphArgs>): Promise<GraphResult> {
     const request = graphRequestFrom(ctx.args);
-    const resolved = await CommandTargetResolver.resolve({
+    const resolved = await SymbolTargetResolver.resolve({
       workspace: ctx.workspace,
       router: ctx.router,
       cwd: ctx.cwd,
       rawTarget: ctx.args.target,
       line: ctx.args.line,
+      regex: ctx.args.regex,
     });
     const identity = resolved.identity;
     const backend = resolved.backend;
@@ -147,5 +149,6 @@ function graphFlags(args: GraphArgs): string[] {
     ...(args.outgoing ? ["outgoing"] : []),
     ...(args.page !== undefined ? ["page"] : []),
     ...(args.pageSize !== undefined ? ["page-size"] : []),
+    ...(args.regex ? ["regex"] : []),
   ].sort();
 }

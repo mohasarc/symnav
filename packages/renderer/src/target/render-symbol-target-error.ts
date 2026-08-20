@@ -13,12 +13,14 @@ export class SymbolTargetErrorRenderer {
 
   private static renderAmbiguity(err: AmbiguousSymbolTargetError): string {
     return [
-      `Cannot answer: symbol target ${JSON.stringify(err.pattern.raw)} is ambiguous.`,
+      `Cannot answer: symbol target ${JSON.stringify(err.rawTarget)} is ambiguous.`,
       "",
       "Candidates",
       ...err.candidates.flatMap((candidate, index) =>
         SymbolTargetErrorRenderer.candidateLines(candidate, index === err.candidates.length - 1),
       ),
+      "",
+      "Copy a candidate id, or narrow with --line.",
       "",
     ].join("\n");
   }

@@ -38,13 +38,25 @@ src/orders.ts::PaymentProcessor::charge
 - Use workspace-relative paths: `src/orders.ts::charge`, not `/app/src/orders.ts::charge`.
 - One target per command.
 - Quote targets containing `$ * [ ] ( ) !` or spaces in single quotes.
+- Naming a file pins the whole symbol path: `orders.ts::charge` finds top-level `charge`, never `orders.ts::PaymentProcessor::charge`. Drop the file part to reach nested symbols.
 - Ambiguous target → symnav prints candidates; copy one and retry.
 - Not found → check the path is workspace-relative and the name appears in `overview`/`resolve`.
+
+`--regex` switches the target to a case-sensitive JS regex over full canonical ids:
+
+```
+symnav def --regex 'PaymentProcessor::charge$'
+symnav refs --regex 'src/payments/.+::charge$'
+symnav graph --regex 'Router::dispatch#[1-3]$'
+```
+
+Anchor with `$` — an unanchored regex matches anywhere in the id and goes ambiguous fast.
 
 ## Options
 
 - `overview` — `--depth <n>`, `--at <text>`, `--line <n>`
 - `resolve` — `--fuzzy` (subsequence), `--regex` (JS regex; not with `--fuzzy`)
+- `def`/`refs`/`context`/`graph` — `--regex` (JS regex target), `--line <n>`
 - `refs` — `--page <n>`, `--page-size <n>`, `--all`, `--full-lines`
 - `graph` — `--incoming`, `--outgoing`, `--depth <n>`, `--page <n>`, `--page-size <n>`, `--all`
 - all — `--json`

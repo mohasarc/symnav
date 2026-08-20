@@ -6,7 +6,7 @@ import type {
   SymbolReference,
   ResolvedPath,
   SymbolOverviewNode,
-} from "@symnav/core";
+} from "../../../../src/index.js";
 
 export interface FakeLanguageBackendOptions {
   accept?: (filePath: string) => boolean;

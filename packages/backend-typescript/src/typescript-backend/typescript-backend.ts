@@ -7,13 +7,10 @@ import type {
   LanguageBackend,
   OverviewFileEntries,
   SymbolReference,
-  ResolveSymbolTargetOptions,
   ResolveSymbolsOptions,
   ResolvedPath,
   SymbolOverviewNode,
   SymbolIdentity,
-  SymbolTargetCandidate,
-  SymbolTargetPattern,
 } from "@symnav/core";
 import { CollectingDiagnosticSink, FileNotFoundError } from "@symnav/core";
 
@@ -25,7 +22,6 @@ import { loadFileEntries } from "../extract/load-file-entries.js";
 import { WorkspaceDeclarationIndex } from "../identity/workspace-declaration-index.js";
 import { ReferenceFinder } from "../references/find-references.js";
 import { SymbolResolver } from "../resolve/resolve-symbols.js";
-import { TargetCandidateFinder } from "../target/find-target-candidates.js";
 
 export class TypeScriptBackend implements LanguageBackend {
   static readonly extensions: readonly string[] = [".d.ts", ".ts", ".tsx", ".mts", ".cts"];
@@ -70,17 +66,10 @@ export class TypeScriptBackend implements LanguageBackend {
     return SymbolResolver.resolveSymbols({ fs: this.fs, files, query, options });
   }
 
-  async findTargetCandidates(
-    files: readonly ResolvedPath[],
-    pattern: SymbolTargetPattern,
-    options: ResolveSymbolTargetOptions,
-  ): Promise<readonly SymbolTargetCandidate[]> {
-    return TargetCandidateFinder.find({
-      declarationIndex: this.sharedDeclarationIndex(),
-      files,
-      pattern,
-      options,
-    });
+  async declarations(files: readonly ResolvedPath[]): Promise<readonly SymbolOverviewNode[]> {
+    const declarationIndex = this.sharedDeclarationIndex();
+    declarationIndex.ensureFiles(files);
+    return files.flatMap((file) => declarationIndex.declarationsIn(file.relative) ?? []);
   }
 
   async findDefinitions(

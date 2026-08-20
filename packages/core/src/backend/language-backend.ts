@@ -6,8 +6,6 @@ import type {
   OverviewFileEntries,
   SymbolOverviewNode,
 } from "../intermediate-representation/overview-tree.js";
-import type { SymbolTargetPattern } from "../target/symbol-target-pattern.js";
-import type { SymbolTargetCandidate } from "../target/symbol-target-result.js";
 import type { ResolvedPath } from "../workspace/workspace.js";
 
 export type ResolveSymbolsMode = "exact" | "fuzzy" | "regex";
@@ -17,10 +15,6 @@ export type ResolveSymbolsOptions =
   | { readonly mode: "fuzzy" }
   | { readonly mode: "regex"; readonly regex: RegExp };
 
-export interface ResolveSymbolTargetOptions {
-  readonly containingLine: number | undefined;
-}
-
 export interface LanguageBackend {
   accepts(filePath: string): boolean;
   fileEntries(path: ResolvedPath): Promise<OverviewFileEntries>;
@@ -29,11 +23,7 @@ export interface LanguageBackend {
     query: string,
     options: ResolveSymbolsOptions,
   ): Promise<readonly SymbolOverviewNode[]>;
-  findTargetCandidates(
-    files: readonly ResolvedPath[],
-    pattern: SymbolTargetPattern,
-    options: ResolveSymbolTargetOptions,
-  ): Promise<readonly SymbolTargetCandidate[]>;
+  declarations(files: readonly ResolvedPath[]): Promise<readonly SymbolOverviewNode[]>;
   findDefinitions(
     files: readonly ResolvedPath[],
     identity: SymbolIdentity,

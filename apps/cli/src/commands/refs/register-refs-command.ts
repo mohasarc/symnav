@@ -7,6 +7,7 @@ import { refsCommand } from "./refs-command.js";
 
 interface RefsOptions {
   readonly line?: string;
+  readonly regex: boolean;
   readonly page?: string;
   readonly pageSize?: string;
   readonly all: boolean;
@@ -23,6 +24,7 @@ export function registerRefsCommand(
     .command("refs <target>")
     .description("List references to a symbol across the workspace")
     .option("--line <n>", "narrow target matches to declarations containing this line")
+    .option("--regex", "match full canonical symbol ids by JavaScript regex", false)
     .option("--page <n>", "page of references to show")
     .option("--page-size <n>", "references per page")
     .option("--all", "show every reference on one page", false)
@@ -38,6 +40,7 @@ export function registerRefsCommand(
         args: {
           target,
           line: options.line,
+          regex: options.regex,
           page: options.page === undefined ? undefined : Number(options.page),
           pageSize: options.pageSize === undefined ? undefined : Number(options.pageSize),
           all: options.all,

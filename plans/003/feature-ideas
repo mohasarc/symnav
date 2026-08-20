@@ -119,6 +119,24 @@ Map agent situations to the concept that answers them ("where did this value com
 
 Compute-once, cache, and reuse repo-level artifacts (module map, family index, co-change table) so orientation cost amortizes across tasks.
 
+### 19. Near-miss counts on a failed target
+
+`Cannot answer: no symbol target "command.ts::git" found.` reads the same for a typo as for a target that is one segment short. Naming a file pins the whole symbol path, so `command.ts::git` misses `command.ts::CommandContext::git` and says nothing about it. Count what almost matched and say so — "no exact match; 3 symbols partially match, 7 fuzzy-match — retry with --regex or --fuzzy" — so a dead end becomes a next step instead of a second `resolve` round trip.
+
+- Question answered: "Did I mistype, or did I under-specify?"
+- Basis: compiler truth (the candidate set is already enumerated when the match fails).
+- Targets: agent trajectories that stall on not-found; measured at 1,395 `basename::leaf` shorthands in symnav's own 360-file workspace that resolve to nothing under exact suffix matching.
+- Known caveats to explore: counts must stay cheap (no second pass over declarations); printing candidate ids risks the output growth ambiguity errors already fight; deciding whether the hint belongs in text output, JSON, or both.
+
+### 20. `--fuzzy` on the symbol commands
+
+`--fuzzy` is `resolve`-only. `def`/`refs`/`context`/`graph` take exact suffix targets or `--regex`, so reaching a half-remembered nested symbol costs a `resolve` call plus a copy-paste. Extending `--fuzzy` to the symbol commands collapses that to one call, with ambiguity handling already in place for when the subsequence matches several symbols.
+
+- Question answered: "Can I go straight to the symbol I only half remember?"
+- Basis: compiler truth (reuses the existing subsequence matcher over canonical ids).
+- Targets: the two-step discover-then-navigate loop; pairs naturally with #19, which would name `--fuzzy` as the recovery path.
+- Known caveats to explore: fuzzy over full canonical ids matches far more than fuzzy over a leaf name, so ambiguity rates need measuring before committing; interaction with `--regex` (mutually exclusive, as on `resolve`).
+
 ---
 
 ## Cross-cutting design principles from the session

@@ -7,6 +7,7 @@ import { graphCommand } from "./graph-command.js";
 
 interface GraphOptions {
   readonly line?: string;
+  readonly regex: boolean;
   readonly incoming: boolean;
   readonly outgoing: boolean;
   readonly depth?: string;
@@ -25,6 +26,7 @@ export function registerGraphCommand(
     .command("graph <target>")
     .description("Show call paths around a symbol")
     .option("--line <n>", "narrow target matches to declarations containing this line")
+    .option("--regex", "match full canonical symbol ids by JavaScript regex", false)
     .option("--incoming", "show caller paths only", false)
     .option("--outgoing", "show callee paths only", false)
     .option("--depth <n>", "maximum call depth")
@@ -42,6 +44,7 @@ export function registerGraphCommand(
         args: {
           target,
           line: options.line,
+          regex: options.regex,
           incoming: options.incoming,
           outgoing: options.outgoing,
           depth: options.depth,

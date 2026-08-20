@@ -6,17 +6,13 @@ import type {
   SymbolOverviewNode,
   SymbolTargetCandidate,
 } from "@symnav/core";
-import {
-  AmbiguousSymbolTargetError,
-  SymbolTargetNotFoundError,
-  SymbolTargetGrammar,
-} from "@symnav/core";
+import { AmbiguousSymbolTargetError, SymbolTargetNotFoundError } from "@symnav/core";
 
 import { SymbolTargetErrorRenderer } from "./render-symbol-target-error.js";
 
 describe("SymbolTargetErrorRenderer", () => {
   it("renders the ambiguity statement and candidate tree exactly", () => {
-    const error = new AmbiguousSymbolTargetError(SymbolTargetGrammar.parse("parse"), [
+    const error = new AmbiguousSymbolTargetError("parse", [
       candidate("src/json.ts", ["parse"], ["export function parse(input: string): JsonValue"]),
       candidate(
         "src/query.ts",
@@ -35,12 +31,14 @@ describe("SymbolTargetErrorRenderer", () => {
         "└── src/query.ts::parse",
         "    export function parse(input: URLSearchParams): Query",
         "",
+        "Copy a candidate id, or narrow with --line.",
+        "",
       ].join("\n"),
     );
   });
 
   it("prefixes every line of a wrapped signature with its candidate's glyph", () => {
-    const error = new AmbiguousSymbolTargetError(SymbolTargetGrammar.parse("charge"), [
+    const error = new AmbiguousSymbolTargetError("charge", [
       candidate(
         "src/stripe.ts",
         ["charge"],
@@ -67,12 +65,14 @@ describe("SymbolTargetErrorRenderer", () => {
         "      amount: Money,",
         "    ): Promise<Invoice>",
         "",
+        "Copy a candidate id, or narrow with --line.",
+        "",
       ].join("\n"),
     );
   });
 
   it("leaves other symbol-target errors unrendered", () => {
-    const error = new SymbolTargetNotFoundError(SymbolTargetGrammar.parse("parse"));
+    const error = new SymbolTargetNotFoundError("parse");
 
     expect(SymbolTargetErrorRenderer.render(error)).toBeUndefined();
   });

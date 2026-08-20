@@ -79,6 +79,7 @@ export type { PageRequest, Page } from "./pagination/paginator.js";
 export { DEFAULT_PAGE_SIZE, Paginator } from "./pagination/paginator.js";
 export { InvalidPageRequestError, PageOutOfRangeError } from "./pagination/errors.js";
 export { isPositiveInteger } from "./validation/is-positive-integer.js";
+export { InvalidRegexError, compileRegex } from "./validation/compile-regex.js";
 export {
   InvalidSymbolIdError,
   SEGMENT_SEPARATOR,
@@ -87,16 +88,24 @@ export {
   parseSegment,
 } from "./intermediate-representation/canonical-identity.js";
 export type { SymbolTargetPattern } from "./target/symbol-target-pattern.js";
-export { SymbolTargetGrammar } from "./target/symbol-target-pattern.js";
+export { InvalidSymbolTargetError, SymbolTargetGrammar } from "./target/symbol-target-pattern.js";
+export type { SymbolTargetRequest } from "./target/symbol-target-request.js";
+export {
+  SymbolTargetRequestMatcher,
+  SymbolTargetRequestParser,
+} from "./target/symbol-target-request.js";
+export type {
+  ResolveSymbolTargetArgs,
+  ResolvedSymbolTarget,
+} from "./target/symbol-target-resolver.js";
+export { SymbolTargetResolver } from "./target/symbol-target-resolver.js";
 export type { SymbolTargetCandidate } from "./target/symbol-target-result.js";
 export {
   AmbiguousSymbolTargetError,
+  SymbolTargetLineMismatchError,
   SymbolTargetNotFoundError,
 } from "./target/symbol-target-result.js";
-export {
-  InvalidSymbolTargetRequestError,
-  validateResolveSymbolTargetOptions,
-} from "./target/validate-resolve-symbol-target-options.js";
+export { InvalidSymbolTargetRequestError } from "./target/invalid-symbol-target-request-error.js";
 export { splitHeaderLines } from "./intermediate-representation/split-header-lines.js";
 export { assignDisambiguators } from "./intermediate-representation/assign-disambiguators.js";
 export type { FileSystem } from "./workspace/file-system.js";
@@ -108,14 +117,11 @@ export type {
   LanguageBackend,
   ResolveSymbolsMode,
   ResolveSymbolsOptions,
-  ResolveSymbolTargetOptions,
 } from "./backend/language-backend.js";
-export { compileResolveRegex } from "./backend/compile-resolve-regex.js";
 export { BackendRouter } from "./backend/backend-router.js";
 export { UserFacingError } from "./errors.js";
 export {
   AmbiguousSymbolError,
-  InvalidResolveRegexError,
   NoSupportedFilesError,
   SymbolNotFoundError,
   UnsupportedFileError,

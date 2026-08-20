@@ -1,8 +1,8 @@
 import { UserFacingError } from "../errors.js";
+import { SegmentGrammar } from "./segment-grammar.js";
 import type { SymbolIdentity, SymbolPathSegment } from "./symbol-identity.js";
 
 export const SEGMENT_SEPARATOR = "::";
-const DISAMBIGUATOR_PREFIX = "#";
 
 export class InvalidSymbolIdError extends UserFacingError {
   constructor(
@@ -19,25 +19,11 @@ export class InvalidSymbolIdError extends UserFacingError {
 }
 
 export function parseSegment(segment: string, raw: string): SymbolPathSegment {
-  if (segment.length === 0) {
-    throw new InvalidSymbolIdError('empty path segment between "::" separators', raw);
+  const parsed = SegmentGrammar.parse(segment);
+  if (parsed.outcome === "rejected") {
+    throw new InvalidSymbolIdError(parsed.explanation, raw);
   }
-  const hashIndex = segment.lastIndexOf(DISAMBIGUATOR_PREFIX);
-  if (hashIndex === -1) {
-    return { name: segment };
-  }
-  const name = segment.slice(0, hashIndex);
-  const disambiguatorText = segment.slice(hashIndex + DISAMBIGUATOR_PREFIX.length);
-  if (name.length === 0) {
-    return { name: segment };
-  }
-  if (!/^[1-9][0-9]*$/.test(disambiguatorText)) {
-    throw new InvalidSymbolIdError(
-      `disambiguator must be a positive integer (got ${JSON.stringify(disambiguatorText)})`,
-      raw,
-    );
-  }
-  return { name, disambiguator: Number.parseInt(disambiguatorText, 10) };
+  return parsed.segment;
 }
 
 export function formatSymbolIdentity(identity: SymbolIdentity): string {
@@ -48,12 +34,5 @@ export function formatSymbolIdentity(identity: SymbolIdentity): string {
 }
 
 export function formatSymbolPath(segments: readonly SymbolPathSegment[]): string {
-  return segments.map(formatSegment).join(SEGMENT_SEPARATOR);
-}
-
-function formatSegment(segment: SymbolPathSegment): string {
-  if (segment.disambiguator === undefined) {
-    return segment.name;
-  }
-  return `${segment.name}${DISAMBIGUATOR_PREFIX}${segment.disambiguator}`;
+  return segments.map(SegmentGrammar.format).join(SEGMENT_SEPARATOR);
 }

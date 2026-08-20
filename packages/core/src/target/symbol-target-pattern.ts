@@ -1,8 +1,6 @@
-import {
-  InvalidSymbolIdError,
-  SEGMENT_SEPARATOR,
-  parseSegment,
-} from "../intermediate-representation/canonical-identity.js";
+import { SEGMENT_SEPARATOR } from "../intermediate-representation/canonical-identity.js";
+import { SegmentGrammar } from "../intermediate-representation/segment-grammar.js";
+import { UserFacingError } from "../errors.js";
 import type {
   SymbolIdentity,
   SymbolPathSegment,
@@ -14,30 +12,43 @@ export interface SymbolTargetPattern {
   readonly segmentSuffix: readonly SymbolPathSegment[];
 }
 
+export class InvalidSymbolTargetError extends UserFacingError {
+  constructor(
+    readonly explanation: string,
+    readonly raw: string,
+  ) {
+    super();
+    this.name = "InvalidSymbolTargetError";
+  }
+
+  get reason(): string {
+    return `invalid symbol target (${this.explanation}): ${JSON.stringify(this.raw)}`;
+  }
+}
+
 export class SymbolTargetGrammar {
   static parse(raw: string): SymbolTargetPattern {
     if (raw.length === 0) {
-      throw new InvalidSymbolIdError("empty input", raw);
+      throw new InvalidSymbolTargetError("empty input", raw);
     }
     const parts = raw.split(SEGMENT_SEPARATOR);
     const fileSuffix = SymbolTargetGrammar.fileSuffixFrom(parts);
     const segmentParts = fileSuffix === undefined ? parts : parts.slice(1);
-    if (segmentParts.length === 0) {
-      throw new InvalidSymbolIdError("empty symbol target", raw);
-    }
     return {
       raw,
       fileSuffix,
-      segmentSuffix: segmentParts.map((segment) => parseSegment(segment, raw)),
+      segmentSuffix: segmentParts.map((segment) => SymbolTargetGrammar.parseSegment(segment, raw)),
     };
   }
 
   static matches(pattern: SymbolTargetPattern, identity: SymbolIdentity): boolean {
-    if (
-      pattern.fileSuffix !== undefined &&
-      !SymbolTargetGrammar.fileSuffixMatches(identity.file, pattern.fileSuffix)
-    ) {
-      return false;
+    if (pattern.fileSuffix !== undefined) {
+      if (!SymbolTargetGrammar.fileSuffixMatches(identity.file, pattern.fileSuffix)) {
+        return false;
+      }
+      if (pattern.segmentSuffix.length !== identity.segments.length) {
+        return false;
+      }
     }
     if (pattern.segmentSuffix.length > identity.segments.length) {
       return false;
@@ -55,6 +66,14 @@ export class SymbolTargetGrammar {
       return true;
     }
     return file.endsWith(`/${suffix}`);
+  }
+
+  private static parseSegment(segment: string, raw: string): SymbolPathSegment {
+    const parsed = SegmentGrammar.parse(segment);
+    if (parsed.outcome === "rejected") {
+      throw new InvalidSymbolTargetError(parsed.explanation, raw);
+    }
+    return parsed.segment;
   }
 
   private static fileSuffixFrom(parts: readonly string[]): string | undefined {

@@ -12,16 +12,16 @@ Default commands stay concise, deterministic, and non-interactive. Exact and suf
 
 ## Core Guarantees
 
-### Stronger matches win
+### One suffix, one match
 
-When a regular symbol target matches candidates with different specificity, symnav selects the uniquely strongest match instead of reporting avoidable ambiguity.
+A regular symbol target matches a candidate when the candidate canonical id ends with the target at a path or segment boundary. Symnav resolves the target when exactly one candidate matches, and reports ambiguity when several do.
 
 Functional rule:
 
 ```text
-A full symbol-path match outranks a proper symbol-path suffix match.
-An exact file-path match outranks a proper file-path suffix match.
-Candidates tied at the strongest rank remain ambiguous.
+A candidate matches when its canonical id ends with the target.
+Boundaries are path separators and "::" separators, never mid-name.
+Two or more matches are ambiguous.
 ```
 
 Example:
@@ -37,9 +37,11 @@ Result:
 src/adapters/orders.ts::charge
 ```
 
-The first candidate matches the complete requested symbol path. The second only ends with the requested symbol path.
+Only the first candidate ends with `orders.ts::charge`. The second ends with `PaymentProcessor::charge`, so the target does not reach its file portion.
 
-Symnav does not use source order or an arbitrary first result to break a tie. There is no first-result override.
+A shorter target trades precision for reach. `charge` alone ends both canonical ids above, so it is ambiguous and symnav prints both. Lengthen the target until one candidate remains.
+
+Symnav does not rank matches by specificity, source order, or an arbitrary first result. There is no first-result override.
 
 ### Line filtering reports what happened
 
@@ -260,7 +262,7 @@ If file exists but its symbol path does not match, symnav reports a missing symb
 
 ### Determinism
 
-Candidate ranking, ambiguity order, and error output are deterministic for same workspace and request.
+Candidate matching, ambiguity order, and error output are deterministic for same workspace and request.
 
 ### Matching order
 
@@ -269,11 +271,10 @@ For symbol commands, request processing follows this observable order:
 ```text
 1. Match regular target or regex against canonical IDs.
 2. Apply --line when present.
-3. Rank regular target matches by specificity.
-4. Return one winner, not-found, line-mismatch, or ambiguity.
+3. Return one winner, not-found, line-mismatch, or ambiguity.
 ```
 
-Regex matches are not ranked by regular-target suffix specificity. Every regex match has equal specificity.
+Regular targets and regexes reach this order the same way. Every surviving match has equal standing.
 
 ### Exit behavior
 
@@ -289,9 +290,9 @@ This feature does not add reference ownership to `refs`. It affects call relatio
 
 ## Symbol Target Matching
 
-**Purpose.** Resolve regular suffix targets to best supported candidate without avoidable ambiguity.
+**Purpose.** Resolve a regular suffix target when exactly one canonical id ends with it.
 
-Exact full symbol paths outrank proper suffix matches. Exact file paths outrank proper file suffixes. Equal best candidates remain ambiguous.
+A candidate matches when its canonical id ends with the target at a boundary. Several matches remain ambiguous.
 
 Example:
 
@@ -299,7 +300,7 @@ Example:
 $ symnav def orders.ts::charge
 ```
 
-This selects top-level `src/adapters/orders.ts::charge` over nested `src/domain/orders.ts::PaymentProcessor::charge`.
+This selects `src/adapters/orders.ts::charge`. Nested `src/domain/orders.ts::PaymentProcessor::charge` does not end with the target.
 
 Example:
 

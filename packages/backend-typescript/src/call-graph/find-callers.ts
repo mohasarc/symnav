@@ -1,8 +1,6 @@
 import {
   Node,
-  type ArrowFunction,
   type CallExpression,
-  type FunctionExpression,
   type NewExpression,
   type ReferencedSymbolEntry,
   type SourceFile,
@@ -129,27 +127,15 @@ class CallerFinder {
 
   private functionValuedVariableOf(node: Node): VariableDeclaration | undefined {
     if (!Node.isArrowFunction(node) && !Node.isFunctionExpression(node)) return undefined;
-    let initializer: Node = node;
-    let parent = initializer.getParent();
+    let parent = node.getParent();
     while (parent && Node.isParenthesizedExpression(parent)) {
-      initializer = parent;
       parent = parent.getParent();
     }
-    if (!parent || !Node.isVariableDeclaration(parent)) return undefined;
-    const functionValue = CallerFinder.unwrapFunctionValue(parent.getInitializerOrThrow());
-    return functionValue?.compilerNode === node.compilerNode ? parent : undefined;
+    return parent && Node.isVariableDeclaration(parent) ? parent : undefined;
   }
 
   private indexedDeclarationAt(node: Node): SymbolOverviewNode | undefined {
     return this.declarationIndex.declarationAt(node);
-  }
-
-  private static unwrapFunctionValue(node: Node): ArrowFunction | FunctionExpression | undefined {
-    if (Node.isParenthesizedExpression(node)) {
-      return CallerFinder.unwrapFunctionValue(node.getExpression());
-    }
-    if (Node.isArrowFunction(node) || Node.isFunctionExpression(node)) return node;
-    return undefined;
   }
 
   private siteFor(node: Node): CallSite {

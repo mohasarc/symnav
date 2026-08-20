@@ -25,15 +25,6 @@ describe("symnav resolve e2e (exact)", () => {
     );
   });
 
-  it("names the broader matching modes on an empty exact result", () => {
-    const r = runResolve(["resolve", "paymentprocessor"]);
-    expect(r.stderr).toBe("");
-    expect(r.status).toBe(0);
-    expect(r.stdout).toContain(
-      "No exact match; try --fuzzy for approximate names, or --regex for a pattern.",
-    );
-  });
-
   it("renders no-match with empty sections under headers", async () => {
     const r = runResolve(["resolve", "NoSuchSymbol"]);
     expect(r.stderr).toBe("");

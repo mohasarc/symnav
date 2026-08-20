@@ -51,34 +51,34 @@ export class DeclarationLocator {
   }
 
   locateAll(entries: readonly OverviewNode[]): readonly LocatedDeclaration[] {
-    const declarationsByLocation = this.declarationsByLocation(entries);
+    const declarationsByLineAndName = this.declarationsByLineAndName(entries);
     const locatedDeclarations: LocatedDeclaration[] = [];
     this.sourceFile.forEachDescendant((node) => {
       if (!this.isDefinitionNode(node)) return;
       const name = this.declarationName(node);
       if (!name) return;
       const location = DeclarationLocator.locationKey(node.getStartLineNumber(), name);
-      const declarations = declarationsByLocation.get(location);
+      const declarations = declarationsByLineAndName.get(location);
       const declaration = declarations?.shift();
       if (declaration) locatedDeclarations.push({ declaration, node });
     });
     return locatedDeclarations;
   }
 
-  private declarationsByLocation(
+  private declarationsByLineAndName(
     entries: readonly OverviewNode[],
   ): Map<string, SymbolOverviewNode[]> {
-    const declarationsByLocation = new Map<string, SymbolOverviewNode[]>();
+    const declarationsByLineAndName = new Map<string, SymbolOverviewNode[]>();
     for (const declaration of OverviewTree.walkSymbols(entries)) {
       const location = DeclarationLocator.locationKey(
         declaration.range.startLine,
         OverviewTree.ownName(declaration),
       );
-      const declarations = declarationsByLocation.get(location) ?? [];
+      const declarations = declarationsByLineAndName.get(location) ?? [];
       declarations.push(declaration);
-      declarationsByLocation.set(location, declarations);
+      declarationsByLineAndName.set(location, declarations);
     }
-    return declarationsByLocation;
+    return declarationsByLineAndName;
   }
 
   private static locationKey(line: number, name: string): string {

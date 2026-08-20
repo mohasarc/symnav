@@ -137,6 +137,15 @@ Compute-once, cache, and reuse repo-level artifacts (module map, family index, c
 - Targets: the two-step discover-then-navigate loop; pairs naturally with #19, which would name `--fuzzy` as the recovery path.
 - Known caveats to explore: fuzzy over full canonical ids matches far more than fuzzy over a leaf name, so ambiguity rates need measuring before committing; interaction with `--regex` (mutually exclusive, as on `resolve`).
 
+### 21. File-scope call endpoints
+
+`graph --callers` and `context` attribute each call to its nearest indexed owner: the enclosing function, method, accessor, function-valued variable or property, or failing that the nearest enclosing declaration (`export const seeded = target()` → `seeded`, `enum E { A = target() }` → `E`). A call with nothing above it but the module — a bare `target();` statement, a module-level IIFE, a loop body at top level — has no owner and is dropped. A short `--callers` result then reads as "no caller" rather than "runs at module load". Same gap on the callee side: `findCallees` drops calls to symbols outside the workspace, so an outgoing path ends early without saying the next hop is an npm import.
+
+- Question answered: "Does anything run this at import time?" / "Does this path leave the workspace?"
+- Basis: compiler truth (the sites are already on the edge; `CallSite` carries `file`, `line`, `matchStart`).
+- Targets: side-effectful modules (registration, polyfills, config assembly) whose entry point is the import itself; outgoing paths that look complete but stop at a library boundary.
+- Known caveats to explore: `CallEdge.symbol` assumes a `SymbolOverviewNode` on both sides, so a file-scope caller or external callee needs its own endpoint type and a graph traversal that stops there; JSON field names for context/graph edges change with it; one edge per file (grouped sites) rather than one per call; `matchStart` is a 0-based offset so a `file:line:col` label needs a `+1` at the render site.
+
 ---
 
 ## Cross-cutting design principles from the session

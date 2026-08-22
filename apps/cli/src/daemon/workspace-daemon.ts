@@ -1,4 +1,5 @@
 import type { CliExecutionRequest, CommandExecutionResult } from "../command-execution-result.js";
+import { CliProgramExecutor } from "../cli-program-executor.js";
 import type { ProgramDependencies } from "../program-dependencies.js";
 import { WorkspaceRequestScopeFactory } from "../workspace-request-scope.js";
 import type { DaemonRecord, DaemonRequest, DaemonResponse, DaemonServer } from "./daemon-protocol.js";
@@ -29,13 +30,19 @@ export interface DaemonCommandExecutor {
 export class WorkspaceDaemon {
   private readonly now: () => number;
   private readonly exit: (code: number) => void;
+  private readonly executor: DaemonCommandExecutor;
   private readonly scopeFactory: WorkspaceRequestScopeFactory;
   private server: DaemonServer | undefined;
   private startedAt = 0;
 
   constructor(private readonly options: WorkspaceDaemonOptions) {
     const retainedBackends = options.dependencies.backends();
+    const retainedDependencies: ProgramDependencies = {
+      ...options.dependencies,
+      backends: () => retainedBackends,
+    };
     this.scopeFactory = new WorkspaceRequestScopeFactory(options.dependencies.fs, retainedBackends);
+    this.executor = options.executor ?? new CliProgramExecutor(retainedDependencies);
     this.now = options.now ?? Date.now;
     this.exit = options.exit ?? ((code) => process.exit(code));
   }
@@ -134,6 +141,13 @@ export class WorkspaceDaemon {
         protocolVersion: DAEMON_PROTOCOL_VERSION,
         instanceId: this.options.instanceId,
         symnavVersion: this.options.symnavVersion,
+      };
+    }
+    if (request.kind === "execute") {
+      return {
+        kind: "result",
+        requestId: request.requestId,
+        result: await this.executor.execute(request.request),
       };
     }
     throw new Error("Workspace daemon request handling is not implemented");

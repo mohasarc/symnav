@@ -127,6 +127,43 @@ describe("LocalDaemonTransport", () => {
       frame({ kind: "stopped", instanceId: "instance" }),
     );
   });
+
+  it("decodes coalesced request frames independently", async () => {
+    const endpoint = endpointFor(roots);
+    const transport = new LocalDaemonTransport();
+    const server = await transport.listen(endpoint, async (request) => ({
+      kind: "pong",
+      protocolVersion: DAEMON_PROTOCOL_VERSION,
+      instanceId: request.instanceId,
+      symnavVersion: "0.1.0",
+    }));
+    const first = {
+      kind: "ping",
+      protocolVersion: DAEMON_PROTOCOL_VERSION,
+      instanceId: "first",
+    } satisfies DaemonRequest;
+    const second: DaemonRequest = { ...first, instanceId: "second" };
+
+    const responses = await new Promise<readonly unknown[]>((resolve, reject) => {
+      const socket = createConnection(endpoint);
+      let bytes = Buffer.alloc(0);
+      socket.once("error", reject);
+      socket.once("connect", () => socket.write(Buffer.concat([frame(first), frame(second)])));
+      socket.on("data", (chunk) => {
+        bytes = Buffer.concat([bytes, Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)]);
+        const decoded = decodeFrames(bytes);
+        if (decoded.length !== 2) return;
+        socket.end();
+        resolve(decoded);
+      });
+    });
+
+    expect(responses).toMatchObject([
+      { kind: "pong", instanceId: "first" },
+      { kind: "pong", instanceId: "second" },
+    ]);
+    await server.close();
+  });
 });
 
 function endpointFor(roots: string[]): string {

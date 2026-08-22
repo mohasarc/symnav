@@ -21,3 +21,11 @@ export interface WorkspaceDaemonOptions {
 export interface DaemonCommandExecutor {
   execute(request: CliExecutionRequest): Promise<CommandExecutionResult>;
 }
+
+export class WorkspaceDaemon {
+  constructor(private readonly _options: WorkspaceDaemonOptions) {}
+
+  async start(): Promise<void> {
+    throw new Error("Workspace daemon startup is not implemented");
+  }
+}

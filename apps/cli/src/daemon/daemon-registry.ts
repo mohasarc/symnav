@@ -93,6 +93,16 @@ export class DaemonRegistry {
     return false;
   }
 
+  writeStartingIfStartupOwner(identity: DaemonWorkspaceIdentity, record: DaemonRecord): boolean {
+    if (record.state !== "starting" || !this.isStartupOwner(identity, record.instanceId)) {
+      return false;
+    }
+    this.write(record);
+    if (this.isStartupOwner(identity, record.instanceId)) return true;
+    this.removeIfInstance(identity, record.instanceId);
+    return false;
+  }
+
   acquireStartup(identity: DaemonWorkspaceIdentity, instanceId: string): StartupLease | undefined {
     mkdirSync(identity.registryDirectory, { recursive: true, mode: 0o700 });
     const owner: StartupOwner = {

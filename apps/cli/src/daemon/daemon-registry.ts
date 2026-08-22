@@ -1,5 +1,13 @@
 import { randomUUID } from "node:crypto";
-import { mkdirSync, readFileSync, readdirSync, renameSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  readdirSync,
+  renameSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { dirname, join } from "node:path";
 import {
   DAEMON_PROTOCOL_VERSION,
@@ -80,25 +88,57 @@ export class DaemonRegistry {
   }
 
   acquireStartup(
-    _identity: DaemonWorkspaceIdentity,
-    _instanceId: string,
+    identity: DaemonWorkspaceIdentity,
+    instanceId: string,
   ): StartupLease | undefined {
-    throw new Error("Daemon startup election is not implemented");
+    mkdirSync(identity.registryDirectory, { recursive: true, mode: 0o700 });
+    const owner: StartupOwner = {
+      instanceId,
+      ownerPid: process.pid,
+      acquiredAt: Date.now(),
+    };
+    const claimPath = identity.startupClaimPath(instanceId);
+    mkdirSync(claimPath, { mode: 0o700 });
+    writeFileSync(identity.startupOwnerPath(claimPath), JSON.stringify(owner), {
+      encoding: "utf8",
+      flag: "wx",
+      mode: 0o600,
+    });
+    try {
+      renameSync(claimPath, identity.lockPath);
+      return new RegistryStartupLease(this, identity, instanceId);
+    } catch (error) {
+      rmSync(claimPath, { recursive: true, force: true });
+      if (existsSync(identity.lockPath)) return undefined;
+      throw error;
+    }
   }
 
-  startupOwner(_identity: DaemonWorkspaceIdentity): StartupOwner | undefined {
-    throw new Error("Daemon startup election is not implemented");
+  startupOwner(identity: DaemonWorkspaceIdentity): StartupOwner | undefined {
+    try {
+      const value: unknown = JSON.parse(
+        readFileSync(identity.startupOwnerPath(identity.lockPath), "utf8"),
+      );
+      return DaemonRegistry.isStartupOwner(value) ? value : undefined;
+    } catch (error) {
+      if (DaemonRegistry.errorCode(error) === "ENOENT" || error instanceof SyntaxError) {
+        return undefined;
+      }
+      throw error;
+    }
   }
 
-  isStartupOwner(_identity: DaemonWorkspaceIdentity, _instanceId: string): boolean {
-    throw new Error("Daemon startup election is not implemented");
+  isStartupOwner(identity: DaemonWorkspaceIdentity, instanceId: string): boolean {
+    return this.startupOwner(identity)?.instanceId === instanceId;
   }
 
   removeStartupLockIfInstance(
-    _identity: DaemonWorkspaceIdentity,
-    _instanceId: string,
+    identity: DaemonWorkspaceIdentity,
+    instanceId: string,
   ): boolean {
-    throw new Error("Daemon startup cleanup is not implemented");
+    if (!this.isStartupOwner(identity, instanceId)) return false;
+    rmSync(identity.lockPath, { recursive: true, force: true });
+    return true;
   }
 
   removeIfInstance(_identity: DaemonWorkspaceIdentity, _instanceId: string): void {
@@ -204,6 +244,16 @@ export class DaemonRegistry {
       (record.readyAt === undefined || typeof record.readyAt === "number") &&
       (record.fileCount === undefined || typeof record.fileCount === "number") &&
       (record.lastNavigationAt === undefined || typeof record.lastNavigationAt === "number")
+    );
+  }
+
+  private static isStartupOwner(value: unknown): value is StartupOwner {
+    if (typeof value !== "object" || value === null) return false;
+    const owner = value as Record<string, unknown>;
+    return (
+      typeof owner.instanceId === "string" &&
+      Number.isInteger(owner.ownerPid) &&
+      typeof owner.acquiredAt === "number"
     );
   }
 

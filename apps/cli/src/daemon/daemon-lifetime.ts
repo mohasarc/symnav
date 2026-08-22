@@ -6,6 +6,7 @@ export class DaemonLifetime {
   private timer: ReturnType<typeof setTimeout> | undefined;
   private deadline: number;
   private navigationActive = false;
+  private stopped = false;
   private idleTriggered = false;
 
   constructor(
@@ -18,18 +19,22 @@ export class DaemonLifetime {
   }
 
   navigationAccepted(): void {
+    if (this.stopped) return;
     this.navigationActive = true;
     this.deadline = this.clock.now() + this.idleTimeoutMs;
     this.schedule();
   }
 
   queueBecameIdle(): void {
+    if (this.stopped) return;
     this.navigationActive = false;
     if (this.clock.now() >= this.deadline) this.triggerIdle();
   }
 
   stop(): void {
-    throw new Error("Daemon lifetime stop is not implemented");
+    this.stopped = true;
+    if (this.timer !== undefined) clearTimeout(this.timer);
+    this.timer = undefined;
   }
 
   private schedule(): void {
@@ -41,7 +46,7 @@ export class DaemonLifetime {
 
   private deadlineReached(): void {
     this.timer = undefined;
-    if (this.navigationActive) return;
+    if (this.stopped || this.navigationActive) return;
     this.triggerIdle();
   }
 

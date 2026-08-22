@@ -176,6 +176,23 @@ describe("symnav daemon parity", () => {
     expect(harness.warm(["stats", "--json"])).toEqual(harness.cold(["stats", "--json"]));
     expect(harness.onlyDaemonPid()).toBe(daemonPid);
   });
+
+  it("falls back without replacement after a crash, then restarts warm", async () => {
+    const harness = new DaemonParityHarness();
+    harnesses.push(harness);
+    const first = harness.warmWithTelemetry(["overview", "input.ts"]);
+    const firstPid = harness.onlyDaemonPid();
+    process.kill(firstPid, "SIGKILL");
+    await waitUntil(() => !processIsAlive(firstPid));
+
+    expect(harness.warmWithTelemetry(["overview", "input.ts"])).toEqual(first);
+    expect(harness.telemetryModes()).toEqual(["warm", "fallback"]);
+    expect(harness.daemonRecordCount()).toBe(0);
+
+    expect(harness.warmWithTelemetry(["overview", "input.ts"])).toEqual(first);
+    expect(harness.telemetryModes()).toEqual(["warm", "fallback", "warm"]);
+    expect(harness.onlyDaemonPid()).not.toBe(firstPid);
+  });
 });
 
 class DaemonParityHarness {

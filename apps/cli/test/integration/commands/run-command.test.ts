@@ -1,14 +1,16 @@
 import { describe, expect, it, vi } from "vitest";
+import { TypeScriptBackend, TypeScriptWorkspaceState } from "@symnav/backend-typescript";
 import {
   InMemoryFileSystem,
   type FileMetadata,
   type FileSystem,
   type ResultWithDiagnostics,
+  type SymbolIdentity,
   UserFacingError,
 } from "@symnav/core";
 import type { ArgShape } from "@symnav/telemetry";
 import { runCommand } from "../../../src/command.js";
-import type { Command, CommandContext } from "../../../src/command.js";
+import type { Command, CommandContext, CommandInvocation } from "../../../src/command.js";
 import {
   createCapturingRecorder,
   createFakeIdentityProvider,
@@ -120,6 +122,66 @@ describe("runCommand lifecycle", () => {
       "/repo/src/nested/.gitignore",
       "/repo/src/nested/b.ts",
     ]);
+  });
+
+  it("purges newly ignored files before retained reference and caller queries", async () => {
+    const context = createFakeProgramContext({ cwd: "/repo" });
+    const fs = new MutableCommandFileSystem({
+      "/repo/.git/HEAD": "ref: refs/heads/main\n",
+      "/repo/.gitignore": "",
+      "/repo/src/a.ts": "export function target(): void {}\n",
+      "/repo/src/b.ts": [
+        'import { target } from "./a.js";',
+        "export function caller(): void { target(); }",
+        "",
+      ].join("\n"),
+    });
+    const state = new TypeScriptWorkspaceState(fs);
+    const backend = new TypeScriptBackend(fs, state);
+    const observations: {
+      readonly referenceFiles: readonly string[];
+      readonly callerSiteFiles: readonly string[];
+    }[] = [];
+    const command = new StubCommand({
+      compute: async (commandContext) => {
+        const typescript = commandContext.router.findOrThrow("src/a.ts");
+        const files = (await commandContext.workspace.enumerate()).filter((file) =>
+          typescript.accepts(file.relative),
+        );
+        const identity: SymbolIdentity = {
+          file: "src/a.ts",
+          segments: [{ name: "target" }],
+        };
+        const references = await typescript.findReferences(files, identity);
+        const callers = await typescript.findCallers(files, identity);
+        observations.push({
+          referenceFiles: references.map((reference) => reference.file),
+          callerSiteFiles: callers.flatMap((caller) => caller.sites.map((site) => site.file)),
+        });
+        return { value: "computed" };
+      },
+    });
+    const invocation: CommandInvocation<StubArgs> = {
+      context,
+      dependencies: fakeDependencies({ fs, backends: () => [backend] }),
+      cwdOverride: undefined,
+      json: false,
+      args: stubArgs("hi"),
+    };
+
+    await runCommand(command, invocation);
+    fs.setFile("/repo/.gitignore", "src/b.ts\n");
+    await runCommand(command, invocation);
+
+    expect(observations).toEqual([
+      {
+        referenceFiles: ["src/b.ts", "src/b.ts"],
+        callerSiteFiles: ["src/b.ts"],
+      },
+      { referenceFiles: [], callerSiteFiles: [] },
+    ]);
+    expect(state.currentFileCount()).toBe(1);
+    expect(state.sourceFile("src/b.ts")).toBeUndefined();
   });
 
   it("writes the rendered text result to stdout on success", async () => {

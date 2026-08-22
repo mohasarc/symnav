@@ -4,6 +4,7 @@ import {
   InMemoryFileSystem,
   type FileMetadata,
   type FileSystem,
+  type SymbolIdentity,
   type WorkspaceFile,
 } from "@symnav/core";
 
@@ -141,6 +142,23 @@ describe("TypeScriptWorkspaceState.refresh", () => {
     files = fs.workspaceFiles("src/sibling.ts", "src/stable.ts");
     expect(state.refresh(files)).toEqual({ added: 0, changed: 1, removed: 0, unchanged: 1 });
     expect(state.sourceFile("src/stable.ts")).toBe(stableSourceFile);
+
+    fs.setFile("/repo/src/added.ts", "export const added = 3;\n");
+    files = fs.workspaceFiles("src/added.ts", "src/sibling.ts", "src/stable.ts");
+    expect(state.refresh(files)).toEqual({ added: 1, changed: 0, removed: 0, unchanged: 2 });
+    expect(state.sourceFile("src/stable.ts")).toBe(stableSourceFile);
+
+    fs.deleteFile("/repo/src/added.ts");
+    files = fs.workspaceFiles("src/sibling.ts", "src/stable.ts");
+    expect(state.refresh(files)).toEqual({ added: 0, changed: 0, removed: 1, unchanged: 2 });
+    expect(state.sourceFile("src/stable.ts")).toBe(stableSourceFile);
+
+    fs.deleteFile("/repo/src/sibling.ts");
+    fs.setFile("/repo/src/renamed.ts", "export const editedSibling = 2;\n");
+    files = fs.workspaceFiles("src/renamed.ts", "src/stable.ts");
+    expect(state.refresh(files)).toEqual({ added: 1, changed: 0, removed: 1, unchanged: 1 });
+    expect(state.currentFileCount()).toBe(2);
+    expect(state.sourceFile("src/stable.ts")).toBe(stableSourceFile);
   });
 
   it.each([
@@ -172,6 +190,39 @@ describe("TypeScriptWorkspaceState.refresh", () => {
       expect(declarationNames(state, files)).toEqual([expectedName]);
     },
   );
+
+  it("adds, removes, and renames files while purging every old lookup", () => {
+    const fs = new MutableWorkspaceFileSystem({
+      "/repo/src/old.ts": "export function oldName(): void {}\n",
+    });
+    const state = new TypeScriptWorkspaceState(fs);
+    const oldIdentity: SymbolIdentity = { file: "src/old.ts", segments: [{ name: "oldName" }] };
+    state.refresh(fs.workspaceFiles("src/old.ts"));
+
+    fs.setFile("/repo/src/added.ts", "export const added = true;\n");
+    expect(state.refresh(fs.workspaceFiles("src/added.ts", "src/old.ts"))).toEqual({
+      added: 1,
+      changed: 0,
+      removed: 0,
+      unchanged: 1,
+    });
+
+    fs.deleteFile("/repo/src/old.ts");
+    fs.setFile("/repo/src/renamed.ts", "export function renamed(): void {}\n");
+    const renamedFiles = fs.workspaceFiles("src/added.ts", "src/renamed.ts");
+    expect(state.refresh(renamedFiles)).toEqual({
+      added: 1,
+      changed: 0,
+      removed: 1,
+      unchanged: 1,
+    });
+    expect(state.currentFileCount()).toBe(2);
+    expect(state.sourceFile("src/old.ts")).toBeUndefined();
+    expect(state.declarationsIn("src/old.ts")).toBeUndefined();
+    expect(state.declarationForIdentity(oldIdentity)).toBeUndefined();
+    expect(state.locate(oldIdentity)).toEqual([]);
+    expect(declarationNames(state, renamedFiles)).toEqual(["added", "renamed"]);
+  });
 
   it("keeps old content when a write preserves both modification time and size", () => {
     const fs = new MutableWorkspaceFileSystem({

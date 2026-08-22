@@ -1,4 +1,4 @@
-import type { FileSystem, GitHistory, LanguageBackend } from "@symnav/core";
+import type { BackendRefreshSummary, FileSystem, GitHistory, LanguageBackend } from "@symnav/core";
 import type { Clock, Recorder } from "@symnav/telemetry";
 import type { TelemetryIdentityProvider } from "./telemetry/telemetry-identity.js";
 import type { CommandExecutionMode } from "./command-execution-result.js";
@@ -13,4 +13,5 @@ export interface ProgramDependencies {
   executionMode?: CommandExecutionMode;
   identity: TelemetryIdentityProvider;
   symnavVersion: string;
+  backendRefreshed?: (summary: BackendRefreshSummary) => void;
 }

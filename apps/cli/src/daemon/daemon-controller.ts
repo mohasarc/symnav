@@ -52,12 +52,30 @@ export class DaemonController {
     const identity = DaemonWorkspaceIdentity.from(record.workspaceRoot, this.stateDirectory);
     const owner = this.registry.startupOwner(identity);
     if (
-      owner?.instanceId !== record.instanceId ||
-      !this.registry.startupOwnerIsWithinGrace(owner) ||
-      !this.processTerminator.isAlive(owner.ownerPid)
+      owner?.instanceId === record.instanceId &&
+      this.registry.startupOwnerIsWithinGrace(owner) &&
+      this.processTerminator.isAlive(owner.ownerPid)
     ) {
-      return undefined;
+      return this.startingStatus(record);
     }
+    if (owner?.instanceId === record.instanceId) {
+      if (!this.registry.removeStartupLockIfOwner(identity, owner)) {
+        const renewedOwner = this.registry.startupOwner(identity);
+        if (
+          renewedOwner?.instanceId === record.instanceId &&
+          this.registry.startupOwnerIsWithinGrace(renewedOwner) &&
+          this.processTerminator.isAlive(renewedOwner.ownerPid)
+        ) {
+          return this.startingStatus(record);
+        }
+        return undefined;
+      }
+    }
+    this.registry.removeIfInstance(identity, record.instanceId);
+    return undefined;
+  }
+
+  private startingStatus(record: DaemonRecord): RunningDaemonStatus {
     return {
       workspaceRoot: record.workspaceRoot,
       state: "starting",

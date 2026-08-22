@@ -5,6 +5,8 @@ import { WorkspaceRequestScopeFactory } from "../workspace-request-scope.js";
 import type { DaemonRecord, DaemonRequest, DaemonResponse, DaemonServer } from "./daemon-protocol.js";
 import { DAEMON_PROTOCOL_VERSION, DAEMON_RECORD_SCHEMA_VERSION } from "./daemon-protocol.js";
 import { NodeDaemonProcessTerminator } from "./daemon-process-launcher.js";
+import { DAEMON_IDLE_TIMEOUT_MS, DaemonLifetime } from "./daemon-lifetime.js";
+import { DaemonLogger } from "./daemon-logger.js";
 import type { DaemonRegistry } from "./daemon-registry.js";
 import type { DaemonWorkspaceIdentity } from "./daemon-workspace-identity.js";
 import type { LocalDaemonTransport } from "./local-daemon-transport.js";
@@ -35,8 +37,11 @@ export class WorkspaceDaemon {
   private readonly executor: DaemonCommandExecutor;
   private readonly scopeFactory: WorkspaceRequestScopeFactory;
   private readonly requestQueue = new WorkspaceRequestQueue();
+  private readonly logger: DaemonLogger;
+  private readonly lifetime: DaemonLifetime;
   private server: DaemonServer | undefined;
   private startedAt = 0;
+  private shutdownStarted = false;
 
   constructor(private readonly options: WorkspaceDaemonOptions) {
     const retainedBackends = options.dependencies.backends();
@@ -47,13 +52,25 @@ export class WorkspaceDaemon {
     this.scopeFactory = new WorkspaceRequestScopeFactory(options.dependencies.fs, retainedBackends);
     this.executor = options.executor ?? new CliProgramExecutor(retainedDependencies);
     this.now = options.now ?? Date.now;
+    this.logger = new DaemonLogger(options.identity.logPath, { now: this.now });
     this.exit = options.exit ?? ((code) => process.exit(code));
+    this.lifetime = new DaemonLifetime(
+      { now: this.now },
+      options.idleTimeoutMs ?? DAEMON_IDLE_TIMEOUT_MS,
+      () => this.drainAndShutdown("idle"),
+    );
   }
 
   async start(): Promise<void> {
+    this.logger.record({
+      kind: "start",
+      workspaceRoot: this.options.identity.workspaceRoot,
+      instanceId: this.options.instanceId,
+    });
     const startingRecord = await this.waitForStartupAuthorization();
     this.startedAt = startingRecord.startedAt;
     const prepared = await this.scopeFactory.prepare(this.options.identity.workspaceRoot);
+    this.logger.record({ kind: "freshness", ...prepared.refresh });
     this.server = await this.options.transport.listen(
       this.options.identity.endpoint(this.options.instanceId),
       (request) => this.handle(request),
@@ -79,6 +96,7 @@ export class WorkspaceDaemon {
       await this.server.close();
       throw new Error("Daemon startup ownership changed before readiness publication");
     }
+    this.logger.record({ kind: "ready", fileCount });
   }
 
   private async waitForStartupAuthorization(): Promise<DaemonRecord> {
@@ -128,9 +146,9 @@ export class WorkspaceDaemon {
       }
       if (request.kind === "terminate") {
         await this.requestQueue.drain();
-        setTimeout(() => void this.shutdown(), 0);
+        setTimeout(() => void this.shutdown("graceful"), 0);
       } else {
-        setTimeout(() => void this.shutdown(true), 0);
+        setTimeout(() => void this.shutdown("graceful", true), 0);
       }
       return {
         kind: request.kind === "terminate" ? "terminating" : "killing",
@@ -152,19 +170,33 @@ export class WorkspaceDaemon {
       };
     }
     if (request.kind === "execute") {
-      return {
-        kind: "result",
-        requestId: request.requestId,
-        result: await this.requestQueue.enqueue(() => this.executor.execute(request.request)),
-      };
+      this.lifetime.navigationAccepted();
+      try {
+        return {
+          kind: "result",
+          requestId: request.requestId,
+          result: await this.requestQueue.enqueue(() => this.executor.execute(request.request)),
+        };
+      } finally {
+        if (this.requestQueue.isIdle) this.lifetime.queueBecameIdle();
+      }
     }
     await this.requestQueue.drain();
-    setTimeout(() => void this.shutdown(), 0);
+    setTimeout(() => void this.shutdown("graceful"), 0);
     return { kind: "stopped", instanceId: this.options.instanceId };
   }
 
-  private async shutdown(force = false): Promise<void> {
+  private async drainAndShutdown(reason: "idle"): Promise<void> {
+    await this.requestQueue.drain();
+    await this.shutdown(reason);
+  }
+
+  private async shutdown(reason: "graceful" | "idle", force = false): Promise<void> {
+    if (this.shutdownStarted) return;
+    this.shutdownStarted = true;
+    this.lifetime.stop();
     this.requestQueue.close();
+    this.logger.record({ kind: "stop", reason });
     await this.server?.close(force);
     this.options.registry.removeIfInstance(this.options.identity, this.options.instanceId);
     this.exit(0);

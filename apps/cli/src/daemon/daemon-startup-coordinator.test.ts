@@ -314,20 +314,18 @@ describe("DaemonStartupCoordinator", () => {
     expect(harness.launcher.launchCount).toBe(1);
   }, 5_000);
 
-  it("recovers after a startup mutation owner is killed and elects one fresh daemon", async () => {
+  it("recovers after a slow startup mutation owner is killed and elects one fresh daemon", async () => {
     const harness = new CoordinatorHarness(roots);
     const stateDirectory = dirname(harness.identity.registryDirectory);
-    const readyPath = join(stateDirectory, "mutation-owner-ready");
-    const mutationOwner = spawnStartupMutationOwner(
+    const mutationOwner = await spawnStartupMutationOwner(
       harness.identity.workspaceRoot,
       stateDirectory,
-      readyPath,
+      1_100,
+      realProcessIds,
     );
-    await waitUntil(() => existsSync(readyPath));
-    const mutationOwnerPid = Number(readFileSync(readyPath, "utf8"));
-    realProcessIds.push(mutationOwnerPid);
+    const mutationOwnerPid = mutationOwner.ownerPid;
     await new NodeDaemonProcessTerminator(100, 5).terminate(mutationOwnerPid);
-    mutationOwner.kill("SIGKILL");
+    mutationOwner.process.kill("SIGKILL");
     expect(harness.registry.list()).toHaveLength(1);
     expect(harness.registry.startupOwner(harness.identity)).toMatchObject({
       instanceId: "orphaned-mutation",
@@ -449,17 +447,15 @@ describe("DaemonStartupCoordinator", () => {
   it("elects one fresh daemon after a mutation owner is killed", async () => {
     const harness = new CoordinatorHarness(roots);
     const stateDirectory = dirname(harness.identity.registryDirectory);
-    const readyPath = join(stateDirectory, "mutation-owner-ready");
-    const mutationOwner = spawnStartupMutationOwner(
+    const mutationOwner = await spawnStartupMutationOwner(
       harness.identity.workspaceRoot,
       stateDirectory,
-      readyPath,
+      10,
+      realProcessIds,
     );
-    await waitUntil(() => existsSync(readyPath));
-    const mutationOwnerPid = Number(readFileSync(readyPath, "utf8"));
-    realProcessIds.push(mutationOwnerPid);
+    const mutationOwnerPid = mutationOwner.ownerPid;
     await new NodeDaemonProcessTerminator(100, 5).terminate(mutationOwnerPid);
-    mutationOwner.kill("SIGKILL");
+    mutationOwner.process.kill("SIGKILL");
     const controller = new DaemonController(
       harness.registry,
       harness.transport as unknown as LocalDaemonTransport,
@@ -746,12 +742,18 @@ function spawnIdleProcess(processIds: number[]): Promise<number> {
   });
 }
 
+interface StartupMutationOwner {
+  readonly process: ChildProcess;
+  readonly ownerPid: number;
+}
+
 function spawnStartupMutationOwner(
   workspaceRoot: string,
   stateDirectory: string,
-  readyPath: string,
-): ChildProcess {
-  return spawn(
+  startupDelayMs: number,
+  processIds: number[],
+): Promise<StartupMutationOwner> {
+  const mutationOwner = spawn(
     process.execPath,
     [
       fileURLToPath(new URL("../../node_modules/tsx/dist/cli.mjs", import.meta.url)),
@@ -760,10 +762,25 @@ function spawnStartupMutationOwner(
       ),
       workspaceRoot,
       stateDirectory,
-      readyPath,
+      String(startupDelayMs),
     ],
-    { stdio: "ignore" },
+    { stdio: ["ignore", "ignore", "ignore", "ipc"] },
   );
+  return new Promise((resolve, reject) => {
+    mutationOwner.once("error", reject);
+    mutationOwner.once("spawn", () => processIds.push(mutationOwner.pid!));
+    mutationOwner.once("exit", (code, signal) => {
+      reject(new Error(`Mutation owner exited before readiness: code=${code} signal=${signal}`));
+    });
+    mutationOwner.once("message", (message) => {
+      if (typeof message !== "number" || !Number.isSafeInteger(message) || message <= 0) {
+        reject(new Error(`Mutation owner published invalid pid: ${String(message)}`));
+        return;
+      }
+      if (!processIds.includes(message)) processIds.push(message);
+      resolve({ process: mutationOwner, ownerPid: message });
+    });
+  });
 }
 
 async function waitUntil(predicate: () => boolean): Promise<void> {

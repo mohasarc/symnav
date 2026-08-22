@@ -284,6 +284,7 @@ describe("daemon registry", () => {
     { field: "workspaceRoot", value: "/other" },
     { field: "workspaceKey", value: "other-key" },
     { field: "endpoint", value: "other-endpoint" },
+    { field: "memoryBytes", value: "invalid" },
   ] as const)("rejects records with incompatible $field", ({ field, value }) => {
     const identity = DaemonWorkspaceIdentity.from("/repo", temporaryDirectory(roots));
     const registry = new DaemonRegistry(identity.registryDirectory);
@@ -298,7 +299,12 @@ describe("daemon registry", () => {
     expect(registry.read(identity)).toBeUndefined();
     expect(registry.readInstance(identity, "incompatible")).toBeUndefined();
     expect(registry.list()).toEqual([]);
-    if (field === "workspaceRoot" || field === "workspaceKey" || field === "endpoint") {
+    if (
+      field === "workspaceRoot" ||
+      field === "workspaceKey" ||
+      field === "endpoint" ||
+      field === "memoryBytes"
+    ) {
       expect(registry.readStored(identity)).toBeUndefined();
     } else {
       expect(registry.readStored(identity)?.instanceId).toBe("incompatible");

@@ -41,6 +41,8 @@ interface StartupMutationOwner {
 }
 
 class RegistryStartupMutationLease {
+  private released = false;
+
   constructor(
     private readonly registry: DaemonRegistry,
     private readonly identity: DaemonWorkspaceIdentity,
@@ -48,11 +50,13 @@ class RegistryStartupMutationLease {
   ) {}
 
   isOwned(): boolean {
-    throw new Error("Startup mutation ownership is not implemented");
+    return this.registry.isStartupMutationOwner(this.identity, this.owner);
   }
 
   release(): void {
-    throw new Error("Startup mutation release is not implemented");
+    if (this.released) return;
+    this.released = true;
+    this.registry.releaseStartupMutation(this.identity, this.owner);
   }
 }
 
@@ -251,6 +255,32 @@ export class DaemonRegistry {
       .map(({ record }) => record);
   }
 
+  isStartupMutationOwner(identity: DaemonWorkspaceIdentity, owner: StartupMutationOwner): boolean {
+    return DaemonRegistry.sameStartupMutationOwner(
+      DaemonRegistry.readStartupMutationOwner(identity, identity.startupMutationPath),
+      owner,
+    );
+  }
+
+  releaseStartupMutation(identity: DaemonWorkspaceIdentity, owner: StartupMutationOwner): void {
+    if (!this.isStartupMutationOwner(identity, owner)) return;
+    const releasedPath = identity.releasedStartupMutationPath(owner.token);
+    try {
+      renameSync(identity.startupMutationPath, releasedPath);
+      if (
+        DaemonRegistry.sameStartupMutationOwner(
+          DaemonRegistry.readStartupMutationOwner(identity, releasedPath),
+          owner,
+        )
+      ) {
+        rmSync(releasedPath, { recursive: true, force: true });
+      }
+    } catch (error) {
+      if (DaemonRegistry.errorCode(error) === "ENOENT") return;
+      throw error;
+    }
+  }
+
   private beginStartupMutation(
     identity: DaemonWorkspaceIdentity,
   ): RegistryStartupMutationLease | undefined {
@@ -399,6 +429,17 @@ export class DaemonRegistry {
     );
   }
 
+  private static sameStartupMutationOwner(
+    current: StartupMutationOwner | undefined,
+    observed: StartupMutationOwner,
+  ): boolean {
+    return (
+      current?.ownerPid === observed.ownerPid &&
+      current.acquiredAt === observed.acquiredAt &&
+      current.token === observed.token
+    );
+  }
+
   private static readStartupOwner(
     identity: DaemonWorkspaceIdentity,
     path: string,
@@ -409,6 +450,28 @@ export class DaemonRegistry {
     } catch {
       return undefined;
     }
+  }
+
+  private static readStartupMutationOwner(
+    identity: DaemonWorkspaceIdentity,
+    path: string,
+  ): StartupMutationOwner | undefined {
+    try {
+      const value: unknown = JSON.parse(readFileSync(identity.startupOwnerPath(path), "utf8"));
+      return DaemonRegistry.isStartupMutationOwner(value) ? value : undefined;
+    } catch {
+      return undefined;
+    }
+  }
+
+  private static isStartupMutationOwner(value: unknown): value is StartupMutationOwner {
+    if (typeof value !== "object" || value === null) return false;
+    const owner = value as Record<string, unknown>;
+    return (
+      Number.isInteger(owner.ownerPid) &&
+      typeof owner.acquiredAt === "number" &&
+      typeof owner.token === "string"
+    );
   }
 
   private static errorCode(error: unknown): string | undefined {

@@ -119,6 +119,7 @@ export type {
 export { createWorkspace } from "./workspace/workspace.js";
 export { InMemoryFileSystem } from "./workspace/in-memory/in-memory-file-system.js";
 export type {
+  BackendRefreshSummary,
   LanguageBackend,
   ResolveSymbolsMode,
   ResolveSymbolsOptions,

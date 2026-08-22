@@ -8,6 +8,13 @@ import type {
 } from "../intermediate-representation/overview-tree.js";
 import type { ResolvedPath } from "../workspace/workspace.js";
 
+export interface BackendRefreshSummary {
+  readonly added: number;
+  readonly changed: number;
+  readonly removed: number;
+  readonly unchanged: number;
+}
+
 export type ResolveSymbolsMode = "exact" | "fuzzy" | "regex";
 
 export type ResolveSymbolsOptions =

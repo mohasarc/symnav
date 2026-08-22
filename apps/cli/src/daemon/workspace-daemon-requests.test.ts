@@ -1,7 +1,7 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { CliExecutionRequest, CommandExecutionResult } from "../command-execution-result.js";
 import { createDefaultDependencies } from "../program.js";
 import type { DaemonRequest, DaemonResponse, DaemonServer } from "./daemon-protocol.js";
@@ -155,6 +155,17 @@ class RequestHarness {
   }
 
   static async start(executor: DaemonCommandExecutor): Promise<RequestHarness> {
+    const { daemon, harness, lease } = RequestHarness.create(executor);
+    await daemon.start();
+    lease.release();
+    return harness;
+  }
+
+  static create(executor: DaemonCommandExecutor): {
+    readonly daemon: WorkspaceDaemon;
+    readonly harness: RequestHarness;
+    readonly lease: NonNullable<ReturnType<DaemonRegistry["acquireStartup"]>>;
+  } {
     const harness = new RequestHarness();
     const lease = harness.registry.acquireStartup(harness.identity, harness.instanceId);
     if (lease === undefined) throw new Error("Expected startup ownership");
@@ -184,9 +195,7 @@ class RequestHarness {
       executor,
       exit: (code) => harness.resolveExit(code),
     });
-    await daemon.start();
-    lease.release();
-    return harness;
+    return { daemon, harness, lease };
   }
 
   identify(): Promise<DaemonResponse> {
@@ -231,6 +240,20 @@ class RequestHarness {
     });
   }
 
+  logEvents(): readonly Record<string, unknown>[] {
+    return readFileSync(this.identity.logPath, "utf8")
+      .trim()
+      .split("\n")
+      .filter((line) => line.length > 0)
+      .map((line) => JSON.parse(line) as Record<string, unknown>);
+  }
+
+  failRegistryRemoval(): void {
+    vi.spyOn(this.registry, "removeIfInstance").mockImplementation(() => {
+      throw new Error("registry cleanup failed");
+    });
+  }
+
   async dispose(): Promise<void> {
     if (this.transport.isListening) {
       await this.transport
@@ -245,6 +268,8 @@ class RequestHarness {
 
 class RequestTransport {
   private handler: ((request: DaemonRequest) => Promise<DaemonResponse>) | undefined;
+  listenError: Error | undefined;
+  closeError: Error | undefined;
 
   get isListening(): boolean {
     return this.handler !== undefined;
@@ -254,10 +279,12 @@ class RequestTransport {
     _endpoint: string,
     handler: (request: DaemonRequest) => Promise<DaemonResponse>,
   ): Promise<DaemonServer> {
+    if (this.listenError !== undefined) throw this.listenError;
     this.handler = handler;
     return {
       close: async () => {
         this.handler = undefined;
+        if (this.closeError !== undefined) throw this.closeError;
       },
     };
   }

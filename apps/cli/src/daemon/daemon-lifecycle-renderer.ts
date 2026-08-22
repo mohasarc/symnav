@@ -1,4 +1,8 @@
-import type { DaemonStartResult, RunningDaemonStatus } from "./daemon-protocol.js";
+import type {
+  DaemonStartResult,
+  DaemonStopResult,
+  RunningDaemonStatus,
+} from "./daemon-protocol.js";
 
 export class DaemonLifecycleRenderer {
   static renderStartText(result: DaemonStartResult): string {
@@ -22,6 +26,20 @@ export class DaemonLifecycleRenderer {
 
   static renderStatusJson(results: readonly RunningDaemonStatus[]): string {
     return `${JSON.stringify(results)}\n`;
+  }
+
+  static renderStopText(result: DaemonStopResult): string {
+    if (result.status === "not-running") {
+      return `No daemon running for ${result.workspaceRoot}\n`;
+    }
+    if (result.status === "killed") {
+      return `Killed daemon for ${result.workspaceRoot} (pid ${result.pid})\n`;
+    }
+    return `Stopped daemon for ${result.workspaceRoot} (pid ${result.pid})\n`;
+  }
+
+  static renderStopJson(result: DaemonStopResult): string {
+    return `${JSON.stringify(result)}\n`;
   }
 
   private static statusLine(result: RunningDaemonStatus): string {

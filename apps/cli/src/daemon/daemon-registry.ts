@@ -87,8 +87,14 @@ export class DaemonRegistry {
     renameSync(temporaryPath, recordPath);
   }
 
-  writeIfStartupOwner(_identity: DaemonWorkspaceIdentity, _record: DaemonRecord): boolean {
-    throw new Error("Daemon readiness publication is not implemented");
+  writeIfStartupOwner(identity: DaemonWorkspaceIdentity, record: DaemonRecord): boolean {
+    if (!this.isStartupOwner(identity, record.instanceId)) return false;
+    const current = this.readInstance(identity, record.instanceId);
+    if (current?.state !== "starting") return false;
+    this.write(record);
+    if (this.isStartupOwner(identity, record.instanceId)) return true;
+    this.removeIfInstance(identity, record.instanceId);
+    return false;
   }
 
   acquireStartup(

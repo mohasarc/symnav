@@ -213,6 +213,23 @@ describe("LocalDaemonTransport validation", () => {
     ).rejects.toThrow("Malformed daemon stop response");
   });
 
+  it("rejects malformed daemon identity responses", async () => {
+    const endpoint = await rawServer(servers, directories, (socket) => {
+      socket.write(
+        frame({ kind: "identity", instanceId: "instance", processToken: "process" }),
+      );
+      setTimeout(() => socket.destroy(), 50);
+    });
+
+    await expect(
+      new LocalDaemonTransport({ requestTimeoutMs: 100 }).request(endpoint, {
+        kind: "identify",
+        instanceId: "instance",
+        processToken: "process",
+      }),
+    ).rejects.toThrow("Malformed daemon identity");
+  });
+
 });
 
 function pingRequest(): DaemonRequest {

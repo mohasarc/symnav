@@ -95,6 +95,36 @@ describe("LocalDaemonTransport validation", () => {
     ).rejects.toThrow("Malformed daemon response");
   });
 
+  it.each([
+    { kind: "result", requestId: "request", result: { frames: [], exitCode: "invalid" } },
+    {
+      kind: "result",
+      requestId: "request",
+      result: { frames: [{ stream: "invalid", bytesBase64: "" }], exitCode: 0 },
+    },
+    {
+      kind: "result",
+      requestId: "request",
+      result: { frames: [{ stream: "stdout", bytesBase64: "***" }], exitCode: 0 },
+    },
+  ])("rejects malformed daemon result payload %#", async (response) => {
+    const endpoint = await rawServer(servers, directories, (socket) => {
+      socket.write(frame(response));
+      setTimeout(() => socket.destroy(), 50);
+    });
+    const request = {
+      kind: "execute",
+      protocolVersion: DAEMON_PROTOCOL_VERSION,
+      instanceId: "instance",
+      requestId: "request",
+      request: { argv: ["--version"], cwd: "/repo", telemetryEnabled: false },
+    } satisfies DaemonRequest;
+
+    await expect(
+      new LocalDaemonTransport({ requestTimeoutMs: 100 }).request(endpoint, request),
+    ).rejects.toThrow("Malformed daemon result");
+  });
+
 });
 
 function pingRequest(): DaemonRequest {

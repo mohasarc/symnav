@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { createConnection, createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { DAEMON_PROTOCOL_VERSION, type DaemonRequest } from "./daemon-protocol.js";
 import { LocalDaemonTransport } from "./local-daemon-transport.js";
 
@@ -87,6 +87,45 @@ describe("LocalDaemonTransport", () => {
     await new Promise<void>((resolve, reject) => {
       server.close((error) => (error ? reject(error) : resolve()));
     });
+  });
+
+  it("round trips Unicode and arbitrary newlines through fragmented framing", async () => {
+    const endpoint = endpointFor(roots);
+    const transport = new LocalDaemonTransport({ writeChunkSize: 1 });
+    const server = await transport.listen(endpoint, async (request) => ({
+      kind: "result",
+      requestId: request.kind === "execute" ? request.requestId : "wrong",
+      result: {
+        frames: [{ stream: "stdout", bytesBase64: Buffer.from("✓\n\ntext").toString("base64") }],
+        exitCode: 0,
+      },
+    }));
+
+    const response = await transport.request(endpoint, {
+      kind: "execute",
+      protocolVersion: DAEMON_PROTOCOL_VERSION,
+      instanceId: "instance",
+      requestId: "request",
+      request: { argv: ["resolve", "\n✓"], cwd: "/repo", telemetryEnabled: false },
+    });
+
+    expect(response).toMatchObject({ kind: "result", requestId: "request" });
+    await server.close();
+  });
+
+  it("writes configured daemon frame fragments separately", () => {
+    const write = vi.fn();
+    const transport = new LocalDaemonTransport({ writeChunkSize: 1 });
+    const frameWriter = transport as unknown as {
+      writeFrame(socket: { write: typeof write }, value: unknown): void;
+    };
+
+    frameWriter.writeFrame({ write }, { kind: "stopped", instanceId: "instance" });
+
+    expect(write.mock.calls.length).toBeGreaterThan(1);
+    expect(Buffer.concat(write.mock.calls.map(([chunk]) => chunk))).toEqual(
+      frame({ kind: "stopped", instanceId: "instance" }),
+    );
   });
 });
 

@@ -13,6 +13,7 @@ import {
 } from "@symnav/telemetry";
 import type { Clock } from "@symnav/telemetry";
 import { registerContextCommand } from "./commands/context/register-context-command.js";
+import { registerDaemonCommand } from "./commands/daemon/register-daemon-command.js";
 import { registerDefCommand } from "./commands/def/register-def-command.js";
 import { registerGraphCommand } from "./commands/graph/register-graph-command.js";
 import { NodeGitHistory } from "./git/node-git-history.js";
@@ -94,6 +95,7 @@ export function buildProgram(
   registerRefsCommand(program, ctx, deps);
   registerContextCommand(program, ctx, deps);
   registerGraphCommand(program, ctx, deps);
+  registerDaemonCommand(program, ctx, deps);
   registerStatsCommand(program, ctx, deps);
   return program;
 }

@@ -343,6 +343,21 @@ describe("daemon registry", () => {
     alphaLease?.release();
   });
 
+  it("cleans stale records and does not trust a live PID without a matching ping", async () => {
+    const stateDirectory = temporaryDirectory(roots);
+    const identity = DaemonWorkspaceIdentity.from("/repo", stateDirectory);
+    const registry = new DaemonRegistry(identity.registryDirectory);
+    registry.write({ ...record(identity, "ready", "stale"), pid: 401 });
+    const controller = new DaemonController(
+      registry,
+      new ControllerTransport(registry) as unknown as LocalDaemonTransport,
+      stateDirectory,
+      { processTerminator: new ControllerTerminator([401]) },
+    );
+
+    await expect(controller.status()).resolves.toEqual([]);
+    expect(registry.readStoredInstance(identity, "stale")).toBeUndefined();
+  });
 });
 
 class ControllerTransport {
@@ -378,6 +393,10 @@ class ControllerTransport {
       };
     }
     throw new Error(`Unsupported controller request ${request.kind}`);
+  }
+
+  async removeUnavailableEndpoint(): Promise<boolean> {
+    return true;
   }
 }
 

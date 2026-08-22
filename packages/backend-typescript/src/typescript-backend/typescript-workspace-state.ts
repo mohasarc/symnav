@@ -21,6 +21,13 @@ export interface IndexedDeclaration {
   readonly file: ResolvedPath;
 }
 
+export interface TypeScriptFileRevision {
+  readonly relativePath: string;
+  readonly absolutePath: string;
+  readonly size: number;
+  readonly modifiedAtMs: number;
+}
+
 export class TypeScriptWorkspaceState {
   private readonly project: Project;
   private readonly fileByRelativePath = new Map<string, ResolvedPath>();

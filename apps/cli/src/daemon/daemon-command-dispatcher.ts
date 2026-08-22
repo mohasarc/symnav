@@ -112,6 +112,7 @@ export class DaemonCommandDispatcher {
         request: { ...workspaceRequest, executionMode: "warm" },
       });
     } catch {
+      await this.invalidate(runtime, identity, record);
       return this.executeLocally(workspaceRequest, "fallback");
     }
     if (response.kind !== "result") throw new Error("Daemon returned no command result");
@@ -124,6 +125,19 @@ export class DaemonCommandDispatcher {
   ): Promise<DispatchedCommandResult> {
     const executor = this.executorFactory(this.options.createDependencies());
     return executor.execute({ ...request, executionMode: mode }).then((result) => ({ mode, result }));
+  }
+
+  private async invalidate(
+    runtime: DaemonDispatchRuntime,
+    identity: DaemonWorkspaceIdentity,
+    record: DaemonRecord,
+  ): Promise<void> {
+    await runtime.transport.request(record.endpoint, {
+      kind: "kill",
+      instanceId: record.instanceId,
+      processToken: record.processToken,
+    });
+    runtime.registry.removeIfInstance(identity, record.instanceId);
   }
 
   private static createRuntime(

@@ -1,5 +1,9 @@
 import { UnsupportedFileError } from "./errors.js";
-import type { BackendRefreshSummary, LanguageBackend } from "./language-backend.js";
+import type {
+  BackendRefreshCoverage,
+  BackendRefreshSummary,
+  LanguageBackend,
+} from "./language-backend.js";
 import type { WorkspaceFile, WorkspaceSnapshot } from "../workspace/workspace.js";
 
 export class BackendRouter {
@@ -9,7 +13,10 @@ export class BackendRouter {
     this.#backends = backends;
   }
 
-  async refresh(snapshot: WorkspaceSnapshot): Promise<BackendRefreshSummary> {
+  async refresh(
+    snapshot: WorkspaceSnapshot,
+    coverage: BackendRefreshCoverage = "workspace",
+  ): Promise<BackendRefreshSummary> {
     const filesByBackend = new Map<LanguageBackend, WorkspaceFile[]>();
     for (const backend of this.#backends) {
       filesByBackend.set(backend, []);
@@ -23,7 +30,7 @@ export class BackendRouter {
 
     let total: BackendRefreshSummary = { added: 0, changed: 0, removed: 0, unchanged: 0 };
     for (const backend of this.#backends) {
-      const summary = await backend.refresh(filesByBackend.get(backend) ?? []);
+      const summary = await backend.refresh(filesByBackend.get(backend) ?? [], coverage);
       total = {
         added: total.added + summary.added,
         changed: total.changed + summary.changed,

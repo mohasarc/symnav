@@ -1,3 +1,5 @@
+import { describe, expect, it } from "vitest";
+
 import {
   InMemoryFileSystem,
   type FileMetadata,
@@ -122,3 +124,52 @@ function declarationNames(
     .allDeclarations(files)
     .map((declaration) => declaration.identity.segments.at(-1)?.name ?? "");
 }
+
+describe("TypeScriptWorkspaceState.refresh", () => {
+  it("keeps an unchanged source object while sibling deltas are applied", () => {
+    const fs = new MutableWorkspaceFileSystem({
+      "/repo/src/stable.ts": "export const stable = 1;\n",
+      "/repo/src/sibling.ts": "export const sibling = 1;\n",
+    });
+    const state = new TypeScriptWorkspaceState(fs);
+    let files = fs.workspaceFiles("src/sibling.ts", "src/stable.ts");
+
+    expect(state.refresh(files)).toEqual({ added: 2, changed: 0, removed: 0, unchanged: 0 });
+    const stableSourceFile = state.sourceFile("src/stable.ts");
+
+    fs.setFile("/repo/src/sibling.ts", "export const editedSibling = 2;\n");
+    files = fs.workspaceFiles("src/sibling.ts", "src/stable.ts");
+    expect(state.refresh(files)).toEqual({ added: 0, changed: 1, removed: 0, unchanged: 1 });
+    expect(state.sourceFile("src/stable.ts")).toBe(stableSourceFile);
+  });
+
+  it.each([
+    {
+      trigger: "size only",
+      source: "export const longerName = 1;\n",
+      metadata: { size: 29, modifiedAtMs: 1 },
+      expectedName: "longerName",
+    },
+    {
+      trigger: "modification time only",
+      source: "export const b = 2;\n",
+      metadata: { size: 20, modifiedAtMs: 2 },
+      expectedName: "b",
+    },
+  ])(
+    "reloads and reindexes one file after a $trigger change",
+    ({ source, metadata, expectedName }) => {
+      const fs = new MutableWorkspaceFileSystem({
+        "/repo/src/a.ts": "export const a = 1;\n",
+      });
+      const state = new TypeScriptWorkspaceState(fs);
+      state.refresh(fs.workspaceFiles("src/a.ts"));
+
+      fs.setFile("/repo/src/a.ts", source, metadata);
+      const files = fs.workspaceFiles("src/a.ts");
+
+      expect(state.refresh(files)).toEqual({ added: 0, changed: 1, removed: 0, unchanged: 0 });
+      expect(declarationNames(state, files)).toEqual([expectedName]);
+    },
+  );
+});

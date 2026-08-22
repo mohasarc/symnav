@@ -72,7 +72,15 @@ describe("CliProgramExecutor", () => {
       telemetryEnabled: false,
     });
     const crash = await new CliProgramExecutor(
-      fakeDependencies({ backends: () => [new FakeLanguageBackend({ entries: () => { throw new Error("boom"); } })] }),
+      fakeDependencies({
+        backends: () => [
+          new FakeLanguageBackend({
+            entries: () => {
+              throw new Error("boom");
+            },
+          }),
+        ],
+      }),
     ).execute({ argv: ["overview", "src/a.ts"], cwd: "/repo", telemetryEnabled: false });
     const json = await new CliProgramExecutor(fakeDependencies()).execute({
       argv: ["overview", "src/a.ts", "--json"],

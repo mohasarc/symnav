@@ -238,7 +238,7 @@ describe("symnav daemon parity", () => {
     await waitUntil(() => existsSync(controlled.requestStartedPath));
     const execution = harness.warmAsync(["overview", "input.ts"]);
     await new Promise((resolve) => setTimeout(resolve, 100));
-    process.kill(controlled.child.pid!, "SIGKILL");
+    process.kill(controlled.record.pid, "SIGKILL");
 
     expect(await execution).toEqual(harness.cold(["overview", "input.ts"]));
     expect(harness.warm(["overview", "input.ts"])).toEqual(harness.cold(["overview", "input.ts"]));

@@ -132,6 +132,12 @@ export class LocalDaemonTransport {
     });
   }
 
+  async removeUnavailableEndpoint(endpoint: string): Promise<boolean> {
+    if (await this.endpointIsReachable(endpoint)) return false;
+    if (process.platform !== "win32") rmSync(endpoint, { force: true });
+    return true;
+  }
+
   private endpointIsReachable(endpoint: string): Promise<boolean> {
     return new Promise((resolve) => {
       const socket = createConnection(endpoint);

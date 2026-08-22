@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import type { DaemonRegistry } from "./daemon-registry.js";
 import {
   NodeDaemonProcessTerminator,
@@ -120,6 +121,10 @@ export class DaemonController {
           : { lastRequestAgoMs: Math.max(0, this.now() - lastNavigationAt) }),
       };
     } catch {
+      await this.removeStaleRecord(
+        DaemonWorkspaceIdentity.from(record.workspaceRoot, this.stateDirectory),
+        record,
+      );
       return undefined;
     }
   }
@@ -131,6 +136,21 @@ export class DaemonController {
       pid: record.pid,
       uptimeMs: Math.max(0, this.now() - record.startedAt),
     };
+  }
+
+  private async removeStaleRecord(
+    identity: DaemonWorkspaceIdentity,
+    record: DaemonRecord,
+  ): Promise<void> {
+    const lease = this.registry.acquireStartup(identity, `status-cleanup-${randomUUID()}`);
+    if (lease === undefined) return;
+    try {
+      if (this.registry.readStoredInstance(identity, record.instanceId) === undefined) return;
+      if (!(await this.transport.removeUnavailableEndpoint(record.endpoint))) return;
+      this.registry.removeIfInstance(identity, record.instanceId);
+    } finally {
+      lease.release();
+    }
   }
 
   private stopStarting(

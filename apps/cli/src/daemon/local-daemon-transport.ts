@@ -200,8 +200,12 @@ export class LocalDaemonTransport {
       }
       return value;
     }
-    if (value.kind !== "terminating") {
-      throw new Error("Daemon response kind does not match request");
+    if (
+      value.kind !== "terminating" ||
+      value.instanceId !== request.instanceId ||
+      value.processToken !== request.processToken
+    ) {
+      throw new Error("Daemon termination does not match process instance");
     }
     return value;
   }

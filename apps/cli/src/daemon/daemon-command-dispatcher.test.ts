@@ -221,6 +221,19 @@ describe("DaemonCommandDispatcher", () => {
     expect(harness.recordTelemetry).toHaveBeenCalledWith(warmTelemetry);
     expect(harness.recordTelemetry).toHaveBeenCalledTimes(1);
   });
+
+  it("falls back without recording malformed deferred telemetry", async () => {
+    const harness = new DispatchHarness({
+      ...success,
+      telemetry: { executionMode: "warm" } as UsageEventInput,
+    });
+
+    await expect(
+      harness.dispatcher().execute({ ...request, telemetryEnabled: true }),
+    ).resolves.toEqual({ mode: "fallback", result: success });
+    expect(harness.recordTelemetry).not.toHaveBeenCalled();
+    expect(harness.coldExecute).toHaveBeenCalledOnce();
+  });
 });
 
 interface DispatchHarnessOptions {

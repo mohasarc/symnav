@@ -681,3 +681,73 @@ class CountingFileSystem implements FileSystem {
     return this.inner.metadataSync(absPath);
   }
 }
+
+class MutableCommandFileSystem implements FileSystem {
+  private readonly contents = new Map<string, string>();
+  private readonly modifiedAtByPath = new Map<string, number>();
+  private modifiedAtMs = 0;
+
+  constructor(files: Record<string, string>) {
+    for (const [path, content] of Object.entries(files)) {
+      this.setFile(path, content);
+    }
+  }
+
+  setFile(path: string, content: string): void {
+    this.modifiedAtMs += 1;
+    this.contents.set(path, content);
+    this.modifiedAtByPath.set(path, this.modifiedAtMs);
+  }
+
+  readFile(absPath: string): Promise<string> {
+    return Promise.resolve(this.readFileSync(absPath));
+  }
+
+  exists(absPath: string): Promise<boolean> {
+    return Promise.resolve(this.existsSync(absPath));
+  }
+
+  listDir(absPath: string): Promise<readonly string[]> {
+    return Promise.resolve(this.listDirSync(absPath));
+  }
+
+  isDirectory(absPath: string): Promise<boolean> {
+    return Promise.resolve(this.isDirectorySync(absPath));
+  }
+
+  metadata(absPath: string): Promise<FileMetadata> {
+    return Promise.resolve(this.metadataSync(absPath));
+  }
+
+  existsSync(absPath: string): boolean {
+    return this.delegate().existsSync(absPath);
+  }
+
+  readFileSync(absPath: string): string {
+    const content = this.contents.get(absPath);
+    if (content === undefined) {
+      throw new Error(`ENOENT: no such file: ${absPath}`);
+    }
+    return content;
+  }
+
+  listDirSync(absPath: string): readonly string[] {
+    return this.delegate().listDirSync(absPath);
+  }
+
+  isDirectorySync(absPath: string): boolean {
+    return this.delegate().isDirectorySync(absPath);
+  }
+
+  metadataSync(absPath: string): FileMetadata {
+    const content = this.readFileSync(absPath);
+    return {
+      size: Buffer.byteLength(content),
+      modifiedAtMs: this.modifiedAtByPath.get(absPath) ?? 0,
+    };
+  }
+
+  private delegate(): InMemoryFileSystem {
+    return new InMemoryFileSystem(Object.fromEntries(this.contents));
+  }
+}

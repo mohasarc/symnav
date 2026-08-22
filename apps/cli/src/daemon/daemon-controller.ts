@@ -20,12 +20,16 @@ interface DaemonControllerOptions {
   readonly launcher?: DaemonProcessLauncher;
   readonly processTerminator?: DaemonProcessTerminator;
   readonly now?: () => number;
+  readonly stopTimeoutMs?: number;
+  readonly pollIntervalMs?: number;
 }
 
 export class DaemonController {
   private readonly launcher: DaemonProcessLauncher | undefined;
   private readonly processTerminator: DaemonProcessTerminator;
   private readonly now: () => number;
+  private readonly stopTimeoutMs: number;
+  private readonly pollIntervalMs: number;
 
   constructor(
     private readonly registry: DaemonRegistry,
@@ -36,6 +40,8 @@ export class DaemonController {
     this.launcher = options.launcher;
     this.processTerminator = options.processTerminator ?? new NodeDaemonProcessTerminator();
     this.now = options.now ?? Date.now;
+    this.stopTimeoutMs = options.stopTimeoutMs ?? 5_000;
+    this.pollIntervalMs = options.pollIntervalMs ?? 20;
   }
 
   start(workspaceRoot: string): Promise<DaemonStartResult> {
@@ -47,12 +53,24 @@ export class DaemonController {
   }
 
   async stop(workspaceRoot: string): Promise<DaemonStopResult> {
+    const stopStartedAt = this.now();
+    const deadline = stopStartedAt + this.stopTimeoutMs;
     const identity = DaemonWorkspaceIdentity.from(workspaceRoot, this.stateDirectory);
     const record = this.registry.read(identity);
-    if (record?.state !== "starting") {
-      throw new Error("Ready daemon stopping is not available");
+    if (record === undefined) throw new Error("Daemon is not registered");
+    if (record.state === "starting") return this.stopStarting(identity, record);
+    if (!(await this.identifies(record))) throw new Error("Registered daemon identity is stale");
+
+    await this.transport.request(record.endpoint, {
+      kind: "stop",
+      protocolVersion: DAEMON_PROTOCOL_VERSION,
+      instanceId: record.instanceId,
+    });
+    if (!(await this.waitForExit(record.pid, deadline))) {
+      throw new Error(`Daemon process ${record.pid} did not exit gracefully`);
     }
-    return this.stopStarting(identity, record);
+    this.registry.removeIfInstance(identity, record.instanceId);
+    return { status: "stopped", workspaceRoot, pid: record.pid };
   }
 
   async status(): Promise<readonly RunningDaemonStatus[]> {
@@ -153,6 +171,34 @@ export class DaemonController {
     }
   }
 
+  private async identifies(record: DaemonRecord): Promise<boolean> {
+    try {
+      const response = await this.transport.request(record.endpoint, {
+        kind: "identify",
+        instanceId: record.instanceId,
+        processToken: record.processToken,
+      });
+      return (
+        response.kind === "identity" &&
+        response.pid === record.pid &&
+        response.startedAt === record.startedAt
+      );
+    } catch {
+      return false;
+    }
+  }
+
+  private async waitForExit(pid: number, deadline: number): Promise<boolean> {
+    while (this.now() <= deadline) {
+      if (!this.processTerminator.isAlive(pid)) return true;
+      await this.pause(this.pollIntervalMs);
+    }
+    return !this.processTerminator.isAlive(pid);
+  }
+
+  private pause(durationMs: number): Promise<void> {
+    return new Promise((resolve) => setTimeout(resolve, durationMs));
+  }
   private stopStarting(
     identity: DaemonWorkspaceIdentity,
     record: DaemonRecord,

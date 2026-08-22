@@ -4,10 +4,16 @@ import { DAEMON_PROTOCOL_VERSION } from "../../src/daemon/daemon-protocol.js";
 import { DaemonRegistry } from "../../src/daemon/daemon-registry.js";
 import { DaemonWorkspaceIdentity } from "../../src/daemon/daemon-workspace-identity.js";
 
-const [workspaceRoot, stateDirectory, readyPath] = process.argv.slice(2);
-if (workspaceRoot === undefined || stateDirectory === undefined || readyPath === undefined) {
+const [workspaceRoot, stateDirectory, startupDelayMsText] = process.argv.slice(2);
+if (
+  workspaceRoot === undefined ||
+  stateDirectory === undefined ||
+  startupDelayMsText === undefined
+) {
   process.exit(2);
 }
+
+await new Promise<void>((resolve) => setTimeout(resolve, Number(startupDelayMsText)));
 
 const identity = DaemonWorkspaceIdentity.from(workspaceRoot, stateDirectory);
 const registry = new DaemonRegistry(identity.registryDirectory);
@@ -42,5 +48,9 @@ writeFileSync(
   { encoding: "utf8", flag: "wx", mode: 0o600 },
 );
 renameSync(claimPath, identity.startupMutationPath);
-writeFileSync(readyPath, String(process.pid));
+if (process.send === undefined) process.exit(5);
+process.send(process.pid, (error) => {
+  if (error !== null) process.exit(5);
+  process.disconnect?.();
+});
 setInterval(() => undefined, 1_000);

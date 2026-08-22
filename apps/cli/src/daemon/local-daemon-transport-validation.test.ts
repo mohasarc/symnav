@@ -245,6 +245,28 @@ describe("LocalDaemonTransport validation", () => {
     ).rejects.toThrow("Malformed daemon termination response");
   });
 
+  it.each(["startedAt", "fileCount", "memoryBytes", "lastNavigationAt"] as const)(
+    "rejects invalid %s pong metadata",
+    async (field) => {
+      const endpoint = await rawServer(servers, directories, (socket) => {
+        socket.end(
+          frame({
+            kind: "pong",
+            protocolVersion: DAEMON_PROTOCOL_VERSION,
+            instanceId: "instance",
+            symnavVersion: "test",
+            [field]: "invalid",
+          }),
+        );
+      });
+      const transport = new LocalDaemonTransport({ requestTimeoutMs: 100 });
+
+      await expect(transport.request(endpoint, pingRequest())).rejects.toThrow(
+        "Malformed daemon pong",
+      );
+    },
+  );
+
 });
 
 function pingRequest(): DaemonRequest {

@@ -1,4 +1,4 @@
-export const SCHEMA_VERSION = 1;
+export const SCHEMA_VERSION = 2;
 
 export type Outcome = "success" | "user_error" | "crash";
 export type ExecutionMode = "warm" | "cold" | "fallback";

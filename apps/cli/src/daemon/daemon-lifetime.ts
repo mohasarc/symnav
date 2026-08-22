@@ -5,6 +5,7 @@ export const DAEMON_IDLE_TIMEOUT_MS = 30 * 60 * 1_000;
 export class DaemonLifetime {
   private timer: ReturnType<typeof setTimeout> | undefined;
   private deadline: number;
+  private navigationActive = false;
   private idleTriggered = false;
 
   constructor(
@@ -17,11 +18,15 @@ export class DaemonLifetime {
   }
 
   navigationAccepted(): void {
+    this.navigationActive = true;
     this.deadline = this.clock.now() + this.idleTimeoutMs;
     this.schedule();
   }
 
-  queueBecameIdle(): void {}
+  queueBecameIdle(): void {
+    this.navigationActive = false;
+    if (this.clock.now() >= this.deadline) this.triggerIdle();
+  }
 
   stop(): void {
     throw new Error("Daemon lifetime stop is not implemented");
@@ -36,6 +41,7 @@ export class DaemonLifetime {
 
   private deadlineReached(): void {
     this.timer = undefined;
+    if (this.navigationActive) return;
     this.triggerIdle();
   }
 

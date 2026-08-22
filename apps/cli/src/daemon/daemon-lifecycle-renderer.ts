@@ -1,4 +1,4 @@
-import type { DaemonStartResult } from "./daemon-protocol.js";
+import type { DaemonStartResult, RunningDaemonStatus } from "./daemon-protocol.js";
 
 export class DaemonLifecycleRenderer {
   static renderStartText(result: DaemonStartResult): string {
@@ -15,6 +15,27 @@ export class DaemonLifecycleRenderer {
     return `${JSON.stringify(result)}\n`;
   }
 
+  static renderStatusText(results: readonly RunningDaemonStatus[]): string {
+    if (results.length === 0) return "No daemons running.\n";
+    return `${results.map((result) => DaemonLifecycleRenderer.statusLine(result)).join("\n")}\n`;
+  }
+
+  static renderStatusJson(results: readonly RunningDaemonStatus[]): string {
+    return `${JSON.stringify(results)}\n`;
+  }
+
+  private static statusLine(result: RunningDaemonStatus): string {
+    const prefix = `${result.workspaceRoot}  pid ${result.pid}  up ${DaemonLifecycleRenderer.uptime(result.uptimeMs)}`;
+    if (result.state === "starting") return `${prefix}  starting`;
+    const fileCount = `${result.fileCount ?? 0} files`;
+    const memory = DaemonLifecycleRenderer.bytes(result.memoryBytes ?? 0);
+    const lastRequest =
+      result.lastRequestAgoMs === undefined
+        ? "no requests"
+        : `last request ${DaemonLifecycleRenderer.uptime(result.lastRequestAgoMs)} ago`;
+    return `${prefix}  ${fileCount}  ${memory}  ${lastRequest}`;
+  }
+
   private static duration(durationMs: number): string {
     if (durationMs < 1_000) return `${Math.max(0, Math.round(durationMs))}ms`;
     return `${(durationMs / 1_000).toFixed(1)}s`;
@@ -26,5 +47,17 @@ export class DaemonLifecycleRenderer {
     const minutes = Math.floor(seconds / 60);
     if (minutes < 60) return `${minutes}m`;
     return `${Math.floor(minutes / 60)}h`;
+  }
+
+  private static bytes(bytes: number): string {
+    const units = ["B", "KB", "MB", "GB"];
+    let value = Math.max(0, bytes);
+    let unit = 0;
+    while (value >= 1024 && unit < units.length - 1) {
+      value /= 1024;
+      unit += 1;
+    }
+    const precision = value >= 10 || unit === 0 ? 0 : 1;
+    return `${value.toFixed(precision)} ${units[unit]}`;
   }
 }

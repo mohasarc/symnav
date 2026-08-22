@@ -71,6 +71,9 @@ export async function runCommand<Result extends ResultWithDiagnostics, Args>(
           }),
         )
       : await scopeFactory.prepareWorkspace(workspace);
+    try {
+      dependencies.backendRefreshed?.(preparedScope.refresh);
+    } catch {}
     const commandContext: CommandContext<Args> = {
       workspace,
       router: preparedScope.router,

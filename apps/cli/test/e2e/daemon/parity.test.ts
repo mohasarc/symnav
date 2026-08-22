@@ -254,6 +254,18 @@ describe("symnav daemon parity", () => {
     expect(fallback).toMatchObject({ status: 0, stderr: "" });
     expect(harness.daemonRecordCount()).toBe(0);
   });
+
+  it("keeps stats cold when workspace discovery fails", () => {
+    const harness = new DaemonParityHarness();
+    harnesses.push(harness);
+    const outsideWorkspace = join(harness.root, "outside");
+    mkdirSync(outsideWorkspace);
+
+    expect(harness.warmFrom(outsideWorkspace, ["stats", "--json"])).toEqual(
+      harness.coldFrom(outsideWorkspace, ["stats", "--json"]),
+    );
+    expect(harness.daemonRecordCount()).toBe(0);
+  });
 });
 
 class DaemonParityHarness {

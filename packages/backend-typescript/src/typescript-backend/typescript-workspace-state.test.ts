@@ -172,4 +172,20 @@ describe("TypeScriptWorkspaceState.refresh", () => {
       expect(declarationNames(state, files)).toEqual([expectedName]);
     },
   );
+
+  it("keeps old content when a write preserves both modification time and size", () => {
+    const fs = new MutableWorkspaceFileSystem({
+      "/repo/src/a.ts": "export const before = 1;\n",
+    });
+    const state = new TypeScriptWorkspaceState(fs);
+    const files = fs.workspaceFiles("src/a.ts");
+    state.refresh(files);
+    const metadata = files[0]!.metadata;
+
+    fs.setFile("/repo/src/a.ts", "export const afterx = 2;\n", metadata);
+    const sameRevision = fs.workspaceFiles("src/a.ts");
+
+    expect(state.refresh(sameRevision)).toEqual({ added: 0, changed: 0, removed: 0, unchanged: 1 });
+    expect(declarationNames(state, sameRevision)).toEqual(["before"]);
+  });
 });

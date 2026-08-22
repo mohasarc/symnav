@@ -71,6 +71,19 @@ describe("DaemonStartupCoordinator", () => {
     expect(harness.registry.list()).toHaveLength(1);
   });
 
+  it("does not terminate an unrelated live process referenced by a stale record", async () => {
+    const oldPid = await spawnIdleProcess(realProcessIds);
+    const runtime = socketBackedCoordinator(roots);
+    runtime.registry.write(readyRecord(runtime.identity, "old", "old-process", oldPid));
+
+    const result = await runtime.coordinator.ensureRunning(runtime.identity);
+
+    expect(result.status).toBe("ready");
+    expect(runtime.terminator.isAlive(oldPid)).toBe(true);
+    expect(runtime.registry.list()).toHaveLength(1);
+    await runtime.launcher.close();
+  });
+
 });
 
 interface CoordinatorHarnessOptions {

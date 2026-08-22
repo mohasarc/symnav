@@ -50,6 +50,24 @@ describe("WorkspaceDaemon requests", () => {
     });
   });
 
+  it("authenticates termination requests", async () => {
+    const harness = await RequestHarness.start(new ImmediateExecutor());
+    harnesses.push(harness);
+
+    await expect(
+      harness.transport.receive({
+        kind: "terminate",
+        instanceId: harness.instanceId,
+        processToken: "wrong-token",
+      }),
+    ).rejects.toThrow("termination");
+    await expect(harness.terminate()).resolves.toEqual({
+      kind: "terminating",
+      instanceId: harness.instanceId,
+      processToken: harness.processToken,
+    });
+  });
+
 });
 
 class RequestHarness {

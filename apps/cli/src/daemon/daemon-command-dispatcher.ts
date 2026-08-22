@@ -132,11 +132,13 @@ export class DaemonCommandDispatcher {
     identity: DaemonWorkspaceIdentity,
     record: DaemonRecord,
   ): Promise<void> {
-    await runtime.transport.request(record.endpoint, {
-      kind: "kill",
-      instanceId: record.instanceId,
-      processToken: record.processToken,
-    });
+    try {
+      await runtime.transport.request(record.endpoint, {
+        kind: "kill",
+        instanceId: record.instanceId,
+        processToken: record.processToken,
+      });
+    } catch {}
     runtime.registry.removeIfInstance(identity, record.instanceId);
   }
 

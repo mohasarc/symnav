@@ -275,6 +275,15 @@ function spawnIdleProcess(processIds: number[]): Promise<number> {
   });
 }
 
+async function waitUntil(predicate: () => boolean): Promise<void> {
+  const deadline = Date.now() + 1_000;
+  while (Date.now() <= deadline) {
+    if (predicate()) return;
+    await new Promise((resolve) => setTimeout(resolve, 5));
+  }
+  throw new Error("Timed out waiting for daemon process exit");
+}
+
 interface SocketBackedCoordinator {
   readonly identity: DaemonWorkspaceIdentity;
   readonly registry: DaemonRegistry;

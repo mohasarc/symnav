@@ -1,6 +1,8 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { spawn, type ChildProcess } from "node:child_process";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
 import type { CliExecutionRequest, CommandExecutionResult } from "../command-execution-result.js";
 import { createDefaultDependencies } from "../program.js";
@@ -12,10 +14,13 @@ import { type DaemonCommandExecutor, WorkspaceDaemon } from "./workspace-daemon.
 
 describe("WorkspaceDaemon runtime lifecycle", () => {
   const harnesses: WorkspaceDaemonHarness[] = [];
+  const childProcesses: ChildProcess[] = [];
 
   afterEach(async () => {
     await Promise.all(harnesses.map((harness) => harness.dispose()));
     harnesses.length = 0;
+    for (const child of childProcesses) child.kill("SIGTERM");
+    childProcesses.length = 0;
   });
 
   it("returns an in-flight navigation result before a graceful stop exits", async () => {
@@ -135,7 +140,13 @@ class WorkspaceDaemonHarness {
 
   async dispose(): Promise<void> {
     if (this.exitCode === undefined) {
-      await this.stop().catch(() => undefined);
+      await this.transport
+        .request(this.identity.endpoint(this.instanceId), {
+          kind: "kill",
+          instanceId: this.instanceId,
+          processToken: "runtime-token",
+        })
+        .catch(() => undefined);
       await Promise.race([this.exited, new Promise((resolve) => setTimeout(resolve, 250))]);
     }
     rmSync(this.stateDirectory, { recursive: true, force: true });
@@ -166,4 +177,47 @@ class DeferredExecutor implements DaemonCommandExecutor {
   complete(result: CommandExecutionResult): void {
     this.resolveResult(result);
   }
+}
+
+function spawnStuckDaemon(
+  workspaceRoot: string,
+  stateDirectory: string,
+  instanceId: string,
+  processToken: string,
+  readyPath: string,
+  requestStartedPath: string,
+): ChildProcess {
+  return spawn(
+    process.execPath,
+    [
+      fileURLToPath(new URL("../../node_modules/tsx/dist/cli.mjs", import.meta.url)),
+      fileURLToPath(new URL("../../test/helpers/workspace-daemon-stuck.ts", import.meta.url)),
+      workspaceRoot,
+      stateDirectory,
+      instanceId,
+      processToken,
+      readyPath,
+      requestStartedPath,
+    ],
+    { stdio: "ignore" },
+  );
+}
+
+function waitForProcess(child: ChildProcess): Promise<void> {
+  return new Promise((resolve, reject) => {
+    child.once("error", reject);
+    child.once("exit", (code) => {
+      if (code === 0) resolve();
+      else reject(new Error(`Stuck daemon exited with code ${String(code)}`));
+    });
+  });
+}
+
+async function waitUntil(predicate: () => boolean): Promise<void> {
+  const deadline = Date.now() + 5_000;
+  while (Date.now() <= deadline) {
+    if (predicate()) return;
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+  throw new Error("Timed out waiting for daemon runtime state");
 }

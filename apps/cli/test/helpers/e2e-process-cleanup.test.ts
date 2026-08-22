@@ -48,4 +48,47 @@ describe("E2eProcessCleanup", () => {
     });
     expect(attempted).toEqual([101, 202, 404]);
   });
+
+  it("labels a child-only pid termination failure as a helper process", async () => {
+    const child = {
+      exitCode: 0,
+      signalCode: null,
+      pid: 404,
+    } as ChildProcess;
+    const processTerminator: DaemonProcessTerminator = {
+      isAlive: () => true,
+      terminate: async () => {
+        throw new Error("helper stuck");
+      },
+    };
+
+    await expect(E2eProcessCleanup.terminate([], [child], processTerminator)).rejects.toMatchObject(
+      {
+        failures: ["Helper process 404 termination failed: helper stuck"],
+      },
+    );
+  });
+
+  it("retains daemon provenance when a helper child has the same pid", async () => {
+    const child = {
+      exitCode: 0,
+      signalCode: null,
+      pid: 101,
+    } as ChildProcess;
+    const attempted: number[] = [];
+    const processTerminator: DaemonProcessTerminator = {
+      isAlive: () => true,
+      terminate: async (processId) => {
+        attempted.push(processId);
+        throw new Error("overlap stuck");
+      },
+    };
+
+    await expect(
+      E2eProcessCleanup.terminate([101], [child], processTerminator),
+    ).rejects.toMatchObject({
+      failures: ["Daemon process 101 termination failed: overlap stuck"],
+    });
+    expect(attempted).toEqual([101]);
+  });
 });

@@ -9,10 +9,14 @@ export class DaemonLogger {
   ) {}
 
   record(event: DaemonLogEvent): void {
-    appendFileSync(
-      this.logPath,
-      `${JSON.stringify({ timestamp: this.clock.now(), ...event })}\n`,
-      { encoding: "utf8", flag: "a", mode: 0o600 },
-    );
+    try {
+      appendFileSync(
+        this.logPath,
+        `${JSON.stringify({ timestamp: this.clock.now(), ...event })}\n`,
+        { encoding: "utf8", flag: "a", mode: 0o600 },
+      );
+    } catch {
+      return;
+    }
   }
 }

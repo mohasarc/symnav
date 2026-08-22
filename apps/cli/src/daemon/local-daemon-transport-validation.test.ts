@@ -18,6 +18,17 @@ describe("LocalDaemonTransport validation", () => {
     directories.length = 0;
   });
 
+  it("times out a daemon request that never receives a response", async () => {
+    const endpoint = await rawServer(servers, directories, (socket) => {
+      setTimeout(() => socket.destroy(), 50);
+    });
+    const transport = new LocalDaemonTransport({ requestTimeoutMs: 10 });
+
+    await expect(transport.request(endpoint, pingRequest())).rejects.toThrow(
+      "Daemon request timed out",
+    );
+  });
+
 });
 
 function pingRequest(): DaemonRequest {

@@ -196,6 +196,14 @@ export class DaemonRegistry {
     }
   }
 
+  removeStartupLockIfOwner(
+    identity: DaemonWorkspaceIdentity,
+    observedOwner: StartupOwner,
+  ): boolean {
+    if (!DaemonRegistry.sameStartupOwner(this.startupOwner(identity), observedOwner)) return false;
+    return this.removeStartupLockIfInstance(identity, observedOwner.instanceId);
+  }
+
   removeIfInstance(identity: DaemonWorkspaceIdentity, instanceId: string): void {
     rmSync(identity.recordPath(instanceId), { force: true });
   }

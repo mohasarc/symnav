@@ -33,6 +33,13 @@ export interface StartupLease {
   readonly instanceId: string;
   release(): void;
 }
+
+interface StartupMutationOwner {
+  readonly ownerPid: number;
+  readonly acquiredAt: number;
+  readonly token: string;
+}
+
 class RegistryStartupLease implements StartupLease {
   private released = false;
 

@@ -191,6 +191,16 @@ describe("daemon registry", () => {
     expect(registry.startupOwnerIsWithinGrace(owner, 100, owner.heartbeatAt + 101)).toBe(false);
   });
 
+  it("admits one startup mutation lease at a time", () => {
+    const identity = DaemonWorkspaceIdentity.from("/repo", temporaryDirectory(roots));
+    const registry = new DaemonRegistry(identity.registryDirectory);
+    const mutations = registry as unknown as StartupMutationLeaseTestAccess;
+
+    const first = mutations.beginStartupMutation(identity);
+    expect(first).toBeDefined();
+    expect(mutations.beginStartupMutation(identity)).toBeUndefined();
+  });
+
   it.each([
     { field: "schemaVersion", value: 2 },
     { field: "protocolVersion", value: DAEMON_PROTOCOL_VERSION + 1 },

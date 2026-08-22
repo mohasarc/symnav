@@ -6,6 +6,8 @@ import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
 import type { CliExecutionRequest, CommandExecutionResult } from "../command-execution-result.js";
 import { createDefaultDependencies } from "../program.js";
+import { DaemonController } from "./daemon-controller.js";
+import type { DaemonProcessTerminator } from "./daemon-process-launcher.js";
 import { DAEMON_PROTOCOL_VERSION } from "./daemon-protocol.js";
 import { DaemonRegistry } from "./daemon-registry.js";
 import { DaemonWorkspaceIdentity } from "./daemon-workspace-identity.js";
@@ -49,6 +51,107 @@ describe("WorkspaceDaemon runtime lifecycle", () => {
     expect(harness.registry.read(harness.identity)).toBeUndefined();
     await expect(harness.ping()).rejects.toThrow();
   });
+
+  it("force-stops a matching daemon with a stuck request inside the bound", async () => {
+    const executor = new DeferredExecutor();
+    const harness = await WorkspaceDaemonHarness.start(executor);
+    harnesses.push(harness);
+    void harness.execute("stuck").catch(() => undefined);
+    await executor.started;
+    const controller = new DaemonController(
+      harness.registry,
+      harness.transport,
+      harness.stateDirectory,
+      {
+        stopTimeoutMs: 100,
+        pollIntervalMs: 1,
+        processTerminator: new CurrentProcessTerminator(() => harness.hasExited),
+      },
+    );
+    const startedAt = Date.now();
+
+    await expect(controller.stop(harness.workspaceRoot)).resolves.toEqual({
+      status: "killed",
+      workspaceRoot: harness.workspaceRoot,
+      pid: process.pid,
+    });
+    expect(harness.hasExited).toBe(true);
+    expect(Date.now() - startedAt).toBeLessThan(500);
+    await harness.exited;
+    expect(harness.registry.read(harness.identity)).toBeUndefined();
+  });
+
+  it("force-stops a real matching daemon process with a stuck request", async () => {
+    const stateDirectory = mkdtempSync(join(tmpdir(), "symnav-daemon-child-state-"));
+    const workspaceRoot = mkdtempSync(join(tmpdir(), "symnav-daemon-child-workspace-"));
+    mkdirSync(join(workspaceRoot, ".git"));
+    writeFileSync(join(workspaceRoot, "input.ts"), "export const value = 1;\n");
+    const identity = DaemonWorkspaceIdentity.from(workspaceRoot, stateDirectory);
+    const registry = new DaemonRegistry(identity.registryDirectory);
+    const instanceId = "real-stuck-instance";
+    const processToken = "real-stuck-token";
+    const readyPath = join(stateDirectory, "daemon-ready");
+    const requestStartedPath = join(stateDirectory, "request-started");
+    const lease = registry.acquireStartup(identity, instanceId);
+    expect(lease).toBeDefined();
+    const child = spawnStuckDaemon(
+      workspaceRoot,
+      stateDirectory,
+      instanceId,
+      processToken,
+      readyPath,
+      requestStartedPath,
+    );
+    childProcesses.push(child);
+    if (child.pid === undefined) throw new Error("Stuck daemon did not receive a PID");
+    await waitUntil(() => existsSync(`${readyPath}.boot`));
+    const daemonPid = Number(readFileSync(`${readyPath}.boot`, "utf8"));
+    expect(
+      registry.writeStartingIfStartupOwner(identity, {
+        schemaVersion: 1,
+        protocolVersion: DAEMON_PROTOCOL_VERSION,
+        symnavVersion: "test",
+        workspaceRoot,
+        workspaceKey: identity.workspaceKey,
+        instanceId,
+        processToken,
+        endpoint: identity.endpoint(instanceId),
+        pid: daemonPid,
+        state: "starting",
+        startedAt: Date.now(),
+        memoryCapBytes: Number.MAX_SAFE_INTEGER,
+      }),
+    ).toBe(true);
+    await waitUntil(() => existsSync(readyPath));
+    lease?.release();
+    const transport = new LocalDaemonTransport({ requestTimeoutMs: 200 });
+    void transport
+      .request(identity.endpoint(instanceId), {
+        kind: "execute",
+        protocolVersion: DAEMON_PROTOCOL_VERSION,
+        instanceId,
+        requestId: "stuck-child-request",
+        request: { argv: ["--version"], cwd: workspaceRoot, telemetryEnabled: false },
+      })
+      .catch(() => undefined);
+    await waitUntil(() => existsSync(requestStartedPath));
+    const controller = new DaemonController(registry, transport, stateDirectory, {
+      stopTimeoutMs: 500,
+      pollIntervalMs: 1,
+    });
+
+    await expect(controller.stop(workspaceRoot)).resolves.toEqual({
+      status: "killed",
+      workspaceRoot,
+      pid: daemonPid,
+    });
+    expect(() => process.kill(daemonPid, 0)).toThrow();
+    await waitForProcess(child);
+    childProcesses.splice(childProcesses.indexOf(child), 1);
+    expect(registry.read(identity)).toBeUndefined();
+    rmSync(stateDirectory, { recursive: true, force: true });
+    rmSync(workspaceRoot, { recursive: true, force: true });
+  }, 10_000);
 });
 
 class WorkspaceDaemonHarness {
@@ -61,6 +164,10 @@ class WorkspaceDaemonHarness {
   readonly exited: Promise<number>;
   private resolveExit!: (code: number) => void;
   private exitCode: number | undefined;
+
+  get hasExited(): boolean {
+    return this.exitCode !== undefined;
+  }
 
   private constructor() {
     this.stateDirectory = mkdtempSync(join(tmpdir(), "symnav-daemon-runtime-state-"));
@@ -176,6 +283,18 @@ class DeferredExecutor implements DaemonCommandExecutor {
 
   complete(result: CommandExecutionResult): void {
     this.resolveResult(result);
+  }
+}
+
+class CurrentProcessTerminator implements DaemonProcessTerminator {
+  constructor(private readonly exited: () => boolean) {}
+
+  isAlive(pid: number): boolean {
+    return pid === process.pid && !this.exited();
+  }
+
+  terminate(): Promise<void> {
+    throw new Error("Controller must not signal by PID");
   }
 }
 

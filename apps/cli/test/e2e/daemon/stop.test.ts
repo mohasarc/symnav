@@ -126,6 +126,35 @@ describe("symnav daemon stop", () => {
     await waitForProcess(runtime.child);
     helperProcesses.splice(helperProcesses.indexOf(runtime.child), 1);
   }, 15_000);
+
+  it("force-kills stuck work before the built stop command renders success", async () => {
+    const stateDir = temporaryStateDirectory(stateDirectories);
+    const cwd = temporaryWorkspace(stateDirectories);
+    const runtime = await startControlledDaemon(stateDir, realpathSync(cwd));
+    helperProcesses.push(runtime.child);
+    const transport = new LocalDaemonTransport({ requestTimeoutMs: 10_000 });
+    void transport
+      .request(runtime.record.endpoint, {
+        kind: "execute",
+        protocolVersion: DAEMON_PROTOCOL_VERSION,
+        instanceId: runtime.record.instanceId,
+        requestId: "built-force",
+        request: { argv: ["--version"], cwd, telemetryEnabled: false },
+      })
+      .catch(() => undefined);
+    await waitUntil(() => existsSync(runtime.requestStartedPath));
+
+    const stopped = await runBuiltStop(cwd, stateDir);
+
+    expect(stopped).toEqual({
+      status: 0,
+      stdout: expect.stringMatching(/^\{"status":"killed"/),
+      stderr: "",
+    });
+    expect(() => process.kill(runtime.record.pid, 0)).toThrow();
+    await waitForProcess(runtime.child);
+    helperProcesses.splice(helperProcesses.indexOf(runtime.child), 1);
+  }, 15_000);
 });
 
 interface ControlledDaemon {

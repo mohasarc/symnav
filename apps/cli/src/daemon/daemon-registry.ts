@@ -19,6 +19,18 @@ export interface StartupLease {
   release(): void;
 }
 
+class RegistryStartupLease implements StartupLease {
+  constructor(
+    private readonly _registry: DaemonRegistry,
+    private readonly _identity: DaemonWorkspaceIdentity,
+    readonly instanceId: string,
+  ) {}
+
+  release(): void {
+    throw new Error("Startup lease release is not implemented");
+  }
+}
+
 export class DaemonRegistry {
   constructor(private readonly registryDirectory: string) {}
 

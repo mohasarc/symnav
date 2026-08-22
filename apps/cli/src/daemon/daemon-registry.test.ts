@@ -148,6 +148,22 @@ describe("daemon registry", () => {
     lease?.release();
   });
 
+  it("renews startup ownership with a new revision", () => {
+    const identity = DaemonWorkspaceIdentity.from("/repo", temporaryDirectory(roots));
+    const registry = new DaemonRegistry(identity.registryDirectory);
+    expect(registry.acquireStartup(identity, "owner")).toBeDefined();
+    const before = registry.startupOwner(identity)!;
+
+    expect(registry.refreshStartupOwner(identity, "owner")).toBe(true);
+
+    expect(registry.startupOwner(identity)).toMatchObject({
+      instanceId: "owner",
+      acquiredAt: before.acquiredAt,
+    });
+    expect(registry.startupOwner(identity)?.revision).not.toBe(before.revision);
+    expect(registry.startupOwner(identity)!.heartbeatAt).toBeGreaterThanOrEqual(before.heartbeatAt);
+  });
+
   it.each([
     { field: "schemaVersion", value: 2 },
     { field: "protocolVersion", value: DAEMON_PROTOCOL_VERSION + 1 },

@@ -1,4 +1,4 @@
-import type { Server } from "node:net";
+import { createServer, type Server } from "node:net";
 import type { DaemonRequest, DaemonResponse, DaemonServer } from "./daemon-protocol.js";
 
 const DEFAULT_MAXIMUM_FRAME_BYTES = 8 * 1024 * 1024;
@@ -51,9 +51,13 @@ export class LocalDaemonTransport {
   }
 
   async listen(
-    _endpoint: string,
+    endpoint: string,
     _handler: (request: DaemonRequest) => Promise<DaemonResponse>,
   ): Promise<DaemonServer> {
-    throw new Error("Local daemon servers are not implemented");
+    const server = createServer((socket) => socket.destroy());
+    return new Promise((resolve, reject) => {
+      server.once("error", reject);
+      server.listen(endpoint, () => resolve(new ListeningDaemonServer(server)));
+    });
   }
 }

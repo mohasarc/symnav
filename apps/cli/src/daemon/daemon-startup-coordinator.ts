@@ -54,6 +54,8 @@ export class DaemonStartupCoordinator {
       if (currentRecord?.symnavVersion === this.launcher.symnavVersion) {
         return this.alreadyRunning(currentRecord);
       }
+      const storedRecord = this.registry.readStored(identity);
+      if (storedRecord !== undefined) await this.replaceStoredRecord(identity, storedRecord);
       return await this.launchAndWait(identity, instanceId);
     } finally {
       lease.release();
@@ -150,6 +152,18 @@ export class DaemonStartupCoordinator {
     }
   }
 
+  private async replaceStoredRecord(
+    identity: DaemonWorkspaceIdentity,
+    record: DaemonRecord,
+  ): Promise<void> {
+    await this.transport.request(record.endpoint, {
+      kind: "terminate",
+      instanceId: record.instanceId,
+      processToken: record.processToken,
+    });
+    this.registry.removeIfInstance(identity, record.instanceId);
+  }
+
   private async probeExecution(record: DaemonRecord): Promise<void> {
     const response = await this.transport.request(record.endpoint, {
       kind: "execute",
@@ -180,4 +194,3 @@ export class DaemonStartupCoordinator {
     return new Promise((resolve) => setTimeout(resolve, this.pollIntervalMs));
   }
 }
-

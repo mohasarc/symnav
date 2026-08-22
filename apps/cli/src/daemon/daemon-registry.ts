@@ -333,15 +333,6 @@ export class DaemonRegistry {
     return this.claimStartupMutation(identity);
   }
 
-  private startupMutationOwnerIsLive(identity: DaemonWorkspaceIdentity): boolean {
-    const owner = DaemonRegistry.readStartupMutationOwner(identity, identity.startupMutationPath);
-    return (
-      owner !== undefined &&
-      DaemonRegistry.processIsAlive(owner.ownerPid) &&
-      Date.now() - owner.acquiredAt <= DAEMON_STARTUP_TIMEOUT_MS
-    );
-  }
-
   private claimStartupMutation(
     identity: DaemonWorkspaceIdentity,
   ): RegistryStartupMutationLease | undefined {
@@ -503,11 +494,11 @@ export class DaemonRegistry {
   }
 
   private static sameOptionalStartupMutationOwner(
-    left: StartupMutationOwner | undefined,
-    right: StartupMutationOwner | undefined,
+    current: StartupMutationOwner | undefined,
+    observed: StartupMutationOwner | undefined,
   ): boolean {
-    if (left === undefined || right === undefined) return left === right;
-    return DaemonRegistry.sameStartupMutationOwner(left, right);
+    if (current === undefined || observed === undefined) return current === observed;
+    return DaemonRegistry.sameStartupMutationOwner(current, observed);
   }
 
   private static readStartupOwner(

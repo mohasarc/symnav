@@ -161,6 +161,14 @@ export class DaemonRegistry {
     }
   }
 
+  startupOwnerIsWithinGrace(
+    owner: StartupOwner,
+    graceMs = DAEMON_STARTUP_TIMEOUT_MS,
+    now = Date.now(),
+  ): boolean {
+    return now - owner.heartbeatAt <= graceMs;
+  }
+
   startupOwner(identity: DaemonWorkspaceIdentity): StartupOwner | undefined {
     try {
       const value: unknown = JSON.parse(

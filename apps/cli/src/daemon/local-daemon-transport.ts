@@ -190,11 +190,19 @@ export class LocalDaemonTransport {
       }
       return value;
     }
-    const expectedKind =
-      request.kind === "identify"
-              ? "identity"
-              : "terminating";
-    if (value.kind !== expectedKind) throw new Error("Daemon response kind does not match request");
+    if (request.kind === "identify") {
+      if (
+        value.kind !== "identity" ||
+        value.instanceId !== request.instanceId ||
+        value.processToken !== request.processToken
+      ) {
+        throw new Error("Daemon identity does not match process instance");
+      }
+      return value;
+    }
+    if (value.kind !== "terminating") {
+      throw new Error("Daemon response kind does not match request");
+    }
     return value;
   }
 

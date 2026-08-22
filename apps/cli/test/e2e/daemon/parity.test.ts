@@ -31,6 +31,30 @@ describe("symnav daemon parity", () => {
     harnesses.length = 0;
   });
 
+  it.each([
+    ["text success", ["overview", "input.ts"]],
+    ["json success", ["overview", "input.ts", "--json"]],
+    ["resolve", ["resolve", "target"]],
+    ["definition", ["def", "input.ts::target"]],
+    ["references", ["refs", "input.ts::target", "--all"]],
+    ["context", ["context", "input.ts::target"]],
+    ["graph", ["graph", "input.ts::target"]],
+    ["extraction warning", ["overview", "warning.ts"]],
+    ["command usage error", ["def"]],
+    ["user error", ["overview", "missing.ts"]],
+    ["not found", ["resolve", "unknown"]],
+    ["cwd-shaped target after separator", ["resolve", "--", "--cwd=target"]],
+    ["help-shaped target after separator", ["resolve", "--", "--help"]],
+    ["version-shaped target after separator", ["resolve", "--", "--version"]],
+    ["help", ["--help"]],
+    ["version", ["--version"]],
+    ["stats", ["stats", "--json"]],
+  ])("keeps %s bytes and status identical", (_name, args) => {
+    const harness = new DaemonParityHarness();
+    harnesses.push(harness);
+
+    expect(harness.warm(args)).toEqual(harness.cold(args));
+  });
 });
 
 class DaemonParityHarness {

@@ -1,10 +1,8 @@
 import {
-  mkdirSync,
   mkdtempSync,
   readFileSync,
   readdirSync,
   rmSync,
-  writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -65,8 +63,7 @@ describe("daemon registry", () => {
       fileCount: 2,
       [field]: value,
     } satisfies DaemonRecord;
-    mkdirSync(identity.registryDirectory, { recursive: true });
-    writeFileSync(identity.recordPath("incompatible"), JSON.stringify(incompatible));
+    registry.write(incompatible);
 
     expect(registry.read(identity)).toBeUndefined();
     expect(registry.readInstance(identity, "incompatible")).toBeUndefined();

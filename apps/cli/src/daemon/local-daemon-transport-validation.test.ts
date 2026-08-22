@@ -2,7 +2,7 @@ import { createServer, type Server, type Socket } from "node:net";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { DaemonRequest } from "./daemon-protocol.js";
 import { DAEMON_PROTOCOL_VERSION } from "./daemon-protocol.js";
 import { LocalDaemonTransport } from "./local-daemon-transport.js";
@@ -69,6 +69,19 @@ describe("LocalDaemonTransport validation", () => {
     await expect(
       new LocalDaemonTransport({ requestTimeoutMs: 100 }).request(endpoint, pingRequest()),
     ).rejects.toThrow("truncated frame");
+  });
+
+  it("rejects oversized outbound daemon frames", () => {
+    const write = vi.fn();
+    const transport = new LocalDaemonTransport({ maximumFrameBytes: 8 });
+    const frameWriter = transport as unknown as {
+      writeFrame(socket: { write: typeof write }, value: unknown): void;
+    };
+
+    expect(() =>
+      frameWriter.writeFrame({ write }, { value: "long daemon payload" }),
+    ).toThrow("exceeds 8 bytes");
+    expect(write).not.toHaveBeenCalled();
   });
 
 });

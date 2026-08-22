@@ -92,7 +92,11 @@ export class DaemonCommandDispatcher {
     const workspaceRoot = await this.resolveWorkspaceRoot(selected.route.startDir, dependencies);
     const identity = DaemonWorkspaceIdentity.from(workspaceRoot, this.options.stateDirectory);
     const runtime = this.runtimeFactory(identity, dependencies);
-    const record = runtime.registry.read(identity);
+    let record = runtime.registry.read(identity);
+    if (DaemonCommandDispatcher.requiresStartup(record, dependencies)) {
+      await runtime.coordinator.ensureRunning(identity);
+      record = runtime.registry.read(identity);
+    }
     if (record?.state !== "ready") throw new Error("Daemon did not publish a ready record");
     const response = await runtime.transport.request(record.endpoint, {
       kind: "execute",
@@ -128,5 +132,16 @@ export class DaemonCommandDispatcher {
         transport,
       ),
     };
+  }
+
+  private static requiresStartup(
+    record: DaemonRecord | undefined,
+    dependencies: ProgramDependencies,
+  ): boolean {
+    return (
+      record === undefined ||
+      record.state === "starting" ||
+      record.symnavVersion !== dependencies.symnavVersion
+    );
   }
 }

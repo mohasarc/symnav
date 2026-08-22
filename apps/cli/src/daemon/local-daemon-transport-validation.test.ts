@@ -287,6 +287,33 @@ describe("LocalDaemonTransport validation", () => {
     );
   });
 
+  it("rejects malformed deferred telemetry results", async () => {
+    const endpoint = await rawServer(servers, directories, (socket) => {
+      socket.end(
+        frame({
+          kind: "result",
+          requestId: "request",
+          result: {
+            frames: [],
+            exitCode: 0,
+            telemetry: { executionMode: "warm" },
+          },
+        }),
+      );
+    });
+    const transport = new LocalDaemonTransport({ requestTimeoutMs: 100 });
+
+    await expect(
+      transport.request(endpoint, {
+        kind: "execute",
+        protocolVersion: DAEMON_PROTOCOL_VERSION,
+        instanceId: "instance",
+        requestId: "request",
+        request: { argv: ["--version"], cwd: "/workspace", telemetryEnabled: false },
+      }),
+    ).rejects.toThrow("Malformed daemon result");
+  });
+
 });
 
 function pingRequest(): DaemonRequest {

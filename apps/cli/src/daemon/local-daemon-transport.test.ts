@@ -222,6 +222,27 @@ describe("LocalDaemonTransport", () => {
     ).rejects.toThrow(/instance/);
     await server.close();
   });
+
+  it("rejects an identity response for a different process start", async () => {
+    const endpoint = endpointFor(roots);
+    const transport = new LocalDaemonTransport();
+    const server = await transport.listen(endpoint, async () => ({
+      kind: "identity",
+      instanceId: "instance",
+      processToken: "different-process",
+      pid: 123,
+      startedAt: 10,
+    }));
+
+    await expect(
+      transport.request(endpoint, {
+        kind: "identify",
+        instanceId: "instance",
+        processToken: "expected-process",
+      }),
+    ).rejects.toThrow(/process instance/);
+    await server.close();
+  });
 });
 
 function endpointFor(roots: string[]): string {

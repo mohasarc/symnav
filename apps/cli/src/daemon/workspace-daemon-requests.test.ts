@@ -221,6 +221,25 @@ describe("WorkspaceDaemon requests", () => {
     );
   });
 
+  it("exits after transport cleanup fails", async () => {
+    const harness = await RequestHarness.start(new ImmediateExecutor());
+    harnesses.push(harness);
+    harness.transport.closeError = new Error("transport cleanup failed");
+
+    await harness.stop();
+    await harness.exited;
+
+    expect(harness.logEvents()).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          kind: "failure",
+          operation: "transport-close",
+          message: "transport cleanup failed",
+        }),
+      ]),
+    );
+  });
+
 });
 
 class RequestHarness {

@@ -22,6 +22,7 @@ import { DaemonRegistry } from "../../../src/daemon/daemon-registry.js";
 import { DaemonWorkspaceIdentity } from "../../../src/daemon/daemon-workspace-identity.js";
 import { LocalDaemonTransport } from "../../../src/daemon/local-daemon-transport.js";
 import { createDefaultDependencies } from "../../../src/program.js";
+import { canonicalWorkspaceRoot } from "../../helpers/canonical-workspace-root.js";
 
 describe("symnav daemon parity", () => {
   const harnesses: DaemonParityHarness[] = [];
@@ -333,7 +334,7 @@ class DaemonParityHarness {
   }
 
   async orphanStartupMutation(): Promise<void> {
-    const controlledWorkspaceRoot = realpathSync(this.workspaceRoot);
+    const controlledWorkspaceRoot = canonicalWorkspaceRoot(realpathSync(this.workspaceRoot));
     const readyPath = join(this.stateDirectory, "orphaned-mutation-ready");
     const child = spawn(
       process.execPath,
@@ -354,7 +355,7 @@ class DaemonParityHarness {
   }
 
   async startControlledDaemon(releaseArgument = "--no-release"): Promise<ControlledDaemon> {
-    const controlledWorkspaceRoot = realpathSync(this.workspaceRoot);
+    const controlledWorkspaceRoot = canonicalWorkspaceRoot(realpathSync(this.workspaceRoot));
     const identity = DaemonWorkspaceIdentity.from(controlledWorkspaceRoot, this.stateDirectory);
     const registry = new DaemonRegistry(identity.registryDirectory);
     const instanceId = "controlled-crash";

@@ -18,6 +18,7 @@ import { DAEMON_PROTOCOL_VERSION, type DaemonRecord } from "../../../src/daemon/
 import { DaemonRegistry } from "../../../src/daemon/daemon-registry.js";
 import { DaemonWorkspaceIdentity } from "../../../src/daemon/daemon-workspace-identity.js";
 import { LocalDaemonTransport } from "../../../src/daemon/local-daemon-transport.js";
+import { canonicalWorkspaceRoot } from "../../helpers/canonical-workspace-root.js";
 
 describe("symnav daemon stop", () => {
   const stateDirectories: string[] = [];
@@ -99,7 +100,11 @@ describe("symnav daemon stop", () => {
     const stateDir = temporaryStateDirectory(stateDirectories);
     const cwd = temporaryWorkspace(stateDirectories);
     const releasePath = join(stateDir, "release-request");
-    const runtime = await startControlledDaemon(stateDir, realpathSync(cwd), releasePath);
+    const runtime = await startControlledDaemon(
+      stateDir,
+      canonicalWorkspaceRoot(realpathSync(cwd)),
+      releasePath,
+    );
     helperProcesses.push(runtime.child);
     const transport = new LocalDaemonTransport({ requestTimeoutMs: 10_000 });
     const execution = transport.request(runtime.record.endpoint, {
@@ -130,7 +135,10 @@ describe("symnav daemon stop", () => {
   it("force-kills stuck work before the built stop command renders success", async () => {
     const stateDir = temporaryStateDirectory(stateDirectories);
     const cwd = temporaryWorkspace(stateDirectories);
-    const runtime = await startControlledDaemon(stateDir, realpathSync(cwd));
+    const runtime = await startControlledDaemon(
+      stateDir,
+      canonicalWorkspaceRoot(realpathSync(cwd)),
+    );
     helperProcesses.push(runtime.child);
     const transport = new LocalDaemonTransport({ requestTimeoutMs: 10_000 });
     void transport

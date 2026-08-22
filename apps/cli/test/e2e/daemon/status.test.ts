@@ -16,6 +16,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { runSymnavBinary } from "@symnav/testing";
 import { DAEMON_PROTOCOL_VERSION, type DaemonRecord } from "../../../src/daemon/daemon-protocol.js";
 import { LocalDaemonTransport } from "../../../src/daemon/local-daemon-transport.js";
+import { canonicalWorkspaceRoot } from "../../helpers/canonical-workspace-root.js";
 
 describe("symnav daemon status", () => {
   const stateDirectories: string[] = [];
@@ -98,7 +99,9 @@ describe("symnav daemon status", () => {
     expect(
       JSON.parse(status.stdout).map((entry: { workspaceRoot: string }) => entry.workspaceRoot),
     ).toEqual(
-      [realpathSync(alpha), realpathSync(beta)].sort((left, right) => left.localeCompare(right)),
+      [realpathSync(alpha), realpathSync(beta)]
+        .map(canonicalWorkspaceRoot)
+        .sort((left, right) => left.localeCompare(right)),
     );
   });
 

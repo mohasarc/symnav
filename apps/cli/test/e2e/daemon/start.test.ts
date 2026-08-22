@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { runSymnavBinary } from "@symnav/testing";
+import { canonicalWorkspaceRoot } from "../../helpers/canonical-workspace-root.js";
 
 describe("symnav daemon start", () => {
   const stateDirectories: string[] = [];
@@ -53,7 +54,7 @@ describe("symnav daemon start", () => {
     expect(result.stderr).toBe("");
     expect(JSON.parse(result.stdout)).toMatchObject({
       status: "ready",
-      workspaceRoot: resolve(cwd),
+      workspaceRoot: canonicalWorkspaceRoot(resolve(cwd)),
     });
   });
 

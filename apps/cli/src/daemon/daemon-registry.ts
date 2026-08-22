@@ -1,5 +1,11 @@
-import type { DaemonRecord } from "./daemon-protocol.js";
-import type { DaemonWorkspaceIdentity } from "./daemon-workspace-identity.js";
+import { readFileSync, readdirSync } from "node:fs";
+import { dirname, join } from "node:path";
+import {
+  DAEMON_PROTOCOL_VERSION,
+  DAEMON_RECORD_SCHEMA_VERSION,
+  type DaemonRecord,
+} from "./daemon-protocol.js";
+import { DaemonWorkspaceIdentity } from "./daemon-workspace-identity.js";
 
 export interface StartupOwner {
   readonly instanceId: string;
@@ -13,28 +19,36 @@ export interface StartupLease {
 }
 
 export class DaemonRegistry {
-  constructor(private readonly _registryDirectory: string) {}
+  constructor(private readonly registryDirectory: string) {}
 
-  read(_identity: DaemonWorkspaceIdentity): DaemonRecord | undefined {
-    throw new Error("Daemon registry reads are not implemented");
+  read(identity: DaemonWorkspaceIdentity): DaemonRecord | undefined {
+    return this.records(identity).find((record) => DaemonRegistry.isCurrentRecord(record));
   }
 
   readInstance(
-    _identity: DaemonWorkspaceIdentity,
-    _instanceId: string,
+    identity: DaemonWorkspaceIdentity,
+    instanceId: string,
   ): DaemonRecord | undefined {
-    throw new Error("Daemon registry reads are not implemented");
+    const record = this.readStoredPath(identity.recordPath(instanceId));
+    return record !== undefined &&
+      DaemonRegistry.isCurrentRecord(record) &&
+      DaemonRegistry.matchesIdentity(record, identity)
+      ? record
+      : undefined;
   }
 
-  readStored(_identity: DaemonWorkspaceIdentity): DaemonRecord | undefined {
-    throw new Error("Daemon registry reads are not implemented");
+  readStored(identity: DaemonWorkspaceIdentity): DaemonRecord | undefined {
+    return this.records(identity)[0];
   }
 
   readStoredInstance(
-    _identity: DaemonWorkspaceIdentity,
-    _instanceId: string,
+    identity: DaemonWorkspaceIdentity,
+    instanceId: string,
   ): DaemonRecord | undefined {
-    throw new Error("Daemon registry reads are not implemented");
+    const record = this.readStoredPath(identity.recordPath(instanceId));
+    return record !== undefined && DaemonRegistry.matchesIdentity(record, identity)
+      ? record
+      : undefined;
   }
 
   write(_record: DaemonRecord): void {
@@ -72,6 +86,109 @@ export class DaemonRegistry {
   }
 
   list(): readonly DaemonRecord[] {
-    throw new Error("Daemon registry reads are not implemented");
+    return this.recordNames()
+      .map((name) => ({ name, record: this.readStoredPath(join(this.registryDirectory, name)) }))
+      .filter(
+        (entry): entry is { readonly name: string; readonly record: DaemonRecord } =>
+          entry.record !== undefined &&
+          DaemonRegistry.isCurrentRecord(entry.record) &&
+          this.recordMatchesFile(entry.name, entry.record),
+      )
+      .map(({ record }) => record);
+  }
+
+  private records(identity: DaemonWorkspaceIdentity): readonly DaemonRecord[] {
+    const prefix = `${identity.workspaceKey}.`;
+    return this.recordNames()
+      .filter((name) => name.startsWith(prefix))
+      .map((name) => this.readStoredPath(join(this.registryDirectory, name)))
+      .filter(
+        (record): record is DaemonRecord =>
+          record !== undefined && DaemonRegistry.matchesIdentity(record, identity),
+      )
+      .sort(
+        (left, right) =>
+          right.startedAt - left.startedAt || right.instanceId.localeCompare(left.instanceId),
+      );
+  }
+
+  private recordNames(): readonly string[] {
+    try {
+      return readdirSync(this.registryDirectory).filter((name) => name.endsWith(".json"));
+    } catch (error) {
+      if (DaemonRegistry.errorCode(error) === "ENOENT") return [];
+      throw error;
+    }
+  }
+
+  private readStoredPath(recordPath: string): DaemonRecord | undefined {
+    try {
+      const value: unknown = JSON.parse(readFileSync(recordPath, "utf8"));
+      return DaemonRegistry.isStoredRecord(value) ? value : undefined;
+    } catch (error) {
+      if (DaemonRegistry.errorCode(error) === "ENOENT" || error instanceof SyntaxError) {
+        return undefined;
+      }
+      throw error;
+    }
+  }
+
+  private recordMatchesFile(name: string, record: DaemonRecord): boolean {
+    const expectedIdentity = DaemonWorkspaceIdentity.from(
+      record.workspaceRoot,
+      dirname(this.registryDirectory),
+    );
+    return (
+      expectedIdentity.registryDirectory === this.registryDirectory &&
+      DaemonRegistry.matchesIdentity(record, expectedIdentity) &&
+      name === `${expectedIdentity.workspaceKey}.${record.instanceId}.json`
+    );
+  }
+
+  private static matchesIdentity(record: DaemonRecord, identity: DaemonWorkspaceIdentity): boolean {
+    return (
+      record.workspaceRoot === identity.workspaceRoot &&
+      record.workspaceKey === identity.workspaceKey &&
+      record.endpoint === identity.endpoint(record.instanceId)
+    );
+  }
+
+  private static isCurrentRecord(record: DaemonRecord): boolean {
+    if (
+      record.schemaVersion !== DAEMON_RECORD_SCHEMA_VERSION ||
+      record.protocolVersion !== DAEMON_PROTOCOL_VERSION
+    )
+      return false;
+    if (record.state === "starting") {
+      return record.readyAt === undefined && record.fileCount === undefined;
+    }
+    return typeof record.readyAt === "number" && typeof record.fileCount === "number";
+  }
+
+  private static isStoredRecord(value: unknown): value is DaemonRecord {
+    if (typeof value !== "object" || value === null) return false;
+    const record = value as Record<string, unknown>;
+    return (
+      Number.isInteger(record.schemaVersion) &&
+      Number.isInteger(record.protocolVersion) &&
+      typeof record.symnavVersion === "string" &&
+      typeof record.workspaceRoot === "string" &&
+      typeof record.workspaceKey === "string" &&
+      typeof record.instanceId === "string" &&
+      typeof record.processToken === "string" &&
+      typeof record.endpoint === "string" &&
+      Number.isInteger(record.pid) &&
+      (record.state === "starting" || record.state === "ready") &&
+      typeof record.startedAt === "number" &&
+      typeof record.memoryCapBytes === "number" &&
+      (record.readyAt === undefined || typeof record.readyAt === "number") &&
+      (record.fileCount === undefined || typeof record.fileCount === "number") &&
+      (record.lastNavigationAt === undefined || typeof record.lastNavigationAt === "number")
+    );
+  }
+
+  private static errorCode(error: unknown): string | undefined {
+    if (typeof error !== "object" || error === null) return undefined;
+    return (error as { readonly code?: string }).code;
   }
 }

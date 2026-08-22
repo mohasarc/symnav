@@ -282,6 +282,9 @@ export class LocalDaemonTransport {
     ) {
       throw new Error("Malformed daemon pong");
     }
+    if (value.kind === "stopped" && typeof value.instanceId !== "string") {
+      throw new Error("Malformed daemon stop response");
+    }
   }
 
   private static isExecutionResult(value: unknown): boolean {

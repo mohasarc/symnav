@@ -1,4 +1,6 @@
+import { existsSync, mkdirSync, rmSync } from "node:fs";
 import { createConnection, createServer, type Server, type Socket } from "node:net";
+import { dirname } from "node:path";
 import type { DaemonRequest, DaemonResponse, DaemonServer } from "./daemon-protocol.js";
 
 const DEFAULT_MAXIMUM_FRAME_BYTES = 8 * 1024 * 1024;
@@ -114,10 +116,32 @@ export class LocalDaemonTransport {
     endpoint: string,
     handler: (request: DaemonRequest) => Promise<DaemonResponse>,
   ): Promise<DaemonServer> {
+    if (process.platform !== "win32") {
+      mkdirSync(dirname(endpoint), { recursive: true, mode: 0o700 });
+      if (existsSync(endpoint)) {
+        if (await this.endpointIsReachable(endpoint)) {
+          throw new Error(`Daemon endpoint is already in use: ${endpoint}`);
+        }
+        rmSync(endpoint, { force: true });
+      }
+    }
     const server = createServer((socket) => this.serve(socket, handler));
     return new Promise((resolve, reject) => {
       server.once("error", reject);
       server.listen(endpoint, () => resolve(new ListeningDaemonServer(server)));
+    });
+  }
+
+  private endpointIsReachable(endpoint: string): Promise<boolean> {
+    return new Promise((resolve) => {
+      const socket = createConnection(endpoint);
+      const finish = (reachable: boolean): void => {
+        socket.destroy();
+        resolve(reachable);
+      };
+      socket.setTimeout(this.requestTimeoutMs, () => finish(false));
+      socket.once("connect", () => finish(true));
+      socket.once("error", () => finish(false));
     });
   }
 

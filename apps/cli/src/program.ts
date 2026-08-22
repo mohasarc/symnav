@@ -44,7 +44,7 @@ export function createDefaultProgramContext(): ProgramContext {
   };
 }
 
-function defaultDependencies(): ProgramDependencies {
+export function createDefaultDependencies(): ProgramDependencies {
   const fs = new NodeFileSystem();
   const clock: Clock = { now: () => Date.now() };
   const stateDir = resolveStateDir(process.env);
@@ -67,7 +67,7 @@ export function buildProgram(
   dependencies?: ProgramDependencies,
 ): CommanderCommand {
   const ctx = context ?? createDefaultProgramContext();
-  const deps = dependencies ?? defaultDependencies();
+  const deps = dependencies ?? createDefaultDependencies();
   const program = new CommanderCommand();
   program
     .name("symnav")

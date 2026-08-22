@@ -8,6 +8,12 @@ import { DaemonRegistry } from "./daemon-registry.js";
 import { DaemonWorkspaceIdentity } from "./daemon-workspace-identity.js";
 import { DAEMON_PROTOCOL_VERSION, type DaemonRecord } from "./daemon-protocol.js";
 
+interface StartupMutationLeaseTestAccess {
+  beginStartupMutation(identity: DaemonWorkspaceIdentity):
+    | { isOwned(): boolean; release(): void }
+    | undefined;
+}
+
 describe("daemon registry", () => {
   const roots: string[] = [];
 

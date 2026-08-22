@@ -3,8 +3,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import type { OverviewFileEntries } from "@symnav/core";
-import { CliProgramExecutor } from "./cli-program-executor.js";
+import { CliProgramExecutor, CommandResultReplayer } from "./cli-program-executor.js";
 import { fakeDependencies } from "../test/integration/commands/helpers/fake-program-dependencies.js";
+import { createFakeProgramContext } from "../test/integration/commands/helpers/fake-program-context.js";
 import { FakeLanguageBackend } from "../test/integration/commands/helpers/fake-language-backend.js";
 
 describe("CliProgramExecutor", () => {
@@ -16,7 +17,7 @@ describe("CliProgramExecutor", () => {
     temporaryRoots.length = 0;
   });
 
-  it("captures successful command frames in write order", async () => {
+  it("captures successful command frames in write order and replays exact bytes", async () => {
     const entries: OverviewFileEntries = {
       file: "src/a.ts",
       entries: [],
@@ -34,7 +35,11 @@ describe("CliProgramExecutor", () => {
 
     expect(result.exitCode).toBe(0);
     expect(result.frames.map((frame) => frame.stream)).toEqual(["stderr", "stdout"]);
-    expect(decode(result)).toBe("Warning: unicode ✓\nnext\nOverview: src/a.ts\n(no symbols)\n");
+    const context = createFakeProgramContext({ cwd: "/repo" });
+    CommandResultReplayer.replay(result, context);
+    expect(context.stderr.text()).toBe("Warning: unicode ✓\nnext\n");
+    expect(context.stdout.text()).toBe("Overview: src/a.ts\n(no symbols)\n");
+    expect(context.exitCodes).toEqual([]);
   });
 
   it.each([

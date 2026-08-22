@@ -40,6 +40,21 @@ describe("DaemonCommandDispatcher", () => {
     ]);
   });
 
+  it.each([
+    { frames: [], exitCode: 1.5 },
+    { frames: "invalid", exitCode: 0 },
+    { frames: [{ stream: "invalid", bytesBase64: "" }], exitCode: 0 },
+    { frames: [{ stream: "stdout", bytesBase64: "***" }], exitCode: 0 },
+  ])("falls back from incomplete daemon result %#", async (incomplete) => {
+    const harness = new DispatchHarness(incomplete as unknown as CommandExecutionResult);
+
+    await expect(harness.dispatcher().execute(request)).resolves.toEqual({
+      mode: "fallback",
+      result: success,
+    });
+    expect(harness.coldExecute).toHaveBeenCalledOnce();
+  });
+
   it("sends an absolute cwd override to the daemon", async () => {
     const harness = new DispatchHarness(success);
 

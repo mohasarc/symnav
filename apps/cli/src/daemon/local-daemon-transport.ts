@@ -220,9 +220,10 @@ export class LocalDaemonTransport {
       }
       return value;
     }
-    if (request.kind === "terminate") {
+    if (request.kind === "terminate" || request.kind === "kill") {
+      const expectedKind = request.kind === "terminate" ? "terminating" : "killing";
       if (
-        value.kind !== "terminating" ||
+        value.kind !== expectedKind ||
         value.instanceId !== request.instanceId ||
         value.processToken !== request.processToken
       ) {
@@ -256,7 +257,7 @@ export class LocalDaemonTransport {
     if (!LocalDaemonTransport.isRecord(value) || typeof value.kind !== "string") {
       throw new Error("Malformed daemon request");
     }
-    if (value.kind === "identify" || value.kind === "terminate") {
+    if (value.kind === "identify" || value.kind === "terminate" || value.kind === "kill") {
       if (typeof value.instanceId !== "string" || typeof value.processToken !== "string") {
         throw new Error("Malformed daemon identity request");
       }
@@ -300,7 +301,7 @@ export class LocalDaemonTransport {
       }
       return;
     }
-    if (value.kind === "terminating") {
+    if (value.kind === "terminating" || value.kind === "killing") {
       if (typeof value.instanceId !== "string" || typeof value.processToken !== "string") {
         throw new Error("Malformed daemon termination response");
       }

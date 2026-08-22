@@ -4,7 +4,11 @@ import {
   type DaemonProcessTerminator,
 } from "./daemon-process-launcher.js";
 import type { LocalDaemonTransport } from "./local-daemon-transport.js";
-import type { DaemonRecord, DaemonStopResult } from "./daemon-protocol.js";
+import type {
+  DaemonRecord,
+  DaemonStopResult,
+  RunningDaemonStatus,
+} from "./daemon-protocol.js";
 import { DaemonWorkspaceIdentity } from "./daemon-workspace-identity.js";
 
 interface DaemonControllerOptions {
@@ -33,6 +37,33 @@ export class DaemonController {
       throw new Error("Ready daemon stopping is not available");
     }
     return this.stopStarting(identity, record);
+  }
+
+  async status(): Promise<readonly RunningDaemonStatus[]> {
+    return this.registry
+      .list()
+      .map((record) => this.statusForRecord(record))
+      .filter((status): status is RunningDaemonStatus => status !== undefined)
+      .sort((left, right) => left.workspaceRoot.localeCompare(right.workspaceRoot));
+  }
+
+  private statusForRecord(record: DaemonRecord): RunningDaemonStatus | undefined {
+    if (record.state !== "starting") return undefined;
+    const identity = DaemonWorkspaceIdentity.from(record.workspaceRoot, this.stateDirectory);
+    const owner = this.registry.startupOwner(identity);
+    if (
+      owner?.instanceId !== record.instanceId ||
+      !this.registry.startupOwnerIsWithinGrace(owner) ||
+      !this.processTerminator.isAlive(owner.ownerPid)
+    ) {
+      return undefined;
+    }
+    return {
+      workspaceRoot: record.workspaceRoot,
+      state: "starting",
+      pid: record.pid,
+      uptimeMs: Math.max(0, this.now() - record.startedAt),
+    };
   }
 
   private stopStarting(

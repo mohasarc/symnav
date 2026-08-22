@@ -4,6 +4,7 @@ import {
   type OverviewExpansionResult,
   type OverviewFileEntries,
 } from "@symnav/core";
+import { TypeScriptBackend } from "@symnav/backend-typescript";
 import { buildProgram } from "../../../../src/program.js";
 import { FakeLanguageBackend } from "../helpers/fake-language-backend.js";
 import { fakeDependencies } from "../helpers/fake-program-dependencies.js";
@@ -28,7 +29,115 @@ async function parse(
   };
 }
 
+class UnreadableSiblingFileSystem extends InMemoryFileSystem {
+  unreadableDirectoryReads = 0;
+
+  override async listDir(absPath: string): Promise<readonly string[]> {
+    if (absPath === "/repo/private") {
+      this.unreadableDirectoryReads += 1;
+      throw Object.assign(new Error("denied"), { code: "EACCES" });
+    }
+    return super.listDir(absPath);
+  }
+}
+
+class UnreadableTypeScriptSiblingFileSystem extends InMemoryFileSystem {
+  readonly typescriptSourceReads: string[] = [];
+  unreadableSourceReads = 0;
+
+  override readFileSync(absPath: string): string {
+    if (absPath.endsWith(".ts")) {
+      this.typescriptSourceReads.push(absPath);
+    }
+    if (absPath === "/repo/src/unreadable.ts") {
+      this.unreadableSourceReads += 1;
+      throw Object.assign(new Error("permission denied"), { code: "EACCES" });
+    }
+    return super.readFileSync(absPath);
+  }
+}
+
+class UnreadableSiblingMetadataFileSystem extends InMemoryFileSystem {
+  siblingMetadataReads = 0;
+
+  override async metadata(absPath: string) {
+    if (absPath === "/repo/src/unreadable.ts") {
+      this.siblingMetadataReads += 1;
+      throw Object.assign(new Error("metadata permission denied"), { code: "EACCES" });
+    }
+    return super.metadata(absPath);
+  }
+}
+
+class UnexpectedSiblingDirectoryFileSystem extends InMemoryFileSystem {
+  override async listDir(absPath: string): Promise<readonly string[]> {
+    if (absPath === "/repo/private") {
+      throw Object.assign(new Error("device failure"), { code: "EIO" });
+    }
+    return super.listDir(absPath);
+  }
+}
+
 describe("symnav overview happy path", () => {
+  it("reads an accessible target when an unrelated sibling directory is unreadable", async () => {
+    const fs = new UnreadableSiblingFileSystem({
+      "/repo/.git/HEAD": "ref: refs/heads/main\n",
+      "/repo/private/hidden.ts": "export const hidden = true;\n",
+      "/repo/src/a.ts": "export const accessible = true;\n",
+    });
+    const backend = new FakeLanguageBackend();
+
+    const result = await parse(
+      ["overview", "src/a.ts"],
+      fakeDependencies({ fs, backends: () => [backend] }),
+    );
+
+    expect(result.stderr).toBe("");
+    expect(result.exitCodes).toEqual([]);
+    expect(result.stdout).toContain("src/a.ts");
+    expect(backend.refreshCalls[0]?.map((file) => file.relative)).toEqual(["src/a.ts"]);
+    expect(fs.unreadableDirectoryReads).toBe(1);
+  });
+
+  it("does not read an unrelated TypeScript sibling while preparing overview", async () => {
+    const fs = new UnreadableTypeScriptSiblingFileSystem({
+      "/repo/.git/HEAD": "ref: refs/heads/main\n",
+      "/repo/src/a.ts": "export const accessible = true;\n",
+      "/repo/src/unreadable.ts": "export const unreadable = true;\n",
+    });
+    const backend = new TypeScriptBackend(fs);
+
+    const result = await parse(
+      ["overview", "src/a.ts"],
+      fakeDependencies({ fs, backends: () => [backend] }),
+    );
+
+    expect(result.stderr).toBe("");
+    expect(result.exitCodes).toEqual([]);
+    expect(result.stdout).toContain("accessible");
+    expect(fs.unreadableSourceReads).toBe(0);
+    expect(fs.typescriptSourceReads).toEqual(["/repo/src/a.ts"]);
+  });
+
+  it("does not stat an unrelated TypeScript sibling while preparing overview", async () => {
+    const fs = new UnreadableSiblingMetadataFileSystem({
+      "/repo/.git/HEAD": "ref: refs/heads/main\n",
+      "/repo/src/a.ts": "export const accessible = true;\n",
+      "/repo/src/unreadable.ts": "export const unreadable = true;\n",
+    });
+    const backend = new TypeScriptBackend(fs);
+
+    const result = await parse(
+      ["overview", "src/a.ts"],
+      fakeDependencies({ fs, backends: () => [backend] }),
+    );
+
+    expect(result.stderr).toBe("");
+    expect(result.exitCodes).toEqual([]);
+    expect(result.stdout).toContain("accessible");
+    expect(fs.siblingMetadataReads).toBe(0);
+  });
+
   it("writes text-rendered IR to stdout with exit 0", async () => {
     const entries: OverviewFileEntries = {
       file: "src/a.ts",
@@ -108,6 +217,70 @@ describe("symnav overview happy path", () => {
 });
 
 describe("symnav overview user errors", () => {
+  it("preserves target validation when an unrelated sibling directory is unreadable", async () => {
+    const fs = new UnreadableSiblingFileSystem({
+      "/repo/.git/HEAD": "ref: refs/heads/main\n",
+      "/repo/private/hidden.ts": "export const hidden = true;\n",
+      "/repo/src/a.ts": "export const accessible = true;\n",
+    });
+
+    const result = await parse(["overview", "src/missing.ts"], fakeDependencies({ fs }));
+
+    expect(result.stdout).toBe("");
+    expect(result.stderr).toBe("Cannot answer: file not found: src/missing.ts.\n");
+    expect(result.exitCodes).toEqual([1]);
+    expect(fs.unreadableDirectoryReads).toBe(1);
+  });
+
+  it("validates a missing target before reading an unrelated TypeScript sibling", async () => {
+    const fs = new UnreadableTypeScriptSiblingFileSystem({
+      "/repo/.git/HEAD": "ref: refs/heads/main\n",
+      "/repo/src/a.ts": "export const accessible = true;\n",
+      "/repo/src/unreadable.ts": "export const unreadable = true;\n",
+    });
+    const backend = new TypeScriptBackend(fs);
+
+    const result = await parse(
+      ["overview", "src/missing.ts"],
+      fakeDependencies({ fs, backends: () => [backend] }),
+    );
+
+    expect(result.stdout).toBe("");
+    expect(result.stderr).toBe("Cannot answer: file not found: src/missing.ts.\n");
+    expect(result.exitCodes).toEqual([1]);
+    expect(fs.unreadableSourceReads).toBe(0);
+    expect(fs.typescriptSourceReads).toEqual([]);
+  });
+
+  it("validates a missing target without statting an unrelated TypeScript sibling", async () => {
+    const fs = new UnreadableSiblingMetadataFileSystem({
+      "/repo/.git/HEAD": "ref: refs/heads/main\n",
+      "/repo/src/a.ts": "export const accessible = true;\n",
+      "/repo/src/unreadable.ts": "export const unreadable = true;\n",
+    });
+
+    const result = await parse(["overview", "src/missing.ts"], fakeDependencies({ fs }));
+
+    expect(result.stdout).toBe("");
+    expect(result.stderr).toBe("Cannot answer: file not found: src/missing.ts.\n");
+    expect(result.exitCodes).toEqual([1]);
+    expect(fs.siblingMetadataReads).toBe(0);
+  });
+
+  it("surfaces an unexpected sibling directory failure before target loading", async () => {
+    const fs = new UnexpectedSiblingDirectoryFileSystem({
+      "/repo/.git/HEAD": "ref: refs/heads/main\n",
+      "/repo/private/hidden.ts": "export const hidden = true;\n",
+      "/repo/src/a.ts": "export const accessible = true;\n",
+    });
+
+    const result = await parse(["overview", "src/a.ts"], fakeDependencies({ fs }));
+
+    expect(result.stdout).toBe("");
+    expect(result.stderr).toBe("device failure\n");
+    expect(result.exitCodes).toEqual([2]);
+  });
+
   it("writes the file-not-found line to stderr with exit 1 for a missing file", async () => {
     const fs = new InMemoryFileSystem({
       "/repo/.git/HEAD": "ref: refs/heads/main\n",

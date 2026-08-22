@@ -94,6 +94,10 @@ class ControllerTransport {
   request(_endpoint: string, _request: DaemonRequest): Promise<DaemonResponse> {
     throw new Error("Starting-daemon cancellation must not use transport");
   }
+
+  async removeUnavailableEndpoint(_endpoint: string): Promise<boolean> {
+    return true;
+  }
 }
 
 class ControllerTerminator implements DaemonProcessTerminator {

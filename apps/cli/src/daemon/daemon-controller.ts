@@ -1,11 +1,4 @@
 import { randomUUID } from "node:crypto";
-import type { DaemonRegistry } from "./daemon-registry.js";
-import {
-  NodeDaemonProcessTerminator,
-  type DaemonProcessLauncher,
-  type DaemonProcessTerminator,
-} from "./daemon-process-launcher.js";
-import type { LocalDaemonTransport } from "./local-daemon-transport.js";
 import type {
   DaemonRecord,
   DaemonStartResult,
@@ -13,23 +6,30 @@ import type {
   RunningDaemonStatus,
 } from "./daemon-protocol.js";
 import { DAEMON_PROTOCOL_VERSION } from "./daemon-protocol.js";
+import {
+  NodeDaemonProcessTerminator,
+  type DaemonProcessTerminator,
+  type DaemonProcessLauncher,
+} from "./daemon-process-launcher.js";
+import type { DaemonRegistry } from "./daemon-registry.js";
 import { DaemonStartupCoordinator } from "./daemon-startup-coordinator.js";
 import { DaemonWorkspaceIdentity } from "./daemon-workspace-identity.js";
+import type { LocalDaemonTransport } from "./local-daemon-transport.js";
 
 interface DaemonControllerOptions {
-  readonly launcher?: DaemonProcessLauncher;
-  readonly processTerminator?: DaemonProcessTerminator;
   readonly now?: () => number;
   readonly stopTimeoutMs?: number;
   readonly pollIntervalMs?: number;
+  readonly processTerminator?: DaemonProcessTerminator;
+  readonly launcher?: DaemonProcessLauncher;
 }
 
 export class DaemonController {
-  private readonly launcher: DaemonProcessLauncher | undefined;
-  private readonly processTerminator: DaemonProcessTerminator;
   private readonly now: () => number;
   private readonly stopTimeoutMs: number;
   private readonly pollIntervalMs: number;
+  private readonly processTerminator: DaemonProcessTerminator;
+  private readonly launcher: DaemonProcessLauncher | undefined;
 
   constructor(
     private readonly registry: DaemonRegistry,
@@ -37,11 +37,11 @@ export class DaemonController {
     private readonly stateDirectory: string,
     options: DaemonControllerOptions = {},
   ) {
-    this.launcher = options.launcher;
-    this.processTerminator = options.processTerminator ?? new NodeDaemonProcessTerminator();
     this.now = options.now ?? Date.now;
     this.stopTimeoutMs = options.stopTimeoutMs ?? 5_000;
     this.pollIntervalMs = options.pollIntervalMs ?? 20;
+    this.processTerminator = options.processTerminator ?? new NodeDaemonProcessTerminator();
+    this.launcher = options.launcher;
   }
 
   start(workspaceRoot: string): Promise<DaemonStartResult> {
@@ -52,6 +52,15 @@ export class DaemonController {
     );
   }
 
+  async status(): Promise<readonly RunningDaemonStatus[]> {
+    const statuses = await Promise.all(
+      this.registry.list().map((record) => this.statusForRecord(record)),
+    );
+    return statuses
+      .filter((status): status is RunningDaemonStatus => status !== undefined)
+      .sort((left, right) => left.workspaceRoot.localeCompare(right.workspaceRoot));
+  }
+
   async stop(workspaceRoot: string): Promise<DaemonStopResult> {
     const stopStartedAt = this.now();
     const deadline = stopStartedAt + this.stopTimeoutMs;
@@ -59,7 +68,9 @@ export class DaemonController {
     const gracefulDeadline = deadline - forceWaitMs;
     const identity = DaemonWorkspaceIdentity.from(workspaceRoot, this.stateDirectory);
     const record = this.registry.read(identity);
-    if (record === undefined) return { status: "not-running", workspaceRoot };
+    if (record === undefined) {
+      return { status: "not-running", workspaceRoot };
+    }
     if (record.state === "starting") return this.stopStarting(identity, record);
     if (!(await this.identifies(record))) {
       this.registry.removeIfInstance(identity, record.instanceId);
@@ -91,44 +102,34 @@ export class DaemonController {
     return { status: "killed", workspaceRoot, pid: record.pid };
   }
 
-  async status(): Promise<readonly RunningDaemonStatus[]> {
-    const statuses = await Promise.all(
-      this.registry.list().map((record) => this.statusForRecord(record)),
-    );
-    return statuses
-      .filter((status): status is RunningDaemonStatus => status !== undefined)
-      .sort((left, right) => left.workspaceRoot.localeCompare(right.workspaceRoot));
-  }
-
   private async statusForRecord(record: DaemonRecord): Promise<RunningDaemonStatus | undefined> {
-    if (record.state === "ready") return this.readyStatus(record);
     const identity = DaemonWorkspaceIdentity.from(record.workspaceRoot, this.stateDirectory);
-    const owner = this.registry.startupOwner(identity);
-    if (
-      owner?.instanceId === record.instanceId &&
-      this.registry.startupOwnerIsWithinGrace(owner) &&
-      this.processTerminator.isAlive(owner.ownerPid)
-    ) {
-      return this.startingStatus(record);
-    }
-    if (owner?.instanceId === record.instanceId) {
-      if (!this.registry.removeStartupLockIfOwner(identity, owner)) {
-        const renewedOwner = this.registry.startupOwner(identity);
-        if (
-          renewedOwner?.instanceId === record.instanceId &&
-          this.registry.startupOwnerIsWithinGrace(renewedOwner) &&
-          this.processTerminator.isAlive(renewedOwner.ownerPid)
-        ) {
-          return this.startingStatus(record);
-        }
-        return undefined;
+    if (record.state === "starting") {
+      const owner = this.registry.startupOwner(identity);
+      if (
+        owner?.instanceId === record.instanceId &&
+        this.registry.startupOwnerIsWithinGrace(owner) &&
+        this.processTerminator.isAlive(owner.ownerPid)
+      ) {
+        return this.startingStatus(record);
       }
+      if (owner?.instanceId === record.instanceId) {
+        if (!this.registry.removeStartupLockIfOwner(identity, owner)) {
+          const renewedOwner = this.registry.startupOwner(identity);
+          if (
+            renewedOwner?.instanceId === record.instanceId &&
+            this.registry.startupOwnerIsWithinGrace(renewedOwner) &&
+            this.processTerminator.isAlive(renewedOwner.ownerPid)
+          ) {
+            return this.startingStatus(record);
+          }
+          return undefined;
+        }
+      }
+      await this.removeStaleRecord(identity, record);
+      return undefined;
     }
-    this.registry.removeIfInstance(identity, record.instanceId);
-    return undefined;
-  }
 
-  private async readyStatus(record: DaemonRecord): Promise<RunningDaemonStatus | undefined> {
     try {
       const response = await this.transport.request(record.endpoint, {
         kind: "ping",
@@ -157,12 +158,32 @@ export class DaemonController {
           : { lastRequestAgoMs: Math.max(0, this.now() - lastNavigationAt) }),
       };
     } catch {
-      await this.removeStaleRecord(
-        DaemonWorkspaceIdentity.from(record.workspaceRoot, this.stateDirectory),
-        record,
-      );
+      await this.removeStaleRecord(identity, record);
       return undefined;
     }
+  }
+
+  private async stopStarting(
+    identity: DaemonWorkspaceIdentity,
+    record: DaemonRecord,
+  ): Promise<DaemonStopResult> {
+    const owner = this.registry.startupOwner(identity);
+    if (
+      owner?.instanceId !== record.instanceId ||
+      !this.registry.startupOwnerIsWithinGrace(owner) ||
+      !this.processTerminator.isAlive(owner.ownerPid)
+    ) {
+      if (owner?.instanceId === record.instanceId) {
+        this.registry.removeStartupLockIfInstance(identity, record.instanceId);
+      }
+      this.registry.removeIfInstance(identity, record.instanceId);
+      return { status: "not-running", workspaceRoot: record.workspaceRoot };
+    }
+    this.registry.removeStartupLockIfInstance(identity, record.instanceId);
+    this.registry.removeIfInstance(identity, record.instanceId);
+    return record.pid > 0
+      ? { status: "stopped", workspaceRoot: record.workspaceRoot, pid: record.pid }
+      : { status: "not-running", workspaceRoot: record.workspaceRoot };
   }
 
   private startingStatus(record: DaemonRecord): RunningDaemonStatus {
@@ -172,21 +193,6 @@ export class DaemonController {
       pid: record.pid,
       uptimeMs: Math.max(0, this.now() - record.startedAt),
     };
-  }
-
-  private async removeStaleRecord(
-    identity: DaemonWorkspaceIdentity,
-    record: DaemonRecord,
-  ): Promise<void> {
-    const lease = this.registry.acquireStartup(identity, `status-cleanup-${randomUUID()}`);
-    if (lease === undefined) return;
-    try {
-      if (this.registry.readStoredInstance(identity, record.instanceId) === undefined) return;
-      if (!(await this.transport.removeUnavailableEndpoint(record.endpoint))) return;
-      this.registry.removeIfInstance(identity, record.instanceId);
-    } finally {
-      lease.release();
-    }
   }
 
   private async killIdentified(record: DaemonRecord, deadline: number): Promise<boolean> {
@@ -214,6 +220,22 @@ export class DaemonController {
     }
     return !(await this.identifies(record)) && !this.processTerminator.isAlive(record.pid);
   }
+
+  private async removeStaleRecord(
+    identity: DaemonWorkspaceIdentity,
+    record: DaemonRecord,
+  ): Promise<void> {
+    const lease = this.registry.acquireStartup(identity, `status-cleanup-${randomUUID()}`);
+    if (lease === undefined) return;
+    try {
+      if (this.registry.readStoredInstance(identity, record.instanceId) === undefined) return;
+      if (!(await this.transport.removeUnavailableEndpoint(record.endpoint))) return;
+      this.registry.removeIfInstance(identity, record.instanceId);
+    } finally {
+      lease.release();
+    }
+  }
+
   private async identifies(record: DaemonRecord): Promise<boolean> {
     try {
       const response = await this.transport.request(record.endpoint, {
@@ -241,26 +263,5 @@ export class DaemonController {
 
   private pause(durationMs: number): Promise<void> {
     return new Promise((resolve) => setTimeout(resolve, durationMs));
-  }
-  private stopStarting(
-    identity: DaemonWorkspaceIdentity,
-    record: DaemonRecord,
-  ): DaemonStopResult {
-    const owner = this.registry.startupOwner(identity);
-    if (
-      owner?.instanceId !== record.instanceId ||
-      !this.processTerminator.isAlive(owner.ownerPid)
-    ) {
-      if (owner?.instanceId === record.instanceId) {
-        this.registry.removeStartupLockIfInstance(identity, record.instanceId);
-      }
-      this.registry.removeIfInstance(identity, record.instanceId);
-      return { status: "not-running", workspaceRoot: record.workspaceRoot };
-    }
-    this.registry.removeStartupLockIfInstance(identity, record.instanceId);
-    this.registry.removeIfInstance(identity, record.instanceId);
-    return record.pid > 0
-      ? { status: "stopped", workspaceRoot: record.workspaceRoot, pid: record.pid }
-      : { status: "not-running", workspaceRoot: record.workspaceRoot };
   }
 }

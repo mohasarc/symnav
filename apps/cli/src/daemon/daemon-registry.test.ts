@@ -12,9 +12,17 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
+import { DaemonController } from "./daemon-controller.js";
+import type { DaemonProcessTerminator } from "./daemon-process-launcher.js";
 import { DaemonRegistry } from "./daemon-registry.js";
 import { DaemonWorkspaceIdentity } from "./daemon-workspace-identity.js";
-import { DAEMON_PROTOCOL_VERSION, type DaemonRecord } from "./daemon-protocol.js";
+import {
+  DAEMON_PROTOCOL_VERSION,
+  type DaemonRecord,
+  type DaemonRequest,
+  type DaemonResponse,
+} from "./daemon-protocol.js";
+import type { LocalDaemonTransport } from "./local-daemon-transport.js";
 
 interface StartupMutationLeaseTestAccess {
   beginStartupMutation(identity: DaemonWorkspaceIdentity):

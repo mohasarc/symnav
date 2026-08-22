@@ -98,6 +98,18 @@ describe("symnav daemon parity", () => {
     expect(results).toEqual([expected, expected]);
     expect(harness.onlyDaemonPid()).toBeGreaterThan(0);
   });
+  it("records only fallback when execution finishes but response delivery fails", async () => {
+    const harness = new DaemonParityHarness();
+    harnesses.push(harness);
+    const controlled = await harness.startControlledDaemon("--oversized-response");
+
+    expect(harness.warmWithTelemetry(["overview", "input.ts"])).toEqual(
+      harness.cold(["overview", "input.ts"]),
+    );
+    expect(existsSync(`${controlled.requestStartedPath}.1`)).toBe(true);
+    expect(harness.telemetryModes()).toEqual(["fallback"]);
+    expect(harness.daemonRecordCount()).toBe(0);
+  }, 15_000);
 });
 
 class DaemonParityHarness {

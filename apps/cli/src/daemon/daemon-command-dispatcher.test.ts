@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import type { UsageEventInput } from "@symnav/telemetry";
 import type { CliExecutionRequest, CommandExecutionResult } from "../command-execution-result.js";
 import type { ProgramDependencies } from "../program-dependencies.js";
 import type { DaemonRecord, DaemonRequest, DaemonResponse } from "./daemon-protocol.js";
@@ -190,6 +191,21 @@ describe("DaemonCommandDispatcher", () => {
     });
     expect(harness.coldExecute).not.toHaveBeenCalled();
   });
+
+  it("commits deferred warm telemetry only after receiving the complete result", async () => {
+    const warmTelemetry = telemetryInput("warm");
+    const harness = new DispatchHarness({ ...success, telemetry: warmTelemetry });
+
+    await expect(
+      harness.dispatcher().execute({ ...request, telemetryEnabled: true }),
+    ).resolves.toEqual({
+      mode: "warm",
+      result: success,
+    });
+
+    expect(harness.recordTelemetry).toHaveBeenCalledWith(warmTelemetry);
+    expect(harness.recordTelemetry).toHaveBeenCalledTimes(1);
+  });
 });
 
 interface DispatchHarnessOptions {
@@ -204,6 +220,7 @@ class DispatchHarness {
   readonly ensureRunning: ReturnType<typeof vi.fn>;
   readonly removeIfInstance = vi.fn();
   readonly coldExecute = vi.fn(async () => success);
+  readonly recordTelemetry = vi.fn();
   readonly runtimeFactory = vi.fn(() => this.runtime);
   private readonly requests: DaemonRequest[] = [];
   private registered: DaemonRecord | undefined;
@@ -270,7 +287,11 @@ class DispatchHarness {
 
   dispatcher(): DaemonCommandDispatcher {
     return new DaemonCommandDispatcher({
-      createDependencies: () => ({ symnavVersion: "0.1.0" }) as ProgramDependencies,
+      createDependencies: () =>
+        ({
+          symnavVersion: "0.1.0",
+          recorder: { record: this.recordTelemetry },
+        }) as unknown as ProgramDependencies,
       daemonEnabled: () => this.options.daemonEnabled ?? true,
       stateDirectory: "/state",
       resolveWorkspaceRoot: async () => "/repo",
@@ -317,5 +338,20 @@ function daemonRecord(instanceId = "instance-1"): DaemonRecord {
     readyAt: 2,
     fileCount: 1,
     memoryCapBytes: 1024,
+  };
+}
+
+function telemetryInput(executionMode: "warm" | "cold" | "fallback"): UsageEventInput {
+  return {
+    symnavVersion: "0.1.0",
+    command: "overview",
+    timestamp: 1,
+    durationMs: 2,
+    executionMode,
+    outcome: "success",
+    argShape: { kind: "path", lengthBucket: "short", flags: [] },
+    resultCounts: { symbols: 1 },
+    workspaceId: "workspace",
+    machineId: "machine",
   };
 }

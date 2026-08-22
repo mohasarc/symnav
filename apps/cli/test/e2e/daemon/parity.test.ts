@@ -214,6 +214,34 @@ describe("symnav daemon parity", () => {
     expect(harness.onlyDaemonPid()).toBe(daemonPid);
     expect(harness.telemetryModes()).toEqual(["warm", "warm"]);
   }, 15_000);
+
+  it("discards a disconnected daemon response and returns one complete cold answer", async () => {
+    const harness = new DaemonParityHarness();
+    harnesses.push(harness);
+    const controlled = await harness.startControlledDaemon();
+    const transport = new LocalDaemonTransport({ requestTimeoutMs: 10_000 });
+    void transport
+      .request(controlled.record.endpoint, {
+        kind: "execute",
+        protocolVersion: DAEMON_PROTOCOL_VERSION,
+        instanceId: controlled.record.instanceId,
+        requestId: "crash-blocker",
+        request: {
+          argv: ["--version"],
+          cwd: harness.workspaceRoot,
+          telemetryEnabled: false,
+          executionMode: "warm",
+        },
+      })
+      .catch(() => undefined);
+    await waitUntil(() => existsSync(controlled.requestStartedPath));
+    const execution = harness.warmAsync(["overview", "input.ts"]);
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    process.kill(controlled.child.pid!, "SIGKILL");
+
+    expect(await execution).toEqual(harness.cold(["overview", "input.ts"]));
+    expect(harness.warm(["overview", "input.ts"])).toEqual(harness.cold(["overview", "input.ts"]));
+  }, 15_000);
 });
 
 class DaemonParityHarness {

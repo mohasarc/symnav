@@ -461,6 +461,7 @@ export class DaemonRegistry {
       typeof record.memoryCapBytes === "number" &&
       (record.readyAt === undefined || typeof record.readyAt === "number") &&
       (record.fileCount === undefined || typeof record.fileCount === "number") &&
+      (record.memoryBytes === undefined || typeof record.memoryBytes === "number") &&
       (record.lastNavigationAt === undefined || typeof record.lastNavigationAt === "number")
     );
   }

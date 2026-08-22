@@ -120,6 +120,17 @@ describe("WorkspaceDaemon requests", () => {
     });
   });
 
+  it("removes registry and transport state before exiting", async () => {
+    const harness = await RequestHarness.start(new ImmediateExecutor());
+    harnesses.push(harness);
+
+    await harness.stop();
+    await harness.exited;
+
+    expect(harness.registry.read(harness.identity)).toBeUndefined();
+    expect(harness.transport.isListening).toBe(false);
+  });
+
 });
 
 class RequestHarness {

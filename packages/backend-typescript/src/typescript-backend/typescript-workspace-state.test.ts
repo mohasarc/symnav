@@ -224,6 +224,75 @@ describe("TypeScriptWorkspaceState.refresh", () => {
     expect(declarationNames(state, renamedFiles)).toEqual(["added", "renamed"]);
   });
 
+  it("rolls back project mutations and derived state across repeated refresh failures", () => {
+    const fs = new MutableWorkspaceFileSystem({
+      "/repo/src/a.ts": "export const beforeA = 1;\n",
+    });
+    const state = new TypeScriptWorkspaceState(fs);
+    state.refresh(fs.workspaceFiles("src/a.ts"));
+    const sourceTextDuringFailure: string[] = [];
+    const beforeIdentity: SymbolIdentity = {
+      file: "src/a.ts",
+      segments: [{ name: "beforeA" }],
+    };
+    const afterIdentity: SymbolIdentity = {
+      file: "src/a.ts",
+      segments: [{ name: "afterA" }],
+    };
+    const addedIdentity: SymbolIdentity = {
+      file: "src/b.ts",
+      segments: [{ name: "addedB" }],
+    };
+
+    fs.setFile("/repo/src/a.ts", "export const afterA = 2;\n");
+    fs.setFile("/repo/src/b.ts", "export const addedB = 2;\n");
+    fs.failReadsFor("/repo/src/b.ts", () => {
+      sourceTextDuringFailure.push(state.sourceFile("src/a.ts")?.getFullText() ?? "");
+    });
+    const changedFiles = fs.workspaceFiles("src/a.ts", "src/b.ts");
+
+    expect(() => state.refresh(changedFiles)).toThrow("read failed: /repo/src/b.ts");
+    expect(sourceTextDuringFailure).toEqual(["export const afterA = 2;\n"]);
+    expect(state.sourceFile("src/a.ts")?.getFullText()).toBe("export const beforeA = 1;\n");
+    expect(state.declarationsIn("src/a.ts")?.map((entry) => entry.identity)).toEqual([
+      beforeIdentity,
+    ]);
+    expect(state.declarationForIdentity(beforeIdentity)).toBeDefined();
+    expect(state.declarationForIdentity(afterIdentity)).toBeUndefined();
+    expect(state.locate(beforeIdentity)).toHaveLength(1);
+    expect(state.currentFileCount()).toBe(1);
+    expect(state.sourceFile("src/b.ts")).toBeUndefined();
+    expect(state.declarationsIn("src/b.ts")).toBeUndefined();
+    expect(state.declarationForIdentity(addedIdentity)).toBeUndefined();
+
+    expect(() => state.refresh(changedFiles)).toThrow("read failed: /repo/src/b.ts");
+    expect(sourceTextDuringFailure).toEqual([
+      "export const afterA = 2;\n",
+      "export const afterA = 2;\n",
+    ]);
+    expect(state.sourceFile("src/a.ts")?.getFullText()).toBe("export const beforeA = 1;\n");
+    expect(state.declarationsIn("src/a.ts")?.map((entry) => entry.identity)).toEqual([
+      beforeIdentity,
+    ]);
+    expect(state.declarationForIdentity(beforeIdentity)).toBeDefined();
+    expect(state.declarationForIdentity(afterIdentity)).toBeUndefined();
+    expect(state.locate(beforeIdentity)).toHaveLength(1);
+    expect(state.currentFileCount()).toBe(1);
+    expect(state.sourceFile("src/b.ts")).toBeUndefined();
+    expect(state.declarationsIn("src/b.ts")).toBeUndefined();
+    expect(state.declarationForIdentity(addedIdentity)).toBeUndefined();
+
+    fs.restoreReadsFor("/repo/src/b.ts");
+    expect(state.refresh(changedFiles)).toEqual({ added: 1, changed: 1, removed: 0, unchanged: 0 });
+    expect(state.currentFileCount()).toBe(2);
+    expect(state.sourceFile("src/a.ts")?.getFullText()).toBe("export const afterA = 2;\n");
+    expect(state.sourceFile("src/b.ts")?.getFullText()).toBe("export const addedB = 2;\n");
+    expect(declarationNames(state, changedFiles)).toEqual(["afterA", "addedB"]);
+    expect(state.declarationForIdentity(beforeIdentity)).toBeUndefined();
+    expect(state.declarationForIdentity(afterIdentity)).toBeDefined();
+    expect(state.declarationForIdentity(addedIdentity)).toBeDefined();
+  });
+
   it("keeps old content when a write preserves both modification time and size", () => {
     const fs = new MutableWorkspaceFileSystem({
       "/repo/src/a.ts": "export const before = 1;\n",

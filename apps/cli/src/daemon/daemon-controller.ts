@@ -59,7 +59,7 @@ export class DaemonController {
     const gracefulDeadline = deadline - forceWaitMs;
     const identity = DaemonWorkspaceIdentity.from(workspaceRoot, this.stateDirectory);
     const record = this.registry.read(identity);
-    if (record === undefined) throw new Error("Daemon is not registered");
+    if (record === undefined) return { status: "not-running", workspaceRoot };
     if (record.state === "starting") return this.stopStarting(identity, record);
     if (!(await this.identifies(record))) throw new Error("Registered daemon identity is stale");
 

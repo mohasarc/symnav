@@ -129,6 +129,10 @@ class ResolveComputation {
 
 export const resolveCommand: Command<ResolveResult, ResolveArgs> = {
   name: "resolve",
+  validate(args: ResolveArgs) {
+    const mode = ResolveComputation.modeFrom(args);
+    ResolveComputation.symbolsOptionsFrom(mode, args.query);
+  },
   describeArgs(args: ResolveArgs) {
     return {
       kind: classifyArgKind(args.query),

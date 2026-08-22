@@ -18,6 +18,13 @@ export interface DefArgs {
 
 export const defCommand: Command<DefinitionResult, DefArgs> = {
   name: "def",
+  validate(args: DefArgs) {
+    SymbolTargetResolver.validateRequest({
+      rawTarget: args.target,
+      line: args.line,
+      regex: args.regex,
+    });
+  },
   describeArgs(args: DefArgs) {
     return {
       kind: classifyArgKind(args.target),

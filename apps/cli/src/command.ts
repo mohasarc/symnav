@@ -34,6 +34,7 @@ export interface CommandInvocation<Args> {
 
 export interface Command<Result extends ResultWithDiagnostics, Args> {
   readonly name: string;
+  validate?(args: Args): void;
   snapshotForBackendRefresh?(ctx: CommandContext<Args>): Promise<WorkspaceSnapshot>;
   describeArgs(args: Args): ArgShape;
   countResults(result: Result): Record<string, number>;
@@ -55,6 +56,7 @@ export async function runCommand<Result extends ResultWithDiagnostics, Args>(
 
   try {
     workspace = await createWorkspace({ startDir: cwd, fs });
+    command.validate?.(args);
     const router = new BackendRouter(dependencies.backends());
     const commandContext: CommandContext<Args> = {
       workspace,

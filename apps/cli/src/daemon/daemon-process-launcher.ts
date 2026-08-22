@@ -1,5 +1,5 @@
 import { closeSync, openSync } from "node:fs";
-import { totalmem } from "node:os";
+import { tmpdir, totalmem } from "node:os";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawn } from "node:child_process";
@@ -143,7 +143,7 @@ export class NodeDaemonProcessLauncher implements DaemonProcessLauncher {
           encodedConfiguration,
         ],
         {
-          cwd: stateDirectory,
+          cwd: tmpdir(),
           detached: true,
           stdio: ["ignore", logDescriptor, logDescriptor],
           env: { ...process.env, SYMNAV_STATE_DIR: stateDirectory },

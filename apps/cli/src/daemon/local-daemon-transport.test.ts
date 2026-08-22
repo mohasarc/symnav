@@ -1,5 +1,5 @@
 import { mkdtempSync, rmSync } from "node:fs";
-import { createConnection } from "node:net";
+import { createConnection, createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -56,6 +56,37 @@ describe("LocalDaemonTransport", () => {
 
     expect(response).toMatchObject({ kind: "pong", instanceId: "instance" });
     await server.close();
+  });
+
+  it("writes one client request and resolves one response", async () => {
+    const endpoint = endpointFor(roots);
+    const server = createServer((socket) => {
+      socket.once("data", () =>
+        socket.end(
+          frame({
+            kind: "pong",
+            protocolVersion: DAEMON_PROTOCOL_VERSION,
+            instanceId: "instance",
+            symnavVersion: "test",
+          }),
+        ),
+      );
+    });
+    await new Promise<void>((resolve, reject) => {
+      server.once("error", reject);
+      server.listen(endpoint, resolve);
+    });
+
+    await expect(
+      new LocalDaemonTransport().request(endpoint, {
+        kind: "ping",
+        protocolVersion: DAEMON_PROTOCOL_VERSION,
+        instanceId: "instance",
+      }),
+    ).resolves.toMatchObject({ kind: "pong", instanceId: "instance" });
+    await new Promise<void>((resolve, reject) => {
+      server.close((error) => (error ? reject(error) : resolve()));
+    });
   });
 });
 

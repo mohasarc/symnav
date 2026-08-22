@@ -195,6 +195,7 @@ interface CoordinatorHarnessOptions {
   readonly launchFailure?: Error;
   readonly neverReady?: boolean;
   readonly newDaemonPid?: number;
+  readonly readyDelayMs?: number;
 }
 
 class CoordinatorHarness {
@@ -216,6 +217,7 @@ class CoordinatorHarness {
     options: {
       readonly startupTimeoutMs?: number;
       readonly processTerminator?: DaemonProcessTerminator;
+      readonly heartbeatIntervalMs?: number;
     } = {},
   ): DaemonStartupCoordinator {
     return new DaemonStartupCoordinator(
@@ -228,6 +230,9 @@ class CoordinatorHarness {
           : { startupTimeoutMs: options.startupTimeoutMs }),
         pollIntervalMs: 1,
         processTerminator: options.processTerminator ?? this.terminator,
+        ...(options.heartbeatIntervalMs === undefined
+          ? {}
+          : { heartbeatIntervalMs: options.heartbeatIntervalMs }),
       },
     );
   }
@@ -287,7 +292,7 @@ class ReadyTestLauncher implements DaemonProcessLauncher {
           readyAt: Date.now(),
           fileCount: 2,
         });
-      }, 0);
+      }, this.options.readyDelayMs ?? 0);
     }
     return {
       pid,

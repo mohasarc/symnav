@@ -29,6 +29,19 @@ describe("LocalDaemonTransport validation", () => {
     );
   });
 
+  it("rejects malformed daemon frame JSON", async () => {
+    const prefix = Buffer.alloc(4);
+    prefix.writeUInt32BE(1);
+    const endpoint = await rawServer(servers, directories, (socket) => {
+      socket.write(Buffer.concat([prefix, Buffer.from("{")]));
+      setTimeout(() => socket.destroy(), 50);
+    });
+
+    await expect(
+      new LocalDaemonTransport({ requestTimeoutMs: 100 }).request(endpoint, pingRequest()),
+    ).rejects.toThrow("malformed JSON");
+  });
+
 });
 
 function pingRequest(): DaemonRequest {

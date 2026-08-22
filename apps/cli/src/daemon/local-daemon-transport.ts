@@ -285,6 +285,15 @@ export class LocalDaemonTransport {
     if (value.kind === "stopped" && typeof value.instanceId !== "string") {
       throw new Error("Malformed daemon stop response");
     }
+    if (
+      value.kind === "identity" &&
+      (typeof value.instanceId !== "string" ||
+        typeof value.processToken !== "string" ||
+        !Number.isInteger(value.pid) ||
+        typeof value.startedAt !== "number")
+    ) {
+      throw new Error("Malformed daemon identity");
+    }
   }
 
   private static isExecutionResult(value: unknown): boolean {

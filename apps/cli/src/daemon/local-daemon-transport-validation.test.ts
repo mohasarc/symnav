@@ -142,6 +142,23 @@ describe("LocalDaemonTransport validation", () => {
     ).rejects.toThrow("kind does not match request");
   });
 
+  it("rejects multiple daemon responses for one request", async () => {
+    const response = frame({
+      kind: "pong",
+      protocolVersion: DAEMON_PROTOCOL_VERSION,
+      instanceId: "instance",
+      symnavVersion: "test",
+    });
+    const endpoint = await rawServer(servers, directories, (socket) => {
+      socket.write(Buffer.concat([response, response]));
+      setTimeout(() => socket.destroy(), 50);
+    });
+
+    await expect(
+      new LocalDaemonTransport({ requestTimeoutMs: 100 }).request(endpoint, pingRequest()),
+    ).rejects.toThrow("multiple responses");
+  });
+
 });
 
 function pingRequest(): DaemonRequest {

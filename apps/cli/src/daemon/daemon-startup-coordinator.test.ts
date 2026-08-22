@@ -131,6 +131,40 @@ describe("DaemonStartupCoordinator", () => {
     expect(harness.registry.startupOwner(harness.identity)).toBeUndefined();
   });
 
+  it("does not launch a replacement until the authenticated daemon process exits", async () => {
+    const harness = new CoordinatorHarness(roots, { oldDaemonExitsAfterTerminate: false });
+    harness.seedReady("existing", "0.0.9", 4003);
+
+    const starting = harness
+      .coordinator({ startupTimeoutMs: 1_000 })
+      .ensureRunning(harness.identity);
+    await waitUntil(() => harness.transport.terminationCount === 1);
+    await new Promise((resolve) => setTimeout(resolve, 10));
+
+    expect(harness.launcher.launchCount).toBe(0);
+    expect(harness.registry.readStored(harness.identity)?.instanceId).toBe("existing");
+
+    harness.terminator.alive.delete(4003);
+    await expect(starting).resolves.toMatchObject({ status: "ready" });
+    expect(harness.launcher.launchCount).toBe(1);
+  });
+
+  it("preserves termination failure precedence and startup ownership when the process stays alive", async () => {
+    const harness = new CoordinatorHarness(roots, {
+      launchFailure: new Error("replacement launch must remain blocked"),
+      oldDaemonExitsAfterTerminate: false,
+    });
+    harness.seedReady("existing", "0.0.9", 4004);
+
+    await expect(
+      harness.coordinator({ startupTimeoutMs: 5 }).ensureRunning(harness.identity),
+    ).rejects.toBeInstanceOf(DaemonProcessTerminationError);
+
+    expect(harness.launcher.launchCount).toBe(0);
+    expect(harness.registry.readStored(harness.identity)?.instanceId).toBe("existing");
+    expect(harness.registry.startupOwner(harness.identity)).toBeDefined();
+  });
+
   it("terminates and cleans a daemon that misses its readiness deadline", async () => {
     const harness = new CoordinatorHarness(roots, { neverReady: true });
 
@@ -309,6 +343,7 @@ interface CoordinatorHarnessOptions {
   readonly neverReady?: boolean;
   readonly newDaemonPid?: number;
   readonly readyDelayMs?: number;
+  readonly oldDaemonExitsAfterTerminate?: boolean;
 }
 
 class CoordinatorHarness {
@@ -323,7 +358,9 @@ class CoordinatorHarness {
     this.identity = DaemonWorkspaceIdentity.from("/repo", stateDir);
     this.registry = new DaemonRegistry(this.identity.registryDirectory);
     this.launcher = new ReadyTestLauncher(this.registry, this.identity, this.terminator, options);
-    this.transport = new RegistryTransport(this.registry, this.identity);
+    this.transport = new RegistryTransport(this.registry, this.identity, (pid) => {
+      if (options.oldDaemonExitsAfterTerminate !== false) this.terminator.alive.delete(pid);
+    });
   }
 
   coordinator(
@@ -421,6 +458,7 @@ class RegistryTransport {
   constructor(
     private readonly registry: DaemonRegistry,
     private readonly identity: DaemonWorkspaceIdentity,
+    private readonly daemonTerminated: (pid: number) => void = () => undefined,
   ) {}
 
   async request(_endpoint: string, request: DaemonRequest): Promise<DaemonResponse> {
@@ -430,6 +468,8 @@ class RegistryTransport {
     if (request.kind === "terminate") {
       this.terminationCount += 1;
       this.terminatedInstances.add(request.instanceId);
+      const record = this.registry.readStoredInstance(this.identity, request.instanceId);
+      if (record !== undefined) this.daemonTerminated(record.pid);
       return {
         kind: "terminating",
         instanceId: request.instanceId,

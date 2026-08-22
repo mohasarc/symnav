@@ -166,6 +166,16 @@ describe("symnav daemon parity", () => {
     expect(decodeFrames(firstResponse.result.frames)).toMatch(/^\d+\.\d+\.\d+/);
     expect(secondResult.stdout).toContain("queuedEdit");
   }, 15_000);
+
+  it("routes stats through and reuses the workspace daemon", () => {
+    const harness = new DaemonParityHarness();
+    harnesses.push(harness);
+    harness.warm(["overview", "input.ts"]);
+    const daemonPid = harness.onlyDaemonPid();
+
+    expect(harness.warm(["stats", "--json"])).toEqual(harness.cold(["stats", "--json"]));
+    expect(harness.onlyDaemonPid()).toBe(daemonPid);
+  });
 });
 
 class DaemonParityHarness {

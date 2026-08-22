@@ -80,6 +80,19 @@ describe("WorkspaceDaemon requests", () => {
     });
   });
 
+  it("executes matching workspace requests", async () => {
+    const executor = new RecordingExecutor();
+    const harness = await RequestHarness.start(executor);
+    harnesses.push(harness);
+
+    await expect(harness.execute("one")).resolves.toEqual({
+      kind: "result",
+      requestId: "one",
+      result: { frames: [], exitCode: 0 },
+    });
+    expect(executor.requests).toHaveLength(1);
+  });
+
 });
 
 class RequestHarness {

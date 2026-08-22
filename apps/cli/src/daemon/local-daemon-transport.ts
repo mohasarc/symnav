@@ -1,4 +1,4 @@
-import { createServer, type Server, type Socket } from "node:net";
+import { createConnection, createServer, type Server, type Socket } from "node:net";
 import type { DaemonRequest, DaemonResponse, DaemonServer } from "./daemon-protocol.js";
 
 const DEFAULT_MAXIMUM_FRAME_BYTES = 8 * 1024 * 1024;
@@ -52,8 +52,35 @@ export class LocalDaemonTransport {
     this.writeChunkSize = options.writeChunkSize;
   }
 
-  request(_endpoint: string, _request: DaemonRequest): Promise<DaemonResponse> {
-    throw new Error("Local daemon requests are not implemented");
+  request(endpoint: string, request: DaemonRequest): Promise<DaemonResponse> {
+    return new Promise((resolve, reject) => {
+      const decoder = new DaemonFrameDecoder(this.maximumFrameBytes);
+      const socket = createConnection(endpoint);
+      let settled = false;
+      const fail = (error: unknown): void => {
+        if (settled) return;
+        settled = true;
+        socket.destroy();
+        reject(error instanceof Error ? error : new Error(String(error)));
+      };
+      socket.once("error", fail);
+      socket.once("connect", () => this.writeFrame(socket, request));
+      socket.on("data", (bytes) => {
+        try {
+          const value = decoder.append(Buffer.isBuffer(bytes) ? bytes : Buffer.from(bytes))[0];
+          if (value === undefined) return;
+          settled = true;
+          socket.end();
+          resolve(value as DaemonResponse);
+        } catch (error) {
+          fail(error);
+        }
+      });
+      socket.once("end", () => {
+        if (settled) return;
+        fail(new Error("Daemon connection ended before a response"));
+      });
+    });
   }
 
   async listen(

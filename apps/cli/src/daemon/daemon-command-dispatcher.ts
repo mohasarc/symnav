@@ -90,7 +90,12 @@ export class DaemonCommandDispatcher {
     if (!this.daemonEnabled()) return this.executeLocally(workspaceRequest, "cold");
 
     const dependencies = this.options.createDependencies();
-    const workspaceRoot = await this.resolveWorkspaceRoot(selected.route.startDir, dependencies);
+    let workspaceRoot: string;
+    try {
+      workspaceRoot = await this.resolveWorkspaceRoot(selected.route.startDir, dependencies);
+    } catch {
+      return this.executeLocally(workspaceRequest, "cold");
+    }
     const identity = DaemonWorkspaceIdentity.from(workspaceRoot, this.options.stateDirectory);
     const runtime = this.runtimeFactory(identity, dependencies);
     let record: DaemonRecord | undefined;

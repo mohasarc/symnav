@@ -441,6 +441,21 @@ describe("daemon registry", () => {
     expect(registry.readStoredInstance(identity, "replacement")).toBeDefined();
     expect(terminator.terminated).toEqual([]);
   });
+
+  it("treats an absent daemon as a successful stop", async () => {
+    const stateDirectory = temporaryDirectory(roots);
+    const registry = new DaemonRegistry(join(stateDirectory, "daemons"));
+    const controller = new DaemonController(
+      registry,
+      new ControllerTransport(registry) as unknown as LocalDaemonTransport,
+      stateDirectory,
+    );
+
+    await expect(controller.stop("/repo")).resolves.toEqual({
+      status: "not-running",
+      workspaceRoot: "/repo",
+    });
+  });
 });
 
 class ControllerTransport {

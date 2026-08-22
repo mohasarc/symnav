@@ -7,6 +7,7 @@ import { DAEMON_PROTOCOL_VERSION, DAEMON_RECORD_SCHEMA_VERSION } from "./daemon-
 import { NodeDaemonProcessTerminator } from "./daemon-process-launcher.js";
 import { DAEMON_IDLE_TIMEOUT_MS, DaemonLifetime } from "./daemon-lifetime.js";
 import { DaemonLogger } from "./daemon-logger.js";
+import { DaemonResourceMonitor } from "./daemon-resource-monitor.js";
 import type { DaemonRegistry } from "./daemon-registry.js";
 import type { DaemonWorkspaceIdentity } from "./daemon-workspace-identity.js";
 import type { LocalDaemonTransport } from "./local-daemon-transport.js";
@@ -41,6 +42,7 @@ export class WorkspaceDaemon {
   private readonly requestQueue = new WorkspaceRequestQueue();
   private readonly logger: DaemonLogger;
   private readonly lifetime: DaemonLifetime;
+  private readonly resourceMonitor: DaemonResourceMonitor;
   private server: DaemonServer | undefined;
   private startedAt = 0;
   private shutdownStarted = false;
@@ -61,6 +63,16 @@ export class WorkspaceDaemon {
       options.idleTimeoutMs ?? DAEMON_IDLE_TIMEOUT_MS,
       () => this.drainAndShutdown("idle"),
     );
+    this.resourceMonitor = new DaemonResourceMonitor({
+      memoryCapBytes: options.memoryCapBytes,
+      ...(options.resourceCheckIntervalMs === undefined
+        ? {}
+        : { intervalMs: options.resourceCheckIntervalMs }),
+      ...(options.residentMemoryBytes === undefined
+        ? {}
+        : { residentMemoryBytes: options.residentMemoryBytes }),
+      onExceeded: () => this.shutdown("resource", true),
+    });
   }
 
   async start(): Promise<void> {
@@ -99,6 +111,7 @@ export class WorkspaceDaemon {
       throw new Error("Daemon startup ownership changed before readiness publication");
     }
     this.logger.record({ kind: "ready", fileCount });
+    this.resourceMonitor.start();
   }
 
   private async waitForStartupAuthorization(): Promise<DaemonRecord> {
@@ -213,12 +226,13 @@ export class WorkspaceDaemon {
   }
 
   private async shutdown(
-    reason: "graceful" | "idle" | "workspace-deleted",
+    reason: "graceful" | "idle" | "resource" | "workspace-deleted",
     force = false,
   ): Promise<void> {
     if (this.shutdownStarted) return;
     this.shutdownStarted = true;
     this.lifetime.stop();
+    this.resourceMonitor.stop();
     this.requestQueue.close();
     this.logger.record({ kind: "stop", reason });
     await this.server?.close(force);

@@ -34,6 +34,13 @@ export function registerDaemonCommand(
     .action(async (options: DaemonStartOptions) => {
       await DaemonStatusAction.run(context, options);
     });
+  daemon
+    .command("stop")
+    .description("Stop the workspace daemon")
+    .option("--json", "emit JSON instead of text", false)
+    .action(async (options: DaemonStartOptions) => {
+      await DaemonStopAction.run(program, context, dependencies, options);
+    });
 }
 
 class DaemonStatusAction {
@@ -47,6 +54,39 @@ class DaemonStatusAction {
         ? DaemonLifecycleRenderer.renderStatusJson(results)
         : DaemonLifecycleRenderer.renderStatusText(results),
     );
+  }
+}
+
+class DaemonStopAction {
+  static async run(
+    program: CommanderCommand,
+    context: ProgramContext,
+    dependencies: ProgramDependencies,
+    options: DaemonStartOptions,
+  ): Promise<void> {
+    const cwd = program.opts<{ cwd?: string }>().cwd ?? context.cwd;
+    try {
+      const workspace = await createWorkspace({ startDir: cwd, fs: dependencies.fs });
+      const stateDirectory = resolveStateDir(process.env);
+      const registry = new DaemonRegistry(
+        DaemonWorkspaceIdentity.registryDirectory(stateDirectory),
+      );
+      const controller = new DaemonController(registry, new LocalDaemonTransport(), stateDirectory);
+      const result = await controller.stop(workspace.root);
+      context.stdout.write(
+        options.json
+          ? DaemonLifecycleRenderer.renderStopJson(result)
+          : DaemonLifecycleRenderer.renderStopText(result),
+      );
+    } catch (error) {
+      if (error instanceof UserFacingError) {
+        context.stderr.write(error.render());
+        context.exit(1);
+      }
+      const message = error instanceof Error ? error.message : String(error);
+      context.stderr.write(`Cannot stop daemon: ${message}\n`);
+      context.exit(2);
+    }
   }
 }
 

@@ -67,6 +67,7 @@ export class LocalDaemonTransport {
   }
 
   request(endpoint: string, request: DaemonRequest): Promise<DaemonResponse> {
+    LocalDaemonTransport.assertRequest(request);
     return new Promise((resolve, reject) => {
       const decoder = new DaemonFrameDecoder(this.maximumFrameBytes);
       const socket = createConnection(endpoint);
@@ -129,8 +130,9 @@ export class LocalDaemonTransport {
     socket.on("data", (bytes) => {
       try {
         for (const value of decoder.append(Buffer.isBuffer(bytes) ? bytes : Buffer.from(bytes))) {
+          LocalDaemonTransport.assertRequest(value);
           responses = responses.then(async () => {
-            this.writeFrame(socket, await handler(value as DaemonRequest));
+            this.writeFrame(socket, await handler(value));
           });
         }
       } catch {
@@ -180,6 +182,29 @@ export class LocalDaemonTransport {
     return value;
   }
 
+  private static assertRequest(value: unknown): asserts value is DaemonRequest {
+    if (!LocalDaemonTransport.isRecord(value) || typeof value.kind !== "string") {
+      throw new Error("Malformed daemon request");
+    }
+    if (value.kind === "identify" || value.kind === "terminate") {
+      if (typeof value.instanceId !== "string" || typeof value.processToken !== "string") {
+        throw new Error("Malformed daemon identity request");
+      }
+      return;
+    }
+    if (typeof value.protocolVersion !== "number" || typeof value.instanceId !== "string") {
+      throw new Error("Malformed daemon request envelope");
+    }
+    if (value.kind === "ping" || value.kind === "stop") return;
+    if (
+      value.kind !== "execute" ||
+      typeof value.requestId !== "string" ||
+      !LocalDaemonTransport.isExecutionRequest(value.request)
+    ) {
+      throw new Error("Malformed daemon execute request");
+    }
+  }
+
   private static assertResponse(value: unknown): asserts value is DaemonResponse {
     if (
       !LocalDaemonTransport.isRecord(value) ||
@@ -210,6 +235,16 @@ export class LocalDaemonTransport {
         (frame.stream === "stdout" || frame.stream === "stderr") &&
         typeof frame.bytesBase64 === "string" &&
         LocalDaemonTransport.isBase64(frame.bytesBase64),
+    );
+  }
+
+  private static isExecutionRequest(value: unknown): boolean {
+    return (
+      LocalDaemonTransport.isRecord(value) &&
+      Array.isArray(value.argv) &&
+      value.argv.every((arg) => typeof arg === "string") &&
+      typeof value.cwd === "string" &&
+      typeof value.telemetryEnabled === "boolean"
     );
   }
 

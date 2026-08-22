@@ -239,7 +239,6 @@ describe("WorkspaceDaemon requests", () => {
       ]),
     );
   });
-
 });
 
 class RequestHarness {

@@ -36,6 +36,10 @@ class DaemonStartAction {
     dependencies: ProgramDependencies,
     options: DaemonStartOptions,
   ): Promise<void> {
+    if (process.env.SYMNAV_DAEMON === "0") {
+      context.stderr.write("Daemon disabled by SYMNAV_DAEMON=0\n");
+      context.exit(1);
+    }
     const cwd = program.opts<{ cwd?: string }>().cwd ?? context.cwd;
     try {
       const workspace = await createWorkspace({ startDir: cwd, fs: dependencies.fs });

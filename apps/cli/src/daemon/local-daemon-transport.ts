@@ -178,10 +178,14 @@ export class LocalDaemonTransport {
       }
       return value;
     }
+    if (request.kind === "execute") {
+      if (value.kind !== "result" || value.requestId !== request.requestId) {
+        throw new Error("Daemon result does not match request identifier");
+      }
+      return value;
+    }
     const expectedKind =
-      request.kind === "execute"
-          ? "result"
-          : request.kind === "stop"
+      request.kind === "stop"
             ? "stopped"
             : request.kind === "identify"
               ? "identity"

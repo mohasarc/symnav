@@ -41,9 +41,28 @@ symnav resolve --fuzzy payment
 symnav resolve --regex '^to[A-Z].*'
 ```
 
+## Workspace daemon
+
+Workspace commands use a per-workspace daemon by default. The first eligible command starts and warms it; later commands reuse retained TypeScript state while preserving the same output and exit status as cold execution. Set `SYMNAV_DAEMON=0` to run commands locally without creating or using a daemon.
+
+Use the lifecycle commands to manage daemon processes explicitly:
+
+```sh
+symnav daemon start
+symnav daemon status
+symnav daemon stop
+symnav daemon status --json
+```
+
+`start`, `status`, and `stop` all accept `--json`. `start` and `stop` select the workspace from the current directory or global `--cwd`; `status` lists every validated daemon in workspace-path order.
+
+Daemons exit after 30 minutes without navigation work, when their workspace is deleted, or when resident memory exceeds one quarter of system memory, bounded between 256 MiB and 4 GiB. A daemon startup, connection, or response failure runs that invocation locally once; a later eligible invocation can start a replacement.
+
+Registry records and per-workspace JSON diagnostic logs live under `~/.symnav/daemons/`. Set `SYMNAV_STATE_DIR` to relocate all symnav state; daemon files then live under `$SYMNAV_STATE_DIR/daemons/`. Diagnostics are not written to command stdout or stderr.
+
 ## Telemetry
 
-Symnav records local, shape-only usage telemetry by default. Each command appends one JSON line to `~/.symnav/usage.jsonl` with command name, timestamp, duration, outcome, enabled flag names, result-size counts, argument shape, `workspaceId`, `machineId`, `sessionId`, symnav version, and schema version.
+Symnav records local, shape-only usage telemetry by default. Each command appends one JSON line to `~/.symnav/usage.jsonl` with command name, timestamp, duration, outcome, execution mode (`warm`, `cold`, or `fallback`), enabled flag names, result-size counts, argument shape, `workspaceId`, `machineId`, `sessionId`, symnav version, and schema version.
 
 Telemetry does not record symbol names, file paths, query strings, source previews, or command output. `machineId` is stored in `~/.symnav/machine-id`; `workspaceId` is derived from the git remote URL when available, with a workspace-path fallback.
 

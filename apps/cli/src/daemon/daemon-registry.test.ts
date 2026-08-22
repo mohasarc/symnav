@@ -1,8 +1,10 @@
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
+import { DaemonRegistry } from "./daemon-registry.js";
 import { DaemonWorkspaceIdentity } from "./daemon-workspace-identity.js";
+import { DAEMON_PROTOCOL_VERSION, type DaemonRecord } from "./daemon-protocol.js";
 
 describe("daemon registry", () => {
   const roots: string[] = [];
@@ -25,10 +27,60 @@ describe("daemon registry", () => {
       "/repo/submodule",
     ]);
   });
+
+  it.each([
+    { field: "schemaVersion", value: 2 },
+    { field: "protocolVersion", value: DAEMON_PROTOCOL_VERSION + 1 },
+    { field: "workspaceRoot", value: "/other" },
+    { field: "workspaceKey", value: "other-key" },
+    { field: "endpoint", value: "other-endpoint" },
+  ] as const)("rejects records with incompatible $field", ({ field, value }) => {
+    const identity = DaemonWorkspaceIdentity.from("/repo", temporaryDirectory(roots));
+    const registry = new DaemonRegistry(identity.registryDirectory);
+    const incompatible = {
+      ...record(identity, "ready", "incompatible"),
+      readyAt: 20,
+      fileCount: 2,
+      [field]: value,
+    } satisfies DaemonRecord;
+    mkdirSync(identity.registryDirectory, { recursive: true });
+    writeFileSync(identity.recordPath("incompatible"), JSON.stringify(incompatible));
+
+    expect(registry.read(identity)).toBeUndefined();
+    expect(registry.readInstance(identity, "incompatible")).toBeUndefined();
+    expect(registry.list()).toEqual([]);
+    if (field === "workspaceRoot" || field === "workspaceKey" || field === "endpoint") {
+      expect(registry.readStored(identity)).toBeUndefined();
+    } else {
+      expect(registry.readStored(identity)?.instanceId).toBe("incompatible");
+    }
+  });
 });
 
 function temporaryDirectory(roots: string[]): string {
-  const root = mkdtempSync(join(tmpdir(), "symnav-daemon-registry-"));
+  const root = mkdtempSync(join(tmpdir(), "symnav-registry-"));
   roots.push(root);
   return root;
+}
+
+function record(
+  identity: DaemonWorkspaceIdentity,
+  state: DaemonRecord["state"],
+  instanceId = "instance",
+): DaemonRecord {
+  const base: DaemonRecord = {
+    schemaVersion: 1,
+    protocolVersion: DAEMON_PROTOCOL_VERSION,
+    symnavVersion: "0.1.0",
+    workspaceRoot: identity.workspaceRoot,
+    workspaceKey: identity.workspaceKey,
+    instanceId,
+    processToken: `${instanceId}-process`,
+    endpoint: identity.endpoint(instanceId),
+    pid: 123,
+    state,
+    startedAt: 10,
+    memoryCapBytes: 256 * 1024 * 1024,
+  };
+  return state === "ready" ? { ...base, readyAt: 20, fileCount: 2 } : base;
 }

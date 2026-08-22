@@ -94,8 +94,12 @@ export class DaemonCommandDispatcher {
     const runtime = this.runtimeFactory(identity, dependencies);
     let record = runtime.registry.read(identity);
     if (DaemonCommandDispatcher.requiresStartup(record, dependencies)) {
-      await runtime.coordinator.ensureRunning(identity);
-      record = runtime.registry.read(identity);
+      try {
+        await runtime.coordinator.ensureRunning(identity);
+        record = runtime.registry.read(identity);
+      } catch {
+        return this.executeLocally(workspaceRequest, "fallback");
+      }
     }
     if (record?.state !== "ready") throw new Error("Daemon did not publish a ready record");
     const response = await runtime.transport.request(record.endpoint, {

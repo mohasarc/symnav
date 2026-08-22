@@ -93,6 +93,23 @@ describe("WorkspaceDaemon requests", () => {
     expect(executor.requests).toHaveLength(1);
   });
 
+  it("serializes workspace execution requests", async () => {
+    const executor = new SerializedExecutor();
+    const harness = await RequestHarness.start(executor);
+    harnesses.push(harness);
+
+    const first = harness.execute("first");
+    await executor.started(1);
+    const second = harness.execute("second");
+    await Promise.resolve();
+    expect(executor.startedCount).toBe(1);
+    executor.complete(0);
+    await first;
+    await executor.started(2);
+    executor.complete(1);
+    await second;
+  });
+
 });
 
 class RequestHarness {

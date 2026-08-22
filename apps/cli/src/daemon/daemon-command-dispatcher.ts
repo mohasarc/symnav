@@ -85,26 +85,33 @@ export class DaemonCommandDispatcher {
 
   async execute(request: CliExecutionRequest): Promise<DispatchedCommandResult> {
     const selected = this.selector.select(request.argv, request.cwd);
-    if (selected.route.kind !== "workspace") return this.executeLocally(request, "cold");
-    const workspaceRequest: CliExecutionRequest = { ...request, argv: selected.argv };
+    const route = selected.route;
+    if (route.kind !== "workspace") {
+      return this.executeLocally(request, "cold");
+    }
+    const workspaceRequest: CliExecutionRequest = {
+      ...request,
+      argv: selected.argv,
+    };
     if (!this.daemonEnabled()) return this.executeLocally(workspaceRequest, "cold");
 
-    const dependencies = this.options.createDependencies();
+    const workspaceDependencies = this.options.createDependencies();
     let workspaceRoot: string;
     try {
-      workspaceRoot = await this.resolveWorkspaceRoot(selected.route.startDir, dependencies);
+      workspaceRoot = await this.resolveWorkspaceRoot(route.startDir, workspaceDependencies);
     } catch {
       return this.executeLocally(workspaceRequest, "cold");
     }
+
     const identity = DaemonWorkspaceIdentity.from(workspaceRoot, this.options.stateDirectory);
-    const runtime = this.runtimeFactory(identity, dependencies);
+    const runtime = this.runtimeFactory(identity, workspaceDependencies);
     let record: DaemonRecord | undefined;
     try {
       record = runtime.registry.read(identity);
     } catch {
       return this.executeLocally(workspaceRequest, "fallback");
     }
-    if (DaemonCommandDispatcher.requiresStartup(record, dependencies)) {
+    if (DaemonCommandDispatcher.requiresStartup(record, workspaceDependencies)) {
       try {
         await runtime.coordinator.ensureRunning(identity);
         record = runtime.registry.read(identity);
@@ -126,7 +133,7 @@ export class DaemonCommandDispatcher {
         mode: "warm",
         result: DaemonCommandDispatcher.commitWarmTelemetry(
           response.result,
-          dependencies.recorder,
+          workspaceDependencies.recorder,
         ),
       };
     } catch {
@@ -140,7 +147,9 @@ export class DaemonCommandDispatcher {
     mode: "cold" | "fallback",
   ): Promise<DispatchedCommandResult> {
     const executor = this.executorFactory(this.options.createDependencies());
-    return executor.execute({ ...request, executionMode: mode }).then((result) => ({ mode, result }));
+    return executor
+      .execute({ ...request, executionMode: mode })
+      .then((result) => ({ mode, result }));
   }
 
   private async invalidate(

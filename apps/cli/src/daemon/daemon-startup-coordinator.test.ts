@@ -116,6 +116,17 @@ describe("DaemonStartupCoordinator", () => {
     },
   );
 
+  it("cleans startup state when process launch fails", async () => {
+    const harness = new CoordinatorHarness(roots, { launchFailure: new Error("spawn failed") });
+
+    await expect(harness.coordinator().ensureRunning(harness.identity)).rejects.toThrow(
+      "spawn failed",
+    );
+
+    expect(harness.registry.readStored(harness.identity)).toBeUndefined();
+    expect(harness.registry.startupOwner(harness.identity)).toBeUndefined();
+  });
+
 });
 
 interface CoordinatorHarnessOptions {

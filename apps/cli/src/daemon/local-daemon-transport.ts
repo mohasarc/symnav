@@ -155,11 +155,13 @@ export class LocalDaemonTransport {
       try {
         for (const value of decoder.append(Buffer.isBuffer(bytes) ? bytes : Buffer.from(bytes))) {
           LocalDaemonTransport.assertRequest(value);
-          responses = responses.then(async () => {
-            this.writeFrame(socket, await handler(value));
-          }).catch(() => {
-            socket.destroy();
-          });
+          responses = responses
+            .then(async () => {
+              this.writeFrame(socket, await handler(value));
+            })
+            .catch(() => {
+              socket.destroy();
+            });
         }
       } catch {
         socket.destroy();
@@ -194,6 +196,26 @@ export class LocalDaemonTransport {
 
   private static responseFor(request: DaemonRequest, value: unknown): DaemonResponse {
     LocalDaemonTransport.assertResponse(value);
+    if (request.kind === "identify") {
+      if (
+        value.kind !== "identity" ||
+        value.instanceId !== request.instanceId ||
+        value.processToken !== request.processToken
+      ) {
+        throw new Error("Daemon identity does not match process instance");
+      }
+      return value;
+    }
+    if (request.kind === "terminate") {
+      if (
+        value.kind !== "terminating" ||
+        value.instanceId !== request.instanceId ||
+        value.processToken !== request.processToken
+      ) {
+        throw new Error("Daemon termination does not match process instance");
+      }
+      return value;
+    }
     if (request.kind === "ping") {
       if (
         value.kind !== "pong" ||
@@ -210,28 +232,8 @@ export class LocalDaemonTransport {
       }
       return value;
     }
-    if (request.kind === "stop") {
-      if (value.kind !== "stopped" || value.instanceId !== request.instanceId) {
-        throw new Error("Daemon stop response does not match instance");
-      }
-      return value;
-    }
-    if (request.kind === "identify") {
-      if (
-        value.kind !== "identity" ||
-        value.instanceId !== request.instanceId ||
-        value.processToken !== request.processToken
-      ) {
-        throw new Error("Daemon identity does not match process instance");
-      }
-      return value;
-    }
-    if (
-      value.kind !== "terminating" ||
-      value.instanceId !== request.instanceId ||
-      value.processToken !== request.processToken
-    ) {
-      throw new Error("Daemon termination does not match process instance");
+    if (value.kind !== "stopped" || value.instanceId !== request.instanceId) {
+      throw new Error("Daemon stop response does not match instance");
     }
     return value;
   }
@@ -260,46 +262,57 @@ export class LocalDaemonTransport {
   }
 
   private static assertResponse(value: unknown): asserts value is DaemonResponse {
-    if (
-      !LocalDaemonTransport.isRecord(value) ||
-      typeof value.kind !== "string" ||
-      !["pong", "identity", "terminating", "stopped", "result"].includes(value.kind)
-    ) {
+    if (!LocalDaemonTransport.isRecord(value) || typeof value.kind !== "string") {
       throw new Error("Malformed daemon response");
     }
+    if (value.kind === "pong") {
+      if (
+        typeof value.protocolVersion !== "number" ||
+        typeof value.instanceId !== "string" ||
+        typeof value.symnavVersion !== "string"
+      ) {
+        throw new Error("Malformed daemon pong");
+      }
+      return;
+    }
+    if (value.kind === "identity") {
+      if (
+        typeof value.instanceId !== "string" ||
+        typeof value.processToken !== "string" ||
+        !Number.isInteger(value.pid) ||
+        typeof value.startedAt !== "number"
+      ) {
+        throw new Error("Malformed daemon identity");
+      }
+      return;
+    }
+    if (value.kind === "terminating") {
+      if (typeof value.instanceId !== "string" || typeof value.processToken !== "string") {
+        throw new Error("Malformed daemon termination response");
+      }
+      return;
+    }
+    if (value.kind === "stopped") {
+      if (typeof value.instanceId !== "string") throw new Error("Malformed daemon stop response");
+      return;
+    }
     if (
-      value.kind === "result" &&
-      (typeof value.requestId !== "string" ||
-        !LocalDaemonTransport.isExecutionResult(value.result))
+      value.kind !== "result" ||
+      typeof value.requestId !== "string" ||
+      !LocalDaemonTransport.isExecutionResult(value.result)
     ) {
       throw new Error("Malformed daemon result");
     }
-    if (
-      value.kind === "pong" &&
-      (typeof value.protocolVersion !== "number" ||
-        typeof value.instanceId !== "string" ||
-        typeof value.symnavVersion !== "string")
-    ) {
-      throw new Error("Malformed daemon pong");
-    }
-    if (value.kind === "stopped" && typeof value.instanceId !== "string") {
-      throw new Error("Malformed daemon stop response");
-    }
-    if (
-      value.kind === "identity" &&
-      (typeof value.instanceId !== "string" ||
-        typeof value.processToken !== "string" ||
-        !Number.isInteger(value.pid) ||
-        typeof value.startedAt !== "number")
-    ) {
-      throw new Error("Malformed daemon identity");
-    }
-    if (
-      value.kind === "terminating" &&
-      (typeof value.instanceId !== "string" || typeof value.processToken !== "string")
-    ) {
-      throw new Error("Malformed daemon termination response");
-    }
+  }
+
+  private static isExecutionRequest(value: unknown): boolean {
+    return (
+      LocalDaemonTransport.isRecord(value) &&
+      Array.isArray(value.argv) &&
+      value.argv.every((arg) => typeof arg === "string") &&
+      typeof value.cwd === "string" &&
+      typeof value.telemetryEnabled === "boolean"
+    );
   }
 
   private static isExecutionResult(value: unknown): boolean {
@@ -315,16 +328,6 @@ export class LocalDaemonTransport {
         (frame.stream === "stdout" || frame.stream === "stderr") &&
         typeof frame.bytesBase64 === "string" &&
         LocalDaemonTransport.isBase64(frame.bytesBase64),
-    );
-  }
-
-  private static isExecutionRequest(value: unknown): boolean {
-    return (
-      LocalDaemonTransport.isRecord(value) &&
-      Array.isArray(value.argv) &&
-      value.argv.every((arg) => typeof arg === "string") &&
-      typeof value.cwd === "string" &&
-      typeof value.telemetryEnabled === "boolean"
     );
   }
 

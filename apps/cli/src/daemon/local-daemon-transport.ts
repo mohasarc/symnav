@@ -184,10 +184,14 @@ export class LocalDaemonTransport {
       }
       return value;
     }
+    if (request.kind === "stop") {
+      if (value.kind !== "stopped" || value.instanceId !== request.instanceId) {
+        throw new Error("Daemon stop response does not match instance");
+      }
+      return value;
+    }
     const expectedKind =
-      request.kind === "stop"
-            ? "stopped"
-            : request.kind === "identify"
+      request.kind === "identify"
               ? "identity"
               : "terminating";
     if (value.kind !== expectedKind) throw new Error("Daemon response kind does not match request");

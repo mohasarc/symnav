@@ -250,6 +250,20 @@ describe("daemon registry", () => {
     mutation?.release();
   });
 
+  it("does not renew startup ownership while another mutation owns the boundary", () => {
+    const identity = DaemonWorkspaceIdentity.from("/repo", temporaryDirectory(roots));
+    const registry = new DaemonRegistry(identity.registryDirectory);
+    expect(registry.acquireStartup(identity, "owner")).toBeDefined();
+    const observedOwner = registry.startupOwner(identity);
+    const mutation = (registry as unknown as StartupMutationLeaseTestAccess).beginStartupMutation(
+      identity,
+    );
+
+    expect(registry.refreshStartupOwner(identity, "owner")).toBe(false);
+    expect(registry.startupOwner(identity)).toEqual(observedOwner);
+    mutation?.release();
+  });
+
   it.each([
     { field: "schemaVersion", value: 2 },
     { field: "protocolVersion", value: DAEMON_PROTOCOL_VERSION + 1 },

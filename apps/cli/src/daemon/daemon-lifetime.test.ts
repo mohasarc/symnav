@@ -38,4 +38,14 @@ describe("DaemonLifetime", () => {
     await Promise.resolve();
     expect(onIdle).toHaveBeenCalledOnce();
   });
+
+  it("stops its timer permanently", async () => {
+    let now = 0;
+    const onIdle = vi.fn(async () => undefined);
+    const lifetime = new DaemonLifetime({ now: () => now }, 10, onIdle);
+    lifetime.stop();
+    now = 20;
+    await vi.advanceTimersByTimeAsync(20);
+    expect(onIdle).not.toHaveBeenCalled();
+  });
 });

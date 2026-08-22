@@ -1,6 +1,16 @@
 import { Command as CommanderCommand } from "commander";
 import type { InvocationRoute, SelectedInvocation } from "./invocation-route.js";
 
+const workspaceCommands = new Set([
+  "overview",
+  "resolve",
+  "def",
+  "refs",
+  "context",
+  "graph",
+  "stats",
+]);
+
 export class InvocationWorkspaceSelector {
   classify(argv: readonly string[], cwd: string): InvocationRoute {
     return this.select(argv, cwd).route;
@@ -25,6 +35,9 @@ export class InvocationWorkspaceSelector {
     }
     if (command === "daemon" && (action === "start" || action === "status" || action === "stop")) {
       return { route: { kind: "daemon-control", action }, argv };
+    }
+    if (command !== undefined && workspaceCommands.has(command)) {
+      return { route: { kind: "workspace", startDir: _cwd }, argv };
     }
     return { route: { kind: "local" }, argv };
   }

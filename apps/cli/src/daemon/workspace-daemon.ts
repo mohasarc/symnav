@@ -123,6 +123,19 @@ export class WorkspaceDaemon {
         processToken: this.options.processToken,
       };
     }
+    if (
+      request.protocolVersion !== DAEMON_PROTOCOL_VERSION ||
+      request.instanceId !== this.options.instanceId
+    )
+      throw new Error("Daemon request does not match protocol or instance");
+    if (request.kind === "ping") {
+      return {
+        kind: "pong",
+        protocolVersion: DAEMON_PROTOCOL_VERSION,
+        instanceId: this.options.instanceId,
+        symnavVersion: this.options.symnavVersion,
+      };
+    }
     throw new Error("Workspace daemon request handling is not implemented");
   }
 

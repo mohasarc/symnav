@@ -101,6 +101,17 @@ describe("WorkspaceDaemon requests", () => {
     });
   });
 
+  it("reports workspace status metrics in daemon pings", async () => {
+    const harness = await RequestHarness.start(new ImmediateExecutor());
+    harnesses.push(harness);
+
+    await expect(harness.ping()).resolves.toMatchObject({
+      startedAt: expect.any(Number),
+      fileCount: 1,
+      memoryBytes: expect.any(Number),
+    });
+  });
+
   it("executes matching workspace requests", async () => {
     const executor = new RecordingExecutor();
     const harness = await RequestHarness.start(executor);

@@ -172,6 +172,34 @@ export class LocalDaemonTransport {
     ) {
       throw new Error("Malformed daemon response");
     }
+    if (
+      value.kind === "result" &&
+      (typeof value.requestId !== "string" ||
+        !LocalDaemonTransport.isExecutionResult(value.result))
+    ) {
+      throw new Error("Malformed daemon result");
+    }
+  }
+
+  private static isExecutionResult(value: unknown): boolean {
+    if (
+      !LocalDaemonTransport.isRecord(value) ||
+      !Array.isArray(value.frames) ||
+      !Number.isInteger(value.exitCode)
+    )
+      return false;
+    return value.frames.every(
+      (frame) =>
+        LocalDaemonTransport.isRecord(frame) &&
+        (frame.stream === "stdout" || frame.stream === "stderr") &&
+        typeof frame.bytesBase64 === "string" &&
+        LocalDaemonTransport.isBase64(frame.bytesBase64),
+    );
+  }
+
+  private static isBase64(value: string): boolean {
+    if (value.length % 4 !== 0) return false;
+    return /^(?:[A-Za-z\d+/]{4})*(?:[A-Za-z\d+/]{2}==|[A-Za-z\d+/]{3}=)?$/.test(value);
   }
 
   private static isRecord(value: unknown): value is Record<string, unknown> {

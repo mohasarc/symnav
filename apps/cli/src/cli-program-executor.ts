@@ -1,4 +1,5 @@
 import { Writable } from "node:stream";
+import type { Recorder, UsageEventInput } from "@symnav/telemetry";
 import type {
   CliExecutionRequest,
   CommandExecutionResult,
@@ -31,6 +32,14 @@ class CommandFrameStream extends Writable {
     const bytes = Buffer.isBuffer(chunk) ? chunk : Buffer.from(String(chunk), encoding);
     this.frames.push({ stream: this.stream, bytesBase64: bytes.toString("base64") });
     callback();
+  }
+}
+
+class DeferredTelemetryRecorder implements Recorder {
+  event: UsageEventInput | undefined;
+
+  record(input: UsageEventInput): void {
+    this.event = input;
   }
 }
 

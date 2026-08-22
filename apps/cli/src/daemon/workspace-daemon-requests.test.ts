@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { CliExecutionRequest, CommandExecutionResult } from "../command-execution-result.js";
+import type { ProgramDependencies } from "../program-dependencies.js";
 import { createDefaultDependencies } from "../program.js";
 import type { DaemonRequest, DaemonResponse, DaemonServer } from "./daemon-protocol.js";
 import { DAEMON_PROTOCOL_VERSION } from "./daemon-protocol.js";
@@ -154,14 +155,20 @@ class RequestHarness {
     });
   }
 
-  static async start(executor: DaemonCommandExecutor): Promise<RequestHarness> {
-    const { daemon, harness, lease } = RequestHarness.create(executor);
+  static async start(
+    executor: DaemonCommandExecutor,
+    options: RequestHarnessOptions = {},
+  ): Promise<RequestHarness> {
+    const { daemon, harness, lease } = RequestHarness.create(executor, options);
     await daemon.start();
     lease.release();
     return harness;
   }
 
-  static create(executor: DaemonCommandExecutor): {
+  static create(
+    executor: DaemonCommandExecutor,
+    options: RequestHarnessOptions = {},
+  ): {
     readonly daemon: WorkspaceDaemon;
     readonly harness: RequestHarness;
     readonly lease: NonNullable<ReturnType<DaemonRegistry["acquireStartup"]>>;
@@ -189,10 +196,11 @@ class RequestHarness {
       processToken: harness.processToken,
       symnavVersion: "test",
       memoryCapBytes: 1024,
-      dependencies: createDefaultDependencies(),
+      dependencies: options.dependencies ?? createDefaultDependencies(),
       registry: harness.registry,
       transport: harness.transport as unknown as LocalDaemonTransport,
       executor,
+      ...(options.now === undefined ? {} : { now: options.now }),
       exit: (code) => harness.resolveExit(code),
     });
     return { daemon, harness, lease };
@@ -264,6 +272,11 @@ class RequestHarness {
     rmSync(this.stateDirectory, { recursive: true, force: true });
     rmSync(this.workspaceRoot, { recursive: true, force: true });
   }
+}
+
+interface RequestHarnessOptions {
+  readonly dependencies?: ProgramDependencies;
+  readonly now?: () => number;
 }
 
 class RequestTransport {

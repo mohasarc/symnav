@@ -14,22 +14,26 @@ export class E2eProcessCleanupError extends Error {
 
 export class E2eProcessCleanup {
   static async terminate(
-    processIds: readonly number[],
+    daemonProcessIds: readonly number[],
     children: readonly ChildProcess[] = [],
     processTerminator: DaemonProcessTerminator = new NodeDaemonProcessTerminator(1_000, 10),
   ): Promise<void> {
     const childExitFailures = children.map((child) => E2eProcessCleanup.childExitFailure(child));
-    const uniqueProcessIds = new Set([
-      ...processIds,
-      ...children.flatMap((child) => (child.pid === undefined ? [] : [child.pid])),
-    ]);
+    const processProvenance = new Map<number, "daemon" | "helper">();
+    for (const processId of daemonProcessIds) processProvenance.set(processId, "daemon");
+    for (const child of children) {
+      if (child.pid !== undefined && !processProvenance.has(child.pid)) {
+        processProvenance.set(child.pid, "helper");
+      }
+    }
     const failures: string[] = [];
-    for (const processId of uniqueProcessIds) {
+    for (const [processId, provenance] of processProvenance) {
       try {
         await processTerminator.terminate(processId);
       } catch (error) {
+        const processKind = provenance === "daemon" ? "Daemon" : "Helper";
         failures.push(
-          `Daemon process ${processId} termination failed: ${E2eProcessCleanup.errorMessage(error)}`,
+          `${processKind} process ${processId} termination failed: ${E2eProcessCleanup.errorMessage(error)}`,
         );
       }
     }

@@ -1,11 +1,12 @@
 import { readFileSync } from "node:fs";
 import { SCHEMA_VERSION } from "./usage-event.js";
-import type { ArgKind, LengthBucket, Outcome, UsageEvent } from "./usage-event.js";
+import type { ArgKind, ExecutionMode, LengthBucket, Outcome, UsageEvent } from "./usage-event.js";
 import type { UsageLogReader } from "./usage-log-reader.js";
 
 const outcomes = new Set<Outcome>(["success", "user_error", "crash"]);
 const argKinds = new Set<ArgKind>(["symbol_id", "path", "bare", "empty"]);
 const lengthBuckets = new Set<LengthBucket>(["empty", "short", "medium", "long"]);
+const executionModes = new Set<ExecutionMode>(["warm", "cold", "fallback"]);
 
 export class NodeUsageLogReader implements UsageLogReader {
   read(usageFilePath: string): readonly UsageEvent[] {
@@ -29,7 +30,8 @@ function parseUsageEventLine(line: string): readonly UsageEvent[] {
 
   try {
     const parsed = JSON.parse(line) as unknown;
-    return isUsageEvent(parsed) ? [parsed] : [];
+    if (!isUsageEvent(parsed)) return [];
+    return parsed.schemaVersion === 1 ? [{ ...parsed, executionMode: "cold" }] : [parsed];
   } catch {
     return [];
   }
@@ -41,7 +43,7 @@ function isUsageEvent(value: unknown): value is UsageEvent {
   }
 
   if (
-    value.schemaVersion !== SCHEMA_VERSION ||
+    (value.schemaVersion !== 1 && value.schemaVersion !== SCHEMA_VERSION) ||
     typeof value.symnavVersion !== "string" ||
     typeof value.command !== "string" ||
     typeof value.timestamp !== "number" ||
@@ -51,6 +53,13 @@ function isUsageEvent(value: unknown): value is UsageEvent {
     typeof value.sessionId !== "string" ||
     !isArgShape(value.argShape) ||
     !outcomes.has(value.outcome as Outcome)
+  ) {
+    return false;
+  }
+
+  if (
+    value.schemaVersion === SCHEMA_VERSION &&
+    !executionModes.has(value.executionMode as ExecutionMode)
   ) {
     return false;
   }

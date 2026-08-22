@@ -1,8 +1,8 @@
-import { mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { fixturePath, runSymnavBinary } from "@symnav/testing";
+import { runSymnavBinary } from "@symnav/testing";
 
 describe("symnav daemon start", () => {
   const stateDirectories: string[] = [];
@@ -21,7 +21,7 @@ describe("symnav daemon start", () => {
 
   it("starts, warms, and then reports the existing daemon", () => {
     const stateDir = temporaryStateDirectory(stateDirectories);
-    const cwd = fixturePath("trivial-project");
+    const cwd = temporaryWorkspace(stateDirectories);
     const first = runSymnavBinary(["daemon", "start"], {
       cwd,
       env: { SYMNAV_STATE_DIR: stateDir },
@@ -42,7 +42,7 @@ describe("symnav daemon start", () => {
 
   it("supports --cwd and stable JSON", () => {
     const stateDir = temporaryStateDirectory(stateDirectories);
-    const cwd = fixturePath("trivial-project");
+    const cwd = temporaryWorkspace(stateDirectories);
     const result = runSymnavBinary(["--cwd", cwd, "daemon", "start", "--json"], {
       cwd: tmpdir(),
       env: { SYMNAV_STATE_DIR: stateDir },
@@ -53,18 +53,19 @@ describe("symnav daemon start", () => {
     expect(result.stderr).toBe("");
     expect(JSON.parse(result.stdout)).toMatchObject({
       status: "ready",
-      workspaceRoot: resolve(cwd, "../../../.."),
+      workspaceRoot: resolve(cwd),
     });
   });
 
   it("preserves non-git errors and honors SYMNAV_DAEMON=0", () => {
     const stateDir = temporaryStateDirectory(stateDirectories);
+    const workspace = temporaryWorkspace(stateDirectories);
     const nonGit = runSymnavBinary(["daemon", "start"], {
       cwd: stateDir,
       env: { SYMNAV_STATE_DIR: stateDir },
     });
     const disabled = runSymnavBinary(["daemon", "start"], {
-      cwd: fixturePath("trivial-project"),
+      cwd: workspace,
       env: { SYMNAV_STATE_DIR: stateDir, SYMNAV_DAEMON: "0" },
     });
 
@@ -78,6 +79,14 @@ describe("symnav daemon start", () => {
 function temporaryStateDirectory(directories: string[]): string {
   const directory = mkdtempSync(join(tmpdir(), "symnav-daemon-e2e-"));
   directories.push(directory);
+  return directory;
+}
+
+function temporaryWorkspace(directories: string[]): string {
+  const directory = mkdtempSync(join(tmpdir(), "symnav-daemon-workspace-"));
+  directories.push(directory);
+  mkdirSync(join(directory, ".git"));
+  writeFileSync(join(directory, "input.ts"), "export const value = 1;\n");
   return directory;
 }
 

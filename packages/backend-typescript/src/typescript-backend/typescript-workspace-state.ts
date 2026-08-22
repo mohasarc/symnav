@@ -188,20 +188,34 @@ export class TypeScriptWorkspaceState {
         content: existingSourceFile ? this.fs.readFileSync(revision.absolutePath) : undefined,
       };
     });
-    return candidates.map(({ revision, existingSourceFile, content }) => {
-      const path: ResolvedPath = {
-        relative: revision.relativePath,
-        absolute: revision.absolutePath,
-      };
-      let sourceFile: SourceFile;
-      if (existingSourceFile) {
-        existingSourceFile.replaceWithText(content!);
-        sourceFile = existingSourceFile;
-      } else {
-        sourceFile = this.project.addSourceFileAtPath(revision.absolutePath);
+    const mutations: ProjectMutation[] = [];
+
+    try {
+      return candidates.map(({ revision, existingSourceFile, content }) => {
+        const path: ResolvedPath = {
+          relative: revision.relativePath,
+          absolute: revision.absolutePath,
+        };
+        let sourceFile: SourceFile;
+
+        if (existingSourceFile) {
+          const previousText = existingSourceFile.getFullText();
+          existingSourceFile.replaceWithText(content!);
+          mutations.push({ rollback: () => existingSourceFile.replaceWithText(previousText) });
+          sourceFile = existingSourceFile;
+        } else {
+          sourceFile = this.project.addSourceFileAtPath(revision.absolutePath);
+          mutations.push({ rollback: () => this.project.removeSourceFile(sourceFile) });
+        }
+
+        return this.buildFileIndex(sourceFile, path, revision);
+      });
+    } catch (error) {
+      for (const mutation of mutations.reverse()) {
+        mutation.rollback();
       }
-      return this.buildFileIndex(sourceFile, path, revision);
-    });
+      throw error;
+    }
   }
 
   private buildFileIndex(

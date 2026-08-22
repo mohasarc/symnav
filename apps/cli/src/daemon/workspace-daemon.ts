@@ -90,37 +90,46 @@ export class WorkspaceDaemon {
       workspaceRoot: this.options.identity.workspaceRoot,
       instanceId: this.options.instanceId,
     });
-    const startingRecord = await this.waitForStartupAuthorization();
-    this.startedAt = startingRecord.startedAt;
-    const prepared = await this.scopeFactory.prepare(this.options.identity.workspaceRoot);
-    this.logger.record({ kind: "freshness", ...prepared.refresh });
-    this.server = await this.options.transport.listen(
-      this.options.identity.endpoint(this.options.instanceId),
-      (request) => this.handle(request),
-    );
-    const fileCount = prepared.refresh.added + prepared.refresh.unchanged;
-    const readyRecord: DaemonRecord = {
-      schemaVersion: DAEMON_RECORD_SCHEMA_VERSION,
-      protocolVersion: DAEMON_PROTOCOL_VERSION,
-      symnavVersion: this.options.symnavVersion,
-      workspaceRoot: this.options.identity.workspaceRoot,
-      workspaceKey: this.options.identity.workspaceKey,
-      instanceId: this.options.instanceId,
-      processToken: this.options.processToken,
-      endpoint: this.options.identity.endpoint(this.options.instanceId),
-      pid: process.pid,
-      state: "ready",
-      startedAt: startingRecord.startedAt,
-      readyAt: this.now(),
-      fileCount,
-      memoryCapBytes: this.options.memoryCapBytes,
-    };
-    if (!this.options.registry.writeIfStartupOwner(this.options.identity, readyRecord)) {
-      await this.server.close();
-      throw new Error("Daemon startup ownership changed before readiness publication");
+    try {
+      const startingRecord = await this.waitForStartupAuthorization();
+      this.startedAt = startingRecord.startedAt;
+      const prepared = await this.scopeFactory.prepare(this.options.identity.workspaceRoot);
+      this.logger.record({ kind: "freshness", ...prepared.refresh });
+      this.server = await this.options.transport.listen(
+        this.options.identity.endpoint(this.options.instanceId),
+        (request) => this.handle(request),
+      );
+      const fileCount = prepared.refresh.added + prepared.refresh.unchanged;
+      const readyRecord: DaemonRecord = {
+        schemaVersion: DAEMON_RECORD_SCHEMA_VERSION,
+        protocolVersion: DAEMON_PROTOCOL_VERSION,
+        symnavVersion: this.options.symnavVersion,
+        workspaceRoot: this.options.identity.workspaceRoot,
+        workspaceKey: this.options.identity.workspaceKey,
+        instanceId: this.options.instanceId,
+        processToken: this.options.processToken,
+        endpoint: this.options.identity.endpoint(this.options.instanceId),
+        pid: process.pid,
+        state: "ready",
+        startedAt: startingRecord.startedAt,
+        readyAt: this.now(),
+        fileCount,
+        memoryCapBytes: this.options.memoryCapBytes,
+      };
+      if (!this.options.registry.writeIfStartupOwner(this.options.identity, readyRecord)) {
+        await this.server.close();
+        throw new Error("Daemon startup ownership changed before readiness publication");
+      }
+      this.logger.record({ kind: "ready", fileCount });
+      this.resourceMonitor.start();
+    } catch (error) {
+      this.logger.record({
+        kind: "failure",
+        operation: "start",
+        message: WorkspaceDaemon.errorMessage(error),
+      });
+      throw error;
     }
-    this.logger.record({ kind: "ready", fileCount });
-    this.resourceMonitor.start();
   }
 
   private async waitForStartupAuthorization(): Promise<DaemonRecord> {

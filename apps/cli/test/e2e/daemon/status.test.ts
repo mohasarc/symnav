@@ -136,6 +136,33 @@ describe("symnav daemon status", () => {
     expect(JSON.parse(stopped.stdout)).toEqual([]);
   });
 
+  it("cleans a stale current-schema record", () => {
+    const stateDir = temporaryStateDirectory(stateDirectories);
+    const daemonDirectory = join(stateDir, "daemons");
+    const cwd = temporaryWorkspace(stateDirectories);
+    const started = runSymnavBinary(["daemon", "start"], {
+      cwd,
+      env: { SYMNAV_STATE_DIR: stateDir },
+    });
+    expect(started.status).toBe(0);
+    captureDaemonPids(stateDir, daemonPids);
+    for (const pid of daemonPids) process.kill(pid, "SIGKILL");
+    daemonPids.length = 0;
+    const recordName = readdirSync(daemonDirectory).find((name) => name.endsWith(".json"));
+    expect(recordName).toBeDefined();
+    const recordPath = join(daemonDirectory, recordName!);
+    const record = JSON.parse(readFileSync(recordPath, "utf8")) as Record<string, unknown>;
+    writeFileSync(recordPath, JSON.stringify({ ...record, pid: 999_999_999 }));
+
+    const status = runSymnavBinary(["daemon", "status"], {
+      cwd: tmpdir(),
+      env: { SYMNAV_STATE_DIR: stateDir },
+    });
+    expect(status).toEqual({ stdout: "No daemons running.\n", stderr: "", status: 0 });
+    expect(readdirSync(daemonDirectory).filter((name) => name.endsWith(".json"))).toEqual([]);
+    expect(existsSync(String(record.endpoint))).toBe(false);
+  });
+
   it("returns the cold workspace error and exits after workspace deletion", async () => {
     const stateDir = temporaryStateDirectory(stateDirectories);
     const workspaceRoot = mkdtempSync(join(tmpdir(), "symnav-deleted-workspace-"));

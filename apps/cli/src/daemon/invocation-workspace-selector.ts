@@ -11,7 +11,6 @@ const workspaceCommands = new Set([
   "graph",
   "stats",
 ]);
-
 export class InvocationWorkspaceSelector {
   classify(argv: readonly string[], cwd: string): InvocationRoute {
     return this.select(argv, cwd).route;
@@ -29,7 +28,11 @@ export class InvocationWorkspaceSelector {
       .argument("[arguments...]")
       .parse([...argv], { from: "user" });
     const [command, action] = parsed.args;
-    const options = parsed.opts<{ cwd?: string; help?: boolean; version?: boolean }>();
+    const options = parsed.opts<{
+      cwd?: string;
+      help?: boolean;
+      version?: boolean;
+    }>();
 
     if (options.help === true || options.version === true) {
       return { route: { kind: "local" }, argv };

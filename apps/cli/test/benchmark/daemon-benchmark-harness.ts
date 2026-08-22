@@ -20,3 +20,22 @@ export interface DaemonBenchmarkTargetComparison {
   readonly firstToSecondRatioMet: boolean;
   readonly wallClockGated: false;
 }
+
+export class DaemonBenchmarkTarget {
+  constructor(
+    private readonly secondResolveThresholdMs = 200,
+    private readonly minimumFirstToSecondRatio = 2,
+  ) {}
+
+  compare(firstResolveMs: number, secondResolveMs: number): DaemonBenchmarkTargetComparison {
+    const ratio =
+      secondResolveMs === 0 ? Number.POSITIVE_INFINITY : firstResolveMs / secondResolveMs;
+    return {
+      secondResolveMs: this.secondResolveThresholdMs,
+      minimumFirstToSecondRatio: this.minimumFirstToSecondRatio,
+      secondResolveMet: secondResolveMs < this.secondResolveThresholdMs,
+      firstToSecondRatioMet: ratio >= this.minimumFirstToSecondRatio,
+      wallClockGated: false,
+    };
+  }
+}

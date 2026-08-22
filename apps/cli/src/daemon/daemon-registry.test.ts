@@ -133,6 +133,21 @@ describe("daemon registry", () => {
     replacementLease?.release();
   });
 
+  it("publishes starting records only for the current startup owner", () => {
+    const identity = DaemonWorkspaceIdentity.from("/repo", temporaryDirectory(roots));
+    const registry = new DaemonRegistry(identity.registryDirectory);
+    const lease = registry.acquireStartup(identity, "starting");
+    const starting = { ...record(identity, "starting", "starting"), pid: 0 };
+
+    expect(registry.writeStartingIfStartupOwner(identity, starting)).toBe(true);
+    expect(registry.removeStartupLockIfInstance(identity, "starting")).toBe(true);
+    expect(registry.acquireStartup(identity, "replacement")).toBeDefined();
+    expect(registry.writeStartingIfStartupOwner(identity, { ...starting, pid: 777 })).toBe(false);
+    expect(registry.readStoredInstance(identity, "starting")?.pid).toBe(0);
+
+    lease?.release();
+  });
+
   it.each([
     { field: "schemaVersion", value: 2 },
     { field: "protocolVersion", value: DAEMON_PROTOCOL_VERSION + 1 },

@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { createWorkspace } from "@symnav/core";
+import type { Recorder } from "@symnav/telemetry";
 import { CliProgramExecutor } from "../cli-program-executor.js";
 import type {
   CliExecutionRequest,
@@ -107,21 +108,26 @@ export class DaemonCommandDispatcher {
       }
     }
     if (record?.state !== "ready") throw new Error("Daemon did not publish a ready record");
-    let response: DaemonResponse;
     try {
-      response = await runtime.transport.request(record.endpoint, {
+      const response = await runtime.transport.request(record.endpoint, {
         kind: "execute",
         protocolVersion: record.protocolVersion,
         instanceId: record.instanceId,
         requestId: this.requestId(),
-        request: { ...workspaceRequest, executionMode: "warm" },
+        request: { ...workspaceRequest, executionMode: "warm", deferTelemetry: true },
       });
+      if (response.kind !== "result") throw new Error("Daemon returned no command result");
+      return {
+        mode: "warm",
+        result: DaemonCommandDispatcher.commitWarmTelemetry(
+          response.result,
+          dependencies.recorder,
+        ),
+      };
     } catch {
       await this.invalidate(runtime, identity, record);
       return this.executeLocally(workspaceRequest, "fallback");
     }
-    if (response.kind !== "result") throw new Error("Daemon returned no command result");
-    return { mode: "warm", result: response.result };
   }
 
   private executeLocally(
@@ -175,5 +181,17 @@ export class DaemonCommandDispatcher {
       record.state === "starting" ||
       record.symnavVersion !== dependencies.symnavVersion
     );
+  }
+
+  private static commitWarmTelemetry(
+    result: CommandExecutionResult,
+    recorder: Recorder,
+  ): CommandExecutionResult {
+    if (result.telemetry !== undefined) {
+      try {
+        recorder.record(result.telemetry);
+      } catch {}
+    }
+    return { frames: result.frames, exitCode: result.exitCode };
   }
 }

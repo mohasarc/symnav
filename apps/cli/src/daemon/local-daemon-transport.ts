@@ -1,3 +1,4 @@
+import type { Server } from "node:net";
 import type { DaemonRequest, DaemonResponse, DaemonServer } from "./daemon-protocol.js";
 
 const DEFAULT_MAXIMUM_FRAME_BYTES = 8 * 1024 * 1024;
@@ -19,6 +20,19 @@ class DaemonFrameDecoder {
   }
 
   assertComplete(): void {}
+}
+
+class ListeningDaemonServer implements DaemonServer {
+  constructor(private readonly server: Server) {}
+
+  close(): Promise<void> {
+    return new Promise((resolve, reject) => {
+      this.server.close((error) => {
+        if (error) reject(error);
+        else resolve();
+      });
+    });
+  }
 }
 
 export class LocalDaemonTransport {

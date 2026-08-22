@@ -131,11 +131,13 @@ class DispatchHarness {
   private readonly requests: DaemonRequest[] = [];
   private registered: DaemonRecord | undefined;
   private readonly runtime: DaemonDispatchRuntime;
+  private daemonAnswer: CommandExecutionResult | Error;
 
   constructor(
-    private readonly daemonAnswer: CommandExecutionResult | Error,
+    daemonAnswer: CommandExecutionResult | Error,
     private readonly options: DispatchHarnessOptions = {},
   ) {
+    this.daemonAnswer = daemonAnswer;
     this.registered =
       options.initiallyRegistered === false ? undefined : { ...daemonRecord(), ...options.record };
     this.ensureRunning = vi.fn(async () => {
@@ -151,11 +153,21 @@ class DispatchHarness {
       coordinator: { ensureRunning: this.ensureRunning },
       registry: {
         read: () => this.registered,
-        removeIfInstance: this.removeIfInstance,
+        removeIfInstance: (identity, instanceId) => {
+          this.removeIfInstance(identity, instanceId);
+          this.registered = undefined;
+        },
       },
       transport: {
         request: async (_endpoint: string, daemonRequest: DaemonRequest) => {
           this.requests.push(daemonRequest);
+          if (daemonRequest.kind === "kill") {
+            return {
+              kind: "killing",
+              instanceId: daemonRequest.instanceId,
+              processToken: daemonRequest.processToken,
+            };
+          }
           if (this.daemonAnswer instanceof Error) throw this.daemonAnswer;
           return {
             kind: "result",
@@ -181,6 +193,14 @@ class DispatchHarness {
 
   executeRequests(): readonly DaemonRequest[] {
     return this.requests.filter((daemonRequest) => daemonRequest.kind === "execute");
+  }
+
+  answer(daemonAnswer: CommandExecutionResult | Error): void {
+    this.daemonAnswer = daemonAnswer;
+  }
+
+  registeredRecord(): DaemonRecord | undefined {
+    return this.registered;
   }
 }
 

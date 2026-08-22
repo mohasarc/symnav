@@ -110,6 +110,16 @@ describe("WorkspaceDaemon requests", () => {
     await second;
   });
 
+  it("acknowledges graceful stop requests", async () => {
+    const harness = await RequestHarness.start(new ImmediateExecutor());
+    harnesses.push(harness);
+
+    await expect(harness.stop()).resolves.toEqual({
+      kind: "stopped",
+      instanceId: harness.instanceId,
+    });
+  });
+
 });
 
 class RequestHarness {

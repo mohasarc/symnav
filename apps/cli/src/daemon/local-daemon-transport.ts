@@ -47,10 +47,14 @@ class DaemonFrameDecoder {
 class ListeningDaemonServer implements DaemonServer {
   constructor(
     private readonly server: Server,
-    private readonly _sockets: ReadonlySet<Socket>,
+    private readonly sockets: ReadonlySet<Socket>,
   ) {}
 
-  close(): Promise<void> {
+  close(force = false): Promise<void> {
+    if (force) {
+      for (const socket of this.sockets) socket.destroy();
+    }
+    if (!this.server.listening) return Promise.resolve();
     return new Promise((resolve, reject) => {
       this.server.close((error) => {
         if (error) reject(error);

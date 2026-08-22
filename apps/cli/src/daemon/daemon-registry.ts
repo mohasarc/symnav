@@ -244,8 +244,19 @@ export class DaemonRegistry {
     identity: DaemonWorkspaceIdentity,
     observedOwner: StartupOwner,
   ): boolean {
-    if (!DaemonRegistry.sameStartupOwner(this.startupOwner(identity), observedOwner)) return false;
-    return this.removeStartupLockIfInstance(identity, observedOwner.instanceId);
+    const mutation = this.beginStartupMutation(identity);
+    if (mutation === undefined) return false;
+    try {
+      if (
+        !mutation.isOwned() ||
+        !DaemonRegistry.sameStartupOwner(this.startupOwner(identity), observedOwner)
+      ) {
+        return false;
+      }
+      return this.removeStartupLockIfInstance(identity, observedOwner.instanceId);
+    } finally {
+      mutation.release();
+    }
   }
 
   removeIfInstance(identity: DaemonWorkspaceIdentity, instanceId: string): void {

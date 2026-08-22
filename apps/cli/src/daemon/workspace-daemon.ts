@@ -160,7 +160,8 @@ export class WorkspaceDaemon {
         result: await this.executor.execute(request.request),
       };
     }
-    throw new Error("Workspace daemon request handling is not implemented");
+    setTimeout(() => void this.shutdown(), 0);
+    return { kind: "stopped", instanceId: this.options.instanceId };
   }
 
   private async shutdown(): Promise<void> {

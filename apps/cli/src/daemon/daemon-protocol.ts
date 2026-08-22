@@ -21,6 +21,8 @@ export interface DaemonRecord {
   readonly memoryCapBytes: number;
 }
 
+export type WorkspaceRequestQueueState = "accepting" | "draining" | "closed";
+
 export interface RunningDaemonStatus {
   readonly workspaceRoot: string;
   readonly state: "starting" | "ready";

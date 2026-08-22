@@ -64,6 +64,7 @@ export class DaemonStartupCoordinator {
     );
     heartbeat.unref?.();
 
+    let releaseLease = true;
     try {
       const currentRecord = await this.validatedReadyRecord(identity);
       if (currentRecord?.symnavVersion === this.launcher.symnavVersion) {
@@ -72,9 +73,12 @@ export class DaemonStartupCoordinator {
       const storedRecord = this.registry.readStored(identity);
       if (storedRecord !== undefined) await this.replaceStoredRecord(identity, storedRecord);
       return await this.launchAndWait(identity, instanceId);
+    } catch (error) {
+      if (error instanceof DaemonProcessTerminationError) releaseLease = false;
+      throw error;
     } finally {
       clearInterval(heartbeat);
-      lease.release();
+      if (releaseLease) lease.release();
     }
   }
 

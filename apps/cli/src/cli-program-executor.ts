@@ -63,3 +63,9 @@ export class CliProgramExecutor {
     }
   }
 }
+
+export class CommandResultReplayer {
+  static replay(_result: CommandExecutionResult, _context: ProgramContext): never | void {
+    throw new Error("Captured result replay is not implemented");
+  }
+}

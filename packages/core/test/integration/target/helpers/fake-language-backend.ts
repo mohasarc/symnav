@@ -1,10 +1,12 @@
 import type {
   CallEdge,
   CallTargetResolution,
+  BackendRefreshSummary,
   LanguageBackend,
   OverviewFileEntries,
   SymbolReference,
   ResolvedPath,
+  WorkspaceFile,
   SymbolOverviewNode,
 } from "../../../../src/index.js";
 
@@ -29,6 +31,10 @@ export class FakeLanguageBackend implements LanguageBackend {
 
   accepts(filePath: string): boolean {
     return this.acceptFn(filePath);
+  }
+
+  async refresh(files: readonly WorkspaceFile[]): Promise<BackendRefreshSummary> {
+    return { added: files.length, changed: 0, removed: 0, unchanged: 0 };
   }
 
   async fileEntries(path: ResolvedPath): Promise<OverviewFileEntries> {

@@ -6,7 +6,7 @@ import type {
   OverviewFileEntries,
   SymbolOverviewNode,
 } from "../intermediate-representation/overview-tree.js";
-import type { ResolvedPath } from "../workspace/workspace.js";
+import type { ResolvedPath, WorkspaceFile } from "../workspace/workspace.js";
 
 export interface BackendRefreshSummary {
   readonly added: number;
@@ -24,6 +24,7 @@ export type ResolveSymbolsOptions =
 
 export interface LanguageBackend {
   accepts(filePath: string): boolean;
+  refresh(files: readonly WorkspaceFile[]): Promise<BackendRefreshSummary>;
   fileEntries(path: ResolvedPath): Promise<OverviewFileEntries>;
   resolveSymbols(
     files: readonly ResolvedPath[],

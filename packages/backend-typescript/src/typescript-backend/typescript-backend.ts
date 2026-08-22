@@ -3,6 +3,7 @@ import { basename } from "node:path";
 import type {
   CallEdge,
   CallTargetResolution,
+  BackendRefreshSummary,
   FileSystem,
   LanguageBackend,
   OverviewFileEntries,
@@ -11,6 +12,7 @@ import type {
   ResolvedPath,
   SymbolOverviewNode,
   SymbolIdentity,
+  WorkspaceFile,
 } from "@symnav/core";
 import { CollectingDiagnosticSink, FileNotFoundError } from "@symnav/core";
 
@@ -39,6 +41,10 @@ export class TypeScriptBackend implements LanguageBackend {
   private declarationIndex: WorkspaceDeclarationIndex | undefined;
 
   constructor(private readonly fs: FileSystem) {}
+
+  declare readonly refresh: (
+    files: readonly WorkspaceFile[],
+  ) => Promise<BackendRefreshSummary>;
 
   private sharedDeclarationIndex(): WorkspaceDeclarationIndex {
     this.declarationIndex ??= new WorkspaceDeclarationIndex(this.fs);

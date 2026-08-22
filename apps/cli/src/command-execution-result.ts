@@ -25,4 +25,5 @@ export interface CliExecutionRequest {
   readonly cwd: string;
   readonly telemetryEnabled: boolean;
   readonly executionMode?: CommandExecutionMode;
+  readonly deferTelemetry?: boolean;
 }

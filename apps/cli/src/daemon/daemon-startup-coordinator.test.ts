@@ -189,6 +189,26 @@ describe("DaemonStartupCoordinator", () => {
     expect(harness.launcher.launchCount).toBe(0);
   });
 
+  it("renews startup ownership while readiness is pending", async () => {
+    const harness = new CoordinatorHarness(roots, { readyDelayMs: 80 });
+    const starting = harness
+      .coordinator({ startupTimeoutMs: 500, heartbeatIntervalMs: 5 })
+      .ensureRunning(harness.identity);
+    await waitUntil(() => harness.registry.read(harness.identity)?.state === "starting");
+    const initialRevision = harness.registry.startupOwner(harness.identity)?.revision;
+
+    await waitUntil(() => {
+      const owner = harness.registry.startupOwner(harness.identity);
+      return (
+        harness.registry.read(harness.identity)?.state === "starting" &&
+        owner !== undefined &&
+        owner.revision !== initialRevision
+      );
+    });
+
+    await expect(starting).resolves.toMatchObject({ status: "ready" });
+  });
+
 });
 
 interface CoordinatorHarnessOptions {

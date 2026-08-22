@@ -23,6 +23,40 @@ describe("LocalDaemonTransport", () => {
 
     await expect(server.close()).resolves.toBeUndefined();
   });
+
+  it("decodes one request frame and encodes one response frame", async () => {
+    const endpoint = endpointFor(roots);
+    const transport = new LocalDaemonTransport();
+    const server = await transport.listen(endpoint, async (request) => ({
+      kind: "pong",
+      protocolVersion: DAEMON_PROTOCOL_VERSION,
+      instanceId: request.instanceId,
+      symnavVersion: "test",
+    }));
+    const request = {
+      kind: "ping",
+      protocolVersion: DAEMON_PROTOCOL_VERSION,
+      instanceId: "instance",
+    } satisfies DaemonRequest;
+
+    const response = await new Promise<unknown>((resolve, reject) => {
+      const socket = createConnection(endpoint);
+      let bytes = Buffer.alloc(0);
+      socket.once("error", reject);
+      socket.once("close", () => reject(new Error("Daemon server closed without a response")));
+      socket.once("connect", () => socket.write(frame(request)));
+      socket.on("data", (chunk) => {
+        bytes = Buffer.concat([bytes, Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)]);
+        const decoded = decodeFrames(bytes)[0];
+        if (decoded === undefined) return;
+        socket.end();
+        resolve(decoded);
+      });
+    });
+
+    expect(response).toMatchObject({ kind: "pong", instanceId: "instance" });
+    await server.close();
+  });
 });
 
 function endpointFor(roots: string[]): string {

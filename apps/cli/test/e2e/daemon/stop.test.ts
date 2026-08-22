@@ -94,6 +94,38 @@ describe("symnav daemon stop", () => {
       expect.objectContaining({ status: "stopped", pid: expect.any(Number) }),
     );
   });
+
+  it("drains an in-flight request before the built stop command returns", async () => {
+    const stateDir = temporaryStateDirectory(stateDirectories);
+    const cwd = temporaryWorkspace(stateDirectories);
+    const releasePath = join(stateDir, "release-request");
+    const runtime = await startControlledDaemon(stateDir, realpathSync(cwd), releasePath);
+    helperProcesses.push(runtime.child);
+    const transport = new LocalDaemonTransport({ requestTimeoutMs: 10_000 });
+    const execution = transport.request(runtime.record.endpoint, {
+      kind: "execute",
+      protocolVersion: DAEMON_PROTOCOL_VERSION,
+      instanceId: runtime.record.instanceId,
+      requestId: "built-drain",
+      request: { argv: ["--version"], cwd, telemetryEnabled: false },
+    });
+    await waitUntil(() => existsSync(runtime.requestStartedPath));
+    const stopping = runBuiltStop(cwd, stateDir);
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    writeFileSync(releasePath, "release");
+
+    const response = await execution;
+    const stopped = await stopping;
+
+    expect(response).toMatchObject({ kind: "result", result: { exitCode: 0 } });
+    expect(stopped).toEqual({
+      status: 0,
+      stdout: expect.stringMatching(/^\{"status":"stopped"/),
+      stderr: "",
+    });
+    await waitForProcess(runtime.child);
+    helperProcesses.splice(helperProcesses.indexOf(runtime.child), 1);
+  }, 15_000);
 });
 
 interface ControlledDaemon {

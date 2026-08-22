@@ -1,3 +1,4 @@
+import type { CliExecutionRequest, CommandExecutionResult } from "../command-execution-result.js";
 import type { ProgramDependencies } from "../program-dependencies.js";
 import type { DaemonRegistry } from "./daemon-registry.js";
 import type { DaemonWorkspaceIdentity } from "./daemon-workspace-identity.js";
@@ -14,4 +15,8 @@ export interface WorkspaceDaemonOptions {
   readonly transport: LocalDaemonTransport;
   readonly now?: () => number;
   readonly exit?: (code: number) => never;
+}
+
+export interface DaemonCommandExecutor {
+  execute(request: CliExecutionRequest): Promise<CommandExecutionResult>;
 }

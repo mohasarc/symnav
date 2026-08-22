@@ -193,6 +193,27 @@ describe("symnav daemon parity", () => {
     expect(harness.telemetryModes()).toEqual(["warm", "fallback", "warm"]);
     expect(harness.onlyDaemonPid()).not.toBe(firstPid);
   });
+
+  it("recovers an orphaned startup mutation and keeps the next eligible command warm", async () => {
+    const harness = new DaemonParityHarness();
+    harnesses.push(harness);
+    await harness.orphanStartupMutation();
+
+    expect(harness.daemonStatus()).toMatchObject({ status: 0, stderr: "" });
+    expect(harness.daemonRecordCount()).toBe(0);
+    expect(harness.warmWithTelemetry(["overview", "input.ts"])).toMatchObject({
+      status: 0,
+      stderr: "",
+    });
+    const daemonPid = harness.onlyDaemonPid();
+    expect(harness.daemonRecordCount()).toBe(1);
+    expect(harness.warmWithTelemetry(["overview", "input.ts"])).toMatchObject({
+      status: 0,
+      stderr: "",
+    });
+    expect(harness.onlyDaemonPid()).toBe(daemonPid);
+    expect(harness.telemetryModes()).toEqual(["warm", "warm"]);
+  }, 15_000);
 });
 
 class DaemonParityHarness {

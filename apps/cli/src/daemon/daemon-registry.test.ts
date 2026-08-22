@@ -164,6 +164,17 @@ describe("daemon registry", () => {
     expect(registry.startupOwner(identity)!.heartbeatAt).toBeGreaterThanOrEqual(before.heartbeatAt);
   });
 
+  it("does not remove startup ownership renewed after stale observation", () => {
+    const identity = DaemonWorkspaceIdentity.from("/repo", temporaryDirectory(roots));
+    const registry = new DaemonRegistry(identity.registryDirectory);
+    expect(registry.acquireStartup(identity, "owner")).toBeDefined();
+    const observedOwner = registry.startupOwner(identity)!;
+    expect(registry.refreshStartupOwner(identity, "owner")).toBe(true);
+
+    expect(registry.removeStartupLockIfOwner(identity, observedOwner)).toBe(false);
+    expect(registry.startupOwner(identity)?.instanceId).toBe("owner");
+  });
+
   it.each([
     { field: "schemaVersion", value: 2 },
     { field: "protocolVersion", value: DAEMON_PROTOCOL_VERSION + 1 },

@@ -204,6 +204,24 @@ describe("LocalDaemonTransport", () => {
     ).rejects.toThrow(/request identifier/);
     await server.close();
   });
+
+  it("rejects an otherwise valid stop result with a different instance identifier", async () => {
+    const endpoint = endpointFor(roots);
+    const transport = new LocalDaemonTransport();
+    const server = await transport.listen(endpoint, async () => ({
+      kind: "stopped",
+      instanceId: "different-instance",
+    }));
+
+    await expect(
+      transport.request(endpoint, {
+        kind: "stop",
+        protocolVersion: DAEMON_PROTOCOL_VERSION,
+        instanceId: "expected-instance",
+      }),
+    ).rejects.toThrow(/instance/);
+    await server.close();
+  });
 });
 
 function endpointFor(roots: string[]): string {

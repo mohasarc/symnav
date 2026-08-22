@@ -133,6 +133,8 @@ export class LocalDaemonTransport {
           LocalDaemonTransport.assertRequest(value);
           responses = responses.then(async () => {
             this.writeFrame(socket, await handler(value));
+          }).catch(() => {
+            socket.destroy();
           });
         }
       } catch {

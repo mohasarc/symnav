@@ -23,6 +23,24 @@ describe("Workspace.resolveInputPath", () => {
     });
   });
 
+  it.each(["C:/repo/src/nested", "C:\\repo\\src\\nested"])(
+    "resolves a relative input from drive-qualified cwd %s",
+    async (cwd) => {
+      const ws = await createWorkspace({
+        startDir: "C:/repo",
+        fs: new InMemoryFileSystem({
+          "C:/repo/.git/HEAD": "ref: refs/heads/main\n",
+          "C:/repo/src/nested/a.ts": "export const x = 1;",
+        }),
+      });
+
+      expect(await ws.resolveInputPath("a.ts", cwd)).toEqual({
+        relative: "src/nested/a.ts",
+        absolute: "C:/repo/src/nested/a.ts",
+      });
+    },
+  );
+
   it("returns an absolute input inside the workspace as a workspace-relative path", async () => {
     const ws = await createWorkspace({
       startDir: "/repo",

@@ -92,7 +92,12 @@ export class DaemonCommandDispatcher {
     const workspaceRoot = await this.resolveWorkspaceRoot(selected.route.startDir, dependencies);
     const identity = DaemonWorkspaceIdentity.from(workspaceRoot, this.options.stateDirectory);
     const runtime = this.runtimeFactory(identity, dependencies);
-    let record = runtime.registry.read(identity);
+    let record: DaemonRecord | undefined;
+    try {
+      record = runtime.registry.read(identity);
+    } catch {
+      return this.executeLocally(workspaceRequest, "fallback");
+    }
     if (DaemonCommandDispatcher.requiresStartup(record, dependencies)) {
       try {
         await runtime.coordinator.ensureRunning(identity);

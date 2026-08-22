@@ -18,7 +18,7 @@ export interface WorkspaceDaemonOptions {
   readonly registry: DaemonRegistry;
   readonly transport: LocalDaemonTransport;
   readonly now?: () => number;
-  readonly exit?: (code: number) => never;
+  readonly exit?: (code: number) => void;
   readonly executor?: DaemonCommandExecutor;
 }
 

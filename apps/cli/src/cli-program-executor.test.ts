@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import type { OverviewFileEntries } from "@symnav/core";
 import { CliProgramExecutor, CommandResultReplayer } from "./cli-program-executor.js";
 import { fakeDependencies } from "../test/integration/commands/helpers/fake-program-dependencies.js";
+import { createCapturingRecorder } from "../test/integration/commands/helpers/fake-program-dependencies.js";
 import { createFakeProgramContext } from "../test/integration/commands/helpers/fake-program-context.js";
 import { FakeLanguageBackend } from "../test/integration/commands/helpers/fake-language-backend.js";
 
@@ -90,6 +91,26 @@ describe("CliProgramExecutor", () => {
     expect(decode(crash)).toBe("boom\n");
     expect(JSON.parse(decode(json))).toMatchObject({ file: "src/a.ts" });
     expect(JSON.parse(decode(stats))).toMatchObject({ totalEvents: 0 });
+  });
+
+  it("defers one telemetry event into the execution result", async () => {
+    const recorder = createCapturingRecorder();
+    const result = await new CliProgramExecutor(
+      fakeDependencies({ recorder, telemetryEnabled: true }),
+    ).execute({
+      argv: ["overview", "src/a.ts"],
+      cwd: "/repo",
+      telemetryEnabled: true,
+      executionMode: "warm",
+      deferTelemetry: true,
+    });
+
+    expect(recorder.events).toEqual([]);
+    expect(result.telemetry).toMatchObject({
+      command: "overview",
+      executionMode: "warm",
+      outcome: "success",
+    });
   });
 });
 

@@ -165,6 +165,8 @@ export class WorkspaceDaemon {
   }
 
   private async shutdown(): Promise<void> {
+    await this.server?.close();
+    this.options.registry.removeIfInstance(this.options.identity, this.options.instanceId);
     this.exit(0);
   }
 }

@@ -1,4 +1,5 @@
 import {
+  existsSync,
   mkdirSync,
   mkdtempSync,
   readdirSync,
@@ -11,7 +12,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { runSymnavBinary } from "@symnav/testing";
-import type { DaemonRecord } from "../../../src/daemon/daemon-protocol.js";
+import { DAEMON_PROTOCOL_VERSION, type DaemonRecord } from "../../../src/daemon/daemon-protocol.js";
+import { LocalDaemonTransport } from "../../../src/daemon/local-daemon-transport.js";
 
 describe("symnav daemon status", () => {
   const stateDirectories: string[] = [];
@@ -94,6 +96,46 @@ describe("symnav daemon status", () => {
       [realpathSync(alpha), realpathSync(beta)].sort((left, right) => left.localeCompare(right)),
     );
   });
+
+  it("returns the cold workspace error and exits after workspace deletion", async () => {
+    const stateDir = temporaryStateDirectory(stateDirectories);
+    const workspaceRoot = mkdtempSync(join(tmpdir(), "symnav-deleted-workspace-"));
+    stateDirectories.push(workspaceRoot);
+    mkdirSync(join(workspaceRoot, ".git"));
+    writeFileSync(join(workspaceRoot, "input.ts"), "export const value = 1;\n");
+    const started = runSymnavBinary(["daemon", "start"], {
+      cwd: workspaceRoot,
+      env: { SYMNAV_STATE_DIR: stateDir },
+    });
+    expect(started.status).toBe(0);
+    const record = daemonRecords(stateDir)[0];
+    expect(record).toBeDefined();
+    daemonPids.push(record!.pid);
+    rmSync(workspaceRoot, { recursive: true, force: true });
+
+    const cold = runSymnavBinary(["--cwd", workspaceRoot, "overview", "input.ts"], {
+      cwd: tmpdir(),
+      env: { SYMNAV_DAEMON: "0" },
+    });
+    const response = await new LocalDaemonTransport().request(record!.endpoint, {
+      kind: "execute",
+      protocolVersion: DAEMON_PROTOCOL_VERSION,
+      instanceId: record!.instanceId,
+      requestId: "deleted-workspace",
+      request: {
+        argv: ["overview", "input.ts"],
+        cwd: workspaceRoot,
+        telemetryEnabled: false,
+      },
+    });
+
+    expect(response.kind).toBe("result");
+    if (response.kind !== "result") throw new Error("Expected command result");
+    expect(replay(response.result.frames, "stdout")).toBe(cold.stdout);
+    expect(replay(response.result.frames, "stderr")).toBe(cold.stderr);
+    expect(response.result.exitCode).toBe(cold.status);
+    await waitUntil(() => daemonRecords(stateDir).length === 0);
+  });
 });
 
 function temporaryStateDirectory(directories: string[]): string {
@@ -125,4 +167,24 @@ function daemonRecords(stateDir: string): readonly DaemonRecord[] {
   } catch {
     return [];
   }
+}
+
+function replay(
+  frames: readonly { readonly stream: "stdout" | "stderr"; readonly bytesBase64: string }[],
+  stream: "stdout" | "stderr",
+): string {
+  return Buffer.concat(
+    frames
+      .filter((frame) => frame.stream === stream)
+      .map((frame) => Buffer.from(frame.bytesBase64, "base64")),
+  ).toString("utf8");
+}
+
+async function waitUntil(predicate: () => boolean): Promise<void> {
+  const deadline = Date.now() + 5_000;
+  while (Date.now() <= deadline) {
+    if (predicate()) return;
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+  throw new Error("Timed out waiting for daemon shutdown");
 }

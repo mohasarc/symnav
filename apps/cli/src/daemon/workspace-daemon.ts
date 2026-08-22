@@ -1,8 +1,13 @@
-import type { CliExecutionRequest, CommandExecutionResult } from "../command-execution-result.js";
-import { CliProgramExecutor } from "../cli-program-executor.js";
 import type { ProgramDependencies } from "../program-dependencies.js";
+import { CliProgramExecutor } from "../cli-program-executor.js";
+import type { CliExecutionRequest, CommandExecutionResult } from "../command-execution-result.js";
 import { WorkspaceRequestScopeFactory } from "../workspace-request-scope.js";
-import type { DaemonRecord, DaemonRequest, DaemonResponse, DaemonServer } from "./daemon-protocol.js";
+import type {
+  DaemonRecord,
+  DaemonRequest,
+  DaemonResponse,
+  DaemonServer,
+} from "./daemon-protocol.js";
 import { DAEMON_PROTOCOL_VERSION, DAEMON_RECORD_SCHEMA_VERSION } from "./daemon-protocol.js";
 import { NodeDaemonProcessTerminator } from "./daemon-process-launcher.js";
 import { DAEMON_IDLE_TIMEOUT_MS, DaemonLifetime } from "./daemon-lifetime.js";
@@ -53,10 +58,10 @@ export class WorkspaceDaemon {
       ...options.dependencies,
       backends: () => retainedBackends,
     };
-    this.scopeFactory = new WorkspaceRequestScopeFactory(options.dependencies.fs, retainedBackends);
-    this.executor = options.executor ?? new CliProgramExecutor(retainedDependencies);
     this.now = options.now ?? Date.now;
     this.logger = new DaemonLogger(options.identity.logPath, { now: this.now });
+    this.executor = options.executor ?? new CliProgramExecutor(retainedDependencies);
+    this.scopeFactory = new WorkspaceRequestScopeFactory(options.dependencies.fs, retainedBackends);
     this.exit = options.exit ?? ((code) => process.exit(code));
     this.lifetime = new DaemonLifetime(
       { now: this.now },
@@ -187,7 +192,7 @@ export class WorkspaceDaemon {
     if (request.kind === "execute") {
       this.lifetime.navigationAccepted();
       const requestStartedAt = this.now();
-      let result: CommandExecutionResult;
+      let result;
       try {
         result = await this.requestQueue.enqueue(() => this.executor.execute(request.request));
       } catch (error) {

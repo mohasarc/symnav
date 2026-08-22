@@ -1,3 +1,5 @@
+import type { UsageEventInput } from "@symnav/telemetry";
+
 export type CommandOutputStream = "stdout" | "stderr";
 
 export interface CommandOutputFrame {
@@ -8,6 +10,7 @@ export interface CommandOutputFrame {
 export interface CommandExecutionResult {
   readonly frames: readonly CommandOutputFrame[];
   readonly exitCode: number;
+  readonly telemetry?: UsageEventInput;
 }
 
 export type CommandExecutionMode = "cold" | "warm" | "fallback";

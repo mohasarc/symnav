@@ -8,7 +8,7 @@ import {
 } from "./daemon-process-launcher.js";
 import type { DaemonRecord, DaemonStartResult } from "./daemon-protocol.js";
 import { DAEMON_PROTOCOL_VERSION, DAEMON_RECORD_SCHEMA_VERSION } from "./daemon-protocol.js";
-import type { DaemonRegistry } from "./daemon-registry.js";
+import type { DaemonRegistry, StartupOwner } from "./daemon-registry.js";
 import type { DaemonWorkspaceIdentity } from "./daemon-workspace-identity.js";
 import type { LocalDaemonTransport } from "./local-daemon-transport.js";
 
@@ -122,9 +122,25 @@ export class DaemonStartupCoordinator {
       if (record?.symnavVersion === this.launcher.symnavVersion) {
         return this.alreadyRunning(record);
       }
+      const owner = this.registry.startupOwner(identity);
+      if (owner === undefined) return this.ensureRunning(identity);
+      if (!this.processTerminator.isAlive(owner.ownerPid)) {
+        this.cleanupAbandonedStartup(identity, owner);
+        return this.ensureRunning(identity);
+      }
       await this.pause();
     }
+    const owner = this.registry.startupOwner(identity);
+    if (owner !== undefined) this.cleanupAbandonedStartup(identity, owner);
     throw new Error("Daemon startup timed out while waiting for another process");
+  }
+
+  private cleanupAbandonedStartup(
+    identity: DaemonWorkspaceIdentity,
+    owner: StartupOwner,
+  ): void {
+    this.registry.removeIfInstance(identity, owner.instanceId);
+    this.registry.removeStartupLockIfInstance(identity, owner.instanceId);
   }
 
   private async waitForReady(

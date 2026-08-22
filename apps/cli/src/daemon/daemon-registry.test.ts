@@ -70,6 +70,21 @@ describe("daemon registry", () => {
     expect(registry.read(identity)).toBeUndefined();
   });
 
+  it("does not release a replacement startup owner from an old lease", () => {
+    const identity = DaemonWorkspaceIdentity.from("/repo", temporaryDirectory(roots));
+    const registry = new DaemonRegistry(identity.registryDirectory);
+    const oldLease = registry.acquireStartup(identity, "old");
+    expect(oldLease).toBeDefined();
+    expect(registry.removeStartupLockIfInstance(identity, "old")).toBe(true);
+    const replacementLease = registry.acquireStartup(identity, "replacement");
+    expect(replacementLease).toBeDefined();
+
+    oldLease?.release();
+
+    expect(registry.startupOwner(identity)?.instanceId).toBe("replacement");
+    replacementLease?.release();
+  });
+
   it.each([
     { field: "schemaVersion", value: 2 },
     { field: "protocolVersion", value: DAEMON_PROTOCOL_VERSION + 1 },

@@ -164,6 +164,25 @@ describe("LocalDaemonTransport", () => {
     ]);
     await server.close();
   });
+  it("rejects wrong pong protocol and instance identifiers", async () => {
+    const endpoint = endpointFor(roots);
+    const transport = new LocalDaemonTransport();
+    const server = await transport.listen(endpoint, async () => ({
+      kind: "pong",
+      protocolVersion: DAEMON_PROTOCOL_VERSION + 1,
+      instanceId: "other",
+      symnavVersion: "0.0.0",
+    }));
+
+    await expect(
+      transport.request(endpoint, {
+        kind: "ping",
+        protocolVersion: DAEMON_PROTOCOL_VERSION,
+        instanceId: "expected",
+      }),
+    ).rejects.toThrow();
+    await server.close();
+  });
 });
 
 function endpointFor(roots: string[]): string {

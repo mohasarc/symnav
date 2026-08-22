@@ -1,14 +1,12 @@
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, readdirSync, rmSync } from "node:fs";
+import { mkdtempSync, readdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { E2eProcessCleanup } from "../helpers/e2e-process-cleanup.js";
+import { NavigationModeCleanup, type NavigationModeDaemon } from "./navigation-mode-cleanup.js";
 
 type E2eDaemonMode = "0" | "1";
-
-interface RunningDaemon {
-  readonly workspaceRoot: string;
-}
 
 class NavigationModeRunner {
   private readonly cliRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
@@ -26,7 +24,7 @@ class NavigationModeRunner {
 
   constructor(private readonly daemonMode: E2eDaemonMode) {}
 
-  run(): number {
+  async run(): Promise<number> {
     let testStatus = 1;
     try {
       const result = spawnSync(
@@ -40,13 +38,9 @@ class NavigationModeRunner {
       );
       testStatus = result.status ?? 1;
     } finally {
-      try {
-        this.stopValidatedDaemons();
-      } catch (error) {
-        process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
-        testStatus = 1;
-      }
-      rmSync(this.runRoot, { recursive: true, force: true });
+      const cleanupOutcome = await this.cleanup(testStatus);
+      testStatus = cleanupOutcome.status;
+      for (const error of cleanupOutcome.errors) process.stderr.write(`${error}\n`);
     }
     return testStatus;
   }
@@ -72,31 +66,41 @@ class NavigationModeRunner {
     return sources;
   }
 
-  private stopValidatedDaemons(): void {
-    const statuses = this.daemonStatus();
-    for (const status of statuses) {
-      const stopped = spawnSync(
-        process.execPath,
-        [this.cliBinPath, "--cwd", status.workspaceRoot, "daemon", "stop", "--json"],
-        {
-          cwd: this.cliRoot,
-          encoding: "utf8",
-          env: this.environment(),
-        },
-      );
-      if (stopped.status !== 0) {
-        throw new Error(
-          `Failed to stop daemon for ${status.workspaceRoot}: ${stopped.stderr || stopped.stdout}`,
-        );
-      }
+  private cleanup(
+    testStatus: number,
+  ): Promise<{ readonly status: number; readonly errors: readonly string[] }> {
+    return new NavigationModeCleanup({
+      discoverDaemons: () => this.daemonStatus(),
+      stop: (daemon) => this.stopDaemon(daemon),
+      terminate: (processIds) => E2eProcessCleanup.terminate(processIds),
+      validateRemainingDaemons: () => this.validateRemainingDaemons(),
+      removeRunRoot: () => E2eProcessCleanup.removeDirectories([this.runRoot]),
+    }).run(testStatus);
+  }
+
+  private stopDaemon(daemon: NavigationModeDaemon): void {
+    const stopped = spawnSync(
+      process.execPath,
+      [this.cliBinPath, "--cwd", daemon.workspaceRoot, "daemon", "stop", "--json"],
+      {
+        cwd: this.cliRoot,
+        encoding: "utf8",
+        env: this.environment(),
+      },
+    );
+    if (stopped.status !== 0) {
+      throw new Error(stopped.stderr || stopped.stdout || `exit status ${String(stopped.status)}`);
     }
+  }
+
+  private validateRemainingDaemons(): void {
     const remaining = this.daemonStatus();
     if (remaining.length !== 0) {
       throw new Error(`E2E teardown left ${remaining.length} daemon instances running`);
     }
   }
 
-  private daemonStatus(): readonly RunningDaemon[] {
+  private daemonStatus(): readonly NavigationModeDaemon[] {
     const result = spawnSync(process.execPath, [this.cliBinPath, "daemon", "status", "--json"], {
       cwd: this.cliRoot,
       encoding: "utf8",
@@ -105,7 +109,7 @@ class NavigationModeRunner {
     if (result.status !== 0) {
       throw new Error(`Failed to validate E2E daemons: ${result.stderr || result.stdout}`);
     }
-    return JSON.parse(result.stdout) as readonly RunningDaemon[];
+    return JSON.parse(result.stdout) as readonly NavigationModeDaemon[];
   }
 
   private environment(): NodeJS.ProcessEnv {
@@ -122,4 +126,4 @@ const daemonMode = process.argv[2];
 if (daemonMode !== "0" && daemonMode !== "1") {
   throw new Error("Expected E2E daemon mode 0 or 1");
 }
-process.exitCode = new NavigationModeRunner(daemonMode).run();
+process.exitCode = await new NavigationModeRunner(daemonMode).run();

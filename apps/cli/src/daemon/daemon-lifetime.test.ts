@@ -24,4 +24,18 @@ describe("DaemonLifetime", () => {
     await vi.advanceTimersByTimeAsync(1);
     expect(onIdle).toHaveBeenCalledOnce();
   });
+
+  it("waits for active navigation to finish after deadline", async () => {
+    let now = 0;
+    const onIdle = vi.fn(async () => undefined);
+    const lifetime = new DaemonLifetime({ now: () => now }, 10, onIdle);
+    lifetime.navigationAccepted();
+
+    now = 10;
+    await vi.advanceTimersByTimeAsync(10);
+    expect(onIdle).not.toHaveBeenCalled();
+    lifetime.queueBecameIdle();
+    await Promise.resolve();
+    expect(onIdle).toHaveBeenCalledOnce();
+  });
 });

@@ -419,6 +419,7 @@ describe("runCommand lifecycle", () => {
         command: "stub",
         timestamp: 2_000,
         durationMs: 45,
+        executionMode: "cold",
         outcome: "success",
         argShape: { kind: "bare", lengthBucket: "short", flags: ["json"] },
         resultCounts: { length: 8 },

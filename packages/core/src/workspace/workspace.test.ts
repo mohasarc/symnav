@@ -224,4 +224,29 @@ describe("Workspace snapshots", () => {
       DirectoryInputError,
     );
   });
+
+  it("keeps one request immutable while new workspaces see ignore and file-set changes", async () => {
+    const fs = new MutableWorkspaceFileSystem({
+      "/repo/.git/HEAD": "ref: refs/heads/main\n",
+      "/repo/.gitignore": "ignored.ts\n",
+      "/repo/a.ts": "export const a = 1;\n",
+      "/repo/ignored.ts": "export const ignored = 1;\n",
+    });
+    const firstWorkspace = await createWorkspace({ startDir: "/repo", fs });
+    const firstSnapshot = await firstWorkspace.snapshot();
+
+    fs.setFile("/repo/.gitignore", "a.ts\n");
+    fs.deleteFile("/repo/a.ts");
+    fs.setFile("/repo/added.ts", "export const added = 1;\n");
+    const secondWorkspace = await createWorkspace({ startDir: "/repo", fs });
+    const secondSnapshot = await secondWorkspace.snapshot();
+
+    expect(firstSnapshot.files.map((file) => file.relative)).toEqual([".gitignore", "a.ts"]);
+    expect((await firstWorkspace.snapshot()).files).toBe(firstSnapshot.files);
+    expect(secondSnapshot.files.map((file) => file.relative)).toEqual([
+      ".gitignore",
+      "added.ts",
+      "ignored.ts",
+    ]);
+  });
 });

@@ -49,7 +49,8 @@ export class DaemonWorkspaceIdentity {
   }
 
   private static userIdentityKey(): string {
-    const userIdentity = typeof process.getuid === "function" ? String(process.getuid()) : userInfo().username;
+    const userIdentity =
+      typeof process.getuid === "function" ? String(process.getuid()) : userInfo().username;
     return DaemonWorkspaceIdentity.hash(userIdentity).slice(0, 8);
   }
 

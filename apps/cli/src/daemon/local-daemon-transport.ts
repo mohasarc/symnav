@@ -63,6 +63,7 @@ export class LocalDaemonTransport {
         socket.destroy();
         reject(error instanceof Error ? error : new Error(String(error)));
       };
+      socket.setTimeout(this.requestTimeoutMs, () => fail(new Error("Daemon request timed out")));
       socket.once("error", fail);
       socket.once("connect", () => this.writeFrame(socket, request));
       socket.on("data", (bytes) => {

@@ -110,6 +110,62 @@ describe("symnav daemon parity", () => {
     expect(harness.telemetryModes()).toEqual(["fallback"]);
     expect(harness.daemonRecordCount()).toBe(0);
   }, 15_000);
+
+  it("refreshes edits, additions, deletions, and renames before the next warm request", () => {
+    const harness = new DaemonParityHarness();
+    harnesses.push(harness);
+    harness.warm(["overview", "input.ts"]);
+
+    writeFileSync(join(harness.workspaceRoot, "input.ts"), "export const edited = 2;\n");
+    expect(harness.warm(["overview", "input.ts"])).toEqual(harness.cold(["overview", "input.ts"]));
+
+    writeFileSync(join(harness.workspaceRoot, "added.ts"), "export const added = 3;\n");
+    expect(harness.warm(["overview", "added.ts"])).toEqual(harness.cold(["overview", "added.ts"]));
+
+    unlinkSync(join(harness.workspaceRoot, "added.ts"));
+    expect(harness.warm(["overview", "added.ts"])).toEqual(harness.cold(["overview", "added.ts"]));
+
+    renameSync(join(harness.workspaceRoot, "input.ts"), join(harness.workspaceRoot, "renamed.ts"));
+    expect(harness.warm(["overview", "renamed.ts"])).toEqual(
+      harness.cold(["overview", "renamed.ts"]),
+    );
+  });
+
+  it("executes distinguishable queued requests FIFO and refreshes at queue-turn start", async () => {
+    const harness = new DaemonParityHarness();
+    harnesses.push(harness);
+    const releasePath = join(harness.root, "release-first-request");
+    const controlled = await harness.startControlledDaemon(releasePath);
+    const transport = new LocalDaemonTransport({ requestTimeoutMs: 10_000 });
+    const first = transport.request(controlled.record.endpoint, {
+      kind: "execute",
+      protocolVersion: DAEMON_PROTOCOL_VERSION,
+      instanceId: controlled.record.instanceId,
+      requestId: "fifo-first",
+      request: {
+        argv: ["--version"],
+        cwd: harness.workspaceRoot,
+        telemetryEnabled: false,
+        executionMode: "warm",
+      },
+    });
+    await waitUntil(() => existsSync(`${controlled.requestStartedPath}.1`));
+    const second = harness.warmAsync(["overview", "input.ts"]);
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    expect(existsSync(`${controlled.requestStartedPath}.2`)).toBe(false);
+    writeFileSync(join(harness.workspaceRoot, "input.ts"), "export const queuedEdit = 3;\n");
+    writeFileSync(releasePath, "release");
+
+    const firstResponse = await first;
+    const secondResult = await second;
+
+    expect(firstResponse).toMatchObject({ kind: "result", result: { exitCode: 0 } });
+    await waitUntil(() => existsSync(`${controlled.requestStartedPath}.2`));
+    expect(secondResult).toEqual(harness.cold(["overview", "input.ts"]));
+    if (firstResponse.kind !== "result") throw new Error("Expected first FIFO result");
+    expect(decodeFrames(firstResponse.result.frames)).toMatch(/^\d+\.\d+\.\d+/);
+    expect(secondResult.stdout).toContain("queuedEdit");
+  }, 15_000);
 });
 
 class DaemonParityHarness {

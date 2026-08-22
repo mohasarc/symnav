@@ -1,3 +1,5 @@
+import { randomUUID } from "node:crypto";
+import { createWorkspace } from "@symnav/core";
 import { CliProgramExecutor } from "../cli-program-executor.js";
 import type {
   CliExecutionRequest,
@@ -6,8 +8,12 @@ import type {
 } from "../command-execution-result.js";
 import type { ProgramDependencies } from "../program-dependencies.js";
 import type { DaemonRecord, DaemonRequest, DaemonResponse } from "./daemon-protocol.js";
-import type { DaemonWorkspaceIdentity } from "./daemon-workspace-identity.js";
+import { DaemonRegistry } from "./daemon-registry.js";
+import { NodeDaemonProcessLauncher } from "./daemon-process-launcher.js";
+import { DaemonStartupCoordinator } from "./daemon-startup-coordinator.js";
+import { DaemonWorkspaceIdentity } from "./daemon-workspace-identity.js";
 import { InvocationWorkspaceSelector } from "./invocation-workspace-selector.js";
+import { LocalDaemonTransport } from "./local-daemon-transport.js";
 
 interface DaemonStarter {
   ensureRunning(identity: DaemonWorkspaceIdentity): Promise<unknown>;
@@ -52,13 +58,28 @@ export interface DaemonCommandDispatcherOptions {
 export class DaemonCommandDispatcher {
   private readonly selector: InvocationWorkspaceSelector;
   private readonly daemonEnabled: () => boolean;
+  private readonly resolveWorkspaceRoot: (
+    startDir: string,
+    dependencies: ProgramDependencies,
+  ) => Promise<string>;
+  private readonly runtimeFactory: (
+    identity: DaemonWorkspaceIdentity,
+    dependencies: ProgramDependencies,
+  ) => DaemonDispatchRuntime;
   private readonly executorFactory: (dependencies: ProgramDependencies) => CommandExecutor;
+  private readonly requestId: () => string;
 
   constructor(private readonly options: DaemonCommandDispatcherOptions) {
     this.selector = options.selector ?? new InvocationWorkspaceSelector();
     this.daemonEnabled = options.daemonEnabled ?? (() => true);
+    this.resolveWorkspaceRoot =
+      options.resolveWorkspaceRoot ??
+      (async (startDir, dependencies) =>
+        (await createWorkspace({ startDir, fs: dependencies.fs })).root);
+    this.runtimeFactory = options.runtimeFactory ?? DaemonCommandDispatcher.createRuntime;
     this.executorFactory =
       options.executorFactory ?? ((dependencies) => new CliProgramExecutor(dependencies));
+    this.requestId = options.requestId ?? randomUUID;
   }
 
   async execute(request: CliExecutionRequest): Promise<DispatchedCommandResult> {
@@ -66,7 +87,22 @@ export class DaemonCommandDispatcher {
     if (selected.route.kind !== "workspace") return this.executeLocally(request, "cold");
     const workspaceRequest: CliExecutionRequest = { ...request, argv: selected.argv };
     if (!this.daemonEnabled()) return this.executeLocally(workspaceRequest, "cold");
-    throw new Error("Workspace daemon dispatch is not available");
+
+    const dependencies = this.options.createDependencies();
+    const workspaceRoot = await this.resolveWorkspaceRoot(selected.route.startDir, dependencies);
+    const identity = DaemonWorkspaceIdentity.from(workspaceRoot, this.options.stateDirectory);
+    const runtime = this.runtimeFactory(identity, dependencies);
+    const record = runtime.registry.read(identity);
+    if (record?.state !== "ready") throw new Error("Daemon did not publish a ready record");
+    const response = await runtime.transport.request(record.endpoint, {
+      kind: "execute",
+      protocolVersion: record.protocolVersion,
+      instanceId: record.instanceId,
+      requestId: this.requestId(),
+      request: { ...workspaceRequest, executionMode: "warm" },
+    });
+    if (response.kind !== "result") throw new Error("Daemon returned no command result");
+    return { mode: "warm", result: response.result };
   }
 
   private executeLocally(
@@ -75,5 +111,22 @@ export class DaemonCommandDispatcher {
   ): Promise<DispatchedCommandResult> {
     const executor = this.executorFactory(this.options.createDependencies());
     return executor.execute({ ...request, executionMode: mode }).then((result) => ({ mode, result }));
+  }
+
+  private static createRuntime(
+    identity: DaemonWorkspaceIdentity,
+    dependencies: ProgramDependencies,
+  ): DaemonDispatchRuntime {
+    const registry = new DaemonRegistry(identity.registryDirectory);
+    const transport = new LocalDaemonTransport();
+    return {
+      registry,
+      transport,
+      coordinator: new DaemonStartupCoordinator(
+        registry,
+        new NodeDaemonProcessLauncher(dependencies.symnavVersion),
+        transport,
+      ),
+    };
   }
 }

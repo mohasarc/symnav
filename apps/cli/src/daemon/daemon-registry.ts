@@ -251,6 +251,39 @@ export class DaemonRegistry {
       .map(({ record }) => record);
   }
 
+  private beginStartupMutation(
+    identity: DaemonWorkspaceIdentity,
+  ): RegistryStartupMutationLease | undefined {
+    return this.claimStartupMutation(identity);
+  }
+
+  private claimStartupMutation(
+    identity: DaemonWorkspaceIdentity,
+  ): RegistryStartupMutationLease | undefined {
+    mkdirSync(identity.registryDirectory, { recursive: true, mode: 0o700 });
+    const token = randomUUID();
+    const owner: StartupMutationOwner = {
+      ownerPid: process.pid,
+      acquiredAt: Date.now(),
+      token,
+    };
+    const claimPath = identity.startupMutationClaimPath(token);
+    mkdirSync(claimPath, { mode: 0o700 });
+    writeFileSync(identity.startupOwnerPath(claimPath), JSON.stringify(owner), {
+      encoding: "utf8",
+      flag: "wx",
+      mode: 0o600,
+    });
+    try {
+      renameSync(claimPath, identity.startupMutationPath);
+      return new RegistryStartupMutationLease(this, identity, owner);
+    } catch (error) {
+      rmSync(claimPath, { recursive: true, force: true });
+      if (existsSync(identity.startupMutationPath)) return undefined;
+      throw error;
+    }
+  }
+
   private records(identity: DaemonWorkspaceIdentity): readonly DaemonRecord[] {
     const prefix = `${identity.workspaceKey}.`;
     return this.recordNames()

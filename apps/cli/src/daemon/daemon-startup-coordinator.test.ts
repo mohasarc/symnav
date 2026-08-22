@@ -2,7 +2,7 @@ import { spawn } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { DaemonStartupCoordinator } from "./daemon-startup-coordinator.js";
 import {
   NodeDaemonProcessTerminator,
@@ -176,6 +176,17 @@ describe("DaemonStartupCoordinator", () => {
 
     expect(harness.registry.startupOwner(harness.identity)).toBeUndefined();
     expect(harness.registry.acquireStartup(harness.identity, "recovered")).toBeDefined();
+  });
+
+  it("does not launch after startup ownership changes before publication", async () => {
+    const harness = new CoordinatorHarness(roots);
+    vi.spyOn(harness.registry, "writeStartingIfStartupOwner").mockReturnValue(false);
+
+    await expect(harness.coordinator().ensureRunning(harness.identity)).rejects.toThrow(
+      /ownership changed/i,
+    );
+
+    expect(harness.launcher.launchCount).toBe(0);
   });
 
 });

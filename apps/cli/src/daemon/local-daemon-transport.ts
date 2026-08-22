@@ -294,6 +294,12 @@ export class LocalDaemonTransport {
     ) {
       throw new Error("Malformed daemon identity");
     }
+    if (
+      value.kind === "terminating" &&
+      (typeof value.instanceId !== "string" || typeof value.processToken !== "string")
+    ) {
+      throw new Error("Malformed daemon termination response");
+    }
   }
 
   private static isExecutionResult(value: unknown): boolean {

@@ -67,6 +67,34 @@ describe("DaemonCommandDispatcher real failure boundaries", () => {
     expect(runtime.registry.read(runtime.identity)).toBeUndefined();
     startupLease?.release();
   });
+
+  it.each(["refused", "malformed", "truncated", "mismatched"] as const)(
+    "invalidates a same-version %s endpoint and executes cold once without replacement",
+    async (scenario) => {
+      const runtime = createRuntime(roots);
+      runtime.registry.write(readyRecord(runtime.identity));
+      if (scenario !== "refused") {
+        const server = createServer((socket) => {
+          socket.once("data", () => socket.end(invalidResponse(scenario)));
+        });
+        servers.push(server);
+        await new Promise<void>((resolve, reject) => {
+          server.once("error", reject);
+          server.listen(runtime.identity.endpoint("failed"), resolve);
+        });
+      }
+      const ensureRunning = vi.fn();
+      const coldExecute = vi.fn(async () => coldResult);
+
+      await expect(
+        dispatcher(runtime, { ensureRunning }, coldExecute).execute(request),
+      ).resolves.toEqual({ mode: "fallback", result: coldResult });
+
+      expect(ensureRunning).not.toHaveBeenCalled();
+      expect(coldExecute).toHaveBeenCalledTimes(1);
+      expect(runtime.registry.read(runtime.identity)).toBeUndefined();
+    },
+  );
 });
 
 function createRuntime(roots: string[]) {

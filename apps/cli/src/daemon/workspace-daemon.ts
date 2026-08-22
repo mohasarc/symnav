@@ -57,6 +57,10 @@ export class WorkspaceDaemon {
     const retainedDependencies: ProgramDependencies = {
       ...options.dependencies,
       backends: () => retainedBackends,
+      backendRefreshed: (summary) => {
+        options.dependencies.backendRefreshed?.(summary);
+        this.logger.record({ kind: "freshness", ...summary });
+      },
     };
     this.now = options.now ?? Date.now;
     this.logger = new DaemonLogger(options.identity.logPath, { now: this.now });

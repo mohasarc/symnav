@@ -141,6 +141,7 @@ export class WorkspaceDaemon {
       };
     }
     if (
+      !("protocolVersion" in request) ||
       request.protocolVersion !== DAEMON_PROTOCOL_VERSION ||
       request.instanceId !== this.options.instanceId
     )

@@ -1,6 +1,8 @@
 import type { WorkspaceRequestQueueState } from "./daemon-protocol.js";
 
 export class WorkspaceRequestQueue {
+  private tail: Promise<void> = Promise.resolve();
+
   get state(): WorkspaceRequestQueueState {
     throw new Error("Workspace request queue state is not implemented");
   }
@@ -9,8 +11,10 @@ export class WorkspaceRequestQueue {
     throw new Error("Workspace request queue idle tracking is not implemented");
   }
 
-  enqueue<T>(_task: () => Promise<T>): Promise<T> {
-    throw new Error("Workspace request queue execution is not implemented");
+  enqueue<T>(task: () => Promise<T>): Promise<T> {
+    const result = this.tail.then(task);
+    this.tail = result.then(() => undefined);
+    return result;
   }
 
   drain(): Promise<void> {

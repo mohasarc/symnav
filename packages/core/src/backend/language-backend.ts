@@ -15,6 +15,8 @@ export interface BackendRefreshSummary {
   readonly unchanged: number;
 }
 
+export type BackendRefreshCoverage = "workspace" | "selection";
+
 export type ResolveSymbolsMode = "exact" | "fuzzy" | "regex";
 
 export type ResolveSymbolsOptions =

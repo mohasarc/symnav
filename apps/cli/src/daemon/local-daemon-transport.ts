@@ -84,9 +84,10 @@ export class LocalDaemonTransport {
         try {
           const value = decoder.append(Buffer.isBuffer(bytes) ? bytes : Buffer.from(bytes))[0];
           if (value === undefined) return;
+          const response = LocalDaemonTransport.responseFor(value);
           settled = true;
           socket.end();
-          resolve(value as DaemonResponse);
+          resolve(response);
         } catch (error) {
           fail(error);
         }
@@ -156,5 +157,24 @@ export class LocalDaemonTransport {
     for (let offset = 0; offset < frame.length; offset += this.writeChunkSize) {
       socket.write(frame.subarray(offset, offset + this.writeChunkSize));
     }
+  }
+
+  private static responseFor(value: unknown): DaemonResponse {
+    LocalDaemonTransport.assertResponse(value);
+    return value;
+  }
+
+  private static assertResponse(value: unknown): asserts value is DaemonResponse {
+    if (
+      !LocalDaemonTransport.isRecord(value) ||
+      typeof value.kind !== "string" ||
+      !["pong", "identity", "terminating", "stopped", "result"].includes(value.kind)
+    ) {
+      throw new Error("Malformed daemon response");
+    }
+  }
+
+  private static isRecord(value: unknown): value is Record<string, unknown> {
+    return typeof value === "object" && value !== null && !Array.isArray(value);
   }
 }

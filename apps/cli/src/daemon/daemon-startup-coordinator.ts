@@ -18,6 +18,7 @@ interface DaemonStartupCoordinatorOptions {
   readonly now?: () => number;
   readonly instanceId?: () => string;
   readonly processTerminator?: DaemonProcessTerminator;
+  readonly heartbeatIntervalMs?: number;
 }
 
 export class DaemonStartupCoordinator {

@@ -105,14 +105,9 @@ export class DaemonStartupCoordinator {
     if (!this.registry.writeStartingIfStartupOwner(identity, startingRecord)) {
       throw new Error("Daemon startup ownership changed before process launch");
     }
-    let daemonProcess: DaemonProcess;
+    let daemonProcess: DaemonProcess | undefined;
     try {
       daemonProcess = await this.launcher.launch(identity, instanceId, processToken);
-    } catch (error) {
-      this.registry.removeIfInstance(identity, instanceId);
-      throw error;
-    }
-    try {
       if (
         !this.registry.writeStartingIfStartupOwner(identity, {
           ...startingRecord,
@@ -129,11 +124,13 @@ export class DaemonStartupCoordinator {
         loadDurationMs: (ready.readyAt ?? this.now()) - ready.startedAt,
       };
     } catch (error) {
-      try {
-        await daemonProcess.terminate();
-      } catch (terminationError) {
-        if (terminationError instanceof DaemonProcessTerminationError) throw terminationError;
-        throw new DaemonProcessTerminationError(String(terminationError));
+      if (daemonProcess !== undefined) {
+        try {
+          await daemonProcess.terminate();
+        } catch (terminationError) {
+          if (terminationError instanceof DaemonProcessTerminationError) throw terminationError;
+          throw new DaemonProcessTerminationError(String(terminationError));
+        }
       }
       this.registry.removeIfInstance(identity, instanceId);
       throw error;
@@ -169,8 +166,8 @@ export class DaemonStartupCoordinator {
 
   private startupOwnerIsAbandoned(owner: StartupOwner): boolean {
     return (
-      !this.registry.startupOwnerIsWithinGrace(owner) &&
-      !this.processTerminator.isAlive(owner.ownerPid)
+      !this.processTerminator.isAlive(owner.ownerPid) ||
+      !this.registry.startupOwnerIsWithinGrace(owner)
     );
   }
 

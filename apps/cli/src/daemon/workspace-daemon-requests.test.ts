@@ -201,6 +201,26 @@ describe("WorkspaceDaemon requests", () => {
     );
   });
 
+  it("closes transport and exits after registry cleanup fails", async () => {
+    const harness = await RequestHarness.start(new ImmediateExecutor());
+    harnesses.push(harness);
+    harness.failRegistryRemoval();
+
+    await harness.stop();
+    await harness.exited;
+
+    expect(harness.transport.isListening).toBe(false);
+    expect(harness.logEvents()).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          kind: "failure",
+          operation: "registry-cleanup",
+          message: "registry cleanup failed",
+        }),
+      ]),
+    );
+  });
+
 });
 
 class RequestHarness {

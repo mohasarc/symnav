@@ -9,9 +9,12 @@ import { LocalDaemonTransport } from "./local-daemon-transport.js";
 
 describe("LocalDaemonTransport validation", () => {
   const servers: Server[] = [];
+  const sockets: Socket[] = [];
   const directories: string[] = [];
 
   afterEach(async () => {
+    for (const socket of sockets) socket.destroy();
+    sockets.length = 0;
     await Promise.all(servers.map((server) => new Promise<void>((resolve) => server.close(() => resolve()))));
     servers.length = 0;
     for (const directory of directories) rmSync(directory, { recursive: true, force: true });
@@ -19,7 +22,7 @@ describe("LocalDaemonTransport validation", () => {
   });
 
   it("times out a daemon request that never receives a response", async () => {
-    const endpoint = await rawServer(servers, directories, (socket) => {
+    const endpoint = await rawServer(servers, sockets, directories, (socket) => {
       setTimeout(() => socket.destroy(), 50);
     });
     const transport = new LocalDaemonTransport({ requestTimeoutMs: 10 });
@@ -32,7 +35,7 @@ describe("LocalDaemonTransport validation", () => {
   it("rejects malformed daemon frame JSON", async () => {
     const prefix = Buffer.alloc(4);
     prefix.writeUInt32BE(1);
-    const endpoint = await rawServer(servers, directories, (socket) => {
+    const endpoint = await rawServer(servers, sockets, directories, (socket) => {
       socket.write(Buffer.concat([prefix, Buffer.from("{")]));
       setTimeout(() => socket.destroy(), 50);
     });
@@ -45,7 +48,7 @@ describe("LocalDaemonTransport validation", () => {
   it("rejects oversized inbound daemon frames", async () => {
     const prefix = Buffer.alloc(4);
     prefix.writeUInt32BE(129);
-    const endpoint = await rawServer(servers, directories, (socket) => {
+    const endpoint = await rawServer(servers, sockets, directories, (socket) => {
       socket.write(prefix);
       setTimeout(() => socket.destroy(), 50);
     });
@@ -61,7 +64,7 @@ describe("LocalDaemonTransport validation", () => {
   it("rejects truncated daemon frames", async () => {
     const prefix = Buffer.alloc(4);
     prefix.writeUInt32BE(10);
-    const endpoint = await rawServer(servers, directories, (socket) => {
+    const endpoint = await rawServer(servers, sockets, directories, (socket) => {
       socket.end(Buffer.concat([prefix, Buffer.from("{}")]));
       setTimeout(() => socket.destroy(), 50);
     });
@@ -85,7 +88,7 @@ describe("LocalDaemonTransport validation", () => {
   });
 
   it("rejects unknown daemon response envelopes", async () => {
-    const endpoint = await rawServer(servers, directories, (socket) => {
+    const endpoint = await rawServer(servers, sockets, directories, (socket) => {
       socket.write(frame({ kind: "unknown" }));
       setTimeout(() => socket.destroy(), 50);
     });
@@ -108,7 +111,7 @@ describe("LocalDaemonTransport validation", () => {
       result: { frames: [{ stream: "stdout", bytesBase64: "***" }], exitCode: 0 },
     },
   ])("rejects malformed daemon result payload %#", async (response) => {
-    const endpoint = await rawServer(servers, directories, (socket) => {
+    const endpoint = await rawServer(servers, sockets, directories, (socket) => {
       socket.write(frame(response));
       setTimeout(() => socket.destroy(), 50);
     });
@@ -126,7 +129,7 @@ describe("LocalDaemonTransport validation", () => {
   });
 
   it("rejects a response kind for a different request", async () => {
-    const endpoint = await rawServer(servers, directories, (socket) => {
+    const endpoint = await rawServer(servers, sockets, directories, (socket) => {
       socket.write(
         frame({
           kind: "result",
@@ -149,7 +152,7 @@ describe("LocalDaemonTransport validation", () => {
       instanceId: "instance",
       symnavVersion: "test",
     });
-    const endpoint = await rawServer(servers, directories, (socket) => {
+    const endpoint = await rawServer(servers, sockets, directories, (socket) => {
       socket.write(Buffer.concat([response, response]));
       setTimeout(() => socket.destroy(), 50);
     });
@@ -181,7 +184,7 @@ describe("LocalDaemonTransport validation", () => {
   });
 
   it("rejects malformed daemon pong responses", async () => {
-    const endpoint = await rawServer(servers, directories, (socket) => {
+    const endpoint = await rawServer(servers, sockets, directories, (socket) => {
       socket.write(
         frame({
           kind: "pong",
@@ -199,7 +202,7 @@ describe("LocalDaemonTransport validation", () => {
   });
 
   it("rejects malformed daemon stop responses", async () => {
-    const endpoint = await rawServer(servers, directories, (socket) => {
+    const endpoint = await rawServer(servers, sockets, directories, (socket) => {
       socket.write(frame({ kind: "stopped" }));
       setTimeout(() => socket.destroy(), 50);
     });
@@ -214,7 +217,7 @@ describe("LocalDaemonTransport validation", () => {
   });
 
   it("rejects malformed daemon identity responses", async () => {
-    const endpoint = await rawServer(servers, directories, (socket) => {
+    const endpoint = await rawServer(servers, sockets, directories, (socket) => {
       socket.write(
         frame({ kind: "identity", instanceId: "instance", processToken: "process" }),
       );
@@ -231,7 +234,7 @@ describe("LocalDaemonTransport validation", () => {
   });
 
   it("rejects malformed daemon termination responses", async () => {
-    const endpoint = await rawServer(servers, directories, (socket) => {
+    const endpoint = await rawServer(servers, sockets, directories, (socket) => {
       socket.write(frame({ kind: "terminating", instanceId: "instance" }));
       setTimeout(() => socket.destroy(), 50);
     });
@@ -248,7 +251,7 @@ describe("LocalDaemonTransport validation", () => {
   it.each(["startedAt", "fileCount", "memoryBytes", "lastNavigationAt"] as const)(
     "rejects invalid %s pong metadata",
     async (field) => {
-      const endpoint = await rawServer(servers, directories, (socket) => {
+      const endpoint = await rawServer(servers, sockets, directories, (socket) => {
         socket.end(
           frame({
             kind: "pong",
@@ -288,7 +291,7 @@ describe("LocalDaemonTransport validation", () => {
   });
 
   it("rejects malformed deferred telemetry results", async () => {
-    const endpoint = await rawServer(servers, directories, (socket) => {
+    const endpoint = await rawServer(servers, sockets, directories, (socket) => {
       socket.end(
         frame({
           kind: "result",
@@ -333,13 +336,17 @@ function frame(value: unknown): Buffer {
 
 async function rawServer(
   servers: Server[],
+  sockets: Socket[],
   directories: string[],
   connected: (socket: Socket) => void,
 ): Promise<string> {
   const directory = mkdtempSync(join(tmpdir(), "symnav-transport-validation-"));
   directories.push(directory);
   const endpoint = join(directory, "daemon.sock");
-  const server = createServer(connected);
+  const server = createServer((socket) => {
+    sockets.push(socket);
+    connected(socket);
+  });
   servers.push(server);
   await new Promise<void>((resolve, reject) => {
     server.once("error", reject);

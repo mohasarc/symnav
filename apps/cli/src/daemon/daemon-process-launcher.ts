@@ -167,3 +167,29 @@ export class NodeDaemonProcessLauncher implements DaemonProcessLauncher {
     );
   }
 }
+
+export class DaemonProcessConfigurationParser {
+  static parse(encoded: string | undefined): DaemonProcessConfiguration {
+    if (encoded === undefined) throw new Error("Missing daemon process configuration");
+    const value: unknown = JSON.parse(Buffer.from(encoded, "base64url").toString("utf8"));
+    if (!DaemonProcessConfigurationParser.isConfiguration(value)) {
+      throw new Error("Invalid daemon process configuration");
+    }
+    return value;
+  }
+
+  private static isConfiguration(value: unknown): value is DaemonProcessConfiguration {
+    if (typeof value !== "object" || value === null) return false;
+    const configuration = value as Record<string, unknown>;
+    return (
+      typeof configuration.workspaceRoot === "string" &&
+      typeof configuration.stateDir === "string" &&
+      typeof configuration.workspaceKey === "string" &&
+      typeof configuration.instanceId === "string" &&
+      typeof configuration.processToken === "string" &&
+      typeof configuration.endpoint === "string" &&
+      typeof configuration.symnavVersion === "string" &&
+      typeof configuration.memoryCapBytes === "number"
+    );
+  }
+}

@@ -58,35 +58,49 @@ export class TypeScriptWorkspaceState {
     files: readonly WorkspaceFile[],
     coverage: BackendRefreshCoverage = "workspace",
   ): BackendRefreshSummary {
-    const incomingPaths = new Set(files.map((file) => file.relative));
-    let added = 0;
-    let changed = 0;
+    const incomingRevisions = files.map((file) => TypeScriptWorkspaceState.revisionFor(file));
+    const incomingPaths = new Set(incomingRevisions.map((revision) => revision.relativePath));
+    const added: TypeScriptFileRevision[] = [];
+    const changed: TypeScriptFileRevision[] = [];
+    const revisionsToPrepare: TypeScriptFileRevision[] = [];
     let unchanged = 0;
-    for (const file of files) {
-      const revision = TypeScriptWorkspaceState.revisionFor(file);
-      const current = this.revisionsByRelativePath.get(file.relative);
+
+    for (const revision of incomingRevisions) {
+      const current = this.revisionsByRelativePath.get(revision.relativePath);
       if (!current) {
-        this.addFile(file);
-        added += 1;
+        added.push(revision);
+        revisionsToPrepare.push(revision);
         continue;
       }
       if (TypeScriptWorkspaceState.sameRevision(current, revision)) {
         unchanged += 1;
         continue;
       }
-      this.changeFile(file, revision);
-      changed += 1;
+      changed.push(revision);
+      revisionsToPrepare.push(revision);
     }
+
     const removed =
       coverage === "workspace"
         ? [...this.revisionsByRelativePath.keys()].filter(
             (relativePath) => !incomingPaths.has(relativePath),
           )
         : [];
+    const prepared = this.prepareFiles(revisionsToPrepare);
+
     for (const relativePath of removed) {
       this.removeFile(relativePath);
     }
-    return { added, changed, removed: removed.length, unchanged };
+    for (const preparedFile of prepared) {
+      this.publishFile(preparedFile);
+    }
+
+    return {
+      added: added.length,
+      changed: changed.length,
+      removed: removed.length,
+      unchanged,
+    };
   }
 
   currentFileCount(): number {
@@ -147,24 +161,47 @@ export class TypeScriptWorkspaceState {
 
   private addFile(path: ResolvedPath): void {
     const metadata = this.fs.metadataSync(path.absolute);
-    const revision: TypeScriptFileRevision = {
-      relativePath: path.relative,
-      absolutePath: path.absolute,
-      size: metadata.size,
-      modifiedAtMs: metadata.modifiedAtMs,
-    };
-    const sourceFile = this.project.addSourceFileAtPath(path.absolute);
-    this.publishFile(this.buildFileIndex(sourceFile, path, revision));
+    const prepared = this.prepareFiles([
+      {
+        relativePath: path.relative,
+        absolutePath: path.absolute,
+        size: metadata.size,
+        modifiedAtMs: metadata.modifiedAtMs,
+      },
+    ]);
+    const preparedFile = prepared[0];
+    if (preparedFile) {
+      this.publishFile(preparedFile);
+    }
   }
 
-  private changeFile(path: ResolvedPath, revision: TypeScriptFileRevision): void {
-    const sourceFile = this.project.getSourceFile(path.absolute);
-    if (!sourceFile) {
-      this.addFile(path);
-      return;
-    }
-    sourceFile.replaceWithText(this.fs.readFileSync(path.absolute));
-    this.publishFile(this.buildFileIndex(sourceFile, path, revision));
+  private prepareFiles(revisions: readonly TypeScriptFileRevision[]): readonly PreparedFileIndex[] {
+    const candidates = revisions.map((revision) => {
+      const existingPath = this.fileByRelativePath.get(revision.relativePath);
+      const existingSourceFile =
+        existingPath?.absolute === revision.absolutePath
+          ? this.project.getSourceFile(revision.absolutePath)
+          : undefined;
+      return {
+        revision,
+        existingSourceFile,
+        content: existingSourceFile ? this.fs.readFileSync(revision.absolutePath) : undefined,
+      };
+    });
+    return candidates.map(({ revision, existingSourceFile, content }) => {
+      const path: ResolvedPath = {
+        relative: revision.relativePath,
+        absolute: revision.absolutePath,
+      };
+      let sourceFile: SourceFile;
+      if (existingSourceFile) {
+        existingSourceFile.replaceWithText(content!);
+        sourceFile = existingSourceFile;
+      } else {
+        sourceFile = this.project.addSourceFileAtPath(revision.absolutePath);
+      }
+      return this.buildFileIndex(sourceFile, path, revision);
+    });
   }
 
   private buildFileIndex(

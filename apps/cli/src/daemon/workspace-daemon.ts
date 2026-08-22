@@ -191,6 +191,9 @@ export class WorkspaceDaemon {
         durationMs: Math.max(0, this.now() - requestStartedAt),
         exitCode: result.exitCode,
       });
+      if (!(await this.options.dependencies.fs.exists(this.options.identity.workspaceRoot))) {
+        setTimeout(() => void this.shutdown("workspace-deleted"), 0);
+      }
       return {
         kind: "result",
         requestId: request.requestId,
@@ -207,7 +210,10 @@ export class WorkspaceDaemon {
     await this.shutdown(reason);
   }
 
-  private async shutdown(reason: "graceful" | "idle", force = false): Promise<void> {
+  private async shutdown(
+    reason: "graceful" | "idle" | "workspace-deleted",
+    force = false,
+  ): Promise<void> {
     if (this.shutdownStarted) return;
     this.shutdownStarted = true;
     this.lifetime.stop();

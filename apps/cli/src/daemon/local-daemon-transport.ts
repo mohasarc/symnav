@@ -288,7 +288,11 @@ export class LocalDaemonTransport {
       if (
         typeof value.protocolVersion !== "number" ||
         typeof value.instanceId !== "string" ||
-        typeof value.symnavVersion !== "string"
+        typeof value.symnavVersion !== "string" ||
+        (value.startedAt !== undefined && typeof value.startedAt !== "number") ||
+        (value.fileCount !== undefined && typeof value.fileCount !== "number") ||
+        (value.memoryBytes !== undefined && typeof value.memoryBytes !== "number") ||
+        (value.lastNavigationAt !== undefined && typeof value.lastNavigationAt !== "number")
       ) {
         throw new Error("Malformed daemon pong");
       }

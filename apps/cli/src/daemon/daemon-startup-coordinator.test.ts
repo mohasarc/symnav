@@ -11,6 +11,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { DaemonController } from "./daemon-controller.js";
 import { DaemonStartupCoordinator } from "./daemon-startup-coordinator.js";
 import {
   NodeDaemonProcessTerminator,
@@ -239,6 +240,37 @@ describe("DaemonStartupCoordinator", () => {
     expect(harness.registry.startupOwner(harness.identity)).toEqual(observedOwner);
     expect(harness.launcher.launchCount).toBe(0);
   });
+
+  it("elects one fresh daemon after a mutation owner is killed", async () => {
+    const harness = new CoordinatorHarness(roots);
+    const stateDirectory = dirname(harness.identity.registryDirectory);
+    const readyPath = join(stateDirectory, "mutation-owner-ready");
+    const mutationOwner = spawnStartupMutationOwner(
+      harness.identity.workspaceRoot,
+      stateDirectory,
+      readyPath,
+    );
+    await waitUntil(() => existsSync(readyPath));
+    const mutationOwnerPid = Number(readFileSync(readyPath, "utf8"));
+    realProcessIds.push(mutationOwnerPid);
+    await new NodeDaemonProcessTerminator(100, 5).terminate(mutationOwnerPid);
+    mutationOwner.kill("SIGKILL");
+    const controller = new DaemonController(
+      harness.registry,
+      harness.transport as unknown as LocalDaemonTransport,
+      stateDirectory,
+      { processTerminator: harness.terminator },
+    );
+
+    await expect(controller.status()).resolves.toEqual([]);
+    const [first, second] = await Promise.all([
+      harness.coordinator().ensureRunning(harness.identity),
+      harness.coordinator().ensureRunning(harness.identity),
+    ]);
+
+    expect([first.status, second.status].sort()).toEqual(["already-running", "ready"]);
+    expect(harness.launcher.launchCount).toBe(1);
+  }, 10_000);
 
 });
 

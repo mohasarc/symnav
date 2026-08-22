@@ -102,6 +102,40 @@ describe("symnav daemon status", () => {
     );
   });
 
+  it("reports starting only while the matching cross-process owner is live", async () => {
+    const stateDir = temporaryStateDirectory(stateDirectories);
+    const workspaceRoot = temporaryWorkspace(stateDirectories);
+    const readyPath = join(stateDir, "publisher-ready");
+    const barrierPath = join(stateDir, "publisher-go");
+    const resultPath = join(stateDir, "publisher-result");
+    const publisher = spawnStartupPublisher(
+      workspaceRoot,
+      stateDir,
+      readyPath,
+      barrierPath,
+      resultPath,
+    );
+    helperProcesses.push(publisher);
+    await waitUntil(() => existsSync(readyPath));
+
+    const starting = runSymnavBinary(["daemon", "status", "--json"], {
+      cwd: tmpdir(),
+      env: { SYMNAV_STATE_DIR: stateDir },
+    });
+    expect(JSON.parse(starting.stdout)).toEqual([
+      expect.objectContaining({ workspaceRoot, state: "starting", pid: 0 }),
+    ]);
+
+    writeFileSync(barrierPath, "go");
+    await waitForProcess(publisher);
+    helperProcesses.splice(helperProcesses.indexOf(publisher), 1);
+    const stopped = runSymnavBinary(["daemon", "status", "--json"], {
+      cwd: tmpdir(),
+      env: { SYMNAV_STATE_DIR: stateDir },
+    });
+    expect(JSON.parse(stopped.stdout)).toEqual([]);
+  });
+
   it("returns the cold workspace error and exits after workspace deletion", async () => {
     const stateDir = temporaryStateDirectory(stateDirectories);
     const workspaceRoot = mkdtempSync(join(tmpdir(), "symnav-deleted-workspace-"));

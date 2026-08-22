@@ -15,6 +15,7 @@ export interface WorkspaceDaemonOptions {
   readonly transport: LocalDaemonTransport;
   readonly now?: () => number;
   readonly exit?: (code: number) => never;
+  readonly executor?: DaemonCommandExecutor;
 }
 
 export interface DaemonCommandExecutor {

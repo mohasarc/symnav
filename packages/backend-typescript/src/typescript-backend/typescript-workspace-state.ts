@@ -55,16 +55,24 @@ export class TypeScriptWorkspaceState {
     coverage: BackendRefreshCoverage = "workspace",
   ): BackendRefreshSummary {
     let added = 0;
+    let changed = 0;
     let unchanged = 0;
     for (const file of files) {
-      if (this.fileByRelativePath.has(file.relative)) {
+      const revision = TypeScriptWorkspaceState.revisionFor(file);
+      const current = this.revisionsByRelativePath.get(file.relative);
+      if (!current) {
+        this.addFile(file);
+        added += 1;
+        continue;
+      }
+      if (TypeScriptWorkspaceState.sameRevision(current, revision)) {
         unchanged += 1;
         continue;
       }
-      this.addFile(file);
-      added += 1;
+      this.changeFile(file, revision);
+      changed += 1;
     }
-    return { added, changed: 0, removed: 0, unchanged };
+    return { added, changed, removed: 0, unchanged };
   }
 
   ensureFiles(files: readonly ResolvedPath[]): void {
@@ -131,6 +139,16 @@ export class TypeScriptWorkspaceState {
     this.publishFile(this.buildFileIndex(sourceFile, path, revision));
   }
 
+  private changeFile(path: ResolvedPath, revision: TypeScriptFileRevision): void {
+    const sourceFile = this.project.getSourceFile(path.absolute);
+    if (!sourceFile) {
+      this.addFile(path);
+      return;
+    }
+    sourceFile.replaceWithText(this.fs.readFileSync(path.absolute));
+    this.publishFile(this.buildFileIndex(sourceFile, path, revision));
+  }
+
   private buildFileIndex(
     sourceFile: SourceFile,
     path: ResolvedPath,
@@ -189,5 +207,26 @@ export class TypeScriptWorkspaceState {
     }
     this.declarationsByPosition.delete(relativePath);
     this.declarationsByFile.delete(relativePath);
+  }
+
+  private static revisionFor(file: WorkspaceFile): TypeScriptFileRevision {
+    return {
+      relativePath: file.relative,
+      absolutePath: file.absolute,
+      size: file.metadata.size,
+      modifiedAtMs: file.metadata.modifiedAtMs,
+    };
+  }
+
+  private static sameRevision(
+    current: TypeScriptFileRevision,
+    incoming: TypeScriptFileRevision,
+  ): boolean {
+    return (
+      current.relativePath === incoming.relativePath &&
+      current.absolutePath === incoming.absolutePath &&
+      current.size === incoming.size &&
+      current.modifiedAtMs === incoming.modifiedAtMs
+    );
   }
 }

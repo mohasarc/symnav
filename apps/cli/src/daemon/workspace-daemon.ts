@@ -118,22 +118,26 @@ export class WorkspaceDaemon {
         startedAt: this.startedAt,
       };
     }
-    if (request.kind === "terminate") {
+    if (request.kind === "terminate" || request.kind === "kill") {
       if (
         request.instanceId !== this.options.instanceId ||
         request.processToken !== this.options.processToken
       ) {
         throw new Error("Daemon termination does not match process instance");
       }
-      setTimeout(() => void this.shutdown(), 0);
+      if (request.kind === "terminate") {
+        await this.requestQueue.drain();
+        setTimeout(() => void this.shutdown(), 0);
+      } else {
+        setTimeout(() => void this.shutdown(true), 0);
+      }
       return {
-        kind: "terminating",
+        kind: request.kind === "terminate" ? "terminating" : "killing",
         instanceId: this.options.instanceId,
         processToken: this.options.processToken,
       };
     }
     if (
-      !("protocolVersion" in request) ||
       request.protocolVersion !== DAEMON_PROTOCOL_VERSION ||
       request.instanceId !== this.options.instanceId
     )
@@ -158,9 +162,9 @@ export class WorkspaceDaemon {
     return { kind: "stopped", instanceId: this.options.instanceId };
   }
 
-  private async shutdown(): Promise<void> {
+  private async shutdown(force = false): Promise<void> {
     this.requestQueue.close();
-    await this.server?.close();
+    await this.server?.close(force);
     this.options.registry.removeIfInstance(this.options.identity, this.options.instanceId);
     this.exit(0);
   }

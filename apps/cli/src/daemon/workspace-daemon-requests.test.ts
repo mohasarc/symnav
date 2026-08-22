@@ -230,13 +230,13 @@ class RequestHarness {
     });
   }
 
-  execute(requestId: string): Promise<DaemonResponse> {
+  execute(requestId: string, argv: readonly string[] = ["--version"]): Promise<DaemonResponse> {
     return this.transport.receive({
       kind: "execute",
       protocolVersion: DAEMON_PROTOCOL_VERSION,
       instanceId: this.instanceId,
       requestId,
-      request: { argv: ["--version"], cwd: this.workspaceRoot, telemetryEnabled: false },
+      request: { argv, cwd: this.workspaceRoot, telemetryEnabled: false },
     });
   }
 

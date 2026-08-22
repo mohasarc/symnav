@@ -127,6 +127,18 @@ describe("DaemonStartupCoordinator", () => {
     expect(harness.registry.startupOwner(harness.identity)).toBeUndefined();
   });
 
+  it("terminates and cleans a daemon that misses its readiness deadline", async () => {
+    const harness = new CoordinatorHarness(roots, { neverReady: true });
+
+    await expect(
+      harness.coordinator({ startupTimeoutMs: 5 }).ensureRunning(harness.identity),
+    ).rejects.toThrow(/timed out/i);
+
+    expect(harness.terminator.terminated).toContain(harness.launcher.lastPid);
+    expect(harness.registry.readStored(harness.identity)).toBeUndefined();
+    expect(harness.registry.startupOwner(harness.identity)).toBeUndefined();
+  });
+
 });
 
 interface CoordinatorHarnessOptions {

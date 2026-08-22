@@ -4,10 +4,9 @@ import { dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawn } from "node:child_process";
 import type { DaemonWorkspaceIdentity } from "./daemon-workspace-identity.js";
+import { daemonMemoryCapBytes } from "./daemon-resource-monitor.js";
 
 const MEBIBYTE = 1024 * 1024;
-const MINIMUM_MEMORY_CAP_BYTES = 256 * MEBIBYTE;
-const MAXIMUM_MEMORY_CAP_BYTES = 4 * 1024 * MEBIBYTE;
 
 interface DaemonProcessConfiguration {
   readonly workspaceRoot: string;
@@ -161,10 +160,7 @@ export class NodeDaemonProcessLauncher implements DaemonProcessLauncher {
   }
 
   private static defaultMemoryCapBytes(): number {
-    return Math.max(
-      MINIMUM_MEMORY_CAP_BYTES,
-      Math.min(MAXIMUM_MEMORY_CAP_BYTES, Math.floor(totalmem() / 4)),
-    );
+    return daemonMemoryCapBytes(totalmem());
   }
 }
 

@@ -67,4 +67,21 @@ describe("WorkspaceRequestQueue", () => {
     await expect(rejected).rejects.toThrow("rejected");
     expect(queue.isIdle).toBe(true);
   });
+
+  it("drains active work and rejects new work", async () => {
+    const queue = new WorkspaceRequestQueue();
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const active = queue.enqueue(() => gate);
+
+    const drained = queue.drain();
+    expect(queue.state).toBe("draining");
+    await expect(queue.enqueue(() => Promise.resolve())).rejects.toThrow(/draining/i);
+    release();
+    await active;
+    await drained;
+    expect(queue.state).toBe("closed");
+  });
 });

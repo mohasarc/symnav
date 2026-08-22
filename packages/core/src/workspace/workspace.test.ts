@@ -78,6 +78,76 @@ function workspaceFileSystem(): CountingFileSystem {
   );
 }
 
+class MutableWorkspaceFileSystem implements FileSystem {
+  private readonly files = new Map<string, string>();
+  private modifiedAtMs = 0;
+
+  constructor(files: Record<string, string>) {
+    for (const [path, content] of Object.entries(files)) {
+      this.files.set(path, content);
+    }
+  }
+
+  setFile(path: string, content: string): void {
+    this.files.set(path, content);
+    this.modifiedAtMs += 1;
+  }
+
+  deleteFile(path: string): void {
+    this.files.delete(path);
+    this.modifiedAtMs += 1;
+  }
+
+  readFile(absPath: string): Promise<string> {
+    return Promise.resolve(this.readFileSync(absPath));
+  }
+
+  exists(absPath: string): Promise<boolean> {
+    return Promise.resolve(this.existsSync(absPath));
+  }
+
+  listDir(absPath: string): Promise<readonly string[]> {
+    return Promise.resolve(this.delegate().listDirSync(absPath));
+  }
+
+  isDirectory(absPath: string): Promise<boolean> {
+    return Promise.resolve(this.delegate().isDirectorySync(absPath));
+  }
+
+  metadata(absPath: string): Promise<FileMetadata> {
+    return Promise.resolve(this.metadataSync(absPath));
+  }
+
+  existsSync(absPath: string): boolean {
+    return this.delegate().existsSync(absPath);
+  }
+
+  readFileSync(absPath: string): string {
+    const content = this.files.get(absPath);
+    if (content === undefined) {
+      throw new Error(`ENOENT: no such file: ${absPath}`);
+    }
+    return content;
+  }
+
+  listDirSync(absPath: string): readonly string[] {
+    return this.delegate().listDirSync(absPath);
+  }
+
+  isDirectorySync(absPath: string): boolean {
+    return this.delegate().isDirectorySync(absPath);
+  }
+
+  metadataSync(absPath: string): FileMetadata {
+    const content = this.readFileSync(absPath);
+    return { size: Buffer.byteLength(content), modifiedAtMs: this.modifiedAtMs };
+  }
+
+  private delegate(): InMemoryFileSystem {
+    return new InMemoryFileSystem(Object.fromEntries(this.files));
+  }
+}
+
 describe("Workspace snapshots", () => {
   it("stats only a selected path after one ignore-aware traversal", async () => {
     const fs = workspaceFileSystem();

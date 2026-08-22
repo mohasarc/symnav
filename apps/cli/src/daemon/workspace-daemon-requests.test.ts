@@ -68,6 +68,18 @@ describe("WorkspaceDaemon requests", () => {
     });
   });
 
+  it("reports protocol and process identity to matching pings", async () => {
+    const harness = await RequestHarness.start(new ImmediateExecutor());
+    harnesses.push(harness);
+
+    await expect(harness.ping()).resolves.toMatchObject({
+      kind: "pong",
+      protocolVersion: DAEMON_PROTOCOL_VERSION,
+      instanceId: harness.instanceId,
+      symnavVersion: "test",
+    });
+  });
+
 });
 
 class RequestHarness {

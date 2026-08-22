@@ -139,6 +139,35 @@ describe("DaemonCommandDispatcher", () => {
     expect(harness.coldExecute).toHaveBeenCalledOnce();
   });
 
+  it("executes one fallback when initial registry discovery throws", async () => {
+    const harness = new DispatchHarness(success, { registryReadFailures: [1] });
+
+    await expect(harness.dispatcher().execute(request)).resolves.toEqual({
+      mode: "fallback",
+      result: success,
+    });
+
+    expect(harness.ensureRunning).not.toHaveBeenCalled();
+    expect(harness.removeIfInstance).not.toHaveBeenCalled();
+    expect(harness.coldExecute).toHaveBeenCalledTimes(1);
+  });
+
+  it("executes one fallback when recovery registry discovery throws", async () => {
+    const harness = new DispatchHarness(success, {
+      initiallyRegistered: false,
+      ensureFailure: new Error("startup failed"),
+      registryReadFailures: [2],
+    });
+
+    await expect(harness.dispatcher().execute(request)).resolves.toEqual({
+      mode: "fallback",
+      result: success,
+    });
+
+    expect(harness.ensureRunning).toHaveBeenCalledOnce();
+    expect(harness.removeIfInstance).not.toHaveBeenCalled();
+    expect(harness.coldExecute).toHaveBeenCalledTimes(1);
+  });
   it("does not touch daemon state when disabled", async () => {
     const harness = new DispatchHarness(success, { daemonEnabled: false });
 
@@ -167,6 +196,8 @@ interface DispatchHarnessOptions {
   readonly daemonEnabled?: boolean;
   readonly initiallyRegistered?: boolean;
   readonly record?: Partial<DaemonRecord>;
+  readonly ensureFailure?: Error;
+  readonly registryReadFailures?: readonly number[];
 }
 
 class DispatchHarness {
@@ -180,6 +211,7 @@ class DispatchHarness {
   private daemonAnswer: CommandExecutionResult | Error;
   private killFailure: Error | undefined;
   private removalFailure: Error | undefined;
+  private registryReadCount = 0;
 
   constructor(
     daemonAnswer: CommandExecutionResult | Error,
@@ -189,6 +221,7 @@ class DispatchHarness {
     this.registered =
       options.initiallyRegistered === false ? undefined : { ...daemonRecord(), ...options.record };
     this.ensureRunning = vi.fn(async () => {
+      if (options.ensureFailure !== undefined) throw options.ensureFailure;
       this.registered = daemonRecord("replacement");
       return {
         status: "ready" as const,
@@ -200,7 +233,13 @@ class DispatchHarness {
     this.runtime = {
       coordinator: { ensureRunning: this.ensureRunning },
       registry: {
-        read: () => this.registered,
+        read: () => {
+          this.registryReadCount += 1;
+          if (this.options.registryReadFailures?.includes(this.registryReadCount) === true) {
+            throw new Error("registry read failed");
+          }
+          return this.registered;
+        },
         removeIfInstance: (identity, instanceId) => {
           this.removeIfInstance(identity, instanceId);
           if (this.removalFailure !== undefined) throw this.removalFailure;

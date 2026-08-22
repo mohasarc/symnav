@@ -284,6 +284,20 @@ export class DaemonRegistry {
   private beginStartupMutation(
     identity: DaemonWorkspaceIdentity,
   ): RegistryStartupMutationLease | undefined {
+    const claimed = this.claimStartupMutation(identity);
+    if (claimed !== undefined) return claimed;
+    const observedOwner = DaemonRegistry.readStartupMutationOwner(
+      identity,
+      identity.startupMutationPath,
+    );
+    if (
+      observedOwner !== undefined &&
+      DaemonRegistry.processIsAlive(observedOwner.ownerPid) &&
+      Date.now() - observedOwner.acquiredAt <= DAEMON_STARTUP_TIMEOUT_MS
+    ) {
+      return undefined;
+    }
+    if (!this.recoverStartupMutation(identity, observedOwner)) return undefined;
     return this.claimStartupMutation(identity);
   }
 
@@ -319,6 +333,27 @@ export class DaemonRegistry {
     } catch (error) {
       rmSync(claimPath, { recursive: true, force: true });
       if (existsSync(identity.startupMutationPath)) return undefined;
+      throw error;
+    }
+  }
+
+  private recoverStartupMutation(
+    identity: DaemonWorkspaceIdentity,
+    observedOwner: StartupMutationOwner | undefined,
+  ): boolean {
+    const currentOwner = DaemonRegistry.readStartupMutationOwner(
+      identity,
+      identity.startupMutationPath,
+    );
+    if (!DaemonRegistry.sameOptionalStartupMutationOwner(currentOwner, observedOwner)) return false;
+    const recoveryToken = observedOwner?.token ?? "ownerless";
+    const releasedPath = identity.releasedStartupMutationPath(recoveryToken);
+    try {
+      renameSync(identity.startupMutationPath, releasedPath);
+      return true;
+    } catch (error) {
+      if (existsSync(releasedPath)) return true;
+      if (DaemonRegistry.errorCode(error) === "ENOENT") return false;
       throw error;
     }
   }
@@ -447,6 +482,14 @@ export class DaemonRegistry {
       current.acquiredAt === observed.acquiredAt &&
       current.token === observed.token
     );
+  }
+
+  private static sameOptionalStartupMutationOwner(
+    left: StartupMutationOwner | undefined,
+    right: StartupMutationOwner | undefined,
+  ): boolean {
+    if (left === undefined || right === undefined) return left === right;
+    return DaemonRegistry.sameStartupMutationOwner(left, right);
   }
 
   private static readStartupOwner(

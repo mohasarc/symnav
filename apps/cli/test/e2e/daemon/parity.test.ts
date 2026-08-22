@@ -55,6 +55,35 @@ describe("symnav daemon parity", () => {
 
     expect(harness.warm(args)).toEqual(harness.cold(args));
   });
+  it("resolves relative --cwd from the requesting client directory", () => {
+    const harness = new DaemonParityHarness();
+    harnesses.push(harness);
+    harness.warm(["overview", "input.ts"]);
+    const nestedDirectory = join(harness.workspaceRoot, "nested");
+    mkdirSync(nestedDirectory);
+    const args = ["--cwd", "..", "overview", "input.ts"];
+
+    expect(harness.warmFrom(nestedDirectory, args)).toEqual(
+      harness.coldFrom(nestedDirectory, args),
+    );
+  });
+
+  it("uses the final repeated cwd from a client directory different from daemon launch", () => {
+    const harness = new DaemonParityHarness();
+    harnesses.push(harness);
+    const launcherDirectory = join(harness.workspaceRoot, "launcher");
+    const clientDirectory = join(harness.workspaceRoot, "client");
+    mkdirSync(launcherDirectory);
+    mkdirSync(clientDirectory);
+    harness.warmFrom(launcherDirectory, ["--cwd", "..", "overview", "input.ts"]);
+    const daemonPid = harness.onlyDaemonPid();
+    const args = ["--cwd=../ignored", "--cwd", "..", "overview", "input.ts"];
+
+    expect(harness.warmFrom(clientDirectory, args)).toEqual(
+      harness.coldFrom(clientDirectory, args),
+    );
+    expect(harness.onlyDaemonPid()).toBe(daemonPid);
+  });
 });
 
 class DaemonParityHarness {

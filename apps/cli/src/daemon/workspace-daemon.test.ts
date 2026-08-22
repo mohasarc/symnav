@@ -294,10 +294,10 @@ class WorkspaceDaemonHarness {
       registry: harness.registry,
       transport: harness.transport,
       executor,
-      exit: ((code: number) => {
+      exit: (code) => {
         harness.exitCode = code;
         harness.resolveExit(code);
-      }) as (code: number) => never,
+      },
       ...runtime,
     });
     await daemon.start();

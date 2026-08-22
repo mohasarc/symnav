@@ -36,4 +36,35 @@ describe("WorkspaceRequestQueue", () => {
     await expect(failed).rejects.toThrow("failed");
     await expect(recovered).resolves.toBe("recovered");
   });
+
+  it("tracks idle state across successful and rejected work", async () => {
+    const queue = new WorkspaceRequestQueue();
+    expect(queue.isIdle).toBe(true);
+
+    let complete!: () => void;
+    const active = queue.enqueue(
+      () =>
+        new Promise<void>((resolve) => {
+          complete = resolve;
+        }),
+    );
+    await Promise.resolve();
+    expect(queue.isIdle).toBe(false);
+    complete();
+    await active;
+    expect(queue.isIdle).toBe(true);
+
+    let reject!: (error: Error) => void;
+    const rejected = queue.enqueue(
+      () =>
+        new Promise<void>((_resolve, rejectTask) => {
+          reject = rejectTask;
+        }),
+    );
+    await Promise.resolve();
+    expect(queue.isIdle).toBe(false);
+    reject(new Error("rejected"));
+    await expect(rejected).rejects.toThrow("rejected");
+    expect(queue.isIdle).toBe(true);
+  });
 });

@@ -8,7 +8,11 @@ import {
 } from "./daemon-process-launcher.js";
 import type { DaemonRecord, DaemonStartResult } from "./daemon-protocol.js";
 import { DAEMON_PROTOCOL_VERSION, DAEMON_RECORD_SCHEMA_VERSION } from "./daemon-protocol.js";
-import type { DaemonRegistry, StartupOwner } from "./daemon-registry.js";
+import {
+  DAEMON_STARTUP_TIMEOUT_MS,
+  type DaemonRegistry,
+  type StartupOwner,
+} from "./daemon-registry.js";
 import type { DaemonWorkspaceIdentity } from "./daemon-workspace-identity.js";
 import type { LocalDaemonTransport } from "./local-daemon-transport.js";
 
@@ -21,12 +25,15 @@ interface DaemonStartupCoordinatorOptions {
   readonly heartbeatIntervalMs?: number;
 }
 
+const STARTUP_HEARTBEAT_INTERVAL_MS = 100;
+
 export class DaemonStartupCoordinator {
   private readonly startupTimeoutMs: number;
   private readonly pollIntervalMs: number;
   private readonly now: () => number;
   private readonly nextInstanceId: () => string;
   private readonly processTerminator: DaemonProcessTerminator;
+  private readonly heartbeatIntervalMs: number;
 
   constructor(
     private readonly registry: DaemonRegistry,
@@ -34,11 +41,12 @@ export class DaemonStartupCoordinator {
     private readonly transport: LocalDaemonTransport,
     options: DaemonStartupCoordinatorOptions = {},
   ) {
-    this.startupTimeoutMs = options.startupTimeoutMs ?? 15_000;
+    this.startupTimeoutMs = options.startupTimeoutMs ?? DAEMON_STARTUP_TIMEOUT_MS;
     this.pollIntervalMs = options.pollIntervalMs ?? 20;
     this.now = options.now ?? Date.now;
     this.nextInstanceId = options.instanceId ?? randomUUID;
     this.processTerminator = options.processTerminator ?? new NodeDaemonProcessTerminator();
+    this.heartbeatIntervalMs = options.heartbeatIntervalMs ?? STARTUP_HEARTBEAT_INTERVAL_MS;
   }
 
   async ensureRunning(identity: DaemonWorkspaceIdentity): Promise<DaemonStartResult> {
@@ -50,6 +58,11 @@ export class DaemonStartupCoordinator {
     const instanceId = this.nextInstanceId();
     const lease = this.registry.acquireStartup(identity, instanceId);
     if (lease === undefined) return this.waitForWinner(identity);
+    const heartbeat = setInterval(
+      () => this.registry.refreshStartupOwner(identity, instanceId),
+      this.heartbeatIntervalMs,
+    );
+    heartbeat.unref?.();
 
     try {
       const currentRecord = await this.validatedReadyRecord(identity);
@@ -60,6 +73,7 @@ export class DaemonStartupCoordinator {
       if (storedRecord !== undefined) await this.replaceStoredRecord(identity, storedRecord);
       return await this.launchAndWait(identity, instanceId);
     } finally {
+      clearInterval(heartbeat);
       lease.release();
     }
   }

@@ -149,6 +149,46 @@ describe("DaemonStartupCoordinator", () => {
     expect(harness.registry.startupOwner(harness.identity)).toBeUndefined();
   });
 
+  it("retains startup ownership when a previous daemon cannot terminate", async () => {
+    const harness = new CoordinatorHarness(roots);
+    const existing = harness.readyRecord("existing", "0.0.9", 4002);
+    harness.seedReady(existing.instanceId, existing.symnavVersion, existing.pid);
+    vi.spyOn(harness.transport, "request").mockImplementation(
+      async (_endpoint, request): Promise<DaemonResponse> => {
+        if (request.kind === "ping") {
+          return {
+            kind: "pong",
+            protocolVersion: DAEMON_PROTOCOL_VERSION,
+            instanceId: existing.instanceId,
+            symnavVersion: existing.symnavVersion,
+          };
+        }
+        if (request.kind === "identify") {
+          return {
+            kind: "identity",
+            instanceId: existing.instanceId,
+            processToken: existing.processToken,
+            pid: existing.pid,
+            startedAt: existing.startedAt,
+          };
+        }
+        if (request.kind === "terminate") {
+          return {
+            kind: "terminating",
+            instanceId: existing.instanceId,
+            processToken: existing.processToken,
+          };
+        }
+        throw new Error(`Unexpected ${request.kind} request`);
+      },
+    );
+
+    await expect(
+      harness.coordinator({ startupTimeoutMs: 5 }).ensureRunning(harness.identity),
+    ).rejects.toBeInstanceOf(DaemonProcessTerminationError);
+    expect(harness.registry.startupOwner(harness.identity)).toBeDefined();
+  });
+
   it("kills a real timed-out child before releasing startup ownership", async () => {
     const root = temporaryDirectory(roots);
     const identity = DaemonWorkspaceIdentity.from("/repo", root);

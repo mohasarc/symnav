@@ -42,6 +42,22 @@ describe("LocalDaemonTransport validation", () => {
     ).rejects.toThrow("malformed JSON");
   });
 
+  it("rejects oversized inbound daemon frames", async () => {
+    const prefix = Buffer.alloc(4);
+    prefix.writeUInt32BE(129);
+    const endpoint = await rawServer(servers, directories, (socket) => {
+      socket.write(prefix);
+      setTimeout(() => socket.destroy(), 50);
+    });
+
+    await expect(
+      new LocalDaemonTransport({ maximumFrameBytes: 128, requestTimeoutMs: 100 }).request(
+        endpoint,
+        pingRequest(),
+      ),
+    ).rejects.toThrow("exceeds 128 bytes");
+  });
+
 });
 
 function pingRequest(): DaemonRequest {

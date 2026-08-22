@@ -168,6 +168,32 @@ describe("WorkspaceDaemon runtime lifecycle", () => {
     );
     expect(readFileSync(harness.identity.logPath, "utf8")).not.toContain("\u001B");
   });
+
+  it("recovers from rejected work and exits after the recovered queue becomes idle", async () => {
+    const harness = await WorkspaceDaemonHarness.start(new RejectThenSucceedExecutor(), {
+      idleTimeoutMs: 30,
+    });
+    harnesses.push(harness);
+
+    await expect(harness.execute("rejected")).rejects.toThrow();
+    await expect(harness.execute("recovered")).resolves.toMatchObject({
+      kind: "result",
+      requestId: "recovered",
+      result: { exitCode: 0 },
+    });
+    await harness.exited;
+
+    expect(harness.registry.read(harness.identity)).toBeUndefined();
+    expect(existsSync(harness.identity.endpoint(harness.instanceId))).toBe(false);
+    await expect(harness.ping()).rejects.toThrow();
+    expect(harness.logEvents()).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ kind: "failure", operation: "request" }),
+        expect.objectContaining({ kind: "request", exitCode: 0 }),
+        expect.objectContaining({ kind: "stop", reason: "idle" }),
+      ]),
+    );
+  });
 });
 
 interface RuntimeOptions {
@@ -319,6 +345,16 @@ class DeferredExecutor implements DaemonCommandExecutor {
 
 class ImmediateExecutor implements DaemonCommandExecutor {
   async execute(_request: CliExecutionRequest): Promise<CommandExecutionResult> {
+    return { frames: [], exitCode: 0 };
+  }
+}
+
+class RejectThenSucceedExecutor implements DaemonCommandExecutor {
+  private executionCount = 0;
+
+  async execute(_request: CliExecutionRequest): Promise<CommandExecutionResult> {
+    this.executionCount += 1;
+    if (this.executionCount === 1) throw new Error("executor rejected");
     return { frames: [], exitCode: 0 };
   }
 }

@@ -1,4 +1,5 @@
-import { readFileSync, readdirSync } from "node:fs";
+import { randomUUID } from "node:crypto";
+import { mkdirSync, readFileSync, readdirSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import {
   DAEMON_PROTOCOL_VERSION,
@@ -51,8 +52,15 @@ export class DaemonRegistry {
       : undefined;
   }
 
-  write(_record: DaemonRecord): void {
-    throw new Error("Daemon registry writes are not implemented");
+  write(record: DaemonRecord): void {
+    mkdirSync(this.registryDirectory, { recursive: true, mode: 0o700 });
+    const recordPath = join(
+      this.registryDirectory,
+      `${record.workspaceKey}.${record.instanceId}.json`,
+    );
+    const temporaryPath = `${recordPath}.${process.pid}.${randomUUID()}.tmp`;
+    writeFileSync(temporaryPath, JSON.stringify(record), { encoding: "utf8", mode: 0o600 });
+    renameSync(temporaryPath, recordPath);
   }
 
   writeIfStartupOwner(_identity: DaemonWorkspaceIdentity, _record: DaemonRecord): boolean {

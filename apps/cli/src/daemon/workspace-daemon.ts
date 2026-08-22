@@ -32,6 +32,7 @@ export class WorkspaceDaemon {
   private readonly exit: (code: number) => void;
   private readonly executor: DaemonCommandExecutor;
   private readonly scopeFactory: WorkspaceRequestScopeFactory;
+  private requestQueue: Promise<void> = Promise.resolve();
   private server: DaemonServer | undefined;
   private startedAt = 0;
 
@@ -53,7 +54,7 @@ export class WorkspaceDaemon {
     const prepared = await this.scopeFactory.prepare(this.options.identity.workspaceRoot);
     this.server = await this.options.transport.listen(
       this.options.identity.endpoint(this.options.instanceId),
-      (request) => this.handle(request),
+      (request) => this.enqueue(request),
     );
     const fileCount = prepared.refresh.added + prepared.refresh.unchanged;
     const readyRecord: DaemonRecord = {
@@ -98,6 +99,15 @@ export class WorkspaceDaemon {
       await new Promise((resolve) => setTimeout(resolve, 10));
     }
     throw new Error("Daemon process did not receive startup authorization");
+  }
+
+  private enqueue(request: DaemonRequest): Promise<DaemonResponse> {
+    const response = this.requestQueue.then(() => this.handle(request));
+    this.requestQueue = response.then(
+      () => undefined,
+      () => undefined,
+    );
+    return response;
   }
 
   private async handle(request: DaemonRequest): Promise<DaemonResponse> {

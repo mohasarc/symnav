@@ -83,7 +83,9 @@ export class DaemonStartupCoordinator {
       startedAt,
       memoryCapBytes: this.launcher.memoryCapBytes,
     };
-    this.registry.write(startingRecord);
+    if (!this.registry.writeStartingIfStartupOwner(identity, startingRecord)) {
+      throw new Error("Daemon startup ownership changed before process launch");
+    }
     let daemonProcess: DaemonProcess;
     try {
       daemonProcess = await this.launcher.launch(identity, instanceId, processToken);

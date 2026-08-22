@@ -1,4 +1,5 @@
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { beforeAll, describe, expect, it } from "vitest";
 import { fixturePath, runSymnavBinary } from "@symnav/testing";
 
@@ -6,7 +7,7 @@ import { ensureFixtureGitMarker } from "../ensure-fixture-git-marker.js";
 import type { JsonIdentity } from "../json-identity.js";
 
 const fixtureRoot = fixturePath("refs-cases");
-const snapshotsDir = new URL("./__snapshots__/", import.meta.url).pathname;
+const snapshotsDir = fileURLToPath(new URL("./__snapshots__/", import.meta.url));
 const processorId = "src/payments/PaymentProcessor.ts::PaymentProcessor";
 const controlFlowTargetId = "src/control-flow/ControlFlowTarget.ts::controlFlowTarget";
 const foldedInnerId = "src/folded-symbols.ts::foldedRoot::foldedInner";

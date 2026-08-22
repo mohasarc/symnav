@@ -1,10 +1,11 @@
 import { mkdtempSync, realpathSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { overviewFixtureRoot, runOverview } from "./run-overview.js";
 
-const snapshotsDir = new URL("./__snapshots__/", import.meta.url).pathname;
+const snapshotsDir = fileURLToPath(new URL("./__snapshots__/", import.meta.url));
 
 function snapshot(name: string): string {
   return join(snapshotsDir, name);

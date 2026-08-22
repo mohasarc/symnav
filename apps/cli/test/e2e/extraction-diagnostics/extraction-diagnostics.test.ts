@@ -1,11 +1,12 @@
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
 import { FixtureRunner } from "../fixture-runner.js";
 
 const runner = new FixtureRunner("extraction-diagnostics-cases");
 const cleanRunner = new FixtureRunner("definition-cases");
-const snapshotsDir = new URL("./__snapshots__/", import.meta.url).pathname;
+const snapshotsDir = fileURLToPath(new URL("./__snapshots__/", import.meta.url));
 const warningMessage =
   "skipped unrecognised statement syntax at src/unsupported-statement.ts:5 (MissingDeclaration)";
 const warning = `Warning: ${warningMessage}\n`;

@@ -1,3 +1,4 @@
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
 import { runOverview } from "./run-overview.js";
@@ -13,7 +14,7 @@ describe("symnav overview e2e (fold tree)", () => {
     expect(r.stdout).not.toContain("2 const helper = () => …");
     expect(r.stdout).not.toContain("return 1");
     await expect(r.stdout).toMatchFileSnapshot(
-      new URL("./__snapshots__/fold-tree-depth-0.expected.txt", import.meta.url).pathname,
+      fileURLToPath(new URL("./__snapshots__/fold-tree-depth-0.expected.txt", import.meta.url)),
     );
   });
 
@@ -27,7 +28,7 @@ describe("symnav overview e2e (fold tree)", () => {
     expect(r.stdout).toContain("2 const helper = () => …");
     expect(r.stdout).not.toContain("return 1");
     await expect(r.stdout).toMatchFileSnapshot(
-      new URL("./__snapshots__/fold-tree-depth-1.expected.txt", import.meta.url).pathname,
+      fileURLToPath(new URL("./__snapshots__/fold-tree-depth-1.expected.txt", import.meta.url)),
     );
   });
 
@@ -69,7 +70,7 @@ describe("symnav overview e2e (fold tree)", () => {
     expect(r.stdout).not.toContain("outerDeclaration::nestedDeclaration");
     expect(r.stdout).not.toContain("initializerHost::initializerNestedDeclaration");
     await expect(r.stdout).toMatchFileSnapshot(
-      new URL("./__snapshots__/default-fold-overview.expected.txt", import.meta.url).pathname,
+      fileURLToPath(new URL("./__snapshots__/default-fold-overview.expected.txt", import.meta.url)),
     );
   });
 
@@ -100,8 +101,9 @@ describe("symnav overview e2e (fold tree)", () => {
     expect(r.stdout).toContain("initializerHost::initializerNestedDeclaration");
     expect(r.stdout).not.toContain("FoldMemberHost::run::memberBranchValue");
     await expect(r.stdout).toMatchFileSnapshot(
-      new URL("./__snapshots__/default-fold-overview-depth-1.expected.txt", import.meta.url)
-        .pathname,
+      fileURLToPath(
+        new URL("./__snapshots__/default-fold-overview-depth-1.expected.txt", import.meta.url),
+      ),
     );
   });
 
@@ -113,8 +115,9 @@ describe("symnav overview e2e (fold tree)", () => {
     expect(r.stdout).toContain("67-70: if (flag) {");
     expect(r.stdout).not.toContain("FoldMemberHost::run::memberBranchValue");
     await expect(r.stdout).toMatchFileSnapshot(
-      new URL("./__snapshots__/default-fold-overview-depth-2.expected.txt", import.meta.url)
-        .pathname,
+      fileURLToPath(
+        new URL("./__snapshots__/default-fold-overview-depth-2.expected.txt", import.meta.url),
+      ),
     );
   });
 
@@ -126,8 +129,9 @@ describe("symnav overview e2e (fold tree)", () => {
     expect(r.stdout).toContain("67-70: if (flag) {");
     expect(r.stdout).toContain("FoldMemberHost::run::memberBranchValue");
     await expect(r.stdout).toMatchFileSnapshot(
-      new URL("./__snapshots__/default-fold-overview-depth-3.expected.txt", import.meta.url)
-        .pathname,
+      fileURLToPath(
+        new URL("./__snapshots__/default-fold-overview-depth-3.expected.txt", import.meta.url),
+      ),
     );
   });
 });

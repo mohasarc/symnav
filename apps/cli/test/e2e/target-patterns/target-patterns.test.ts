@@ -1,4 +1,5 @@
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
 import { expectIdentity } from "../expect-identity.js";
@@ -7,7 +8,7 @@ import type { JsonIdentity } from "../json-identity.js";
 import { type SymbolCommand, symbolCommands } from "../symbol-command.js";
 
 const fixtureRunner = new FixtureRunner("target-pattern-cases");
-const snapshotsDir = new URL("./__snapshots__/", import.meta.url).pathname;
+const snapshotsDir = fileURLToPath(new URL("./__snapshots__/", import.meta.url));
 
 const helperId = "src/unique/helper.ts::helper";
 const orderChargeId = "src/domain/orders.ts::PaymentProcessor::charge";

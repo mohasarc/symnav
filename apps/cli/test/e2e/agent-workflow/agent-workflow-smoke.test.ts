@@ -1,4 +1,5 @@
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
 import { expectIdentity } from "../expect-identity.js";
@@ -6,7 +7,7 @@ import { FixtureRunner } from "../fixture-runner.js";
 import type { JsonIdentity } from "../json-identity.js";
 
 const fixtureRunner = new FixtureRunner("agent-workflow-cases");
-const snapshotsDir = new URL("./__snapshots__/", import.meta.url).pathname;
+const snapshotsDir = fileURLToPath(new URL("./__snapshots__/", import.meta.url));
 const buildWorkflowId = "src/agent-workflow.ts::buildWorkflow";
 const buildWorkflowSuffixTarget = "agent-workflow.ts::buildWorkflow";
 

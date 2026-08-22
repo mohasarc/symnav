@@ -1,10 +1,11 @@
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { fixturePath, runSymnavBinary } from "@symnav/testing";
 import { ensureFixtureGitMarker } from "../ensure-fixture-git-marker.js";
 
 export const overviewFixtureRoot = fixturePath("overview-cases");
 
-const snapshotsDirectory = new URL("./__snapshots__/", import.meta.url).pathname;
+const snapshotsDirectory = fileURLToPath(new URL("./__snapshots__/", import.meta.url));
 
 export function runOverview(
   args: readonly string[],

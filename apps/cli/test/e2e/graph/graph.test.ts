@@ -1,6 +1,7 @@
 import { existsSync, mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { beforeAll, describe, expect, it } from "vitest";
 import { fixturePath, runSymnavBinary } from "@symnav/testing";
 
@@ -8,7 +9,7 @@ import { ensureFixtureGitMarker } from "../ensure-fixture-git-marker.js";
 import type { JsonIdentity, JsonSymbol } from "../json-identity.js";
 
 const fixtureRoot = fixturePath("graph-cases");
-const snapshotsDir = new URL("./__snapshots__/", import.meta.url).pathname;
+const snapshotsDir = fileURLToPath(new URL("./__snapshots__/", import.meta.url));
 const hubId = "src/hub.ts::hub";
 const chainRootId = "src/chain.ts::chainRoot";
 const cycleId = "src/cycle.ts::cycleA";

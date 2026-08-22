@@ -55,6 +55,7 @@ describe("symnav daemon parity", () => {
 
     expect(harness.warm(args)).toEqual(harness.cold(args));
   });
+
   it("resolves relative --cwd from the requesting client directory", () => {
     const harness = new DaemonParityHarness();
     harnesses.push(harness);
@@ -83,6 +84,19 @@ describe("symnav daemon parity", () => {
       harness.coldFrom(clientDirectory, args),
     );
     expect(harness.onlyDaemonPid()).toBe(daemonPid);
+  });
+  it("elects one daemon when two commands start together", async () => {
+    const harness = new DaemonParityHarness();
+    harnesses.push(harness);
+    const expected = harness.cold(["overview", "input.ts"]);
+
+    const results = await Promise.all([
+      harness.warmAsync(["overview", "input.ts"]),
+      harness.warmAsync(["overview", "input.ts"]),
+    ]);
+
+    expect(results).toEqual([expected, expected]);
+    expect(harness.onlyDaemonPid()).toBeGreaterThan(0);
   });
 });
 

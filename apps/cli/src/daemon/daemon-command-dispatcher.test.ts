@@ -53,6 +53,27 @@ describe("DaemonCommandDispatcher", () => {
     ]);
   });
 
+  it("elects a starter when no daemon is registered", async () => {
+    const harness = new DispatchHarness(success, { initiallyRegistered: false });
+
+    const dispatched = await harness.dispatcher().execute(request);
+
+    expect(dispatched.mode).toBe("warm");
+    expect(harness.ensureRunning).toHaveBeenCalledOnce();
+  });
+
+  it.each([
+    ["concurrent initial startup", { state: "starting" as const }],
+    ["version replacement", { symnavVersion: "0.0.9" }],
+  ])("waits for %s before warm execution", async (_name, record) => {
+    const harness = new DispatchHarness(success, { record });
+
+    await expect(harness.dispatcher().execute(request)).resolves.toMatchObject({ mode: "warm" });
+
+    expect(harness.ensureRunning).toHaveBeenCalledOnce();
+    expect(harness.coldExecute).not.toHaveBeenCalled();
+  });
+
   it("does not touch daemon state when disabled", async () => {
     const harness = new DispatchHarness(success, { daemonEnabled: false });
 
@@ -79,24 +100,38 @@ describe("DaemonCommandDispatcher", () => {
 
 interface DispatchHarnessOptions {
   readonly daemonEnabled?: boolean;
+  readonly initiallyRegistered?: boolean;
+  readonly record?: Partial<DaemonRecord>;
 }
 
 class DispatchHarness {
-  readonly ensureRunning = vi.fn();
+  readonly ensureRunning: ReturnType<typeof vi.fn>;
   readonly removeIfInstance = vi.fn();
   readonly coldExecute = vi.fn(async () => success);
   readonly runtimeFactory = vi.fn(() => this.runtime);
   private readonly requests: DaemonRequest[] = [];
+  private registered: DaemonRecord | undefined;
   private readonly runtime: DaemonDispatchRuntime;
 
   constructor(
     private readonly daemonAnswer: CommandExecutionResult | Error,
     private readonly options: DispatchHarnessOptions = {},
   ) {
+    this.registered =
+      options.initiallyRegistered === false ? undefined : { ...daemonRecord(), ...options.record };
+    this.ensureRunning = vi.fn(async () => {
+      this.registered = daemonRecord("replacement");
+      return {
+        status: "ready" as const,
+        workspaceRoot: "/repo",
+        fileCount: 1,
+        loadDurationMs: 10,
+      };
+    });
     this.runtime = {
       coordinator: { ensureRunning: this.ensureRunning },
       registry: {
-        read: () => daemonRecord(),
+        read: () => this.registered,
         removeIfInstance: this.removeIfInstance,
       },
       transport: {
@@ -130,15 +165,15 @@ class DispatchHarness {
   }
 }
 
-function daemonRecord(): DaemonRecord {
+function daemonRecord(instanceId = "instance-1"): DaemonRecord {
   return {
     schemaVersion: 1,
     protocolVersion: 1,
     symnavVersion: "0.1.0",
     workspaceRoot: "/repo",
     workspaceKey: "key",
-    instanceId: "instance-1",
-    processToken: "instance-1-token",
+    instanceId,
+    processToken: `${instanceId}-token`,
     endpoint: "/endpoint",
     pid: 123,
     state: "ready",

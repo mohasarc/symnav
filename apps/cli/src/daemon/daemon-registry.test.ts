@@ -175,6 +175,16 @@ describe("daemon registry", () => {
     expect(registry.startupOwner(identity)?.instanceId).toBe("owner");
   });
 
+  it("measures startup ownership grace from the latest heartbeat", () => {
+    const identity = DaemonWorkspaceIdentity.from("/repo", temporaryDirectory(roots));
+    const registry = new DaemonRegistry(identity.registryDirectory);
+    expect(registry.acquireStartup(identity, "owner")).toBeDefined();
+    const owner = registry.startupOwner(identity)!;
+
+    expect(registry.startupOwnerIsWithinGrace(owner, 100, owner.heartbeatAt + 100)).toBe(true);
+    expect(registry.startupOwnerIsWithinGrace(owner, 100, owner.heartbeatAt + 101)).toBe(false);
+  });
+
   it.each([
     { field: "schemaVersion", value: 2 },
     { field: "protocolVersion", value: DAEMON_PROTOCOL_VERSION + 1 },

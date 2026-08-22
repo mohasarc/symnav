@@ -1,6 +1,6 @@
 import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join, relative, resolve } from "node:path";
+import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const { spawnMock } = vi.hoisted(() => ({ spawnMock: vi.fn() }));
@@ -48,7 +48,7 @@ describe("NodeDaemonProcessLauncher", () => {
     ["absolute", (stateDirectory: string) => stateDirectory],
     ["relative", (stateDirectory: string) => relative(process.cwd(), stateDirectory)],
   ])(
-    "uses one absolute state directory for %s identity configuration, cwd, and environment",
+    "uses one absolute state directory and a neutral cwd for %s identity configuration",
     async (_label, identityStateDirectory) => {
       const root = mkdtempSync(join(tmpdir(), "symnav-launcher-"));
       roots.push(root);
@@ -72,9 +72,13 @@ describe("NodeDaemonProcessLauncher", () => {
       ];
       const configuration = DaemonProcessConfigurationParser.parse(args[2]);
       const absoluteStateDirectory = resolve(stateDirectory);
+      const absoluteWorkspaceRoot = resolve(root, "workspace");
       expect(configuration.stateDir).toBe(absoluteStateDirectory);
-      expect(options.cwd).toBe(absoluteStateDirectory);
       expect(options.env.SYMNAV_STATE_DIR).toBe(absoluteStateDirectory);
+      expect(options.cwd).toBe(tmpdir());
+      expect(isAbsolute(options.cwd)).toBe(true);
+      expect(options.cwd).not.toBe(absoluteStateDirectory);
+      expect(options.cwd).not.toBe(absoluteWorkspaceRoot);
     },
   );
 });

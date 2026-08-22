@@ -27,6 +27,27 @@ export function registerDaemonCommand(
     .action(async (options: DaemonStartOptions) => {
       await DaemonStartAction.run(program, context, dependencies, options);
     });
+  daemon
+    .command("status")
+    .description("List running workspace daemons")
+    .option("--json", "emit JSON instead of text", false)
+    .action(async (options: DaemonStartOptions) => {
+      await DaemonStatusAction.run(context, options);
+    });
+}
+
+class DaemonStatusAction {
+  static async run(context: ProgramContext, options: DaemonStartOptions): Promise<void> {
+    const stateDirectory = resolveStateDir(process.env);
+    const registry = new DaemonRegistry(DaemonWorkspaceIdentity.registryDirectory(stateDirectory));
+    const controller = new DaemonController(registry, new LocalDaemonTransport(), stateDirectory);
+    const results = await controller.status();
+    context.stdout.write(
+      options.json
+        ? DaemonLifecycleRenderer.renderStatusJson(results)
+        : DaemonLifecycleRenderer.renderStatusText(results),
+    );
+  }
 }
 
 class DaemonStartAction {

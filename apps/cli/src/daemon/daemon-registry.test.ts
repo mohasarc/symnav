@@ -60,6 +60,16 @@ describe("daemon registry", () => {
     expect(registry.acquireStartup(identity, "next")).toBeDefined();
   });
 
+  it("does not remove a replacement record when cleaning up an old instance", () => {
+    const identity = DaemonWorkspaceIdentity.from("/repo", temporaryDirectory(roots));
+    const registry = new DaemonRegistry(identity.registryDirectory);
+    registry.write(record(identity, "ready", "new"));
+    registry.removeIfInstance(identity, "old");
+    expect(registry.read(identity)?.instanceId).toBe("new");
+    registry.removeIfInstance(identity, "new");
+    expect(registry.read(identity)).toBeUndefined();
+  });
+
   it.each([
     { field: "schemaVersion", value: 2 },
     { field: "protocolVersion", value: DAEMON_PROTOCOL_VERSION + 1 },

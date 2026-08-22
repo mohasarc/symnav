@@ -18,6 +18,7 @@ export interface DaemonRecord {
   readonly readyAt?: number;
   readonly lastNavigationAt?: number;
   readonly fileCount?: number;
+  readonly memoryBytes?: number;
   readonly memoryCapBytes: number;
 }
 
@@ -98,6 +99,10 @@ export type DaemonResponse =
       readonly protocolVersion: number;
       readonly instanceId: string;
       readonly symnavVersion: string;
+      readonly startedAt?: number;
+      readonly fileCount?: number;
+      readonly memoryBytes?: number;
+      readonly lastNavigationAt?: number;
     }
   | { readonly kind: "result"; readonly requestId: string; readonly result: CommandExecutionResult }
   | { readonly kind: "stopped"; readonly instanceId: string };

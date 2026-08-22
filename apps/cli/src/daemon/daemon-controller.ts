@@ -11,6 +11,7 @@ import type {
   DaemonStopResult,
   RunningDaemonStatus,
 } from "./daemon-protocol.js";
+import { DAEMON_PROTOCOL_VERSION } from "./daemon-protocol.js";
 import { DaemonStartupCoordinator } from "./daemon-startup-coordinator.js";
 import { DaemonWorkspaceIdentity } from "./daemon-workspace-identity.js";
 
@@ -54,15 +55,16 @@ export class DaemonController {
   }
 
   async status(): Promise<readonly RunningDaemonStatus[]> {
-    return this.registry
-      .list()
-      .map((record) => this.statusForRecord(record))
+    const statuses = await Promise.all(
+      this.registry.list().map((record) => this.statusForRecord(record)),
+    );
+    return statuses
       .filter((status): status is RunningDaemonStatus => status !== undefined)
       .sort((left, right) => left.workspaceRoot.localeCompare(right.workspaceRoot));
   }
 
-  private statusForRecord(record: DaemonRecord): RunningDaemonStatus | undefined {
-    if (record.state !== "starting") return undefined;
+  private async statusForRecord(record: DaemonRecord): Promise<RunningDaemonStatus | undefined> {
+    if (record.state === "ready") return this.readyStatus(record);
     const identity = DaemonWorkspaceIdentity.from(record.workspaceRoot, this.stateDirectory);
     const owner = this.registry.startupOwner(identity);
     if (
@@ -87,6 +89,39 @@ export class DaemonController {
     }
     this.registry.removeIfInstance(identity, record.instanceId);
     return undefined;
+  }
+
+  private async readyStatus(record: DaemonRecord): Promise<RunningDaemonStatus | undefined> {
+    try {
+      const response = await this.transport.request(record.endpoint, {
+        kind: "ping",
+        protocolVersion: DAEMON_PROTOCOL_VERSION,
+        instanceId: record.instanceId,
+      });
+      if (
+        response.kind !== "pong" ||
+        response.symnavVersion !== record.symnavVersion ||
+        (response.startedAt !== undefined && response.startedAt !== record.startedAt)
+      ) {
+        return undefined;
+      }
+      const lastNavigationAt = response.lastNavigationAt ?? record.lastNavigationAt;
+      const fileCount = response.fileCount ?? record.fileCount;
+      const memoryBytes = response.memoryBytes ?? record.memoryBytes;
+      return {
+        workspaceRoot: record.workspaceRoot,
+        state: "ready",
+        pid: record.pid,
+        uptimeMs: Math.max(0, this.now() - record.startedAt),
+        ...(fileCount === undefined ? {} : { fileCount }),
+        ...(memoryBytes === undefined ? {} : { memoryBytes }),
+        ...(lastNavigationAt === undefined
+          ? {}
+          : { lastRequestAgoMs: Math.max(0, this.now() - lastNavigationAt) }),
+      };
+    } catch {
+      return undefined;
+    }
   }
 
   private startingStatus(record: DaemonRecord): RunningDaemonStatus {

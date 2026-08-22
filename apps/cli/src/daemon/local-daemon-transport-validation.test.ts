@@ -84,6 +84,17 @@ describe("LocalDaemonTransport validation", () => {
     expect(write).not.toHaveBeenCalled();
   });
 
+  it("rejects unknown daemon response envelopes", async () => {
+    const endpoint = await rawServer(servers, directories, (socket) => {
+      socket.write(frame({ kind: "unknown" }));
+      setTimeout(() => socket.destroy(), 50);
+    });
+
+    await expect(
+      new LocalDaemonTransport({ requestTimeoutMs: 100 }).request(endpoint, pingRequest()),
+    ).rejects.toThrow("Malformed daemon response");
+  });
+
 });
 
 function pingRequest(): DaemonRequest {

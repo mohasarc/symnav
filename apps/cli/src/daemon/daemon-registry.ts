@@ -16,13 +16,10 @@ import {
 } from "./daemon-protocol.js";
 import { DaemonWorkspaceIdentity } from "./daemon-workspace-identity.js";
 
-export interface StartupOwner extends StartupOwnerRenewal {
+export interface StartupOwner {
   readonly instanceId: string;
   readonly ownerPid: number;
   readonly acquiredAt: number;
-}
-
-export interface StartupOwnerRenewal {
   readonly heartbeatAt: number;
   readonly revision: string;
 }

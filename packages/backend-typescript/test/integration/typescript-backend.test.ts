@@ -6,6 +6,9 @@ import {
   InMemoryFileSystem,
   type FileSystem,
   type ResolvedPath,
+  type FileMetadata,
+  type SymbolIdentity,
+  type WorkspaceFile,
   OverviewTree,
 } from "@symnav/core";
 
@@ -40,6 +43,9 @@ class CountingFileSystem implements FileSystem {
   async isDirectory(absPath: string): Promise<boolean> {
     return this.inner.isDirectory(absPath);
   }
+  async metadata(absPath: string): Promise<FileMetadata> {
+    return this.inner.metadata(absPath);
+  }
   existsSync(absPath: string): boolean {
     return this.inner.existsSync(absPath);
   }
@@ -52,6 +58,9 @@ class CountingFileSystem implements FileSystem {
   }
   isDirectorySync(absPath: string): boolean {
     return this.inner.isDirectorySync(absPath);
+  }
+  metadataSync(absPath: string): FileMetadata {
+    return this.inner.metadataSync(absPath);
   }
 }
 
@@ -163,6 +172,47 @@ describe("TypeScriptBackend.fileEntries", () => {
 });
 
 describe("TypeScriptBackend parse sharing", () => {
+  it("reuses one refreshed workspace across every navigation operation", async () => {
+    const inner = new InMemoryFileSystem({
+      "/repo/.git/HEAD": "ref: refs/heads/main\n",
+      "/repo/src/lib.ts": "export function helper(): void {}\n",
+      "/repo/src/app.ts": [
+        'import { helper } from "./lib.js";',
+        "",
+        "export function main(): void {",
+        "  helper();",
+        "}",
+        "",
+      ].join("\n"),
+    });
+    const counting = new CountingFileSystem(inner);
+    const backend = new TypeScriptBackend(counting);
+    const files: readonly WorkspaceFile[] = [
+      workspaceFile("src/app.ts", inner),
+      workspaceFile("src/lib.ts", inner),
+    ];
+    const helper: SymbolIdentity = { file: "src/lib.ts", segments: [{ name: "helper" }] };
+    const main: SymbolIdentity = { file: "src/app.ts", segments: [{ name: "main" }] };
+
+    await expect(backend.refresh(files)).resolves.toEqual({
+      added: 2,
+      changed: 0,
+      removed: 0,
+      unchanged: 0,
+    });
+    await backend.fileEntries(files[0]!);
+    await backend.resolveSymbols(files, "helper", { mode: "exact" });
+    await backend.declarations(files);
+    await backend.findDefinitions(files, helper);
+    await backend.findReferences(files, helper);
+    await backend.findCallTarget(files, helper);
+    await backend.findCallers(files, helper);
+    await backend.findCallees(files, main);
+
+    const sourceReads = counting.readFileCalls.filter((path) => path.startsWith("/repo/src/"));
+    expect(sourceReads).toEqual(["/repo/src/app.ts", "/repo/src/lib.ts"]);
+  });
+
   it("reads each workspace file at most once across declarations and findDefinitions", async () => {
     const inner = new InMemoryFileSystem({
       "/repo/.git/HEAD": "ref: refs/heads/main\n",
@@ -196,6 +246,15 @@ describe("TypeScriptBackend parse sharing", () => {
     expect(sourceReads).toHaveLength(2);
   });
 });
+
+function workspaceFile(relative: string, fs: InMemoryFileSystem): WorkspaceFile {
+  const absolute = `/repo/${relative}`;
+  return {
+    relative,
+    absolute,
+    metadata: { size: fs.readFileSync(absolute).length, modifiedAtMs: 100 },
+  };
+}
 
 describe("TypeScriptBackend.findReferences", () => {
   it("finds references nested inside executable control-flow blocks", async () => {

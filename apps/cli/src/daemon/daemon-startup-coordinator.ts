@@ -113,10 +113,14 @@ export class DaemonStartupCoordinator {
       throw error;
     }
     try {
-      if (!this.registry.isStartupOwner(identity, instanceId)) {
+      if (
+        !this.registry.writeStartingIfStartupOwner(identity, {
+          ...startingRecord,
+          pid: daemonProcess.pid,
+        })
+      ) {
         throw new Error("Daemon startup ownership changed after process launch");
       }
-      this.registry.write({ ...startingRecord, pid: daemonProcess.pid });
       const ready = await this.waitForReady(identity, instanceId, startedAt);
       return {
         status: "ready",

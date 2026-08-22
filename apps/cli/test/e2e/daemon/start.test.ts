@@ -56,6 +56,23 @@ describe("symnav daemon start", () => {
       workspaceRoot: resolve(cwd, "../../../.."),
     });
   });
+
+  it("preserves non-git errors and honors SYMNAV_DAEMON=0", () => {
+    const stateDir = temporaryStateDirectory(stateDirectories);
+    const nonGit = runSymnavBinary(["daemon", "start"], {
+      cwd: stateDir,
+      env: { SYMNAV_STATE_DIR: stateDir },
+    });
+    const disabled = runSymnavBinary(["daemon", "start"], {
+      cwd: fixturePath("trivial-project"),
+      env: { SYMNAV_STATE_DIR: stateDir, SYMNAV_DAEMON: "0" },
+    });
+
+    expect(nonGit.status).toBe(1);
+    expect(nonGit.stderr).toContain("Cannot answer: not in a git workspace");
+    expect(disabled.status).toBe(1);
+    expect(disabled.stderr).toBe("Daemon disabled by SYMNAV_DAEMON=0\n");
+  });
 });
 
 function temporaryStateDirectory(directories: string[]): string {

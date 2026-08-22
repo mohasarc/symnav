@@ -1,4 +1,4 @@
-import type { FileSystem } from "../file-system.js";
+import type { FileMetadata, FileSystem } from "../file-system.js";
 
 function computeDirSet(fileSet: Set<string>): Set<string> {
   const dirs = new Set<string>();
@@ -43,6 +43,10 @@ export class InMemoryFileSystem implements FileSystem {
     return this.isDirectorySync(absPath);
   }
 
+  async metadata(absPath: string): Promise<FileMetadata> {
+    return this.metadataSync(absPath);
+  }
+
   existsSync(absPath: string): boolean {
     return this.fileSet.has(absPath) || this.dirSet.has(absPath);
   }
@@ -78,6 +82,10 @@ export class InMemoryFileSystem implements FileSystem {
 
   isDirectorySync(absPath: string): boolean {
     return this.dirSet.has(absPath);
+  }
+
+  metadataSync(absPath: string): FileMetadata {
+    return { size: Buffer.byteLength(this.readFileSyncImpl(absPath)), modifiedAtMs: 0 };
   }
 
   private readFileSyncImpl(absPath: string): string {

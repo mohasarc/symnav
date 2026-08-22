@@ -4,7 +4,7 @@ import { InMemoryFileSystem } from "../../../src/workspace/in-memory/in-memory-f
 import { UnreadableDirectoryWarningCandidateError } from "../../../src/workspace/errors.js";
 
 describe("Workspace.enumerate", () => {
-  it("returns every non-ignored file under the workspace root as ResolvedPath", async () => {
+  it("returns every non-ignored file under the workspace root with metadata", async () => {
     const ws = await createWorkspace({
       startDir: "/repo",
       fs: new InMemoryFileSystem({
@@ -16,9 +16,21 @@ describe("Workspace.enumerate", () => {
     });
     const files = await ws.enumerate();
     expect(files).toEqual([
-      { relative: "README.md", absolute: "/repo/README.md" },
-      { relative: "src/a.ts", absolute: "/repo/src/a.ts" },
-      { relative: "src/nested/b.ts", absolute: "/repo/src/nested/b.ts" },
+      {
+        relative: "README.md",
+        absolute: "/repo/README.md",
+        metadata: { size: 7, modifiedAtMs: 0 },
+      },
+      {
+        relative: "src/a.ts",
+        absolute: "/repo/src/a.ts",
+        metadata: { size: 19, modifiedAtMs: 0 },
+      },
+      {
+        relative: "src/nested/b.ts",
+        absolute: "/repo/src/nested/b.ts",
+        metadata: { size: 19, modifiedAtMs: 0 },
+      },
     ]);
   });
 

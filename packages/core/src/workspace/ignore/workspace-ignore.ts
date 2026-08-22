@@ -10,7 +10,11 @@ interface IgnoreScope {
 }
 
 export class WorkspaceIgnore {
-  private constructor(private readonly scopes: readonly IgnoreScope[]) {}
+  constructor(private readonly scopes: IgnoreScope[] = []) {}
+
+  addScope(dirRelToRoot: string, patterns: string): void {
+    this.scopes.push({ dirRelToRoot, matcher: ignore().add(patterns) });
+  }
 
   static build(root: string, fs: FileSystem): WorkspaceIgnore {
     const scopes: IgnoreScope[] = [];

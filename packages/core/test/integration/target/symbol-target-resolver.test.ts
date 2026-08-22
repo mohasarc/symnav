@@ -88,12 +88,17 @@ class ResolverScenario {
   }
 
   private static fakeWorkspace(files: readonly ResolvedPath[]): Workspace {
+    const workspaceFiles = files.map((file) => ({
+      ...file,
+      metadata: { size: 0, modifiedAtMs: 0 },
+    }));
     return {
       root: "/repo",
       resolveInputPath: (inputPath: string) => {
         throw new Error(`unexpected resolveInputPath: ${inputPath}`);
       },
-      enumerate: () => Promise.resolve(files),
+      enumerate: () => Promise.resolve(workspaceFiles),
+      snapshot: () => Promise.resolve({ root: "/repo", files: workspaceFiles }),
     };
   }
 }

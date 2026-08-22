@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import {
+  DaemonProcessTerminationError,
   NodeDaemonProcessTerminator,
   type DaemonProcess,
   type DaemonProcessLauncher,
@@ -156,12 +157,43 @@ export class DaemonStartupCoordinator {
     identity: DaemonWorkspaceIdentity,
     record: DaemonRecord,
   ): Promise<void> {
-    await this.transport.request(record.endpoint, {
-      kind: "terminate",
-      instanceId: record.instanceId,
-      processToken: record.processToken,
-    });
+    if (await this.identifiesRecordedProcess(record)) {
+      await this.transport.request(record.endpoint, {
+        kind: "terminate",
+        instanceId: record.instanceId,
+        processToken: record.processToken,
+      });
+      await this.waitForProcessEndpointRelease(record);
+    }
     this.registry.removeIfInstance(identity, record.instanceId);
+  }
+
+  private async waitForProcessEndpointRelease(record: DaemonRecord): Promise<void> {
+    const waitStartedAt = this.now();
+    while (this.now() - waitStartedAt <= this.startupTimeoutMs) {
+      if (!(await this.identifiesRecordedProcess(record))) return;
+      await this.pause();
+    }
+    throw new DaemonProcessTerminationError(
+      `Daemon process ${record.pid} did not release its endpoint`,
+    );
+  }
+
+  private async identifiesRecordedProcess(record: DaemonRecord): Promise<boolean> {
+    try {
+      const response = await this.transport.request(record.endpoint, {
+        kind: "identify",
+        instanceId: record.instanceId,
+        processToken: record.processToken,
+      });
+      return (
+        response.kind === "identity" &&
+        response.pid === record.pid &&
+        response.startedAt === record.startedAt
+      );
+    } catch {
+      return false;
+    }
   }
 
   private async probeExecution(record: DaemonRecord): Promise<void> {

@@ -387,11 +387,67 @@ describe("daemon registry", () => {
     expect(registry.readStoredInstance(identity, "replacement")).toBeDefined();
     expect(terminator.terminated).toEqual([]);
   });
+
+  it("force-terminates a validated daemon after the drain deadline", async () => {
+    const stateDirectory = temporaryDirectory(roots);
+    const identity = DaemonWorkspaceIdentity.from("/repo", stateDirectory);
+    const registry = new DaemonRegistry(identity.registryDirectory);
+    registry.write({ ...record(identity, "ready", "stuck"), pid: 601 });
+    const transport = new ControllerTransport(registry);
+    transport.live.add("stuck");
+    const terminator = new ControllerTerminator([601]);
+    transport.onKill = () => {
+      transport.live.delete("stuck");
+      terminator.alive.delete(601);
+    };
+    const controller = new DaemonController(
+      registry,
+      transport as unknown as LocalDaemonTransport,
+      stateDirectory,
+      { processTerminator: terminator, stopTimeoutMs: 20, pollIntervalMs: 1 },
+    );
+
+    await expect(controller.stop("/repo")).resolves.toEqual({
+      status: "killed",
+      workspaceRoot: "/repo",
+      pid: 601,
+    });
+    expect(transport.killed).toEqual(["stuck"]);
+    expect(terminator.terminated).toEqual([]);
+  });
+
+  it("does not signal a reused PID when identity changes at the kill boundary", async () => {
+    const stateDirectory = temporaryDirectory(roots);
+    const identity = DaemonWorkspaceIdentity.from("/repo", stateDirectory);
+    const registry = new DaemonRegistry(identity.registryDirectory);
+    registry.write({ ...record(identity, "ready", "old"), pid: 602 });
+    const transport = new ControllerTransport(registry);
+    transport.live.add("old");
+    transport.onKill = () => {
+      transport.live.delete("old");
+      registry.removeIfInstance(identity, "old");
+      registry.write({ ...record(identity, "ready", "replacement"), pid: 602 });
+      throw new Error("identity changed");
+    };
+    const terminator = new ControllerTerminator([602]);
+    const controller = new DaemonController(
+      registry,
+      transport as unknown as LocalDaemonTransport,
+      stateDirectory,
+      { processTerminator: terminator, stopTimeoutMs: 0, pollIntervalMs: 1 },
+    );
+
+    await expect(controller.stop("/repo")).rejects.toThrow("authenticated kill");
+    expect(registry.readStoredInstance(identity, "replacement")).toBeDefined();
+    expect(terminator.terminated).toEqual([]);
+  });
 });
 
 class ControllerTransport {
   readonly live = new Set<string>();
+  readonly killed: string[] = [];
   onStop: (() => void) | undefined;
+  onKill: (() => void) | undefined;
 
   constructor(private readonly registry: DaemonRegistry) {}
 
@@ -425,6 +481,15 @@ class ControllerTransport {
     if (request.kind === "stop") {
       this.onStop?.();
       return { kind: "stopped", instanceId: record.instanceId };
+    }
+    if (request.kind === "kill") {
+      this.onKill?.();
+      this.killed.push(record.instanceId);
+      return {
+        kind: "killing",
+        instanceId: record.instanceId,
+        processToken: record.processToken,
+      };
     }
     throw new Error(`Unsupported controller request ${request.kind}`);
   }

@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -164,6 +164,11 @@ describe("DaemonStartupCoordinator", () => {
   it("recovers a durable startup lock when its owner published no record", async () => {
     const harness = new CoordinatorHarness(roots, { neverReady: true });
     expect(harness.registry.acquireStartup(harness.identity, "orphan")).toBeDefined();
+    const owner = harness.registry.startupOwner(harness.identity)!;
+    writeFileSync(
+      harness.identity.startupOwnerPath(harness.identity.lockPath),
+      JSON.stringify({ ...owner, heartbeatAt: Date.now() - 20_000 }),
+    );
 
     await expect(
       harness

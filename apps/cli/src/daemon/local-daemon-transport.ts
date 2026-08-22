@@ -9,6 +9,18 @@ interface LocalDaemonTransportOptions {
   readonly writeChunkSize?: number;
 }
 
+class DaemonFrameDecoder {
+  private buffered = Buffer.alloc(0);
+
+  constructor(_maximumFrameBytes: number) {}
+
+  append(_bytes: Buffer): readonly unknown[] {
+    throw new Error("Daemon frame decoding is not implemented");
+  }
+
+  assertComplete(): void {}
+}
+
 export class LocalDaemonTransport {
   private readonly maximumFrameBytes: number;
   private readonly requestTimeoutMs: number;

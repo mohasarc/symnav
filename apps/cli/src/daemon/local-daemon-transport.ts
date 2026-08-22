@@ -82,7 +82,12 @@ export class LocalDaemonTransport {
       socket.once("connect", () => this.writeFrame(socket, request));
       socket.on("data", (bytes) => {
         try {
-          const value = decoder.append(Buffer.isBuffer(bytes) ? bytes : Buffer.from(bytes))[0];
+          const values = decoder.append(Buffer.isBuffer(bytes) ? bytes : Buffer.from(bytes));
+          if (values.length > 1 || (values.length === 1 && settled)) {
+            fail(new Error("Daemon returned multiple responses"));
+            return;
+          }
+          const value = values[0];
           if (value === undefined) return;
           const response = LocalDaemonTransport.responseFor(request, value);
           settled = true;

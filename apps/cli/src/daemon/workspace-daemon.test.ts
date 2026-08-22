@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { CliExecutionRequest, CommandExecutionResult } from "../command-execution-result.js";
 import { createDefaultDependencies } from "../program.js";
 import { DaemonController } from "./daemon-controller.js";
@@ -194,10 +194,46 @@ describe("WorkspaceDaemon runtime lifecycle", () => {
       ]),
     );
   });
+
+  it("force-closes active work without terminal output when resident memory exceeds the cap", async () => {
+    let resourceExceeded = false;
+    const executor = new DeferredExecutor();
+    const stdout = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+    const stderr = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+    const harness = await WorkspaceDaemonHarness.start(executor, {
+      memoryCapBytes: 1,
+      resourceCheckIntervalMs: 5,
+      residentMemoryBytes: () => (resourceExceeded ? 2 : 0),
+    });
+    harnesses.push(harness);
+    const activeRequest = harness.execute("resource-active");
+    await executor.started;
+    const startedAt = Date.now();
+    resourceExceeded = true;
+
+    await harness.exited;
+
+    expect(Date.now() - startedAt).toBeLessThan(500);
+    await expect(activeRequest).rejects.toThrow();
+    expect(harness.registry.read(harness.identity)).toBeUndefined();
+    await expect(harness.execute("after-resource")).rejects.toThrow();
+    await expect(harness.ping()).rejects.toThrow();
+    expect(existsSync(harness.identity.endpoint(harness.instanceId))).toBe(false);
+    expect(harness.logEvents()).toEqual(
+      expect.arrayContaining([expect.objectContaining({ kind: "stop", reason: "resource" })]),
+    );
+    expect(stdout).not.toHaveBeenCalled();
+    expect(stderr).not.toHaveBeenCalled();
+    stdout.mockRestore();
+    stderr.mockRestore();
+  });
 });
 
 interface RuntimeOptions {
   readonly idleTimeoutMs?: number;
+  readonly memoryCapBytes?: number;
+  readonly resourceCheckIntervalMs?: number;
+  readonly residentMemoryBytes?: () => number;
 }
 
 class WorkspaceDaemonHarness {
@@ -246,14 +282,14 @@ class WorkspaceDaemonHarness {
       pid: process.pid,
       state: "starting",
       startedAt: Date.now(),
-      memoryCapBytes: 1024,
+      memoryCapBytes: runtime.memoryCapBytes ?? 1024,
     });
     const daemon = new WorkspaceDaemon({
       identity: harness.identity,
       instanceId: harness.instanceId,
       processToken: "runtime-token",
       symnavVersion: "test",
-      memoryCapBytes: 1024,
+      memoryCapBytes: runtime.memoryCapBytes ?? 1024,
       dependencies: createDefaultDependencies(),
       registry: harness.registry,
       transport: harness.transport,

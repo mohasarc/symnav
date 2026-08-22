@@ -112,6 +112,20 @@ describe("DaemonCommandDispatcher", () => {
     expect(harness.ensureRunning).toHaveBeenCalledOnce();
   });
 
+  it("removes a failed daemon record when kill delivery fails", async () => {
+    const harness = new DispatchHarness(new Error("connection refused"));
+    harness.failKill(new Error("kill refused"));
+
+    await expect(harness.dispatcher().execute(request)).resolves.toEqual({
+      mode: "fallback",
+      result: success,
+    });
+
+    expect(harness.removeIfInstance).toHaveBeenCalledOnce();
+    expect(harness.registeredRecord()).toBeUndefined();
+    expect(harness.coldExecute).toHaveBeenCalledOnce();
+  });
+
   it("does not touch daemon state when disabled", async () => {
     const harness = new DispatchHarness(success, { daemonEnabled: false });
 

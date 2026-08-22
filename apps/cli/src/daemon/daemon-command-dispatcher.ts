@@ -102,13 +102,18 @@ export class DaemonCommandDispatcher {
       }
     }
     if (record?.state !== "ready") throw new Error("Daemon did not publish a ready record");
-    const response = await runtime.transport.request(record.endpoint, {
-      kind: "execute",
-      protocolVersion: record.protocolVersion,
-      instanceId: record.instanceId,
-      requestId: this.requestId(),
-      request: { ...workspaceRequest, executionMode: "warm" },
-    });
+    let response: DaemonResponse;
+    try {
+      response = await runtime.transport.request(record.endpoint, {
+        kind: "execute",
+        protocolVersion: record.protocolVersion,
+        instanceId: record.instanceId,
+        requestId: this.requestId(),
+        request: { ...workspaceRequest, executionMode: "warm" },
+      });
+    } catch {
+      return this.executeLocally(workspaceRequest, "fallback");
+    }
     if (response.kind !== "result") throw new Error("Daemon returned no command result");
     return { mode: "warm", result: response.result };
   }

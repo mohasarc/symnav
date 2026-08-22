@@ -28,6 +28,7 @@ export interface DaemonCommandExecutor {
 
 export class WorkspaceDaemon {
   private readonly now: () => number;
+  private readonly exit: (code: number) => void;
   private readonly scopeFactory: WorkspaceRequestScopeFactory;
   private server: DaemonServer | undefined;
   private startedAt = 0;
@@ -36,6 +37,7 @@ export class WorkspaceDaemon {
     const retainedBackends = options.dependencies.backends();
     this.scopeFactory = new WorkspaceRequestScopeFactory(options.dependencies.fs, retainedBackends);
     this.now = options.now ?? Date.now;
+    this.exit = options.exit ?? ((code) => process.exit(code));
   }
 
   async start(): Promise<void> {
@@ -107,6 +109,24 @@ export class WorkspaceDaemon {
         startedAt: this.startedAt,
       };
     }
+    if (request.kind === "terminate") {
+      if (
+        request.instanceId !== this.options.instanceId ||
+        request.processToken !== this.options.processToken
+      ) {
+        throw new Error("Daemon termination does not match process instance");
+      }
+      setTimeout(() => void this.shutdown(), 0);
+      return {
+        kind: "terminating",
+        instanceId: this.options.instanceId,
+        processToken: this.options.processToken,
+      };
+    }
     throw new Error("Workspace daemon request handling is not implemented");
+  }
+
+  private async shutdown(): Promise<void> {
+    this.exit(0);
   }
 }

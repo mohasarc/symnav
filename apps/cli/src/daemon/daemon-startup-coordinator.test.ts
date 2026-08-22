@@ -1,7 +1,15 @@
-import { spawn } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { spawn, type ChildProcess } from "node:child_process";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { DaemonStartupCoordinator } from "./daemon-startup-coordinator.js";
 import {
@@ -461,6 +469,26 @@ function spawnIdleProcess(processIds: number[]): Promise<number> {
       resolve(child.pid!);
     });
   });
+}
+
+function spawnStartupMutationOwner(
+  workspaceRoot: string,
+  stateDirectory: string,
+  readyPath: string,
+): ChildProcess {
+  return spawn(
+    process.execPath,
+    [
+      fileURLToPath(new URL("../../node_modules/tsx/dist/cli.mjs", import.meta.url)),
+      fileURLToPath(
+        new URL("../../test/helpers/daemon-startup-mutation-owner.ts", import.meta.url),
+      ),
+      workspaceRoot,
+      stateDirectory,
+      readyPath,
+    ],
+    { stdio: "ignore" },
+  );
 }
 
 async function waitUntil(predicate: () => boolean): Promise<void> {

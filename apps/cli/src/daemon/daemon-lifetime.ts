@@ -3,21 +3,45 @@ import type { Clock } from "@symnav/telemetry";
 export const DAEMON_IDLE_TIMEOUT_MS = 30 * 60 * 1_000;
 
 export class DaemonLifetime {
+  private timer: ReturnType<typeof setTimeout> | undefined;
+  private deadline: number;
+  private idleTriggered = false;
+
   constructor(
-    _clock: Clock,
-    _idleTimeoutMs: number,
-    _onIdle: () => Promise<void>,
-  ) {}
+    private readonly clock: Clock,
+    private readonly idleTimeoutMs: number,
+    private readonly onIdle: () => Promise<void>,
+  ) {
+    this.deadline = this.clock.now() + this.idleTimeoutMs;
+    this.schedule();
+  }
 
   navigationAccepted(): void {
-    throw new Error("Daemon navigation deadlines are not implemented");
+    this.deadline = this.clock.now() + this.idleTimeoutMs;
+    this.schedule();
   }
 
-  queueBecameIdle(): void {
-    throw new Error("Daemon active-work expiry is not implemented");
-  }
+  queueBecameIdle(): void {}
 
   stop(): void {
     throw new Error("Daemon lifetime stop is not implemented");
+  }
+
+  private schedule(): void {
+    if (this.timer !== undefined) clearTimeout(this.timer);
+    const remainingMs = Math.max(0, this.deadline - this.clock.now());
+    this.timer = setTimeout(() => this.deadlineReached(), remainingMs);
+    this.timer.unref?.();
+  }
+
+  private deadlineReached(): void {
+    this.timer = undefined;
+    this.triggerIdle();
+  }
+
+  private triggerIdle(): void {
+    if (this.idleTriggered) return;
+    this.idleTriggered = true;
+    void this.onIdle();
   }
 }

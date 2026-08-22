@@ -118,7 +118,7 @@ export type DaemonResponse =
   | { readonly kind: "stopped"; readonly instanceId: string };
 
 export interface DaemonServer {
-  close(): Promise<void>;
+  close(force?: boolean): Promise<void>;
 }
 
 export type DaemonStartResult =

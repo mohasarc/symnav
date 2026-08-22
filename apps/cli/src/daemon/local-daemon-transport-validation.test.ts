@@ -125,6 +125,23 @@ describe("LocalDaemonTransport validation", () => {
     ).rejects.toThrow("Malformed daemon result");
   });
 
+  it("rejects a response kind for a different request", async () => {
+    const endpoint = await rawServer(servers, directories, (socket) => {
+      socket.write(
+        frame({
+          kind: "result",
+          requestId: "wrong",
+          result: { frames: [], exitCode: 0 },
+        }),
+      );
+      setTimeout(() => socket.destroy(), 50);
+    });
+
+    await expect(
+      new LocalDaemonTransport({ requestTimeoutMs: 100 }).request(endpoint, pingRequest()),
+    ).rejects.toThrow("kind does not match request");
+  });
+
 });
 
 function pingRequest(): DaemonRequest {

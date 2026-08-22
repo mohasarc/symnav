@@ -27,4 +27,13 @@ describe("WorkspaceRequestQueue", () => {
     await expect(Promise.all([first, second])).resolves.toEqual([1, 2]);
     expect(events).toEqual(["first-start", "first-end", "second"]);
   });
+
+  it("continues after rejection", async () => {
+    const queue = new WorkspaceRequestQueue();
+    const failed = queue.enqueue(() => Promise.reject(new Error("failed")));
+    const recovered = queue.enqueue(() => Promise.resolve("recovered"));
+
+    await expect(failed).rejects.toThrow("failed");
+    await expect(recovered).resolves.toBe("recovered");
+  });
 });

@@ -106,21 +106,15 @@ export class DaemonCommandDispatcher {
     const identity = DaemonWorkspaceIdentity.from(workspaceRoot, this.options.stateDirectory);
     const runtime = this.runtimeFactory(identity, workspaceDependencies);
     let record: DaemonRecord | undefined;
+    let registryReadCompleted = false;
     try {
       record = runtime.registry.read(identity);
-    } catch {
-      return this.executeLocally(workspaceRequest, "fallback");
-    }
-    if (DaemonCommandDispatcher.requiresStartup(record, workspaceDependencies)) {
-      try {
+      registryReadCompleted = true;
+      if (DaemonCommandDispatcher.requiresStartup(record, workspaceDependencies)) {
         await runtime.coordinator.ensureRunning(identity);
         record = runtime.registry.read(identity);
-      } catch {
-        return this.executeLocally(workspaceRequest, "fallback");
       }
-    }
-    if (record?.state !== "ready") throw new Error("Daemon did not publish a ready record");
-    try {
+      if (record?.state !== "ready") throw new Error("Daemon did not publish a ready record");
       const response = await runtime.transport.request(record.endpoint, {
         kind: "execute",
         protocolVersion: record.protocolVersion,
@@ -142,7 +136,12 @@ export class DaemonCommandDispatcher {
         ),
       };
     } catch {
-      await this.invalidate(runtime, identity, record);
+      if (registryReadCompleted && record === undefined) {
+        try {
+          record = runtime.registry.read(identity);
+        } catch {}
+      }
+      if (record !== undefined) await this.invalidate(runtime, identity, record);
       return this.executeLocally(workspaceRequest, "fallback");
     }
   }

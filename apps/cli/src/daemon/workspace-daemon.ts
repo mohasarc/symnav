@@ -50,6 +50,7 @@ export class WorkspaceDaemon {
   private readonly resourceMonitor: DaemonResourceMonitor;
   private server: DaemonServer | undefined;
   private startedAt = 0;
+  private fileCount = 0;
   private shutdownStarted = false;
 
   constructor(private readonly options: WorkspaceDaemonOptions) {
@@ -100,6 +101,7 @@ export class WorkspaceDaemon {
         (request) => this.handle(request),
       );
       const fileCount = prepared.refresh.added + prepared.refresh.unchanged;
+      this.fileCount = fileCount;
       const readyRecord: DaemonRecord = {
         schemaVersion: DAEMON_RECORD_SCHEMA_VERSION,
         protocolVersion: DAEMON_PROTOCOL_VERSION,
@@ -201,6 +203,9 @@ export class WorkspaceDaemon {
         protocolVersion: DAEMON_PROTOCOL_VERSION,
         instanceId: this.options.instanceId,
         symnavVersion: this.options.symnavVersion,
+        startedAt: this.startedAt,
+        fileCount: this.fileCount,
+        memoryBytes: process.memoryUsage().rss,
       };
     }
     if (request.kind === "execute") {

@@ -74,6 +74,25 @@ describe("DaemonCommandDispatcher", () => {
     expect(harness.coldExecute).not.toHaveBeenCalled();
   });
 
+  it.each([
+    "connection refused",
+    "malformed result",
+    "truncated result",
+    "mismatched result",
+    "mid-request disconnect",
+  ])("executes one cold fallback after %s", async (message) => {
+    const harness = new DispatchHarness(new Error(message));
+
+    await expect(harness.dispatcher().execute(request)).resolves.toEqual({
+      mode: "fallback",
+      result: success,
+    });
+    expect(harness.coldExecute).toHaveBeenCalledTimes(1);
+    expect(harness.coldExecute).toHaveBeenCalledWith(
+      expect.objectContaining({ executionMode: "fallback" }),
+    );
+  });
+
   it("does not touch daemon state when disabled", async () => {
     const harness = new DispatchHarness(success, { daemonEnabled: false });
 

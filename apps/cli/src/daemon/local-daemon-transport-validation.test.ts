@@ -267,6 +267,26 @@ describe("LocalDaemonTransport validation", () => {
     },
   );
 
+  it("rejects nonboolean deferred telemetry requests", async () => {
+    const transport = new LocalDaemonTransport({ requestTimeoutMs: 100 });
+    const request = {
+      kind: "execute",
+      protocolVersion: DAEMON_PROTOCOL_VERSION,
+      instanceId: "instance",
+      requestId: "request",
+      request: {
+        argv: ["--version"],
+        cwd: "/workspace",
+        telemetryEnabled: false,
+        deferTelemetry: "invalid",
+      },
+    } as unknown as DaemonRequest;
+
+    expect(() => transport.request("/missing-daemon-endpoint", request)).toThrow(
+      "Malformed daemon execute request",
+    );
+  });
+
 });
 
 function pingRequest(): DaemonRequest {

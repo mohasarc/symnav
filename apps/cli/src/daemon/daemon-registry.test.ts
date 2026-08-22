@@ -12,6 +12,7 @@ interface StartupMutationLeaseTestAccess {
   beginStartupMutation(identity: DaemonWorkspaceIdentity):
     | { isOwned(): boolean; release(): void }
     | undefined;
+  startupMutationOwnerIsLive(identity: DaemonWorkspaceIdentity): boolean;
 }
 
 describe("daemon registry", () => {

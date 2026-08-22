@@ -287,6 +287,15 @@ export class DaemonRegistry {
     return this.claimStartupMutation(identity);
   }
 
+  private startupMutationOwnerIsLive(identity: DaemonWorkspaceIdentity): boolean {
+    const owner = DaemonRegistry.readStartupMutationOwner(identity, identity.startupMutationPath);
+    return (
+      owner !== undefined &&
+      DaemonRegistry.processIsAlive(owner.ownerPid) &&
+      Date.now() - owner.acquiredAt <= DAEMON_STARTUP_TIMEOUT_MS
+    );
+  }
+
   private claimStartupMutation(
     identity: DaemonWorkspaceIdentity,
   ): RegistryStartupMutationLease | undefined {
@@ -472,6 +481,16 @@ export class DaemonRegistry {
       typeof owner.acquiredAt === "number" &&
       typeof owner.token === "string"
     );
+  }
+
+  private static processIsAlive(pid: number): boolean {
+    if (!Number.isInteger(pid) || pid <= 0) return false;
+    try {
+      process.kill(pid, 0);
+      return true;
+    } catch (error) {
+      return DaemonRegistry.errorCode(error) === "EPERM";
+    }
   }
 
   private static errorCode(error: unknown): string | undefined {

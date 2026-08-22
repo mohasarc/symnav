@@ -3,9 +3,10 @@ import type { WorkspaceRequestQueueState } from "./daemon-protocol.js";
 export class WorkspaceRequestQueue {
   private tail: Promise<void> = Promise.resolve();
   private pendingTasks = 0;
+  private currentState: WorkspaceRequestQueueState = "accepting";
 
   get state(): WorkspaceRequestQueueState {
-    throw new Error("Workspace request queue state is not implemented");
+    return this.currentState;
   }
 
   get isIdle(): boolean {
@@ -13,6 +14,9 @@ export class WorkspaceRequestQueue {
   }
 
   enqueue<T>(task: () => Promise<T>): Promise<T> {
+    if (this.currentState !== "accepting") {
+      return Promise.reject(new Error(`Workspace request queue is ${this.currentState}`));
+    }
     this.pendingTasks += 1;
     const result = this.tail.then(task);
     this.tail = result.then(
@@ -22,8 +26,11 @@ export class WorkspaceRequestQueue {
     return result;
   }
 
-  drain(): Promise<void> {
-    throw new Error("Workspace request queue draining is not implemented");
+  async drain(): Promise<void> {
+    if (this.currentState === "closed") return;
+    this.currentState = "draining";
+    await this.tail;
+    this.currentState = "closed";
   }
 
   close(): void {

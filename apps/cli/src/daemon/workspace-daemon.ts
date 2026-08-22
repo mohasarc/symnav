@@ -271,7 +271,15 @@ export class WorkspaceDaemon {
         message: WorkspaceDaemon.errorMessage(error),
       });
     }
-    await this.server?.close(force);
+    try {
+      await this.server?.close(force);
+    } catch (error) {
+      this.logger.record({
+        kind: "failure",
+        operation: "transport-close",
+        message: WorkspaceDaemon.errorMessage(error),
+      });
+    }
     this.exit(0);
   }
 

@@ -1,4 +1,3 @@
-import { randomUUID } from "node:crypto";
 import {
   existsSync,
   mkdirSync,
@@ -8,6 +7,7 @@ import {
   rmSync,
   writeFileSync,
 } from "node:fs";
+import { randomUUID } from "node:crypto";
 import { dirname, join } from "node:path";
 import {
   DAEMON_PROTOCOL_VERSION,
@@ -26,7 +26,6 @@ export interface StartupLease {
   readonly instanceId: string;
   release(): void;
 }
-
 class RegistryStartupLease implements StartupLease {
   private released = false;
 
@@ -50,10 +49,7 @@ export class DaemonRegistry {
     return this.records(identity).find((record) => DaemonRegistry.isCurrentRecord(record));
   }
 
-  readInstance(
-    identity: DaemonWorkspaceIdentity,
-    instanceId: string,
-  ): DaemonRecord | undefined {
+  readInstance(identity: DaemonWorkspaceIdentity, instanceId: string): DaemonRecord | undefined {
     const record = this.readStoredPath(identity.recordPath(instanceId));
     return record !== undefined &&
       DaemonRegistry.isCurrentRecord(record) &&
@@ -97,10 +93,7 @@ export class DaemonRegistry {
     return false;
   }
 
-  acquireStartup(
-    identity: DaemonWorkspaceIdentity,
-    instanceId: string,
-  ): StartupLease | undefined {
+  acquireStartup(identity: DaemonWorkspaceIdentity, instanceId: string): StartupLease | undefined {
     mkdirSync(identity.registryDirectory, { recursive: true, mode: 0o700 });
     const owner: StartupOwner = {
       instanceId,
@@ -142,10 +135,7 @@ export class DaemonRegistry {
     return this.startupOwner(identity)?.instanceId === instanceId;
   }
 
-  removeStartupLockIfInstance(
-    identity: DaemonWorkspaceIdentity,
-    instanceId: string,
-  ): boolean {
+  removeStartupLockIfInstance(identity: DaemonWorkspaceIdentity, instanceId: string): boolean {
     const releasedPath = identity.releasedStartupLockPath(instanceId);
     const owner = this.startupOwner(identity);
     if (owner?.instanceId !== instanceId) {

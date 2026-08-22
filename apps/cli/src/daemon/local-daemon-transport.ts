@@ -84,7 +84,7 @@ export class LocalDaemonTransport {
         try {
           const value = decoder.append(Buffer.isBuffer(bytes) ? bytes : Buffer.from(bytes))[0];
           if (value === undefined) return;
-          const response = LocalDaemonTransport.responseFor(value);
+          const response = LocalDaemonTransport.responseFor(request, value);
           settled = true;
           socket.end();
           resolve(response);
@@ -159,8 +159,19 @@ export class LocalDaemonTransport {
     }
   }
 
-  private static responseFor(value: unknown): DaemonResponse {
+  private static responseFor(request: DaemonRequest, value: unknown): DaemonResponse {
     LocalDaemonTransport.assertResponse(value);
+    const expectedKind =
+      request.kind === "ping"
+        ? "pong"
+        : request.kind === "execute"
+          ? "result"
+          : request.kind === "stop"
+            ? "stopped"
+            : request.kind === "identify"
+              ? "identity"
+              : "terminating";
+    if (value.kind !== expectedKind) throw new Error("Daemon response kind does not match request");
     return value;
   }
 

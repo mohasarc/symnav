@@ -280,6 +280,86 @@ describe("LocalDaemonTransport", () => {
     await server.close();
   });
 
+  it("allows navigation to outlive the lifecycle request timeout", async () => {
+    const endpoint = endpointFor(roots);
+    const transport = new LocalDaemonTransport({
+      requestTimeoutMs: 10,
+      executionRequestTimeoutMs: 100,
+    });
+    const server = await transport.listen(endpoint, async (request) => {
+      await pause(30);
+      return {
+        kind: "result",
+        requestId: request.kind === "execute" ? request.requestId : "wrong",
+        result: { frames: [], exitCode: 0 },
+      };
+    });
+
+    await expect(
+      transport.request(endpoint, {
+        kind: "execute",
+        protocolVersion: DAEMON_PROTOCOL_VERSION,
+        instanceId: "instance",
+        requestId: "request",
+        request: { argv: ["resolve", "target"], cwd: "/repo", telemetryEnabled: false },
+      }),
+    ).resolves.toMatchObject({ kind: "result", requestId: "request" });
+    await server.close();
+  });
+
+  it("bounds navigation with the execution request timeout", async () => {
+    const endpoint = endpointFor(roots);
+    const transport = new LocalDaemonTransport({
+      requestTimeoutMs: 100,
+      executionRequestTimeoutMs: 10,
+    });
+    const server = await transport.listen(endpoint, async (request) => {
+      await pause(30);
+      return {
+        kind: "result",
+        requestId: request.kind === "execute" ? request.requestId : "wrong",
+        result: { frames: [], exitCode: 0 },
+      };
+    });
+
+    await expect(
+      transport.request(endpoint, {
+        kind: "execute",
+        protocolVersion: DAEMON_PROTOCOL_VERSION,
+        instanceId: "instance",
+        requestId: "request",
+        request: { argv: ["resolve", "target"], cwd: "/repo", telemetryEnabled: false },
+      }),
+    ).rejects.toThrow(/timed out/);
+    await expect(server.close()).resolves.toBeUndefined();
+  });
+
+  it("keeps lifecycle requests on the short timeout", async () => {
+    const endpoint = endpointFor(roots);
+    const transport = new LocalDaemonTransport({
+      requestTimeoutMs: 10,
+      executionRequestTimeoutMs: 100,
+    });
+    const server = await transport.listen(endpoint, async (request) => {
+      await pause(30);
+      return {
+        kind: "pong",
+        protocolVersion: DAEMON_PROTOCOL_VERSION,
+        instanceId: request.instanceId,
+        symnavVersion: "0.1.0",
+      };
+    });
+
+    await expect(
+      transport.request(endpoint, {
+        kind: "ping",
+        protocolVersion: DAEMON_PROTOCOL_VERSION,
+        instanceId: "instance",
+      }),
+    ).rejects.toThrow(/timed out/);
+    await server.close();
+  });
+
   it("does not replace a live server that owns the endpoint", async () => {
     const endpoint = endpointFor(roots);
     const first = new LocalDaemonTransport();
@@ -311,6 +391,33 @@ function endpointFor(roots: string[]): string {
   const root = mkdtempSync(join(tmpdir(), "symnav-transport-"));
   roots.push(root);
   return process.platform === "win32" ? `\\\\.\\pipe\\symnav-${Date.now()}` : join(root, "d.sock");
+}
+
+function pause(durationMs: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, durationMs));
+}
+
+function invalidResponse(scenario: string): Buffer {
+  if (scenario === "oversized") {
+    const prefix = Buffer.alloc(4);
+    prefix.writeUInt32BE(129);
+    return prefix;
+  }
+  if (scenario === "truncated") {
+    const prefix = Buffer.alloc(4);
+    prefix.writeUInt32BE(10);
+    return Buffer.concat([prefix, Buffer.from("{}")]);
+  }
+  if (scenario === "wrong-response") {
+    return frame({
+      kind: "result",
+      requestId: "wrong",
+      result: { frames: [], exitCode: 0 },
+    });
+  }
+  const prefix = Buffer.alloc(4);
+  prefix.writeUInt32BE(1);
+  return Buffer.concat([prefix, Buffer.from("{")]);
 }
 
 function frame(value: unknown): Buffer {

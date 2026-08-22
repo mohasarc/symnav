@@ -93,6 +93,25 @@ describe("DaemonCommandDispatcher", () => {
     );
   });
 
+  it("invalidates a failed daemon and restarts on the next invocation", async () => {
+    const harness = new DispatchHarness(success);
+    const dispatcher = harness.dispatcher();
+    await expect(dispatcher.execute(request)).resolves.toMatchObject({ mode: "warm" });
+    harness.answer(new Error("connection refused"));
+
+    await expect(dispatcher.execute(request)).resolves.toEqual({
+      mode: "fallback",
+      result: success,
+    });
+    expect(harness.ensureRunning).not.toHaveBeenCalled();
+    expect(harness.registeredRecord()).toBeUndefined();
+    expect(harness.coldExecute).toHaveBeenCalledTimes(1);
+
+    harness.answer(success);
+    await expect(dispatcher.execute(request)).resolves.toMatchObject({ mode: "warm" });
+    expect(harness.ensureRunning).toHaveBeenCalledOnce();
+  });
+
   it("does not touch daemon state when disabled", async () => {
     const harness = new DispatchHarness(success, { daemonEnabled: false });
 

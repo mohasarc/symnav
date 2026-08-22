@@ -1,22 +1,27 @@
 import type { DaemonRegistry } from "./daemon-registry.js";
 import {
   NodeDaemonProcessTerminator,
+  type DaemonProcessLauncher,
   type DaemonProcessTerminator,
 } from "./daemon-process-launcher.js";
 import type { LocalDaemonTransport } from "./local-daemon-transport.js";
 import type {
   DaemonRecord,
+  DaemonStartResult,
   DaemonStopResult,
   RunningDaemonStatus,
 } from "./daemon-protocol.js";
+import { DaemonStartupCoordinator } from "./daemon-startup-coordinator.js";
 import { DaemonWorkspaceIdentity } from "./daemon-workspace-identity.js";
 
 interface DaemonControllerOptions {
+  readonly launcher?: DaemonProcessLauncher;
   readonly processTerminator?: DaemonProcessTerminator;
   readonly now?: () => number;
 }
 
 export class DaemonController {
+  private readonly launcher: DaemonProcessLauncher | undefined;
   private readonly processTerminator: DaemonProcessTerminator;
   private readonly now: () => number;
 
@@ -26,8 +31,17 @@ export class DaemonController {
     private readonly stateDirectory: string,
     options: DaemonControllerOptions = {},
   ) {
+    this.launcher = options.launcher;
     this.processTerminator = options.processTerminator ?? new NodeDaemonProcessTerminator();
     this.now = options.now ?? Date.now;
+  }
+
+  start(workspaceRoot: string): Promise<DaemonStartResult> {
+    if (this.launcher === undefined) throw new Error("Daemon controller has no process launcher");
+    const identity = DaemonWorkspaceIdentity.from(workspaceRoot, this.stateDirectory);
+    return new DaemonStartupCoordinator(this.registry, this.launcher, this.transport).ensureRunning(
+      identity,
+    );
   }
 
   async stop(workspaceRoot: string): Promise<DaemonStopResult> {

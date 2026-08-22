@@ -13,6 +13,11 @@ export interface DaemonBenchmarkMeasurement {
   readonly target: DaemonBenchmarkTargetComparison;
 }
 
+interface BenchmarkCounters {
+  projectLoads: number;
+  readonly refreshes: BackendRefreshSummary[];
+}
+
 export interface DaemonBenchmarkTargetComparison {
   readonly secondResolveMs: number;
   readonly minimumFirstToSecondRatio: number;

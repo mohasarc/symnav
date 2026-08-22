@@ -249,7 +249,7 @@ function temporaryDirectory(roots: string[]): string {
   roots.push(root);
   return root;
 }
-+function spawnIdleProcess(processIds: number[]): Promise<number> {
+function spawnIdleProcess(processIds: number[]): Promise<number> {
   return new Promise((resolve, reject) => {
     const child = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], {
       stdio: "ignore",

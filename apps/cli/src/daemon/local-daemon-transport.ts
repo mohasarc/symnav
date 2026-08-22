@@ -45,7 +45,10 @@ class DaemonFrameDecoder {
 }
 
 class ListeningDaemonServer implements DaemonServer {
-  constructor(private readonly server: Server) {}
+  constructor(
+    private readonly server: Server,
+    private readonly _sockets: ReadonlySet<Socket>,
+  ) {}
 
   close(): Promise<void> {
     return new Promise((resolve, reject) => {
@@ -125,10 +128,15 @@ export class LocalDaemonTransport {
         rmSync(endpoint, { force: true });
       }
     }
-    const server = createServer((socket) => this.serve(socket, handler));
+    const sockets = new Set<Socket>();
+    const server = createServer((socket) => {
+      sockets.add(socket);
+      socket.once("close", () => sockets.delete(socket));
+      this.serve(socket, handler);
+    });
     return new Promise((resolve, reject) => {
       server.once("error", reject);
-      server.listen(endpoint, () => resolve(new ListeningDaemonServer(server)));
+      server.listen(endpoint, () => resolve(new ListeningDaemonServer(server, sockets)));
     });
   }
 

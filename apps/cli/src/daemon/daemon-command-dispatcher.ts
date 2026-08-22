@@ -46,3 +46,7 @@ export interface DaemonCommandDispatcherOptions {
   readonly executorFactory?: (dependencies: ProgramDependencies) => CommandExecutor;
   readonly requestId?: () => string;
 }
+
+export class DaemonCommandDispatcher {
+  constructor(private readonly options: DaemonCommandDispatcherOptions) {}
+}

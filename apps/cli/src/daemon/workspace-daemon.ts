@@ -171,15 +171,31 @@ export class WorkspaceDaemon {
     }
     if (request.kind === "execute") {
       this.lifetime.navigationAccepted();
+      const requestStartedAt = this.now();
+      let result: CommandExecutionResult;
       try {
-        return {
-          kind: "result",
-          requestId: request.requestId,
-          result: await this.requestQueue.enqueue(() => this.executor.execute(request.request)),
-        };
+        result = await this.requestQueue.enqueue(() => this.executor.execute(request.request));
+      } catch (error) {
+        this.logger.record({
+          kind: "failure",
+          operation: "request",
+          message: WorkspaceDaemon.errorMessage(error),
+        });
+        throw error;
       } finally {
         if (this.requestQueue.isIdle) this.lifetime.queueBecameIdle();
       }
+      this.logger.record({
+        kind: "request",
+        command: WorkspaceDaemon.commandName(request.request.argv),
+        durationMs: Math.max(0, this.now() - requestStartedAt),
+        exitCode: result.exitCode,
+      });
+      return {
+        kind: "result",
+        requestId: request.requestId,
+        result,
+      };
     }
     await this.requestQueue.drain();
     setTimeout(() => void this.shutdown("graceful"), 0);
@@ -200,5 +216,18 @@ export class WorkspaceDaemon {
     await this.server?.close(force);
     this.options.registry.removeIfInstance(this.options.identity, this.options.instanceId);
     this.exit(0);
+  }
+
+  private static commandName(argv: readonly string[]): string {
+    const commands = ["overview", "resolve", "def", "refs", "context", "graph", "stats"];
+    const command = argv.find((argument) => commands.includes(argument));
+    if (command !== undefined) return command;
+    if (argv.includes("--version") || argv.includes("-v")) return "version";
+    if (argv.includes("--help") || argv.includes("-h")) return "help";
+    return "unknown";
+  }
+
+  private static errorMessage(error: unknown): string {
+    return error instanceof Error ? error.message : String(error);
   }
 }

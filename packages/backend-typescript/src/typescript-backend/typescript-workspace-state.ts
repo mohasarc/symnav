@@ -39,13 +39,14 @@ interface PreparedFileIndex {
 
 export class TypeScriptWorkspaceState {
   private readonly project: Project;
+  private readonly revisionsByRelativePath = new Map<string, TypeScriptFileRevision>();
   private readonly fileByRelativePath = new Map<string, ResolvedPath>();
   private readonly relativePathByAbsolute = new Map<string, string>();
   private readonly declarationsByIdentity = new Map<string, IndexedDeclaration>();
   private readonly declarationsByPosition = new Map<string, Map<number, SymbolOverviewNode>>();
   private readonly declarationsByFile = new Map<string, readonly SymbolOverviewNode[]>();
 
-  constructor(fs: FileSystem) {
+  constructor(private readonly fs: FileSystem) {
     this.project = new Project({ fileSystem: new WorkspaceFileSystemHost(fs) });
   }
 
@@ -119,19 +120,29 @@ export class TypeScriptWorkspaceState {
   }
 
   private addFile(path: ResolvedPath): void {
+    const metadata = this.fs.metadataSync(path.absolute);
+    const revision: TypeScriptFileRevision = {
+      relativePath: path.relative,
+      absolutePath: path.absolute,
+      size: metadata.size,
+      modifiedAtMs: metadata.modifiedAtMs,
+    };
     const sourceFile = this.project.addSourceFileAtPath(path.absolute);
-    this.fileByRelativePath.set(path.relative, path);
-    this.relativePathByAbsolute.set(path.absolute, path.relative);
-    this.indexDeclarations(sourceFile, path);
+    this.publishFile(this.buildFileIndex(sourceFile, path, revision));
   }
 
-  private indexDeclarations(sourceFile: SourceFile, path: ResolvedPath): void {
+  private buildFileIndex(
+    sourceFile: SourceFile,
+    path: ResolvedPath,
+    revision: TypeScriptFileRevision,
+  ): PreparedFileIndex {
     const byPosition = new Map<number, SymbolOverviewNode>();
     const declarations: SymbolOverviewNode[] = [];
+    const byIdentity = new Map<string, IndexedDeclaration>();
     const { entries } = extractFileEntries({ sourceFile, filePath: path.relative });
     for (const declaration of OverviewTree.walkSymbols(entries)) {
       declarations.push(declaration);
-      this.declarationsByIdentity.set(DeclarationLocator.identityKey(declaration.identity), {
+      byIdentity.set(DeclarationLocator.identityKey(declaration.identity), {
         declaration,
         file: path,
       });
@@ -139,7 +150,44 @@ export class TypeScriptWorkspaceState {
     for (const { declaration, node } of new DeclarationLocator(sourceFile).locateAll(entries)) {
       byPosition.set(node.getStart(), declaration);
     }
-    this.declarationsByPosition.set(path.relative, byPosition);
-    this.declarationsByFile.set(path.relative, declarations);
+    return {
+      revision,
+      path,
+      declarations,
+      declarationsByIdentity: byIdentity,
+      declarationsByPosition: byPosition,
+    };
+  }
+
+  private publishFile(prepared: PreparedFileIndex): void {
+    const previousPath = this.fileByRelativePath.get(prepared.path.relative);
+    this.purgeIndexes(prepared.path.relative);
+    if (previousPath && previousPath.absolute !== prepared.path.absolute) {
+      const previousSourceFile = this.project.getSourceFile(previousPath.absolute);
+      if (previousSourceFile) {
+        this.project.removeSourceFile(previousSourceFile);
+      }
+      this.relativePathByAbsolute.delete(previousPath.absolute);
+    }
+
+    this.revisionsByRelativePath.set(prepared.path.relative, prepared.revision);
+    this.fileByRelativePath.set(prepared.path.relative, prepared.path);
+    this.relativePathByAbsolute.set(prepared.path.absolute, prepared.path.relative);
+    for (const [identity, declaration] of prepared.declarationsByIdentity) {
+      this.declarationsByIdentity.set(identity, declaration);
+    }
+    this.declarationsByPosition.set(
+      prepared.path.relative,
+      new Map(prepared.declarationsByPosition),
+    );
+    this.declarationsByFile.set(prepared.path.relative, prepared.declarations);
+  }
+
+  private purgeIndexes(relativePath: string): void {
+    for (const declaration of this.declarationsByFile.get(relativePath) ?? []) {
+      this.declarationsByIdentity.delete(DeclarationLocator.identityKey(declaration.identity));
+    }
+    this.declarationsByPosition.delete(relativePath);
+    this.declarationsByFile.delete(relativePath);
   }
 }

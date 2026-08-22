@@ -79,20 +79,25 @@ describe("Workspace.enumerate", () => {
   it("throws a warning-candidate error (preserving the cause) when a directory cannot be read", async () => {
     const cause = Object.assign(new Error("denied"), { code: "EACCES" });
     class UnreadableSubdirFs extends InMemoryFileSystem {
+      unreadableDirectoryReads = 0;
+
       override async listDir(absPath: string): Promise<readonly string[]> {
         if (absPath === "/repo/src") {
+          this.unreadableDirectoryReads += 1;
           throw cause;
         }
         return super.listDir(absPath);
       }
     }
+    const fs = new UnreadableSubdirFs({
+      "/repo/.git/HEAD": "ref: refs/heads/main\n",
+      "/repo/src/a.ts": "",
+    });
     const ws = await createWorkspace({
       startDir: "/repo",
-      fs: new UnreadableSubdirFs({
-        "/repo/.git/HEAD": "ref: refs/heads/main\n",
-        "/repo/src/a.ts": "",
-      }),
+      fs,
     });
+    expect(await ws.snapshot()).toEqual({ root: "/repo", files: [] });
     const error = await ws.enumerate().then(
       () => undefined,
       (thrown: unknown) => thrown,
@@ -102,6 +107,28 @@ describe("Workspace.enumerate", () => {
       "warning candidate",
     );
     expect((error as Error).cause).toBe(cause);
+    expect(fs.unreadableDirectoryReads).toBe(1);
+  });
+
+  it("surfaces unexpected directory failures during active snapshot traversal", async () => {
+    const cause = Object.assign(new Error("device failure"), { code: "EIO" });
+    class UnexpectedSubdirFailureFileSystem extends InMemoryFileSystem {
+      override async listDir(absPath: string): Promise<readonly string[]> {
+        if (absPath === "/repo/src") {
+          throw cause;
+        }
+        return super.listDir(absPath);
+      }
+    }
+    const workspace = await createWorkspace({
+      startDir: "/repo",
+      fs: new UnexpectedSubdirFailureFileSystem({
+        "/repo/.git/HEAD": "ref: refs/heads/main\n",
+        "/repo/src/a.ts": "",
+      }),
+    });
+
+    await expect(workspace.snapshot()).rejects.toBe(cause);
   });
 
   it("returns the same order on repeated calls", async () => {

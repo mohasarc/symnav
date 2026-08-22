@@ -34,7 +34,7 @@ export class WorkspaceRequestQueue {
   }
 
   close(): void {
-    throw new Error("Workspace request queue closure is not implemented");
+    this.currentState = "closed";
   }
 
   private taskFinished(): void {

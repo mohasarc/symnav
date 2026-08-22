@@ -22,6 +22,13 @@ export interface StartupOwner {
   readonly acquiredAt: number;
 }
 
+export interface StartupOwnerRenewal {
+  readonly heartbeatAt: number;
+  readonly revision: string;
+}
+
+export const DAEMON_STARTUP_TIMEOUT_MS = 15_000;
+
 export interface StartupLease {
   readonly instanceId: string;
   release(): void;

@@ -334,7 +334,8 @@ export class LocalDaemonTransport {
       Array.isArray(value.argv) &&
       value.argv.every((arg) => typeof arg === "string") &&
       typeof value.cwd === "string" &&
-      typeof value.telemetryEnabled === "boolean"
+      typeof value.telemetryEnabled === "boolean" &&
+      (value.deferTelemetry === undefined || typeof value.deferTelemetry === "boolean")
     );
   }
 

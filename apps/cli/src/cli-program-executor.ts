@@ -48,6 +48,7 @@ export class CliProgramExecutor {
 
   async execute(request: CliExecutionRequest): Promise<CommandExecutionResult> {
     const frames: CommandOutputFrame[] = [];
+    const deferredTelemetry = request.deferTelemetry ? new DeferredTelemetryRecorder() : undefined;
     const context: ProgramContext = {
       stdout: new CommandFrameStream("stdout", frames),
       stderr: new CommandFrameStream("stderr", frames),
@@ -56,20 +57,30 @@ export class CliProgramExecutor {
         throw new CapturedProgramExit(exitCode);
       },
     };
-    const dependencies = {
+    const dependencies: ProgramDependencies = {
       ...this.dependencies,
+      recorder: deferredTelemetry ?? this.dependencies.recorder,
       telemetryEnabled: request.telemetryEnabled,
+      executionMode: request.executionMode ?? "cold",
     };
 
     try {
       await buildProgram(context, dependencies).parseAsync([...request.argv], { from: "user" });
-      return { frames, exitCode: 0 };
+      return CliProgramExecutor.result(frames, 0, deferredTelemetry?.event);
     } catch (error) {
       if (error instanceof CapturedProgramExit) {
-        return { frames, exitCode: error.exitCode };
+        return CliProgramExecutor.result(frames, error.exitCode, deferredTelemetry?.event);
       }
       throw error;
     }
+  }
+
+  private static result(
+    frames: readonly CommandOutputFrame[],
+    exitCode: number,
+    telemetry: UsageEventInput | undefined,
+  ): CommandExecutionResult {
+    return telemetry === undefined ? { frames, exitCode } : { frames, exitCode, telemetry };
   }
 }
 

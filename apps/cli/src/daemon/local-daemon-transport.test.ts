@@ -183,6 +183,27 @@ describe("LocalDaemonTransport", () => {
     ).rejects.toThrow();
     await server.close();
   });
+
+  it("rejects an otherwise valid execute result with a different request identifier", async () => {
+    const endpoint = endpointFor(roots);
+    const transport = new LocalDaemonTransport();
+    const server = await transport.listen(endpoint, async () => ({
+      kind: "result",
+      requestId: "different-request",
+      result: { frames: [], exitCode: 0 },
+    }));
+
+    await expect(
+      transport.request(endpoint, {
+        kind: "execute",
+        protocolVersion: DAEMON_PROTOCOL_VERSION,
+        instanceId: "instance",
+        requestId: "expected-request",
+        request: { argv: ["--version"], cwd: "/repo", telemetryEnabled: false },
+      }),
+    ).rejects.toThrow(/request identifier/);
+    await server.close();
+  });
 });
 
 function endpointFor(roots: string[]): string {

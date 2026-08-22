@@ -262,6 +262,23 @@ describe("LocalDaemonTransport", () => {
     ).rejects.toThrow(/process instance/);
     await server.close();
   });
+
+  it("closes the connection when request handling fails", async () => {
+    const endpoint = endpointFor(roots);
+    const transport = new LocalDaemonTransport({ requestTimeoutMs: 100 });
+    const server = await transport.listen(endpoint, async () => {
+      throw new Error("handler failed");
+    });
+
+    await expect(
+      transport.request(endpoint, {
+        kind: "ping",
+        protocolVersion: DAEMON_PROTOCOL_VERSION,
+        instanceId: "instance",
+      }),
+    ).rejects.toThrow();
+    await server.close();
+  });
 });
 
 function endpointFor(roots: string[]): string {

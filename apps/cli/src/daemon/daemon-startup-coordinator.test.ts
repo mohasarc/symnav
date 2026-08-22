@@ -209,6 +209,24 @@ describe("DaemonStartupCoordinator", () => {
     await expect(starting).resolves.toMatchObject({ status: "ready" });
   });
 
+  it("preserves a fresh startup owner when process liveness is unavailable", async () => {
+    const harness = new CoordinatorHarness(roots);
+    expect(harness.registry.acquireStartup(harness.identity, "owner")).toBeDefined();
+    const observedOwner = harness.registry.startupOwner(harness.identity);
+
+    await expect(
+      harness
+        .coordinator({
+          startupTimeoutMs: 5,
+          processTerminator: new TestProcessTerminator(false),
+        })
+        .ensureRunning(harness.identity),
+    ).rejects.toThrow(/timed out/i);
+
+    expect(harness.registry.startupOwner(harness.identity)).toEqual(observedOwner);
+    expect(harness.launcher.launchCount).toBe(0);
+  });
+
 });
 
 interface CoordinatorHarnessOptions {

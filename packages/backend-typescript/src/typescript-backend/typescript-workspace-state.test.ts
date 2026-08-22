@@ -8,6 +8,7 @@ import {
   type WorkspaceFile,
 } from "@symnav/core";
 
+import { TypeScriptBackend } from "./typescript-backend.js";
 import { TypeScriptWorkspaceState } from "./typescript-workspace-state.js";
 
 class MutableWorkspaceFileSystem implements FileSystem {
@@ -222,6 +223,52 @@ describe("TypeScriptWorkspaceState.refresh", () => {
     expect(state.declarationForIdentity(oldIdentity)).toBeUndefined();
     expect(state.locate(oldIdentity)).toEqual([]);
     expect(declarationNames(state, renamedFiles)).toEqual(["added", "renamed"]);
+  });
+
+  it("updates declaration, reference, and call lookups after edits and deletion", async () => {
+    const fs = new MutableWorkspaceFileSystem({
+      "/repo/src/lib.ts": "export function oldName(): void {}\n",
+      "/repo/src/app.ts": [
+        'import { oldName } from "./lib.js";',
+        "export function main(): void { oldName(); }",
+        "",
+      ].join("\n"),
+    });
+    const state = new TypeScriptWorkspaceState(fs);
+    const backend = new TypeScriptBackend(fs, state);
+    let files = fs.workspaceFiles("src/app.ts", "src/lib.ts");
+    await backend.refresh(files);
+    const oldIdentity: SymbolIdentity = { file: "src/lib.ts", segments: [{ name: "oldName" }] };
+    expect(await backend.findReferences(files, oldIdentity)).toHaveLength(2);
+
+    fs.setFile("/repo/src/lib.ts", "export function newName(): void {}\n");
+    fs.setFile(
+      "/repo/src/app.ts",
+      [
+        'import { newName } from "./lib.js";',
+        "export function main(): void { newName(); }",
+        "",
+      ].join("\n"),
+    );
+    files = fs.workspaceFiles("src/app.ts", "src/lib.ts");
+    await backend.refresh(files);
+    const newIdentity: SymbolIdentity = { file: "src/lib.ts", segments: [{ name: "newName" }] };
+
+    expect(await backend.resolveSymbols(files, "oldName", { mode: "exact" })).toEqual([]);
+    await expect(backend.findReferences(files, oldIdentity)).rejects.toMatchObject({
+      reason: "no symbol src/lib.ts::oldName found",
+    });
+    expect(await backend.findDefinitions(files, newIdentity)).toHaveLength(1);
+    expect(await backend.findReferences(files, newIdentity)).toHaveLength(2);
+    expect(
+      await backend.findCallees(files, { file: "src/app.ts", segments: [{ name: "main" }] }),
+    ).toHaveLength(1);
+
+    fs.deleteFile("/repo/src/lib.ts");
+    files = fs.workspaceFiles("src/app.ts");
+    await backend.refresh(files);
+    expect(await backend.findDefinitions(files, newIdentity)).toEqual([]);
+    expect(state.sourceFile("src/lib.ts")).toBeUndefined();
   });
 
   it("rolls back project mutations and derived state across repeated refresh failures", () => {

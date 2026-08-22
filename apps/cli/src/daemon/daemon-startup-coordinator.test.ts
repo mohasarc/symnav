@@ -324,8 +324,10 @@ class TestProcessTerminator implements DaemonProcessTerminator {
   readonly alive = new Set<number>();
   readonly terminated: number[] = [];
 
+  constructor(private readonly currentProcessIsAlive = true) {}
+
   isAlive(pid: number): boolean {
-    return pid === process.pid || this.alive.has(pid);
+    return (this.currentProcessIsAlive && pid === process.pid) || this.alive.has(pid);
   }
 
   async terminate(pid: number): Promise<void> {

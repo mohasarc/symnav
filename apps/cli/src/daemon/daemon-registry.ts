@@ -165,26 +165,35 @@ export class DaemonRegistry {
   }
 
   refreshStartupOwner(identity: DaemonWorkspaceIdentity, instanceId: string): boolean {
-    const owner = this.startupOwner(identity);
-    if (owner?.instanceId !== instanceId) return false;
-    const ownerPath = identity.startupOwnerPath(identity.lockPath);
-    const temporaryPath = `${identity.lockPath}.${process.pid}.${randomUUID()}.owner.tmp`;
-    writeFileSync(
-      temporaryPath,
-      JSON.stringify({ ...owner, heartbeatAt: Date.now(), revision: randomUUID() }),
-      { encoding: "utf8", mode: 0o600 },
-    );
-    if (!DaemonRegistry.sameStartupOwner(this.startupOwner(identity), owner)) {
-      rmSync(temporaryPath, { force: true });
-      return false;
-    }
+    const mutation = this.beginStartupMutation(identity);
+    if (mutation === undefined) return false;
     try {
-      renameSync(temporaryPath, ownerPath);
-      return this.isStartupOwner(identity, instanceId);
-    } catch (error) {
-      rmSync(temporaryPath, { force: true });
-      if (DaemonRegistry.errorCode(error) === "ENOENT") return false;
-      throw error;
+      const owner = this.startupOwner(identity);
+      if (owner?.instanceId !== instanceId) return false;
+      const ownerPath = identity.startupOwnerPath(identity.lockPath);
+      const temporaryPath = `${identity.lockPath}.${process.pid}.${randomUUID()}.owner.tmp`;
+      writeFileSync(
+        temporaryPath,
+        JSON.stringify({ ...owner, heartbeatAt: Date.now(), revision: randomUUID() }),
+        { encoding: "utf8", mode: 0o600 },
+      );
+      if (
+        !mutation.isOwned() ||
+        !DaemonRegistry.sameStartupOwner(this.startupOwner(identity), owner)
+      ) {
+        rmSync(temporaryPath, { force: true });
+        return false;
+      }
+      try {
+        renameSync(temporaryPath, ownerPath);
+        return this.isStartupOwner(identity, instanceId);
+      } catch (error) {
+        rmSync(temporaryPath, { force: true });
+        if (DaemonRegistry.errorCode(error) === "ENOENT") return false;
+        throw error;
+      }
+    } finally {
+      mutation.release();
     }
   }
 

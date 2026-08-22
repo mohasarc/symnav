@@ -68,7 +68,7 @@ describe("WorkspaceRequestQueue", () => {
     expect(queue.isIdle).toBe(true);
   });
 
-  it("drains active work and rejects new work", async () => {
+  it("drains active work, rejects new work, and cannot restart after close", async () => {
     const queue = new WorkspaceRequestQueue();
     let release!: () => void;
     const gate = new Promise<void>((resolve) => {
@@ -83,5 +83,7 @@ describe("WorkspaceRequestQueue", () => {
     await active;
     await drained;
     expect(queue.state).toBe("closed");
+    queue.close();
+    await expect(queue.enqueue(() => Promise.resolve())).rejects.toThrow(/closed/i);
   });
 });

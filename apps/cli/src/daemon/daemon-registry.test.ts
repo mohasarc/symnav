@@ -48,6 +48,18 @@ describe("daemon registry", () => {
     );
   });
 
+  it("admits one startup winner and removes a stale lock only for its nonce", () => {
+    const identity = DaemonWorkspaceIdentity.from("/repo", temporaryDirectory(roots));
+    const registry = new DaemonRegistry(identity.registryDirectory);
+    const lease = registry.acquireStartup(identity, "winner");
+
+    expect(lease).toBeDefined();
+    expect(registry.acquireStartup(identity, "loser")).toBeUndefined();
+    expect(registry.removeStartupLockIfInstance(identity, "loser")).toBe(false);
+    expect(registry.removeStartupLockIfInstance(identity, "winner")).toBe(true);
+    expect(registry.acquireStartup(identity, "next")).toBeDefined();
+  });
+
   it.each([
     { field: "schemaVersion", value: 2 },
     { field: "protocolVersion", value: DAEMON_PROTOCOL_VERSION + 1 },

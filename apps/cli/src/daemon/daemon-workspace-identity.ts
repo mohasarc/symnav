@@ -10,6 +10,7 @@ export class DaemonWorkspaceIdentity {
   readonly workspaceKey: string;
   readonly registryDirectory: string;
   readonly lockPath: string;
+  readonly startupMutationPath: string;
   readonly logPath: string;
   private readonly userKey: string;
 
@@ -20,6 +21,7 @@ export class DaemonWorkspaceIdentity {
     this.workspaceKey = DaemonWorkspaceIdentity.hash(workspaceRoot);
     this.registryDirectory = join(stateDir, "daemons");
     this.lockPath = join(this.registryDirectory, `${this.workspaceKey}.lock`);
+    this.startupMutationPath = `${this.lockPath}.mutation`;
     this.logPath = join(this.registryDirectory, `${this.workspaceKey}.log`);
     this.userKey = DaemonWorkspaceIdentity.userIdentityKey();
   }
@@ -38,6 +40,14 @@ export class DaemonWorkspaceIdentity {
 
   startupClaimPath(instanceId: string): string {
     return `${this.lockPath}.${instanceId}.claim`;
+  }
+
+  startupMutationClaimPath(token: string): string {
+    return `${this.startupMutationPath}.${token}.claim`;
+  }
+
+  releasedStartupMutationPath(token: string): string {
+    return `${this.startupMutationPath}.${token}.released`;
   }
 
   releasedStartupLockPath(instanceId: string): string {

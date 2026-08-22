@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { createWorkspace } from "@symnav/core";
-import type { Recorder } from "@symnav/telemetry";
+import type { Recorder, UsageEventInput } from "@symnav/telemetry";
 import { CliProgramExecutor } from "../cli-program-executor.js";
 import type {
   CliExecutionRequest,
@@ -199,7 +199,8 @@ export class DaemonCommandDispatcher {
         (frame) =>
           (frame.stream === "stdout" || frame.stream === "stderr") &&
           DaemonCommandDispatcher.isBase64(frame.bytesBase64),
-      )
+      ) &&
+      (result.telemetry === undefined || DaemonCommandDispatcher.isTelemetryInput(result.telemetry))
     );
   }
 
@@ -224,6 +225,27 @@ export class DaemonCommandDispatcher {
       } catch {}
     }
     return { frames: result.frames, exitCode: result.exitCode };
+  }
+
+  private static isTelemetryInput(value: UsageEventInput): boolean {
+    return (
+      typeof value.symnavVersion === "string" &&
+      typeof value.command === "string" &&
+      typeof value.timestamp === "number" &&
+      typeof value.durationMs === "number" &&
+      value.executionMode === "warm" &&
+      (value.outcome === "success" ||
+        ((value.outcome === "user_error" || value.outcome === "crash") &&
+          typeof value.errorReason === "string")) &&
+      typeof value.argShape === "object" &&
+      value.argShape !== null &&
+      typeof value.argShape.kind === "string" &&
+      typeof value.argShape.lengthBucket === "string" &&
+      Array.isArray(value.argShape.flags) &&
+      value.argShape.flags.every((flag) => typeof flag === "string") &&
+      typeof value.workspaceId === "string" &&
+      typeof value.machineId === "string"
+    );
   }
 
   private static isBase64(value: string): boolean {

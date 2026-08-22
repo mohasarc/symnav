@@ -243,6 +243,25 @@ describe("LocalDaemonTransport", () => {
     ).rejects.toThrow(/process instance/);
     await server.close();
   });
+
+  it("correlates unversioned termination to the process start token", async () => {
+    const endpoint = endpointFor(roots);
+    const transport = new LocalDaemonTransport();
+    const server = await transport.listen(endpoint, async () => ({
+      kind: "terminating",
+      instanceId: "instance",
+      processToken: "different-process",
+    }));
+
+    await expect(
+      transport.request(endpoint, {
+        kind: "terminate",
+        instanceId: "instance",
+        processToken: "expected-process",
+      }),
+    ).rejects.toThrow(/process instance/);
+    await server.close();
+  });
 });
 
 function endpointFor(roots: string[]): string {

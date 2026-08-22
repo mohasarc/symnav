@@ -122,6 +122,13 @@ export class LocalDaemonTransport {
     const payload = Buffer.from(JSON.stringify(value), "utf8");
     const prefix = Buffer.alloc(4);
     prefix.writeUInt32BE(payload.length);
-    socket.write(Buffer.concat([prefix, payload]));
+    const frame = Buffer.concat([prefix, payload]);
+    if (this.writeChunkSize === undefined) {
+      socket.write(frame);
+      return;
+    }
+    for (let offset = 0; offset < frame.length; offset += this.writeChunkSize) {
+      socket.write(frame.subarray(offset, offset + this.writeChunkSize));
+    }
   }
 }

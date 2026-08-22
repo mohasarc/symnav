@@ -293,3 +293,84 @@ describe("TypeScriptBackend.findReferences", () => {
     ]);
   });
 });
+
+class MutableBackendFileSystem implements FileSystem {
+  private readonly files = new Map<string, string>();
+  private readonly modifiedAtByPath = new Map<string, number>();
+
+  constructor(files: Record<string, string>) {
+    for (const [path, content] of Object.entries(files)) {
+      this.files.set(path, content);
+      this.modifiedAtByPath.set(path, 1);
+    }
+  }
+
+  setFile(path: string, content: string): void {
+    this.files.set(path, content);
+    this.modifiedAtByPath.set(path, (this.modifiedAtByPath.get(path) ?? 0) + 1);
+  }
+
+  deleteFile(path: string): void {
+    this.files.delete(path);
+    this.modifiedAtByPath.delete(path);
+  }
+
+  workspaceFiles(...relativePaths: string[]): readonly WorkspaceFile[] {
+    return relativePaths.map((relative) => {
+      const absolute = `/repo/${relative}`;
+      return { relative, absolute, metadata: this.metadataSync(absolute) };
+    });
+  }
+
+  readFile(absPath: string): Promise<string> {
+    return Promise.resolve(this.readFileSync(absPath));
+  }
+
+  exists(absPath: string): Promise<boolean> {
+    return Promise.resolve(this.existsSync(absPath));
+  }
+
+  listDir(absPath: string): Promise<readonly string[]> {
+    return Promise.resolve(this.delegate().listDirSync(absPath));
+  }
+
+  isDirectory(absPath: string): Promise<boolean> {
+    return Promise.resolve(this.delegate().isDirectorySync(absPath));
+  }
+
+  metadata(absPath: string): Promise<FileMetadata> {
+    return Promise.resolve(this.metadataSync(absPath));
+  }
+
+  existsSync(absPath: string): boolean {
+    return this.delegate().existsSync(absPath);
+  }
+
+  readFileSync(absPath: string): string {
+    const content = this.files.get(absPath);
+    if (content === undefined) {
+      throw new Error(`ENOENT: no such file: ${absPath}`);
+    }
+    return content;
+  }
+
+  listDirSync(absPath: string): readonly string[] {
+    return this.delegate().listDirSync(absPath);
+  }
+
+  isDirectorySync(absPath: string): boolean {
+    return this.delegate().isDirectorySync(absPath);
+  }
+
+  metadataSync(absPath: string): FileMetadata {
+    const content = this.readFileSync(absPath);
+    return {
+      size: Buffer.byteLength(content),
+      modifiedAtMs: this.modifiedAtByPath.get(absPath) ?? 0,
+    };
+  }
+
+  private delegate(): InMemoryFileSystem {
+    return new InMemoryFileSystem(Object.fromEntries(this.files));
+  }
+}

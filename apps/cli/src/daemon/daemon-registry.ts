@@ -140,9 +140,20 @@ export class DaemonRegistry {
     identity: DaemonWorkspaceIdentity,
     instanceId: string,
   ): boolean {
-    if (!this.isStartupOwner(identity, instanceId)) return false;
-    rmSync(identity.lockPath, { recursive: true, force: true });
-    return true;
+    const releasedPath = identity.releasedStartupLockPath(instanceId);
+    const owner = this.startupOwner(identity);
+    if (owner?.instanceId !== instanceId) {
+      return DaemonRegistry.readStartupOwner(identity, releasedPath)?.instanceId === instanceId;
+    }
+    try {
+      renameSync(identity.lockPath, releasedPath);
+      return true;
+    } catch (error) {
+      if (DaemonRegistry.readStartupOwner(identity, releasedPath)?.instanceId === instanceId) {
+        return true;
+      }
+      throw error;
+    }
   }
 
   removeIfInstance(identity: DaemonWorkspaceIdentity, instanceId: string): void {
@@ -259,6 +270,18 @@ export class DaemonRegistry {
       Number.isInteger(owner.ownerPid) &&
       typeof owner.acquiredAt === "number"
     );
+  }
+
+  private static readStartupOwner(
+    identity: DaemonWorkspaceIdentity,
+    path: string,
+  ): StartupOwner | undefined {
+    try {
+      const value: unknown = JSON.parse(readFileSync(identity.startupOwnerPath(path), "utf8"));
+      return DaemonRegistry.isStartupOwner(value) ? value : undefined;
+    } catch {
+      return undefined;
+    }
   }
 
   private static errorCode(error: unknown): string | undefined {

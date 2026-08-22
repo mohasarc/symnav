@@ -44,6 +44,32 @@ describe("DaemonController", () => {
     expect(registry.readStoredInstance(identity, "starting")).toBeUndefined();
     lease?.release();
   });
+
+  it("reports a live starting daemon", async () => {
+    const stateDirectory = temporaryDirectory(roots);
+    const identity = DaemonWorkspaceIdentity.from("/repo", stateDirectory);
+    const registry = new DaemonRegistry(identity.registryDirectory);
+    expect(registry.acquireStartup(identity, "starting")).toBeDefined();
+    expect(registry.writeStartingIfStartupOwner(identity, startingRecord(identity))).toBe(true);
+    const controller = new DaemonController(
+      registry,
+      new ControllerTransport() as unknown as LocalDaemonTransport,
+      stateDirectory,
+      {
+        processTerminator: new ControllerTerminator([process.pid]),
+        now: () => 20,
+      },
+    );
+
+    await expect(controller.status()).resolves.toEqual([
+      {
+        workspaceRoot: "/repo",
+        state: "starting",
+        pid: 0,
+        uptimeMs: 10,
+      },
+    ]);
+  });
 });
 
 class ControllerTransport {

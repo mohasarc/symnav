@@ -1,0 +1,193 @@
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { afterEach, describe, expect, it } from "vitest";
+import type { CliExecutionRequest, CommandExecutionResult } from "../command-execution-result.js";
+import { createDefaultDependencies } from "../program.js";
+import type { DaemonRequest, DaemonResponse, DaemonServer } from "./daemon-protocol.js";
+import { DAEMON_PROTOCOL_VERSION } from "./daemon-protocol.js";
+import { DaemonRegistry } from "./daemon-registry.js";
+import { DaemonWorkspaceIdentity } from "./daemon-workspace-identity.js";
+import type { LocalDaemonTransport } from "./local-daemon-transport.js";
+import { type DaemonCommandExecutor, WorkspaceDaemon } from "./workspace-daemon.js";
+
+describe("WorkspaceDaemon requests", () => {
+  const harnesses: RequestHarness[] = [];
+
+  afterEach(async () => {
+    await Promise.all(harnesses.map((harness) => harness.dispose()));
+    harnesses.length = 0;
+  });
+
+});
+
+class RequestHarness {
+  readonly stateDirectory = mkdtempSync(join(tmpdir(), "symnav-request-state-"));
+  readonly workspaceRoot = mkdtempSync(join(tmpdir(), "symnav-request-workspace-"));
+  readonly identity: DaemonWorkspaceIdentity;
+  readonly registry: DaemonRegistry;
+  readonly transport = new RequestTransport();
+  readonly instanceId = "request-instance";
+  readonly processToken = "request-token";
+  readonly exited: Promise<number>;
+  private resolveExit!: (code: number) => void;
+
+  private constructor() {
+    mkdirSync(join(this.workspaceRoot, ".git"));
+    writeFileSync(join(this.workspaceRoot, "input.ts"), "export const value = 1;\n");
+    this.identity = DaemonWorkspaceIdentity.from(this.workspaceRoot, this.stateDirectory);
+    this.registry = new DaemonRegistry(this.identity.registryDirectory);
+    this.exited = new Promise((resolve) => {
+      this.resolveExit = resolve;
+    });
+  }
+
+  static async start(executor: DaemonCommandExecutor): Promise<RequestHarness> {
+    const harness = new RequestHarness();
+    const lease = harness.registry.acquireStartup(harness.identity, harness.instanceId);
+    if (lease === undefined) throw new Error("Expected startup ownership");
+    harness.registry.write({
+      schemaVersion: 1,
+      protocolVersion: DAEMON_PROTOCOL_VERSION,
+      symnavVersion: "test",
+      workspaceRoot: harness.workspaceRoot,
+      workspaceKey: harness.identity.workspaceKey,
+      instanceId: harness.instanceId,
+      processToken: harness.processToken,
+      endpoint: harness.identity.endpoint(harness.instanceId),
+      pid: process.pid,
+      state: "starting",
+      startedAt: Date.now(),
+      memoryCapBytes: 1024,
+    });
+    const daemon = new WorkspaceDaemon({
+      identity: harness.identity,
+      instanceId: harness.instanceId,
+      processToken: harness.processToken,
+      symnavVersion: "test",
+      memoryCapBytes: 1024,
+      dependencies: createDefaultDependencies(),
+      registry: harness.registry,
+      transport: harness.transport as unknown as LocalDaemonTransport,
+      executor,
+      exit: (code) => harness.resolveExit(code),
+    });
+    await daemon.start();
+    lease.release();
+    return harness;
+  }
+
+  identify(): Promise<DaemonResponse> {
+    return this.transport.receive({
+      kind: "identify",
+      instanceId: this.instanceId,
+      processToken: this.processToken,
+    });
+  }
+
+  terminate(): Promise<DaemonResponse> {
+    return this.transport.receive({
+      kind: "terminate",
+      instanceId: this.instanceId,
+      processToken: this.processToken,
+    });
+  }
+
+  ping(): Promise<DaemonResponse> {
+    return this.transport.receive({
+      kind: "ping",
+      protocolVersion: DAEMON_PROTOCOL_VERSION,
+      instanceId: this.instanceId,
+    });
+  }
+
+  execute(requestId: string): Promise<DaemonResponse> {
+    return this.transport.receive({
+      kind: "execute",
+      protocolVersion: DAEMON_PROTOCOL_VERSION,
+      instanceId: this.instanceId,
+      requestId,
+      request: { argv: ["--version"], cwd: this.workspaceRoot, telemetryEnabled: false },
+    });
+  }
+
+  stop(): Promise<DaemonResponse> {
+    return this.transport.receive({
+      kind: "stop",
+      protocolVersion: DAEMON_PROTOCOL_VERSION,
+      instanceId: this.instanceId,
+    });
+  }
+
+  async dispose(): Promise<void> {
+    if (this.transport.isListening) {
+      await this.transport
+        .receive({ kind: "kill", instanceId: this.instanceId, processToken: this.processToken })
+        .catch(() => undefined);
+      await Promise.race([this.exited, new Promise((resolve) => setTimeout(resolve, 100))]);
+    }
+    rmSync(this.stateDirectory, { recursive: true, force: true });
+    rmSync(this.workspaceRoot, { recursive: true, force: true });
+  }
+}
+
+class RequestTransport {
+  private handler: ((request: DaemonRequest) => Promise<DaemonResponse>) | undefined;
+
+  get isListening(): boolean {
+    return this.handler !== undefined;
+  }
+
+  async listen(
+    _endpoint: string,
+    handler: (request: DaemonRequest) => Promise<DaemonResponse>,
+  ): Promise<DaemonServer> {
+    this.handler = handler;
+    return {
+      close: async () => {
+        this.handler = undefined;
+      },
+    };
+  }
+
+  receive(request: DaemonRequest): Promise<DaemonResponse> {
+    if (this.handler === undefined) return Promise.reject(new Error("Transport is not listening"));
+    return this.handler(request);
+  }
+}
+
+class ImmediateExecutor implements DaemonCommandExecutor {
+  async execute(_request: CliExecutionRequest): Promise<CommandExecutionResult> {
+    return { frames: [], exitCode: 0 };
+  }
+}
+
+class RecordingExecutor implements DaemonCommandExecutor {
+  readonly requests: CliExecutionRequest[] = [];
+
+  async execute(request: CliExecutionRequest): Promise<CommandExecutionResult> {
+    this.requests.push(request);
+    return { frames: [], exitCode: 0 };
+  }
+}
+
+class SerializedExecutor implements DaemonCommandExecutor {
+  private readonly results: (() => void)[] = [];
+
+  get startedCount(): number {
+    return this.results.length;
+  }
+
+  async execute(_request: CliExecutionRequest): Promise<CommandExecutionResult> {
+    await new Promise<void>((resolve) => this.results.push(resolve));
+    return { frames: [], exitCode: 0 };
+  }
+
+  async started(count: number): Promise<void> {
+    while (this.results.length < count) await Promise.resolve();
+  }
+
+  complete(index: number): void {
+    this.results[index]?.();
+  }
+}

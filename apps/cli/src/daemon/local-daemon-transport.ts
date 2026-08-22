@@ -13,13 +13,16 @@ interface LocalDaemonTransportOptions {
 class DaemonFrameDecoder {
   private buffered = Buffer.alloc(0);
 
-  constructor(_maximumFrameBytes: number) {}
+  constructor(private readonly maximumFrameBytes: number) {}
 
   append(bytes: Buffer): readonly unknown[] {
     this.buffered = Buffer.concat([this.buffered, bytes]);
     const values: unknown[] = [];
     while (this.buffered.length >= 4) {
       const payloadLength = this.buffered.readUInt32BE(0);
+      if (payloadLength > this.maximumFrameBytes) {
+        throw new Error(`Daemon frame exceeds ${this.maximumFrameBytes} bytes`);
+      }
       if (this.buffered.length < payloadLength + 4) break;
       const payload = this.buffered.subarray(4, payloadLength + 4);
       this.buffered = this.buffered.subarray(payloadLength + 4);

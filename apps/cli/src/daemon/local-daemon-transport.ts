@@ -1,4 +1,4 @@
-import { createServer, type Server } from "node:net";
+import { createServer, type Server, type Socket } from "node:net";
 import type { DaemonRequest, DaemonResponse, DaemonServer } from "./daemon-protocol.js";
 
 const DEFAULT_MAXIMUM_FRAME_BYTES = 8 * 1024 * 1024;
@@ -15,8 +15,14 @@ class DaemonFrameDecoder {
 
   constructor(_maximumFrameBytes: number) {}
 
-  append(_bytes: Buffer): readonly unknown[] {
-    throw new Error("Daemon frame decoding is not implemented");
+  append(bytes: Buffer): readonly unknown[] {
+    this.buffered = Buffer.concat([this.buffered, bytes]);
+    if (this.buffered.length < 4) return [];
+    const payloadLength = this.buffered.readUInt32BE(0);
+    if (this.buffered.length < payloadLength + 4) return [];
+    const payload = this.buffered.subarray(4, payloadLength + 4);
+    this.buffered = this.buffered.subarray(payloadLength + 4);
+    return [JSON.parse(payload.toString("utf8"))];
   }
 
   assertComplete(): void {}
@@ -52,12 +58,43 @@ export class LocalDaemonTransport {
 
   async listen(
     endpoint: string,
-    _handler: (request: DaemonRequest) => Promise<DaemonResponse>,
+    handler: (request: DaemonRequest) => Promise<DaemonResponse>,
   ): Promise<DaemonServer> {
-    const server = createServer((socket) => socket.destroy());
+    const server = createServer((socket) => this.serve(socket, handler));
     return new Promise((resolve, reject) => {
       server.once("error", reject);
       server.listen(endpoint, () => resolve(new ListeningDaemonServer(server)));
     });
+  }
+
+  private serve(
+    socket: Socket,
+    handler: (request: DaemonRequest) => Promise<DaemonResponse>,
+  ): void {
+    const decoder = new DaemonFrameDecoder(this.maximumFrameBytes);
+    socket.on("data", (bytes) => {
+      try {
+        const value = decoder.append(Buffer.isBuffer(bytes) ? bytes : Buffer.from(bytes))[0];
+        if (value === undefined) return;
+        void handler(value as DaemonRequest).then((response) => this.writeFrame(socket, response));
+      } catch {
+        socket.destroy();
+      }
+    });
+    socket.once("end", () => {
+      try {
+        decoder.assertComplete();
+      } catch {
+        socket.destroy();
+      }
+    });
+    socket.once("error", () => socket.destroy());
+  }
+
+  private writeFrame(socket: Socket, value: unknown): void {
+    const payload = Buffer.from(JSON.stringify(value), "utf8");
+    const prefix = Buffer.alloc(4);
+    prefix.writeUInt32BE(payload.length);
+    socket.write(Buffer.concat([prefix, payload]));
   }
 }

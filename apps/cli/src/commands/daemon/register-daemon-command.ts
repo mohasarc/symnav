@@ -10,6 +10,10 @@ import { LocalDaemonTransport } from "../../daemon/local-daemon-transport.js";
 import type { ProgramContext } from "../../program-context.js";
 import type { ProgramDependencies } from "../../program-dependencies.js";
 
+interface DaemonStartOptions {
+  readonly json: boolean;
+}
+
 export function registerDaemonCommand(
   program: CommanderCommand,
   context: ProgramContext,
@@ -19,8 +23,9 @@ export function registerDaemonCommand(
   daemon
     .command("start")
     .description("Start and warm the workspace daemon")
-    .action(async () => {
-      await DaemonStartAction.run(program, context, dependencies);
+    .option("--json", "emit JSON instead of text", false)
+    .action(async (options: DaemonStartOptions) => {
+      await DaemonStartAction.run(program, context, dependencies, options);
     });
 }
 
@@ -29,6 +34,7 @@ class DaemonStartAction {
     program: CommanderCommand,
     context: ProgramContext,
     dependencies: ProgramDependencies,
+    options: DaemonStartOptions,
   ): Promise<void> {
     const cwd = program.opts<{ cwd?: string }>().cwd ?? context.cwd;
     try {
@@ -41,7 +47,9 @@ class DaemonStartAction {
         new LocalDaemonTransport(),
       );
       const result = await coordinator.ensureRunning(identity);
-      context.stdout.write(DaemonStartAction.renderText(result));
+      context.stdout.write(
+        options.json ? DaemonStartAction.renderJson(result) : DaemonStartAction.renderText(result),
+      );
     } catch (error) {
       if (error instanceof UserFacingError) {
         context.stderr.write(error.render());
@@ -61,6 +69,10 @@ class DaemonStartAction {
       return `Daemon already running for ${result.workspaceRoot} (pid ${result.pid}, up ${DaemonStartAction.uptime(result.uptimeMs)})\n`;
     }
     return "Daemon disabled by SYMNAV_DAEMON=0\n";
+  }
+
+  private static renderJson(result: DaemonStartResult): string {
+    return `${JSON.stringify(result)}\n`;
   }
 
   private static duration(durationMs: number): string {

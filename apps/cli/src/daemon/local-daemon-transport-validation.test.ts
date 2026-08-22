@@ -1,4 +1,4 @@
-import { createServer, type Server, type Socket } from "node:net";
+import { createConnection, createServer, type Server, type Socket } from "node:net";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -157,6 +157,27 @@ describe("LocalDaemonTransport validation", () => {
     await expect(
       new LocalDaemonTransport({ requestTimeoutMs: 100 }).request(endpoint, pingRequest()),
     ).rejects.toThrow("multiple responses");
+  });
+
+  it("rejects invalid server requests before invoking the handler", async () => {
+    const directory = mkdtempSync(join(tmpdir(), "symnav-transport-server-validation-"));
+    directories.push(directory);
+    const endpoint = join(directory, "daemon.sock");
+    let handled = false;
+    const transport = new LocalDaemonTransport({ requestTimeoutMs: 100 });
+    const listening = await transport.listen(endpoint, async () => {
+      handled = true;
+      return { kind: "pong", protocolVersion: 1, instanceId: "instance", symnavVersion: "test" };
+    });
+    const socket = createConnection(endpoint);
+    await new Promise<void>((resolve, reject) => {
+      socket.once("error", reject);
+      socket.once("connect", () => socket.write(frame({ kind: "ping", protocolVersion: "bad" })));
+      socket.once("close", () => resolve());
+    });
+
+    expect(handled).toBe(false);
+    await listening.close();
   });
 
 });

@@ -1,11 +1,15 @@
+import { spawn, type ChildProcess } from "node:child_process";
 import {
+  existsSync,
   mkdtempSync,
   readFileSync,
   readdirSync,
   rmSync,
+  writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
 import { DaemonRegistry } from "./daemon-registry.js";
 import { DaemonWorkspaceIdentity } from "./daemon-workspace-identity.js";
@@ -85,6 +89,28 @@ describe("daemon registry", () => {
     replacementLease?.release();
   });
 
+  it("keeps replacement ownership when two processes clean the old owner", async () => {
+    const stateDirectory = temporaryDirectory(roots);
+    const identity = DaemonWorkspaceIdentity.from("/repo", stateDirectory);
+    const registry = new DaemonRegistry(identity.registryDirectory);
+    expect(registry.acquireStartup(identity, "old")).toBeDefined();
+    const barrierPath = join(stateDirectory, "cleaners-go");
+    const readyPaths = [join(stateDirectory, "cleaner-one"), join(stateDirectory, "cleaner-two")];
+    const cleaners = readyPaths.map((readyPath) =>
+      spawnRegistryCleaner(identity.workspaceRoot, stateDirectory, "old", readyPath, barrierPath),
+    );
+    await waitUntil(() => readyPaths.every((path) => existsSync(path)));
+
+    writeFileSync(barrierPath, "go");
+    await waitUntil(() => registry.startupOwner(identity) === undefined);
+    const replacementLease = registry.acquireStartup(identity, "replacement");
+    expect(replacementLease).toBeDefined();
+    await Promise.all(cleaners.map(waitForProcess));
+
+    expect(registry.startupOwner(identity)?.instanceId).toBe("replacement");
+    replacementLease?.release();
+  }, 10_000);
+
   it.each([
     { field: "schemaVersion", value: 2 },
     { field: "protocolVersion", value: DAEMON_PROTOCOL_VERSION + 1 },
@@ -117,6 +143,47 @@ function temporaryDirectory(roots: string[]): string {
   const root = mkdtempSync(join(tmpdir(), "symnav-registry-"));
   roots.push(root);
   return root;
+}
+
+function spawnRegistryCleaner(
+  workspaceRoot: string,
+  stateDirectory: string,
+  instanceId: string,
+  readyPath: string,
+  barrierPath: string,
+): ChildProcess {
+  return spawn(
+    process.execPath,
+    [
+      fileURLToPath(new URL("../../node_modules/tsx/dist/cli.mjs", import.meta.url)),
+      fileURLToPath(new URL("../../test/helpers/daemon-registry-cleaner.ts", import.meta.url)),
+      workspaceRoot,
+      stateDirectory,
+      instanceId,
+      readyPath,
+      barrierPath,
+    ],
+    { stdio: "ignore" },
+  );
+}
+
+function waitForProcess(child: ChildProcess): Promise<void> {
+  return new Promise((resolve, reject) => {
+    child.once("error", reject);
+    child.once("exit", (code) => {
+      if (code === 0) resolve();
+      else reject(new Error(`Registry cleaner exited with code ${String(code)}`));
+    });
+  });
+}
+
+async function waitUntil(predicate: () => boolean): Promise<void> {
+  const deadline = Date.now() + 5_000;
+  while (Date.now() <= deadline) {
+    if (predicate()) return;
+    await new Promise((resolve) => setTimeout(resolve, 2));
+  }
+  throw new Error("Timed out waiting for registry race");
 }
 
 function record(

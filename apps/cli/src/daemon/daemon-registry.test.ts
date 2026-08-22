@@ -456,6 +456,24 @@ describe("daemon registry", () => {
       workspaceRoot: "/repo",
     });
   });
+
+  it("cleans a stale registered daemon while stopping", async () => {
+    const stateDirectory = temporaryDirectory(roots);
+    const identity = DaemonWorkspaceIdentity.from("/repo", stateDirectory);
+    const registry = new DaemonRegistry(identity.registryDirectory);
+    registry.write({ ...record(identity, "ready", "stale-stop"), pid: 999_999_999 });
+    const controller = new DaemonController(
+      registry,
+      new ControllerTransport(registry) as unknown as LocalDaemonTransport,
+      stateDirectory,
+    );
+
+    await expect(controller.stop("/repo")).resolves.toEqual({
+      status: "not-running",
+      workspaceRoot: "/repo",
+    });
+    expect(registry.readStoredInstance(identity, "stale-stop")).toBeUndefined();
+  });
 });
 
 class ControllerTransport {

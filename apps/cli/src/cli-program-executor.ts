@@ -65,7 +65,12 @@ export class CliProgramExecutor {
 }
 
 export class CommandResultReplayer {
-  static replay(_result: CommandExecutionResult, _context: ProgramContext): never | void {
-    throw new Error("Captured result replay is not implemented");
+  static replay(result: CommandExecutionResult, context: ProgramContext): never | void {
+    for (const frame of result.frames) {
+      context[frame.stream].write(Buffer.from(frame.bytesBase64, "base64"));
+    }
+    if (result.exitCode !== 0) {
+      context.exit(result.exitCode);
+    }
   }
 }

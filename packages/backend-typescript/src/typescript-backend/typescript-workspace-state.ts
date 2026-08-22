@@ -28,6 +28,14 @@ export interface TypeScriptFileRevision {
   readonly modifiedAtMs: number;
 }
 
+interface PreparedFileIndex {
+  readonly revision: TypeScriptFileRevision;
+  readonly path: ResolvedPath;
+  readonly declarations: readonly SymbolOverviewNode[];
+  readonly declarationsByIdentity: ReadonlyMap<string, IndexedDeclaration>;
+  readonly declarationsByPosition: ReadonlyMap<number, SymbolOverviewNode>;
+}
+
 export class TypeScriptWorkspaceState {
   private readonly project: Project;
   private readonly fileByRelativePath = new Map<string, ResolvedPath>();

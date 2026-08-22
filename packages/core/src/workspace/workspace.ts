@@ -1,4 +1,4 @@
-import { isAbsolute, posix, resolve } from "node:path";
+import { posix, win32 } from "node:path";
 import type { FileMetadata, FileSystem } from "./file-system.js";
 import {
   FileNotFoundError,
@@ -48,7 +48,8 @@ class DefaultWorkspace implements Workspace {
 
   async resolveInputPath(inputPath: string, cwd: string): Promise<ResolvedPath> {
     await this.paths();
-    const absolutePath = posixify(isAbsolute(inputPath) ? inputPath : resolve(cwd, inputPath));
+    const pathDialect = posix.isAbsolute(this.root) ? posix : win32;
+    const absolutePath = posixify(pathDialect.resolve(cwd, inputPath));
     if (!(await this.fs.exists(absolutePath))) {
       throw new FileNotFoundError(inputPath);
     }

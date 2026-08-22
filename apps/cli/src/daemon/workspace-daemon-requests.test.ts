@@ -125,6 +125,15 @@ describe("WorkspaceDaemon requests", () => {
     expect(executor.requests).toHaveLength(1);
   });
 
+  it("timestamps daemon requests when they are accepted", async () => {
+    const harness = await RequestHarness.start(new ImmediateExecutor(), { now: () => 1_234 });
+    harnesses.push(harness);
+
+    await harness.execute("timestamped");
+
+    await expect(harness.ping()).resolves.toMatchObject({ lastNavigationAt: 1_234 });
+  });
+
   it("serializes workspace execution requests", async () => {
     const executor = new SerializedExecutor();
     const harness = await RequestHarness.start(executor);

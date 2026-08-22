@@ -8,8 +8,10 @@ import {
   rmSync,
   writeFileSync,
 } from "node:fs";
+import { spawn, type ChildProcess } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
 import { runSymnavBinary } from "@symnav/testing";
 import { DAEMON_PROTOCOL_VERSION, type DaemonRecord } from "../../../src/daemon/daemon-protocol.js";
@@ -18,6 +20,7 @@ import { LocalDaemonTransport } from "../../../src/daemon/local-daemon-transport
 describe("symnav daemon status", () => {
   const stateDirectories: string[] = [];
   const daemonPids: number[] = [];
+  const helperProcesses: ChildProcess[] = [];
 
   afterEach(() => {
     for (const pid of daemonPids) {
@@ -26,6 +29,8 @@ describe("symnav daemon status", () => {
       } catch {}
     }
     daemonPids.length = 0;
+    for (const child of helperProcesses) child.kill("SIGTERM");
+    helperProcesses.length = 0;
     for (const directory of stateDirectories) rmSync(directory, { recursive: true, force: true });
     stateDirectories.length = 0;
   });
@@ -150,6 +155,38 @@ function temporaryWorkspace(directories: string[], label = "workspace"): string 
   mkdirSync(join(directory, ".git"));
   writeFileSync(join(directory, "input.ts"), "export const value = 1;\n");
   return directory;
+}
+
+function spawnStartupPublisher(
+  workspaceRoot: string,
+  stateDirectory: string,
+  readyPath: string,
+  barrierPath: string,
+  resultPath: string,
+): ChildProcess {
+  return spawn(
+    process.execPath,
+    [
+      fileURLToPath(new URL("../../../node_modules/tsx/dist/cli.mjs", import.meta.url)),
+      fileURLToPath(new URL("../../helpers/daemon-startup-publisher.ts", import.meta.url)),
+      workspaceRoot,
+      stateDirectory,
+      readyPath,
+      barrierPath,
+      resultPath,
+    ],
+    { stdio: "ignore" },
+  );
+}
+
+function waitForProcess(child: ChildProcess): Promise<void> {
+  return new Promise((resolve, reject) => {
+    child.once("error", reject);
+    child.once("exit", (code) => {
+      if (code === 0) resolve();
+      else reject(new Error(`Startup publisher exited with code ${String(code)}`));
+    });
+  });
 }
 
 function captureDaemonPids(stateDir: string, pids: number[]): void {

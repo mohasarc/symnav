@@ -180,6 +180,24 @@ describe("LocalDaemonTransport validation", () => {
     await listening.close();
   });
 
+  it("rejects malformed daemon pong responses", async () => {
+    const endpoint = await rawServer(servers, directories, (socket) => {
+      socket.write(
+        frame({
+          kind: "pong",
+          protocolVersion: "invalid",
+          instanceId: "instance",
+          symnavVersion: "test",
+        }),
+      );
+      setTimeout(() => socket.destroy(), 50);
+    });
+
+    await expect(
+      new LocalDaemonTransport({ requestTimeoutMs: 100 }).request(endpoint, pingRequest()),
+    ).rejects.toThrow("Malformed daemon pong");
+  });
+
 });
 
 function pingRequest(): DaemonRequest {

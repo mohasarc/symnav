@@ -6,6 +6,7 @@ import {
   type ResultWithDiagnostics,
   UserFacingError,
   type Workspace,
+  type WorkspaceSnapshot,
 } from "@symnav/core";
 
 const severityPrefixes: Record<NavigationDiagnosticSeverity, string> = {
@@ -33,6 +34,7 @@ export interface CommandInvocation<Args> {
 
 export interface Command<Result extends ResultWithDiagnostics, Args> {
   readonly name: string;
+  snapshotForBackendRefresh?(ctx: CommandContext<Args>): Promise<WorkspaceSnapshot>;
   describeArgs(args: Args): ArgShape;
   countResults(result: Result): Record<string, number>;
   compute(ctx: CommandContext<Args>): Promise<Result>;
@@ -54,7 +56,18 @@ export async function runCommand<Result extends ResultWithDiagnostics, Args>(
   try {
     workspace = await createWorkspace({ startDir: cwd, fs });
     const router = new BackendRouter(dependencies.backends());
-    const result = await command.compute({ workspace, router, git: dependencies.git, cwd, args });
+    const commandContext: CommandContext<Args> = {
+      workspace,
+      router,
+      git: dependencies.git,
+      cwd,
+      args,
+    };
+    const snapshot = command.snapshotForBackendRefresh
+      ? await command.snapshotForBackendRefresh(commandContext)
+      : await workspace.snapshot();
+    await router.refresh(snapshot);
+    const result = await command.compute(commandContext);
     const rendered = json ? command.renderJson(result) : command.renderText(result);
     for (const diagnostic of result.diagnostics ?? []) {
       context.stderr.write(`${severityPrefixes[diagnostic.severity]}: ${diagnostic.message}\n`);

@@ -16,8 +16,43 @@ const success: CommandExecutionResult = {
   frames: [{ stream: "stdout", bytesBase64: Buffer.from("answer\n").toString("base64") }],
   exitCode: 0,
 };
+const userError: CommandExecutionResult = {
+  frames: [{ stream: "stderr", bytesBase64: Buffer.from("bad\n").toString("base64") }],
+  exitCode: 1,
+};
 
 describe("DaemonCommandDispatcher", () => {
+  it("returns one complete result from an existing daemon", async () => {
+    const harness = new DispatchHarness(success);
+
+    await expect(harness.dispatcher().execute(request)).resolves.toEqual({
+      mode: "warm",
+      result: success,
+    });
+    expect(harness.ensureRunning).not.toHaveBeenCalled();
+    expect(harness.coldExecute).not.toHaveBeenCalled();
+    expect(harness.executeRequests()).toEqual([
+      expect.objectContaining({
+        kind: "execute",
+        request: expect.objectContaining({ executionMode: "warm" }),
+      }),
+    ]);
+  });
+
+  it("sends an absolute cwd override to the daemon", async () => {
+    const harness = new DispatchHarness(success);
+
+    await harness
+      .dispatcher()
+      .execute({ ...request, argv: ["--cwd", "..", ...request.argv], cwd: "/repo/nested" });
+
+    expect(harness.executeRequests()).toEqual([
+      expect.objectContaining({
+        request: expect.objectContaining({ argv: ["--cwd", "/repo", ...request.argv] }),
+      }),
+    ]);
+  });
+
   it("does not touch daemon state when disabled", async () => {
     const harness = new DispatchHarness(success, { daemonEnabled: false });
 
@@ -29,6 +64,16 @@ describe("DaemonCommandDispatcher", () => {
     expect(harness.coldExecute).toHaveBeenCalledWith(
       expect.objectContaining({ executionMode: "cold" }),
     );
+  });
+
+  it("replays normal nonzero daemon results without retrying", async () => {
+    const harness = new DispatchHarness(userError);
+
+    await expect(harness.dispatcher().execute(request)).resolves.toEqual({
+      mode: "warm",
+      result: userError,
+    });
+    expect(harness.coldExecute).not.toHaveBeenCalled();
   });
 });
 

@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -297,6 +297,39 @@ class TestProcessTerminator implements DaemonProcessTerminator {
   async terminate(pid: number): Promise<void> {
     this.terminated.push(pid);
     this.alive.delete(pid);
+  }
+}
+
+class DelayedMarkerLauncher implements DaemonProcessLauncher {
+  readonly symnavVersion = "0.1.0";
+  readonly memoryCapBytes = 256 * 1024 * 1024;
+
+  constructor(
+    private readonly markerPath: string,
+    private readonly processIds: number[],
+  ) {}
+
+  launch(): Promise<DaemonProcess> {
+    return new Promise((resolve, reject) => {
+      const child = spawn(
+        process.execPath,
+        [
+          "-e",
+          'setTimeout(() => require("node:fs").writeFileSync(process.argv[1], "late"), 200)',
+          this.markerPath,
+        ],
+        { stdio: "ignore" },
+      );
+      child.once("error", reject);
+      child.once("spawn", () => {
+        this.processIds.push(child.pid!);
+        const terminator = new NodeDaemonProcessTerminator(100, 5);
+        resolve({
+          pid: child.pid!,
+          terminate: () => terminator.terminate(child.pid!),
+        });
+      });
+    });
   }
 }
 

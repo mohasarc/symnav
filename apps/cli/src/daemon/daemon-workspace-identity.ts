@@ -3,6 +3,10 @@ import { tmpdir, userInfo } from "node:os";
 import { join } from "node:path";
 
 export class DaemonWorkspaceIdentity {
+  static registryDirectory(stateDir: string): string {
+    return join(stateDir, "daemons");
+  }
+
   static from(workspaceRoot: string, stateDir: string): DaemonWorkspaceIdentity {
     return new DaemonWorkspaceIdentity(workspaceRoot, stateDir);
   }
@@ -19,7 +23,7 @@ export class DaemonWorkspaceIdentity {
     stateDir: string,
   ) {
     this.workspaceKey = DaemonWorkspaceIdentity.hash(workspaceRoot);
-    this.registryDirectory = join(stateDir, "daemons");
+    this.registryDirectory = DaemonWorkspaceIdentity.registryDirectory(stateDir);
     this.lockPath = join(this.registryDirectory, `${this.workspaceKey}.lock`);
     this.startupMutationPath = `${this.lockPath}.mutation`;
     this.logPath = join(this.registryDirectory, `${this.workspaceKey}.log`);

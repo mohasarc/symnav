@@ -242,6 +242,18 @@ describe("symnav daemon parity", () => {
     expect(await execution).toEqual(harness.cold(["overview", "input.ts"]));
     expect(harness.warm(["overview", "input.ts"])).toEqual(harness.cold(["overview", "input.ts"]));
   }, 15_000);
+
+  it("keeps cold bytes and status when daemon state path is an existing file", () => {
+    const harness = new DaemonParityHarness();
+    harnesses.push(harness);
+    harness.replaceStateDirectoryWithFile();
+
+    const fallback = harness.warm(["overview", "input.ts"]);
+
+    expect(fallback).toEqual(harness.cold(["overview", "input.ts"]));
+    expect(fallback).toMatchObject({ status: 0, stderr: "" });
+    expect(harness.daemonRecordCount()).toBe(0);
+  });
 });
 
 class DaemonParityHarness {

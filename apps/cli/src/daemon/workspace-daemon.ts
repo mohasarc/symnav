@@ -143,6 +143,7 @@ export class WorkspaceDaemon {
       );
       if (
         owner?.instanceId === this.options.instanceId &&
+        this.options.registry.startupOwnerIsWithinGrace(owner) &&
         terminator.isAlive(owner.ownerPid) &&
         record?.state === "starting" &&
         record.pid === process.pid

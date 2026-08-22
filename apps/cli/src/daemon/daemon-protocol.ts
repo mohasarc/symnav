@@ -71,6 +71,11 @@ export type DaemonRequest =
       readonly instanceId: string;
       readonly processToken: string;
     }
+  | {
+      readonly kind: "kill";
+      readonly instanceId: string;
+      readonly processToken: string;
+    }
   | { readonly kind: "ping"; readonly protocolVersion: number; readonly instanceId: string }
   | {
       readonly kind: "execute";
@@ -91,6 +96,11 @@ export type DaemonResponse =
     }
   | {
       readonly kind: "terminating";
+      readonly instanceId: string;
+      readonly processToken: string;
+    }
+  | {
+      readonly kind: "killing";
       readonly instanceId: string;
       readonly processToken: string;
     }

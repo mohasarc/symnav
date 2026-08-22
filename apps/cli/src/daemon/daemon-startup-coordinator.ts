@@ -141,23 +141,29 @@ export class DaemonStartupCoordinator {
       }
       const owner = this.registry.startupOwner(identity);
       if (owner === undefined) return this.ensureRunning(identity);
-      if (!this.processTerminator.isAlive(owner.ownerPid)) {
-        this.cleanupAbandonedStartup(identity, owner);
-        return this.ensureRunning(identity);
+      if (this.startupOwnerIsAbandoned(owner)) {
+        if (this.cleanupAbandonedStartup(identity, owner)) return this.ensureRunning(identity);
       }
       await this.pause();
     }
     const owner = this.registry.startupOwner(identity);
-    if (owner !== undefined) this.cleanupAbandonedStartup(identity, owner);
+    if (owner !== undefined && this.startupOwnerIsAbandoned(owner)) {
+      this.cleanupAbandonedStartup(identity, owner);
+    }
     throw new Error("Daemon startup timed out while waiting for another process");
   }
 
-  private cleanupAbandonedStartup(
-    identity: DaemonWorkspaceIdentity,
-    owner: StartupOwner,
-  ): void {
+  private cleanupAbandonedStartup(identity: DaemonWorkspaceIdentity, owner: StartupOwner): boolean {
+    if (!this.registry.removeStartupLockIfOwner(identity, owner)) return false;
     this.registry.removeIfInstance(identity, owner.instanceId);
-    this.registry.removeStartupLockIfInstance(identity, owner.instanceId);
+    return true;
+  }
+
+  private startupOwnerIsAbandoned(owner: StartupOwner): boolean {
+    return (
+      !this.registry.startupOwnerIsWithinGrace(owner) &&
+      !this.processTerminator.isAlive(owner.ownerPid)
+    );
   }
 
   private async waitForReady(

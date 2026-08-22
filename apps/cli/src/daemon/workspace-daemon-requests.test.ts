@@ -146,6 +146,21 @@ describe("WorkspaceDaemon requests", () => {
     );
   });
 
+  it("logs startup failures before rethrowing them", async () => {
+    const { daemon, harness, lease } = RequestHarness.create(new ImmediateExecutor());
+    harnesses.push(harness);
+    harness.transport.listenError = new Error("listen failed");
+
+    await expect(daemon.start()).rejects.toThrow("listen failed");
+    lease.release();
+
+    expect(harness.logEvents()).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ kind: "failure", operation: "start", message: "listen failed" }),
+      ]),
+    );
+  });
+
 });
 
 class RequestHarness {

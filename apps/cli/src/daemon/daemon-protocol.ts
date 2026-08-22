@@ -21,6 +21,21 @@ export interface DaemonRecord {
   readonly memoryCapBytes: number;
 }
 
+export interface RunningDaemonStatus {
+  readonly workspaceRoot: string;
+  readonly state: "starting" | "ready";
+  readonly pid: number;
+  readonly uptimeMs: number;
+  readonly fileCount?: number;
+  readonly memoryBytes?: number;
+  readonly lastRequestAgoMs?: number;
+}
+
+export type DaemonStopResult =
+  | { readonly status: "stopped"; readonly workspaceRoot: string; readonly pid: number }
+  | { readonly status: "killed"; readonly workspaceRoot: string; readonly pid: number }
+  | { readonly status: "not-running"; readonly workspaceRoot: string };
+
 export type DaemonRequest =
   | {
       readonly kind: "identify";

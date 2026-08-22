@@ -16,7 +16,7 @@ export interface UsageEventContent {
   readonly command: string;
   readonly timestamp: number;
   readonly durationMs: number;
-  readonly executionMode?: ExecutionMode | undefined;
+  readonly executionMode: ExecutionMode;
   readonly argShape: ArgShape;
   readonly resultCounts?: Readonly<Record<string, number>>;
   readonly workspaceId: string;

@@ -358,10 +358,40 @@ describe("daemon registry", () => {
     await expect(controller.status()).resolves.toEqual([]);
     expect(registry.readStoredInstance(identity, "stale")).toBeUndefined();
   });
+
+  it("drains a validated daemon and compare-removes only its record", async () => {
+    const stateDirectory = temporaryDirectory(roots);
+    const identity = DaemonWorkspaceIdentity.from("/repo", stateDirectory);
+    const registry = new DaemonRegistry(identity.registryDirectory);
+    registry.write({ ...record(identity, "ready", "old"), pid: 501 });
+    const transport = new ControllerTransport(registry);
+    transport.live.add("old");
+    transport.onStop = () => {
+      transport.live.delete("old");
+      terminator.alive.delete(501);
+      registry.write({ ...record(identity, "ready", "replacement"), pid: 502 });
+    };
+    const terminator = new ControllerTerminator([501, 502]);
+    const controller = new DaemonController(
+      registry,
+      transport as unknown as LocalDaemonTransport,
+      stateDirectory,
+      { processTerminator: terminator, stopTimeoutMs: 5, pollIntervalMs: 1 },
+    );
+
+    await expect(controller.stop("/repo")).resolves.toEqual({
+      status: "stopped",
+      workspaceRoot: "/repo",
+      pid: 501,
+    });
+    expect(registry.readStoredInstance(identity, "replacement")).toBeDefined();
+    expect(terminator.terminated).toEqual([]);
+  });
 });
 
 class ControllerTransport {
   readonly live = new Set<string>();
+  onStop: (() => void) | undefined;
 
   constructor(private readonly registry: DaemonRegistry) {}
 
@@ -392,6 +422,10 @@ class ControllerTransport {
           : { lastNavigationAt: record.lastNavigationAt }),
       };
     }
+    if (request.kind === "stop") {
+      this.onStop?.();
+      return { kind: "stopped", instanceId: record.instanceId };
+    }
     throw new Error(`Unsupported controller request ${request.kind}`);
   }
 
@@ -402,6 +436,7 @@ class ControllerTransport {
 
 class ControllerTerminator implements DaemonProcessTerminator {
   readonly alive: Set<number>;
+  readonly terminated: number[] = [];
 
   constructor(alive: readonly number[]) {
     this.alive = new Set(alive);
@@ -412,6 +447,7 @@ class ControllerTerminator implements DaemonProcessTerminator {
   }
 
   async terminate(pid: number): Promise<void> {
+    this.terminated.push(pid);
     this.alive.delete(pid);
   }
 }

@@ -84,6 +84,38 @@ describe("DaemonStartupCoordinator", () => {
     await runtime.launcher.close();
   });
 
+  it.each(["schema", "protocol", "symnav"] as const)(
+    "proves and replaces a real daemon for $mismatch mismatch",
+    async (mismatch) => {
+      const runtime = socketBackedCoordinator(roots);
+      const oldPid = await spawnIdentifiableDaemon(
+        runtime.identity,
+        "old",
+        "old-process",
+        10,
+        realProcessIds,
+      );
+      const oldRecord = readyRecord(runtime.identity, "old", "old-process", oldPid);
+      const incompatibleRecord: DaemonRecord = {
+        ...oldRecord,
+        schemaVersion:
+          mismatch === "schema" ? DAEMON_RECORD_SCHEMA_VERSION + 1 : oldRecord.schemaVersion,
+        protocolVersion:
+          mismatch === "protocol" ? DAEMON_PROTOCOL_VERSION + 1 : oldRecord.protocolVersion,
+        symnavVersion: mismatch === "symnav" ? "0.0.9" : "0.1.0",
+      };
+      runtime.registry.write(incompatibleRecord);
+
+      const result = await runtime.coordinator.ensureRunning(runtime.identity);
+
+      expect(result.status).toBe("ready");
+      await waitUntil(() => !runtime.terminator.isAlive(oldPid));
+      expect(runtime.registry.list()).toHaveLength(1);
+      expect(runtime.registry.read(runtime.identity)?.instanceId).not.toBe("old");
+      await runtime.launcher.close();
+    },
+  );
+
 });
 
 interface CoordinatorHarnessOptions {

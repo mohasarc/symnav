@@ -91,7 +91,22 @@ export class WorkspaceDaemon {
     throw new Error("Daemon process did not receive startup authorization");
   }
 
-  private async handle(_request: DaemonRequest): Promise<DaemonResponse> {
+  private async handle(request: DaemonRequest): Promise<DaemonResponse> {
+    if (request.kind === "identify") {
+      if (
+        request.instanceId !== this.options.instanceId ||
+        request.processToken !== this.options.processToken
+      ) {
+        throw new Error("Daemon identity request does not match process instance");
+      }
+      return {
+        kind: "identity",
+        instanceId: this.options.instanceId,
+        processToken: this.options.processToken,
+        pid: process.pid,
+        startedAt: this.startedAt,
+      };
+    }
     throw new Error("Workspace daemon request handling is not implemented");
   }
 }

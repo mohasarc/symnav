@@ -1,5 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
-import { InMemoryFileSystem, type ResultWithDiagnostics, UserFacingError } from "@symnav/core";
+import {
+  InMemoryFileSystem,
+  type FileMetadata,
+  type FileSystem,
+  type ResultWithDiagnostics,
+  UserFacingError,
+} from "@symnav/core";
 import type { ArgShape } from "@symnav/telemetry";
 import { runCommand } from "../../../src/command.js";
 import type { Command, CommandContext } from "../../../src/command.js";
@@ -10,6 +16,8 @@ import {
   fakeDependencies,
 } from "./helpers/fake-program-dependencies.js";
 import { createFakeProgramContext } from "./helpers/fake-program-context.js";
+import { FakeLanguageBackend } from "./helpers/fake-language-backend.js";
+import { NavigationDiagnosticsCollector } from "../../../src/commands/navigation-diagnostics-collector.js";
 
 interface StubArgs {
   readonly note: string;
@@ -63,6 +71,57 @@ class StubCommand implements Command<StubResult, StubArgs> {
 const stubArgs = (note: string): StubArgs => ({ note });
 
 describe("runCommand lifecycle", () => {
+  it("snapshots and refreshes once before compute reuses workspace files", async () => {
+    const context = createFakeProgramContext({ cwd: "/repo" });
+    const fs = new CountingFileSystem(
+      new InMemoryFileSystem({
+        "/repo/.git/HEAD": "ref: refs/heads/main\n",
+        "/repo/src/a.ts": "export const x = 1;\n",
+        "/repo/src/nested/.gitignore": "ignored.ts\n",
+        "/repo/src/nested/b.ts": "export const b = 2;\n",
+        "/repo/src/nested/ignored.ts": "export const ignored = 3;\n",
+      }),
+    );
+    const backend = new FakeLanguageBackend({ accept: (filePath) => filePath.endsWith(".ts") });
+
+    await runCommand(
+      new StubCommand({
+        compute: async (commandContext) => {
+          const first = await commandContext.workspace.enumerate();
+          const second = await commandContext.workspace.enumerate();
+          expect(second).toBe(first);
+          return NavigationDiagnosticsCollector.attach<StubResult>(
+            { value: "computed" },
+            commandContext.workspace,
+            commandContext.router,
+          );
+        },
+      }),
+      {
+        context,
+        dependencies: fakeDependencies({ fs, backends: () => [backend] }),
+        cwdOverride: undefined,
+        json: false,
+        args: stubArgs("hi"),
+      },
+    );
+
+    expect(context.stdout.text()).toBe("text:computed");
+    expect(context.stderr.text()).toBe("");
+    expect(backend.refreshCalls).toHaveLength(1);
+    expect(backend.refreshCalls[0]?.map((file) => file.relative)).toEqual([
+      "src/a.ts",
+      "src/nested/b.ts",
+    ]);
+    expect(backend.calls).toEqual(["src/a.ts", "src/nested/b.ts"]);
+    expect(fs.directoryReads).toEqual(["async:/repo", "async:/repo/src", "async:/repo/src/nested"]);
+    expect(fs.metadataCalls).toEqual([
+      "/repo/src/a.ts",
+      "/repo/src/nested/.gitignore",
+      "/repo/src/nested/b.ts",
+    ]);
+  });
+
   it("writes the rendered text result to stdout on success", async () => {
     const context = createFakeProgramContext({ cwd: "/repo" });
 
@@ -571,3 +630,54 @@ describe("runCommand lifecycle", () => {
     expect(order).toEqual(["record", "exit:2"]);
   });
 });
+
+class CountingFileSystem implements FileSystem {
+  readonly directoryReads: string[] = [];
+  readonly metadataCalls: string[] = [];
+
+  constructor(private readonly inner: InMemoryFileSystem) {}
+
+  readFile(absPath: string): Promise<string> {
+    return this.inner.readFile(absPath);
+  }
+
+  exists(absPath: string): Promise<boolean> {
+    return this.inner.exists(absPath);
+  }
+
+  listDir(absPath: string): Promise<readonly string[]> {
+    this.directoryReads.push(`async:${absPath}`);
+    return this.inner.listDir(absPath);
+  }
+
+  isDirectory(absPath: string): Promise<boolean> {
+    return this.inner.isDirectory(absPath);
+  }
+
+  metadata(absPath: string): Promise<FileMetadata> {
+    this.metadataCalls.push(absPath);
+    return this.inner.metadata(absPath);
+  }
+
+  existsSync(absPath: string): boolean {
+    return this.inner.existsSync(absPath);
+  }
+
+  readFileSync(absPath: string): string {
+    return this.inner.readFileSync(absPath);
+  }
+
+  listDirSync(absPath: string): readonly string[] {
+    this.directoryReads.push(`sync:${absPath}`);
+    return this.inner.listDirSync(absPath);
+  }
+
+  isDirectorySync(absPath: string): boolean {
+    return this.inner.isDirectorySync(absPath);
+  }
+
+  metadataSync(absPath: string): FileMetadata {
+    this.metadataCalls.push(absPath);
+    return this.inner.metadataSync(absPath);
+  }
+}

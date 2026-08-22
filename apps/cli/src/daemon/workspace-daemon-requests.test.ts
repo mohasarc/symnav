@@ -33,6 +33,26 @@ describe("WorkspaceDaemon requests", () => {
     });
   });
 
+  it("rejects startup authorization from an expired live owner", async () => {
+    let currentTime = 0;
+    const { daemon, harness, lease } = RequestHarness.create(new ImmediateExecutor(), {
+      now: () => {
+        currentTime += 5_001;
+        return currentTime;
+      },
+    });
+    harnesses.push(harness);
+    const owner = harness.registry.startupOwner(harness.identity);
+    if (owner === undefined) throw new Error("Expected startup owner");
+    writeFileSync(
+      harness.identity.startupOwnerPath(harness.identity.lockPath),
+      JSON.stringify({ ...owner, acquiredAt: 1, heartbeatAt: 1 }),
+    );
+
+    await expect(daemon.start()).rejects.toThrow("startup authorization");
+    lease.release();
+  });
+
   it("authenticates identity requests", async () => {
     const harness = await RequestHarness.start(new ImmediateExecutor());
     harnesses.push(harness);

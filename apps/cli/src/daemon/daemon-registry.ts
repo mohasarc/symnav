@@ -272,6 +272,21 @@ export class DaemonRegistry {
       .map(({ record }) => record);
   }
 
+  private records(identity: DaemonWorkspaceIdentity): readonly DaemonRecord[] {
+    const prefix = `${identity.workspaceKey}.`;
+    return this.recordNames()
+      .filter((name) => name.startsWith(prefix))
+      .map((name) => this.readStoredPath(join(this.registryDirectory, name)))
+      .filter(
+        (record): record is DaemonRecord =>
+          record !== undefined && DaemonRegistry.matchesIdentity(record, identity),
+      )
+      .sort(
+        (left, right) =>
+          right.startedAt - left.startedAt || right.instanceId.localeCompare(left.instanceId),
+      );
+  }
+
   isStartupMutationOwner(identity: DaemonWorkspaceIdentity, owner: StartupMutationOwner): boolean {
     return DaemonRegistry.sameStartupMutationOwner(
       DaemonRegistry.readStartupMutationOwner(identity, identity.startupMutationPath),
@@ -373,21 +388,6 @@ export class DaemonRegistry {
       if (DaemonRegistry.errorCode(error) === "ENOENT") return false;
       throw error;
     }
-  }
-
-  private records(identity: DaemonWorkspaceIdentity): readonly DaemonRecord[] {
-    const prefix = `${identity.workspaceKey}.`;
-    return this.recordNames()
-      .filter((name) => name.startsWith(prefix))
-      .map((name) => this.readStoredPath(join(this.registryDirectory, name)))
-      .filter(
-        (record): record is DaemonRecord =>
-          record !== undefined && DaemonRegistry.matchesIdentity(record, identity),
-      )
-      .sort(
-        (left, right) =>
-          right.startedAt - left.startedAt || right.instanceId.localeCompare(left.instanceId),
-      );
   }
 
   private recordNames(): readonly string[] {

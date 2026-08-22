@@ -1,4 +1,5 @@
 import { mkdtempSync, rmSync } from "node:fs";
+import { createServer, type Server } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -6,6 +7,11 @@ import type { CliExecutionRequest, CommandExecutionResult } from "../command-exe
 import type { ProgramDependencies } from "../program-dependencies.js";
 import { DaemonCommandDispatcher } from "./daemon-command-dispatcher.js";
 import type { DaemonProcessLauncher } from "./daemon-process-launcher.js";
+import {
+  DAEMON_PROTOCOL_VERSION,
+  DAEMON_RECORD_SCHEMA_VERSION,
+  type DaemonRecord,
+} from "./daemon-protocol.js";
 import { DaemonRegistry } from "./daemon-registry.js";
 import { DaemonStartupCoordinator } from "./daemon-startup-coordinator.js";
 import { DaemonWorkspaceIdentity } from "./daemon-workspace-identity.js";
@@ -23,8 +29,13 @@ const coldResult: CommandExecutionResult = {
 
 describe("DaemonCommandDispatcher real failure boundaries", () => {
   const roots: string[] = [];
+  const servers: Server[] = [];
 
-  afterEach(() => {
+  afterEach(async () => {
+    for (const server of servers) {
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
+    servers.length = 0;
     for (const root of roots) rmSync(root, { recursive: true, force: true });
     roots.length = 0;
   });
@@ -87,4 +98,48 @@ function dispatcher(
     executorFactory: () => ({ execute: coldExecute }),
     requestId: () => "expected-request",
   });
+}
+
+function readyRecord(identity: DaemonWorkspaceIdentity): DaemonRecord {
+  return {
+    schemaVersion: DAEMON_RECORD_SCHEMA_VERSION,
+    protocolVersion: DAEMON_PROTOCOL_VERSION,
+    symnavVersion: "0.1.0",
+    workspaceRoot: identity.workspaceRoot,
+    workspaceKey: identity.workspaceKey,
+    instanceId: "failed",
+    processToken: "failed-process",
+    endpoint: identity.endpoint("failed"),
+    pid: 123,
+    state: "ready",
+    startedAt: 1,
+    readyAt: 2,
+    fileCount: 1,
+    memoryCapBytes: 1024,
+  };
+}
+
+function invalidResponse(scenario: "malformed" | "truncated" | "mismatched"): Buffer {
+  if (scenario === "truncated") {
+    const prefix = Buffer.alloc(4);
+    prefix.writeUInt32BE(10);
+    return Buffer.concat([prefix, Buffer.from("{}")]);
+  }
+  if (scenario === "mismatched") {
+    return frame({
+      kind: "result",
+      requestId: "different-request",
+      result: { frames: [], exitCode: 0 },
+    });
+  }
+  const prefix = Buffer.alloc(4);
+  prefix.writeUInt32BE(1);
+  return Buffer.concat([prefix, Buffer.from("{")]);
+}
+
+function frame(value: unknown): Buffer {
+  const payload = Buffer.from(JSON.stringify(value));
+  const prefix = Buffer.alloc(4);
+  prefix.writeUInt32BE(payload.length);
+  return Buffer.concat([prefix, payload]);
 }

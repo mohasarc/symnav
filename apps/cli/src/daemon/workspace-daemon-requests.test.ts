@@ -156,7 +156,7 @@ class RequestHarness {
   }
 
   static async start(
-    executor: DaemonCommandExecutor,
+    executor: DaemonCommandExecutor | undefined,
     options: RequestHarnessOptions = {},
   ): Promise<RequestHarness> {
     const { daemon, harness, lease } = RequestHarness.create(executor, options);
@@ -166,7 +166,7 @@ class RequestHarness {
   }
 
   static create(
-    executor: DaemonCommandExecutor,
+    executor: DaemonCommandExecutor | undefined,
     options: RequestHarnessOptions = {},
   ): {
     readonly daemon: WorkspaceDaemon;
@@ -199,7 +199,7 @@ class RequestHarness {
       dependencies: options.dependencies ?? createDefaultDependencies(),
       registry: harness.registry,
       transport: harness.transport as unknown as LocalDaemonTransport,
-      executor,
+      ...(executor === undefined ? {} : { executor }),
       ...(options.now === undefined ? {} : { now: options.now }),
       exit: (code) => harness.resolveExit(code),
     });

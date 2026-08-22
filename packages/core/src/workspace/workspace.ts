@@ -1,5 +1,5 @@
 import { isAbsolute, posix, resolve } from "node:path";
-import type { FileSystem } from "./file-system.js";
+import type { FileMetadata, FileSystem } from "./file-system.js";
 import {
   FileNotFoundError,
   IgnoredFileError,
@@ -17,6 +17,15 @@ import { relPathFromRoot } from "./paths/rel-from-root.js";
 export interface ResolvedPath {
   readonly relative: string;
   readonly absolute: string;
+}
+
+export interface WorkspaceFile extends ResolvedPath {
+  readonly metadata: FileMetadata;
+}
+
+export interface WorkspaceSnapshot {
+  readonly root: string;
+  readonly files: readonly WorkspaceFile[];
 }
 
 export interface Workspace {

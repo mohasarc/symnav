@@ -108,9 +108,14 @@ export {
 export { InvalidSymbolTargetRequestError } from "./target/invalid-symbol-target-request-error.js";
 export { splitHeaderLines } from "./intermediate-representation/split-header-lines.js";
 export { assignDisambiguators } from "./intermediate-representation/assign-disambiguators.js";
-export type { FileSystem } from "./workspace/file-system.js";
+export type { FileMetadata, FileSystem } from "./workspace/file-system.js";
 export { NodeFileSystem } from "./workspace/node-file-system.js";
-export type { ResolvedPath, Workspace } from "./workspace/workspace.js";
+export type {
+  ResolvedPath,
+  Workspace,
+  WorkspaceFile,
+  WorkspaceSnapshot,
+} from "./workspace/workspace.js";
 export { createWorkspace } from "./workspace/workspace.js";
 export { InMemoryFileSystem } from "./workspace/in-memory/in-memory-file-system.js";
 export type {

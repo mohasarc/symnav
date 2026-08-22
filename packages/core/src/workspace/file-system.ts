@@ -1,3 +1,8 @@
+export interface FileMetadata {
+  readonly size: number;
+  readonly modifiedAtMs: number;
+}
+
 export interface FileSystem {
   readFile(absPath: string): Promise<string>;
   exists(absPath: string): Promise<boolean>;

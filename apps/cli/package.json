@@ -23,6 +23,8 @@
   "scripts": {
     "benchmark:daemon": "tsx test/benchmark/run-daemon-benchmark.ts",
     "test": "vitest run",
+    "test:e2e:cold": "tsx test/e2e/run-navigation-mode.ts 0",
+    "test:e2e:warm": "tsx test/e2e/run-navigation-mode.ts 1",
     "build": "tsc --build",
     "typecheck": "tsc --build",
     "lint": "eslint src test",

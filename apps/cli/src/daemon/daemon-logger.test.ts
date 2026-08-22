@@ -41,4 +41,9 @@ describe("DaemonLogger", () => {
     ]);
     expect(events.map((event) => event.timestamp)).toEqual([10, 11, 11, 11, 11, 11]);
   });
+
+  it("silently ignores write failures", () => {
+    const logger = new DaemonLogger("/missing/parent/workspace.log", { now: () => 10 });
+    expect(() => logger.record({ kind: "stop", reason: "idle" })).not.toThrow();
+  });
 });

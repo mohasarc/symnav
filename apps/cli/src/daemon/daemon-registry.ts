@@ -16,7 +16,7 @@ import {
 } from "./daemon-protocol.js";
 import { DaemonWorkspaceIdentity } from "./daemon-workspace-identity.js";
 
-export interface StartupOwner {
+export interface StartupOwner extends StartupOwnerRenewal {
   readonly instanceId: string;
   readonly ownerPid: number;
   readonly acquiredAt: number;
@@ -112,10 +112,13 @@ export class DaemonRegistry {
 
   acquireStartup(identity: DaemonWorkspaceIdentity, instanceId: string): StartupLease | undefined {
     mkdirSync(identity.registryDirectory, { recursive: true, mode: 0o700 });
+    const acquiredAt = Date.now();
     const owner: StartupOwner = {
       instanceId,
       ownerPid: process.pid,
-      acquiredAt: Date.now(),
+      acquiredAt,
+      heartbeatAt: acquiredAt,
+      revision: randomUUID(),
     };
     const claimPath = identity.startupClaimPath(instanceId);
     mkdirSync(claimPath, { mode: 0o700 });
@@ -281,7 +284,9 @@ export class DaemonRegistry {
     return (
       typeof owner.instanceId === "string" &&
       Number.isInteger(owner.ownerPid) &&
-      typeof owner.acquiredAt === "number"
+      typeof owner.acquiredAt === "number" &&
+      typeof owner.heartbeatAt === "number" &&
+      typeof owner.revision === "string"
     );
   }
 

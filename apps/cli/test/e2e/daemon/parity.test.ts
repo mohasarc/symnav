@@ -6,7 +6,6 @@ import {
   realpathSync,
   readdirSync,
   renameSync,
-  rmSync,
   unlinkSync,
   writeFileSync,
 } from "node:fs";
@@ -23,12 +22,13 @@ import { DaemonWorkspaceIdentity } from "../../../src/daemon/daemon-workspace-id
 import { LocalDaemonTransport } from "../../../src/daemon/local-daemon-transport.js";
 import { createDefaultDependencies } from "../../../src/program.js";
 import { canonicalWorkspaceRoot } from "../../helpers/canonical-workspace-root.js";
+import { E2eProcessCleanup } from "../../helpers/e2e-process-cleanup.js";
 
 describe("symnav daemon parity", () => {
   const harnesses: DaemonParityHarness[] = [];
 
-  afterEach(() => {
-    for (const harness of harnesses) harness.dispose();
+  afterEach(async () => {
+    for (const harness of harnesses) await harness.dispose();
     harnesses.length = 0;
   });
 
@@ -273,6 +273,7 @@ class DaemonParityHarness {
   readonly root = mkdtempSync(join(tmpdir(), "symnav-daemon-parity-"));
   readonly workspaceRoot = join(this.root, "workspace");
   private readonly stateDirectory = join(this.root, "state");
+  private readonly helperProcesses: ChildProcess[] = [];
 
   constructor() {
     mkdirSync(join(this.workspaceRoot, ".git"), { recursive: true });
@@ -347,6 +348,7 @@ class DaemonParityHarness {
       ],
       { stdio: "ignore" },
     );
+    this.helperProcesses.push(child);
     await waitUntil(() => existsSync(readyPath));
     const mutationOwnerPid = Number(readFileSync(readyPath, "utf8"));
     process.kill(mutationOwnerPid, "SIGKILL");
@@ -388,6 +390,7 @@ class DaemonParityHarness {
         },
       },
     );
+    this.helperProcesses.push(child);
     await waitUntil(() => existsSync(`${readyPath}.boot`));
     const daemonPid = Number(readFileSync(`${readyPath}.boot`, "utf8"));
     const record: DaemonRecord = {
@@ -441,11 +444,24 @@ class DaemonParityHarness {
       .map((line) => (JSON.parse(line) as { executionMode: string }).executionMode);
   }
 
-  dispose(): void {
-    try {
-      process.kill(this.onlyDaemonPid(), "SIGTERM");
-    } catch {}
-    rmSync(this.root, { recursive: true, force: true });
+  async dispose(): Promise<void> {
+    const daemonProcessIds = this.daemonProcessIds();
+    await E2eProcessCleanup.terminate(daemonProcessIds, this.helperProcesses);
+    this.helperProcesses.length = 0;
+    E2eProcessCleanup.removeDirectories([this.root]);
+  }
+
+  private daemonProcessIds(): readonly number[] {
+    const recordsDirectory = join(this.stateDirectory, "daemons");
+    if (!existsSync(recordsDirectory)) return [];
+    return readdirSync(recordsDirectory)
+      .filter((name) => name.endsWith(".json"))
+      .map((name) => {
+        const record = JSON.parse(readFileSync(join(recordsDirectory, name), "utf8")) as {
+          readonly pid: number;
+        };
+        return record.pid;
+      });
   }
 
   private run(

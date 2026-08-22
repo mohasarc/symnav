@@ -5,7 +5,6 @@ import {
   readdirSync,
   readFileSync,
   realpathSync,
-  rmSync,
   writeFileSync,
 } from "node:fs";
 import { spawn, type ChildProcess } from "node:child_process";
@@ -17,22 +16,18 @@ import { runSymnavBinary } from "@symnav/testing";
 import { DAEMON_PROTOCOL_VERSION, type DaemonRecord } from "../../../src/daemon/daemon-protocol.js";
 import { LocalDaemonTransport } from "../../../src/daemon/local-daemon-transport.js";
 import { canonicalWorkspaceRoot } from "../../helpers/canonical-workspace-root.js";
+import { E2eProcessCleanup } from "../../helpers/e2e-process-cleanup.js";
 
 describe("symnav daemon status", () => {
   const stateDirectories: string[] = [];
   const daemonPids: number[] = [];
   const helperProcesses: ChildProcess[] = [];
 
-  afterEach(() => {
-    for (const pid of daemonPids) {
-      try {
-        process.kill(pid, "SIGTERM");
-      } catch {}
-    }
+  afterEach(async () => {
+    await E2eProcessCleanup.terminate(daemonPids, helperProcesses);
     daemonPids.length = 0;
-    for (const child of helperProcesses) child.kill("SIGTERM");
     helperProcesses.length = 0;
-    for (const directory of stateDirectories) rmSync(directory, { recursive: true, force: true });
+    E2eProcessCleanup.removeDirectories(stateDirectories);
     stateDirectories.length = 0;
   });
 
@@ -139,7 +134,7 @@ describe("symnav daemon status", () => {
     expect(JSON.parse(stopped.stdout)).toEqual([]);
   });
 
-  it("cleans a stale current-schema record", () => {
+  it("cleans a stale current-schema record", async () => {
     const stateDir = temporaryStateDirectory(stateDirectories);
     const daemonDirectory = join(stateDir, "daemons");
     const cwd = temporaryWorkspace(stateDirectories);
@@ -149,7 +144,10 @@ describe("symnav daemon status", () => {
     });
     expect(started.status).toBe(0);
     captureDaemonPids(stateDir, daemonPids);
-    for (const pid of daemonPids) process.kill(pid, "SIGKILL");
+    const originalRecord = daemonRecords(stateDir)[0];
+    expect(originalRecord).toBeDefined();
+    await E2eProcessCleanup.kill(daemonPids);
+    await E2eProcessCleanup.waitForEndpointRelease(originalRecord!.endpoint);
     daemonPids.length = 0;
     const recordName = readdirSync(daemonDirectory).find((name) => name.endsWith(".json"));
     expect(recordName).toBeDefined();
@@ -180,7 +178,7 @@ describe("symnav daemon status", () => {
     const record = daemonRecords(stateDir)[0];
     expect(record).toBeDefined();
     daemonPids.push(record!.pid);
-    rmSync(workspaceRoot, { recursive: true, force: true });
+    E2eProcessCleanup.removeDirectories([workspaceRoot]);
 
     const cold = runSymnavBinary(["--cwd", workspaceRoot, "overview", "input.ts"], {
       cwd: tmpdir(),

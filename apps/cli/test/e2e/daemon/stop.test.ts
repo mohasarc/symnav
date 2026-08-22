@@ -6,7 +6,6 @@ import {
   readdirSync,
   readFileSync,
   realpathSync,
-  rmSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -19,22 +18,18 @@ import { DaemonRegistry } from "../../../src/daemon/daemon-registry.js";
 import { DaemonWorkspaceIdentity } from "../../../src/daemon/daemon-workspace-identity.js";
 import { LocalDaemonTransport } from "../../../src/daemon/local-daemon-transport.js";
 import { canonicalWorkspaceRoot } from "../../helpers/canonical-workspace-root.js";
+import { E2eProcessCleanup } from "../../helpers/e2e-process-cleanup.js";
 
 describe("symnav daemon stop", () => {
   const stateDirectories: string[] = [];
   const daemonPids: number[] = [];
   const helperProcesses: ChildProcess[] = [];
 
-  afterEach(() => {
-    for (const pid of daemonPids) {
-      try {
-        process.kill(pid, "SIGTERM");
-      } catch {}
-    }
+  afterEach(async () => {
+    await E2eProcessCleanup.terminate(daemonPids, helperProcesses);
     daemonPids.length = 0;
-    for (const child of helperProcesses) child.kill("SIGTERM");
     helperProcesses.length = 0;
-    for (const directory of stateDirectories) rmSync(directory, { recursive: true, force: true });
+    E2eProcessCleanup.removeDirectories(stateDirectories);
     stateDirectories.length = 0;
   });
 

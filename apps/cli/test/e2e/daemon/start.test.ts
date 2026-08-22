@@ -1,22 +1,19 @@
-import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { runSymnavBinary } from "@symnav/testing";
 import { canonicalWorkspaceRoot } from "../../helpers/canonical-workspace-root.js";
+import { E2eProcessCleanup } from "../../helpers/e2e-process-cleanup.js";
 
 describe("symnav daemon start", () => {
   const stateDirectories: string[] = [];
   const daemonPids: number[] = [];
 
-  afterEach(() => {
-    for (const pid of daemonPids) {
-      try {
-        process.kill(pid, "SIGTERM");
-      } catch {}
-    }
+  afterEach(async () => {
+    await E2eProcessCleanup.terminate(daemonPids);
     daemonPids.length = 0;
-    for (const directory of stateDirectories) rmSync(directory, { recursive: true, force: true });
+    E2eProcessCleanup.removeDirectories(stateDirectories);
     stateDirectories.length = 0;
   });
 

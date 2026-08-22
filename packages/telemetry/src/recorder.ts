@@ -38,6 +38,7 @@ export class NodeUsageRecorder implements Recorder {
       command: input.command,
       timestamp: input.timestamp,
       durationMs: input.durationMs,
+      executionMode: input.executionMode,
     } satisfies Partial<UsageEvent>;
     const tail = {
       argShape: input.argShape,

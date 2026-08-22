@@ -166,6 +166,7 @@ class DispatchHarness {
   private readonly runtime: DaemonDispatchRuntime;
   private daemonAnswer: CommandExecutionResult | Error;
   private killFailure: Error | undefined;
+  private removalFailure: Error | undefined;
 
   constructor(
     daemonAnswer: CommandExecutionResult | Error,
@@ -189,6 +190,7 @@ class DispatchHarness {
         read: () => this.registered,
         removeIfInstance: (identity, instanceId) => {
           this.removeIfInstance(identity, instanceId);
+          if (this.removalFailure !== undefined) throw this.removalFailure;
           this.registered = undefined;
         },
       },
@@ -240,6 +242,10 @@ class DispatchHarness {
 
   failKill(error: Error): void {
     this.killFailure = error;
+  }
+
+  failRemoval(error: Error): void {
+    this.removalFailure = error;
   }
 }
 

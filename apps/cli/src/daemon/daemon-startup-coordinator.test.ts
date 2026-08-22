@@ -161,6 +161,23 @@ describe("DaemonStartupCoordinator", () => {
     expect(registry.readStored(identity)).toBeUndefined();
   });
 
+  it("recovers a durable startup lock when its owner published no record", async () => {
+    const harness = new CoordinatorHarness(roots, { neverReady: true });
+    expect(harness.registry.acquireStartup(harness.identity, "orphan")).toBeDefined();
+
+    await expect(
+      harness
+        .coordinator({
+          startupTimeoutMs: 5,
+          processTerminator: new TestProcessTerminator(false),
+        })
+        .ensureRunning(harness.identity),
+    ).rejects.toThrow(/timed out/i);
+
+    expect(harness.registry.startupOwner(harness.identity)).toBeUndefined();
+    expect(harness.registry.acquireStartup(harness.identity, "recovered")).toBeDefined();
+  });
+
 });
 
 interface CoordinatorHarnessOptions {

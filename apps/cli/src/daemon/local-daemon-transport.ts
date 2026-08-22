@@ -23,7 +23,11 @@ class DaemonFrameDecoder {
       if (this.buffered.length < payloadLength + 4) break;
       const payload = this.buffered.subarray(4, payloadLength + 4);
       this.buffered = this.buffered.subarray(payloadLength + 4);
-      values.push(JSON.parse(payload.toString("utf8")));
+      try {
+        values.push(JSON.parse(payload.toString("utf8")));
+      } catch {
+        throw new Error("Daemon frame contains malformed JSON");
+      }
     }
     return values;
   }

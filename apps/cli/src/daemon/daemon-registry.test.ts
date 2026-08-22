@@ -111,6 +111,35 @@ describe("daemon registry", () => {
     replacementLease?.release();
   }, 10_000);
 
+  it("does not publish late readiness after startup ownership is replaced", () => {
+    const identity = DaemonWorkspaceIdentity.from("/repo", temporaryDirectory(roots));
+    const registry = new DaemonRegistry(identity.registryDirectory);
+    const oldLease = registry.acquireStartup(identity, "old");
+    registry.write(record(identity, "starting", "old"));
+    expect(registry.removeStartupLockIfInstance(identity, "old")).toBe(true);
+    const replacementLease = registry.acquireStartup(identity, "replacement");
+    registry.write(record(identity, "starting", "replacement"));
+
+    expect(
+      registry.writeIfStartupOwner(identity, {
+        ...record(identity, "ready", "old"),
+        readyAt: 20,
+        fileCount: 2,
+      }),
+    ).toBe(false);
+    expect(
+      registry.writeIfStartupOwner(identity, {
+        ...record(identity, "ready", "replacement"),
+        readyAt: 20,
+        fileCount: 2,
+      }),
+    ).toBe(true);
+    expect(registry.read(identity)?.instanceId).toBe("replacement");
+
+    oldLease?.release();
+    replacementLease?.release();
+  });
+
   it.each([
     { field: "schemaVersion", value: 2 },
     { field: "protocolVersion", value: DAEMON_PROTOCOL_VERSION + 1 },

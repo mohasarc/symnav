@@ -168,10 +168,18 @@ export class LocalDaemonTransport {
 
   private static responseFor(request: DaemonRequest, value: unknown): DaemonResponse {
     LocalDaemonTransport.assertResponse(value);
+    if (request.kind === "ping") {
+      if (
+        value.kind !== "pong" ||
+        value.protocolVersion !== request.protocolVersion ||
+        value.instanceId !== request.instanceId
+      ) {
+        throw new Error("Daemon pong does not match request protocol and instance");
+      }
+      return value;
+    }
     const expectedKind =
-      request.kind === "ping"
-        ? "pong"
-        : request.kind === "execute"
+      request.kind === "execute"
           ? "result"
           : request.kind === "stop"
             ? "stopped"

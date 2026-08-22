@@ -132,6 +132,20 @@ describe("WorkspaceDaemon requests", () => {
     expect(harness.transport.isListening).toBe(false);
   });
 
+  it("forwards refresh summaries and records freshness diagnostics", async () => {
+    const backendRefreshed = vi.fn();
+    const dependencies: ProgramDependencies = { ...createDefaultDependencies(), backendRefreshed };
+    const harness = await RequestHarness.start(undefined, { dependencies });
+    harnesses.push(harness);
+
+    await harness.execute("refresh", ["overview", "input.ts"]);
+
+    expect(backendRefreshed).toHaveBeenCalledOnce();
+    expect(harness.logEvents()).toEqual(
+      expect.arrayContaining([expect.objectContaining({ kind: "freshness" })]),
+    );
+  });
+
 });
 
 class RequestHarness {

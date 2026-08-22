@@ -1,6 +1,6 @@
 import { mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { fixturePath, runSymnavBinary } from "@symnav/testing";
 
@@ -38,6 +38,23 @@ describe("symnav daemon start", () => {
     expect(second.status).toBe(0);
     expect(second.stderr).toBe("");
     expect(second.stdout).toMatch(/^Daemon already running for .+ \(pid \d+, up .+\)\n$/);
+  });
+
+  it("supports --cwd and stable JSON", () => {
+    const stateDir = temporaryStateDirectory(stateDirectories);
+    const cwd = fixturePath("trivial-project");
+    const result = runSymnavBinary(["--cwd", cwd, "daemon", "start", "--json"], {
+      cwd: tmpdir(),
+      env: { SYMNAV_STATE_DIR: stateDir },
+    });
+    captureDaemonPid(stateDir, daemonPids);
+
+    expect(result.status).toBe(0);
+    expect(result.stderr).toBe("");
+    expect(JSON.parse(result.stdout)).toMatchObject({
+      status: "ready",
+      workspaceRoot: resolve(cwd, "../../../.."),
+    });
   });
 });
 

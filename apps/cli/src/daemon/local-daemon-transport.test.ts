@@ -279,6 +279,32 @@ describe("LocalDaemonTransport", () => {
     ).rejects.toThrow();
     await server.close();
   });
+
+  it("does not replace a live server that owns the endpoint", async () => {
+    const endpoint = endpointFor(roots);
+    const first = new LocalDaemonTransport();
+    const server = await first.listen(endpoint, async (request) => ({
+      kind: "pong",
+      protocolVersion: DAEMON_PROTOCOL_VERSION,
+      instanceId: request.instanceId,
+      symnavVersion: "0.1.0",
+    }));
+
+    await expect(
+      new LocalDaemonTransport().listen(endpoint, async () => ({
+        kind: "stopped",
+        instanceId: "replacement",
+      })),
+    ).rejects.toThrow(/already in use/);
+    await expect(
+      first.request(endpoint, {
+        kind: "ping",
+        protocolVersion: DAEMON_PROTOCOL_VERSION,
+        instanceId: "owner",
+      }),
+    ).resolves.toMatchObject({ kind: "pong", instanceId: "owner" });
+    await server.close();
+  });
 });
 
 function endpointFor(roots: string[]): string {

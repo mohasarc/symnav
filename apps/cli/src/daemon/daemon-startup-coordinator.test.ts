@@ -1,9 +1,11 @@
-import { mkdtempSync, rmSync } from "node:fs";
+import { spawn } from "node:child_process";
+import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { DaemonStartupCoordinator } from "./daemon-startup-coordinator.js";
 import {
+  NodeDaemonProcessTerminator,
   type DaemonProcess,
   type DaemonProcessLauncher,
   type DaemonProcessTerminator,
@@ -21,7 +23,14 @@ import { LocalDaemonTransport } from "./local-daemon-transport.js";
 
 describe("DaemonStartupCoordinator", () => {
   const roots: string[] = [];
-  afterEach(() => {
+  const realProcessIds: number[] = [];
+
+  afterEach(async () => {
+    const terminator = new NodeDaemonProcessTerminator(100, 5);
+    for (const pid of realProcessIds) {
+      if (terminator.isAlive(pid)) await terminator.terminate(pid);
+    }
+    realProcessIds.length = 0;
     for (const root of roots) rmSync(root, { recursive: true, force: true });
     roots.length = 0;
   });
@@ -217,3 +226,196 @@ function temporaryDirectory(roots: string[]): string {
   roots.push(root);
   return root;
 }
++function spawnIdleProcess(processIds: number[]): Promise<number> {
+  return new Promise((resolve, reject) => {
+    const child = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], {
+      stdio: "ignore",
+    });
+    child.once("error", reject);
+    child.once("spawn", () => {
+      processIds.push(child.pid!);
+      resolve(child.pid!);
+    });
+  });
+}
+
+interface SocketBackedCoordinator {
+  readonly identity: DaemonWorkspaceIdentity;
+  readonly registry: DaemonRegistry;
+  readonly terminator: NodeDaemonProcessTerminator;
+  readonly launcher: InProcessReadyLauncher;
+  readonly coordinator: DaemonStartupCoordinator;
+}
+
+function socketBackedCoordinator(roots: string[]): SocketBackedCoordinator {
+  const stateDirectory = temporaryDirectory(roots);
+  const identity = DaemonWorkspaceIdentity.from(join(stateDirectory, "workspace"), stateDirectory);
+  const registry = new DaemonRegistry(identity.registryDirectory);
+  const transport = new LocalDaemonTransport({ requestTimeoutMs: 100 });
+  const terminator = new NodeDaemonProcessTerminator(100, 5);
+  const launcher = new InProcessReadyLauncher(registry, transport);
+  return {
+    identity,
+    registry,
+    terminator,
+    launcher,
+    coordinator: new DaemonStartupCoordinator(registry, launcher, transport, {
+      startupTimeoutMs: 1_000,
+      pollIntervalMs: 2,
+      processTerminator: terminator,
+    }),
+  };
+}
+
+class InProcessReadyLauncher implements DaemonProcessLauncher {
+  readonly symnavVersion = "0.1.0";
+  readonly memoryCapBytes = 256 * 1024 * 1024;
+  private server: Awaited<ReturnType<LocalDaemonTransport["listen"]>> | undefined;
+
+  constructor(
+    private readonly registry: DaemonRegistry,
+    private readonly transport: LocalDaemonTransport,
+  ) {}
+
+  async launch(
+    identity: DaemonWorkspaceIdentity,
+    instanceId: string,
+    processToken: string,
+  ): Promise<DaemonProcess> {
+    const startingRecord = this.registry.readInstance(identity, instanceId);
+    if (startingRecord?.state !== "starting") throw new Error("missing starting record");
+    this.server = await this.transport.listen(identity.endpoint(instanceId), async (request) => {
+      if (request.kind === "identify") {
+        return {
+          kind: "identity",
+          instanceId,
+          processToken,
+          pid: process.pid,
+          startedAt: startingRecord.startedAt,
+        };
+      }
+      if (request.kind === "terminate") {
+        setTimeout(() => void this.close(), 0);
+        return { kind: "terminating", instanceId, processToken };
+      }
+      if (request.kind === "ping") {
+        return {
+          kind: "pong",
+          protocolVersion: DAEMON_PROTOCOL_VERSION,
+          instanceId,
+          symnavVersion: this.symnavVersion,
+        };
+      }
+      if (request.kind === "execute") {
+        return {
+          kind: "result",
+          requestId: request.requestId,
+          result: { frames: [], exitCode: 0 },
+        };
+      }
+      return { kind: "stopped", instanceId };
+    });
+    setTimeout(() => {
+      const record = this.registry.readInstance(identity, instanceId);
+      if (record?.state !== "starting") return;
+      this.registry.writeIfStartupOwner(identity, {
+        ...record,
+        state: "ready",
+        readyAt: Date.now(),
+        fileCount: 2,
+      });
+    }, 0);
+    return { pid: process.pid, terminate: () => this.close() };
+  }
+
+  async close(): Promise<void> {
+    const server = this.server;
+    this.server = undefined;
+    await server?.close();
+  }
+}
+
+function readyRecord(
+  identity: DaemonWorkspaceIdentity,
+  instanceId: string,
+  processToken: string,
+  pid: number,
+): DaemonRecord {
+  return {
+    schemaVersion: DAEMON_RECORD_SCHEMA_VERSION,
+    protocolVersion: DAEMON_PROTOCOL_VERSION,
+    symnavVersion: "0.1.0",
+    workspaceRoot: identity.workspaceRoot,
+    workspaceKey: identity.workspaceKey,
+    instanceId,
+    processToken,
+    endpoint: identity.endpoint(instanceId),
+    pid,
+    state: "ready",
+    startedAt: 10,
+    readyAt: 20,
+    fileCount: 2,
+    memoryCapBytes: 256 * 1024 * 1024,
+  };
+}
+
+function spawnIdentifiableDaemon(
+  identity: DaemonWorkspaceIdentity,
+  instanceId: string,
+  processToken: string,
+  startedAt: number,
+  processIds: number[],
+): Promise<number> {
+  if (process.platform !== "win32") {
+    mkdirSync(dirname(identity.endpoint(instanceId)), { recursive: true, mode: 0o700 });
+  }
+  return new Promise((resolve, reject) => {
+    const child = spawn(
+      process.execPath,
+      [
+        "-e",
+        identifiableDaemonSource,
+        identity.endpoint(instanceId),
+        instanceId,
+        processToken,
+        String(startedAt),
+      ],
+      { stdio: ["ignore", "pipe", "ignore"] },
+    );
+    child.once("error", reject);
+    child.stdout?.once("data", () => {
+      processIds.push(child.pid!);
+      resolve(child.pid!);
+    });
+  });
+}
+
+const identifiableDaemonSource = `
+const { createServer } = require("node:net");
+const [endpoint, instanceId, processToken, startedAtText] = process.argv.slice(1);
+const startedAt = Number(startedAtText);
+const frame = (value) => {
+  const payload = Buffer.from(JSON.stringify(value));
+  const prefix = Buffer.alloc(4);
+  prefix.writeUInt32BE(payload.length);
+  return Buffer.concat([prefix, payload]);
+};
+const server = createServer((socket) => {
+  let bytes = Buffer.alloc(0);
+  socket.on("data", (chunk) => {
+    bytes = Buffer.concat([bytes, chunk]);
+    if (bytes.length < 4) return;
+    const length = bytes.readUInt32BE(0);
+    if (bytes.length < length + 4) return;
+    const request = JSON.parse(bytes.subarray(4, length + 4).toString("utf8"));
+    if (request.kind === "identify") {
+      socket.end(frame({ kind: "identity", instanceId, processToken, pid: process.pid, startedAt }));
+      return;
+    }
+    if (request.kind === "terminate") {
+      socket.end(frame({ kind: "terminating", instanceId, processToken }), () => server.close(() => process.exit(0)));
+    }
+  });
+});
+server.listen(endpoint, () => process.stdout.write("ready"));
+`;

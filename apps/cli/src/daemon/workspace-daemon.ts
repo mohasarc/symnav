@@ -8,6 +8,7 @@ import { NodeDaemonProcessTerminator } from "./daemon-process-launcher.js";
 import type { DaemonRegistry } from "./daemon-registry.js";
 import type { DaemonWorkspaceIdentity } from "./daemon-workspace-identity.js";
 import type { LocalDaemonTransport } from "./local-daemon-transport.js";
+import { WorkspaceRequestQueue } from "./workspace-request-queue.js";
 
 export interface WorkspaceDaemonOptions {
   readonly identity: DaemonWorkspaceIdentity;
@@ -32,7 +33,7 @@ export class WorkspaceDaemon {
   private readonly exit: (code: number) => void;
   private readonly executor: DaemonCommandExecutor;
   private readonly scopeFactory: WorkspaceRequestScopeFactory;
-  private requestQueue: Promise<void> = Promise.resolve();
+  private readonly requestQueue = new WorkspaceRequestQueue();
   private server: DaemonServer | undefined;
   private startedAt = 0;
 
@@ -54,7 +55,7 @@ export class WorkspaceDaemon {
     const prepared = await this.scopeFactory.prepare(this.options.identity.workspaceRoot);
     this.server = await this.options.transport.listen(
       this.options.identity.endpoint(this.options.instanceId),
-      (request) => this.enqueue(request),
+      (request) => this.handle(request),
     );
     const fileCount = prepared.refresh.added + prepared.refresh.unchanged;
     const readyRecord: DaemonRecord = {
@@ -99,15 +100,6 @@ export class WorkspaceDaemon {
       await new Promise((resolve) => setTimeout(resolve, 10));
     }
     throw new Error("Daemon process did not receive startup authorization");
-  }
-
-  private enqueue(request: DaemonRequest): Promise<DaemonResponse> {
-    const response = this.requestQueue.then(() => this.handle(request));
-    this.requestQueue = response.then(
-      () => undefined,
-      () => undefined,
-    );
-    return response;
   }
 
   private async handle(request: DaemonRequest): Promise<DaemonResponse> {
@@ -158,14 +150,16 @@ export class WorkspaceDaemon {
       return {
         kind: "result",
         requestId: request.requestId,
-        result: await this.executor.execute(request.request),
+        result: await this.requestQueue.enqueue(() => this.executor.execute(request.request)),
       };
     }
+    await this.requestQueue.drain();
     setTimeout(() => void this.shutdown(), 0);
     return { kind: "stopped", instanceId: this.options.instanceId };
   }
 
   private async shutdown(): Promise<void> {
+    this.requestQueue.close();
     await this.server?.close();
     this.options.registry.removeIfInstance(this.options.identity, this.options.instanceId);
     this.exit(0);

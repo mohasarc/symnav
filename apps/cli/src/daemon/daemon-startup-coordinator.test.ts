@@ -139,6 +139,28 @@ describe("DaemonStartupCoordinator", () => {
     expect(harness.registry.startupOwner(harness.identity)).toBeUndefined();
   });
 
+  it("kills a real timed-out child before releasing startup ownership", async () => {
+    const root = temporaryDirectory(roots);
+    const identity = DaemonWorkspaceIdentity.from("/repo", root);
+    const registry = new DaemonRegistry(identity.registryDirectory);
+    const markerPath = join(root, "late-publication");
+    const launcher = new DelayedMarkerLauncher(markerPath, realProcessIds);
+    const transport = new RegistryTransport(registry, identity);
+    const coordinator = new DaemonStartupCoordinator(
+      registry,
+      launcher,
+      transport as unknown as LocalDaemonTransport,
+      { startupTimeoutMs: 20, pollIntervalMs: 2 },
+    );
+
+    await expect(coordinator.ensureRunning(identity)).rejects.toThrow(/timed out/i);
+    await new Promise((resolve) => setTimeout(resolve, 300));
+
+    expect(existsSync(markerPath)).toBe(false);
+    expect(registry.startupOwner(identity)).toBeUndefined();
+    expect(registry.readStored(identity)).toBeUndefined();
+  });
+
 });
 
 interface CoordinatorHarnessOptions {

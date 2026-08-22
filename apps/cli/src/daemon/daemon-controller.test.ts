@@ -1,7 +1,7 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, describe } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import { DaemonController } from "./daemon-controller.js";
 import type { DaemonProcessTerminator } from "./daemon-process-launcher.js";
 import {
@@ -20,6 +20,29 @@ describe("DaemonController", () => {
   afterEach(() => {
     for (const root of roots) rmSync(root, { recursive: true, force: true });
     roots.length = 0;
+  });
+
+  it("cancels a starting daemon without using transport", async () => {
+    const stateDirectory = temporaryDirectory(roots);
+    const identity = DaemonWorkspaceIdentity.from("/repo", stateDirectory);
+    const registry = new DaemonRegistry(identity.registryDirectory);
+    const lease = registry.acquireStartup(identity, "starting");
+    expect(lease).toBeDefined();
+    expect(registry.writeStartingIfStartupOwner(identity, startingRecord(identity))).toBe(true);
+    const controller = new DaemonController(
+      registry,
+      new ControllerTransport() as unknown as LocalDaemonTransport,
+      stateDirectory,
+      { processTerminator: new ControllerTerminator([process.pid]) },
+    );
+
+    await expect(controller.stop("/repo")).resolves.toEqual({
+      status: "not-running",
+      workspaceRoot: "/repo",
+    });
+    expect(registry.startupOwner(identity)).toBeUndefined();
+    expect(registry.readStoredInstance(identity, "starting")).toBeUndefined();
+    lease?.release();
   });
 });
 

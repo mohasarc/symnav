@@ -304,7 +304,98 @@ describe("daemon registry", () => {
       expect(registry.readStored(identity)?.instanceId).toBe("incompatible");
     }
   });
+  it("reports validated ready and live starting daemons sorted by workspace", async () => {
+    const stateDirectory = temporaryDirectory(roots);
+    const registryDirectory = join(stateDirectory, "daemons");
+    const registry = new DaemonRegistry(registryDirectory);
+    const beta = DaemonWorkspaceIdentity.from("/beta", stateDirectory);
+    const alpha = DaemonWorkspaceIdentity.from("/alpha", stateDirectory);
+    registry.write({ ...record(beta, "ready", "beta"), pid: 301, lastNavigationAt: 80 });
+    registry.write({ ...record(alpha, "starting", "alpha"), pid: 302 });
+    const alphaLease = registry.acquireStartup(alpha, "alpha");
+    const transport = new ControllerTransport(registry);
+    transport.live.add("beta");
+    const terminator = new ControllerTerminator([process.pid]);
+    const controller = new DaemonController(
+      registry,
+      transport as unknown as LocalDaemonTransport,
+      stateDirectory,
+      { now: () => 100, processTerminator: terminator },
+    );
+
+    await expect(controller.status()).resolves.toEqual([
+      {
+        workspaceRoot: "/alpha",
+        state: "starting",
+        pid: 302,
+        uptimeMs: 90,
+      },
+      {
+        workspaceRoot: "/beta",
+        state: "ready",
+        pid: 301,
+        uptimeMs: 90,
+        fileCount: 2,
+        memoryBytes: 1234,
+        lastRequestAgoMs: 20,
+      },
+    ]);
+    alphaLease?.release();
+  });
+
 });
+
+class ControllerTransport {
+  readonly live = new Set<string>();
+
+  constructor(private readonly registry: DaemonRegistry) {}
+
+  async request(_endpoint: string, request: DaemonRequest): Promise<DaemonResponse> {
+    const records = this.registry.list();
+    const record = records.find((candidate) => candidate.instanceId === request.instanceId);
+    if (record === undefined || !this.live.has(request.instanceId)) throw new Error("unreachable");
+    if (request.kind === "identify") {
+      return {
+        kind: "identity",
+        instanceId: record.instanceId,
+        processToken: record.processToken,
+        pid: record.pid,
+        startedAt: record.startedAt,
+      };
+    }
+    if (request.kind === "ping") {
+      return {
+        kind: "pong",
+        protocolVersion: DAEMON_PROTOCOL_VERSION,
+        instanceId: record.instanceId,
+        symnavVersion: record.symnavVersion,
+        startedAt: record.startedAt,
+        fileCount: record.fileCount ?? 0,
+        memoryBytes: 1234,
+        ...(record.lastNavigationAt === undefined
+          ? {}
+          : { lastNavigationAt: record.lastNavigationAt }),
+      };
+    }
+    throw new Error(`Unsupported controller request ${request.kind}`);
+  }
+}
+
+class ControllerTerminator implements DaemonProcessTerminator {
+  readonly alive: Set<number>;
+
+  constructor(alive: readonly number[]) {
+    this.alive = new Set(alive);
+  }
+
+  isAlive(pid: number): boolean {
+    return this.alive.has(pid);
+  }
+
+  async terminate(pid: number): Promise<void> {
+    this.alive.delete(pid);
+  }
+}
 
 function temporaryDirectory(roots: string[]): string {
   const root = mkdtempSync(join(tmpdir(), "symnav-registry-"));

@@ -151,6 +151,7 @@ class DispatchHarness {
   private registered: DaemonRecord | undefined;
   private readonly runtime: DaemonDispatchRuntime;
   private daemonAnswer: CommandExecutionResult | Error;
+  private killFailure: Error | undefined;
 
   constructor(
     daemonAnswer: CommandExecutionResult | Error,
@@ -181,6 +182,7 @@ class DispatchHarness {
         request: async (_endpoint: string, daemonRequest: DaemonRequest) => {
           this.requests.push(daemonRequest);
           if (daemonRequest.kind === "kill") {
+            if (this.killFailure !== undefined) throw this.killFailure;
             return {
               kind: "killing",
               instanceId: daemonRequest.instanceId,
@@ -220,6 +222,10 @@ class DispatchHarness {
 
   registeredRecord(): DaemonRecord | undefined {
     return this.registered;
+  }
+
+  failKill(error: Error): void {
+    this.killFailure = error;
   }
 }
 

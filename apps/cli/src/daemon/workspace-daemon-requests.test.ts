@@ -19,6 +19,19 @@ describe("WorkspaceDaemon requests", () => {
     harnesses.length = 0;
   });
 
+  it("authorizes startup before listening and publishes readiness", async () => {
+    const harness = await RequestHarness.start(new ImmediateExecutor());
+    harnesses.push(harness);
+
+    expect(harness.transport.isListening).toBe(true);
+    expect(harness.registry.read(harness.identity)).toMatchObject({
+      state: "ready",
+      instanceId: harness.instanceId,
+      processToken: harness.processToken,
+      fileCount: 1,
+    });
+  });
+
 });
 
 class RequestHarness {

@@ -38,6 +38,8 @@ export type DaemonStopResult =
   | { readonly status: "killed"; readonly workspaceRoot: string; readonly pid: number }
   | { readonly status: "not-running"; readonly workspaceRoot: string };
 
+export type DaemonStopReason = "graceful" | "idle" | "resource" | "workspace-deleted";
+
 export type DaemonRequest =
   | {
       readonly kind: "identify";

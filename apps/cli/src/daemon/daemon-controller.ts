@@ -9,10 +9,12 @@ import { DaemonWorkspaceIdentity } from "./daemon-workspace-identity.js";
 
 interface DaemonControllerOptions {
   readonly processTerminator?: DaemonProcessTerminator;
+  readonly now?: () => number;
 }
 
 export class DaemonController {
   private readonly processTerminator: DaemonProcessTerminator;
+  private readonly now: () => number;
 
   constructor(
     private readonly registry: DaemonRegistry,
@@ -21,6 +23,7 @@ export class DaemonController {
     options: DaemonControllerOptions = {},
   ) {
     this.processTerminator = options.processTerminator ?? new NodeDaemonProcessTerminator();
+    this.now = options.now ?? Date.now;
   }
 
   async stop(workspaceRoot: string): Promise<DaemonStopResult> {

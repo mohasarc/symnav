@@ -28,14 +28,18 @@ export interface StartupLease {
 }
 
 class RegistryStartupLease implements StartupLease {
+  private released = false;
+
   constructor(
-    private readonly _registry: DaemonRegistry,
-    private readonly _identity: DaemonWorkspaceIdentity,
+    private readonly registry: DaemonRegistry,
+    private readonly identity: DaemonWorkspaceIdentity,
     readonly instanceId: string,
   ) {}
 
   release(): void {
-    throw new Error("Startup lease release is not implemented");
+    if (this.released) return;
+    this.released = true;
+    this.registry.removeStartupLockIfInstance(this.identity, this.instanceId);
   }
 }
 

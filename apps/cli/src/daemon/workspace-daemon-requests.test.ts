@@ -32,6 +32,24 @@ describe("WorkspaceDaemon requests", () => {
     });
   });
 
+  it("authenticates identity requests", async () => {
+    const harness = await RequestHarness.start(new ImmediateExecutor());
+    harnesses.push(harness);
+
+    await expect(
+      harness.transport.receive({
+        kind: "identify",
+        instanceId: harness.instanceId,
+        processToken: "wrong-token",
+      }),
+    ).rejects.toThrow("identity request");
+    await expect(harness.identify()).resolves.toMatchObject({
+      kind: "identity",
+      instanceId: harness.instanceId,
+      processToken: harness.processToken,
+    });
+  });
+
 });
 
 class RequestHarness {

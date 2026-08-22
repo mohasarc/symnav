@@ -217,6 +217,22 @@ describe("DaemonStartupCoordinator", () => {
     expect(harness.registry.startupOwner(harness.identity)).toBeDefined();
   });
 
+  it("waits beyond startup-owner grace for a live daemon to finish warming", async () => {
+    const harness = new CoordinatorHarness(roots);
+    let elapsedMs = 0;
+
+    await expect(
+      harness
+        .coordinator({
+          now: () => {
+            elapsedMs += 45_000;
+            return elapsedMs;
+          },
+        })
+        .ensureRunning(harness.identity),
+    ).resolves.toMatchObject({ status: "ready", workspaceRoot: "/repo" });
+  });
+
   it("recovers a durable startup lock when its owner published no record", async () => {
     const harness = new CoordinatorHarness(roots, { neverReady: true });
     expect(harness.registry.acquireStartup(harness.identity, "orphan")).toBeDefined();
@@ -512,6 +528,7 @@ class CoordinatorHarness {
       readonly startupTimeoutMs?: number;
       readonly processTerminator?: DaemonProcessTerminator;
       readonly heartbeatIntervalMs?: number;
+      readonly now?: () => number;
     } = {},
   ): DaemonStartupCoordinator {
     return new DaemonStartupCoordinator(
@@ -524,6 +541,7 @@ class CoordinatorHarness {
           : { startupTimeoutMs: options.startupTimeoutMs }),
         pollIntervalMs: 1,
         processTerminator: options.processTerminator ?? this.terminator,
+        ...(options.now === undefined ? {} : { now: options.now }),
         ...(options.heartbeatIntervalMs === undefined
           ? {}
           : { heartbeatIntervalMs: options.heartbeatIntervalMs }),

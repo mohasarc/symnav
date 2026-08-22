@@ -374,3 +374,106 @@ class MutableBackendFileSystem implements FileSystem {
     return new InMemoryFileSystem(Object.fromEntries(this.files));
   }
 }
+
+describe("TypeScriptBackend retained workspace refresh", () => {
+  it("answers every navigation primitive from current state after edit, add, delete, and rename", async () => {
+    const fs = new MutableBackendFileSystem({
+      "/repo/.git/HEAD": "ref: refs/heads/main\n",
+      "/repo/src/lib.ts": "export function oldName(): void {}\n",
+      "/repo/src/app.ts": [
+        'import { oldName } from "./lib.js";',
+        "export function main(): void { oldName(); }",
+        "",
+      ].join("\n"),
+    });
+    const backend = new TypeScriptBackend(fs);
+    let files = fs.workspaceFiles("src/app.ts", "src/lib.ts");
+    const oldIdentity: SymbolIdentity = { file: "src/lib.ts", segments: [{ name: "oldName" }] };
+    const mainIdentity: SymbolIdentity = { file: "src/app.ts", segments: [{ name: "main" }] };
+
+    await backend.refresh(files);
+    expect((await backend.fileEntries(files[1]!)).entries).toHaveLength(1);
+    expect(await backend.resolveSymbols(files, "oldName", { mode: "exact" })).toHaveLength(1);
+    expect(await backend.findDefinitions(files, oldIdentity)).toHaveLength(1);
+    expect(await backend.findReferences(files, oldIdentity)).toHaveLength(2);
+    expect(await backend.findCallTarget(files, oldIdentity)).toEqual(
+      expect.objectContaining({ outcome: "resolved" }),
+    );
+    expect(await backend.findCallers(files, oldIdentity)).toHaveLength(1);
+    expect(await backend.findCallees(files, mainIdentity)).toHaveLength(1);
+
+    fs.setFile("/repo/src/lib.ts", "export function newName(): void {}\n");
+    fs.setFile(
+      "/repo/src/app.ts",
+      [
+        'import { newName } from "./lib.js";',
+        "export function main(): void { newName(); }",
+        "",
+      ].join("\n"),
+    );
+    files = fs.workspaceFiles("src/app.ts", "src/lib.ts");
+    await expect(backend.refresh(files)).resolves.toEqual({
+      added: 0,
+      changed: 2,
+      removed: 0,
+      unchanged: 0,
+    });
+    const newIdentity: SymbolIdentity = { file: "src/lib.ts", segments: [{ name: "newName" }] };
+    expect(await backend.resolveSymbols(files, "oldName", { mode: "exact" })).toEqual([]);
+    expect(await backend.findDefinitions(files, newIdentity)).toHaveLength(1);
+    expect(await backend.findReferences(files, newIdentity)).toHaveLength(2);
+    expect(await backend.findCallers(files, newIdentity)).toHaveLength(1);
+    expect(await backend.findCallees(files, mainIdentity)).toHaveLength(1);
+
+    fs.setFile(
+      "/repo/src/extra.ts",
+      ['import { newName } from "./lib.js";', "export const extra = newName;", ""].join("\n"),
+    );
+    files = fs.workspaceFiles("src/app.ts", "src/extra.ts", "src/lib.ts");
+    await expect(backend.refresh(files)).resolves.toEqual({
+      added: 1,
+      changed: 0,
+      removed: 0,
+      unchanged: 2,
+    });
+    expect(await backend.findReferences(files, newIdentity)).toHaveLength(4);
+
+    fs.deleteFile("/repo/src/extra.ts");
+    files = fs.workspaceFiles("src/app.ts", "src/lib.ts");
+    await expect(backend.refresh(files)).resolves.toEqual({
+      added: 0,
+      changed: 0,
+      removed: 1,
+      unchanged: 2,
+    });
+    expect(await backend.findReferences(files, newIdentity)).toHaveLength(2);
+
+    fs.deleteFile("/repo/src/lib.ts");
+    fs.setFile("/repo/src/renamed.ts", "export function renamed(): void {}\n");
+    fs.setFile(
+      "/repo/src/app.ts",
+      [
+        'import { renamed } from "./renamed.js";',
+        "export function main(): void { renamed(); }",
+        "",
+      ].join("\n"),
+    );
+    files = fs.workspaceFiles("src/app.ts", "src/renamed.ts");
+    await expect(backend.refresh(files)).resolves.toEqual({
+      added: 1,
+      changed: 1,
+      removed: 1,
+      unchanged: 0,
+    });
+    const renamedIdentity: SymbolIdentity = {
+      file: "src/renamed.ts",
+      segments: [{ name: "renamed" }],
+    };
+    expect((await backend.fileEntries(files[1]!)).entries).toHaveLength(1);
+    expect(await backend.resolveSymbols(files, "newName", { mode: "exact" })).toEqual([]);
+    expect(await backend.findDefinitions(files, renamedIdentity)).toHaveLength(1);
+    expect(await backend.findReferences(files, renamedIdentity)).toHaveLength(2);
+    expect(await backend.findCallers(files, renamedIdentity)).toHaveLength(1);
+    expect(await backend.findCallees(files, mainIdentity)).toHaveLength(1);
+  });
+});

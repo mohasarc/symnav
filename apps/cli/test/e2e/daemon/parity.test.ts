@@ -336,7 +336,6 @@ class DaemonParityHarness {
 
   async orphanStartupMutation(): Promise<void> {
     const controlledWorkspaceRoot = canonicalWorkspaceRoot(realpathSync(this.workspaceRoot));
-    const readyPath = join(this.stateDirectory, "orphaned-mutation-ready");
     const child = spawn(
       process.execPath,
       [
@@ -344,13 +343,24 @@ class DaemonParityHarness {
         fileURLToPath(new URL("../../helpers/daemon-startup-mutation-owner.ts", import.meta.url)),
         controlledWorkspaceRoot,
         this.stateDirectory,
-        readyPath,
+        "0",
       ],
-      { stdio: "ignore" },
+      { stdio: ["ignore", "ignore", "ignore", "ipc"] },
     );
     this.helperProcesses.push(child);
-    await waitUntil(() => existsSync(readyPath));
-    const mutationOwnerPid = Number(readFileSync(readyPath, "utf8"));
+    const mutationOwnerPid = await new Promise<number>((resolve, reject) => {
+      child.once("error", reject);
+      child.once("exit", (code, signal) => {
+        reject(new Error(`Mutation owner exited before readiness: code=${code} signal=${signal}`));
+      });
+      child.once("message", (message) => {
+        if (typeof message !== "number" || !Number.isSafeInteger(message) || message <= 0) {
+          reject(new Error(`Mutation owner published invalid pid: ${String(message)}`));
+          return;
+        }
+        resolve(message);
+      });
+    });
     process.kill(mutationOwnerPid, "SIGKILL");
     child.kill("SIGKILL");
     await waitUntil(() => !processIsAlive(mutationOwnerPid));

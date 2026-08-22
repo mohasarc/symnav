@@ -35,7 +35,11 @@ class DaemonFrameDecoder {
     return values;
   }
 
-  assertComplete(): void {}
+  assertComplete(): void {
+    if (this.buffered.length !== 0) {
+      throw new Error("Daemon connection ended with a truncated frame");
+    }
+  }
 }
 
 class ListeningDaemonServer implements DaemonServer {
@@ -89,7 +93,12 @@ export class LocalDaemonTransport {
       });
       socket.once("end", () => {
         if (settled) return;
-        fail(new Error("Daemon connection ended before a response"));
+        try {
+          decoder.assertComplete();
+          fail(new Error("Daemon connection ended before a response"));
+        } catch (error) {
+          fail(error);
+        }
       });
     });
   }

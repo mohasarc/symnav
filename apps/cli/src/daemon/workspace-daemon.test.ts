@@ -152,7 +152,27 @@ describe("WorkspaceDaemon runtime lifecycle", () => {
     rmSync(stateDirectory, { recursive: true, force: true });
     rmSync(workspaceRoot, { recursive: true, force: true });
   }, 10_000);
+
+  it("removes registry and transport state after idle shutdown and logs without terminal bytes", async () => {
+    const harness = await WorkspaceDaemonHarness.start(new ImmediateExecutor(), {
+      idleTimeoutMs: 10,
+    });
+    harnesses.push(harness);
+
+    await harness.exited;
+
+    expect(harness.registry.read(harness.identity)).toBeUndefined();
+    await expect(harness.ping()).rejects.toThrow();
+    expect(harness.logEvents()).toEqual(
+      expect.arrayContaining([expect.objectContaining({ kind: "stop", reason: "idle" })]),
+    );
+    expect(readFileSync(harness.identity.logPath, "utf8")).not.toContain("\u001B");
+  });
 });
+
+interface RuntimeOptions {
+  readonly idleTimeoutMs?: number;
+}
 
 class WorkspaceDaemonHarness {
   readonly stateDirectory: string;
@@ -181,7 +201,10 @@ class WorkspaceDaemonHarness {
     });
   }
 
-  static async start(executor: DaemonCommandExecutor): Promise<WorkspaceDaemonHarness> {
+  static async start(
+    executor: DaemonCommandExecutor,
+    runtime: RuntimeOptions = {},
+  ): Promise<WorkspaceDaemonHarness> {
     const harness = new WorkspaceDaemonHarness();
     const lease = harness.registry.acquireStartup(harness.identity, harness.instanceId);
     if (lease === undefined) throw new Error("Expected startup ownership");
@@ -213,6 +236,7 @@ class WorkspaceDaemonHarness {
         harness.exitCode = code;
         harness.resolveExit(code);
       }) as (code: number) => never,
+      ...runtime,
     });
     await daemon.start();
     lease.release();
@@ -243,6 +267,13 @@ class WorkspaceDaemonHarness {
       protocolVersion: DAEMON_PROTOCOL_VERSION,
       instanceId: this.instanceId,
     });
+  }
+
+  logEvents(): readonly Record<string, unknown>[] {
+    return readFileSync(this.identity.logPath, "utf8")
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line) as Record<string, unknown>);
   }
 
   async dispose(): Promise<void> {
@@ -283,6 +314,12 @@ class DeferredExecutor implements DaemonCommandExecutor {
 
   complete(result: CommandExecutionResult): void {
     this.resolveResult(result);
+  }
+}
+
+class ImmediateExecutor implements DaemonCommandExecutor {
+  async execute(_request: CliExecutionRequest): Promise<CommandExecutionResult> {
+    return { frames: [], exitCode: 0 };
   }
 }
 

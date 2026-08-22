@@ -128,7 +128,12 @@ export class DaemonCommandDispatcher {
         requestId: this.requestId(),
         request: { ...workspaceRequest, executionMode: "warm", deferTelemetry: true },
       });
-      if (response.kind !== "result") throw new Error("Daemon returned no command result");
+      if (
+        response.kind !== "result" ||
+        !DaemonCommandDispatcher.isCompleteResult(response.result)
+      ) {
+        throw new Error("Daemon returned an incomplete command result");
+      }
       return {
         mode: "warm",
         result: DaemonCommandDispatcher.commitWarmTelemetry(
@@ -186,6 +191,18 @@ export class DaemonCommandDispatcher {
     };
   }
 
+  private static isCompleteResult(result: CommandExecutionResult): boolean {
+    return (
+      Number.isInteger(result.exitCode) &&
+      Array.isArray(result.frames) &&
+      result.frames.every(
+        (frame) =>
+          (frame.stream === "stdout" || frame.stream === "stderr") &&
+          DaemonCommandDispatcher.isBase64(frame.bytesBase64),
+      )
+    );
+  }
+
   private static requiresStartup(
     record: DaemonRecord | undefined,
     dependencies: ProgramDependencies,
@@ -207,5 +224,10 @@ export class DaemonCommandDispatcher {
       } catch {}
     }
     return { frames: result.frames, exitCode: result.exitCode };
+  }
+
+  private static isBase64(value: string): boolean {
+    if (value.length % 4 !== 0) return false;
+    return /^(?:[A-Za-z\d+/]{4})*(?:[A-Za-z\d+/]{2}==|[A-Za-z\d+/]{3}=)?$/.test(value);
   }
 }

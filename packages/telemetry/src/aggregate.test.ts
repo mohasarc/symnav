@@ -96,6 +96,44 @@ describe("UsageAggregator", () => {
       dateRange: null,
     });
   });
+
+  it("preserves summary output across execution modes", () => {
+    const events = [
+      usageEvent({
+        command: "overview",
+        durationMs: 10,
+        outcome: "success",
+        symnavVersion: "0.2.0",
+        timestamp: 100,
+        workspaceId: "workspace-a",
+      }),
+      usageEvent({
+        command: "resolve",
+        durationMs: 20,
+        outcome: "success",
+        symnavVersion: "0.2.0",
+        timestamp: 200,
+        workspaceId: "workspace-a",
+      }),
+      usageEvent({
+        command: "refs",
+        durationMs: 30,
+        outcome: "crash",
+        symnavVersion: "0.2.0",
+        timestamp: 300,
+        workspaceId: "workspace-b",
+      }),
+    ];
+    const mixedModes: readonly UsageEvent[] = [
+      { ...events[0]!, executionMode: "cold" },
+      { ...events[1]!, executionMode: "warm" },
+      { ...events[2]!, executionMode: "fallback" },
+    ];
+
+    expect(new UsageAggregator(mixedModes).aggregate()).toEqual(
+      new UsageAggregator(events).aggregate(),
+    );
+  });
 });
 
 function usageEvent(overrides: UsageEventOverrides): UsageEvent {

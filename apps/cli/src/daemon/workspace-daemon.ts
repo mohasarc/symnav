@@ -262,8 +262,16 @@ export class WorkspaceDaemon {
     this.resourceMonitor.stop();
     this.requestQueue.close();
     this.logger.record({ kind: "stop", reason });
+    try {
+      this.options.registry.removeIfInstance(this.options.identity, this.options.instanceId);
+    } catch (error) {
+      this.logger.record({
+        kind: "failure",
+        operation: "registry-cleanup",
+        message: WorkspaceDaemon.errorMessage(error),
+      });
+    }
     await this.server?.close(force);
-    this.options.registry.removeIfInstance(this.options.identity, this.options.instanceId);
     this.exit(0);
   }
 

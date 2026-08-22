@@ -35,7 +35,7 @@ function readPackageVersion(): string {
   return parsed.version;
 }
 
-function defaultContext(): ProgramContext {
+export function createDefaultProgramContext(): ProgramContext {
   return {
     stdout: process.stdout,
     stderr: process.stderr,
@@ -66,7 +66,7 @@ export function buildProgram(
   context?: ProgramContext,
   dependencies?: ProgramDependencies,
 ): CommanderCommand {
-  const ctx = context ?? defaultContext();
+  const ctx = context ?? createDefaultProgramContext();
   const deps = dependencies ?? defaultDependencies();
   const program = new CommanderCommand();
   program

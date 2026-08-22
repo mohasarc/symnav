@@ -12,6 +12,18 @@ describe("splitHeaderLines", () => {
     expect(splitHeaderLines(raw)).toEqual(["function configure(", "  host: string,", "): void"]);
   });
 
+  it("removes carriage returns from CRLF line separators", () => {
+    expect(splitHeaderLines("function configure(\r\n  host: string,\r\n): void")).toEqual([
+      "function configure(",
+      "  host: string,",
+      "): void",
+    ]);
+  });
+
+  it("preserves a terminator-free final line", () => {
+    expect(splitHeaderLines("first\r\nsecond")).toEqual(["first", "second"]);
+  });
+
   it("produces no element containing a newline", () => {
     const lines = splitHeaderLines(["a", "b", "c"].join("\n"));
     for (const line of lines) {

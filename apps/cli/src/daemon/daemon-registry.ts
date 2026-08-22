@@ -141,8 +141,8 @@ export class DaemonRegistry {
     return true;
   }
 
-  removeIfInstance(_identity: DaemonWorkspaceIdentity, _instanceId: string): void {
-    throw new Error("Daemon record removal is not implemented");
+  removeIfInstance(identity: DaemonWorkspaceIdentity, instanceId: string): void {
+    rmSync(identity.recordPath(instanceId), { force: true });
   }
 
   list(): readonly DaemonRecord[] {

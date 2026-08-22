@@ -14,6 +14,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { DaemonController } from "./daemon-controller.js";
 import { DaemonStartupCoordinator } from "./daemon-startup-coordinator.js";
 import {
+  DaemonProcessTerminationError,
   NodeDaemonProcessTerminator,
   type DaemonProcess,
   type DaemonProcessLauncher,

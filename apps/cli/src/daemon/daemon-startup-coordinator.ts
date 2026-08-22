@@ -220,19 +220,21 @@ export class DaemonStartupCoordinator {
         instanceId: record.instanceId,
         processToken: record.processToken,
       });
-      await this.waitForProcessEndpointRelease(record);
+      await this.waitForProcessExitAndEndpointRelease(record);
     }
     this.registry.removeIfInstance(identity, record.instanceId);
   }
 
-  private async waitForProcessEndpointRelease(record: DaemonRecord): Promise<void> {
+  private async waitForProcessExitAndEndpointRelease(record: DaemonRecord): Promise<void> {
     const waitStartedAt = this.now();
     while (this.now() - waitStartedAt <= this.startupTimeoutMs) {
-      if (!(await this.identifiesRecordedProcess(record))) return;
+      const endpointReleased = !(await this.identifiesRecordedProcess(record));
+      const processExited = !this.processTerminator.isAlive(record.pid);
+      if (endpointReleased && processExited) return;
       await this.pause();
     }
     throw new DaemonProcessTerminationError(
-      `Daemon process ${record.pid} did not release its endpoint`,
+      `Daemon process ${record.pid} did not exit and release its endpoint`,
     );
   }
 

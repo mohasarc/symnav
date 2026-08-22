@@ -1,5 +1,13 @@
 import { spawn, type ChildProcess } from "node:child_process";
-import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -223,6 +231,23 @@ describe("daemon registry", () => {
     expect(mutations.startupMutationOwnerIsLive(identity)).toBe(true);
     mutation.release();
     expect(mutations.startupMutationOwnerIsLive(identity)).toBe(false);
+  });
+
+  it("recovers a startup mutation abandoned by a dead process", () => {
+    const identity = DaemonWorkspaceIdentity.from("/repo", temporaryDirectory(roots));
+    const registry = new DaemonRegistry(identity.registryDirectory);
+    mkdirSync(identity.startupMutationPath, { recursive: true });
+    writeFileSync(
+      identity.startupOwnerPath(identity.startupMutationPath),
+      JSON.stringify({ ownerPid: 999_999_999, acquiredAt: 0, token: "abandoned" }),
+    );
+
+    const mutation = (registry as unknown as StartupMutationLeaseTestAccess).beginStartupMutation(
+      identity,
+    );
+
+    expect(mutation?.isOwned()).toBe(true);
+    mutation?.release();
   });
 
   it.each([

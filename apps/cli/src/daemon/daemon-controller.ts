@@ -55,22 +55,37 @@ export class DaemonController {
   async stop(workspaceRoot: string): Promise<DaemonStopResult> {
     const stopStartedAt = this.now();
     const deadline = stopStartedAt + this.stopTimeoutMs;
+    const forceWaitMs = Math.min(500, Math.floor(this.stopTimeoutMs / 2));
+    const gracefulDeadline = deadline - forceWaitMs;
     const identity = DaemonWorkspaceIdentity.from(workspaceRoot, this.stateDirectory);
     const record = this.registry.read(identity);
     if (record === undefined) throw new Error("Daemon is not registered");
     if (record.state === "starting") return this.stopStarting(identity, record);
     if (!(await this.identifies(record))) throw new Error("Registered daemon identity is stale");
 
-    await this.transport.request(record.endpoint, {
-      kind: "stop",
-      protocolVersion: DAEMON_PROTOCOL_VERSION,
-      instanceId: record.instanceId,
-    });
-    if (!(await this.waitForExit(record.pid, deadline))) {
-      throw new Error(`Daemon process ${record.pid} did not exit gracefully`);
+    const stopRequest = this.transport
+      .request(record.endpoint, {
+        kind: "stop",
+        protocolVersion: DAEMON_PROTOCOL_VERSION,
+        instanceId: record.instanceId,
+      })
+      .then(() => true)
+      .catch(() => false);
+    const acknowledged = await Promise.race([
+      stopRequest,
+      this.pause(Math.max(0, gracefulDeadline - this.now())).then(() => false),
+    ]);
+    if (acknowledged && (await this.waitForExit(record.pid, gracefulDeadline))) {
+      this.registry.removeIfInstance(identity, record.instanceId);
+      return { status: "stopped", workspaceRoot, pid: record.pid };
+    }
+
+    const killed = await this.killIdentified(record, deadline);
+    if (!killed || !(await this.waitForIdentifiedExit(record, deadline))) {
+      throw new Error(`Daemon process ${record.pid} did not exit after authenticated kill`);
     }
     this.registry.removeIfInstance(identity, record.instanceId);
-    return { status: "stopped", workspaceRoot, pid: record.pid };
+    return { status: "killed", workspaceRoot, pid: record.pid };
   }
 
   async status(): Promise<readonly RunningDaemonStatus[]> {
@@ -171,6 +186,31 @@ export class DaemonController {
     }
   }
 
+  private async killIdentified(record: DaemonRecord, deadline: number): Promise<boolean> {
+    try {
+      const response = await Promise.race([
+        this.transport.request(record.endpoint, {
+          kind: "kill",
+          instanceId: record.instanceId,
+          processToken: record.processToken,
+        }),
+        this.pause(Math.max(0, deadline - this.now())).then(() => undefined),
+      ]);
+      return response?.kind === "killing";
+    } catch {
+      return false;
+    }
+  }
+
+  private async waitForIdentifiedExit(record: DaemonRecord, deadline: number): Promise<boolean> {
+    while (this.now() <= deadline) {
+      if (!(await this.identifies(record)) && !this.processTerminator.isAlive(record.pid)) {
+        return true;
+      }
+      await this.pause(this.pollIntervalMs);
+    }
+    return !(await this.identifies(record)) && !this.processTerminator.isAlive(record.pid);
+  }
   private async identifies(record: DaemonRecord): Promise<boolean> {
     try {
       const response = await this.transport.request(record.endpoint, {

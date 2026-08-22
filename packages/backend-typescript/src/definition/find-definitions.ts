@@ -10,10 +10,10 @@ import {
 import type { ResolvedPath, SymbolOverviewNode, SymbolIdentity } from "@symnav/core";
 
 import { DeclarationLocator, type LocatedDeclaration } from "../identity/locate-declarations.js";
-import type { WorkspaceDeclarationIndex } from "../identity/workspace-declaration-index.js";
+import type { TypeScriptWorkspaceState } from "../typescript-backend/typescript-workspace-state.js";
 
 export interface FindDefinitionsArgs {
-  readonly declarationIndex: WorkspaceDeclarationIndex;
+  readonly workspaceState: TypeScriptWorkspaceState;
   readonly files: readonly ResolvedPath[];
   readonly identity: SymbolIdentity;
 }
@@ -21,19 +21,19 @@ export interface FindDefinitionsArgs {
 export async function findDefinitions(
   args: FindDefinitionsArgs,
 ): Promise<readonly SymbolOverviewNode[]> {
-  args.declarationIndex.ensureFiles(args.files);
+  args.workspaceState.ensureFiles(args.files);
   return new DefinitionFinder(args).find();
 }
 
 class DefinitionFinder {
-  private readonly declarationIndex: WorkspaceDeclarationIndex;
+  private readonly workspaceState: TypeScriptWorkspaceState;
 
   constructor(private readonly args: FindDefinitionsArgs) {
-    this.declarationIndex = args.declarationIndex;
+    this.workspaceState = args.workspaceState;
   }
 
   async find(): Promise<readonly SymbolOverviewNode[]> {
-    const matches = this.declarationIndex.locate(this.args.identity);
+    const matches = this.workspaceState.locate(this.args.identity);
     return this.withContractImplementations(matches);
   }
 
@@ -74,11 +74,11 @@ class DefinitionFinder {
     const segments = [...enclosingTypeNames(methodNode), methodNode.getName()].map((name) => ({
       name,
     }));
-    return this.declarationIndex.declarationForIdentity({ file: filePath, segments })?.declaration;
+    return this.workspaceState.declarationForIdentity({ file: filePath, segments })?.declaration;
   }
 
   private workspaceRelativePathOf(sourceFile: SourceFile): string | undefined {
-    return this.declarationIndex.relativePathOf(sourceFile);
+    return this.workspaceState.relativePathOf(sourceFile);
   }
 }
 

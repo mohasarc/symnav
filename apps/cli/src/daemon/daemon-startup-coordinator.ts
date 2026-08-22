@@ -8,11 +8,7 @@ import {
 } from "./daemon-process-launcher.js";
 import type { DaemonRecord, DaemonStartResult } from "./daemon-protocol.js";
 import { DAEMON_PROTOCOL_VERSION, DAEMON_RECORD_SCHEMA_VERSION } from "./daemon-protocol.js";
-import {
-  DAEMON_STARTUP_TIMEOUT_MS,
-  type DaemonRegistry,
-  type StartupOwner,
-} from "./daemon-registry.js";
+import type { DaemonRegistry, StartupOwner } from "./daemon-registry.js";
 import type { DaemonWorkspaceIdentity } from "./daemon-workspace-identity.js";
 import type { LocalDaemonTransport } from "./local-daemon-transport.js";
 
@@ -26,6 +22,7 @@ interface DaemonStartupCoordinatorOptions {
 }
 
 const STARTUP_HEARTBEAT_INTERVAL_MS = 100;
+const DAEMON_READINESS_TIMEOUT_MS = 5 * 60_000;
 
 export class DaemonStartupCoordinator {
   private readonly startupTimeoutMs: number;
@@ -41,7 +38,7 @@ export class DaemonStartupCoordinator {
     private readonly transport: LocalDaemonTransport,
     options: DaemonStartupCoordinatorOptions = {},
   ) {
-    this.startupTimeoutMs = options.startupTimeoutMs ?? DAEMON_STARTUP_TIMEOUT_MS;
+    this.startupTimeoutMs = options.startupTimeoutMs ?? DAEMON_READINESS_TIMEOUT_MS;
     this.pollIntervalMs = options.pollIntervalMs ?? 20;
     this.now = options.now ?? Date.now;
     this.nextInstanceId = options.instanceId ?? randomUUID;

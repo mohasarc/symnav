@@ -35,6 +35,19 @@ describe("NodeUsageLogReader", () => {
 
     expect(new NodeUsageLogReader().read(join(root, "missing.jsonl"))).toEqual([]);
   });
+
+  it("reads schema-v1 events as cold execution", () => {
+    const root = mkdtempSync(join(tmpdir(), "symnav-telemetry-"));
+    roots.push(root);
+    const usageFilePath = join(root, "usage.jsonl");
+    const legacy: UsageEvent = { ...usageEvent("overview", 1), schemaVersion: 1 };
+    const { executionMode: _executionMode, ...schemaV1 } = legacy;
+    writeFileSync(usageFilePath, `${JSON.stringify(schemaV1)}\n`, "utf8");
+
+    expect(new NodeUsageLogReader().read(usageFilePath)).toEqual([
+      { ...schemaV1, executionMode: "cold" },
+    ]);
+  });
 });
 
 function usageEvent(command: string, timestamp: number): UsageEvent {
@@ -44,6 +57,7 @@ function usageEvent(command: string, timestamp: number): UsageEvent {
     command,
     timestamp,
     durationMs: 42,
+    executionMode: "cold",
     outcome: "success",
     argShape: {
       kind: "path",

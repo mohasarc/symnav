@@ -201,6 +201,18 @@ describe("daemon registry", () => {
     expect(mutations.beginStartupMutation(identity)).toBeUndefined();
   });
 
+  it("releases startup mutation ownership for the next lease", () => {
+    const identity = DaemonWorkspaceIdentity.from("/repo", temporaryDirectory(roots));
+    const registry = new DaemonRegistry(identity.registryDirectory);
+    const mutations = registry as unknown as StartupMutationLeaseTestAccess;
+    const first = mutations.beginStartupMutation(identity)!;
+
+    expect(first.isOwned()).toBe(true);
+    first.release();
+
+    expect(mutations.beginStartupMutation(identity)).toBeDefined();
+  });
+
   it.each([
     { field: "schemaVersion", value: 2 },
     { field: "protocolVersion", value: DAEMON_PROTOCOL_VERSION + 1 },

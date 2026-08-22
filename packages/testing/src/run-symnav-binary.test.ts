@@ -59,4 +59,17 @@ describe("runSymnavBinary", () => {
       },
     });
   });
+
+  it("defaults ordinary commands to cold mode without changing daemon commands", () => {
+    runSymnavBinary(["resolve", "value"], { cwd: "/fixture" });
+    runSymnavBinary(["daemon", "status"], { cwd: "/fixture" });
+    runSymnavBinary(["resolve", "value"], {
+      cwd: "/fixture",
+      env: { SYMNAV_DAEMON: "1" },
+    });
+
+    expect(vi.mocked(spawnSync).mock.calls[0]?.[2]?.env).toMatchObject({ SYMNAV_DAEMON: "0" });
+    expect(vi.mocked(spawnSync).mock.calls[1]?.[2]?.env).not.toHaveProperty("SYMNAV_DAEMON");
+    expect(vi.mocked(spawnSync).mock.calls[2]?.[2]?.env).toMatchObject({ SYMNAV_DAEMON: "1" });
+  });
 });

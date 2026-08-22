@@ -25,6 +25,8 @@ export interface WorkspaceDaemonOptions {
   readonly exit?: (code: number) => void;
   readonly executor?: DaemonCommandExecutor;
   readonly idleTimeoutMs?: number;
+  readonly resourceCheckIntervalMs?: number;
+  readonly residentMemoryBytes?: () => number;
 }
 
 export interface DaemonCommandExecutor {

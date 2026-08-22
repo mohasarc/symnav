@@ -4,6 +4,17 @@ import { InvocationWorkspaceSelector } from "./invocation-workspace-selector.js"
 describe("InvocationWorkspaceSelector", () => {
   const selector = new InvocationWorkspaceSelector();
 
+  it("routes navigation commands through the selected workspace", () => {
+    expect(selector.classify(["overview", "src/a.ts"], "/repo")).toEqual({
+      kind: "workspace",
+      startDir: "/repo",
+    });
+    expect(selector.classify(["stats", "--json"], "/repo")).toEqual({
+      kind: "workspace",
+      startDir: "/repo",
+    });
+  });
+
   it.each(["start", "status", "stop"] as const)(
     "classifies daemon %s as a control invocation",
     (action) => {

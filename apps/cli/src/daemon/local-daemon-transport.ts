@@ -143,6 +143,9 @@ export class LocalDaemonTransport {
 
   private writeFrame(socket: Socket, value: unknown): void {
     const payload = Buffer.from(JSON.stringify(value), "utf8");
+    if (payload.length > this.maximumFrameBytes) {
+      throw new Error(`Daemon frame exceeds ${this.maximumFrameBytes} bytes`);
+    }
     const prefix = Buffer.alloc(4);
     prefix.writeUInt32BE(payload.length);
     const frame = Buffer.concat([prefix, payload]);

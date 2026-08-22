@@ -54,6 +54,7 @@ export class TypeScriptWorkspaceState {
     files: readonly WorkspaceFile[],
     coverage: BackendRefreshCoverage = "workspace",
   ): BackendRefreshSummary {
+    const incomingPaths = new Set(files.map((file) => file.relative));
     let added = 0;
     let changed = 0;
     let unchanged = 0;
@@ -72,7 +73,20 @@ export class TypeScriptWorkspaceState {
       this.changeFile(file, revision);
       changed += 1;
     }
-    return { added, changed, removed: 0, unchanged };
+    const removed =
+      coverage === "workspace"
+        ? [...this.revisionsByRelativePath.keys()].filter(
+            (relativePath) => !incomingPaths.has(relativePath),
+          )
+        : [];
+    for (const relativePath of removed) {
+      this.removeFile(relativePath);
+    }
+    return { added, changed, removed: removed.length, unchanged };
+  }
+
+  currentFileCount(): number {
+    return this.revisionsByRelativePath.size;
   }
 
   ensureFiles(files: readonly ResolvedPath[]): void {
@@ -199,6 +213,20 @@ export class TypeScriptWorkspaceState {
       new Map(prepared.declarationsByPosition),
     );
     this.declarationsByFile.set(prepared.path.relative, prepared.declarations);
+  }
+
+  private removeFile(relativePath: string): void {
+    const path = this.fileByRelativePath.get(relativePath);
+    if (path) {
+      const sourceFile = this.project.getSourceFile(path.absolute);
+      if (sourceFile) {
+        this.project.removeSourceFile(sourceFile);
+      }
+      this.relativePathByAbsolute.delete(path.absolute);
+    }
+    this.purgeIndexes(relativePath);
+    this.fileByRelativePath.delete(relativePath);
+    this.revisionsByRelativePath.delete(relativePath);
   }
 
   private purgeIndexes(relativePath: string): void {

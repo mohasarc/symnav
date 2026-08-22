@@ -3,6 +3,7 @@ import { basename } from "node:path";
 import type {
   CallEdge,
   CallTargetResolution,
+  BackendRefreshCoverage,
   BackendRefreshSummary,
   FileSystem,
   LanguageBackend,
@@ -46,8 +47,11 @@ export class TypeScriptBackend implements LanguageBackend {
     return TypeScriptBackend.accepts(filePath);
   }
 
-  async refresh(files: readonly WorkspaceFile[]): Promise<BackendRefreshSummary> {
-    return this.state.refresh(files);
+  async refresh(
+    files: readonly WorkspaceFile[],
+    coverage: BackendRefreshCoverage = "workspace",
+  ): Promise<BackendRefreshSummary> {
+    return this.state.refresh(files, coverage);
   }
 
   async fileEntries(file: ResolvedPath): Promise<OverviewFileEntries> {

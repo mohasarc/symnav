@@ -84,11 +84,13 @@ export class DaemonStartupCoordinator {
       memoryCapBytes: this.launcher.memoryCapBytes,
     };
     this.registry.write(startingRecord);
-    const daemonProcess: DaemonProcess = await this.launcher.launch(
-      identity,
-      instanceId,
-      processToken,
-    );
+    let daemonProcess: DaemonProcess;
+    try {
+      daemonProcess = await this.launcher.launch(identity, instanceId, processToken);
+    } catch (error) {
+      this.registry.removeIfInstance(identity, instanceId);
+      throw error;
+    }
     if (!this.registry.isStartupOwner(identity, instanceId)) {
       throw new Error("Daemon startup ownership changed after process launch");
     }

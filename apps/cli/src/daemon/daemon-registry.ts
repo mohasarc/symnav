@@ -40,6 +40,22 @@ interface StartupMutationOwner {
   readonly token: string;
 }
 
+class RegistryStartupMutationLease {
+  constructor(
+    private readonly registry: DaemonRegistry,
+    private readonly identity: DaemonWorkspaceIdentity,
+    private readonly owner: StartupMutationOwner,
+  ) {}
+
+  isOwned(): boolean {
+    throw new Error("Startup mutation ownership is not implemented");
+  }
+
+  release(): void {
+    throw new Error("Startup mutation release is not implemented");
+  }
+}
+
 class RegistryStartupLease implements StartupLease {
   private released = false;
 

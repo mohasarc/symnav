@@ -1,4 +1,13 @@
+import { closeSync, openSync } from "node:fs";
+import { totalmem } from "node:os";
+import { dirname } from "node:path";
+import { fileURLToPath } from "node:url";
+import { spawn } from "node:child_process";
 import type { DaemonWorkspaceIdentity } from "./daemon-workspace-identity.js";
+
+const MEBIBYTE = 1024 * 1024;
+const MINIMUM_MEMORY_CAP_BYTES = 256 * MEBIBYTE;
+const MAXIMUM_MEMORY_CAP_BYTES = 4 * 1024 * MEBIBYTE;
 
 interface DaemonProcessConfiguration {
   readonly workspaceRoot: string;
@@ -90,5 +99,71 @@ export class NodeDaemonProcessTerminator implements DaemonProcessTerminator {
   private static errorCode(error: unknown): string | undefined {
     if (typeof error !== "object" || error === null) return undefined;
     return (error as { readonly code?: string }).code;
+  }
+}
+
+export class NodeDaemonProcessLauncher implements DaemonProcessLauncher {
+  readonly memoryCapBytes: number;
+  private readonly terminator: DaemonProcessTerminator;
+
+  constructor(
+    readonly symnavVersion: string,
+    memoryCapBytes = NodeDaemonProcessLauncher.defaultMemoryCapBytes(),
+    terminator: DaemonProcessTerminator = new NodeDaemonProcessTerminator(),
+  ) {
+    this.memoryCapBytes = memoryCapBytes;
+    this.terminator = terminator;
+  }
+
+  launch(
+    identity: DaemonWorkspaceIdentity,
+    instanceId: string,
+    processToken: string,
+  ): Promise<DaemonProcess> {
+    const configuration: DaemonProcessConfiguration = {
+      workspaceRoot: identity.workspaceRoot,
+      stateDir: dirname(identity.registryDirectory),
+      workspaceKey: identity.workspaceKey,
+      instanceId,
+      processToken,
+      endpoint: identity.endpoint(instanceId),
+      symnavVersion: this.symnavVersion,
+      memoryCapBytes: this.memoryCapBytes,
+    };
+    const encodedConfiguration = Buffer.from(JSON.stringify(configuration)).toString("base64url");
+    const daemonEntryPath = fileURLToPath(new URL("./daemon-entry.js", import.meta.url));
+    const logDescriptor = openSync(identity.logPath, "a", 0o600);
+
+    return new Promise((resolve, reject) => {
+      const child = spawn(
+        process.execPath,
+        [
+          `--max-old-space-size=${Math.floor(this.memoryCapBytes / MEBIBYTE)}`,
+          daemonEntryPath,
+          encodedConfiguration,
+        ],
+        {
+          detached: true,
+          stdio: ["ignore", logDescriptor, logDescriptor],
+          env: process.env,
+        },
+      );
+      child.once("error", (error) => {
+        closeSync(logDescriptor);
+        reject(error);
+      });
+      child.once("spawn", () => {
+        closeSync(logDescriptor);
+        child.unref();
+        resolve(new SpawnedDaemonProcess(child.pid!, this.terminator));
+      });
+    });
+  }
+
+  private static defaultMemoryCapBytes(): number {
+    return Math.max(
+      MINIMUM_MEMORY_CAP_BYTES,
+      Math.min(MAXIMUM_MEMORY_CAP_BYTES, Math.floor(totalmem() / 4)),
+    );
   }
 }

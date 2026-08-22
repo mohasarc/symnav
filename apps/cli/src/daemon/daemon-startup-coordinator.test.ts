@@ -58,6 +58,19 @@ describe("DaemonStartupCoordinator", () => {
     expect(harness.launcher.launchCount).toBe(0);
   });
 
+  it("drains a validated daemon running a different version", async () => {
+    const harness = new CoordinatorHarness(roots);
+    harness.seedReady("existing", "0.0.9", 4002);
+
+    const result = await harness.coordinator().ensureRunning(harness.identity);
+
+    expect(harness.transport.terminationCount).toBe(1);
+    expect(harness.terminator.terminated).not.toContain(4002);
+    expect(harness.launcher.launchCount).toBe(1);
+    expect(result.status).toBe("ready");
+    expect(harness.registry.list()).toHaveLength(1);
+  });
+
 });
 
 interface CoordinatorHarnessOptions {

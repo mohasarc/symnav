@@ -91,17 +91,28 @@ export class DaemonStartupCoordinator {
       this.registry.removeIfInstance(identity, instanceId);
       throw error;
     }
-    if (!this.registry.isStartupOwner(identity, instanceId)) {
-      throw new Error("Daemon startup ownership changed after process launch");
+    try {
+      if (!this.registry.isStartupOwner(identity, instanceId)) {
+        throw new Error("Daemon startup ownership changed after process launch");
+      }
+      this.registry.write({ ...startingRecord, pid: daemonProcess.pid });
+      const ready = await this.waitForReady(identity, instanceId, startedAt);
+      return {
+        status: "ready",
+        workspaceRoot: ready.workspaceRoot,
+        fileCount: ready.fileCount ?? 0,
+        loadDurationMs: (ready.readyAt ?? this.now()) - ready.startedAt,
+      };
+    } catch (error) {
+      try {
+        await daemonProcess.terminate();
+      } catch (terminationError) {
+        if (terminationError instanceof DaemonProcessTerminationError) throw terminationError;
+        throw new DaemonProcessTerminationError(String(terminationError));
+      }
+      this.registry.removeIfInstance(identity, instanceId);
+      throw error;
     }
-    this.registry.write({ ...startingRecord, pid: daemonProcess.pid });
-    const ready = await this.waitForReady(identity, instanceId, startedAt);
-    return {
-      status: "ready",
-      workspaceRoot: ready.workspaceRoot,
-      fileCount: ready.fileCount ?? 0,
-      loadDurationMs: (ready.readyAt ?? this.now()) - ready.startedAt,
-    };
   }
 
   private async waitForWinner(identity: DaemonWorkspaceIdentity): Promise<DaemonStartResult> {

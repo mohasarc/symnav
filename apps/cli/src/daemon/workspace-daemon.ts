@@ -51,6 +51,7 @@ export class WorkspaceDaemon {
   private server: DaemonServer | undefined;
   private startedAt = 0;
   private fileCount = 0;
+  private lastNavigationAt: number | undefined;
   private shutdownStarted = false;
 
   constructor(private readonly options: WorkspaceDaemonOptions) {
@@ -206,9 +207,11 @@ export class WorkspaceDaemon {
         startedAt: this.startedAt,
         fileCount: this.fileCount,
         memoryBytes: process.memoryUsage().rss,
+        ...(this.lastNavigationAt === undefined ? {} : { lastNavigationAt: this.lastNavigationAt }),
       };
     }
     if (request.kind === "execute") {
+      this.lastNavigationAt = this.now();
       this.lifetime.navigationAccepted();
       const requestStartedAt = this.now();
       let result;

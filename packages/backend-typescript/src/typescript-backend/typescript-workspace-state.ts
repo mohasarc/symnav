@@ -37,6 +37,10 @@ interface PreparedFileIndex {
   readonly declarationsByPosition: ReadonlyMap<number, SymbolOverviewNode>;
 }
 
+interface ProjectMutation {
+  rollback(): void;
+}
+
 export class TypeScriptWorkspaceState {
   private readonly project: Project;
   private readonly revisionsByRelativePath = new Map<string, TypeScriptFileRevision>();

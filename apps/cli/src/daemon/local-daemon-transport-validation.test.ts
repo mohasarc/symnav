@@ -58,6 +58,19 @@ describe("LocalDaemonTransport validation", () => {
     ).rejects.toThrow("exceeds 128 bytes");
   });
 
+  it("rejects truncated daemon frames", async () => {
+    const prefix = Buffer.alloc(4);
+    prefix.writeUInt32BE(10);
+    const endpoint = await rawServer(servers, directories, (socket) => {
+      socket.end(Buffer.concat([prefix, Buffer.from("{}")]));
+      setTimeout(() => socket.destroy(), 50);
+    });
+
+    await expect(
+      new LocalDaemonTransport({ requestTimeoutMs: 100 }).request(endpoint, pingRequest()),
+    ).rejects.toThrow("truncated frame");
+  });
+
 });
 
 function pingRequest(): DaemonRequest {

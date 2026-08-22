@@ -1,6 +1,7 @@
 import {
   FileNotFoundError,
   OverviewTree,
+  type BackendRefreshCoverage,
   type BackendRefreshSummary,
   type DiagnosticSink,
   type FileSystem,
@@ -48,7 +49,10 @@ export class TypeScriptWorkspaceState {
     this.project = new Project({ fileSystem: new WorkspaceFileSystemHost(fs) });
   }
 
-  refresh(files: readonly WorkspaceFile[]): BackendRefreshSummary {
+  refresh(
+    files: readonly WorkspaceFile[],
+    coverage: BackendRefreshCoverage = "workspace",
+  ): BackendRefreshSummary {
     let added = 0;
     let unchanged = 0;
     for (const file of files) {

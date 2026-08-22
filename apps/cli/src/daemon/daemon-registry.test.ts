@@ -1,4 +1,11 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import {
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -26,6 +33,21 @@ describe("daemon registry", () => {
       "/repo-worktree",
       "/repo/submodule",
     ]);
+  });
+
+  it("atomically replaces records without leaving temporary files", () => {
+    const identity = DaemonWorkspaceIdentity.from("/repo", temporaryDirectory(roots));
+    const registry = new DaemonRegistry(identity.registryDirectory);
+    registry.write(record(identity, "starting"));
+    registry.write({ ...record(identity, "ready"), readyAt: 20 });
+
+    expect(registry.read(identity)).toMatchObject({ state: "ready", readyAt: 20 });
+    expect(readFileSync(identity.recordPath("instance"), "utf8")).toBe(
+      JSON.stringify({ ...record(identity, "ready"), readyAt: 20 }),
+    );
+    expect(readdirSync(identity.registryDirectory).some((name) => name.endsWith(".tmp"))).toBe(
+      false,
+    );
   });
 
   it.each([

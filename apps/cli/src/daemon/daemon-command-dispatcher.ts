@@ -1,11 +1,13 @@
+import { CliProgramExecutor } from "../cli-program-executor.js";
 import type {
   CliExecutionRequest,
   CommandExecutionResult,
+  DispatchedCommandResult,
 } from "../command-execution-result.js";
 import type { ProgramDependencies } from "../program-dependencies.js";
 import type { DaemonRecord, DaemonRequest, DaemonResponse } from "./daemon-protocol.js";
 import type { DaemonWorkspaceIdentity } from "./daemon-workspace-identity.js";
-import type { InvocationWorkspaceSelector } from "./invocation-workspace-selector.js";
+import { InvocationWorkspaceSelector } from "./invocation-workspace-selector.js";
 
 interface DaemonStarter {
   ensureRunning(identity: DaemonWorkspaceIdentity): Promise<unknown>;
@@ -48,5 +50,30 @@ export interface DaemonCommandDispatcherOptions {
 }
 
 export class DaemonCommandDispatcher {
-  constructor(private readonly options: DaemonCommandDispatcherOptions) {}
+  private readonly selector: InvocationWorkspaceSelector;
+  private readonly daemonEnabled: () => boolean;
+  private readonly executorFactory: (dependencies: ProgramDependencies) => CommandExecutor;
+
+  constructor(private readonly options: DaemonCommandDispatcherOptions) {
+    this.selector = options.selector ?? new InvocationWorkspaceSelector();
+    this.daemonEnabled = options.daemonEnabled ?? (() => true);
+    this.executorFactory =
+      options.executorFactory ?? ((dependencies) => new CliProgramExecutor(dependencies));
+  }
+
+  async execute(request: CliExecutionRequest): Promise<DispatchedCommandResult> {
+    const selected = this.selector.select(request.argv, request.cwd);
+    if (selected.route.kind !== "workspace") return this.executeLocally(request, "cold");
+    const workspaceRequest: CliExecutionRequest = { ...request, argv: selected.argv };
+    if (!this.daemonEnabled()) return this.executeLocally(workspaceRequest, "cold");
+    throw new Error("Workspace daemon dispatch is not available");
+  }
+
+  private executeLocally(
+    request: CliExecutionRequest,
+    mode: "cold" | "fallback",
+  ): Promise<DispatchedCommandResult> {
+    const executor = this.executorFactory(this.options.createDependencies());
+    return executor.execute({ ...request, executionMode: mode }).then((result) => ({ mode, result }));
+  }
 }

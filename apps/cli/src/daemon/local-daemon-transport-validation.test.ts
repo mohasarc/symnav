@@ -15,7 +15,9 @@ describe("LocalDaemonTransport validation", () => {
   afterEach(async () => {
     for (const socket of sockets) socket.destroy();
     sockets.length = 0;
-    await Promise.all(servers.map((server) => new Promise<void>((resolve) => server.close(() => resolve()))));
+    await Promise.all(
+      servers.map((server) => new Promise<void>((resolve) => server.close(() => resolve()))),
+    );
     servers.length = 0;
     for (const directory of directories) rmSync(directory, { recursive: true, force: true });
     directories.length = 0;
@@ -81,9 +83,9 @@ describe("LocalDaemonTransport validation", () => {
       writeFrame(socket: { write: typeof write }, value: unknown): void;
     };
 
-    expect(() =>
-      frameWriter.writeFrame({ write }, { value: "long daemon payload" }),
-    ).toThrow("exceeds 8 bytes");
+    expect(() => frameWriter.writeFrame({ write }, { value: "long daemon payload" })).toThrow(
+      "exceeds 8 bytes",
+    );
     expect(write).not.toHaveBeenCalled();
   });
 
@@ -95,7 +97,7 @@ describe("LocalDaemonTransport validation", () => {
 
     await expect(
       new LocalDaemonTransport({ requestTimeoutMs: 100 }).request(endpoint, pingRequest()),
-    ).rejects.toThrow("Malformed daemon response");
+    ).rejects.toThrow("Malformed daemon result");
   });
 
   it.each([
@@ -142,7 +144,7 @@ describe("LocalDaemonTransport validation", () => {
 
     await expect(
       new LocalDaemonTransport({ requestTimeoutMs: 100 }).request(endpoint, pingRequest()),
-    ).rejects.toThrow("kind does not match request");
+    ).rejects.toThrow("Daemon pong does not match request protocol and instance");
   });
 
   it("rejects multiple daemon responses for one request", async () => {
@@ -218,9 +220,7 @@ describe("LocalDaemonTransport validation", () => {
 
   it("rejects malformed daemon identity responses", async () => {
     const endpoint = await rawServer(servers, sockets, directories, (socket) => {
-      socket.write(
-        frame({ kind: "identity", instanceId: "instance", processToken: "process" }),
-      );
+      socket.write(frame({ kind: "identity", instanceId: "instance", processToken: "process" }));
       setTimeout(() => socket.destroy(), 50);
     });
 
@@ -316,7 +316,6 @@ describe("LocalDaemonTransport validation", () => {
       }),
     ).rejects.toThrow("Malformed daemon result");
   });
-
 });
 
 function pingRequest(): DaemonRequest {

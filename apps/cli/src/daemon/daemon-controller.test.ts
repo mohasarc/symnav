@@ -122,10 +122,7 @@ function temporaryDirectory(roots: string[]): string {
   return root;
 }
 
-function startingRecord(
-  identity: DaemonWorkspaceIdentity,
-  instanceId = "starting",
-): DaemonRecord {
+function startingRecord(identity: DaemonWorkspaceIdentity, instanceId = "starting"): DaemonRecord {
   return {
     schemaVersion: 1,
     protocolVersion: DAEMON_PROTOCOL_VERSION,

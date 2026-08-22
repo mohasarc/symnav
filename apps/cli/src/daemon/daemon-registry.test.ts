@@ -25,9 +25,9 @@ import {
 import type { LocalDaemonTransport } from "./local-daemon-transport.js";
 
 interface StartupMutationLeaseTestAccess {
-  beginStartupMutation(identity: DaemonWorkspaceIdentity):
-    | { isOwned(): boolean; release(): void }
-    | undefined;
+  beginStartupMutation(
+    identity: DaemonWorkspaceIdentity,
+  ): { isOwned(): boolean; release(): void } | undefined;
 }
 
 describe("daemon registry", () => {
@@ -159,7 +159,10 @@ describe("daemon registry", () => {
     const identity = DaemonWorkspaceIdentity.from("/repo", temporaryDirectory(roots));
     const registry = new DaemonRegistry(identity.registryDirectory);
     const lease = registry.acquireStartup(identity, "starting");
-    const starting = { ...record(identity, "starting", "starting"), pid: 0 };
+    const starting = {
+      ...record(identity, "starting", "starting"),
+      pid: 0,
+    } satisfies DaemonRecord;
 
     expect(registry.writeStartingIfStartupOwner(identity, starting)).toBe(true);
     expect(registry.removeStartupLockIfInstance(identity, "starting")).toBe(true);

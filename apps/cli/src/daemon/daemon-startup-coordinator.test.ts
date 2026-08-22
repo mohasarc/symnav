@@ -1,12 +1,5 @@
 import { spawn, type ChildProcess } from "node:child_process";
-import {
-  existsSync,
-  mkdirSync,
-  mkdtempSync,
-  readFileSync,
-  rmSync,
-  writeFileSync,
-} from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -308,7 +301,6 @@ describe("DaemonStartupCoordinator", () => {
     expect([first.status, second.status].sort()).toEqual(["already-running", "ready"]);
     expect(harness.launcher.launchCount).toBe(1);
   }, 10_000);
-
 });
 
 interface CoordinatorHarnessOptions {

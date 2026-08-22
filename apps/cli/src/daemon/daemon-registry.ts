@@ -137,6 +137,30 @@ export class DaemonRegistry {
     }
   }
 
+  refreshStartupOwner(identity: DaemonWorkspaceIdentity, instanceId: string): boolean {
+    const owner = this.startupOwner(identity);
+    if (owner?.instanceId !== instanceId) return false;
+    const ownerPath = identity.startupOwnerPath(identity.lockPath);
+    const temporaryPath = `${identity.lockPath}.${process.pid}.${randomUUID()}.owner.tmp`;
+    writeFileSync(
+      temporaryPath,
+      JSON.stringify({ ...owner, heartbeatAt: Date.now(), revision: randomUUID() }),
+      { encoding: "utf8", mode: 0o600 },
+    );
+    if (!DaemonRegistry.sameStartupOwner(this.startupOwner(identity), owner)) {
+      rmSync(temporaryPath, { force: true });
+      return false;
+    }
+    try {
+      renameSync(temporaryPath, ownerPath);
+      return this.isStartupOwner(identity, instanceId);
+    } catch (error) {
+      rmSync(temporaryPath, { force: true });
+      if (DaemonRegistry.errorCode(error) === "ENOENT") return false;
+      throw error;
+    }
+  }
+
   startupOwner(identity: DaemonWorkspaceIdentity): StartupOwner | undefined {
     try {
       const value: unknown = JSON.parse(
@@ -287,6 +311,19 @@ export class DaemonRegistry {
       typeof owner.acquiredAt === "number" &&
       typeof owner.heartbeatAt === "number" &&
       typeof owner.revision === "string"
+    );
+  }
+
+  private static sameStartupOwner(
+    current: StartupOwner | undefined,
+    observed: StartupOwner,
+  ): boolean {
+    return (
+      current?.instanceId === observed.instanceId &&
+      current.ownerPid === observed.ownerPid &&
+      current.acquiredAt === observed.acquiredAt &&
+      current.heartbeatAt === observed.heartbeatAt &&
+      current.revision === observed.revision
     );
   }
 

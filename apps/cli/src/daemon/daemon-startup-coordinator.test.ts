@@ -244,6 +244,20 @@ describe("DaemonStartupCoordinator", () => {
     expect(harness.launcher.launchCount).toBe(0);
   });
 
+  it("terminates a child after startup ownership changes during launch", async () => {
+    const harness = new CoordinatorHarness(roots);
+    const publishStarting = harness.registry.writeStartingIfStartupOwner.bind(harness.registry);
+    vi.spyOn(harness.registry, "writeStartingIfStartupOwner")
+      .mockImplementationOnce(publishStarting)
+      .mockReturnValueOnce(false);
+
+    await expect(harness.coordinator().ensureRunning(harness.identity)).rejects.toThrow(
+      "ownership changed after process launch",
+    );
+    expect(harness.launcher.launchCount).toBe(1);
+    expect(harness.terminator.terminated).toContain(harness.launcher.lastPid);
+  });
+
   it("renews startup ownership while readiness is pending", async () => {
     const harness = new CoordinatorHarness(roots, { readyDelayMs: 80 });
     const starting = harness

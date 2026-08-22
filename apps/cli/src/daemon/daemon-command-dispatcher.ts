@@ -139,7 +139,9 @@ export class DaemonCommandDispatcher {
         processToken: record.processToken,
       });
     } catch {}
-    runtime.registry.removeIfInstance(identity, record.instanceId);
+    try {
+      runtime.registry.removeIfInstance(identity, record.instanceId);
+    } catch {}
   }
 
   private static createRuntime(

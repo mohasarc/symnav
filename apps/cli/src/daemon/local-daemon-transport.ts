@@ -274,6 +274,14 @@ export class LocalDaemonTransport {
     ) {
       throw new Error("Malformed daemon result");
     }
+    if (
+      value.kind === "pong" &&
+      (typeof value.protocolVersion !== "number" ||
+        typeof value.instanceId !== "string" ||
+        typeof value.symnavVersion !== "string")
+    ) {
+      throw new Error("Malformed daemon pong");
+    }
   }
 
   private static isExecutionResult(value: unknown): boolean {

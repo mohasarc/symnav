@@ -17,12 +17,15 @@ class DaemonFrameDecoder {
 
   append(bytes: Buffer): readonly unknown[] {
     this.buffered = Buffer.concat([this.buffered, bytes]);
-    if (this.buffered.length < 4) return [];
-    const payloadLength = this.buffered.readUInt32BE(0);
-    if (this.buffered.length < payloadLength + 4) return [];
-    const payload = this.buffered.subarray(4, payloadLength + 4);
-    this.buffered = this.buffered.subarray(payloadLength + 4);
-    return [JSON.parse(payload.toString("utf8"))];
+    const values: unknown[] = [];
+    while (this.buffered.length >= 4) {
+      const payloadLength = this.buffered.readUInt32BE(0);
+      if (this.buffered.length < payloadLength + 4) break;
+      const payload = this.buffered.subarray(4, payloadLength + 4);
+      this.buffered = this.buffered.subarray(payloadLength + 4);
+      values.push(JSON.parse(payload.toString("utf8")));
+    }
+    return values;
   }
 
   assertComplete(): void {}
@@ -100,11 +103,14 @@ export class LocalDaemonTransport {
     handler: (request: DaemonRequest) => Promise<DaemonResponse>,
   ): void {
     const decoder = new DaemonFrameDecoder(this.maximumFrameBytes);
+    let responses = Promise.resolve();
     socket.on("data", (bytes) => {
       try {
-        const value = decoder.append(Buffer.isBuffer(bytes) ? bytes : Buffer.from(bytes))[0];
-        if (value === undefined) return;
-        void handler(value as DaemonRequest).then((response) => this.writeFrame(socket, response));
+        for (const value of decoder.append(Buffer.isBuffer(bytes) ? bytes : Buffer.from(bytes))) {
+          responses = responses.then(async () => {
+            this.writeFrame(socket, await handler(value as DaemonRequest));
+          });
+        }
       } catch {
         socket.destroy();
       }

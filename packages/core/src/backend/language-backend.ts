@@ -26,7 +26,10 @@ export type ResolveSymbolsOptions =
 
 export interface LanguageBackend {
   accepts(filePath: string): boolean;
-  refresh(files: readonly WorkspaceFile[]): Promise<BackendRefreshSummary>;
+  refresh(
+    files: readonly WorkspaceFile[],
+    coverage?: BackendRefreshCoverage,
+  ): Promise<BackendRefreshSummary>;
   fileEntries(path: ResolvedPath): Promise<OverviewFileEntries>;
   resolveSymbols(
     files: readonly ResolvedPath[],

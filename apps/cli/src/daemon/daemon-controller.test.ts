@@ -70,6 +70,24 @@ describe("DaemonController", () => {
       },
     ]);
   });
+
+  it("cleans stale starting state while reporting status", async () => {
+    const stateDirectory = temporaryDirectory(roots);
+    const identity = DaemonWorkspaceIdentity.from("/repo", stateDirectory);
+    const registry = new DaemonRegistry(identity.registryDirectory);
+    expect(registry.acquireStartup(identity, "starting")).toBeDefined();
+    expect(registry.writeStartingIfStartupOwner(identity, startingRecord(identity))).toBe(true);
+    const controller = new DaemonController(
+      registry,
+      new ControllerTransport() as unknown as LocalDaemonTransport,
+      stateDirectory,
+      { processTerminator: new ControllerTerminator([]) },
+    );
+
+    await expect(controller.status()).resolves.toEqual([]);
+    expect(registry.startupOwner(identity)).toBeUndefined();
+    expect(registry.readStoredInstance(identity, "starting")).toBeUndefined();
+  });
 });
 
 class ControllerTransport {

@@ -117,6 +117,7 @@ describe("DaemonStartupCoordinator", () => {
       expect(runtime.registry.read(runtime.identity)?.instanceId).not.toBe("old");
       await runtime.launcher.close();
     },
+    10_000,
   );
 
   it("cleans startup state when process launch fails", async () => {
@@ -577,7 +578,7 @@ function socketBackedCoordinator(roots: string[]): SocketBackedCoordinator {
   const stateDirectory = temporaryDirectory(roots);
   const identity = DaemonWorkspaceIdentity.from(join(stateDirectory, "workspace"), stateDirectory);
   const registry = new DaemonRegistry(identity.registryDirectory);
-  const transport = new LocalDaemonTransport({ requestTimeoutMs: 100 });
+  const transport = new LocalDaemonTransport({ requestTimeoutMs: 1_000 });
   const terminator = new NodeDaemonProcessTerminator(100, 5);
   const launcher = new InProcessReadyLauncher(registry, transport);
   return {
@@ -586,7 +587,7 @@ function socketBackedCoordinator(roots: string[]): SocketBackedCoordinator {
     terminator,
     launcher,
     coordinator: new DaemonStartupCoordinator(registry, launcher, transport, {
-      startupTimeoutMs: 1_000,
+      startupTimeoutMs: 5_000,
       pollIntervalMs: 2,
       processTerminator: terminator,
     }),

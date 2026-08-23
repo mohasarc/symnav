@@ -74,7 +74,11 @@ class RegistryStartupLease implements StartupLease {
 }
 
 export class DaemonRegistry {
-  constructor(private readonly registryDirectory: string) {}
+  constructor(
+    private readonly registryDirectory: string,
+    private readonly platform = process.platform,
+    private readonly renamePath: typeof renameSync = renameSync,
+  ) {}
 
   read(identity: DaemonWorkspaceIdentity): DaemonRecord | undefined {
     return this.records(identity).find((record) => DaemonRegistry.isCurrentRecord(record));
@@ -182,7 +186,7 @@ export class DaemonRegistry {
         return false;
       }
       try {
-        renameSync(temporaryPath, ownerPath);
+        this.replaceStartupOwner(temporaryPath, ownerPath);
         return this.isStartupOwner(identity, instanceId);
       } catch (error) {
         rmSync(temporaryPath, { force: true });
@@ -543,6 +547,26 @@ export class DaemonRegistry {
     } catch (error) {
       return DaemonRegistry.errorCode(error) === "EPERM";
     }
+  }
+
+  private replaceStartupOwner(temporaryPath: string, ownerPath: string): void {
+    if (this.platform !== "win32") {
+      this.renamePath(temporaryPath, ownerPath);
+      return;
+    }
+    const previousPath = `${ownerPath}.${process.pid}.${randomUUID()}.previous`;
+    this.renamePath(ownerPath, previousPath);
+    try {
+      this.renamePath(temporaryPath, ownerPath);
+    } catch (error) {
+      try {
+        this.renamePath(previousPath, ownerPath);
+      } catch {}
+      throw error;
+    }
+    try {
+      rmSync(previousPath, { force: true });
+    } catch {}
   }
 
   private static errorCode(error: unknown): string | undefined {

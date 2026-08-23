@@ -5,6 +5,7 @@ import {
   mkdtempSync,
   readFileSync,
   readdirSync,
+  renameSync,
   rmSync,
   writeFileSync,
 } from "node:fs";
@@ -187,6 +188,30 @@ describe("daemon registry", () => {
     });
     expect(registry.startupOwner(identity)?.revision).not.toBe(before.revision);
     expect(registry.startupOwner(identity)!.heartbeatAt).toBeGreaterThanOrEqual(before.heartbeatAt);
+  });
+
+  it("keeps the startup lock claimed while replacing its owner on Windows", () => {
+    const identity = DaemonWorkspaceIdentity.from("/repo", temporaryDirectory(roots));
+    const ownerPath = identity.startupOwnerPath(identity.lockPath);
+    let replacementObserved = false;
+    let contenderClaimed = false;
+    let registry!: DaemonRegistry;
+    registry = new DaemonRegistry(identity.registryDirectory, "win32", (source, destination) => {
+      renameSync(source, destination);
+      if (source !== ownerPath) return;
+      replacementObserved = true;
+      contenderClaimed = registry.acquireStartup(identity, "contender") !== undefined;
+    });
+    expect(registry.acquireStartup(identity, "owner")).toBeDefined();
+    const before = registry.startupOwner(identity)!;
+
+    expect(registry.refreshStartupOwner(identity, "owner")).toBe(true);
+
+    expect(replacementObserved).toBe(true);
+    expect(contenderClaimed).toBe(false);
+    expect(registry.startupOwner(identity)?.instanceId).toBe("owner");
+    expect(registry.startupOwner(identity)?.revision).not.toBe(before.revision);
+    expect(readdirSync(identity.lockPath)).toEqual(["owner.json"]);
   });
 
   it("does not remove startup ownership renewed after stale observation", () => {

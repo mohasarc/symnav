@@ -88,19 +88,22 @@ describe("symnav telemetry e2e", () => {
 
   it("records warm execution through an automatically started daemon", () => {
     const stateDir = newStateDir();
-    const result = runSymnavBinary(overviewArgs, {
-      cwd: fixtureRoot,
-      env: {
-        SYMNAV_DAEMON: "1",
-        SYMNAV_STATE_DIR: stateDir,
-        SYMNAV_TELEMETRY: "1",
-      },
-    });
-    const event = JSON.parse(singleUsageLine(stateDir)) as UsageEventLine;
+    try {
+      const result = runSymnavBinary(overviewArgs, {
+        cwd: fixtureRoot,
+        env: {
+          SYMNAV_DAEMON: "1",
+          SYMNAV_STATE_DIR: stateDir,
+          SYMNAV_TELEMETRY: "1",
+        },
+      });
+      const event = JSON.parse(singleUsageLine(stateDir)) as UsageEventLine;
 
-    expect(result.status).toBe(0);
-    expect(event.executionMode).toBe("warm");
-    stopDaemon(stateDir);
+      expect(result.status).toBe(0);
+      expect(event.executionMode).toBe("warm");
+    } finally {
+      stopDaemon(stateDir);
+    }
   });
 
   it("keeps daemon telemetry inert for an opted-out client", () => {

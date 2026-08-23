@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { createConnection, createServer, type Server, type Socket } from "node:net";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -165,9 +166,7 @@ describe("LocalDaemonTransport validation", () => {
   });
 
   it("rejects invalid server requests before invoking the handler", async () => {
-    const directory = mkdtempSync(join(tmpdir(), "symnav-transport-server-validation-"));
-    directories.push(directory);
-    const endpoint = join(directory, "daemon.sock");
+    const endpoint = validationEndpoint(directories);
     let handled = false;
     const transport = new LocalDaemonTransport({ requestTimeoutMs: 100 });
     const listening = await transport.listen(endpoint, async () => {
@@ -183,6 +182,13 @@ describe("LocalDaemonTransport validation", () => {
 
     expect(handled).toBe(false);
     await listening.close();
+  });
+
+  it("uses native Windows named pipe endpoints", () => {
+    expect(validationEndpoint(directories, "win32", "endpoint")).toBe(
+      "\\\\.\\pipe\\symnav-transport-validation-endpoint",
+    );
+    expect(directories).toEqual([]);
   });
 
   it("rejects malformed daemon pong responses", async () => {
@@ -339,9 +345,7 @@ async function rawServer(
   directories: string[],
   connected: (socket: Socket) => void,
 ): Promise<string> {
-  const directory = mkdtempSync(join(tmpdir(), "symnav-transport-validation-"));
-  directories.push(directory);
-  const endpoint = join(directory, "daemon.sock");
+  const endpoint = validationEndpoint(directories);
   const server = createServer((socket) => {
     sockets.push(socket);
     connected(socket);
@@ -352,4 +356,17 @@ async function rawServer(
     server.listen(endpoint, resolve);
   });
   return endpoint;
+}
+
+function validationEndpoint(
+  directories: string[],
+  platform = process.platform,
+  uniqueId: string = randomUUID(),
+): string {
+  if (platform === "win32") {
+    return `\\\\.\\pipe\\symnav-transport-validation-${uniqueId}`;
+  }
+  const directory = mkdtempSync(join(tmpdir(), "symnav-transport-validation-"));
+  directories.push(directory);
+  return join(directory, "daemon.sock");
 }

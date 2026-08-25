@@ -4,7 +4,7 @@ import { dirname } from "node:path";
 import type { DaemonRequest, DaemonResponse, DaemonServer } from "./daemon-protocol.js";
 
 const DEFAULT_MAXIMUM_FRAME_BYTES = 8 * 1024 * 1024;
-const DEFAULT_REQUEST_TIMEOUT_MS = 5_000;
+const DEFAULT_REQUEST_TIMEOUT_MS = 250;
 const DEFAULT_EXECUTION_REQUEST_TIMEOUT_MS = 5 * 60_000;
 
 interface LocalDaemonTransportOptions {

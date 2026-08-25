@@ -12,7 +12,14 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
 import { runSymnavBinary } from "@symnav/testing";
-import { DAEMON_PROTOCOL_VERSION, type DaemonRecord } from "../../../src/daemon/daemon-protocol.js";
+import { canonicalStateDir } from "@symnav/telemetry";
+import {
+  DAEMON_PROTOCOL_VERSION,
+  DAEMON_RECORD_SCHEMA_VERSION,
+  type DaemonRecord,
+} from "../../../src/daemon/daemon-protocol.js";
+import { DaemonRegistry } from "../../../src/daemon/daemon-registry.js";
+import { DaemonWorkspaceIdentity } from "../../../src/daemon/daemon-workspace-identity.js";
 import { LocalDaemonTransport } from "../../../src/daemon/local-daemon-transport.js";
 import { canonicalWorkspaceRoot } from "../../helpers/canonical-workspace-root.js";
 import { E2eProcessCleanup } from "../../helpers/e2e-process-cleanup.js";
@@ -169,6 +176,10 @@ describe("symnav daemon status", () => {
     const processToken = "stuck-status-process";
     const readyPath = join(stateDir, "stuck-ready");
     const requestStartedPath = join(stateDir, "stuck-request");
+    const identity = DaemonWorkspaceIdentity.from(workspaceRoot, canonicalStateDir(stateDir));
+    const registry = new DaemonRegistry(identity.registryDirectory);
+    const lease = registry.acquireStartup(identity, instanceId);
+    expect(lease).toBeDefined();
     const child = spawnStuckDaemon(
       workspaceRoot,
       stateDir,
@@ -178,7 +189,28 @@ describe("symnav daemon status", () => {
       requestStartedPath,
     );
     helperProcesses.push(child);
+    await waitUntil(() => existsSync(`${readyPath}.boot`));
+    const daemonPid = Number(readFileSync(`${readyPath}.boot`, "utf8"));
+    expect(
+      registry.writeStartingIfStartupOwner(identity, {
+        schemaVersion: DAEMON_RECORD_SCHEMA_VERSION,
+        protocolVersion: DAEMON_PROTOCOL_VERSION,
+        symnavVersion: "0.1.0",
+        workspaceRoot,
+        workspaceKey: identity.workspaceKey,
+        stateKey: identity.stateKey,
+        identityKey: identity.identityKey,
+        instanceId,
+        processToken,
+        endpoint: identity.endpoint(instanceId),
+        pid: daemonPid,
+        state: "starting",
+        startedAt: Date.now(),
+        memoryCapBytes: Number.MAX_SAFE_INTEGER,
+      }),
+    ).toBe(true);
     await waitUntil(() => existsSync(readyPath));
+    lease?.release();
     const originalRecord = daemonRecords(stateDir)[0];
     expect(originalRecord).toBeDefined();
     daemonPids.push(originalRecord!.pid);

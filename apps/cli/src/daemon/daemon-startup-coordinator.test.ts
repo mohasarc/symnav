@@ -53,6 +53,20 @@ describe("DaemonStartupCoordinator", () => {
     expect(harness.registry.list()).toHaveLength(1);
   });
 
+  it("keeps waiting for its live child after a transient ready-record probe failure", async () => {
+    const harness = new CoordinatorHarness(roots, { readyAuthenticationFailures: 1 });
+
+    await expect(
+      harness.coordinator({ startupTimeoutMs: 1_000 }).ensureRunning(harness.identity),
+    ).resolves.toMatchObject({ status: "ready", workspaceRoot: "/repo" });
+
+    expect(harness.launcher.launchCount).toBe(1);
+    expect(harness.registry.readStored(harness.identity)).toMatchObject({
+      pid: harness.launcher.lastPid,
+      state: "ready",
+    });
+  });
+
   it("reuses a validated daemon running the same version", async () => {
     const harness = new CoordinatorHarness(roots);
     harness.seedReady("existing", "0.1.0", 4001);
@@ -646,6 +660,7 @@ interface CoordinatorHarnessOptions {
   readonly exitingLaunches?: number;
   readonly childExit?: DaemonProcessExit;
   readonly childExitDelayMs?: number;
+  readonly readyAuthenticationFailures?: number;
 }
 
 class ReadinessPublicationGate {
@@ -679,9 +694,14 @@ class CoordinatorHarness {
     this.identity = DaemonWorkspaceIdentity.from("/repo", stateDir);
     this.registry = new DaemonRegistry(this.identity.registryDirectory);
     this.launcher = new ReadyTestLauncher(this.registry, this.identity, this.terminator, options);
-    this.transport = new RegistryTransport(this.registry, this.identity, (pid) => {
-      if (options.oldDaemonExitsAfterTerminate !== false) this.terminator.alive.delete(pid);
-    });
+    this.transport = new RegistryTransport(
+      this.registry,
+      this.identity,
+      (pid) => {
+        if (options.oldDaemonExitsAfterTerminate !== false) this.terminator.alive.delete(pid);
+      },
+      options.readyAuthenticationFailures,
+    );
   }
 
   coordinator(
@@ -804,12 +824,16 @@ class ReadyTestLauncher implements DaemonProcessLauncher {
 class RegistryTransport {
   terminationCount = 0;
   private readonly terminatedInstances = new Set<string>();
+  private remainingReadyAuthenticationFailures: number;
 
   constructor(
     private readonly registry: DaemonRegistry,
     private readonly identity: DaemonWorkspaceIdentity,
     private readonly daemonTerminated: (pid: number) => void = () => undefined,
-  ) {}
+    readyAuthenticationFailures = 0,
+  ) {
+    this.remainingReadyAuthenticationFailures = readyAuthenticationFailures;
+  }
 
   async request(_endpoint: string, request: DaemonRequest): Promise<DaemonResponse> {
     if (request.kind === "stop") {
@@ -830,6 +854,10 @@ class RegistryTransport {
       if (this.terminatedInstances.has(request.instanceId)) throw new Error("daemon terminated");
       const record = this.registry.readStoredInstance(this.identity, request.instanceId);
       if (record === undefined) throw new Error("missing daemon");
+      if (record.state === "ready" && this.remainingReadyAuthenticationFailures > 0) {
+        this.remainingReadyAuthenticationFailures -= 1;
+        throw new Error("transient authentication failure");
+      }
       return {
         kind: "identity",
         instanceId: record.instanceId,

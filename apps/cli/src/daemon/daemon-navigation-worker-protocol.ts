@@ -158,10 +158,73 @@ export class DaemonNavigationWorkerProtocol {
           this.isRecord(frame) &&
           this.hasKeys(frame, ["stream", "bytesBase64"]) &&
           (frame.stream === "stdout" || frame.stream === "stderr") &&
-          typeof frame.bytesBase64 === "string",
+          this.isCanonicalBase64(frame.bytesBase64),
       ) &&
-      Number.isInteger(value.exitCode) &&
-      (value.telemetry === undefined || this.isRecord(value.telemetry))
+      this.isCount(value.exitCode) &&
+      (value.telemetry === undefined || this.isTelemetry(value.telemetry))
+    );
+  }
+
+  private static isTelemetry(
+    value: unknown,
+  ): value is NonNullable<CommandExecutionResult["telemetry"]> {
+    if (!this.isRecord(value)) return false;
+    const keys = [
+      "symnavVersion",
+      "command",
+      "timestamp",
+      "durationMs",
+      "executionMode",
+      "outcome",
+      "argShape",
+      "workspaceId",
+      "machineId",
+    ];
+    if (value.resultCounts !== undefined) keys.push("resultCounts");
+    if (value.errorReason !== undefined) keys.push("errorReason");
+    const validOutcome =
+      value.outcome === "success"
+        ? value.errorReason === undefined
+        : (value.outcome === "user_error" || value.outcome === "crash") &&
+          this.isNonEmptyString(value.errorReason);
+    return (
+      this.hasKeys(value, keys) &&
+      this.isNonEmptyString(value.symnavVersion) &&
+      this.isNonEmptyString(value.command) &&
+      this.isMetric(value.timestamp) &&
+      this.isMetric(value.durationMs) &&
+      value.executionMode === "warm" &&
+      validOutcome &&
+      this.isArgShape(value.argShape) &&
+      (value.resultCounts === undefined || this.isResultCounts(value.resultCounts)) &&
+      this.isNonEmptyString(value.workspaceId) &&
+      this.isNonEmptyString(value.machineId)
+    );
+  }
+
+  private static isArgShape(value: unknown): boolean {
+    return (
+      this.isRecord(value) &&
+      this.hasKeys(value, ["kind", "lengthBucket", "flags"]) &&
+      (value.kind === "symbol_id" ||
+        value.kind === "path" ||
+        value.kind === "bare" ||
+        value.kind === "empty") &&
+      (value.lengthBucket === "empty" ||
+        value.lengthBucket === "short" ||
+        value.lengthBucket === "medium" ||
+        value.lengthBucket === "long") &&
+      Array.isArray(value.flags) &&
+      value.flags.every((flag) => typeof flag === "string")
+    );
+  }
+
+  private static isResultCounts(value: unknown): boolean {
+    return (
+      this.isRecord(value) &&
+      Object.entries(value).every(
+        ([name, count]) => this.isNonEmptyString(name) && this.isCount(count),
+      )
     );
   }
 
@@ -195,7 +258,7 @@ export class DaemonNavigationWorkerProtocol {
     return (
       this.isRecord(value) &&
       this.hasKeys(value, keys) &&
-      keys.every((key) => this.isCount(value[key]))
+      keys.every((key) => this.isMetric(value[key]))
     );
   }
 
@@ -211,7 +274,20 @@ export class DaemonNavigationWorkerProtocol {
   }
 
   private static isCount(value: unknown): value is number {
+    return Number.isSafeInteger(value) && Number(value) >= 0;
+  }
+
+  private static isMetric(value: unknown): value is number {
     return typeof value === "number" && Number.isFinite(value) && value >= 0;
+  }
+
+  private static isCanonicalBase64(value: unknown): value is string {
+    return (
+      typeof value === "string" &&
+      value.length % 4 === 0 &&
+      /^(?:[A-Za-z\d+/]{4})*(?:[A-Za-z\d+/]{2}==|[A-Za-z\d+/]{3}=)?$/.test(value) &&
+      Buffer.from(value, "base64").toString("base64") === value
+    );
   }
 
   private static isNonEmptyString(value: unknown): value is string {

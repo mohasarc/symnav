@@ -244,7 +244,7 @@ export class TypeScriptProjectGraph implements TypeScriptSemanticSourceProvider 
     const parsedConfiguration = ts.parseJsonConfigFileContent(
       value,
       {
-        useCaseSensitiveFileNames: true,
+        useCaseSensitiveFileNames: paths.caseSensitive,
         fileExists: (candidate) => {
           const normalizedCandidate = paths.normalize(candidate);
           return (
@@ -290,23 +290,30 @@ export class TypeScriptProjectGraph implements TypeScriptSemanticSourceProvider 
     includes: readonly string[] | undefined,
     depth: number | undefined,
   ): string[] {
+    const paths = new WorkspacePathDialect(snapshot.root);
+    const normalizedRoot = paths.normalize(root);
     return snapshot.files
       .filter((file) => {
-        const relative = posix.relative(root, file.absolute);
-        if (relative.startsWith("../")) return false;
+        const relative = paths.relative(normalizedRoot, file.absolute);
+        if (!paths.contains(normalizedRoot, file.absolute)) return false;
         if (depth !== undefined && relative.split("/").length - 1 > depth) return false;
         if (!extensions.some((extension) => file.absolute.endsWith(extension))) return false;
         if (
           includes &&
           includes.length > 0 &&
           !includes.some((pattern) =>
-            TypeScriptProjectGraph.matchesConfiguredPattern(relative, pattern, root),
+            TypeScriptProjectGraph.matchesConfiguredPattern(
+              relative,
+              pattern,
+              normalizedRoot,
+              paths,
+            ),
           )
         ) {
           return false;
         }
         return !excludes?.some((pattern) =>
-          TypeScriptProjectGraph.matchesConfiguredPattern(relative, pattern, root),
+          TypeScriptProjectGraph.matchesConfiguredPattern(relative, pattern, normalizedRoot, paths),
         );
       })
       .map((file) => file.absolute);
@@ -406,7 +413,7 @@ export class TypeScriptProjectGraph implements TypeScriptSemanticSourceProvider 
     return [...paths].filter((path) => current.get(path) !== next.get(path)).length;
   }
 
-  private static matchesGlob(path: string, pattern: string): boolean {
+  private static matchesGlob(path: string, pattern: string, caseSensitive = true): boolean {
     const relativePattern = pattern.replace(/^\.\//, "");
     const normalized =
       !relativePattern.includes("*") && posix.extname(relativePattern) === ""
@@ -429,12 +436,20 @@ export class TypeScriptProjectGraph implements TypeScriptSemanticSourceProvider 
         expression += character.replace(/[|\\{}()[\]^$+?.]/g, "\\$&");
       }
     }
-    return new RegExp(`^${expression}$`).test(path);
+    return new RegExp(`^${expression}$`, caseSensitive ? "" : "i").test(path);
   }
 
-  private static matchesConfiguredPattern(path: string, pattern: string, root: string): boolean {
-    const relativePattern = posix.isAbsolute(pattern) ? posix.relative(root, pattern) : pattern;
-    return TypeScriptProjectGraph.matchesGlob(path, relativePattern);
+  private static matchesConfiguredPattern(
+    path: string,
+    pattern: string,
+    root: string,
+    paths: WorkspacePathDialect,
+  ): boolean {
+    const normalizedPattern = paths.normalize(pattern);
+    const relativePattern = paths.isAbsolute(normalizedPattern)
+      ? paths.relative(root, normalizedPattern)
+      : normalizedPattern;
+    return TypeScriptProjectGraph.matchesGlob(path, relativePattern, paths.caseSensitive);
   }
 
   private static parseJson(content: string): Record<string, unknown> | undefined {

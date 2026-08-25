@@ -1,20 +1,15 @@
-import { closeSync, openSync } from "node:fs";
+import { closeSync, mkdirSync, openSync } from "node:fs";
 import { tmpdir, totalmem } from "node:os";
-import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawn } from "node:child_process";
 import type { DaemonWorkspaceIdentity } from "./daemon-workspace-identity.js";
+import type { DaemonIdentityCoordinates } from "./daemon-protocol.js";
 import { daemonMemoryCapBytes } from "./daemon-resource-monitor.js";
 
 const MEBIBYTE = 1024 * 1024;
 
-interface DaemonProcessConfiguration {
-  readonly workspaceRoot: string;
-  readonly stateDir: string;
-  readonly workspaceKey: string;
-  readonly instanceId: string;
-  readonly processToken: string;
-  readonly endpoint: string;
+interface DaemonProcessConfiguration extends DaemonIdentityCoordinates {
+  readonly stateDirectory: string;
   readonly symnavVersion: string;
   readonly memoryCapBytes: number;
 }
@@ -128,11 +123,13 @@ export class NodeDaemonProcessLauncher implements DaemonProcessLauncher {
     instanceId: string,
     processToken: string,
   ): Promise<DaemonProcess> {
-    const stateDirectory = resolve(dirname(identity.registryDirectory));
+    const stateDirectory = identity.stateDirectory;
     const configuration: DaemonProcessConfiguration = {
       workspaceRoot: identity.workspaceRoot,
-      stateDir: stateDirectory,
+      stateDirectory,
       workspaceKey: identity.workspaceKey,
+      stateKey: identity.stateKey,
+      identityKey: identity.identityKey,
       instanceId,
       processToken,
       endpoint: identity.endpoint(instanceId),
@@ -141,6 +138,7 @@ export class NodeDaemonProcessLauncher implements DaemonProcessLauncher {
     };
     const encodedConfiguration = Buffer.from(JSON.stringify(configuration)).toString("base64url");
     const daemonEntryPath = fileURLToPath(new URL("./daemon-entry.js", import.meta.url));
+    mkdirSync(identity.identityDirectory, { recursive: true, mode: 0o700 });
     const logDescriptor = openSync(identity.logPath, "a", 0o600);
 
     return new Promise((resolve, reject) => {
@@ -212,8 +210,10 @@ export class DaemonProcessConfigurationParser {
     const configuration = value as Record<string, unknown>;
     return (
       typeof configuration.workspaceRoot === "string" &&
-      typeof configuration.stateDir === "string" &&
+      typeof configuration.stateDirectory === "string" &&
       typeof configuration.workspaceKey === "string" &&
+      typeof configuration.stateKey === "string" &&
+      typeof configuration.identityKey === "string" &&
       typeof configuration.instanceId === "string" &&
       typeof configuration.processToken === "string" &&
       typeof configuration.endpoint === "string" &&

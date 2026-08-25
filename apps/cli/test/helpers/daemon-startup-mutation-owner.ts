@@ -27,6 +27,8 @@ if (
     symnavVersion: "0.1.0",
     workspaceRoot,
     workspaceKey: identity.workspaceKey,
+    stateKey: identity.stateKey,
+    identityKey: identity.identityKey,
     instanceId,
     processToken: "orphaned-mutation-token",
     endpoint: identity.endpoint(instanceId),

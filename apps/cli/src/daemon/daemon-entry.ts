@@ -10,10 +10,12 @@ class DaemonEntry {
     const configuration = DaemonProcessConfigurationParser.parse(encodedConfiguration);
     const identity = DaemonWorkspaceIdentity.from(
       configuration.workspaceRoot,
-      configuration.stateDir,
+      configuration.stateDirectory,
     );
     if (
       identity.workspaceKey !== configuration.workspaceKey ||
+      identity.stateKey !== configuration.stateKey ||
+      identity.identityKey !== configuration.identityKey ||
       identity.endpoint(configuration.instanceId) !== configuration.endpoint
     )
       throw new Error("Daemon process identity does not match configuration");

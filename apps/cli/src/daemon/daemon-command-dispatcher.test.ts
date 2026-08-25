@@ -362,6 +362,8 @@ function daemonRecord(instanceId = "instance-1"): DaemonRecord {
     symnavVersion: "0.1.0",
     workspaceRoot,
     workspaceKey: "key",
+    stateKey: "state-key",
+    identityKey: "identity-key",
     instanceId,
     processToken: `${instanceId}-token`,
     endpoint: "/endpoint",

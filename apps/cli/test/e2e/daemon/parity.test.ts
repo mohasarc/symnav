@@ -626,6 +626,8 @@ class DaemonParityHarness {
       symnavVersion,
       workspaceRoot: controlledWorkspaceRoot,
       workspaceKey: identity.workspaceKey,
+      stateKey: identity.stateKey,
+      identityKey: identity.identityKey,
       instanceId,
       processToken,
       endpoint: identity.endpoint(instanceId),

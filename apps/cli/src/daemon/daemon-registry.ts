@@ -108,11 +108,12 @@ export class DaemonRegistry {
   }
 
   write(record: DaemonRecord): void {
-    mkdirSync(this.registryDirectory, { recursive: true, mode: 0o700 });
-    const recordPath = join(
-      this.registryDirectory,
-      `${record.workspaceKey}.${record.instanceId}.json`,
+    const identity = DaemonWorkspaceIdentity.from(
+      record.workspaceRoot,
+      dirname(this.registryDirectory),
     );
+    mkdirSync(identity.identityDirectory, { recursive: true, mode: 0o700 });
+    const recordPath = identity.recordPath(record.instanceId);
     const temporaryPath = `${recordPath}.${process.pid}.${randomUUID()}.tmp`;
     writeFileSync(temporaryPath, JSON.stringify(record), { encoding: "utf8", mode: 0o600 });
     renameSync(temporaryPath, recordPath);
@@ -139,7 +140,7 @@ export class DaemonRegistry {
   }
 
   acquireStartup(identity: DaemonWorkspaceIdentity, instanceId: string): StartupLease | undefined {
-    mkdirSync(identity.registryDirectory, { recursive: true, mode: 0o700 });
+    mkdirSync(identity.identityDirectory, { recursive: true, mode: 0o700 });
     const acquiredAt = Date.now();
     const owner: StartupOwner = {
       instanceId,
@@ -265,22 +266,20 @@ export class DaemonRegistry {
   }
 
   list(): readonly DaemonRecord[] {
-    return this.recordNames()
-      .map((name) => ({ name, record: this.readStoredPath(join(this.registryDirectory, name)) }))
+    return this.recordPaths()
+      .map((path) => ({ path, record: this.readStoredPath(path) }))
       .filter(
-        (entry): entry is { readonly name: string; readonly record: DaemonRecord } =>
+        (entry): entry is { readonly path: string; readonly record: DaemonRecord } =>
           entry.record !== undefined &&
           DaemonRegistry.isCurrentRecord(entry.record) &&
-          this.recordMatchesFile(entry.name, entry.record),
+          this.recordMatchesFile(entry.path, entry.record),
       )
       .map(({ record }) => record);
   }
 
   private records(identity: DaemonWorkspaceIdentity): readonly DaemonRecord[] {
-    const prefix = `${identity.workspaceKey}.`;
-    return this.recordNames()
-      .filter((name) => name.startsWith(prefix))
-      .map((name) => this.readStoredPath(join(this.registryDirectory, name)))
+    return this.recordPathsIn(identity.identityDirectory)
+      .map((path) => this.readStoredPath(path))
       .filter(
         (record): record is DaemonRecord =>
           record !== undefined && DaemonRegistry.matchesIdentity(record, identity),
@@ -340,7 +339,7 @@ export class DaemonRegistry {
   private claimStartupMutation(
     identity: DaemonWorkspaceIdentity,
   ): RegistryStartupMutationLease | undefined {
-    mkdirSync(identity.registryDirectory, { recursive: true, mode: 0o700 });
+    mkdirSync(identity.identityDirectory, { recursive: true, mode: 0o700 });
     const token = randomUUID();
     const owner: StartupMutationOwner = {
       ownerPid: process.pid,
@@ -385,9 +384,22 @@ export class DaemonRegistry {
     }
   }
 
-  private recordNames(): readonly string[] {
+  private recordPaths(): readonly string[] {
     try {
-      return readdirSync(this.registryDirectory).filter((name) => name.endsWith(".json"));
+      return readdirSync(this.registryDirectory, { withFileTypes: true }).flatMap((entry) =>
+        entry.isDirectory() ? this.recordPathsIn(join(this.registryDirectory, entry.name)) : [],
+      );
+    } catch (error) {
+      if (DaemonRegistry.errorCode(error) === "ENOENT") return [];
+      throw error;
+    }
+  }
+
+  private recordPathsIn(identityDirectory: string): readonly string[] {
+    try {
+      return readdirSync(identityDirectory, { withFileTypes: true }).flatMap((entry) =>
+        entry.isFile() && entry.name.endsWith(".json") ? [join(identityDirectory, entry.name)] : [],
+      );
     } catch (error) {
       if (DaemonRegistry.errorCode(error) === "ENOENT") return [];
       throw error;
@@ -406,7 +418,7 @@ export class DaemonRegistry {
     }
   }
 
-  private recordMatchesFile(name: string, record: DaemonRecord): boolean {
+  private recordMatchesFile(path: string, record: DaemonRecord): boolean {
     const expectedIdentity = DaemonWorkspaceIdentity.from(
       record.workspaceRoot,
       dirname(this.registryDirectory),
@@ -414,7 +426,7 @@ export class DaemonRegistry {
     return (
       expectedIdentity.registryDirectory === this.registryDirectory &&
       DaemonRegistry.matchesIdentity(record, expectedIdentity) &&
-      name === `${expectedIdentity.workspaceKey}.${record.instanceId}.json`
+      path === expectedIdentity.recordPath(record.instanceId)
     );
   }
 
@@ -422,6 +434,8 @@ export class DaemonRegistry {
     return (
       record.workspaceRoot === identity.workspaceRoot &&
       record.workspaceKey === identity.workspaceKey &&
+      record.stateKey === identity.stateKey &&
+      record.identityKey === identity.identityKey &&
       record.endpoint === identity.endpoint(record.instanceId)
     );
   }
@@ -447,6 +461,8 @@ export class DaemonRegistry {
       typeof record.symnavVersion === "string" &&
       typeof record.workspaceRoot === "string" &&
       typeof record.workspaceKey === "string" &&
+      typeof record.stateKey === "string" &&
+      typeof record.identityKey === "string" &&
       typeof record.instanceId === "string" &&
       typeof record.processToken === "string" &&
       typeof record.endpoint === "string" &&

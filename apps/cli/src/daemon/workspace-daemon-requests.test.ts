@@ -289,6 +289,8 @@ class RequestHarness {
       symnavVersion: "test",
       workspaceRoot: harness.workspaceRoot,
       workspaceKey: harness.identity.workspaceKey,
+      stateKey: harness.identity.stateKey,
+      identityKey: harness.identity.identityKey,
       instanceId: harness.instanceId,
       processToken: harness.processToken,
       endpoint: harness.identity.endpoint(harness.instanceId),

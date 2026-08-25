@@ -672,6 +672,8 @@ function record(
     symnavVersion: "0.1.0",
     workspaceRoot: identity.workspaceRoot,
     workspaceKey: identity.workspaceKey,
+    stateKey: identity.stateKey,
+    identityKey: identity.identityKey,
     instanceId,
     processToken: `${instanceId}-process`,
     endpoint: identity.endpoint(instanceId),

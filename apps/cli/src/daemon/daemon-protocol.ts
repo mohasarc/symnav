@@ -13,15 +13,10 @@ export interface DaemonIdentityCoordinates {
   readonly endpoint: string;
 }
 
-export interface DaemonRecord {
+export interface DaemonRecord extends DaemonIdentityCoordinates {
   readonly schemaVersion: number;
   readonly protocolVersion: number;
   readonly symnavVersion: string;
-  readonly workspaceRoot: string;
-  readonly workspaceKey: string;
-  readonly instanceId: string;
-  readonly processToken: string;
-  readonly endpoint: string;
   readonly pid: number;
   readonly state: "starting" | "ready";
   readonly startedAt: number;

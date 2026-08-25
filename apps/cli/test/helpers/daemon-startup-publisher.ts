@@ -29,6 +29,8 @@ const startingRecord: DaemonRecord = {
   symnavVersion: "test",
   workspaceRoot,
   workspaceKey: identity.workspaceKey,
+  stateKey: identity.stateKey,
+  identityKey: identity.identityKey,
   instanceId,
   processToken: "cross-process-token",
   endpoint: identity.endpoint(instanceId),

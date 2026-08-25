@@ -135,6 +135,8 @@ function readyRecord(identity: DaemonWorkspaceIdentity): DaemonRecord {
     symnavVersion: "0.1.0",
     workspaceRoot: identity.workspaceRoot,
     workspaceKey: identity.workspaceKey,
+    stateKey: identity.stateKey,
+    identityKey: identity.identityKey,
     instanceId: "failed",
     processToken: "failed-process",
     endpoint: identity.endpoint("failed"),

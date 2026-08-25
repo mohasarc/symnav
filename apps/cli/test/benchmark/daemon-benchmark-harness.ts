@@ -2,7 +2,13 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { performance } from "node:perf_hooks";
-import { TypeScriptBackend } from "@symnav/backend-typescript";
+import {
+  TypeScriptBackend,
+  TypeScriptFileEntryExtractor,
+  TypeScriptWorkspaceState,
+  type TypeScriptFileExtractionRequest,
+  type TypeScriptFileExtractor,
+} from "@symnav/backend-typescript";
 import { NodeFileSystem } from "@symnav/core";
 import type {
   BackendRefreshCoverage,
@@ -21,6 +27,8 @@ export interface DaemonBenchmarkMeasurement {
     readonly projectLoads: number;
     readonly snapshots: number;
     readonly refreshes: number;
+    readonly sourceReads: number;
+    readonly extractions: number;
   };
   readonly refreshes: readonly BackendRefreshSummary[];
   readonly firstResolveMs: number;
@@ -30,6 +38,7 @@ export interface DaemonBenchmarkMeasurement {
 
 interface BenchmarkCounters {
   projectLoads: number;
+  extractions: number;
   readonly refreshes: BackendRefreshSummary[];
 }
 
@@ -89,13 +98,13 @@ export class DaemonBenchmarkHarness {
 
   private async measure(workspaceRoot: string): Promise<DaemonBenchmarkMeasurement> {
     const fileSystem = new SnapshotCountingFileSystem(new NodeFileSystem());
-    const counters: BenchmarkCounters = { projectLoads: 0, refreshes: [] };
+    const counters: BenchmarkCounters = { projectLoads: 0, extractions: 0, refreshes: [] };
     const retainedProgram = new RetainedWorkspaceProgram(
       fakeDependencies({
         fs: fileSystem,
         backends: () => {
           counters.projectLoads += 1;
-          return [new InstrumentedTypeScriptBackend(fileSystem, counters.refreshes)];
+          return [new InstrumentedTypeScriptBackend(fileSystem, counters)];
         },
       }),
     );
@@ -121,6 +130,8 @@ export class DaemonBenchmarkHarness {
         projectLoads: counters.projectLoads,
         snapshots: fileSystem.completeSnapshots(this.fileCount),
         refreshes: counters.refreshes.length,
+        sourceReads: fileSystem.sourceReadCount(),
+        extractions: counters.extractions,
       },
       refreshes: counters.refreshes,
       firstResolveMs: first.durationMs,
@@ -141,9 +152,17 @@ export class DaemonBenchmarkHarness {
 class InstrumentedTypeScriptBackend extends TypeScriptBackend {
   constructor(
     fileSystem: FileSystem,
-    private readonly refreshes: BackendRefreshSummary[],
+    private readonly counters: BenchmarkCounters,
   ) {
-    super(fileSystem);
+    super(
+      fileSystem,
+      new TypeScriptWorkspaceState(
+        fileSystem,
+        new CountingTypeScriptFileExtractor(() => {
+          counters.extractions += 1;
+        }),
+      ),
+    );
   }
 
   override async refresh(
@@ -151,13 +170,25 @@ class InstrumentedTypeScriptBackend extends TypeScriptBackend {
     coverage: BackendRefreshCoverage = "workspace",
   ): Promise<BackendRefreshSummary> {
     const summary = await super.refresh(files, coverage);
-    this.refreshes.push(summary);
+    this.counters.refreshes.push(summary);
     return summary;
+  }
+}
+
+class CountingTypeScriptFileExtractor implements TypeScriptFileExtractor {
+  private readonly extractor = new TypeScriptFileEntryExtractor();
+
+  constructor(private readonly extracted: () => void) {}
+
+  extract(request: TypeScriptFileExtractionRequest) {
+    this.extracted();
+    return this.extractor.extract(request);
   }
 }
 
 class SnapshotCountingFileSystem implements FileSystem {
   private metadataReads = 0;
+  private sourceReads = 0;
 
   constructor(private readonly fileSystem: FileSystem) {}
 
@@ -166,6 +197,10 @@ class SnapshotCountingFileSystem implements FileSystem {
       throw new Error(`${this.metadataReads} metadata reads do not form complete snapshots`);
     }
     return this.metadataReads / fileCount;
+  }
+
+  sourceReadCount(): number {
+    return this.sourceReads;
   }
 
   readFile(absPath: string): Promise<string> {
@@ -194,6 +229,7 @@ class SnapshotCountingFileSystem implements FileSystem {
   }
 
   readFileSync(absPath: string): string {
+    if (TypeScriptBackend.accepts(absPath)) this.sourceReads += 1;
     return this.fileSystem.readFileSync(absPath);
   }
 

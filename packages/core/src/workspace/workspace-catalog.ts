@@ -7,7 +7,6 @@ import { posixify } from "./paths/posixify.js";
 import { relPathFromRoot } from "./paths/rel-from-root.js";
 import {
   createWorkspaceTurn,
-  type ResolvedPath,
   type Workspace,
   type WorkspaceFile,
   type WorkspaceSnapshot,
@@ -56,18 +55,6 @@ export class WorkspaceCatalog {
     const next = await this.capture(root, previous);
     this.states.set(root, next);
     return WorkspaceCatalog.workspaceFrom(next, this.fs);
-  }
-
-  async refreshSelection(startDir: string, selection: readonly ResolvedPath[]): Promise<Workspace> {
-    const workspace = await this.refresh(startDir);
-    const snapshot = await workspace.snapshot(selection);
-    const state = this.states.get(workspace.root) as CatalogState;
-    return createWorkspaceTurn({
-      root: workspace.root,
-      fs: this.fs,
-      snapshot,
-      ignore: state.ignore,
-    });
   }
 
   private rootFor(startDir: string): string {

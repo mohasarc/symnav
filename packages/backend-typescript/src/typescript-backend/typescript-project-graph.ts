@@ -37,20 +37,16 @@ interface WorkspacePackage {
 }
 
 class TypeScriptSemanticProject {
-  readonly project: Project;
+  private project: Project;
   private loaded = false;
 
   constructor(
-    fileSystem: FileSystem,
-    compilerOptions: ts.CompilerOptions,
+    private readonly fileSystem: FileSystem,
+    private readonly compilerOptions: ts.CompilerOptions,
     private readonly ownedFiles: readonly WorkspaceFile[],
     private readonly observer?: TypeScriptSemanticQueryObserver,
   ) {
-    this.project = new Project({
-      fileSystem: new WorkspaceFileSystemHost(fileSystem),
-      compilerOptions,
-      skipAddingFilesFromTsConfig: true,
-    });
+    this.project = this.createProject();
   }
 
   program(): ts.Program {
@@ -71,6 +67,9 @@ class TypeScriptSemanticProject {
   releaseTransientResources(): void {
     if (!this.loaded) return;
     this.project.getLanguageService().compilerObject.cleanupSemanticCache();
+    this.observer?.semanticCacheReleased?.();
+    this.project = this.createProject();
+    this.loaded = false;
   }
 
   private load(): void {
@@ -81,6 +80,14 @@ class TypeScriptSemanticProject {
     }
     this.project.resolveSourceFileDependencies();
     this.loaded = true;
+  }
+
+  private createProject(): Project {
+    return new Project({
+      fileSystem: new WorkspaceFileSystemHost(this.fileSystem),
+      compilerOptions: this.compilerOptions,
+      skipAddingFilesFromTsConfig: true,
+    });
   }
 }
 

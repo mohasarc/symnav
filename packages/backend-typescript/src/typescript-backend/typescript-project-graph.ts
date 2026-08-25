@@ -60,6 +60,7 @@ class TypeScriptSemanticProject {
   }
 
   sourceFile(absolutePath: string): SourceFile | undefined {
+    if (this.ownedFiles.length === 0) return undefined;
     this.load();
     return this.project.getSourceFile(absolutePath);
   }

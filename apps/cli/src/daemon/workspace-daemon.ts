@@ -50,8 +50,15 @@ export class WorkspaceDaemon {
   private lastNavigationAt: number | undefined;
   private workerReady = false;
   private shutdownStarted = false;
+  private shutdownOperation: Promise<void> | undefined;
+  private forcedWorkerShutdown: Promise<void> | undefined;
+  private readonly forceEscalated: Promise<void>;
+  private resolveForceEscalated!: () => void;
 
   constructor(private readonly options: WorkspaceDaemonOptions) {
+    this.forceEscalated = new Promise((resolve) => {
+      this.resolveForceEscalated = resolve;
+    });
     this.now = options.now ?? Date.now;
     this.requestQueue = new WorkspaceRequestQueue(this.now);
     this.logger = new DaemonLogger(options.identity.logPath, { now: this.now });
@@ -318,18 +325,21 @@ export class WorkspaceDaemon {
     reason: "graceful" | "idle" | "resource" | "workspace-deleted",
     force = false,
   ): Promise<void> {
-    if (this.shutdownStarted) return;
+    if (force) this.forceWorkerShutdown();
+    if (this.shutdownOperation !== undefined) return this.shutdownOperation;
     this.shutdownStarted = true;
+    this.shutdownOperation = this.completeShutdown(reason, force);
+    return this.shutdownOperation;
+  }
+
+  private async completeShutdown(
+    reason: "graceful" | "idle" | "resource" | "workspace-deleted",
+    force: boolean,
+  ): Promise<void> {
     this.lifetime.stop();
     this.resourceMonitor.stop();
-    if (force) {
-      this.requestQueue.close();
-      await this.navigationWorker.terminate();
-      await this.requestQueue.drain();
-    } else {
-      await this.requestQueue.drain();
-      await this.navigationWorker.drainAndClose();
-    }
+    if (force) await this.forceWorkerShutdown();
+    else await this.gracefullyShutdownWorker();
     this.logger.record({ kind: "stop", reason });
     try {
       await this.server?.close();
@@ -341,6 +351,25 @@ export class WorkspaceDaemon {
       });
     }
     this.exit(0);
+  }
+
+  private async gracefullyShutdownWorker(): Promise<void> {
+    await this.requestQueue.drain();
+    const gracefulClose = this.navigationWorker.drainAndClose();
+    await Promise.race([
+      gracefulClose,
+      this.forceEscalated.then(() => this.forceWorkerShutdown()),
+    ]);
+  }
+
+  private forceWorkerShutdown(): Promise<void> {
+    if (this.forcedWorkerShutdown !== undefined) return this.forcedWorkerShutdown;
+    this.requestQueue.close();
+    this.forcedWorkerShutdown = this.navigationWorker
+      .terminate()
+      .then(() => this.requestQueue.drain());
+    this.resolveForceEscalated();
+    return this.forcedWorkerShutdown;
   }
 
   private pause(): Promise<void> {

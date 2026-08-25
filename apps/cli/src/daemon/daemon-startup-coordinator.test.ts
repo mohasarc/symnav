@@ -3,6 +3,7 @@ import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { canonicalStateDir } from "@symnav/telemetry";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { DaemonController } from "./daemon-controller.js";
 import { DaemonStartupCoordinator } from "./daemon-startup-coordinator.js";
@@ -823,7 +824,7 @@ class DelayedMarkerLauncher implements DaemonProcessLauncher {
 }
 
 function temporaryDirectory(roots: string[]): string {
-  const root = mkdtempSync(join(tmpdir(), "symnav-startup-"));
+  const root = canonicalStateDir(mkdtempSync(join(tmpdir(), "symnav-startup-")));
   roots.push(root);
   return root;
 }

@@ -3,6 +3,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { canonicalStateDir } from "@symnav/telemetry";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { CliExecutionRequest, CommandExecutionResult } from "../command-execution-result.js";
 import { createDefaultDependencies } from "../program.js";
@@ -82,7 +83,9 @@ describe("WorkspaceDaemon runtime lifecycle", () => {
   });
 
   it("force-stops a real matching daemon process with a stuck request", async () => {
-    const stateDirectory = mkdtempSync(join(tmpdir(), "symnav-daemon-child-state-"));
+    const stateDirectory = canonicalStateDir(
+      mkdtempSync(join(tmpdir(), "symnav-daemon-child-state-")),
+    );
     const workspaceRoot = mkdtempSync(join(tmpdir(), "symnav-daemon-child-workspace-"));
     mkdirSync(join(workspaceRoot, ".git"));
     writeFileSync(join(workspaceRoot, "input.ts"), "export const value = 1;\n");

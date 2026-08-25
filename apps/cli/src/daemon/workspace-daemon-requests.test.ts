@@ -10,6 +10,11 @@ import { DAEMON_PROTOCOL_VERSION, DAEMON_RECORD_SCHEMA_VERSION } from "./daemon-
 import { DaemonRegistry } from "./daemon-registry.js";
 import { DaemonWorkspaceIdentity } from "./daemon-workspace-identity.js";
 import type { LocalDaemonTransport } from "./local-daemon-transport.js";
+import type {
+  DaemonNavigationWorker,
+  DaemonNavigationWorkerExit,
+} from "./daemon-navigation-worker.js";
+import type { DaemonNavigationWorkerResponse } from "./daemon-navigation-worker-protocol.js";
 import { type DaemonCommandExecutor, WorkspaceDaemon } from "./workspace-daemon.js";
 
 describe("WorkspaceDaemon requests", () => {
@@ -31,6 +36,26 @@ describe("WorkspaceDaemon requests", () => {
       processToken: harness.processToken,
       fileCount: 1,
     });
+  });
+
+  it("binds lifecycle transport while navigation initialization is blocked", async () => {
+    const worker = new DeferredInitializationWorker();
+    const { daemon, harness, lease } = RequestHarness.create(undefined, {
+      navigationWorker: worker,
+    });
+    harnesses.push(harness);
+
+    const starting = daemon.start();
+    await worker.initializationStarted;
+
+    expect(harness.transport.isListening).toBe(true);
+    await expect(harness.ping()).resolves.toMatchObject({ kind: "pong", state: "starting" });
+    expect(harness.registry.read(harness.identity)?.state).toBe("starting");
+
+    worker.completeInitialization();
+    await starting;
+    lease.release();
+    expect(harness.registry.read(harness.identity)?.state).toBe("ready");
   });
 
   it("rejects startup authorization from an expired live owner", async () => {
@@ -144,6 +169,30 @@ describe("WorkspaceDaemon requests", () => {
     const second = harness.execute("second");
     await Promise.resolve();
     expect(executor.startedCount).toBe(1);
+    executor.complete(0);
+    await first;
+    await executor.started(2);
+    executor.complete(1);
+    await second;
+  });
+
+  it("reports active command and queued count while worker execution is blocked", async () => {
+    const executor = new SerializedExecutor();
+    const harness = await RequestHarness.start(executor);
+    harnesses.push(harness);
+    const first = harness.execute("first", ["refs", "input"]);
+    await executor.started(1);
+    const second = harness.execute("second", ["overview", "input.ts"]);
+
+    const pingStartedAt = Date.now();
+    await expect(harness.ping()).resolves.toMatchObject({
+      kind: "pong",
+      state: "busy",
+      currentCommand: "refs",
+      queued: 1,
+    });
+    expect(Date.now() - pingStartedAt).toBeLessThan(1_000);
+
     executor.complete(0);
     await first;
     await executor.started(2);
@@ -331,6 +380,9 @@ class RequestHarness {
       registry: harness.registry,
       transport: harness.transport as unknown as LocalDaemonTransport,
       ...(executor === undefined ? {} : { executor }),
+      ...(options.navigationWorker === undefined
+        ? {}
+        : { navigationWorker: options.navigationWorker }),
       ...(options.now === undefined ? {} : { now: options.now }),
       exit: (code) => harness.resolveExit(code),
     });
@@ -422,6 +474,7 @@ interface RequestHarnessOptions {
   readonly dependencies?: ProgramDependencies;
   readonly createDependencies?: (stateDirectory: string) => ProgramDependencies;
   readonly now?: () => number;
+  readonly navigationWorker?: DaemonNavigationWorker;
 }
 
 class RequestTransport {
@@ -486,5 +539,54 @@ class SerializedExecutor implements DaemonCommandExecutor {
 
   complete(index: number): void {
     this.results[index]?.();
+  }
+}
+
+class DeferredInitializationWorker implements DaemonNavigationWorker {
+  readonly generation = 1;
+  readonly exited = new Promise<DaemonNavigationWorkerExit>(() => undefined);
+  readonly initializationStarted: Promise<void>;
+  private resolveInitializationStarted!: () => void;
+  private resolveReady!: (response: DaemonNavigationWorkerResponse) => void;
+  private readonly ready: Promise<DaemonNavigationWorkerResponse>;
+
+  constructor() {
+    this.initializationStarted = new Promise((resolve) => {
+      this.resolveInitializationStarted = resolve;
+    });
+    this.ready = new Promise((resolve) => {
+      this.resolveReady = resolve;
+    });
+  }
+
+  start(): Promise<DaemonNavigationWorkerResponse> {
+    this.resolveInitializationStarted();
+    return this.ready;
+  }
+
+  execute(): Promise<DaemonNavigationWorkerResponse> {
+    throw new Error("Deferred initialization worker is not executable");
+  }
+
+  releaseTransientResources(): Promise<DaemonNavigationWorkerResponse> {
+    throw new Error("Deferred initialization worker has no transient resources");
+  }
+
+  drainAndClose(): Promise<void> {
+    return Promise.resolve();
+  }
+
+  terminate(): Promise<void> {
+    return Promise.resolve();
+  }
+
+  completeInitialization(): void {
+    this.resolveReady({
+      kind: "ready",
+      generation: this.generation,
+      fileCount: 1,
+      refresh: { added: 1, changed: 0, removed: 0, unchanged: 0 },
+      startupDurations: { discoveryMs: 0, indexingMs: 1, totalMs: 1 },
+    });
   }
 }

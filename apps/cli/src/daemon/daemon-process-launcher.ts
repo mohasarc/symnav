@@ -12,6 +12,7 @@ interface DaemonProcessConfiguration extends DaemonIdentityCoordinates {
   readonly stateDirectory: string;
   readonly symnavVersion: string;
   readonly memoryCapBytes: number;
+  readonly startupOwnerKind: "daemon";
 }
 
 export interface DaemonProcessExit {
@@ -135,6 +136,7 @@ export class NodeDaemonProcessLauncher implements DaemonProcessLauncher {
       endpoint: identity.endpoint(instanceId),
       symnavVersion: this.symnavVersion,
       memoryCapBytes: this.memoryCapBytes,
+      startupOwnerKind: "daemon",
     };
     const encodedConfiguration = Buffer.from(JSON.stringify(configuration)).toString("base64url");
     const daemonEntryPath = fileURLToPath(new URL("./daemon-entry.js", import.meta.url));
@@ -218,7 +220,8 @@ export class DaemonProcessConfigurationParser {
       typeof configuration.processToken === "string" &&
       typeof configuration.endpoint === "string" &&
       typeof configuration.symnavVersion === "string" &&
-      typeof configuration.memoryCapBytes === "number"
+      typeof configuration.memoryCapBytes === "number" &&
+      configuration.startupOwnerKind === "daemon"
     );
   }
 }

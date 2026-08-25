@@ -32,6 +32,11 @@ interface StartupMutationLeaseTestAccess {
   ): { isOwned(): boolean; release(): void } | undefined;
 }
 
+interface StartupProcessRegistryTestAccess {
+  startupOwnerMatchesProcess(identity: DaemonWorkspaceIdentity, record: DaemonRecord): boolean;
+  removeStartupLockIfProcess(identity: DaemonWorkspaceIdentity, record: DaemonRecord): boolean;
+}
+
 describe("daemon registry", () => {
   const roots: string[] = [];
 
@@ -208,6 +213,29 @@ describe("daemon registry", () => {
       ownerPid: starting.pid,
       processToken: starting.processToken,
     });
+  });
+
+  it("releases only the exact daemon-owned startup process", () => {
+    const identity = DaemonWorkspaceIdentity.from("/repo", temporaryDirectory(roots));
+    const registry = new DaemonRegistry(identity.registryDirectory);
+    const processRegistry = registry as unknown as StartupProcessRegistryTestAccess;
+    expect(registry.acquireStartup(identity, "starting")).toBeDefined();
+    const starting = {
+      ...record(identity, "starting", "starting"),
+      pid: 777,
+    } satisfies DaemonRecord;
+    expect(registry.writeStartingIfStartupOwner(identity, starting)).toBe(true);
+
+    expect(processRegistry.startupOwnerMatchesProcess(identity, starting)).toBe(true);
+    expect(
+      processRegistry.removeStartupLockIfProcess(identity, {
+        ...starting,
+        processToken: "replacement-process",
+      }),
+    ).toBe(false);
+    expect(registry.startupOwner(identity)).toBeDefined();
+    expect(processRegistry.removeStartupLockIfProcess(identity, starting)).toBe(true);
+    expect(registry.startupOwner(identity)).toBeUndefined();
   });
 
   it("renews startup ownership with a new revision", () => {

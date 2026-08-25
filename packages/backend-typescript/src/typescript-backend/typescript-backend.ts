@@ -42,21 +42,24 @@ export class TypeScriptBackend implements LanguageBackend {
   }
 
   private readonly state: TypeScriptWorkspaceState;
-  private readonly projectGraph: TypeScriptProjectGraph;
+  private readonly projectGraph: TypeScriptProjectGraph | undefined;
 
   constructor(
     private readonly fs: FileSystem,
     state?: TypeScriptWorkspaceState,
-    projectGraph = new TypeScriptProjectGraph(fs),
+    projectGraph?: TypeScriptProjectGraph,
   ) {
-    this.projectGraph = projectGraph;
-    this.state =
-      state ??
-      new TypeScriptWorkspaceState(
-        fs,
-        new TypeScriptFileEntryExtractor(),
-        projectGraph.workspaceProject(),
-      );
+    if (state) {
+      this.state = state;
+      this.projectGraph = projectGraph;
+      return;
+    }
+    this.projectGraph = projectGraph ?? new TypeScriptProjectGraph(fs);
+    this.state = new TypeScriptWorkspaceState(
+      fs,
+      new TypeScriptFileEntryExtractor(),
+      this.projectGraph.workspaceProject(),
+    );
   }
 
   accepts(filePath: string): boolean {
@@ -64,12 +67,12 @@ export class TypeScriptBackend implements LanguageBackend {
   }
 
   async refresh(request: BackendRefreshRequest): Promise<BackendRefreshSummary> {
-    await this.projectGraph.refresh(request.snapshot);
+    await this.projectGraph?.refresh(request.snapshot);
     return this.state.refresh(request.snapshot.files, request.coverage);
   }
 
   async releaseTransientResources(): Promise<void> {
-    this.projectGraph.releaseTransientResources();
+    this.projectGraph?.releaseTransientResources();
   }
 
   async fileEntries(file: ResolvedPath): Promise<OverviewFileEntries> {

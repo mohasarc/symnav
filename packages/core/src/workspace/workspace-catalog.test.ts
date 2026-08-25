@@ -206,6 +206,25 @@ describe("WorkspaceCatalog", () => {
     expect(fileSystem.directoryReads).toEqual(["/repo/src"]);
   });
 
+  it("normalizes drive-qualified start paths before retained lookup and target resolution", async () => {
+    const fileSystem = new MutableCatalogFileSystem({
+      "C:/repo/.git/HEAD": "ref: refs/heads/main\n",
+      "C:/repo/src/a.ts": "export const a = 1;\n",
+    });
+    const catalog = new WorkspaceCatalog(fileSystem);
+    const backslashTurn = await catalog.refresh("C:\\repo");
+
+    await expect(backslashTurn.resolveInputPath("src/a.ts", "C:\\repo")).resolves.toEqual({
+      relative: "src/a.ts",
+      absolute: "C:/repo/src/a.ts",
+    });
+
+    fileSystem.resetCounts();
+    const slashTurn = await catalog.refresh("C:/repo");
+    expect(slashTurn.root).toBe("C:/repo");
+    expect(fileSystem.directoryReads).toEqual([]);
+  });
+
   it("retains the last published turn when refresh fails", async () => {
     const fileSystem = new MutableCatalogFileSystem({
       "/repo/.git/HEAD": "ref: refs/heads/main\n",

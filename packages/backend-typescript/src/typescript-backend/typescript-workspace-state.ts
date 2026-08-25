@@ -42,7 +42,7 @@ export interface TypeScriptFileExtractor {
   extract(request: TypeScriptFileExtractionRequest): OverviewFileEntries;
 }
 
-class DefaultTypeScriptFileExtractor implements TypeScriptFileExtractor {
+export class TypeScriptFileEntryExtractor implements TypeScriptFileExtractor {
   extract(request: TypeScriptFileExtractionRequest): OverviewFileEntries {
     return extractFileEntries(request);
   }
@@ -86,7 +86,7 @@ export class TypeScriptWorkspaceState {
 
   constructor(
     private readonly fs: FileSystem,
-    private readonly extractor: TypeScriptFileExtractor = new DefaultTypeScriptFileExtractor(),
+    private readonly extractor: TypeScriptFileExtractor = new TypeScriptFileEntryExtractor(),
   ) {
     this.project = new Project({ fileSystem: new WorkspaceFileSystemHost(fs) });
   }

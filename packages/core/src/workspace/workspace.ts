@@ -122,6 +122,9 @@ class DefaultWorkspace implements Workspace {
         const childAbs = posix.join(dirAbs, entry);
         const childRel = relPathFromRoot(childAbs, this.root);
         const childIsDirectory = await this.fs.isDirectory(childAbs);
+        if (childIsDirectory && (await this.isNestedWorkspaceRoot(childAbs))) {
+          continue;
+        }
         const ignoreCandidate = childIsDirectory ? `${childRel}/` : childRel;
         if (this.ignore.isIgnored(ignoreCandidate)) {
           continue;
@@ -134,6 +137,10 @@ class DefaultWorkspace implements Workspace {
       }
     }
     return results;
+  }
+
+  private isNestedWorkspaceRoot(directoryAbsolute: string): Promise<boolean> {
+    return this.fs.exists(posix.join(directoryAbsolute, ".git"));
   }
 
   private static isExpectedListDirError(error: unknown): boolean {

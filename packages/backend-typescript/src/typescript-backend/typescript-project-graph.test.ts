@@ -214,9 +214,9 @@ describe("TypeScriptProjectGraph", () => {
     const missing = await graph.refresh(await projectFixture.snapshot());
 
     expect(malformed.configuredProjectCount).toBe(0);
-    expect(malformed.inferredFileCount).toBe(6);
+    expect(malformed.inferredFileCount).toBe(8);
     expect(missing.configuredProjectCount).toBe(0);
-    expect(missing.inferredFileCount).toBe(6);
+    expect(missing.inferredFileCount).toBe(8);
     expect(graph.languageServiceFor("scratch/outside.ts")).toBeDefined();
   });
 
@@ -229,23 +229,29 @@ describe("TypeScriptProjectGraph", () => {
     expect(graph.programFor("scratch/outside.ts")?.getCompilerOptions().paths).toBeUndefined();
   });
 
-  it("ignores workspace packages without a root export", async () => {
+  it("maps exact and patterned workspace package subpath exports", async () => {
     const projectFixture = fixture();
     const graph = new TypeScriptProjectGraph(projectFixture.fileSystem);
     projectFixture.write(
       "packages/domain/package.json",
       JSON.stringify({
         name: "@configured/domain",
-        exports: { "./feature": "./src/index.ts" },
+        exports: {
+          "./feature": "./src/feature.ts",
+          "./features/*": "./src/features/*.ts",
+        },
       }),
     );
 
-    await expect(graph.refresh(await projectFixture.snapshot())).resolves.toMatchObject({
-      configuredProjectCount: 3,
-    });
-    expect(
-      graph.programFor("packages/domain/src/index.ts")?.getCompilerOptions().paths,
-    ).not.toHaveProperty("@configured/domain");
+    await graph.refresh(await projectFixture.snapshot());
+    const paths = graph.programFor("packages/app/src/index.ts")?.getCompilerOptions().paths;
+
+    expect(paths?.["@configured/domain/feature"]).toEqual([
+      `${projectFixture.root.replaceAll("\\", "/")}/packages/domain/src/feature.ts`,
+    ]);
+    expect(paths?.["@configured/domain/features/*"]).toEqual([
+      `${projectFixture.root.replaceAll("\\", "/")}/packages/domain/src/features/*.ts`,
+    ]);
   });
 
   it("changes semantic answers after path alias configuration edits", async () => {

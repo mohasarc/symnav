@@ -367,6 +367,26 @@ describe("symnav daemon parity", () => {
       ["graph", "packages/app/src/index.ts::useInheritedConfiguration", "--depth", "1"],
       "inheritedTarget",
     ],
+    [
+      "refs through a workspace subpath export",
+      ["refs", "packages/domain/src/feature.ts::subpathTarget", "--all"],
+      "@configured/domain/feature",
+    ],
+    [
+      "context through a workspace subpath export",
+      ["context", "packages/domain/src/feature.ts::subpathTarget"],
+      "useWorkspaceSubpaths",
+    ],
+    [
+      "depth-one graph through a workspace subpath export",
+      ["graph", "packages/app/src/index.ts::useWorkspaceSubpaths", "--depth", "1"],
+      "subpathTarget",
+    ],
+    [
+      "refs through a patterned workspace subpath export",
+      ["refs", "packages/domain/src/features/patterned.ts::patternedSubpathTarget", "--all"],
+      "@configured/domain/features/patterned",
+    ],
   ])(
     "keeps configured project %s non-empty and byte-identical",
     (_name, args, expected) => {

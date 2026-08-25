@@ -88,6 +88,25 @@ describe("TypeScriptBackend configured projects", () => {
       },
     ]);
   });
+
+  it("resolves exact and patterned workspace package subpaths", async () => {
+    const { backend, files } = await backendOverFixture();
+
+    await expect(
+      backend.findCallees(files, identity("packages/app/src/index.ts", "useWorkspaceSubpaths")),
+    ).resolves.toMatchObject([
+      {
+        symbol: {
+          identity: identity("packages/domain/src/feature.ts", "subpathTarget"),
+        },
+      },
+      {
+        symbol: {
+          identity: identity("packages/domain/src/features/patterned.ts", "patternedSubpathTarget"),
+        },
+      },
+    ]);
+  });
 });
 
 async function backendOverFixture(): Promise<{
@@ -100,6 +119,8 @@ async function backendOverFixture(): Promise<{
     "packages/app/src/local.ts",
     "packages/domain/src/index.ts",
     "packages/domain/src/inherited.ts",
+    "packages/domain/src/feature.ts",
+    "packages/domain/src/features/patterned.ts",
     "packages/domain/src/local.ts",
     "scratch/outside.ts",
   ];

@@ -1,6 +1,8 @@
 {
   "name": "@configured/domain",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./feature": "./src/feature.ts",
+    "./features/*": "./src/features/*.ts"
   }
 }

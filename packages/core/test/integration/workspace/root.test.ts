@@ -24,6 +24,30 @@ describe("Workspace root detection", () => {
     expect(ws.root).toBe("/repo");
   });
 
+  it("selects the nearest nested root with a .git directory marker", async () => {
+    const ws = await createWorkspace({
+      startDir: "/repo/vendor/package/src",
+      fs: new InMemoryFileSystem({
+        "/repo/.git/HEAD": "ref: refs/heads/main\n",
+        "/repo/vendor/package/.git/HEAD": "ref: refs/heads/feature\n",
+        "/repo/vendor/package/src/x.ts": "export const x = 1;\n",
+      }),
+    });
+    expect(ws.root).toBe("/repo/vendor/package");
+  });
+
+  it("selects the nearest nested root with a .git file marker", async () => {
+    const ws = await createWorkspace({
+      startDir: "/repo/worktrees/feature/src",
+      fs: new InMemoryFileSystem({
+        "/repo/.git/HEAD": "ref: refs/heads/main\n",
+        "/repo/worktrees/feature/.git": "gitdir: /repo/.git/worktrees/feature\n",
+        "/repo/worktrees/feature/src/x.ts": "export const x = 1;\n",
+      }),
+    });
+    expect(ws.root).toBe("/repo/worktrees/feature");
+  });
+
   it("rejects with a UserFacingError when no .git ancestor exists", async () => {
     await expect(
       createWorkspace({

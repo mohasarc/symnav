@@ -5,6 +5,7 @@ import {
   DirectoryInputError,
   FileNotFoundError,
   IgnoredFileError,
+  NestedWorkspacePathError,
   NotInWorkspaceError,
   OutsideWorkspaceError,
 } from "./errors.js";
@@ -38,5 +39,20 @@ describe("workspace errors render their reason", () => {
     const err = new NotInWorkspaceError("/x");
     expect(err).toBeInstanceOf(UserFacingError);
     expect(err.reason).toBe("not in a git workspace (no .git found in or above /x)");
+  });
+
+  it("NestedWorkspacePathError identifies both workspace roots and gives selection guidance", () => {
+    const err = new NestedWorkspacePathError(
+      "vendor/package/src/index.ts",
+      "/repo",
+      "/repo/vendor/package",
+    );
+    expect(err).toBeInstanceOf(UserFacingError);
+    expect(err.inputPath).toBe("vendor/package/src/index.ts");
+    expect(err.workspaceRoot).toBe("/repo");
+    expect(err.nestedWorkspaceRoot).toBe("/repo/vendor/package");
+    expect(err.render()).toBe(
+      "Cannot answer: vendor/package/src/index.ts belongs to nested Git workspace rooted at /repo/vendor/package, not selected workspace /repo; run from /repo/vendor/package or use --cwd /repo/vendor/package.\n",
+    );
   });
 });

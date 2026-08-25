@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { canonicalStateDir } from "@symnav/telemetry";
 import { createDefaultDependencies } from "../../src/program.js";
@@ -24,39 +24,31 @@ class DaemonStartupCallerExit {
   }
 
   private static async runCaller(argumentsAfterEntry: readonly string[]): Promise<void> {
-    const [workspaceRoot, stateDirectory, instanceId, processToken, bootPath, readyPath] =
-      argumentsAfterEntry;
+    const [
+      workspaceRoot,
+      stateDirectory,
+      instanceId,
+      processToken,
+      bootPath,
+      readyPath,
+      callerBarrierPath,
+      childReleasePath,
+    ] = argumentsAfterEntry;
     if (
       workspaceRoot === undefined ||
       stateDirectory === undefined ||
       instanceId === undefined ||
       processToken === undefined ||
       bootPath === undefined ||
-      readyPath === undefined
+      readyPath === undefined ||
+      callerBarrierPath === undefined ||
+      childReleasePath === undefined
     ) {
       process.exit(2);
     }
     const identity = DaemonWorkspaceIdentity.from(workspaceRoot, canonicalStateDir(stateDirectory));
     const registry = new DaemonRegistry(identity.registryDirectory);
     if (registry.acquireStartup(identity, instanceId) === undefined) process.exit(3);
-    const child = spawn(
-      process.execPath,
-      [
-        fileURLToPath(new URL("../../node_modules/tsx/dist/cli.mjs", import.meta.url)),
-        fileURLToPath(import.meta.url),
-        "--child",
-        workspaceRoot,
-        stateDirectory,
-        instanceId,
-        processToken,
-        bootPath,
-        readyPath,
-      ],
-      { detached: true, stdio: "ignore" },
-    );
-    child.unref();
-    await DaemonStartupCallerExit.waitUntil(() => existsSync(bootPath));
-    const daemonPid = Number(readFileSync(bootPath, "utf8"));
     const dependencies = createDefaultDependencies(identity.stateDirectory);
     const startingRecord: DaemonRecord = {
       schemaVersion: DAEMON_RECORD_SCHEMA_VERSION,
@@ -69,30 +61,59 @@ class DaemonStartupCallerExit {
       instanceId,
       processToken,
       endpoint: identity.endpoint(instanceId),
-      pid: daemonPid,
+      pid: 0,
       state: "starting",
       startedAt: Date.now(),
       memoryCapBytes: Number.MAX_SAFE_INTEGER,
     };
     if (!registry.writeStartingIfStartupOwner(identity, startingRecord)) process.exit(4);
+    if (!registry.armStartingProcessLaunch(identity, startingRecord)) process.exit(5);
+    const child = spawn(
+      process.execPath,
+      [
+        fileURLToPath(new URL("../../node_modules/tsx/dist/cli.mjs", import.meta.url)),
+        fileURLToPath(import.meta.url),
+        "--child",
+        workspaceRoot,
+        stateDirectory,
+        instanceId,
+        processToken,
+        bootPath,
+        readyPath,
+        childReleasePath,
+      ],
+      { detached: true, stdio: "ignore" },
+    );
+    child.unref();
+    await DaemonStartupCallerExit.waitUntil(() => existsSync(bootPath));
+    writeFileSync(callerBarrierPath, "spawned");
+    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0);
   }
 
   private static async runDaemon(argumentsAfterMode: readonly string[]): Promise<void> {
-    const [workspaceRoot, stateDirectory, instanceId, processToken, bootPath, readyPath] =
-      argumentsAfterMode;
+    const [
+      workspaceRoot,
+      stateDirectory,
+      instanceId,
+      processToken,
+      bootPath,
+      readyPath,
+      releasePath,
+    ] = argumentsAfterMode;
     if (
       workspaceRoot === undefined ||
       stateDirectory === undefined ||
       instanceId === undefined ||
       processToken === undefined ||
       bootPath === undefined ||
-      readyPath === undefined
+      readyPath === undefined ||
+      releasePath === undefined
     ) {
       process.exit(2);
     }
     const identity = DaemonWorkspaceIdentity.from(workspaceRoot, canonicalStateDir(stateDirectory));
     writeFileSync(bootPath, String(process.pid));
-    await new Promise((resolve) => setTimeout(resolve, 1_500));
+    await DaemonStartupCallerExit.waitUntil(() => existsSync(releasePath));
     const dependencies = createDefaultDependencies(identity.stateDirectory);
     await new WorkspaceDaemon({
       identity,

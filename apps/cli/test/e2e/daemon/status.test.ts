@@ -143,7 +143,9 @@ describe("symnav daemon status", () => {
 
   it("keeps one armed child when its initiating caller is killed before PID publication", async () => {
     const stateDir = temporaryStateDirectory(stateDirectories);
-    const workspaceRoot = temporaryWorkspace(stateDirectories);
+    const workspaceRoot = canonicalWorkspaceRoot(
+      realpathSync(temporaryWorkspace(stateDirectories)),
+    );
     const instanceId = "caller-exit";
     const processToken = "caller-exit-process";
     const bootPath = join(stateDir, "caller-exit-boot");
@@ -188,7 +190,6 @@ describe("symnav daemon status", () => {
       expect.objectContaining({
         workspaceRoot,
         state: "starting",
-        instanceId,
         pid: 0,
       }),
     ]);
@@ -210,11 +211,14 @@ describe("symnav daemon status", () => {
       cwd: workspaceRoot,
       env: { SYMNAV_DAEMON: "1", SYMNAV_STATE_DIR: stateDir },
     });
-    const readyRecord = daemonRecords(stateDir)[0];
+    const readyRecords = daemonRecords(stateDir);
+    const readyRecord = readyRecords[0];
 
     expect(navigation.status).toBe(0);
     expect(navigation.stdout).toContain("value");
-    expect(daemonRecords(stateDir)).toHaveLength(1);
+    expect(readyRecords).toEqual([
+      expect.objectContaining({ instanceId, processToken, pid: childPid, state: "ready" }),
+    ]);
     expect(readyRecord?.state).toBe("ready");
     expect(readyRecord?.pid).toBe(childPid);
     expect(readyRecord?.instanceId).toBe(instanceId);

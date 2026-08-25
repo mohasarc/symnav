@@ -54,13 +54,19 @@ export class TypeScriptProjectGraph {
       this.configureProject(snapshot.root, configurations, workspacePackages);
     }
     this.initialized = true;
+    for (const file of snapshot.files) {
+      if (!this.project.getSourceFile(file.absolute)) {
+        this.project.addSourceFileAtPath(file.absolute);
+      }
+    }
     this.configurationInputs = nextInputs;
     this.acceptedFiles = new Set(snapshot.files.map((file) => file.relative));
     const configuredFiles = this.configuredFiles(snapshot, configurations);
     return {
       root: snapshot.root,
       configuredProjectCount: configurations.length,
-      inferredFileCount: snapshot.files.filter((file) => !configuredFiles.has(file.relative)).length,
+      inferredFileCount: snapshot.files.filter((file) => !configuredFiles.has(file.relative))
+        .length,
       changedConfigurationCount,
     };
   }
@@ -94,7 +100,10 @@ export class TypeScriptProjectGraph {
       const rawCompilerOptions = TypeScriptProjectGraph.recordValue(
         configuration.value.compilerOptions,
       );
-      const converted = ts.convertCompilerOptionsFromJson(rawCompilerOptions, configuration.directory);
+      const converted = ts.convertCompilerOptionsFromJson(
+        rawCompilerOptions,
+        configuration.directory,
+      );
       Object.assign(compilerOptions, converted.options);
       const configuredPaths = TypeScriptProjectGraph.recordValue(rawCompilerOptions.paths);
       const baseUrl =
@@ -144,7 +153,8 @@ export class TypeScriptProjectGraph {
   }
 
   private readConfiguration(path: string): ParsedTypeScriptConfiguration | undefined {
-    if (!this.fileSystem.existsSync(path) || this.fileSystem.isDirectorySync(path)) return undefined;
+    if (!this.fileSystem.existsSync(path) || this.fileSystem.isDirectorySync(path))
+      return undefined;
     const content = this.fileSystem.readFileSync(path);
     const parsed = ts.parseConfigFileTextToJson(path, content);
     if (parsed.error || !parsed.config || typeof parsed.config !== "object") return undefined;

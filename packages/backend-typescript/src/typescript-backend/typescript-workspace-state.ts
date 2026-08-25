@@ -232,13 +232,16 @@ export class TypeScriptWorkspaceState {
     const candidates = revisions.map((revision) => {
       const existingPath = this.preparedIndex.byRelativePath.get(revision.relativePath)?.file;
       const existingSourceFile =
-        existingPath?.absolute === revision.absolutePath
+        existingPath === undefined || existingPath.absolute === revision.absolutePath
           ? this.project.getSourceFile(revision.absolutePath)
           : undefined;
       return {
         revision,
         existingSourceFile,
-        content: existingSourceFile ? this.fs.readFileSync(revision.absolutePath) : undefined,
+        content:
+          existingSourceFile && existingPath
+            ? this.fs.readFileSync(revision.absolutePath)
+            : undefined,
       };
     });
     const mutations: ProjectMutation[] = [];
@@ -251,10 +254,12 @@ export class TypeScriptWorkspaceState {
         };
         let sourceFile: SourceFile;
 
-        if (existingSourceFile) {
+        if (existingSourceFile && content !== undefined) {
           const previousText = existingSourceFile.getFullText();
-          existingSourceFile.replaceWithText(content!);
+          existingSourceFile.replaceWithText(content);
           mutations.push({ rollback: () => existingSourceFile.replaceWithText(previousText) });
+          sourceFile = existingSourceFile;
+        } else if (existingSourceFile) {
           sourceFile = existingSourceFile;
         } else {
           sourceFile = this.project.addSourceFileAtPath(revision.absolutePath);

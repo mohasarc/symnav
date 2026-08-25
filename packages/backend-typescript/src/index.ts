@@ -1,5 +1,9 @@
 export { TypeScriptBackend } from "./typescript-backend/typescript-backend.js";
 export {
+  TypeScriptProjectGraph,
+  type TypeScriptProjectGraphRefresh,
+} from "./typescript-backend/typescript-project-graph.js";
+export {
   TypeScriptFileEntryExtractor,
   TypeScriptWorkspaceState,
   type PreparedFileIndex,

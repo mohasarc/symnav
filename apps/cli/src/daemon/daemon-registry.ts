@@ -64,13 +64,17 @@ class RegistryStartupLease implements StartupLease {
   constructor(
     private readonly registry: DaemonRegistry,
     private readonly identity: DaemonWorkspaceIdentity,
-    readonly instanceId: string,
+    private readonly owner: StartupOwner,
   ) {}
+
+  get instanceId(): string {
+    return this.owner.instanceId;
+  }
 
   release(): void {
     if (this.released) return;
     this.released = true;
-    this.registry.removeStartupLockIfInstance(this.identity, this.instanceId);
+    this.registry.removeStartupLockIfOwner(this.identity, this.owner);
   }
 }
 
@@ -208,7 +212,7 @@ export class DaemonRegistry {
     });
     try {
       renameSync(claimPath, identity.lockPath);
-      return new RegistryStartupLease(this, identity, instanceId);
+      return new RegistryStartupLease(this, identity, owner);
     } catch (error) {
       rmSync(claimPath, { recursive: true, force: true });
       if (existsSync(identity.lockPath)) return undefined;

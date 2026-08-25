@@ -160,7 +160,7 @@ export class DaemonStartupCoordinator {
     } catch (error) {
       if (error instanceof DaemonStartupWaitTimeoutError) throw error;
       if (error instanceof DaemonChildExitError) {
-        this.registry.removeIfProcess(identity, instanceId, processToken);
+        this.cleanupLaunchedProcess(identity, instanceId, processToken);
         throw error;
       }
       if (daemonProcess !== undefined) {
@@ -171,9 +171,21 @@ export class DaemonStartupCoordinator {
           throw new DaemonProcessTerminationError(String(terminationError));
         }
       }
-      this.registry.removeIfProcess(identity, instanceId, processToken);
+      this.cleanupLaunchedProcess(identity, instanceId, processToken);
       throw error;
     }
+  }
+
+  private cleanupLaunchedProcess(
+    identity: DaemonWorkspaceIdentity,
+    instanceId: string,
+    processToken: string,
+  ): void {
+    const record = this.registry.readStoredInstance(identity, instanceId);
+    if (record?.processToken === processToken) {
+      this.registry.removeStartupLockIfProcess(identity, record);
+    }
+    this.registry.removeIfProcess(identity, instanceId, processToken);
   }
 
   private async waitForWinner(identity: DaemonWorkspaceIdentity): Promise<DaemonStartResult> {

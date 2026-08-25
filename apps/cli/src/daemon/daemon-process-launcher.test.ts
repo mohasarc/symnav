@@ -21,6 +21,7 @@ interface FakeChildProcess {
   readonly pid: number;
   readonly once: ReturnType<typeof vi.fn>;
   readonly unref: ReturnType<typeof vi.fn>;
+  emit(event: string, ...args: unknown[]): void;
 }
 
 describe("NodeDaemonProcessLauncher", () => {
@@ -38,6 +39,9 @@ describe("NodeDaemonProcessLauncher", () => {
           return child;
         }),
         unref: vi.fn(),
+        emit(event: string, ...args: unknown[]) {
+          processListeners.get(event)?.(...args);
+        },
       };
       return child;
     });
@@ -93,18 +97,15 @@ describe("NodeDaemonProcessLauncher", () => {
     },
   );
 
-  it("reports child exit after the detached process spawns", async () => {
-    const root = mkdtempSync(join(tmpdir(), "symnav-launcher-exit-"));
-    roots.push(root);
-    const identity = DaemonWorkspaceIdentity.from(join(root, "workspace"), join(root, "state"));
-    mkdirSync(identity.registryDirectory, { recursive: true });
-    const daemonProcess = await new NodeDaemonProcessLauncher("1.2.3", 128 * 1024 * 1024).launch(
-      identity,
-      "instance",
-      "process-token",
-    );
+  it("reports child exit through the launched process immediately", async () => {
+    const identity = launcherIdentity(roots);
+    const daemonProcess = await new NodeDaemonProcessLauncher(
+      "1.2.3",
+      128 * 1024 * 1024,
+    ).launch(identity, "instance", "process-token");
+    const child = spawnMock.mock.results[0]?.value as FakeChildProcess;
 
-    processListeners.get("exit")?.(7, "SIGTERM");
+    child.emit("exit", 7, "SIGTERM");
 
     await expect(daemonProcess.exited).resolves.toEqual({
       code: 7,
@@ -112,4 +113,32 @@ describe("NodeDaemonProcessLauncher", () => {
       cause: "exit",
     });
   });
+
+  it("reports a child spawn error after launch", async () => {
+    const identity = launcherIdentity(roots);
+    const daemonProcess = await new NodeDaemonProcessLauncher(
+      "1.2.3",
+      128 * 1024 * 1024,
+    ).launch(identity, "instance", "process-token");
+    const child = spawnMock.mock.results[0]?.value as FakeChildProcess;
+    const error = new Error("child failed");
+    error.name = "ChildProcessError";
+
+    child.emit("error", error);
+
+    await expect(daemonProcess.exited).resolves.toEqual({
+      code: null,
+      signal: null,
+      cause: "spawn-error",
+      errorName: "ChildProcessError",
+    });
+  });
 });
+
+function launcherIdentity(roots: string[]): DaemonWorkspaceIdentity {
+  const root = mkdtempSync(join(tmpdir(), "symnav-launcher-exit-"));
+  roots.push(root);
+  const identity = DaemonWorkspaceIdentity.from(join(root, "workspace"), join(root, "state"));
+  mkdirSync(identity.identityDirectory, { recursive: true });
+  return identity;
+}

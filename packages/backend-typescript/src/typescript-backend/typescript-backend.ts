@@ -16,13 +16,10 @@ import type {
 } from "@symnav/core";
 import { FileNotFoundError } from "@symnav/core";
 
-import { findCallees } from "../call-graph/find-callees.js";
-import { findCallers } from "../call-graph/find-callers.js";
-import { findCallTarget } from "../call-graph/find-call-target.js";
-import { findDefinitions } from "../definition/find-definitions.js";
-import { ReferenceFinder } from "../references/find-references.js";
 import { SymbolResolver } from "../resolve/resolve-symbols.js";
 import { TypeScriptProjectGraph } from "./typescript-project-graph.js";
+import type { TypeScriptSemanticQueryObserver } from "./typescript-semantic-query-observer.js";
+import { TypeScriptSemanticQueryService } from "./typescript-semantic-query-service.js";
 import {
   TypeScriptFileEntryExtractor,
   TypeScriptWorkspaceState,
@@ -45,24 +42,36 @@ export class TypeScriptBackend implements LanguageBackend {
   private readonly state: TypeScriptWorkspaceState;
   private readonly projectGraph: TypeScriptProjectGraph | undefined;
   private readonly sourceCache: WorkspaceSourceCache | undefined;
+  private readonly semanticQueries: TypeScriptSemanticQueryService;
 
   constructor(
     private readonly fs: FileSystem,
     state?: TypeScriptWorkspaceState,
     projectGraph?: TypeScriptProjectGraph,
+    observer?: TypeScriptSemanticQueryObserver,
   ) {
     if (state) {
       this.state = state;
       this.projectGraph = projectGraph;
       this.sourceCache = undefined;
+      this.semanticQueries = new TypeScriptSemanticQueryService(
+        this.projectGraph,
+        this.state,
+        observer,
+      );
       return;
     }
     this.sourceCache = new WorkspaceSourceCache(fs);
-    this.projectGraph = projectGraph ?? new TypeScriptProjectGraph(this.sourceCache);
+    this.projectGraph = projectGraph ?? new TypeScriptProjectGraph(this.sourceCache, observer);
     this.state = new TypeScriptWorkspaceState(
       this.sourceCache,
       new TypeScriptFileEntryExtractor(),
       this.projectGraph,
+    );
+    this.semanticQueries = new TypeScriptSemanticQueryService(
+      this.projectGraph,
+      this.state,
+      observer,
     );
   }
 
@@ -73,11 +82,13 @@ export class TypeScriptBackend implements LanguageBackend {
   async refresh(request: BackendRefreshRequest): Promise<BackendRefreshSummary> {
     this.sourceCache?.refresh(request.snapshot);
     await this.projectGraph?.refresh(request.snapshot);
-    return this.state.refresh(request.snapshot.files, request.coverage);
+    const summary = this.state.refresh(request.snapshot.files, request.coverage);
+    this.semanticQueries.beginTurn(request.snapshot);
+    return summary;
   }
 
   async releaseTransientResources(): Promise<void> {
-    this.projectGraph?.releaseTransientResources();
+    this.semanticQueries.releaseTransientResources();
   }
 
   async fileEntries(file: ResolvedPath): Promise<OverviewFileEntries> {
@@ -103,34 +114,39 @@ export class TypeScriptBackend implements LanguageBackend {
     files: readonly ResolvedPath[],
     identity: SymbolIdentity,
   ): Promise<readonly SymbolOverviewNode[]> {
-    return findDefinitions({ workspaceState: this.state, files, identity });
+    this.state.ensureFiles(files);
+    return this.semanticQueries.findDefinitions(identity);
   }
 
   async findReferences(
     files: readonly ResolvedPath[],
     identity: SymbolIdentity,
   ): Promise<readonly SymbolReference[]> {
-    return new ReferenceFinder({ state: this.state, files, identity }).find();
+    this.state.ensureFiles(files);
+    return this.semanticQueries.findReferences(identity);
   }
 
   async findCallTarget(
     files: readonly ResolvedPath[],
     identity: SymbolIdentity,
   ): Promise<CallTargetResolution> {
-    return findCallTarget({ workspaceState: this.state, files, identity });
+    this.state.ensureFiles(files);
+    return this.semanticQueries.findCallTarget(identity);
   }
 
   async findCallees(
     files: readonly ResolvedPath[],
     identity: SymbolIdentity,
   ): Promise<readonly CallEdge[]> {
-    return findCallees({ workspaceState: this.state, files, identity });
+    this.state.ensureFiles(files);
+    return this.semanticQueries.findCallees(identity);
   }
 
   async findCallers(
     files: readonly ResolvedPath[],
     identity: SymbolIdentity,
   ): Promise<readonly CallEdge[]> {
-    return findCallers({ workspaceState: this.state, files, identity });
+    this.state.ensureFiles(files);
+    return this.semanticQueries.findCallers(identity);
   }
 }

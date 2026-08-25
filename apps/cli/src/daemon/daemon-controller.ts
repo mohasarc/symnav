@@ -74,9 +74,13 @@ export class DaemonController {
       return { status: "not-running", workspaceRoot };
     }
     if (record.state === "starting") return this.stopStarting(identity, record);
-    if (!(await this.identifies(record))) {
-      this.registry.removeIfInstance(identity, record.instanceId);
+    const observation = await this.observer.observe(record);
+    if (observation.kind === "exited") {
+      this.registry.removeIfProcess(identity, record.instanceId, record.processToken);
       return { status: "not-running", workspaceRoot };
+    }
+    if (observation.kind === "unresponsive" || observation.kind === "starting") {
+      throw new Error(`Daemon process ${record.pid} is live but unresponsive`);
     }
 
     const stopRequest = this.transport
@@ -92,7 +96,7 @@ export class DaemonController {
       this.pause(Math.max(0, gracefulDeadline - this.now())).then(() => false),
     ]);
     if (acknowledged && (await this.waitForExit(record.pid, gracefulDeadline))) {
-      this.registry.removeIfInstance(identity, record.instanceId);
+      this.registry.removeIfProcess(identity, record.instanceId, record.processToken);
       return { status: "stopped", workspaceRoot, pid: record.pid };
     }
 
@@ -100,7 +104,7 @@ export class DaemonController {
     if (!killed || !(await this.waitForIdentifiedExit(record, deadline))) {
       throw new Error(`Daemon process ${record.pid} did not exit after authenticated kill`);
     }
-    this.registry.removeIfInstance(identity, record.instanceId);
+    this.registry.removeIfProcess(identity, record.instanceId, record.processToken);
     return { status: "killed", workspaceRoot, pid: record.pid };
   }
 
@@ -149,17 +153,16 @@ export class DaemonController {
     const owner = this.registry.startupOwner(identity);
     if (
       owner?.instanceId !== record.instanceId ||
-      !this.registry.startupOwnerIsWithinGrace(owner) ||
       !this.processTerminator.isAlive(owner.ownerPid)
     ) {
       if (owner?.instanceId === record.instanceId) {
         this.registry.removeStartupLockIfInstance(identity, record.instanceId);
       }
-      this.registry.removeIfInstance(identity, record.instanceId);
+      this.registry.removeIfProcess(identity, record.instanceId, record.processToken);
       return { status: "not-running", workspaceRoot: record.workspaceRoot };
     }
     this.registry.removeStartupLockIfInstance(identity, record.instanceId);
-    this.registry.removeIfInstance(identity, record.instanceId);
+    this.registry.removeIfProcess(identity, record.instanceId, record.processToken);
     return record.pid > 0
       ? { status: "stopped", workspaceRoot: record.workspaceRoot, pid: record.pid }
       : { status: "not-running", workspaceRoot: record.workspaceRoot };

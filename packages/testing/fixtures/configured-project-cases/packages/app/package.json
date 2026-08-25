@@ -1,0 +1,6 @@
+{
+  "name": "@configured/app",
+  "exports": {
+    ".": "./src/index.ts"
+  }
+}

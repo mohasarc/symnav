@@ -1,0 +1,6 @@
+{
+  "name": "@configured/domain",
+  "exports": {
+    ".": "./src/index.ts"
+  }
+}

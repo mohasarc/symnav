@@ -1,0 +1,11 @@
+{
+  "compilerOptions": {
+    "composite": true,
+    "baseUrl": ".",
+    "paths": {
+      "@domain/*": ["../domain/src/*"]
+    }
+  },
+  "references": [{ "path": "../domain" }],
+  "include": ["src/**/*.ts"]
+}

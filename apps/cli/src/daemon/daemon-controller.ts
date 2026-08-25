@@ -262,7 +262,7 @@ export class DaemonController {
     const memoryBytes = observation.pong.memoryBytes ?? record.memoryBytes;
     return {
       workspaceRoot: record.workspaceRoot,
-      state: "ready",
+      state: observation.pong.state === "busy" ? "busy" : "ready",
       pid: record.pid,
       uptimeMs: Math.max(0, this.now() - record.startedAt),
       ...(fileCount === undefined ? {} : { fileCount }),
@@ -270,6 +270,13 @@ export class DaemonController {
       ...(lastNavigationAt === undefined
         ? {}
         : { lastRequestAgoMs: Math.max(0, this.now() - lastNavigationAt) }),
+      ...(observation.pong.currentCommand === undefined
+        ? {}
+        : { currentCommand: observation.pong.currentCommand }),
+      ...(observation.pong.currentCommandElapsedMs === undefined
+        ? {}
+        : { currentCommandElapsedMs: observation.pong.currentCommandElapsedMs }),
+      ...(observation.pong.queued === undefined ? {} : { queued: observation.pong.queued }),
     };
   }
 

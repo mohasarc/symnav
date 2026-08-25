@@ -31,12 +31,15 @@ export type WorkspaceRequestQueueState = "accepting" | "draining" | "closed";
 
 export interface RunningDaemonStatus {
   readonly workspaceRoot: string;
-  readonly state: "starting" | "ready" | "unresponsive";
+  readonly state: "starting" | "ready" | "busy" | "unresponsive";
   readonly pid: number;
   readonly uptimeMs: number;
   readonly fileCount?: number;
   readonly memoryBytes?: number;
   readonly lastRequestAgoMs?: number;
+  readonly currentCommand?: string;
+  readonly currentCommandElapsedMs?: number;
+  readonly queued?: number;
 }
 
 export type DaemonStopResult =
@@ -114,10 +117,14 @@ export type DaemonResponse =
       readonly protocolVersion: number;
       readonly instanceId: string;
       readonly symnavVersion: string;
+      readonly state?: "starting" | "ready" | "busy";
       readonly startedAt?: number;
       readonly fileCount?: number;
       readonly memoryBytes?: number;
       readonly lastNavigationAt?: number;
+      readonly currentCommand?: string;
+      readonly currentCommandElapsedMs?: number;
+      readonly queued?: number;
     }
   | { readonly kind: "result"; readonly requestId: string; readonly result: CommandExecutionResult }
   | { readonly kind: "stopped"; readonly instanceId: string };

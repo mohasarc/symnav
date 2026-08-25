@@ -97,8 +97,7 @@ export class WorkspaceRequestQueue {
   }
 
   async drain(): Promise<void> {
-    if (this.currentState === "closed") return;
-    this.currentState = "draining";
+    if (this.currentState !== "closed") this.currentState = "draining";
     await this.tail;
     this.currentState = "closed";
   }

@@ -1,6 +1,5 @@
 import type { ProgramDependencies } from "../program-dependencies.js";
-import type { CliExecutionRequest, CommandExecutionResult } from "../command-execution-result.js";
-import type { WorkspaceRequestScopeFactory } from "../workspace-request-scope.js";
+import type { CommandExecutionResult } from "../command-execution-result.js";
 import type {
   DaemonRecord,
   DaemonRequest,
@@ -10,12 +9,15 @@ import type {
 import { DAEMON_PROTOCOL_VERSION, DAEMON_RECORD_SCHEMA_VERSION } from "./daemon-protocol.js";
 import { DAEMON_IDLE_TIMEOUT_MS, DaemonLifetime } from "./daemon-lifetime.js";
 import { DaemonLogger } from "./daemon-logger.js";
+import {
+  type DaemonNavigationWorker,
+  NodeDaemonNavigationWorker,
+} from "./daemon-navigation-worker.js";
 import { DaemonResourceMonitor } from "./daemon-resource-monitor.js";
-import { RetainedWorkspaceProgram } from "./retained-workspace-program.js";
 import type { DaemonRegistry } from "./daemon-registry.js";
 import type { DaemonWorkspaceIdentity } from "./daemon-workspace-identity.js";
 import type { LocalDaemonTransport } from "./local-daemon-transport.js";
-import { WorkspaceRequestQueue } from "./workspace-request-queue.js";
+import { WorkspaceRequestQueue, type DaemonCommandName } from "./workspace-request-queue.js";
 
 export interface WorkspaceDaemonOptions {
   readonly identity: DaemonWorkspaceIdentity;
@@ -26,24 +28,19 @@ export interface WorkspaceDaemonOptions {
   readonly dependencies: ProgramDependencies;
   readonly registry: DaemonRegistry;
   readonly transport: LocalDaemonTransport;
+  readonly navigationWorker?: DaemonNavigationWorker;
   readonly now?: () => number;
   readonly exit?: (code: number) => void;
-  readonly executor?: DaemonCommandExecutor;
   readonly idleTimeoutMs?: number;
   readonly resourceCheckIntervalMs?: number;
   readonly residentMemoryBytes?: () => number;
 }
 
-export interface DaemonCommandExecutor {
-  execute(request: CliExecutionRequest): Promise<CommandExecutionResult>;
-}
-
 export class WorkspaceDaemon {
   private readonly now: () => number;
   private readonly exit: (code: number) => void;
-  private readonly executor: DaemonCommandExecutor;
-  private readonly scopeFactory: WorkspaceRequestScopeFactory;
-  private readonly requestQueue = new WorkspaceRequestQueue();
+  private readonly navigationWorker: DaemonNavigationWorker;
+  private readonly requestQueue: WorkspaceRequestQueue;
   private readonly logger: DaemonLogger;
   private readonly lifetime: DaemonLifetime;
   private readonly resourceMonitor: DaemonResourceMonitor;
@@ -51,17 +48,19 @@ export class WorkspaceDaemon {
   private startedAt = 0;
   private fileCount = 0;
   private lastNavigationAt: number | undefined;
+  private workerReady = false;
   private shutdownStarted = false;
 
   constructor(private readonly options: WorkspaceDaemonOptions) {
     this.now = options.now ?? Date.now;
+    this.requestQueue = new WorkspaceRequestQueue(this.now);
     this.logger = new DaemonLogger(options.identity.logPath, { now: this.now });
-    const retainedProgram = new RetainedWorkspaceProgram(options.dependencies, (summary) => {
-      options.dependencies.backendRefreshed?.(summary);
-      this.logger.record({ kind: "freshness", ...summary });
-    });
-    this.executor = options.executor ?? retainedProgram;
-    this.scopeFactory = retainedProgram.scopeFactory;
+    this.navigationWorker =
+      options.navigationWorker ??
+      new NodeDaemonNavigationWorker({
+        generation: 1,
+        stateDirectory: options.identity.stateDirectory,
+      });
     this.exit = options.exit ?? ((code) => process.exit(code));
     this.lifetime = new DaemonLifetime(
       { now: this.now },
@@ -89,14 +88,15 @@ export class WorkspaceDaemon {
     try {
       const startingRecord = await this.waitForStartupAuthorization();
       this.startedAt = startingRecord.startedAt;
-      const prepared = await this.scopeFactory.prepare(this.options.identity.workspaceRoot);
-      this.logger.record({ kind: "freshness", ...prepared.refresh });
       this.server = await this.options.transport.listen(
         this.options.identity.endpoint(this.options.instanceId),
         (request) => this.handle(request),
       );
-      const fileCount = prepared.refresh.added + prepared.refresh.unchanged;
-      this.fileCount = fileCount;
+      const response = await this.navigationWorker.start(this.options.identity.workspaceRoot);
+      if (response.kind !== "ready") throw new Error("Navigation worker did not become ready");
+      this.workerReady = true;
+      this.fileCount = response.fileCount;
+      this.logger.record({ kind: "freshness", ...response.refresh });
       const readyRecord: DaemonRecord = {
         schemaVersion: DAEMON_RECORD_SCHEMA_VERSION,
         protocolVersion: DAEMON_PROTOCOL_VERSION,
@@ -112,7 +112,7 @@ export class WorkspaceDaemon {
         state: "ready",
         startedAt: startingRecord.startedAt,
         readyAt: this.now(),
-        fileCount,
+        fileCount: response.fileCount,
         memoryCapBytes: this.options.memoryCapBytes,
       };
       if (!this.options.registry.writeIfStartupOwner(this.options.identity, readyRecord)) {
@@ -120,7 +120,7 @@ export class WorkspaceDaemon {
         throw new Error("Daemon startup ownership changed before readiness publication");
       }
       this.options.registry.removeStartupLockIfProcess(this.options.identity, readyRecord);
-      this.logger.record({ kind: "ready", fileCount });
+      this.logger.record({ kind: "ready", fileCount: response.fileCount });
       this.resourceMonitor.start();
     } catch (error) {
       this.logger.record({
@@ -155,7 +155,7 @@ export class WorkspaceDaemon {
           this.options.instanceId,
         );
         if (adoptedRecord?.pid !== process.pid) {
-          await new Promise((resolve) => setTimeout(resolve, 10));
+          await this.pause();
           continue;
         }
         if (
@@ -169,98 +169,135 @@ export class WorkspaceDaemon {
           return adoptedRecord;
         }
       }
-      await new Promise((resolve) => setTimeout(resolve, 10));
+      await this.pause();
     }
     throw new Error("Daemon process did not receive startup authorization");
   }
 
   private async handle(request: DaemonRequest): Promise<DaemonResponse> {
-    if (request.kind === "identify") {
-      if (
-        request.instanceId !== this.options.instanceId ||
-        request.processToken !== this.options.processToken
-      ) {
-        throw new Error("Daemon identity request does not match process instance");
-      }
-      return {
-        kind: "identity",
-        instanceId: this.options.instanceId,
-        processToken: this.options.processToken,
-        pid: process.pid,
-        startedAt: this.startedAt,
-      };
-    }
+    if (request.kind === "identify") return this.identify(request);
     if (request.kind === "terminate" || request.kind === "kill") {
-      if (
-        request.instanceId !== this.options.instanceId ||
-        request.processToken !== this.options.processToken
-      ) {
-        throw new Error("Daemon termination does not match process instance");
-      }
-      if (request.kind === "terminate") {
-        await this.requestQueue.drain();
-        setTimeout(() => void this.shutdown("graceful"), 0);
-      } else {
-        setTimeout(() => void this.shutdown("graceful", true), 0);
-      }
-      return {
-        kind: request.kind === "terminate" ? "terminating" : "killing",
-        instanceId: this.options.instanceId,
-        processToken: this.options.processToken,
-      };
+      return this.terminate(request);
     }
     if (
       request.protocolVersion !== DAEMON_PROTOCOL_VERSION ||
       request.instanceId !== this.options.instanceId
-    )
+    ) {
       throw new Error("Daemon request does not match protocol or instance");
-    if (request.kind === "ping") {
-      return {
-        kind: "pong",
-        protocolVersion: DAEMON_PROTOCOL_VERSION,
-        instanceId: this.options.instanceId,
-        symnavVersion: this.options.symnavVersion,
-        startedAt: this.startedAt,
-        fileCount: this.fileCount,
-        memoryBytes: process.memoryUsage().rss,
-        ...(this.lastNavigationAt === undefined ? {} : { lastNavigationAt: this.lastNavigationAt }),
-      };
     }
-    if (request.kind === "execute") {
-      this.lastNavigationAt = this.now();
-      this.lifetime.navigationAccepted();
-      const requestStartedAt = this.now();
-      let result;
-      try {
-        result = await this.requestQueue.enqueue(() => this.executor.execute(request.request));
-      } catch (error) {
-        this.logger.record({
-          kind: "failure",
-          operation: "request",
-          message: WorkspaceDaemon.errorMessage(error),
-        });
-        throw error;
-      } finally {
-        if (this.requestQueue.isIdle) this.lifetime.queueBecameIdle();
-      }
-      this.logger.record({
-        kind: "request",
-        command: WorkspaceDaemon.commandName(request.request.argv),
-        durationMs: Math.max(0, this.now() - requestStartedAt),
-        exitCode: result.exitCode,
-      });
-      if (!(await this.options.dependencies.fs.exists(this.options.identity.workspaceRoot))) {
-        setTimeout(() => void this.shutdown("workspace-deleted"), 0);
-      }
-      return {
-        kind: "result",
-        requestId: request.requestId,
-        result,
-      };
-    }
+    if (request.kind === "ping") return this.pong();
+    if (request.kind === "execute") return this.execute(request);
     await this.requestQueue.drain();
     setTimeout(() => void this.shutdown("graceful"), 0);
     return { kind: "stopped", instanceId: this.options.instanceId };
+  }
+
+  private identify(request: Extract<DaemonRequest, { kind: "identify" }>): DaemonResponse {
+    if (
+      request.instanceId !== this.options.instanceId ||
+      request.processToken !== this.options.processToken
+    ) {
+      throw new Error("Daemon identity request does not match process instance");
+    }
+    return {
+      kind: "identity",
+      instanceId: this.options.instanceId,
+      processToken: this.options.processToken,
+      pid: process.pid,
+      startedAt: this.startedAt,
+    };
+  }
+
+  private async terminate(
+    request: Extract<DaemonRequest, { kind: "terminate" | "kill" }>,
+  ): Promise<DaemonResponse> {
+    if (
+      request.instanceId !== this.options.instanceId ||
+      request.processToken !== this.options.processToken
+    ) {
+      throw new Error("Daemon termination does not match process instance");
+    }
+    if (request.kind === "terminate") {
+      await this.requestQueue.drain();
+      setTimeout(() => void this.shutdown("graceful"), 0);
+    } else {
+      setTimeout(() => void this.shutdown("graceful", true), 0);
+    }
+    return {
+      kind: request.kind === "terminate" ? "terminating" : "killing",
+      instanceId: this.options.instanceId,
+      processToken: this.options.processToken,
+    };
+  }
+
+  private pong(): DaemonResponse {
+    const activity = this.requestQueue.snapshot;
+    const active = activity.active;
+    return {
+      kind: "pong",
+      protocolVersion: DAEMON_PROTOCOL_VERSION,
+      instanceId: this.options.instanceId,
+      symnavVersion: this.options.symnavVersion,
+      state: this.workerReady ? (active === undefined ? "ready" : "busy") : "starting",
+      startedAt: this.startedAt,
+      fileCount: this.fileCount,
+      memoryBytes: process.memoryUsage().rss,
+      queued: activity.queued,
+      ...(active === undefined
+        ? {}
+        : {
+            currentCommand: active.command,
+            currentCommandElapsedMs: Math.max(0, this.now() - active.startedAt),
+          }),
+      ...(this.lastNavigationAt === undefined ? {} : { lastNavigationAt: this.lastNavigationAt }),
+    };
+  }
+
+  private async execute(
+    request: Extract<DaemonRequest, { kind: "execute" }>,
+  ): Promise<DaemonResponse> {
+    if (!this.workerReady) throw new Error("Daemon navigation worker is still starting");
+    this.lastNavigationAt = this.now();
+    this.lifetime.navigationAccepted();
+    const requestStartedAt = this.now();
+    let result: CommandExecutionResult;
+    try {
+      result = await this.requestQueue.enqueue(
+        {
+          requestId: request.requestId,
+          command: WorkspaceDaemon.commandName(request.request.argv),
+          acceptedAt: this.now(),
+        },
+        async () => {
+          const response = await this.navigationWorker.execute(request.requestId, request.request);
+          if (response.kind !== "result" || response.requestId !== request.requestId) {
+            throw new Error("Navigation worker returned an uncorrelated result");
+          }
+          this.logger.record({ kind: "freshness", ...response.refresh });
+          return response.result;
+        },
+      );
+    } catch (error) {
+      this.logger.record({
+        kind: "failure",
+        operation: "request",
+        message: WorkspaceDaemon.errorMessage(error),
+      });
+      if (!this.shutdownStarted) throw error;
+      result = WorkspaceDaemon.stoppedResult();
+    } finally {
+      if (this.requestQueue.isIdle) this.lifetime.queueBecameIdle();
+    }
+    this.logger.record({
+      kind: "request",
+      command: WorkspaceDaemon.commandName(request.request.argv),
+      durationMs: Math.max(0, this.now() - requestStartedAt),
+      exitCode: result.exitCode,
+    });
+    if (!(await this.options.dependencies.fs.exists(this.options.identity.workspaceRoot))) {
+      setTimeout(() => void this.shutdown("workspace-deleted"), 0);
+    }
+    return { kind: "result", requestId: request.requestId, result };
   }
 
   private async drainAndShutdown(reason: "idle"): Promise<void> {
@@ -276,10 +313,17 @@ export class WorkspaceDaemon {
     this.shutdownStarted = true;
     this.lifetime.stop();
     this.resourceMonitor.stop();
-    this.requestQueue.close();
+    if (force) {
+      this.requestQueue.close();
+      await this.navigationWorker.terminate();
+      await this.requestQueue.drain();
+    } else {
+      await this.requestQueue.drain();
+      await this.navigationWorker.drainAndClose();
+    }
     this.logger.record({ kind: "stop", reason });
     try {
-      await this.server?.close(force);
+      await this.server?.close();
     } catch (error) {
       this.logger.record({
         kind: "failure",
@@ -290,13 +334,41 @@ export class WorkspaceDaemon {
     this.exit(0);
   }
 
-  private static commandName(argv: readonly string[]): string {
-    const commands = ["overview", "resolve", "def", "refs", "context", "graph", "stats"];
-    const command = argv.find((argument) => commands.includes(argument));
+  private pause(): Promise<void> {
+    return new Promise((resolve) => setTimeout(resolve, 10));
+  }
+
+  private static commandName(argv: readonly string[]): DaemonCommandName {
+    const commands: readonly DaemonCommandName[] = [
+      "overview",
+      "resolve",
+      "def",
+      "refs",
+      "context",
+      "graph",
+      "stats",
+    ];
+    const command = argv.find((argument): argument is DaemonCommandName =>
+      commands.includes(argument as DaemonCommandName),
+    );
     if (command !== undefined) return command;
     if (argv.includes("--version") || argv.includes("-v")) return "version";
     if (argv.includes("--help") || argv.includes("-h")) return "help";
     return "unknown";
+  }
+
+  private static stoppedResult(): CommandExecutionResult {
+    return {
+      frames: [
+        {
+          stream: "stderr",
+          bytesBase64: Buffer.from("Cannot answer: daemon navigation was stopped.\n").toString(
+            "base64",
+          ),
+        },
+      ],
+      exitCode: 1,
+    };
   }
 
   private static errorMessage(error: unknown): string {

@@ -3,7 +3,6 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { CliExecutionRequest, CommandExecutionResult } from "../command-execution-result.js";
-import type { ProgramDependencies } from "../program-dependencies.js";
 import { createDefaultDependencies } from "../program.js";
 import type { DaemonRequest, DaemonResponse, DaemonServer } from "./daemon-protocol.js";
 import { DAEMON_PROTOCOL_VERSION, DAEMON_RECORD_SCHEMA_VERSION } from "./daemon-protocol.js";
@@ -15,7 +14,7 @@ import type {
   DaemonNavigationWorkerExit,
 } from "./daemon-navigation-worker.js";
 import type { DaemonNavigationWorkerResponse } from "./daemon-navigation-worker-protocol.js";
-import { type DaemonCommandExecutor, WorkspaceDaemon } from "./workspace-daemon.js";
+import { WorkspaceDaemon } from "./workspace-daemon.js";
 
 describe("WorkspaceDaemon requests", () => {
   const harnesses: RequestHarness[] = [];
@@ -210,33 +209,26 @@ describe("WorkspaceDaemon requests", () => {
     });
   });
 
-  it("removes registry and transport state before exiting", async () => {
+  it("closes transport while leaving ready ownership for an exit observer", async () => {
     const harness = await RequestHarness.start(new ImmediateExecutor());
     harnesses.push(harness);
 
     await harness.stop();
     await harness.exited;
 
-    expect(harness.registry.read(harness.identity)).toBeUndefined();
+    expect(harness.registry.read(harness.identity)).toMatchObject({
+      processToken: harness.processToken,
+    });
     expect(harness.transport.isListening).toBe(false);
   });
 
-  it("forwards refresh summaries and records freshness diagnostics", async () => {
-    const backendRefreshed = vi.fn();
-    const harness = await RequestHarness.start(undefined, {
-      createDependencies: (stateDirectory) => ({
-        ...createDefaultDependencies(stateDirectory),
-        backendRefreshed,
-      }),
-    });
+  it("records worker freshness diagnostics for every execution turn", async () => {
+    const harness = await RequestHarness.start(new ImmediateExecutor());
     harnesses.push(harness);
 
     await harness.execute("refresh", ["overview", "input.ts"]);
 
-    expect(backendRefreshed).toHaveBeenCalledOnce();
-    expect(harness.logEvents()).toEqual(
-      expect.arrayContaining([expect.objectContaining({ kind: "freshness" })]),
-    );
+    expect(harness.logEvents().filter((event) => event.kind === "freshness")).toHaveLength(2);
   });
 
   it("logs startup failures before rethrowing them", async () => {
@@ -254,39 +246,16 @@ describe("WorkspaceDaemon requests", () => {
     );
   });
 
-  it("closes transport and exits after registry cleanup fails", async () => {
+  it("does not mutate registry ownership during process-local shutdown", async () => {
     const harness = await RequestHarness.start(new ImmediateExecutor());
     harnesses.push(harness);
-    harness.failRegistryRemoval();
+    const remove = vi.spyOn(harness.registry, "removeIfProcess");
 
     await harness.stop();
     await harness.exited;
 
     expect(harness.transport.isListening).toBe(false);
-    expect(harness.logEvents()).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          kind: "failure",
-          operation: "registry-cleanup",
-          message: "registry cleanup failed",
-        }),
-      ]),
-    );
-  });
-
-  it("keeps replacement ownership when stale daemon shutdown cleanup runs", async () => {
-    const harness = await RequestHarness.start(undefined);
-    harnesses.push(harness);
-    harness.replaceDuringRegistryRemoval();
-
-    await expect(harness.stop()).resolves.toMatchObject({ kind: "stopped" });
-    await harness.exited;
-
-    expect(harness.registry.readStoredInstance(harness.identity, harness.instanceId)).toMatchObject(
-      {
-        processToken: "replacement-process",
-      },
-    );
+    expect(remove).not.toHaveBeenCalled();
   });
 
   it("exits after transport cleanup fails", async () => {
@@ -373,16 +342,12 @@ class RequestHarness {
       processToken: harness.processToken,
       symnavVersion: "test",
       memoryCapBytes: 1024,
-      dependencies:
-        options.dependencies ??
-        options.createDependencies?.(harness.identity.stateDirectory) ??
-        createDefaultDependencies(harness.identity.stateDirectory),
+      dependencies: createDefaultDependencies(harness.identity.stateDirectory),
       registry: harness.registry,
       transport: harness.transport as unknown as LocalDaemonTransport,
-      ...(executor === undefined ? {} : { executor }),
-      ...(options.navigationWorker === undefined
-        ? {}
-        : { navigationWorker: options.navigationWorker }),
+      navigationWorker:
+        options.navigationWorker ??
+        new ExecutorNavigationWorker(executor ?? new ImmediateExecutor()),
       ...(options.now === undefined ? {} : { now: options.now }),
       exit: (code) => harness.resolveExit(code),
     });
@@ -439,25 +404,6 @@ class RequestHarness {
       .map((line) => JSON.parse(line) as Record<string, unknown>);
   }
 
-  failRegistryRemoval(): void {
-    vi.spyOn(this.registry, "removeIfProcess").mockImplementation(() => {
-      throw new Error("registry cleanup failed");
-    });
-  }
-
-  replaceDuringRegistryRemoval(): void {
-    const removeIfProcess = this.registry.removeIfProcess.bind(this.registry);
-    vi.spyOn(this.registry, "removeIfProcess").mockImplementation(
-      (identity, instanceId, processToken) => {
-        const current = this.registry.readStoredInstance(identity, instanceId);
-        if (current !== undefined) {
-          this.registry.write({ ...current, processToken: "replacement-process" });
-        }
-        return removeIfProcess(identity, instanceId, processToken);
-      },
-    );
-  }
-
   async dispose(): Promise<void> {
     if (this.transport.isListening) {
       await this.transport
@@ -471,8 +417,6 @@ class RequestHarness {
 }
 
 interface RequestHarnessOptions {
-  readonly dependencies?: ProgramDependencies;
-  readonly createDependencies?: (stateDirectory: string) => ProgramDependencies;
   readonly now?: () => number;
   readonly navigationWorker?: DaemonNavigationWorker;
 }
@@ -504,6 +448,10 @@ class RequestTransport {
     if (this.handler === undefined) return Promise.reject(new Error("Transport is not listening"));
     return this.handler(request);
   }
+}
+
+interface DaemonCommandExecutor {
+  execute(request: CliExecutionRequest): Promise<CommandExecutionResult>;
 }
 
 class ImmediateExecutor implements DaemonCommandExecutor {
@@ -539,6 +487,56 @@ class SerializedExecutor implements DaemonCommandExecutor {
 
   complete(index: number): void {
     this.results[index]?.();
+  }
+}
+
+class ExecutorNavigationWorker implements DaemonNavigationWorker {
+  readonly generation = 1;
+  readonly exited: Promise<DaemonNavigationWorkerExit>;
+  private resolveExited!: (exit: DaemonNavigationWorkerExit) => void;
+
+  constructor(private readonly executor: DaemonCommandExecutor) {
+    this.exited = new Promise((resolve) => {
+      this.resolveExited = resolve;
+    });
+  }
+
+  async start(): Promise<DaemonNavigationWorkerResponse> {
+    return {
+      kind: "ready",
+      generation: this.generation,
+      fileCount: 1,
+      refresh: { added: 1, changed: 0, removed: 0, unchanged: 0 },
+      startupDurations: { discoveryMs: 0, indexingMs: 1, totalMs: 1 },
+    };
+  }
+
+  async execute(
+    requestId: string,
+    request: CliExecutionRequest,
+  ): Promise<DaemonNavigationWorkerResponse> {
+    return {
+      kind: "result",
+      generation: this.generation,
+      requestId,
+      result: await this.executor.execute(request),
+      refresh: { added: 0, changed: 0, removed: 0, unchanged: 1 },
+      durations: { freshnessMs: 0, navigationMs: 1, renderMs: 0, outputMs: 0 },
+    };
+  }
+
+  async releaseTransientResources(): Promise<DaemonNavigationWorkerResponse> {
+    return { kind: "heap", generation: this.generation, usedHeapBytes: 1, heapLimitBytes: 2 };
+  }
+
+  drainAndClose(): Promise<void> {
+    this.resolveExited({ generation: this.generation, cause: "closed" });
+    return Promise.resolve();
+  }
+
+  terminate(): Promise<void> {
+    this.resolveExited({ generation: this.generation, cause: "terminated" });
+    return Promise.resolve();
   }
 }
 

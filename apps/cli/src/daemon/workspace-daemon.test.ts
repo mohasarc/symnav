@@ -8,6 +8,11 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { CliExecutionRequest, CommandExecutionResult } from "../command-execution-result.js";
 import { createDefaultDependencies } from "../program.js";
 import { DaemonController } from "./daemon-controller.js";
+import type {
+  DaemonNavigationWorker,
+  DaemonNavigationWorkerExit,
+} from "./daemon-navigation-worker.js";
+import type { DaemonNavigationWorkerResponse } from "./daemon-navigation-worker-protocol.js";
 import type { DaemonProcessTerminator } from "./daemon-process-launcher.js";
 import {
   DAEMON_PROTOCOL_VERSION,
@@ -19,7 +24,7 @@ import {
 import { DaemonRegistry } from "./daemon-registry.js";
 import { DaemonWorkspaceIdentity } from "./daemon-workspace-identity.js";
 import { LocalDaemonTransport } from "./local-daemon-transport.js";
-import { type DaemonCommandExecutor, WorkspaceDaemon } from "./workspace-daemon.js";
+import { WorkspaceDaemon } from "./workspace-daemon.js";
 
 describe("WorkspaceDaemon runtime lifecycle", () => {
   const harnesses: WorkspaceDaemonHarness[] = [];
@@ -355,7 +360,7 @@ class WorkspaceDaemonHarness {
       dependencies: createDefaultDependencies(harness.identity.stateDirectory),
       registry: harness.registry,
       transport: harness.transport,
-      executor,
+      navigationWorker: new ExecutorNavigationWorker(executor),
       exit: (code) => {
         harness.exitCode = code;
         harness.resolveExit(code);
@@ -456,6 +461,60 @@ class BlockingCloseTransport extends LocalDaemonTransport {
 
   allowClose(): void {
     this.resolveCloseAllowed();
+  }
+}
+
+interface DaemonCommandExecutor {
+  execute(request: CliExecutionRequest): Promise<CommandExecutionResult>;
+}
+
+class ExecutorNavigationWorker implements DaemonNavigationWorker {
+  readonly generation = 1;
+  readonly exited: Promise<DaemonNavigationWorkerExit>;
+  private resolveExited!: (exit: DaemonNavigationWorkerExit) => void;
+
+  constructor(private readonly executor: DaemonCommandExecutor) {
+    this.exited = new Promise((resolve) => {
+      this.resolveExited = resolve;
+    });
+  }
+
+  async start(): Promise<DaemonNavigationWorkerResponse> {
+    return {
+      kind: "ready",
+      generation: this.generation,
+      fileCount: 1,
+      refresh: { added: 1, changed: 0, removed: 0, unchanged: 0 },
+      startupDurations: { discoveryMs: 0, indexingMs: 1, totalMs: 1 },
+    };
+  }
+
+  async execute(
+    requestId: string,
+    request: CliExecutionRequest,
+  ): Promise<DaemonNavigationWorkerResponse> {
+    return {
+      kind: "result",
+      generation: this.generation,
+      requestId,
+      result: await this.executor.execute(request),
+      refresh: { added: 0, changed: 0, removed: 0, unchanged: 1 },
+      durations: { freshnessMs: 0, navigationMs: 1, renderMs: 0, outputMs: 0 },
+    };
+  }
+
+  async releaseTransientResources(): Promise<DaemonNavigationWorkerResponse> {
+    return { kind: "heap", generation: this.generation, usedHeapBytes: 1, heapLimitBytes: 2 };
+  }
+
+  drainAndClose(): Promise<void> {
+    this.resolveExited({ generation: this.generation, cause: "closed" });
+    return Promise.resolve();
+  }
+
+  terminate(): Promise<void> {
+    this.resolveExited({ generation: this.generation, cause: "terminated" });
+    return Promise.resolve();
   }
 }
 

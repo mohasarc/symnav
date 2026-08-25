@@ -9,7 +9,12 @@ import { CliProgramExecutor } from "../../src/cli-program-executor.js";
 import { DaemonRegistry } from "../../src/daemon/daemon-registry.js";
 import { DaemonWorkspaceIdentity } from "../../src/daemon/daemon-workspace-identity.js";
 import { LocalDaemonTransport } from "../../src/daemon/local-daemon-transport.js";
-import { type DaemonCommandExecutor, WorkspaceDaemon } from "../../src/daemon/workspace-daemon.js";
+import type {
+  DaemonNavigationWorker,
+  DaemonNavigationWorkerExit,
+} from "../../src/daemon/daemon-navigation-worker.js";
+import type { DaemonNavigationWorkerResponse } from "../../src/daemon/daemon-navigation-worker-protocol.js";
+import { WorkspaceDaemon } from "../../src/daemon/workspace-daemon.js";
 
 const [
   workspaceRoot,
@@ -42,7 +47,7 @@ const retainedBackends = dependencies.backends();
 const executor = new CliProgramExecutor({ ...dependencies, backends: () => retainedBackends });
 let executionCount = 0;
 
-class ControlledExecutor implements DaemonCommandExecutor {
+class ControlledExecutor {
   async execute(request: CliExecutionRequest): Promise<CommandExecutionResult> {
     executionCount += 1;
     writeFileSync(acceptedRequestStartedPath, "started");
@@ -68,6 +73,48 @@ class ControlledExecutor implements DaemonCommandExecutor {
   }
 }
 
+class ControlledNavigationWorker implements DaemonNavigationWorker {
+  readonly generation = 1;
+  readonly exited = new Promise<DaemonNavigationWorkerExit>(() => undefined);
+  private readonly controlledExecutor = new ControlledExecutor();
+
+  async start(): Promise<DaemonNavigationWorkerResponse> {
+    return {
+      kind: "ready",
+      generation: this.generation,
+      fileCount: 1,
+      refresh: { added: 1, changed: 0, removed: 0, unchanged: 0 },
+      startupDurations: { discoveryMs: 0, indexingMs: 1, totalMs: 1 },
+    };
+  }
+
+  async execute(
+    requestId: string,
+    request: CliExecutionRequest,
+  ): Promise<DaemonNavigationWorkerResponse> {
+    return {
+      kind: "result",
+      generation: this.generation,
+      requestId,
+      result: await this.controlledExecutor.execute(request),
+      refresh: { added: 0, changed: 0, removed: 0, unchanged: 1 },
+      durations: { freshnessMs: 0, navigationMs: 1, renderMs: 0, outputMs: 0 },
+    };
+  }
+
+  async releaseTransientResources(): Promise<DaemonNavigationWorkerResponse> {
+    return { kind: "heap", generation: this.generation, usedHeapBytes: 1, heapLimitBytes: 2 };
+  }
+
+  drainAndClose(): Promise<void> {
+    return Promise.resolve();
+  }
+
+  terminate(): Promise<void> {
+    return Promise.resolve();
+  }
+}
+
 const identity = DaemonWorkspaceIdentity.from(workspaceRoot, canonicalStateDirectory);
 writeFileSync(`${readyPath}.boot`, String(process.pid));
 const daemon = new WorkspaceDaemon({
@@ -79,7 +126,7 @@ const daemon = new WorkspaceDaemon({
   dependencies,
   registry: new DaemonRegistry(identity.registryDirectory),
   transport: new LocalDaemonTransport(),
-  executor: new ControlledExecutor(),
+  navigationWorker: new ControlledNavigationWorker(),
 });
 await daemon.start();
 writeFileSync(readyPath, "ready");

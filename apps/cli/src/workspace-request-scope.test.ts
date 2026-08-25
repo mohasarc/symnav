@@ -1,10 +1,35 @@
 import { describe, expect, it } from "vitest";
 
 import { TypeScriptBackend, TypeScriptWorkspaceState } from "@symnav/backend-typescript";
-import { InMemoryFileSystem, WorkspaceCatalog } from "@symnav/core";
+import {
+  InMemoryFileSystem,
+  type FileMetadata,
+  type Workspace,
+  WorkspaceCatalog,
+} from "@symnav/core";
 
 import { FakeLanguageBackend } from "../test/integration/commands/helpers/fake-language-backend.js";
 import { WorkspaceRequestScopeFactory } from "./workspace-request-scope.js";
+
+class FailingSiblingMetadataFileSystem extends InMemoryFileSystem {
+  readonly siblingMetadataReads: string[] = [];
+  private failSiblingMetadata = false;
+
+  failUnrelatedSiblingMetadata(): void {
+    this.failSiblingMetadata = true;
+    this.siblingMetadataReads.length = 0;
+  }
+
+  override async metadata(absPath: string): Promise<FileMetadata> {
+    if (absPath.startsWith("/repo/siblings/")) {
+      this.siblingMetadataReads.push(absPath);
+      if (this.failSiblingMetadata) {
+        throw new Error(`unrelated metadata failure: ${absPath}`);
+      }
+    }
+    return super.metadata(absPath);
+  }
+}
 
 describe("WorkspaceRequestScopeFactory", () => {
   it("creates fresh request snapshots while reusing the provided backend instances", async () => {
@@ -92,5 +117,41 @@ describe("WorkspaceRequestScopeFactory", () => {
     expect(Object.isFrozen(first.snapshot)).toBe(true);
     expect(Object.isFrozen(first.snapshot.files)).toBe(true);
     expect(first.snapshot.files[0]).toBe(second.snapshot.files[0]);
+  });
+
+  it("prepares a retained selection without reconciling unrelated siblings", async () => {
+    const siblings = Object.fromEntries(
+      Array.from({ length: 4_000 }, (_, index) => [
+        `/repo/siblings/file-${index}.ts`,
+        `export const sibling${index} = ${index};\n`,
+      ]),
+    );
+    const fs = new FailingSiblingMetadataFileSystem({
+      "/repo/.git/HEAD": "ref: refs/heads/main\n",
+      "/repo/src/target.ts": "export const target = true;\n",
+      ...siblings,
+    });
+    const catalog = new WorkspaceCatalog(fs);
+    await catalog.refresh("/repo");
+    fs.failUnrelatedSiblingMetadata();
+    const retainedFactory = new WorkspaceRequestScopeFactory(
+      fs,
+      [new FakeLanguageBackend({ accept: (path) => path.endsWith(".ts") })],
+      catalog,
+    );
+    const coldFactory = new WorkspaceRequestScopeFactory(fs, [
+      new FakeLanguageBackend({ accept: (path) => path.endsWith(".ts") }),
+    ]);
+    const selectTarget = async (workspace: Workspace) => {
+      const target = await workspace.resolveInputPath("src/target.ts", "/repo");
+      return workspace.snapshot([target]);
+    };
+
+    const retained = await retainedFactory.prepare("/repo", selectTarget);
+    const cold = await coldFactory.prepare("/repo", selectTarget);
+
+    expect(retained.snapshot).toEqual(cold.snapshot);
+    expect(retained.snapshot.files.map((file) => file.relative)).toEqual(["src/target.ts"]);
+    expect(fs.siblingMetadataReads).toEqual([]);
   });
 });

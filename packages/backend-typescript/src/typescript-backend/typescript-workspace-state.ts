@@ -40,6 +40,12 @@ export interface TypeScriptFileExtractor {
   extract(request: TypeScriptFileExtractionRequest): OverviewFileEntries;
 }
 
+class DefaultTypeScriptFileExtractor implements TypeScriptFileExtractor {
+  extract(request: TypeScriptFileExtractionRequest): OverviewFileEntries {
+    return extractFileEntries(request);
+  }
+}
+
 interface PreparedFileIndex {
   readonly revision: TypeScriptFileRevision;
   readonly path: ResolvedPath;
@@ -61,7 +67,10 @@ export class TypeScriptWorkspaceState {
   private readonly declarationsByPosition = new Map<string, Map<number, SymbolOverviewNode>>();
   private readonly declarationsByFile = new Map<string, readonly SymbolOverviewNode[]>();
 
-  constructor(private readonly fs: FileSystem) {
+  constructor(
+    private readonly fs: FileSystem,
+    private readonly extractor: TypeScriptFileExtractor = new DefaultTypeScriptFileExtractor(),
+  ) {
     this.project = new Project({ fileSystem: new WorkspaceFileSystemHost(fs) });
   }
 
@@ -132,7 +141,7 @@ export class TypeScriptWorkspaceState {
     if (!sourceFile) {
       throw new FileNotFoundError(file.relative);
     }
-    return extractFileEntries({ sourceFile, filePath: file.relative, diagnostics });
+    return this.extractor.extract({ sourceFile, filePath: file.relative, diagnostics });
   }
 
   declarationsIn(relativePath: string): readonly SymbolOverviewNode[] | undefined {
@@ -238,7 +247,7 @@ export class TypeScriptWorkspaceState {
     const byPosition = new Map<number, SymbolOverviewNode>();
     const declarations: SymbolOverviewNode[] = [];
     const byIdentity = new Map<string, IndexedDeclaration>();
-    const { entries } = extractFileEntries({ sourceFile, filePath: path.relative });
+    const { entries } = this.extractor.extract({ sourceFile, filePath: path.relative });
     for (const declaration of OverviewTree.walkSymbols(entries)) {
       declarations.push(declaration);
       byIdentity.set(DeclarationLocator.identityKey(declaration.identity), {

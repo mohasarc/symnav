@@ -35,7 +35,12 @@ class CountingFileSystem implements FileSystem {
 
   metadata(absPath: string): Promise<FileMetadata> {
     this.metadataPaths.push(absPath);
-    return Promise.resolve({ size: this.inner.readFileSync(absPath).length, modifiedAtMs: 100 });
+    return Promise.resolve({
+      size: this.inner.readFileSync(absPath).length,
+      modifiedAtMs: 100,
+      changeToken: this.inner.metadataSync(absPath).changeToken,
+      fileIdentity: absPath,
+    });
   }
 
   existsSync(absPath: string): boolean {
@@ -57,7 +62,12 @@ class CountingFileSystem implements FileSystem {
 
   metadataSync(absPath: string): FileMetadata {
     this.metadataPaths.push(absPath);
-    return { size: this.inner.readFileSync(absPath).length, modifiedAtMs: 100 };
+    return {
+      size: this.inner.readFileSync(absPath).length,
+      modifiedAtMs: 100,
+      changeToken: this.inner.metadataSync(absPath).changeToken,
+      fileIdentity: absPath,
+    };
   }
 }
 
@@ -140,7 +150,12 @@ class MutableWorkspaceFileSystem implements FileSystem {
 
   metadataSync(absPath: string): FileMetadata {
     const content = this.readFileSync(absPath);
-    return { size: Buffer.byteLength(content), modifiedAtMs: this.modifiedAtMs };
+    return {
+      size: Buffer.byteLength(content),
+      modifiedAtMs: this.modifiedAtMs,
+      changeToken: `${this.modifiedAtMs}:${content}`,
+      fileIdentity: absPath,
+    };
   }
 
   private delegate(): InMemoryFileSystem {
@@ -163,7 +178,12 @@ describe("Workspace snapshots", () => {
         {
           relative: "src/a.ts",
           absolute: "/repo/src/a.ts",
-          metadata: { size: 23, modifiedAtMs: 100 },
+          metadata: {
+            size: 23,
+            modifiedAtMs: 100,
+            changeToken: expect.any(String),
+            fileIdentity: "/repo/src/a.ts",
+          },
         },
       ],
     });
@@ -189,11 +209,11 @@ describe("Workspace snapshots", () => {
       "src/nested/keep.ts",
     ]);
     expect(first.files.map((file) => file.metadata)).toEqual([
-      { size: 19, modifiedAtMs: 100 },
-      { size: 23, modifiedAtMs: 100 },
-      { size: 23, modifiedAtMs: 100 },
-      { size: 8, modifiedAtMs: 100 },
-      { size: 26, modifiedAtMs: 100 },
+      expect.objectContaining({ size: 19, modifiedAtMs: 100 }),
+      expect.objectContaining({ size: 23, modifiedAtMs: 100 }),
+      expect.objectContaining({ size: 23, modifiedAtMs: 100 }),
+      expect.objectContaining({ size: 8, modifiedAtMs: 100 }),
+      expect.objectContaining({ size: 26, modifiedAtMs: 100 }),
     ]);
     expect(enumerated).toBe(first.files);
     expect(fs.directoryReads).toEqual(["async:/repo", "async:/repo/src", "async:/repo/src/nested"]);

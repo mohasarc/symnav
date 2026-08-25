@@ -252,7 +252,11 @@ function workspaceFile(relative: string, fs: InMemoryFileSystem): WorkspaceFile 
   return {
     relative,
     absolute,
-    metadata: { size: fs.readFileSync(absolute).length, modifiedAtMs: 100 },
+    metadata: {
+      size: fs.readFileSync(absolute).length,
+      modifiedAtMs: 100,
+      changeToken: fs.metadataSync(absolute).changeToken,
+    },
   };
 }
 
@@ -367,6 +371,8 @@ class MutableBackendFileSystem implements FileSystem {
     return {
       size: Buffer.byteLength(content),
       modifiedAtMs: this.modifiedAtByPath.get(absPath) ?? 0,
+      changeToken: `${this.modifiedAtByPath.get(absPath) ?? 0}:${content}`,
+      fileIdentity: absPath,
     };
   }
 

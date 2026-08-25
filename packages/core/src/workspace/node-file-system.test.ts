@@ -9,7 +9,9 @@ describe("NodeFileSystem metadata", () => {
   const temporaryDirectories: string[] = [];
 
   afterEach(async () => {
-    await Promise.all(temporaryDirectories.splice(0).map((directory) => rm(directory, { recursive: true })));
+    await Promise.all(
+      temporaryDirectories.splice(0).map((directory) => rm(directory, { recursive: true })),
+    );
   });
 
   it("changes revision when equal-size content replaces a file with restored modification time", async () => {

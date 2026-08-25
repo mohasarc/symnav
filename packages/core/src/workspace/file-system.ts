@@ -1,6 +1,8 @@
 export interface FileMetadata {
   readonly size: number;
   readonly modifiedAtMs: number;
+  readonly changeToken: string;
+  readonly fileIdentity?: string;
 }
 
 export interface FileSystem {

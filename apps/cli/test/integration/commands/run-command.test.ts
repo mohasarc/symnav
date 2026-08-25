@@ -807,6 +807,8 @@ class MutableCommandFileSystem implements FileSystem {
     return {
       size: Buffer.byteLength(content),
       modifiedAtMs: this.modifiedAtByPath.get(absPath) ?? 0,
+      changeToken: `${this.modifiedAtByPath.get(absPath) ?? 0}:${content}`,
+      fileIdentity: absPath,
     };
   }
 

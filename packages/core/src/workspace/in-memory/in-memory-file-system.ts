@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import type { FileMetadata, FileSystem } from "../file-system.js";
 
 function computeDirSet(fileSet: Set<string>): Set<string> {
@@ -85,7 +86,22 @@ export class InMemoryFileSystem implements FileSystem {
   }
 
   metadataSync(absPath: string): FileMetadata {
-    return { size: Buffer.byteLength(this.readFileSyncImpl(absPath)), modifiedAtMs: 0 };
+    if (this.dirSet.has(absPath)) {
+      const entries = this.listDirSync(absPath);
+      return {
+        size: entries.length,
+        modifiedAtMs: 0,
+        changeToken: InMemoryFileSystem.changeToken(entries.join("\0")),
+        fileIdentity: absPath,
+      };
+    }
+    const content = this.readFileSyncImpl(absPath);
+    return {
+      size: Buffer.byteLength(content),
+      modifiedAtMs: 0,
+      changeToken: InMemoryFileSystem.changeToken(content),
+      fileIdentity: absPath,
+    };
   }
 
   private readFileSyncImpl(absPath: string): string {
@@ -94,5 +110,9 @@ export class InMemoryFileSystem implements FileSystem {
       throw new Error(`ENOENT: no such file: ${absPath}`);
     }
     return content;
+  }
+
+  private static changeToken(content: string): string {
+    return createHash("sha256").update(content).digest("hex");
   }
 }

@@ -19,7 +19,11 @@ class MutableWorkspaceFileSystem implements FileSystem {
 
   constructor(files: Record<string, string>) {
     for (const [path, content] of Object.entries(files)) {
-      this.setFile(path, content, { size: Buffer.byteLength(content), modifiedAtMs: 1 });
+      this.setFile(path, content, {
+        size: Buffer.byteLength(content),
+        modifiedAtMs: 1,
+        changeToken: `1:${content}`,
+      });
     }
   }
 
@@ -31,6 +35,7 @@ class MutableWorkspaceFileSystem implements FileSystem {
       metadata ?? {
         size: Buffer.byteLength(content),
         modifiedAtMs: (previous?.modifiedAtMs ?? 0) + 1,
+        changeToken: `${(previous?.modifiedAtMs ?? 0) + 1}:${content}`,
       },
     );
   }
@@ -166,13 +171,13 @@ describe("TypeScriptWorkspaceState.refresh", () => {
     {
       trigger: "size only",
       source: "export const longerName = 1;\n",
-      metadata: { size: 29, modifiedAtMs: 1 },
+      metadata: { size: 29, modifiedAtMs: 1, changeToken: "revision-1" },
       expectedName: "longerName",
     },
     {
       trigger: "modification time only",
       source: "export const b = 2;\n",
-      metadata: { size: 20, modifiedAtMs: 2 },
+      metadata: { size: 20, modifiedAtMs: 2, changeToken: "revision-2" },
       expectedName: "b",
     },
   ])(

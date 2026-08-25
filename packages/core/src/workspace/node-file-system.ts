@@ -24,8 +24,13 @@ export class NodeFileSystem implements FileSystem {
   }
 
   async metadata(absPath: string): Promise<FileMetadata> {
-    const fileStat = await stat(absPath);
-    return { size: fileStat.size, modifiedAtMs: fileStat.mtimeMs };
+    const fileStat = await stat(absPath, { bigint: true });
+    return {
+      size: Number(fileStat.size),
+      modifiedAtMs: Number(fileStat.mtimeNs) / 1_000_000,
+      changeToken: `${fileStat.dev}:${fileStat.ino}:${fileStat.ctimeNs}:${fileStat.size}`,
+      fileIdentity: `${fileStat.dev}:${fileStat.ino}`,
+    };
   }
 
   existsSync(absPath: string): boolean {
@@ -49,7 +54,12 @@ export class NodeFileSystem implements FileSystem {
   }
 
   metadataSync(absPath: string): FileMetadata {
-    const fileStat = statSync(absPath);
-    return { size: fileStat.size, modifiedAtMs: fileStat.mtimeMs };
+    const fileStat = statSync(absPath, { bigint: true });
+    return {
+      size: Number(fileStat.size),
+      modifiedAtMs: Number(fileStat.mtimeNs) / 1_000_000,
+      changeToken: `${fileStat.dev}:${fileStat.ino}:${fileStat.ctimeNs}:${fileStat.size}`,
+      fileIdentity: `${fileStat.dev}:${fileStat.ino}`,
+    };
   }
 }

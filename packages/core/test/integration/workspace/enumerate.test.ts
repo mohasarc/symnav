@@ -19,17 +19,17 @@ describe("Workspace.enumerate", () => {
       {
         relative: "README.md",
         absolute: "/repo/README.md",
-        metadata: { size: 7, modifiedAtMs: 0 },
+        metadata: expect.objectContaining({ size: 7, modifiedAtMs: 0 }),
       },
       {
         relative: "src/a.ts",
         absolute: "/repo/src/a.ts",
-        metadata: { size: 19, modifiedAtMs: 0 },
+        metadata: expect.objectContaining({ size: 19, modifiedAtMs: 0 }),
       },
       {
         relative: "src/nested/b.ts",
         absolute: "/repo/src/nested/b.ts",
-        metadata: { size: 19, modifiedAtMs: 0 },
+        metadata: expect.objectContaining({ size: 19, modifiedAtMs: 0 }),
       },
     ]);
   });

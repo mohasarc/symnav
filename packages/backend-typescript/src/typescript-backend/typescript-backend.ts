@@ -3,7 +3,7 @@ import { basename } from "node:path";
 import type {
   CallEdge,
   CallTargetResolution,
-  BackendRefreshCoverage,
+  BackendRefreshRequest,
   BackendRefreshSummary,
   FileSystem,
   LanguageBackend,
@@ -13,7 +13,6 @@ import type {
   ResolvedPath,
   SymbolOverviewNode,
   SymbolIdentity,
-  WorkspaceFile,
 } from "@symnav/core";
 import { FileNotFoundError } from "@symnav/core";
 
@@ -47,11 +46,12 @@ export class TypeScriptBackend implements LanguageBackend {
     return TypeScriptBackend.accepts(filePath);
   }
 
-  async refresh(
-    files: readonly WorkspaceFile[],
-    coverage: BackendRefreshCoverage = "workspace",
-  ): Promise<BackendRefreshSummary> {
-    return this.state.refresh(files, coverage);
+  async refresh(request: BackendRefreshRequest): Promise<BackendRefreshSummary> {
+    return this.state.refresh(request.snapshot.files, request.coverage);
+  }
+
+  async releaseTransientResources(): Promise<void> {
+    return Promise.resolve();
   }
 
   async fileEntries(file: ResolvedPath): Promise<OverviewFileEntries> {

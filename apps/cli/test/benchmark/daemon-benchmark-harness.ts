@@ -11,13 +11,12 @@ import {
 } from "@symnav/backend-typescript";
 import { NodeFileSystem } from "@symnav/core";
 import type {
-  BackendRefreshCoverage,
+  BackendRefreshRequest,
   BackendRefreshSummary,
   FileMetadata,
   FileSystem,
   ResolvedPath,
   SymbolIdentity,
-  WorkspaceFile,
 } from "@symnav/core";
 import type {
   CliExecutionRequest,
@@ -193,11 +192,8 @@ class InstrumentedTypeScriptBackend extends TypeScriptBackend {
     );
   }
 
-  override async refresh(
-    files: readonly WorkspaceFile[],
-    coverage: BackendRefreshCoverage = "workspace",
-  ): Promise<BackendRefreshSummary> {
-    const summary = await super.refresh(files, coverage);
+  override async refresh(request: BackendRefreshRequest): Promise<BackendRefreshSummary> {
+    const summary = await super.refresh(request);
     this.counters.refreshes.push(summary);
     return summary;
   }

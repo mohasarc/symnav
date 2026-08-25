@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import type {
   BackendRefreshSummary,
+  BackendRefreshRequest,
   LanguageBackend,
   ResolveSymbolsOptions,
 } from "../backend/language-backend.js";
@@ -14,7 +15,7 @@ import type {
   OverviewFileEntries,
   SymbolOverviewNode,
 } from "../intermediate-representation/overview-tree.js";
-import type { ResolvedPath, WorkspaceFile } from "../workspace/workspace.js";
+import type { ResolvedPath } from "../workspace/workspace.js";
 import { GraphTraverser } from "./graph-traverser.js";
 
 const files: readonly ResolvedPath[] = [];
@@ -77,7 +78,11 @@ class FakeLanguageBackend implements LanguageBackend {
     throw new Error("not implemented");
   }
 
-  refresh(_files: readonly WorkspaceFile[]): Promise<BackendRefreshSummary> {
+  refresh(_request: BackendRefreshRequest): Promise<BackendRefreshSummary> {
+    throw new Error("not implemented");
+  }
+
+  releaseTransientResources(): Promise<void> {
     throw new Error("not implemented");
   }
 

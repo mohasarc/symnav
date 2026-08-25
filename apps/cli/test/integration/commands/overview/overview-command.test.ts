@@ -117,7 +117,9 @@ describe("symnav overview happy path", () => {
     expect(result.stderr).toBe("");
     expect(result.exitCodes).toEqual([]);
     expect(result.stdout).toContain("src/a.ts");
-    expect(backend.refreshCalls[0]?.map((file) => file.relative)).toEqual(["src/a.ts"]);
+    expect(backend.refreshCalls[0]?.snapshot.files.map((file) => file.relative)).toEqual([
+      "src/a.ts",
+    ]);
     expect(fs.unreadableDirectoryReads).toBe(0);
   });
 

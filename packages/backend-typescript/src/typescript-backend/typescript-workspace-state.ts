@@ -220,6 +220,12 @@ export class TypeScriptWorkspaceState {
     return this.preparedIndex.declarationsByPosition.get(relative)?.get(node.getStart());
   }
 
+  nodeAt(relativePath: string, start: number): Node | undefined {
+    const prepared = this.preparedIndex.byRelativePath.get(relativePath);
+    if (!prepared) return undefined;
+    return this.project.getSourceFile(prepared.file.absolute)?.getDescendantAtPos(start);
+  }
+
   declarationForIdentity(identity: SymbolIdentity): IndexedDeclaration | undefined {
     const declaration = this.preparedIndex.declarationsByIdentity.get(
       DeclarationLocator.identityKey(identity),

@@ -13,3 +13,7 @@ export {
   type TypeScriptFileRevision,
 } from "./typescript-backend/typescript-workspace-state.js";
 export type { TypeScriptSemanticQueryObserver } from "./typescript-backend/typescript-semantic-query-observer.js";
+export {
+  TypeScriptSemanticQueryService,
+  type SemanticReferenceLocation,
+} from "./typescript-backend/typescript-semantic-query-service.js";

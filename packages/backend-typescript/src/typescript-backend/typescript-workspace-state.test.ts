@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import {
   InMemoryFileSystem,
@@ -9,7 +9,7 @@ import {
 } from "@symnav/core";
 
 import { TypeScriptBackend } from "./typescript-backend.js";
-import { extractFileEntries } from "../extract/extract-file-entries.js";
+import * as fileEntryExtraction from "../extract/extract-file-entries.js";
 import {
   TypeScriptWorkspaceState,
   type TypeScriptFileExtractionRequest,
@@ -33,7 +33,7 @@ class CountingTypeScriptFileExtractor implements TypeScriptFileExtractor {
     if (this.failingPaths.has(request.filePath)) {
       throw new Error(`extraction failed: ${request.filePath}`);
     }
-    return extractFileEntries(request);
+    return fileEntryExtraction.extractFileEntries(request);
   }
 }
 
@@ -181,6 +181,38 @@ describe("TypeScriptWorkspaceState.refresh", () => {
 
     expect(state.fileEntries(secondRevision[0]!)).not.toBe(firstEntries);
     expect(extractor.calls).toEqual(["src/a.ts", "src/a.ts"]);
+  });
+
+  it("reuses prepared declarations across repeated semantic lookups", async () => {
+    const fs = new MutableWorkspaceFileSystem({
+      "/repo/src/app.ts": [
+        "export function target(): void {}",
+        "export function caller(): void { target(); }",
+        "",
+      ].join("\n"),
+    });
+    const extraction = vi.spyOn(fileEntryExtraction, "extractFileEntries");
+    const state = new TypeScriptWorkspaceState(fs);
+    const backend = new TypeScriptBackend(fs, state);
+    const files = fs.workspaceFiles("src/app.ts");
+    const target: SymbolIdentity = { file: "src/app.ts", segments: [{ name: "target" }] };
+    const caller: SymbolIdentity = { file: "src/app.ts", segments: [{ name: "caller" }] };
+
+    await backend.refresh(files);
+    const preparedTarget = state
+      .declarationsIn("src/app.ts")
+      ?.find((declaration) => declaration.identity.segments.at(-1)?.name === "target");
+
+    for (let repetition = 0; repetition < 2; repetition += 1) {
+      expect(await backend.findDefinitions(files, target)).toHaveLength(1);
+      expect(await backend.findReferences(files, target)).toHaveLength(1);
+      expect(await backend.findCallees(files, caller)).toHaveLength(1);
+      expect(await backend.findCallers(files, target)).toHaveLength(1);
+      expect(state.locate(target)[0]?.declaration).toBe(preparedTarget);
+    }
+
+    expect(extraction).toHaveBeenCalledTimes(1);
+    extraction.mockRestore();
   });
 
   it("publishes changed declarations and diagnostics only after every extraction succeeds", () => {

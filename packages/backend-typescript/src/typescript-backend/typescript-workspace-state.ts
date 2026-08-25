@@ -30,6 +30,16 @@ export interface TypeScriptFileRevision {
   readonly changeToken: string;
 }
 
+export interface TypeScriptFileExtractionRequest {
+  readonly sourceFile: SourceFile;
+  readonly filePath: string;
+  readonly diagnostics?: DiagnosticSink;
+}
+
+export interface TypeScriptFileExtractor {
+  extract(request: TypeScriptFileExtractionRequest): OverviewFileEntries;
+}
+
 interface PreparedFileIndex {
   readonly revision: TypeScriptFileRevision;
   readonly path: ResolvedPath;

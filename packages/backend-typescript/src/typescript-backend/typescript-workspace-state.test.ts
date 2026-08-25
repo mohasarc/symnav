@@ -9,7 +9,21 @@ import {
 } from "@symnav/core";
 
 import { TypeScriptBackend } from "./typescript-backend.js";
-import { TypeScriptWorkspaceState } from "./typescript-workspace-state.js";
+import { extractFileEntries } from "../extract/extract-file-entries.js";
+import {
+  TypeScriptWorkspaceState,
+  type TypeScriptFileExtractionRequest,
+  type TypeScriptFileExtractor,
+} from "./typescript-workspace-state.js";
+
+class CountingTypeScriptFileExtractor implements TypeScriptFileExtractor {
+  readonly calls: string[] = [];
+
+  extract(request: TypeScriptFileExtractionRequest) {
+    this.calls.push(request.filePath);
+    return extractFileEntries(request);
+  }
+}
 
 class MutableWorkspaceFileSystem implements FileSystem {
   private readonly contents = new Map<string, string>();
@@ -133,6 +147,30 @@ function declarationNames(
 }
 
 describe("TypeScriptWorkspaceState.refresh", () => {
+  it("extracts each file revision once across prepared lookups and no-change refresh", () => {
+    const fs = new MutableWorkspaceFileSystem({
+      "/repo/src/a.ts": "export const before = 1;\n",
+    });
+    const extractor = new CountingTypeScriptFileExtractor();
+    const state = new TypeScriptWorkspaceState(fs, extractor);
+    const firstRevision = fs.workspaceFiles("src/a.ts");
+
+    state.refresh(firstRevision);
+    const firstEntries = state.fileEntries(firstRevision[0]!);
+    expect(state.fileEntries(firstRevision[0]!)).toBe(firstEntries);
+    expect(state.allDeclarations(firstRevision)).toHaveLength(1);
+    state.refresh(firstRevision);
+    expect(state.fileEntries(firstRevision[0]!)).toBe(firstEntries);
+    expect(extractor.calls).toEqual(["src/a.ts"]);
+
+    fs.setFile("/repo/src/a.ts", "export const afterx = 2;\n");
+    const secondRevision = fs.workspaceFiles("src/a.ts");
+    state.refresh(secondRevision);
+
+    expect(state.fileEntries(secondRevision[0]!)).not.toBe(firstEntries);
+    expect(extractor.calls).toEqual(["src/a.ts", "src/a.ts"]);
+  });
+
   it("keeps an unchanged source object while sibling deltas are applied", () => {
     const fs = new MutableWorkspaceFileSystem({
       "/repo/src/stable.ts": "export const stable = 1;\n",

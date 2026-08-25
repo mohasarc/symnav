@@ -164,7 +164,7 @@ class MutableWorkspaceFileSystem implements FileSystem {
 }
 
 describe("Workspace snapshots", () => {
-  it("stats only a selected path after one ignore-aware traversal", async () => {
+  it("stats only a selected path without workspace traversal", async () => {
     const fs = workspaceFileSystem();
     const workspace = await createWorkspace({ startDir: "/repo", fs });
 
@@ -187,7 +187,7 @@ describe("Workspace snapshots", () => {
         },
       ],
     });
-    expect(fs.directoryReads).toEqual(["async:/repo", "async:/repo/src", "async:/repo/src/nested"]);
+    expect(fs.directoryReads).toEqual([]);
     expect(fs.metadataPaths).toEqual(["/repo/src/a.ts"]);
   });
 

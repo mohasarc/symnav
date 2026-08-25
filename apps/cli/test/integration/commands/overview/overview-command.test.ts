@@ -96,7 +96,7 @@ describe("symnav overview happy path", () => {
     expect(result.exitCodes).toEqual([]);
     expect(result.stdout).toContain("src/a.ts");
     expect(backend.refreshCalls[0]?.map((file) => file.relative)).toEqual(["src/a.ts"]);
-    expect(fs.unreadableDirectoryReads).toBe(1);
+    expect(fs.unreadableDirectoryReads).toBe(0);
   });
 
   it("does not read an unrelated TypeScript sibling while preparing overview", async () => {
@@ -229,7 +229,7 @@ describe("symnav overview user errors", () => {
     expect(result.stdout).toBe("");
     expect(result.stderr).toBe("Cannot answer: file not found: src/missing.ts.\n");
     expect(result.exitCodes).toEqual([1]);
-    expect(fs.unreadableDirectoryReads).toBe(1);
+    expect(fs.unreadableDirectoryReads).toBe(0);
   });
 
   it("validates a missing target before reading an unrelated TypeScript sibling", async () => {
@@ -267,7 +267,7 @@ describe("symnav overview user errors", () => {
     expect(fs.siblingMetadataReads).toBe(0);
   });
 
-  it("surfaces an unexpected sibling directory failure before target loading", async () => {
+  it("does not visit an unexpectedly failing sibling directory", async () => {
     const fs = new UnexpectedSiblingDirectoryFileSystem({
       "/repo/.git/HEAD": "ref: refs/heads/main\n",
       "/repo/private/hidden.ts": "export const hidden = true;\n",
@@ -276,9 +276,9 @@ describe("symnav overview user errors", () => {
 
     const result = await parse(["overview", "src/a.ts"], fakeDependencies({ fs }));
 
-    expect(result.stdout).toBe("");
-    expect(result.stderr).toBe("device failure\n");
-    expect(result.exitCodes).toEqual([2]);
+    expect(result.stdout).toContain("src/a.ts");
+    expect(result.stderr).toBe("");
+    expect(result.exitCodes).toEqual([]);
   });
 
   it("writes the file-not-found line to stderr with exit 1 for a missing file", async () => {

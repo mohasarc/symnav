@@ -185,7 +185,7 @@ class SnapshotCountingFileSystem implements FileSystem {
   }
 
   metadata(absPath: string): Promise<FileMetadata> {
-    this.metadataReads += 1;
+    if (!this.fileSystem.isDirectorySync(absPath)) this.metadataReads += 1;
     return this.fileSystem.metadata(absPath);
   }
 

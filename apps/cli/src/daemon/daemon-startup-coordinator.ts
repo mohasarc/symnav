@@ -262,10 +262,7 @@ export class DaemonStartupCoordinator {
       this.registry.removeIfProcess(identity, record.instanceId, record.processToken);
       return;
     }
-    if (
-      observation.kind === "starting" ||
-      observation.kind === "unresponsive"
-    ) {
+    if (observation.kind === "starting" || observation.kind === "unresponsive") {
       throw new DaemonOwnedButUnresponsiveError(
         `Daemon process ${record.pid} is live but unresponsive; ownership was retained`,
       );

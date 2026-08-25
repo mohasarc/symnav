@@ -43,7 +43,10 @@ export class DaemonTransportError extends Error {
 
 class DaemonResponseError extends Error {
   constructor(
-    readonly code: Extract<DaemonTransportFailureCode, "authentication" | "corrupt" | "incompatible">,
+    readonly code: Extract<
+      DaemonTransportFailureCode,
+      "authentication" | "corrupt" | "incompatible"
+    >,
     message: string,
     readonly authenticatedInstanceId?: string,
   ) {
@@ -284,15 +287,10 @@ export class LocalDaemonTransport {
   private static responseFor(request: DaemonRequest, value: unknown): DaemonResponse {
     LocalDaemonTransport.assertResponse(value);
     if (request.kind === "identify") {
-      if (
-        value.kind !== "identity"
-      ) {
+      if (value.kind !== "identity") {
         throw new DaemonResponseError("corrupt", "Daemon returned a non-identity response");
       }
-      if (
-        value.instanceId !== request.instanceId ||
-        value.processToken !== request.processToken
-      ) {
+      if (value.instanceId !== request.instanceId || value.processToken !== request.processToken) {
         throw new DaemonResponseError(
           "authentication",
           "Daemon identity does not match process instance",
@@ -303,15 +301,10 @@ export class LocalDaemonTransport {
     }
     if (request.kind === "terminate" || request.kind === "kill") {
       const expectedKind = request.kind === "terminate" ? "terminating" : "killing";
-      if (
-        value.kind !== expectedKind
-      ) {
+      if (value.kind !== expectedKind) {
         throw new DaemonResponseError("corrupt", "Daemon returned a non-termination response");
       }
-      if (
-        value.instanceId !== request.instanceId ||
-        value.processToken !== request.processToken
-      ) {
+      if (value.instanceId !== request.instanceId || value.processToken !== request.processToken) {
         throw new DaemonResponseError(
           "authentication",
           "Daemon termination does not match process instance",
@@ -355,7 +348,10 @@ export class LocalDaemonTransport {
       throw new DaemonResponseError("corrupt", "Daemon returned a non-stop response");
     }
     if (value.instanceId !== request.instanceId) {
-      throw new DaemonResponseError("authentication", "Daemon stop response does not match instance");
+      throw new DaemonResponseError(
+        "authentication",
+        "Daemon stop response does not match instance",
+      );
     }
     return value;
   }

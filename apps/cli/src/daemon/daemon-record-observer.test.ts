@@ -8,10 +8,7 @@ import {
   type DaemonResponse,
 } from "./daemon-protocol.js";
 import { DaemonRecordObserver } from "./daemon-record-observer.js";
-import {
-  DaemonTransportError,
-  type LocalDaemonTransport,
-} from "./local-daemon-transport.js";
+import { DaemonTransportError, type LocalDaemonTransport } from "./local-daemon-transport.js";
 
 describe("DaemonRecordObserver", () => {
   it("reports a starting record without probing its endpoint", async () => {
@@ -45,11 +42,7 @@ describe("DaemonRecordObserver", () => {
   it("retains a live silent daemon as unresponsive", async () => {
     const transport = new ObserverTransport([
       identityResponse(),
-      new DaemonTransportError(
-        "timeout",
-        "submitted-unconfirmed",
-        "Daemon request timed out",
-      ),
+      new DaemonTransportError("timeout", "submitted-unconfirmed", "Daemon request timed out"),
     ]);
 
     await expect(observer(transport, [101]).observe(record("ready"))).resolves.toMatchObject({

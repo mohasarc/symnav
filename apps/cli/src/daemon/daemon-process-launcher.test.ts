@@ -99,10 +99,11 @@ describe("NodeDaemonProcessLauncher", () => {
 
   it("reports child exit through the launched process immediately", async () => {
     const identity = launcherIdentity(roots);
-    const daemonProcess = await new NodeDaemonProcessLauncher(
-      "1.2.3",
-      128 * 1024 * 1024,
-    ).launch(identity, "instance", "process-token");
+    const daemonProcess = await new NodeDaemonProcessLauncher("1.2.3", 128 * 1024 * 1024).launch(
+      identity,
+      "instance",
+      "process-token",
+    );
     const child = spawnMock.mock.results[0]?.value as FakeChildProcess;
 
     child.emit("exit", 7, "SIGTERM");
@@ -116,10 +117,11 @@ describe("NodeDaemonProcessLauncher", () => {
 
   it("reports a child spawn error after launch", async () => {
     const identity = launcherIdentity(roots);
-    const daemonProcess = await new NodeDaemonProcessLauncher(
-      "1.2.3",
-      128 * 1024 * 1024,
-    ).launch(identity, "instance", "process-token");
+    const daemonProcess = await new NodeDaemonProcessLauncher("1.2.3", 128 * 1024 * 1024).launch(
+      identity,
+      "instance",
+      "process-token",
+    );
     const child = spawnMock.mock.results[0]?.value as FakeChildProcess;
     const error = new Error("child failed");
     error.name = "ChildProcessError";

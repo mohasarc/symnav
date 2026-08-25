@@ -6,10 +6,7 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { DaemonRequest } from "./daemon-protocol.js";
 import { DAEMON_PROTOCOL_VERSION } from "./daemon-protocol.js";
-import {
-  DaemonTransportError,
-  LocalDaemonTransport,
-} from "./local-daemon-transport.js";
+import { DaemonTransportError, LocalDaemonTransport } from "./local-daemon-transport.js";
 
 describe("LocalDaemonTransport validation", () => {
   const servers: Server[] = [];
@@ -55,12 +52,12 @@ describe("LocalDaemonTransport validation", () => {
   ] as const)("classifies %s timeout after request submission", async (_kind, request, options) => {
     const endpoint = await rawServer(servers, sockets, directories, () => undefined);
 
-    await expect(new LocalDaemonTransport(options).request(endpoint, request)).rejects.toMatchObject(
-      {
-        code: "timeout",
-        delivery: "submitted-unconfirmed",
-      } satisfies Partial<DaemonTransportError>,
-    );
+    await expect(
+      new LocalDaemonTransport(options).request(endpoint, request),
+    ).rejects.toMatchObject({
+      code: "timeout",
+      delivery: "submitted-unconfirmed",
+    } satisfies Partial<DaemonTransportError>);
   });
 
   it.each([
@@ -92,7 +89,11 @@ describe("LocalDaemonTransport validation", () => {
     ],
     [
       "token",
-      { kind: "identify", instanceId: "instance", processToken: "expected" } satisfies DaemonRequest,
+      {
+        kind: "identify",
+        instanceId: "instance",
+        processToken: "expected",
+      } satisfies DaemonRequest,
       {
         kind: "identity",
         instanceId: "instance",

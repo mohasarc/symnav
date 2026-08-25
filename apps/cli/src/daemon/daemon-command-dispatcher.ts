@@ -199,12 +199,9 @@ export class DaemonCommandDispatcher {
       registry,
       transport,
       observer: new DaemonRecordObserver(transport, processTerminator),
-      coordinator: new DaemonStartupCoordinator(
-        registry,
-        launcher,
-        transport,
-        { processTerminator },
-      ),
+      coordinator: new DaemonStartupCoordinator(registry, launcher, transport, {
+        processTerminator,
+      }),
     };
   }
 

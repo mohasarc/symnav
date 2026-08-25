@@ -87,8 +87,9 @@ export class TypeScriptWorkspaceState {
   constructor(
     private readonly fs: FileSystem,
     private readonly extractor: TypeScriptFileExtractor = new TypeScriptFileEntryExtractor(),
+    project?: Project,
   ) {
-    this.project = new Project({ fileSystem: new WorkspaceFileSystemHost(fs) });
+    this.project = project ?? new Project({ fileSystem: new WorkspaceFileSystemHost(fs) });
   }
 
   refresh(

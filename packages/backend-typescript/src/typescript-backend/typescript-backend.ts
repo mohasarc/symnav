@@ -22,7 +22,11 @@ import { findCallTarget } from "../call-graph/find-call-target.js";
 import { findDefinitions } from "../definition/find-definitions.js";
 import { ReferenceFinder } from "../references/find-references.js";
 import { SymbolResolver } from "../resolve/resolve-symbols.js";
-import { TypeScriptWorkspaceState } from "./typescript-workspace-state.js";
+import { TypeScriptProjectGraph } from "./typescript-project-graph.js";
+import {
+  TypeScriptFileEntryExtractor,
+  TypeScriptWorkspaceState,
+} from "./typescript-workspace-state.js";
 
 export class TypeScriptBackend implements LanguageBackend {
   static readonly extensions: readonly string[] = [".d.ts", ".ts", ".tsx", ".mts", ".cts"];
@@ -37,21 +41,35 @@ export class TypeScriptBackend implements LanguageBackend {
     return false;
   }
 
+  private readonly state: TypeScriptWorkspaceState;
+  private readonly projectGraph: TypeScriptProjectGraph;
+
   constructor(
     private readonly fs: FileSystem,
-    private readonly state = new TypeScriptWorkspaceState(fs),
-  ) {}
+    state?: TypeScriptWorkspaceState,
+    projectGraph = new TypeScriptProjectGraph(fs),
+  ) {
+    this.projectGraph = projectGraph;
+    this.state =
+      state ??
+      new TypeScriptWorkspaceState(
+        fs,
+        new TypeScriptFileEntryExtractor(),
+        projectGraph.workspaceProject(),
+      );
+  }
 
   accepts(filePath: string): boolean {
     return TypeScriptBackend.accepts(filePath);
   }
 
   async refresh(request: BackendRefreshRequest): Promise<BackendRefreshSummary> {
+    await this.projectGraph.refresh(request.snapshot);
     return this.state.refresh(request.snapshot.files, request.coverage);
   }
 
   async releaseTransientResources(): Promise<void> {
-    return Promise.resolve();
+    this.projectGraph.releaseTransientResources();
   }
 
   async fileEntries(file: ResolvedPath): Promise<OverviewFileEntries> {

@@ -4,7 +4,12 @@ import { join, relative } from "node:path";
 
 import { afterEach, describe, expect, it } from "vitest";
 import { fixturePath } from "@symnav/testing";
-import { NodeFileSystem, type WorkspaceSnapshot } from "@symnav/core";
+import {
+  NodeFileSystem,
+  type ResolvedPath,
+  type SymbolIdentity,
+  type WorkspaceSnapshot,
+} from "@symnav/core";
 
 import { TypeScriptBackend } from "./typescript-backend.js";
 import { TypeScriptProjectGraph } from "./typescript-project-graph.js";
@@ -178,4 +183,83 @@ describe("TypeScriptProjectGraph", () => {
     expect(missing.inferredFileCount).toBe(3);
     expect(graph.languageServiceFor("scratch/outside.ts")).toBeDefined();
   });
+
+  it("changes semantic answers after path alias configuration edits", async () => {
+    const projectFixture = fixture();
+    const backend = new TypeScriptBackend(projectFixture.fileSystem);
+    let snapshot = await projectFixture.snapshot();
+    await backend.refresh({ snapshot, coverage: "workspace" });
+    const app = symbolIdentity("packages/app/src/index.ts", "useConfiguredImports");
+    expect(await calleeNames(backend, snapshot.files, app)).toEqual([
+      "workspaceTarget",
+      "pathTarget",
+    ]);
+
+    projectFixture.write(
+      "packages/app/tsconfig.json",
+      JSON.stringify({
+        compilerOptions: { baseUrl: ".", paths: { "@domain/*": ["./missing/*"] } },
+        references: [{ path: "../domain" }],
+        include: ["src/**/*.ts"],
+      }),
+    );
+    snapshot = await projectFixture.snapshot();
+    await backend.refresh({ snapshot, coverage: "workspace" });
+
+    expect(await calleeNames(backend, snapshot.files, app)).toEqual(["workspaceTarget"]);
+  });
+
+  it("changes semantic answers after workspace package export edits", async () => {
+    const projectFixture = fixture();
+    const backend = new TypeScriptBackend(projectFixture.fileSystem);
+    let snapshot = await projectFixture.snapshot();
+    await backend.refresh({ snapshot, coverage: "workspace" });
+    const app = symbolIdentity("packages/app/src/index.ts", "useConfiguredImports");
+
+    projectFixture.write(
+      "packages/domain/package.json",
+      JSON.stringify({ name: "@configured/domain", exports: { ".": "./src/missing.ts" } }),
+    );
+    snapshot = await projectFixture.snapshot();
+    await backend.refresh({ snapshot, coverage: "workspace" });
+
+    expect(await calleeNames(backend, snapshot.files, app)).toEqual(["pathTarget"]);
+  });
+
+  it("updates inferred semantic membership after accepted source changes", async () => {
+    const projectFixture = fixture();
+    const backend = new TypeScriptBackend(projectFixture.fileSystem);
+    let snapshot = await projectFixture.snapshot();
+    await backend.refresh({ snapshot, coverage: "workspace" });
+    projectFixture.write(
+      "scratch/added.ts",
+      "export function addedInferredTarget(): string { return 'added'; }\n",
+    );
+    snapshot = await projectFixture.snapshot();
+    await backend.refresh({ snapshot, coverage: "workspace" });
+
+    await expect(
+      backend.resolveSymbols(snapshot.files, "addedInferredTarget", { mode: "exact" }),
+    ).resolves.toHaveLength(1);
+
+    projectFixture.remove("scratch/added.ts");
+    snapshot = await projectFixture.snapshot();
+    await backend.refresh({ snapshot, coverage: "workspace" });
+    await expect(
+      backend.resolveSymbols(snapshot.files, "addedInferredTarget", { mode: "exact" }),
+    ).resolves.toEqual([]);
+  });
 });
+
+async function calleeNames(
+  backend: TypeScriptBackend,
+  files: readonly ResolvedPath[],
+  identity: SymbolIdentity,
+): Promise<readonly string[]> {
+  const callees = await backend.findCallees(files, identity);
+  return callees.map((callee) => callee.symbol.identity.segments.at(-1)?.name ?? "");
+}
+
+function symbolIdentity(file: string, name: string): SymbolIdentity {
+  return { file, segments: [{ name }] };
+}

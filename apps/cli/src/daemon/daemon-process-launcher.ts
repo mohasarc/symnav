@@ -14,6 +14,13 @@ interface DaemonProcessConfiguration extends DaemonIdentityCoordinates {
   readonly memoryCapBytes: number;
 }
 
+export interface DaemonProcessExit {
+  readonly code: number | null;
+  readonly signal: NodeJS.Signals | null;
+  readonly cause: "exit" | "spawn-error";
+  readonly errorName?: string;
+}
+
 export interface DaemonProcess {
   readonly pid: number;
   readonly exited: Promise<DaemonProcessExit>;

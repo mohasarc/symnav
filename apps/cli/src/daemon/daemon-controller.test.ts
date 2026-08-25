@@ -50,7 +50,7 @@ describe("DaemonController", () => {
     const stateDirectory = temporaryDirectory(roots);
     const identity = DaemonWorkspaceIdentity.from("/repo", stateDirectory);
     const registry = new DaemonRegistry(identity.registryDirectory);
-    const record = { ...startingRecord(identity), pid: 7001 };
+    const record = { ...startingRecord(identity), pid: 7001 } satisfies DaemonRecord;
     expect(registry.acquireStartup(identity, record.instanceId)).toBeDefined();
     expect(registry.writeStartingIfStartupOwner(identity, record)).toBe(true);
     const terminator = new BlockingControllerTerminator([process.pid, record.pid]);

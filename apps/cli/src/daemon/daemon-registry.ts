@@ -279,10 +279,7 @@ export class DaemonRegistry {
     return this.startupOwner(identity)?.instanceId === instanceId;
   }
 
-  startupOwnerMatchesProcess(
-    identity: DaemonWorkspaceIdentity,
-    record: DaemonRecord,
-  ): boolean {
+  startupOwnerMatchesProcess(identity: DaemonWorkspaceIdentity, record: DaemonRecord): boolean {
     if (record.pid <= 0) return false;
     const owner = this.startupOwner(identity);
     const stored = this.readStoredInstance(identity, record.instanceId);
@@ -296,10 +293,7 @@ export class DaemonRegistry {
     );
   }
 
-  removeStartupLockIfProcess(
-    identity: DaemonWorkspaceIdentity,
-    record: DaemonRecord,
-  ): boolean {
+  removeStartupLockIfProcess(identity: DaemonWorkspaceIdentity, record: DaemonRecord): boolean {
     const owner = this.startupOwner(identity);
     if (owner === undefined || !this.startupOwnerMatchesProcess(identity, record)) return false;
     return this.removeStartupLockIfOwner(identity, owner);

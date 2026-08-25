@@ -35,10 +35,7 @@ class DaemonStartupCallerExit {
     ) {
       process.exit(2);
     }
-    const identity = DaemonWorkspaceIdentity.from(
-      workspaceRoot,
-      canonicalStateDir(stateDirectory),
-    );
+    const identity = DaemonWorkspaceIdentity.from(workspaceRoot, canonicalStateDir(stateDirectory));
     const registry = new DaemonRegistry(identity.registryDirectory);
     if (registry.acquireStartup(identity, instanceId) === undefined) process.exit(3);
     const child = spawn(
@@ -92,10 +89,7 @@ class DaemonStartupCallerExit {
     ) {
       process.exit(2);
     }
-    const identity = DaemonWorkspaceIdentity.from(
-      workspaceRoot,
-      canonicalStateDir(stateDirectory),
-    );
+    const identity = DaemonWorkspaceIdentity.from(workspaceRoot, canonicalStateDir(stateDirectory));
     writeFileSync(bootPath, String(process.pid));
     await new Promise((resolve) => setTimeout(resolve, 1_500));
     const dependencies = createDefaultDependencies(identity.stateDirectory);

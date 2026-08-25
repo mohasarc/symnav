@@ -283,22 +283,24 @@ class WorkspaceDaemonHarness {
     const harness = new WorkspaceDaemonHarness();
     const lease = harness.registry.acquireStartup(harness.identity, harness.instanceId);
     if (lease === undefined) throw new Error("Expected startup ownership");
-    if (!harness.registry.writeStartingIfStartupOwner(harness.identity, {
-      schemaVersion: DAEMON_RECORD_SCHEMA_VERSION,
-      protocolVersion: DAEMON_PROTOCOL_VERSION,
-      symnavVersion: "test",
-      workspaceRoot: harness.workspaceRoot,
-      workspaceKey: harness.identity.workspaceKey,
-      stateKey: harness.identity.stateKey,
-      identityKey: harness.identity.identityKey,
-      instanceId: harness.instanceId,
-      processToken: "runtime-token",
-      endpoint: harness.identity.endpoint(harness.instanceId),
-      pid: process.pid,
-      state: "starting",
-      startedAt: Date.now(),
-      memoryCapBytes: runtime.memoryCapBytes ?? 1024,
-    })) {
+    if (
+      !harness.registry.writeStartingIfStartupOwner(harness.identity, {
+        schemaVersion: DAEMON_RECORD_SCHEMA_VERSION,
+        protocolVersion: DAEMON_PROTOCOL_VERSION,
+        symnavVersion: "test",
+        workspaceRoot: harness.workspaceRoot,
+        workspaceKey: harness.identity.workspaceKey,
+        stateKey: harness.identity.stateKey,
+        identityKey: harness.identity.identityKey,
+        instanceId: harness.instanceId,
+        processToken: "runtime-token",
+        endpoint: harness.identity.endpoint(harness.instanceId),
+        pid: process.pid,
+        state: "starting",
+        startedAt: Date.now(),
+        memoryCapBytes: runtime.memoryCapBytes ?? 1024,
+      })
+    ) {
       throw new Error("Expected daemon-owned startup publication");
     }
     const daemon = new WorkspaceDaemon({

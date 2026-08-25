@@ -226,16 +226,18 @@ describe("WorkspaceDaemon requests", () => {
   });
 
   it("keeps replacement ownership when stale daemon shutdown cleanup runs", async () => {
-    const harness = await RequestHarness.start();
+    const harness = await RequestHarness.start(undefined);
     harnesses.push(harness);
     harness.replaceDuringRegistryRemoval();
 
     await expect(harness.stop()).resolves.toMatchObject({ kind: "stopped" });
     await harness.exited;
 
-    expect(harness.registry.readStoredInstance(harness.identity, harness.instanceId)).toMatchObject({
-      processToken: "replacement-process",
-    });
+    expect(harness.registry.readStoredInstance(harness.identity, harness.instanceId)).toMatchObject(
+      {
+        processToken: "replacement-process",
+      },
+    );
   });
 
   it("exits after transport cleanup fails", async () => {

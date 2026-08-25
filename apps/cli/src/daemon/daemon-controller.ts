@@ -192,10 +192,7 @@ export class DaemonController {
     }
   }
 
-  private removeStartingOwnership(
-    identity: DaemonWorkspaceIdentity,
-    record: DaemonRecord,
-  ): void {
+  private removeStartingOwnership(identity: DaemonWorkspaceIdentity, record: DaemonRecord): void {
     const owner = this.registry.startupOwner(identity);
     if (this.registry.startupOwnerMatchesProcess(identity, record)) {
       this.registry.removeStartupLockIfProcess(identity, record);

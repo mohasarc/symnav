@@ -225,10 +225,7 @@ export class DaemonStartupCoordinator {
     return true;
   }
 
-  private startupOwnerIsAbandoned(
-    identity: DaemonWorkspaceIdentity,
-    owner: StartupOwner,
-  ): boolean {
+  private startupOwnerIsAbandoned(identity: DaemonWorkspaceIdentity, owner: StartupOwner): boolean {
     const record = this.registry.readStoredInstance(identity, owner.instanceId);
     if (record !== undefined && record.pid > 0) {
       return !this.processTerminator.isAlive(record.pid);

@@ -37,6 +37,10 @@ interface StartupProcessRegistryTestAccess {
   removeStartupLockIfProcess(identity: DaemonWorkspaceIdentity, record: DaemonRecord): boolean;
 }
 
+interface DaemonRegistryClassTestAccess {
+  startupMutationClaimWasContended(error: unknown): boolean;
+}
+
 describe("daemon registry", () => {
   const roots: string[] = [];
 
@@ -348,6 +352,16 @@ describe("daemon registry", () => {
     expect(first).toBeDefined();
     expect(mutations.beginStartupMutation(identity)).toBeUndefined();
   });
+
+  it.each(["EEXIST", "ENOTEMPTY"])(
+    "treats %s as a lost startup mutation claim after the winner releases",
+    (code) => {
+      const registryClass = DaemonRegistry as unknown as DaemonRegistryClassTestAccess;
+
+      expect(registryClass.startupMutationClaimWasContended({ code })).toBe(true);
+      expect(registryClass.startupMutationClaimWasContended({ code: "EACCES" })).toBe(false);
+    },
+  );
 
   it("releases startup mutation ownership for the next lease", () => {
     const identity = DaemonWorkspaceIdentity.from("/repo", temporaryDirectory(roots));

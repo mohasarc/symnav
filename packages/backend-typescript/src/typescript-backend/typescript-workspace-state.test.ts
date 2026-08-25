@@ -213,6 +213,29 @@ describe("TypeScriptWorkspaceState.refresh", () => {
     expect(declarationNames(state, afterFiles)).toEqual(["afterA", "afterB"]);
   });
 
+  it("retains unselected diagnostics and purges removed diagnostics", () => {
+    const fs = new MutableWorkspaceFileSystem({
+      "/repo/src/a.ts": "export const a = 1;\n",
+      "/repo/src/b.ts": "export const b = 1;\n@orphaned\n",
+    });
+    const state = new TypeScriptWorkspaceState(fs);
+    const files = fs.workspaceFiles("src/a.ts", "src/b.ts");
+    state.refresh(files);
+    const siblingDiagnostics = state.diagnostics(files[1]!);
+
+    fs.setFile("/repo/src/a.ts", "export const changedA = 2;\n");
+    state.refresh(fs.workspaceFiles("src/a.ts"), "selection");
+
+    expect(state.diagnostics(files[1]!)).toBe(siblingDiagnostics);
+    expect(state.declarationsIn("src/b.ts")).toBeDefined();
+
+    fs.deleteFile("/repo/src/b.ts");
+    state.refresh(fs.workspaceFiles("src/a.ts"));
+
+    expect(state.diagnostics(files[1]!)).toEqual([]);
+    expect(state.declarationsIn("src/b.ts")).toBeUndefined();
+  });
+
   it("keeps an unchanged source object while sibling deltas are applied", () => {
     const fs = new MutableWorkspaceFileSystem({
       "/repo/src/stable.ts": "export const stable = 1;\n",

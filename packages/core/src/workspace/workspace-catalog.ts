@@ -52,7 +52,6 @@ export class WorkspaceCatalog {
   async refresh(startDir: string): Promise<Workspace> {
     const root = this.rootFor(startDir);
     const previous = this.states.get(root);
-    this.states.delete(root);
     const next = await this.capture(root, previous);
     this.states.set(root, next);
     return WorkspaceCatalog.workspaceFrom(next, this.fs);

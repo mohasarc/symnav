@@ -46,7 +46,7 @@ it("owns one canonical state directory across one client invocation", async () =
     DaemonCommandDispatcher: class {
       constructor(
         private readonly options: {
-          readonly createDependencies: () => ProgramDependencies;
+          readonly createDependencies: (stateDirectory: string) => ProgramDependencies;
           readonly stateDirectory: string;
         },
       ) {
@@ -54,8 +54,8 @@ it("owns one canonical state directory across one client invocation", async () =
       }
 
       async execute(): Promise<DispatchedCommandResult> {
-        this.options.createDependencies();
-        this.options.createDependencies();
+        this.options.createDependencies(this.options.stateDirectory);
+        this.options.createDependencies(this.options.stateDirectory);
         const identity = DaemonWorkspaceIdentity.from("/workspace", this.options.stateDirectory);
         daemonRecordPath = identity.recordPath("instance");
         daemonEndpoint = identity.endpoint("instance");

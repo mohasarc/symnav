@@ -36,7 +36,8 @@ const oversizedResponse = releasePathArgument === "--oversized-response";
 const releasePath =
   releasePathArgument === "--no-release" || oversizedResponse ? undefined : releasePathArgument;
 const symnavVersion = configuredSymnavVersion ?? "test";
-const dependencies = createDefaultDependencies();
+const canonicalStateDirectory = canonicalStateDir(stateDirectory);
+const dependencies = createDefaultDependencies(canonicalStateDirectory);
 const retainedBackends = dependencies.backends();
 const executor = new CliProgramExecutor({ ...dependencies, backends: () => retainedBackends });
 let executionCount = 0;
@@ -67,7 +68,7 @@ class ControlledExecutor implements DaemonCommandExecutor {
   }
 }
 
-const identity = DaemonWorkspaceIdentity.from(workspaceRoot, canonicalStateDir(stateDirectory));
+const identity = DaemonWorkspaceIdentity.from(workspaceRoot, canonicalStateDirectory);
 writeFileSync(`${readyPath}.boot`, String(process.pid));
 const daemon = new WorkspaceDaemon({
   identity,

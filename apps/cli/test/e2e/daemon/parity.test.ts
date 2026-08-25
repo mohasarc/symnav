@@ -599,7 +599,7 @@ class DaemonParityHarness {
     const processToken = `${instanceId}-token`;
     const readyPath = join(this.stateDirectory, `${instanceId}-ready`);
     const requestStartedPath = join(this.stateDirectory, `${instanceId}-request`);
-    const symnavVersion = createDefaultDependencies().symnavVersion;
+    const symnavVersion = createDefaultDependencies(identity.stateDirectory).symnavVersion;
     const lease = registry.acquireStartup(identity, instanceId);
     if (lease === undefined) throw new Error("Expected controlled daemon startup ownership");
     const child = spawn(

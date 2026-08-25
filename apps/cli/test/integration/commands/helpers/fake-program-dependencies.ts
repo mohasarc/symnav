@@ -15,6 +15,7 @@ export function fakeDependencies(
   overrides: FakeDependenciesOverrides = {},
 ): FakeProgramDependencies {
   return {
+    stateDirectory: overrides.stateDirectory ?? "/state",
     fs: overrides.fs ?? repoFs(),
     backends: overrides.backends ?? (() => [new FakeLanguageBackend()]),
     git: overrides.git ?? createFakeGitHistory(),

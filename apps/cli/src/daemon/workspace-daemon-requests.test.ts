@@ -174,8 +174,12 @@ describe("WorkspaceDaemon requests", () => {
 
   it("forwards refresh summaries and records freshness diagnostics", async () => {
     const backendRefreshed = vi.fn();
-    const dependencies: ProgramDependencies = { ...createDefaultDependencies(), backendRefreshed };
-    const harness = await RequestHarness.start(undefined, { dependencies });
+    const harness = await RequestHarness.start(undefined, {
+      createDependencies: (stateDirectory) => ({
+        ...createDefaultDependencies(stateDirectory),
+        backendRefreshed,
+      }),
+    });
     harnesses.push(harness);
 
     await harness.execute("refresh", ["overview", "input.ts"]);
@@ -305,7 +309,10 @@ class RequestHarness {
       processToken: harness.processToken,
       symnavVersion: "test",
       memoryCapBytes: 1024,
-      dependencies: options.dependencies ?? createDefaultDependencies(),
+      dependencies:
+        options.dependencies ??
+        options.createDependencies?.(harness.identity.stateDirectory) ??
+        createDefaultDependencies(harness.identity.stateDirectory),
       registry: harness.registry,
       transport: harness.transport as unknown as LocalDaemonTransport,
       ...(executor === undefined ? {} : { executor }),
@@ -385,6 +392,7 @@ class RequestHarness {
 
 interface RequestHarnessOptions {
   readonly dependencies?: ProgramDependencies;
+  readonly createDependencies?: (stateDirectory: string) => ProgramDependencies;
   readonly now?: () => number;
 }
 

@@ -297,7 +297,7 @@ class WorkspaceDaemonHarness {
       processToken: "runtime-token",
       symnavVersion: "test",
       memoryCapBytes: runtime.memoryCapBytes ?? 1024,
-      dependencies: createDefaultDependencies(),
+      dependencies: createDefaultDependencies(harness.identity.stateDirectory),
       registry: harness.registry,
       transport: harness.transport,
       executor,

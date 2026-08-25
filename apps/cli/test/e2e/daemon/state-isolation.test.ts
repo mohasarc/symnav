@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, realpathSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { canonicalStateDir } from "@symnav/telemetry";
@@ -53,6 +53,39 @@ describe("symnav daemon state location isolation", () => {
     expect(statusProcessIds(firstState)).toEqual([]);
     expect(statusProcessIds(secondState)).toEqual([secondRecord.pid]);
     expect(overview(workspace, secondState)).toMatchObject({ status: 0, stderr: "" });
+  });
+
+  it("converges lifecycle and navigation through equivalent state directory spellings", () => {
+    const workspace = temporaryWorkspace(directories);
+    const stateDirectory = temporaryStateDirectory(directories);
+    const linkDirectory = temporaryStateDirectory(directories);
+    const stateLink = join(linkDirectory, "state-link");
+    symlinkSync(stateDirectory, stateLink, process.platform === "win32" ? "junction" : "dir");
+    const dottedLink = `${stateLink}/.`;
+    const canonicalStateDirectory = realpathSync(stateDirectory);
+
+    expect(startDaemon(workspace, dottedLink).status).toBe(0);
+    const record = onlyRecord(canonicalStateDirectory);
+    daemonProcessIds.push(record.pid);
+
+    expect(startDaemon(workspace, canonicalStateDirectory).status).toBe(0);
+    expect(onlyRecord(stateLink)).toMatchObject({
+      pid: record.pid,
+      endpoint: record.endpoint,
+      stateKey: record.stateKey,
+      identityKey: record.identityKey,
+    });
+    expect(statusProcessIds(dottedLink)).toEqual([record.pid]);
+    expect(statusProcessIds(canonicalStateDirectory)).toEqual([record.pid]);
+    expect(overview(workspace, stateLink)).toMatchObject({ status: 0, stderr: "" });
+
+    const stopped = runSymnavBinary(["daemon", "stop", "--json"], {
+      cwd: workspace,
+      env: { SYMNAV_STATE_DIR: canonicalStateDirectory },
+    });
+    expect(stopped.status).toBe(0);
+    expect(JSON.parse(stopped.stdout)).toMatchObject({ status: "stopped", pid: record.pid });
+    expect(statusProcessIds(stateLink)).toEqual([]);
   });
 });
 

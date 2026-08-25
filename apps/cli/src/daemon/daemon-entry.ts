@@ -19,7 +19,7 @@ class DaemonEntry {
       identity.endpoint(configuration.instanceId) !== configuration.endpoint
     )
       throw new Error("Daemon process identity does not match configuration");
-    const dependencies = createDefaultDependencies();
+    const dependencies = createDefaultDependencies(configuration.stateDirectory);
     if (dependencies.symnavVersion !== configuration.symnavVersion) {
       throw new Error("Daemon process version does not match launcher");
     }

@@ -45,20 +45,21 @@ export function createDefaultProgramContext(): ProgramContext {
   };
 }
 
-export function createDefaultDependencies(): ProgramDependencies {
+export function createDefaultDependencies(canonicalStateDirectory: string): ProgramDependencies {
   const fs = new NodeFileSystem();
   const clock: Clock = { now: () => Date.now() };
-  const stateDir = resolveStateDir(process.env);
   return {
+    stateDirectory: canonicalStateDirectory,
     fs,
     backends: () => [new TypeScriptBackend(fs)],
     git: new NodeGitHistory(),
-    recorder: new NodeUsageRecorder(new NodeTelemetryWritePort(usageLogPath(stateDir)), {
-      next: () => randomUUID(),
-    }),
+    recorder: new NodeUsageRecorder(
+      new NodeTelemetryWritePort(usageLogPath(canonicalStateDirectory)),
+      { next: () => randomUUID() },
+    ),
     clock,
     telemetryEnabled: isTelemetryEnabled(process.env),
-    identity: new NodeTelemetryIdentityProvider(stateDir, new NodeGitRemoteReader()),
+    identity: new NodeTelemetryIdentityProvider(canonicalStateDirectory, new NodeGitRemoteReader()),
     symnavVersion: readPackageVersion(),
   };
 }
@@ -68,7 +69,7 @@ export function buildProgram(
   dependencies?: ProgramDependencies,
 ): CommanderCommand {
   const ctx = context ?? createDefaultProgramContext();
-  const deps = dependencies ?? createDefaultDependencies();
+  const deps = dependencies ?? createDefaultDependencies(resolveStateDir(process.env));
   const program = new CommanderCommand();
   program
     .name("symnav")

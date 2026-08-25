@@ -1,6 +1,5 @@
 import type { Command as CommanderCommand } from "commander";
 import { createWorkspace, UserFacingError } from "@symnav/core";
-import { resolveStateDir } from "@symnav/telemetry";
 import { DaemonController } from "../../daemon/daemon-controller.js";
 import { DaemonLifecycleRenderer } from "../../daemon/daemon-lifecycle-renderer.js";
 import { DaemonRegistry } from "../../daemon/daemon-registry.js";
@@ -34,7 +33,7 @@ export function registerDaemonCommand(
     .description("List running workspace daemons")
     .option("--json", "emit JSON instead of text", false)
     .action(async (options: DaemonOutputOptions) => {
-      await DaemonStatusAction.run(context, options);
+      await DaemonStatusAction.run(context, dependencies, options);
     });
   daemon
     .command("stop")
@@ -59,7 +58,7 @@ class DaemonStartAction {
     const cwd = program.opts<{ cwd?: string }>().cwd ?? context.cwd;
     try {
       const workspace = await createWorkspace({ startDir: cwd, fs: dependencies.fs });
-      const stateDirectory = resolveStateDir(process.env);
+      const stateDirectory = dependencies.stateDirectory;
       const identity = DaemonWorkspaceIdentity.from(workspace.root, stateDirectory);
       const registry = new DaemonRegistry(identity.registryDirectory);
       const controller = new DaemonController(
@@ -87,8 +86,12 @@ class DaemonStartAction {
 }
 
 class DaemonStatusAction {
-  static async run(context: ProgramContext, options: DaemonOutputOptions): Promise<void> {
-    const stateDirectory = resolveStateDir(process.env);
+  static async run(
+    context: ProgramContext,
+    dependencies: ProgramDependencies,
+    options: DaemonOutputOptions,
+  ): Promise<void> {
+    const stateDirectory = dependencies.stateDirectory;
     const registry = new DaemonRegistry(DaemonWorkspaceIdentity.registryDirectory(stateDirectory));
     const controller = new DaemonController(registry, new LocalDaemonTransport(), stateDirectory);
     const results = await controller.status();
@@ -110,7 +113,7 @@ class DaemonStopAction {
     const cwd = program.opts<{ cwd?: string }>().cwd ?? context.cwd;
     try {
       const workspace = await createWorkspace({ startDir: cwd, fs: dependencies.fs });
-      const stateDirectory = resolveStateDir(process.env);
+      const stateDirectory = dependencies.stateDirectory;
       const registry = new DaemonRegistry(
         DaemonWorkspaceIdentity.registryDirectory(stateDirectory),
       );

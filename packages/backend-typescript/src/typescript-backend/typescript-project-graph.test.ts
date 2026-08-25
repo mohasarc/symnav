@@ -246,6 +246,34 @@ describe("TypeScriptProjectGraph", () => {
     expect(options?.paths?.["@local/*"]).toBeUndefined();
   });
 
+  it("keeps implicit outDir contents outside configured membership", async () => {
+    const projectFixture = fixture();
+    const graph = new TypeScriptProjectGraph(projectFixture.fileSystem);
+    projectFixture.write(
+      "packages/app/tsconfig.json",
+      JSON.stringify({
+        extends: "./tsconfig.base.json",
+        compilerOptions: { composite: true, outDir: "dist" },
+        references: [{ path: "../domain" }],
+        include: ["**/*.ts"],
+      }),
+    );
+    projectFixture.write(
+      "packages/app/dist/generated.ts",
+      [
+        'import { appLocalTarget } from "@local/local";',
+        "export function generatedCaller(): string { return appLocalTarget(); }",
+        "",
+      ].join("\n"),
+    );
+
+    await graph.refresh(await projectFixture.snapshot());
+    const options = graph.programFor("packages/app/dist/generated.ts")?.getCompilerOptions();
+
+    expect(options?.paths?.["@local/*"]).toBeUndefined();
+    expect(options?.paths?.["@configured/domain"]).toBeDefined();
+  });
+
   it("maps exact and patterned workspace package subpath exports", async () => {
     const projectFixture = fixture();
     const graph = new TypeScriptProjectGraph(projectFixture.fileSystem);

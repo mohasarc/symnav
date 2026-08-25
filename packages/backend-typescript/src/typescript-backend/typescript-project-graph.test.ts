@@ -144,7 +144,7 @@ describe("TypeScriptProjectGraph", () => {
     expect(referencesChanged.configuredProjectCount).toBe(2);
     expect(referencesChanged.inferredFileCount).toBe(3);
     expect(referencesChanged.changedConfigurationCount).toBe(2);
-    expect(referencedOptions?.paths).not.toHaveProperty("@changed/*");
+    expect(referencedOptions?.paths?.["@changed/*"]).toBeUndefined();
   });
 
   it("invalidates workspace package exports and source membership", async () => {

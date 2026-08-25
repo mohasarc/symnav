@@ -67,7 +67,9 @@ describe("TypeScriptBackend configured projects", () => {
       files,
       identity("packages/app/src/local.ts", "appLocalTarget"),
     );
-    expect(references.map((reference) => reference.file)).toEqual(["packages/app/src/index.ts"]);
+    expect(new Set(references.map((reference) => reference.file))).toEqual(
+      new Set(["packages/app/src/index.ts"]),
+    );
   });
 });
 

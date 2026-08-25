@@ -184,12 +184,11 @@ export class TypeScriptProjectGraph implements TypeScriptSemanticSourceProvider 
     const inferredFiles = snapshot.files.filter(
       (file) => !configuredProjectByFile.has(file.relative),
     );
-    const fallbackOptions = configurations.at(-1)?.compilerOptions ?? {};
     this.configuredProjects = configuredProjects;
     this.configuredProjectByFile = configuredProjectByFile;
     this.inferredProject = new TypeScriptSemanticProject(
       this.fileSystem,
-      { ...fallbackOptions, noEmit: true },
+      { noEmit: true },
       inferredFiles,
     );
   }

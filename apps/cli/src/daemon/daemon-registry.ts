@@ -448,9 +448,15 @@ export class DaemonRegistry {
       return new RegistryStartupMutationLease(this, identity, owner);
     } catch (error) {
       rmSync(claimPath, { recursive: true, force: true });
+      if (DaemonRegistry.startupMutationClaimWasContended(error)) return undefined;
       if (existsSync(identity.startupMutationPath)) return undefined;
       throw error;
     }
+  }
+
+  private static startupMutationClaimWasContended(error: unknown): boolean {
+    const code = DaemonRegistry.errorCode(error);
+    return code === "EEXIST" || code === "ENOTEMPTY";
   }
 
   private recoverStartupMutation(

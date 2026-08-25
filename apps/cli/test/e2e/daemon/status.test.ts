@@ -162,6 +162,64 @@ describe("symnav daemon status", () => {
     expect(existsSync(String(record.endpoint))).toBe(false);
   });
 
+  it("reports a stuck live daemon promptly without replacing its process", async () => {
+    const stateDir = temporaryStateDirectory(stateDirectories);
+    const workspaceRoot = temporaryWorkspace(stateDirectories);
+    const instanceId = "stuck-status";
+    const processToken = "stuck-status-process";
+    const readyPath = join(stateDir, "stuck-ready");
+    const requestStartedPath = join(stateDir, "stuck-request");
+    const child = spawnStuckDaemon(
+      workspaceRoot,
+      stateDir,
+      instanceId,
+      processToken,
+      readyPath,
+      requestStartedPath,
+    );
+    helperProcesses.push(child);
+    await waitUntil(() => existsSync(readyPath));
+    const originalRecord = daemonRecords(stateDir)[0];
+    expect(originalRecord).toBeDefined();
+    daemonPids.push(originalRecord!.pid);
+    const transport = new LocalDaemonTransport({ executionRequestTimeoutMs: 5_000 });
+    void transport
+      .request(originalRecord!.endpoint, {
+        kind: "execute",
+        protocolVersion: DAEMON_PROTOCOL_VERSION,
+        instanceId,
+        requestId: "stuck-navigation",
+        request: {
+          argv: ["overview", "input.ts"],
+          cwd: workspaceRoot,
+          telemetryEnabled: false,
+        },
+      })
+      .catch(() => undefined);
+    await waitUntil(() => existsSync(requestStartedPath));
+
+    const statusStartedAt = Date.now();
+    const status = runSymnavBinary(["daemon", "status", "--json"], {
+      cwd: tmpdir(),
+      env: { SYMNAV_STATE_DIR: stateDir },
+    });
+    const statusDurationMs = Date.now() - statusStartedAt;
+    const recordsAfterStatus = daemonRecords(stateDir);
+
+    expect(status.status).toBe(0);
+    expect(statusDurationMs).toBeLessThan(1_000);
+    expect(JSON.parse(status.stdout)).toEqual([
+      expect.objectContaining({
+        workspaceRoot,
+        state: expect.stringMatching(/^(ready|unresponsive)$/),
+        pid: originalRecord!.pid,
+      }),
+    ]);
+    expect(recordsAfterStatus).toHaveLength(1);
+    expect(recordsAfterStatus[0]?.pid).toBe(originalRecord!.pid);
+    expect(recordsAfterStatus[0]?.instanceId).toBe(instanceId);
+  });
+
   it("returns the cold workspace error and exits after workspace deletion", async () => {
     const stateDir = temporaryStateDirectory(stateDirectories);
     const workspaceRoot = mkdtempSync(join(tmpdir(), "symnav-deleted-workspace-"));
@@ -234,6 +292,32 @@ function spawnStartupPublisher(
       readyPath,
       barrierPath,
       resultPath,
+    ],
+    { stdio: "ignore" },
+  );
+}
+
+function spawnStuckDaemon(
+  workspaceRoot: string,
+  stateDirectory: string,
+  instanceId: string,
+  processToken: string,
+  readyPath: string,
+  requestStartedPath: string,
+): ChildProcess {
+  return spawn(
+    process.execPath,
+    [
+      fileURLToPath(new URL("../../../node_modules/tsx/dist/cli.mjs", import.meta.url)),
+      fileURLToPath(new URL("../../helpers/workspace-daemon-stuck.ts", import.meta.url)),
+      workspaceRoot,
+      stateDirectory,
+      instanceId,
+      processToken,
+      readyPath,
+      requestStartedPath,
+      "--no-release",
+      "0.1.0",
     ],
     { stdio: "ignore" },
   );

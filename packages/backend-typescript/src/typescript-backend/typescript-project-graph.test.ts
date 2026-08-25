@@ -1,4 +1,12 @@
-import { cpSync, mkdirSync, mkdtempSync, readdirSync, rmSync, unlinkSync, writeFileSync } from "node:fs";
+import {
+  cpSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  rmSync,
+  unlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join, relative } from "node:path";
 
@@ -119,12 +127,8 @@ describe("TypeScriptProjectGraph", () => {
     expect(compilerOptionsChanged.configuredProjectCount).toBe(3);
     expect(compilerOptionsChanged.changedConfigurationCount).toBe(1);
     expect(changedOptions?.paths).toEqual({
-      "@changed/*": [
-        `${projectFixture.root.replaceAll("\\", "/")}/packages/domain/src/*`,
-      ],
-      "@configured/app": [
-        `${projectFixture.root.replaceAll("\\", "/")}/packages/app/src/index.ts`,
-      ],
+      "@changed/*": [`${projectFixture.root.replaceAll("\\", "/")}/packages/domain/src/*`],
+      "@configured/app": [`${projectFixture.root.replaceAll("\\", "/")}/packages/app/src/index.ts`],
       "@configured/domain": [
         `${projectFixture.root.replaceAll("\\", "/")}/packages/domain/src/index.ts`,
       ],
@@ -182,6 +186,25 @@ describe("TypeScriptProjectGraph", () => {
     expect(missing.configuredProjectCount).toBe(0);
     expect(missing.inferredFileCount).toBe(3);
     expect(graph.languageServiceFor("scratch/outside.ts")).toBeDefined();
+  });
+
+  it("ignores workspace packages without a root export", async () => {
+    const projectFixture = fixture();
+    const graph = new TypeScriptProjectGraph(projectFixture.fileSystem);
+    projectFixture.write(
+      "packages/domain/package.json",
+      JSON.stringify({
+        name: "@configured/domain",
+        exports: { "./feature": "./src/index.ts" },
+      }),
+    );
+
+    await expect(graph.refresh(await projectFixture.snapshot())).resolves.toMatchObject({
+      configuredProjectCount: 3,
+    });
+    expect(
+      graph.programFor("packages/domain/src/index.ts")?.getCompilerOptions().paths,
+    ).not.toHaveProperty("@configured/domain");
   });
 
   it("changes semantic answers after path alias configuration edits", async () => {

@@ -122,13 +122,16 @@ describe("symnav daemon parity", () => {
     const daemonPid = harness.onlyDaemonPid();
     const inputPath = join(harness.workspaceRoot, "input.ts");
     const originalTimes = statSync(inputPath);
+    const originalSource = readFileSync(inputPath, "utf8");
+    const equalSizeEdit =
+      'export function edited(value: string): string { return value; }\nexport function caller(): string { return edited("x"); }\n';
 
-    writeFileSync(
-      inputPath,
-      'export function edited(value: string): string { return value; }\nexport function caller(): string { return edited("x"); }\n',
-    );
+    expect(Buffer.byteLength(equalSizeEdit)).toBe(Buffer.byteLength(originalSource));
+    writeFileSync(inputPath, equalSizeEdit);
     utimesSync(inputPath, originalTimes.atime, originalTimes.mtime);
-    expect(harness.warm(["overview", "input.ts"])).toEqual(harness.cold(["overview", "input.ts"]));
+    const equalSizeWarmResult = harness.warm(["overview", "input.ts"]);
+    expect(equalSizeWarmResult).toEqual(harness.cold(["overview", "input.ts"]));
+    expect(equalSizeWarmResult.stdout).toContain("edited");
 
     writeFileSync(join(harness.workspaceRoot, "added.ts"), "export const added = 3;\n");
     expect(harness.warm(["overview", "added.ts"])).toEqual(harness.cold(["overview", "added.ts"]));

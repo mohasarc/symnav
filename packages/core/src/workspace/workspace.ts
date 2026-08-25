@@ -4,6 +4,7 @@ import {
   FileNotFoundError,
   IgnoredFileError,
   DirectoryInputError,
+  NestedWorkspacePathError,
   NotInWorkspaceError,
   OutsideWorkspaceError,
   UnreadableDirectoryWarningCandidateError,
@@ -56,6 +57,7 @@ class DefaultWorkspace implements Workspace {
     if (!isUnderRoot(absolutePath, this.root)) {
       throw new OutsideWorkspaceError(inputPath, this.root);
     }
+    this.assertPathOwnedByWorkspace(inputPath, absolutePath);
     const relativePath = relPathFromRoot(absolutePath, this.root);
     if (this.ignore.isIgnored(relativePath)) {
       throw new IgnoredFileError(inputPath);
@@ -64,6 +66,13 @@ class DefaultWorkspace implements Workspace {
       throw new DirectoryInputError(relativePath);
     }
     return { relative: relativePath, absolute: absolutePath };
+  }
+
+  private assertPathOwnedByWorkspace(inputPath: string, absolutePath: string): void {
+    const nearestWorkspaceRoot = findWorkspaceRoot(posix.dirname(absolutePath), this.fs);
+    if (nearestWorkspaceRoot !== null && nearestWorkspaceRoot !== this.root) {
+      throw new NestedWorkspacePathError(inputPath, this.root, nearestWorkspaceRoot);
+    }
   }
 
   async enumerate(): Promise<readonly WorkspaceFile[]> {

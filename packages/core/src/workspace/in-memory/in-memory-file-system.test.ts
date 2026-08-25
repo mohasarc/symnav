@@ -41,4 +41,21 @@ describe("InMemoryFileSystem", () => {
     await expect(fs.exists("/repo/src/x.ts")).resolves.toBe(true);
     await expect(fs.exists("/repo/missing.ts")).resolves.toBe(false);
   });
+
+  it("derives stable content revisions independent of size and modification time", () => {
+    const same = new InMemoryFileSystem({ "/repo/source.ts": "export const a = 1;\n" });
+    const sameAgain = new InMemoryFileSystem({ "/repo/source.ts": "export const a = 1;\n" });
+    const changed = new InMemoryFileSystem({ "/repo/source.ts": "export const b = 1;\n" });
+
+    expect(same.metadataSync("/repo/source.ts").changeToken).toBe(
+      sameAgain.metadataSync("/repo/source.ts").changeToken,
+    );
+    expect(changed.metadataSync("/repo/source.ts")).toMatchObject({
+      size: same.metadataSync("/repo/source.ts").size,
+      modifiedAtMs: same.metadataSync("/repo/source.ts").modifiedAtMs,
+    });
+    expect(changed.metadataSync("/repo/source.ts").changeToken).not.toBe(
+      same.metadataSync("/repo/source.ts").changeToken,
+    );
+  });
 });

@@ -322,6 +322,22 @@ describe("DaemonStartupCoordinator", () => {
     expect(harness.registry.startupOwner(harness.identity)).toBeUndefined();
   });
 
+  it("recovers a confirmed dead child from legacy caller-owned startup state", async () => {
+    const harness = new CoordinatorHarness(roots);
+    expect(harness.registry.acquireStartup(harness.identity, "legacy-starting")).toBeDefined();
+    harness.registry.write({
+      ...harness.readyRecord("legacy-starting", harness.launcher.symnavVersion, 999_999_999),
+      state: "starting",
+    });
+
+    await expect(
+      harness.coordinator({ startupTimeoutMs: 100 }).ensureRunning(harness.identity),
+    ).resolves.toMatchObject({ status: "ready", workspaceRoot: "/repo" });
+
+    expect(harness.launcher.launchCount).toBe(1);
+    expect(harness.registry.readStored(harness.identity)?.instanceId).not.toBe("legacy-starting");
+  });
+
   it("retains startup ownership when a previous daemon cannot terminate", async () => {
     const harness = new CoordinatorHarness(roots);
     const existing = harness.readyRecord("existing", "0.0.9", 4002);

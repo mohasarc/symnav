@@ -175,4 +175,24 @@ describe("WorkspaceCatalog", () => {
     expect(firstSnapshot.files.map((file) => file.relative)).toEqual([".gitignore", "src/a.ts"]);
     expect((await first.snapshot()).files).toBe(firstSnapshot.files);
   });
+
+  it("reuses unchanged directory entries and relists only a changed subtree", async () => {
+    const fileSystem = new MutableCatalogFileSystem({
+      "/repo/.git/HEAD": "ref: refs/heads/main\n",
+      "/repo/src/a.ts": "export const a = 1;\n",
+      "/repo/test/b.ts": "export const b = 1;\n",
+    });
+    const catalog = new WorkspaceCatalog(fileSystem);
+    await catalog.refresh("/repo");
+
+    fileSystem.resetCounts();
+    await catalog.refresh("/repo");
+    expect(fileSystem.directoryReads).toEqual([]);
+    expect(fileSystem.sourceReads).toEqual([]);
+
+    fileSystem.setFile("/repo/src/c.ts", "export const c = 1;\n");
+    fileSystem.resetCounts();
+    await catalog.refresh("/repo");
+    expect(fileSystem.directoryReads).toEqual(["/repo/src"]);
+  });
 });

@@ -1,4 +1,5 @@
 import {
+  createWorkspace,
   type BackendRouter,
   type GitHistory,
   type NavigationDiagnosticSeverity,
@@ -57,9 +58,11 @@ export async function runCommand<Result extends ResultWithDiagnostics, Args>(
   try {
     const scopeFactory =
       dependencies.scopeFactory ?? new WorkspaceRequestScopeFactory(fs, dependencies.backends());
-    workspace = await scopeFactory.openWorkspace(cwd);
-    command.validate?.(args);
     const snapshotSelector = command.snapshotForBackendRefresh;
+    workspace = snapshotSelector
+      ? await createWorkspace({ startDir: cwd, fs })
+      : await scopeFactory.openWorkspace(cwd);
+    command.validate?.(args);
     const preparedScope = snapshotSelector
       ? await scopeFactory.prepareWorkspace(workspace, (scopeWorkspace, scopeRouter) =>
           snapshotSelector({

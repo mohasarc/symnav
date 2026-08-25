@@ -134,10 +134,59 @@ export class DaemonRegistry {
     if (record.state !== "starting" || !this.isStartupOwner(identity, record.instanceId)) {
       return false;
     }
+    if (record.pid > 0) return this.writeDaemonOwnedStartingRecord(identity, record);
     this.write(record);
     if (this.isStartupOwner(identity, record.instanceId)) return true;
     this.removeIfInstance(identity, record.instanceId);
     return false;
+  }
+
+  private writeDaemonOwnedStartingRecord(
+    identity: DaemonWorkspaceIdentity,
+    record: DaemonRecord,
+  ): boolean {
+    const mutation = this.beginStartupMutation(identity);
+    if (mutation === undefined) return false;
+    try {
+      const owner = this.startupOwner(identity);
+      if (owner?.instanceId !== record.instanceId) return false;
+      const adoptedOwner: StartupOwner = {
+        ...owner,
+        ownerPid: record.pid,
+        processToken: record.processToken,
+        heartbeatAt: Date.now(),
+        revision: randomUUID(),
+      };
+      const ownerPath = identity.startupOwnerPath(identity.lockPath);
+      const temporaryPath = `${identity.lockPath}.${process.pid}.${randomUUID()}.owner.tmp`;
+      writeFileSync(temporaryPath, JSON.stringify(adoptedOwner), {
+        encoding: "utf8",
+        mode: 0o600,
+      });
+      if (
+        !mutation.isOwned() ||
+        !DaemonRegistry.sameStartupOwner(this.startupOwner(identity), owner)
+      ) {
+        rmSync(temporaryPath, { force: true });
+        return false;
+      }
+      this.write(record);
+      try {
+        this.replaceStartupOwner(temporaryPath, ownerPath);
+      } catch (error) {
+        rmSync(temporaryPath, { force: true });
+        if (DaemonRegistry.errorCode(error) === "ENOENT") return false;
+        throw error;
+      }
+      const currentOwner = this.startupOwner(identity);
+      return (
+        currentOwner?.instanceId === record.instanceId &&
+        currentOwner.ownerPid === record.pid &&
+        currentOwner.processToken === record.processToken
+      );
+    } finally {
+      mutation.release();
+    }
   }
 
   acquireStartup(identity: DaemonWorkspaceIdentity, instanceId: string): StartupLease | undefined {

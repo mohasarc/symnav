@@ -8,18 +8,32 @@ describe("daemon benchmark harness", () => {
     expect(measurement.fileCount).toBe(2_000);
     expect(measurement.counts).toEqual({
       projectLoads: 1,
-      snapshots: 4,
-      refreshes: 4,
-      definitionLookups: 2,
+      snapshots: 10,
+      refreshes: 10,
+      definitionLookups: 6,
+      referenceSearches: 4,
+      callTargetResolutions: 12,
+      duplicateReferenceSearches: 0,
+      duplicateCallTargetResolutions: 0,
+      semanticProjectLoads: 2,
+      semanticProjectFiles: 2_000,
       sourceReads: 2_000,
       extractions: 2_000,
     });
-    expect(measurement.refreshes).toEqual([
-      { added: 2_000, changed: 0, removed: 0, unchanged: 0 },
-      { added: 0, changed: 0, removed: 0, unchanged: 2_000 },
-      { added: 0, changed: 0, removed: 0, unchanged: 2_000 },
-      { added: 0, changed: 0, removed: 0, unchanged: 2_000 },
-    ]);
+    expect(measurement.refreshes[0]).toEqual({
+      added: 2_000,
+      changed: 0,
+      removed: 0,
+      unchanged: 0,
+    });
+    expect(measurement.refreshes.slice(1)).toEqual(
+      Array.from({ length: 9 }, () => ({
+        added: 0,
+        changed: 0,
+        removed: 0,
+        unchanged: 2_000,
+      })),
+    );
     expect(measurement.firstResolveMs).toBeGreaterThanOrEqual(0);
     expect(measurement.secondResolveMs).toBeGreaterThanOrEqual(0);
     expect(measurement.target).toEqual(

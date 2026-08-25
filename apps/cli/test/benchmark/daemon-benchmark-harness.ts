@@ -5,9 +5,9 @@ import { performance } from "node:perf_hooks";
 import {
   TypeScriptBackend,
   TypeScriptFileEntryExtractor,
-  TypeScriptWorkspaceState,
   type TypeScriptFileExtractionRequest,
   type TypeScriptFileExtractor,
+  type TypeScriptSemanticQueryObserver,
 } from "@symnav/backend-typescript";
 import { NodeFileSystem } from "@symnav/core";
 import type {
@@ -15,8 +15,6 @@ import type {
   BackendRefreshSummary,
   FileMetadata,
   FileSystem,
-  ResolvedPath,
-  SymbolIdentity,
 } from "@symnav/core";
 import type {
   CliExecutionRequest,
@@ -32,6 +30,8 @@ export interface DaemonBenchmarkMeasurement {
     readonly snapshots: number;
     readonly refreshes: number;
     readonly definitionLookups: number;
+    readonly semanticProjectLoads: number;
+    readonly semanticProjectFiles: number;
     readonly sourceReads: number;
     readonly extractions: number;
   };
@@ -44,6 +44,8 @@ export interface DaemonBenchmarkMeasurement {
 interface BenchmarkCounters {
   projectLoads: number;
   definitionLookups: number;
+  semanticProjectLoads: number;
+  semanticProjectFiles: number;
   extractions: number;
   readonly refreshes: BackendRefreshSummary[];
 }
@@ -89,11 +91,28 @@ export class DaemonBenchmarkHarness {
 
   private createWorkspace(): string {
     const workspaceRoot = mkdtempSync(join(tmpdir(), "symnav-daemon-benchmark-"));
-    const sourceDirectory = join(workspaceRoot, "src");
+    const leftSourceDirectory = join(workspaceRoot, "packages", "left", "src");
+    const rightSourceDirectory = join(workspaceRoot, "packages", "right", "src");
     mkdirSync(join(workspaceRoot, ".git"));
-    mkdirSync(sourceDirectory);
+    mkdirSync(leftSourceDirectory, { recursive: true });
+    mkdirSync(rightSourceDirectory, { recursive: true });
+    writeFileSync(
+      join(workspaceRoot, "tsconfig.json"),
+      JSON.stringify({
+        files: [],
+        references: [{ path: "packages/left" }, { path: "packages/right" }],
+      }),
+    );
+    for (const packageName of ["left", "right"]) {
+      writeFileSync(
+        join(workspaceRoot, "packages", packageName, "tsconfig.json"),
+        JSON.stringify({ compilerOptions: { composite: true }, include: ["src/**/*.ts"] }),
+      );
+    }
     for (let index = 0; index < this.fileCount; index += 1) {
       const suffix = String(index).padStart(4, "0");
+      const sourceDirectory =
+        index < Math.ceil(this.fileCount / 2) ? leftSourceDirectory : rightSourceDirectory;
       writeFileSync(
         join(sourceDirectory, `module-${suffix}.ts`),
         `export const symbol${suffix}: number = ${index};\n`,
@@ -107,6 +126,8 @@ export class DaemonBenchmarkHarness {
     const counters: BenchmarkCounters = {
       projectLoads: 0,
       definitionLookups: 0,
+      semanticProjectLoads: 0,
+      semanticProjectFiles: 0,
       extractions: 0,
       refreshes: [],
     };
@@ -130,7 +151,7 @@ export class DaemonBenchmarkHarness {
     const targetSuffix = String(this.fileCount - 1).padStart(4, "0");
     const definitionRequest: CliExecutionRequest = {
       ...request,
-      argv: ["def", `src/module-${targetSuffix}.ts::symbol${targetSuffix}`],
+      argv: ["def", `packages/right/src/module-${targetSuffix}.ts::symbol${targetSuffix}`],
     };
     const firstDefinition = await retainedProgram.execute(definitionRequest);
     const secondDefinition = await retainedProgram.execute(definitionRequest);
@@ -154,9 +175,11 @@ export class DaemonBenchmarkHarness {
       fileCount: this.fileCount,
       counts: {
         projectLoads: counters.projectLoads,
-        snapshots: fileSystem.completeSnapshots(this.fileCount),
+        snapshots: fileSystem.completeSnapshots(this.fileCount + 3),
         refreshes: counters.refreshes.length,
         definitionLookups: counters.definitionLookups,
+        semanticProjectLoads: counters.semanticProjectLoads,
+        semanticProjectFiles: counters.semanticProjectFiles,
         sourceReads: fileSystem.sourceReadCount(),
         extractions: counters.extractions,
       },
@@ -181,14 +204,23 @@ class InstrumentedTypeScriptBackend extends TypeScriptBackend {
     fileSystem: FileSystem,
     private readonly counters: BenchmarkCounters,
   ) {
+    const observer: TypeScriptSemanticQueryObserver = {
+      semanticProjectLoaded: (fileCount) => {
+        counters.semanticProjectLoads += 1;
+        counters.semanticProjectFiles += fileCount;
+      },
+      definitionSearch: () => {
+        counters.definitionLookups += 1;
+      },
+    };
     super(
       fileSystem,
-      new TypeScriptWorkspaceState(
-        fileSystem,
-        new CountingTypeScriptFileExtractor(() => {
-          counters.extractions += 1;
-        }),
-      ),
+      undefined,
+      undefined,
+      observer,
+      new CountingTypeScriptFileExtractor(() => {
+        counters.extractions += 1;
+      }),
     );
   }
 
@@ -196,11 +228,6 @@ class InstrumentedTypeScriptBackend extends TypeScriptBackend {
     const summary = await super.refresh(request);
     this.counters.refreshes.push(summary);
     return summary;
-  }
-
-  override async findDefinitions(files: readonly ResolvedPath[], identity: SymbolIdentity) {
-    this.counters.definitionLookups += 1;
-    return super.findDefinitions(files, identity);
   }
 }
 

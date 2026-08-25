@@ -246,7 +246,7 @@ export class DaemonStartupCoordinator {
     while (this.now() - waitStartedAt <= this.startupTimeoutMs) {
       const record = this.registry.readInstance(identity, instanceId);
       if (record?.state === "ready") {
-        const validated = await this.validatedReadyRecord(identity);
+        const validated = await this.validatedChildRecord(identity);
         if (validated?.instanceId === instanceId) {
           await this.probeExecution(validated);
           return validated;
@@ -261,6 +261,17 @@ export class DaemonStartupCoordinator {
     throw new DaemonStartupWaitTimeoutError(
       "Daemon startup wait ended before readiness; live daemon ownership was retained",
     );
+  }
+
+  private async validatedChildRecord(
+    identity: DaemonWorkspaceIdentity,
+  ): Promise<DaemonRecord | undefined> {
+    try {
+      return await this.validatedReadyRecord(identity);
+    } catch (error) {
+      if (error instanceof DaemonOwnedButUnresponsiveError) return undefined;
+      throw error;
+    }
   }
 
   private async validatedReadyRecord(

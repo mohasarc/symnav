@@ -387,6 +387,21 @@ describe("symnav daemon parity", () => {
       ["refs", "packages/domain/src/features/patterned.ts::patternedSubpathTarget", "--all"],
       "@configured/domain/features/patterned",
     ],
+    [
+      "refs through an inferred workspace import",
+      ["refs", "packages/domain/src/index.ts::workspaceTarget", "--all"],
+      "scratch/outside.ts",
+    ],
+    [
+      "context through an inferred workspace import",
+      ["context", "packages/domain/src/feature.ts::subpathTarget"],
+      "useWorkspacePackagesFromInferred",
+    ],
+    [
+      "depth-one graph through inferred workspace imports",
+      ["graph", "scratch/outside.ts::useWorkspacePackagesFromInferred", "--depth", "1"],
+      "patternedSubpathTarget",
+    ],
   ])(
     "keeps configured project %s non-empty and byte-identical",
     (_name, args, expected) => {
@@ -428,15 +443,29 @@ describe("symnav daemon parity", () => {
       } else {
         harness.writeWorkspaceFile("tsconfig.json", config);
       }
-      const args = ["refs", "scratch/outside.ts::inferredTarget", "--all"];
+      const cases = [
+        {
+          args: ["refs", "packages/domain/src/index.ts::workspaceTarget", "--all"],
+          expected: "scratch/outside.ts",
+        },
+        {
+          args: ["context", "packages/domain/src/feature.ts::subpathTarget"],
+          expected: "useWorkspacePackagesFromInferred",
+        },
+        {
+          args: ["graph", "scratch/outside.ts::useWorkspacePackagesFromInferred", "--depth", "1"],
+          expected: "patternedSubpathTarget",
+        },
+      ];
 
-      const warm = harness.warm(args);
-
-      expect(warm).toEqual(harness.cold(args));
-      expect(warm).toMatchObject({ status: 0, stderr: "" });
-      expect(warm.stdout).toContain("inferredTarget();");
+      for (const { args, expected } of cases) {
+        const warm = harness.warm(args);
+        expect(warm).toEqual(harness.cold(args));
+        expect(warm).toMatchObject({ status: 0, stderr: "" });
+        expect(warm.stdout).toContain(expected);
+      }
     },
-    20_000,
+    40_000,
   );
 });
 

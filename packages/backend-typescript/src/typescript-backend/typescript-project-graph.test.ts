@@ -22,6 +22,7 @@ import {
 
 import { TypeScriptBackend } from "./typescript-backend.js";
 import { TypeScriptProjectGraph } from "./typescript-project-graph.js";
+import { TypeScriptWorkspaceState } from "./typescript-workspace-state.js";
 
 class ConfiguredProjectFixture {
   readonly root: string;
@@ -118,6 +119,7 @@ describe("TypeScriptProjectGraph", () => {
     expect(inferredPaths).toEqual(driveRootPackagePaths());
     expect(inferredPaths?.["@configured-only/*"]).toBeUndefined();
   });
+
   it("loads only the owning semantic project for a targeted source lookup", async () => {
     const projectFixture = fixture();
     const loadedFileCounts: number[] = [];
@@ -127,6 +129,23 @@ describe("TypeScriptProjectGraph", () => {
     await graph.refresh(await projectFixture.snapshot());
 
     expect(graph.sourceFileFor("packages/domain/src/index.ts")).toBeDefined();
+    expect(loadedFileCounts).toEqual([5]);
+  });
+
+  it("locates a declaration without materializing unrelated semantic projects", async () => {
+    const projectFixture = fixture();
+    const loadedFileCounts: number[] = [];
+    const graph = new TypeScriptProjectGraph(projectFixture.fileSystem, {
+      semanticProjectLoaded: (fileCount) => loadedFileCounts.push(fileCount),
+    });
+    const snapshot = await projectFixture.snapshot();
+    await graph.refresh(snapshot);
+    const state = new TypeScriptWorkspaceState(projectFixture.fileSystem, undefined, graph);
+    state.refresh(snapshot.files);
+
+    expect(
+      state.locate(symbolIdentity("packages/domain/src/index.ts", "workspaceTarget")),
+    ).toHaveLength(1);
     expect(loadedFileCounts).toEqual([5]);
   });
   it("loads recursive project references and reuses services across no-change refreshes", async () => {

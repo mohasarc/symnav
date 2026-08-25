@@ -386,7 +386,7 @@ class RequestHarness {
   }
 
   failRegistryRemoval(): void {
-    vi.spyOn(this.registry, "removeIfInstance").mockImplementation(() => {
+    vi.spyOn(this.registry, "removeIfProcess").mockImplementation(() => {
       throw new Error("registry cleanup failed");
     });
   }

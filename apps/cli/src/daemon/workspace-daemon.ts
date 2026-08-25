@@ -261,7 +261,11 @@ export class WorkspaceDaemon {
     this.requestQueue.close();
     this.logger.record({ kind: "stop", reason });
     try {
-      this.options.registry.removeIfInstance(this.options.identity, this.options.instanceId);
+      this.options.registry.removeIfProcess(
+        this.options.identity,
+        this.options.instanceId,
+        this.options.processToken,
+      );
     } catch (error) {
       this.logger.record({
         kind: "failure",

@@ -1,4 +1,5 @@
 import {
+  cpSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
@@ -17,7 +18,7 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawn } from "node:child_process";
 import { afterEach, describe, expect, it } from "vitest";
-import { runSymnavBinary, type RunSymnavBinaryResult } from "@symnav/testing";
+import { fixturePath, runSymnavBinary, type RunSymnavBinaryResult } from "@symnav/testing";
 import type { ChildProcess } from "node:child_process";
 import { DAEMON_PROTOCOL_VERSION, type DaemonRecord } from "../../../src/daemon/daemon-protocol.js";
 import { DaemonRegistry } from "../../../src/daemon/daemon-registry.js";
@@ -306,6 +307,84 @@ describe("symnav daemon parity", () => {
     );
     expect(harness.daemonRecordCount()).toBe(0);
   });
+
+  it.each([
+    ["resolve through path alias", ["resolve", "pathTarget"], "pathTarget"],
+    ["resolve through workspace import", ["resolve", "workspaceTarget"], "workspaceTarget"],
+    ["def through path alias", ["def", "packages/domain/src/index.ts::pathTarget"], "pathTarget"],
+    [
+      "def through workspace import",
+      ["def", "packages/domain/src/index.ts::workspaceTarget"],
+      "workspaceTarget",
+    ],
+    [
+      "refs through path alias",
+      ["refs", "packages/domain/src/index.ts::pathTarget", "--all"],
+      "@domain/index",
+    ],
+    [
+      "refs through workspace import",
+      ["refs", "packages/domain/src/index.ts::workspaceTarget", "--all"],
+      "@configured/domain",
+    ],
+    [
+      "context through path alias",
+      ["context", "packages/domain/src/index.ts::pathTarget"],
+      "useConfiguredImports",
+    ],
+    [
+      "context through workspace import",
+      ["context", "packages/domain/src/index.ts::workspaceTarget"],
+      "useConfiguredImports",
+    ],
+    [
+      "depth-one graph through path alias",
+      ["graph", "packages/app/src/index.ts::useConfiguredImports", "--depth", "1"],
+      "pathTarget",
+    ],
+    [
+      "depth-one graph through workspace import",
+      ["graph", "packages/app/src/index.ts::useConfiguredImports", "--depth", "1"],
+      "workspaceTarget",
+    ],
+  ])(
+    "keeps configured project %s non-empty and byte-identical",
+    (_name, args, expected) => {
+      const harness = new DaemonParityHarness("configured-project-cases");
+      harnesses.push(harness);
+
+      const warm = harness.warm(args);
+
+      expect(warm).toEqual(harness.cold(args));
+      expect(warm).toMatchObject({ status: 0, stderr: "" });
+      expect(warm.stdout).toContain(expected);
+    },
+    20_000,
+  );
+
+  it.each([
+    ["malformed", "{ malformed"],
+    ["missing", undefined],
+  ])(
+    "falls back without raw failures when root tsconfig is %s",
+    (_name, config) => {
+      const harness = new DaemonParityHarness("configured-project-cases");
+      harnesses.push(harness);
+      if (config === undefined) {
+        harness.removeWorkspaceFile("tsconfig.json");
+      } else {
+        harness.writeWorkspaceFile("tsconfig.json", config);
+      }
+      const args = ["refs", "scratch/outside.ts::inferredTarget", "--all"];
+
+      const warm = harness.warm(args);
+
+      expect(warm).toEqual(harness.cold(args));
+      expect(warm).toMatchObject({ status: 0, stderr: "" });
+      expect(warm.stdout).toContain("inferredTarget();");
+    },
+    20_000,
+  );
 });
 
 class DaemonParityHarness {
@@ -314,16 +393,29 @@ class DaemonParityHarness {
   private readonly stateDirectory = join(this.root, "state");
   private readonly helperProcesses: ChildProcess[] = [];
 
-  constructor() {
+  constructor(fixtureName?: string) {
+    if (fixtureName) {
+      cpSync(fixturePath(fixtureName), this.workspaceRoot, { recursive: true });
+    }
     mkdirSync(join(this.workspaceRoot, ".git"), { recursive: true });
-    writeFileSync(
-      join(this.workspaceRoot, "input.ts"),
-      'export function target(value: string): string { return value; }\nexport function caller(): string { return target("x"); }\n',
-    );
-    writeFileSync(
-      join(this.workspaceRoot, "warning.ts"),
-      'export function stillVisible(): string { return "ok"; }\n\n@orphaned\n',
-    );
+    if (!fixtureName) {
+      writeFileSync(
+        join(this.workspaceRoot, "input.ts"),
+        'export function target(value: string): string { return value; }\nexport function caller(): string { return target("x"); }\n',
+      );
+      writeFileSync(
+        join(this.workspaceRoot, "warning.ts"),
+        'export function stillVisible(): string { return "ok"; }\n\n@orphaned\n',
+      );
+    }
+  }
+
+  writeWorkspaceFile(relativePath: string, content: string): void {
+    writeFileSync(join(this.workspaceRoot, relativePath), content);
+  }
+
+  removeWorkspaceFile(relativePath: string): void {
+    unlinkSync(join(this.workspaceRoot, relativePath));
   }
 
   warm(args: readonly string[]): RunSymnavBinaryResult {

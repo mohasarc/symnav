@@ -174,6 +174,14 @@ describe("WorkspaceDaemon runtime lifecycle", () => {
     expect(readFileSync(harness.identity.logPath, "utf8")).not.toContain("\u001B");
   });
 
+  it("releases daemon-owned startup authorization after publishing readiness", async () => {
+    const harness = await WorkspaceDaemonHarness.start(new ImmediateExecutor());
+    harnesses.push(harness);
+
+    expect(harness.registry.read(harness.identity)?.state).toBe("ready");
+    expect(harness.registry.startupOwner(harness.identity)).toBeUndefined();
+  });
+
   it("recovers from rejected work and exits after the recovered queue becomes idle", async () => {
     const harness = await WorkspaceDaemonHarness.start(new RejectThenSucceedExecutor(), {
       idleTimeoutMs: 30,
@@ -275,7 +283,7 @@ class WorkspaceDaemonHarness {
     const harness = new WorkspaceDaemonHarness();
     const lease = harness.registry.acquireStartup(harness.identity, harness.instanceId);
     if (lease === undefined) throw new Error("Expected startup ownership");
-    harness.registry.write({
+    if (!harness.registry.writeStartingIfStartupOwner(harness.identity, {
       schemaVersion: DAEMON_RECORD_SCHEMA_VERSION,
       protocolVersion: DAEMON_PROTOCOL_VERSION,
       symnavVersion: "test",
@@ -290,7 +298,9 @@ class WorkspaceDaemonHarness {
       state: "starting",
       startedAt: Date.now(),
       memoryCapBytes: runtime.memoryCapBytes ?? 1024,
-    });
+    })) {
+      throw new Error("Expected daemon-owned startup publication");
+    }
     const daemon = new WorkspaceDaemon({
       identity: harness.identity,
       instanceId: harness.instanceId,
@@ -308,7 +318,6 @@ class WorkspaceDaemonHarness {
       ...runtime,
     });
     await daemon.start();
-    lease.release();
     return harness;
   }
 

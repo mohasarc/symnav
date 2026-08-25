@@ -230,8 +230,8 @@ export class DaemonStartupCoordinator {
     owner: StartupOwner,
   ): boolean {
     const record = this.registry.readStoredInstance(identity, owner.instanceId);
-    if (record !== undefined && record.pid > 0 && this.processTerminator.isAlive(record.pid)) {
-      return false;
+    if (record !== undefined && record.pid > 0) {
+      return !this.processTerminator.isAlive(record.pid);
     }
     if (owner.processToken !== undefined) return !this.processTerminator.isAlive(owner.ownerPid);
     return (

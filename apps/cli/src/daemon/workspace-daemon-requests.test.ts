@@ -209,6 +209,39 @@ describe("WorkspaceDaemon requests", () => {
     });
   });
 
+  it("force-terminates blocked worker execution with one controlled result", async () => {
+    const executor = new SerializedExecutor();
+    const harness = await RequestHarness.start(executor);
+    harnesses.push(harness);
+    const execution = harness.execute("blocked", ["refs", "input"]);
+    await executor.started(1);
+
+    await expect(harness.kill()).resolves.toEqual({
+      kind: "killing",
+      instanceId: harness.instanceId,
+      processToken: harness.processToken,
+    });
+    await expect(execution).resolves.toEqual({
+      kind: "result",
+      requestId: "blocked",
+      result: {
+        frames: [
+          {
+            stream: "stderr",
+            bytesBase64: Buffer.from("Cannot answer: daemon navigation was stopped.\n").toString(
+              "base64",
+            ),
+          },
+        ],
+        exitCode: 1,
+      },
+    });
+    await harness.exited;
+    expect(harness.registry.read(harness.identity)).toMatchObject({
+      processToken: harness.processToken,
+    });
+  });
+
   it("closes transport while leaving ready ownership for an exit observer", async () => {
     const harness = await RequestHarness.start(new ImmediateExecutor());
     harnesses.push(harness);
@@ -393,6 +426,14 @@ class RequestHarness {
       kind: "stop",
       protocolVersion: DAEMON_PROTOCOL_VERSION,
       instanceId: this.instanceId,
+    });
+  }
+
+  kill(): Promise<DaemonResponse> {
+    return this.transport.receive({
+      kind: "kill",
+      instanceId: this.instanceId,
+      processToken: this.processToken,
     });
   }
 

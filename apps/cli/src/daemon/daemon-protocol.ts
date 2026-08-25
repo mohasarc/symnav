@@ -3,6 +3,16 @@ import type { CliExecutionRequest, CommandExecutionResult } from "../command-exe
 export const DAEMON_PROTOCOL_VERSION = 1;
 export const DAEMON_RECORD_SCHEMA_VERSION = 1;
 
+export interface DaemonIdentityCoordinates {
+  readonly workspaceRoot: string;
+  readonly workspaceKey: string;
+  readonly stateKey: string;
+  readonly identityKey: string;
+  readonly instanceId: string;
+  readonly processToken: string;
+  readonly endpoint: string;
+}
+
 export interface DaemonRecord {
   readonly schemaVersion: number;
   readonly protocolVersion: number;

@@ -76,6 +76,7 @@ describe("WorkspaceRequestQueue", () => {
       release = resolve;
     });
     const active = queue.enqueue(metadata("active", "graph", 1), () => gate);
+    await Promise.resolve();
     const drained = queue.drain();
     expect(queue.snapshot).toMatchObject({ state: "draining", queued: 0 });
     await expect(

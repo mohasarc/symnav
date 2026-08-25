@@ -265,6 +265,17 @@ export class DaemonRegistry {
     rmSync(identity.recordPath(instanceId), { force: true });
   }
 
+  removeIfProcess(
+    identity: DaemonWorkspaceIdentity,
+    instanceId: string,
+    processToken: string,
+  ): boolean {
+    const record = this.readStoredInstance(identity, instanceId);
+    if (record?.processToken !== processToken) return false;
+    this.removeIfInstance(identity, instanceId);
+    return true;
+  }
+
   list(): readonly DaemonRecord[] {
     return this.recordPaths()
       .map((path) => ({ path, record: this.readStoredPath(path) }))

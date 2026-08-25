@@ -55,7 +55,10 @@ describe("WorkspaceDaemon runtime lifecycle", () => {
       instanceId: harness.instanceId,
     });
     await harness.exited;
-    expect(harness.registry.read(harness.identity)).toBeUndefined();
+    expect(harness.registry.read(harness.identity)).toMatchObject({
+      instanceId: harness.instanceId,
+      processToken: "runtime-token",
+    });
     await expect(harness.ping()).rejects.toThrow();
   });
 
@@ -164,7 +167,7 @@ describe("WorkspaceDaemon runtime lifecycle", () => {
     rmSync(workspaceRoot, { recursive: true, force: true });
   }, 10_000);
 
-  it("removes registry and transport state after idle shutdown and logs without terminal bytes", async () => {
+  it("retains exact ownership after autonomous idle shutdown for an exit observer", async () => {
     const harness = await WorkspaceDaemonHarness.start(new ImmediateExecutor(), {
       idleTimeoutMs: 10,
     });
@@ -172,7 +175,10 @@ describe("WorkspaceDaemon runtime lifecycle", () => {
 
     await harness.exited;
 
-    expect(harness.registry.read(harness.identity)).toBeUndefined();
+    expect(harness.registry.read(harness.identity)).toMatchObject({
+      instanceId: harness.instanceId,
+      processToken: "runtime-token",
+    });
     await expect(harness.ping()).rejects.toThrow();
     expect(harness.logEvents()).toEqual(
       expect.arrayContaining([expect.objectContaining({ kind: "stop", reason: "idle" })]),
@@ -225,7 +231,10 @@ describe("WorkspaceDaemon runtime lifecycle", () => {
     });
     await harness.exited;
 
-    expect(harness.registry.read(harness.identity)).toBeUndefined();
+    expect(harness.registry.read(harness.identity)).toMatchObject({
+      instanceId: harness.instanceId,
+      processToken: "runtime-token",
+    });
     expect(existsSync(harness.identity.endpoint(harness.instanceId))).toBe(false);
     await expect(harness.ping()).rejects.toThrow();
     expect(harness.logEvents()).toEqual(
@@ -257,7 +266,10 @@ describe("WorkspaceDaemon runtime lifecycle", () => {
 
     expect(Date.now() - startedAt).toBeLessThan(500);
     await expect(activeRequest).rejects.toThrow();
-    expect(harness.registry.read(harness.identity)).toBeUndefined();
+    expect(harness.registry.read(harness.identity)).toMatchObject({
+      instanceId: harness.instanceId,
+      processToken: "runtime-token",
+    });
     await expect(harness.execute("after-resource")).rejects.toThrow();
     await expect(harness.ping()).rejects.toThrow();
     expect(existsSync(harness.identity.endpoint(harness.instanceId))).toBe(false);

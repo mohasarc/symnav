@@ -120,10 +120,15 @@ export class DaemonController {
         return this.startingStatus(record);
       }
       const owner = this.registry.startupOwner(identity);
-      if (
+      const armedLaunchIsWithinGrace =
         owner?.instanceId === record.instanceId &&
-        this.processTerminator.isAlive(owner.ownerPid) &&
-        this.registry.startupOwnerIsWithinGrace(owner)
+        owner.processToken === record.processToken &&
+        this.registry.startupOwnerIsWithinGrace(owner);
+      if (
+        armedLaunchIsWithinGrace ||
+        (owner?.instanceId === record.instanceId &&
+          this.processTerminator.isAlive(owner.ownerPid) &&
+          this.registry.startupOwnerIsWithinGrace(owner))
       ) {
         return this.startingStatus(record);
       }
@@ -154,9 +159,11 @@ export class DaemonController {
   ): Promise<DaemonStopResult> {
     const owner = this.registry.startupOwner(identity);
     if (record.pid <= 0) {
-      if (owner?.instanceId === record.instanceId) {
-        this.registry.removeStartupLockIfOwner(identity, owner);
+      if (owner?.processToken === record.processToken) {
+        return this.waitForClaimedProcessAndStop(identity, record, deadline);
       }
+      if (owner?.instanceId === record.instanceId)
+        this.registry.removeStartupLockIfOwner(identity, owner);
       this.registry.removeIfProcess(identity, record.instanceId, record.processToken);
       return { status: "not-running", workspaceRoot: record.workspaceRoot };
     }
@@ -175,6 +182,29 @@ export class DaemonController {
     this.registry.removeStartupLockIfProcess(identity, record);
     this.registry.removeIfProcess(identity, record.instanceId, record.processToken);
     return { status: "stopped", workspaceRoot: record.workspaceRoot, pid: record.pid };
+  }
+
+  private async waitForClaimedProcessAndStop(
+    identity: DaemonWorkspaceIdentity,
+    claimedRecord: DaemonRecord,
+    deadline: number,
+  ): Promise<DaemonStopResult> {
+    while (this.now() <= deadline) {
+      const record = this.registry.readStoredInstance(identity, claimedRecord.instanceId);
+      if (record === undefined || record.processToken !== claimedRecord.processToken) {
+        return { status: "not-running", workspaceRoot: claimedRecord.workspaceRoot };
+      }
+      if (record.pid > 0) return this.stopStarting(identity, record, deadline);
+      const owner = this.registry.startupOwner(identity);
+      if (
+        owner?.instanceId !== claimedRecord.instanceId ||
+        owner.processToken !== claimedRecord.processToken
+      ) {
+        return { status: "not-running", workspaceRoot: claimedRecord.workspaceRoot };
+      }
+      await this.pause(this.pollIntervalMs);
+    }
+    throw new Error("Daemon launch did not publish its process before authenticated stop");
   }
 
   private async terminateStartingProcess(pid: number, deadline: number): Promise<boolean> {

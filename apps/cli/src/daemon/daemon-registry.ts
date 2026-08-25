@@ -138,14 +138,10 @@ export class DaemonRegistry {
     if (record.state !== "starting" || !this.isStartupOwner(identity, record.instanceId)) {
       return false;
     }
-    if (record.pid > 0) return this.writeDaemonOwnedStartingRecord(identity, record);
-    this.write(record);
-    if (this.isStartupOwner(identity, record.instanceId)) return true;
-    this.removeIfProcess(identity, record.instanceId, record.processToken);
-    return false;
+    return this.writeClaimedStartingRecord(identity, record);
   }
 
-  private writeDaemonOwnedStartingRecord(
+  private writeClaimedStartingRecord(
     identity: DaemonWorkspaceIdentity,
     record: DaemonRecord,
   ): boolean {
@@ -156,7 +152,7 @@ export class DaemonRegistry {
       if (owner?.instanceId !== record.instanceId) return false;
       const adoptedOwner: StartupOwner = {
         ...owner,
-        ownerPid: record.pid,
+        ownerPid: record.pid > 0 ? record.pid : owner.ownerPid,
         processToken: record.processToken,
         heartbeatAt: Date.now(),
         revision: randomUUID(),
@@ -185,7 +181,7 @@ export class DaemonRegistry {
       const currentOwner = this.startupOwner(identity);
       return (
         currentOwner?.instanceId === record.instanceId &&
-        currentOwner.ownerPid === record.pid &&
+        currentOwner.ownerPid === adoptedOwner.ownerPid &&
         currentOwner.processToken === record.processToken
       );
     } finally {

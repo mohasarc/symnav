@@ -230,7 +230,9 @@ export class DaemonStartupCoordinator {
     if (record !== undefined && record.pid > 0) {
       return !this.processTerminator.isAlive(record.pid);
     }
-    if (owner.processToken !== undefined) return !this.processTerminator.isAlive(owner.ownerPid);
+    if (owner.processToken !== undefined) {
+      return !this.registry.startupOwnerIsWithinGrace(owner);
+    }
     return (
       !this.processTerminator.isAlive(owner.ownerPid) ||
       !this.registry.startupOwnerIsWithinGrace(owner)

@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -130,6 +130,11 @@ describe("DaemonController", () => {
     const registry = new DaemonRegistry(identity.registryDirectory);
     expect(registry.acquireStartup(identity, "starting")).toBeDefined();
     expect(registry.writeStartingIfStartupOwner(identity, startingRecord(identity))).toBe(true);
+    const owner = registry.startupOwner(identity);
+    writeFileSync(
+      identity.startupOwnerPath(identity.lockPath),
+      JSON.stringify({ ...owner, heartbeatAt: Date.now() - 60_000 }),
+    );
     const controller = new DaemonController(
       registry,
       new ControllerTransport() as unknown as LocalDaemonTransport,

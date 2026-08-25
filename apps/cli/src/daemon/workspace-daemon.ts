@@ -141,14 +141,32 @@ export class WorkspaceDaemon {
       );
       if (
         record?.state === "starting" &&
-        record.pid === process.pid &&
+        (record.pid === 0 || record.pid === process.pid) &&
         record.processToken === this.options.processToken
       ) {
-        if (!this.options.registry.startupOwnerMatchesProcess(this.options.identity, record)) {
-          this.options.registry.writeStartingIfStartupOwner(this.options.identity, record);
+        if (record.pid === 0) {
+          this.options.registry.writeStartingIfStartupOwner(this.options.identity, {
+            ...record,
+            pid: process.pid,
+          });
         }
-        if (this.options.registry.startupOwnerMatchesProcess(this.options.identity, record)) {
-          return record;
+        const adoptedRecord = this.options.registry.readInstance(
+          this.options.identity,
+          this.options.instanceId,
+        );
+        if (adoptedRecord?.pid !== process.pid) {
+          await new Promise((resolve) => setTimeout(resolve, 10));
+          continue;
+        }
+        if (
+          !this.options.registry.startupOwnerMatchesProcess(this.options.identity, adoptedRecord)
+        ) {
+          this.options.registry.writeStartingIfStartupOwner(this.options.identity, adoptedRecord);
+        }
+        if (
+          this.options.registry.startupOwnerMatchesProcess(this.options.identity, adoptedRecord)
+        ) {
+          return adoptedRecord;
         }
       }
       await new Promise((resolve) => setTimeout(resolve, 10));
@@ -260,19 +278,6 @@ export class WorkspaceDaemon {
     this.resourceMonitor.stop();
     this.requestQueue.close();
     this.logger.record({ kind: "stop", reason });
-    try {
-      this.options.registry.removeIfProcess(
-        this.options.identity,
-        this.options.instanceId,
-        this.options.processToken,
-      );
-    } catch (error) {
-      this.logger.record({
-        kind: "failure",
-        operation: "registry-cleanup",
-        message: WorkspaceDaemon.errorMessage(error),
-      });
-    }
     try {
       await this.server?.close(force);
     } catch (error) {

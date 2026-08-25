@@ -345,7 +345,7 @@ describe("TypeScriptWorkspaceState.refresh", () => {
     expect(state.declarationForIdentity(addedIdentity)).toBeDefined();
   });
 
-  it("keeps old content when a write preserves both modification time and size", () => {
+  it("reloads content when only the filesystem change token changes", () => {
     const fs = new MutableWorkspaceFileSystem({
       "/repo/src/a.ts": "export const before = 1;\n",
     });
@@ -354,10 +354,18 @@ describe("TypeScriptWorkspaceState.refresh", () => {
     state.refresh(files);
     const metadata = files[0]!.metadata;
 
-    fs.setFile("/repo/src/a.ts", "export const afterx = 2;\n", metadata);
-    const sameRevision = fs.workspaceFiles("src/a.ts");
+    fs.setFile("/repo/src/a.ts", "export const afterx = 2;\n", {
+      ...metadata,
+      changeToken: "equal-size-restored-time-edit",
+    });
+    const changedRevision = fs.workspaceFiles("src/a.ts");
 
-    expect(state.refresh(sameRevision)).toEqual({ added: 0, changed: 0, removed: 0, unchanged: 1 });
-    expect(declarationNames(state, sameRevision)).toEqual(["before"]);
+    expect(state.refresh(changedRevision)).toEqual({
+      added: 0,
+      changed: 1,
+      removed: 0,
+      unchanged: 0,
+    });
+    expect(declarationNames(state, changedRevision)).toEqual(["afterx"]);
   });
 });

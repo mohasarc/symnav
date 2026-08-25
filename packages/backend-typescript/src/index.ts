@@ -1,6 +1,7 @@
 export { TypeScriptBackend } from "./typescript-backend/typescript-backend.js";
 export {
   TypeScriptWorkspaceState,
+  type PreparedFileIndex,
   type PreparedFileRevision,
   type TypeScriptFileExtractionRequest,
   type TypeScriptFileExtractor,

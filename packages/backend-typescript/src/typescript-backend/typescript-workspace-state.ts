@@ -54,6 +54,11 @@ export interface PreparedFileRevision {
   readonly diagnostics: readonly NavigationDiagnostic[];
 }
 
+export interface PreparedFileIndex {
+  readonly byRelativePath: ReadonlyMap<string, PreparedFileRevision>;
+  readonly declarationsByIdentity: ReadonlyMap<string, readonly SymbolOverviewNode[]>;
+}
+
 interface PreparedFileState extends PreparedFileRevision {
   readonly revision: TypeScriptFileRevision;
   readonly path: ResolvedPath;

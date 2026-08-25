@@ -2,6 +2,10 @@
   "compilerOptions": {
     "composite": true,
     "declaration": true,
+    "baseUrl": ".",
+    "paths": {
+      "@local/*": ["src/*"]
+    },
     "rootDir": "src"
   },
   "include": ["src/**/*.ts"]

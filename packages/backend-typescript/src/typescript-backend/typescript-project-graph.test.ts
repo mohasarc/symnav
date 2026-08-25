@@ -182,9 +182,9 @@ describe("TypeScriptProjectGraph", () => {
     const missing = await graph.refresh(await projectFixture.snapshot());
 
     expect(malformed.configuredProjectCount).toBe(0);
-    expect(malformed.inferredFileCount).toBe(3);
+    expect(malformed.inferredFileCount).toBe(5);
     expect(missing.configuredProjectCount).toBe(0);
-    expect(missing.inferredFileCount).toBe(3);
+    expect(missing.inferredFileCount).toBe(5);
     expect(graph.languageServiceFor("scratch/outside.ts")).toBeDefined();
   });
 

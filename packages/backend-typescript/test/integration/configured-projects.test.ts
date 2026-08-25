@@ -41,6 +41,21 @@ describe("TypeScriptBackend configured projects", () => {
       target: { identity: inferred },
     });
   });
+
+  it("keeps repeated path aliases owned by their configured projects", async () => {
+    const { backend, files } = await backendOverFixture();
+
+    await expect(
+      backend.findCallees(files, identity("packages/domain/src/index.ts", "useDomainLocal")),
+    ).resolves.toMatchObject([
+      { symbol: { identity: identity("packages/domain/src/local.ts", "domainLocalTarget") } },
+    ]);
+    await expect(
+      backend.findCallees(files, identity("packages/app/src/index.ts", "useAppLocal")),
+    ).resolves.toMatchObject([
+      { symbol: { identity: identity("packages/app/src/local.ts", "appLocalTarget") } },
+    ]);
+  });
 });
 
 async function backendOverFixture(): Promise<{
@@ -50,7 +65,9 @@ async function backendOverFixture(): Promise<{
   const fileSystem = new NodeFileSystem();
   const sourceFiles = [
     "packages/app/src/index.ts",
+    "packages/app/src/local.ts",
     "packages/domain/src/index.ts",
+    "packages/domain/src/local.ts",
     "scratch/outside.ts",
   ];
   const acceptedSnapshot: WorkspaceSnapshot = {

@@ -347,6 +347,16 @@ describe("symnav daemon parity", () => {
       ["graph", "packages/app/src/index.ts::useConfiguredImports", "--depth", "1"],
       "workspaceTarget",
     ],
+    [
+      "refs through a project-owned repeated alias",
+      ["refs", "packages/domain/src/local.ts::domainLocalTarget", "--all"],
+      "@local/local",
+    ],
+    [
+      "depth-one graph through a project-owned repeated alias",
+      ["graph", "packages/domain/src/index.ts::useDomainLocal", "--depth", "1"],
+      "domainLocalTarget",
+    ],
   ])(
     "keeps configured project %s non-empty and byte-identical",
     (_name, args, expected) => {

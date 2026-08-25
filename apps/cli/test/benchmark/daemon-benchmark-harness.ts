@@ -15,9 +15,14 @@ import type {
   BackendRefreshSummary,
   FileMetadata,
   FileSystem,
+  ResolvedPath,
+  SymbolIdentity,
   WorkspaceFile,
 } from "@symnav/core";
-import type { CommandExecutionResult } from "../../src/command-execution-result.js";
+import type {
+  CliExecutionRequest,
+  CommandExecutionResult,
+} from "../../src/command-execution-result.js";
 import { RetainedWorkspaceProgram } from "../../src/daemon/retained-workspace-program.js";
 import { fakeDependencies } from "../integration/commands/helpers/fake-program-dependencies.js";
 
@@ -27,6 +32,7 @@ export interface DaemonBenchmarkMeasurement {
     readonly projectLoads: number;
     readonly snapshots: number;
     readonly refreshes: number;
+    readonly definitionLookups: number;
     readonly sourceReads: number;
     readonly extractions: number;
   };
@@ -38,6 +44,7 @@ export interface DaemonBenchmarkMeasurement {
 
 interface BenchmarkCounters {
   projectLoads: number;
+  definitionLookups: number;
   extractions: number;
   readonly refreshes: BackendRefreshSummary[];
 }
@@ -98,7 +105,12 @@ export class DaemonBenchmarkHarness {
 
   private async measure(workspaceRoot: string): Promise<DaemonBenchmarkMeasurement> {
     const fileSystem = new SnapshotCountingFileSystem(new NodeFileSystem());
-    const counters: BenchmarkCounters = { projectLoads: 0, extractions: 0, refreshes: [] };
+    const counters: BenchmarkCounters = {
+      projectLoads: 0,
+      definitionLookups: 0,
+      extractions: 0,
+      refreshes: [],
+    };
     const retainedProgram = new RetainedWorkspaceProgram(
       fakeDependencies({
         fs: fileSystem,
@@ -116,6 +128,13 @@ export class DaemonBenchmarkHarness {
     } as const;
     const first = await this.timeExecution(() => retainedProgram.execute(request));
     const second = await this.timeExecution(() => retainedProgram.execute(request));
+    const targetSuffix = String(this.fileCount - 1).padStart(4, "0");
+    const definitionRequest: CliExecutionRequest = {
+      ...request,
+      argv: ["def", `src/module-${targetSuffix}.ts::symbol${targetSuffix}`],
+    };
+    const firstDefinition = await retainedProgram.execute(definitionRequest);
+    const secondDefinition = await retainedProgram.execute(definitionRequest);
     if (first.result.exitCode !== 0 || second.result.exitCode !== 0) {
       throw new Error(
         `Benchmark commands exited ${first.result.exitCode} and ${second.result.exitCode}`,
@@ -124,12 +143,21 @@ export class DaemonBenchmarkHarness {
     if (JSON.stringify(first.result.frames) !== JSON.stringify(second.result.frames)) {
       throw new Error("First and second benchmark commands produced different output");
     }
+    if (firstDefinition.exitCode !== 0 || secondDefinition.exitCode !== 0) {
+      throw new Error(
+        `Benchmark definition commands exited ${firstDefinition.exitCode} and ${secondDefinition.exitCode}`,
+      );
+    }
+    if (JSON.stringify(firstDefinition.frames) !== JSON.stringify(secondDefinition.frames)) {
+      throw new Error("First and second benchmark definition commands produced different output");
+    }
     return {
       fileCount: this.fileCount,
       counts: {
         projectLoads: counters.projectLoads,
         snapshots: fileSystem.completeSnapshots(this.fileCount),
         refreshes: counters.refreshes.length,
+        definitionLookups: counters.definitionLookups,
         sourceReads: fileSystem.sourceReadCount(),
         extractions: counters.extractions,
       },
@@ -172,6 +200,11 @@ class InstrumentedTypeScriptBackend extends TypeScriptBackend {
     const summary = await super.refresh(files, coverage);
     this.counters.refreshes.push(summary);
     return summary;
+  }
+
+  override async findDefinitions(files: readonly ResolvedPath[], identity: SymbolIdentity) {
+    this.counters.definitionLookups += 1;
+    return super.findDefinitions(files, identity);
   }
 }
 

@@ -2,6 +2,7 @@ import type { BackendRefreshSummary, FileSystem, GitHistory, LanguageBackend } f
 import type { Clock, Recorder } from "@symnav/telemetry";
 import type { TelemetryIdentityProvider } from "./telemetry/telemetry-identity.js";
 import type { CommandExecutionMode } from "./command-execution-result.js";
+import type { WorkspaceRequestScopeFactory } from "./workspace-request-scope.js";
 
 export interface ProgramDependencies {
   fs: FileSystem;
@@ -14,4 +15,5 @@ export interface ProgramDependencies {
   identity: TelemetryIdentityProvider;
   symnavVersion: string;
   backendRefreshed?: (summary: BackendRefreshSummary) => void;
+  scopeFactory?: WorkspaceRequestScopeFactory;
 }

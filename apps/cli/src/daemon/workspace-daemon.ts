@@ -1,6 +1,6 @@
 import type { ProgramDependencies } from "../program-dependencies.js";
 import type { CliExecutionRequest, CommandExecutionResult } from "../command-execution-result.js";
-import { WorkspaceRequestScopeFactory } from "../workspace-request-scope.js";
+import type { WorkspaceRequestScopeFactory } from "../workspace-request-scope.js";
 import type {
   DaemonRecord,
   DaemonRequest,
@@ -62,10 +62,7 @@ export class WorkspaceDaemon {
       this.logger.record({ kind: "freshness", ...summary });
     });
     this.executor = options.executor ?? retainedProgram;
-    this.scopeFactory = new WorkspaceRequestScopeFactory(
-      options.dependencies.fs,
-      retainedProgram.backends,
-    );
+    this.scopeFactory = retainedProgram.scopeFactory;
     this.exit = options.exit ?? ((code) => process.exit(code));
     this.lifetime = new DaemonLifetime(
       { now: this.now },

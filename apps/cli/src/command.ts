@@ -1,5 +1,4 @@
 import {
-  createWorkspace,
   type BackendRouter,
   type GitHistory,
   type NavigationDiagnosticSeverity,
@@ -56,12 +55,12 @@ export async function runCommand<Result extends ResultWithDiagnostics, Args>(
   let workspace: Workspace | undefined;
 
   try {
-    workspace = await createWorkspace({ startDir: cwd, fs });
     command.validate?.(args);
-    const scopeFactory = new WorkspaceRequestScopeFactory(fs, dependencies.backends());
+    const scopeFactory =
+      dependencies.scopeFactory ?? new WorkspaceRequestScopeFactory(fs, dependencies.backends());
     const snapshotSelector = command.snapshotForBackendRefresh;
     const preparedScope = snapshotSelector
-      ? await scopeFactory.prepareWorkspace(workspace, (scopeWorkspace, scopeRouter) =>
+      ? await scopeFactory.prepare(cwd, (scopeWorkspace, scopeRouter) =>
           snapshotSelector({
             workspace: scopeWorkspace,
             router: scopeRouter,
@@ -70,7 +69,8 @@ export async function runCommand<Result extends ResultWithDiagnostics, Args>(
             args,
           }),
         )
-      : await scopeFactory.prepareWorkspace(workspace);
+      : await scopeFactory.prepare(cwd);
+    workspace = preparedScope.workspace;
     try {
       dependencies.backendRefreshed?.(preparedScope.refresh);
     } catch {}

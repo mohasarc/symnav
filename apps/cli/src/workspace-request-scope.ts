@@ -7,6 +7,7 @@ import {
   type LanguageBackend,
   type Workspace,
   type WorkspaceSnapshot,
+  WorkspaceCatalog,
 } from "@symnav/core";
 
 export interface PreparedCommandScope {
@@ -20,13 +21,16 @@ export class WorkspaceRequestScopeFactory {
   constructor(
     private readonly fs: FileSystem,
     private readonly backends: readonly LanguageBackend[],
+    private readonly catalog?: WorkspaceCatalog,
   ) {}
 
   async prepare(
     startDir: string,
     selectSnapshot?: (workspace: Workspace, router: BackendRouter) => Promise<WorkspaceSnapshot>,
   ): Promise<PreparedCommandScope> {
-    const workspace = await createWorkspace({ startDir, fs: this.fs });
+    const workspace = this.catalog
+      ? await this.catalog.refresh(startDir)
+      : await createWorkspace({ startDir, fs: this.fs });
     return this.prepareWorkspace(workspace, selectSnapshot);
   }
 

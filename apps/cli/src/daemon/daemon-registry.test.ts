@@ -143,6 +143,32 @@ describe("daemon registry", () => {
     expect(registry.startupOwnerMatchesProcess(identity, starting)).toBe(true);
   });
 
+  it("keeps an armed launch claim after the initiating caller releases its lease", () => {
+    const identity = DaemonWorkspaceIdentity.from("/repo", temporaryDirectory(roots));
+    const registry = new DaemonRegistry(identity.registryDirectory);
+    const lease = registry.acquireStartup(identity, "starting");
+    const launchClaim = {
+      ...record(identity, "starting", "starting"),
+      pid: 0,
+    } satisfies DaemonRecord;
+
+    expect(registry.writeStartingIfStartupOwner(identity, launchClaim)).toBe(true);
+    lease?.release();
+
+    expect(registry.startupOwner(identity)).toMatchObject({
+      instanceId: launchClaim.instanceId,
+      processToken: launchClaim.processToken,
+    });
+    expect(registry.acquireStartup(identity, "replacement")).toBeUndefined();
+    expect(
+      registry.writeStartingIfStartupOwner(identity, { ...launchClaim, pid: 777 }),
+    ).toBe(true);
+    expect(registry.startupOwner(identity)).toMatchObject({
+      ownerPid: 777,
+      processToken: launchClaim.processToken,
+    });
+  });
+
   it("keeps replacement ownership when two processes clean the old owner", async () => {
     const stateDirectory = temporaryDirectory(roots);
     const identity = DaemonWorkspaceIdentity.from("/repo", stateDirectory);

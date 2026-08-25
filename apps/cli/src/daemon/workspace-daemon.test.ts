@@ -9,7 +9,13 @@ import type { CliExecutionRequest, CommandExecutionResult } from "../command-exe
 import { createDefaultDependencies } from "../program.js";
 import { DaemonController } from "./daemon-controller.js";
 import type { DaemonProcessTerminator } from "./daemon-process-launcher.js";
-import { DAEMON_PROTOCOL_VERSION, DAEMON_RECORD_SCHEMA_VERSION } from "./daemon-protocol.js";
+import {
+  DAEMON_PROTOCOL_VERSION,
+  DAEMON_RECORD_SCHEMA_VERSION,
+  type DaemonRequest,
+  type DaemonResponse,
+  type DaemonServer,
+} from "./daemon-protocol.js";
 import { DaemonRegistry } from "./daemon-registry.js";
 import { DaemonWorkspaceIdentity } from "./daemon-workspace-identity.js";
 import { LocalDaemonTransport } from "./local-daemon-transport.js";
@@ -174,6 +180,29 @@ describe("WorkspaceDaemon runtime lifecycle", () => {
     expect(readFileSync(harness.identity.logPath, "utf8")).not.toContain("\u001B");
   });
 
+  it("retains ready ownership while transport shutdown is blocked", async () => {
+    const transport = new BlockingCloseTransport();
+    const harness = await WorkspaceDaemonHarness.start(new ImmediateExecutor(), { transport });
+    harnesses.push(harness);
+
+    const killing = transport.request(harness.identity.endpoint(harness.instanceId), {
+      kind: "kill",
+      instanceId: harness.instanceId,
+      processToken: "runtime-token",
+    });
+    await transport.waitUntilCloseStarted();
+
+    expect(harness.registry.read(harness.identity)).toMatchObject({
+      instanceId: harness.instanceId,
+      state: "ready",
+    });
+    expect(harness.hasExited).toBe(false);
+
+    transport.allowClose();
+    await killing;
+    await harness.exited;
+  });
+
   it("releases daemon-owned startup authorization after publishing readiness", async () => {
     const harness = await WorkspaceDaemonHarness.start(new ImmediateExecutor());
     harnesses.push(harness);
@@ -247,6 +276,7 @@ interface RuntimeOptions {
   readonly memoryCapBytes?: number;
   readonly resourceCheckIntervalMs?: number;
   readonly residentMemoryBytes?: () => number;
+  readonly transport?: LocalDaemonTransport;
 }
 
 class WorkspaceDaemonHarness {
@@ -254,7 +284,7 @@ class WorkspaceDaemonHarness {
   readonly workspaceRoot: string;
   readonly identity: DaemonWorkspaceIdentity;
   readonly registry: DaemonRegistry;
-  readonly transport = new LocalDaemonTransport({ requestTimeoutMs: 200 });
+  readonly transport: LocalDaemonTransport;
   readonly instanceId = "runtime-instance";
   readonly exited: Promise<number>;
   private resolveExit!: (code: number) => void;
@@ -264,7 +294,8 @@ class WorkspaceDaemonHarness {
     return this.exitCode !== undefined;
   }
 
-  private constructor() {
+  private constructor(transport = new LocalDaemonTransport({ requestTimeoutMs: 200 })) {
+    this.transport = transport;
     this.stateDirectory = mkdtempSync(join(tmpdir(), "symnav-daemon-runtime-state-"));
     this.workspaceRoot = mkdtempSync(join(tmpdir(), "symnav-daemon-runtime-workspace-"));
     mkdirSync(join(this.workspaceRoot, ".git"));
@@ -280,7 +311,7 @@ class WorkspaceDaemonHarness {
     executor: DaemonCommandExecutor,
     runtime: RuntimeOptions = {},
   ): Promise<WorkspaceDaemonHarness> {
-    const harness = new WorkspaceDaemonHarness();
+    const harness = new WorkspaceDaemonHarness(runtime.transport);
     const lease = harness.registry.acquireStartup(harness.identity, harness.instanceId);
     if (lease === undefined) throw new Error("Expected startup ownership");
     if (
@@ -369,6 +400,50 @@ class WorkspaceDaemonHarness {
     }
     rmSync(this.stateDirectory, { recursive: true, force: true });
     rmSync(this.workspaceRoot, { recursive: true, force: true });
+  }
+}
+
+class BlockingCloseTransport extends LocalDaemonTransport {
+  private handler: ((request: DaemonRequest) => Promise<DaemonResponse>) | undefined;
+  private readonly closeStarted: Promise<void>;
+  private resolveCloseStarted!: () => void;
+  private readonly closeAllowed: Promise<void>;
+  private resolveCloseAllowed!: () => void;
+
+  constructor() {
+    super();
+    this.closeStarted = new Promise((resolve) => {
+      this.resolveCloseStarted = resolve;
+    });
+    this.closeAllowed = new Promise((resolve) => {
+      this.resolveCloseAllowed = resolve;
+    });
+  }
+
+  override async listen(
+    _endpoint: string,
+    handler: (request: DaemonRequest) => Promise<DaemonResponse>,
+  ): Promise<DaemonServer> {
+    this.handler = handler;
+    return {
+      close: async () => {
+        this.resolveCloseStarted();
+        await this.closeAllowed;
+      },
+    };
+  }
+
+  override request(_endpoint: string, request: DaemonRequest): Promise<DaemonResponse> {
+    if (this.handler === undefined) throw new Error("Daemon transport is not listening");
+    return this.handler(request);
+  }
+
+  waitUntilCloseStarted(): Promise<void> {
+    return this.closeStarted;
+  }
+
+  allowClose(): void {
+    this.resolveCloseAllowed();
   }
 }
 

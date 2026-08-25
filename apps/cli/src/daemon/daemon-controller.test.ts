@@ -23,23 +23,37 @@ describe("DaemonController", () => {
     roots.length = 0;
   });
 
-  it("cancels a starting daemon without using transport", async () => {
+  it("waits for an armed launch to publish its process before stopping it", async () => {
     const stateDirectory = temporaryDirectory(roots);
     const identity = DaemonWorkspaceIdentity.from("/repo", stateDirectory);
     const registry = new DaemonRegistry(identity.registryDirectory);
     const lease = registry.acquireStartup(identity, "starting");
     expect(lease).toBeDefined();
     expect(registry.writeStartingIfStartupOwner(identity, startingRecord(identity))).toBe(true);
+    const terminator = new BlockingControllerTerminator([process.pid, 7000]);
     const controller = new DaemonController(
       registry,
       new ControllerTransport() as unknown as LocalDaemonTransport,
       stateDirectory,
-      { processTerminator: new ControllerTerminator([process.pid]) },
+      { processTerminator: terminator, stopTimeoutMs: 1_000, pollIntervalMs: 1 },
     );
 
-    await expect(controller.stop("/repo")).resolves.toEqual({
-      status: "not-running",
+    const stopping = controller.stop("/repo");
+    const published = registry.writeStartingIfStartupOwner(identity, {
+      ...startingRecord(identity),
+      pid: 7000,
+    });
+
+    expect(published).toBe(true);
+    await terminator.waitUntilTerminationRequested();
+    expect(registry.startupOwner(identity)).toBeDefined();
+    expect(registry.readStoredInstance(identity, "starting")?.pid).toBe(7000);
+    terminator.allowExit();
+
+    await expect(stopping).resolves.toEqual({
+      status: "stopped",
       workspaceRoot: "/repo",
+      pid: 7000,
     });
     expect(registry.startupOwner(identity)).toBeUndefined();
     expect(registry.readStoredInstance(identity, "starting")).toBeUndefined();

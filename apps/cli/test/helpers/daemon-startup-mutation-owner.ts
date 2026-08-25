@@ -1,5 +1,6 @@
 import { mkdirSync, renameSync, writeFileSync } from "node:fs";
 import { randomUUID } from "node:crypto";
+import { canonicalStateDir } from "@symnav/telemetry";
 import {
   DAEMON_PROTOCOL_VERSION,
   DAEMON_RECORD_SCHEMA_VERSION,
@@ -18,7 +19,7 @@ if (
 
 await new Promise<void>((resolve) => setTimeout(resolve, Number(startupDelayMsText)));
 
-const identity = DaemonWorkspaceIdentity.from(workspaceRoot, stateDirectory);
+const identity = DaemonWorkspaceIdentity.from(workspaceRoot, canonicalStateDir(stateDirectory));
 const registry = new DaemonRegistry(identity.registryDirectory);
 const instanceId = "orphaned-mutation";
 const lease = registry.acquireStartup(identity, instanceId);

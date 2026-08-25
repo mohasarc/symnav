@@ -2,7 +2,6 @@ import {
   existsSync,
   mkdirSync,
   mkdtempSync,
-  readdirSync,
   readFileSync,
   realpathSync,
   writeFileSync,
@@ -17,6 +16,7 @@ import { DAEMON_PROTOCOL_VERSION, type DaemonRecord } from "../../../src/daemon/
 import { LocalDaemonTransport } from "../../../src/daemon/local-daemon-transport.js";
 import { canonicalWorkspaceRoot } from "../../helpers/canonical-workspace-root.js";
 import { E2eProcessCleanup } from "../../helpers/e2e-process-cleanup.js";
+import { DaemonStateFiles } from "../../helpers/daemon-state-files.js";
 
 describe("symnav daemon status", () => {
   const stateDirectories: string[] = [];
@@ -136,7 +136,6 @@ describe("symnav daemon status", () => {
 
   it("cleans a stale current-schema record", async () => {
     const stateDir = temporaryStateDirectory(stateDirectories);
-    const daemonDirectory = join(stateDir, "daemons");
     const cwd = temporaryWorkspace(stateDirectories);
     const started = runSymnavBinary(["daemon", "start"], {
       cwd,
@@ -149,18 +148,17 @@ describe("symnav daemon status", () => {
     await E2eProcessCleanup.kill(daemonPids);
     await E2eProcessCleanup.waitForEndpointRelease(originalRecord!.endpoint);
     daemonPids.length = 0;
-    const recordName = readdirSync(daemonDirectory).find((name) => name.endsWith(".json"));
-    expect(recordName).toBeDefined();
-    const recordPath = join(daemonDirectory, recordName!);
-    const record = JSON.parse(readFileSync(recordPath, "utf8")) as Record<string, unknown>;
-    writeFileSync(recordPath, JSON.stringify({ ...record, pid: 999_999_999 }));
+    const recordPath = DaemonStateFiles.matchingPaths(stateDir, ".json")[0];
+    expect(recordPath).toBeDefined();
+    const record = JSON.parse(readFileSync(recordPath!, "utf8")) as Record<string, unknown>;
+    writeFileSync(recordPath!, JSON.stringify({ ...record, pid: 999_999_999 }));
 
     const status = runSymnavBinary(["daemon", "status"], {
       cwd: tmpdir(),
       env: { SYMNAV_STATE_DIR: stateDir },
     });
     expect(status).toEqual({ stdout: "No daemons running.\n", stderr: "", status: 0 });
-    expect(readdirSync(daemonDirectory).filter((name) => name.endsWith(".json"))).toEqual([]);
+    expect(DaemonStateFiles.matchingPaths(stateDir, ".json")).toEqual([]);
     expect(existsSync(String(record.endpoint))).toBe(false);
   });
 
@@ -256,16 +254,9 @@ function captureDaemonPids(stateDir: string, pids: number[]): void {
 }
 
 function daemonRecords(stateDir: string): readonly DaemonRecord[] {
-  const recordsDirectory = join(stateDir, "daemons");
-  try {
-    return readdirSync(recordsDirectory)
-      .filter((name) => name.endsWith(".json"))
-      .map(
-        (name) => JSON.parse(readFileSync(join(recordsDirectory, name), "utf8")) as DaemonRecord,
-      );
-  } catch {
-    return [];
-  }
+  return DaemonStateFiles.matchingPaths(stateDir, ".json").map(
+    (path) => JSON.parse(readFileSync(path, "utf8")) as DaemonRecord,
+  );
 }
 
 function replay(

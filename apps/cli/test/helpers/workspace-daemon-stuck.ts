@@ -1,4 +1,5 @@
 import { existsSync, writeFileSync } from "node:fs";
+import { canonicalStateDir } from "@symnav/telemetry";
 import type {
   CliExecutionRequest,
   CommandExecutionResult,
@@ -66,7 +67,7 @@ class ControlledExecutor implements DaemonCommandExecutor {
   }
 }
 
-const identity = DaemonWorkspaceIdentity.from(workspaceRoot, stateDirectory);
+const identity = DaemonWorkspaceIdentity.from(workspaceRoot, canonicalStateDir(stateDirectory));
 writeFileSync(`${readyPath}.boot`, String(process.pid));
 const daemon = new WorkspaceDaemon({
   identity,

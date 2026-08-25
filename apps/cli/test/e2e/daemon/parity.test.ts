@@ -5,7 +5,6 @@ import {
   mkdtempSync,
   readFileSync,
   realpathSync,
-  readdirSync,
   renameSync,
   rmSync,
   statSync,
@@ -19,6 +18,7 @@ import { fileURLToPath } from "node:url";
 import { spawn } from "node:child_process";
 import { afterEach, describe, expect, it } from "vitest";
 import { fixturePath, runSymnavBinary, type RunSymnavBinaryResult } from "@symnav/testing";
+import { canonicalStateDir } from "@symnav/telemetry";
 import type { ChildProcess } from "node:child_process";
 import {
   DAEMON_PROTOCOL_VERSION,
@@ -31,6 +31,7 @@ import { LocalDaemonTransport } from "../../../src/daemon/local-daemon-transport
 import { createDefaultDependencies } from "../../../src/program.js";
 import { canonicalWorkspaceRoot } from "../../helpers/canonical-workspace-root.js";
 import { E2eProcessCleanup } from "../../helpers/e2e-process-cleanup.js";
+import { DaemonStateFiles } from "../../helpers/daemon-state-files.js";
 
 describe("symnav daemon parity", () => {
   const harnesses: DaemonParityHarness[] = [];
@@ -589,7 +590,10 @@ class DaemonParityHarness {
 
   async startControlledDaemon(releaseArgument = "--no-release"): Promise<ControlledDaemon> {
     const controlledWorkspaceRoot = canonicalWorkspaceRoot(realpathSync(this.workspaceRoot));
-    const identity = DaemonWorkspaceIdentity.from(controlledWorkspaceRoot, this.stateDirectory);
+    const identity = DaemonWorkspaceIdentity.from(
+      controlledWorkspaceRoot,
+      canonicalStateDir(this.stateDirectory),
+    );
     const registry = new DaemonRegistry(identity.registryDirectory);
     const instanceId = "controlled-crash";
     const processToken = `${instanceId}-token`;
@@ -651,19 +655,16 @@ class DaemonParityHarness {
   }
 
   onlyDaemonPid(): number {
-    const recordsDirectory = join(this.stateDirectory, "daemons");
-    const records = readdirSync(recordsDirectory).filter((name) => name.endsWith(".json"));
+    const records = DaemonStateFiles.matchingPaths(this.stateDirectory, ".json");
     expect(records).toHaveLength(1);
-    const record = JSON.parse(readFileSync(join(recordsDirectory, records[0]!), "utf8")) as {
+    const record = JSON.parse(readFileSync(records[0]!, "utf8")) as {
       pid: number;
     };
     return record.pid;
   }
 
   daemonRecordCount(): number {
-    const recordsDirectory = join(this.stateDirectory, "daemons");
-    if (!existsSync(recordsDirectory)) return 0;
-    return readdirSync(recordsDirectory).filter((name) => name.endsWith(".json")).length;
+    return DaemonStateFiles.matchingPaths(this.stateDirectory, ".json").length;
   }
 
   replaceStateDirectoryWithFile(): void {
@@ -685,16 +686,10 @@ class DaemonParityHarness {
   }
 
   private daemonProcessIds(): readonly number[] {
-    const recordsDirectory = join(this.stateDirectory, "daemons");
-    if (!existsSync(recordsDirectory)) return [];
-    return readdirSync(recordsDirectory)
-      .filter((name) => name.endsWith(".json"))
-      .map((name) => {
-        const record = JSON.parse(readFileSync(join(recordsDirectory, name), "utf8")) as {
-          readonly pid: number;
-        };
-        return record.pid;
-      });
+    return DaemonStateFiles.matchingPaths(this.stateDirectory, ".json").map((path) => {
+      const record = JSON.parse(readFileSync(path, "utf8")) as { readonly pid: number };
+      return record.pid;
+    });
   }
 
   private run(

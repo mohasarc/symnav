@@ -563,6 +563,26 @@ describe("daemon registry", () => {
     });
     expect(registry.readStoredInstance(identity, "stale-stop")).toBeUndefined();
   });
+
+  it("does not remove or terminate a live daemon when stop authentication times out", async () => {
+    const stateDirectory = temporaryDirectory(roots);
+    const identity = DaemonWorkspaceIdentity.from("/repo", stateDirectory);
+    const registry = new DaemonRegistry(identity.registryDirectory);
+    registry.write({ ...record(identity, "ready", "silent-stop"), pid: 701 });
+    const transport = new ControllerTransport(registry);
+    const terminator = new ControllerTerminator([701]);
+    const controller = new DaemonController(
+      registry,
+      transport as unknown as LocalDaemonTransport,
+      stateDirectory,
+      { processTerminator: terminator, stopTimeoutMs: 5, pollIntervalMs: 1 },
+    );
+
+    await expect(controller.stop("/repo")).rejects.toThrow(/unresponsive/i);
+    expect(registry.readStoredInstance(identity, "silent-stop")).toBeDefined();
+    expect(transport.killed).toEqual([]);
+    expect(terminator.terminated).toEqual([]);
+  });
 });
 
 class ControllerTransport {

@@ -76,17 +76,18 @@ describe("DaemonStartupCoordinator", () => {
     expect(harness.registry.list()).toHaveLength(1);
   });
 
-  it("does not terminate an unrelated live process referenced by a stale record", async () => {
+  it("retains ownership when a stale record references an unrelated live process", async () => {
     const oldPid = await spawnIdleProcess(realProcessIds);
     const runtime = socketBackedCoordinator(roots);
     runtime.registry.write(readyRecord(runtime.identity, "old", "old-process", oldPid));
 
-    const result = await runtime.coordinator.ensureRunning(runtime.identity);
+    await expect(runtime.coordinator.ensureRunning(runtime.identity)).rejects.toThrow(
+      /live but unresponsive/i,
+    );
 
-    expect(result.status).toBe("ready");
     expect(runtime.terminator.isAlive(oldPid)).toBe(true);
     expect(runtime.registry.list()).toHaveLength(1);
-    await runtime.launcher.close();
+    expect(runtime.registry.readStored(runtime.identity)?.instanceId).toBe("old");
   });
 
   it.each(["schema", "protocol", "symnav"] as const)(
@@ -187,14 +188,31 @@ describe("DaemonStartupCoordinator", () => {
     expect(harness.registry.readStored(harness.identity)?.instanceId).toBe("existing");
   }, 1_000);
 
-  it("terminates and cleans a daemon that misses its readiness deadline", async () => {
+  it("retains a live daemon that outlives the caller readiness wait", async () => {
     const harness = new CoordinatorHarness(roots, { neverReady: true });
 
     await expect(
       harness.coordinator({ startupTimeoutMs: 5 }).ensureRunning(harness.identity),
-    ).rejects.toThrow(/timed out/i);
+    ).rejects.toThrow(/ownership was retained/i);
 
-    expect(harness.terminator.terminated).toContain(harness.launcher.lastPid);
+    expect(harness.terminator.terminated).not.toContain(harness.launcher.lastPid);
+    expect(harness.registry.readStored(harness.identity)?.pid).toBe(harness.launcher.lastPid);
+    expect(harness.registry.startupOwner(harness.identity)).toBeDefined();
+  });
+
+  it("cleans exact startup ownership promptly when the launched child exits", async () => {
+    const harness = new CoordinatorHarness(roots, {
+      neverReady: true,
+      childExit: { code: 1, signal: null, cause: "exit" },
+      childExitDelayMs: 5,
+    });
+    const startedAt = Date.now();
+
+    await expect(
+      harness.coordinator({ startupTimeoutMs: 1_000 }).ensureRunning(harness.identity),
+    ).rejects.toThrow(/exited before readiness/i);
+
+    expect(Date.now() - startedAt).toBeLessThan(500);
     expect(harness.registry.readStored(harness.identity)).toBeUndefined();
     expect(harness.registry.startupOwner(harness.identity)).toBeUndefined();
   });
@@ -320,10 +338,10 @@ describe("DaemonStartupCoordinator", () => {
           processTerminator: new TestProcessTerminator(false),
         })
         .ensureRunning(harness.identity),
-    ).rejects.toThrow(/timed out/i);
+    ).rejects.toThrow(/ownership was retained/i);
 
-    expect(harness.registry.startupOwner(harness.identity)).toBeUndefined();
-    expect(harness.registry.acquireStartup(harness.identity, "recovered")).toBeDefined();
+    expect(harness.registry.startupOwner(harness.identity)?.instanceId).not.toBe("orphan");
+    expect(harness.registry.acquireStartup(harness.identity, "recovered")).toBeUndefined();
   });
 
   it("does not launch after startup ownership changes before publication", async () => {
@@ -431,7 +449,7 @@ describe("DaemonStartupCoordinator", () => {
     expect(harness.launcher.launchCount).toBe(1);
   }, 10_000);
 
-  it("kills a real timed-out child before releasing startup ownership", async () => {
+  it("observes a real child exit before releasing startup ownership", async () => {
     const root = temporaryDirectory(roots);
     const identity = DaemonWorkspaceIdentity.from("/repo", root);
     const registry = new DaemonRegistry(identity.registryDirectory);
@@ -442,13 +460,12 @@ describe("DaemonStartupCoordinator", () => {
       registry,
       launcher,
       transport as unknown as LocalDaemonTransport,
-      { startupTimeoutMs: 20, pollIntervalMs: 2 },
+      { startupTimeoutMs: 1_000, pollIntervalMs: 2 },
     );
 
-    await expect(coordinator.ensureRunning(identity)).rejects.toThrow(/timed out/i);
-    await new Promise((resolve) => setTimeout(resolve, 300));
+    await expect(coordinator.ensureRunning(identity)).rejects.toThrow(/exited before readiness/i);
 
-    expect(existsSync(markerPath)).toBe(false);
+    expect(existsSync(markerPath)).toBe(true);
     expect(registry.startupOwner(identity)).toBeUndefined();
     expect(registry.readStored(identity)).toBeUndefined();
   });
@@ -469,10 +486,10 @@ describe("DaemonStartupCoordinator", () => {
           processTerminator: new TestProcessTerminator(false),
         })
         .ensureRunning(harness.identity),
-    ).rejects.toThrow(/timed out/i);
+    ).rejects.toThrow(/ownership was retained/i);
 
-    expect(harness.registry.startupOwner(harness.identity)).toBeUndefined();
-    expect(harness.registry.acquireStartup(harness.identity, "recovered")).toBeDefined();
+    expect(harness.registry.startupOwner(harness.identity)?.instanceId).not.toBe("orphan");
+    expect(harness.registry.acquireStartup(harness.identity, "recovered")).toBeUndefined();
   });
 
   it("does not launch after startup ownership changes before publication", async () => {
@@ -560,6 +577,8 @@ interface CoordinatorHarnessOptions {
   readonly readinessPublicationGate?: ReadinessPublicationGate;
   readonly oldDaemonExitsAfterTerminate?: boolean;
   readonly exitingLaunches?: number;
+  readonly childExit?: DaemonProcessExit;
+  readonly childExitDelayMs?: number;
 }
 
 class ReadinessPublicationGate {
@@ -676,7 +695,10 @@ class ReadyTestLauncher implements DaemonProcessLauncher {
     this.lastPid = pid;
     this.terminator.alive.add(pid);
     const exitsBeforeReadiness = this.launchCount <= (this.options.exitingLaunches ?? 0);
-    if (!this.options.neverReady && !exitsBeforeReadiness) {
+    const childExit = exitsBeforeReadiness
+      ? { code: 1, signal: null, cause: "exit" as const }
+      : this.options.childExit;
+    if (!this.options.neverReady && childExit === undefined) {
       const readinessPublicationGate = this.options.readinessPublicationGate;
       if (readinessPublicationGate === undefined) {
         setTimeout(() => this.publishReady(instanceId), this.options.readyDelayMs ?? 0);
@@ -684,14 +706,15 @@ class ReadyTestLauncher implements DaemonProcessLauncher {
         void readinessPublicationGate.wait().then(() => this.publishReady(instanceId));
       }
     }
-    const exited: Promise<DaemonProcessExit> = exitsBeforeReadiness
-      ? new Promise((resolve) =>
-          setTimeout(() => {
-            this.terminator.alive.delete(pid);
-            resolve({ code: 1, signal: null, cause: "exit" });
-          }, 5),
-        )
-      : new Promise(() => undefined);
+    const exited: Promise<DaemonProcessExit> =
+      childExit === undefined
+        ? new Promise(() => undefined)
+        : new Promise((resolve) =>
+            setTimeout(() => {
+              this.terminator.alive.delete(pid);
+              resolve(childExit);
+            }, exitsBeforeReadiness ? 5 : (this.options.childExitDelayMs ?? 0)),
+          );
     return {
       pid,
       exited,
@@ -1068,6 +1091,12 @@ const server = createServer((socket) => {
     const request = JSON.parse(bytes.subarray(4, length + 4).toString("utf8"));
     if (request.kind === "identify") {
       socket.end(frame({ kind: "identity", instanceId, processToken, pid: process.pid, startedAt }));
+      return;
+    }
+    if (request.kind === "ping") {
+      socket.end(frame({ kind: "pong", protocolVersion: ${String(
+        DAEMON_PROTOCOL_VERSION,
+      )}, instanceId, symnavVersion: "0.1.0", startedAt }));
       return;
     }
     if (request.kind === "terminate") {

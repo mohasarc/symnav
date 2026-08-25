@@ -11,7 +11,8 @@ parentPort.on("message", (message) => {
     if (workerData.mode === "late-generation") {
       parentPort.postMessage({ kind: "closed", generation: generation - 1 });
     }
-    if (workerData.mode === "block") Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 150);
+    if (workerData.mode === "block")
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 150);
     parentPort.postMessage({
       kind: "ready",
       generation,

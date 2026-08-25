@@ -193,7 +193,7 @@ export class TypeScriptProjectGraph implements TypeScriptSemanticSourceProvider 
     this.configuredProjectByFile = configuredProjectByFile;
     this.inferredProject = new TypeScriptSemanticProject(
       this.fileSystem,
-      { noEmit: true },
+      TypeScriptProjectGraph.inferredCompilerOptions(snapshot.root, workspacePackages),
       inferredFiles,
     );
   }
@@ -342,10 +342,7 @@ export class TypeScriptProjectGraph implements TypeScriptSemanticSourceProvider 
   ): ts.CompilerOptions {
     const compilerOptions: ts.CompilerOptions = { ...configuration.compilerOptions };
     const baseUrl = compilerOptions.baseUrl ?? configuration.directory;
-    const paths: Record<string, string[]> = {};
-    for (const workspacePackage of workspacePackages) {
-      for (const mapping of workspacePackage.mappings) paths[mapping.specifier] = [mapping.target];
-    }
+    const paths = TypeScriptProjectGraph.workspacePackagePaths(workspacePackages);
     for (const [specifier, targets] of Object.entries(compilerOptions.paths ?? {})) {
       paths[specifier] = targets.map((target) => posix.resolve(baseUrl, target));
     }
@@ -356,6 +353,27 @@ export class TypeScriptProjectGraph implements TypeScriptSemanticSourceProvider 
     compilerOptions.paths = paths;
     compilerOptions.noEmit = true;
     return compilerOptions;
+  }
+
+  private static inferredCompilerOptions(
+    root: string,
+    workspacePackages: readonly WorkspacePackage[],
+  ): ts.CompilerOptions {
+    return {
+      baseUrl: root,
+      paths: TypeScriptProjectGraph.workspacePackagePaths(workspacePackages),
+      noEmit: true,
+    };
+  }
+
+  private static workspacePackagePaths(
+    workspacePackages: readonly WorkspacePackage[],
+  ): Record<string, string[]> {
+    const paths: Record<string, string[]> = {};
+    for (const workspacePackage of workspacePackages) {
+      for (const mapping of workspacePackage.mappings) paths[mapping.specifier] = [mapping.target];
+    }
+    return paths;
   }
 
   private static changedInputCount(

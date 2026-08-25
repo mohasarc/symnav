@@ -17,6 +17,10 @@ class StateDirectoryPath {
   }
 }
 
+export function canonicalStateDir(stateDirectory: string): string {
+  return StateDirectoryPath.canonicalize(stateDirectory);
+}
+
 export function resolveStateDir(
   env: NodeJS.ProcessEnv = process.env,
   homedir = osHomedir(),

@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync } from "node:
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { resolveStateDir, usageLogPath } from "./state-dir.js";
+import { canonicalStateDir, resolveStateDir, usageLogPath } from "./state-dir.js";
 
 const temporaryDirectories: string[] = [];
 
@@ -50,6 +50,7 @@ describe("resolveStateDir", () => {
     const canonicalRoot = realpathSync(root);
 
     expect(resolveStateDir({ SYMNAV_STATE_DIR: canonicalRoot })).toBe(canonicalRoot);
+    expect(canonicalStateDir(canonicalRoot)).toBe(canonicalRoot);
   });
 });
 

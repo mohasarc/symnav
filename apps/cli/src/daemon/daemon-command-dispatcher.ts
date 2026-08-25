@@ -10,11 +10,15 @@ import type {
 import type { ProgramDependencies } from "../program-dependencies.js";
 import type { DaemonRecord, DaemonRequest, DaemonResponse } from "./daemon-protocol.js";
 import { DaemonRegistry } from "./daemon-registry.js";
-import { NodeDaemonProcessLauncher } from "./daemon-process-launcher.js";
+import {
+  NodeDaemonProcessLauncher,
+  NodeDaemonProcessTerminator,
+} from "./daemon-process-launcher.js";
 import { DaemonStartupCoordinator } from "./daemon-startup-coordinator.js";
 import { DaemonWorkspaceIdentity } from "./daemon-workspace-identity.js";
 import { InvocationWorkspaceSelector } from "./invocation-workspace-selector.js";
 import { LocalDaemonTransport } from "./local-daemon-transport.js";
+import { DaemonRecordObserver, type DaemonObservation } from "./daemon-record-observer.js";
 
 interface DaemonStarter {
   ensureRunning(identity: DaemonWorkspaceIdentity): Promise<unknown>;
@@ -22,15 +26,24 @@ interface DaemonStarter {
 
 interface DaemonDispatchRegistry {
   read(identity: DaemonWorkspaceIdentity): DaemonRecord | undefined;
-  removeIfInstance(identity: DaemonWorkspaceIdentity, instanceId: string): void;
+  removeIfProcess(
+    identity: DaemonWorkspaceIdentity,
+    instanceId: string,
+    processToken: string,
+  ): boolean;
 }
 
 interface DaemonDispatchTransport {
   request(endpoint: string, request: DaemonRequest): Promise<DaemonResponse>;
 }
 
+interface DaemonDispatchObserver {
+  observe(record: DaemonRecord): Promise<DaemonObservation>;
+}
+
 export interface DaemonDispatchRuntime {
   readonly coordinator: DaemonStarter;
+  readonly observer: DaemonDispatchObserver;
   readonly registry: DaemonDispatchRegistry;
   readonly transport: DaemonDispatchTransport;
 }
@@ -141,7 +154,7 @@ export class DaemonCommandDispatcher {
           record = runtime.registry.read(identity);
         } catch {}
       }
-      if (record !== undefined) await this.invalidate(runtime, identity, record);
+      if (record !== undefined) await this.reconcileFailure(runtime, identity, record);
       return this.executeLocally(workspaceRequest, "fallback");
     }
   }
@@ -158,20 +171,15 @@ export class DaemonCommandDispatcher {
       .then((result) => ({ mode, result }));
   }
 
-  private async invalidate(
+  private async reconcileFailure(
     runtime: DaemonDispatchRuntime,
     identity: DaemonWorkspaceIdentity,
     record: DaemonRecord,
   ): Promise<void> {
     try {
-      await runtime.transport.request(record.endpoint, {
-        kind: "kill",
-        instanceId: record.instanceId,
-        processToken: record.processToken,
-      });
-    } catch {}
-    try {
-      runtime.registry.removeIfInstance(identity, record.instanceId);
+      const observation = await runtime.observer.observe(record);
+      if (observation.kind !== "exited") return;
+      runtime.registry.removeIfProcess(identity, record.instanceId, record.processToken);
     } catch {}
   }
 
@@ -181,13 +189,21 @@ export class DaemonCommandDispatcher {
   ): DaemonDispatchRuntime {
     const registry = new DaemonRegistry(identity.registryDirectory);
     const transport = new LocalDaemonTransport();
+    const processTerminator = new NodeDaemonProcessTerminator();
+    const launcher = new NodeDaemonProcessLauncher(
+      dependencies.symnavVersion,
+      undefined,
+      processTerminator,
+    );
     return {
       registry,
       transport,
+      observer: new DaemonRecordObserver(transport, processTerminator),
       coordinator: new DaemonStartupCoordinator(
         registry,
-        new NodeDaemonProcessLauncher(dependencies.symnavVersion),
+        launcher,
         transport,
+        { processTerminator },
       ),
     };
   }

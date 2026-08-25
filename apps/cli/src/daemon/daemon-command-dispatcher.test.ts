@@ -336,6 +336,7 @@ class DispatchHarness {
           this.removeIfProcess(identity, instanceId, processToken);
           if (this.removalFailure !== undefined) throw this.removalFailure;
           this.registered = undefined;
+          return true;
         },
       },
       transport: {

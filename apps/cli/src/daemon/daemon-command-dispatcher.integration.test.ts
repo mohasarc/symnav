@@ -6,13 +6,17 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { CliExecutionRequest, CommandExecutionResult } from "../command-execution-result.js";
 import type { ProgramDependencies } from "../program-dependencies.js";
 import { DaemonCommandDispatcher } from "./daemon-command-dispatcher.js";
-import type { DaemonProcessLauncher } from "./daemon-process-launcher.js";
+import {
+  NodeDaemonProcessTerminator,
+  type DaemonProcessLauncher,
+} from "./daemon-process-launcher.js";
 import {
   DAEMON_PROTOCOL_VERSION,
   DAEMON_RECORD_SCHEMA_VERSION,
   type DaemonRecord,
 } from "./daemon-protocol.js";
 import { DaemonRegistry } from "./daemon-registry.js";
+import { DaemonRecordObserver } from "./daemon-record-observer.js";
 import { DaemonStartupCoordinator } from "./daemon-startup-coordinator.js";
 import { DaemonWorkspaceIdentity } from "./daemon-workspace-identity.js";
 import { LocalDaemonTransport } from "./local-daemon-transport.js";
@@ -101,10 +105,13 @@ function createRuntime(roots: string[]) {
   const stateDirectory = mkdtempSync(join(tmpdir(), "symnav-dispatch-failure-"));
   roots.push(stateDirectory);
   const identity = DaemonWorkspaceIdentity.from("/repo", stateDirectory);
+  const transport = new LocalDaemonTransport({ requestTimeoutMs: 50 });
+  const processTerminator = new NodeDaemonProcessTerminator();
   return {
     identity,
     registry: new DaemonRegistry(identity.registryDirectory),
-    transport: new LocalDaemonTransport({ requestTimeoutMs: 50 }),
+    transport,
+    observer: new DaemonRecordObserver(transport, processTerminator),
     stateDirectory,
   };
 }

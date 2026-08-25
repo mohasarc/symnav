@@ -55,10 +55,13 @@ All commands operate only on non-ignored workspace files.
 
 Rules:
 
-- Project ignore files define the boundary.
+- Project ignore files define which files are ignored within one workspace.
+- Nested Git repositories, worktrees, and submodules are separate workspace boundaries, not ignore rules.
+- Parent commands never traverse or return files from a nested workspace.
 - Ignored files are always out of scope.
 - There are no built-in ignore rules beyond project ignore behavior.
 - There is no include-ignored override.
+- There is no include-nested-workspaces override.
 - The tool does not mention ignored files unless the user directly queries an ignored path.
 
 Example:
@@ -66,6 +69,8 @@ Example:
 ```text
 Cannot answer: path is ignored by project rules.
 ```
+
+Directly querying a path owned by a nested workspace fails with guidance to select that workspace through the current directory or `--cwd`.
 
 ### Ambiguity
 

@@ -188,6 +188,15 @@ describe("TypeScriptProjectGraph", () => {
     expect(graph.languageServiceFor("scratch/outside.ts")).toBeDefined();
   });
 
+  it("keeps uncovered files outside configured compiler options", async () => {
+    const projectFixture = fixture();
+    const graph = new TypeScriptProjectGraph(projectFixture.fileSystem);
+
+    await graph.refresh(await projectFixture.snapshot());
+
+    expect(graph.programFor("scratch/outside.ts")?.getCompilerOptions().paths).toBeUndefined();
+  });
+
   it("ignores workspace packages without a root export", async () => {
     const projectFixture = fixture();
     const graph = new TypeScriptProjectGraph(projectFixture.fileSystem);

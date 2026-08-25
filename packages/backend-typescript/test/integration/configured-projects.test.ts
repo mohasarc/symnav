@@ -56,6 +56,19 @@ describe("TypeScriptBackend configured projects", () => {
       { symbol: { identity: identity("packages/app/src/local.ts", "appLocalTarget") } },
     ]);
   });
+
+  it("does not resolve configured aliases from the inferred project", async () => {
+    const { backend, files } = await backendOverFixture();
+
+    await expect(
+      backend.findCallees(files, identity("scratch/outside.ts", "useConfiguredAliasFromInferred")),
+    ).resolves.toEqual([]);
+    const references = await backend.findReferences(
+      files,
+      identity("packages/app/src/local.ts", "appLocalTarget"),
+    );
+    expect(references.map((reference) => reference.file)).toEqual(["packages/app/src/index.ts"]);
+  });
 });
 
 async function backendOverFixture(): Promise<{

@@ -372,6 +372,19 @@ describe("symnav daemon parity", () => {
     20_000,
   );
 
+  it("keeps configured aliases out of cold and warm inferred semantics", () => {
+    const harness = new DaemonParityHarness("configured-project-cases");
+    harnesses.push(harness);
+    const args = ["refs", "packages/app/src/local.ts::appLocalTarget", "--all"];
+
+    const warm = harness.warm(args);
+
+    expect(warm).toEqual(harness.cold(args));
+    expect(warm).toMatchObject({ status: 0, stderr: "" });
+    expect(warm.stdout).toContain("packages/app/src/index.ts");
+    expect(warm.stdout).not.toContain("scratch/outside.ts");
+  }, 20_000);
+
   it.each([
     ["malformed", "{ malformed"],
     ["missing", undefined],

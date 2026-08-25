@@ -1,4 +1,3 @@
-import { randomUUID } from "node:crypto";
 import type {
   DaemonRecord,
   DaemonStartResult,
@@ -12,6 +11,7 @@ import {
   type DaemonProcessLauncher,
 } from "./daemon-process-launcher.js";
 import type { DaemonRegistry } from "./daemon-registry.js";
+import { DaemonRecordObserver, type DaemonObservation } from "./daemon-record-observer.js";
 import { DaemonStartupCoordinator } from "./daemon-startup-coordinator.js";
 import { DaemonWorkspaceIdentity } from "./daemon-workspace-identity.js";
 import type { LocalDaemonTransport } from "./local-daemon-transport.js";
@@ -30,6 +30,7 @@ export class DaemonController {
   private readonly pollIntervalMs: number;
   private readonly processTerminator: DaemonProcessTerminator;
   private readonly launcher: DaemonProcessLauncher | undefined;
+  private readonly observer: DaemonRecordObserver;
 
   constructor(
     private readonly registry: DaemonRegistry,
@@ -42,6 +43,7 @@ export class DaemonController {
     this.pollIntervalMs = options.pollIntervalMs ?? 20;
     this.processTerminator = options.processTerminator ?? new NodeDaemonProcessTerminator();
     this.launcher = options.launcher;
+    this.observer = new DaemonRecordObserver(this.transport, this.processTerminator, this.now);
   }
 
   start(workspaceRoot: string): Promise<DaemonStartResult> {
@@ -108,7 +110,6 @@ export class DaemonController {
       const owner = this.registry.startupOwner(identity);
       if (
         owner?.instanceId === record.instanceId &&
-        this.registry.startupOwnerIsWithinGrace(owner) &&
         this.processTerminator.isAlive(owner.ownerPid)
       ) {
         return this.startingStatus(record);
@@ -118,7 +119,6 @@ export class DaemonController {
           const renewedOwner = this.registry.startupOwner(identity);
           if (
             renewedOwner?.instanceId === record.instanceId &&
-            this.registry.startupOwnerIsWithinGrace(renewedOwner) &&
             this.processTerminator.isAlive(renewedOwner.ownerPid)
           ) {
             return this.startingStatus(record);
@@ -126,41 +126,20 @@ export class DaemonController {
           return undefined;
         }
       }
-      await this.removeStaleRecord(identity, record);
-      return undefined;
-    }
-
-    try {
-      const response = await this.transport.request(record.endpoint, {
-        kind: "ping",
-        protocolVersion: DAEMON_PROTOCOL_VERSION,
-        instanceId: record.instanceId,
-      });
-      if (
-        response.kind !== "pong" ||
-        response.symnavVersion !== record.symnavVersion ||
-        (response.startedAt !== undefined && response.startedAt !== record.startedAt)
-      ) {
+      if (record.pid <= 0) {
+        this.registry.removeIfProcess(identity, record.instanceId, record.processToken);
         return undefined;
       }
-      const lastNavigationAt = response.lastNavigationAt ?? record.lastNavigationAt;
-      const fileCount = response.fileCount ?? record.fileCount;
-      const memoryBytes = response.memoryBytes ?? record.memoryBytes;
-      return {
-        workspaceRoot: record.workspaceRoot,
-        state: "ready",
-        pid: record.pid,
-        uptimeMs: Math.max(0, this.now() - record.startedAt),
-        ...(fileCount === undefined ? {} : { fileCount }),
-        ...(memoryBytes === undefined ? {} : { memoryBytes }),
-        ...(lastNavigationAt === undefined
-          ? {}
-          : { lastRequestAgoMs: Math.max(0, this.now() - lastNavigationAt) }),
-      };
-    } catch {
-      await this.removeStaleRecord(identity, record);
-      return undefined;
+      const observation = await this.observer.observe(record);
+      if (observation.kind === "starting") return this.startingStatus(record);
+      if (observation.kind === "exited") {
+        this.registry.removeIfProcess(identity, record.instanceId, record.processToken);
+        return undefined;
+      }
+      return this.unresponsiveStatus(record);
     }
+
+    return this.statusForObservation(await this.observer.observe(record));
   }
 
   private async stopStarting(
@@ -195,6 +174,44 @@ export class DaemonController {
     };
   }
 
+  private statusForObservation(observation: DaemonObservation): RunningDaemonStatus | undefined {
+    const record = observation.record;
+    if (observation.kind === "exited") {
+      const identity = DaemonWorkspaceIdentity.from(record.workspaceRoot, this.stateDirectory);
+      this.registry.removeIfProcess(identity, record.instanceId, record.processToken);
+      return undefined;
+    }
+    if (observation.kind !== "responsive") return this.unresponsiveStatus(record);
+    const lastNavigationAt = observation.pong.lastNavigationAt ?? record.lastNavigationAt;
+    const fileCount = observation.pong.fileCount ?? record.fileCount;
+    const memoryBytes = observation.pong.memoryBytes ?? record.memoryBytes;
+    return {
+      workspaceRoot: record.workspaceRoot,
+      state: "ready",
+      pid: record.pid,
+      uptimeMs: Math.max(0, this.now() - record.startedAt),
+      ...(fileCount === undefined ? {} : { fileCount }),
+      ...(memoryBytes === undefined ? {} : { memoryBytes }),
+      ...(lastNavigationAt === undefined
+        ? {}
+        : { lastRequestAgoMs: Math.max(0, this.now() - lastNavigationAt) }),
+    };
+  }
+
+  private unresponsiveStatus(record: DaemonRecord): RunningDaemonStatus {
+    return {
+      workspaceRoot: record.workspaceRoot,
+      state: "unresponsive",
+      pid: record.pid,
+      uptimeMs: Math.max(0, this.now() - record.startedAt),
+      ...(record.fileCount === undefined ? {} : { fileCount: record.fileCount }),
+      ...(record.memoryBytes === undefined ? {} : { memoryBytes: record.memoryBytes }),
+      ...(record.lastNavigationAt === undefined
+        ? {}
+        : { lastRequestAgoMs: Math.max(0, this.now() - record.lastNavigationAt) }),
+    };
+  }
+
   private async killIdentified(record: DaemonRecord, deadline: number): Promise<boolean> {
     try {
       const response = await Promise.race([
@@ -219,21 +236,6 @@ export class DaemonController {
       await this.pause(this.pollIntervalMs);
     }
     return !(await this.identifies(record)) && !this.processTerminator.isAlive(record.pid);
-  }
-
-  private async removeStaleRecord(
-    identity: DaemonWorkspaceIdentity,
-    record: DaemonRecord,
-  ): Promise<void> {
-    const lease = this.registry.acquireStartup(identity, `status-cleanup-${randomUUID()}`);
-    if (lease === undefined) return;
-    try {
-      if (this.registry.readStoredInstance(identity, record.instanceId) === undefined) return;
-      if (!(await this.transport.removeUnavailableEndpoint(record.endpoint))) return;
-      this.registry.removeIfInstance(identity, record.instanceId);
-    } finally {
-      lease.release();
-    }
   }
 
   private async identifies(record: DaemonRecord): Promise<boolean> {

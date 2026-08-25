@@ -45,6 +45,7 @@ export class DaemonLifecycleRenderer {
   private static statusLine(result: RunningDaemonStatus): string {
     const prefix = `${result.workspaceRoot}  pid ${result.pid}  up ${DaemonLifecycleRenderer.uptime(result.uptimeMs)}`;
     if (result.state === "starting") return `${prefix}  starting`;
+    if (result.state === "unresponsive") return `${prefix}  unresponsive`;
     const fileCount = `${result.fileCount ?? 0} files`;
     const memory = DaemonLifecycleRenderer.bytes(result.memoryBytes ?? 0);
     const lastRequest =

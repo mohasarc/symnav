@@ -396,7 +396,7 @@ describe("daemon registry", () => {
     const alphaLease = registry.acquireStartup(alpha, "alpha");
     const transport = new ControllerTransport(registry);
     transport.live.add("beta");
-    const terminator = new ControllerTerminator([process.pid]);
+    const terminator = new ControllerTerminator([process.pid, 301]);
     const controller = new DaemonController(
       registry,
       transport as unknown as LocalDaemonTransport,

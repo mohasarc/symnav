@@ -153,6 +153,7 @@ describe("daemon registry", () => {
     } satisfies DaemonRecord;
 
     expect(registry.writeStartingIfStartupOwner(identity, launchClaim)).toBe(true);
+    expect(registry.armStartingProcessLaunch(identity, launchClaim)).toBe(true);
     lease?.release();
 
     expect(registry.startupOwner(identity)).toMatchObject({
@@ -160,9 +161,7 @@ describe("daemon registry", () => {
       processToken: launchClaim.processToken,
     });
     expect(registry.acquireStartup(identity, "replacement")).toBeUndefined();
-    expect(
-      registry.writeStartingIfStartupOwner(identity, { ...launchClaim, pid: 777 }),
-    ).toBe(true);
+    expect(registry.writeStartingIfStartupOwner(identity, { ...launchClaim, pid: 777 })).toBe(true);
     expect(registry.startupOwner(identity)).toMatchObject({
       ownerPid: 777,
       processToken: launchClaim.processToken,

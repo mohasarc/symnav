@@ -139,6 +139,9 @@ export class DaemonStartupCoordinator {
     if (!this.registry.writeStartingIfStartupOwner(identity, startingRecord)) {
       throw new Error("Daemon startup ownership changed before process launch");
     }
+    if (!this.registry.armStartingProcessLaunch(identity, startingRecord)) {
+      throw new Error("Daemon startup ownership changed before process launch");
+    }
     let daemonProcess: DaemonProcess | undefined;
     try {
       daemonProcess = await this.launcher.launch(identity, instanceId, processToken);
@@ -183,7 +186,14 @@ export class DaemonStartupCoordinator {
   ): void {
     const record = this.registry.readStoredInstance(identity, instanceId);
     if (record?.processToken === processToken) {
-      this.registry.removeStartupLockIfProcess(identity, record);
+      if (record.pid > 0) {
+        this.registry.removeStartupLockIfProcess(identity, record);
+      } else {
+        const owner = this.registry.startupOwner(identity);
+        if (owner?.instanceId === instanceId && owner.processToken === processToken) {
+          this.registry.removeStartupLockIfOwner(identity, owner);
+        }
+      }
     }
     this.registry.removeIfProcess(identity, instanceId, processToken);
   }

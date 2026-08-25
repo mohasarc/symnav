@@ -30,6 +30,7 @@ describe("DaemonController", () => {
     const lease = registry.acquireStartup(identity, "starting");
     expect(lease).toBeDefined();
     expect(registry.writeStartingIfStartupOwner(identity, startingRecord(identity))).toBe(true);
+    expect(registry.armStartingProcessLaunch(identity, startingRecord(identity))).toBe(true);
     const terminator = new BlockingControllerTerminator([process.pid, 7000]);
     const controller = new DaemonController(
       registry,

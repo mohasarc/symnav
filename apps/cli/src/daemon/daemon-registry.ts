@@ -138,6 +138,15 @@ export class DaemonRegistry {
     if (record.state !== "starting" || !this.isStartupOwner(identity, record.instanceId)) {
       return false;
     }
+    if (record.pid > 0) return this.writeClaimedStartingRecord(identity, record);
+    this.write(record);
+    if (this.isStartupOwner(identity, record.instanceId)) return true;
+    this.removeIfProcess(identity, record.instanceId, record.processToken);
+    return false;
+  }
+
+  armStartingProcessLaunch(identity: DaemonWorkspaceIdentity, record: DaemonRecord): boolean {
+    if (record.state !== "starting" || record.pid !== 0) return false;
     return this.writeClaimedStartingRecord(identity, record);
   }
 

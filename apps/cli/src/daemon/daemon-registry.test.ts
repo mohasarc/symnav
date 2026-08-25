@@ -192,6 +192,24 @@ describe("daemon registry", () => {
     lease?.release();
   });
 
+  it("transfers startup ownership to the published daemon process", () => {
+    const identity = DaemonWorkspaceIdentity.from("/repo", temporaryDirectory(roots));
+    const registry = new DaemonRegistry(identity.registryDirectory);
+    expect(registry.acquireStartup(identity, "starting")).toBeDefined();
+    const starting = {
+      ...record(identity, "starting", "starting"),
+      pid: 777,
+    } satisfies DaemonRecord;
+
+    expect(registry.writeStartingIfStartupOwner(identity, starting)).toBe(true);
+
+    expect(registry.startupOwner(identity)).toMatchObject({
+      instanceId: starting.instanceId,
+      ownerPid: starting.pid,
+      processToken: starting.processToken,
+    });
+  });
+
   it("renews startup ownership with a new revision", () => {
     const identity = DaemonWorkspaceIdentity.from("/repo", temporaryDirectory(roots));
     const registry = new DaemonRegistry(identity.registryDirectory);

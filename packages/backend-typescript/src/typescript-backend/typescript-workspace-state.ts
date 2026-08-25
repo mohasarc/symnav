@@ -6,6 +6,7 @@ import {
   type DiagnosticSink,
   type FileSystem,
   type OverviewFileEntries,
+  type NavigationDiagnostic,
   type ResolvedPath,
   type SymbolIdentity,
   type SymbolOverviewNode,
@@ -44,6 +45,12 @@ class DefaultTypeScriptFileExtractor implements TypeScriptFileExtractor {
   extract(request: TypeScriptFileExtractionRequest): OverviewFileEntries {
     return extractFileEntries(request);
   }
+}
+
+export interface PreparedFileRevision {
+  readonly file: WorkspaceFile;
+  readonly entries: OverviewFileEntries;
+  readonly diagnostics: readonly NavigationDiagnostic[];
 }
 
 interface PreparedFileIndex {

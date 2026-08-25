@@ -127,6 +127,38 @@ describe("DaemonController", () => {
     expect(registry.startupOwner(identity)).toBeUndefined();
     expect(registry.readStoredInstance(identity, "starting")).toBeUndefined();
   });
+
+  it("preserves a replacement startup lock while cleaning an observed dead process", async () => {
+    const stateDirectory = temporaryDirectory(roots);
+    const identity = DaemonWorkspaceIdentity.from("/repo", stateDirectory);
+    const registry = new DaemonRegistry(identity.registryDirectory);
+    const observed = { ...startingRecord(identity), pid: 7002 } satisfies DaemonRecord;
+    const replacement = {
+      ...observed,
+      processToken: "replacement-process",
+      pid: 7003,
+      startedAt: 20,
+    } satisfies DaemonRecord;
+    expect(registry.acquireStartup(identity, observed.instanceId)).toBeDefined();
+    expect(registry.writeStartingIfStartupOwner(identity, observed)).toBe(true);
+    const terminator = new ReplacingControllerTerminator(observed.pid, () => {
+      expect(registry.writeStartingIfStartupOwner(identity, replacement)).toBe(true);
+    });
+    const controller = new DaemonController(
+      registry,
+      new ControllerTransport() as unknown as LocalDaemonTransport,
+      stateDirectory,
+      { processTerminator: terminator },
+    );
+
+    await expect(controller.status()).resolves.toEqual([]);
+    expect(registry.startupOwner(identity)).toMatchObject({
+      instanceId: replacement.instanceId,
+      ownerPid: replacement.pid,
+      processToken: replacement.processToken,
+    });
+    expect(registry.readStoredInstance(identity, replacement.instanceId)).toEqual(replacement);
+  });
 });
 
 class ControllerTransport {
@@ -189,6 +221,26 @@ class BlockingControllerTerminator implements DaemonProcessTerminator {
   allowExit(): void {
     this.resolveExitAllowed();
   }
+}
+
+class ReplacingControllerTerminator implements DaemonProcessTerminator {
+  private replaced = false;
+
+  constructor(
+    private readonly observedPid: number,
+    private readonly replace: () => void,
+  ) {}
+
+  isAlive(pid: number): boolean {
+    if (pid === this.observedPid && !this.replaced) {
+      this.replaced = true;
+      this.replace();
+      return false;
+    }
+    return pid !== this.observedPid;
+  }
+
+  async terminate(): Promise<void> {}
 }
 
 function temporaryDirectory(roots: string[]): string {

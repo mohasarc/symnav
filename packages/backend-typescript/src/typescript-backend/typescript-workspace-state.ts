@@ -42,6 +42,10 @@ export interface TypeScriptFileExtractor {
   extract(request: TypeScriptFileExtractionRequest): OverviewFileEntries;
 }
 
+export interface TypeScriptSemanticSourceProvider {
+  sourceFilesFor(relativePath: string): readonly SourceFile[];
+}
+
 export class TypeScriptFileEntryExtractor implements TypeScriptFileExtractor {
   extract(request: TypeScriptFileExtractionRequest): OverviewFileEntries {
     return extractFileEntries(request);

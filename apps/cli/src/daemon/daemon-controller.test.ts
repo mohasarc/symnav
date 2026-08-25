@@ -46,6 +46,44 @@ describe("DaemonController", () => {
     lease?.release();
   });
 
+  it("retains starting ownership until the exact launched process exits", async () => {
+    const stateDirectory = temporaryDirectory(roots);
+    const identity = DaemonWorkspaceIdentity.from("/repo", stateDirectory);
+    const registry = new DaemonRegistry(identity.registryDirectory);
+    const record = { ...startingRecord(identity), pid: 7001 };
+    expect(registry.acquireStartup(identity, record.instanceId)).toBeDefined();
+    expect(registry.writeStartingIfStartupOwner(identity, record)).toBe(true);
+    const terminator = new BlockingControllerTerminator([process.pid, record.pid]);
+    const controller = new DaemonController(
+      registry,
+      new ControllerTransport() as unknown as LocalDaemonTransport,
+      stateDirectory,
+      { processTerminator: terminator },
+    );
+
+    const stopping = controller.stop("/repo");
+    try {
+      const terminationRequested = await Promise.race([
+        terminator.waitUntilTerminationRequested().then(() => true),
+        new Promise<false>((resolve) => setTimeout(() => resolve(false), 50)),
+      ]);
+      expect(terminationRequested).toBe(true);
+      expect(registry.startupOwner(identity)).toBeDefined();
+      expect(registry.readStoredInstance(identity, record.instanceId)).toEqual(record);
+    } finally {
+      terminator.allowExit();
+    }
+
+    await expect(stopping).resolves.toEqual({
+      status: "stopped",
+      workspaceRoot: "/repo",
+      pid: record.pid,
+    });
+    expect(terminator.isAlive(record.pid)).toBe(false);
+    expect(registry.startupOwner(identity)).toBeUndefined();
+    expect(registry.readStoredInstance(identity, record.instanceId)).toBeUndefined();
+  });
+
   it("reports a live starting daemon", async () => {
     const stateDirectory = temporaryDirectory(roots);
     const identity = DaemonWorkspaceIdentity.from("/repo", stateDirectory);
@@ -114,6 +152,42 @@ class ControllerTerminator implements DaemonProcessTerminator {
 
   async terminate(pid: number): Promise<void> {
     this.alive.delete(pid);
+  }
+}
+
+class BlockingControllerTerminator implements DaemonProcessTerminator {
+  readonly alive: Set<number>;
+  private readonly terminationRequested: Promise<void>;
+  private resolveTerminationRequested!: () => void;
+  private readonly exitAllowed: Promise<void>;
+  private resolveExitAllowed!: () => void;
+
+  constructor(alive: readonly number[]) {
+    this.alive = new Set(alive);
+    this.terminationRequested = new Promise((resolve) => {
+      this.resolveTerminationRequested = resolve;
+    });
+    this.exitAllowed = new Promise((resolve) => {
+      this.resolveExitAllowed = resolve;
+    });
+  }
+
+  isAlive(pid: number): boolean {
+    return this.alive.has(pid);
+  }
+
+  async terminate(pid: number): Promise<void> {
+    this.resolveTerminationRequested();
+    await this.exitAllowed;
+    this.alive.delete(pid);
+  }
+
+  waitUntilTerminationRequested(): Promise<void> {
+    return this.terminationRequested;
+  }
+
+  allowExit(): void {
+    this.resolveExitAllowed();
   }
 }
 

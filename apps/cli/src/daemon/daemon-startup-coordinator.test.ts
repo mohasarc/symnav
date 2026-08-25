@@ -200,6 +200,57 @@ describe("DaemonStartupCoordinator", () => {
     expect(harness.registry.startupOwner(harness.identity)).toBeDefined();
   });
 
+  it("retains one live warm-up after the initiating caller exits and its heartbeat expires", async () => {
+    const harness = new CoordinatorHarness(roots, { neverReady: true });
+
+    await expect(
+      harness.coordinator({ startupTimeoutMs: 5 }).ensureRunning(harness.identity),
+    ).rejects.toThrow(/ownership was retained/i);
+    const originalRecord = harness.registry.readStored(harness.identity);
+    const originalOwner = harness.registry.startupOwner(harness.identity);
+    expect(originalRecord?.pid).toBe(harness.launcher.lastPid);
+    expect(originalOwner).toBeDefined();
+    writeFileSync(
+      harness.identity.startupOwnerPath(harness.identity.lockPath),
+      JSON.stringify({ ...originalOwner, heartbeatAt: Date.now() - 60_000 }),
+    );
+    harness.terminator.currentProcessIsAlive = false;
+
+    await expect(
+      harness.coordinator({ startupTimeoutMs: 5 }).ensureRunning(harness.identity),
+    ).rejects.toThrow(/retained|timed out/i);
+
+    expect(harness.launcher.launchCount).toBe(1);
+    expect(harness.registry.readStored(harness.identity)).toEqual(originalRecord);
+  });
+
+  it("lets a later caller use the original warm-up after the initiating caller exits", async () => {
+    const readinessPublicationGate = new ReadinessPublicationGate();
+    const harness = new CoordinatorHarness(roots, { readinessPublicationGate });
+
+    await expect(
+      harness.coordinator({ startupTimeoutMs: 5 }).ensureRunning(harness.identity),
+    ).rejects.toThrow(/ownership was retained/i);
+    const originalRecord = harness.registry.readStored(harness.identity);
+    expect(originalRecord?.pid).toBe(harness.launcher.lastPid);
+    harness.terminator.currentProcessIsAlive = false;
+
+    const laterCaller = harness
+      .coordinator({ startupTimeoutMs: 1_000 })
+      .ensureRunning(harness.identity);
+    readinessPublicationGate.release();
+
+    await expect(laterCaller).resolves.toMatchObject({
+      status: "already-running",
+      workspaceRoot: "/repo",
+      pid: originalRecord?.pid,
+    });
+    expect(harness.launcher.launchCount).toBe(1);
+    expect(harness.registry.readStored(harness.identity)?.instanceId).toBe(
+      originalRecord?.instanceId,
+    );
+  });
+
   it("cleans exact startup ownership promptly when the launched child exits", async () => {
     const harness = new CoordinatorHarness(roots, {
       neverReady: true,
@@ -797,7 +848,7 @@ class TestProcessTerminator implements DaemonProcessTerminator {
   readonly alive = new Set<number>();
   readonly terminated: number[] = [];
 
-  constructor(private readonly currentProcessIsAlive = true) {}
+  constructor(public currentProcessIsAlive = true) {}
 
   isAlive(pid: number): boolean {
     return (this.currentProcessIsAlive && pid === process.pid) || this.alive.has(pid);

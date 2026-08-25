@@ -14,6 +14,43 @@ interface LocalDaemonTransportOptions {
   readonly writeChunkSize?: number;
 }
 
+export type DaemonDeliveryState = "not-submitted" | "submitted-unconfirmed" | "accepted";
+
+export type DaemonTransportFailureCode =
+  | "unreachable"
+  | "timeout"
+  | "corrupt"
+  | "incompatible"
+  | "authentication"
+  | "closed";
+
+export class DaemonTransportError extends Error {
+  readonly authenticatedInstanceId?: string;
+
+  constructor(
+    readonly code: DaemonTransportFailureCode,
+    readonly delivery: DaemonDeliveryState,
+    message: string,
+    authenticatedInstanceId?: string,
+  ) {
+    super(message);
+    this.name = "DaemonTransportError";
+    if (authenticatedInstanceId !== undefined) {
+      this.authenticatedInstanceId = authenticatedInstanceId;
+    }
+  }
+}
+
+class DaemonResponseError extends Error {
+  constructor(
+    readonly code: Extract<DaemonTransportFailureCode, "authentication" | "corrupt" | "incompatible">,
+    message: string,
+    readonly authenticatedInstanceId?: string,
+  ) {
+    super(message);
+  }
+}
+
 class DaemonFrameDecoder {
   private buffered = Buffer.alloc(0);
 
@@ -86,17 +123,31 @@ export class LocalDaemonTransport {
       const decoder = new DaemonFrameDecoder(this.maximumFrameBytes);
       const socket = createConnection(endpoint);
       let settled = false;
+      let delivery: DaemonDeliveryState = "not-submitted";
       const fail = (error: unknown): void => {
         if (settled) return;
         settled = true;
         socket.destroy();
-        reject(error instanceof Error ? error : new Error(String(error)));
+        reject(LocalDaemonTransport.transportError(error, delivery));
       };
       socket.setTimeout(this.timeoutFor(request), () =>
-        fail(new Error("Daemon request timed out")),
+        fail(new DaemonTransportError("timeout", delivery, "Daemon request timed out")),
       );
-      socket.once("error", fail);
-      socket.once("connect", () => this.writeFrame(socket, request));
+      socket.once("error", (error) => {
+        if (delivery === "not-submitted") {
+          fail(new DaemonTransportError("unreachable", delivery, error.message));
+          return;
+        }
+        fail(new DaemonTransportError("closed", delivery, error.message));
+      });
+      socket.once("connect", () => {
+        try {
+          this.writeFrame(socket, request);
+          delivery = "submitted-unconfirmed";
+        } catch (error) {
+          fail(error);
+        }
+      });
       socket.on("data", (bytes) => {
         try {
           const values = decoder.append(Buffer.isBuffer(bytes) ? bytes : Buffer.from(bytes));
@@ -107,6 +158,7 @@ export class LocalDaemonTransport {
           const value = values[0];
           if (value === undefined) return;
           const response = LocalDaemonTransport.responseFor(request, value);
+          delivery = "accepted";
           settled = true;
           socket.end();
           resolve(response);
@@ -118,7 +170,13 @@ export class LocalDaemonTransport {
         if (settled) return;
         try {
           decoder.assertComplete();
-          fail(new Error("Daemon connection ended before a response"));
+          fail(
+            new DaemonTransportError(
+              "closed",
+              delivery,
+              "Daemon connection ended before a response",
+            ),
+          );
         } catch (error) {
           fail(error);
         }
@@ -227,43 +285,77 @@ export class LocalDaemonTransport {
     LocalDaemonTransport.assertResponse(value);
     if (request.kind === "identify") {
       if (
-        value.kind !== "identity" ||
+        value.kind !== "identity"
+      ) {
+        throw new DaemonResponseError("corrupt", "Daemon returned a non-identity response");
+      }
+      if (
         value.instanceId !== request.instanceId ||
         value.processToken !== request.processToken
       ) {
-        throw new Error("Daemon identity does not match process instance");
+        throw new DaemonResponseError(
+          "authentication",
+          "Daemon identity does not match process instance",
+          value.instanceId === request.instanceId ? value.instanceId : undefined,
+        );
       }
       return value;
     }
     if (request.kind === "terminate" || request.kind === "kill") {
       const expectedKind = request.kind === "terminate" ? "terminating" : "killing";
       if (
-        value.kind !== expectedKind ||
+        value.kind !== expectedKind
+      ) {
+        throw new DaemonResponseError("corrupt", "Daemon returned a non-termination response");
+      }
+      if (
         value.instanceId !== request.instanceId ||
         value.processToken !== request.processToken
       ) {
-        throw new Error("Daemon termination does not match process instance");
+        throw new DaemonResponseError(
+          "authentication",
+          "Daemon termination does not match process instance",
+          value.instanceId === request.instanceId ? value.instanceId : undefined,
+        );
       }
       return value;
     }
     if (request.kind === "ping") {
-      if (
-        value.kind !== "pong" ||
-        value.protocolVersion !== request.protocolVersion ||
-        value.instanceId !== request.instanceId
-      ) {
-        throw new Error("Daemon pong does not match request protocol and instance");
+      if (value.kind !== "pong") {
+        throw new DaemonResponseError(
+          "corrupt",
+          "Daemon pong does not match request protocol and instance",
+        );
+      }
+      if (value.instanceId !== request.instanceId) {
+        throw new DaemonResponseError(
+          "authentication",
+          "Daemon pong does not match request instance",
+        );
+      }
+      if (value.protocolVersion !== request.protocolVersion) {
+        throw new DaemonResponseError(
+          "incompatible",
+          "Daemon pong does not match request protocol",
+          value.instanceId,
+        );
       }
       return value;
     }
     if (request.kind === "execute") {
-      if (value.kind !== "result" || value.requestId !== request.requestId) {
-        throw new Error("Daemon result does not match request identifier");
+      if (value.kind !== "result") {
+        throw new DaemonResponseError("corrupt", "Daemon returned a non-result response");
+      }
+      if (value.requestId !== request.requestId) {
+        throw new DaemonResponseError("corrupt", "Daemon result does not match request identifier");
       }
       return value;
     }
-    if (value.kind !== "stopped" || value.instanceId !== request.instanceId) {
-      throw new Error("Daemon stop response does not match instance");
+    if (value.kind !== "stopped") {
+      throw new DaemonResponseError("corrupt", "Daemon returned a non-stop response");
+    }
+    if (value.instanceId !== request.instanceId) {
+      throw new DaemonResponseError("authentication", "Daemon stop response does not match instance");
     }
     return value;
   }
@@ -337,6 +429,23 @@ export class LocalDaemonTransport {
     ) {
       throw new Error("Malformed daemon result");
     }
+  }
+
+  private static transportError(
+    error: unknown,
+    delivery: DaemonDeliveryState,
+  ): DaemonTransportError {
+    if (error instanceof DaemonTransportError) return error;
+    if (error instanceof DaemonResponseError) {
+      return new DaemonTransportError(
+        error.code,
+        "accepted",
+        error.message,
+        error.authenticatedInstanceId,
+      );
+    }
+    const message = error instanceof Error ? error.message : String(error);
+    return new DaemonTransportError("corrupt", delivery, message);
   }
 
   private static isExecutionRequest(value: unknown): boolean {

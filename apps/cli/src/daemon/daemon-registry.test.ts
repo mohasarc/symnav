@@ -438,11 +438,16 @@ describe("daemon registry", () => {
     const beta = DaemonWorkspaceIdentity.from("/beta", stateDirectory);
     const alpha = DaemonWorkspaceIdentity.from("/alpha", stateDirectory);
     registry.write({ ...record(beta, "ready", "beta"), pid: 301, lastNavigationAt: 80 });
-    registry.write({ ...record(alpha, "starting", "alpha"), pid: 302 });
     const alphaLease = registry.acquireStartup(alpha, "alpha");
+    expect(
+      registry.writeStartingIfStartupOwner(alpha, {
+        ...record(alpha, "starting", "alpha"),
+        pid: 302,
+      }),
+    ).toBe(true);
     const transport = new ControllerTransport(registry);
     transport.live.add("beta");
-    const terminator = new ControllerTerminator([process.pid, 301]);
+    const terminator = new ControllerTerminator([301, 302]);
     const controller = new DaemonController(
       registry,
       transport as unknown as LocalDaemonTransport,

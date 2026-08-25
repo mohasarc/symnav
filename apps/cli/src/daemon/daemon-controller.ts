@@ -73,7 +73,7 @@ export class DaemonController {
     if (record === undefined) {
       return { status: "not-running", workspaceRoot };
     }
-    if (record.state === "starting") return this.stopStarting(identity, record);
+    if (record.state === "starting") return this.stopStarting(identity, record, deadline);
     const observation = await this.observer.observe(record);
     if (observation.kind === "exited") {
       this.registry.removeIfProcess(identity, record.instanceId, record.processToken);
@@ -111,10 +111,19 @@ export class DaemonController {
   private async statusForRecord(record: DaemonRecord): Promise<RunningDaemonStatus | undefined> {
     const identity = DaemonWorkspaceIdentity.from(record.workspaceRoot, this.stateDirectory);
     if (record.state === "starting") {
+      if (record.pid > 0) {
+        const observation = await this.observer.observe(record);
+        if (observation.kind === "exited") {
+          this.removeStartingOwnership(identity, record);
+          return undefined;
+        }
+        return this.startingStatus(record);
+      }
       const owner = this.registry.startupOwner(identity);
       if (
         owner?.instanceId === record.instanceId &&
-        this.processTerminator.isAlive(owner.ownerPid)
+        this.processTerminator.isAlive(owner.ownerPid) &&
+        this.registry.startupOwnerIsWithinGrace(owner)
       ) {
         return this.startingStatus(record);
       }
@@ -123,24 +132,16 @@ export class DaemonController {
           const renewedOwner = this.registry.startupOwner(identity);
           if (
             renewedOwner?.instanceId === record.instanceId &&
-            this.processTerminator.isAlive(renewedOwner.ownerPid)
+            this.processTerminator.isAlive(renewedOwner.ownerPid) &&
+            this.registry.startupOwnerIsWithinGrace(renewedOwner)
           ) {
             return this.startingStatus(record);
           }
           return undefined;
         }
       }
-      if (record.pid <= 0) {
-        this.registry.removeIfProcess(identity, record.instanceId, record.processToken);
-        return undefined;
-      }
-      const observation = await this.observer.observe(record);
-      if (observation.kind === "starting") return this.startingStatus(record);
-      if (observation.kind === "exited") {
-        this.registry.removeIfProcess(identity, record.instanceId, record.processToken);
-        return undefined;
-      }
-      return this.unresponsiveStatus(record);
+      this.registry.removeIfProcess(identity, record.instanceId, record.processToken);
+      return undefined;
     }
 
     return this.statusForObservation(await this.observer.observe(record));
@@ -149,23 +150,59 @@ export class DaemonController {
   private async stopStarting(
     identity: DaemonWorkspaceIdentity,
     record: DaemonRecord,
+    deadline: number,
   ): Promise<DaemonStopResult> {
     const owner = this.registry.startupOwner(identity);
-    if (
-      owner?.instanceId !== record.instanceId ||
-      !this.processTerminator.isAlive(owner.ownerPid)
-    ) {
+    if (record.pid <= 0) {
       if (owner?.instanceId === record.instanceId) {
-        this.registry.removeStartupLockIfInstance(identity, record.instanceId);
+        this.registry.removeStartupLockIfOwner(identity, owner);
       }
       this.registry.removeIfProcess(identity, record.instanceId, record.processToken);
       return { status: "not-running", workspaceRoot: record.workspaceRoot };
     }
-    this.registry.removeStartupLockIfInstance(identity, record.instanceId);
+
+    if (!this.processTerminator.isAlive(record.pid)) {
+      this.removeStartingOwnership(identity, record);
+      return { status: "not-running", workspaceRoot: record.workspaceRoot };
+    }
+    if (!this.registry.startupOwnerMatchesProcess(identity, record)) {
+      throw new Error(`Daemon process ${record.pid} has no authenticated startup ownership`);
+    }
+    const terminated = await this.terminateStartingProcess(record.pid, deadline);
+    if (!terminated || this.processTerminator.isAlive(record.pid)) {
+      throw new Error(`Daemon process ${record.pid} did not exit after authenticated stop`);
+    }
+    this.registry.removeStartupLockIfProcess(identity, record);
     this.registry.removeIfProcess(identity, record.instanceId, record.processToken);
-    return record.pid > 0
-      ? { status: "stopped", workspaceRoot: record.workspaceRoot, pid: record.pid }
-      : { status: "not-running", workspaceRoot: record.workspaceRoot };
+    return { status: "stopped", workspaceRoot: record.workspaceRoot, pid: record.pid };
+  }
+
+  private async terminateStartingProcess(pid: number, deadline: number): Promise<boolean> {
+    let timeout: NodeJS.Timeout | undefined;
+    const deadlineReached = new Promise<false>((resolve) => {
+      timeout = setTimeout(() => resolve(false), Math.max(0, deadline - this.now()));
+    });
+    try {
+      return await Promise.race([
+        this.processTerminator.terminate(pid).then(() => true),
+        deadlineReached,
+      ]);
+    } finally {
+      if (timeout !== undefined) clearTimeout(timeout);
+    }
+  }
+
+  private removeStartingOwnership(
+    identity: DaemonWorkspaceIdentity,
+    record: DaemonRecord,
+  ): void {
+    const owner = this.registry.startupOwner(identity);
+    if (this.registry.startupOwnerMatchesProcess(identity, record)) {
+      this.registry.removeStartupLockIfProcess(identity, record);
+    } else if (owner?.instanceId === record.instanceId) {
+      this.registry.removeStartupLockIfOwner(identity, owner);
+    }
+    this.registry.removeIfProcess(identity, record.instanceId, record.processToken);
   }
 
   private startingStatus(record: DaemonRecord): RunningDaemonStatus {

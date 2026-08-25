@@ -135,7 +135,7 @@ describe("TypeScriptSemanticQueryService", () => {
     expect(new Set(resolvedPositions).size).toBe(4);
   });
 
-  it("rebuilds released semantics once from fresh source and configuration", async () => {
+  it("rebuilds released fresh semantics once in an unchanged turn", async () => {
     const fixture = new MutableSemanticFixture();
     mutableFixtures.push(fixture);
     let referenceSearches = 0;
@@ -164,7 +164,6 @@ describe("TypeScriptSemanticQueryService", () => {
     await expect(backend.findReferences(files, original)).resolves.toHaveLength(2);
     expect(semanticProjectLoads).toBe(1);
 
-    await backend.releaseTransientResources();
     fixture.writeConfiguration("@fresh");
     fixture.write("src/lib.ts", "export function freshTarget(): void {}\n");
     fixture.write(
@@ -179,7 +178,6 @@ describe("TypeScriptSemanticQueryService", () => {
     files = snapshot.files;
     await backend.refresh({ snapshot, coverage: "workspace" });
 
-    expect(semanticReleases).toBe(1);
     await expect(
       backend.resolveSymbols(files, "originalTarget", { mode: "exact" }),
     ).resolves.toEqual([]);
@@ -187,11 +185,26 @@ describe("TypeScriptSemanticQueryService", () => {
     await expect(backend.fileEntries(stableFile)).resolves.toBe(preparedEntries);
 
     const fresh = identity("src/lib.ts", "freshTarget");
-    await expect(backend.findReferences(files, fresh)).resolves.toHaveLength(2);
-    await expect(backend.findCallers(files, fresh)).resolves.toHaveLength(1);
-    await expect(backend.findCallees(files, fresh)).resolves.toEqual([]);
+    const preparedReferences = await backend.findReferences(files, fresh);
+    const preparedCallers = await backend.findCallers(files, fresh);
+    const preparedCallees = await backend.findCallees(files, fresh);
     expect(semanticProjectLoads).toBe(2);
     expect(referenceSearches).toBe(2);
+
+    await backend.releaseTransientResources();
+    await backend.refresh({ snapshot, coverage: "workspace" });
+
+    expect(semanticReleases).toBe(1);
+    expect(semanticProjectLoads).toBe(2);
+    await expect(backend.findDefinitions(files, stable)).resolves.toContain(preparedDeclaration);
+    await expect(backend.fileEntries(stableFile)).resolves.toBe(preparedEntries);
+
+    await expect(backend.findReferences(files, fresh)).resolves.toEqual(preparedReferences);
+    expect(semanticProjectLoads).toBe(3);
+    await expect(backend.findCallers(files, fresh)).resolves.toEqual(preparedCallers);
+    await expect(backend.findCallees(files, fresh)).resolves.toEqual(preparedCallees);
+    expect(semanticProjectLoads).toBe(3);
+    expect(referenceSearches).toBe(3);
   });
 });
 

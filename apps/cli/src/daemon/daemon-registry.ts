@@ -19,6 +19,7 @@ import { DaemonWorkspaceIdentity } from "./daemon-workspace-identity.js";
 export interface StartupOwner {
   readonly instanceId: string;
   readonly ownerPid: number;
+  readonly processToken?: string;
   readonly acquiredAt: number;
   readonly heartbeatAt: number;
   readonly revision: string;
@@ -494,6 +495,7 @@ export class DaemonRegistry {
     return (
       typeof owner.instanceId === "string" &&
       Number.isInteger(owner.ownerPid) &&
+      (owner.processToken === undefined || typeof owner.processToken === "string") &&
       typeof owner.acquiredAt === "number" &&
       typeof owner.heartbeatAt === "number" &&
       typeof owner.revision === "string"
@@ -507,6 +509,7 @@ export class DaemonRegistry {
     return (
       current?.instanceId === observed.instanceId &&
       current.ownerPid === observed.ownerPid &&
+      current.processToken === observed.processToken &&
       current.acquiredAt === observed.acquiredAt &&
       current.heartbeatAt === observed.heartbeatAt &&
       current.revision === observed.revision

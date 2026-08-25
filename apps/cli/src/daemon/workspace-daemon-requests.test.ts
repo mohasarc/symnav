@@ -309,6 +309,29 @@ describe("WorkspaceDaemon requests", () => {
       ]),
     );
   });
+
+  it("shuts down when the navigation worker exits unexpectedly", async () => {
+    const worker = new ExecutorNavigationWorker(new ImmediateExecutor());
+    const harness = await RequestHarness.start(undefined, { navigationWorker: worker });
+    harnesses.push(harness);
+
+    worker.fail({ generation: worker.generation, cause: "error", errorName: "WorkerError" });
+
+    await expect(harness.exited).resolves.toBe(0);
+    expect(harness.transport.isListening).toBe(false);
+    expect(harness.registry.read(harness.identity)).toMatchObject({
+      processToken: harness.processToken,
+    });
+    expect(harness.logEvents()).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          kind: "failure",
+          operation: "worker-exit",
+          message: "error (WorkerError)",
+        }),
+      ]),
+    );
+  });
 });
 
 class RequestHarness {
@@ -585,6 +608,10 @@ class ExecutorNavigationWorker implements DaemonNavigationWorker {
     this.rejectTermination(new Error("worker terminated"));
     this.resolveExited({ generation: this.generation, cause: "terminated" });
     return Promise.resolve();
+  }
+
+  fail(exit: DaemonNavigationWorkerExit): void {
+    this.resolveExited(exit);
   }
 }
 

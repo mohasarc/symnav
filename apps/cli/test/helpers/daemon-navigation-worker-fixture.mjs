@@ -1,4 +1,5 @@
 import { parentPort, workerData } from "node:worker_threads";
+import { writeFileSync } from "node:fs";
 
 const generation = 7;
 
@@ -23,8 +24,11 @@ parentPort.on("message", (message) => {
     return;
   }
   if (message.kind === "execute") {
+    if (workerData.requestStartedPath !== undefined) {
+      writeFileSync(workerData.requestStartedPath, "started");
+    }
     if (workerData.mode === "block" || workerData.mode === "block-execution") {
-      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 150);
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, workerData.blockMs ?? 150);
     }
     const result = {
       kind: "result",

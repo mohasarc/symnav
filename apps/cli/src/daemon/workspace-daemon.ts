@@ -77,6 +77,15 @@ export class WorkspaceDaemon {
         : { residentMemoryBytes: options.residentMemoryBytes }),
       onExceeded: () => this.shutdown("resource", true),
     });
+    void this.navigationWorker.exited.then((exit) => {
+      if (this.shutdownStarted) return;
+      this.logger.record({
+        kind: "failure",
+        operation: "worker-exit",
+        message: `${exit.cause}${exit.errorName === undefined ? "" : ` (${exit.errorName})`}`,
+      });
+      void this.shutdown("resource", true);
+    });
   }
 
   async start(): Promise<void> {

@@ -13,6 +13,7 @@ import type {
   DaemonNavigationWorker,
   DaemonNavigationWorkerExit,
 } from "../../src/daemon/daemon-navigation-worker.js";
+import { NodeDaemonNavigationWorker } from "../../src/daemon/daemon-navigation-worker.js";
 import type { DaemonNavigationWorkerResponse } from "../../src/daemon/daemon-navigation-worker-protocol.js";
 import { WorkspaceDaemon } from "../../src/daemon/workspace-daemon.js";
 
@@ -125,6 +126,19 @@ class ControlledNavigationWorker implements DaemonNavigationWorker {
 }
 
 const identity = DaemonWorkspaceIdentity.from(workspaceRoot, canonicalStateDirectory);
+const navigationWorker =
+  releasePath === undefined && !oversizedResponse
+    ? new NodeDaemonNavigationWorker({
+        generation: 7,
+        stateDirectory: canonicalStateDirectory,
+        entryUrl: new URL("./daemon-navigation-worker-fixture.mjs", import.meta.url),
+        workerData: {
+          mode: "block-execution",
+          blockMs: 60_000,
+          requestStartedPath: acceptedRequestStartedPath,
+        },
+      })
+    : new ControlledNavigationWorker();
 writeFileSync(`${readyPath}.boot`, String(process.pid));
 const daemon = new WorkspaceDaemon({
   identity,
@@ -135,7 +149,7 @@ const daemon = new WorkspaceDaemon({
   dependencies,
   registry: new DaemonRegistry(identity.registryDirectory),
   transport: new LocalDaemonTransport(),
-  navigationWorker: new ControlledNavigationWorker(),
+  navigationWorker,
 });
 await daemon.start();
 writeFileSync(readyPath, "ready");

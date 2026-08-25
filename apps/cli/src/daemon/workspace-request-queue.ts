@@ -33,7 +33,6 @@ export class WorkspaceRequestQueue {
   private readonly admitted: WorkspaceQueuedRequest[] = [];
   private activeRequest: WorkspaceActiveRequest | undefined;
   private currentState: WorkspaceRequestQueueState = "accepting";
-  private compatibilityRequestId = 0;
 
   constructor(private readonly now: () => number = Date.now) {}
 
@@ -55,27 +54,10 @@ export class WorkspaceRequestQueue {
     return this.activeRequest === undefined && this.admitted.length === 0;
   }
 
-  enqueue<T>(metadata: WorkspaceQueuedRequest, execute: () => Promise<T>): Promise<T>;
-  enqueue<T>(execute: () => Promise<T>): Promise<T>;
-  enqueue<T>(
-    metadataOrExecute: WorkspaceQueuedRequest | (() => Promise<T>),
-    requestedExecution?: () => Promise<T>,
-  ): Promise<T> {
+  enqueue<T>(metadata: WorkspaceQueuedRequest, execute: () => Promise<T>): Promise<T> {
     if (this.currentState !== "accepting") {
       return Promise.reject(new Error(`Workspace request queue is ${this.currentState}`));
     }
-    const metadata =
-      typeof metadataOrExecute === "function"
-        ? {
-            requestId: `compatibility-${this.compatibilityRequestId++}`,
-            command: "unknown" as const,
-            acceptedAt: this.now(),
-          }
-        : metadataOrExecute;
-    const execute =
-      typeof metadataOrExecute === "function" ? metadataOrExecute : requestedExecution;
-    if (execute === undefined)
-      return Promise.reject(new Error("Workspace request has no execution"));
     this.admitted.push(Object.freeze({ ...metadata }));
     const result = this.tail.then(async () => {
       const admitted = this.admitted.shift();

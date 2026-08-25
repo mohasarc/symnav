@@ -27,6 +27,7 @@ import {
   TypeScriptFileEntryExtractor,
   TypeScriptWorkspaceState,
 } from "./typescript-workspace-state.js";
+import { WorkspaceSourceCache } from "./workspace-source-cache.js";
 
 export class TypeScriptBackend implements LanguageBackend {
   static readonly extensions: readonly string[] = [".d.ts", ".ts", ".tsx", ".mts", ".cts"];
@@ -43,6 +44,7 @@ export class TypeScriptBackend implements LanguageBackend {
 
   private readonly state: TypeScriptWorkspaceState;
   private readonly projectGraph: TypeScriptProjectGraph | undefined;
+  private readonly sourceCache: WorkspaceSourceCache | undefined;
 
   constructor(
     private readonly fs: FileSystem,
@@ -52,13 +54,15 @@ export class TypeScriptBackend implements LanguageBackend {
     if (state) {
       this.state = state;
       this.projectGraph = projectGraph;
+      this.sourceCache = undefined;
       return;
     }
-    this.projectGraph = projectGraph ?? new TypeScriptProjectGraph(fs);
+    this.sourceCache = new WorkspaceSourceCache(fs);
+    this.projectGraph = projectGraph ?? new TypeScriptProjectGraph(this.sourceCache);
     this.state = new TypeScriptWorkspaceState(
-      fs,
+      this.sourceCache,
       new TypeScriptFileEntryExtractor(),
-      this.projectGraph.workspaceProject(),
+      this.projectGraph,
     );
   }
 
@@ -67,6 +71,7 @@ export class TypeScriptBackend implements LanguageBackend {
   }
 
   async refresh(request: BackendRefreshRequest): Promise<BackendRefreshSummary> {
+    this.sourceCache?.refresh(request.snapshot);
     await this.projectGraph?.refresh(request.snapshot);
     return this.state.refresh(request.snapshot.files, request.coverage);
   }

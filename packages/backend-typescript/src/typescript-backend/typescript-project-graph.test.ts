@@ -142,7 +142,7 @@ describe("TypeScriptProjectGraph", () => {
     const referencedOptions = graph.programFor("packages/app/src/index.ts")?.getCompilerOptions();
 
     expect(referencesChanged.configuredProjectCount).toBe(2);
-    expect(referencesChanged.inferredFileCount).toBe(2);
+    expect(referencesChanged.inferredFileCount).toBe(3);
     expect(referencesChanged.changedConfigurationCount).toBe(2);
     expect(referencedOptions?.paths).not.toHaveProperty("@changed/*");
   });

@@ -91,9 +91,9 @@ export class TypeScriptWorkspaceState {
   constructor(
     private readonly fs: FileSystem,
     private readonly extractor: TypeScriptFileExtractor = new TypeScriptFileEntryExtractor(),
-    project?: Project,
+    private readonly semanticSources?: TypeScriptSemanticSourceProvider,
   ) {
-    this.project = project ?? new Project({ fileSystem: new WorkspaceFileSystemHost(fs) });
+    this.project = new Project({ fileSystem: new WorkspaceFileSystemHost(fs) });
   }
 
   refresh(
@@ -181,15 +181,24 @@ export class TypeScriptWorkspaceState {
   sourceFile(relativePath: string): SourceFile | undefined {
     const prepared = this.preparedIndex.byRelativePath.get(relativePath);
     if (!prepared) return undefined;
+    const semanticSource = this.semanticSources?.sourceFilesFor(relativePath)[0];
+    if (semanticSource) return semanticSource;
     return this.project.getSourceFile(prepared.file.absolute);
   }
 
   locate(identity: SymbolIdentity): readonly LocatedDeclaration[] {
     const prepared = this.preparedIndex.byRelativePath.get(identity.file);
     if (!prepared) return [];
-    const sourceFile = this.project.getSourceFile(prepared.file.absolute);
-    if (!sourceFile) return [];
-    return new DeclarationLocator(sourceFile).locate(identity, prepared.entries.entries);
+    const semanticSources = this.semanticSources?.sourceFilesFor(identity.file);
+    const sourceFiles =
+      semanticSources && semanticSources.length > 0
+        ? semanticSources
+        : [this.project.getSourceFile(prepared.file.absolute)].filter(
+            (sourceFile): sourceFile is SourceFile => sourceFile !== undefined,
+          );
+    return sourceFiles.flatMap((sourceFile) =>
+      new DeclarationLocator(sourceFile).locate(identity, prepared.entries.entries),
+    );
   }
 
   declarationAt(node: Node): SymbolOverviewNode | undefined {

@@ -1,8 +1,9 @@
 import { posix } from "node:path";
 
-import type { FileSystem, WorkspaceSnapshot } from "@symnav/core";
-import { Project, ts } from "ts-morph";
+import type { FileSystem, WorkspaceFile, WorkspaceSnapshot } from "@symnav/core";
+import { Project, type SourceFile, ts } from "ts-morph";
 
+import type { TypeScriptSemanticSourceProvider } from "./typescript-workspace-state.js";
 import { WorkspaceFileSystemHost } from "./workspace-file-system-host.js";
 
 export interface TypeScriptProjectGraphRefresh {
@@ -17,23 +18,77 @@ interface ParsedTypeScriptConfiguration {
   readonly directory: string;
   readonly content: string;
   readonly value: Record<string, unknown>;
+  readonly compilerOptions: ts.CompilerOptions;
+}
+
+interface WorkspacePackageMapping {
+  readonly specifier: string;
+  readonly target: string;
 }
 
 interface WorkspacePackage {
   readonly path: string;
   readonly content: string;
-  readonly name: string;
-  readonly target: string;
+  readonly mappings: readonly WorkspacePackageMapping[];
 }
 
-export class TypeScriptProjectGraph {
-  private readonly project: Project;
-  private acceptedFiles = new Set<string>();
+class TypeScriptSemanticProject {
+  readonly project: Project;
+  private loaded = false;
+
+  constructor(
+    fileSystem: FileSystem,
+    compilerOptions: ts.CompilerOptions,
+    private readonly ownedFiles: readonly WorkspaceFile[],
+  ) {
+    this.project = new Project({
+      fileSystem: new WorkspaceFileSystemHost(fileSystem),
+      compilerOptions,
+      skipAddingFilesFromTsConfig: true,
+    });
+  }
+
+  program(): ts.Program {
+    this.load();
+    return this.project.getProgram().compilerObject;
+  }
+
+  languageService(): ts.LanguageService {
+    this.load();
+    return this.project.getLanguageService().compilerObject;
+  }
+
+  sourceFile(absolutePath: string): SourceFile | undefined {
+    this.load();
+    return this.project.getSourceFile(absolutePath);
+  }
+
+  releaseTransientResources(): void {
+    if (!this.loaded) return;
+    this.project.getLanguageService().compilerObject.cleanupSemanticCache();
+  }
+
+  private load(): void {
+    if (this.loaded) return;
+    for (const file of this.ownedFiles) {
+      this.project.addSourceFileAtPathIfExists(file.absolute);
+    }
+    this.project.resolveSourceFileDependencies();
+    this.loaded = true;
+  }
+}
+
+export class TypeScriptProjectGraph implements TypeScriptSemanticSourceProvider {
+  private acceptedFiles = new Map<string, WorkspaceFile>();
+  private configuredProjects: readonly TypeScriptSemanticProject[] = [];
+  private configuredProjectByFile = new Map<string, TypeScriptSemanticProject>();
+  private inferredProject: TypeScriptSemanticProject;
   private configurationInputs = new Map<string, string>();
+  private workspaceRevision = "";
   private initialized = false;
 
   constructor(private readonly fileSystem: FileSystem) {
-    this.project = new Project({ fileSystem: new WorkspaceFileSystemHost(fileSystem) });
+    this.inferredProject = new TypeScriptSemanticProject(fileSystem, { noEmit: true }, []);
   }
 
   async refresh(snapshot: WorkspaceSnapshot): Promise<TypeScriptProjectGraphRefresh> {
@@ -50,84 +105,93 @@ export class TypeScriptProjectGraph {
       this.configurationInputs,
       nextInputs,
     );
-    if (changedConfigurationCount > 0 || !this.initialized) {
-      this.configureProject(snapshot.root, configurations, workspacePackages);
+    const workspaceRevision = snapshot.files
+      .map((file) => `${file.relative}:${file.metadata.changeToken}`)
+      .join("\n");
+    if (
+      changedConfigurationCount > 0 ||
+      !this.initialized ||
+      workspaceRevision !== this.workspaceRevision
+    ) {
+      this.configureProjects(snapshot, configurations, workspacePackages);
     }
     this.initialized = true;
-    for (const file of snapshot.files) {
-      if (!this.project.getSourceFile(file.absolute)) {
-        this.project.addSourceFileAtPath(file.absolute);
-      }
-    }
     this.configurationInputs = nextInputs;
-    this.acceptedFiles = new Set(snapshot.files.map((file) => file.relative));
-    const configuredFiles = this.configuredFiles(snapshot, configurations);
+    this.workspaceRevision = workspaceRevision;
+    this.acceptedFiles = new Map(snapshot.files.map((file) => [file.relative, file]));
     return {
       root: snapshot.root,
       configuredProjectCount: configurations.length,
-      inferredFileCount: snapshot.files.filter((file) => !configuredFiles.has(file.relative))
-        .length,
+      inferredFileCount: snapshot.files.filter(
+        (file) => !this.configuredProjectByFile.has(file.relative),
+      ).length,
       changedConfigurationCount,
     };
   }
 
   programFor(relativePath: string): ts.Program | undefined {
     if (!this.acceptedFiles.has(relativePath)) return undefined;
-    return this.project.getProgram().compilerObject;
+    return this.projectFor(relativePath).program();
   }
 
   languageServiceFor(relativePath: string): ts.LanguageService | undefined {
     if (!this.acceptedFiles.has(relativePath)) return undefined;
-    return this.project.getLanguageService().compilerObject;
+    return this.projectFor(relativePath).languageService();
+  }
+
+  sourceFilesFor(relativePath: string): readonly SourceFile[] {
+    const file = this.acceptedFiles.get(relativePath);
+    if (!file) return [];
+    const sourceFiles: SourceFile[] = [];
+    for (const configuredProject of this.configuredProjects) {
+      const sourceFile = configuredProject.sourceFile(file.absolute);
+      if (sourceFile) sourceFiles.push(sourceFile);
+    }
+    const inferredSourceFile = this.inferredProject.sourceFile(file.absolute);
+    if (inferredSourceFile) sourceFiles.push(inferredSourceFile);
+    return sourceFiles;
   }
 
   releaseTransientResources(): void {
-    this.project.getLanguageService().compilerObject.cleanupSemanticCache();
+    for (const configuredProject of this.configuredProjects) {
+      configuredProject.releaseTransientResources();
+    }
+    this.inferredProject.releaseTransientResources();
   }
 
-  workspaceProject(): Project {
-    return this.project;
+  private projectFor(relativePath: string): TypeScriptSemanticProject {
+    return this.configuredProjectByFile.get(relativePath) ?? this.inferredProject;
   }
 
-  private configureProject(
-    root: string,
+  private configureProjects(
+    snapshot: WorkspaceSnapshot,
     configurations: readonly ParsedTypeScriptConfiguration[],
     workspacePackages: readonly WorkspacePackage[],
   ): void {
-    const compilerOptions: ts.CompilerOptions = {};
-    const paths: Record<string, string[]> = {};
+    const configuredProjectByFile = new Map<string, TypeScriptSemanticProject>();
+    const configuredProjects: TypeScriptSemanticProject[] = [];
     for (const configuration of configurations) {
-      const rawCompilerOptions = TypeScriptProjectGraph.recordValue(
-        configuration.value.compilerOptions,
+      const ownedFiles = this.configuredFiles(snapshot, configuration);
+      const compilerOptions = TypeScriptProjectGraph.compilerOptionsFor(
+        snapshot.root,
+        configuration,
+        workspacePackages,
       );
-      const converted = ts.convertCompilerOptionsFromJson(
-        rawCompilerOptions,
-        configuration.directory,
-      );
-      Object.assign(compilerOptions, converted.options);
-      const configuredPaths = TypeScriptProjectGraph.recordValue(rawCompilerOptions.paths);
-      const baseUrl =
-        typeof rawCompilerOptions.baseUrl === "string"
-          ? posix.resolve(configuration.directory, rawCompilerOptions.baseUrl)
-          : configuration.directory;
-      for (const [alias, targets] of Object.entries(configuredPaths)) {
-        if (!Array.isArray(targets)) continue;
-        paths[alias] = targets
-          .filter((target): target is string => typeof target === "string")
-          .map((target) => posix.resolve(baseUrl, target));
-      }
+      const project = new TypeScriptSemanticProject(this.fileSystem, compilerOptions, ownedFiles);
+      configuredProjects.push(project);
+      for (const file of ownedFiles) configuredProjectByFile.set(file.relative, project);
     }
-    for (const workspacePackage of workspacePackages) {
-      paths[workspacePackage.name] = [workspacePackage.target];
-    }
-    delete compilerOptions.rootDir;
-    delete compilerOptions.outDir;
-    delete compilerOptions.composite;
-    compilerOptions.baseUrl = root;
-    compilerOptions.paths = paths;
-    compilerOptions.noEmit = true;
-    this.project.compilerOptions.reset();
-    this.project.compilerOptions.set(compilerOptions);
+    const inferredFiles = snapshot.files.filter(
+      (file) => !configuredProjectByFile.has(file.relative),
+    );
+    const fallbackOptions = configurations.at(-1)?.compilerOptions ?? {};
+    this.configuredProjects = configuredProjects;
+    this.configuredProjectByFile = configuredProjectByFile;
+    this.inferredProject = new TypeScriptSemanticProject(
+      this.fileSystem,
+      { ...fallbackOptions, noEmit: true },
+      inferredFiles,
+    );
   }
 
   private readConfigurations(root: string): readonly ParsedTypeScriptConfiguration[] {
@@ -153,17 +217,18 @@ export class TypeScriptProjectGraph {
   }
 
   private readConfiguration(path: string): ParsedTypeScriptConfiguration | undefined {
-    if (!this.fileSystem.existsSync(path) || this.fileSystem.isDirectorySync(path))
+    if (!this.fileSystem.existsSync(path) || this.fileSystem.isDirectorySync(path)) {
       return undefined;
+    }
     const content = this.fileSystem.readFileSync(path);
     const parsed = ts.parseConfigFileTextToJson(path, content);
     if (parsed.error || !parsed.config || typeof parsed.config !== "object") return undefined;
-    return {
-      path,
-      directory: posix.dirname(path),
-      content,
-      value: parsed.config as Record<string, unknown>,
-    };
+    const value = parsed.config as Record<string, unknown>;
+    const compilerOptions = ts.convertCompilerOptionsFromJson(
+      TypeScriptProjectGraph.recordValue(value.compilerOptions),
+      posix.dirname(path),
+    ).options;
+    return { path, directory: posix.dirname(path), content, value, compilerOptions };
   }
 
   private readWorkspacePackages(
@@ -187,49 +252,67 @@ export class TypeScriptProjectGraph {
       const content = this.fileSystem.readFileSync(path);
       const value = TypeScriptProjectGraph.parseJson(content);
       const name = value?.name;
-      const target = value && TypeScriptProjectGraph.packageTarget(value);
-      if (typeof name !== "string" || !target) continue;
-      packages.push({ path, content, name, target: posix.resolve(directory, target) });
+      if (typeof name !== "string" || !value) continue;
+      const target = TypeScriptProjectGraph.packageTarget(value);
+      const mappings = target
+        ? [{ specifier: name, target: posix.resolve(directory, target) }]
+        : [];
+      if (mappings.length === 0) continue;
+      packages.push({ path, content, mappings });
     }
     return packages;
   }
 
   private configuredFiles(
     snapshot: WorkspaceSnapshot,
-    configurations: readonly ParsedTypeScriptConfiguration[],
-  ): ReadonlySet<string> {
-    const configured = new Set<string>();
-    for (const configuration of configurations) {
-      const explicitFiles = Array.isArray(configuration.value.files)
-        ? configuration.value.files.filter((file): file is string => typeof file === "string")
-        : undefined;
-      if (explicitFiles) {
-        for (const file of explicitFiles) {
-          const absolute = posix.resolve(configuration.directory, file);
-          const match = snapshot.files.find((candidate) => candidate.absolute === absolute);
-          if (match) configured.add(match.relative);
-        }
-        continue;
-      }
-      const includes = Array.isArray(configuration.value.include)
-        ? configuration.value.include.filter((value): value is string => typeof value === "string")
-        : ["**/*"];
-      const excludes = Array.isArray(configuration.value.exclude)
-        ? configuration.value.exclude.filter((value): value is string => typeof value === "string")
-        : ["node_modules", "bower_components", "jspm_packages"];
-      for (const file of snapshot.files) {
-        const relative = posix.relative(configuration.directory, file.absolute);
-        if (relative.startsWith("../")) continue;
-        if (!includes.some((pattern) => TypeScriptProjectGraph.matchesGlob(relative, pattern))) {
-          continue;
-        }
-        if (excludes.some((pattern) => TypeScriptProjectGraph.matchesGlob(relative, pattern))) {
-          continue;
-        }
-        configured.add(file.relative);
-      }
+    configuration: ParsedTypeScriptConfiguration,
+  ): readonly WorkspaceFile[] {
+    const explicitFiles = Array.isArray(configuration.value.files)
+      ? configuration.value.files.filter((file): file is string => typeof file === "string")
+      : undefined;
+    if (explicitFiles) {
+      const absoluteFiles = new Set(
+        explicitFiles.map((file) => posix.resolve(configuration.directory, file)),
+      );
+      return snapshot.files.filter((file) => absoluteFiles.has(file.absolute));
     }
-    return configured;
+    const includes = Array.isArray(configuration.value.include)
+      ? configuration.value.include.filter((value): value is string => typeof value === "string")
+      : ["**/*"];
+    const excludes = Array.isArray(configuration.value.exclude)
+      ? configuration.value.exclude.filter((value): value is string => typeof value === "string")
+      : ["node_modules", "bower_components", "jspm_packages"];
+    return snapshot.files.filter((file) => {
+      const relative = posix.relative(configuration.directory, file.absolute);
+      if (relative.startsWith("../")) return false;
+      if (!includes.some((pattern) => TypeScriptProjectGraph.matchesGlob(relative, pattern))) {
+        return false;
+      }
+      return !excludes.some((pattern) => TypeScriptProjectGraph.matchesGlob(relative, pattern));
+    });
+  }
+
+  private static compilerOptionsFor(
+    root: string,
+    configuration: ParsedTypeScriptConfiguration,
+    workspacePackages: readonly WorkspacePackage[],
+  ): ts.CompilerOptions {
+    const compilerOptions: ts.CompilerOptions = { ...configuration.compilerOptions };
+    const baseUrl = compilerOptions.baseUrl ?? configuration.directory;
+    const paths: Record<string, string[]> = {};
+    for (const workspacePackage of workspacePackages) {
+      for (const mapping of workspacePackage.mappings) paths[mapping.specifier] = [mapping.target];
+    }
+    for (const [specifier, targets] of Object.entries(compilerOptions.paths ?? {})) {
+      paths[specifier] = targets.map((target) => posix.resolve(baseUrl, target));
+    }
+    delete compilerOptions.rootDir;
+    delete compilerOptions.outDir;
+    delete compilerOptions.composite;
+    compilerOptions.baseUrl ??= root;
+    compilerOptions.paths = paths;
+    compilerOptions.noEmit = true;
+    return compilerOptions;
   }
 
   private static changedInputCount(

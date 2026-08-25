@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  GraphTraverser,
   InMemoryFileSystem,
   type SymbolIdentity,
   type WorkspaceFile,
@@ -90,6 +91,37 @@ describe("TypeScriptSemanticQueryService", () => {
     ]);
     expect(resolvedPositions).toHaveLength(2);
     expect(new Set(resolvedPositions).size).toBe(2);
+  });
+
+  it("queries each declaration position once across diamond graph paths", async () => {
+    const fileSystem = new InMemoryFileSystem({
+      "/repo/src/graph.ts": [
+        "export function leaf(): void {}",
+        "export function left(): void { leaf(); }",
+        "export function right(): void { leaf(); }",
+        "export function root(): void { left(); right(); }",
+        "",
+      ].join("\n"),
+    });
+    const resolvedPositions: string[] = [];
+    const backend = new TypeScriptBackend(fileSystem, undefined, undefined, {
+      callTargetResolution: (relativePath, start) =>
+        resolvedPositions.push(`${relativePath}:${start}`),
+    });
+    const files = workspaceFiles(fileSystem, "src/graph.ts");
+    await backend.refresh({ snapshot: { root: "/repo", files }, coverage: "workspace" });
+    const [root] = await backend.findDefinitions(files, identity("src/graph.ts", "root"));
+    if (!root) throw new Error("expected root declaration");
+
+    const paths = await new GraphTraverser({ backend, files, root, depth: 2 }).traverseOutgoing();
+
+    expect(paths).toHaveLength(2);
+    expect(paths.map((path) => path.steps.at(-1)?.symbol.identity)).toEqual([
+      identity("src/graph.ts", "leaf"),
+      identity("src/graph.ts", "leaf"),
+    ]);
+    expect(resolvedPositions).toHaveLength(4);
+    expect(new Set(resolvedPositions).size).toBe(4);
   });
 });
 

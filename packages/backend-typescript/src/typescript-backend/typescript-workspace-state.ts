@@ -27,6 +27,7 @@ export interface TypeScriptFileRevision {
   readonly absolutePath: string;
   readonly size: number;
   readonly modifiedAtMs: number;
+  readonly changeToken: string;
 }
 
 interface PreparedFileIndex {
@@ -167,6 +168,7 @@ export class TypeScriptWorkspaceState {
         absolutePath: path.absolute,
         size: metadata.size,
         modifiedAtMs: metadata.modifiedAtMs,
+        changeToken: metadata.changeToken,
       },
     ]);
     const preparedFile = prepared[0];
@@ -298,6 +300,7 @@ export class TypeScriptWorkspaceState {
       absolutePath: file.absolute,
       size: file.metadata.size,
       modifiedAtMs: file.metadata.modifiedAtMs,
+      changeToken: file.metadata.changeToken,
     };
   }
 
@@ -308,8 +311,7 @@ export class TypeScriptWorkspaceState {
     return (
       current.relativePath === incoming.relativePath &&
       current.absolutePath === incoming.absolutePath &&
-      current.size === incoming.size &&
-      current.modifiedAtMs === incoming.modifiedAtMs
+      current.changeToken === incoming.changeToken
     );
   }
 }

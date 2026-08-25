@@ -259,6 +259,61 @@ describe("daemon registry", () => {
     });
   });
 
+  it("atomically transfers an authenticated launcher lease to the daemon", () => {
+    const identity = DaemonWorkspaceIdentity.from("/repo", temporaryDirectory(roots));
+    const registry = new DaemonRegistry(identity.registryDirectory);
+    const launcherLease = registry.acquireStartup(identity, {
+      identityKey: identity.identityKey,
+      instanceId: "starting",
+      processToken: "process-token",
+      ownerPid: process.pid,
+      ownerKind: "launcher",
+      heartbeatAt: Date.now(),
+    });
+    expect(launcherLease).toBeDefined();
+
+    expect(launcherLease?.transferToDaemon(777, "process-token")).toBe(true);
+    expect(registry.startupOwner(identity)).toMatchObject({
+      identityKey: identity.identityKey,
+      instanceId: "starting",
+      processToken: "process-token",
+      ownerPid: 777,
+      ownerKind: "daemon",
+    });
+    expect(launcherLease?.heartbeat()).toBe(false);
+    expect(launcherLease?.release()).toBe(false);
+  });
+
+  it("lets only the exact daemon claim heartbeat and release transferred startup", () => {
+    const identity = DaemonWorkspaceIdentity.from("/repo", temporaryDirectory(roots));
+    const registry = new DaemonRegistry(identity.registryDirectory);
+    expect(
+      registry.acquireStartup(identity, {
+        identityKey: identity.identityKey,
+        instanceId: "starting",
+        processToken: "process-token",
+        ownerPid: process.pid,
+        ownerKind: "launcher",
+        heartbeatAt: Date.now(),
+      }),
+    ).toBeDefined();
+
+    expect(
+      registry.claimStartupForDaemon(identity, "starting", "wrong-token", 777),
+    ).toBeUndefined();
+    const daemonLease = registry.claimStartupForDaemon(identity, "starting", "process-token", 777);
+    expect(daemonLease).toBeDefined();
+    const revisionBeforeHeartbeat = registry.startupOwner(identity)?.revision;
+
+    expect(daemonLease?.heartbeat()).toBe(true);
+    expect(registry.startupOwner(identity)?.revision).not.toBe(revisionBeforeHeartbeat);
+    expect(
+      registry.claimStartupForDaemon(identity, "starting", "process-token", 778),
+    ).toBeUndefined();
+    expect(daemonLease?.release()).toBe(true);
+    expect(registry.startupOwner(identity)).toBeUndefined();
+  });
+
   it("releases only the exact daemon-owned startup process", () => {
     const identity = DaemonWorkspaceIdentity.from("/repo", temporaryDirectory(roots));
     const registry = new DaemonRegistry(identity.registryDirectory);

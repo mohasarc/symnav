@@ -141,6 +141,58 @@ describe("symnav daemon status", () => {
     expect(JSON.parse(stopped.stdout)).toEqual([]);
   });
 
+  it("keeps one warm-up after its initiating caller exits", async () => {
+    const stateDir = temporaryStateDirectory(stateDirectories);
+    const workspaceRoot = temporaryWorkspace(stateDirectories);
+    const instanceId = "caller-exit";
+    const processToken = "caller-exit-process";
+    const bootPath = join(stateDir, "caller-exit-boot");
+    const readyPath = join(stateDir, "caller-exit-ready");
+    const caller = spawnCallerExitStartup(
+      workspaceRoot,
+      stateDir,
+      instanceId,
+      processToken,
+      bootPath,
+      readyPath,
+    );
+    helperProcesses.push(caller);
+    await waitForProcess(caller);
+    helperProcesses.splice(helperProcesses.indexOf(caller), 1);
+    const originalRecord = daemonRecords(stateDir)[0];
+    expect(originalRecord).toBeDefined();
+    daemonPids.push(originalRecord!.pid);
+
+    const starting = runSymnavBinary(["daemon", "status", "--json"], {
+      cwd: tmpdir(),
+      env: { SYMNAV_STATE_DIR: stateDir },
+    });
+
+    expect(starting.status).toBe(0);
+    expect(JSON.parse(starting.stdout)).toEqual([
+      expect.objectContaining({
+        workspaceRoot,
+        state: "starting",
+        pid: originalRecord!.pid,
+      }),
+    ]);
+    expect(daemonRecords(stateDir)).toEqual([originalRecord]);
+
+    await waitUntil(() => existsSync(readyPath));
+    const navigation = runSymnavBinary(["overview", "input.ts"], {
+      cwd: workspaceRoot,
+      env: { SYMNAV_STATE_DIR: stateDir },
+    });
+    const readyRecord = daemonRecords(stateDir)[0];
+
+    expect(navigation.status).toBe(0);
+    expect(navigation.stdout).toContain("value");
+    expect(daemonRecords(stateDir)).toHaveLength(1);
+    expect(readyRecord?.state).toBe("ready");
+    expect(readyRecord?.pid).toBe(originalRecord!.pid);
+    expect(readyRecord?.instanceId).toBe(instanceId);
+  }, 15_000);
+
   it("cleans a stale current-schema record", async () => {
     const stateDir = temporaryStateDirectory(stateDirectories);
     const cwd = temporaryWorkspace(stateDirectories);
@@ -350,6 +402,30 @@ function spawnStuckDaemon(
       requestStartedPath,
       "--no-release",
       "0.1.0",
+    ],
+    { stdio: "ignore" },
+  );
+}
+
+function spawnCallerExitStartup(
+  workspaceRoot: string,
+  stateDirectory: string,
+  instanceId: string,
+  processToken: string,
+  bootPath: string,
+  readyPath: string,
+): ChildProcess {
+  return spawn(
+    process.execPath,
+    [
+      fileURLToPath(new URL("../../../node_modules/tsx/dist/cli.mjs", import.meta.url)),
+      fileURLToPath(new URL("../../helpers/daemon-startup-caller-exit.ts", import.meta.url)),
+      workspaceRoot,
+      stateDirectory,
+      instanceId,
+      processToken,
+      bootPath,
+      readyPath,
     ],
     { stdio: "ignore" },
   );

@@ -6,7 +6,10 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { DaemonRequest } from "./daemon-protocol.js";
 import { DAEMON_PROTOCOL_VERSION } from "./daemon-protocol.js";
-import { LocalDaemonTransport } from "./local-daemon-transport.js";
+import {
+  DaemonTransportError,
+  LocalDaemonTransport,
+} from "./local-daemon-transport.js";
 
 describe("LocalDaemonTransport validation", () => {
   const servers: Server[] = [];
@@ -22,6 +25,125 @@ describe("LocalDaemonTransport validation", () => {
     servers.length = 0;
     for (const directory of directories) rmSync(directory, { recursive: true, force: true });
     directories.length = 0;
+  });
+
+  it("classifies connection refusal before request submission", async () => {
+    const endpoint = validationEndpoint(directories);
+
+    await expect(
+      new LocalDaemonTransport({ requestTimeoutMs: 100 }).request(endpoint, pingRequest()),
+    ).rejects.toMatchObject({
+      name: "DaemonTransportError",
+      code: "unreachable",
+      delivery: "not-submitted",
+    } satisfies Partial<DaemonTransportError>);
+  });
+
+  it.each([
+    ["lifecycle", pingRequest(), { requestTimeoutMs: 10 }],
+    [
+      "admission",
+      {
+        kind: "execute",
+        protocolVersion: DAEMON_PROTOCOL_VERSION,
+        instanceId: "instance",
+        requestId: "request",
+        request: { argv: ["resolve", "target"], cwd: "/repo", telemetryEnabled: false },
+      } satisfies DaemonRequest,
+      { requestTimeoutMs: 100, executionRequestTimeoutMs: 10 },
+    ],
+  ] as const)("classifies %s timeout after request submission", async (_kind, request, options) => {
+    const endpoint = await rawServer(servers, sockets, directories, () => undefined);
+
+    await expect(new LocalDaemonTransport(options).request(endpoint, request)).rejects.toMatchObject(
+      {
+        code: "timeout",
+        delivery: "submitted-unconfirmed",
+      } satisfies Partial<DaemonTransportError>,
+    );
+  });
+
+  it.each([
+    ["malformed", invalidResponse("malformed")],
+    ["truncated", invalidResponse("truncated")],
+  ] as const)("classifies %s response framing as corrupt", async (_kind, response) => {
+    const endpoint = await rawServer(servers, sockets, directories, (socket) => {
+      socket.end(response);
+    });
+
+    await expect(
+      new LocalDaemonTransport({ requestTimeoutMs: 100 }).request(endpoint, pingRequest()),
+    ).rejects.toMatchObject({
+      code: "corrupt",
+      delivery: "submitted-unconfirmed",
+    } satisfies Partial<DaemonTransportError>);
+  });
+
+  it.each([
+    [
+      "instance",
+      pingRequest(),
+      {
+        kind: "pong",
+        protocolVersion: DAEMON_PROTOCOL_VERSION,
+        instanceId: "other",
+        symnavVersion: "test",
+      },
+    ],
+    [
+      "token",
+      { kind: "identify", instanceId: "instance", processToken: "expected" } satisfies DaemonRequest,
+      {
+        kind: "identity",
+        instanceId: "instance",
+        processToken: "other",
+        pid: 123,
+        startedAt: 10,
+      },
+    ],
+  ] as const)("classifies wrong %s as authentication failure", async (_kind, request, response) => {
+    const endpoint = await rawServer(servers, sockets, directories, (socket) => {
+      socket.end(frame(response));
+    });
+
+    await expect(
+      new LocalDaemonTransport({ requestTimeoutMs: 100 }).request(endpoint, request),
+    ).rejects.toMatchObject({
+      code: "authentication",
+      delivery: "accepted",
+    } satisfies Partial<DaemonTransportError>);
+  });
+
+  it("classifies a correlated protocol mismatch as authenticated incompatibility", async () => {
+    const endpoint = await rawServer(servers, sockets, directories, (socket) => {
+      socket.end(
+        frame({
+          kind: "pong",
+          protocolVersion: DAEMON_PROTOCOL_VERSION + 1,
+          instanceId: "instance",
+          symnavVersion: "test",
+        }),
+      );
+    });
+
+    await expect(
+      new LocalDaemonTransport({ requestTimeoutMs: 100 }).request(endpoint, pingRequest()),
+    ).rejects.toMatchObject({
+      code: "incompatible",
+      delivery: "accepted",
+      authenticatedInstanceId: "instance",
+    } satisfies Partial<DaemonTransportError>);
+  });
+
+  it("classifies a clean close without a response", async () => {
+    const endpoint = await rawServer(servers, sockets, directories, (socket) => socket.end());
+
+    await expect(
+      new LocalDaemonTransport({ requestTimeoutMs: 100 }).request(endpoint, pingRequest()),
+    ).rejects.toMatchObject({
+      code: "closed",
+      delivery: "submitted-unconfirmed",
+    } satisfies Partial<DaemonTransportError>);
   });
 
   it("times out a daemon request that never receives a response", async () => {
@@ -337,6 +459,16 @@ function frame(value: unknown): Buffer {
   const prefix = Buffer.alloc(4);
   prefix.writeUInt32BE(payload.length);
   return Buffer.concat([prefix, payload]);
+}
+
+function invalidResponse(scenario: "malformed" | "truncated"): Buffer {
+  const prefix = Buffer.alloc(4);
+  if (scenario === "truncated") {
+    prefix.writeUInt32BE(10);
+    return Buffer.concat([prefix, Buffer.from("{}")]);
+  }
+  prefix.writeUInt32BE(1);
+  return Buffer.concat([prefix, Buffer.from("{")]);
 }
 
 async function rawServer(

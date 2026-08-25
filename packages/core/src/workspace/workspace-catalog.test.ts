@@ -175,5 +175,4 @@ describe("WorkspaceCatalog", () => {
     expect(firstSnapshot.files.map((file) => file.relative)).toEqual([".gitignore", "src/a.ts"]);
     expect((await first.snapshot()).files).toBe(firstSnapshot.files);
   });
-
 });

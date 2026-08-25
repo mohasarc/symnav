@@ -18,9 +18,21 @@ import {
 
 class CountingTypeScriptFileExtractor implements TypeScriptFileExtractor {
   readonly calls: string[] = [];
+  private readonly failingPaths = new Set<string>();
+
+  failFor(filePath: string): void {
+    this.failingPaths.add(filePath);
+  }
+
+  restore(filePath: string): void {
+    this.failingPaths.delete(filePath);
+  }
 
   extract(request: TypeScriptFileExtractionRequest) {
     this.calls.push(request.filePath);
+    if (this.failingPaths.has(request.filePath)) {
+      throw new Error(`extraction failed: ${request.filePath}`);
+    }
     return extractFileEntries(request);
   }
 }
@@ -169,6 +181,36 @@ describe("TypeScriptWorkspaceState.refresh", () => {
 
     expect(state.fileEntries(secondRevision[0]!)).not.toBe(firstEntries);
     expect(extractor.calls).toEqual(["src/a.ts", "src/a.ts"]);
+  });
+
+  it("publishes changed declarations and diagnostics only after every extraction succeeds", () => {
+    const fs = new MutableWorkspaceFileSystem({
+      "/repo/src/a.ts": "export const beforeA = 1;\n@orphaned\n",
+      "/repo/src/b.ts": "export const beforeB = 1;\n",
+    });
+    const extractor = new CountingTypeScriptFileExtractor();
+    const state = new TypeScriptWorkspaceState(fs, extractor);
+    const beforeFiles = fs.workspaceFiles("src/a.ts", "src/b.ts");
+    state.refresh(beforeFiles);
+    const beforeEntries = state.fileEntries(beforeFiles[0]!);
+    const beforeDiagnostics = state.diagnostics(beforeFiles[0]!);
+
+    fs.setFile("/repo/src/a.ts", "export const afterA = 2;\n");
+    fs.setFile("/repo/src/b.ts", "export const afterB = 2;\n");
+    const afterFiles = fs.workspaceFiles("src/a.ts", "src/b.ts");
+    extractor.failFor("src/b.ts");
+
+    expect(() => state.refresh(afterFiles)).toThrow("extraction failed: src/b.ts");
+    expect(state.fileEntries(beforeFiles[0]!)).toBe(beforeEntries);
+    expect(state.diagnostics(beforeFiles[0]!)).toBe(beforeDiagnostics);
+    expect(declarationNames(state, beforeFiles)).toEqual(["beforeA", "beforeB"]);
+
+    extractor.restore("src/b.ts");
+    state.refresh(afterFiles);
+
+    expect(state.fileEntries(afterFiles[0]!)).not.toBe(beforeEntries);
+    expect(state.diagnostics(afterFiles[0]!)).toEqual([]);
+    expect(declarationNames(state, afterFiles)).toEqual(["afterA", "afterB"]);
   });
 
   it("keeps an unchanged source object while sibling deltas are applied", () => {

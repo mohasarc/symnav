@@ -77,6 +77,14 @@ class ControlledNavigationWorker implements DaemonNavigationWorker {
   readonly generation = 1;
   readonly exited = new Promise<DaemonNavigationWorkerExit>(() => undefined);
   private readonly controlledExecutor = new ControlledExecutor();
+  private rejectTermination!: (error: Error) => void;
+  private readonly termination = new Promise<never>((_resolve, reject) => {
+    this.rejectTermination = reject;
+  });
+
+  constructor() {
+    void this.termination.catch(() => undefined);
+  }
 
   async start(): Promise<DaemonNavigationWorkerResponse> {
     return {
@@ -96,7 +104,7 @@ class ControlledNavigationWorker implements DaemonNavigationWorker {
       kind: "result",
       generation: this.generation,
       requestId,
-      result: await this.controlledExecutor.execute(request),
+      result: await Promise.race([this.controlledExecutor.execute(request), this.termination]),
       refresh: { added: 0, changed: 0, removed: 0, unchanged: 1 },
       durations: { freshnessMs: 0, navigationMs: 1, renderMs: 0, outputMs: 0 },
     };
@@ -111,6 +119,7 @@ class ControlledNavigationWorker implements DaemonNavigationWorker {
   }
 
   terminate(): Promise<void> {
+    this.rejectTermination(new Error("worker terminated"));
     return Promise.resolve();
   }
 }

@@ -270,7 +270,11 @@ describe("WorkspaceDaemon runtime lifecycle", () => {
     await harness.exited;
 
     expect(Date.now() - startedAt).toBeLessThan(500);
-    await expect(activeRequest).rejects.toThrow();
+    await expect(activeRequest).resolves.toMatchObject({
+      kind: "result",
+      requestId: "resource-active",
+      result: { exitCode: 1 },
+    });
     expect(harness.registry.read(harness.identity)).toMatchObject({
       instanceId: harness.instanceId,
       processToken: "runtime-token",
@@ -472,11 +476,17 @@ class ExecutorNavigationWorker implements DaemonNavigationWorker {
   readonly generation = 1;
   readonly exited: Promise<DaemonNavigationWorkerExit>;
   private resolveExited!: (exit: DaemonNavigationWorkerExit) => void;
+  private rejectTermination!: (error: Error) => void;
+  private readonly termination: Promise<never>;
 
   constructor(private readonly executor: DaemonCommandExecutor) {
     this.exited = new Promise((resolve) => {
       this.resolveExited = resolve;
     });
+    this.termination = new Promise((_resolve, reject) => {
+      this.rejectTermination = reject;
+    });
+    void this.termination.catch(() => undefined);
   }
 
   async start(): Promise<DaemonNavigationWorkerResponse> {
@@ -497,7 +507,7 @@ class ExecutorNavigationWorker implements DaemonNavigationWorker {
       kind: "result",
       generation: this.generation,
       requestId,
-      result: await this.executor.execute(request),
+      result: await Promise.race([this.executor.execute(request), this.termination]),
       refresh: { added: 0, changed: 0, removed: 0, unchanged: 1 },
       durations: { freshnessMs: 0, navigationMs: 1, renderMs: 0, outputMs: 0 },
     };
@@ -513,6 +523,7 @@ class ExecutorNavigationWorker implements DaemonNavigationWorker {
   }
 
   terminate(): Promise<void> {
+    this.rejectTermination(new Error("worker terminated"));
     this.resolveExited({ generation: this.generation, cause: "terminated" });
     return Promise.resolve();
   }

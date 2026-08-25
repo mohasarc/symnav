@@ -188,15 +188,13 @@ describe("symnav daemon stop", () => {
     );
     helperProcesses.push(runtime.child);
     const transport = new LocalDaemonTransport({ requestTimeoutMs: 10_000 });
-    void transport
-      .request(runtime.record.endpoint, {
-        kind: "execute",
-        protocolVersion: DAEMON_PROTOCOL_VERSION,
-        instanceId: runtime.record.instanceId,
-        requestId: "built-force",
-        request: { argv: ["--version"], cwd, telemetryEnabled: false },
-      })
-      .catch(() => undefined);
+    const execution = transport.request(runtime.record.endpoint, {
+      kind: "execute",
+      protocolVersion: DAEMON_PROTOCOL_VERSION,
+      instanceId: runtime.record.instanceId,
+      requestId: "built-force",
+      request: { argv: ["--version"], cwd, telemetryEnabled: false },
+    });
     await waitUntil(() => existsSync(runtime.requestStartedPath));
 
     const stopped = await runBuiltStop(cwd, stateDir);
@@ -207,6 +205,11 @@ describe("symnav daemon stop", () => {
       stderr: "",
     });
     expect(() => process.kill(runtime.record.pid, 0)).toThrow();
+    await expect(execution).resolves.toMatchObject({
+      kind: "result",
+      requestId: "built-force",
+      result: { exitCode: 1 },
+    });
     await waitForProcess(runtime.child);
     helperProcesses.splice(helperProcesses.indexOf(runtime.child), 1);
   }, 15_000);

@@ -11,6 +11,7 @@ import {
 import { DaemonRegistry } from "../../src/daemon/daemon-registry.js";
 import { DaemonWorkspaceIdentity } from "../../src/daemon/daemon-workspace-identity.js";
 import { LocalDaemonTransport } from "../../src/daemon/local-daemon-transport.js";
+import { NodeDaemonNavigationWorker } from "../../src/daemon/daemon-navigation-worker.js";
 import { WorkspaceDaemon } from "../../src/daemon/workspace-daemon.js";
 
 class DaemonStartupCallerExit {
@@ -102,6 +103,11 @@ class DaemonStartupCallerExit {
       dependencies,
       registry: new DaemonRegistry(identity.registryDirectory),
       transport: new LocalDaemonTransport(),
+      navigationWorker: new NodeDaemonNavigationWorker({
+        generation: 1,
+        stateDirectory: identity.stateDirectory,
+        entryUrl: new URL("../../dist/daemon/daemon-navigation-worker-entry.js", import.meta.url),
+      }),
     }).start();
     writeFileSync(readyPath, "ready");
   }

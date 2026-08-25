@@ -295,8 +295,10 @@ describe("symnav daemon status", () => {
     expect(JSON.parse(status.stdout)).toEqual([
       expect.objectContaining({
         workspaceRoot,
-        state: expect.stringMatching(/^(ready|unresponsive)$/),
+        state: "busy",
         pid: originalRecord!.pid,
+        currentCommand: "overview",
+        queued: 0,
       }),
     ]);
     expect(recordsAfterStatus).toHaveLength(1);
@@ -341,7 +343,13 @@ describe("symnav daemon status", () => {
     expect(replay(response.result.frames, "stdout")).toBe(cold.stdout);
     expect(replay(response.result.frames, "stderr")).toBe(cold.stderr);
     expect(response.result.exitCode).toBe(cold.status);
-    await waitUntil(() => daemonRecords(stateDir).length === 0);
+    await waitUntil(() => {
+      runSymnavBinary(["daemon", "status", "--json"], {
+        cwd: tmpdir(),
+        env: { SYMNAV_STATE_DIR: stateDir },
+      });
+      return daemonRecords(stateDir).length === 0;
+    });
   });
 });
 

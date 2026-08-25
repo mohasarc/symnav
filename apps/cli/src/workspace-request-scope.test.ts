@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { TypeScriptBackend, TypeScriptWorkspaceState } from "@symnav/backend-typescript";
-import { InMemoryFileSystem } from "@symnav/core";
+import { InMemoryFileSystem, WorkspaceCatalog } from "@symnav/core";
 
 import { FakeLanguageBackend } from "../test/integration/commands/helpers/fake-language-backend.js";
 import { WorkspaceRequestScopeFactory } from "./workspace-request-scope.js";
@@ -74,5 +74,23 @@ describe("WorkspaceRequestScopeFactory", () => {
       unchanged: 2,
     });
     expect(state.sourceFile("src/b.ts")).toBe(siblingSourceFile);
+  });
+
+  it("publishes a new immutable catalog turn only when prepare starts", async () => {
+    const fs = new InMemoryFileSystem({
+      "/repo/.git/HEAD": "ref: refs/heads/main\n",
+      "/repo/src/a.ts": "export const a = 1;\n",
+    });
+    const backend = new FakeLanguageBackend({ accept: (path) => path.endsWith(".ts") });
+    const factory = new WorkspaceRequestScopeFactory(fs, [backend], new WorkspaceCatalog(fs));
+
+    const first = await factory.prepare("/repo");
+    const second = await factory.prepare("/repo");
+
+    expect(first.workspace).not.toBe(second.workspace);
+    expect(first.snapshot).not.toBe(second.snapshot);
+    expect(Object.isFrozen(first.snapshot)).toBe(true);
+    expect(Object.isFrozen(first.snapshot.files)).toBe(true);
+    expect(first.snapshot.files[0]).toBe(second.snapshot.files[0]);
   });
 });

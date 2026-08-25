@@ -60,6 +60,37 @@ describe("TypeScriptSemanticQueryService", () => {
     await backend.findReferences(files, target);
     expect(referenceSearches).toBe(2);
   });
+
+  it("resolves each call position once while grouping repeated targets", async () => {
+    const fileSystem = new InMemoryFileSystem({
+      "/repo/src/app.ts": [
+        "export function target(value: string): string;",
+        "export function target(value: number): string;",
+        "export function target(value: string | number): string { return String(value); }",
+        "export function caller(): string { return `${target(1)}:${target('x')}`; }",
+        "",
+      ].join("\n"),
+    });
+    const resolvedPositions: string[] = [];
+    const backend = new TypeScriptBackend(fileSystem, undefined, undefined, {
+      callTargetResolution: (relativePath, start) =>
+        resolvedPositions.push(`${relativePath}:${start}`),
+    });
+    const files = workspaceFiles(fileSystem, "src/app.ts");
+    const caller = identity("src/app.ts", "caller");
+    await backend.refresh({ snapshot: { root: "/repo", files }, coverage: "workspace" });
+
+    const first = await backend.findCallees(files, caller);
+    const second = await backend.findCallees(files, caller);
+
+    expect(first).toBe(second);
+    expect(first.map((edge) => edge.symbol.kind.nativeLabel)).toEqual([
+      "function-overload-signature",
+      "function-overload-signature",
+    ]);
+    expect(resolvedPositions).toHaveLength(2);
+    expect(new Set(resolvedPositions).size).toBe(2);
+  });
 });
 
 function workspaceFiles(

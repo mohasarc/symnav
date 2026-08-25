@@ -4,6 +4,7 @@ import type { FileSystem, WorkspaceFile, WorkspaceSnapshot } from "@symnav/core"
 import { Project, type SourceFile, ts } from "ts-morph";
 
 import type { TypeScriptSemanticSourceProvider } from "./typescript-workspace-state.js";
+import type { TypeScriptSemanticQueryObserver } from "./typescript-semantic-query-observer.js";
 import { WorkspaceFileSystemHost } from "./workspace-file-system-host.js";
 import { WorkspacePathDialect } from "./workspace-path-dialect.js";
 
@@ -43,6 +44,7 @@ class TypeScriptSemanticProject {
     fileSystem: FileSystem,
     compilerOptions: ts.CompilerOptions,
     private readonly ownedFiles: readonly WorkspaceFile[],
+    private readonly observer?: TypeScriptSemanticQueryObserver,
   ) {
     this.project = new Project({
       fileSystem: new WorkspaceFileSystemHost(fileSystem),
@@ -73,6 +75,7 @@ class TypeScriptSemanticProject {
 
   private load(): void {
     if (this.loaded) return;
+    this.observer?.semanticProjectLoaded?.(this.ownedFiles.length);
     for (const file of this.ownedFiles) {
       this.project.addSourceFileAtPathIfExists(file.absolute);
     }
@@ -90,7 +93,10 @@ export class TypeScriptProjectGraph implements TypeScriptSemanticSourceProvider 
   private workspaceRevision = "";
   private initialized = false;
 
-  constructor(private readonly fileSystem: FileSystem) {
+  constructor(
+    private readonly fileSystem: FileSystem,
+    private readonly observer?: TypeScriptSemanticQueryObserver,
+  ) {
     this.inferredProject = new TypeScriptSemanticProject(fileSystem, { noEmit: true }, []);
   }
 
@@ -158,6 +164,12 @@ export class TypeScriptProjectGraph implements TypeScriptSemanticSourceProvider 
     return sourceFiles;
   }
 
+  sourceFileFor(relativePath: string): SourceFile | undefined {
+    const file = this.acceptedFiles.get(relativePath);
+    if (!file) return undefined;
+    return this.projectFor(relativePath).sourceFile(file.absolute);
+  }
+
   releaseTransientResources(): void {
     for (const configuredProject of this.configuredProjects) {
       configuredProject.releaseTransientResources();
@@ -183,7 +195,12 @@ export class TypeScriptProjectGraph implements TypeScriptSemanticSourceProvider 
         configuration,
         workspacePackages,
       );
-      const project = new TypeScriptSemanticProject(this.fileSystem, compilerOptions, ownedFiles);
+      const project = new TypeScriptSemanticProject(
+        this.fileSystem,
+        compilerOptions,
+        ownedFiles,
+        this.observer,
+      );
       configuredProjects.push(project);
       for (const file of ownedFiles) configuredProjectByFile.set(file.relative, project);
     }
@@ -196,6 +213,7 @@ export class TypeScriptProjectGraph implements TypeScriptSemanticSourceProvider 
       this.fileSystem,
       TypeScriptProjectGraph.inferredCompilerOptions(snapshot.root, workspacePackages),
       inferredFiles,
+      this.observer,
     );
   }
 

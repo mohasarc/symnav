@@ -12,6 +12,7 @@ class MutableCatalogFileSystem implements FileSystem {
   private readonly revisions = new Map<string, number>();
   private readonly modifiedAt = new Map<string, number>();
   private failingDirectory: string | undefined;
+  private failingSource: string | undefined;
 
   constructor(files: Record<string, string>) {
     for (const [path, content] of Object.entries(files)) this.setFile(path, content);
@@ -37,6 +38,14 @@ class MutableCatalogFileSystem implements FileSystem {
     this.failingDirectory = undefined;
   }
 
+  failSource(path: string): void {
+    this.failingSource = path;
+  }
+
+  restoreSources(): void {
+    this.failingSource = undefined;
+  }
+
   resetCounts(): void {
     this.directoryReads.length = 0;
     this.metadataReads.length = 0;
@@ -45,6 +54,7 @@ class MutableCatalogFileSystem implements FileSystem {
 
   readFile(absPath: string): Promise<string> {
     this.sourceReads.push(absPath);
+    if (absPath === this.failingSource) return Promise.reject(new Error("EIO"));
     return Promise.resolve(this.readFileSync(absPath));
   }
 
@@ -194,5 +204,41 @@ describe("WorkspaceCatalog", () => {
     fileSystem.resetCounts();
     await catalog.refresh("/repo");
     expect(fileSystem.directoryReads).toEqual(["/repo/src"]);
+  });
+
+  it("retains the last published turn when refresh fails", async () => {
+    const fileSystem = new MutableCatalogFileSystem({
+      "/repo/.git/HEAD": "ref: refs/heads/main\n",
+      "/repo/src/a.ts": "export const a = 1;\n",
+    });
+    const catalog = new WorkspaceCatalog(fileSystem);
+    await catalog.refresh("/repo");
+    fileSystem.setFile("/repo/src/b.ts", "export const b = 1;\n");
+    fileSystem.failDirectory("/repo/src");
+
+    await expect(catalog.refresh("/repo")).rejects.toThrow("EIO");
+    expect(await paths(await catalog.open("/repo"))).toEqual(["src/a.ts"]);
+
+    fileSystem.restoreDirectories();
+    expect(await paths(await catalog.refresh("/repo"))).toEqual(["src/a.ts", "src/b.ts"]);
+  });
+
+  it("retains the last published turn when an ignore read fails", async () => {
+    const fileSystem = new MutableCatalogFileSystem({
+      "/repo/.git/HEAD": "ref: refs/heads/main\n",
+      "/repo/.gitignore": "ignored.ts\n",
+      "/repo/a.ts": "export const a = 1;\n",
+      "/repo/ignored.ts": "export const ignored = 1;\n",
+    });
+    const catalog = new WorkspaceCatalog(fileSystem);
+    await catalog.refresh("/repo");
+    fileSystem.setFile("/repo/.gitignore", "a.ts\n");
+    fileSystem.failSource("/repo/.gitignore");
+
+    await expect(catalog.refresh("/repo")).rejects.toThrow("EIO");
+    expect(await paths(await catalog.open("/repo"))).toEqual([".gitignore", "a.ts"]);
+
+    fileSystem.restoreSources();
+    expect(await paths(await catalog.refresh("/repo"))).toEqual([".gitignore", "ignored.ts"]);
   });
 });

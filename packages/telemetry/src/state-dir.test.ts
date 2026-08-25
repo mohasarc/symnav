@@ -14,11 +14,19 @@ afterEach(() => {
 
 describe("resolveStateDir", () => {
   it("uses SYMNAV_STATE_DIR when set", () => {
-    expect(resolveStateDir({ SYMNAV_STATE_DIR: "/tmp/x" }, "/home/me")).toBe("/tmp/x");
+    const root = mkdtempSync(join(tmpdir(), "symnav-state-dir-"));
+    temporaryDirectories.push(root);
+
+    expect(resolveStateDir({ SYMNAV_STATE_DIR: join(root, "state") }, "/unused")).toBe(
+      join(realpathSync(root), "state"),
+    );
   });
 
   it("uses the homedir symnav directory when SYMNAV_STATE_DIR is unset", () => {
-    expect(resolveStateDir({}, "/home/me")).toBe(join("/home/me", ".symnav"));
+    const root = mkdtempSync(join(tmpdir(), "symnav-state-dir-"));
+    temporaryDirectories.push(root);
+
+    expect(resolveStateDir({}, root)).toBe(join(realpathSync(root), ".symnav"));
   });
 
   it("canonicalizes relative and dot-segment state directories", () => {

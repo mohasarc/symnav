@@ -8,7 +8,6 @@ import type {
   DaemonServer,
 } from "./daemon-protocol.js";
 import { DAEMON_PROTOCOL_VERSION, DAEMON_RECORD_SCHEMA_VERSION } from "./daemon-protocol.js";
-import { NodeDaemonProcessTerminator } from "./daemon-process-launcher.js";
 import { DAEMON_IDLE_TIMEOUT_MS, DaemonLifetime } from "./daemon-lifetime.js";
 import { DaemonLogger } from "./daemon-logger.js";
 import { DaemonResourceMonitor } from "./daemon-resource-monitor.js";
@@ -120,6 +119,7 @@ export class WorkspaceDaemon {
         await this.server.close();
         throw new Error("Daemon startup ownership changed before readiness publication");
       }
+      this.options.registry.removeStartupLockIfProcess(this.options.identity, readyRecord);
       this.logger.record({ kind: "ready", fileCount });
       this.resourceMonitor.start();
     } catch (error) {
@@ -133,22 +133,23 @@ export class WorkspaceDaemon {
   }
 
   private async waitForStartupAuthorization(): Promise<DaemonRecord> {
-    const terminator = new NodeDaemonProcessTerminator();
     const deadline = this.now() + 5_000;
     while (this.now() <= deadline) {
-      const owner = this.options.registry.startupOwner(this.options.identity);
       const record = this.options.registry.readInstance(
         this.options.identity,
         this.options.instanceId,
       );
       if (
-        owner?.instanceId === this.options.instanceId &&
-        this.options.registry.startupOwnerIsWithinGrace(owner) &&
-        terminator.isAlive(owner.ownerPid) &&
         record?.state === "starting" &&
-        record.pid === process.pid
+        record.pid === process.pid &&
+        record.processToken === this.options.processToken
       ) {
-        return record;
+        if (!this.options.registry.startupOwnerMatchesProcess(this.options.identity, record)) {
+          this.options.registry.writeStartingIfStartupOwner(this.options.identity, record);
+        }
+        if (this.options.registry.startupOwnerMatchesProcess(this.options.identity, record)) {
+          return record;
+        }
       }
       await new Promise((resolve) => setTimeout(resolve, 10));
     }

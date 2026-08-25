@@ -185,25 +185,43 @@ export class DaemonStartupCoordinator {
       }
       const owner = this.registry.startupOwner(identity);
       if (owner === undefined) return this.ensureRunningOnce(identity);
-      if (this.startupOwnerIsAbandoned(owner)) {
+      if (this.startupOwnerIsAbandoned(identity, owner)) {
         if (this.cleanupAbandonedStartup(identity, owner)) return this.ensureRunningOnce(identity);
       }
       await this.pause();
     }
     const owner = this.registry.startupOwner(identity);
-    if (owner !== undefined && this.startupOwnerIsAbandoned(owner)) {
+    if (owner !== undefined && this.startupOwnerIsAbandoned(identity, owner)) {
       this.cleanupAbandonedStartup(identity, owner);
     }
     throw new Error("Daemon startup timed out while waiting for another process");
   }
 
   private cleanupAbandonedStartup(identity: DaemonWorkspaceIdentity, owner: StartupOwner): boolean {
+    const record = this.registry.readStoredInstance(identity, owner.instanceId);
+    if (
+      record !== undefined &&
+      owner.processToken !== undefined &&
+      (record.processToken !== owner.processToken || record.pid !== owner.ownerPid)
+    ) {
+      return false;
+    }
     if (!this.registry.removeStartupLockIfOwner(identity, owner)) return false;
-    this.registry.removeIfInstance(identity, owner.instanceId);
+    if (record !== undefined) {
+      this.registry.removeIfProcess(identity, record.instanceId, record.processToken);
+    }
     return true;
   }
 
-  private startupOwnerIsAbandoned(owner: StartupOwner): boolean {
+  private startupOwnerIsAbandoned(
+    identity: DaemonWorkspaceIdentity,
+    owner: StartupOwner,
+  ): boolean {
+    const record = this.registry.readStoredInstance(identity, owner.instanceId);
+    if (record !== undefined && record.pid > 0 && this.processTerminator.isAlive(record.pid)) {
+      return false;
+    }
+    if (owner.processToken !== undefined) return !this.processTerminator.isAlive(owner.ownerPid);
     return (
       !this.processTerminator.isAlive(owner.ownerPid) ||
       !this.registry.startupOwnerIsWithinGrace(owner)
@@ -242,7 +260,10 @@ export class DaemonStartupCoordinator {
     const record = this.registry.read(identity);
     if (record?.state !== "ready") return undefined;
     const observation = await this.observer.observe(record);
-    if (observation.kind === "responsive") return record;
+    if (observation.kind === "responsive") {
+      this.registry.removeStartupLockIfProcess(identity, record);
+      return record;
+    }
     if (observation.kind === "exited") {
       this.registry.removeIfProcess(identity, record.instanceId, record.processToken);
       return undefined;

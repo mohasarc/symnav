@@ -141,12 +141,14 @@ describe("symnav daemon status", () => {
     expect(JSON.parse(stopped.stdout)).toEqual([]);
   });
 
-  it("keeps one warm-up after its initiating caller exits", async () => {
+  it("keeps one armed child when its initiating caller is killed before PID publication", async () => {
     const stateDir = temporaryStateDirectory(stateDirectories);
     const workspaceRoot = temporaryWorkspace(stateDirectories);
     const instanceId = "caller-exit";
     const processToken = "caller-exit-process";
     const bootPath = join(stateDir, "caller-exit-boot");
+    const callerBarrierPath = join(stateDir, "caller-exit-spawned");
+    const childReleasePath = join(stateDir, "caller-exit-release");
     const readyPath = join(stateDir, "caller-exit-ready");
     const caller = spawnCallerExitStartup(
       workspaceRoot,
@@ -155,13 +157,26 @@ describe("symnav daemon status", () => {
       processToken,
       bootPath,
       readyPath,
+      callerBarrierPath,
+      childReleasePath,
     );
     helperProcesses.push(caller);
-    await waitForProcess(caller);
+    await waitUntil(() => existsSync(callerBarrierPath));
+    const childPid = Number(readFileSync(bootPath, "utf8"));
+    daemonPids.push(childPid);
+    const identity = DaemonWorkspaceIdentity.from(workspaceRoot, canonicalStateDir(stateDir));
+    const registry = new DaemonRegistry(identity.registryDirectory);
+
+    expect(registry.readStoredInstance(identity, instanceId)).toMatchObject({
+      instanceId,
+      processToken,
+      pid: 0,
+      state: "starting",
+    });
+    expect(registry.startupOwner(identity)).toMatchObject({ instanceId, processToken });
+    expect(caller.kill("SIGKILL")).toBe(true);
+    await waitForKilledProcess(caller);
     helperProcesses.splice(helperProcesses.indexOf(caller), 1);
-    const originalRecord = daemonRecords(stateDir)[0];
-    expect(originalRecord).toBeDefined();
-    daemonPids.push(originalRecord!.pid);
 
     const starting = runSymnavBinary(["daemon", "status", "--json"], {
       cwd: tmpdir(),
@@ -173,15 +188,27 @@ describe("symnav daemon status", () => {
       expect.objectContaining({
         workspaceRoot,
         state: "starting",
-        pid: originalRecord!.pid,
+        instanceId,
+        pid: 0,
       }),
     ]);
-    expect(daemonRecords(stateDir)).toEqual([originalRecord]);
+    expect(registry.startupOwner(identity)).toMatchObject({ instanceId, processToken });
 
+    const laterStart = spawnDaemonStart(workspaceRoot, stateDir);
+    helperProcesses.push(laterStart);
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    expect(laterStart.exitCode).toBeNull();
+    expect(daemonRecords(stateDir)).toEqual([
+      expect.objectContaining({ instanceId, processToken, pid: 0 }),
+    ]);
+
+    writeFileSync(childReleasePath, "go");
     await waitUntil(() => existsSync(readyPath));
+    await waitForProcess(laterStart);
+    helperProcesses.splice(helperProcesses.indexOf(laterStart), 1);
     const navigation = runSymnavBinary(["overview", "input.ts"], {
       cwd: workspaceRoot,
-      env: { SYMNAV_STATE_DIR: stateDir },
+      env: { SYMNAV_DAEMON: "1", SYMNAV_STATE_DIR: stateDir },
     });
     const readyRecord = daemonRecords(stateDir)[0];
 
@@ -189,8 +216,17 @@ describe("symnav daemon status", () => {
     expect(navigation.stdout).toContain("value");
     expect(daemonRecords(stateDir)).toHaveLength(1);
     expect(readyRecord?.state).toBe("ready");
-    expect(readyRecord?.pid).toBe(originalRecord!.pid);
+    expect(readyRecord?.pid).toBe(childPid);
     expect(readyRecord?.instanceId).toBe(instanceId);
+    expect(readyRecord?.processToken).toBe(processToken);
+
+    const stopped = runSymnavBinary(["daemon", "stop"], {
+      cwd: workspaceRoot,
+      env: { SYMNAV_STATE_DIR: stateDir },
+    });
+    expect(stopped.status).toBe(0);
+    expect(isProcessAlive(childPid)).toBe(false);
+    expect(daemonRecords(stateDir)).toEqual([]);
   }, 15_000);
 
   it("cleans a stale current-schema record", async () => {
@@ -422,6 +458,8 @@ function spawnCallerExitStartup(
   processToken: string,
   bootPath: string,
   readyPath: string,
+  callerBarrierPath: string,
+  childReleasePath: string,
 ): ChildProcess {
   return spawn(
     process.execPath,
@@ -434,8 +472,26 @@ function spawnCallerExitStartup(
       processToken,
       bootPath,
       readyPath,
+      callerBarrierPath,
+      childReleasePath,
     ],
     { stdio: "ignore" },
+  );
+}
+
+function spawnDaemonStart(workspaceRoot: string, stateDirectory: string): ChildProcess {
+  return spawn(
+    process.execPath,
+    [fileURLToPath(new URL("../../../dist/cli.js", import.meta.url)), "daemon", "start"],
+    {
+      cwd: workspaceRoot,
+      env: {
+        ...process.env,
+        SYMNAV_STATE_DIR: stateDirectory,
+        SYMNAV_TELEMETRY: "0",
+      },
+      stdio: "ignore",
+    },
   );
 }
 
@@ -447,6 +503,25 @@ function waitForProcess(child: ChildProcess): Promise<void> {
       else reject(new Error(`Startup publisher exited with code ${String(code)}`));
     });
   });
+}
+
+function waitForKilledProcess(child: ChildProcess): Promise<void> {
+  return new Promise((resolve, reject) => {
+    child.once("error", reject);
+    child.once("exit", (code, signal) => {
+      if (signal !== null || (code !== null && code !== 0)) resolve();
+      else reject(new Error("Startup caller did not exit abruptly"));
+    });
+  });
+}
+
+function isProcessAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 function captureDaemonPids(stateDir: string, pids: number[]): void {

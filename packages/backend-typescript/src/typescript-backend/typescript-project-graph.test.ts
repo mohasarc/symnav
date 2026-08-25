@@ -101,7 +101,7 @@ describe("TypeScriptProjectGraph", () => {
       root: snapshot.root,
       configuredProjectCount: 3,
       inferredFileCount: 1,
-      changedConfigurationCount: 5,
+      changedConfigurationCount: 6,
     });
     expect(second.changedConfigurationCount).toBe(0);
     expect(graph.languageServiceFor("packages/app/src/index.ts")).toBe(languageService);
@@ -125,7 +125,7 @@ describe("TypeScriptProjectGraph", () => {
     const changedOptions = graph.programFor("packages/app/src/index.ts")?.getCompilerOptions();
 
     expect(compilerOptionsChanged.configuredProjectCount).toBe(3);
-    expect(compilerOptionsChanged.changedConfigurationCount).toBe(1);
+    expect(compilerOptionsChanged.changedConfigurationCount).toBe(2);
     expect(changedOptions?.paths).toEqual({
       "@changed/*": [`${projectFixture.root.replaceAll("\\", "/")}/packages/domain/src/*`],
       "@configured/app": [`${projectFixture.root.replaceAll("\\", "/")}/packages/app/src/index.ts`],
@@ -172,6 +172,38 @@ describe("TypeScriptProjectGraph", () => {
     ]);
   });
 
+  it("applies and invalidates extended compiler options", async () => {
+    const projectFixture = fixture();
+    const graph = new TypeScriptProjectGraph(projectFixture.fileSystem);
+
+    const first = await graph.refresh(await projectFixture.snapshot());
+    const inheritedOptions = graph.programFor("packages/app/src/index.ts")?.getCompilerOptions();
+    projectFixture.write(
+      "packages/app/tsconfig.base.json",
+      JSON.stringify({
+        compilerOptions: {
+          baseUrl: ".",
+          paths: {
+            "@domain/*": ["../domain/src/*"],
+            "@inherited/*": ["./missing/*"],
+            "@local/*": ["src/*"],
+          },
+        },
+      }),
+    );
+    const changed = await graph.refresh(await projectFixture.snapshot());
+    const changedOptions = graph.programFor("packages/app/src/index.ts")?.getCompilerOptions();
+
+    expect(first.changedConfigurationCount).toBe(6);
+    expect(inheritedOptions?.paths?.["@inherited/*"]).toEqual([
+      `${projectFixture.root.replaceAll("\\", "/")}/packages/domain/src/*`,
+    ]);
+    expect(changed.changedConfigurationCount).toBe(1);
+    expect(changedOptions?.paths?.["@inherited/*"]).toEqual([
+      `${projectFixture.root.replaceAll("\\", "/")}/packages/app/missing/*`,
+    ]);
+  });
+
   it("falls back to one inferred project for malformed or missing root configuration", async () => {
     const projectFixture = fixture();
     const graph = new TypeScriptProjectGraph(projectFixture.fileSystem);
@@ -182,9 +214,9 @@ describe("TypeScriptProjectGraph", () => {
     const missing = await graph.refresh(await projectFixture.snapshot());
 
     expect(malformed.configuredProjectCount).toBe(0);
-    expect(malformed.inferredFileCount).toBe(5);
+    expect(malformed.inferredFileCount).toBe(6);
     expect(missing.configuredProjectCount).toBe(0);
-    expect(missing.inferredFileCount).toBe(5);
+    expect(missing.inferredFileCount).toBe(6);
     expect(graph.languageServiceFor("scratch/outside.ts")).toBeDefined();
   });
 

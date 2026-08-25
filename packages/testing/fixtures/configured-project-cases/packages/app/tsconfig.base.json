@@ -1,0 +1,10 @@
+{
+  "compilerOptions": {
+    "baseUrl": ".",
+    "paths": {
+      "@domain/*": ["../domain/src/*"],
+      "@inherited/*": ["../domain/src/*"],
+      "@local/*": ["src/*"]
+    }
+  }
+}

@@ -71,6 +71,23 @@ describe("TypeScriptBackend configured projects", () => {
       new Set(["packages/app/src/index.ts"]),
     );
   });
+
+  it("resolves semantic targets through extended compiler options", async () => {
+    const { backend, files } = await backendOverFixture();
+
+    await expect(
+      backend.findCallees(
+        files,
+        identity("packages/app/src/index.ts", "useInheritedConfiguration"),
+      ),
+    ).resolves.toMatchObject([
+      {
+        symbol: {
+          identity: identity("packages/domain/src/inherited.ts", "inheritedTarget"),
+        },
+      },
+    ]);
+  });
 });
 
 async function backendOverFixture(): Promise<{
@@ -82,6 +99,7 @@ async function backendOverFixture(): Promise<{
     "packages/app/src/index.ts",
     "packages/app/src/local.ts",
     "packages/domain/src/index.ts",
+    "packages/domain/src/inherited.ts",
     "packages/domain/src/local.ts",
     "scratch/outside.ts",
   ];

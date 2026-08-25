@@ -357,6 +357,16 @@ describe("symnav daemon parity", () => {
       ["graph", "packages/domain/src/index.ts::useDomainLocal", "--depth", "1"],
       "domainLocalTarget",
     ],
+    [
+      "refs through extended compiler options",
+      ["refs", "packages/domain/src/inherited.ts::inheritedTarget", "--all"],
+      "@inherited/inherited",
+    ],
+    [
+      "depth-one graph through extended compiler options",
+      ["graph", "packages/app/src/index.ts::useInheritedConfiguration", "--depth", "1"],
+      "inheritedTarget",
+    ],
   ])(
     "keeps configured project %s non-empty and byte-identical",
     (_name, args, expected) => {

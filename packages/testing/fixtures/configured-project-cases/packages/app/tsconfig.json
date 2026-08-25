@@ -1,12 +1,6 @@
 {
-  "compilerOptions": {
-    "composite": true,
-    "baseUrl": ".",
-    "paths": {
-      "@domain/*": ["../domain/src/*"],
-      "@local/*": ["src/*"]
-    }
-  },
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": { "composite": true },
   "references": [{ "path": "../domain" }],
   "include": ["src/**/*.ts"]
 }

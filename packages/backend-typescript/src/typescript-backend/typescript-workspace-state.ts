@@ -161,6 +161,10 @@ export class TypeScriptWorkspaceState {
     return prepared.entries;
   }
 
+  diagnostics(file: ResolvedPath): readonly NavigationDiagnostic[] {
+    return this.preparedByRelativePath.get(file.relative)?.diagnostics ?? [];
+  }
+
   declarationsIn(relativePath: string): readonly SymbolOverviewNode[] | undefined {
     return this.declarationsByFile.get(relativePath);
   }

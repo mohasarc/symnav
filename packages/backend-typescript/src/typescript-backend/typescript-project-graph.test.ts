@@ -118,6 +118,17 @@ describe("TypeScriptProjectGraph", () => {
     expect(inferredPaths).toEqual(driveRootPackagePaths());
     expect(inferredPaths?.["@configured-only/*"]).toBeUndefined();
   });
+  it("loads only the owning semantic project for a targeted source lookup", async () => {
+    const projectFixture = fixture();
+    const loadedFileCounts: number[] = [];
+    const graph = new TypeScriptProjectGraph(projectFixture.fileSystem, {
+      semanticProjectLoaded: (fileCount) => loadedFileCounts.push(fileCount),
+    });
+    await graph.refresh(await projectFixture.snapshot());
+
+    expect(graph.sourceFileFor("packages/domain/src/index.ts")).toBeDefined();
+    expect(loadedFileCounts).toEqual([5]);
+  });
   it("loads recursive project references and reuses services across no-change refreshes", async () => {
     const projectFixture = fixture();
     const graph = new TypeScriptProjectGraph(projectFixture.fileSystem);

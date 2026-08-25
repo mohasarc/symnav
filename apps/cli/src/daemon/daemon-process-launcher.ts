@@ -27,13 +27,6 @@ export interface DaemonProcess {
   terminate(): Promise<void>;
 }
 
-export interface DaemonProcessExit {
-  readonly code: number | null;
-  readonly signal: NodeJS.Signals | null;
-  readonly cause: "exit" | "spawn-error";
-  readonly errorName?: string;
-}
-
 export interface DaemonProcessTerminator {
   isAlive(pid: number): boolean;
   terminate(pid: number): Promise<void>;

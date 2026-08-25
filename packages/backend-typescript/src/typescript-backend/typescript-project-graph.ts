@@ -5,6 +5,7 @@ import { Project, type SourceFile, ts } from "ts-morph";
 
 import type { TypeScriptSemanticSourceProvider } from "./typescript-workspace-state.js";
 import { WorkspaceFileSystemHost } from "./workspace-file-system-host.js";
+import { WorkspacePathDialect } from "./workspace-path-dialect.js";
 
 export interface TypeScriptProjectGraphRefresh {
   readonly root: string;
@@ -201,7 +202,8 @@ export class TypeScriptProjectGraph implements TypeScriptSemanticSourceProvider 
   private readConfigurations(
     snapshot: WorkspaceSnapshot,
   ): readonly ParsedTypeScriptConfiguration[] {
-    const pending = [posix.join(snapshot.root, "tsconfig.json")];
+    const paths = new WorkspacePathDialect(snapshot.root);
+    const pending = [paths.join(snapshot.root, "tsconfig.json")];
     const seen = new Set<string>();
     const configurations: ParsedTypeScriptConfiguration[] = [];
     while (pending.length > 0) {
@@ -215,8 +217,8 @@ export class TypeScriptProjectGraph implements TypeScriptSemanticSourceProvider 
       for (const reference of references) {
         const referencePath = TypeScriptProjectGraph.recordValue(reference).path;
         if (typeof referencePath !== "string") continue;
-        const resolved = posix.resolve(parsed.directory, referencePath);
-        pending.push(resolved.endsWith(".json") ? resolved : posix.join(resolved, "tsconfig.json"));
+        const resolved = paths.resolve(parsed.directory, referencePath);
+        pending.push(resolved.endsWith(".json") ? resolved : paths.join(resolved, "tsconfig.json"));
       }
     }
     return configurations;
@@ -226,11 +228,16 @@ export class TypeScriptProjectGraph implements TypeScriptSemanticSourceProvider 
     path: string,
     snapshot: WorkspaceSnapshot,
   ): ParsedTypeScriptConfiguration | undefined {
-    if (!this.fileSystem.existsSync(path) || this.fileSystem.isDirectorySync(path)) {
+    const paths = new WorkspacePathDialect(snapshot.root);
+    const normalizedPath = paths.normalize(path);
+    if (
+      !this.fileSystem.existsSync(normalizedPath) ||
+      this.fileSystem.isDirectorySync(normalizedPath)
+    ) {
       return undefined;
     }
-    const content = this.fileSystem.readFileSync(path);
-    const parsed = ts.parseConfigFileTextToJson(path, content);
+    const content = this.fileSystem.readFileSync(normalizedPath);
+    const parsed = ts.parseConfigFileTextToJson(normalizedPath, content);
     if (parsed.error || !parsed.config || typeof parsed.config !== "object") return undefined;
     const value = parsed.config as Record<string, unknown>;
     const extendedInputs = new Map<string, string>();
@@ -238,33 +245,39 @@ export class TypeScriptProjectGraph implements TypeScriptSemanticSourceProvider 
       value,
       {
         useCaseSensitiveFileNames: true,
-        fileExists: (candidate) =>
-          this.fileSystem.existsSync(candidate) && !this.fileSystem.isDirectorySync(candidate),
+        fileExists: (candidate) => {
+          const normalizedCandidate = paths.normalize(candidate);
+          return (
+            this.fileSystem.existsSync(normalizedCandidate) &&
+            !this.fileSystem.isDirectorySync(normalizedCandidate)
+          );
+        },
         readFile: (candidate) => {
+          const normalizedCandidate = paths.normalize(candidate);
           if (
-            !this.fileSystem.existsSync(candidate) ||
-            this.fileSystem.isDirectorySync(candidate)
+            !this.fileSystem.existsSync(normalizedCandidate) ||
+            this.fileSystem.isDirectorySync(normalizedCandidate)
           ) {
             return undefined;
           }
-          const candidateContent = this.fileSystem.readFileSync(candidate);
-          extendedInputs.set(candidate, candidateContent);
+          const candidateContent = this.fileSystem.readFileSync(normalizedCandidate);
+          extendedInputs.set(normalizedCandidate, candidateContent);
           return candidateContent;
         },
         readDirectory: (root, extensions, excludes, includes, depth) =>
           this.readConfiguredDirectory(snapshot, root, extensions, excludes, includes, depth),
       },
-      posix.dirname(path),
+      paths.dirname(normalizedPath),
       undefined,
-      path,
+      normalizedPath,
     );
     return {
-      path,
-      directory: posix.dirname(path),
+      path: normalizedPath,
+      directory: paths.dirname(normalizedPath),
       content,
       value,
       compilerOptions: parsedConfiguration.options,
-      fileNames: parsedConfiguration.fileNames,
+      fileNames: parsedConfiguration.fileNames.map((fileName) => paths.normalize(fileName)),
       extendedInputs,
     };
   }
@@ -303,19 +316,22 @@ export class TypeScriptProjectGraph implements TypeScriptSemanticSourceProvider 
     snapshot: WorkspaceSnapshot,
     configurations: readonly ParsedTypeScriptConfiguration[],
   ): readonly WorkspacePackage[] {
-    const directories = new Set<string>([snapshot.root]);
-    for (const configuration of configurations) directories.add(configuration.directory);
+    const paths = new WorkspacePathDialect(snapshot.root);
+    const directories = new Map<string, string>([[paths.key(snapshot.root), snapshot.root]]);
+    for (const configuration of configurations) {
+      directories.set(paths.key(configuration.directory), configuration.directory);
+    }
     for (const file of snapshot.files) {
-      let directory = posix.dirname(file.absolute);
-      while (directory.startsWith(snapshot.root)) {
-        directories.add(directory);
-        if (directory === snapshot.root) break;
-        directory = posix.dirname(directory);
+      let directory = paths.dirname(file.absolute);
+      while (paths.contains(snapshot.root, directory)) {
+        directories.set(paths.key(directory), directory);
+        if (paths.equals(directory, snapshot.root)) break;
+        directory = paths.dirname(directory);
       }
     }
     const packages: WorkspacePackage[] = [];
-    for (const directory of directories) {
-      const path = posix.join(directory, "package.json");
+    for (const directory of directories.values()) {
+      const path = paths.join(directory, "package.json");
       if (!this.fileSystem.existsSync(path) || this.fileSystem.isDirectorySync(path)) continue;
       const content = this.fileSystem.readFileSync(path);
       const value = TypeScriptProjectGraph.parseJson(content);
@@ -323,7 +339,7 @@ export class TypeScriptProjectGraph implements TypeScriptSemanticSourceProvider 
       if (typeof name !== "string" || !value) continue;
       const mappings = TypeScriptProjectGraph.packageMappings(value, name).map((mapping) => ({
         specifier: mapping.specifier,
-        target: posix.resolve(directory, mapping.target),
+        target: paths.resolve(directory, mapping.target),
       }));
       if (mappings.length === 0) continue;
       packages.push({ path, content, mappings });
@@ -335,8 +351,9 @@ export class TypeScriptProjectGraph implements TypeScriptSemanticSourceProvider 
     snapshot: WorkspaceSnapshot,
     configuration: ParsedTypeScriptConfiguration,
   ): readonly WorkspaceFile[] {
-    const configuredPaths = new Set(configuration.fileNames);
-    return snapshot.files.filter((file) => configuredPaths.has(file.absolute));
+    const paths = new WorkspacePathDialect(snapshot.root);
+    const configuredPaths = new Set(configuration.fileNames.map((path) => paths.key(path)));
+    return snapshot.files.filter((file) => configuredPaths.has(paths.key(file.absolute)));
   }
 
   private static compilerOptionsFor(
@@ -344,11 +361,12 @@ export class TypeScriptProjectGraph implements TypeScriptSemanticSourceProvider 
     configuration: ParsedTypeScriptConfiguration,
     workspacePackages: readonly WorkspacePackage[],
   ): ts.CompilerOptions {
+    const pathDialect = new WorkspacePathDialect(root);
     const compilerOptions: ts.CompilerOptions = { ...configuration.compilerOptions };
     const baseUrl = compilerOptions.baseUrl ?? configuration.directory;
     const paths = TypeScriptProjectGraph.workspacePackagePaths(workspacePackages);
     for (const [specifier, targets] of Object.entries(compilerOptions.paths ?? {})) {
-      paths[specifier] = targets.map((target) => posix.resolve(baseUrl, target));
+      paths[specifier] = targets.map((target) => pathDialect.resolve(baseUrl, target));
     }
     delete compilerOptions.rootDir;
     delete compilerOptions.outDir;

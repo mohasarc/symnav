@@ -286,11 +286,15 @@ export class TypeScriptProjectGraph implements TypeScriptSemanticSourceProvider 
         if (
           includes &&
           includes.length > 0 &&
-          !includes.some((pattern) => TypeScriptProjectGraph.matchesGlob(relative, pattern))
+          !includes.some((pattern) =>
+            TypeScriptProjectGraph.matchesConfiguredPattern(relative, pattern, root),
+          )
         ) {
           return false;
         }
-        return !excludes?.some((pattern) => TypeScriptProjectGraph.matchesGlob(relative, pattern));
+        return !excludes?.some((pattern) =>
+          TypeScriptProjectGraph.matchesConfiguredPattern(relative, pattern, root),
+        );
       })
       .map((file) => file.absolute);
   }
@@ -408,6 +412,11 @@ export class TypeScriptProjectGraph implements TypeScriptSemanticSourceProvider 
       }
     }
     return new RegExp(`^${expression}$`).test(path);
+  }
+
+  private static matchesConfiguredPattern(path: string, pattern: string, root: string): boolean {
+    const relativePattern = posix.isAbsolute(pattern) ? posix.relative(root, pattern) : pattern;
+    return TypeScriptProjectGraph.matchesGlob(path, relativePattern);
   }
 
   private static parseJson(content: string): Record<string, unknown> | undefined {

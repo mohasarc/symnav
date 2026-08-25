@@ -6,7 +6,7 @@ import type { CliExecutionRequest, CommandExecutionResult } from "../command-exe
 import type { ProgramDependencies } from "../program-dependencies.js";
 import { createDefaultDependencies } from "../program.js";
 import type { DaemonRequest, DaemonResponse, DaemonServer } from "./daemon-protocol.js";
-import { DAEMON_PROTOCOL_VERSION } from "./daemon-protocol.js";
+import { DAEMON_PROTOCOL_VERSION, DAEMON_RECORD_SCHEMA_VERSION } from "./daemon-protocol.js";
 import { DaemonRegistry } from "./daemon-registry.js";
 import { DaemonWorkspaceIdentity } from "./daemon-workspace-identity.js";
 import type { LocalDaemonTransport } from "./local-daemon-transport.js";
@@ -284,7 +284,7 @@ class RequestHarness {
     const lease = harness.registry.acquireStartup(harness.identity, harness.instanceId);
     if (lease === undefined) throw new Error("Expected startup ownership");
     harness.registry.write({
-      schemaVersion: 1,
+      schemaVersion: DAEMON_RECORD_SCHEMA_VERSION,
       protocolVersion: DAEMON_PROTOCOL_VERSION,
       symnavVersion: "test",
       workspaceRoot: harness.workspaceRoot,

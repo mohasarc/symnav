@@ -672,7 +672,7 @@ function record(
   instanceId = "instance",
 ): DaemonRecord {
   const base: DaemonRecord = {
-    schemaVersion: 1,
+    schemaVersion: DAEMON_RECORD_SCHEMA_VERSION,
     protocolVersion: DAEMON_PROTOCOL_VERSION,
     symnavVersion: "0.1.0",
     workspaceRoot: identity.workspaceRoot,

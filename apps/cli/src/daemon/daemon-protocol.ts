@@ -1,7 +1,7 @@
 import type { CliExecutionRequest, CommandExecutionResult } from "../command-execution-result.js";
 
-export const DAEMON_PROTOCOL_VERSION = 1;
-export const DAEMON_RECORD_SCHEMA_VERSION = 1;
+export const DAEMON_PROTOCOL_VERSION = 2;
+export const DAEMON_RECORD_SCHEMA_VERSION = 2;
 
 export interface DaemonIdentityCoordinates {
   readonly workspaceRoot: string;

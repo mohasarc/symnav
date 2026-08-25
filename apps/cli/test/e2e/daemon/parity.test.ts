@@ -20,7 +20,11 @@ import { spawn } from "node:child_process";
 import { afterEach, describe, expect, it } from "vitest";
 import { fixturePath, runSymnavBinary, type RunSymnavBinaryResult } from "@symnav/testing";
 import type { ChildProcess } from "node:child_process";
-import { DAEMON_PROTOCOL_VERSION, type DaemonRecord } from "../../../src/daemon/daemon-protocol.js";
+import {
+  DAEMON_PROTOCOL_VERSION,
+  DAEMON_RECORD_SCHEMA_VERSION,
+  type DaemonRecord,
+} from "../../../src/daemon/daemon-protocol.js";
 import { DaemonRegistry } from "../../../src/daemon/daemon-registry.js";
 import { DaemonWorkspaceIdentity } from "../../../src/daemon/daemon-workspace-identity.js";
 import { LocalDaemonTransport } from "../../../src/daemon/local-daemon-transport.js";
@@ -621,7 +625,7 @@ class DaemonParityHarness {
     await waitUntil(() => existsSync(`${readyPath}.boot`));
     const daemonPid = Number(readFileSync(`${readyPath}.boot`, "utf8"));
     const record: DaemonRecord = {
-      schemaVersion: 1,
+      schemaVersion: DAEMON_RECORD_SCHEMA_VERSION,
       protocolVersion: DAEMON_PROTOCOL_VERSION,
       symnavVersion,
       workspaceRoot: controlledWorkspaceRoot,

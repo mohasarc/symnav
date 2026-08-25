@@ -8,7 +8,7 @@ import type { CliExecutionRequest, CommandExecutionResult } from "../command-exe
 import { createDefaultDependencies } from "../program.js";
 import { DaemonController } from "./daemon-controller.js";
 import type { DaemonProcessTerminator } from "./daemon-process-launcher.js";
-import { DAEMON_PROTOCOL_VERSION } from "./daemon-protocol.js";
+import { DAEMON_PROTOCOL_VERSION, DAEMON_RECORD_SCHEMA_VERSION } from "./daemon-protocol.js";
 import { DaemonRegistry } from "./daemon-registry.js";
 import { DaemonWorkspaceIdentity } from "./daemon-workspace-identity.js";
 import { LocalDaemonTransport } from "./local-daemon-transport.js";
@@ -108,7 +108,7 @@ describe("WorkspaceDaemon runtime lifecycle", () => {
     const daemonPid = Number(readFileSync(`${readyPath}.boot`, "utf8"));
     expect(
       registry.writeStartingIfStartupOwner(identity, {
-        schemaVersion: 1,
+        schemaVersion: DAEMON_RECORD_SCHEMA_VERSION,
         protocolVersion: DAEMON_PROTOCOL_VERSION,
         symnavVersion: "test",
         workspaceRoot,
@@ -273,7 +273,7 @@ class WorkspaceDaemonHarness {
     const lease = harness.registry.acquireStartup(harness.identity, harness.instanceId);
     if (lease === undefined) throw new Error("Expected startup ownership");
     harness.registry.write({
-      schemaVersion: 1,
+      schemaVersion: DAEMON_RECORD_SCHEMA_VERSION,
       protocolVersion: DAEMON_PROTOCOL_VERSION,
       symnavVersion: "test",
       workspaceRoot: harness.workspaceRoot,

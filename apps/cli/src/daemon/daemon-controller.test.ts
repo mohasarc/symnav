@@ -6,6 +6,7 @@ import { DaemonController } from "./daemon-controller.js";
 import type { DaemonProcessTerminator } from "./daemon-process-launcher.js";
 import {
   DAEMON_PROTOCOL_VERSION,
+  DAEMON_RECORD_SCHEMA_VERSION,
   type DaemonRecord,
   type DaemonRequest,
   type DaemonResponse,
@@ -124,7 +125,7 @@ function temporaryDirectory(roots: string[]): string {
 
 function startingRecord(identity: DaemonWorkspaceIdentity, instanceId = "starting"): DaemonRecord {
   return {
-    schemaVersion: 1,
+    schemaVersion: DAEMON_RECORD_SCHEMA_VERSION,
     protocolVersion: DAEMON_PROTOCOL_VERSION,
     symnavVersion: "0.1.0",
     workspaceRoot: identity.workspaceRoot,

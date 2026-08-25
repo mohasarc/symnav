@@ -317,10 +317,10 @@ export class TypeScriptProjectGraph implements TypeScriptSemanticSourceProvider 
       const value = TypeScriptProjectGraph.parseJson(content);
       const name = value?.name;
       if (typeof name !== "string" || !value) continue;
-      const target = TypeScriptProjectGraph.packageTarget(value);
-      const mappings = target
-        ? [{ specifier: name, target: posix.resolve(directory, target) }]
-        : [];
+      const mappings = TypeScriptProjectGraph.packageMappings(value, name).map((mapping) => ({
+        specifier: mapping.specifier,
+        target: posix.resolve(directory, mapping.target),
+      }));
       if (mappings.length === 0) continue;
       packages.push({ path, content, mappings });
     }
@@ -401,14 +401,27 @@ export class TypeScriptProjectGraph implements TypeScriptSemanticSourceProvider 
     }
   }
 
-  private static packageTarget(value: Record<string, unknown>): string | undefined {
+  private static packageMappings(
+    value: Record<string, unknown>,
+    packageName: string,
+  ): readonly WorkspacePackageMapping[] {
     const exports = value.exports;
-    const rootExport = TypeScriptProjectGraph.recordValue(exports)["."] ?? exports;
-    return (
-      TypeScriptProjectGraph.stringTarget(rootExport) ??
+    const exportMap = TypeScriptProjectGraph.recordValue(exports);
+    const subpathEntries = Object.entries(exportMap).filter(([subpath]) => subpath.startsWith("."));
+    if (subpathEntries.length > 0) {
+      return subpathEntries.flatMap(([subpath, exportTarget]) => {
+        const target = TypeScriptProjectGraph.stringTarget(exportTarget);
+        if (!target) return [];
+        const specifier =
+          subpath === "." ? packageName : `${packageName}/${subpath.replace(/^\.\//, "")}`;
+        return [{ specifier, target }];
+      });
+    }
+    const rootTarget =
+      TypeScriptProjectGraph.stringTarget(exports) ??
       TypeScriptProjectGraph.stringTarget(value.types) ??
-      TypeScriptProjectGraph.stringTarget(value.main)
-    );
+      TypeScriptProjectGraph.stringTarget(value.main);
+    return rootTarget ? [{ specifier: packageName, target: rootTarget }] : [];
   }
 
   private static stringTarget(value: unknown): string | undefined {

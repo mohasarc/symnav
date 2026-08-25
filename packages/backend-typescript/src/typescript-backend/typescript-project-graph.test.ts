@@ -132,6 +132,12 @@ describe("TypeScriptProjectGraph", () => {
       "@configured/domain": [
         `${projectFixture.root.replaceAll("\\", "/")}/packages/domain/src/index.ts`,
       ],
+      "@configured/domain/feature": [
+        `${projectFixture.root.replaceAll("\\", "/")}/packages/domain/src/feature.ts`,
+      ],
+      "@configured/domain/features/*": [
+        `${projectFixture.root.replaceAll("\\", "/")}/packages/domain/src/features/*.ts`,
+      ],
     });
 
     projectFixture.write(

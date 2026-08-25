@@ -103,16 +103,14 @@ describe("TypeScriptProjectGraph", () => {
       ),
     ).resolves.toEqual(["featureTarget", "rootTarget", "patternTarget"]);
     await expect(
-      calleeNames(
-        backend,
-        files,
-        symbolIdentity("scratch/outside.ts", "useInferredPackages"),
-      ),
+      calleeNames(backend, files, symbolIdentity("scratch/outside.ts", "useInferredPackages")),
     ).resolves.toEqual(["featureTarget", "rootTarget", "patternTarget"]);
 
     const graph = new TypeScriptProjectGraph(fileSystem);
     const refresh = await graph.refresh({ root: "C:/repo", files });
-    const configuredPaths = graph.programFor("packages/app/src/index.ts")?.getCompilerOptions().paths;
+    const configuredPaths = graph
+      .programFor("packages/app/src/index.ts")
+      ?.getCompilerOptions().paths;
     const inferredPaths = graph.programFor("scratch/outside.ts")?.getCompilerOptions().paths;
 
     expect(refresh.configuredProjectCount).toBe(3);
@@ -304,6 +302,30 @@ describe("TypeScriptProjectGraph", () => {
 
     expect(options?.paths?.["@local/*"]).toBeUndefined();
     expect(options?.paths?.["@configured/domain"]).toBeDefined();
+  });
+
+  it("keeps drive-root outDir contents outside case-insensitive configured membership", async () => {
+    const fileSystem = driveRootFileSystem({
+      appConfiguration: {
+        compilerOptions: {
+          baseUrl: ".",
+          outDir: "Dist",
+          paths: { "@configured-only/*": ["src/*"] },
+        },
+        include: ["**/*.ts"],
+      },
+      generatedSource: "export const generated = true;\n",
+    });
+    const files = driveRootWorkspaceFiles(fileSystem, "packages/app/dist/generated.ts");
+    const graph = new TypeScriptProjectGraph(fileSystem);
+
+    await graph.refresh({ root: "C:/repo", files });
+    const generatedOptions = graph
+      .programFor("packages/app/dist/generated.ts")
+      ?.getCompilerOptions();
+
+    expect(generatedOptions?.paths).toEqual(driveRootPackagePaths());
+    expect(generatedOptions?.paths?.["@configured-only/*"]).toBeUndefined();
   });
 
   it("maps exact and patterned workspace package subpath exports", async () => {

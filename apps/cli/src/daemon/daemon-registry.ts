@@ -130,7 +130,7 @@ export class DaemonRegistry {
     if (current?.state !== "starting") return false;
     this.write(record);
     if (this.isStartupOwner(identity, record.instanceId)) return true;
-    this.removeIfInstance(identity, record.instanceId);
+    this.removeIfProcess(identity, record.instanceId, record.processToken);
     return false;
   }
 
@@ -141,7 +141,7 @@ export class DaemonRegistry {
     if (record.pid > 0) return this.writeDaemonOwnedStartingRecord(identity, record);
     this.write(record);
     if (this.isStartupOwner(identity, record.instanceId)) return true;
-    this.removeIfInstance(identity, record.instanceId);
+    this.removeIfProcess(identity, record.instanceId, record.processToken);
     return false;
   }
 

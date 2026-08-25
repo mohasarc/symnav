@@ -9,7 +9,7 @@ import {
   type TypeScriptFileExtractor,
   type TypeScriptSemanticQueryObserver,
 } from "@symnav/backend-typescript";
-import { NodeFileSystem } from "@symnav/core";
+import { formatSymbolIdentity, NodeFileSystem } from "@symnav/core";
 import type {
   BackendRefreshRequest,
   BackendRefreshSummary,
@@ -30,6 +30,10 @@ export interface DaemonBenchmarkMeasurement {
     readonly snapshots: number;
     readonly refreshes: number;
     readonly definitionLookups: number;
+    readonly referenceSearches: number;
+    readonly callTargetResolutions: number;
+    readonly duplicateReferenceSearches: number;
+    readonly duplicateCallTargetResolutions: number;
     readonly semanticProjectLoads: number;
     readonly semanticProjectFiles: number;
     readonly sourceReads: number;
@@ -44,9 +48,15 @@ export interface DaemonBenchmarkMeasurement {
 interface BenchmarkCounters {
   projectLoads: number;
   definitionLookups: number;
+  referenceSearches: number;
+  callTargetResolutions: number;
+  duplicateReferenceSearches: number;
+  duplicateCallTargetResolutions: number;
   semanticProjectLoads: number;
   semanticProjectFiles: number;
   extractions: number;
+  readonly referenceSearchesThisTurn: Set<string>;
+  readonly callTargetResolutionsThisTurn: Set<string>;
   readonly refreshes: BackendRefreshSummary[];
 }
 
@@ -113,12 +123,30 @@ export class DaemonBenchmarkHarness {
       const suffix = String(index).padStart(4, "0");
       const sourceDirectory =
         index < Math.ceil(this.fileCount / 2) ? leftSourceDirectory : rightSourceDirectory;
-      writeFileSync(
-        join(sourceDirectory, `module-${suffix}.ts`),
-        `export const symbol${suffix}: number = ${index};\n`,
-      );
+      writeFileSync(join(sourceDirectory, `module-${suffix}.ts`), this.moduleSource(index, suffix));
     }
     return workspaceRoot;
+  }
+
+  private moduleSource(index: number, suffix: string): string {
+    if (index === 0) {
+      const targetSuffix = String(this.fileCount - 1).padStart(4, "0");
+      return [
+        `import { symbol${targetSuffix} } from "../../right/src/module-${targetSuffix}.js";`,
+        `export function benchmarkEntry(): number { return symbol${targetSuffix}(); }`,
+        "",
+      ].join("\n");
+    }
+    if (index === this.fileCount - 1) {
+      return [
+        "export function benchmarkLeaf(): number { return 1; }",
+        "export function benchmarkLeft(): number { return benchmarkLeaf(); }",
+        "export function benchmarkRight(): number { return benchmarkLeaf(); }",
+        `export function symbol${suffix}(): number { return benchmarkLeft() + benchmarkRight(); }`,
+        "",
+      ].join("\n");
+    }
+    return `export const symbol${suffix}: number = ${index};\n`;
   }
 
   private async measure(workspaceRoot: string): Promise<DaemonBenchmarkMeasurement> {
@@ -126,9 +154,15 @@ export class DaemonBenchmarkHarness {
     const counters: BenchmarkCounters = {
       projectLoads: 0,
       definitionLookups: 0,
+      referenceSearches: 0,
+      callTargetResolutions: 0,
+      duplicateReferenceSearches: 0,
+      duplicateCallTargetResolutions: 0,
       semanticProjectLoads: 0,
       semanticProjectFiles: 0,
       extractions: 0,
+      referenceSearchesThisTurn: new Set(),
+      callTargetResolutionsThisTurn: new Set(),
       refreshes: [],
     };
     const retainedProgram = new RetainedWorkspaceProgram(
@@ -153,8 +187,15 @@ export class DaemonBenchmarkHarness {
       ...request,
       argv: ["def", `packages/right/src/module-${targetSuffix}.ts::symbol${targetSuffix}`],
     };
-    const firstDefinition = await retainedProgram.execute(definitionRequest);
-    const secondDefinition = await retainedProgram.execute(definitionRequest);
+    await this.executeStablePair(retainedProgram, definitionRequest, "definition");
+    const semanticRequests: readonly [string, readonly string[]][] = [
+      ["references", ["refs", definitionRequest.argv[1]!, "--all"]],
+      ["context", ["context", definitionRequest.argv[1]!]],
+      ["graph", ["graph", definitionRequest.argv[1]!, "--outgoing", "--depth", "2", "--all"]],
+    ];
+    for (const [label, argv] of semanticRequests) {
+      await this.executeStablePair(retainedProgram, { ...request, argv }, label);
+    }
     if (first.result.exitCode !== 0 || second.result.exitCode !== 0) {
       throw new Error(
         `Benchmark commands exited ${first.result.exitCode} and ${second.result.exitCode}`,
@@ -163,14 +204,6 @@ export class DaemonBenchmarkHarness {
     if (JSON.stringify(first.result.frames) !== JSON.stringify(second.result.frames)) {
       throw new Error("First and second benchmark commands produced different output");
     }
-    if (firstDefinition.exitCode !== 0 || secondDefinition.exitCode !== 0) {
-      throw new Error(
-        `Benchmark definition commands exited ${firstDefinition.exitCode} and ${secondDefinition.exitCode}`,
-      );
-    }
-    if (JSON.stringify(firstDefinition.frames) !== JSON.stringify(secondDefinition.frames)) {
-      throw new Error("First and second benchmark definition commands produced different output");
-    }
     return {
       fileCount: this.fileCount,
       counts: {
@@ -178,6 +211,10 @@ export class DaemonBenchmarkHarness {
         snapshots: fileSystem.completeSnapshots(this.fileCount + 3),
         refreshes: counters.refreshes.length,
         definitionLookups: counters.definitionLookups,
+        referenceSearches: counters.referenceSearches,
+        callTargetResolutions: counters.callTargetResolutions,
+        duplicateReferenceSearches: counters.duplicateReferenceSearches,
+        duplicateCallTargetResolutions: counters.duplicateCallTargetResolutions,
         semanticProjectLoads: counters.semanticProjectLoads,
         semanticProjectFiles: counters.semanticProjectFiles,
         sourceReads: fileSystem.sourceReadCount(),
@@ -188,6 +225,23 @@ export class DaemonBenchmarkHarness {
       secondResolveMs: second.durationMs,
       target: new DaemonBenchmarkTarget().compare(first.durationMs, second.durationMs),
     };
+  }
+
+  private async executeStablePair(
+    retainedProgram: RetainedWorkspaceProgram,
+    request: CliExecutionRequest,
+    label: string,
+  ): Promise<void> {
+    const first = await retainedProgram.execute(request);
+    const second = await retainedProgram.execute(request);
+    if (first.exitCode !== 0 || second.exitCode !== 0) {
+      throw new Error(
+        `Benchmark ${label} commands exited ${first.exitCode} and ${second.exitCode}`,
+      );
+    }
+    if (JSON.stringify(first.frames) !== JSON.stringify(second.frames)) {
+      throw new Error(`First and second benchmark ${label} commands produced different output`);
+    }
   }
 
   private async timeExecution(
@@ -212,6 +266,22 @@ class InstrumentedTypeScriptBackend extends TypeScriptBackend {
       definitionSearch: () => {
         counters.definitionLookups += 1;
       },
+      referenceSearch: (identity) => {
+        counters.referenceSearches += 1;
+        const key = formatSymbolIdentity(identity);
+        if (counters.referenceSearchesThisTurn.has(key)) {
+          counters.duplicateReferenceSearches += 1;
+        }
+        counters.referenceSearchesThisTurn.add(key);
+      },
+      callTargetResolution: (relativePath, start) => {
+        counters.callTargetResolutions += 1;
+        const key = `${relativePath}:${start}`;
+        if (counters.callTargetResolutionsThisTurn.has(key)) {
+          counters.duplicateCallTargetResolutions += 1;
+        }
+        counters.callTargetResolutionsThisTurn.add(key);
+      },
     };
     super(
       fileSystem,
@@ -225,6 +295,8 @@ class InstrumentedTypeScriptBackend extends TypeScriptBackend {
   }
 
   override async refresh(request: BackendRefreshRequest): Promise<BackendRefreshSummary> {
+    this.counters.referenceSearchesThisTurn.clear();
+    this.counters.callTargetResolutionsThisTurn.clear();
     const summary = await super.refresh(request);
     this.counters.refreshes.push(summary);
     return summary;

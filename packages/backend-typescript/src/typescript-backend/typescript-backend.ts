@@ -23,6 +23,7 @@ import { TypeScriptSemanticQueryService } from "./typescript-semantic-query-serv
 import {
   TypeScriptFileEntryExtractor,
   TypeScriptWorkspaceState,
+  type TypeScriptFileExtractor,
 } from "./typescript-workspace-state.js";
 import { WorkspaceSourceCache } from "./workspace-source-cache.js";
 
@@ -49,6 +50,7 @@ export class TypeScriptBackend implements LanguageBackend {
     state?: TypeScriptWorkspaceState,
     projectGraph?: TypeScriptProjectGraph,
     observer?: TypeScriptSemanticQueryObserver,
+    extractor: TypeScriptFileExtractor = new TypeScriptFileEntryExtractor(),
   ) {
     if (state) {
       this.state = state;
@@ -63,11 +65,7 @@ export class TypeScriptBackend implements LanguageBackend {
     }
     this.sourceCache = new WorkspaceSourceCache(fs);
     this.projectGraph = projectGraph ?? new TypeScriptProjectGraph(this.sourceCache, observer);
-    this.state = new TypeScriptWorkspaceState(
-      this.sourceCache,
-      new TypeScriptFileEntryExtractor(),
-      this.projectGraph,
-    );
+    this.state = new TypeScriptWorkspaceState(this.sourceCache, extractor, this.projectGraph);
     this.semanticQueries = new TypeScriptSemanticQueryService(
       this.projectGraph,
       this.state,

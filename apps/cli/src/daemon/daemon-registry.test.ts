@@ -96,6 +96,18 @@ describe("daemon registry", () => {
     expect(registry.read(identity)).toBeUndefined();
   });
 
+  it("compare-removes a dead process only for its exact instance and token", () => {
+    const identity = DaemonWorkspaceIdentity.from("/repo", temporaryDirectory(roots));
+    const registry = new DaemonRegistry(identity.registryDirectory);
+    registry.write(record(identity, "ready", "instance"));
+
+    expect(registry.removeIfProcess(identity, "instance", "wrong-token")).toBe(false);
+    expect(registry.readStoredInstance(identity, "instance")).toBeDefined();
+    expect(registry.removeIfProcess(identity, "replacement", "instance-process")).toBe(false);
+    expect(registry.removeIfProcess(identity, "instance", "instance-process")).toBe(true);
+    expect(registry.readStoredInstance(identity, "instance")).toBeUndefined();
+  });
+
   it("does not release a replacement startup owner from an old lease", () => {
     const identity = DaemonWorkspaceIdentity.from("/repo", temporaryDirectory(roots));
     const registry = new DaemonRegistry(identity.registryDirectory);
@@ -412,7 +424,7 @@ describe("daemon registry", () => {
     alphaLease?.release();
   });
 
-  it("cleans stale records and does not trust a live PID without a matching ping", async () => {
+  it("retains live ownership when a daemon does not answer ping", async () => {
     const stateDirectory = temporaryDirectory(roots);
     const identity = DaemonWorkspaceIdentity.from("/repo", stateDirectory);
     const registry = new DaemonRegistry(identity.registryDirectory);
@@ -424,8 +436,16 @@ describe("daemon registry", () => {
       { processTerminator: new ControllerTerminator([401]) },
     );
 
-    await expect(controller.status()).resolves.toEqual([]);
-    expect(registry.readStoredInstance(identity, "stale")).toBeUndefined();
+    await expect(controller.status()).resolves.toEqual([
+      {
+        workspaceRoot: "/repo",
+        state: "unresponsive",
+        pid: 401,
+        uptimeMs: expect.any(Number),
+        fileCount: 2,
+      },
+    ]);
+    expect(registry.readStoredInstance(identity, "stale")).toBeDefined();
   });
 
   it("drains a validated daemon and compare-removes only its record", async () => {

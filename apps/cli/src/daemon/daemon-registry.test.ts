@@ -128,6 +128,21 @@ describe("daemon registry", () => {
     replacementLease?.release();
   });
 
+  it("does not let the initiating caller lease release daemon-owned startup", () => {
+    const identity = DaemonWorkspaceIdentity.from("/repo", temporaryDirectory(roots));
+    const registry = new DaemonRegistry(identity.registryDirectory);
+    const lease = registry.acquireStartup(identity, "starting");
+    const starting = {
+      ...record(identity, "starting", "starting"),
+      pid: 777,
+    } satisfies DaemonRecord;
+    expect(registry.writeStartingIfStartupOwner(identity, starting)).toBe(true);
+
+    lease?.release();
+
+    expect(registry.startupOwnerMatchesProcess(identity, starting)).toBe(true);
+  });
+
   it("keeps replacement ownership when two processes clean the old owner", async () => {
     const stateDirectory = temporaryDirectory(roots);
     const identity = DaemonWorkspaceIdentity.from("/repo", stateDirectory);

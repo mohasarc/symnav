@@ -3,6 +3,7 @@ import { posix } from "node:path";
 import type { FileMetadata, FileSystem } from "./file-system.js";
 import { WorkspaceIgnore } from "./ignore/workspace-ignore.js";
 import { findWorkspaceRoot } from "./paths/find-root.js";
+import { posixify } from "./paths/posixify.js";
 import { relPathFromRoot } from "./paths/rel-from-root.js";
 import {
   createWorkspaceTurn,
@@ -70,7 +71,7 @@ export class WorkspaceCatalog {
   }
 
   private rootFor(startDir: string): string {
-    const root = findWorkspaceRoot(startDir, this.fs);
+    const root = findWorkspaceRoot(posixify(startDir), this.fs);
     if (root === null) throw new NotInWorkspaceError(startDir);
     return root;
   }

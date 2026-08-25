@@ -275,6 +275,32 @@ export class DaemonRegistry {
     return this.startupOwner(identity)?.instanceId === instanceId;
   }
 
+  startupOwnerMatchesProcess(
+    identity: DaemonWorkspaceIdentity,
+    record: DaemonRecord,
+  ): boolean {
+    if (record.pid <= 0) return false;
+    const owner = this.startupOwner(identity);
+    const stored = this.readStoredInstance(identity, record.instanceId);
+    return (
+      owner?.instanceId === record.instanceId &&
+      owner.ownerPid === record.pid &&
+      owner.processToken === record.processToken &&
+      stored?.pid === record.pid &&
+      stored.processToken === record.processToken &&
+      stored.startedAt === record.startedAt
+    );
+  }
+
+  removeStartupLockIfProcess(
+    identity: DaemonWorkspaceIdentity,
+    record: DaemonRecord,
+  ): boolean {
+    const owner = this.startupOwner(identity);
+    if (owner === undefined || !this.startupOwnerMatchesProcess(identity, record)) return false;
+    return this.removeStartupLockIfOwner(identity, owner);
+  }
+
   removeStartupLockIfInstance(identity: DaemonWorkspaceIdentity, instanceId: string): boolean {
     const releasedPath = identity.releasedStartupLockPath(instanceId);
     const owner = this.startupOwner(identity);

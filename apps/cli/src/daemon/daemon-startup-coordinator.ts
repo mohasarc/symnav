@@ -10,6 +10,7 @@ import {
 import type { DaemonRecord, DaemonStartResult } from "./daemon-protocol.js";
 import { DAEMON_PROTOCOL_VERSION, DAEMON_RECORD_SCHEMA_VERSION } from "./daemon-protocol.js";
 import type { DaemonRegistry, StartupOwner } from "./daemon-registry.js";
+import { DaemonRecordObserver } from "./daemon-record-observer.js";
 import type { DaemonWorkspaceIdentity } from "./daemon-workspace-identity.js";
 import type { LocalDaemonTransport } from "./local-daemon-transport.js";
 
@@ -26,15 +27,19 @@ interface DaemonStartupCoordinatorOptions {
 const STARTUP_HEARTBEAT_INTERVAL_MS = 100;
 const DAEMON_TERMINATION_TIMEOUT_MS = 5 * 60_000;
 
+class DaemonStartupWaitTimeoutError extends Error {}
+
 class DaemonChildExitError extends Error {
   constructor(readonly exit: DaemonProcessExit) {
-    const detail =
+    super(
       exit.cause === "spawn-error"
-        ? `spawn error ${exit.errorName ?? "unknown"}`
-        : `code ${exit.code ?? "null"}, signal ${exit.signal ?? "null"}`;
-    super(`Daemon child exited before readiness (${detail})`);
+        ? `Daemon child failed after spawn (${exit.errorName ?? "Error"})`
+        : `Daemon child exited before readiness (code ${String(exit.code)}, signal ${String(exit.signal)})`,
+    );
   }
 }
+
+class DaemonOwnedButUnresponsiveError extends Error {}
 
 export class DaemonStartupCoordinator {
   private readonly startupTimeoutMs: number;
@@ -44,6 +49,7 @@ export class DaemonStartupCoordinator {
   private readonly nextInstanceId: () => string;
   private readonly processTerminator: DaemonProcessTerminator;
   private readonly heartbeatIntervalMs: number;
+  private readonly observer: DaemonRecordObserver;
 
   constructor(
     private readonly registry: DaemonRegistry,
@@ -58,6 +64,7 @@ export class DaemonStartupCoordinator {
     this.nextInstanceId = options.instanceId ?? randomUUID;
     this.processTerminator = options.processTerminator ?? new NodeDaemonProcessTerminator();
     this.heartbeatIntervalMs = options.heartbeatIntervalMs ?? STARTUP_HEARTBEAT_INTERVAL_MS;
+    this.observer = new DaemonRecordObserver(this.transport, this.processTerminator, this.now);
   }
 
   async ensureRunning(identity: DaemonWorkspaceIdentity): Promise<DaemonStartResult> {
@@ -94,7 +101,12 @@ export class DaemonStartupCoordinator {
       if (storedRecord !== undefined) await this.replaceStoredRecord(identity, storedRecord);
       return await this.launchAndWait(identity, instanceId);
     } catch (error) {
-      if (error instanceof DaemonProcessTerminationError) releaseLease = false;
+      if (
+        error instanceof DaemonProcessTerminationError ||
+        error instanceof DaemonStartupWaitTimeoutError
+      ) {
+        releaseLease = false;
+      }
       throw error;
     } finally {
       clearInterval(heartbeat);
@@ -146,8 +158,9 @@ export class DaemonStartupCoordinator {
         loadDurationMs: (ready.readyAt ?? this.now()) - ready.startedAt,
       };
     } catch (error) {
+      if (error instanceof DaemonStartupWaitTimeoutError) throw error;
       if (error instanceof DaemonChildExitError) {
-        this.registry.removeIfInstance(identity, instanceId);
+        this.registry.removeIfProcess(identity, instanceId, processToken);
         throw error;
       }
       if (daemonProcess !== undefined) {
@@ -158,7 +171,7 @@ export class DaemonStartupCoordinator {
           throw new DaemonProcessTerminationError(String(terminationError));
         }
       }
-      this.registry.removeIfInstance(identity, instanceId);
+      this.registry.removeIfProcess(identity, instanceId, processToken);
       throw error;
     }
   }
@@ -218,7 +231,9 @@ export class DaemonStartupCoordinator {
       ]);
       if (childExit !== undefined) throw new DaemonChildExitError(childExit);
     }
-    throw new Error("Daemon startup timed out before readiness probe completed");
+    throw new DaemonStartupWaitTimeoutError(
+      "Daemon startup wait ended before readiness; live daemon ownership was retained",
+    );
   }
 
   private async validatedReadyRecord(
@@ -226,34 +241,42 @@ export class DaemonStartupCoordinator {
   ): Promise<DaemonRecord | undefined> {
     const record = this.registry.read(identity);
     if (record?.state !== "ready") return undefined;
-    try {
-      const response = await this.transport.request(record.endpoint, {
-        kind: "ping",
-        protocolVersion: DAEMON_PROTOCOL_VERSION,
-        instanceId: record.instanceId,
-      });
-      if (response.kind !== "pong" || response.symnavVersion !== record.symnavVersion) {
-        return undefined;
-      }
-      return record;
-    } catch {
+    const observation = await this.observer.observe(record);
+    if (observation.kind === "responsive") return record;
+    if (observation.kind === "exited") {
+      this.registry.removeIfProcess(identity, record.instanceId, record.processToken);
       return undefined;
     }
+    if (observation.kind === "incompatible" || observation.kind === "corrupt") return undefined;
+    throw new DaemonOwnedButUnresponsiveError(
+      `Daemon process ${record.pid} is live but unresponsive; ownership was retained`,
+    );
   }
 
   private async replaceStoredRecord(
     identity: DaemonWorkspaceIdentity,
     record: DaemonRecord,
   ): Promise<void> {
-    if (await this.identifiesRecordedProcess(record)) {
-      await this.transport.request(record.endpoint, {
-        kind: "terminate",
-        instanceId: record.instanceId,
-        processToken: record.processToken,
-      });
-      await this.waitForProcessExitAndEndpointRelease(record);
+    const observation = await this.observer.observe(record);
+    if (observation.kind === "exited") {
+      this.registry.removeIfProcess(identity, record.instanceId, record.processToken);
+      return;
     }
-    this.registry.removeIfInstance(identity, record.instanceId);
+    if (
+      observation.kind === "starting" ||
+      observation.kind === "unresponsive"
+    ) {
+      throw new DaemonOwnedButUnresponsiveError(
+        `Daemon process ${record.pid} is live but unresponsive; ownership was retained`,
+      );
+    }
+    await this.transport.request(record.endpoint, {
+      kind: "terminate",
+      instanceId: record.instanceId,
+      processToken: record.processToken,
+    });
+    await this.waitForProcessExitAndEndpointRelease(record);
+    this.registry.removeIfProcess(identity, record.instanceId, record.processToken);
   }
 
   private async waitForProcessExitAndEndpointRelease(record: DaemonRecord): Promise<void> {

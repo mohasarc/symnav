@@ -193,10 +193,18 @@ export class DaemonController {
   }
 
   private removeStartingOwnership(identity: DaemonWorkspaceIdentity, record: DaemonRecord): void {
+    const storedRecord = this.registry.readStoredInstance(identity, record.instanceId);
+    if (
+      storedRecord?.processToken !== record.processToken ||
+      storedRecord.pid !== record.pid ||
+      storedRecord.startedAt !== record.startedAt
+    ) {
+      return;
+    }
     const owner = this.registry.startupOwner(identity);
     if (this.registry.startupOwnerMatchesProcess(identity, record)) {
       this.registry.removeStartupLockIfProcess(identity, record);
-    } else if (owner?.instanceId === record.instanceId) {
+    } else if (owner?.instanceId === record.instanceId && owner.processToken === undefined) {
       this.registry.removeStartupLockIfOwner(identity, owner);
     }
     this.registry.removeIfProcess(identity, record.instanceId, record.processToken);

@@ -1,4 +1,5 @@
 import {
+  CollectingDiagnosticSink,
   FileNotFoundError,
   OverviewTree,
   type BackendRefreshCoverage,
@@ -53,7 +54,7 @@ export interface PreparedFileRevision {
   readonly diagnostics: readonly NavigationDiagnostic[];
 }
 
-interface PreparedFileIndex {
+interface PreparedFileState extends PreparedFileRevision {
   readonly revision: TypeScriptFileRevision;
   readonly path: ResolvedPath;
   readonly declarations: readonly SymbolOverviewNode[];
@@ -73,6 +74,7 @@ export class TypeScriptWorkspaceState {
   private readonly declarationsByIdentity = new Map<string, IndexedDeclaration>();
   private readonly declarationsByPosition = new Map<string, Map<number, SymbolOverviewNode>>();
   private readonly declarationsByFile = new Map<string, readonly SymbolOverviewNode[]>();
+  private readonly preparedByRelativePath = new Map<string, PreparedFileRevision>();
 
   constructor(
     private readonly fs: FileSystem,
@@ -144,11 +146,14 @@ export class TypeScriptWorkspaceState {
 
   fileEntries(file: ResolvedPath, diagnostics?: DiagnosticSink): OverviewFileEntries {
     this.ensureFiles([file]);
-    const sourceFile = this.sourceFile(file.relative);
-    if (!sourceFile) {
+    const prepared = this.preparedByRelativePath.get(file.relative);
+    if (!prepared) {
       throw new FileNotFoundError(file.relative);
     }
-    return this.extractor.extract({ sourceFile, filePath: file.relative, diagnostics });
+    for (const diagnostic of prepared.diagnostics) {
+      diagnostics?.report(diagnostic);
+    }
+    return prepared.entries;
   }
 
   declarationsIn(relativePath: string): readonly SymbolOverviewNode[] | undefined {
@@ -203,7 +208,7 @@ export class TypeScriptWorkspaceState {
     }
   }
 
-  private prepareFiles(revisions: readonly TypeScriptFileRevision[]): readonly PreparedFileIndex[] {
+  private prepareFiles(revisions: readonly TypeScriptFileRevision[]): readonly PreparedFileState[] {
     const candidates = revisions.map((revision) => {
       const existingPath = this.fileByRelativePath.get(revision.relativePath);
       const existingSourceFile =
@@ -250,31 +255,50 @@ export class TypeScriptWorkspaceState {
     sourceFile: SourceFile,
     path: ResolvedPath,
     revision: TypeScriptFileRevision,
-  ): PreparedFileIndex {
+  ): PreparedFileState {
     const byPosition = new Map<number, SymbolOverviewNode>();
     const declarations: SymbolOverviewNode[] = [];
     const byIdentity = new Map<string, IndexedDeclaration>();
-    const { entries } = this.extractor.extract({ sourceFile, filePath: path.relative });
-    for (const declaration of OverviewTree.walkSymbols(entries)) {
+    const diagnosticSink = new CollectingDiagnosticSink();
+    const extracted = this.extractor.extract({
+      sourceFile,
+      filePath: path.relative,
+      diagnostics: diagnosticSink,
+    });
+    const diagnostics = diagnosticSink.diagnostics();
+    const entries = diagnostics.length === 0 ? extracted : { ...extracted, diagnostics };
+    for (const declaration of OverviewTree.walkSymbols(entries.entries)) {
       declarations.push(declaration);
       byIdentity.set(DeclarationLocator.identityKey(declaration.identity), {
         declaration,
         file: path,
       });
     }
-    for (const { declaration, node } of new DeclarationLocator(sourceFile).locateAll(entries)) {
+    for (const { declaration, node } of new DeclarationLocator(sourceFile).locateAll(
+      entries.entries,
+    )) {
       byPosition.set(node.getStart(), declaration);
     }
     return {
       revision,
       path,
+      file: {
+        ...path,
+        metadata: {
+          size: revision.size,
+          modifiedAtMs: revision.modifiedAtMs,
+          changeToken: revision.changeToken,
+        },
+      },
+      entries,
+      diagnostics,
       declarations,
       declarationsByIdentity: byIdentity,
       declarationsByPosition: byPosition,
     };
   }
 
-  private publishFile(prepared: PreparedFileIndex): void {
+  private publishFile(prepared: PreparedFileState): void {
     const previousPath = this.fileByRelativePath.get(prepared.path.relative);
     this.purgeIndexes(prepared.path.relative);
     if (previousPath && previousPath.absolute !== prepared.path.absolute) {
@@ -288,6 +312,7 @@ export class TypeScriptWorkspaceState {
     this.revisionsByRelativePath.set(prepared.path.relative, prepared.revision);
     this.fileByRelativePath.set(prepared.path.relative, prepared.path);
     this.relativePathByAbsolute.set(prepared.path.absolute, prepared.path.relative);
+    this.preparedByRelativePath.set(prepared.path.relative, prepared);
     for (const [identity, declaration] of prepared.declarationsByIdentity) {
       this.declarationsByIdentity.set(identity, declaration);
     }
@@ -310,6 +335,7 @@ export class TypeScriptWorkspaceState {
     this.purgeIndexes(relativePath);
     this.fileByRelativePath.delete(relativePath);
     this.revisionsByRelativePath.delete(relativePath);
+    this.preparedByRelativePath.delete(relativePath);
   }
 
   private purgeIndexes(relativePath: string): void {

@@ -96,6 +96,52 @@ describe("WorkspaceDaemon runtime lifecycle", () => {
     expect(harness.registry.read(harness.identity)).toBeUndefined();
   });
 
+  it("escalates a stuck graceful worker close to one forced termination", async () => {
+    const worker = new BlockingDrainNavigationWorker();
+    const harness = await WorkspaceDaemonHarness.start(new ImmediateExecutor(), {
+      navigationWorker: worker,
+    });
+    harnesses.push(harness);
+    const controller = new DaemonController(
+      harness.registry,
+      harness.transport,
+      harness.stateDirectory,
+      {
+        stopTimeoutMs: 100,
+        pollIntervalMs: 1,
+        processTerminator: new CurrentProcessTerminator(() => harness.hasExited),
+      },
+    );
+
+    const stopping = controller.stop(harness.workspaceRoot);
+    await worker.drainStarted;
+    const repeatedForce = Promise.all([
+      harness.transport.request(harness.identity.endpoint(harness.instanceId), {
+        kind: "kill",
+        instanceId: harness.instanceId,
+        processToken: "runtime-token",
+      }),
+      harness.transport.request(harness.identity.endpoint(harness.instanceId), {
+        kind: "kill",
+        instanceId: harness.instanceId,
+        processToken: "runtime-token",
+      }),
+    ]);
+
+    await expect(repeatedForce).resolves.toEqual([
+      expect.objectContaining({ kind: "killing" }),
+      expect.objectContaining({ kind: "killing" }),
+    ]);
+    await expect(stopping).resolves.toEqual({
+      status: "stopped",
+      workspaceRoot: harness.workspaceRoot,
+      pid: process.pid,
+    });
+    await harness.exited;
+    expect(worker.terminateCount).toBe(1);
+    expect(harness.registry.read(harness.identity)).toBeUndefined();
+  });
+
   it("force-stops a real matching daemon process with a stuck request", async () => {
     const stateDirectory = canonicalStateDir(
       mkdtempSync(join(tmpdir(), "symnav-daemon-child-state-")),
@@ -298,6 +344,7 @@ interface RuntimeOptions {
   readonly resourceCheckIntervalMs?: number;
   readonly residentMemoryBytes?: () => number;
   readonly transport?: LocalDaemonTransport;
+  readonly navigationWorker?: DaemonNavigationWorker;
 }
 
 class WorkspaceDaemonHarness {
@@ -364,7 +411,7 @@ class WorkspaceDaemonHarness {
       dependencies: createDefaultDependencies(harness.identity.stateDirectory),
       registry: harness.registry,
       transport: harness.transport,
-      navigationWorker: new ExecutorNavigationWorker(executor),
+      navigationWorker: runtime.navigationWorker ?? new ExecutorNavigationWorker(executor),
       exit: (code) => {
         harness.exitCode = code;
         harness.resolveExit(code);
@@ -526,6 +573,35 @@ class ExecutorNavigationWorker implements DaemonNavigationWorker {
     this.rejectTermination(new Error("worker terminated"));
     this.resolveExited({ generation: this.generation, cause: "terminated" });
     return Promise.resolve();
+  }
+}
+
+class BlockingDrainNavigationWorker extends ExecutorNavigationWorker {
+  readonly drainStarted: Promise<void>;
+  terminateCount = 0;
+  private resolveDrainStarted!: () => void;
+  private resolveDrain!: () => void;
+  private readonly drain: Promise<void>;
+
+  constructor() {
+    super(new ImmediateExecutor());
+    this.drainStarted = new Promise((resolve) => {
+      this.resolveDrainStarted = resolve;
+    });
+    this.drain = new Promise((resolve) => {
+      this.resolveDrain = resolve;
+    });
+  }
+
+  override drainAndClose(): Promise<void> {
+    this.resolveDrainStarted();
+    return this.drain;
+  }
+
+  override async terminate(): Promise<void> {
+    this.terminateCount += 1;
+    this.resolveDrain();
+    await super.terminate();
   }
 }
 

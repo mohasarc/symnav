@@ -226,13 +226,24 @@ describe("TypeScriptProjectGraph", () => {
     expect(graph.languageServiceFor("scratch/outside.ts")).toBeDefined();
   });
 
-  it("keeps uncovered files outside configured compiler options", async () => {
+  it("gives uncovered files workspace mappings without configured compiler options", async () => {
     const projectFixture = fixture();
     const graph = new TypeScriptProjectGraph(projectFixture.fileSystem);
 
     await graph.refresh(await projectFixture.snapshot());
 
-    expect(graph.programFor("scratch/outside.ts")?.getCompilerOptions().paths).toBeUndefined();
+    const options = graph.programFor("scratch/outside.ts")?.getCompilerOptions();
+
+    expect(options?.paths?.["@configured/domain"]).toEqual([
+      `${projectFixture.root.replaceAll("\\", "/")}/packages/domain/src/index.ts`,
+    ]);
+    expect(options?.paths?.["@configured/domain/feature"]).toEqual([
+      `${projectFixture.root.replaceAll("\\", "/")}/packages/domain/src/feature.ts`,
+    ]);
+    expect(options?.paths?.["@configured/domain/features/*"]).toEqual([
+      `${projectFixture.root.replaceAll("\\", "/")}/packages/domain/src/features/*.ts`,
+    ]);
+    expect(options?.paths?.["@local/*"]).toBeUndefined();
   });
 
   it("maps exact and patterned workspace package subpath exports", async () => {

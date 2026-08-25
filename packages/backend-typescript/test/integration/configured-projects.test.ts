@@ -72,6 +72,35 @@ describe("TypeScriptBackend configured projects", () => {
     );
   });
 
+  it("resolves workspace package exports without inheriting configured aliases", async () => {
+    const { backend, files } = await backendOverFixture();
+
+    await expect(
+      backend.findCallees(
+        files,
+        identity("scratch/outside.ts", "useWorkspacePackagesFromInferred"),
+      ),
+    ).resolves.toMatchObject([
+      { symbol: { identity: identity("packages/domain/src/feature.ts", "subpathTarget") } },
+      {
+        symbol: {
+          identity: identity("packages/domain/src/features/patterned.ts", "patternedSubpathTarget"),
+        },
+      },
+      { symbol: { identity: identity("packages/domain/src/index.ts", "workspaceTarget") } },
+    ]);
+    const workspaceReferences = await backend.findReferences(
+      files,
+      identity("packages/domain/src/index.ts", "workspaceTarget"),
+    );
+    expect(workspaceReferences).toContainEqual(
+      expect.objectContaining({ file: "scratch/outside.ts", line: 2 }),
+    );
+    await expect(
+      backend.findCallees(files, identity("scratch/outside.ts", "useConfiguredAliasFromInferred")),
+    ).resolves.toEqual([]);
+  });
+
   it("resolves semantic targets through extended compiler options", async () => {
     const { backend, files } = await backendOverFixture();
 

@@ -41,11 +41,7 @@ describe("DaemonWorkspaceIdentity", () => {
     const stateDirectory = join(root, "state");
     const stateSymlink = join(root, "state-link");
     mkdirSync(stateDirectory);
-    symlinkSync(
-      stateDirectory,
-      stateSymlink,
-      process.platform === "win32" ? "junction" : "dir",
-    );
+    symlinkSync(stateDirectory, stateSymlink, process.platform === "win32" ? "junction" : "dir");
 
     const identities = [
       stateDirectory,

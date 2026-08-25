@@ -3,35 +3,44 @@ import { tmpdir, userInfo } from "node:os";
 import { join } from "node:path";
 
 export class DaemonWorkspaceIdentity {
-  static registryDirectory(stateDir: string): string {
-    return join(stateDir, "daemons");
+  static registryDirectory(stateDirectory: string): string {
+    return join(stateDirectory, "daemons");
   }
 
-  static from(workspaceRoot: string, stateDir: string): DaemonWorkspaceIdentity {
-    return new DaemonWorkspaceIdentity(workspaceRoot, stateDir);
+  static from(workspaceRoot: string, stateDirectory: string): DaemonWorkspaceIdentity {
+    return new DaemonWorkspaceIdentity(workspaceRoot, stateDirectory);
   }
 
   readonly workspaceKey: string;
+  readonly stateKey: string;
+  readonly identityKey: string;
   readonly registryDirectory: string;
+  readonly identityDirectory: string;
   readonly lockPath: string;
   readonly startupMutationPath: string;
   readonly logPath: string;
+  readonly spoolDirectory: string;
   private readonly userKey: string;
 
   private constructor(
     readonly workspaceRoot: string,
-    stateDir: string,
+    readonly stateDirectory: string,
   ) {
     this.workspaceKey = DaemonWorkspaceIdentity.hash(workspaceRoot);
-    this.registryDirectory = DaemonWorkspaceIdentity.registryDirectory(stateDir);
-    this.lockPath = join(this.registryDirectory, `${this.workspaceKey}.lock`);
-    this.startupMutationPath = `${this.lockPath}.mutation`;
-    this.logPath = join(this.registryDirectory, `${this.workspaceKey}.log`);
+    this.stateKey = DaemonWorkspaceIdentity.hash(stateDirectory);
+    this.identityKey = DaemonWorkspaceIdentity.hash(`${this.workspaceKey}:${this.stateKey}`);
+    this.registryDirectory = DaemonWorkspaceIdentity.registryDirectory(stateDirectory);
+    this.identityDirectory = join(this.registryDirectory, this.identityKey);
+    this.lockPath = join(this.identityDirectory, "startup.lock");
+    this.startupMutationPath = join(this.identityDirectory, "startup.mutation");
+    this.logPath = join(this.identityDirectory, "daemon.log");
+    this.spoolDirectory = join(this.identityDirectory, "spool");
     this.userKey = DaemonWorkspaceIdentity.userIdentityKey();
   }
 
-  endpoint(_instanceId: string): string {
-    const endpointName = this.workspaceKey.slice(0, 20);
+  endpoint(instanceId: string): string {
+    const instanceKey = DaemonWorkspaceIdentity.hash(instanceId).slice(0, 12);
+    const endpointName = `${this.identityKey.slice(0, 20)}-${instanceKey}`;
     if (process.platform === "win32") {
       return `\\\\.\\pipe\\symnav-${this.userKey}-${endpointName}`;
     }
@@ -39,7 +48,7 @@ export class DaemonWorkspaceIdentity {
   }
 
   recordPath(instanceId: string): string {
-    return join(this.registryDirectory, `${this.workspaceKey}.${instanceId}.json`);
+    return join(this.identityDirectory, `${instanceId}.json`);
   }
 
   startupClaimPath(instanceId: string): string {

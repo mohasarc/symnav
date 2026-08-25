@@ -50,7 +50,9 @@ class CallerFinder {
   }
 
   private targetDeclarationNodes(): readonly Node[] {
-    return this.workspaceState.locate(this.args.identity).map((located) => located.node);
+    return this.workspaceState
+      .locateSemanticCopies(this.args.identity)
+      .map((located) => located.node);
   }
 
   private edgesFrom(declarationNodes: readonly Node[]): readonly CallEdge[] {

@@ -43,6 +43,7 @@ export interface TypeScriptFileExtractor {
 }
 
 export interface TypeScriptSemanticSourceProvider {
+  sourceFileFor(relativePath: string): SourceFile | undefined;
   sourceFilesFor(relativePath: string): readonly SourceFile[];
 }
 
@@ -181,15 +182,27 @@ export class TypeScriptWorkspaceState {
   sourceFile(relativePath: string): SourceFile | undefined {
     const prepared = this.preparedIndex.byRelativePath.get(relativePath);
     if (!prepared) return undefined;
-    const semanticSource = this.semanticSources?.sourceFilesFor(relativePath)[0];
+    const semanticSource = this.semanticSources?.sourceFileFor(relativePath);
     if (semanticSource) return semanticSource;
     return this.project.getSourceFile(prepared.file.absolute);
   }
 
   locate(identity: SymbolIdentity): readonly LocatedDeclaration[] {
+    const semanticSource = this.semanticSources?.sourceFileFor(identity.file);
+    return this.locateIn(identity, semanticSource ? [semanticSource] : undefined);
+  }
+
+  locateSemanticCopies(identity: SymbolIdentity): readonly LocatedDeclaration[] {
+    const semanticSources = this.semanticSources?.sourceFilesFor(identity.file);
+    return this.locateIn(identity, semanticSources);
+  }
+
+  private locateIn(
+    identity: SymbolIdentity,
+    semanticSources: readonly SourceFile[] | undefined,
+  ): readonly LocatedDeclaration[] {
     const prepared = this.preparedIndex.byRelativePath.get(identity.file);
     if (!prepared) return [];
-    const semanticSources = this.semanticSources?.sourceFilesFor(identity.file);
     const sourceFiles =
       semanticSources && semanticSources.length > 0
         ? semanticSources

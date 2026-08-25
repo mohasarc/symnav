@@ -26,7 +26,7 @@ export class ReferenceFinder {
   }
 
   private declarationNodesMatchingIdentity(): readonly Node[] {
-    return this.args.state.locate(this.args.identity).map((located) => located.node);
+    return this.args.state.locateSemanticCopies(this.args.identity).map((located) => located.node);
   }
 
   private referencesFrom(declarationNodes: readonly Node[]): SymbolReference[] {

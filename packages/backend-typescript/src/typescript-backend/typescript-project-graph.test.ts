@@ -13,6 +13,7 @@ import { join, relative } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { fixturePath } from "@symnav/testing";
 import {
+  InMemoryFileSystem,
   NodeFileSystem,
   type ResolvedPath,
   type SymbolIdentity,
@@ -88,6 +89,37 @@ function fixture(): ConfiguredProjectFixture {
 }
 
 describe("TypeScriptProjectGraph", () => {
+  it("resolves configured and inferred workspace package exports from a drive root", async () => {
+    const fileSystem = driveRootFileSystem();
+    const files = driveRootWorkspaceFiles(fileSystem);
+    const backend = new TypeScriptBackend(fileSystem);
+    await backend.refresh({ snapshot: { root: "C:/repo", files }, coverage: "workspace" });
+
+    await expect(
+      calleeNames(
+        backend,
+        files,
+        symbolIdentity("packages/app/src/index.ts", "useConfiguredPackages"),
+      ),
+    ).resolves.toEqual(["featureTarget", "rootTarget", "patternTarget"]);
+    await expect(
+      calleeNames(
+        backend,
+        files,
+        symbolIdentity("scratch/outside.ts", "useInferredPackages"),
+      ),
+    ).resolves.toEqual(["featureTarget", "rootTarget", "patternTarget"]);
+
+    const graph = new TypeScriptProjectGraph(fileSystem);
+    const refresh = await graph.refresh({ root: "C:/repo", files });
+    const configuredPaths = graph.programFor("packages/app/src/index.ts")?.getCompilerOptions().paths;
+    const inferredPaths = graph.programFor("scratch/outside.ts")?.getCompilerOptions().paths;
+
+    expect(refresh.configuredProjectCount).toBe(3);
+    expect(configuredPaths).toMatchObject(driveRootPackagePaths());
+    expect(inferredPaths).toEqual(driveRootPackagePaths());
+    expect(inferredPaths?.["@configured-only/*"]).toBeUndefined();
+  });
   it("loads recursive project references and reuses services across no-change refreshes", async () => {
     const projectFixture = fixture();
     const graph = new TypeScriptProjectGraph(projectFixture.fileSystem);
@@ -377,4 +409,90 @@ async function calleeNames(
 
 function symbolIdentity(file: string, name: string): SymbolIdentity {
   return { file, segments: [{ name }] };
+}
+
+function driveRootFileSystem(
+  options: {
+    readonly appConfiguration?: Record<string, unknown>;
+    readonly generatedSource?: string;
+  } = {},
+): InMemoryFileSystem {
+  return new InMemoryFileSystem({
+    "C:/repo/tsconfig.json": JSON.stringify({
+      files: [],
+      references: [{ path: "packages/app" }, { path: "packages/domain" }],
+    }),
+    "C:/repo/packages/app/tsconfig.json": JSON.stringify(
+      options.appConfiguration ?? {
+        compilerOptions: {
+          baseUrl: ".",
+          paths: { "@configured-only/*": ["src/*"] },
+        },
+        references: [{ path: "../domain" }],
+        include: ["src/**/*.ts"],
+      },
+    ),
+    "C:/repo/packages/domain/tsconfig.json": JSON.stringify({
+      compilerOptions: { composite: true },
+      include: ["src/**/*.ts"],
+    }),
+    "C:/repo/packages/domain/package.json": JSON.stringify({
+      name: "@workspace/domain",
+      exports: {
+        ".": "./src/index.ts",
+        "./feature": "./src/feature.ts",
+        "./patterns/*": "./src/patterns/*.ts",
+      },
+    }),
+    "C:/repo/packages/domain/src/index.ts":
+      'export function rootTarget(): string { return "root"; }\n',
+    "C:/repo/packages/domain/src/feature.ts":
+      'export function featureTarget(): string { return "feature"; }\n',
+    "C:/repo/packages/domain/src/patterns/one.ts":
+      'export function patternTarget(): string { return "pattern"; }\n',
+    "C:/repo/packages/app/src/index.ts": driveRootPackageConsumer("useConfiguredPackages"),
+    "C:/repo/scratch/outside.ts": driveRootPackageConsumer("useInferredPackages"),
+    ...(options.generatedSource
+      ? { "C:/repo/packages/app/dist/generated.ts": options.generatedSource }
+      : {}),
+  });
+}
+
+function driveRootPackageConsumer(name: string): string {
+  return [
+    'import { rootTarget } from "@workspace/domain";',
+    'import { featureTarget } from "@workspace/domain/feature";',
+    'import { patternTarget } from "@workspace/domain/patterns/one";',
+    `export function ${name}(): string {`,
+    "  return rootTarget() + featureTarget() + patternTarget();",
+    "}",
+    "",
+  ].join("\n");
+}
+
+function driveRootWorkspaceFiles(
+  fileSystem: InMemoryFileSystem,
+  ...additionalRelativePaths: readonly string[]
+): WorkspaceSnapshot["files"] {
+  const relativePaths = [
+    "packages/app/src/index.ts",
+    "packages/domain/src/feature.ts",
+    "packages/domain/src/index.ts",
+    "packages/domain/src/patterns/one.ts",
+    "scratch/outside.ts",
+    ...additionalRelativePaths,
+  ];
+  return relativePaths.map((relativePath) => ({
+    relative: relativePath,
+    absolute: `C:/repo/${relativePath}`,
+    metadata: fileSystem.metadataSync(`C:/repo/${relativePath}`),
+  }));
+}
+
+function driveRootPackagePaths(): Record<string, string[]> {
+  return {
+    "@workspace/domain": ["C:/repo/packages/domain/src/index.ts"],
+    "@workspace/domain/feature": ["C:/repo/packages/domain/src/feature.ts"],
+    "@workspace/domain/patterns/*": ["C:/repo/packages/domain/src/patterns/*.ts"],
+  };
 }

@@ -40,12 +40,24 @@ class DefaultWorkspace implements Workspace {
   private pathsPromise: Promise<readonly ResolvedPath[]> | undefined;
   private snapshotPromise: Promise<WorkspaceSnapshot> | undefined;
   private enumerationError: UnreadableDirectoryWarningCandidateError | undefined;
-  private readonly ignore = new WorkspaceIgnore();
+  private readonly ignore: WorkspaceIgnore;
 
   constructor(
     public readonly root: string,
     private readonly fs: FileSystem,
-  ) {}
+    retained?: {
+      readonly snapshot: WorkspaceSnapshot;
+      readonly ignore: WorkspaceIgnore;
+    },
+  ) {
+    this.ignore = retained?.ignore ?? new WorkspaceIgnore();
+    if (retained) {
+      this.snapshotPromise = Promise.resolve(retained.snapshot);
+      this.pathsPromise = Promise.resolve(
+        retained.snapshot.files.map(({ relative, absolute }) => ({ relative, absolute })),
+      );
+    }
+  }
 
   async resolveInputPath(inputPath: string, cwd: string): Promise<ResolvedPath> {
     await this.paths();
@@ -187,4 +199,16 @@ export async function createWorkspace(opts: {
     throw new NotInWorkspaceError(opts.startDir);
   }
   return new DefaultWorkspace(root, fs);
+}
+
+export function createWorkspaceTurn(opts: {
+  root: string;
+  fs: FileSystem;
+  snapshot: WorkspaceSnapshot;
+  ignore: WorkspaceIgnore;
+}): Workspace {
+  return new DefaultWorkspace(opts.root, opts.fs, {
+    snapshot: opts.snapshot,
+    ignore: opts.ignore,
+  });
 }

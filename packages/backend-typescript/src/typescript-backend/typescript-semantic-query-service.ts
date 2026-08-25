@@ -11,7 +11,7 @@ import {
 import { Node, type ReferencedSymbolEntry, type SourceFile } from "ts-morph";
 
 import { CallerFinder } from "../call-graph/find-callers.js";
-import { findCallees } from "../call-graph/find-callees.js";
+import { findCallees, type PositionDefinitionResolver } from "../call-graph/find-callees.js";
 import { findDefinitions } from "../definition/find-definitions.js";
 import { classifyReferenceKind } from "../references/classify-reference-kind.js";
 import type { TypeScriptProjectGraph } from "./typescript-project-graph.js";
@@ -25,7 +25,7 @@ export interface SemanticReferenceLocation {
   readonly isDefinition: boolean;
 }
 
-export class TypeScriptSemanticQueryService {
+export class TypeScriptSemanticQueryService implements PositionDefinitionResolver {
   private files: WorkspaceSnapshot["files"] = [];
   private readonly definitionsByIdentity = new Map<
     string,
@@ -38,6 +38,7 @@ export class TypeScriptSemanticQueryService {
   private readonly callTargetsByIdentity = new Map<string, Promise<CallTargetResolution>>();
   private readonly callersByIdentity = new Map<string, Promise<readonly CallEdge[]>>();
   private readonly calleesByIdentity = new Map<string, Promise<readonly CallEdge[]>>();
+  private readonly definitionsByPosition = new Map<string, readonly SemanticNodeLocation[]>();
 
   constructor(
     private readonly projects: TypeScriptProjectGraph | undefined,
@@ -115,6 +116,7 @@ export class TypeScriptSemanticQueryService {
       workspaceState: this.workspaceState,
       files: this.files,
       identity,
+      definitionResolver: this,
     });
     this.calleesByIdentity.set(key, callees);
     return callees;
@@ -123,6 +125,37 @@ export class TypeScriptSemanticQueryService {
   releaseTransientResources(): void {
     this.clearQueryCaches();
     this.projects?.releaseTransientResources();
+  }
+
+  definitionNodesOf(node: Node): readonly Node[] {
+    if (!Node.isIdentifier(node) && !Node.isPrivateIdentifier(node)) return [];
+    const relativePath = this.workspaceState.relativePathOf(node.getSourceFile());
+    if (!relativePath) return [];
+    const key = `${relativePath}:${node.getStart()}`;
+    let locations = this.definitionsByPosition.get(key);
+    if (!locations) {
+      this.observer?.callTargetResolution?.(relativePath, node.getStart());
+      locations = node.getDefinitionNodes().flatMap((definition) => {
+        const definitionRelativePath = this.workspaceState.relativePathOf(
+          definition.getSourceFile(),
+        );
+        return definitionRelativePath
+          ? [
+              {
+                relativePath: definitionRelativePath,
+                start: definition.getStart(),
+                kind: definition.getKind(),
+              },
+            ]
+          : [];
+      });
+      this.definitionsByPosition.set(key, locations);
+    }
+    return locations.flatMap((location) => {
+      const sourceFile = this.projects?.sourceFileFor(location.relativePath);
+      const definition = this.nodeAtSemanticLocation(location, sourceFile);
+      return definition ? [definition] : [];
+    });
   }
 
   private referenceLocations(
@@ -189,6 +222,21 @@ export class TypeScriptSemanticQueryService {
     this.callTargetsByIdentity.clear();
     this.callersByIdentity.clear();
     this.calleesByIdentity.clear();
+    this.definitionsByPosition.clear();
+  }
+
+  private nodeAtSemanticLocation(
+    location: SemanticNodeLocation,
+    sourceFile: SourceFile | undefined,
+  ): Node | undefined {
+    let node =
+      sourceFile?.getDescendantAtPos(location.start) ??
+      this.workspaceState.nodeAt(location.relativePath, location.start);
+    while (node) {
+      if (node.getStart() === location.start && node.getKind() === location.kind) return node;
+      node = node.getParent();
+    }
+    return undefined;
   }
 
   private static referenceEntriesOf(declarationNode: Node): readonly ReferencedSymbolEntry[] {
@@ -206,4 +254,10 @@ export class TypeScriptSemanticQueryService {
       zeroBasedLine + 1 < lineStarts.length ? lineStarts[zeroBasedLine + 1]! : fullText.length;
     return fullText.slice(start, end).replace(/\r?\n$/, "");
   }
+}
+
+interface SemanticNodeLocation {
+  readonly relativePath: string;
+  readonly start: number;
+  readonly kind: number;
 }

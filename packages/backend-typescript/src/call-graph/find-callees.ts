@@ -25,6 +25,11 @@ export interface FindCalleesArgs {
   readonly workspaceState: TypeScriptWorkspaceState;
   readonly files: readonly ResolvedPath[];
   readonly identity: SymbolIdentity;
+  readonly definitionResolver?: PositionDefinitionResolver;
+}
+
+export interface PositionDefinitionResolver {
+  definitionNodesOf(node: Node): readonly Node[];
 }
 
 export async function findCallees(args: FindCalleesArgs): Promise<readonly CallEdge[]> {
@@ -45,9 +50,11 @@ interface DynamicCandidate {
 
 class CalleeFinder {
   private readonly workspaceState: TypeScriptWorkspaceState;
+  private readonly definitionResolver: PositionDefinitionResolver;
 
   constructor(private readonly args: FindCalleesArgs) {
     this.workspaceState = args.workspaceState;
+    this.definitionResolver = args.definitionResolver ?? new DirectPositionDefinitionResolver();
   }
 
   find(): readonly CallEdge[] {
@@ -147,7 +154,7 @@ class CalleeFinder {
       return unwrapped;
     }
     if (!Node.isIdentifier(unwrapped)) return undefined;
-    for (const declaration of definitionNodesOf(unwrapped)) {
+    for (const declaration of this.definitionResolver.definitionNodesOf(unwrapped)) {
       if (!Node.isVariableDeclaration(declaration)) continue;
       const initializer = declaration.getInitializer();
       if (!initializer) continue;
@@ -165,7 +172,8 @@ class CalleeFinder {
 
   private resolveConstructed(call: NewExpression): ResolvedCallee | undefined {
     const nameNode = calleeNameNode(call.getExpression());
-    const classDeclaration = nameNode && definitionNodesOf(nameNode).find(Node.isClassDeclaration);
+    const classDeclaration =
+      nameNode && this.definitionResolver.definitionNodesOf(nameNode).find(Node.isClassDeclaration);
     if (!classDeclaration) return undefined;
     const constructed = this.constructorTargetOf(classDeclaration);
     const symbol = this.workspaceSymbolFor(constructed);
@@ -199,7 +207,7 @@ class CalleeFinder {
     if (!memberName) return undefined;
     const target = expression.getExpression();
     if (!Node.isIdentifier(target)) return undefined;
-    for (const declaration of definitionNodesOf(target)) {
+    for (const declaration of this.definitionResolver.definitionNodesOf(target)) {
       if (!Node.isVariableDeclaration(declaration)) continue;
       const initializer = declaration.getInitializer();
       if (!initializer || !Node.isObjectLiteralExpression(initializer)) continue;
@@ -225,7 +233,7 @@ class CalleeFinder {
   }
 
   private workspaceSymbolForDefinitionsOf(node: Node): SymbolOverviewNode | undefined {
-    for (const declaration of definitionNodesOf(node)) {
+    for (const declaration of this.definitionResolver.definitionNodesOf(node)) {
       const symbol = this.workspaceSymbolFor(declaration);
       if (symbol) return symbol;
     }
@@ -296,11 +304,13 @@ function calleeNameNode(expression: Node): Node | undefined {
   return undefined;
 }
 
-function definitionNodesOf(node: Node): readonly Node[] {
-  if (Node.isIdentifier(node) || Node.isPrivateIdentifier(node)) {
-    return node.getDefinitionNodes();
+class DirectPositionDefinitionResolver implements PositionDefinitionResolver {
+  definitionNodesOf(node: Node): readonly Node[] {
+    if (Node.isIdentifier(node) || Node.isPrivateIdentifier(node)) {
+      return node.getDefinitionNodes();
+    }
+    return [];
   }
-  return [];
 }
 
 function literalMemberName(node: Node | undefined): string | undefined {

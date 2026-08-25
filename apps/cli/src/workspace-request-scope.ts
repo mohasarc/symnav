@@ -28,10 +28,14 @@ export class WorkspaceRequestScopeFactory {
     startDir: string,
     selectSnapshot?: (workspace: Workspace, router: BackendRouter) => Promise<WorkspaceSnapshot>,
   ): Promise<PreparedCommandScope> {
-    const workspace = this.catalog
-      ? await this.catalog.refresh(startDir)
-      : await createWorkspace({ startDir, fs: this.fs });
+    const workspace = await this.openWorkspace(startDir);
     return this.prepareWorkspace(workspace, selectSnapshot);
+  }
+
+  openWorkspace(startDir: string): Promise<Workspace> {
+    return this.catalog
+      ? this.catalog.refresh(startDir)
+      : createWorkspace({ startDir, fs: this.fs });
   }
 
   async prepareWorkspace(

@@ -55,12 +55,13 @@ export async function runCommand<Result extends ResultWithDiagnostics, Args>(
   let workspace: Workspace | undefined;
 
   try {
-    command.validate?.(args);
     const scopeFactory =
       dependencies.scopeFactory ?? new WorkspaceRequestScopeFactory(fs, dependencies.backends());
+    workspace = await scopeFactory.openWorkspace(cwd);
+    command.validate?.(args);
     const snapshotSelector = command.snapshotForBackendRefresh;
     const preparedScope = snapshotSelector
-      ? await scopeFactory.prepare(cwd, (scopeWorkspace, scopeRouter) =>
+      ? await scopeFactory.prepareWorkspace(workspace, (scopeWorkspace, scopeRouter) =>
           snapshotSelector({
             workspace: scopeWorkspace,
             router: scopeRouter,
@@ -69,7 +70,7 @@ export async function runCommand<Result extends ResultWithDiagnostics, Args>(
             args,
           }),
         )
-      : await scopeFactory.prepare(cwd);
+      : await scopeFactory.prepareWorkspace(workspace);
     workspace = preparedScope.workspace;
     try {
       dependencies.backendRefreshed?.(preparedScope.refresh);

@@ -180,9 +180,11 @@ export class TypeScriptWorkspaceState {
   }
 
   locate(identity: SymbolIdentity): readonly LocatedDeclaration[] {
-    const sourceFile = this.sourceFile(identity.file);
+    const prepared = this.preparedIndex.byRelativePath.get(identity.file);
+    if (!prepared) return [];
+    const sourceFile = this.project.getSourceFile(prepared.file.absolute);
     if (!sourceFile) return [];
-    return new DeclarationLocator(sourceFile).locate(identity);
+    return new DeclarationLocator(sourceFile).locate(identity, prepared.entries.entries);
   }
 
   declarationAt(node: Node): SymbolOverviewNode | undefined {

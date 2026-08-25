@@ -19,6 +19,8 @@ interface ParsedTypeScriptConfiguration {
   readonly content: string;
   readonly value: Record<string, unknown>;
   readonly compilerOptions: ts.CompilerOptions;
+  readonly fileNames: readonly string[];
+  readonly extendedInputs: ReadonlyMap<string, string>;
 }
 
 interface WorkspacePackageMapping {
@@ -92,11 +94,14 @@ export class TypeScriptProjectGraph implements TypeScriptSemanticSourceProvider 
   }
 
   async refresh(snapshot: WorkspaceSnapshot): Promise<TypeScriptProjectGraphRefresh> {
-    const configurations = this.readConfigurations(snapshot.root);
+    const configurations = this.readConfigurations(snapshot);
     const workspacePackages = this.readWorkspacePackages(snapshot, configurations);
     const nextInputs = new Map<string, string>();
     for (const configuration of configurations) {
       nextInputs.set(configuration.path, configuration.content);
+      for (const [path, content] of configuration.extendedInputs) {
+        nextInputs.set(path, content);
+      }
     }
     for (const workspacePackage of workspacePackages) {
       nextInputs.set(workspacePackage.path, workspacePackage.content);
@@ -193,15 +198,17 @@ export class TypeScriptProjectGraph implements TypeScriptSemanticSourceProvider 
     );
   }
 
-  private readConfigurations(root: string): readonly ParsedTypeScriptConfiguration[] {
-    const pending = [posix.join(root, "tsconfig.json")];
+  private readConfigurations(
+    snapshot: WorkspaceSnapshot,
+  ): readonly ParsedTypeScriptConfiguration[] {
+    const pending = [posix.join(snapshot.root, "tsconfig.json")];
     const seen = new Set<string>();
     const configurations: ParsedTypeScriptConfiguration[] = [];
     while (pending.length > 0) {
       const path = pending.shift() as string;
       if (seen.has(path)) continue;
       seen.add(path);
-      const parsed = this.readConfiguration(path);
+      const parsed = this.readConfiguration(path, snapshot);
       if (!parsed) continue;
       configurations.push(parsed);
       const references = Array.isArray(parsed.value.references) ? parsed.value.references : [];
@@ -215,7 +222,10 @@ export class TypeScriptProjectGraph implements TypeScriptSemanticSourceProvider 
     return configurations;
   }
 
-  private readConfiguration(path: string): ParsedTypeScriptConfiguration | undefined {
+  private readConfiguration(
+    path: string,
+    snapshot: WorkspaceSnapshot,
+  ): ParsedTypeScriptConfiguration | undefined {
     if (!this.fileSystem.existsSync(path) || this.fileSystem.isDirectorySync(path)) {
       return undefined;
     }
@@ -223,11 +233,66 @@ export class TypeScriptProjectGraph implements TypeScriptSemanticSourceProvider 
     const parsed = ts.parseConfigFileTextToJson(path, content);
     if (parsed.error || !parsed.config || typeof parsed.config !== "object") return undefined;
     const value = parsed.config as Record<string, unknown>;
-    const compilerOptions = ts.convertCompilerOptionsFromJson(
-      TypeScriptProjectGraph.recordValue(value.compilerOptions),
+    const extendedInputs = new Map<string, string>();
+    const parsedConfiguration = ts.parseJsonConfigFileContent(
+      value,
+      {
+        useCaseSensitiveFileNames: true,
+        fileExists: (candidate) =>
+          this.fileSystem.existsSync(candidate) && !this.fileSystem.isDirectorySync(candidate),
+        readFile: (candidate) => {
+          if (
+            !this.fileSystem.existsSync(candidate) ||
+            this.fileSystem.isDirectorySync(candidate)
+          ) {
+            return undefined;
+          }
+          const candidateContent = this.fileSystem.readFileSync(candidate);
+          extendedInputs.set(candidate, candidateContent);
+          return candidateContent;
+        },
+        readDirectory: (root, extensions, excludes, includes, depth) =>
+          this.readConfiguredDirectory(snapshot, root, extensions, excludes, includes, depth),
+      },
       posix.dirname(path),
-    ).options;
-    return { path, directory: posix.dirname(path), content, value, compilerOptions };
+      undefined,
+      path,
+    );
+    return {
+      path,
+      directory: posix.dirname(path),
+      content,
+      value,
+      compilerOptions: parsedConfiguration.options,
+      fileNames: parsedConfiguration.fileNames,
+      extendedInputs,
+    };
+  }
+
+  private readConfiguredDirectory(
+    snapshot: WorkspaceSnapshot,
+    root: string,
+    extensions: readonly string[],
+    excludes: readonly string[] | undefined,
+    includes: readonly string[] | undefined,
+    depth: number | undefined,
+  ): string[] {
+    return snapshot.files
+      .filter((file) => {
+        const relative = posix.relative(root, file.absolute);
+        if (relative.startsWith("../")) return false;
+        if (depth !== undefined && relative.split("/").length - 1 > depth) return false;
+        if (!extensions.some((extension) => file.absolute.endsWith(extension))) return false;
+        if (
+          includes &&
+          includes.length > 0 &&
+          !includes.some((pattern) => TypeScriptProjectGraph.matchesGlob(relative, pattern))
+        ) {
+          return false;
+        }
+        return !excludes?.some((pattern) => TypeScriptProjectGraph.matchesGlob(relative, pattern));
+      })
+      .map((file) => file.absolute);
   }
 
   private readWorkspacePackages(
@@ -266,29 +331,8 @@ export class TypeScriptProjectGraph implements TypeScriptSemanticSourceProvider 
     snapshot: WorkspaceSnapshot,
     configuration: ParsedTypeScriptConfiguration,
   ): readonly WorkspaceFile[] {
-    const explicitFiles = Array.isArray(configuration.value.files)
-      ? configuration.value.files.filter((file): file is string => typeof file === "string")
-      : undefined;
-    if (explicitFiles) {
-      const absoluteFiles = new Set(
-        explicitFiles.map((file) => posix.resolve(configuration.directory, file)),
-      );
-      return snapshot.files.filter((file) => absoluteFiles.has(file.absolute));
-    }
-    const includes = Array.isArray(configuration.value.include)
-      ? configuration.value.include.filter((value): value is string => typeof value === "string")
-      : ["**/*"];
-    const excludes = Array.isArray(configuration.value.exclude)
-      ? configuration.value.exclude.filter((value): value is string => typeof value === "string")
-      : ["node_modules", "bower_components", "jspm_packages"];
-    return snapshot.files.filter((file) => {
-      const relative = posix.relative(configuration.directory, file.absolute);
-      if (relative.startsWith("../")) return false;
-      if (!includes.some((pattern) => TypeScriptProjectGraph.matchesGlob(relative, pattern))) {
-        return false;
-      }
-      return !excludes.some((pattern) => TypeScriptProjectGraph.matchesGlob(relative, pattern));
-    });
+    const configuredPaths = new Set(configuration.fileNames);
+    return snapshot.files.filter((file) => configuredPaths.has(file.absolute));
   }
 
   private static compilerOptionsFor(
@@ -323,7 +367,11 @@ export class TypeScriptProjectGraph implements TypeScriptSemanticSourceProvider 
   }
 
   private static matchesGlob(path: string, pattern: string): boolean {
-    const normalized = pattern.replace(/^\.\//, "").replace(/\/$/, "/**/*");
+    const relativePattern = pattern.replace(/^\.\//, "");
+    const normalized =
+      !relativePattern.includes("*") && posix.extname(relativePattern) === ""
+        ? `${relativePattern.replace(/\/$/, "")}/**/*`
+        : relativePattern.replace(/\/$/, "/**/*");
     let expression = "";
     for (let index = 0; index < normalized.length; index += 1) {
       const character = normalized[index] as string;

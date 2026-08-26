@@ -12,8 +12,6 @@ import type {
   DaemonExecuteRequest,
   DaemonExecutionFailureCode,
   DaemonRecord,
-  DaemonRequest,
-  DaemonResponse,
 } from "./daemon-protocol.js";
 import { DaemonRegistry } from "./daemon-registry.js";
 import {
@@ -53,7 +51,6 @@ interface DaemonDispatchRegistry {
 }
 
 interface DaemonDispatchTransport {
-  request(endpoint: string, request: DaemonRequest): Promise<DaemonResponse>;
   execute(endpoint: string, request: DaemonExecuteRequest): Promise<DaemonExecutionReceipt>;
 }
 

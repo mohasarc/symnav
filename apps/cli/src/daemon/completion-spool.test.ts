@@ -47,9 +47,7 @@ describe("DaemonCompletionSpoolStore", () => {
     }
     const records = [];
     for await (const record of spool.read(1)) records.push(record);
-    expect(records).toEqual([
-      { sequence: 1, stream: "stderr", bytes: Buffer.from("x") },
-    ]);
+    expect(records).toEqual([{ sequence: 1, stream: "stderr", bytes: Buffer.from("x") }]);
 
     await spool.acknowledge();
     expect(store.usage()).toEqual({ rawBytes: 0, completionCount: 0 });

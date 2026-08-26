@@ -108,27 +108,73 @@ describe("DaemonCommandDispatcher", () => {
 
   it.each([
     new DaemonTransportError("timeout", "submitted-unconfirmed", "request timed out"),
-    new DaemonTransportError("closed", "accepted", "request closed"),
-    new Error("ambiguous transport failure"),
-  ])("never replays or mutates after ambiguous warm failure %#", async (failure) => {
+    new DaemonTransportError("closed", "accepted", "request closed", "instance-1"),
+    new DaemonTransportError(
+      "rejected",
+      "submitted-unconfirmed",
+      "non-retry rejection",
+      "instance-1",
+      false,
+    ),
+    new Error("malformed accepted completion"),
+  ])("returns a controlled result without replay or mutation after uncertain delivery %#", async (failure) => {
     const harness = new DispatchHarness(failure);
 
-    await expect(harness.dispatcher().execute(request)).rejects.toBe(failure);
+    await expect(harness.dispatcher().execute(request)).resolves.toMatchObject({
+      mode: "warm",
+      result: { exitCode: 1, frames: [expect.objectContaining({ stream: "stderr" })] },
+    });
 
     expect(harness.coldExecute).not.toHaveBeenCalled();
     expect(harness.removeIfProcess).not.toHaveBeenCalled();
     expect(harness.trigger).not.toHaveBeenCalled();
   });
 
-  it("does not replay an incomplete accepted result", async () => {
+  it("returns a controlled result without replay for a malformed completion", async () => {
     const harness = new DispatchHarness({ frames: [], exitCode: 1.5 });
 
-    await expect(harness.dispatcher().execute(request)).rejects.toThrow(
-      "Daemon returned an incomplete command result",
-    );
+    await expect(harness.dispatcher().execute(request)).resolves.toMatchObject({
+      mode: "warm",
+      result: { exitCode: 1 },
+    });
 
     expect(harness.coldExecute).not.toHaveBeenCalled();
   });
+
+  it("falls back once after an authenticated retry-safe rejection", async () => {
+    const harness = new DispatchHarness(
+      new DaemonTransportError(
+        "rejected",
+        "submitted-unconfirmed",
+        "not ready",
+        "instance-1",
+        true,
+      ),
+    );
+
+    await expect(harness.dispatcher().execute(request)).resolves.toEqual({
+      mode: "fallback",
+      result: success,
+    });
+
+    expect(harness.coldExecute).toHaveBeenCalledOnce();
+    expect(harness.removeIfProcess).not.toHaveBeenCalled();
+  });
+
+  it.each(["worker-exit", "controlled-resource", "response-capacity", "stopping", "internal"])(
+    "returns one controlled result and never replays terminal daemon failure %s",
+    async (code) => {
+      const harness = new DispatchHarness({ failed: code as DaemonFailureCode });
+
+      await expect(harness.dispatcher().execute(request)).resolves.toMatchObject({
+        mode: "warm",
+        result: { exitCode: 1 },
+      });
+
+      expect(harness.coldExecute).not.toHaveBeenCalled();
+      expect(harness.removeIfProcess).not.toHaveBeenCalled();
+    },
+  );
 
   it("does not mutate or trigger from an unresponsive observation", async () => {
     const harness = new DispatchHarness(success, { observationKind: "unresponsive" });
@@ -206,7 +252,10 @@ class DispatchHarness {
   private readonly runtime: DaemonDispatchRuntime;
 
   constructor(
-    private readonly daemonAnswer: CommandExecutionResult | Error,
+    private readonly daemonAnswer:
+      | CommandExecutionResult
+      | Error
+      | { readonly failed: DaemonFailureCode },
     private readonly options: DispatchHarnessOptions = {},
   ) {
     this.registered =
@@ -288,6 +337,13 @@ class DispatchHarness {
     return this.requests.filter((daemonRequest) => daemonRequest.kind === "execute");
   }
 }
+
+type DaemonFailureCode =
+  | "worker-exit"
+  | "controlled-resource"
+  | "response-capacity"
+  | "stopping"
+  | "internal";
 
 function daemonRecord(instanceId = "instance-1"): DaemonRecord {
   return {

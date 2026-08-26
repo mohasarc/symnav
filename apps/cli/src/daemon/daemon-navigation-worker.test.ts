@@ -40,6 +40,34 @@ describe("NodeDaemonNavigationWorker", () => {
     await expect(worker.exited).resolves.toMatchObject({ generation: 7, cause: "error" });
   });
 
+  it("acknowledges a worker chunk only after the resumable owner appends it", async () => {
+    const worker = createWorker("block");
+    await worker.start("/repo");
+    let releaseAppend!: () => void;
+    const appendAllowed = new Promise<void>((resolve) => {
+      releaseAppend = resolve;
+    });
+    let appended = false;
+    const execution = worker.execute("request-1", request, {
+      append: async () => {
+        appended = true;
+        await appendAllowed;
+      },
+    });
+    while (!appended) await new Promise((resolve) => setTimeout(resolve, 1));
+
+    let completed = false;
+    void execution.then(() => {
+      completed = true;
+    });
+    await new Promise((resolve) => setTimeout(resolve, 25));
+    expect(completed).toBe(false);
+
+    releaseAppend();
+    await expect(execution).resolves.toMatchObject({ kind: "result", requestId: "request-1" });
+    await worker.drainAndClose();
+  });
+
   it("ignores late responses from a fenced generation", async () => {
     const worker = createWorker("late-generation");
 

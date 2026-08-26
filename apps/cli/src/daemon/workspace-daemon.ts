@@ -361,8 +361,9 @@ export class WorkspaceDaemon {
     if (request.kind === "result-fetch") {
       let disconnectTraceConnection: (() => void) | undefined;
       if (this.acceptedRequests.entryFor(request.requestId)?.state.state === "completed") {
-        this.reattachOperationTrace(request.requestId);
+        const traceWasDisconnected = !this.operationTraceConnections.has(request.requestId);
         disconnectTraceConnection = this.attachOperationTraceConnection(request.requestId, send);
+        if (traceWasDisconnected) this.reattachOperationTrace(request.requestId);
       }
       try {
         await this.deliverStoredCompletion(request.requestId, send, request.offset);
@@ -526,12 +527,13 @@ export class WorkspaceDaemon {
     }
     const acceptance = this.acceptances.get(request.requestId);
     if (acceptance === undefined) throw new Error("Accepted request is missing admission metadata");
+    const traceWasDisconnected = !this.operationTraceConnections.has(request.requestId);
     const disconnectTraceConnection = this.attachOperationTraceConnection(request.requestId, send);
     if (existing === undefined) {
       this.lastNavigationAt = this.now();
       this.lifetime.navigationAccepted();
       void this.executeAccepted(request);
-    } else {
+    } else if (traceWasDisconnected) {
       this.reattachOperationTrace(request.requestId);
     }
     try {

@@ -1085,7 +1085,8 @@ export class LocalDaemonTransport {
         (value.currentCommand !== undefined && typeof value.currentCommand !== "string") ||
         (value.currentCommandElapsedMs !== undefined &&
           typeof value.currentCommandElapsedMs !== "number") ||
-        (value.queued !== undefined && typeof value.queued !== "number")
+        (value.queued !== undefined && typeof value.queued !== "number") ||
+        (value.activity !== undefined && !LocalDaemonTransport.isActivitySnapshot(value.activity))
       ) {
         throw new Error("Malformed daemon pong");
       }
@@ -1355,6 +1356,37 @@ export class LocalDaemonTransport {
     if (value.state === "queued") return LocalDaemonTransport.isCount(value.queuePosition);
     if (value.state === "running") return LocalDaemonTransport.isMetric(value.startedAt);
     return value.state === "failed" && LocalDaemonTransport.isExecutionFailureCode(value.code);
+  }
+
+  private static isActivitySnapshot(value: unknown): boolean {
+    if (!LocalDaemonTransport.isRecord(value)) return false;
+    const lifecycle = value.lifecycle;
+    const current = value.current;
+    return (
+      (lifecycle === "starting" ||
+        lifecycle === "ready" ||
+        lifecycle === "busy" ||
+        lifecycle === "recovering" ||
+        lifecycle === "draining") &&
+      LocalDaemonTransport.isCount(value.pid) &&
+      LocalDaemonTransport.isMetric(value.startedAt) &&
+      LocalDaemonTransport.isMetric(value.startupElapsedMs) &&
+      (value.fileCount === undefined || LocalDaemonTransport.isCount(value.fileCount)) &&
+      LocalDaemonTransport.isCount(value.processRssBytes) &&
+      LocalDaemonTransport.isCount(value.hardProcessRssBytes) &&
+      (value.workerHeapUsedBytes === undefined ||
+        LocalDaemonTransport.isCount(value.workerHeapUsedBytes)) &&
+      LocalDaemonTransport.isCount(value.workerGeneration) &&
+      (current === undefined ||
+        (LocalDaemonTransport.isRecord(current) &&
+          typeof current.requestId === "string" &&
+          typeof current.command === "string" &&
+          LocalDaemonTransport.isMetric(current.elapsedMs))) &&
+      LocalDaemonTransport.isCount(value.queued) &&
+      (value.lastCompletedAgoMs === undefined ||
+        LocalDaemonTransport.isMetric(value.lastCompletedAgoMs)) &&
+      LocalDaemonTransport.isCount(value.spoolBytes)
+    );
   }
 
   private static isCount(value: unknown): boolean {

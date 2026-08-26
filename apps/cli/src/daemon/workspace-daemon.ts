@@ -869,6 +869,11 @@ export class WorkspaceDaemon {
 
   private attachOperationTraceConnection(requestId: string, send: DaemonServerSend): () => void {
     const connectionCount = this.operationTraceConnections.get(requestId) ?? 0;
+    if (connectionCount === 0) {
+      const expiration = this.operationTraceExpirations.get(requestId);
+      if (expiration !== undefined) clearTimeout(expiration);
+      this.operationTraceExpirations.delete(requestId);
+    }
     this.operationTraceConnections.set(requestId, connectionCount + 1);
     let connectionClosed = false;
     const disconnect = (): void => {
@@ -888,9 +893,6 @@ export class WorkspaceDaemon {
 
   private reattachOperationTrace(requestId: string): void {
     if (this.acceptedRequests.isDeliveryTerminated(requestId)) return;
-    const expiration = this.operationTraceExpirations.get(requestId);
-    if (expiration !== undefined) clearTimeout(expiration);
-    this.operationTraceExpirations.delete(requestId);
     const trace = this.operationTraces.get(requestId);
     if (trace === undefined) this.operationObserver.reattached(requestId);
     else trace.reattached();

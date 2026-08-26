@@ -3,6 +3,7 @@ import { DaemonProcessConfigurationParser } from "./daemon-process-launcher.js";
 import { DaemonRegistry } from "./daemon-registry.js";
 import { DaemonWorkspaceIdentity } from "./daemon-workspace-identity.js";
 import { LocalDaemonTransport } from "./local-daemon-transport.js";
+import { DaemonResourcePolicy } from "./daemon-resource-monitor.js";
 import { WorkspaceDaemon } from "./workspace-daemon.js";
 
 class DaemonEntry {
@@ -30,6 +31,9 @@ class DaemonEntry {
       processToken: configuration.processToken,
       symnavVersion: configuration.symnavVersion,
       memoryCapBytes: configuration.memoryCapBytes,
+      resourcePolicy: DaemonResourcePolicy.fromSystemMemory(
+        configuration.resourcePolicy.effectiveMemoryBytes,
+      ),
       dependencies,
       registry,
       transport: new LocalDaemonTransport(),

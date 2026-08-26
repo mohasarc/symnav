@@ -93,6 +93,21 @@ export class AcceptedRequestLedger {
     });
   }
 
+  invalidateCompletion(
+    requestId: string,
+    code: DaemonExecutionFailureCode,
+    completedAt: number,
+  ): AcceptedRequestEntry {
+    const entry = this.entry(requestId);
+    if (entry.state.state !== "completed") {
+      throw new Error(`Accepted request ${requestId} is not completed`);
+    }
+    return this.publish({
+      ...entry,
+      state: { state: "failed", completedAt, code },
+    });
+  }
+
   status(requestId: string): DaemonExecutionStatus {
     const state = this.entries.get(requestId)?.state;
     if (state === undefined) return { state: "unknown" };

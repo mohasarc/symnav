@@ -15,8 +15,10 @@ import type {
 } from "./daemon-protocol.js";
 import {
   CompletionSpoolCapacityError,
+  CompletionSpoolReadError,
   DaemonCompletionSpoolStore,
   type CompletionSpool,
+  type CompletionSpoolStorage,
 } from "./completion-spool.js";
 import { DAEMON_PROTOCOL_VERSION, DAEMON_RECORD_SCHEMA_VERSION } from "./daemon-protocol.js";
 import { DAEMON_IDLE_TIMEOUT_MS, DaemonLifetime } from "./daemon-lifetime.js";
@@ -57,6 +59,7 @@ export interface WorkspaceDaemonOptions {
     readonly maximumResultBytes?: number;
     readonly maximumAggregateBytes?: number;
   };
+  readonly completionSpoolStorage?: CompletionSpoolStorage;
 }
 
 export class WorkspaceDaemon {
@@ -97,6 +100,9 @@ export class WorkspaceDaemon {
       workspaceKey: options.identity.workspaceKey,
       instanceId: options.instanceId,
       ...options.completionSpoolLimits,
+      ...(options.completionSpoolStorage === undefined
+        ? {}
+        : { storage: options.completionSpoolStorage }),
     });
     this.logger = new DaemonLogger(options.identity.logPath, { now: this.now });
     this.navigationWorker =
@@ -291,9 +297,7 @@ export class WorkspaceDaemon {
     }
     if (request.kind === "execute") return this.acceptExecution(request, send);
     if (request.kind === "result-fetch") {
-      const spool = await this.completionSpools.open(request.requestId);
-      if (spool === undefined) throw new Error("Accepted request completion is unavailable");
-      await this.deliverCompletion(request.requestId, spool, request.offset, send);
+      await this.deliverStoredCompletion(request.requestId, send, request.offset);
       return;
     }
     if (request.kind === "result-ack") {
@@ -302,7 +306,13 @@ export class WorkspaceDaemon {
       if (spool.completedManifest?.transferId !== request.transferId) {
         throw new Error("Result acknowledgement does not match completion transfer");
       }
-      await spool.acknowledge();
+      await spool.acknowledge().catch((error) => {
+        this.logger.record({
+          kind: "failure",
+          operation: "completion-cleanup",
+          message: WorkspaceDaemon.errorMessage(error),
+        });
+      });
       this.acceptedRequests.acknowledge(request.requestId);
       return {
         kind: "result-acknowledged",
@@ -458,8 +468,8 @@ export class WorkspaceDaemon {
     request: Extract<DaemonRequest, { kind: "execute" }>,
   ): Promise<void> {
     const requestStartedAt = this.now();
+    let spool: CompletionSpool | undefined;
     try {
-      let spool: CompletionSpool | undefined;
       const result = await this.requestQueue.enqueue(
         {
           requestId: request.requestId,
@@ -483,8 +493,8 @@ export class WorkspaceDaemon {
       );
       if (spool === undefined) throw new Error("Completion spool was not created");
       await spool.finish(result.exitCode);
-      this.acceptedRequests.complete(request.requestId, request.requestId, this.now());
       await this.recordCompletion(request, requestStartedAt, result);
+      this.acceptedRequests.complete(request.requestId, request.requestId, this.now());
     } catch (error) {
       this.logger.record({
         kind: "failure",
@@ -500,6 +510,13 @@ export class WorkspaceDaemon {
             : this.shutdownStarted
               ? "stopping"
               : "internal");
+      await spool?.dispose().catch((cleanupError) => {
+        this.logger.record({
+          kind: "failure",
+          operation: "completion-cleanup",
+          message: WorkspaceDaemon.errorMessage(cleanupError),
+        });
+      });
       this.acceptedRequests.fail(request.requestId, code, this.now());
     } finally {
       if (this.requestQueue.isIdle) this.lifetime.queueBecameIdle();
@@ -557,10 +574,29 @@ export class WorkspaceDaemon {
   private async deliverStoredCompletion(
     requestId: string,
     send: DaemonServerSend,
+    offset = 0,
   ): Promise<void> {
     const spool = await this.completionSpools.open(requestId);
     if (spool === undefined) throw new Error("Accepted request result is missing");
-    await this.deliverCompletion(requestId, spool, 0, send);
+    try {
+      await this.deliverCompletion(requestId, spool, offset, send);
+    } catch (error) {
+      if (!(error instanceof CompletionSpoolReadError)) throw error;
+      this.logger.record({
+        kind: "failure",
+        operation: "completion-delivery",
+        message: WorkspaceDaemon.errorMessage(error),
+      });
+      await spool.dispose().catch((cleanupError) => {
+        this.logger.record({
+          kind: "failure",
+          operation: "completion-cleanup",
+          message: WorkspaceDaemon.errorMessage(cleanupError),
+        });
+      });
+      this.acceptedRequests.invalidateCompletion(requestId, "internal", this.now());
+      await this.deliver(send, this.failedFrame(requestId, "internal"));
+    }
   }
 
   private async deliverCompletion(

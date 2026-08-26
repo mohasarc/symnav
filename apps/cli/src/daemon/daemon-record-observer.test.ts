@@ -45,6 +45,18 @@ describe("DaemonRecordObserver", () => {
     expect(transport.requests.map((request) => request.kind).sort()).toEqual(["identify", "ping"]);
   });
 
+  it("keeps authenticated startup truthful while activity is not responsive", async () => {
+    const transport = new ObserverTransport([
+      identityResponse(),
+      new DaemonTransportError("timeout", "submitted-unconfirmed", "Daemon request timed out"),
+    ]);
+
+    await expect(observer(transport, [101]).observe(record("starting"))).resolves.toMatchObject({
+      kind: "starting",
+      record: { instanceId: "instance" },
+    });
+  });
+
   it("reports an authenticated responsive daemon", async () => {
     const transport = new ObserverTransport([
       identityResponse(),

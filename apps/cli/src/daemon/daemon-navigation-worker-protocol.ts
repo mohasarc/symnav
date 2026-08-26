@@ -4,6 +4,7 @@ import type {
   CommandExecutionResult,
   CommandOutputStream,
 } from "../command-execution-result.js";
+import { COMMAND_OUTPUT_CHUNK_BYTES } from "./completion-spool.js";
 
 export type DaemonExecutionFailureCode = "initialization" | "execution" | "protocol" | "resource";
 
@@ -97,6 +98,14 @@ export class DaemonNavigationWorkerProtocol {
       return value as unknown as DaemonNavigationWorkerRequest;
     }
     if (
+      value.kind === "output-ack" &&
+      this.hasKeys(value, ["kind", "generation", "requestId", "sequence"]) &&
+      this.isNonEmptyString(value.requestId) &&
+      this.isCount(value.sequence)
+    ) {
+      return value as unknown as DaemonNavigationWorkerRequest;
+    }
+    if (
       (value.kind === "release-transient" || value.kind === "close") &&
       this.hasKeys(value, ["kind", "generation"])
     ) {
@@ -115,6 +124,17 @@ export class DaemonNavigationWorkerProtocol {
       this.isCount(value.fileCount) &&
       this.isRefresh(value.refresh) &&
       this.isDurations(value.startupDurations, ["discoveryMs", "indexingMs", "totalMs"])
+    ) {
+      return value as unknown as DaemonNavigationWorkerResponse;
+    }
+    if (
+      value.kind === "output-chunk" &&
+      this.hasKeys(value, ["kind", "generation", "requestId", "sequence", "stream", "bytes"]) &&
+      this.isNonEmptyString(value.requestId) &&
+      this.isCount(value.sequence) &&
+      (value.stream === "stdout" || value.stream === "stderr") &&
+      value.bytes instanceof Uint8Array &&
+      value.bytes.byteLength <= COMMAND_OUTPUT_CHUNK_BYTES
     ) {
       return value as unknown as DaemonNavigationWorkerResponse;
     }

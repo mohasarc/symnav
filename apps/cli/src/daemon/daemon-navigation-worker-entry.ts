@@ -25,6 +25,7 @@ class DaemonNavigationWorkerEntry {
     unchanged: 0,
   };
   private tail: Promise<void> = Promise.resolve();
+  private readonly outputAcknowledgements = new Map<string, () => void>();
 
   constructor(
     private readonly port: NonNullable<typeof parentPort>,
@@ -33,6 +34,22 @@ class DaemonNavigationWorkerEntry {
 
   run(): void {
     this.port.on("message", (value: unknown) => {
+      if (
+        typeof value === "object" &&
+        value !== null &&
+        "kind" in value &&
+        value.kind === "output-ack"
+      ) {
+        try {
+          const request = DaemonNavigationWorkerProtocol.request(value);
+          if (request.kind !== "output-ack") throw new Error("Invalid output acknowledgement");
+          this.acknowledgeOutput(request.requestId, request.sequence);
+          return;
+        } catch (error) {
+          this.fail("protocol", error);
+          return;
+        }
+      }
       this.tail = this.tail.then(() => this.handle(value));
     });
   }
@@ -88,11 +105,15 @@ class DaemonNavigationWorkerEntry {
     try {
       if (this.retainedProgram === undefined) throw new Error("Navigation worker is not ready");
       const result = await this.retainedProgram.execute(request.request);
+      for await (const record of result.output?.records() ?? []) {
+        await this.sendOutput(request.requestId, record);
+      }
+      await result.output?.dispose();
       this.send({
         kind: "result",
         generation: this.data.generation,
         requestId: request.requestId,
-        result,
+        result: { frames: [], exitCode: result.exitCode },
         refresh: this.latestRefresh,
         durations: {
           freshnessMs: 0,
@@ -142,7 +163,43 @@ class DaemonNavigationWorkerEntry {
   }
 
   private send(response: DaemonNavigationWorkerResponse): void {
-    this.port.postMessage(DaemonNavigationWorkerProtocol.response(response));
+    const validated = DaemonNavigationWorkerProtocol.response(response);
+    if (validated.kind === "output-chunk") {
+      this.port.postMessage(validated, [validated.bytes.buffer as ArrayBuffer]);
+      return;
+    }
+    this.port.postMessage(validated);
+  }
+
+  private sendOutput(
+    requestId: string,
+    record: import("../command-execution-result.js").CommandOutputRecord,
+  ): Promise<void> {
+    const key = `${requestId}:${record.sequence}`;
+    if (this.outputAcknowledgements.has(key)) {
+      return Promise.reject(new Error("Duplicate worker output sequence"));
+    }
+    const acknowledgement = new Promise<void>((resolve) => {
+      this.outputAcknowledgements.set(key, resolve);
+    });
+    const bytes = Uint8Array.from(record.bytes);
+    this.send({
+      kind: "output-chunk",
+      generation: this.data.generation,
+      requestId,
+      sequence: record.sequence,
+      stream: record.stream,
+      bytes,
+    });
+    return acknowledgement;
+  }
+
+  private acknowledgeOutput(requestId: string, sequence: number): void {
+    const key = `${requestId}:${sequence}`;
+    const resolve = this.outputAcknowledgements.get(key);
+    if (resolve === undefined) throw new Error("Unexpected worker output acknowledgement");
+    this.outputAcknowledgements.delete(key);
+    resolve();
   }
 }
 

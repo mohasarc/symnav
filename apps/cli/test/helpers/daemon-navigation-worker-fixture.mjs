@@ -3,6 +3,7 @@ import { existsSync, writeFileSync } from "node:fs";
 
 const generation = 7;
 let executionCount = 0;
+const pendingResults = new Map();
 
 parentPort.on("message", (message) => {
   if (message.kind === "initialize") {
@@ -50,6 +51,25 @@ parentPort.on("message", (message) => {
       refresh: { added: 0, changed: 0, removed: 0, unchanged: 1 },
       durations: { freshnessMs: 1, navigationMs: 149, renderMs: 0, outputMs: 0 },
     };
+    pendingResults.set(message.requestId, result);
+    const bytes = Uint8Array.from(Buffer.from("worker output\n"));
+    parentPort.postMessage(
+      {
+        kind: "output-chunk",
+        generation,
+        requestId: message.requestId,
+        sequence: 0,
+        stream: "stdout",
+        bytes,
+      },
+      [bytes.buffer],
+    );
+    return;
+  }
+  if (message.kind === "output-ack") {
+    const result = pendingResults.get(message.requestId);
+    if (result === undefined || message.sequence !== 0) throw new Error("unexpected output ack");
+    pendingResults.delete(message.requestId);
     parentPort.postMessage(result);
     if (workerData.mode === "duplicate") parentPort.postMessage(result);
     return;

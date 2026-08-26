@@ -17,11 +17,16 @@ describe("NodeDaemonNavigationWorker", () => {
     await expect(initializationTimer).resolves.toBeLessThan(100);
 
     const executionTimer = timerTurn();
-    await expect(worker.execute("request-1", request)).resolves.toMatchObject({
+    const response = await worker.execute("request-1", request);
+    expect(response).toMatchObject({
       kind: "result",
       requestId: "request-1",
       result: { exitCode: 0 },
     });
+    if (response.kind !== "result") throw new Error("Expected worker result");
+    expect(response.result.frames).toEqual([
+      { stream: "stdout", bytesBase64: Buffer.from("worker output\n").toString("base64") },
+    ]);
     await expect(executionTimer).resolves.toBeLessThan(100);
     await worker.drainAndClose();
     await expect(worker.exited).resolves.toEqual({ generation: 7, cause: "closed" });

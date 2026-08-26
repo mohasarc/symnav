@@ -1,5 +1,5 @@
 import { Worker } from "node:worker_threads";
-import type { CliExecutionRequest } from "../command-execution-result.js";
+import { OrderedCommandOutput, type CliExecutionRequest } from "../command-execution-result.js";
 import {
   DaemonNavigationWorkerProtocol,
   type DaemonNavigationWorkerRequest,
@@ -42,6 +42,9 @@ export interface NodeDaemonNavigationWorkerOptions {
 interface PendingWorkerResponse {
   readonly resolve: (response: DaemonNavigationWorkerResponse) => void;
   readonly reject: (error: Error) => void;
+  readonly output?: OrderedCommandOutput;
+  nextSequence: number;
+  chunkInFlight: boolean;
 }
 
 export class NodeDaemonNavigationWorker implements DaemonNavigationWorker {
@@ -71,7 +74,7 @@ export class NodeDaemonNavigationWorker implements DaemonNavigationWorker {
         },
       },
     );
-    this.worker.on("message", (value: unknown) => this.receive(value));
+    this.worker.on("message", (value: unknown) => void this.receive(value));
     this.worker.once("error", (error) => this.failCommunication(error));
     this.worker.once("exit", () => this.finishExit());
   }
@@ -88,12 +91,16 @@ export class NodeDaemonNavigationWorker implements DaemonNavigationWorker {
     requestId: string,
     request: CliExecutionRequest,
   ): Promise<DaemonNavigationWorkerResponse> {
-    return this.send(`execute:${requestId}`, {
-      kind: "execute",
-      generation: this.generation,
-      requestId,
-      request,
-    });
+    return this.send(
+      `execute:${requestId}`,
+      {
+        kind: "execute",
+        generation: this.generation,
+        requestId,
+        request,
+      },
+      new OrderedCommandOutput(),
+    );
   }
 
   releaseTransientResources(): Promise<DaemonNavigationWorkerResponse> {
@@ -119,6 +126,7 @@ export class NodeDaemonNavigationWorker implements DaemonNavigationWorker {
   private send(
     key: string,
     request: DaemonNavigationWorkerRequest,
+    output?: OrderedCommandOutput,
   ): Promise<DaemonNavigationWorkerResponse> {
     if (this.exit !== undefined)
       return Promise.reject(new Error("Daemon navigation worker exited"));
@@ -126,13 +134,19 @@ export class NodeDaemonNavigationWorker implements DaemonNavigationWorker {
       return Promise.reject(new Error(`Duplicate daemon navigation worker request: ${key}`));
     }
     const response = new Promise<DaemonNavigationWorkerResponse>((resolve, reject) => {
-      this.pending.set(key, { resolve, reject });
+      this.pending.set(key, {
+        resolve,
+        reject,
+        ...(output === undefined ? {} : { output }),
+        nextSequence: 0,
+        chunkInFlight: false,
+      });
     });
     this.worker.postMessage(DaemonNavigationWorkerProtocol.request(request));
     return response;
   }
 
-  private receive(value: unknown): void {
+  private async receive(value: unknown): Promise<void> {
     let response: DaemonNavigationWorkerResponse;
     try {
       response = DaemonNavigationWorkerProtocol.response(value);
@@ -141,6 +155,10 @@ export class NodeDaemonNavigationWorker implements DaemonNavigationWorker {
       return;
     }
     if (response.generation !== this.generation) return;
+    if (response.kind === "output-chunk") {
+      await this.receiveOutputChunk(response);
+      return;
+    }
     const key = NodeDaemonNavigationWorker.responseKey(response);
     if (this.completed.has(key)) {
       this.failCommunication(new Error(`Duplicate daemon navigation worker response: ${key}`));
@@ -158,7 +176,46 @@ export class NodeDaemonNavigationWorker implements DaemonNavigationWorker {
       return;
     }
     if (response.kind === "closed") this.closeAcknowledged = true;
+    if (response.kind === "result" && pending.output !== undefined) {
+      const result = await pending.output.finish(response.result.exitCode);
+      pending.resolve({ ...response, result });
+      return;
+    }
     pending.resolve(response);
+  }
+
+  private async receiveOutputChunk(
+    response: Extract<DaemonNavigationWorkerResponse, { kind: "output-chunk" }>,
+  ): Promise<void> {
+    const key = `execute:${response.requestId}`;
+    const pending = this.pending.get(key);
+    if (
+      pending?.output === undefined ||
+      pending.chunkInFlight ||
+      response.sequence !== pending.nextSequence
+    ) {
+      this.failCommunication(new Error(`Unexpected daemon navigation worker output: ${key}`));
+      return;
+    }
+    pending.chunkInFlight = true;
+    try {
+      await new Promise<void>((resolve, reject) => {
+        pending.output?.[response.stream].write(response.bytes, (error) =>
+          error ? reject(error) : resolve(),
+        );
+      });
+      pending.nextSequence += 1;
+      pending.chunkInFlight = false;
+      const acknowledgement: DaemonNavigationWorkerRequest = {
+        kind: "output-ack",
+        generation: this.generation,
+        requestId: response.requestId,
+        sequence: response.sequence,
+      };
+      this.worker.postMessage(DaemonNavigationWorkerProtocol.request(acknowledgement));
+    } catch (error) {
+      this.failCommunication(error);
+    }
   }
 
   private failCommunication(error: unknown): void {

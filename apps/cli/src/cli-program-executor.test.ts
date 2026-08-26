@@ -1,8 +1,10 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import type { Writable } from "node:stream";
 import { afterEach, describe, expect, it } from "vitest";
 import { InMemoryFileSystem, WorkspaceCatalog, type OverviewFileEntries } from "@symnav/core";
+import * as commandExecutionResult from "./command-execution-result.js";
 import { CliProgramExecutor, CommandResultReplayer } from "./cli-program-executor.js";
 import { fakeDependencies } from "../test/integration/commands/helpers/fake-program-dependencies.js";
 import { createCapturingRecorder } from "../test/integration/commands/helpers/fake-program-dependencies.js";
@@ -42,6 +44,70 @@ describe("CliProgramExecutor", () => {
     expect(context.stderr.text()).toBe("Warning: unicode ✓\nnext\n");
     expect(context.stdout.text()).toBe("Overview: src/a.ts\n(no symbols)\n");
     expect(context.exitCodes).toEqual([]);
+  });
+
+  it("replays identical ordered bytes from inline and spilled command output", async () => {
+    const spillDirectory = mkdtempSync(join(tmpdir(), "symnav-ordered-output-"));
+    temporaryRoots.push(spillDirectory);
+    const OrderedCommandOutput = (
+      commandExecutionResult as unknown as {
+        OrderedCommandOutput: new (options: {
+          readonly directory?: string;
+          readonly inlineBytes: number;
+        }) => {
+          readonly stdout: Writable;
+          readonly stderr: Writable;
+          finish(exitCode: number): Promise<{
+            readonly exitCode: number;
+            readonly output: {
+              readonly summary: { readonly rawBytes: number; readonly recordCount: number };
+              records(): AsyncIterable<{
+                readonly sequence: number;
+                readonly stream: "stdout" | "stderr";
+                readonly bytes: Uint8Array;
+              }>;
+              dispose(): Promise<void>;
+            };
+          }>;
+        };
+      }
+    ).OrderedCommandOutput;
+    const writes = Array.from({ length: 128 }, (_, index) => ({
+      stream: index % 3 === 0 ? ("stderr" as const) : ("stdout" as const),
+      bytes: Buffer.from(`${index}:unicode-✓\n`),
+    }));
+    const expectedStreams = writes.reduce<Array<"stdout" | "stderr">>((streams, write) => {
+      if (streams.at(-1) !== write.stream) streams.push(write.stream);
+      return streams;
+    }, []);
+    const capture = async (inlineBytes: number) => {
+      const output = new OrderedCommandOutput({ directory: spillDirectory, inlineBytes });
+      for (const write of writes) {
+        await new Promise<void>((resolve, reject) => {
+          output[write.stream].write(write.bytes, (error) => (error ? reject(error) : resolve()));
+        });
+      }
+      const result = await output.finish(7);
+      const records = [];
+      for await (const record of result.output.records()) {
+        records.push({ ...record, bytes: Buffer.from(record.bytes).toString("hex") });
+      }
+      await result.output.dispose();
+      return { result, records };
+    };
+
+    const inline = await capture(Number.MAX_SAFE_INTEGER);
+    const spilled = await capture(1);
+
+    expect(spilled.records).toEqual(inline.records);
+    expect(inline.result.exitCode).toBe(7);
+    expect(inline.result.output.summary.rawBytes).toBe(
+      writes.reduce((total, write) => total + write.bytes.byteLength, 0),
+    );
+    expect(inline.result.output.summary.recordCount).toBe(expectedStreams.length);
+    expect(inline.records.map(({ sequence, stream }) => ({ sequence, stream }))).toEqual(
+      expectedStreams.map((stream, sequence) => ({ sequence, stream })),
+    );
   });
 
   it.each([

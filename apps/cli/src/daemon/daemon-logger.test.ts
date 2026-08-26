@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, readdirSync, rmSync, statSync } from "node:fs";
+import { mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -183,6 +183,19 @@ describe("DaemonLogger", () => {
     expect(storage.events().at(-1)).toMatchObject({ droppedCount: 1 });
   });
 
+  it("isolates append and rotation failures from records and flush", async () => {
+    const root = mkdtempSync(join(tmpdir(), "symnav-daemon-failure-"));
+    roots.push(root);
+    const identity = DaemonWorkspaceIdentity.from("/repo", root);
+    const logger = new DaemonLogger(identity, "failure", new NodeDaemonClock(), {
+      rotateBytes: 1,
+      storage: new FailingLogStorage(),
+    });
+
+    expect(() => logger.record({ kind: "ready", fileCount: 1 })).not.toThrow();
+    await expect(logger.flush()).resolves.toBeUndefined();
+    await expect(logger.close()).resolves.toBeUndefined();
+  });
 });
 
 class BlockingLogStorage implements DaemonLogStorage {
@@ -233,5 +246,31 @@ class BlockingLogStorage implements DaemonLogStorage {
 
   events(): readonly Record<string, unknown>[] {
     return this.lines.map((line) => JSON.parse(line) as Record<string, unknown>);
+  }
+}
+
+class FailingLogStorage implements DaemonLogStorage {
+  prepare(): Promise<void> {
+    return Promise.reject(new Error("prepare failed"));
+  }
+
+  size(): Promise<number> {
+    return Promise.resolve(2);
+  }
+
+  append(): Promise<void> {
+    return Promise.reject(new Error("append failed"));
+  }
+
+  move(): Promise<void> {
+    return Promise.reject(new Error("rotation failed"));
+  }
+
+  remove(): Promise<void> {
+    return Promise.reject(new Error("remove failed"));
+  }
+
+  sync(): Promise<void> {
+    return Promise.reject(new Error("sync failed"));
   }
 }

@@ -360,7 +360,9 @@ export class WorkspaceDaemon {
         status: this.acceptedRequests.status(request.requestId),
       };
     }
+    this.beginGracefulShutdown();
     await this.requestQueue.drain();
+    await this.waitForCompletionAcknowledgements();
     setTimeout(() => void this.shutdown("graceful"), 0);
     return { kind: "stopped", instanceId: this.options.instanceId };
   }
@@ -390,8 +392,10 @@ export class WorkspaceDaemon {
     ) {
       throw new Error("Daemon termination does not match process instance");
     }
+    this.beginGracefulShutdown();
     if (request.kind === "terminate") {
       await this.requestQueue.drain();
+      await this.waitForCompletionAcknowledgements();
       setTimeout(() => void this.shutdown("graceful"), 0);
     } else {
       setTimeout(() => void this.shutdown("graceful", true), 0);
@@ -724,14 +728,13 @@ export class WorkspaceDaemon {
     await this.shutdown(reason);
   }
 
+  private beginGracefulShutdown(): void {
+    this.shutdownFailureCode ??= "stopping";
+    this.resourceSupervisor.stop();
+  }
+
   private async initiateResourceDrain(): Promise<void> {
-    const acknowledgementDeadline = Date.now() + 250;
-    while (
-      this.acceptedRequests.hasUnacknowledgedCompletions &&
-      Date.now() < acknowledgementDeadline
-    ) {
-      await new Promise((resolve) => setTimeout(resolve, 5));
-    }
+    await this.waitForCompletionAcknowledgements();
     void this.shutdown("resource", true).catch((error) => {
       this.logger.record({
         kind: "failure",
@@ -739,6 +742,16 @@ export class WorkspaceDaemon {
         message: WorkspaceDaemon.errorMessage(error),
       });
     });
+  }
+
+  private async waitForCompletionAcknowledgements(): Promise<void> {
+    const acknowledgementDeadline = Date.now() + 250;
+    while (
+      this.acceptedRequests.hasUnacknowledgedCompletions &&
+      Date.now() < acknowledgementDeadline
+    ) {
+      await new Promise((resolve) => setTimeout(resolve, 5));
+    }
   }
 
   private async shutdown(

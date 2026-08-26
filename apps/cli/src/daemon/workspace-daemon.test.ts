@@ -74,6 +74,40 @@ describe("WorkspaceDaemon runtime lifecycle", () => {
     await expect(harness.ping()).rejects.toThrow();
   });
 
+  it("preserves an earlier graceful stop when resource pressure arrives during its drain", async () => {
+    let resourceExceeded = false;
+    const resourcePolicy = DaemonResourcePolicy.fromSystemMemory(512 * 1024 * 1024);
+    const executor = new DeferredExecutor();
+    const harness = await WorkspaceDaemonHarness.start(executor, {
+      resourcePolicy,
+      resourceCheckIntervalMs: 5,
+      residentMemoryBytes: () =>
+        resourceExceeded ? resourcePolicy.record.hardProcessRssBytes + 1 : 0,
+    });
+    harnesses.push(harness);
+    const execution = harness.execute("navigation");
+    await executor.started;
+    const stopping = harness.stop();
+    await expect(harness.execute("after-stop")).rejects.toThrow(/draining/);
+
+    resourceExceeded = true;
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    executor.complete(emptyResult());
+
+    await expect(execution).resolves.toMatchObject({
+      status: "completed",
+      result: { exitCode: 0 },
+    });
+    await expect(stopping).resolves.toEqual({
+      kind: "stopped",
+      instanceId: harness.instanceId,
+    });
+    await harness.exited;
+    expect(harness.logEvents()).toEqual(
+      expect.arrayContaining([expect.objectContaining({ kind: "stop", reason: "graceful" })]),
+    );
+  });
+
   it("force-stops a matching daemon with a stuck request inside the bound", async () => {
     const executor = new DeferredExecutor();
     const harness = await WorkspaceDaemonHarness.start(executor);

@@ -19,7 +19,10 @@ import type {
   DaemonServer,
 } from "./daemon-protocol.js";
 import { DaemonResultChunkCodec, DaemonTransferFrameDecoder } from "./daemon-result-chunk-codec.js";
-import { DAEMON_MAXIMUM_CONTROL_FRAME_BYTES } from "./completion-spool.js";
+import {
+  DAEMON_MAXIMUM_CONTROL_FRAME_BYTES,
+  type CompletionSpoolManifest,
+} from "./completion-spool.js";
 
 const DEFAULT_MAXIMUM_FRAME_BYTES = 8 * 1024 * 1024;
 const DEFAULT_REQUEST_TIMEOUT_MS = 250;
@@ -30,6 +33,8 @@ interface LocalDaemonTransportOptions {
   readonly requestTimeoutMs?: number;
   readonly executionRequestTimeoutMs?: number;
   readonly writeChunkSize?: number;
+  readonly outputDirectory?: string;
+  readonly outputInlineBytes?: number;
 }
 
 export type DaemonDeliveryState = "not-submitted" | "submitted-unconfirmed" | "accepted";
@@ -148,6 +153,8 @@ export class LocalDaemonTransport {
   private readonly requestTimeoutMs: number;
   private readonly executionRequestTimeoutMs: number;
   private readonly writeChunkSize: number | undefined;
+  private readonly outputDirectory: string | undefined;
+  private readonly outputInlineBytes: number | undefined;
 
   constructor(options: LocalDaemonTransportOptions = {}) {
     this.maximumFrameBytes = options.maximumFrameBytes ?? DEFAULT_MAXIMUM_FRAME_BYTES;
@@ -155,6 +162,8 @@ export class LocalDaemonTransport {
     this.executionRequestTimeoutMs =
       options.executionRequestTimeoutMs ?? DEFAULT_EXECUTION_REQUEST_TIMEOUT_MS;
     this.writeChunkSize = options.writeChunkSize;
+    this.outputDirectory = options.outputDirectory;
+    this.outputInlineBytes = options.outputInlineBytes;
   }
 
   canFrame(value: unknown): boolean {
@@ -280,7 +289,10 @@ export class LocalDaemonTransport {
     LocalDaemonTransport.assertRequest(request);
     return new Promise((resolve, reject) => {
       const decoder = new DaemonTransferFrameDecoder(DAEMON_MAXIMUM_CONTROL_FRAME_BYTES);
-      const output = new OrderedCommandOutput();
+      const output = new OrderedCommandOutput({
+        ...(this.outputDirectory === undefined ? {} : { directory: this.outputDirectory }),
+        ...(this.outputInlineBytes === undefined ? {} : { inlineBytes: this.outputInlineBytes }),
+      });
       let manifest:
         | Extract<DaemonExecutionServerFrame, { kind: "result-manifest" }>["manifest"]
         | undefined;
@@ -305,12 +317,12 @@ export class LocalDaemonTransport {
         socket.destroy();
         if (!outerSettled) {
           outerSettled = true;
-          reject(transportError);
+          void output.dispose().finally(() => reject(transportError));
           return;
         }
         if (!completionSettled) {
           completionSettled = true;
-          rejectCompletion(transportError);
+          void output.dispose().finally(() => rejectCompletion(transportError));
         }
       };
       const resume = (): boolean => {
@@ -448,10 +460,7 @@ export class LocalDaemonTransport {
             }
             if (terminal) throw new Error("Daemon returned duplicate terminal frame");
             terminal = true;
-            terminalValue =
-              frame.kind === "completed"
-                ? { status: "completed", result: frame.result }
-                : { status: "failed", code: frame.code };
+            terminalValue = { status: "failed", code: frame.code };
           }
           if (acceptance !== undefined && !outerSettled) {
             outerSettled = true;
@@ -517,7 +526,9 @@ export class LocalDaemonTransport {
         socket.destroy();
         reject(LocalDaemonTransport.transportError(error, "accepted"));
       };
-      socket.once("error", fail);
+      socket.once("error", (error) =>
+        fail(new DaemonTransportError("closed", "accepted", error.message, request.instanceId)),
+      );
       socket.once("connect", () => {
         this.writeFrame(socket, {
           kind: "result-fetch",
@@ -915,7 +926,6 @@ export class LocalDaemonTransport {
     if (
       value.kind === "accepted" ||
       value.kind === "rejected" ||
-      value.kind === "completed" ||
       value.kind === "result-manifest" ||
       value.kind === "result-end" ||
       value.kind === "execution-failed"
@@ -973,7 +983,6 @@ export class LocalDaemonTransport {
     if (
       value.kind !== "accepted" &&
       value.kind !== "rejected" &&
-      value.kind !== "completed" &&
       value.kind !== "result-manifest" &&
       value.kind !== "result-end" &&
       value.kind !== "execution-failed"
@@ -1019,6 +1028,14 @@ export class LocalDaemonTransport {
     }
     if (value.kind === "accepted") {
       if (
+        !LocalDaemonTransport.hasExactKeys(value, [
+          "kind",
+          "instanceId",
+          "processToken",
+          "requestId",
+          "acceptedAt",
+          "queuePosition",
+        ]) ||
         !LocalDaemonTransport.isMetric(value.acceptedAt) ||
         !LocalDaemonTransport.isCount(value.queuePosition)
       ) {
@@ -1028,6 +1045,14 @@ export class LocalDaemonTransport {
     }
     if (value.kind === "rejected") {
       if (
+        !LocalDaemonTransport.hasExactKeys(value, [
+          "kind",
+          "instanceId",
+          "processToken",
+          "requestId",
+          "code",
+          "retrySafe",
+        ]) ||
         !LocalDaemonTransport.isExecuteRejectionCode(value.code) ||
         typeof value.retrySafe !== "boolean"
       ) {
@@ -1035,32 +1060,85 @@ export class LocalDaemonTransport {
       }
       return;
     }
-    if (value.kind === "completed") {
-      if (!LocalDaemonTransport.isExecutionResult(value.result)) {
-        throw new Error("Malformed daemon execution completion");
-      }
-      return;
-    }
     if (value.kind === "result-manifest") {
-      if (!LocalDaemonTransport.isRecord(value.manifest)) {
+      if (
+        !LocalDaemonTransport.hasExactKeys(value, [
+          "kind",
+          "instanceId",
+          "processToken",
+          "requestId",
+          "manifest",
+        ]) ||
+        !LocalDaemonTransport.isCompletionManifest(value.manifest) ||
+        value.manifest.instanceId !== value.instanceId ||
+        value.manifest.requestId !== value.requestId
+      ) {
         throw new Error("Malformed daemon result manifest");
       }
       return;
     }
     if (value.kind === "result-end") {
       if (
+        !LocalDaemonTransport.hasExactKeys(value, [
+          "kind",
+          "instanceId",
+          "processToken",
+          "requestId",
+          "transferId",
+          "rawBytes",
+          "recordCount",
+          "sha256",
+        ]) ||
         typeof value.transferId !== "string" ||
         !LocalDaemonTransport.isCount(value.rawBytes) ||
         !LocalDaemonTransport.isCount(value.recordCount) ||
-        typeof value.sha256 !== "string"
+        !LocalDaemonTransport.isDigest(value.sha256)
       ) {
         throw new Error("Malformed daemon result end");
       }
       return;
     }
-    if (!LocalDaemonTransport.isExecutionFailureCode(value.code)) {
+    if (
+      !LocalDaemonTransport.hasExactKeys(value, [
+        "kind",
+        "instanceId",
+        "processToken",
+        "requestId",
+        "code",
+      ]) ||
+      !LocalDaemonTransport.isExecutionFailureCode(value.code)
+    ) {
       throw new Error("Malformed daemon execution failure");
     }
+  }
+
+  private static isCompletionManifest(value: unknown): value is CompletionSpoolManifest {
+    return (
+      LocalDaemonTransport.isRecord(value) &&
+      LocalDaemonTransport.hasExactKeys(value, [
+        "transferId",
+        "requestId",
+        "instanceId",
+        "exitCode",
+        "rawBytes",
+        "recordCount",
+        "sha256",
+      ]) &&
+      typeof value.transferId === "string" &&
+      value.transferId.length > 0 &&
+      typeof value.requestId === "string" &&
+      value.requestId.length > 0 &&
+      typeof value.instanceId === "string" &&
+      value.instanceId.length > 0 &&
+      LocalDaemonTransport.isCount(value.exitCode) &&
+      LocalDaemonTransport.isCount(value.rawBytes) &&
+      LocalDaemonTransport.isCount(value.recordCount) &&
+      LocalDaemonTransport.isDigest(value.sha256)
+    );
+  }
+
+  private static isDigest(value: unknown): value is string {
+    return typeof value === "string" && /^[a-f\d]{64}$/.test(value);
   }
 
   private static isExecuteRejectionCode(value: unknown): boolean {
@@ -1113,28 +1191,6 @@ export class LocalDaemonTransport {
         value.executionMode === "warm" ||
         value.executionMode === "fallback")
     );
-  }
-
-  private static isExecutionResult(value: unknown): boolean {
-    if (
-      !LocalDaemonTransport.isRecord(value) ||
-      !LocalDaemonTransport.hasExactKeys(value, ["frames", "exitCode"]) ||
-      !Array.isArray(value.frames) ||
-      !Number.isInteger(value.exitCode)
-    )
-      return false;
-    return value.frames.every(
-      (frame) =>
-        LocalDaemonTransport.isRecord(frame) &&
-        (frame.stream === "stdout" || frame.stream === "stderr") &&
-        typeof frame.bytesBase64 === "string" &&
-        LocalDaemonTransport.isBase64(frame.bytesBase64),
-    );
-  }
-
-  private static isBase64(value: string): boolean {
-    if (value.length % 4 !== 0) return false;
-    return /^(?:[A-Za-z\d+/]{4})*(?:[A-Za-z\d+/]{2}==|[A-Za-z\d+/]{3}=)?$/.test(value);
   }
 
   private static isRecord(value: unknown): value is Record<string, unknown> {

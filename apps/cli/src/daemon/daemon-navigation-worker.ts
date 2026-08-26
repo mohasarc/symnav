@@ -1,6 +1,5 @@
 import { Worker } from "node:worker_threads";
-import { OrderedCommandOutput, type CliExecutionRequest } from "../command-execution-result.js";
-import type { CommandOutputRecord } from "../command-execution-result.js";
+import type { CliExecutionRequest, CommandOutputRecord } from "../command-execution-result.js";
 import {
   DaemonNavigationWorkerProtocol,
   type DaemonNavigationWorkerRequest,
@@ -30,7 +29,7 @@ export interface DaemonNavigationWorker {
   execute(
     requestId: string,
     request: CliExecutionRequest,
-    output?: { append(record: CommandOutputRecord): Promise<void> },
+    output: { append(record: CommandOutputRecord): Promise<void> },
   ): Promise<DaemonNavigationWorkerResponse>;
   releaseTransientResources(): Promise<DaemonNavigationWorkerResponse>;
   drainAndClose(): Promise<void>;
@@ -47,8 +46,7 @@ export interface NodeDaemonNavigationWorkerOptions {
 interface PendingWorkerResponse {
   readonly resolve: (response: DaemonNavigationWorkerResponse) => void;
   readonly reject: (error: Error) => void;
-  readonly output?: OrderedCommandOutput;
-  readonly appendOutput?: (record: CommandOutputRecord) => Promise<void>;
+  readonly appendOutput: (record: CommandOutputRecord) => Promise<void>;
   nextSequence: number;
   chunkInFlight: boolean;
 }
@@ -96,9 +94,8 @@ export class NodeDaemonNavigationWorker implements DaemonNavigationWorker {
   execute(
     requestId: string,
     request: CliExecutionRequest,
-    output?: { append(record: CommandOutputRecord): Promise<void> },
+    output: { append(record: CommandOutputRecord): Promise<void> },
   ): Promise<DaemonNavigationWorkerResponse> {
-    const orderedOutput = output === undefined ? new OrderedCommandOutput() : undefined;
     return this.send(
       `execute:${requestId}`,
       {
@@ -107,8 +104,7 @@ export class NodeDaemonNavigationWorker implements DaemonNavigationWorker {
         requestId,
         request,
       },
-      orderedOutput,
-      output?.append.bind(output),
+      output.append.bind(output),
     );
   }
 
@@ -135,8 +131,7 @@ export class NodeDaemonNavigationWorker implements DaemonNavigationWorker {
   private send(
     key: string,
     request: DaemonNavigationWorkerRequest,
-    output?: OrderedCommandOutput,
-    appendOutput?: (record: CommandOutputRecord) => Promise<void>,
+    appendOutput: ((record: CommandOutputRecord) => Promise<void>) | undefined = undefined,
   ): Promise<DaemonNavigationWorkerResponse> {
     if (this.exit !== undefined)
       return Promise.reject(new Error("Daemon navigation worker exited"));
@@ -147,8 +142,8 @@ export class NodeDaemonNavigationWorker implements DaemonNavigationWorker {
       this.pending.set(key, {
         resolve,
         reject,
-        ...(output === undefined ? {} : { output }),
-        ...(appendOutput === undefined ? {} : { appendOutput }),
+        appendOutput:
+          appendOutput ?? (() => Promise.reject(new Error("Worker output sink is unavailable"))),
         nextSequence: 0,
         chunkInFlight: false,
       });
@@ -187,11 +182,6 @@ export class NodeDaemonNavigationWorker implements DaemonNavigationWorker {
       return;
     }
     if (response.kind === "closed") this.closeAcknowledged = true;
-    if (response.kind === "result" && pending.output !== undefined) {
-      const result = await pending.output.finish(response.result.exitCode);
-      pending.resolve({ ...response, result });
-      return;
-    }
     pending.resolve(response);
   }
 
@@ -201,7 +191,7 @@ export class NodeDaemonNavigationWorker implements DaemonNavigationWorker {
     const key = `execute:${response.requestId}`;
     const pending = this.pending.get(key);
     if (
-      (pending?.output === undefined && pending?.appendOutput === undefined) ||
+      pending === undefined ||
       pending.chunkInFlight ||
       response.sequence !== pending.nextSequence
     ) {
@@ -215,15 +205,7 @@ export class NodeDaemonNavigationWorker implements DaemonNavigationWorker {
         stream: response.stream,
         bytes: response.bytes,
       };
-      if (pending.appendOutput === undefined) {
-        await new Promise<void>((resolve, reject) => {
-          pending.output?.[response.stream].write(response.bytes, (error) =>
-            error ? reject(error) : resolve(),
-          );
-        });
-      } else {
-        await pending.appendOutput(record);
-      }
+      await pending.appendOutput(record);
       pending.nextSequence += 1;
       pending.chunkInFlight = false;
       const acknowledgement: DaemonNavigationWorkerRequest = {

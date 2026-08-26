@@ -1,8 +1,8 @@
-import type { CliExecutionRequest, CommandExecutionResult } from "../command-execution-result.js";
+import type { CliExecutionRequest } from "../command-execution-result.js";
 import type { CompletionSpoolManifest } from "./completion-spool.js";
 import type { CommandOutputStream } from "../command-execution-result.js";
 
-export const DAEMON_PROTOCOL_VERSION = 3;
+export const DAEMON_PROTOCOL_VERSION = 4;
 export const DAEMON_RECORD_SCHEMA_VERSION = 2;
 
 export interface DaemonIdentityCoordinates {
@@ -89,13 +89,6 @@ export type DaemonExecutionServerFrame =
       readonly requestId: string;
       readonly code: DaemonExecuteRejectionCode;
       readonly retrySafe: boolean;
-    }
-  | {
-      readonly kind: "completed";
-      readonly instanceId: string;
-      readonly processToken: string;
-      readonly requestId: string;
-      readonly result: CommandExecutionResult;
     }
   | {
       readonly kind: "result-manifest";

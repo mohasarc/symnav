@@ -113,7 +113,7 @@ class DaemonNavigationWorkerEntry {
         kind: "result",
         generation: this.data.generation,
         requestId: request.requestId,
-        result: { frames: [], exitCode: result.exitCode },
+        result: { exitCode: result.exitCode },
         refresh: this.latestRefresh,
         durations: {
           freshnessMs: 0,

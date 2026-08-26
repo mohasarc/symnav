@@ -1,9 +1,5 @@
 import type { BackendRefreshSummary } from "@symnav/core";
-import type {
-  CliExecutionRequest,
-  CommandExecutionResult,
-  CommandOutputStream,
-} from "../command-execution-result.js";
+import type { CliExecutionRequest, CommandOutputStream } from "../command-execution-result.js";
 import { COMMAND_OUTPUT_CHUNK_BYTES } from "./completion-spool.js";
 
 export type DaemonExecutionFailureCode = "initialization" | "execution" | "protocol" | "resource";
@@ -58,7 +54,7 @@ export type DaemonNavigationWorkerResponse =
       readonly kind: "result";
       readonly generation: number;
       readonly requestId: string;
-      readonly result: CommandExecutionResult;
+      readonly result: { readonly exitCode: number };
       readonly refresh: BackendRefreshSummary;
       readonly durations: WorkerCommandDurations;
     }
@@ -182,20 +178,9 @@ export class DaemonNavigationWorkerProtocol {
     );
   }
 
-  private static isExecutionResult(value: unknown): value is CommandExecutionResult {
-    if (!this.isRecord(value)) return false;
-    const keys = ["frames", "exitCode"];
+  private static isExecutionResult(value: unknown): value is { readonly exitCode: number } {
     return (
-      this.hasKeys(value, keys) &&
-      Array.isArray(value.frames) &&
-      value.frames.every(
-        (frame) =>
-          this.isRecord(frame) &&
-          this.hasKeys(frame, ["stream", "bytesBase64"]) &&
-          (frame.stream === "stdout" || frame.stream === "stderr") &&
-          this.isCanonicalBase64(frame.bytesBase64),
-      ) &&
-      this.isCount(value.exitCode)
+      this.isRecord(value) && this.hasKeys(value, ["exitCode"]) && this.isCount(value.exitCode)
     );
   }
 
@@ -250,15 +235,6 @@ export class DaemonNavigationWorkerProtocol {
 
   private static isMetric(value: unknown): value is number {
     return typeof value === "number" && Number.isFinite(value) && value >= 0;
-  }
-
-  private static isCanonicalBase64(value: unknown): value is string {
-    return (
-      typeof value === "string" &&
-      value.length % 4 === 0 &&
-      /^(?:[A-Za-z\d+/]{4})*(?:[A-Za-z\d+/]{2}==|[A-Za-z\d+/]{3}=)?$/.test(value) &&
-      Buffer.from(value, "base64").toString("base64") === value
-    );
   }
 
   private static isNonEmptyString(value: unknown): value is string {

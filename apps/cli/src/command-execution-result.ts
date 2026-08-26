@@ -1,5 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
-import { mkdir, open, readFile, unlink, type FileHandle } from "node:fs/promises";
+import { constants } from "node:fs";
+import { mkdir, open, unlink, type FileHandle } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Writable } from "node:stream";
@@ -27,11 +28,7 @@ export interface CommandOutput {
 }
 
 export interface CommandExecutionResult {
-  readonly output?: CommandOutput;
-  readonly frames: readonly {
-    readonly stream: CommandOutputStream;
-    readonly bytesBase64: string;
-  }[];
+  readonly output: CommandOutput;
   readonly exitCode: number;
 }
 
@@ -89,8 +86,8 @@ class StoredCommandOutput implements CommandOutput {
     const records =
       this.filePath === undefined
         ? this.inlineRecords
-        : OrderedCommandOutput.decodeRecords(await readFile(this.filePath));
-    for (const record of records) {
+        : OrderedCommandOutput.decodeFileRecords(this.filePath);
+    for await (const record of records) {
       if (record.sequence >= offset) yield record;
     }
   }
@@ -100,6 +97,35 @@ class StoredCommandOutput implements CommandOutput {
     await unlink(this.filePath).catch((error: NodeJS.ErrnoException) => {
       if (error.code !== "ENOENT") throw error;
     });
+  }
+}
+
+export class CommandOutputSnapshot implements CommandOutput {
+  readonly summary: CommandOutputSummary;
+  private readonly captured: readonly CommandOutputRecord[];
+
+  constructor(records: readonly Omit<CommandOutputRecord, "sequence">[]) {
+    this.captured = records.map((record, sequence) => ({
+      sequence,
+      stream: record.stream,
+      bytes: Uint8Array.from(record.bytes),
+    }));
+    const hash = createHash("sha256");
+    let rawBytes = 0;
+    for (const record of this.captured) {
+      const encoded = OrderedCommandOutput.encodeRecord(record);
+      hash.update(encoded.subarray(4));
+      rawBytes += record.bytes.byteLength;
+    }
+    this.summary = { rawBytes, recordCount: this.captured.length, sha256: hash.digest("hex") };
+  }
+
+  async *records(offset = 0): AsyncIterable<CommandOutputRecord> {
+    for (const record of this.captured) if (record.sequence >= offset) yield record;
+  }
+
+  dispose(): Promise<void> {
+    return Promise.resolve();
   }
 }
 
@@ -152,16 +178,8 @@ export class OrderedCommandOutput {
       [...this.inlineRecords],
       this.filePath,
     );
-    const frames = [];
-    for await (const record of storedOutput.records()) {
-      frames.push({
-        stream: record.stream,
-        bytesBase64: Buffer.from(record.bytes).toString("base64"),
-      });
-    }
     return {
       output: storedOutput,
-      frames,
       exitCode,
     };
   }
@@ -274,6 +292,53 @@ export class OrderedCommandOutput {
     }
     return records;
   }
+
+  static async *decodeFileRecords(filePath: string): AsyncIterable<CommandOutputRecord> {
+    const noFollow = "O_NOFOLLOW" in constants ? constants.O_NOFOLLOW : 0;
+    const handle = await open(filePath, constants.O_RDONLY | noFollow);
+    try {
+      const metadata = await handle.stat();
+      if (!metadata.isFile()) throw new Error("Command output spool is not a regular file");
+      let position = 0;
+      let expectedSequence = 0;
+      while (position < metadata.size) {
+        const header = Buffer.alloc(RECORD_HEADER_BYTES);
+        await OrderedCommandOutput.readExact(handle, header, position);
+        position += RECORD_HEADER_BYTES;
+        const sequence = header.readUInt32BE(0);
+        const streamByte = header.readUInt8(4);
+        const length = header.readUInt32BE(5);
+        if (sequence !== expectedSequence || streamByte > 1 || length > MAXIMUM_RECORD_BYTES) {
+          throw new Error("Corrupt command output");
+        }
+        const bytes = Buffer.alloc(length);
+        await OrderedCommandOutput.readExact(handle, bytes, position);
+        position += length;
+        expectedSequence += 1;
+        yield { sequence, stream: streamByte === 0 ? "stdout" : "stderr", bytes };
+      }
+    } finally {
+      await handle.close();
+    }
+  }
+
+  private static async readExact(
+    handle: FileHandle,
+    target: Buffer,
+    position: number,
+  ): Promise<void> {
+    let readBytes = 0;
+    while (readBytes < target.byteLength) {
+      const result = await handle.read(
+        target,
+        readBytes,
+        target.byteLength - readBytes,
+        position + readBytes,
+      );
+      if (result.bytesRead === 0) throw new Error("Truncated command output");
+      readBytes += result.bytesRead;
+    }
+  }
 }
 
 export class CommandOutputCapacityError extends Error {
@@ -288,15 +353,8 @@ export class CommandResultReplayer {
     result: CommandExecutionResult,
     context: ProgramContext,
   ): Promise<never | void> {
-    if (result.output === undefined) {
-      for (const frame of result.frames) {
-        context[frame.stream].write(Buffer.from(frame.bytesBase64, "base64"));
-      }
-    } else {
-      for await (const record of result.output.records())
-        context[record.stream].write(record.bytes);
-      await result.output.dispose();
-    }
+    for await (const record of result.output.records()) context[record.stream].write(record.bytes);
+    await result.output.dispose();
     if (result.exitCode !== 0) context.exit(result.exitCode);
   }
 }
@@ -318,17 +376,8 @@ export class ControlledCommandResult {
 
   private static failure(message: string): CommandExecutionResult {
     const bytes = Buffer.from(message);
-    const encoded = OrderedCommandOutput.encodeRecord({ sequence: 0, stream: "stderr", bytes });
     return {
-      output: new StoredCommandOutput(
-        {
-          rawBytes: bytes.byteLength,
-          recordCount: 1,
-          sha256: createHash("sha256").update(encoded.subarray(4)).digest("hex"),
-        },
-        [{ sequence: 0, stream: "stderr", bytes }],
-      ),
-      frames: [{ stream: "stderr", bytesBase64: bytes.toString("base64") }],
+      output: new CommandOutputSnapshot([{ stream: "stderr", bytes }]),
       exitCode: 1,
     };
   }

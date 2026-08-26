@@ -288,7 +288,7 @@ export class DaemonCommandDispatcher {
   }
 
   private static isCompleteResult(result: CommandExecutionResult): boolean {
-    return Number.isInteger(result.exitCode) && Array.isArray(result.frames);
+    return Number.isInteger(result.exitCode) && result.output !== undefined;
   }
 
   private static isRetrySafeFailure(error: unknown): boolean {

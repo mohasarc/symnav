@@ -52,6 +52,11 @@ export interface WorkspaceDaemonOptions {
   readonly resourceCheckIntervalMs?: number;
   readonly residentMemoryBytes?: () => number;
   readonly startupHeartbeatIntervalMs?: number;
+  readonly completionSpoolLimits?: {
+    readonly inlineBytes?: number;
+    readonly maximumResultBytes?: number;
+    readonly maximumAggregateBytes?: number;
+  };
 }
 
 export class WorkspaceDaemon {
@@ -91,6 +96,7 @@ export class WorkspaceDaemon {
       directory: options.identity.spoolDirectory,
       workspaceKey: options.identity.workspaceKey,
       instanceId: options.instanceId,
+      ...options.completionSpoolLimits,
     });
     this.logger = new DaemonLogger(options.identity.logPath, { now: this.now });
     this.navigationWorker =
@@ -293,6 +299,9 @@ export class WorkspaceDaemon {
     if (request.kind === "result-ack") {
       const spool = await this.completionSpools.open(request.requestId);
       if (spool === undefined) throw new Error("Accepted request completion is unavailable");
+      if (spool.completedManifest?.transferId !== request.transferId) {
+        throw new Error("Result acknowledgement does not match completion transfer");
+      }
       await spool.acknowledge();
       this.acceptedRequests.acknowledge(request.requestId);
       return {
@@ -470,20 +479,6 @@ export class WorkspaceDaemon {
         },
       );
       if (spool === undefined) throw new Error("Completion spool was not created");
-      if (result.output === undefined) {
-        let sequence = 0;
-        for (const frame of result.frames) {
-          await spool.append({
-            sequence,
-            stream: frame.stream,
-            bytes: Buffer.from(frame.bytesBase64, "base64"),
-          });
-          sequence += 1;
-        }
-      } else {
-        for await (const record of result.output.records()) await spool.append(record);
-        await result.output.dispose();
-      }
       await spool.finish(result.exitCode);
       this.acceptedRequests.complete(request.requestId, request.requestId, this.now());
       await this.recordCompletion(request, requestStartedAt, result);
@@ -511,7 +506,7 @@ export class WorkspaceDaemon {
   private async recordCompletion(
     request: Extract<DaemonRequest, { kind: "execute" }>,
     requestStartedAt: number,
-    result: CommandExecutionResult,
+    result: { readonly exitCode: number },
   ): Promise<void> {
     this.logger.record({
       kind: "request",
@@ -639,6 +634,13 @@ export class WorkspaceDaemon {
         message: WorkspaceDaemon.errorMessage(error),
       });
     }
+    await this.completionSpools.cleanupInstance(this.options.instanceId).catch((error) => {
+      this.logger.record({
+        kind: "failure",
+        operation: "completion-cleanup",
+        message: WorkspaceDaemon.errorMessage(error),
+      });
+    });
     this.exit(0);
   }
 

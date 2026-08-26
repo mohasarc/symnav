@@ -1,5 +1,4 @@
 import { createHash, randomUUID } from "node:crypto";
-import { constants } from "node:fs";
 import { mkdir, open, rm, unlink, type FileHandle } from "node:fs/promises";
 import { join } from "node:path";
 import {
@@ -141,8 +140,8 @@ export class CompletionSpool {
     const records =
       this.filePath === undefined
         ? this.inlineRecords
-        : OrderedCommandOutput.decodeRecords(await this.secureRead());
-    for (const record of records) {
+        : OrderedCommandOutput.decodeFileRecords(this.filePath);
+    for await (const record of records) {
       if (record.sequence >= offset) yield record;
     }
   }
@@ -182,19 +181,6 @@ export class CompletionSpool {
       await this.file.write(OrderedCommandOutput.encodeRecord(record));
     }
     this.inlineRecords.length = 0;
-  }
-
-  private async secureRead(): Promise<Buffer> {
-    if (this.filePath === undefined) return Buffer.alloc(0);
-    const noFollow = "O_NOFOLLOW" in constants ? constants.O_NOFOLLOW : 0;
-    const handle = await open(this.filePath, constants.O_RDONLY | noFollow);
-    try {
-      const metadata = await handle.stat();
-      if (!metadata.isFile()) throw new Error("Completion spool is not a regular file");
-      return await handle.readFile();
-    } finally {
-      await handle.close();
-    }
   }
 }
 

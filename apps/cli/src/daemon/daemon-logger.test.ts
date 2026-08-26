@@ -15,7 +15,7 @@ describe("DaemonLogger", () => {
     roots.length = 0;
   });
 
-  it("writes ordered JSON lifecycle, request, freshness, and failure events", () => {
+  it("writes ordered JSON lifecycle, request, freshness, and failure events", async () => {
     const root = mkdtempSync(join(tmpdir(), "symnav-daemon-log-"));
     roots.push(root);
     const identity = DaemonWorkspaceIdentity.from("/repo", root);
@@ -37,6 +37,7 @@ describe("DaemonLogger", () => {
       errorName: "Error",
     });
     logger.record({ kind: "stop", reason: "graceful" });
+    await logger.flush();
 
     const events = readFileSync(identity.logPath, "utf8")
       .trim()

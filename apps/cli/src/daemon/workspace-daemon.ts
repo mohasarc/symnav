@@ -77,6 +77,7 @@ export interface WorkspaceDaemonOptions {
 }
 
 const DEFAULT_OPERATION_TRACE_RETENTION_MS = 5 * 60 * 1000;
+const DEFAULT_MAXIMUM_RETAINED_OPERATION_TRACES = 1_024;
 
 export interface DaemonWorkerGeneration {
   readonly id: number;
@@ -817,6 +818,7 @@ export class WorkspaceDaemon {
     );
     expiration.unref();
     this.operationTraceExpirations.set(requestId, expiration);
+    this.enforceOperationTraceCapacity();
   }
 
   private reattachOperationTrace(requestId: string): void {
@@ -830,6 +832,22 @@ export class WorkspaceDaemon {
     this.operationTraceExpirations.delete(requestId);
     if (!this.operationTraces.delete(requestId)) return;
     this.operationObserver.traceExpired(requestId);
+  }
+
+  private enforceOperationTraceCapacity(): void {
+    const capacity = Math.max(
+      1,
+      this.options.maximumRetainedOperationTraces ?? DEFAULT_MAXIMUM_RETAINED_OPERATION_TRACES,
+    );
+    while (this.operationTraceExpirations.size > capacity) {
+      const oldestRequestId = this.operationTraceExpirations.keys().next().value as
+        | string
+        | undefined;
+      if (oldestRequestId === undefined) return;
+      const expiration = this.operationTraceExpirations.get(oldestRequestId);
+      if (expiration !== undefined) clearTimeout(expiration);
+      this.expireOperationTrace(oldestRequestId);
+    }
   }
 
   private async drainAndShutdown(reason: "idle"): Promise<void> {

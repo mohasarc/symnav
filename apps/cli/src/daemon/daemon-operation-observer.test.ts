@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { DaemonClock } from "./daemon-clock.js";
 import {
   DaemonOperationObserver,
+  type DaemonDiagnosticEvent,
   type DaemonOperationDiagnostic,
 } from "./daemon-operation-observer.js";
 
@@ -93,6 +94,68 @@ describe("DaemonOperationObserver", () => {
 
     expect(events.filter((event) => event.kind === "execution-terminal")).toHaveLength(1);
     expect(events.filter((event) => event.kind === "delivery-terminal")).toHaveLength(1);
+  });
+
+  it("records closed startup, worker recovery, and shutdown diagnostics", () => {
+    const events: DaemonDiagnosticEvent[] = [];
+    const observer = new DaemonOperationObserver(
+      { record: (event) => events.push(event) },
+      new MutableDaemonClock(1, 1),
+    );
+
+    observer.startup({
+      kind: "startup-completed",
+      workerGeneration: 1,
+      fileCount: 14,
+      discoveryMs: 3,
+      indexingMs: 20,
+      totalMs: 23,
+    });
+    observer.worker({
+      kind: "resources-released",
+      workerGeneration: 1,
+      workerHeapUsedBytes: 256,
+      workerHeapLimitBytes: 1_024,
+    });
+    observer.worker({
+      kind: "worker-replaced",
+      cause: "shed-failure",
+      previousWorkerGeneration: 1,
+      workerGeneration: 2,
+      fileCount: 14,
+      discoveryMs: 2,
+      indexingMs: 18,
+      totalMs: 20,
+    });
+    observer.shutdown({ kind: "shutdown", reason: "resource", force: true });
+
+    expect(events).toEqual([
+      {
+        kind: "startup-completed",
+        workerGeneration: 1,
+        fileCount: 14,
+        discoveryMs: 3,
+        indexingMs: 20,
+        totalMs: 23,
+      },
+      {
+        kind: "resources-released",
+        workerGeneration: 1,
+        workerHeapUsedBytes: 256,
+        workerHeapLimitBytes: 1_024,
+      },
+      {
+        kind: "worker-replaced",
+        cause: "shed-failure",
+        previousWorkerGeneration: 1,
+        workerGeneration: 2,
+        fileCount: 14,
+        discoveryMs: 2,
+        indexingMs: 18,
+        totalMs: 20,
+      },
+      { kind: "shutdown", reason: "resource", force: true },
+    ]);
   });
 });
 

@@ -167,6 +167,30 @@ describe("DaemonResourceSupervisor", () => {
     expect(supervisor.snapshot.processRssBytes).toBe(policy.record.hardProcessRssBytes + 1);
   });
 
+  it("reports large disk spools without treating them as process RSS", async () => {
+    const policy = DaemonResourcePolicy.fromSystemMemory(GIBIBYTE);
+    const replaceWorker = vi.fn(async () => 2);
+    const supervisor = new DaemonResourceSupervisor({
+      policy,
+      generation: 1,
+      residentMemoryBytes: () => policy.record.resumeProcessRssBytes - 1,
+      spoolBytes: () => 12 * MEBIBYTE,
+      releaseTransientResources: async () => undefined,
+      replaceWorker,
+      drain: async () => undefined,
+    });
+
+    await supervisor.sample("admission");
+
+    expect(supervisor.snapshot).toMatchObject({
+      state: "ready",
+      processRssBytes: policy.record.resumeProcessRssBytes - 1,
+      spoolBytes: 12 * MEBIBYTE,
+      admissionPaused: false,
+    });
+    expect(replaceWorker).not.toHaveBeenCalled();
+  });
+
   it("drains on a third pressure replacement inside ten minutes", async () => {
     const policy = DaemonResourcePolicy.fromSystemMemory(GIBIBYTE);
     let generation = 1;

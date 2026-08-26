@@ -404,9 +404,10 @@ describe("symnav daemon status", () => {
 
     expect(response.status).toBe("completed");
     if (response.status !== "completed") throw new Error("Expected command result");
-    expect(replay(response.result.frames, "stdout")).toBe(cold.stdout);
-    expect(replay(response.result.frames, "stderr")).toBe(cold.stderr);
+    expect(await replay(response.result.output, "stdout")).toBe(cold.stdout);
+    expect(await replay(response.result.output, "stderr")).toBe(cold.stderr);
     expect(response.result.exitCode).toBe(cold.status);
+    await response.result.output.dispose();
     await waitUntil(() => {
       runSymnavBinary(["daemon", "status", "--json"], {
         cwd: tmpdir(),
@@ -578,15 +579,15 @@ function daemonRecords(stateDir: string): readonly DaemonRecord[] {
   );
 }
 
-function replay(
-  frames: readonly { readonly stream: "stdout" | "stderr"; readonly bytesBase64: string }[],
+async function replay(
+  output: import("../../../src/command-execution-result.js").CommandOutput,
   stream: "stdout" | "stderr",
-): string {
-  return Buffer.concat(
-    frames
-      .filter((frame) => frame.stream === stream)
-      .map((frame) => Buffer.from(frame.bytesBase64, "base64")),
-  ).toString("utf8");
+): Promise<string> {
+  const chunks = [];
+  for await (const record of output.records()) {
+    if (record.stream === stream) chunks.push(Buffer.from(record.bytes));
+  }
+  return Buffer.concat(chunks).toString("utf8");
 }
 
 async function waitUntil(predicate: () => boolean, timeoutMs = 5_000): Promise<void> {

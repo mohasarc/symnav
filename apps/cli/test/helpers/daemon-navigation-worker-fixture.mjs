@@ -47,7 +47,7 @@ parentPort.on("message", (message) => {
       kind: "result",
       generation,
       requestId: message.requestId,
-      result: { frames: [], exitCode: 0 },
+      result: { exitCode: 0 },
       refresh: { added: 0, changed: 0, removed: 0, unchanged: 1 },
       durations: { freshnessMs: 1, navigationMs: 149, renderMs: 0, outputMs: 0 },
     };

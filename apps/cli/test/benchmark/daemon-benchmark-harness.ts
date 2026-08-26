@@ -201,7 +201,7 @@ export class DaemonBenchmarkHarness {
         `Benchmark commands exited ${first.result.exitCode} and ${second.result.exitCode}`,
       );
     }
-    if (JSON.stringify(first.result.frames) !== JSON.stringify(second.result.frames)) {
+    if (first.result.output.summary.sha256 !== second.result.output.summary.sha256) {
       throw new Error("First and second benchmark commands produced different output");
     }
     return {
@@ -239,7 +239,7 @@ export class DaemonBenchmarkHarness {
         `Benchmark ${label} commands exited ${first.exitCode} and ${second.exitCode}`,
       );
     }
-    if (JSON.stringify(first.frames) !== JSON.stringify(second.frames)) {
+    if (first.output.summary.sha256 !== second.output.summary.sha256) {
       throw new Error(`First and second benchmark ${label} commands produced different output`);
     }
   }

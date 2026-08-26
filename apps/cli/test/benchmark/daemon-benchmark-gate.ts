@@ -27,7 +27,6 @@ export type DaemonBenchmarkFailureCode =
   | "stdout-mismatch"
   | "stderr-mismatch"
   | "exit-mismatch"
-  | "alias-result-empty"
   | "semantic-result-mismatch"
   | "stale-mutation"
   | "latency-threshold"
@@ -67,7 +66,7 @@ export interface DaemonBenchmarkGateInput {
   readonly stdoutParity: boolean;
   readonly stderrParity: boolean;
   readonly exitParity: boolean;
-  readonly aliasResultsNonEmpty: boolean;
+  readonly semanticResultsValid: boolean;
   readonly freshness: boolean;
   readonly statusMaximumMs: number;
   readonly busyStatusObserved: boolean;
@@ -154,7 +153,7 @@ export class DaemonBenchmarkGate {
     if (!input.stdoutParity) failures.push("stdout-mismatch");
     if (!input.stderrParity) failures.push("stderr-mismatch");
     if (!input.exitParity) failures.push("exit-mismatch");
-    if (!input.aliasResultsNonEmpty) failures.push("alias-result-empty");
+    if (!input.semanticResultsValid) failures.push("semantic-result-mismatch");
     if (!freshness) failures.push("stale-mutation");
     if (!latencyMet) failures.push("latency-threshold");
     if (!statusResponsive) failures.push("status-unresponsive");

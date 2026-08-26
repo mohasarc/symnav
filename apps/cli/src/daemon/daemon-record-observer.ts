@@ -45,19 +45,26 @@ export class DaemonRecordObserver {
     }
     if (!this.processTerminator.isAlive(record.pid)) return { kind: "exited", record };
 
-    const authenticated = await this.authenticate(record);
+    const [authenticated, ping] = await Promise.all([
+      this.authenticate(record),
+      this.transport
+        .request(record.endpoint, {
+          kind: "ping",
+          protocolVersion: DAEMON_PROTOCOL_VERSION,
+          instanceId: record.instanceId,
+        })
+        .then(
+          (response) => ({ kind: "response" as const, response }),
+          (error: unknown) => ({ kind: "error" as const, error }),
+        ),
+    ]);
+    if (!this.processTerminator.isAlive(record.pid)) return { kind: "exited", record };
     if (!authenticated) {
-      return this.processTerminator.isAlive(record.pid)
-        ? { kind: "unresponsive", record, failureCode: "authentication" }
-        : { kind: "exited", record };
+      return { kind: "unresponsive", record, failureCode: "authentication" };
     }
 
-    try {
-      const response = await this.transport.request(record.endpoint, {
-        kind: "ping",
-        protocolVersion: DAEMON_PROTOCOL_VERSION,
-        instanceId: record.instanceId,
-      });
+    if (ping.kind === "response") {
+      const response = ping.response;
       if (response.kind !== "pong") {
         return { kind: "corrupt", record, evidence: DaemonRecordObserver.evidence(record) };
       }
@@ -68,29 +75,29 @@ export class DaemonRecordObserver {
         return { kind: "corrupt", record, evidence: DaemonRecordObserver.evidence(record) };
       }
       return { kind: "responsive", record, pong: response };
-    } catch (error) {
-      if (!this.processTerminator.isAlive(record.pid)) return { kind: "exited", record };
-      if (
-        error instanceof DaemonTransportError &&
-        error.authenticatedInstanceId === record.instanceId
-      ) {
-        if (error.code === "incompatible") {
-          return {
-            kind: "incompatible",
-            record,
-            evidence: DaemonRecordObserver.evidence(record),
-          };
-        }
-        if (error.code === "corrupt") {
-          return { kind: "corrupt", record, evidence: DaemonRecordObserver.evidence(record) };
-        }
-      }
-      return {
-        kind: "unresponsive",
-        record,
-        failureCode: error instanceof DaemonTransportError ? error.code : "unknown",
-      };
     }
+
+    const error = ping.error;
+    if (
+      error instanceof DaemonTransportError &&
+      error.authenticatedInstanceId === record.instanceId
+    ) {
+      if (error.code === "incompatible") {
+        return {
+          kind: "incompatible",
+          record,
+          evidence: DaemonRecordObserver.evidence(record),
+        };
+      }
+      if (error.code === "corrupt") {
+        return { kind: "corrupt", record, evidence: DaemonRecordObserver.evidence(record) };
+      }
+    }
+    return {
+      kind: "unresponsive",
+      record,
+      failureCode: error instanceof DaemonTransportError ? error.code : "unknown",
+    };
   }
 
   private async authenticate(record: DaemonRecord): Promise<boolean> {

@@ -479,7 +479,7 @@ describe("LocalDaemonTransport execution delivery", () => {
     ).toEqual([]);
   });
 
-  it.each(["eof", "close", "malformed", "multiple"] as const)(
+  it.each(["eof", "close", "malformed", "multiple", "multiple-separated"] as const)(
     "settles an accepted completion when the acknowledgement response is %s",
     async (acknowledgementFailure) => {
       const directory = mkdtempSync(join(tmpdir(), "symnav-result-acknowledgement-"));
@@ -521,8 +521,11 @@ describe("LocalDaemonTransport execution delivery", () => {
             else if (acknowledgementFailure === "close") socket.destroy();
             else if (acknowledgementFailure === "malformed") {
               socket.end(Buffer.from([0, 0, 0, 4, 0x7b]));
-            } else {
+            } else if (acknowledgementFailure === "multiple") {
               socket.end(Buffer.concat([acknowledgement, acknowledgement]));
+            } else {
+              socket.write(acknowledgement);
+              setImmediate(() => socket.end(acknowledgement));
             }
           });
         });

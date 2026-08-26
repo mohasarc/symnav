@@ -453,11 +453,13 @@ export class WorkspaceDaemon {
     let unsubscribe: (() => void) | undefined;
     unsubscribe = this.acceptedRequests.subscribe(request.requestId, (updated) => {
       if (updated.state.state === "completed") {
-        void this.deliverStoredCompletion(request.requestId, send).catch(() => undefined);
+        void this.deliverStoredCompletion(request.requestId, send).catch((error) =>
+          this.recordDeliveryFailure(error),
+        );
         unsubscribe?.();
       } else if (updated.state.state === "failed") {
         void this.deliver(send, this.failedFrame(request.requestId, updated.state.code)).catch(
-          () => undefined,
+          (error) => this.recordDeliveryFailure(error),
         );
         unsubscribe?.();
       }
@@ -633,6 +635,14 @@ export class WorkspaceDaemon {
       rawBytes: completedManifest.rawBytes,
       recordCount: completedManifest.recordCount,
       sha256: completedManifest.sha256,
+    });
+  }
+
+  private recordDeliveryFailure(error: unknown): void {
+    this.logger.record({
+      kind: "failure",
+      operation: "completion-delivery",
+      message: WorkspaceDaemon.errorMessage(error),
     });
   }
 

@@ -195,11 +195,11 @@ export class CompletionSpool {
     if (!Number.isSafeInteger(offset) || offset < 0 || offset > this.recordCount) {
       throw new Error("Invalid completion spool offset");
     }
-    const records =
-      this.filePath === undefined
-        ? this.inlineRecords
-        : this.options.storage.records(this.filePath);
     try {
+      const records =
+        this.filePath === undefined
+          ? this.inlineRecords
+          : this.options.storage.records(this.filePath);
       for await (const record of records) {
         if (record.sequence >= offset) yield record;
       }

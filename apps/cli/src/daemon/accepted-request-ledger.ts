@@ -99,6 +99,7 @@ export class AcceptedRequestLedger {
     completedAt: number,
   ): AcceptedRequestEntry {
     const entry = this.entry(requestId);
+    if (entry.state.state === "failed" && entry.state.code === code) return entry;
     if (entry.state.state !== "completed") {
       throw new Error(`Accepted request ${requestId} is not completed`);
     }

@@ -40,6 +40,58 @@ describe("DaemonStartupCoordinator", () => {
     roots.length = 0;
   });
 
+  it("returns concurrent warm-up triggers after electing one detached child", async () => {
+    const readinessGate = new ReadinessPublicationGate();
+    const harness = new CoordinatorHarness(roots, { readinessPublicationGate: readinessGate });
+    const firstCoordinator = harness.coordinator();
+    const secondCoordinator = harness.coordinator();
+
+    const [first, second] = await Promise.all([
+      firstCoordinator.trigger(harness.identity),
+      secondCoordinator.trigger(harness.identity),
+    ]);
+
+    expect(harness.launcher.launchCount).toBe(1);
+    expect([first.status, second.status].sort()).toEqual(["launched", "starting"]);
+    expect(first.instanceId).toBe(second.instanceId);
+    expect(first.pid).toBe(second.pid);
+    expect(harness.registry.startupOwner(harness.identity)).toMatchObject({
+      ownerKind: "daemon",
+      ownerPid: first.pid,
+    });
+    readinessGate.release();
+  });
+
+  it("shares one readiness record without a healthy startup deadline", async () => {
+    const readinessGate = new ReadinessPublicationGate();
+    const harness = new CoordinatorHarness(roots, { readinessPublicationGate: readinessGate });
+    const coordinator = harness.coordinator({ startupTimeoutMs: 5 });
+    const trigger = await coordinator.trigger(harness.identity);
+    const firstWait = coordinator.waitUntilReady(harness.identity);
+    const secondWait = harness
+      .coordinator({ startupTimeoutMs: 5 })
+      .waitUntilReady(harness.identity);
+    let settled = false;
+    void Promise.all([firstWait, secondWait]).then(() => {
+      settled = true;
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 25));
+
+    expect(settled).toBe(false);
+    expect(harness.registry.read(harness.identity)).toMatchObject({
+      instanceId: trigger.instanceId,
+      pid: trigger.pid,
+      state: "starting",
+    });
+
+    readinessGate.release();
+    await expect(Promise.all([firstWait, secondWait])).resolves.toEqual([
+      expect.objectContaining({ status: "ready" }),
+      expect.objectContaining({ status: "already-running" }),
+    ]);
+  });
+
   it("concurrent starts launch one daemon and report ready then already running", async () => {
     const harness = new CoordinatorHarness(roots);
 
@@ -179,7 +231,7 @@ describe("DaemonStartupCoordinator", () => {
 
     expect(harness.launcher.launchCount).toBe(0);
     expect(harness.registry.readStored(harness.identity)?.instanceId).toBe("existing");
-    expect(harness.registry.startupOwner(harness.identity)).toBeDefined();
+    expect(harness.registry.startupOwner(harness.identity)).toBeUndefined();
   });
 
   it("keeps replacement termination bounded when readiness has no default deadline", async () => {
@@ -202,24 +254,22 @@ describe("DaemonStartupCoordinator", () => {
     expect(harness.registry.readStored(harness.identity)?.instanceId).toBe("existing");
   }, 1_000);
 
-  it("retains a live daemon that outlives the caller readiness wait", async () => {
+  it("returns after launching a healthy daemon that is still warming", async () => {
     const harness = new CoordinatorHarness(roots, { neverReady: true });
 
-    await expect(
-      harness.coordinator({ startupTimeoutMs: 5 }).ensureRunning(harness.identity),
-    ).rejects.toThrow(/ownership was retained/i);
+    await expect(harness.coordinator().trigger(harness.identity)).resolves.toMatchObject({
+      status: "launched",
+    });
 
     expect(harness.terminator.terminated).not.toContain(harness.launcher.lastPid);
     expect(harness.registry.readStored(harness.identity)?.pid).toBe(harness.launcher.lastPid);
-    expect(harness.registry.startupOwner(harness.identity)).toBeDefined();
+    expect(harness.registry.startupOwner(harness.identity)).toMatchObject({ ownerKind: "daemon" });
   });
 
-  it("retains one live warm-up after the initiating caller exits and its heartbeat expires", async () => {
+  it("retains one live daemon warm-up after the launcher heartbeat expires", async () => {
     const harness = new CoordinatorHarness(roots, { neverReady: true });
 
-    await expect(
-      harness.coordinator({ startupTimeoutMs: 5 }).ensureRunning(harness.identity),
-    ).rejects.toThrow(/ownership was retained/i);
+    await harness.coordinator().trigger(harness.identity);
     const originalRecord = harness.registry.readStored(harness.identity);
     const originalOwner = harness.registry.startupOwner(harness.identity);
     expect(originalRecord?.pid).toBe(harness.launcher.lastPid);
@@ -230,9 +280,10 @@ describe("DaemonStartupCoordinator", () => {
     );
     harness.terminator.currentProcessIsAlive = false;
 
-    await expect(
-      harness.coordinator({ startupTimeoutMs: 5 }).ensureRunning(harness.identity),
-    ).rejects.toThrow(/retained|timed out/i);
+    await expect(harness.coordinator().trigger(harness.identity)).resolves.toMatchObject({
+      status: "starting",
+      instanceId: originalRecord?.instanceId,
+    });
 
     expect(harness.launcher.launchCount).toBe(1);
     expect(harness.registry.readStored(harness.identity)).toEqual(originalRecord);
@@ -242,9 +293,7 @@ describe("DaemonStartupCoordinator", () => {
     const readinessPublicationGate = new ReadinessPublicationGate();
     const harness = new CoordinatorHarness(roots, { readinessPublicationGate });
 
-    await expect(
-      harness.coordinator({ startupTimeoutMs: 5 }).ensureRunning(harness.identity),
-    ).rejects.toThrow(/ownership was retained/i);
+    await harness.coordinator().trigger(harness.identity);
     const originalRecord = harness.registry.readStored(harness.identity);
     expect(originalRecord?.pid).toBe(harness.launcher.lastPid);
     harness.terminator.currentProcessIsAlive = false;
@@ -389,7 +438,7 @@ describe("DaemonStartupCoordinator", () => {
     await expect(
       harness.coordinator({ terminationTimeoutMs: 5 }).ensureRunning(harness.identity),
     ).rejects.toBeInstanceOf(DaemonProcessTerminationError);
-    expect(harness.registry.startupOwner(harness.identity)).toBeDefined();
+    expect(harness.registry.startupOwner(harness.identity)).toBeUndefined();
   });
 
   it("waits beyond startup-owner grace for a live daemon to finish warming", async () => {
@@ -414,12 +463,9 @@ describe("DaemonStartupCoordinator", () => {
 
     await expect(
       harness
-        .coordinator({
-          startupTimeoutMs: 5,
-          processTerminator: new TestProcessTerminator(false),
-        })
-        .ensureRunning(harness.identity),
-    ).rejects.toThrow(/ownership was retained/i);
+        .coordinator({ processTerminator: new TestProcessTerminator(false) })
+        .trigger(harness.identity),
+    ).resolves.toMatchObject({ status: "launched" });
 
     expect(harness.registry.startupOwner(harness.identity)?.instanceId).not.toBe("orphan");
     expect(harness.registry.acquireStartup(harness.identity, "recovered")).toBeUndefined();
@@ -449,12 +495,10 @@ describe("DaemonStartupCoordinator", () => {
     expect(harness.terminator.terminated).toContain(harness.launcher.lastPid);
   });
 
-  it("keeps a live startup authoritative through a slow warm and delayed heartbeat", async () => {
+  it("keeps a live daemon-owned startup authoritative through a slow warm", async () => {
     const readinessPublicationGate = new ReadinessPublicationGate();
     const harness = new CoordinatorHarness(roots, { readinessPublicationGate });
-    const starting = harness
-      .coordinator({ startupTimeoutMs: 3_000, heartbeatIntervalMs: 2_000 })
-      .ensureRunning(harness.identity);
+    const starting = harness.coordinator().ensureRunning(harness.identity);
     const startingOutcome = starting.then(
       (result) => ({ status: "fulfilled" as const, result }),
       (error: unknown) => ({ status: "rejected" as const, error }),
@@ -473,9 +517,9 @@ describe("DaemonStartupCoordinator", () => {
       await expect(controller.status()).resolves.toEqual([
         expect.objectContaining({ workspaceRoot: "/repo", state: "starting" }),
       ]);
-      await expect(
-        harness.coordinator({ startupTimeoutMs: 100 }).ensureRunning(harness.identity),
-      ).rejects.toThrow(/timed out/i);
+      await expect(harness.coordinator().trigger(harness.identity)).resolves.toMatchObject({
+        status: "starting",
+      });
       expect(harness.registry.startupOwner(harness.identity)).toEqual(ownerBeforeStatus);
     } catch (error) {
       assertionFailure = error;
@@ -562,12 +606,9 @@ describe("DaemonStartupCoordinator", () => {
 
     await expect(
       harness
-        .coordinator({
-          startupTimeoutMs: 5,
-          processTerminator: new TestProcessTerminator(false),
-        })
-        .ensureRunning(harness.identity),
-    ).rejects.toThrow(/ownership was retained/i);
+        .coordinator({ processTerminator: new TestProcessTerminator(false) })
+        .trigger(harness.identity),
+    ).resolves.toMatchObject({ status: "launched" });
 
     expect(harness.registry.startupOwner(harness.identity)?.instanceId).not.toBe("orphan");
     expect(harness.registry.acquireStartup(harness.identity, "recovered")).toBeUndefined();
@@ -598,26 +639,19 @@ describe("DaemonStartupCoordinator", () => {
     expect(harness.terminator.terminated).toContain(harness.launcher.lastPid);
   });
 
-  it("renews startup ownership while readiness is pending", async () => {
-    const readinessPublicationGate = new ReadinessPublicationGate();
-    const harness = new CoordinatorHarness(roots, { readinessPublicationGate });
-    const starting = harness
-      .coordinator({ startupTimeoutMs: 5_000, heartbeatIntervalMs: 5 })
-      .ensureRunning(harness.identity);
+  it("does not let the coordinator renew daemon ownership while readiness is pending", async () => {
+    const harness = new CoordinatorHarness(roots, { readyDelayMs: 80 });
+    const coordinator = harness.coordinator();
+    await coordinator.trigger(harness.identity);
     await waitUntil(() => harness.registry.read(harness.identity)?.state === "starting");
     const initialRevision = harness.registry.startupOwner(harness.identity)?.revision;
 
-    await waitUntil(() => {
-      const owner = harness.registry.startupOwner(harness.identity);
-      return (
-        harness.registry.read(harness.identity)?.state === "starting" &&
-        owner !== undefined &&
-        owner.revision !== initialRevision
-      );
-    });
+    await new Promise((resolve) => setTimeout(resolve, 20));
 
-    readinessPublicationGate.release();
-    await expect(starting).resolves.toMatchObject({ status: "ready" });
+    expect(harness.registry.startupOwner(harness.identity)?.revision).toBe(initialRevision);
+    await expect(coordinator.waitUntilReady(harness.identity)).resolves.toMatchObject({
+      status: "ready",
+    });
   });
 
   it("elects one fresh daemon after a mutation owner is killed", async () => {
@@ -709,7 +743,6 @@ class CoordinatorHarness {
       readonly startupTimeoutMs?: number;
       readonly terminationTimeoutMs?: number;
       readonly processTerminator?: DaemonProcessTerminator;
-      readonly heartbeatIntervalMs?: number;
       readonly now?: () => number;
     } = {},
   ): DaemonStartupCoordinator {
@@ -727,9 +760,6 @@ class CoordinatorHarness {
         pollIntervalMs: 1,
         processTerminator: options.processTerminator ?? this.terminator,
         ...(options.now === undefined ? {} : { now: options.now }),
-        ...(options.heartbeatIntervalMs === undefined
-          ? {}
-          : { heartbeatIntervalMs: options.heartbeatIntervalMs }),
       },
     );
   }

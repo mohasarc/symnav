@@ -1,6 +1,6 @@
 import type { CliExecutionRequest, CommandExecutionResult } from "../command-execution-result.js";
 
-export const DAEMON_PROTOCOL_VERSION = 2;
+export const DAEMON_PROTOCOL_VERSION = 3;
 export const DAEMON_RECORD_SCHEMA_VERSION = 2;
 
 export interface DaemonIdentityCoordinates {
@@ -207,8 +207,7 @@ export type DaemonLifecycleResponse =
 export type DaemonResponse =
   | DaemonLifecycleResponse
   | DaemonExecutionServerFrame
-  | DaemonExecutionStatusResponse
-  | { readonly kind: "result"; readonly requestId: string; readonly result: CommandExecutionResult };
+  | DaemonExecutionStatusResponse;
 
 export type DaemonPong = Extract<DaemonResponse, { readonly kind: "pong" }>;
 

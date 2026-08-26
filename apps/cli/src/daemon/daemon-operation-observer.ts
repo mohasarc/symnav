@@ -42,6 +42,7 @@ interface DaemonDiagnosticRecorder {
 interface DaemonOperationResources {
   readonly snapshot: {
     readonly processRssBytes: number;
+    readonly peakProcessRssBytes: number;
     readonly workerHeapUsedBytes?: number;
     readonly spoolBytes: number;
   };

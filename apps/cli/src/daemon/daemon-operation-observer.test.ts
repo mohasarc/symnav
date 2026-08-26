@@ -95,6 +95,35 @@ describe("DaemonOperationObserver", () => {
     expect(events.filter((event) => event.kind === "delivery-terminal")).toHaveLength(1);
   });
 
+  it("preserves an earlier process RSS peak at execution completion", () => {
+    const events: DaemonDiagnosticEvent[] = [];
+    const observer = new DaemonOperationObserver(
+      { record: (event) => events.push(event) },
+      new MutableDaemonClock(1, 1),
+      {
+        snapshot: {
+          processRssBytes: 80,
+          peakProcessRssBytes: 120,
+          spoolBytes: 0,
+        },
+      },
+    );
+    const trace = observer.start("request-peak", "context");
+
+    trace.turnStarted(1);
+    trace.executionTerminated("completed");
+
+    expect(events).toContainEqual({
+      kind: "execution-terminal",
+      requestId: "request-peak",
+      outcome: "completed",
+      serviceMs: 0,
+      processRssBytes: 80,
+      peakProcessRssBytes: 120,
+      spoolBytes: 0,
+    });
+  });
+
   it("records closed startup, worker recovery, and shutdown diagnostics", () => {
     const events: DaemonDiagnosticEvent[] = [];
     const observer = new DaemonOperationObserver(

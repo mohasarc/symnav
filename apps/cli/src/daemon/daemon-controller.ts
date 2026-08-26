@@ -244,7 +244,8 @@ export class DaemonController {
       workspaceRoot: record.workspaceRoot,
       state: "starting",
       pid: record.pid,
-      uptimeMs: Math.max(0, this.now() - record.startedAt),
+      startupElapsedMs: Math.max(0, this.now() - record.startedAt),
+      ...(record.memoryBytes === undefined ? {} : { memoryBytes: record.memoryBytes }),
     };
   }
 
@@ -256,26 +257,45 @@ export class DaemonController {
       return undefined;
     }
     if (observation.kind !== "responsive") return this.unresponsiveStatus(record);
+    if (observation.pong.activity !== undefined) {
+      return this.statusFromActivity(record, observation.pong.activity);
+    }
     const lastNavigationAt = observation.pong.lastNavigationAt ?? record.lastNavigationAt;
     const fileCount = observation.pong.fileCount ?? record.fileCount;
     const memoryBytes = observation.pong.memoryBytes ?? record.memoryBytes;
+    if (observation.pong.state === "busy") {
+      if (
+        observation.pong.currentCommand === undefined ||
+        observation.pong.currentCommandElapsedMs === undefined ||
+        observation.pong.queued === undefined ||
+        memoryBytes === undefined
+      ) {
+        return this.unresponsiveStatus(record);
+      }
+      return {
+        workspaceRoot: record.workspaceRoot,
+        state: "busy",
+        pid: record.pid,
+        uptimeMs: Math.max(0, this.now() - record.startedAt),
+        command: DaemonController.commandName(observation.pong.currentCommand),
+        elapsedMs: observation.pong.currentCommandElapsedMs,
+        queued: observation.pong.queued,
+        memoryBytes,
+      };
+    }
+    if (fileCount === undefined || memoryBytes === undefined) {
+      return this.unresponsiveStatus(record);
+    }
     return {
       workspaceRoot: record.workspaceRoot,
-      state: observation.pong.state === "busy" ? "busy" : "ready",
+      state: "ready",
       pid: record.pid,
       uptimeMs: Math.max(0, this.now() - record.startedAt),
-      ...(fileCount === undefined ? {} : { fileCount }),
-      ...(memoryBytes === undefined ? {} : { memoryBytes }),
+      fileCount,
+      memoryBytes,
       ...(lastNavigationAt === undefined
         ? {}
         : { lastRequestAgoMs: Math.max(0, this.now() - lastNavigationAt) }),
-      ...(observation.pong.currentCommand === undefined
-        ? {}
-        : { currentCommand: observation.pong.currentCommand }),
-      ...(observation.pong.currentCommandElapsedMs === undefined
-        ? {}
-        : { currentCommandElapsedMs: observation.pong.currentCommandElapsedMs }),
-      ...(observation.pong.queued === undefined ? {} : { queued: observation.pong.queued }),
     };
   }
 
@@ -285,12 +305,76 @@ export class DaemonController {
       state: "unresponsive",
       pid: record.pid,
       uptimeMs: Math.max(0, this.now() - record.startedAt),
-      ...(record.fileCount === undefined ? {} : { fileCount: record.fileCount }),
-      ...(record.memoryBytes === undefined ? {} : { memoryBytes: record.memoryBytes }),
-      ...(record.lastNavigationAt === undefined
-        ? {}
-        : { lastRequestAgoMs: Math.max(0, this.now() - record.lastNavigationAt) }),
     };
+  }
+
+  private statusFromActivity(
+    record: DaemonRecord,
+    activity: import("./daemon-protocol.js").DaemonActivitySnapshot,
+  ): RunningDaemonStatus {
+    if (activity.lifecycle === "starting") {
+      return {
+        state: "starting",
+        workspaceRoot: record.workspaceRoot,
+        pid: record.pid,
+        startupElapsedMs: activity.startupElapsedMs,
+        memoryBytes: activity.processRssBytes,
+      };
+    }
+    const uptimeMs = Math.max(0, this.now() - record.startedAt);
+    if (activity.lifecycle === "busy" && activity.current !== undefined) {
+      return {
+        state: "busy",
+        workspaceRoot: record.workspaceRoot,
+        pid: record.pid,
+        uptimeMs,
+        command: activity.current.command,
+        elapsedMs: activity.current.elapsedMs,
+        queued: activity.queued,
+        memoryBytes: activity.processRssBytes,
+      };
+    }
+    if (activity.lifecycle === "recovering" || activity.lifecycle === "draining") {
+      return {
+        state: "recovering",
+        workspaceRoot: record.workspaceRoot,
+        pid: record.pid,
+        uptimeMs,
+        detail: activity.lifecycle === "draining" ? "draining" : "resource-pressure",
+        queued: activity.queued,
+        memoryBytes: activity.processRssBytes,
+      };
+    }
+    if (activity.fileCount === undefined) return this.unresponsiveStatus(record);
+    return {
+      state: "ready",
+      workspaceRoot: record.workspaceRoot,
+      pid: record.pid,
+      uptimeMs,
+      fileCount: activity.fileCount,
+      memoryBytes: activity.processRssBytes,
+      ...(activity.lastCompletedAgoMs === undefined
+        ? {}
+        : { lastRequestAgoMs: activity.lastCompletedAgoMs }),
+    };
+  }
+
+  private static commandName(command: string): import("./daemon-protocol.js").DaemonCommandName {
+    const names: readonly import("./daemon-protocol.js").DaemonCommandName[] = [
+      "overview",
+      "resolve",
+      "def",
+      "refs",
+      "context",
+      "graph",
+      "stats",
+      "help",
+      "version",
+      "unknown",
+    ];
+    return names.includes(command as import("./daemon-protocol.js").DaemonCommandName)
+      ? (command as import("./daemon-protocol.js").DaemonCommandName)
+      : "unknown";
   }
 
   private async killIdentified(record: DaemonRecord, deadline: number): Promise<boolean> {

@@ -65,17 +65,54 @@ export interface DaemonActivitySnapshot {
   readonly spoolBytes: number;
 }
 
-export interface RunningDaemonStatus {
-  readonly workspaceRoot: string;
-  readonly state: "starting" | "ready" | "busy" | "unresponsive";
-  readonly pid: number;
-  readonly uptimeMs: number;
-  readonly fileCount?: number;
-  readonly memoryBytes?: number;
-  readonly lastRequestAgoMs?: number;
-  readonly currentCommand?: string;
-  readonly currentCommandElapsedMs?: number;
-  readonly queued?: number;
+export type RunningDaemonStatus =
+  | {
+      readonly state: "starting";
+      readonly workspaceRoot: string;
+      readonly pid: number;
+      readonly startupElapsedMs: number;
+      readonly memoryBytes?: number;
+    }
+  | {
+      readonly state: "ready";
+      readonly workspaceRoot: string;
+      readonly pid: number;
+      readonly uptimeMs: number;
+      readonly fileCount: number;
+      readonly memoryBytes: number;
+      readonly lastRequestAgoMs?: number;
+    }
+  | {
+      readonly state: "busy";
+      readonly workspaceRoot: string;
+      readonly pid: number;
+      readonly uptimeMs: number;
+      readonly command: DaemonCommandName;
+      readonly elapsedMs: number;
+      readonly queued: number;
+      readonly memoryBytes: number;
+    }
+  | {
+      readonly state: "recovering";
+      readonly workspaceRoot: string;
+      readonly pid: number;
+      readonly uptimeMs: number;
+      readonly detail: "resource-pressure" | "worker-replacement" | "draining";
+      readonly queued: number;
+      readonly memoryBytes: number;
+    }
+  | {
+      readonly state: "unresponsive";
+      readonly workspaceRoot: string;
+      readonly pid: number;
+      readonly uptimeMs: number;
+      readonly lastResponseAgoMs?: number;
+      readonly lastKnown?: DaemonActivitySnapshot;
+    };
+
+export interface DaemonStatusEnvelope {
+  readonly schemaVersion: 1;
+  readonly daemons: readonly RunningDaemonStatus[];
 }
 
 export type DaemonStopResult =

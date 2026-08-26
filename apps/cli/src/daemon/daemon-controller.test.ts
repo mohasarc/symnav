@@ -7,6 +7,7 @@ import type { DaemonProcessLauncher, DaemonProcessTerminator } from "./daemon-pr
 import {
   DAEMON_PROTOCOL_VERSION,
   DAEMON_RECORD_SCHEMA_VERSION,
+  type DaemonActivitySnapshot,
   type DaemonRecord,
   type DaemonRequest,
   type DaemonResponse,
@@ -160,6 +161,83 @@ describe("DaemonController", () => {
     ]);
   });
 
+  it.each([
+    [
+      "ready",
+      activity({ lifecycle: "ready", fileCount: 3 }),
+      { state: "ready", uptimeMs: 5_000, fileCount: 3 },
+    ],
+    [
+      "busy",
+      activity({
+        lifecycle: "busy",
+        fileCount: 3,
+        current: { requestId: "request-one", command: "refs", elapsedMs: 200 },
+      }),
+      { state: "busy", uptimeMs: 5_000, command: "refs", elapsedMs: 200 },
+    ],
+    [
+      "recovering",
+      activity({ lifecycle: "recovering", recoveryDetail: "worker-replacement" }),
+      { state: "recovering", uptimeMs: 5_000, detail: "worker-replacement" },
+    ],
+    [
+      "draining",
+      activity({ lifecycle: "draining" }),
+      { state: "recovering", uptimeMs: 5_000, detail: "draining" },
+    ],
+  ] as const)(
+    "uses daemon monotonic uptime for %s activity",
+    async (_label, snapshot, expected) => {
+      const stateDirectory = temporaryDirectory(roots);
+      const identity = DaemonWorkspaceIdentity.from("/repo", stateDirectory);
+      const registry = new DaemonRegistry(identity.registryDirectory);
+      const daemonRecord = readyRecord(identity);
+      registry.write(daemonRecord);
+      const controller = new DaemonController(
+        registry,
+        new ActivityControllerTransport(daemonRecord, snapshot) as unknown as LocalDaemonTransport,
+        stateDirectory,
+        { processTerminator: new ControllerTerminator([daemonRecord.pid]), now: () => -10_000 },
+      );
+
+      await expect(controller.status()).resolves.toEqual([
+        expect.objectContaining({ workspaceRoot: "/repo", pid: daemonRecord.pid, ...expected }),
+      ]);
+    },
+  );
+
+  it("reports authenticated recovery while the registry still says starting", async () => {
+    const stateDirectory = temporaryDirectory(roots);
+    const identity = DaemonWorkspaceIdentity.from("/repo", stateDirectory);
+    const registry = new DaemonRegistry(identity.registryDirectory);
+    const daemonRecord = { ...startingRecord(identity), pid: 101 } satisfies DaemonRecord;
+    expect(registry.acquireStartup(identity, daemonRecord.instanceId)).toBeDefined();
+    expect(registry.writeStartingIfStartupOwner(identity, daemonRecord)).toBe(true);
+    const snapshot = activity({
+      lifecycle: "recovering",
+      recoveryDetail: "worker-replacement",
+      startupElapsedMs: 7_000,
+    });
+    const controller = new DaemonController(
+      registry,
+      new ActivityControllerTransport(daemonRecord, snapshot) as unknown as LocalDaemonTransport,
+      stateDirectory,
+      { processTerminator: new ControllerTerminator([daemonRecord.pid]), now: () => 20 },
+    );
+
+    await expect(controller.status()).resolves.toEqual([
+      expect.objectContaining({
+        workspaceRoot: "/repo",
+        state: "recovering",
+        pid: daemonRecord.pid,
+        uptimeMs: 7_000,
+        detail: "worker-replacement",
+      }),
+    ]);
+    expect(registry.readStoredInstance(identity, daemonRecord.instanceId)).toEqual(daemonRecord);
+  });
+
   it("cleans stale starting state while reporting status", async () => {
     const stateDirectory = temporaryDirectory(roots);
     const identity = DaemonWorkspaceIdentity.from("/repo", stateDirectory);
@@ -223,6 +301,36 @@ class ControllerTransport {
 
   async removeUnavailableEndpoint(_endpoint: string): Promise<boolean> {
     return true;
+  }
+}
+
+class ActivityControllerTransport {
+  constructor(
+    private readonly record: DaemonRecord,
+    private readonly activity: DaemonActivitySnapshot,
+  ) {}
+
+  request(_endpoint: string, request: DaemonRequest): Promise<DaemonResponse> {
+    if (request.kind === "identify") {
+      return Promise.resolve({
+        kind: "identity",
+        instanceId: this.record.instanceId,
+        processToken: this.record.processToken,
+        pid: this.record.pid,
+        startedAt: this.record.startedAt,
+      });
+    }
+    if (request.kind === "ping") {
+      return Promise.resolve({
+        kind: "pong",
+        protocolVersion: DAEMON_PROTOCOL_VERSION,
+        instanceId: this.record.instanceId,
+        symnavVersion: this.record.symnavVersion,
+        startedAt: this.record.startedAt,
+        activity: this.activity,
+      });
+    }
+    return Promise.reject(new Error("Unexpected controller request"));
   }
 }
 
@@ -320,5 +428,33 @@ function startingRecord(identity: DaemonWorkspaceIdentity, instanceId = "startin
     state: "starting",
     startedAt: 10,
     memoryCapBytes: 256 * 1024 * 1024,
+  };
+}
+
+function readyRecord(identity: DaemonWorkspaceIdentity): DaemonRecord {
+  return {
+    ...startingRecord(identity, "ready"),
+    pid: 101,
+    state: "ready",
+    readyAt: 20,
+    fileCount: 3,
+  };
+}
+
+function activity(
+  overrides: Pick<DaemonActivitySnapshot, "lifecycle"> & Partial<DaemonActivitySnapshot>,
+): DaemonActivitySnapshot {
+  const { lifecycle, ...details } = overrides;
+  return {
+    lifecycle,
+    pid: 101,
+    startedAt: 10,
+    startupElapsedMs: 5_000,
+    processRssBytes: 4_096,
+    hardProcessRssBytes: 8_192,
+    workerGeneration: 1,
+    queued: 0,
+    spoolBytes: 0,
+    ...details,
   };
 }

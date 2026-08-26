@@ -128,6 +128,56 @@ describe("daemon diagnostic output isolation", () => {
       expect.objectContaining({ terminationReason: "signal", signal: "SIGTERM" }),
     ]);
   }, 15_000);
+
+  it("records one redacted unhandled rejection classification", async () => {
+    const stateDirectory = mkdtempSync(join(tmpdir(), "symnav-daemon-rejection-state-"));
+    const workspaceRoot = mkdtempSync(join(tmpdir(), "symnav-daemon-rejection-workspace-"));
+    directories.push(stateDirectory, workspaceRoot);
+    mkdirSync(join(workspaceRoot, ".git"));
+    writeFileSync(join(workspaceRoot, "input.ts"), "export const value = 1;\n");
+    const rejectionTrigger = join(stateDirectory, "rejection-trigger");
+    const secret = "/private/source/RejectedSecret?token=secret";
+    const preloadPath = fileURLToPath(
+      new URL("../../helpers/daemon-malicious-output.cjs", import.meta.url),
+    );
+
+    const started = runSymnavBinary(["daemon", "start"], {
+      cwd: workspaceRoot,
+      env: {
+        SYMNAV_STATE_DIR: stateDirectory,
+        NODE_OPTIONS: `--require=${preloadPath}`,
+        SYMNAV_TEST_DAEMON_OUTPUT_SECRET: secret,
+        SYMNAV_TEST_DAEMON_REJECTION_TRIGGER: rejectionTrigger,
+      },
+    });
+    const identity = DaemonWorkspaceIdentity.from(
+      canonicalWorkspaceRoot(realpathSync(workspaceRoot)),
+      canonicalStateDir(stateDirectory),
+    );
+    const registry = new DaemonRegistry(identity.registryDirectory);
+    const record = registry.read(identity);
+    expect(started.status).toBe(0);
+    expect(record).toBeDefined();
+    daemonPids.push(record!.pid);
+    writeFileSync(rejectionTrigger, "reject");
+    await waitUntil(() => !isProcessAlive(record!.pid));
+
+    const contents = readdirSync(identity.identityDirectory)
+      .filter((name) => /^daemon\.log(?:\.\d+)?$/.test(name))
+      .map((name) => readFileSync(join(identity.identityDirectory, name), "utf8"))
+      .join("");
+    expect(contents).not.toContain(secret);
+    const events = contents
+      .split("\n")
+      .filter((line) => line.length > 0)
+      .map((line) => JSON.parse(line) as Record<string, unknown>);
+    expect(events.filter((event) => event.kind === "process-termination")).toEqual([
+      expect.objectContaining({
+        terminationReason: "unhandled-rejection",
+        errorName: "TypeError",
+      }),
+    ]);
+  }, 15_000);
 });
 
 async function waitUntil(predicate: () => boolean): Promise<void> {

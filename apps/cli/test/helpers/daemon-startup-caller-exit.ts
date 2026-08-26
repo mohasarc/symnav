@@ -132,7 +132,8 @@ class DaemonStartupCallerExit {
     const navigationWorker = new StartupBarrierNavigationWorker(
       new NodeDaemonNavigationWorker({
         generation: 1,
-        stateDirectory: identity.stateDirectory,
+        configuration: { stateDirectory: identity.stateDirectory },
+        resourceLimits: { maxOldGenerationSizeMb: 4096 },
         entryUrl: new URL("../../dist/daemon/daemon-navigation-worker-entry.js", import.meta.url),
       }),
       bootPath,

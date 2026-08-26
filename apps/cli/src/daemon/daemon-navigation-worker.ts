@@ -36,10 +36,14 @@ export interface DaemonNavigationWorker {
   terminate(): Promise<void>;
 }
 
+export interface DaemonNavigationWorkerConfiguration {
+  readonly stateDirectory: string;
+}
+
 export interface NodeDaemonNavigationWorkerOptions {
   readonly generation: number;
-  readonly stateDirectory: string;
-  readonly resourceLimits?: {
+  readonly configuration: DaemonNavigationWorkerConfiguration;
+  readonly resourceLimits: {
     readonly maxOldGenerationSizeMb: number;
   };
   readonly entryUrl?: URL;
@@ -75,11 +79,11 @@ export class NodeDaemonNavigationWorker implements DaemonNavigationWorker {
       options.entryUrl ?? new URL("./daemon-navigation-worker-entry.js", import.meta.url),
       {
         workerData: {
-          stateDirectory: options.stateDirectory,
+          stateDirectory: options.configuration.stateDirectory,
           generation: options.generation,
           ...options.workerData,
         },
-        ...(options.resourceLimits === undefined ? {} : { resourceLimits: options.resourceLimits }),
+        resourceLimits: options.resourceLimits,
       },
     );
     this.worker.on("message", (value: unknown) => void this.receive(value));

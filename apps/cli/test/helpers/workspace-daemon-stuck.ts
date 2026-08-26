@@ -149,7 +149,8 @@ const workerExitReleasePath = `${acceptedRequestStartedPath}.release-worker-exit
 const navigationWorker = workerExit
   ? new NodeDaemonNavigationWorker({
       generation: 7,
-      stateDirectory: canonicalStateDirectory,
+      configuration: { stateDirectory: canonicalStateDirectory },
+      resourceLimits: { maxOldGenerationSizeMb: 4096 },
       entryUrl: new URL("./daemon-navigation-worker-fixture.mjs", import.meta.url),
       workerData: {
         mode: "exit-on-release",
@@ -161,7 +162,8 @@ const navigationWorker = workerExit
   : releasePath === undefined && !oversizedResponse && !oversizedJsonResponse
     ? new NodeDaemonNavigationWorker({
         generation: 7,
-        stateDirectory: canonicalStateDirectory,
+        configuration: { stateDirectory: canonicalStateDirectory },
+        resourceLimits: { maxOldGenerationSizeMb: 4096 },
         entryUrl: new URL("./daemon-navigation-worker-fixture.mjs", import.meta.url),
         workerData: {
           mode: "block-execution",

@@ -114,7 +114,7 @@ describe("NodeDaemonNavigationWorker", () => {
 function createWorker(mode: string, maxOldGenerationSizeMb = 128): NodeDaemonNavigationWorker {
   return new NodeDaemonNavigationWorker({
     generation: 7,
-    stateDirectory: "/state",
+    configuration: { stateDirectory: "/state" },
     resourceLimits: { maxOldGenerationSizeMb },
     entryUrl: new URL("../../test/helpers/daemon-navigation-worker-fixture.mjs", import.meta.url),
     workerData: { mode },

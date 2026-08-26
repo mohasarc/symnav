@@ -131,7 +131,7 @@ export class WorkspaceDaemon {
         ? (generation) =>
             new NodeDaemonNavigationWorker({
               generation,
-              stateDirectory: options.identity.stateDirectory,
+              configuration: { stateDirectory: options.identity.stateDirectory },
               resourceLimits: {
                 maxOldGenerationSizeMb: resourcePolicy.record.workerMaxOldGenerationSizeMb,
               },

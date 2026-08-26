@@ -624,7 +624,7 @@ describe("WorkspaceDaemon requests", () => {
         generations.push(generation);
         return new NodeDaemonNavigationWorker({
           generation,
-          stateDirectory: "/state",
+          configuration: { stateDirectory: "/state" },
           entryUrl: new URL(
             "../../test/helpers/daemon-navigation-worker-fixture.mjs",
             import.meta.url,
@@ -651,7 +651,7 @@ describe("WorkspaceDaemon requests", () => {
       navigationWorkerFactory: (generation) =>
         new NodeDaemonNavigationWorker({
           generation,
-          stateDirectory: "/state",
+          configuration: { stateDirectory: "/state" },
           entryUrl: new URL(
             "../../test/helpers/daemon-navigation-worker-fixture.mjs",
             import.meta.url,
@@ -686,7 +686,7 @@ describe("WorkspaceDaemon requests", () => {
       navigationWorkerFactory: (generation) =>
         new NodeDaemonNavigationWorker({
           generation,
-          stateDirectory: "/state",
+          configuration: { stateDirectory: "/state" },
           entryUrl: new URL(
             "../../test/helpers/daemon-navigation-worker-fixture.mjs",
             import.meta.url,

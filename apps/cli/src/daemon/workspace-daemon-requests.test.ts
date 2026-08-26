@@ -788,7 +788,10 @@ describe("WorkspaceDaemon requests", () => {
     });
 
     replacement.completeInitialization();
-    await waitUntil(async () => (await harness.ping()).kind === "pong");
+    await waitUntil(async () => {
+      const pong = await harness.ping();
+      return pong.kind === "pong" && pong.state === "ready";
+    });
   });
 
   it("completes scheduled shedding before the next queued worker turn", async () => {

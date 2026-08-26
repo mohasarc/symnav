@@ -1,92 +1,116 @@
-import { mkdtempSync, rmSync } from "node:fs";
-import { createServer, type Server } from "node:net";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { resolve } from "node:path";
+import { describe, expect, it, vi } from "vitest";
 import type { CliExecutionRequest, CommandExecutionResult } from "../command-execution-result.js";
 import type { ProgramDependencies } from "../program-dependencies.js";
-import { DaemonCommandDispatcher } from "./daemon-command-dispatcher.js";
-import { NodeDaemonProcessTerminator } from "./daemon-process-launcher.js";
+import {
+  DaemonCommandDispatcher,
+  type DaemonDispatchRuntime,
+} from "./daemon-command-dispatcher.js";
 import {
   DAEMON_PROTOCOL_VERSION,
   DAEMON_RECORD_SCHEMA_VERSION,
   type DaemonRecord,
+  type DaemonResponse,
 } from "./daemon-protocol.js";
-import { DaemonRegistry } from "./daemon-registry.js";
-import { DaemonRecordObserver } from "./daemon-record-observer.js";
-import { DaemonWorkspaceIdentity } from "./daemon-workspace-identity.js";
-import { LocalDaemonTransport } from "./local-daemon-transport.js";
 
-const request = {
-  argv: ["overview", "input.ts"],
-  cwd: "/repo",
-  telemetryEnabled: false,
-} as const;
-const coldResult: CommandExecutionResult = {
-  frames: [{ stream: "stdout", bytesBase64: Buffer.from("cold\n").toString("base64") }],
-  exitCode: 0,
-};
+const workspaceRoot = resolve("reference-workspace");
+const REFERENCE_WORKSPACE_FILE_COUNT = 4_000;
 
-describe("DaemonCommandDispatcher real failure boundaries", () => {
-  const roots: string[] = [];
-  const servers: Server[] = [];
-
-  afterEach(async () => {
-    for (const server of servers) {
-      await new Promise<void>((resolve) => server.close(() => resolve()));
-    }
-    servers.length = 0;
-    for (const root of roots) rmSync(root, { recursive: true, force: true });
-    roots.length = 0;
-  });
-
-  it.each(["refused", "malformed", "truncated", "mismatched"] as const)(
-    "invalidates a same-version %s endpoint and executes cold once without replacement",
-    async (scenario) => {
-      const runtime = createRuntime(roots);
-      runtime.registry.write(readyRecord(runtime.identity));
-      if (scenario !== "refused") {
-        const server = createServer((socket) => {
-          socket.once("data", () => socket.end(invalidResponse(scenario)));
-        });
-        servers.push(server);
-        await new Promise<void>((resolve, reject) => {
-          server.once("error", reject);
-          server.listen(runtime.identity.endpoint("failed"), resolve);
-        });
+describe("DaemonCommandDispatcher startup routing", () => {
+  it("finishes concurrent reference-workspace calls cold behind one independent startup barrier", async () => {
+    const barrier = new StartupBarrier();
+    let record: DaemonRecord | undefined;
+    let daemonStarts = 0;
+    const coldExecute = vi.fn(async (request: CliExecutionRequest) =>
+      result(`cold:${request.argv[1] ?? "unknown"}`),
+    );
+    const trigger = vi.fn(async () => {
+      if (record?.state === "starting") {
+        return { status: "starting", instanceId: record.instanceId, pid: record.pid } as const;
       }
-      const ensureRunning = vi.fn();
-      const coldExecute = vi.fn(async () => coldResult);
+      daemonStarts += 1;
+      record = daemonRecord("warming", "starting");
+      await barrier.wait();
+      record = daemonRecord("warming", "ready");
+      return { status: "launched", instanceId: record.instanceId, pid: record.pid } as const;
+    });
+    const runtime: DaemonDispatchRuntime = {
+      coordinator: { trigger },
+      registry: {
+        read: () => record,
+        removeIfProcess: () => false,
+      },
+      observer: {
+        observe: async (observedRecord) => ({
+          kind: "responsive",
+          record: observedRecord,
+          pong: {
+            kind: "pong",
+            protocolVersion: observedRecord.protocolVersion,
+            instanceId: observedRecord.instanceId,
+            symnavVersion: observedRecord.symnavVersion,
+            state: "ready",
+            fileCount: REFERENCE_WORKSPACE_FILE_COUNT,
+          },
+        }),
+      },
+      transport: {
+        request: async (_endpoint, daemonRequest): Promise<DaemonResponse> => ({
+          kind: "result",
+          requestId: daemonRequest.kind === "execute" ? daemonRequest.requestId : "unexpected",
+          result: result("warm"),
+        }),
+      },
+    };
+    const dispatcher = createDispatcher(runtime, coldExecute);
+    const requests = Array.from({ length: 24 }, (_, index) => ({
+      argv: ["overview", `src/module-${String(index).padStart(4, "0")}.ts`],
+      cwd: workspaceRoot,
+      telemetryEnabled: false,
+    }));
 
-      await expect(
-        dispatcher(runtime, { ensureRunning }, coldExecute).execute(request),
-      ).resolves.toEqual({ mode: "fallback", result: coldResult });
+    const coldResults = await Promise.all(requests.map((request) => dispatcher.execute(request)));
 
-      expect(ensureRunning).not.toHaveBeenCalled();
-      expect(coldExecute).toHaveBeenCalledTimes(1);
-      expect(runtime.registry.read(runtime.identity)).toBeUndefined();
-    },
-  );
+    expect(coldResults.map(({ mode }) => mode)).toEqual(Array(24).fill("cold"));
+    expect(coldExecute).toHaveBeenCalledTimes(24);
+    expect(daemonStarts).toBe(1);
+    expect(record?.state).toBe("starting");
+
+    await expect(dispatcher.execute(requests[0]!)).resolves.toMatchObject({ mode: "cold" });
+    expect(trigger).toHaveBeenCalledTimes(24);
+
+    barrier.release();
+    await vi.waitFor(() => expect(record?.state).toBe("ready"));
+
+    await expect(dispatcher.execute(requests[0]!)).resolves.toEqual({
+      mode: "warm",
+      result: result("warm"),
+    });
+    expect(coldExecute).toHaveBeenCalledTimes(25);
+  });
 });
 
-function createRuntime(roots: string[]) {
-  const stateDirectory = mkdtempSync(join(tmpdir(), "symnav-dispatch-failure-"));
-  roots.push(stateDirectory);
-  const identity = DaemonWorkspaceIdentity.from("/repo", stateDirectory);
-  const transport = new LocalDaemonTransport({ requestTimeoutMs: 50 });
-  const processTerminator = new NodeDaemonProcessTerminator();
-  return {
-    identity,
-    registry: new DaemonRegistry(identity.registryDirectory),
-    transport,
-    observer: new DaemonRecordObserver(transport, processTerminator),
-    stateDirectory,
-  };
+class StartupBarrier {
+  private readonly waiting: Promise<void>;
+  private releaseWaiting!: () => void;
+
+  constructor() {
+    this.waiting = new Promise((resolve) => {
+      this.releaseWaiting = resolve;
+    });
+  }
+
+  wait(): Promise<void> {
+    return this.waiting;
+  }
+
+  release(): void {
+    this.releaseWaiting();
+  }
 }
 
-function dispatcher(
-  runtime: ReturnType<typeof createRuntime>,
-  coordinator: { ensureRunning(identity: DaemonWorkspaceIdentity): Promise<unknown> },
+function createDispatcher(
+  runtime: DaemonDispatchRuntime,
   coldExecute: (request: CliExecutionRequest) => Promise<CommandExecutionResult>,
 ): DaemonCommandDispatcher {
   return new DaemonCommandDispatcher({
@@ -95,56 +119,39 @@ function dispatcher(
         symnavVersion: "0.1.0",
         recorder: { record: () => {} },
       }) as unknown as ProgramDependencies,
-    stateDirectory: runtime.stateDirectory,
-    resolveWorkspaceRoot: async () => "/repo",
-    runtimeFactory: () => ({ ...runtime, coordinator }),
+    stateDirectory: "/state",
+    resolveWorkspaceRoot: async () => workspaceRoot,
+    runtimeFactory: () => runtime,
     executorFactory: () => ({ execute: coldExecute }),
     requestId: () => "expected-request",
   });
 }
 
-function readyRecord(identity: DaemonWorkspaceIdentity): DaemonRecord {
-  return {
+function daemonRecord(instanceId: string, state: "starting" | "ready"): DaemonRecord {
+  const base = {
     schemaVersion: DAEMON_RECORD_SCHEMA_VERSION,
     protocolVersion: DAEMON_PROTOCOL_VERSION,
     symnavVersion: "0.1.0",
-    workspaceRoot: identity.workspaceRoot,
-    workspaceKey: identity.workspaceKey,
-    stateKey: identity.stateKey,
-    identityKey: identity.identityKey,
-    instanceId: "failed",
-    processToken: "failed-process",
-    endpoint: identity.endpoint("failed"),
+    workspaceRoot,
+    workspaceKey: "key",
+    stateKey: "state-key",
+    identityKey: "identity-key",
+    instanceId,
+    processToken: `${instanceId}-process`,
+    endpoint: "/endpoint",
     pid: 123,
-    state: "ready",
+    state,
     startedAt: 1,
-    readyAt: 2,
-    fileCount: 1,
     memoryCapBytes: 1024,
+  } as const;
+  return state === "ready"
+    ? { ...base, state, readyAt: 2, fileCount: REFERENCE_WORKSPACE_FILE_COUNT }
+    : base;
+}
+
+function result(output: string): CommandExecutionResult {
+  return {
+    frames: [{ stream: "stdout", bytesBase64: Buffer.from(output).toString("base64") }],
+    exitCode: 0,
   };
-}
-
-function invalidResponse(scenario: "malformed" | "truncated" | "mismatched"): Buffer {
-  if (scenario === "truncated") {
-    const prefix = Buffer.alloc(4);
-    prefix.writeUInt32BE(10);
-    return Buffer.concat([prefix, Buffer.from("{}")]);
-  }
-  if (scenario === "mismatched") {
-    return frame({
-      kind: "result",
-      requestId: "different-request",
-      result: { frames: [], exitCode: 0 },
-    });
-  }
-  const prefix = Buffer.alloc(4);
-  prefix.writeUInt32BE(1);
-  return Buffer.concat([prefix, Buffer.from("{")]);
-}
-
-function frame(value: unknown): Buffer {
-  const payload = Buffer.from(JSON.stringify(value));
-  const prefix = Buffer.alloc(4);
-  prefix.writeUInt32BE(payload.length);
-  return Buffer.concat([prefix, payload]);
 }

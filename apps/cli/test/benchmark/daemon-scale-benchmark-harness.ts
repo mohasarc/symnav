@@ -547,7 +547,7 @@ interface LargeResponseEvidence {
   readonly statusMaximumMs: number;
 }
 
-class BenchmarkSampleEvidence {
+export class BenchmarkSampleEvidence {
   static from(
     command: keyof GeneratedDaemonWorkspace["commands"],
     repetition: number,
@@ -592,7 +592,7 @@ interface OperationMetrics {
   readonly spoolBytes: number;
 }
 
-class DaemonBenchmarkDiagnostics {
+export class DaemonBenchmarkDiagnostics {
   private constructor(
     private readonly operationMetrics: readonly OperationMetrics[],
     readonly restartCount: number,

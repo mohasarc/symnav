@@ -1,7 +1,13 @@
-import { readFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { DAEMON_BENCHMARK_WARM_REPETITIONS } from "./daemon-benchmark-gate.js";
-import { DaemonScaleBenchmarkHarness } from "./daemon-scale-benchmark-harness.js";
+import {
+  BenchmarkSampleEvidence,
+  DaemonBenchmarkDiagnostics,
+  DaemonScaleBenchmarkHarness,
+} from "./daemon-scale-benchmark-harness.js";
 import { DaemonWorkspaceProfileValidator } from "./daemon-workspace-profile.js";
 
 describe("DaemonScaleBenchmarkHarness", () => {
@@ -55,4 +61,47 @@ describe("DaemonScaleBenchmarkHarness", () => {
       failures: [],
     });
   }, 120_000);
+
+  it("rejects a fixed invocation whose diagnostic is masked by later operation evidence", () => {
+    const logPath = TestDiagnostics.withMissingOverviewAndLaterResolve();
+    const samples = Array.from({ length: 9 }, (_, repetition) =>
+      BenchmarkSampleEvidence.from(
+        "overview",
+        repetition,
+        { status: 0, stdout: "benchmarkHub", stderr: "" },
+        { status: 0, stdout: "benchmarkHub", stderr: "" },
+        10,
+        { argv: ["overview", "target.ts"], expectNonEmpty: true },
+      ),
+    );
+
+    const diagnostics = DaemonBenchmarkDiagnostics.read(logPath);
+    const enriched = diagnostics.enrich(samples);
+
+    expect(enriched.filter((sample) => sample.serviceMsExcludingQueue === 10)).toHaveLength(1);
+    expect(diagnostics.complete(samples.length)).toBe(false);
+  });
 });
+
+class TestDiagnostics {
+  static withMissingOverviewAndLaterResolve(): string {
+    const directory = mkdtempSync(join(tmpdir(), "symnav-benchmark-diagnostics-"));
+    const logPath = join(directory, "daemon.jsonl");
+    const events = Array.from({ length: 9 }, (_, index) => {
+      const requestId = `request-${index}`;
+      const command = index === 8 ? "resolve" : "overview";
+      return [
+        { kind: "request-accepted", requestId, command },
+        { kind: "turn-started", requestId, queueWaitMs: 1 },
+        {
+          kind: "execution-terminal",
+          requestId,
+          serviceMs: 2,
+          peakProcessRssBytes: 3,
+        },
+      ];
+    }).flat();
+    writeFileSync(logPath, `${events.map((event) => JSON.stringify(event)).join("\n")}\n`);
+    return logPath;
+  }
+}

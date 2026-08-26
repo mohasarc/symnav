@@ -589,6 +589,12 @@ export class WorkspaceDaemon {
             if (response.kind !== "result" || response.requestId !== request.requestId) {
               throw new Error("Navigation worker returned an uncorrelated result");
             }
+            this.resourceSupervisor.workerHeapReported(
+              response.generation,
+              response.resources.workerHeapUsedBytes,
+              response.resources.workerHeapLimitBytes,
+              response.resources.peakWorkerHeapUsedBytes,
+            );
             trace?.workerCompleted(
               {
                 freshnessMs: response.durations.freshnessMs,

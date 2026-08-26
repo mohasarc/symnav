@@ -43,6 +43,7 @@ interface DaemonOperationResources {
   readonly snapshot: {
     readonly processRssBytes: number;
     readonly peakProcessRssBytes: number;
+    readonly peakWorkerHeapUsedBytes?: number;
     readonly workerHeapUsedBytes?: number;
     readonly spoolBytes: number;
   };
@@ -134,6 +135,9 @@ export class DaemonOperationObserver {
             : {
                 processRssBytes: resources.processRssBytes,
                 peakProcessRssBytes: resources.peakProcessRssBytes,
+                ...(resources.peakWorkerHeapUsedBytes === undefined
+                  ? {}
+                  : { peakWorkerHeapUsedBytes: resources.peakWorkerHeapUsedBytes }),
                 ...(resources.workerHeapUsedBytes === undefined
                   ? {}
                   : { workerHeapUsedBytes: resources.workerHeapUsedBytes }),

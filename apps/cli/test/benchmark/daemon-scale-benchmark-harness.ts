@@ -63,7 +63,9 @@ export interface DaemonBenchmarkArtifact {
   readonly cpuCount: number;
   readonly resourcePolicy: DaemonResourcePolicyRecord;
   readonly startupMs: number;
+  readonly startupPhaseStatistics: Readonly<Record<string, DaemonBenchmarkDurationStatistics>>;
   readonly commandStatistics: Readonly<Record<string, DaemonBenchmarkStatistics>>;
+  readonly commandPhaseStatistics: Readonly<Record<string, DaemonBenchmarkCommandPhaseStatistics>>;
   readonly processRssPeakBytes: number;
   readonly workerHeapPeakBytes?: number;
   readonly spoolPeakBytes: number;
@@ -110,8 +112,13 @@ export class DaemonScaleBenchmarkHarness {
       if (initialRecord === undefined)
         throw new Error("Daemon benchmark startup record is missing");
 
+      const fixedDiagnosticCursor = await this.waitForStartupDiagnostics(identity.logPath);
       const samples = await this.runFixedSuite(generated, stateDirectory);
-      const fixedDiagnostics = DaemonBenchmarkDiagnostics.read(identity.logPath);
+      const fixedDiagnostics = await this.waitForFixedDiagnostics(
+        identity.logPath,
+        fixedDiagnosticCursor,
+        samples.length,
+      );
       const enrichedSamples = fixedDiagnostics.enrich(samples);
       const fixedArtifactComplete = fixedDiagnostics.complete(enrichedSamples);
       const freshness = this.runMutations(generated, stateDirectory);
@@ -184,7 +191,11 @@ export class DaemonScaleBenchmarkHarness {
         cpuCount: cpus().length,
         resourcePolicy,
         startupMs,
+        startupPhaseStatistics: DaemonBenchmarkPhaseStatistics.startup(
+          diagnostics.startupDurations,
+        ),
         commandStatistics: gate.commandStatistics,
+        commandPhaseStatistics: DaemonBenchmarkPhaseStatistics.from(enrichedSamples),
         processRssPeakBytes: diagnostics.processRssPeakBytes,
         ...(diagnostics.workerHeapPeakBytes === undefined
           ? {}
@@ -258,6 +269,31 @@ export class DaemonScaleBenchmarkHarness {
       }
     }
     return samples;
+  }
+
+  private async waitForFixedDiagnostics(
+    logPath: string,
+    cursor: number,
+    expectedOperations: number,
+  ): Promise<DaemonBenchmarkDiagnostics> {
+    const deadline = performance.now() + 10_000;
+    let diagnostics = DaemonBenchmarkDiagnostics.read(logPath, cursor);
+    while (!diagnostics.ready(expectedOperations) && performance.now() < deadline) {
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      diagnostics = DaemonBenchmarkDiagnostics.read(logPath, cursor);
+    }
+    return diagnostics;
+  }
+
+  private async waitForStartupDiagnostics(logPath: string): Promise<number> {
+    const deadline = performance.now() + 10_000;
+    while (
+      !DaemonBenchmarkDiagnostics.startupProbeComplete(logPath) &&
+      performance.now() < deadline
+    ) {
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+    return DaemonBenchmarkDiagnostics.eventCount(logPath);
   }
 
   private runMutations(generated: GeneratedDaemonWorkspace, stateDirectory: string): boolean {
@@ -591,6 +627,11 @@ export class BenchmarkSampleEvidence {
       responseBytes: Buffer.byteLength(warm.stdout) + Buffer.byteLength(warm.stderr),
       processRssPeakBytes: 0,
       spoolPeakBytes: 0,
+      freshnessMs: 0,
+      navigationMs: 0,
+      renderMs: 0,
+      workerOutputMs: 0,
+      spoolMs: 0,
       stdoutParity: cold.stdout === warm.stdout,
       stderrParity: cold.stderr === warm.stderr,
       exitParity: cold.status === warm.status,
@@ -680,6 +721,11 @@ interface OperationMetrics {
   readonly processRssPeakBytes: number;
   readonly workerHeapPeakBytes?: number;
   readonly spoolBytes: number;
+  readonly freshnessMs: number;
+  readonly navigationMs: number;
+  readonly renderMs: number;
+  readonly workerOutputMs: number;
+  readonly spoolMs: number;
   readonly complete: boolean;
 }
 
@@ -693,16 +739,35 @@ export class DaemonBenchmarkDiagnostics {
     readonly workerHeapPeakBytes: number | undefined,
     readonly spoolPeakBytes: number,
     readonly phasesComplete: boolean,
+    readonly startupDurations: {
+      readonly discoveryMs: number;
+      readonly indexingMs: number;
+      readonly totalMs: number;
+    },
+    private readonly uncorrelatedOperationEventCount: number,
   ) {}
 
-  static read(logPath: string): DaemonBenchmarkDiagnostics {
-    const events = existsSync(logPath)
+  static read(logPath: string, cursor = 0): DaemonBenchmarkDiagnostics {
+    const allEvents = existsSync(logPath)
       ? readFileSync(logPath, "utf8")
           .split("\n")
           .filter((line) => line.length > 0)
           .map((line) => JSON.parse(line) as Record<string, unknown>)
       : [];
+    const events = allEvents.slice(cursor);
     const accepted = events.filter((event) => event.kind === "request-accepted");
+    const acceptedRequestIds = new Set(accepted.map((event) => String(event.requestId)));
+    const operationKinds = new Set([
+      "turn-started",
+      "worker-completed",
+      "response-spooled",
+      "execution-terminal",
+      "delivery-terminal",
+    ]);
+    const uncorrelatedOperationEventCount = events.filter(
+      (event) =>
+        operationKinds.has(String(event.kind)) && !acceptedRequestIds.has(String(event.requestId)),
+    ).length;
     const operationMetrics = accepted.map((acceptedEvent) => {
       const requestId = String(acceptedEvent.requestId);
       const requestEvents = events.filter((event) => String(event.requestId) === requestId);
@@ -715,6 +780,7 @@ export class DaemonBenchmarkDiagnostics {
       const turn = turns[0];
       const spool = spools[0];
       const terminal = terminals[0];
+      const worker = workers[0];
       return {
         requestId,
         command: String(acceptedEvent.command),
@@ -723,23 +789,29 @@ export class DaemonBenchmarkDiagnostics {
         processRssPeakBytes: Number(
           terminal?.peakProcessRssBytes ?? terminal?.processRssBytes ?? 0,
         ),
-        ...(terminal?.workerHeapPeakBytes === undefined
+        ...(terminal?.peakWorkerHeapUsedBytes === undefined
           ? {}
-          : { workerHeapPeakBytes: Number(terminal.workerHeapPeakBytes) }),
-        spoolBytes: Math.max(
-          Number(terminal?.spoolBytes ?? 0),
-          Number(spool?.rawBytes ?? 0),
-        ),
+          : { workerHeapPeakBytes: Number(terminal.peakWorkerHeapUsedBytes) }),
+        spoolBytes: Math.max(Number(terminal?.spoolBytes ?? 0), Number(spool?.rawBytes ?? 0)),
+        freshnessMs: Number(worker?.freshnessMs ?? 0),
+        navigationMs: Number(worker?.navigationMs ?? 0),
+        renderMs: Number(worker?.renderMs ?? 0),
+        workerOutputMs: Number(worker?.workerOutputMs ?? 0),
+        spoolMs: Number(spool?.spoolMs ?? 0),
         complete:
           acceptedEvents.length === 1 &&
           turns.length === 1 &&
           workers.length === 1 &&
           spools.length === 1 &&
           terminals.length === 1 &&
-          deliveries.length === 1,
+          deliveries.length === 1 &&
+          terminals[0]?.outcome === "completed" &&
+          deliveries[0]?.outcome === "delivered",
       };
     });
     const phases = new Set(events.map((event) => String(event.kind)));
+    const startup = allEvents.filter((event) => event.kind === "startup-completed");
+    const startupEvent = startup[0];
     return new DaemonBenchmarkDiagnostics(
       operationMetrics,
       events.filter((event) => event.kind === "worker-replaced").length,
@@ -758,14 +830,50 @@ export class DaemonBenchmarkDiagnostics {
         "response-spooled",
         "execution-terminal",
         "delivery-terminal",
-      ].every((phase) => phases.has(phase)),
+      ].every((phase) => phases.has(phase)) && startup.length === 1,
+      {
+        discoveryMs: Number(startupEvent?.discoveryMs ?? 0),
+        indexingMs: Number(startupEvent?.indexingMs ?? 0),
+        totalMs: Number(startupEvent?.totalMs ?? 0),
+      },
+      uncorrelatedOperationEventCount,
     );
+  }
+
+  static startupProbeComplete(logPath: string): boolean {
+    if (!existsSync(logPath)) return false;
+    const events = readFileSync(logPath, "utf8")
+      .split("\n")
+      .filter((line) => line.length > 0)
+      .map((line) => JSON.parse(line) as Record<string, unknown>);
+    const versionRequests = new Set(
+      events
+        .filter((event) => event.kind === "request-accepted" && event.command === "version")
+        .map((event) => String(event.requestId)),
+    );
+    return (
+      events.some((event) => event.kind === "startup-completed") &&
+      events.some(
+        (event) =>
+          event.kind === "delivery-terminal" &&
+          event.outcome === "delivered" &&
+          versionRequests.has(String(event.requestId)),
+      )
+    );
+  }
+
+  static eventCount(logPath: string): number {
+    if (!existsSync(logPath)) return 0;
+    return readFileSync(logPath, "utf8")
+      .split("\n")
+      .filter((line) => line.length > 0).length;
   }
 
   enrich(samples: readonly BenchmarkSampleEvidence[]): BenchmarkSampleEvidence[] {
     return samples.map((sample, index) => {
       const metric = this.operationMetrics[index];
-      if (metric === undefined || metric.command !== sample.command || !metric.complete) return sample;
+      if (metric === undefined || metric.command !== sample.command || !metric.complete)
+        return sample;
       return {
         ...sample,
         serviceMsExcludingQueue: metric!.serviceMs,
@@ -775,6 +883,11 @@ export class DaemonBenchmarkDiagnostics {
           ? {}
           : { workerHeapPeakBytes: metric!.workerHeapPeakBytes }),
         spoolPeakBytes: metric!.spoolBytes,
+        freshnessMs: metric!.freshnessMs,
+        navigationMs: metric!.navigationMs,
+        renderMs: metric!.renderMs,
+        workerOutputMs: metric!.workerOutputMs,
+        spoolMs: metric!.spoolMs,
         diagnosticMatched: true,
       };
     });
@@ -782,14 +895,79 @@ export class DaemonBenchmarkDiagnostics {
 
   complete(samples: readonly BenchmarkSampleEvidence[]): boolean {
     return (
+      this.uncorrelatedOperationEventCount === 0 &&
       this.operationMetrics.length === samples.length &&
       this.operationMetrics.every((metric) => metric.complete) &&
       samples.every((sample) => sample.diagnosticMatched)
     );
   }
 
+  ready(expectedOperations: number): boolean {
+    return (
+      this.uncorrelatedOperationEventCount === 0 &&
+      this.operationMetrics.length === expectedOperations &&
+      this.operationMetrics.every((metric) => metric.complete)
+    );
+  }
+
   private static maximumOptional(values: readonly (number | undefined)[]): number | undefined {
     const present = values.filter((value): value is number => value !== undefined);
     return present.length === 0 ? undefined : Math.max(...present);
+  }
+}
+
+export interface DaemonBenchmarkDurationStatistics {
+  readonly minimumMs: number;
+  readonly p50Ms: number;
+  readonly p95Ms: number;
+  readonly maximumMs: number;
+}
+
+export interface DaemonBenchmarkCommandPhaseStatistics {
+  readonly freshness: DaemonBenchmarkDurationStatistics;
+  readonly navigation: DaemonBenchmarkDurationStatistics;
+  readonly render: DaemonBenchmarkDurationStatistics;
+  readonly workerOutput: DaemonBenchmarkDurationStatistics;
+  readonly spool: DaemonBenchmarkDurationStatistics;
+}
+
+export class DaemonBenchmarkPhaseStatistics {
+  static from(
+    samples: readonly BenchmarkSampleEvidence[],
+  ): Readonly<Record<string, DaemonBenchmarkCommandPhaseStatistics>> {
+    const statistics: Record<string, DaemonBenchmarkCommandPhaseStatistics> = {};
+    for (const command of new Set(samples.map((sample) => sample.command))) {
+      const commandSamples = samples.filter((sample) => sample.command === command);
+      statistics[command] = {
+        freshness: this.distribution(commandSamples.map((sample) => sample.freshnessMs)),
+        navigation: this.distribution(commandSamples.map((sample) => sample.navigationMs)),
+        render: this.distribution(commandSamples.map((sample) => sample.renderMs)),
+        workerOutput: this.distribution(commandSamples.map((sample) => sample.workerOutputMs)),
+        spool: this.distribution(commandSamples.map((sample) => sample.spoolMs)),
+      };
+    }
+    return statistics;
+  }
+
+  static startup(durations: {
+    readonly discoveryMs: number;
+    readonly indexingMs: number;
+    readonly totalMs: number;
+  }): Readonly<Record<string, DaemonBenchmarkDurationStatistics>> {
+    return {
+      discovery: this.distribution([durations.discoveryMs]),
+      indexing: this.distribution([durations.indexingMs]),
+      total: this.distribution([durations.totalMs]),
+    };
+  }
+
+  private static distribution(values: readonly number[]): DaemonBenchmarkDurationStatistics {
+    const ordered = [...values].sort((left, right) => left - right);
+    return {
+      minimumMs: ordered[0]!,
+      p50Ms: ordered[Math.ceil(ordered.length * 0.5) - 1]!,
+      p95Ms: ordered[Math.ceil(ordered.length * 0.95) - 1]!,
+      maximumMs: ordered.at(-1)!,
+    };
   }
 }

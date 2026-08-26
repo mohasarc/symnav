@@ -8,6 +8,7 @@ import {
   type Workspace,
   type WorkspaceSnapshot,
 } from "@symnav/core";
+import { performance } from "node:perf_hooks";
 
 const severityPrefixes: Record<NavigationDiagnosticSeverity, string> = {
   warning: "Warning",
@@ -56,6 +57,7 @@ export async function runCommand<Result extends ResultWithDiagnostics, Args>(
   let workspace: Workspace | undefined;
 
   try {
+    const freshnessStartedAt = performance.now();
     const scopeFactory =
       dependencies.scopeFactory ?? new WorkspaceRequestScopeFactory(fs, dependencies.backends());
     const snapshotSelector = command.snapshotForBackendRefresh;
@@ -75,6 +77,7 @@ export async function runCommand<Result extends ResultWithDiagnostics, Args>(
         )
       : await scopeFactory.prepareWorkspace(workspace);
     workspace = preparedScope.workspace;
+    const freshnessCompletedAt = performance.now();
     try {
       dependencies.backendRefreshed?.(preparedScope.refresh);
     } catch {}
@@ -85,8 +88,17 @@ export async function runCommand<Result extends ResultWithDiagnostics, Args>(
       cwd,
       args,
     };
+    const navigationStartedAt = performance.now();
     const result = await command.compute(commandContext);
+    const navigationCompletedAt = performance.now();
+    const renderStartedAt = performance.now();
     const rendered = json ? command.renderJson(result) : command.renderText(result);
+    const renderCompletedAt = performance.now();
+    dependencies.commandPhasesObserved?.({
+      freshnessMs: Math.max(0, freshnessCompletedAt - freshnessStartedAt),
+      navigationMs: Math.max(0, navigationCompletedAt - navigationStartedAt),
+      renderMs: Math.max(0, renderCompletedAt - renderStartedAt),
+    });
     for (const diagnostic of result.diagnostics ?? []) {
       context.stderr.write(`${severityPrefixes[diagnostic.severity]}: ${diagnostic.message}\n`);
     }

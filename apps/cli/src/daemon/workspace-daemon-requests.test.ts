@@ -1806,6 +1806,11 @@ class ExecutorNavigationWorker implements DaemonNavigationWorker {
       result: { exitCode: result.exitCode },
       refresh: { added: 0, changed: 0, removed: 0, unchanged: 1 },
       durations: { freshnessMs: 0, navigationMs: 1, renderMs: 0, outputMs: 0 },
+      resources: {
+        workerHeapUsedBytes: 1,
+        peakWorkerHeapUsedBytes: 1,
+        workerHeapLimitBytes: 2,
+      },
     };
   }
 

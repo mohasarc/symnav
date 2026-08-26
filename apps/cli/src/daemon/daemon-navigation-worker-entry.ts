@@ -2,6 +2,7 @@ import { performance } from "node:perf_hooks";
 import { parentPort, workerData } from "node:worker_threads";
 import { getHeapStatistics } from "node:v8";
 import type { BackendRefreshSummary } from "@symnav/core";
+import type { CommandPhaseDurations } from "../program-dependencies.js";
 import { createDefaultDependencies } from "../program.js";
 import { RetainedWorkspaceProgram } from "./retained-workspace-program.js";
 import {
@@ -26,6 +27,12 @@ class DaemonNavigationWorkerEntry {
   };
   private tail: Promise<void> = Promise.resolve();
   private readonly outputAcknowledgements = new Map<string, () => void>();
+  private activeHeapMonitor: WorkerHeapHighWater | undefined;
+  private commandDurations: CommandPhaseDurations = {
+    freshnessMs: 0,
+    navigationMs: 0,
+    renderMs: 0,
+  };
 
   constructor(
     private readonly port: NonNullable<typeof parentPort>,
@@ -82,6 +89,10 @@ class DaemonNavigationWorkerEntry {
     const startedAt = performance.now();
     try {
       const dependencies = createDefaultDependencies(this.data.stateDirectory);
+      dependencies.commandPhasesObserved = (durations) => {
+        this.commandDurations = durations;
+        this.activeHeapMonitor?.sample();
+      };
       this.retainedProgram = new RetainedWorkspaceProgram(dependencies, (refresh) => {
         this.latestRefresh = refresh;
       });
@@ -101,14 +112,21 @@ class DaemonNavigationWorkerEntry {
   }
 
   private async execute(request: Extract<DaemonNavigationWorkerRequest, { kind: "execute" }>) {
-    const startedAt = performance.now();
+    const heapMonitor = new WorkerHeapHighWater();
+    this.activeHeapMonitor = heapMonitor;
+    this.commandDurations = { freshnessMs: 0, navigationMs: 0, renderMs: 0 };
     try {
       if (this.retainedProgram === undefined) throw new Error("Navigation worker is not ready");
       const result = await this.retainedProgram.execute(request.request);
+      heapMonitor.sample();
+      const outputStartedAt = performance.now();
       for await (const record of result.output?.records() ?? []) {
         await this.sendOutput(request.requestId, record);
+        heapMonitor.sample();
       }
       await result.output?.dispose();
+      const outputMs = performance.now() - outputStartedAt;
+      const resources = heapMonitor.finish();
       this.send({
         kind: "result",
         generation: this.data.generation,
@@ -116,14 +134,16 @@ class DaemonNavigationWorkerEntry {
         result: { exitCode: result.exitCode },
         refresh: this.latestRefresh,
         durations: {
-          freshnessMs: 0,
-          navigationMs: performance.now() - startedAt,
-          renderMs: 0,
-          outputMs: 0,
+          ...this.commandDurations,
+          outputMs,
         },
+        resources,
       });
     } catch (error) {
       this.fail("execution", error, { requestId: request.requestId });
+    } finally {
+      heapMonitor.close();
+      this.activeHeapMonitor = undefined;
     }
   }
 
@@ -208,6 +228,44 @@ class DaemonNavigationWorkerEntry {
     if (resolve === undefined) throw new Error("Unexpected worker output acknowledgement");
     this.outputAcknowledgements.delete(key);
     resolve();
+  }
+}
+
+class WorkerHeapHighWater {
+  private currentUsedBytes = 0;
+  private peakUsedBytes = 0;
+  private heapLimitBytes = 0;
+  private readonly timer: ReturnType<typeof setInterval>;
+
+  constructor() {
+    this.sample();
+    this.timer = setInterval(() => this.sample(), 25);
+    this.timer.unref?.();
+  }
+
+  sample(): void {
+    const heap = getHeapStatistics();
+    this.currentUsedBytes = heap.used_heap_size;
+    this.peakUsedBytes = Math.max(this.peakUsedBytes, this.currentUsedBytes);
+    this.heapLimitBytes = heap.heap_size_limit;
+  }
+
+  finish(): {
+    readonly workerHeapUsedBytes: number;
+    readonly peakWorkerHeapUsedBytes: number;
+    readonly workerHeapLimitBytes: number;
+  } {
+    this.sample();
+    this.close();
+    return {
+      workerHeapUsedBytes: this.currentUsedBytes,
+      peakWorkerHeapUsedBytes: this.peakUsedBytes,
+      workerHeapLimitBytes: this.heapLimitBytes,
+    };
+  }
+
+  close(): void {
+    clearInterval(this.timer);
   }
 }
 

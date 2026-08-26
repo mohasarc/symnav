@@ -61,6 +61,11 @@ export type DaemonNavigationWorkerResponse =
       readonly result: { readonly exitCode: number };
       readonly refresh: BackendRefreshSummary;
       readonly durations: WorkerCommandDurations;
+      readonly resources: {
+        readonly workerHeapUsedBytes: number;
+        readonly peakWorkerHeapUsedBytes: number;
+        readonly workerHeapLimitBytes: number;
+      };
     }
   | {
       readonly kind: "failed";
@@ -146,11 +151,20 @@ export class DaemonNavigationWorkerProtocol {
     }
     if (
       value.kind === "result" &&
-      this.hasKeys(value, ["kind", "generation", "requestId", "result", "refresh", "durations"]) &&
+      this.hasKeys(value, [
+        "kind",
+        "generation",
+        "requestId",
+        "result",
+        "refresh",
+        "durations",
+        "resources",
+      ]) &&
       this.isNonEmptyString(value.requestId) &&
       this.isExecutionResult(value.result) &&
       this.isRefresh(value.refresh) &&
-      this.isDurations(value.durations, ["freshnessMs", "navigationMs", "renderMs", "outputMs"])
+      this.isDurations(value.durations, ["freshnessMs", "navigationMs", "renderMs", "outputMs"]) &&
+      this.isWorkerResources(value.resources)
     ) {
       return value as unknown as DaemonNavigationWorkerResponse;
     }
@@ -176,6 +190,21 @@ export class DaemonNavigationWorkerProtocol {
       return value as unknown as DaemonNavigationWorkerResponse;
     }
     throw new Error("Invalid daemon navigation worker response");
+  }
+
+  private static isWorkerResources(value: unknown): boolean {
+    return (
+      this.isRecord(value) &&
+      this.hasKeys(value, [
+        "workerHeapUsedBytes",
+        "peakWorkerHeapUsedBytes",
+        "workerHeapLimitBytes",
+      ]) &&
+      this.isCount(value.workerHeapUsedBytes) &&
+      this.isCount(value.peakWorkerHeapUsedBytes) &&
+      this.isCount(value.workerHeapLimitBytes) &&
+      value.peakWorkerHeapUsedBytes >= value.workerHeapUsedBytes
+    );
   }
 
   private static isExecutionRequest(value: unknown): value is CliExecutionRequest {

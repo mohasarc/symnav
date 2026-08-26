@@ -142,6 +142,11 @@ class BenchmarkEvidence {
       responseBytes: 10,
       processRssPeakBytes: 100,
       spoolPeakBytes: 0,
+      freshnessMs: 1,
+      navigationMs: 1,
+      renderMs: 1,
+      workerOutputMs: 1,
+      spoolMs: 1,
     }));
   }
 }

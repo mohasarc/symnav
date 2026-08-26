@@ -71,6 +71,7 @@ export interface DaemonResourceSnapshot {
   readonly processRssBytes: number;
   readonly peakProcessRssBytes: number;
   readonly workerHeapUsedBytes?: number;
+  readonly peakWorkerHeapUsedBytes?: number;
   readonly workerHeapLimitBytes?: number;
   readonly spoolBytes: number;
   readonly admissionPaused: boolean;
@@ -105,6 +106,7 @@ export class DaemonResourceSupervisor {
   private shedCompleted = false;
   private shedOperation: Promise<void> | undefined;
   private workerHeapUsedBytes: number | undefined;
+  private peakWorkerHeapUsedBytes: number | undefined;
   private workerHeapLimitBytes: number | undefined;
   private replacementCount = 0;
   private replacementTimes: number[] = [];
@@ -125,6 +127,9 @@ export class DaemonResourceSupervisor {
       ...(this.workerHeapUsedBytes === undefined
         ? {}
         : { workerHeapUsedBytes: this.workerHeapUsedBytes }),
+      ...(this.peakWorkerHeapUsedBytes === undefined
+        ? {}
+        : { peakWorkerHeapUsedBytes: this.peakWorkerHeapUsedBytes }),
       ...(this.workerHeapLimitBytes === undefined
         ? {}
         : { workerHeapLimitBytes: this.workerHeapLimitBytes }),
@@ -174,10 +179,16 @@ export class DaemonResourceSupervisor {
     await this.shed(runAtBoundary);
   }
 
-  workerHeapReported(generation: number, usedBytes: number, limitBytes: number): void {
+  workerHeapReported(
+    generation: number,
+    usedBytes: number,
+    limitBytes: number,
+    peakUsedBytes = usedBytes,
+  ): void {
     if (generation !== this.currentGeneration) return;
     this.workerHeapUsedBytes = usedBytes;
     this.workerHeapLimitBytes = limitBytes;
+    this.peakWorkerHeapUsedBytes = Math.max(this.peakWorkerHeapUsedBytes ?? 0, peakUsedBytes);
   }
 
   async workerExited(exit: import("./daemon-navigation-worker.js").DaemonNavigationWorkerExit) {

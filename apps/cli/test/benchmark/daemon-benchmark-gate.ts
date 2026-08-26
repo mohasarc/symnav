@@ -13,6 +13,11 @@ export interface DaemonBenchmarkSample {
   readonly processRssPeakBytes: number;
   readonly workerHeapPeakBytes?: number;
   readonly spoolPeakBytes: number;
+  readonly freshnessMs: number;
+  readonly navigationMs: number;
+  readonly renderMs: number;
+  readonly workerOutputMs: number;
+  readonly spoolMs: number;
 }
 
 export interface DaemonBenchmarkStatistics {

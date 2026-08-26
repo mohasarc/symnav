@@ -103,7 +103,7 @@ describe("DaemonScaleBenchmarkHarness", () => {
   });
 
   it("rejects a missing fixed telemetry event masked by a same-command duplicate", () => {
-    const event = { command: "overview", executionMode: "warm" };
+    const event = { command: "overview", executionMode: "warm" } satisfies Record<string, unknown>;
 
     expect(BenchmarkSampleEvidence.telemetryMatched([], [event, event], "overview")).toBe(false);
     expect(BenchmarkSampleEvidence.telemetryMatched([], [], "overview")).toBe(false);
@@ -226,11 +226,22 @@ class TestDiagnostics {
         { kind: "request-accepted", requestId, command },
         { kind: "turn-started", requestId, queueWaitMs: 1 },
         {
+          kind: "worker-completed",
+          requestId,
+          freshnessMs: 1,
+          navigationMs: 1,
+          renderMs: 1,
+          workerOutputMs: 1,
+        },
+        { kind: "response-spooled", requestId, rawBytes: 1, spoolMs: 1 },
+        {
           kind: "execution-terminal",
           requestId,
+          outcome: "completed",
           serviceMs: 2,
           peakProcessRssBytes: 3,
         },
+        { kind: "delivery-terminal", requestId, outcome: "delivered", deliveryMs: 1 },
       ];
     }).flat();
     writeFileSync(logPath, `${events.map((event) => JSON.stringify(event)).join("\n")}\n`);
@@ -258,6 +269,7 @@ class TestDiagnostics {
         ...Array.from({ length: executionTerminals }, () => ({
           kind: "execution-terminal",
           requestId,
+          outcome: "completed",
           serviceMs: 2,
           peakProcessRssBytes: 3,
         })),

@@ -320,6 +320,89 @@ describe("LocalDaemonTransport execution delivery", () => {
     if (completion.status === "completed") await completion.result.output.dispose();
   });
 
+  it("resumes after a stalled append at the first durably missing record", async () => {
+    const directory = mkdtempSync(join(tmpdir(), "symnav-stalled-resume-"));
+    directories.push(directory);
+    const store = new DaemonCompletionSpoolStore({
+      directory: join(directory, "daemon"),
+      workspaceKey: "workspace",
+      instanceId: request.instanceId,
+    });
+    const spool = await store.create(request.requestId);
+    for (let sequence = 0; sequence < 3; sequence += 1) {
+      await spool.append({
+        sequence,
+        stream: sequence % 2 === 0 ? "stdout" : "stderr",
+        bytes: Buffer.from(`record-${sequence}`),
+      });
+    }
+    const manifest = await spool.finish(0);
+    let markAppendStarted!: () => void;
+    let releaseAppend!: () => void;
+    const appendStarted = new Promise<void>((resolve) => {
+      markAppendStarted = resolve;
+    });
+    const appendGate = new Promise<void>((resolve) => {
+      releaseAppend = resolve;
+    });
+    const appendRecord = OrderedCommandOutput.prototype.appendRecord;
+    let appendCalls = 0;
+    vi.spyOn(OrderedCommandOutput.prototype, "appendRecord").mockImplementation(async function (
+      this: OrderedCommandOutput,
+      record,
+    ) {
+      appendCalls += 1;
+      markAppendStarted();
+      if (appendCalls === 1) await appendGate;
+      await appendRecord.call(this, record);
+    });
+    const fetchOffsets: number[] = [];
+    const endpoint = await rawExecutionServer(servers, sockets, directories, (socket) => {
+      socket.once("data", (encoded) => {
+        const bytes = Buffer.isBuffer(encoded) ? encoded : Buffer.from(encoded);
+        const message = JSON.parse(bytes.subarray(4).toString()) as {
+          kind: string;
+          offset?: number;
+        };
+        if (message.kind === "execute") {
+          void firstEncodedRecord(spool, manifest).then((record) =>
+            socket.end(Buffer.concat([frame(accepted()), frame(resultManifest(manifest)), record])),
+          );
+          return;
+        }
+        if (message.kind === "result-fetch") {
+          fetchOffsets.push(message.offset ?? -1);
+          socket.write(frame(resultManifest(manifest)));
+          void sendRecords(socket, spool, manifest.transferId, message.offset ?? 0).then(() =>
+            socket.write(frame(resultEnd(manifest))),
+          );
+          return;
+        }
+        if (message.kind === "result-ack") {
+          socket.end(
+            frame({
+              kind: "result-acknowledged",
+              instanceId: request.instanceId,
+              processToken: request.processToken,
+              requestId: request.requestId,
+              transferId: manifest.transferId,
+            }),
+          );
+        }
+      });
+    });
+    const receipt = await new LocalDaemonTransport().execute(endpoint, request);
+
+    await appendStarted;
+    expect(fetchOffsets).toEqual([]);
+    releaseAppend();
+    const completion = await receipt.completion;
+
+    expect(fetchOffsets).toEqual([1]);
+    expect(completion).toMatchObject({ status: "completed", result: { exitCode: 0 } });
+    if (completion.status === "completed") await completion.result.output.dispose();
+  });
+
   it("resumes a disconnected result transfer at the contiguous record offset", async () => {
     const directory = mkdtempSync(join(tmpdir(), "symnav-resumed-result-"));
     directories.push(directory);
@@ -868,6 +951,23 @@ async function encodedResult(
   }
   chunks.push(frame(resultEnd(manifest)));
   return Buffer.concat(chunks);
+}
+
+async function firstEncodedRecord(
+  spool: import("./completion-spool.js").CompletionSpool,
+  manifest: import("./completion-spool.js").CompletionSpoolManifest,
+): Promise<Buffer> {
+  for await (const record of spool.read(0)) {
+    return DaemonResultChunkCodec.encode({
+      transferId: manifest.transferId,
+      requestId: request.requestId,
+      offset: record.sequence,
+      sequence: record.sequence,
+      stream: record.stream,
+      bytes: record.bytes,
+    });
+  }
+  throw new Error("Expected one completion record");
 }
 
 async function rawExecutionServer(

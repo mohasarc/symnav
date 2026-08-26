@@ -625,6 +625,86 @@ describe("WorkspaceDaemon requests", () => {
     ).resolves.toMatchObject({ kind: "result-acknowledged" });
   });
 
+  it("releases successful request traces after acknowledgement under sustained churn", async () => {
+    const harness = await RequestHarness.start(new ImmediateExecutor());
+    harnesses.push(harness);
+
+    for (let index = 0; index < 100; index += 1) {
+      const requestId = `completed-${index}`;
+      const completed = await harness.execute(requestId);
+      if (completed.kind !== "result-end") throw new Error("Expected completed result");
+      await harness.acknowledge(requestId, completed.transferId);
+    }
+
+    expect(harness.retainedOperationTraceCount()).toBe(0);
+  });
+
+  it("releases non-replayable failed request traces after delivery", async () => {
+    const harness = await RequestHarness.start(new RejectingExecutor());
+    harnesses.push(harness);
+
+    await expect(harness.execute("failed-trace")).resolves.toMatchObject({
+      kind: "execution-failed",
+      code: "internal",
+    });
+
+    expect(harness.retainedOperationTraceCount()).toBe(0);
+    await waitUntil(() => harness.logEvents().some((event) => event.kind === "delivery-terminal"));
+    expect(harness.logEvents().filter((event) => event.kind === "execution-terminal")).toHaveLength(
+      1,
+    );
+    expect(harness.logEvents().filter((event) => event.kind === "delivery-terminal")).toHaveLength(
+      1,
+    );
+  });
+
+  it("retains disconnected request traces only until replay acknowledgement", async () => {
+    const executor = new SerializedExecutor();
+    const harness = await RequestHarness.start(executor);
+    harnesses.push(harness);
+    const disconnected = await harness.admit("reattached-trace", ["overview", "input.ts"]);
+    await executor.started(1);
+    disconnected.disconnect();
+    executor.complete(0);
+    await waitUntil(
+      async () => (await harness.status("reattached-trace")).status.state === "completed",
+    );
+
+    expect(harness.retainedOperationTraceCount()).toBe(1);
+    const reattached = await harness.admit("reattached-trace", ["overview", "input.ts"]);
+    const completed = await reattached.terminal;
+    if (completed.kind !== "result-end") throw new Error("Expected completed result");
+    await harness.acknowledge("reattached-trace", completed.transferId);
+
+    expect(harness.retainedOperationTraceCount()).toBe(0);
+    await waitUntil(() => harness.logEvents().some((event) => event.kind === "delivery-terminal"));
+    const terminalEvents = harness
+      .logEvents()
+      .filter((event) => event.kind === "delivery-terminal");
+    expect(terminalEvents).toHaveLength(1);
+    expect(
+      harness.logEvents().filter((event) => event.kind === "client-disconnected"),
+    ).toHaveLength(1);
+    expect(harness.logEvents().filter((event) => event.kind === "client-reattached")).toHaveLength(
+      1,
+    );
+  });
+
+  it("releases retained request traces during shutdown", async () => {
+    const harness = await RequestHarness.start(new ImmediateExecutor());
+    harnesses.push(harness);
+    await harness.execute("shutdown-trace");
+    expect(harness.retainedOperationTraceCount()).toBe(1);
+
+    await harness.kill();
+    await harness.exited;
+
+    expect(harness.retainedOperationTraceCount()).toBe(0);
+    expect(harness.logEvents().filter((event) => event.kind === "delivery-terminal")).toHaveLength(
+      1,
+    );
+  });
+
   it("logs startup failures before rethrowing them", async () => {
     const { daemon, harness, lease } = RequestHarness.create(new ImmediateExecutor());
     harnesses.push(harness);
@@ -1103,6 +1183,7 @@ class RequestHarness {
   readonly instanceId = "request-instance";
   readonly processToken = "request-token";
   readonly exited: Promise<number>;
+  private daemon: WorkspaceDaemon | undefined;
   private resolveExit!: (code: number) => void;
 
   private constructor() {
@@ -1196,6 +1277,7 @@ class RequestHarness {
         : { residentMemoryBytes: options.residentMemoryBytes }),
       exit: (code) => harness.resolveExit(code),
     });
+    harness.daemon = daemon;
     return { daemon, harness, lease };
   }
 
@@ -1281,6 +1363,13 @@ class RequestHarness {
       .split("\n")
       .filter((line) => line.length > 0)
       .map((line) => JSON.parse(line) as Record<string, unknown>);
+  }
+
+  retainedOperationTraceCount(): number {
+    const daemon = this.daemon as unknown as {
+      readonly operationTraces: ReadonlyMap<string, unknown>;
+    };
+    return daemon.operationTraces.size;
   }
 
   async dispose(): Promise<void> {
@@ -1372,7 +1461,7 @@ class RequestTransport {
         await this.resultChunkGate.wait;
         this.resultChunksInFlight -= 1;
       }
-      if (!connected) return;
+      if (!connected) throw new Error("Request connection is closed");
       frames.push(response);
       if (!RequestTransport.isExecutionFrame(response)) return;
       if (

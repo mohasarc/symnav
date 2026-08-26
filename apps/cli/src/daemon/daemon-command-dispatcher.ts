@@ -146,11 +146,7 @@ export class DaemonCommandDispatcher {
       workspaceDependencies.symnavVersion,
     );
     if (routeSnapshot.kind === "warm") {
-      return this.executeWarm(
-        runtime,
-        routeSnapshot.record,
-        workspaceRequest,
-      );
+      return this.executeWarm(runtime, routeSnapshot.record, workspaceRequest);
     }
     if (
       (routeSnapshot.kind === "cold" && routeSnapshot.reason === "absent") ||

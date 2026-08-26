@@ -169,7 +169,8 @@ export class AcceptedRequestLedger {
   }
 
   private static canonicalValue(value: unknown): unknown {
-    if (Array.isArray(value)) return value.map((item) => AcceptedRequestLedger.canonicalValue(item));
+    if (Array.isArray(value))
+      return value.map((item) => AcceptedRequestLedger.canonicalValue(item));
     if (typeof value !== "object" || value === null) return value;
     return Object.fromEntries(
       Object.entries(value)

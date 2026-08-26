@@ -708,7 +708,9 @@ class RequestTransport {
     };
   }
 
-  private static isExecutionFrame(response: DaemonResponse): response is DaemonExecutionServerFrame {
+  private static isExecutionFrame(
+    response: DaemonResponse,
+  ): response is DaemonExecutionServerFrame {
     return (
       response.kind === "accepted" ||
       response.kind === "rejected" ||

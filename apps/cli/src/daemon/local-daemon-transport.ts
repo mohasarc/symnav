@@ -729,7 +729,10 @@ export class LocalDaemonTransport {
       throw new Error("Malformed daemon execution frame");
     }
     if (value.kind === "accepted") {
-      if (!LocalDaemonTransport.isMetric(value.acceptedAt) || !LocalDaemonTransport.isCount(value.queuePosition)) {
+      if (
+        !LocalDaemonTransport.isMetric(value.acceptedAt) ||
+        !LocalDaemonTransport.isCount(value.queuePosition)
+      ) {
         throw new Error("Malformed daemon acceptance");
       }
       return;
@@ -814,14 +817,12 @@ export class LocalDaemonTransport {
       !Number.isInteger(value.exitCode)
     )
       return false;
-    return (
-      value.frames.every(
-        (frame) =>
-          LocalDaemonTransport.isRecord(frame) &&
-          (frame.stream === "stdout" || frame.stream === "stderr") &&
-          typeof frame.bytesBase64 === "string" &&
-          LocalDaemonTransport.isBase64(frame.bytesBase64),
-      )
+    return value.frames.every(
+      (frame) =>
+        LocalDaemonTransport.isRecord(frame) &&
+        (frame.stream === "stdout" || frame.stream === "stderr") &&
+        typeof frame.bytesBase64 === "string" &&
+        LocalDaemonTransport.isBase64(frame.bytesBase64),
     );
   }
 
@@ -837,6 +838,8 @@ export class LocalDaemonTransport {
   private static hasExactKeys(value: Record<string, unknown>, keys: readonly string[]): boolean {
     const actual = Object.keys(value).sort();
     const expected = [...keys].sort();
-    return actual.length === expected.length && actual.every((key, index) => key === expected[index]);
+    return (
+      actual.length === expected.length && actual.every((key, index) => key === expected[index])
+    );
   }
 }

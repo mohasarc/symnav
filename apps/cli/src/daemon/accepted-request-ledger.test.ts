@@ -33,9 +33,9 @@ describe("AcceptedRequestLedger", () => {
     const ledger = new AcceptedRequestLedger(() => 10);
     ledger.accept("request", request);
 
-    expect(() =>
-      ledger.accept("request", { ...request, argv: ["overview", "src/b.ts"] }),
-    ).toThrow(AcceptedRequestCorruptionError);
+    expect(() => ledger.accept("request", { ...request, argv: ["overview", "src/b.ts"] })).toThrow(
+      AcceptedRequestCorruptionError,
+    );
     expect(ledger.size).toBe(1);
   });
 

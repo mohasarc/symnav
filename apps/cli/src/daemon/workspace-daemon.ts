@@ -1,6 +1,9 @@
 import type { ProgramDependencies } from "../program-dependencies.js";
 import type { CommandExecutionResult } from "../command-execution-result.js";
-import { AcceptedRequestCorruptionError, AcceptedRequestLedger } from "./accepted-request-ledger.js";
+import {
+  AcceptedRequestCorruptionError,
+  AcceptedRequestLedger,
+} from "./accepted-request-ledger.js";
 import type {
   DaemonExecutionFailureCode,
   DaemonExecutionServerFrame,
@@ -251,7 +254,10 @@ export class WorkspaceDaemon {
     if (request.kind === "terminate" || request.kind === "kill") {
       return this.terminate(request);
     }
-    if (request.protocolVersion !== DAEMON_PROTOCOL_VERSION || request.instanceId !== this.options.instanceId) {
+    if (
+      request.protocolVersion !== DAEMON_PROTOCOL_VERSION ||
+      request.instanceId !== this.options.instanceId
+    ) {
       throw new Error("Daemon request does not match protocol or instance");
     }
     if (request.kind === "ping") return this.pong();
@@ -390,7 +396,8 @@ export class WorkspaceDaemon {
     unsubscribe = this.acceptedRequests.subscribe(request.requestId, (updated) => {
       if (updated.state.state === "completed") {
         const result = this.acceptedResults.get(updated.state.resultId);
-        if (result !== undefined) this.deliver(send, this.completedFrame(request.requestId, result));
+        if (result !== undefined)
+          this.deliver(send, this.completedFrame(request.requestId, result));
         unsubscribe?.();
       } else if (updated.state.state === "failed") {
         this.deliver(send, this.failedFrame(request.requestId, updated.state.code));

@@ -448,14 +448,16 @@ class WorkspaceDaemonHarness {
   }
 
   execute(requestId: string) {
-    return this.transport.execute(this.identity.endpoint(this.instanceId), {
-      kind: "execute",
-      protocolVersion: DAEMON_PROTOCOL_VERSION,
-      instanceId: this.instanceId,
-      processToken: "runtime-token",
-      requestId,
-      request: { argv: ["--version"], cwd: this.workspaceRoot, telemetryEnabled: false },
-    }).then((receipt) => receipt.completion);
+    return this.transport
+      .execute(this.identity.endpoint(this.instanceId), {
+        kind: "execute",
+        protocolVersion: DAEMON_PROTOCOL_VERSION,
+        instanceId: this.instanceId,
+        processToken: "runtime-token",
+        requestId,
+        request: { argv: ["--version"], cwd: this.workspaceRoot, telemetryEnabled: false },
+      })
+      .then((receipt) => receipt.completion);
   }
 
   stop() {

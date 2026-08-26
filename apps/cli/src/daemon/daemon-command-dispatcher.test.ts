@@ -116,18 +116,21 @@ describe("DaemonCommandDispatcher", () => {
       false,
     ),
     new Error("malformed accepted completion"),
-  ])("returns a controlled result without replay or mutation after uncertain delivery %#", async (failure) => {
-    const harness = new DispatchHarness(failure);
+  ])(
+    "returns a controlled result without replay or mutation after uncertain delivery %#",
+    async (failure) => {
+      const harness = new DispatchHarness(failure);
 
-    await expect(harness.dispatcher().execute(request)).resolves.toMatchObject({
-      mode: "warm",
-      result: { exitCode: 1, frames: [expect.objectContaining({ stream: "stderr" })] },
-    });
+      await expect(harness.dispatcher().execute(request)).resolves.toMatchObject({
+        mode: "warm",
+        result: { exitCode: 1, frames: [expect.objectContaining({ stream: "stderr" })] },
+      });
 
-    expect(harness.coldExecute).not.toHaveBeenCalled();
-    expect(harness.removeIfProcess).not.toHaveBeenCalled();
-    expect(harness.trigger).not.toHaveBeenCalled();
-  });
+      expect(harness.coldExecute).not.toHaveBeenCalled();
+      expect(harness.removeIfProcess).not.toHaveBeenCalled();
+      expect(harness.trigger).not.toHaveBeenCalled();
+    },
+  );
 
   it("returns a controlled result without replay for a malformed completion", async () => {
     const harness = new DispatchHarness({ frames: [], exitCode: 1.5 });

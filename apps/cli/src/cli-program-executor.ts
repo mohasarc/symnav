@@ -69,7 +69,6 @@ export class CliProgramExecutor {
       throw error;
     }
   }
-
 }
 
 export class CommandResultReplayer {

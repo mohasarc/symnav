@@ -46,7 +46,12 @@ export interface GeneratedDaemonWorkspace {
   readonly expectedProfile: DaemonWorkspaceProfile;
 }
 
+type GeneratedImportKind = "relative" | "path-alias" | "workspace";
+
 export class DaemonWorkspaceGenerator {
+  private generatedImportKinds: readonly GeneratedImportKind[] = [];
+  private generatedImportIndex = 0;
+
   constructor(private readonly options: DaemonWorkspaceGeneratorOptions) {}
 
   async generate(destination: string): Promise<GeneratedDaemonWorkspace> {
@@ -59,6 +64,8 @@ export class DaemonWorkspaceGenerator {
     const packageDirectoryCount = totalPackageCount - 1;
     const configCount = this.options.profile.configCount * this.options.scale;
     const projectReferenceCount = this.options.profile.projectReferenceCount * this.options.scale;
+    this.generatedImportKinds = this.buildImportKinds(visibleTypeScriptFiles);
+    this.generatedImportIndex = 0;
     this.initializeRepository(workspaceRoot);
     this.writeRootConfiguration(
       workspaceRoot,
@@ -152,8 +159,15 @@ export class DaemonWorkspaceGenerator {
           files: [],
           compilerOptions: {
             composite: true,
+            baseUrl: ".",
             module: "NodeNext",
             moduleResolution: "NodeNext",
+            paths: Object.fromEntries(
+              packageNames.map((name, index) => [
+                `@alias/${name}`,
+                [`packages/${name}/src/module-${String(index).padStart(6, "0")}.ts`],
+              ]),
+            ),
             target: "ES2022",
           },
           references: packageNames
@@ -215,11 +229,9 @@ export class DaemonWorkspaceGenerator {
         join(packageRoot, "tsconfig.json"),
         JSON.stringify(
           {
+            extends: "../../tsconfig.json",
             compilerOptions: {
               composite: true,
-              module: "NodeNext",
-              moduleResolution: "NodeNext",
-              target: "ES2022",
               rootDir: "src",
               outDir: "dist",
             },
@@ -274,7 +286,7 @@ export class DaemonWorkspaceGenerator {
         ...Array.from(
           { length: importCount },
           (_, importIndex) =>
-            `import { symbol000001 as benchmarkImport${importIndex} } from "@workspace/package-001";`,
+            `import { symbol000001 as benchmarkImport${importIndex} } from "${this.importSpecifier(0, 1, this.nextImportKind())}";`,
         ),
         `export const generatorSeed = "${this.seedMarker}";`,
         "export function benchmarkHub(value: number): number { return value + 1; }",
@@ -296,7 +308,13 @@ export class DaemonWorkspaceGenerator {
         : 1 + ((index + importIndex) % (packageCount - 1));
       const importedSymbol =
         targetPackage === 0 ? "benchmarkHub" : `symbol${String(targetPackage).padStart(6, "0")}`;
-      return `import { ${importedSymbol} as benchmarkImport${importIndex} } from "@workspace/package-${String(targetPackage).padStart(3, "0")}";`;
+      const currentPackage = index % packageCount;
+      const importSpecifier = this.importSpecifier(
+        currentPackage,
+        targetPackage,
+        this.nextImportKind(),
+      );
+      return `import { ${importedSymbol} as benchmarkImport${importIndex} } from "${importSpecifier}";`;
     });
     if (symbolCount > 0) {
       lines.push(`export function symbol${suffix}(value: number): number {`);
@@ -329,6 +347,57 @@ export class DaemonWorkspaceGenerator {
     if (distributionIndex === fileCount - 1) return distribution.maximum;
     if (distributionIndex < Math.ceil(fileCount * 0.95) - 1) return distribution.p50;
     return distribution.p95;
+  }
+
+  private buildImportKinds(fileCount: number): readonly GeneratedImportKind[] {
+    let totalImportCount = 0;
+    for (let index = 0; index < fileCount; index += 1) {
+      totalImportCount += this.distributionValue(
+        this.options.profile.importsPerFile,
+        index,
+        fileCount,
+      );
+    }
+    const workspaceCount = Math.round(totalImportCount * this.options.profile.workspaceImportRatio);
+    const aliasCount = Math.round(totalImportCount * this.options.profile.aliasImportRatio);
+    if (workspaceCount > aliasCount) {
+      throw new Error("Workspace import ratio exceeds alias import ratio");
+    }
+    const generatedImportKinds: GeneratedImportKind[] = [
+      ...Array.from({ length: workspaceCount }, () => "workspace" as const),
+      ...Array.from({ length: aliasCount - workspaceCount }, () => "path-alias" as const),
+      ...Array.from({ length: totalImportCount - aliasCount }, () => "relative" as const),
+    ];
+    let shuffleState = Number.parseInt(this.seedMarker.slice(0, 8), 16) || 1;
+    for (let index = generatedImportKinds.length - 1; index > 0; index -= 1) {
+      shuffleState = (Math.imul(shuffleState, 1_664_525) + 1_013_904_223) >>> 0;
+      const swapIndex = shuffleState % (index + 1);
+      [generatedImportKinds[index], generatedImportKinds[swapIndex]] = [
+        generatedImportKinds[swapIndex]!,
+        generatedImportKinds[index]!,
+      ];
+    }
+    return generatedImportKinds;
+  }
+
+  private nextImportKind(): GeneratedImportKind {
+    const generatedImportKind = this.generatedImportKinds[this.generatedImportIndex];
+    if (generatedImportKind === undefined) throw new Error("Generated import profile is exhausted");
+    this.generatedImportIndex += 1;
+    return generatedImportKind;
+  }
+
+  private importSpecifier(
+    currentPackage: number,
+    targetPackage: number,
+    generatedImportKind: GeneratedImportKind,
+  ): string {
+    const targetPackageName = `package-${String(targetPackage).padStart(3, "0")}`;
+    if (generatedImportKind === "workspace") return `@workspace/${targetPackageName}`;
+    if (generatedImportKind === "path-alias") return `@alias/${targetPackageName}`;
+    const targetModule = `module-${String(targetPackage).padStart(6, "0")}.js`;
+    if (currentPackage === targetPackage) return `./${targetModule}`;
+    return `../../${targetPackageName}/src/${targetModule}`;
   }
 
   private fitSource(lines: string[], targetLines: number, targetBytes: number): string {

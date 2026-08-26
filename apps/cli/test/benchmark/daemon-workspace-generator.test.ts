@@ -115,7 +115,7 @@ class TestWorkspace {
     projectReferenceCount: 3,
     importsPerFile: { minimum: 1, p50: 2, p95: 3, maximum: 4 },
     referenceFanout: { minimum: 1, p50: 4, p95: 10, maximum: 12 },
-    aliasImportRatio: 0.5,
+    aliasImportRatio: 0.75,
     workspaceImportRatio: 0.5,
     callInDegree: { minimum: 0, p50: 1, p95: 4, maximum: 8 },
     callOutDegree: { minimum: 1, p50: 2, p95: 4, maximum: 8 },

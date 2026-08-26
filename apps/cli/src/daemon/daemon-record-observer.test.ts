@@ -11,14 +11,38 @@ import { DaemonRecordObserver } from "./daemon-record-observer.js";
 import { DaemonTransportError, type LocalDaemonTransport } from "./local-daemon-transport.js";
 
 describe("DaemonRecordObserver", () => {
-  it("reports a starting record without probing its endpoint", async () => {
+  it("reports an unpublished starting record without probing its endpoint", async () => {
     const transport = new ObserverTransport([]);
 
-    await expect(observer(transport, [101]).observe(record("starting"))).resolves.toMatchObject({
+    await expect(
+      observer(transport, [101]).observe({ ...record("starting"), pid: 0 }),
+    ).resolves.toMatchObject({
       kind: "starting",
       record: { instanceId: "instance" },
     });
     expect(transport.requests).toEqual([]);
+  });
+
+  it("probes a live starting daemon identity and activity concurrently", async () => {
+    const transport = new ConcurrentObserverTransport();
+    const observation = observer(transport, [101]).observe(record("starting"));
+
+    await expect(transport.pingRequested).resolves.toBeUndefined();
+    transport.allowIdentity();
+
+    await expect(observation).resolves.toMatchObject({ kind: "responsive" });
+  });
+
+  it("keeps starting fallback when a live process has not published transport", async () => {
+    const transport = new ObserverTransport([
+      new Error("identity unavailable"),
+      new Error("activity unavailable"),
+    ]);
+
+    await expect(observer(transport, [101]).observe(record("starting"))).resolves.toMatchObject({
+      kind: "starting",
+    });
+    expect(transport.requests.map((request) => request.kind).sort()).toEqual(["identify", "ping"]);
   });
 
   it("reports an authenticated responsive daemon", async () => {

@@ -196,17 +196,21 @@ describe("symnav daemon status", () => {
       () => registry.startupOwner(identity)?.revision !== ownerBeforeCallerExit?.revision,
     );
 
+    const statusStartedAt = Date.now();
     const starting = runSymnavBinary(["daemon", "status", "--json"], {
       cwd: tmpdir(),
       env: { SYMNAV_STATE_DIR: stateDir },
     });
 
     expect(starting.status).toBe(0);
+    expect(Date.now() - statusStartedAt).toBeLessThan(1_000);
     expect(JSON.parse(starting.stdout).daemons).toEqual([
       expect.objectContaining({
         workspaceRoot,
         state: "starting",
         pid: childPid,
+        startupElapsedMs: expect.any(Number),
+        memoryBytes: expect.any(Number),
       }),
     ]);
     expect(registry.startupOwner(identity)).toMatchObject({

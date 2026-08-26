@@ -719,6 +719,50 @@ describe("WorkspaceDaemon requests", () => {
     );
   });
 
+  it("keeps a delivered trace while a result-fetch caller remains connected", async () => {
+    const executor = new SerializedExecutor();
+    const harness = await RequestHarness.start(executor, { operationTraceRetentionMs: 20 });
+    harnesses.push(harness);
+    const initial = await harness.admit("delivered-refetch", ["overview", "input.ts"]);
+    await executor.started(1);
+    executor.complete(0);
+    const initialCompletion = await initial.terminal;
+    if (initialCompletion.kind !== "result-end") throw new Error("Expected completed result");
+    initial.disconnect();
+    await waitUntil(
+      () =>
+        harness.logEvents().filter((event) => event.kind === "client-disconnected").length === 1,
+    );
+
+    const refetched = await harness.fetch("delivered-refetch");
+    const refetchedCompletion = await refetched.terminal;
+    if (refetchedCompletion.kind !== "result-end") throw new Error("Expected completed result");
+    expect(refetchedCompletion.transferId).toBe(initialCompletion.transferId);
+    await new Promise((resolve) => setTimeout(resolve, 40));
+    expect(harness.retainedOperationTraceCount()).toBe(1);
+    expect(
+      harness.logEvents().filter((event) => event.kind === "operation-trace-expired"),
+    ).toHaveLength(0);
+
+    refetched.disconnect();
+    await waitUntil(
+      () =>
+        harness.retainedOperationTraceCount() === 0 &&
+        harness.logEvents().filter((event) => event.kind === "operation-trace-expired").length ===
+          1,
+    );
+    const resumed = await harness.fetch("delivered-refetch");
+    const resumedCompletion = await resumed.terminal;
+    if (resumedCompletion.kind !== "result-end") throw new Error("Expected completed result");
+    expect(resumedCompletion.transferId).toBe(initialCompletion.transferId);
+    await harness.acknowledge("delivered-refetch", initialCompletion.transferId);
+
+    expect(executor.requests).toHaveLength(1);
+    expect(harness.logEvents().filter((event) => event.kind === "delivery-terminal")).toHaveLength(
+      1,
+    );
+  });
+
   it("expires disconnected traces without expiring resumable results", async () => {
     const executor = new SerializedExecutor();
     const harness = await RequestHarness.start(executor, { operationTraceRetentionMs: 10 });

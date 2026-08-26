@@ -8,6 +8,9 @@ import type {
   DaemonExecutionServerFrame,
   DaemonExecutionStatus,
   DaemonExecutionStatusRequest,
+  DaemonExecutionStatusResponse,
+  DaemonLifecycleRequest,
+  DaemonLifecycleResponse,
   DaemonRequest,
   DaemonResponse,
   DaemonServer,
@@ -15,12 +18,10 @@ import type {
 
 const DEFAULT_MAXIMUM_FRAME_BYTES = 8 * 1024 * 1024;
 const DEFAULT_REQUEST_TIMEOUT_MS = 250;
-const DEFAULT_EXECUTION_REQUEST_TIMEOUT_MS = 5 * 60_000;
 
 interface LocalDaemonTransportOptions {
   readonly maximumFrameBytes?: number;
   readonly requestTimeoutMs?: number;
-  readonly executionRequestTimeoutMs?: number;
   readonly writeChunkSize?: number;
 }
 
@@ -138,14 +139,11 @@ class ListeningDaemonServer implements DaemonServer {
 export class LocalDaemonTransport {
   private readonly maximumFrameBytes: number;
   private readonly requestTimeoutMs: number;
-  private readonly executionRequestTimeoutMs: number;
   private readonly writeChunkSize: number | undefined;
 
   constructor(options: LocalDaemonTransportOptions = {}) {
     this.maximumFrameBytes = options.maximumFrameBytes ?? DEFAULT_MAXIMUM_FRAME_BYTES;
     this.requestTimeoutMs = options.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS;
-    this.executionRequestTimeoutMs =
-      options.executionRequestTimeoutMs ?? DEFAULT_EXECUTION_REQUEST_TIMEOUT_MS;
     this.writeChunkSize = options.writeChunkSize;
   }
 
@@ -158,7 +156,22 @@ export class LocalDaemonTransport {
     }
   }
 
-  request(endpoint: string, request: DaemonRequest): Promise<DaemonResponse> {
+  request(endpoint: string, request: DaemonLifecycleRequest): Promise<DaemonLifecycleResponse> {
+    return this.singleResponse(endpoint, request);
+  }
+
+  private singleResponse(
+    endpoint: string,
+    request: DaemonLifecycleRequest,
+  ): Promise<DaemonLifecycleResponse>;
+  private singleResponse(
+    endpoint: string,
+    request: DaemonExecutionStatusRequest,
+  ): Promise<DaemonExecutionStatusResponse>;
+  private singleResponse(
+    endpoint: string,
+    request: DaemonLifecycleRequest | DaemonExecutionStatusRequest,
+  ): Promise<DaemonLifecycleResponse | DaemonExecutionStatusResponse> {
     LocalDaemonTransport.assertRequest(request);
     return new Promise((resolve, reject) => {
       const decoder = new DaemonFrameDecoder(this.maximumFrameBytes);
@@ -171,7 +184,7 @@ export class LocalDaemonTransport {
         socket.destroy();
         reject(LocalDaemonTransport.transportError(error, delivery));
       };
-      socket.setTimeout(this.timeoutFor(request), () =>
+      socket.setTimeout(this.requestTimeoutMs, () =>
         fail(new DaemonTransportError("timeout", delivery, "Daemon request timed out")),
       );
       socket.once("error", (error) => {
@@ -358,7 +371,7 @@ export class LocalDaemonTransport {
     endpoint: string,
     request: DaemonExecutionStatusRequest,
   ): Promise<DaemonExecutionStatus> {
-    const response = await this.request(endpoint, request);
+    const response = await this.singleResponse(endpoint, request);
     if (response.kind !== "execution-status") {
       throw new DaemonTransportError(
         "corrupt",
@@ -367,10 +380,6 @@ export class LocalDaemonTransport {
       );
     }
     return response.status;
-  }
-
-  private timeoutFor(request: DaemonRequest): number {
-    return request.kind === "execute" ? this.executionRequestTimeoutMs : this.requestTimeoutMs;
   }
 
   async listen(
@@ -482,7 +491,10 @@ export class LocalDaemonTransport {
     }
   }
 
-  private static responseFor(request: DaemonRequest, value: unknown): DaemonResponse {
+  private static responseFor(
+    request: DaemonLifecycleRequest | DaemonExecutionStatusRequest,
+    value: unknown,
+  ): DaemonLifecycleResponse | DaemonExecutionStatusResponse {
     LocalDaemonTransport.assertResponse(value);
     if (request.kind === "identify") {
       if (value.kind !== "identity") {
@@ -530,15 +542,6 @@ export class LocalDaemonTransport {
           "Daemon pong does not match request protocol",
           value.instanceId,
         );
-      }
-      return value;
-    }
-    if (request.kind === "execute") {
-      if (value.kind !== "result") {
-        throw new DaemonResponseError("corrupt", "Daemon returned a non-result response");
-      }
-      if (value.requestId !== request.requestId) {
-        throw new DaemonResponseError("corrupt", "Daemon result does not match request identifier");
       }
       return value;
     }
@@ -652,13 +655,7 @@ export class LocalDaemonTransport {
       }
       return;
     }
-    if (
-      value.kind !== "result" ||
-      typeof value.requestId !== "string" ||
-      !LocalDaemonTransport.isExecutionResult(value.result)
-    ) {
-      throw new Error("Malformed daemon result");
-    }
+    throw new Error("Malformed daemon response");
   }
 
   private static transportError(

@@ -133,6 +133,78 @@ describe("DaemonResourceSupervisor", () => {
     expect(releaseTransientResources).toHaveBeenCalledTimes(2);
   });
 
+  it("schedules one shed when idle pressure is observed by interval or admission samples", async () => {
+    const policy = DaemonResourcePolicy.fromSystemMemory(GIBIBYTE);
+    const releaseTransientResources = vi.fn(async () => undefined);
+    const supervisor = new DaemonResourceSupervisor({
+      policy,
+      generation: 1,
+      residentMemoryBytes: () => policy.record.softProcessRssBytes + 1,
+      spoolBytes: () => 0,
+      releaseTransientResources,
+      replaceWorker: async () => 2,
+      drain: async () => undefined,
+    });
+
+    await supervisor.sample("interval");
+    await supervisor.sample("admission");
+
+    expect(releaseTransientResources).toHaveBeenCalledOnce();
+    expect(supervisor.snapshot).toMatchObject({ state: "shedding", admissionPaused: true });
+  });
+
+  it("coalesces concurrent soft-pressure samples behind one shed operation", async () => {
+    const policy = DaemonResourcePolicy.fromSystemMemory(GIBIBYTE);
+    let releaseShed!: () => void;
+    const shedGate = new Promise<void>((resolve) => {
+      releaseShed = resolve;
+    });
+    const releaseTransientResources = vi.fn(() => shedGate);
+    const supervisor = new DaemonResourceSupervisor({
+      policy,
+      generation: 1,
+      residentMemoryBytes: () => policy.record.softProcessRssBytes + 1,
+      spoolBytes: () => 0,
+      releaseTransientResources,
+      replaceWorker: async () => 2,
+      drain: async () => undefined,
+    });
+
+    const samples = Promise.all([
+      supervisor.sample("turn-complete"),
+      supervisor.sample("turn-complete"),
+      supervisor.sample("interval"),
+    ]);
+    await Promise.resolve();
+
+    expect(releaseTransientResources).toHaveBeenCalledOnce();
+    releaseShed();
+    await samples;
+  });
+
+  it("returns a failed shed to a retryable state", async () => {
+    const policy = DaemonResourcePolicy.fromSystemMemory(GIBIBYTE);
+    const releaseTransientResources = vi
+      .fn<() => Promise<void>>()
+      .mockRejectedValueOnce(new Error("release failed"))
+      .mockResolvedValueOnce(undefined);
+    const supervisor = new DaemonResourceSupervisor({
+      policy,
+      generation: 1,
+      residentMemoryBytes: () => policy.record.softProcessRssBytes + 1,
+      spoolBytes: () => 0,
+      releaseTransientResources,
+      replaceWorker: async () => 2,
+      drain: async () => undefined,
+    });
+
+    await expect(supervisor.sample("interval")).rejects.toThrow("release failed");
+    await expect(supervisor.sample("interval")).resolves.toBeUndefined();
+
+    expect(releaseTransientResources).toHaveBeenCalledTimes(2);
+    expect(supervisor.snapshot).toMatchObject({ state: "shedding", admissionPaused: true });
+  });
+
   it("replaces once at hard pressure and fences heap reports by generation", async () => {
     const policy = DaemonResourcePolicy.fromSystemMemory(GIBIBYTE);
     const replaceWorker = vi.fn(async () => 2);

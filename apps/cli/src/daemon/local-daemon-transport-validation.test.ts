@@ -230,26 +230,36 @@ describe("LocalDaemonTransport validation", () => {
   });
 
   it.each([
-    { frames: [], exitCode: "invalid" },
+    { transferId: "transfer", requestId: "request", instanceId: "instance", exitCode: 0 },
     {
-      frames: [{ stream: "invalid", bytesBase64: "" }],
+      transferId: "transfer",
+      requestId: "request",
+      instanceId: "instance",
       exitCode: 0,
+      rawBytes: -1,
+      recordCount: 0,
+      sha256: "0".repeat(64),
     },
     {
-      frames: [{ stream: "stdout", bytesBase64: "***" }],
+      transferId: "transfer",
+      requestId: "other",
+      instanceId: "instance",
       exitCode: 0,
+      rawBytes: 0,
+      recordCount: 0,
+      sha256: "invalid",
     },
-  ])("rejects malformed daemon completion payload %#", async (result) => {
+  ])("rejects malformed daemon result manifests %#", async (manifest) => {
     const endpoint = await rawServer(servers, sockets, directories, (socket) => {
       socket.write(
         Buffer.concat([
           frame(acceptedFrame()),
           frame({
-            kind: "completed",
+            kind: "result-manifest",
             instanceId: "instance",
             processToken: "token",
             requestId: "request",
-            result,
+            manifest,
           }),
         ]),
       );
@@ -260,7 +270,7 @@ describe("LocalDaemonTransport validation", () => {
       new LocalDaemonTransport({ requestTimeoutMs: 100 })
         .execute(endpoint, executionRequest())
         .then((receipt) => receipt.completion),
-    ).rejects.toThrow("Malformed daemon execution completion");
+    ).rejects.toThrow("Malformed daemon result manifest");
   });
 
   it("rejects a response kind for a different request", async () => {
@@ -428,7 +438,7 @@ describe("LocalDaemonTransport validation", () => {
     );
   });
 
-  it("rejects malformed deferred telemetry results", async () => {
+  it("rejects legacy embedded completion results", async () => {
     const endpoint = await rawServer(servers, sockets, directories, (socket) => {
       socket.end(
         Buffer.concat([
@@ -438,11 +448,7 @@ describe("LocalDaemonTransport validation", () => {
             instanceId: "instance",
             processToken: "token",
             requestId: "request",
-            result: {
-              frames: [],
-              exitCode: 0,
-              telemetry: { executionMode: "warm" },
-            },
+            result: { exitCode: 0 },
           }),
         ]),
       );
@@ -451,7 +457,7 @@ describe("LocalDaemonTransport validation", () => {
 
     await expect(
       transport.execute(endpoint, executionRequest()).then((receipt) => receipt.completion),
-    ).rejects.toThrow("Malformed daemon execution completion");
+    ).rejects.toThrow("Malformed daemon response");
   });
 });
 

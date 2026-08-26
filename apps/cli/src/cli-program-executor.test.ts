@@ -38,7 +38,7 @@ describe("CliProgramExecutor", () => {
     });
 
     expect(result.exitCode).toBe(0);
-    expect(result.frames.map((frame) => frame.stream)).toEqual(["stderr", "stdout"]);
+    expect((await records(result)).map((record) => record.stream)).toEqual(["stderr", "stdout"]);
     const context = createFakeProgramContext({ cwd: "/repo" });
     await CommandResultReplayer.replay(result, context);
     expect(context.stderr.text()).toBe("Warning: unicode ✓\nnext\n");
@@ -125,8 +125,10 @@ describe("CliProgramExecutor", () => {
     });
 
     expect(result.exitCode).toBe(code);
-    expect(result.frames.length).toBeGreaterThan(0);
-    expect(result.frames.every((frame) => frame.stream === stream)).toBe(true);
+    const captured = await records(result);
+    expect(captured.length).toBeGreaterThan(0);
+    expect(captured.every((record) => record.stream === stream)).toBe(true);
+    await result.output.dispose();
   });
 
   it("captures user errors, crashes, JSON, and hidden stats", async () => {
@@ -161,11 +163,11 @@ describe("CliProgramExecutor", () => {
     });
 
     expect(userError.exitCode).toBe(1);
-    expect(decode(userError)).toContain("Cannot answer: file not found");
+    expect(await decode(userError)).toContain("Cannot answer: file not found");
     expect(crash.exitCode).toBe(2);
-    expect(decode(crash)).toBe("boom\n");
-    expect(JSON.parse(decode(json))).toMatchObject({ file: "src/a.ts" });
-    expect(JSON.parse(decode(stats))).toMatchObject({ totalEvents: 0 });
+    expect(await decode(crash)).toBe("boom\n");
+    expect(JSON.parse(await decode(json))).toMatchObject({ file: "src/a.ts" });
+    expect(JSON.parse(await decode(stats))).toMatchObject({ totalEvents: 0 });
   });
 
   it("records one warm telemetry event at the executing process", async () => {
@@ -195,7 +197,7 @@ describe("CliProgramExecutor", () => {
     }).execute({ argv: ["--version"], cwd: "/repo", telemetryEnabled: false });
 
     expect(result.exitCode).toBe(1);
-    expect(decode(result)).toBe("Cannot answer: daemon response capacity exceeded.\n");
+    expect(await decode(result)).toBe("Cannot answer: daemon response capacity exceeded.\n");
   });
 
   it("reuses an injected request scope factory across executions", async () => {
@@ -251,6 +253,14 @@ class ListingCountingFileSystem extends InMemoryFileSystem {
   }
 }
 
-function decode(result: { readonly frames: readonly { readonly bytesBase64: string }[] }): string {
-  return result.frames.map((frame) => Buffer.from(frame.bytesBase64, "base64").toString()).join("");
+async function records(result: commandExecutionResult.CommandExecutionResult) {
+  const captured = [];
+  for await (const record of result.output.records()) captured.push(record);
+  return captured;
+}
+
+async function decode(result: commandExecutionResult.CommandExecutionResult): Promise<string> {
+  return Buffer.concat(
+    (await records(result)).map((record) => Buffer.from(record.bytes)),
+  ).toString();
 }

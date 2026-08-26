@@ -5,6 +5,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { canonicalStateDir } from "@symnav/telemetry";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { CommandOutputSnapshot } from "../command-execution-result.js";
 import { DaemonController } from "./daemon-controller.js";
 import { DaemonStartupCoordinator } from "./daemon-startup-coordinator.js";
 import {
@@ -1063,7 +1064,7 @@ class RegistryTransport {
       },
       completion: Promise.resolve({
         status: "completed",
-        result: { frames: [], exitCode: 0 },
+        result: { output: new CommandOutputSnapshot([]), exitCode: 0 },
       }),
     };
   }
@@ -1264,6 +1265,8 @@ class InProcessReadyLauncher implements DaemonProcessLauncher {
           };
         }
         if (request.kind === "execute") {
+          const transferId = `${request.requestId}-transfer`;
+          const sha256 = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
           send({
             kind: "accepted",
             instanceId,
@@ -1273,13 +1276,40 @@ class InProcessReadyLauncher implements DaemonProcessLauncher {
             queuePosition: 0,
           });
           send({
-            kind: "completed",
+            kind: "result-manifest",
             instanceId,
             processToken,
             requestId: request.requestId,
-            result: { frames: [], exitCode: 0 },
+            manifest: {
+              transferId,
+              requestId: request.requestId,
+              instanceId,
+              exitCode: 0,
+              rawBytes: 0,
+              recordCount: 0,
+              sha256,
+            },
+          });
+          send({
+            kind: "result-end",
+            instanceId,
+            processToken,
+            requestId: request.requestId,
+            transferId,
+            rawBytes: 0,
+            recordCount: 0,
+            sha256,
           });
           return;
+        }
+        if (request.kind === "result-ack") {
+          return {
+            kind: "result-acknowledged",
+            instanceId,
+            processToken,
+            requestId: request.requestId,
+            transferId: request.transferId,
+          };
         }
         return { kind: "stopped", instanceId };
       },

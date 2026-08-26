@@ -40,7 +40,7 @@ describe("LocalDaemonTransport execution delivery", () => {
   });
 
   it("uses the accepted-request protocol generation", () => {
-    expect(DAEMON_PROTOCOL_VERSION).toBe(3);
+    expect(DAEMON_PROTOCOL_VERSION).toBe(4);
   });
 
   it("classifies connection refusal before any write as retry-safe", async () => {
@@ -133,11 +133,11 @@ describe("LocalDaemonTransport execution delivery", () => {
           () =>
             socket.end(
               frame({
-                kind: "completed",
+                kind: "execution-failed",
                 instanceId: request.instanceId,
                 processToken: request.processToken,
                 requestId: request.requestId,
-                result: { frames: [], exitCode: 0 },
+                code: "internal",
               } satisfies DaemonExecutionServerFrame),
             ),
           40,
@@ -151,8 +151,8 @@ describe("LocalDaemonTransport execution delivery", () => {
     );
 
     await expect(receipt.completion).resolves.toEqual({
-      status: "completed",
-      result: { frames: [], exitCode: 0 },
+      status: "failed",
+      code: "internal",
     });
   });
 
@@ -309,6 +309,57 @@ describe("LocalDaemonTransport execution delivery", () => {
     if (completion.status === "completed") await completion.result.output?.dispose();
   });
 
+  it("cleans client output and fails without replay when the daemon dies before resume", async () => {
+    const directory = mkdtempSync(join(tmpdir(), "symnav-dead-resume-"));
+    directories.push(directory);
+    const store = new DaemonCompletionSpoolStore({
+      directory: join(directory, "daemon"),
+      workspaceKey: "workspace",
+      instanceId: request.instanceId,
+    });
+    const spool = await store.create(request.requestId);
+    for (let sequence = 0; sequence < 4; sequence += 1) {
+      await spool.append({
+        sequence,
+        stream: sequence % 2 === 0 ? "stdout" : "stderr",
+        bytes: Buffer.alloc(COMMAND_OUTPUT_CHUNK_BYTES, sequence),
+      });
+    }
+    const manifest = await spool.finish(0);
+    const endpoint = executionEndpoint(directories);
+    const server = createServer((socket) => {
+      sockets.push(socket);
+      socket.once("data", () => {
+        socket.write(frame(accepted()));
+        socket.write(frame(resultManifest(manifest)));
+        void sendRecords(socket, spool, manifest.transferId, 0, 2).then(() => {
+          server.close();
+          socket.end();
+        });
+      });
+    });
+    servers.push(server);
+    await new Promise<void>((resolve, reject) => {
+      server.once("error", reject);
+      server.listen(endpoint, resolve);
+    });
+    const clientDirectory = join(directory, "client");
+    const receipt = await new LocalDaemonTransport({
+      requestTimeoutMs: 100,
+      outputDirectory: clientDirectory,
+      outputInlineBytes: 0,
+    }).execute(endpoint, request);
+
+    await expect(receipt.completion).rejects.toMatchObject({
+      code: "closed",
+      delivery: "accepted",
+      retrySafe: false,
+    });
+    expect(
+      await import("node:fs/promises").then(({ readdir }) => readdir(clientDirectory)),
+    ).toEqual([]);
+  });
+
   it("reports EOF after acceptance as a typed post-accept failure", async () => {
     const endpoint = await rawExecutionServer(servers, sockets, directories, (socket) => {
       socket.once("data", () => socket.end(frame(accepted())));
@@ -370,11 +421,11 @@ describe("LocalDaemonTransport execution delivery", () => {
     [
       "completion before acceptance",
       {
-        kind: "completed",
+        kind: "execution-failed",
         instanceId: request.instanceId,
         processToken: request.processToken,
         requestId: request.requestId,
-        result: { frames: [], exitCode: 0 },
+        code: "internal",
       },
     ],
     ["duplicate acceptance", [accepted(), accepted()]],
@@ -383,11 +434,11 @@ describe("LocalDaemonTransport execution delivery", () => {
       [
         accepted(),
         {
-          kind: "completed",
+          kind: "execution-failed",
           instanceId: request.instanceId,
           processToken: request.processToken,
           requestId: request.requestId,
-          result: { frames: [], exitCode: 0 },
+          code: "internal",
         },
         {
           kind: "execution-failed",

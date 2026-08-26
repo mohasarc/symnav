@@ -1,5 +1,5 @@
 import { afterEach, expect, it, vi } from "vitest";
-import type { DispatchedCommandResult } from "./command-execution-result.js";
+import { CommandOutputSnapshot, type DispatchedCommandResult } from "./command-execution-result.js";
 import type { ProgramDependencies } from "./program-dependencies.js";
 import { DaemonWorkspaceIdentity } from "./daemon/daemon-workspace-identity.js";
 
@@ -59,7 +59,7 @@ it("owns one canonical state directory across one client invocation", async () =
         const identity = DaemonWorkspaceIdentity.from("/workspace", this.options.stateDirectory);
         daemonRecordPath = identity.recordPath("instance");
         daemonEndpoint = identity.endpoint("instance");
-        return { mode: "cold", result: { frames: [], exitCode: 0 } };
+        return { mode: "cold", result: { output: new CommandOutputSnapshot([]), exitCode: 0 } };
       }
     },
   }));

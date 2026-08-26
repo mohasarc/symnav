@@ -17,16 +17,19 @@ describe("NodeDaemonNavigationWorker", () => {
     await expect(initializationTimer).resolves.toBeLessThan(100);
 
     const executionTimer = timerTurn();
-    const response = await worker.execute("request-1", request);
+    const chunks: Uint8Array[] = [];
+    const response = await worker.execute("request-1", request, {
+      append: (record) => {
+        chunks.push(record.bytes);
+        return Promise.resolve();
+      },
+    });
     expect(response).toMatchObject({
       kind: "result",
       requestId: "request-1",
       result: { exitCode: 0 },
     });
-    if (response.kind !== "result") throw new Error("Expected worker result");
-    expect(response.result.frames).toEqual([
-      { stream: "stdout", bytesBase64: Buffer.from("worker output\n").toString("base64") },
-    ]);
+    expect(Buffer.concat(chunks).toString()).toBe("worker output\n");
     await expect(executionTimer).resolves.toBeLessThan(100);
     await worker.drainAndClose();
     await expect(worker.exited).resolves.toEqual({ generation: 7, cause: "closed" });
@@ -36,7 +39,9 @@ describe("NodeDaemonNavigationWorker", () => {
     const worker = createWorker("duplicate");
     await worker.start("/repo");
 
-    await expect(worker.execute("request-1", request)).resolves.toMatchObject({ kind: "result" });
+    await expect(worker.execute("request-1", request, outputSink())).resolves.toMatchObject({
+      kind: "result",
+    });
     await expect(worker.exited).resolves.toMatchObject({ generation: 7, cause: "error" });
   });
 
@@ -86,7 +91,7 @@ describe("NodeDaemonNavigationWorker", () => {
   it("reports controlled forced termination", async () => {
     const worker = createWorker("block-execution");
     await worker.start("/repo");
-    void worker.execute("request-1", request).catch(() => undefined);
+    void worker.execute("request-1", request, outputSink()).catch(() => undefined);
 
     await worker.terminate();
 
@@ -101,6 +106,10 @@ function createWorker(mode: string): NodeDaemonNavigationWorker {
     entryUrl: new URL("../../test/helpers/daemon-navigation-worker-fixture.mjs", import.meta.url),
     workerData: { mode },
   });
+}
+
+function outputSink() {
+  return { append: () => Promise.resolve() };
 }
 
 function timerTurn(): Promise<number> {

@@ -44,10 +44,7 @@ describe("DaemonNavigationWorkerProtocol", () => {
       kind: "result",
       generation: 4,
       requestId: "request-1",
-      result: {
-        frames: [{ stream: "stdout", bytesBase64: "c3ltbmF2Cg==" }],
-        exitCode: 0,
-      },
+      result: { exitCode: 0 },
       refresh,
       durations: { freshnessMs: 1, navigationMs: 2, renderMs: 3, outputMs: 4 },
     },
@@ -90,7 +87,7 @@ describe("DaemonNavigationWorkerProtocol", () => {
       stream: "stdout",
       bytes: new Uint8Array(64 * 1024 + 1),
     },
-    { kind: "result", generation: 1, requestId: "one", result: { frames: [] } },
+    { kind: "result", generation: 1, requestId: "one", result: {} },
     { kind: "failed", generation: 1, failureCode: "unknown" },
     { kind: "heap", generation: 1, usedHeapBytes: -1, heapLimitBytes: 10 },
     { kind: "closed", generation: 1, extra: true },
@@ -99,10 +96,8 @@ describe("DaemonNavigationWorkerProtocol", () => {
   });
 
   it.each([
-    resultWith({ frames: [{ stream: "stdout", bytesBase64: "%%%" }], exitCode: 0 }),
-    resultWith({ frames: [{ stream: "stdout", bytesBase64: "Zh==" }], exitCode: 0 }),
-    resultWith({ frames: [], exitCode: -1 }),
-    resultWith({ frames: [], exitCode: 0, telemetry: {} }),
+    resultWith({ exitCode: -1 }),
+    resultWith({ exitCode: 0, telemetry: {} }),
     {
       kind: "ready",
       generation: 1,
@@ -114,7 +109,7 @@ describe("DaemonNavigationWorkerProtocol", () => {
       kind: "result",
       generation: 1,
       requestId: "one",
-      result: { frames: [], exitCode: 0 },
+      result: { exitCode: 0 },
       refresh: { ...refresh, added: 0.5 },
       durations: { freshnessMs: 1, navigationMs: 2, renderMs: 3, outputMs: 4 },
     },

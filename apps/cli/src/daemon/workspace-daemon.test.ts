@@ -5,7 +5,11 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { canonicalStateDir } from "@symnav/telemetry";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { CliExecutionRequest, CommandExecutionResult } from "../command-execution-result.js";
+import {
+  CommandOutputSnapshot,
+  type CliExecutionRequest,
+  type CommandExecutionResult,
+} from "../command-execution-result.js";
 import { createDefaultDependencies } from "../program.js";
 import { DaemonController } from "./daemon-controller.js";
 import type {
@@ -49,7 +53,7 @@ describe("WorkspaceDaemon runtime lifecycle", () => {
     const stopping = harness.stop();
 
     executor.complete({
-      frames: [{ stream: "stdout", bytesBase64: Buffer.from("result\n").toString("base64") }],
+      output: new CommandOutputSnapshot([{ stream: "stdout", bytes: Buffer.from("result\n") }]),
       exitCode: 0,
     });
 
@@ -593,12 +597,16 @@ class ExecutorNavigationWorker implements DaemonNavigationWorker {
   async execute(
     requestId: string,
     request: CliExecutionRequest,
+    output: Parameters<DaemonNavigationWorker["execute"]>[2],
   ): Promise<DaemonNavigationWorkerResponse> {
+    const result = await Promise.race([this.executor.execute(request), this.termination]);
+    for await (const record of result.output.records()) await output.append(record);
+    await result.output.dispose();
     return {
       kind: "result",
       generation: this.generation,
       requestId,
-      result: await Promise.race([this.executor.execute(request), this.termination]),
+      result: { exitCode: result.exitCode },
       refresh: { added: 0, changed: 0, removed: 0, unchanged: 1 },
       durations: { freshnessMs: 0, navigationMs: 1, renderMs: 0, outputMs: 0 },
     };
@@ -676,7 +684,7 @@ class DeferredExecutor implements DaemonCommandExecutor {
 
 class ImmediateExecutor implements DaemonCommandExecutor {
   async execute(_request: CliExecutionRequest): Promise<CommandExecutionResult> {
-    return { frames: [], exitCode: 0 };
+    return emptyResult();
   }
 }
 
@@ -686,8 +694,12 @@ class RejectThenSucceedExecutor implements DaemonCommandExecutor {
   async execute(_request: CliExecutionRequest): Promise<CommandExecutionResult> {
     this.executionCount += 1;
     if (this.executionCount === 1) throw new Error("executor rejected");
-    return { frames: [], exitCode: 0 };
+    return emptyResult();
   }
+}
+
+function emptyResult(): CommandExecutionResult {
+  return { output: new CommandOutputSnapshot([]), exitCode: 0 };
 }
 
 class CurrentProcessTerminator implements DaemonProcessTerminator {

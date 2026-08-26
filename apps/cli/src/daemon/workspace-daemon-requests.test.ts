@@ -2,7 +2,11 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "nod
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { CliExecutionRequest, CommandExecutionResult } from "../command-execution-result.js";
+import {
+  CommandOutputSnapshot,
+  type CliExecutionRequest,
+  type CommandExecutionResult,
+} from "../command-execution-result.js";
 import { createDefaultDependencies } from "../program.js";
 import type {
   DaemonExecutionServerFrame,
@@ -21,7 +25,7 @@ import type {
   DaemonNavigationWorkerExit,
 } from "./daemon-navigation-worker.js";
 import type { DaemonNavigationWorkerResponse } from "./daemon-navigation-worker-protocol.js";
-import { WorkspaceDaemon } from "./workspace-daemon.js";
+import { WorkspaceDaemon, type WorkspaceDaemonOptions } from "./workspace-daemon.js";
 
 describe("WorkspaceDaemon requests", () => {
   const harnesses: RequestHarness[] = [];
@@ -323,6 +327,20 @@ describe("WorkspaceDaemon requests", () => {
     });
   });
 
+  it("keeps serving after a result exceeds daemon completion capacity", async () => {
+    const harness = await RequestHarness.start(new SequencedOutputExecutor(), {
+      completionSpoolLimits: { inlineBytes: 0, maximumResultBytes: 1 },
+    });
+    harnesses.push(harness);
+
+    await expect(harness.execute("too-large")).resolves.toMatchObject({
+      kind: "execution-failed",
+      code: "response-capacity",
+    });
+    await expect(harness.ping()).resolves.toMatchObject({ kind: "pong", state: "ready" });
+    await expect(harness.execute("small")).resolves.toMatchObject({ kind: "result-end" });
+  });
+
   it("reports active command and queued count while worker execution is blocked", async () => {
     const executor = new SerializedExecutor();
     const harness = await RequestHarness.start(executor);
@@ -555,6 +573,9 @@ class RequestHarness {
       ...(options.startupHeartbeatIntervalMs === undefined
         ? {}
         : { startupHeartbeatIntervalMs: options.startupHeartbeatIntervalMs }),
+      ...(options.completionSpoolLimits === undefined
+        ? {}
+        : { completionSpoolLimits: options.completionSpoolLimits }),
       exit: (code) => harness.resolveExit(code),
     });
     return { daemon, harness, lease };
@@ -649,6 +670,7 @@ interface RequestHarnessOptions {
   readonly now?: () => number;
   readonly navigationWorker?: DaemonNavigationWorker;
   readonly startupHeartbeatIntervalMs?: number;
+  readonly completionSpoolLimits?: WorkspaceDaemonOptions["completionSpoolLimits"];
 }
 
 class RequestTransport {
@@ -726,7 +748,6 @@ class RequestTransport {
     return (
       response.kind === "accepted" ||
       response.kind === "rejected" ||
-      response.kind === "completed" ||
       response.kind === "result-manifest" ||
       response.kind === "result-end" ||
       response.kind === "execution-failed"
@@ -746,7 +767,7 @@ interface DaemonCommandExecutor {
 
 class ImmediateExecutor implements DaemonCommandExecutor {
   async execute(_request: CliExecutionRequest): Promise<CommandExecutionResult> {
-    return { frames: [], exitCode: 0 };
+    return emptyResult();
   }
 }
 
@@ -755,7 +776,7 @@ class RecordingExecutor implements DaemonCommandExecutor {
 
   async execute(request: CliExecutionRequest): Promise<CommandExecutionResult> {
     this.requests.push(request);
-    return { frames: [], exitCode: 0 };
+    return emptyResult();
   }
 }
 
@@ -770,7 +791,7 @@ class SerializedExecutor implements DaemonCommandExecutor {
   async execute(request: CliExecutionRequest): Promise<CommandExecutionResult> {
     this.requests.push(request);
     await new Promise<void>((resolve) => this.results.push(resolve));
-    return { frames: [], exitCode: 0 };
+    return emptyResult();
   }
 
   async started(count: number): Promise<void> {
@@ -786,6 +807,21 @@ class RejectingExecutor implements DaemonCommandExecutor {
   execute(): Promise<CommandExecutionResult> {
     return Promise.reject(new Error("execution failed"));
   }
+}
+
+class SequencedOutputExecutor implements DaemonCommandExecutor {
+  private executionCount = 0;
+
+  execute(): Promise<CommandExecutionResult> {
+    this.executionCount += 1;
+    const records =
+      this.executionCount === 1 ? [{ stream: "stdout" as const, bytes: Buffer.from("xx") }] : [];
+    return Promise.resolve({ output: new CommandOutputSnapshot(records), exitCode: 0 });
+  }
+}
+
+function emptyResult(): CommandExecutionResult {
+  return { output: new CommandOutputSnapshot([]), exitCode: 0 };
 }
 
 class ExecutorNavigationWorker implements DaemonNavigationWorker {
@@ -818,12 +854,16 @@ class ExecutorNavigationWorker implements DaemonNavigationWorker {
   async execute(
     requestId: string,
     request: CliExecutionRequest,
+    output: Parameters<DaemonNavigationWorker["execute"]>[2],
   ): Promise<DaemonNavigationWorkerResponse> {
+    const result = await Promise.race([this.executor.execute(request), this.termination]);
+    for await (const record of result.output.records()) await output.append(record);
+    await result.output.dispose();
     return {
       kind: "result",
       generation: this.generation,
       requestId,
-      result: await Promise.race([this.executor.execute(request), this.termination]),
+      result: { exitCode: result.exitCode },
       refresh: { added: 0, changed: 0, removed: 0, unchanged: 1 },
       durations: { freshnessMs: 0, navigationMs: 1, renderMs: 0, outputMs: 0 },
     };

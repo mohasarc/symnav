@@ -94,6 +94,7 @@ describe("LocalDaemonTransport", () => {
     const transport = new LocalDaemonTransport({ writeChunkSize: 1 });
     const server = await transport.listen(endpoint, async (request, send) => {
       if (request.kind !== "execute") throw new Error("Expected execution request");
+      expect(request.request.argv).toEqual(["resolve", "\n✓"]);
       send({
         kind: "accepted",
         instanceId: request.instanceId,
@@ -103,14 +104,11 @@ describe("LocalDaemonTransport", () => {
         queuePosition: 0,
       });
       send({
-        kind: "completed",
+        kind: "execution-failed",
         instanceId: request.instanceId,
         processToken: request.processToken,
         requestId: request.requestId,
-        result: {
-          frames: [{ stream: "stdout", bytesBase64: Buffer.from("✓\n\ntext").toString("base64") }],
-          exitCode: 0,
-        },
+        code: "internal",
       });
     });
 
@@ -125,7 +123,7 @@ describe("LocalDaemonTransport", () => {
       })
     ).completion;
 
-    expect(response).toMatchObject({ status: "completed", result: { exitCode: 0 } });
+    expect(response).toEqual({ status: "failed", code: "internal" });
     await server.close();
   });
 

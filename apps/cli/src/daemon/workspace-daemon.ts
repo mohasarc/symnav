@@ -158,7 +158,8 @@ export class WorkspaceDaemon {
         ? {}
         : { residentMemoryBytes: options.residentMemoryBytes }),
       spoolBytes: () => this.completionSpools.usage().rawBytes,
-      releaseTransientResources: () => this.releaseTransientResources(),
+      releaseTransientResources: () =>
+        this.requestQueue.scheduleAtTurnBoundary(() => this.releaseTransientResources()),
       replaceWorker: (cause) => this.replaceNavigationWorker(cause),
       drain: () => this.shutdown("resource", true),
     });

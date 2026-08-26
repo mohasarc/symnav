@@ -26,7 +26,9 @@ import type {
   DaemonNavigationWorker,
   DaemonNavigationWorkerExit,
 } from "./daemon-navigation-worker.js";
+import { NodeDaemonNavigationWorker } from "./daemon-navigation-worker.js";
 import type { DaemonNavigationWorkerResponse } from "./daemon-navigation-worker-protocol.js";
+import { DaemonResourcePolicy } from "./daemon-resource-monitor.js";
 import { WorkspaceDaemon, type WorkspaceDaemonOptions } from "./workspace-daemon.js";
 
 describe("WorkspaceDaemon requests", () => {
@@ -614,6 +616,72 @@ describe("WorkspaceDaemon requests", () => {
     await expect(harness.ping()).resolves.toMatchObject({ state: "ready" });
     expect(workers).toHaveLength(2);
   });
+
+  it("recovers a real old-generation exhaustion without replaying active work", async () => {
+    const harness = await RequestHarness.start(undefined, {
+      navigationWorkerFactory: (generation) =>
+        new NodeDaemonNavigationWorker({
+          generation,
+          stateDirectory: "/state",
+          entryUrl: new URL(
+            "../../test/helpers/daemon-navigation-worker-fixture.mjs",
+            import.meta.url,
+          ),
+          workerData: { mode: generation === 1 ? "heap-oom" : "normal" },
+          resourceLimits: { maxOldGenerationSizeMb: 24 },
+        }),
+    });
+    harnesses.push(harness);
+
+    const active = harness.execute("heap-active", ["refs", "input"]);
+    const queued = harness.execute("heap-queued", ["overview", "input.ts"]);
+
+    await expect(active).resolves.toMatchObject({
+      kind: "execution-failed",
+      requestId: "heap-active",
+      code: "controlled-resource",
+    });
+    await expect(queued).resolves.toMatchObject({
+      kind: "result-end",
+      requestId: "heap-queued",
+    });
+    await expect(harness.ping()).resolves.toMatchObject({ state: "ready" });
+    expect(harness.registry.read(harness.identity)).toMatchObject({ pid: process.pid });
+  }, 10_000);
+
+  it("recovers real external RSS pressure while lifecycle control stays responsive", async () => {
+    const policy = DaemonResourcePolicy.fromSystemMemory(512 * 1024 * 1024);
+    const harness = await RequestHarness.start(undefined, {
+      resourcePolicy: policy,
+      resourceCheckIntervalMs: 25,
+      navigationWorkerFactory: (generation) =>
+        new NodeDaemonNavigationWorker({
+          generation,
+          stateDirectory: "/state",
+          entryUrl: new URL(
+            "../../test/helpers/daemon-navigation-worker-fixture.mjs",
+            import.meta.url,
+          ),
+          workerData: { mode: generation === 1 ? "external-pressure" : "normal" },
+          resourceLimits: { maxOldGenerationSizeMb: 64 },
+        }),
+    });
+    harnesses.push(harness);
+
+    const active = harness.execute("rss-active", ["refs", "input"]);
+    const queued = harness.execute("rss-queued", ["overview", "input.ts"]);
+    await waitUntil(async () => (await harness.ping()).state === "busy");
+    await expect(harness.ping()).resolves.toMatchObject({ state: "busy" });
+
+    await expect(active).resolves.toMatchObject({
+      kind: "execution-failed",
+      requestId: "rss-active",
+      code: "controlled-resource",
+    });
+    await expect(queued).resolves.toMatchObject({ kind: "result-end", requestId: "rss-queued" });
+    await expect(harness.ping()).resolves.toMatchObject({ state: "ready" });
+    expect(harness.registry.read(harness.identity)).toMatchObject({ pid: process.pid });
+  }, 10_000);
 });
 
 class RequestHarness {
@@ -708,6 +776,10 @@ class RequestHarness {
       ...(options.completionSpoolStorage === undefined
         ? {}
         : { completionSpoolStorage: options.completionSpoolStorage }),
+      ...(options.resourcePolicy === undefined ? {} : { resourcePolicy: options.resourcePolicy }),
+      ...(options.resourceCheckIntervalMs === undefined
+        ? {}
+        : { resourceCheckIntervalMs: options.resourceCheckIntervalMs }),
       exit: (code) => harness.resolveExit(code),
     });
     return { daemon, harness, lease };
@@ -813,6 +885,8 @@ interface RequestHarnessOptions {
   readonly now?: () => number;
   readonly navigationWorker?: DaemonNavigationWorker;
   readonly navigationWorkerFactory?: (generation: number) => DaemonNavigationWorker;
+  readonly resourcePolicy?: DaemonResourcePolicy;
+  readonly resourceCheckIntervalMs?: number;
   readonly startupHeartbeatIntervalMs?: number;
   readonly completionSpoolLimits?: WorkspaceDaemonOptions["completionSpoolLimits"];
   readonly completionSpoolStorage?: WorkspaceDaemonOptions["completionSpoolStorage"];

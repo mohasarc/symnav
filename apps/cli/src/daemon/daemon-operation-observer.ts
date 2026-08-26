@@ -137,6 +137,7 @@ export class DaemonOperationObserver {
             ? {}
             : {
                 processRssBytes: resources.processRssBytes,
+                peakProcessRssBytes: resources.peakProcessRssBytes,
                 ...(resources.workerHeapUsedBytes === undefined
                   ? {}
                   : { workerHeapUsedBytes: resources.workerHeapUsedBytes }),

@@ -15,6 +15,7 @@ import {
   DaemonProcessConfigurationParser,
   NodeDaemonProcessLauncher,
 } from "./daemon-process-launcher.js";
+import { DaemonResourcePolicy } from "./daemon-resource-monitor.js";
 import { DaemonWorkspaceIdentity } from "./daemon-workspace-identity.js";
 
 interface FakeChildProcess {
@@ -67,7 +68,8 @@ describe("NodeDaemonProcessLauncher", () => {
       );
       mkdirSync(identity.identityDirectory, { recursive: true });
 
-      await new NodeDaemonProcessLauncher("1.2.3", 128 * 1024 * 1024).launch(
+      const policy = DaemonResourcePolicy.fromSystemMemory(1024 * 1024 * 1024);
+      await new NodeDaemonProcessLauncher("1.2.3", policy).launch(
         identity,
         "instance",
         "process-token",
@@ -83,7 +85,9 @@ describe("NodeDaemonProcessLauncher", () => {
           readonly stdio: readonly unknown[];
         },
       ];
-      const configuration = DaemonProcessConfigurationParser.parse(args[2]);
+      expect(args).toHaveLength(2);
+      expect(args).not.toEqual(expect.arrayContaining([expect.stringContaining("max-old-space")]));
+      const configuration = DaemonProcessConfigurationParser.parse(args[1]);
       const absoluteStateDirectory = canonicalStateDir(resolve(stateDirectory));
       const absoluteWorkspaceRoot = resolve(root, "workspace");
       expect(configuration.stateDirectory).toBe(absoluteStateDirectory);
@@ -94,6 +98,7 @@ describe("NodeDaemonProcessLauncher", () => {
       expect(configuration.instanceId).toBe("instance");
       expect(configuration.processToken).toBe("process-token");
       expect(configuration.startupOwnerKind).toBe("daemon");
+      expect(configuration.resourcePolicy).toEqual(policy.record);
       expect(configuration.endpoint).toBe(identity.endpoint("instance"));
       expect(options.env.SYMNAV_STATE_DIR).toBe(absoluteStateDirectory);
       expect(options.cwd).toBe(tmpdir());

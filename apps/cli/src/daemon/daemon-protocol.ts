@@ -1,4 +1,6 @@
 import type { CliExecutionRequest, CommandExecutionResult } from "../command-execution-result.js";
+import type { CompletionSpoolManifest } from "./completion-spool.js";
+import type { CommandOutputStream } from "../command-execution-result.js";
 
 export const DAEMON_PROTOCOL_VERSION = 3;
 export const DAEMON_RECORD_SCHEMA_VERSION = 2;
@@ -96,6 +98,23 @@ export type DaemonExecutionServerFrame =
       readonly result: CommandExecutionResult;
     }
   | {
+      readonly kind: "result-manifest";
+      readonly instanceId: string;
+      readonly processToken: string;
+      readonly requestId: string;
+      readonly manifest: CompletionSpoolManifest;
+    }
+  | {
+      readonly kind: "result-end";
+      readonly instanceId: string;
+      readonly processToken: string;
+      readonly requestId: string;
+      readonly transferId: string;
+      readonly rawBytes: number;
+      readonly recordCount: number;
+      readonly sha256: string;
+    }
+  | {
       readonly kind: "execution-failed";
       readonly instanceId: string;
       readonly processToken: string;
@@ -124,6 +143,33 @@ export interface DaemonExecutionStatusResponse {
   readonly processToken: string;
   readonly requestId: string;
   readonly status: DaemonExecutionStatus;
+}
+
+export interface DaemonResultChunk {
+  readonly transferId: string;
+  readonly requestId: string;
+  readonly offset: number;
+  readonly sequence: number;
+  readonly stream: CommandOutputStream;
+  readonly bytes: Uint8Array;
+}
+
+export interface DaemonResultFetchRequest {
+  readonly kind: "result-fetch";
+  readonly protocolVersion: number;
+  readonly instanceId: string;
+  readonly processToken: string;
+  readonly requestId: string;
+  readonly offset: number;
+}
+
+export interface DaemonResultAcknowledgement {
+  readonly kind: "result-ack";
+  readonly protocolVersion: number;
+  readonly instanceId: string;
+  readonly processToken: string;
+  readonly requestId: string;
+  readonly transferId: string;
 }
 
 export type DaemonLogEvent =
@@ -168,7 +214,9 @@ export type DaemonLifecycleRequest =
 export type DaemonRequest =
   | DaemonLifecycleRequest
   | DaemonExecuteRequest
-  | DaemonExecutionStatusRequest;
+  | DaemonExecutionStatusRequest
+  | DaemonResultFetchRequest
+  | DaemonResultAcknowledgement;
 
 export type DaemonLifecycleResponse =
   | {
@@ -207,7 +255,16 @@ export type DaemonLifecycleResponse =
 export type DaemonResponse =
   | DaemonLifecycleResponse
   | DaemonExecutionServerFrame
-  | DaemonExecutionStatusResponse;
+  | DaemonExecutionStatusResponse
+  | {
+      readonly kind: "result-acknowledged";
+      readonly instanceId: string;
+      readonly processToken: string;
+      readonly requestId: string;
+      readonly transferId: string;
+    };
+
+export type DaemonServerMessage = DaemonResponse | DaemonResultChunk;
 
 export type DaemonPong = Extract<DaemonResponse, { readonly kind: "pong" }>;
 

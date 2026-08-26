@@ -358,6 +358,9 @@ export class LocalDaemonTransport {
             if (acceptance === undefined) {
               throw new Error("Daemon returned completion before acceptance");
             }
+            if (frame.kind === "result-manifest" || frame.kind === "result-end") {
+              throw new Error("Daemon streamed result transfer is not active");
+            }
             if (terminal) throw new Error("Daemon returned duplicate terminal frame");
             terminal = true;
             terminalValue =

@@ -45,6 +45,26 @@ export interface DaemonRecord extends DaemonIdentityCoordinates {
 
 export type WorkspaceRequestQueueState = "accepting" | "draining" | "closed";
 
+export interface DaemonActivitySnapshot {
+  readonly lifecycle: "starting" | "ready" | "busy" | "recovering" | "draining";
+  readonly pid: number;
+  readonly startedAt: number;
+  readonly startupElapsedMs: number;
+  readonly fileCount?: number;
+  readonly processRssBytes: number;
+  readonly hardProcessRssBytes: number;
+  readonly workerHeapUsedBytes?: number;
+  readonly workerGeneration: number;
+  readonly current?: {
+    readonly requestId: string;
+    readonly command: DaemonCommandName;
+    readonly elapsedMs: number;
+  };
+  readonly queued: number;
+  readonly lastCompletedAgoMs?: number;
+  readonly spoolBytes: number;
+}
+
 export interface RunningDaemonStatus {
   readonly workspaceRoot: string;
   readonly state: "starting" | "ready" | "busy" | "unresponsive";
@@ -350,6 +370,7 @@ export type DaemonLifecycleResponse =
       readonly currentCommand?: string;
       readonly currentCommandElapsedMs?: number;
       readonly queued?: number;
+      readonly activity?: DaemonActivitySnapshot;
     }
   | { readonly kind: "stopped"; readonly instanceId: string };
 

@@ -166,10 +166,7 @@ class TestWorkspace {
   static sourceOccurrences(root: string, value: string): number {
     return this.files(root)
       .filter((path) => path.endsWith(".ts"))
-      .reduce(
-        (count, path) => count + readFileSync(path, "utf8").split(value).length - 1,
-        0,
-      );
+      .reduce((count, path) => count + readFileSync(path, "utf8").split(value).length - 1, 0);
   }
 
   private static files(root: string): readonly string[] {

@@ -735,6 +735,30 @@ describe("WorkspaceDaemon requests", () => {
     });
   }, 10_000);
 
+  it("sheds soft pressure before warm-up publishes readiness", async () => {
+    const policy = DaemonResourcePolicy.fromSystemMemory(1024 * 1024 * 1024);
+    const worker = new ReleaseGatedNavigationWorker(new ImmediateExecutor());
+    const { daemon, harness, lease } = RequestHarness.create(undefined, {
+      navigationWorker: worker,
+      resourcePolicy: policy,
+      residentMemoryBytes: () => policy.record.softProcessRssBytes + 1,
+    });
+    harnesses.push(harness);
+    let ready = false;
+    const starting = daemon.start().then(() => {
+      ready = true;
+    });
+
+    await worker.releaseStarted;
+    expect(ready).toBe(false);
+    expect(harness.registry.read(harness.identity)?.state).toBe("starting");
+    worker.allowRelease();
+    await starting;
+    lease.release();
+
+    await expect(harness.ping()).resolves.toMatchObject({ state: "ready" });
+  });
+
   it("recovers a real old-generation exhaustion without replaying active work", async () => {
     const harness = await RequestHarness.start(undefined, {
       navigationWorkerFactory: (generation) =>

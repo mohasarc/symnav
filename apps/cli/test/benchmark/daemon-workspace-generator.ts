@@ -327,7 +327,7 @@ export class DaemonWorkspaceGenerator {
     const distributionIndex = index === 0 ? medianIndex : index === medianIndex ? 0 : index;
     if (distributionIndex === 0) return distribution.minimum;
     if (distributionIndex === fileCount - 1) return distribution.maximum;
-    if (distributionIndex < Math.ceil(fileCount * 0.5)) return distribution.p50;
+    if (distributionIndex < Math.ceil(fileCount * 0.95) - 1) return distribution.p50;
     return distribution.p95;
   }
 

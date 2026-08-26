@@ -551,6 +551,46 @@ describe("WorkspaceDaemon requests", () => {
     expect(harness.logEvents().filter((event) => event.kind === "freshness")).toHaveLength(2);
   });
 
+  it("records ordered execution and delivery terminals for one request", async () => {
+    const harness = await RequestHarness.start(new ImmediateExecutor());
+    harnesses.push(harness);
+
+    await harness.execute("observed", ["refs", "private-symbol"]);
+    await waitUntil(() =>
+      harness.logEvents().some((event) => event.kind === "delivery-terminal"),
+    );
+
+    const operationEvents = harness
+      .logEvents()
+      .filter((event) => event.requestId === "observed")
+      .map((event) => event.kind);
+    expect(operationEvents).toEqual([
+      "request-accepted",
+      "turn-started",
+      "worker-completed",
+      "response-spooled",
+      "execution-terminal",
+      "delivery-terminal",
+    ]);
+    expect(harness.logEvents()).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          kind: "execution-terminal",
+          requestId: "observed",
+          outcome: "completed",
+          serviceMs: expect.any(Number),
+          processRssBytes: expect.any(Number),
+        }),
+        expect.objectContaining({
+          kind: "delivery-terminal",
+          requestId: "observed",
+          outcome: "delivered",
+          deliveryMs: expect.any(Number),
+        }),
+      ]),
+    );
+  });
+
   it("reports retained spool bytes until completion acknowledgement", async () => {
     const harness = await RequestHarness.start(new MultipleRecordExecutor());
     harnesses.push(harness);

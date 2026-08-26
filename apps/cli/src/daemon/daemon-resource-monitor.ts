@@ -79,6 +79,7 @@ export interface DaemonResourceSnapshot {
 export interface DaemonResourceSupervisorOptions {
   readonly policy: DaemonResourcePolicy;
   readonly generation: number;
+  readonly now?: () => number;
   readonly intervalMs?: number;
   readonly residentMemoryBytes?: () => number;
   readonly spoolBytes: () => number;
@@ -89,6 +90,7 @@ export interface DaemonResourceSupervisorOptions {
 
 export class DaemonResourceSupervisor {
   private readonly residentMemoryBytes: () => number;
+  private readonly now: () => number;
   private timer: ReturnType<typeof setInterval> | undefined;
   private currentState: DaemonResourceState = "ready";
   private currentGeneration: number;
@@ -101,10 +103,12 @@ export class DaemonResourceSupervisor {
   private workerHeapUsedBytes: number | undefined;
   private workerHeapLimitBytes: number | undefined;
   private replacementCount = 0;
+  private replacementTimes: number[] = [];
   private replacementOperation: Promise<void> | undefined;
 
   constructor(private readonly options: DaemonResourceSupervisorOptions) {
     this.currentGeneration = options.generation;
+    this.now = options.now ?? Date.now;
     this.residentMemoryBytes = options.residentMemoryBytes ?? (() => process.memoryUsage().rss);
   }
 
@@ -184,6 +188,16 @@ export class DaemonResourceSupervisor {
 
   private replace(): Promise<void> {
     if (this.replacementOperation !== undefined) return this.replacementOperation;
+    const cutoff = this.now() - DAEMON_RESOURCE_RESTART_WINDOW_MS;
+    this.replacementTimes = this.replacementTimes.filter((replacedAt) => replacedAt > cutoff);
+    if (this.replacementTimes.length >= DAEMON_RESOURCE_RESTART_LIMIT) {
+      this.currentState = "draining";
+      this.admissionPaused = true;
+      this.replacementOperation = this.options.drain().finally(() => {
+        this.replacementOperation = undefined;
+      });
+      return this.replacementOperation;
+    }
     this.currentState = "replacing";
     this.admissionPaused = true;
     this.replacementOperation = this.options
@@ -193,6 +207,7 @@ export class DaemonResourceSupervisor {
         this.workerHeapUsedBytes = undefined;
         this.workerHeapLimitBytes = undefined;
         this.replacementCount += 1;
+        this.replacementTimes.push(this.now());
         this.shedPending = false;
         this.shedCompleted = false;
         this.admissionPaused = false;

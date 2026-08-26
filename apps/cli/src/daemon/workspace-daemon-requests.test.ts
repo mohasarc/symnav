@@ -571,6 +571,49 @@ describe("WorkspaceDaemon requests", () => {
       ]),
     );
   });
+
+  it("fails active work once and preserves queued FIFO across worker replacement", async () => {
+    const activeExecutor = new SerializedExecutor();
+    const replacementExecutor = new RecordingExecutor();
+    const workers: ExecutorNavigationWorker[] = [];
+    const harness = await RequestHarness.start(undefined, {
+      navigationWorkerFactory: (generation) => {
+        const worker = new ExecutorNavigationWorker(
+          generation === 1 ? activeExecutor : replacementExecutor,
+          generation,
+        );
+        workers.push(worker);
+        return worker;
+      },
+    });
+    harnesses.push(harness);
+    const active = harness.execute("active", ["refs", "input"]);
+    await activeExecutor.started(1);
+    const queued = harness.execute("queued", ["overview", "input.ts"]);
+    await expect(harness.ping()).resolves.toMatchObject({ state: "busy", queued: 1 });
+
+    workers[0]?.fail({ generation: 1, cause: "out-of-memory", errorName: "WorkerOom" });
+
+    await expect(active).resolves.toMatchObject({
+      kind: "execution-failed",
+      requestId: "active",
+      code: "controlled-resource",
+    });
+    await expect(queued).resolves.toMatchObject({ kind: "result-end", requestId: "queued" });
+    expect(activeExecutor.requests).toHaveLength(1);
+    expect(replacementExecutor.requests).toHaveLength(1);
+    expect(workers.map((worker) => worker.generation)).toEqual([1, 2]);
+    await expect(harness.ping()).resolves.toMatchObject({ state: "ready" });
+    expect(harness.registry.read(harness.identity)).toMatchObject({
+      pid: process.pid,
+      instanceId: harness.instanceId,
+      processToken: harness.processToken,
+    });
+
+    workers[0]?.fail({ generation: 1, cause: "error", errorName: "LateOldGeneration" });
+    await expect(harness.ping()).resolves.toMatchObject({ state: "ready" });
+    expect(workers).toHaveLength(2);
+  });
 });
 
 class RequestHarness {
@@ -649,7 +692,12 @@ class RequestHarness {
       transport: harness.transport as unknown as LocalDaemonTransport,
       navigationWorker:
         options.navigationWorker ??
-        new ExecutorNavigationWorker(executor ?? new ImmediateExecutor()),
+        (options.navigationWorkerFactory === undefined
+          ? new ExecutorNavigationWorker(executor ?? new ImmediateExecutor())
+          : undefined),
+      ...(options.navigationWorkerFactory === undefined
+        ? {}
+        : { navigationWorkerFactory: options.navigationWorkerFactory }),
       ...(options.now === undefined ? {} : { now: options.now }),
       ...(options.startupHeartbeatIntervalMs === undefined
         ? {}
@@ -764,6 +812,7 @@ class RequestHarness {
 interface RequestHarnessOptions {
   readonly now?: () => number;
   readonly navigationWorker?: DaemonNavigationWorker;
+  readonly navigationWorkerFactory?: (generation: number) => DaemonNavigationWorker;
   readonly startupHeartbeatIntervalMs?: number;
   readonly completionSpoolLimits?: WorkspaceDaemonOptions["completionSpoolLimits"];
   readonly completionSpoolStorage?: WorkspaceDaemonOptions["completionSpoolStorage"];
@@ -1010,13 +1059,17 @@ function emptyResult(): CommandExecutionResult {
 }
 
 class ExecutorNavigationWorker implements DaemonNavigationWorker {
-  readonly generation = 1;
+  readonly generation: number;
   readonly exited: Promise<DaemonNavigationWorkerExit>;
   private resolveExited!: (exit: DaemonNavigationWorkerExit) => void;
   private rejectTermination!: (error: Error) => void;
   private readonly termination: Promise<never>;
 
-  constructor(private readonly executor: DaemonCommandExecutor) {
+  constructor(
+    private readonly executor: DaemonCommandExecutor,
+    generation = 1,
+  ) {
+    this.generation = generation;
     this.exited = new Promise((resolve) => {
       this.resolveExited = resolve;
     });

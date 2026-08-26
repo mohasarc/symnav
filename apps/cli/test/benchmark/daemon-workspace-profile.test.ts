@@ -1,7 +1,10 @@
-import { readFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   DaemonWorkspaceProfileValidator,
+  DaemonWorkspaceProfiler,
   type DaemonWorkspaceProfile,
   type DistributionSummary,
 } from "./daemon-workspace-profile.js";
@@ -32,6 +35,34 @@ describe("daemon workspace profile", () => {
         sourceBytes: { minimum: 10, p50: 9, p95: 20, maximum: 30 },
       }),
     ).toThrow("distribution");
+  });
+
+  it("profiles only aggregate visible workspace structure", async () => {
+    const root = mkdtempSync(join(tmpdir(), "symnav-daemon-profile-"));
+    try {
+      mkdirSync(join(root, ".git"));
+      mkdirSync(join(root, "src"));
+      mkdirSync(join(root, "ignored"));
+      mkdirSync(join(root, "nested", ".git"), { recursive: true });
+      writeFileSync(join(root, ".gitignore"), "ignored/\n");
+      writeFileSync(join(root, "src", "a.ts"), "export const first = 1;\n");
+      writeFileSync(
+        join(root, "src", "b.ts"),
+        "import { first } from './a.js';\nexport function second() { return first; }\n",
+      );
+      writeFileSync(join(root, "ignored", "secret.ts"), "export const ignored = 1;\n");
+      writeFileSync(join(root, "nested", "secret.ts"), "export const nested = 1;\n");
+
+      const profile = await new DaemonWorkspaceProfiler().profile(root);
+
+      expect(profile.visibleTypeScriptFiles).toBe(2);
+      expect(profile.sourceLines).toEqual({ minimum: 1, p50: 1, p95: 2, maximum: 2 });
+      expect(profile.importsPerFile.maximum).toBe(1);
+      expect(JSON.stringify(profile)).not.toContain(root);
+      expect(() => DaemonWorkspaceProfileValidator.parse(profile)).not.toThrow();
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 });
 

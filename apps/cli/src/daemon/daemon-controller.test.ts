@@ -161,6 +161,30 @@ describe("DaemonController", () => {
     ]);
   });
 
+  it("reports authenticated startup before activity is available", async () => {
+    const stateDirectory = temporaryDirectory(roots);
+    const identity = DaemonWorkspaceIdentity.from("/repo", stateDirectory);
+    const registry = new DaemonRegistry(identity.registryDirectory);
+    const daemonRecord = { ...startingRecord(identity), pid: 101 } satisfies DaemonRecord;
+    expect(registry.acquireStartup(identity, daemonRecord.instanceId)).toBeDefined();
+    expect(registry.writeStartingIfStartupOwner(identity, daemonRecord)).toBe(true);
+    const controller = new DaemonController(
+      registry,
+      new ActivityControllerTransport(daemonRecord) as unknown as LocalDaemonTransport,
+      stateDirectory,
+      { processTerminator: new ControllerTerminator([daemonRecord.pid]), now: () => 20 },
+    );
+
+    await expect(controller.status()).resolves.toEqual([
+      {
+        workspaceRoot: "/repo",
+        state: "starting",
+        pid: daemonRecord.pid,
+        startupElapsedMs: 10,
+      },
+    ]);
+  });
+
   it.each([
     [
       "ready",
@@ -307,7 +331,7 @@ class ControllerTransport {
 class ActivityControllerTransport {
   constructor(
     private readonly record: DaemonRecord,
-    private readonly activity: DaemonActivitySnapshot,
+    private readonly activity?: DaemonActivitySnapshot,
   ) {}
 
   request(_endpoint: string, request: DaemonRequest): Promise<DaemonResponse> {
@@ -327,7 +351,7 @@ class ActivityControllerTransport {
         instanceId: this.record.instanceId,
         symnavVersion: this.record.symnavVersion,
         startedAt: this.record.startedAt,
-        activity: this.activity,
+        ...(this.activity === undefined ? {} : { activity: this.activity }),
       });
     }
     return Promise.reject(new Error("Unexpected controller request"));

@@ -9,10 +9,9 @@ import {
 import {
   DAEMON_PROTOCOL_VERSION,
   DAEMON_RECORD_SCHEMA_VERSION,
+  type DaemonExecuteRequest,
   type DaemonPong,
   type DaemonRecord,
-  type DaemonRequest,
-  type DaemonResponse,
 } from "./daemon-protocol.js";
 import type { DaemonObservation } from "./daemon-record-observer.js";
 import { DaemonTransportError } from "./local-daemon-transport.js";
@@ -247,7 +246,7 @@ class DispatchHarness {
   readonly coldExecute = vi.fn(async () => success);
   readonly recordTelemetry = vi.fn();
   readonly runtimeFactory = vi.fn(() => this.runtime);
-  private readonly requests: DaemonRequest[] = [];
+  private readonly requests: DaemonExecuteRequest[] = [];
   private registered: DaemonRecord | undefined;
   private readonly runtime: DaemonDispatchRuntime;
 
@@ -320,16 +319,6 @@ class DispatchHarness {
                 : Promise.resolve({ status: "completed" as const, result: this.daemonAnswer }),
           };
         },
-        request: async (_endpoint: string, daemonRequest: DaemonRequest) => {
-          this.requests.push(daemonRequest);
-          if (this.daemonAnswer instanceof Error) throw this.daemonAnswer;
-          if (!("frames" in this.daemonAnswer)) throw new Error("legacy request failed");
-          return {
-            kind: "result",
-            requestId: daemonRequest.kind === "execute" ? daemonRequest.requestId : "unexpected",
-            result: this.daemonAnswer,
-          } satisfies DaemonResponse;
-        },
       },
     };
   }
@@ -350,7 +339,7 @@ class DispatchHarness {
     });
   }
 
-  executeRequests(): readonly DaemonRequest[] {
+  executeRequests(): readonly DaemonExecuteRequest[] {
     return this.requests.filter((daemonRequest) => daemonRequest.kind === "execute");
   }
 }

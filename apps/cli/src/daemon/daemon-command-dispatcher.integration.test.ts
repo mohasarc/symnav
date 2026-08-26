@@ -8,7 +8,11 @@ import {
   DaemonCommandDispatcher,
   type DaemonDispatchRuntime,
 } from "./daemon-command-dispatcher.js";
-import { type DaemonRecord, type DaemonRequest, type DaemonResponse } from "./daemon-protocol.js";
+import type {
+  DaemonLifecycleRequest,
+  DaemonLifecycleResponse,
+  DaemonRecord,
+} from "./daemon-protocol.js";
 import type {
   DaemonProcess,
   DaemonProcessLauncher,
@@ -66,11 +70,6 @@ describe("DaemonCommandDispatcher startup routing", () => {
               queuePosition: 0,
             },
             completion: Promise.resolve({ status: "completed", result: result("warm") }),
-          }),
-          request: async (_endpoint, daemonRequest): Promise<DaemonResponse> => ({
-            kind: "result",
-            requestId: daemonRequest.kind === "execute" ? daemonRequest.requestId : "unexpected",
-            result: result("warm"),
           }),
         },
       };
@@ -186,7 +185,10 @@ class RegistryDaemonTransport {
     private readonly identity: DaemonWorkspaceIdentity,
   ) {}
 
-  async request(_endpoint: string, request: DaemonRequest): Promise<DaemonResponse> {
+  async request(
+    _endpoint: string,
+    request: DaemonLifecycleRequest,
+  ): Promise<DaemonLifecycleResponse> {
     const record = this.registry.readStoredInstance(this.identity, request.instanceId);
     if (record === undefined) throw new Error("Missing daemon record");
     if (request.kind === "identify") {

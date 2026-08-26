@@ -63,7 +63,23 @@ describe("WorkspaceDaemon requests", () => {
     await worker.initializationStarted;
 
     expect(harness.transport.isListening).toBe(true);
-    await expect(harness.ping()).resolves.toMatchObject({ kind: "pong", state: "starting" });
+    const startingStatus = await harness.ping();
+    expect(startingStatus).toMatchObject({
+      kind: "pong",
+      state: "starting",
+      activity: {
+        lifecycle: "starting",
+        pid: process.pid,
+        startupElapsedMs: expect.any(Number),
+        queued: 0,
+        workerGeneration: 1,
+        spoolBytes: 0,
+      },
+    });
+    if (startingStatus.kind !== "pong" || startingStatus.activity === undefined) {
+      throw new Error("Expected daemon activity snapshot");
+    }
+    expect(() => Object.assign(startingStatus.activity, { queued: 9 })).toThrow();
     expect(harness.registry.read(harness.identity)?.state).toBe("starting");
 
     worker.completeInitialization();
@@ -438,6 +454,15 @@ describe("WorkspaceDaemon requests", () => {
       state: "busy",
       currentCommand: "refs",
       queued: 1,
+      activity: {
+        lifecycle: "busy",
+        current: {
+          requestId: "first",
+          command: "refs",
+          elapsedMs: expect.any(Number),
+        },
+        queued: 1,
+      },
     });
     expect(Date.now() - pingStartedAt).toBeLessThan(1_000);
 

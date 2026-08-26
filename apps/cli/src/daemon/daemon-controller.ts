@@ -73,7 +73,7 @@ export class DaemonController {
       return { status: "not-running", workspaceRoot };
     }
     if (record.state === "starting") return this.stopStarting(identity, record, deadline);
-    const observation = await this.observer.observe(record);
+    const observation = await this.observer.observeIdentity(record);
     if (observation.kind === "exited") {
       this.registry.removeIfProcess(identity, record.instanceId, record.processToken);
       return { status: "not-running", workspaceRoot };

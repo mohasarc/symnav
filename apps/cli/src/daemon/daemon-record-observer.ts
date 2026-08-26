@@ -29,12 +29,37 @@ export type DaemonObservation =
       readonly evidence: DaemonIdentityEvidence;
     };
 
+export type DaemonIdentityObservation =
+  | { readonly kind: "starting"; readonly record: DaemonRecord }
+  | { readonly kind: "authenticated"; readonly record: DaemonRecord }
+  | {
+      readonly kind: "unresponsive";
+      readonly record: DaemonRecord;
+      readonly failureCode: "authentication";
+    }
+  | { readonly kind: "exited"; readonly record: DaemonRecord };
+
 export class DaemonRecordObserver {
   constructor(
     private readonly transport: LocalDaemonTransport,
     private readonly processTerminator: DaemonProcessTerminator,
     _now: () => number = Date.now,
   ) {}
+
+  async observeIdentity(record: DaemonRecord): Promise<DaemonIdentityObservation> {
+    if (record.state === "starting") {
+      if (record.pid > 0 && !this.processTerminator.isAlive(record.pid)) {
+        return { kind: "exited", record };
+      }
+      return { kind: "starting", record };
+    }
+    if (!this.processTerminator.isAlive(record.pid)) return { kind: "exited", record };
+    const authenticated = await this.authenticate(record);
+    if (!this.processTerminator.isAlive(record.pid)) return { kind: "exited", record };
+    return authenticated
+      ? { kind: "authenticated", record }
+      : { kind: "unresponsive", record, failureCode: "authentication" };
+  }
 
   async observe(record: DaemonRecord): Promise<DaemonObservation> {
     if (record.state === "starting") {

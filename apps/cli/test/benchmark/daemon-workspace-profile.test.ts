@@ -37,6 +37,30 @@ describe("daemon workspace profile", () => {
     ).toThrow("distribution");
   });
 
+  it("accepts only directly reproducible aggregate profile fields", () => {
+    const unsupportedFields = [
+      "referenceFanout",
+      "callInDegree",
+      "callOutDegree",
+      "callDepth",
+      "cycleRatio",
+      "declarationKindCounts",
+      "representativeResultCounts",
+      "ignoredPathRatio",
+      "nestedWorkspaceRatio",
+    ] as const;
+    const narrowed = Object.fromEntries(
+      Object.entries(reviewedProfile()).filter(([field]) => !unsupportedFields.includes(field as never)),
+    );
+
+    expect(() => DaemonWorkspaceProfileValidator.parse(narrowed)).not.toThrow();
+    for (const field of unsupportedFields) {
+      expect(() =>
+        DaemonWorkspaceProfileValidator.parse({ ...narrowed, [field]: 0 }),
+      ).toThrow("profile fields");
+    }
+  });
+
   it("profiles only aggregate visible workspace structure", async () => {
     const root = mkdtempSync(join(tmpdir(), "symnav-daemon-profile-"));
     try {

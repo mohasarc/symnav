@@ -1,10 +1,6 @@
-import { Writable } from "node:stream";
-import type {
-  CliExecutionRequest,
-  CommandExecutionResult,
-  CommandOutputFrame,
-  CommandOutputStream,
-} from "./command-execution-result.js";
+import type { CliExecutionRequest, CommandExecutionResult } from "./command-execution-result.js";
+import { OrderedCommandOutput } from "./command-execution-result.js";
+export { CommandResultReplayer } from "./command-execution-result.js";
 import type { ProgramContext } from "./program-context.js";
 import type { ProgramDependencies } from "./program-dependencies.js";
 import { buildProgram } from "./program.js";
@@ -16,25 +12,6 @@ class CapturedProgramExit extends Error {
   }
 }
 
-class CommandFrameStream extends Writable {
-  constructor(
-    private readonly stream: CommandOutputStream,
-    private readonly frames: CommandOutputFrame[],
-  ) {
-    super();
-  }
-
-  override _write(
-    chunk: unknown,
-    encoding: BufferEncoding,
-    callback: (error?: Error | null) => void,
-  ): void {
-    const bytes = Buffer.isBuffer(chunk) ? chunk : Buffer.from(String(chunk), encoding);
-    this.frames.push({ stream: this.stream, bytesBase64: bytes.toString("base64") });
-    callback();
-  }
-}
-
 export class CliProgramExecutor {
   constructor(
     private readonly dependencies: ProgramDependencies,
@@ -42,10 +19,10 @@ export class CliProgramExecutor {
   ) {}
 
   async execute(request: CliExecutionRequest): Promise<CommandExecutionResult> {
-    const frames: CommandOutputFrame[] = [];
+    const output = new OrderedCommandOutput();
     const context: ProgramContext = {
-      stdout: new CommandFrameStream("stdout", frames),
-      stderr: new CommandFrameStream("stderr", frames),
+      stdout: output.stdout,
+      stderr: output.stderr,
       cwd: request.cwd,
       exit: (exitCode) => {
         throw new CapturedProgramExit(exitCode);
@@ -61,23 +38,11 @@ export class CliProgramExecutor {
 
     try {
       await buildProgram(context, dependencies).parseAsync([...request.argv], { from: "user" });
-      return { frames, exitCode: 0 };
+      return await output.finish(0);
     } catch (error) {
-      if (error instanceof CapturedProgramExit) {
-        return { frames, exitCode: error.exitCode };
-      }
+      if (error instanceof CapturedProgramExit) return await output.finish(error.exitCode);
+      await output.dispose();
       throw error;
-    }
-  }
-}
-
-export class CommandResultReplayer {
-  static replay(result: CommandExecutionResult, context: ProgramContext): never | void {
-    for (const frame of result.frames) {
-      context[frame.stream].write(Buffer.from(frame.bytesBase64, "base64"));
-    }
-    if (result.exitCode !== 0) {
-      context.exit(result.exitCode);
     }
   }
 }

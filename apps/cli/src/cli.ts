@@ -16,4 +16,4 @@ const dispatched = await new DaemonCommandDispatcher({
   telemetryEnabled: dependencies.telemetryEnabled,
   executionMode: "cold",
 });
-CommandResultReplayer.replay(dispatched.result, createDefaultProgramContext());
+await CommandResultReplayer.replay(dispatched.result, createDefaultProgramContext());

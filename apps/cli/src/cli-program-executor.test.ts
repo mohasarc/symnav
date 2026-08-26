@@ -40,7 +40,7 @@ describe("CliProgramExecutor", () => {
     expect(result.exitCode).toBe(0);
     expect(result.frames.map((frame) => frame.stream)).toEqual(["stderr", "stdout"]);
     const context = createFakeProgramContext({ cwd: "/repo" });
-    CommandResultReplayer.replay(result, context);
+    await CommandResultReplayer.replay(result, context);
     expect(context.stderr.text()).toBe("Warning: unicode ✓\nnext\n");
     expect(context.stdout.text()).toBe("Overview: src/a.ts\n(no symbols)\n");
     expect(context.exitCodes).toEqual([]);

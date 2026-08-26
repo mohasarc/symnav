@@ -205,7 +205,7 @@ describe("DaemonCommandDispatcher", () => {
     ]);
   });
 
-  it("commits one deferred warm telemetry event", async () => {
+  it("never records warm telemetry in the caller", async () => {
     const warmTelemetry = telemetryInput("warm");
     const harness = new DispatchHarness({ ...success, telemetry: warmTelemetry });
 
@@ -213,8 +213,7 @@ describe("DaemonCommandDispatcher", () => {
       harness.dispatcher().execute({ ...request, telemetryEnabled: true }),
     ).resolves.toEqual({ mode: "warm", result: success });
 
-    expect(harness.recordTelemetry).toHaveBeenCalledWith(warmTelemetry);
-    expect(harness.recordTelemetry).toHaveBeenCalledTimes(1);
+    expect(harness.recordTelemetry).not.toHaveBeenCalled();
   });
 
   it.each([

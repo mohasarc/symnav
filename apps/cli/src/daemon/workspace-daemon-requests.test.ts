@@ -735,6 +735,10 @@ describe("WorkspaceDaemon requests", () => {
     const resumed = await harness.fetch("expired-trace");
     const completed = await resumed.terminal;
     if (completed.kind !== "result-end") throw new Error("Expected completed result");
+    const retried = await harness.fetch("expired-trace");
+    const retriedCompletion = await retried.terminal;
+    if (retriedCompletion.kind !== "result-end") throw new Error("Expected completed result");
+    expect(retriedCompletion.transferId).toBe(completed.transferId);
     await harness.acknowledge("expired-trace", completed.transferId);
 
     expect(executor.requests).toHaveLength(1);
@@ -747,6 +751,9 @@ describe("WorkspaceDaemon requests", () => {
       ]),
     );
     expect(harness.logEvents().filter((event) => event.kind === "delivery-terminal")).toHaveLength(
+      1,
+    );
+    expect(harness.logEvents().filter((event) => event.kind === "client-reattached")).toHaveLength(
       1,
     );
   });

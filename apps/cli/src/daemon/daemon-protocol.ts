@@ -47,6 +47,7 @@ export type WorkspaceRequestQueueState = "accepting" | "draining" | "closed";
 
 export interface DaemonActivitySnapshot {
   readonly lifecycle: "starting" | "ready" | "busy" | "recovering" | "draining";
+  readonly recoveryDetail?: "resource-pressure" | "worker-replacement";
   readonly pid: number;
   readonly startedAt: number;
   readonly startupElapsedMs: number;

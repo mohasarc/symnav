@@ -1368,6 +1368,10 @@ export class LocalDaemonTransport {
         lifecycle === "busy" ||
         lifecycle === "recovering" ||
         lifecycle === "draining") &&
+      (value.recoveryDetail === undefined ||
+        value.recoveryDetail === "resource-pressure" ||
+        value.recoveryDetail === "worker-replacement") &&
+      (lifecycle !== "recovering" || value.recoveryDetail !== undefined) &&
       LocalDaemonTransport.isCount(value.pid) &&
       LocalDaemonTransport.isMetric(value.startedAt) &&
       LocalDaemonTransport.isMetric(value.startupElapsedMs) &&

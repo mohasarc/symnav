@@ -50,16 +50,19 @@ describe("DaemonWorkspaceGenerator", () => {
     expect(profiled.visibleTypeScriptFiles).toBe(12);
   });
 
-  it.each([1, 2, 3, 10] as const)("scales connected visible files and counts at %ix", async (scale) => {
-    const root = TestWorkspace.create(roots);
+  it.each([1, 2, 3, 10] as const)(
+    "scales connected visible files and counts at %ix",
+    async (scale) => {
+      const root = TestWorkspace.create(roots);
 
-    const generated = await TestWorkspace.generate(root, scale, `scale-${scale}`);
-    const profiled = await new DaemonWorkspaceProfiler().profile(root);
+      const generated = await TestWorkspace.generate(root, scale, `scale-${scale}`);
+      const profiled = await new DaemonWorkspaceProfiler().profile(root);
 
-    expect(profiled.visibleTypeScriptFiles).toBe(12 * scale);
-    expect(generated.expectedProfile.visibleTypeScriptFiles).toBe(12 * scale);
-    expect(generated.expectedProfile.sourceBytes).toEqual(TestWorkspace.profile.sourceBytes);
-  });
+      expect(profiled.visibleTypeScriptFiles).toBe(12 * scale);
+      expect(generated.expectedProfile.visibleTypeScriptFiles).toBe(12 * scale);
+      expect(generated.expectedProfile.sourceBytes).toEqual(TestWorkspace.profile.sourceBytes);
+    },
+  );
 });
 
 class TestWorkspace {

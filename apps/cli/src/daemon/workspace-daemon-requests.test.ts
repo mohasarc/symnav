@@ -846,6 +846,44 @@ describe("WorkspaceDaemon requests", () => {
     );
   });
 
+  it("expires a blocked trace after its reattached caller disconnects", async () => {
+    const executor = new SerializedExecutor();
+    const harness = await RequestHarness.start(executor, {
+      operationTraceRetentionMs: 20,
+    });
+    harnesses.push(harness);
+    const initial = await harness.admit("reattached-active", ["overview", "input.ts"]);
+    await executor.started(1);
+    initial.disconnect();
+
+    const reattached = await harness.admit("reattached-active", ["overview", "input.ts"]);
+    reattached.disconnect();
+
+    await waitUntil(
+      () =>
+        harness.retainedOperationTraceCount() === 0 &&
+        harness.logEvents().filter((event) => event.kind === "operation-trace-expired").length ===
+          1,
+    );
+    executor.complete(0);
+    await waitUntil(
+      async () => (await harness.status("reattached-active")).status.state === "completed",
+    );
+
+    const resumed = await harness.fetch("reattached-active");
+    const completed = await resumed.terminal;
+    if (completed.kind !== "result-end") throw new Error("Expected completed result");
+    await harness.acknowledge("reattached-active", completed.transferId);
+
+    expect(executor.requests).toHaveLength(1);
+    expect(harness.logEvents().filter((event) => event.kind === "client-disconnected")).toHaveLength(
+      2,
+    );
+    expect(harness.logEvents().filter((event) => event.kind === "client-reattached")).toHaveLength(
+      2,
+    );
+  });
+
   it("releases retained request traces during shutdown", async () => {
     const harness = await RequestHarness.start(new ImmediateExecutor());
     harnesses.push(harness);

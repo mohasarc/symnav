@@ -67,6 +67,7 @@ class BenchmarkEvidence {
     ["large-response-incomplete", (input) => ({ ...input, largeResponseBytes: 8 * 1024 * 1024 })],
     ["rss-limit", (input) => ({ ...input, processRssPeakBytes: input.hardProcessRssBytes })],
     ["telemetry-count", (input) => ({ ...input, actualTelemetryCount: 10 })],
+    ["telemetry-count", (input) => ({ ...input, invocationTelemetryComplete: false })],
     [
       "telemetry-count",
       (input) => ({
@@ -116,6 +117,7 @@ class BenchmarkEvidence {
       actualTelemetryCount: 9,
       expectedTelemetryCommands: Array(9).fill("overview") as "overview"[],
       actualTelemetryCommands: Array(9).fill("overview") as "overview"[],
+      invocationTelemetryComplete: true,
       artifactComplete: true,
       spoolBytesAfterCleanup: 0,
       diagnosticPhasesComplete: true,

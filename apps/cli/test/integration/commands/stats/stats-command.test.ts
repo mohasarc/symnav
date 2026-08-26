@@ -163,7 +163,7 @@ describe("symnav stats", () => {
     expect(existsSync(usageFilePath)).toBe(false);
   });
 
-  it("does not record itself", async () => {
+  it("records itself after rendering without including stats in its own summary", async () => {
     const stateDir = tempStateDir(roots);
     const events = seededEvents();
     const usageFilePath = seedUsageLog(stateDir, events);
@@ -173,7 +173,16 @@ describe("symnav stats", () => {
 
     expect(result.stderr).toBe("");
     expect(result.exitCodes).toEqual([]);
-    expect(lineCount(usageFilePath)).toBe(lineCountBefore);
+    expect(lineCount(usageFilePath)).toBe(lineCountBefore + 1);
+    expect(result.stdout).toContain("Total events: 6");
+    const recorded = JSON.parse(readFileSync(usageFilePath, "utf8").trim().split("\n").at(-1)!) as {
+      command: string;
+    };
+    expect(recorded.command).toBe("stats");
+
+    const repeated = await parse(["stats"], stateDir);
+
+    expect(repeated.stdout).toBe(result.stdout);
   });
 });
 

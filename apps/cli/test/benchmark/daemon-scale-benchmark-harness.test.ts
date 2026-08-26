@@ -82,6 +82,33 @@ describe("DaemonScaleBenchmarkHarness", () => {
     expect(diagnostics.complete(enriched)).toBe(false);
   });
 
+  it("rejects a missing fixed invocation terminal masked by a same-command duplicate", () => {
+    const logPath = TestDiagnostics.withDuplicatedAndMissingOverviewTerminal();
+    const samples = Array.from({ length: 9 }, (_, repetition) =>
+      BenchmarkSampleEvidence.from(
+        "overview",
+        repetition,
+        { status: 0, stdout: "benchmarkHub", stderr: "" },
+        { status: 0, stdout: "benchmarkHub", stderr: "" },
+        10,
+        { argv: ["overview", "target.ts"], expectNonEmpty: true },
+      ),
+    );
+
+    const diagnostics = DaemonBenchmarkDiagnostics.read(logPath);
+    const enriched = diagnostics.enrich(samples);
+
+    expect(diagnostics.complete(enriched)).toBe(false);
+  });
+
+  it("rejects a missing fixed telemetry event masked by a same-command duplicate", () => {
+    const event = { command: "overview", executionMode: "warm" };
+
+    expect(BenchmarkSampleEvidence.telemetryMatched([], [event, event], "overview")).toBe(false);
+    expect(BenchmarkSampleEvidence.telemetryMatched([], [], "overview")).toBe(false);
+    expect(BenchmarkSampleEvidence.telemetryMatched([], [event], "overview")).toBe(true);
+  });
+
   it.each([
     {
       command: "context" as const,
@@ -177,6 +204,27 @@ class TestDiagnostics {
           serviceMs: 2,
           peakProcessRssBytes: 3,
         },
+      ];
+    }).flat();
+    writeFileSync(logPath, `${events.map((event) => JSON.stringify(event)).join("\n")}\n`);
+    return logPath;
+  }
+
+  static withDuplicatedAndMissingOverviewTerminal(): string {
+    const directory = mkdtempSync(join(tmpdir(), "symnav-benchmark-diagnostics-"));
+    const logPath = join(directory, "daemon.jsonl");
+    const events = Array.from({ length: 9 }, (_, index) => {
+      const requestId = `request-${index}`;
+      const executionTerminals = index === 0 ? 2 : index === 1 ? 0 : 1;
+      return [
+        { kind: "request-accepted", requestId, command: "overview" },
+        { kind: "turn-started", requestId, queueWaitMs: 1 },
+        ...Array.from({ length: executionTerminals }, () => ({
+          kind: "execution-terminal",
+          requestId,
+          serviceMs: 2,
+          peakProcessRssBytes: 3,
+        })),
       ];
     }).flat();
     writeFileSync(logPath, `${events.map((event) => JSON.stringify(event)).join("\n")}\n`);

@@ -106,6 +106,40 @@ describe("DaemonLogger", () => {
     });
   });
 
+  it("rejects open string values in otherwise allowed diagnostic fields", async () => {
+    const root = mkdtempSync(join(tmpdir(), "symnav-daemon-closed-values-"));
+    roots.push(root);
+    const identity = DaemonWorkspaceIdentity.from("/repo", root);
+    const logger = new DaemonLogger(identity, "instance-one", new NodeDaemonClock());
+    const secret = "CustomerSourceSymbol";
+
+    for (const event of [
+      { kind: "failure", operation: secret, failureCode: "internal", errorName: "Error" },
+      { kind: "failure", operation: "request", failureCode: secret, errorName: "Error" },
+      { kind: "execution-terminal", requestId: "request", outcome: secret, serviceMs: 1 },
+      { kind: "stop", reason: secret },
+      {
+        kind: "worker-replaced",
+        cause: secret,
+        previousWorkerGeneration: 1,
+        workerGeneration: 2,
+        fileCount: 1,
+        discoveryMs: 0,
+        indexingMs: 1,
+        totalMs: 1,
+      },
+    ]) {
+      logger.record(event as unknown as DaemonDiagnosticEvent);
+    }
+    logger.record({ kind: "start" });
+    await logger.flush();
+
+    const contents = readFileSync(identity.logPath, "utf8");
+    expect(contents).not.toContain(secret);
+    expect(contents.trim().split("\n")).toHaveLength(1);
+    expect(JSON.parse(contents)).toMatchObject({ kind: "start" });
+  });
+
   it("rotates before the byte limit and retains only four backups", async () => {
     const root = mkdtempSync(join(tmpdir(), "symnav-daemon-rotation-"));
     roots.push(root);

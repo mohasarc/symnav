@@ -141,7 +141,12 @@ export class DaemonBenchmarkGate {
       input.restartCount === 0 &&
       input.initialPid === input.finalPid &&
       input.initialInstanceId === input.finalInstanceId;
-    const exactlyOnceTelemetry = input.actualTelemetryCount === input.expectedTelemetryCount;
+    const exactlyOnceTelemetry =
+      input.actualTelemetryCount === input.expectedTelemetryCount &&
+      input.actualTelemetryCommands.length === input.expectedTelemetryCommands.length &&
+      input.actualTelemetryCommands.every(
+        (command, index) => command === input.expectedTelemetryCommands[index],
+      );
     const resourcesWithinPolicy = input.processRssPeakBytes < input.hardProcessRssBytes;
     const spoolsCleaned = input.spoolBytesAfterCleanup === 0;
     const failures: DaemonBenchmarkFailureCode[] = [];

@@ -141,7 +141,7 @@ describe("symnav daemon status", () => {
     expect(JSON.parse(stopped.stdout)).toEqual([]);
   });
 
-  it("keeps one armed child when its initiating caller is killed before PID publication", async () => {
+  it("keeps one daemon-owned warm-up when its initiating caller is killed", async () => {
     const stateDir = temporaryStateDirectory(stateDirectories);
     const workspaceRoot = canonicalWorkspaceRoot(
       realpathSync(temporaryWorkspace(stateDirectories)),
@@ -172,13 +172,22 @@ describe("symnav daemon status", () => {
     expect(registry.readStoredInstance(identity, instanceId)).toMatchObject({
       instanceId,
       processToken,
-      pid: 0,
+      pid: childPid,
       state: "starting",
     });
-    expect(registry.startupOwner(identity)).toMatchObject({ instanceId, processToken });
+    const ownerBeforeCallerExit = registry.startupOwner(identity);
+    expect(ownerBeforeCallerExit).toMatchObject({
+      instanceId,
+      processToken,
+      ownerKind: "daemon",
+      ownerPid: childPid,
+    });
     expect(caller.kill("SIGKILL")).toBe(true);
     await waitForKilledProcess(caller);
     helperProcesses.splice(helperProcesses.indexOf(caller), 1);
+    await waitUntil(
+      () => registry.startupOwner(identity)?.revision !== ownerBeforeCallerExit?.revision,
+    );
 
     const starting = runSymnavBinary(["daemon", "status", "--json"], {
       cwd: tmpdir(),
@@ -190,23 +199,33 @@ describe("symnav daemon status", () => {
       expect.objectContaining({
         workspaceRoot,
         state: "starting",
-        pid: 0,
+        pid: childPid,
       }),
     ]);
-    expect(registry.startupOwner(identity)).toMatchObject({ instanceId, processToken });
+    expect(registry.startupOwner(identity)).toMatchObject({
+      instanceId,
+      processToken,
+      ownerKind: "daemon",
+      ownerPid: childPid,
+    });
 
-    const laterStart = spawnDaemonStart(workspaceRoot, stateDir);
-    helperProcesses.push(laterStart);
-    await new Promise((resolve) => setTimeout(resolve, 100));
-    expect(laterStart.exitCode).toBeNull();
+    const laterStarts = [
+      spawnDaemonStart(workspaceRoot, stateDir),
+      spawnDaemonStart(workspaceRoot, stateDir),
+    ];
+    helperProcesses.push(...laterStarts);
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    expect(laterStarts.map((start) => start.exitCode)).toEqual([null, null]);
     expect(daemonRecords(stateDir)).toEqual([
-      expect.objectContaining({ instanceId, processToken, pid: 0 }),
+      expect.objectContaining({ instanceId, processToken, pid: childPid }),
     ]);
 
     writeFileSync(childReleasePath, "go");
     await waitUntil(() => existsSync(readyPath));
-    await waitForProcess(laterStart);
-    helperProcesses.splice(helperProcesses.indexOf(laterStart), 1);
+    await Promise.all(laterStarts.map(waitForProcess));
+    for (const laterStart of laterStarts) {
+      helperProcesses.splice(helperProcesses.indexOf(laterStart), 1);
+    }
     const navigation = runSymnavBinary(["overview", "input.ts"], {
       cwd: workspaceRoot,
       env: { SYMNAV_DAEMON: "1", SYMNAV_STATE_DIR: stateDir },

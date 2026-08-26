@@ -595,20 +595,6 @@ export class WorkspaceDaemon {
     return "unknown";
   }
 
-  private static stoppedResult(): CommandExecutionResult {
-    return {
-      frames: [
-        {
-          stream: "stderr",
-          bytesBase64: Buffer.from("Cannot answer: daemon navigation was stopped.\n").toString(
-            "base64",
-          ),
-        },
-      ],
-      exitCode: 1,
-    };
-  }
-
   private static errorMessage(error: unknown): string {
     return error instanceof Error ? error.message : String(error);
   }

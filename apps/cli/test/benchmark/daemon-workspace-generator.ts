@@ -185,7 +185,7 @@ export class DaemonWorkspaceGenerator {
           "src",
           moduleName,
         ),
-        this.moduleSource(index, visibleTypeScriptFiles),
+        this.moduleSource(index, visibleTypeScriptFiles, packageCount),
       );
     }
     return firstModuleByPackage;
@@ -255,7 +255,7 @@ export class DaemonWorkspaceGenerator {
     if (remainingReferences !== 0) throw new Error("Profile project references are undersized");
   }
 
-  private moduleSource(index: number, fileCount: number): string {
+  private moduleSource(index: number, fileCount: number, packageCount: number): string {
     const sourceBytes = this.distributionValue(this.options.profile.sourceBytes, index, fileCount);
     const sourceLines = this.distributionValue(this.options.profile.sourceLines, index, fileCount);
     const symbolCount = this.distributionValue(
@@ -287,11 +287,17 @@ export class DaemonWorkspaceGenerator {
       return this.fitSource(specialLines, sourceLines, sourceBytes);
     }
     const suffix = String(index).padStart(6, "0");
-    const lines = Array.from(
-      { length: importCount },
-      (_, importIndex) =>
-        `import { benchmarkHub as benchmarkImport${importIndex} } from "@workspace/package-000";`,
-    );
+    const directBenchmarkHubFiles =
+      this.options.profile.representativeResultCounts.refs * this.options.scale;
+    const lines = Array.from({ length: importCount }, (_, importIndex) => {
+      const directBenchmarkHub = index <= directBenchmarkHubFiles && importIndex === 0;
+      const targetPackage = directBenchmarkHub
+        ? 0
+        : 1 + ((index + importIndex) % (packageCount - 1));
+      const importedSymbol =
+        targetPackage === 0 ? "benchmarkHub" : `symbol${String(targetPackage).padStart(6, "0")}`;
+      return `import { ${importedSymbol} as benchmarkImport${importIndex} } from "@workspace/package-${String(targetPackage).padStart(3, "0")}";`;
+    });
     if (symbolCount > 0) {
       lines.push(`export function symbol${suffix}(value: number): number {`);
       const executableCalls = Math.max(0, callCount - 2);
@@ -320,9 +326,9 @@ export class DaemonWorkspaceGenerator {
     const medianIndex = Math.ceil(fileCount * 0.5) - 1;
     const distributionIndex = index === 0 ? medianIndex : index === medianIndex ? 0 : index;
     if (distributionIndex === 0) return distribution.minimum;
+    if (distributionIndex === fileCount - 1) return distribution.maximum;
     if (distributionIndex < Math.ceil(fileCount * 0.5)) return distribution.p50;
-    if (distributionIndex < Math.ceil(fileCount * 0.95)) return distribution.p95;
-    return distribution.maximum;
+    return distribution.p95;
   }
 
   private fitSource(lines: string[], targetLines: number, targetBytes: number): string {

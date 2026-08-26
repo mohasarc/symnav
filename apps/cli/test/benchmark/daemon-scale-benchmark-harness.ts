@@ -108,7 +108,7 @@ export class DaemonScaleBenchmarkHarness {
       if (initialRecord === undefined)
         throw new Error("Daemon benchmark startup record is missing");
 
-      const samples = this.runFixedSuite(generated, stateDirectory);
+      const samples = await this.runFixedSuite(generated, stateDirectory);
       const freshness = this.runMutations(generated, stateDirectory);
       const largeResponse = await this.runLargeResponseAndBusyStatus(generated, stateDirectory);
       const finalRecord = registry.read(identity);
@@ -204,16 +204,28 @@ export class DaemonScaleBenchmarkHarness {
     }
   }
 
-  private runFixedSuite(
+  private async runFixedSuite(
     generated: GeneratedDaemonWorkspace,
     stateDirectory: string,
-  ): BenchmarkSampleEvidence[] {
+  ): Promise<BenchmarkSampleEvidence[]> {
     const samples: BenchmarkSampleEvidence[] = [];
     for (const [command, benchmark] of Object.entries(generated.commands)) {
-      const cold = this.runCommand(generated.workspaceRoot, stateDirectory, benchmark.argv, false);
+      const cold = await this.runCommandAsync(
+        generated.workspaceRoot,
+        stateDirectory,
+        benchmark.argv,
+        false,
+        false,
+      );
       for (let repetition = 0; repetition < DAEMON_BENCHMARK_WARM_REPETITIONS; repetition += 1) {
         const startedAt = performance.now();
-        const warm = this.runCommand(generated.workspaceRoot, stateDirectory, benchmark.argv, true);
+        const warm = await this.runCommandAsync(
+          generated.workspaceRoot,
+          stateDirectory,
+          benchmark.argv,
+          true,
+          true,
+        );
         const wallMs = performance.now() - startedAt;
         samples.push(
           BenchmarkSampleEvidence.from(

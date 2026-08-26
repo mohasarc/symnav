@@ -82,12 +82,17 @@ export interface DaemonResourceSupervisorOptions {
   readonly intervalMs?: number;
   readonly residentMemoryBytes?: () => number;
   readonly spoolBytes: () => number;
+  readonly scheduleAtTurnBoundary: (operation: () => Promise<void>) => Promise<void>;
   readonly releaseTransientResources: () => Promise<void>;
   readonly replaceWorker: (cause: DaemonWorkerReplacementCause) => Promise<number>;
   readonly drain: () => Promise<void>;
 }
 
-export type DaemonWorkerReplacementCause = "hard-pressure" | "out-of-memory" | "worker-exit";
+export type DaemonWorkerReplacementCause =
+  | "hard-pressure"
+  | "out-of-memory"
+  | "shed-failure"
+  | "worker-exit";
 
 export class DaemonResourceSupervisor {
   private readonly residentMemoryBytes: () => number;
@@ -223,11 +228,18 @@ export class DaemonResourceSupervisor {
 
   private async shed(): Promise<void> {
     if (this.shedOperation !== undefined) return this.shedOperation;
-    const operation = this.options.releaseTransientResources();
+    const operation = this.options.scheduleAtTurnBoundary(async () => {
+      try {
+        await this.options.releaseTransientResources();
+        this.shedCompleted = true;
+      } catch (error) {
+        await this.replace("shed-failure");
+        throw error;
+      }
+    });
     this.shedOperation = operation;
     try {
       await operation;
-      this.shedCompleted = true;
     } finally {
       if (this.shedOperation === operation) this.shedOperation = undefined;
     }

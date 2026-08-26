@@ -83,6 +83,7 @@ describe("DaemonResourceSupervisor", () => {
       generation: 1,
       residentMemoryBytes,
       spoolBytes: () => 0,
+      scheduleAtTurnBoundary: runImmediately,
       releaseTransientResources: async () => undefined,
       replaceWorker: async () => 2,
       drain: async () => undefined,
@@ -107,6 +108,7 @@ describe("DaemonResourceSupervisor", () => {
       generation: 1,
       residentMemoryBytes: () => residentMemoryBytes,
       spoolBytes: () => 0,
+      scheduleAtTurnBoundary: runImmediately,
       releaseTransientResources,
       replaceWorker: async () => 2,
       drain: async () => undefined,
@@ -141,6 +143,7 @@ describe("DaemonResourceSupervisor", () => {
       generation: 1,
       residentMemoryBytes: () => policy.record.softProcessRssBytes + 1,
       spoolBytes: () => 0,
+      scheduleAtTurnBoundary: runImmediately,
       releaseTransientResources,
       replaceWorker: async () => 2,
       drain: async () => undefined,
@@ -165,6 +168,7 @@ describe("DaemonResourceSupervisor", () => {
       generation: 1,
       residentMemoryBytes: () => policy.record.softProcessRssBytes + 1,
       spoolBytes: () => 0,
+      scheduleAtTurnBoundary: runImmediately,
       releaseTransientResources,
       replaceWorker: async () => 2,
       drain: async () => undefined,
@@ -184,6 +188,7 @@ describe("DaemonResourceSupervisor", () => {
 
   it("returns a failed shed to a retryable state", async () => {
     const policy = DaemonResourcePolicy.fromSystemMemory(GIBIBYTE);
+    const replaceWorker = vi.fn(async () => 2);
     const releaseTransientResources = vi
       .fn<() => Promise<void>>()
       .mockRejectedValueOnce(new Error("release failed"))
@@ -193,12 +198,19 @@ describe("DaemonResourceSupervisor", () => {
       generation: 1,
       residentMemoryBytes: () => policy.record.softProcessRssBytes + 1,
       spoolBytes: () => 0,
+      scheduleAtTurnBoundary: runImmediately,
       releaseTransientResources,
-      replaceWorker: async () => 2,
+      replaceWorker,
       drain: async () => undefined,
     });
 
     await expect(supervisor.sample("interval")).rejects.toThrow("release failed");
+    expect(replaceWorker).toHaveBeenCalledOnce();
+    expect(supervisor.snapshot).toMatchObject({
+      state: "ready",
+      generation: 2,
+      admissionPaused: false,
+    });
     await expect(supervisor.sample("interval")).resolves.toBeUndefined();
 
     expect(releaseTransientResources).toHaveBeenCalledTimes(2);
@@ -213,6 +225,7 @@ describe("DaemonResourceSupervisor", () => {
       generation: 1,
       residentMemoryBytes: () => policy.record.hardProcessRssBytes + 1,
       spoolBytes: () => 4096,
+      scheduleAtTurnBoundary: runImmediately,
       releaseTransientResources: async () => undefined,
       replaceWorker,
       drain: async () => undefined,
@@ -247,6 +260,7 @@ describe("DaemonResourceSupervisor", () => {
       generation: 1,
       residentMemoryBytes: () => policy.record.resumeProcessRssBytes - 1,
       spoolBytes: () => 12 * MEBIBYTE,
+      scheduleAtTurnBoundary: runImmediately,
       releaseTransientResources: async () => undefined,
       replaceWorker,
       drain: async () => undefined,
@@ -275,6 +289,7 @@ describe("DaemonResourceSupervisor", () => {
       now: () => now,
       residentMemoryBytes: () => policy.record.hardProcessRssBytes + 1,
       spoolBytes: () => 0,
+      scheduleAtTurnBoundary: runImmediately,
       releaseTransientResources: async () => undefined,
       replaceWorker,
       drain,
@@ -303,6 +318,7 @@ describe("DaemonResourceSupervisor", () => {
       now: () => now,
       residentMemoryBytes: () => policy.record.hardProcessRssBytes + 1,
       spoolBytes: () => 0,
+      scheduleAtTurnBoundary: runImmediately,
       releaseTransientResources: async () => undefined,
       replaceWorker,
       drain,
@@ -319,3 +335,7 @@ describe("DaemonResourceSupervisor", () => {
     expect(supervisor.snapshot).toMatchObject({ state: "ready", replacementCount: 3 });
   });
 });
+
+function runImmediately(operation: () => Promise<void>): Promise<void> {
+  return operation();
+}

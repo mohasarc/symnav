@@ -36,6 +36,10 @@ describe("LocalDaemonTransport execution delivery", () => {
     directories.length = 0;
   });
 
+  it("uses the accepted-request protocol generation", () => {
+    expect(DAEMON_PROTOCOL_VERSION).toBe(3);
+  });
+
   it("classifies connection refusal before any write as retry-safe", async () => {
     const endpoint = executionEndpoint(directories);
 

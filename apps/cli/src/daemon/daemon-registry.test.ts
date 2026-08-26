@@ -49,9 +49,9 @@ describe("daemon registry", () => {
     roots.length = 0;
   });
 
-  it("uses second-generation record and transport coordinates", () => {
+  it("uses second-generation records with accepted-request transport coordinates", () => {
     expect(DAEMON_RECORD_SCHEMA_VERSION).toBe(2);
-    expect(DAEMON_PROTOCOL_VERSION).toBe(2);
+    expect(DAEMON_PROTOCOL_VERSION).toBe(3);
   });
 
   it("keys repositories, worktrees, and submodules by exact workspace root", () => {

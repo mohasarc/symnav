@@ -92,25 +92,40 @@ describe("LocalDaemonTransport", () => {
   it("round trips Unicode and arbitrary newlines through fragmented framing", async () => {
     const endpoint = endpointFor(roots);
     const transport = new LocalDaemonTransport({ writeChunkSize: 1 });
-    const server = await transport.listen(endpoint, async (request) => ({
-      kind: "result",
-      requestId: request.kind === "execute" ? request.requestId : "wrong",
-      result: {
-        frames: [{ stream: "stdout", bytesBase64: Buffer.from("✓\n\ntext").toString("base64") }],
-        exitCode: 0,
-      },
-    }));
-
-    const response = await transport.request(endpoint, {
-      kind: "execute",
-      protocolVersion: DAEMON_PROTOCOL_VERSION,
-      instanceId: "instance",
-      processToken: "token",
-      requestId: "request",
-      request: { argv: ["resolve", "\n✓"], cwd: "/repo", telemetryEnabled: false },
+    const server = await transport.listen(endpoint, async (request, send) => {
+      if (request.kind !== "execute") throw new Error("Expected execution request");
+      send({
+        kind: "accepted",
+        instanceId: request.instanceId,
+        processToken: request.processToken,
+        requestId: request.requestId,
+        acceptedAt: 1,
+        queuePosition: 0,
+      });
+      send({
+        kind: "completed",
+        instanceId: request.instanceId,
+        processToken: request.processToken,
+        requestId: request.requestId,
+        result: {
+          frames: [{ stream: "stdout", bytesBase64: Buffer.from("✓\n\ntext").toString("base64") }],
+          exitCode: 0,
+        },
+      });
     });
 
-    expect(response).toMatchObject({ kind: "result", requestId: "request" });
+    const response = await (
+      await transport.execute(endpoint, {
+        kind: "execute",
+        protocolVersion: DAEMON_PROTOCOL_VERSION,
+        instanceId: "instance",
+        processToken: "token",
+        requestId: "request",
+        request: { argv: ["resolve", "\n✓"], cwd: "/repo", telemetryEnabled: false },
+      })
+    ).completion;
+
+    expect(response).toMatchObject({ status: "completed", result: { exitCode: 0 } });
     await server.close();
   });
 
@@ -188,14 +203,20 @@ describe("LocalDaemonTransport", () => {
   it("rejects an otherwise valid execute result with a different request identifier", async () => {
     const endpoint = endpointFor(roots);
     const transport = new LocalDaemonTransport();
-    const server = await transport.listen(endpoint, async () => ({
-      kind: "result",
-      requestId: "different-request",
-      result: { frames: [], exitCode: 0 },
-    }));
+    const server = await transport.listen(endpoint, async (request, send) => {
+      if (request.kind !== "execute") throw new Error("Expected execution request");
+      send({
+        kind: "accepted",
+        instanceId: request.instanceId,
+        processToken: request.processToken,
+        requestId: "different-request",
+        acceptedAt: 1,
+        queuePosition: 0,
+      });
+    });
 
     await expect(
-      transport.request(endpoint, {
+      transport.execute(endpoint, {
         kind: "execute",
         protocolVersion: DAEMON_PROTOCOL_VERSION,
         instanceId: "instance",
@@ -282,68 +303,9 @@ describe("LocalDaemonTransport", () => {
     await server.close();
   });
 
-  it("allows navigation to outlive the lifecycle request timeout", async () => {
-    const endpoint = endpointFor(roots);
-    const transport = new LocalDaemonTransport({
-      requestTimeoutMs: 10,
-      executionRequestTimeoutMs: 100,
-    });
-    const server = await transport.listen(endpoint, async (request) => {
-      await pause(30);
-      return {
-        kind: "result",
-        requestId: request.kind === "execute" ? request.requestId : "wrong",
-        result: { frames: [], exitCode: 0 },
-      };
-    });
-
-    await expect(
-      transport.request(endpoint, {
-        kind: "execute",
-        protocolVersion: DAEMON_PROTOCOL_VERSION,
-        instanceId: "instance",
-        processToken: "token",
-        requestId: "request",
-        request: { argv: ["resolve", "target"], cwd: "/repo", telemetryEnabled: false },
-      }),
-    ).resolves.toMatchObject({ kind: "result", requestId: "request" });
-    await server.close();
-  });
-
-  it("bounds navigation with the execution request timeout", async () => {
-    const endpoint = endpointFor(roots);
-    const transport = new LocalDaemonTransport({
-      requestTimeoutMs: 100,
-      executionRequestTimeoutMs: 10,
-    });
-    const server = await transport.listen(endpoint, async (request) => {
-      await pause(30);
-      return {
-        kind: "result",
-        requestId: request.kind === "execute" ? request.requestId : "wrong",
-        result: { frames: [], exitCode: 0 },
-      };
-    });
-
-    await expect(
-      transport.request(endpoint, {
-        kind: "execute",
-        protocolVersion: DAEMON_PROTOCOL_VERSION,
-        instanceId: "instance",
-        processToken: "token",
-        requestId: "request",
-        request: { argv: ["resolve", "target"], cwd: "/repo", telemetryEnabled: false },
-      }),
-    ).rejects.toThrow(/timed out/);
-    await expect(server.close()).resolves.toBeUndefined();
-  });
-
   it("keeps lifecycle requests on the short timeout", async () => {
     const endpoint = endpointFor(roots);
-    const transport = new LocalDaemonTransport({
-      requestTimeoutMs: 10,
-      executionRequestTimeoutMs: 100,
-    });
+    const transport = new LocalDaemonTransport({ requestTimeoutMs: 10 });
     const server = await transport.listen(endpoint, async (request) => {
       await pause(30);
       return {
@@ -413,11 +375,7 @@ function invalidResponse(scenario: string): Buffer {
     return Buffer.concat([prefix, Buffer.from("{}")]);
   }
   if (scenario === "wrong-response") {
-    return frame({
-      kind: "result",
-      requestId: "wrong",
-      result: { frames: [], exitCode: 0 },
-    });
+    return frame({ kind: "stopped", instanceId: "wrong" });
   }
   const prefix = Buffer.alloc(4);
   prefix.writeUInt32BE(1);

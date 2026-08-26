@@ -18,6 +18,8 @@ import {
 import {
   DAEMON_PROTOCOL_VERSION,
   DAEMON_RECORD_SCHEMA_VERSION,
+  type DaemonLifecycleRequest,
+  type DaemonLifecycleResponse,
   type DaemonRecord,
   type DaemonRequest,
   type DaemonResponse,
@@ -542,7 +544,7 @@ describe("DaemonStartupCoordinator", () => {
     const existing = harness.readyRecord("existing", "0.0.9", 4002);
     harness.seedReady(existing.instanceId, existing.symnavVersion, existing.pid);
     vi.spyOn(harness.transport, "request").mockImplementation(
-      async (_endpoint, request): Promise<DaemonResponse> => {
+      async (_endpoint, request): Promise<DaemonLifecycleResponse> => {
         if (request.kind === "ping") {
           return {
             kind: "pong",
@@ -1004,7 +1006,10 @@ class RegistryTransport {
     this.remainingReadyAuthenticationFailures = readyAuthenticationFailures;
   }
 
-  async request(_endpoint: string, request: DaemonRequest): Promise<DaemonResponse> {
+  async request(
+    _endpoint: string,
+    request: DaemonLifecycleRequest,
+  ): Promise<DaemonLifecycleResponse> {
     if (request.kind === "stop") {
       return { kind: "stopped", instanceId: request.instanceId };
     }
@@ -1033,13 +1038,6 @@ class RegistryTransport {
         processToken: record.processToken,
         pid: record.pid,
         startedAt: record.startedAt,
-      };
-    }
-    if (request.kind === "execute") {
-      return {
-        kind: "result",
-        requestId: request.requestId,
-        result: { frames: [], exitCode: 0 },
       };
     }
     const record = this.registry.readStoredInstance(this.identity, request.instanceId);

@@ -166,4 +166,60 @@ describe("DaemonResourceSupervisor", () => {
     expect(supervisor.snapshot.workerHeapUsedBytes).toBe(500);
     expect(supervisor.snapshot.processRssBytes).toBe(policy.record.hardProcessRssBytes + 1);
   });
+
+  it("drains on a third pressure replacement inside ten minutes", async () => {
+    const policy = DaemonResourcePolicy.fromSystemMemory(GIBIBYTE);
+    let generation = 1;
+    let now = 0;
+    const replaceWorker = vi.fn(async () => (generation += 1));
+    const drain = vi.fn(async () => undefined);
+    const supervisor = new DaemonResourceSupervisor({
+      policy,
+      generation,
+      now: () => now,
+      residentMemoryBytes: () => policy.record.hardProcessRssBytes + 1,
+      spoolBytes: () => 0,
+      releaseTransientResources: async () => undefined,
+      replaceWorker,
+      drain,
+    });
+
+    await supervisor.sample("interval");
+    now += 60_000;
+    await supervisor.sample("interval");
+    now += 60_000;
+    await supervisor.sample("interval");
+
+    expect(replaceWorker).toHaveBeenCalledTimes(2);
+    expect(drain).toHaveBeenCalledOnce();
+    expect(supervisor.snapshot).toMatchObject({ state: "draining", replacementCount: 2 });
+  });
+
+  it("does not open the replacement circuit outside the ten minute window", async () => {
+    const policy = DaemonResourcePolicy.fromSystemMemory(GIBIBYTE);
+    let generation = 1;
+    let now = 0;
+    const replaceWorker = vi.fn(async () => (generation += 1));
+    const drain = vi.fn(async () => undefined);
+    const supervisor = new DaemonResourceSupervisor({
+      policy,
+      generation,
+      now: () => now,
+      residentMemoryBytes: () => policy.record.hardProcessRssBytes + 1,
+      spoolBytes: () => 0,
+      releaseTransientResources: async () => undefined,
+      replaceWorker,
+      drain,
+    });
+
+    await supervisor.sample("interval");
+    now += 10 * 60 * 1_000 + 1;
+    await supervisor.sample("interval");
+    now += 10 * 60 * 1_000 + 1;
+    await supervisor.sample("interval");
+
+    expect(replaceWorker).toHaveBeenCalledTimes(3);
+    expect(drain).not.toHaveBeenCalled();
+    expect(supervisor.snapshot).toMatchObject({ state: "ready", replacementCount: 3 });
+  });
 });

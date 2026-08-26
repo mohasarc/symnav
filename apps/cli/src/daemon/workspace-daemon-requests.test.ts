@@ -6,6 +6,7 @@ import {
   CommandOutputSnapshot,
   type CliExecutionRequest,
   type CommandExecutionResult,
+  type CommandOutputRecord,
 } from "../command-execution-result.js";
 import { createDefaultDependencies } from "../program.js";
 import type {
@@ -17,6 +18,10 @@ import type {
   DaemonServer,
 } from "./daemon-protocol.js";
 import { DAEMON_PROTOCOL_VERSION, DAEMON_RECORD_SCHEMA_VERSION } from "./daemon-protocol.js";
+import {
+  NodeCompletionSpoolStorage,
+  type CompletionSpoolFile,
+} from "./completion-spool.js";
 import { DaemonRegistry } from "./daemon-registry.js";
 import { DaemonWorkspaceIdentity } from "./daemon-workspace-identity.js";
 import type { LocalDaemonTransport } from "./local-daemon-transport.js";
@@ -358,6 +363,66 @@ describe("WorkspaceDaemon requests", () => {
     expect(connection.frames.filter((frame) => !("kind" in frame))).toHaveLength(3);
   });
 
+  it("fails a completion cleanly after spool sync failure and keeps serving", async () => {
+    const harness = await RequestHarness.start(new MultipleRecordExecutor(), {
+      completionSpoolLimits: { inlineBytes: 0, maximumAggregateBytes: 11 },
+      completionSpoolStorage: new RequestFailingCompletionStorage("sync"),
+    });
+    harnesses.push(harness);
+
+    await expect(harness.execute("sync-failure")).resolves.toMatchObject({
+      kind: "execution-failed",
+      code: "internal",
+    });
+    expect((await harness.status("sync-failure")).status).toEqual({
+      state: "failed",
+      code: "internal",
+    });
+    await expect(harness.ping()).resolves.toMatchObject({ kind: "pong", state: "ready" });
+    await expect(harness.execute("after-sync-failure")).resolves.toMatchObject({
+      kind: "result-end",
+    });
+  });
+
+  it("maps completion read failure to one controlled result and keeps serving", async () => {
+    const harness = await RequestHarness.start(new MultipleRecordExecutor(), {
+      completionSpoolLimits: { inlineBytes: 0, maximumAggregateBytes: 11 },
+      completionSpoolStorage: new RequestFailingCompletionStorage("read"),
+    });
+    harnesses.push(harness);
+
+    await expect(harness.execute("read-failure")).resolves.toMatchObject({
+      kind: "execution-failed",
+      code: "internal",
+    });
+    expect((await harness.status("read-failure")).status).toEqual({
+      state: "failed",
+      code: "internal",
+    });
+    await expect(harness.ping()).resolves.toMatchObject({ kind: "pong", state: "ready" });
+    await expect(harness.execute("after-read-failure")).resolves.toMatchObject({
+      kind: "result-end",
+    });
+  });
+
+  it("acknowledges logical cleanup when physical unlink fails and keeps serving", async () => {
+    const harness = await RequestHarness.start(new MultipleRecordExecutor(), {
+      completionSpoolLimits: { inlineBytes: 0, maximumAggregateBytes: 11 },
+      completionSpoolStorage: new RequestFailingCompletionStorage("unlink"),
+    });
+    harnesses.push(harness);
+    const completed = await harness.execute("unlink-failure");
+    if (completed.kind !== "result-end") throw new Error("Expected completed result");
+
+    await expect(harness.acknowledge("unlink-failure", completed.transferId)).resolves.toMatchObject({
+      kind: "result-acknowledged",
+    });
+    await expect(harness.ping()).resolves.toMatchObject({ kind: "pong", state: "ready" });
+    await expect(harness.execute("after-unlink-failure")).resolves.toMatchObject({
+      kind: "result-end",
+    });
+  });
+
   it("reports active command and queued count while worker execution is blocked", async () => {
     const executor = new SerializedExecutor();
     const harness = await RequestHarness.start(executor);
@@ -593,6 +658,9 @@ class RequestHarness {
       ...(options.completionSpoolLimits === undefined
         ? {}
         : { completionSpoolLimits: options.completionSpoolLimits }),
+      ...(options.completionSpoolStorage === undefined
+        ? {}
+        : { completionSpoolStorage: options.completionSpoolStorage }),
       exit: (code) => harness.resolveExit(code),
     });
     return { daemon, harness, lease };
@@ -647,6 +715,17 @@ class RequestHarness {
     }) as Promise<DaemonExecutionStatusResponse>;
   }
 
+  acknowledge(requestId: string, transferId: string): Promise<DaemonResponse> {
+    return this.transport.receive({
+      kind: "result-ack",
+      protocolVersion: DAEMON_PROTOCOL_VERSION,
+      instanceId: this.instanceId,
+      processToken: this.processToken,
+      requestId,
+      transferId,
+    });
+  }
+
   stop(): Promise<DaemonResponse> {
     return this.transport.receive({
       kind: "stop",
@@ -688,6 +767,7 @@ interface RequestHarnessOptions {
   readonly navigationWorker?: DaemonNavigationWorker;
   readonly startupHeartbeatIntervalMs?: number;
   readonly completionSpoolLimits?: WorkspaceDaemonOptions["completionSpoolLimits"];
+  readonly completionSpoolStorage?: WorkspaceDaemonOptions["completionSpoolStorage"];
 }
 
 class RequestTransport {
@@ -887,6 +967,42 @@ class MultipleRecordExecutor implements DaemonCommandExecutor {
       ]),
       exitCode: 0,
     });
+  }
+}
+
+class RequestFailingCompletionStorage extends NodeCompletionSpoolStorage {
+  private failed = false;
+
+  constructor(private readonly operation: "sync" | "read" | "unlink") {
+    super();
+  }
+
+  override async createFile(path: string): Promise<CompletionSpoolFile> {
+    const file = await super.createFile(path);
+    return {
+      write: (bytes) => file.write(bytes),
+      sync: async () => {
+        if (this.fail("sync")) throw new Error("sync failed");
+        await file.sync();
+      },
+      close: () => file.close(),
+    };
+  }
+
+  override async *records(path: string): AsyncIterable<CommandOutputRecord> {
+    if (this.fail("read")) throw new Error("read failed");
+    for await (const record of super.records(path)) yield record;
+  }
+
+  override async unlink(path: string): Promise<void> {
+    if (this.fail("unlink")) throw new Error("unlink failed");
+    await super.unlink(path);
+  }
+
+  private fail(operation: "sync" | "read" | "unlink"): boolean {
+    if (this.failed || this.operation !== operation) return false;
+    this.failed = true;
+    return true;
   }
 }
 

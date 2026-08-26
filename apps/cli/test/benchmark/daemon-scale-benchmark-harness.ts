@@ -1,4 +1,5 @@
 import type { DaemonResourcePolicyRecord } from "../../src/daemon/daemon-resource-monitor.js";
+import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
 import {
   appendFileSync,
@@ -11,11 +12,13 @@ import {
   rmSync,
   statSync,
   unlinkSync,
+  utimesSync,
   writeFileSync,
 } from "node:fs";
 import { cpus, tmpdir, totalmem } from "node:os";
 import { join } from "node:path";
 import { performance } from "node:perf_hooks";
+import { fileURLToPath } from "node:url";
 import { runSymnavBinary, type RunSymnavBinaryResult } from "@symnav/testing";
 import { canonicalStateDir } from "@symnav/telemetry";
 import { DaemonRegistry } from "../../src/daemon/daemon-registry.js";
@@ -63,6 +66,8 @@ export interface DaemonBenchmarkArtifact {
   readonly workerHeapPeakBytes?: number;
   readonly spoolPeakBytes: number;
   readonly responsePeakBytes: number;
+  readonly largeResponseBytes: number;
+  readonly busyStatusObserved: boolean;
   readonly parity: boolean;
   readonly freshness: boolean;
   readonly statusResponsive: boolean;
@@ -105,23 +110,10 @@ export class DaemonScaleBenchmarkHarness {
 
       const samples = this.runFixedSuite(generated, stateDirectory);
       const freshness = this.runMutations(generated, stateDirectory);
-      const statusStartedAt = performance.now();
-      const status = this.runCommand(
-        workspaceRoot,
-        stateDirectory,
-        ["daemon", "status", "--json"],
-        false,
-      );
-      const statusMaximumMs = performance.now() - statusStartedAt;
-      if (status.status !== 0) throw new Error("Daemon benchmark status failed");
+      const largeResponse = await this.runLargeResponseAndBusyStatus(generated, stateDirectory);
       const finalRecord = registry.read(identity);
       if (finalRecord === undefined) throw new Error("Daemon benchmark final record is missing");
-      const stopped = this.runCommand(
-        workspaceRoot,
-        stateDirectory,
-        ["daemon", "stop"],
-        false,
-      );
+      const stopped = this.runCommand(workspaceRoot, stateDirectory, ["daemon", "stop"], false);
       daemonStarted = false;
       if (stopped.status !== 0) throw new Error("Daemon benchmark shutdown failed");
 
@@ -133,21 +125,22 @@ export class DaemonScaleBenchmarkHarness {
         process.constrainedMemory?.(),
       ).record;
       const expectedTelemetryCount =
-        enrichedSamples.filter((sample) => sample.command !== "stats").length + 6;
+        enrichedSamples.filter((sample) => sample.command !== "stats").length + 7;
       const gate = new DaemonBenchmarkGate().evaluate({
         scale: this.options.scale,
         samples: enrichedSamples,
         expectedCommands: Object.keys(generated.commands) as (keyof typeof generated.commands)[],
-        stdoutParity: samples.every((sample) => sample.stdoutParity),
-        stderrParity: samples.every((sample) => sample.stderrParity),
-        exitParity: samples.every((sample) => sample.exitParity),
+        stdoutParity: samples.every((sample) => sample.stdoutParity) && largeResponse.stdoutParity,
+        stderrParity: samples.every((sample) => sample.stderrParity) && largeResponse.stderrParity,
+        exitParity: samples.every((sample) => sample.exitParity) && largeResponse.exitParity,
         aliasResultsNonEmpty: samples
           .filter((sample) =>
             ["resolve", "def", "refs", "context", "graph"].includes(sample.command),
           )
           .every((sample) => sample.nonEmpty),
         freshness,
-        statusMaximumMs,
+        statusMaximumMs: largeResponse.statusMaximumMs,
+        busyStatusObserved: largeResponse.busyStatusObserved,
         initialPid: initialRecord.pid,
         finalPid: finalRecord.pid,
         initialInstanceId: initialRecord.instanceId,
@@ -156,6 +149,7 @@ export class DaemonScaleBenchmarkHarness {
         restartCount: diagnostics.restartCount,
         capacityResultCount: diagnostics.capacityResultCount,
         rawRuntimeFailureCount: diagnostics.rawRuntimeFailureCount,
+        largeResponseBytes: largeResponse.responseBytes,
         processRssPeakBytes: diagnostics.processRssPeakBytes,
         hardProcessRssBytes: resourcePolicy.hardProcessRssBytes,
         expectedTelemetryCount,
@@ -185,7 +179,12 @@ export class DaemonScaleBenchmarkHarness {
           ? {}
           : { workerHeapPeakBytes: diagnostics.workerHeapPeakBytes }),
         spoolPeakBytes: diagnostics.spoolPeakBytes,
-        responsePeakBytes: Math.max(...enrichedSamples.map((sample) => sample.responseBytes)),
+        responsePeakBytes: Math.max(
+          largeResponse.responseBytes,
+          ...enrichedSamples.map((sample) => sample.responseBytes),
+        ),
+        largeResponseBytes: largeResponse.responseBytes,
+        busyStatusObserved: largeResponse.busyStatusObserved,
         parity: gate.parity,
         freshness: gate.freshness,
         statusResponsive: gate.statusResponsive,
@@ -198,7 +197,7 @@ export class DaemonScaleBenchmarkHarness {
       };
     } finally {
       if (daemonStarted) {
-        this.runCommand(workspaceRoot, stateDirectory, ["daemon", "stop", "--force"], false);
+        this.runCommand(workspaceRoot, stateDirectory, ["daemon", "stop"], false);
       }
       if (ownsWorkspace) rmSync(workspaceRoot, { recursive: true, force: true });
       if (ownsState) rmSync(stateDirectory, { recursive: true, force: true });
@@ -236,37 +235,213 @@ export class DaemonScaleBenchmarkHarness {
     let current = true;
     const editedPath = join(root, generated.mutations.sameSizeEdit);
     const original = readFileSync(editedPath, "utf8");
-    writeFileSync(editedPath, original.replace("generatorSeed", "generatorSeed"), "utf8");
-    current = this.parity(root, stateDirectory, generated.commands.overview.argv) && current;
+    const originalTimes = statSync(editedPath);
+    const beforeEdit = this.runCommand(
+      root,
+      stateDirectory,
+      generated.commands.overview.argv,
+      false,
+    );
+    const edited = original.replace(/generatorSeed = "[0-9a-f]/, (prefix) =>
+      prefix.endsWith("0") ? `${prefix.slice(0, -1)}1` : `${prefix.slice(0, -1)}0`,
+    );
+    writeFileSync(editedPath, edited, "utf8");
+    utimesSync(editedPath, originalTimes.atime, originalTimes.mtime);
+    current =
+      this.changedParity(root, stateDirectory, generated.commands.overview.argv, beforeEdit) &&
+      current;
 
     const addedPath = join(root, generated.mutations.add);
     writeFileSync(addedPath, "export const AddedBenchmarkSymbol = 1;\n", "utf8");
-    current = this.parity(root, stateDirectory, ["resolve", "AddedBenchmarkSymbol"]) && current;
+    current =
+      this.nonEmptyParity(root, stateDirectory, ["resolve", "AddedBenchmarkSymbol"]) && current;
 
+    const beforeRemove = this.runCommand(
+      root,
+      stateDirectory,
+      ["resolve", generated.mutations.removeSymbol],
+      false,
+    );
     unlinkSync(join(root, generated.mutations.remove));
-    current = this.parity(root, stateDirectory, ["resolve", "removedBenchmarkSymbol"]) && current;
+    current =
+      this.changedParity(
+        root,
+        stateDirectory,
+        ["resolve", generated.mutations.removeSymbol],
+        beforeRemove,
+      ) && current;
 
+    const beforeRename = this.runCommand(
+      root,
+      stateDirectory,
+      ["overview", generated.mutations.renameFrom],
+      false,
+    );
     renameSync(
       join(root, generated.mutations.renameFrom),
       join(root, generated.mutations.renameTo),
     );
     current =
-      this.parity(root, stateDirectory, ["overview", generated.mutations.renameTo]) && current;
-
-    appendFileSync(join(root, generated.mutations.ignoreRule), `${generated.mutations.add}\n`);
-    current = this.parity(root, stateDirectory, ["overview", generated.mutations.add]) && current;
-    current =
-      this.parity(root, stateDirectory, ["overview", generated.mutations.nestedWorkspaceFile]) &&
+      this.nonEmptyParity(root, stateDirectory, ["overview", generated.mutations.renameTo]) &&
+      beforeRename.status === 0 &&
       current;
+
+    const beforeIgnore = this.runCommand(
+      root,
+      stateDirectory,
+      ["overview", generated.mutations.add],
+      false,
+    );
+    appendFileSync(join(root, generated.mutations.ignoreRule), `${generated.mutations.add}\n`);
+    current =
+      this.changedParity(
+        root,
+        stateDirectory,
+        ["overview", generated.mutations.add],
+        beforeIgnore,
+      ) && current;
+    current =
+      this.errorParity(root, stateDirectory, [
+        "overview",
+        generated.mutations.nestedWorkspaceFile,
+      ]) && current;
     return current;
   }
 
-  private parity(root: string, stateDirectory: string, argv: readonly string[]): boolean {
+  private changedParity(
+    root: string,
+    stateDirectory: string,
+    argv: readonly string[],
+    before: RunSymnavBinaryResult,
+  ): boolean {
+    const result = this.parity(root, stateDirectory, argv);
+    return result.parity && result.cold.stdout !== before.stdout;
+  }
+
+  private nonEmptyParity(root: string, stateDirectory: string, argv: readonly string[]): boolean {
+    const result = this.parity(root, stateDirectory, argv);
+    return result.parity && result.warm.status === 0 && result.warm.stdout.trim().length > 0;
+  }
+
+  private errorParity(root: string, stateDirectory: string, argv: readonly string[]): boolean {
+    const result = this.parity(root, stateDirectory, argv);
+    return result.parity && result.warm.status !== 0;
+  }
+
+  private parity(
+    root: string,
+    stateDirectory: string,
+    argv: readonly string[],
+  ): {
+    readonly cold: RunSymnavBinaryResult;
+    readonly warm: RunSymnavBinaryResult;
+    readonly parity: boolean;
+  } {
     const cold = this.runCommand(root, stateDirectory, argv, false);
     const warm = this.runCommand(root, stateDirectory, argv, true);
-    return (
-      cold.status === warm.status && cold.stdout === warm.stdout && cold.stderr === warm.stderr
+    return {
+      cold,
+      warm,
+      parity:
+        cold.status === warm.status && cold.stdout === warm.stdout && cold.stderr === warm.stderr,
+    };
+  }
+
+  private async runLargeResponseAndBusyStatus(
+    generated: GeneratedDaemonWorkspace,
+    stateDirectory: string,
+  ): Promise<LargeResponseEvidence> {
+    const relativePath = "large-response.ts";
+    const sourcePath = join(generated.workspaceRoot, relativePath);
+    const longType = `"${"x".repeat(90_000)}"`;
+    const declarations = Array.from(
+      { length: 100 },
+      (_, index) =>
+        `export function largeSymbol${String(index).padStart(5, "0")}(value: ${longType}): string { return value; }\n`,
     );
+    writeFileSync(sourcePath, declarations.join(""), "utf8");
+    const argv = ["overview", relativePath] as const;
+    const cold = await this.runCommandAsync(
+      generated.workspaceRoot,
+      stateDirectory,
+      argv,
+      false,
+      false,
+    );
+    let warmSettled = false;
+    const warmPromise = this.runCommandAsync(
+      generated.workspaceRoot,
+      stateDirectory,
+      argv,
+      true,
+      true,
+    ).finally(() => {
+      warmSettled = true;
+    });
+    let busyStatusObserved = false;
+    let statusMaximumMs = 0;
+    while (!busyStatusObserved && !warmSettled) {
+      const statusStartedAt = performance.now();
+      const status = this.runCommand(
+        generated.workspaceRoot,
+        stateDirectory,
+        ["daemon", "status", "--json"],
+        false,
+      );
+      statusMaximumMs = Math.max(statusMaximumMs, performance.now() - statusStartedAt);
+      if (status.status !== 0) throw new Error("Daemon benchmark busy status failed");
+      busyStatusObserved = DaemonScaleBenchmarkHarness.hasBusyDaemon(status.stdout);
+      if (!busyStatusObserved) await DaemonScaleBenchmarkHarness.yieldToChild();
+    }
+    const warm = await warmPromise;
+    unlinkSync(sourcePath);
+    return {
+      responseBytes: Buffer.byteLength(warm.stdout) + Buffer.byteLength(warm.stderr),
+      stdoutParity: cold.stdout === warm.stdout,
+      stderrParity: cold.stderr === warm.stderr,
+      exitParity: cold.status === warm.status,
+      busyStatusObserved,
+      statusMaximumMs,
+    };
+  }
+
+  private runCommandAsync(
+    workspaceRoot: string,
+    stateDirectory: string,
+    argv: readonly string[],
+    daemon: boolean,
+    telemetry: boolean,
+  ): Promise<RunSymnavBinaryResult> {
+    return new Promise((resolveResult, reject) => {
+      const child = spawn(process.execPath, [DaemonScaleBenchmarkHarness.cliPath, ...argv], {
+        cwd: workspaceRoot,
+        env: {
+          ...process.env,
+          SYMNAV_STATE_DIR: stateDirectory,
+          SYMNAV_DAEMON: daemon ? "1" : "0",
+          SYMNAV_TELEMETRY: telemetry ? "1" : "0",
+        },
+      });
+      let stdout = "";
+      let stderr = "";
+      child.stdout.setEncoding("utf8").on("data", (chunk: string) => (stdout += chunk));
+      child.stderr.setEncoding("utf8").on("data", (chunk: string) => (stderr += chunk));
+      child.once("error", reject);
+      child.once("close", (status) => resolveResult({ status, stdout, stderr }));
+    });
+  }
+
+  private static get cliPath(): string {
+    return fileURLToPath(new URL("../../dist/cli.js", import.meta.url));
+  }
+
+  private static hasBusyDaemon(stdout: string): boolean {
+    const value = JSON.parse(stdout) as { daemons?: readonly { state?: unknown }[] };
+    return value.daemons?.some((daemon) => daemon.state === "busy") ?? false;
+  }
+
+  private static yieldToChild(): Promise<void> {
+    return new Promise((resolveYield) => setTimeout(resolveYield, 10));
   }
 
   private runCommand(
@@ -322,6 +497,15 @@ interface BenchmarkSampleEvidence extends DaemonBenchmarkSample {
   readonly stderrParity: boolean;
   readonly exitParity: boolean;
   readonly nonEmpty: boolean;
+}
+
+interface LargeResponseEvidence {
+  readonly responseBytes: number;
+  readonly stdoutParity: boolean;
+  readonly stderrParity: boolean;
+  readonly exitParity: boolean;
+  readonly busyStatusObserved: boolean;
+  readonly statusMaximumMs: number;
 }
 
 class BenchmarkSampleEvidence {

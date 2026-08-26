@@ -31,10 +31,12 @@ export type DaemonBenchmarkFailureCode =
   | "stale-mutation"
   | "latency-threshold"
   | "status-unresponsive"
+  | "busy-status-missing"
   | "daemon-restarted"
   | "fallback-observed"
   | "capacity-result"
   | "raw-runtime-failure"
+  | "large-response-incomplete"
   | "rss-limit"
   | "telemetry-count"
   | "missing-sample"
@@ -67,6 +69,7 @@ export interface DaemonBenchmarkGateInput {
   readonly aliasResultsNonEmpty: boolean;
   readonly freshness: boolean;
   readonly statusMaximumMs: number;
+  readonly busyStatusObserved: boolean;
   readonly initialPid: number;
   readonly finalPid: number;
   readonly initialInstanceId: string;
@@ -75,6 +78,7 @@ export interface DaemonBenchmarkGateInput {
   readonly restartCount: number;
   readonly capacityResultCount: number;
   readonly rawRuntimeFailureCount: number;
+  readonly largeResponseBytes: number;
   readonly processRssPeakBytes: number;
   readonly hardProcessRssBytes: number;
   readonly expectedTelemetryCount: number;
@@ -89,6 +93,7 @@ export interface DaemonBenchmarkGateInput {
 
 export const DAEMON_BENCHMARK_WARM_REPETITIONS = 9;
 export const DAEMON_BENCHMARK_REQUIRED_SAMPLES = 8;
+export const DAEMON_BENCHMARK_LARGE_RESPONSE_MINIMUM_BYTES = 8 * 1024 * 1024;
 export const DAEMON_BENCHMARK_THRESHOLDS_MS = {
   overview: 500,
   resolve: 2_000,
@@ -140,10 +145,14 @@ export class DaemonBenchmarkGate {
     if (!freshness) failures.push("stale-mutation");
     if (!latencyMet) failures.push("latency-threshold");
     if (!statusResponsive) failures.push("status-unresponsive");
+    if (!input.busyStatusObserved) failures.push("busy-status-missing");
     if (input.restartCount > 0) failures.push("daemon-restarted");
     if (input.fallbackCount > 0) failures.push("fallback-observed");
     if (input.capacityResultCount > 0) failures.push("capacity-result");
     if (input.rawRuntimeFailureCount > 0) failures.push("raw-runtime-failure");
+    if (input.largeResponseBytes <= DAEMON_BENCHMARK_LARGE_RESPONSE_MINIMUM_BYTES) {
+      failures.push("large-response-incomplete");
+    }
     if (!resourcesWithinPolicy) failures.push("rss-limit");
     if (!exactlyOnceTelemetry) failures.push("telemetry-count");
     if (!samplesComplete) failures.push("missing-sample");

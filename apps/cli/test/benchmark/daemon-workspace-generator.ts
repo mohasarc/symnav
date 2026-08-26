@@ -32,6 +32,7 @@ export interface DaemonBenchmarkMutationSuite {
   readonly sameSizeEdit: string;
   readonly add: string;
   readonly remove: string;
+  readonly removeSymbol: string;
   readonly renameFrom: string;
   readonly renameTo: string;
   readonly ignoreRule: string;
@@ -91,6 +92,7 @@ export class DaemonWorkspaceGenerator {
         sameSizeEdit: targetFile,
         add: "packages/package-000/src/added.ts",
         remove: removableFile,
+        removeSymbol: `symbol${String(removableIndex).padStart(6, "0")}`,
         renameFrom: "packages/package-001/src/module-000001.ts",
         renameTo: "packages/package-001/src/renamed.ts",
         ignoreRule: ".gitignore",

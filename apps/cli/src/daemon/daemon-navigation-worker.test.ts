@@ -109,6 +109,33 @@ describe("NodeDaemonNavigationWorker", () => {
     expect(response.heapLimitBytes).toBeLessThan(96 * 1024 * 1024);
     await worker.drainAndClose();
   });
+
+  it("releases transient resources repeatedly within one worker generation", async () => {
+    const worker = createWorker("heap-limit", 32);
+    await worker.start("/repo");
+
+    await expect(worker.releaseTransientResources()).resolves.toMatchObject({
+      kind: "heap",
+      generation: 7,
+    });
+    await expect(worker.releaseTransientResources()).resolves.toMatchObject({
+      kind: "heap",
+      generation: 7,
+    });
+    await worker.drainAndClose();
+  });
+
+  it("settles a failed transient release and permits a later release", async () => {
+    const worker = createWorker("release-failure-once");
+    await worker.start("/repo");
+
+    await expect(worker.releaseTransientResources()).rejects.toThrow(/resource failure/i);
+    await expect(worker.releaseTransientResources()).resolves.toMatchObject({
+      kind: "heap",
+      generation: 7,
+    });
+    await worker.drainAndClose();
+  });
 });
 
 function createWorker(mode: string, maxOldGenerationSizeMb = 128): NodeDaemonNavigationWorker {

@@ -4,6 +4,7 @@ import { getHeapStatistics } from "node:v8";
 
 const generation = workerData.generation;
 let executionCount = 0;
+let releaseCount = 0;
 let externalMemory;
 const pendingResults = new Map();
 
@@ -85,6 +86,16 @@ parentPort.on("message", (message) => {
     return;
   }
   if (message.kind === "release-transient") {
+    releaseCount += 1;
+    if (workerData.mode === "release-failure-once" && releaseCount === 1) {
+      parentPort.postMessage({
+        kind: "failed",
+        generation,
+        failureCode: "resource",
+        errorName: "ReleaseFailure",
+      });
+      return;
+    }
     const heap = getHeapStatistics();
     parentPort.postMessage({
       kind: "heap",

@@ -72,6 +72,7 @@ export interface WorkspaceDaemonOptions {
     readonly maximumAggregateBytes?: number;
   };
   readonly completionSpoolStorage?: CompletionSpoolStorage;
+  readonly operationTraceRetentionMs?: number;
 }
 
 export interface DaemonWorkerGeneration {

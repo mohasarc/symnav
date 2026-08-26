@@ -45,6 +45,7 @@ const DIAGNOSTIC_FIELDS = [
   "operation",
   "failureCode",
   "errorName",
+  "droppedCount",
 ] as const;
 
 const DIAGNOSTIC_KINDS = new Set([
@@ -63,6 +64,7 @@ const DIAGNOSTIC_KINDS = new Set([
   "client-disconnected",
   "client-reattached",
   "delivery-terminal",
+  "diagnostics-dropped",
 ]);
 
 const COMMAND_NAMES = new Set<DaemonCommandName>([
@@ -162,8 +164,10 @@ class NodeDaemonLogStorage implements DaemonLogStorage {
 
 export class DaemonLogger {
   private readonly rotateBytes: number;
+  private readonly maximumQueuedEvents: number;
   private readonly storage: DaemonLogStorage;
   private readonly pendingLines: string[] = [];
+  private droppedCount = 0;
   private drainOperation: Promise<void> | undefined;
   private closed = false;
 
@@ -174,6 +178,7 @@ export class DaemonLogger {
     options: DaemonLoggerOptions = {},
   ) {
     this.rotateBytes = options.rotateBytes ?? DAEMON_LOG_ROTATE_BYTES;
+    this.maximumQueuedEvents = options.maximumQueuedEvents ?? 1_024;
     this.storage = options.storage ?? new NodeDaemonLogStorage();
   }
 
@@ -182,6 +187,10 @@ export class DaemonLogger {
       if (this.closed) return;
       const line = this.serialize(event);
       if (line === undefined) return;
+      if (this.pendingLines.length >= this.maximumQueuedEvents) {
+        this.droppedCount += 1;
+        return;
+      }
       this.pendingLines.push(line);
       this.startDrain();
     } catch {
@@ -190,7 +199,11 @@ export class DaemonLogger {
   }
 
   async flush(): Promise<void> {
-    while (this.drainOperation !== undefined || this.pendingLines.length > 0) {
+    while (
+      this.drainOperation !== undefined ||
+      this.pendingLines.length > 0 ||
+      this.droppedCount > 0
+    ) {
       this.startDrain();
       await this.drainOperation;
     }
@@ -247,7 +260,7 @@ export class DaemonLogger {
     const operation = this.drain();
     this.drainOperation = operation.finally(() => {
       this.drainOperation = undefined;
-      if (this.pendingLines.length > 0) this.startDrain();
+      if (this.pendingLines.length > 0 || this.droppedCount > 0) this.startDrain();
     });
   }
 
@@ -259,9 +272,16 @@ export class DaemonLogger {
       currentBytes = await this.storage.size(this.identity.logPath);
     } catch {
       this.pendingLines.length = 0;
+      this.droppedCount = 0;
       return;
     }
-    while (this.pendingLines.length > 0) {
+    while (this.pendingLines.length > 0 || this.droppedCount > 0) {
+      if (this.pendingLines.length === 0) {
+        const droppedCount = this.droppedCount;
+        this.droppedCount = 0;
+        const dropped = this.serialize({ kind: "diagnostics-dropped", droppedCount });
+        if (dropped !== undefined) this.pendingLines.push(dropped);
+      }
       const line = this.pendingLines.shift();
       if (line === undefined) continue;
       const lineBytes = Buffer.byteLength(line);

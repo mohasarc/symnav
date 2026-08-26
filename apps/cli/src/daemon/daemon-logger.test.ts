@@ -3,11 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { NodeDaemonClock } from "./daemon-clock.js";
-import {
-  DAEMON_LOG_BACKUP_COUNT,
-  DaemonLogger,
-  type DaemonLogStorage,
-} from "./daemon-logger.js";
+import { DAEMON_LOG_BACKUP_COUNT, DaemonLogger, type DaemonLogStorage } from "./daemon-logger.js";
 import type { DaemonDiagnosticEvent } from "./daemon-protocol.js";
 import { DaemonWorkspaceIdentity } from "./daemon-workspace-identity.js";
 
@@ -136,7 +132,9 @@ describe("DaemonLogger", () => {
     ]);
     const retained = [...logFiles]
       .reverse()
-      .flatMap((name) => readFileSync(join(identity.identityDirectory, name), "utf8").trim().split("\n"))
+      .flatMap((name) =>
+        readFileSync(join(identity.identityDirectory, name), "utf8").trim().split("\n"),
+      )
       .map((line) => JSON.parse(line) as { timestamp: number });
     expect(retained.map((event) => event.timestamp)).toEqual(
       [...retained].map((event) => event.timestamp).sort((left, right) => left - right),

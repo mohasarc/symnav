@@ -277,6 +277,7 @@ export type DaemonDiagnosticEvent =
       readonly unchanged: number;
     }
   | { readonly kind: "stop"; readonly reason: DaemonStopReason }
+  | { readonly kind: "diagnostics-dropped"; readonly droppedCount: number }
   | {
       readonly kind: "failure";
       readonly operation: DaemonFailureOperation;

@@ -55,7 +55,7 @@ class BenchmarkEvidence {
     ["stdout-mismatch", (input) => ({ ...input, stdoutParity: false })],
     ["stderr-mismatch", (input) => ({ ...input, stderrParity: false })],
     ["exit-mismatch", (input) => ({ ...input, exitParity: false })],
-    ["alias-result-empty", (input) => ({ ...input, aliasResultsNonEmpty: false })],
+    ["semantic-result-mismatch", (input) => ({ ...input, aliasResultsNonEmpty: false })],
     ["stale-mutation", (input) => ({ ...input, mutationsCurrent: false })],
     ["latency-threshold", (input) => ({ ...input, samples: this.samples(Array(9).fill(501)) })],
     ["status-unresponsive", (input) => ({ ...input, statusMaximumMs: 1_001 })],

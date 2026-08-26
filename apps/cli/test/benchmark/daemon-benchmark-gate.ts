@@ -28,6 +28,7 @@ export type DaemonBenchmarkFailureCode =
   | "stderr-mismatch"
   | "exit-mismatch"
   | "alias-result-empty"
+  | "semantic-result-mismatch"
   | "stale-mutation"
   | "latency-threshold"
   | "status-unresponsive"

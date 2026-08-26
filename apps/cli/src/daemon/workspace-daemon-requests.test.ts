@@ -510,10 +510,12 @@ describe("WorkspaceDaemon requests", () => {
     await executor.started(1);
 
     const stopping = harness.stop();
-    await expect(harness.ping()).resolves.toMatchObject({
+    const draining = await harness.ping();
+    expect(draining).toMatchObject({
       kind: "pong",
-      activity: { lifecycle: "draining", current: { requestId: "draining" } },
+      activity: { lifecycle: "draining" },
     });
+    expect(draining.kind === "pong" ? draining.activity?.current : undefined).toBeUndefined();
 
     executor.complete(0);
     await execution;

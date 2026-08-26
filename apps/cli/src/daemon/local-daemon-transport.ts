@@ -436,6 +436,7 @@ export class LocalDaemonTransport {
           rejectCompletion = completionReject;
         },
       );
+      let consumption = Promise.resolve();
       const fail = (error: unknown): void => {
         const transportError = LocalDaemonTransport.transportError(error, delivery);
         socket.destroy();
@@ -475,15 +476,19 @@ export class LocalDaemonTransport {
         fail(new DaemonTransportError("timeout", delivery, "Daemon request timed out")),
       );
       socket.once("error", (error) => {
-        if (resume()) return;
-        fail(
-          new DaemonTransportError(
-            delivery === "not-submitted" ? "unreachable" : "closed",
-            delivery,
-            error.message,
-            acceptance?.instanceId,
-          ),
-        );
+        void consumption
+          .then(() => {
+            if (resume()) return;
+            fail(
+              new DaemonTransportError(
+                delivery === "not-submitted" ? "unreachable" : "closed",
+                delivery,
+                error.message,
+                acceptance?.instanceId,
+              ),
+            );
+          })
+          .catch(fail);
       });
       socket.once("connect", () => {
         try {
@@ -494,7 +499,6 @@ export class LocalDaemonTransport {
           fail(error);
         }
       });
-      let consumption = Promise.resolve();
       const publishAcceptance = (): void => {
         if (acceptance === undefined || outerSettled) return;
         outerSettled = true;
@@ -628,15 +632,22 @@ export class LocalDaemonTransport {
       const socket = createConnection(endpoint);
       let ended = false;
       let settled = false;
+      let consumption = Promise.resolve();
       const fail = (error: unknown): void => {
         if (settled) return;
         settled = true;
         socket.destroy();
         reject(LocalDaemonTransport.transportError(error, "accepted"));
       };
-      socket.once("error", (error) =>
-        fail(new DaemonTransportError("closed", "accepted", error.message, request.instanceId)),
-      );
+      socket.once("error", (error) => {
+        void consumption
+          .then(() =>
+            fail(
+              new DaemonTransportError("closed", "accepted", error.message, request.instanceId),
+            ),
+          )
+          .catch(fail);
+      });
       socket.once("connect", () => {
         this.writeFrame(socket, {
           kind: "result-fetch",
@@ -647,9 +658,11 @@ export class LocalDaemonTransport {
           offset: transfer.nextOffset,
         });
       });
-      let consumption = Promise.resolve();
       const consume = async (bytes: Buffer): Promise<void> => {
+        let completedResult = false;
+        let failedCode: DaemonExecutionFailureCode | undefined;
         for (const value of decoder.append(bytes)) {
+          if (ended) throw new Error("Daemon resumed with a duplicate terminal frame");
           if (LocalDaemonTransport.isResultChunk(value)) {
             await transfer.acceptChunk(value);
             continue;
@@ -661,10 +674,7 @@ export class LocalDaemonTransport {
           }
           if (frame.kind === "execution-failed") {
             ended = true;
-            settled = true;
-            socket.end();
-            await output.dispose();
-            resolve({ status: "failed", code: frame.code });
+            failedCode = frame.code;
             continue;
           }
           if (frame.kind !== "result-end") {
@@ -672,6 +682,9 @@ export class LocalDaemonTransport {
           }
           transfer.acceptEnd(frame);
           ended = true;
+          completedResult = true;
+        }
+        if (completedResult) {
           const result = await transfer.finish();
           const manifest = transfer.manifest;
           if (manifest === undefined) throw new Error("Completion manifest is missing");
@@ -679,6 +692,12 @@ export class LocalDaemonTransport {
           settled = true;
           socket.end();
           resolve({ status: "completed", result });
+        }
+        if (failedCode !== undefined) {
+          settled = true;
+          socket.end();
+          await output.dispose();
+          resolve({ status: "failed", code: failedCode });
         }
       };
       socket.on("data", (bytes) => {

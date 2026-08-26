@@ -3,16 +3,24 @@ import type { DaemonClock } from "./daemon-clock.js";
 import type { BackendRefreshSummary } from "@symnav/core";
 import type {
   DaemonCommandName,
+  DaemonDiagnosticEvent,
   DaemonDeliveryOutcome,
   DaemonExecutionOutcome,
   DaemonOperationDiagnostic,
+  DaemonShutdownDiagnostic,
+  DaemonStartupDiagnostic,
+  DaemonWorkerDiagnostic,
   DaemonWorkerPhaseDurations,
 } from "./daemon-protocol.js";
 
 export type {
   DaemonDeliveryOutcome,
+  DaemonDiagnosticEvent,
   DaemonExecutionOutcome,
   DaemonOperationDiagnostic,
+  DaemonShutdownDiagnostic,
+  DaemonStartupDiagnostic,
+  DaemonWorkerDiagnostic,
   DaemonWorkerPhaseDurations,
 } from "./daemon-protocol.js";
 
@@ -28,7 +36,7 @@ export interface DaemonOperationTrace {
 }
 
 interface DaemonDiagnosticRecorder {
-  record(event: DaemonOperationDiagnostic): void;
+  record(event: DaemonDiagnosticEvent): void;
 }
 
 interface DaemonOperationResources {
@@ -45,6 +53,18 @@ export class DaemonOperationObserver {
     private readonly clock: DaemonClock,
     private readonly resources?: DaemonOperationResources,
   ) {}
+
+  startup(event: DaemonStartupDiagnostic): void {
+    this.logger.record(event);
+  }
+
+  worker(event: DaemonWorkerDiagnostic): void {
+    this.logger.record(event);
+  }
+
+  shutdown(event: DaemonShutdownDiagnostic): void {
+    this.logger.record(event);
+  }
 
   start(requestId: string, command: DaemonCommandName): DaemonOperationTrace {
     const acceptedAt = this.clock.monotonicNowMs();

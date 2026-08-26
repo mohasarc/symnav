@@ -1,3 +1,5 @@
+import type { DaemonWorkerReplacementCause } from "./daemon-protocol.js";
+
 const MEBIBYTE = 1024 * 1024;
 const MINIMUM_PROCESS_MEMORY_MIB = 256;
 const MAXIMUM_PROCESS_MEMORY_MIB = 8 * 1024;
@@ -88,11 +90,7 @@ export interface DaemonResourceSupervisorOptions {
   readonly drain: () => Promise<void>;
 }
 
-export type DaemonWorkerReplacementCause =
-  | "hard-pressure"
-  | "out-of-memory"
-  | "shed-failure"
-  | "worker-exit";
+export type { DaemonWorkerReplacementCause } from "./daemon-protocol.js";
 
 export class DaemonResourceSupervisor {
   private readonly residentMemoryBytes: () => number;

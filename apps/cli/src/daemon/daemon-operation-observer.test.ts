@@ -3,13 +3,12 @@ import type { DaemonClock } from "./daemon-clock.js";
 import {
   DaemonOperationObserver,
   type DaemonDiagnosticEvent,
-  type DaemonOperationDiagnostic,
 } from "./daemon-operation-observer.js";
 
 describe("DaemonOperationObserver", () => {
   it("separates queue, service, spool, execution, and delivery observations", () => {
     const clock = new MutableDaemonClock(1_000, 10);
-    const events: DaemonOperationDiagnostic[] = [];
+    const events: DaemonDiagnosticEvent[] = [];
     const observer = new DaemonOperationObserver({ record: (event) => events.push(event) }, clock);
     const trace = observer.start("request-one", "refs");
 
@@ -80,7 +79,7 @@ describe("DaemonOperationObserver", () => {
   });
 
   it("records at most one execution terminal and one delivery terminal", () => {
-    const events: DaemonOperationDiagnostic[] = [];
+    const events: DaemonDiagnosticEvent[] = [];
     const observer = new DaemonOperationObserver(
       { record: (event) => events.push(event) },
       new MutableDaemonClock(1, 1),

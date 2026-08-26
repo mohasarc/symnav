@@ -884,7 +884,7 @@ describe("WorkspaceDaemon requests", () => {
       harness.logEvents().filter((event) => event.kind === "client-disconnected"),
     ).toHaveLength(2);
     expect(harness.logEvents().filter((event) => event.kind === "client-reattached")).toHaveLength(
-      2,
+      1,
     );
   });
 

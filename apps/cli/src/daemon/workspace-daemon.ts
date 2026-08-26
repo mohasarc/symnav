@@ -519,6 +519,7 @@ export class WorkspaceDaemon {
     const acceptance = this.acceptances.get(request.requestId);
     if (acceptance === undefined) throw new Error("Accepted request is missing admission metadata");
     if (existing === undefined) {
+      send.onClose(() => this.disconnectOperationTrace(request.requestId));
       this.lastNavigationAt = this.now();
       this.lifetime.navigationAccepted();
       void this.executeAccepted(request);
@@ -822,10 +823,10 @@ export class WorkspaceDaemon {
   }
 
   private disconnectOperationTrace(requestId: string): void {
+    if (this.operationTraceExpirations.has(requestId)) return;
     const trace = this.operationTraces.get(requestId);
     if (trace === undefined) return;
     trace.clientDisconnected();
-    if (this.operationTraceExpirations.has(requestId)) return;
     const expiration = setTimeout(
       () => this.expireOperationTrace(requestId),
       this.options.operationTraceRetentionMs ?? DEFAULT_OPERATION_TRACE_RETENTION_MS,

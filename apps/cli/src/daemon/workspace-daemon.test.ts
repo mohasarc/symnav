@@ -31,7 +31,7 @@ import {
 import { DaemonRegistry } from "./daemon-registry.js";
 import { DaemonResourcePolicy } from "./daemon-resource-monitor.js";
 import { DaemonWorkspaceIdentity } from "./daemon-workspace-identity.js";
-import { LocalDaemonTransport } from "./local-daemon-transport.js";
+import { type DaemonServerSend, LocalDaemonTransport } from "./local-daemon-transport.js";
 import { WorkspaceDaemon } from "./workspace-daemon.js";
 
 describe("WorkspaceDaemon runtime lifecycle", () => {
@@ -550,10 +550,7 @@ class WorkspaceDaemonHarness {
 
 class BlockingCloseTransport extends LocalDaemonTransport {
   private handler:
-    | ((
-        request: DaemonRequest,
-        send: (response: DaemonServerMessage) => Promise<void>,
-      ) => Promise<DaemonResponse | void>)
+    | ((request: DaemonRequest, send: DaemonServerSend) => Promise<DaemonResponse | void>)
     | undefined;
   private readonly closeStarted: Promise<void>;
   private resolveCloseStarted!: () => void;
@@ -572,10 +569,7 @@ class BlockingCloseTransport extends LocalDaemonTransport {
 
   override async listen(
     _endpoint: string,
-    handler: (
-      request: DaemonRequest,
-      send: (response: DaemonServerMessage) => Promise<void>,
-    ) => Promise<DaemonResponse | void>,
+    handler: (request: DaemonRequest, send: DaemonServerSend) => Promise<DaemonResponse | void>,
   ): Promise<DaemonServer> {
     this.handler = handler;
     return {
@@ -591,7 +585,10 @@ class BlockingCloseTransport extends LocalDaemonTransport {
     request: DaemonLifecycleRequest,
   ): Promise<DaemonLifecycleResponse> {
     if (this.handler === undefined) throw new Error("Daemon transport is not listening");
-    return this.handler(request, async () => undefined).then((response) => {
+    const send = Object.assign(async (_response: DaemonServerMessage) => undefined, {
+      onClose: (_listener: () => void) => () => undefined,
+    });
+    return this.handler(request, send).then((response) => {
       if (response === undefined) throw new Error("Daemon transport returned no response");
       return response as DaemonLifecycleResponse;
     });

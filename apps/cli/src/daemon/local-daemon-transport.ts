@@ -38,7 +38,10 @@ interface LocalDaemonTransportOptions {
   readonly outputInlineBytes?: number;
 }
 
-export type DaemonServerSend = (response: DaemonServerMessage) => Promise<void>;
+export interface DaemonServerSend {
+  (response: DaemonServerMessage): Promise<void>;
+  onClose(listener: () => void): () => void;
+}
 
 export type DaemonDeliveryState = "not-submitted" | "submitted-unconfirmed" | "accepted";
 
@@ -866,11 +869,20 @@ export class LocalDaemonTransport {
     const decoder = new DaemonFrameDecoder(this.maximumFrameBytes);
     let responses = Promise.resolve();
     let writes = Promise.resolve();
-    const send: DaemonServerSend = (message) => {
-      const write = writes.then(() => this.writeServerMessage(socket, message));
-      writes = write;
-      return write;
-    };
+    const closeListeners = new Set<() => void>();
+    const send: DaemonServerSend = Object.assign(
+      (message: DaemonServerMessage) => {
+        const write = writes.then(() => this.writeServerMessage(socket, message));
+        writes = write;
+        return write;
+      },
+      {
+        onClose: (listener: () => void): (() => void) => {
+          closeListeners.add(listener);
+          return () => closeListeners.delete(listener);
+        },
+      },
+    );
     socket.on("data", (bytes) => {
       try {
         for (const value of decoder.append(Buffer.isBuffer(bytes) ? bytes : Buffer.from(bytes))) {
@@ -894,6 +906,14 @@ export class LocalDaemonTransport {
       } catch {
         socket.destroy();
       }
+    });
+    socket.once("close", () => {
+      for (const listener of closeListeners) {
+        try {
+          listener();
+        } catch {}
+      }
+      closeListeners.clear();
     });
     socket.once("error", () => socket.destroy());
   }

@@ -1621,6 +1621,7 @@ class RequestTransport {
     if (this.handler === undefined) throw new Error("Transport is not listening");
     const frames: DaemonServerMessage[] = [];
     let connected = true;
+    const closeListeners = new Set<() => void>();
     let resolveTerminal!: (frame: DaemonExecutionServerFrame) => void;
     const terminal = new Promise<DaemonExecutionServerFrame>((resolve) => {
       resolveTerminal = resolve;
@@ -1647,13 +1648,21 @@ class RequestTransport {
         resolveTerminal(response);
       }
     };
-    const response = await this.handler(request, receive);
+    const send = Object.assign(receive, {
+      onClose: (listener: () => void): (() => void) => {
+        closeListeners.add(listener);
+        return () => closeListeners.delete(listener);
+      },
+    });
+    const response = await this.handler(request, send);
     if (response !== undefined) await receive(response);
     return {
       frames,
       terminal,
       disconnect: () => {
         connected = false;
+        for (const listener of closeListeners) listener();
+        closeListeners.clear();
       },
     };
   }

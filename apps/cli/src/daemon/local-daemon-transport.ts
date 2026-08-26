@@ -149,6 +149,15 @@ export class LocalDaemonTransport {
     this.writeChunkSize = options.writeChunkSize;
   }
 
+  canFrame(value: unknown): boolean {
+    try {
+      this.encodeFrame(value);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
   request(endpoint: string, request: DaemonRequest): Promise<DaemonResponse> {
     LocalDaemonTransport.assertRequest(request);
     return new Promise((resolve, reject) => {

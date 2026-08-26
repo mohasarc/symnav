@@ -164,4 +164,88 @@ describe("DaemonCompletionSpoolStore", () => {
       expect(linkedStore.usage()).toEqual({ rawBytes: 0, completionCount: 0 });
     }
   });
+
+  it.each(["sync", "close"] as const)(
+    "releases ownership and retries physical cleanup after a %s failure",
+    async (operation) => {
+      const directory = await mkdtemp(join(tmpdir(), "symnav-completion-finish-failure-"));
+      roots.push(directory);
+      const storage = new FailingCompletionSpoolStorage(operation);
+      const store = new completionSpoolModule.DaemonCompletionSpoolStore({
+        directory,
+        workspaceKey: "workspace-a",
+        instanceId: "instance-a",
+        inlineBytes: 0,
+        storage,
+      });
+      const spool = await store.create("request-a");
+      await spool.append({ sequence: 0, stream: "stdout", bytes: Buffer.from("stored") });
+
+      await expect(spool.finish(0)).rejects.toThrow(`${operation} failed`);
+      expect(store.usage()).toEqual({ rawBytes: 0, completionCount: 0 });
+      expect(await store.open("request-a")).toBeUndefined();
+
+      await expect(spool.dispose()).resolves.toBeUndefined();
+      expect(await readdir(join(directory, "instance-a"))).toEqual([]);
+      expect(store.usage()).toEqual({ rawBytes: 0, completionCount: 0 });
+    },
+  );
+
+  it("releases acknowledged quota and retries failed unlink during instance cleanup", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "symnav-completion-unlink-failure-"));
+    roots.push(directory);
+    const store = new completionSpoolModule.DaemonCompletionSpoolStore({
+      directory,
+      workspaceKey: "workspace-a",
+      instanceId: "instance-a",
+      inlineBytes: 0,
+      storage: new FailingCompletionSpoolStorage("unlink"),
+    });
+    const spool = await store.create("request-a");
+    await spool.append({ sequence: 0, stream: "stdout", bytes: Buffer.from("stored") });
+    await spool.finish(0);
+
+    await expect(spool.acknowledge()).rejects.toThrow("unlink failed");
+    expect(store.usage()).toEqual({ rawBytes: 0, completionCount: 0 });
+    expect(await store.open("request-a")).toBeUndefined();
+    expect(await readdir(join(directory, "instance-a"))).toHaveLength(1);
+
+    await expect(store.cleanupInstance("instance-a")).resolves.toBeUndefined();
+    await expect(access(join(directory, "instance-a"))).rejects.toMatchObject({ code: "ENOENT" });
+    expect(store.usage()).toEqual({ rawBytes: 0, completionCount: 0 });
+  });
 });
+
+class FailingCompletionSpoolStorage extends completionSpoolModule.NodeCompletionSpoolStorage {
+  private failed = false;
+
+  constructor(private readonly operation: "sync" | "close" | "unlink") {
+    super();
+  }
+
+  override async createFile(path: string): Promise<completionSpoolModule.CompletionSpoolFile> {
+    const file = await super.createFile(path);
+    return {
+      write: (bytes) => file.write(bytes),
+      sync: async () => {
+        if (this.fail("sync")) throw new Error("sync failed");
+        await file.sync();
+      },
+      close: async () => {
+        if (this.fail("close")) throw new Error("close failed");
+        await file.close();
+      },
+    };
+  }
+
+  override async unlink(path: string): Promise<void> {
+    if (this.fail("unlink")) throw new Error("unlink failed");
+    await super.unlink(path);
+  }
+
+  private fail(operation: "sync" | "close" | "unlink"): boolean {
+    if (this.failed || this.operation !== operation) return false;
+    this.failed = true;
+    return true;
+  }
+}

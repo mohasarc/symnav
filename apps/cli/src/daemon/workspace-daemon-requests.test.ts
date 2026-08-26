@@ -774,6 +774,11 @@ describe("WorkspaceDaemon requests", () => {
     }
 
     expect(harness.retainedOperationTraceCount()).toBe(3);
+    await waitUntil(
+      () =>
+        harness.logEvents().filter((event) => event.kind === "operation-trace-expired").length ===
+        7,
+    );
     expect(
       harness.logEvents().filter((event) => event.kind === "operation-trace-expired"),
     ).toHaveLength(7);

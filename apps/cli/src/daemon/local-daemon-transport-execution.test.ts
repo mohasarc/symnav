@@ -3,7 +3,8 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { createServer, type Server, type Socket } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { OrderedCommandOutput } from "../command-execution-result.js";
 import {
   DAEMON_PROTOCOL_VERSION,
   type DaemonExecuteRequest,
@@ -29,6 +30,7 @@ describe("LocalDaemonTransport execution delivery", () => {
   const directories: string[] = [];
 
   afterEach(async () => {
+    vi.restoreAllMocks();
     for (const socket of sockets) socket.destroy();
     sockets.length = 0;
     await Promise.all(
@@ -232,6 +234,91 @@ describe("LocalDaemonTransport execution delivery", () => {
     await completion.result.output.dispose();
     await server.close();
   }, 20_000);
+
+  it("advances one client record only after its spool append completes", async () => {
+    const directory = mkdtempSync(join(tmpdir(), "symnav-stalled-client-spool-"));
+    directories.push(directory);
+    const store = new DaemonCompletionSpoolStore({
+      directory: join(directory, "daemon"),
+      workspaceKey: "workspace",
+      instanceId: request.instanceId,
+    });
+    const spool = await store.create(request.requestId);
+    for (let sequence = 0; sequence < 3; sequence += 1) {
+      await spool.append({
+        sequence,
+        stream: sequence % 2 === 0 ? "stdout" : "stderr",
+        bytes: Buffer.alloc(COMMAND_OUTPUT_CHUNK_BYTES, sequence),
+      });
+    }
+    const manifest = await spool.finish(0);
+    let appendCalls = 0;
+    let activeAppends = 0;
+    let maximumActiveAppends = 0;
+    let markAppendStarted!: () => void;
+    let releaseAppend!: () => void;
+    const appendStarted = new Promise<void>((resolve) => {
+      markAppendStarted = resolve;
+    });
+    const appendGate = new Promise<void>((resolve) => {
+      releaseAppend = resolve;
+    });
+    const appendRecord = OrderedCommandOutput.prototype.appendRecord;
+    vi.spyOn(OrderedCommandOutput.prototype, "appendRecord").mockImplementation(async function (
+      this: OrderedCommandOutput,
+      record,
+    ) {
+      appendCalls += 1;
+      activeAppends += 1;
+      maximumActiveAppends = Math.max(maximumActiveAppends, activeAppends);
+      markAppendStarted();
+      if (appendCalls === 1) await appendGate;
+      try {
+        await appendRecord.call(this, record);
+      } finally {
+        activeAppends -= 1;
+      }
+    });
+    let acknowledgementCount = 0;
+    const endpoint = await rawExecutionServer(servers, sockets, directories, (socket) => {
+      socket.once("data", (encoded) => {
+        const bytes = Buffer.isBuffer(encoded) ? encoded : Buffer.from(encoded);
+        const message = JSON.parse(bytes.subarray(4).toString()) as { kind: string };
+        if (message.kind === "execute") {
+          void encodedResult(spool, manifest).then((resultBytes) => socket.write(resultBytes));
+          return;
+        }
+        if (message.kind === "result-ack") {
+          acknowledgementCount += 1;
+          socket.end(
+            frame({
+              kind: "result-acknowledged",
+              instanceId: request.instanceId,
+              processToken: request.processToken,
+              requestId: request.requestId,
+              transferId: manifest.transferId,
+            }),
+          );
+        }
+      });
+    });
+    const receipt = await new LocalDaemonTransport({
+      outputDirectory: join(directory, "client"),
+      outputInlineBytes: 0,
+    }).execute(endpoint, request);
+
+    await appendStarted;
+    expect(appendCalls).toBe(1);
+    expect(maximumActiveAppends).toBe(1);
+    expect(acknowledgementCount).toBe(0);
+    releaseAppend();
+    const completion = await receipt.completion;
+
+    expect(appendCalls).toBe(3);
+    expect(maximumActiveAppends).toBe(1);
+    expect(acknowledgementCount).toBe(1);
+    if (completion.status === "completed") await completion.result.output.dispose();
+  });
 
   it("resumes a disconnected result transfer at the contiguous record offset", async () => {
     const directory = mkdtempSync(join(tmpdir(), "symnav-resumed-result-"));
@@ -684,6 +771,27 @@ async function sendRecords(
       }),
     );
   }
+}
+
+async function encodedResult(
+  spool: import("./completion-spool.js").CompletionSpool,
+  manifest: import("./completion-spool.js").CompletionSpoolManifest,
+): Promise<Buffer> {
+  const chunks = [frame(accepted()), frame(resultManifest(manifest))];
+  for await (const record of spool.read(0)) {
+    chunks.push(
+      DaemonResultChunkCodec.encode({
+        transferId: manifest.transferId,
+        requestId: request.requestId,
+        offset: record.sequence,
+        sequence: record.sequence,
+        stream: record.stream,
+        bytes: record.bytes,
+      }),
+    );
+  }
+  chunks.push(frame(resultEnd(manifest)));
+  return Buffer.concat(chunks);
 }
 
 async function rawExecutionServer(

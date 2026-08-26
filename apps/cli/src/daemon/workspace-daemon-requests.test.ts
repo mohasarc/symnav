@@ -341,6 +341,23 @@ describe("WorkspaceDaemon requests", () => {
     await expect(harness.execute("small")).resolves.toMatchObject({ kind: "result-end" });
   });
 
+  it("keeps one result chunk in flight while the attachment sink is stalled", async () => {
+    const harness = await RequestHarness.start(new MultipleRecordExecutor());
+    harnesses.push(harness);
+    const stalled = harness.transport.stallNextResultChunk();
+
+    const connection = await harness.admit("stalled-result");
+    await stalled.started;
+
+    expect(stalled.maximumInFlight()).toBe(1);
+    expect(connection.frames.some((frame) => "kind" in frame && frame.kind === "result-end")).toBe(
+      false,
+    );
+    stalled.release();
+    await expect(connection.terminal).resolves.toMatchObject({ kind: "result-end" });
+    expect(connection.frames.filter((frame) => !("kind" in frame))).toHaveLength(3);
+  });
+
   it("reports active command and queued count while worker execution is blocked", async () => {
     const executor = new SerializedExecutor();
     const harness = await RequestHarness.start(executor);
@@ -677,11 +694,19 @@ class RequestTransport {
   private handler:
     | ((
         request: DaemonRequest,
-        send: (response: DaemonServerMessage) => void,
+        send: (response: DaemonServerMessage) => Promise<void>,
       ) => Promise<DaemonResponse | void>)
     | undefined;
   listenError: Error | undefined;
   closeError: Error | undefined;
+  private resultChunkGate:
+    | {
+        readonly started: () => void;
+        readonly wait: Promise<void>;
+      }
+    | undefined;
+  private resultChunksInFlight = 0;
+  private maximumResultChunksInFlight = 0;
 
   get isListening(): boolean {
     return this.handler !== undefined;
@@ -691,7 +716,7 @@ class RequestTransport {
     _endpoint: string,
     handler: (
       request: DaemonRequest,
-      send: (response: DaemonServerMessage) => void,
+      send: (response: DaemonServerMessage) => Promise<void>,
     ) => Promise<DaemonResponse | void>,
   ): Promise<DaemonServer> {
     if (this.listenError !== undefined) throw this.listenError;
@@ -706,7 +731,7 @@ class RequestTransport {
 
   async receive(request: DaemonRequest): Promise<DaemonResponse> {
     if (this.handler === undefined) return Promise.reject(new Error("Transport is not listening"));
-    const response = await this.handler(request, () => undefined);
+    const response = await this.handler(request, async () => undefined);
     if (response === undefined) throw new Error("Transport handler returned no response");
     return response;
   }
@@ -719,9 +744,20 @@ class RequestTransport {
     const terminal = new Promise<DaemonExecutionServerFrame>((resolve) => {
       resolveTerminal = resolve;
     });
-    const receive = (response: DaemonServerMessage): void => {
-      if (!connected || !RequestTransport.isExecutionFrame(response)) return;
+    const receive = async (response: DaemonServerMessage): Promise<void> => {
+      if (!("kind" in response) && this.resultChunkGate !== undefined) {
+        this.resultChunksInFlight += 1;
+        this.maximumResultChunksInFlight = Math.max(
+          this.maximumResultChunksInFlight,
+          this.resultChunksInFlight,
+        );
+        this.resultChunkGate.started();
+        await this.resultChunkGate.wait;
+        this.resultChunksInFlight -= 1;
+      }
+      if (!connected) return;
       frames.push(response);
+      if (!RequestTransport.isExecutionFrame(response)) return;
       if (
         response.kind === "rejected" ||
         response.kind === "result-end" ||
@@ -731,13 +767,34 @@ class RequestTransport {
       }
     };
     const response = await this.handler(request, receive);
-    if (response !== undefined) receive(response);
+    if (response !== undefined) await receive(response);
     return {
       frames,
       terminal,
       disconnect: () => {
         connected = false;
       },
+    };
+  }
+
+  stallNextResultChunk(): {
+    readonly started: Promise<void>;
+    readonly release: () => void;
+    readonly maximumInFlight: () => number;
+  } {
+    let markStarted!: () => void;
+    let release!: () => void;
+    const started = new Promise<void>((resolve) => {
+      markStarted = resolve;
+    });
+    const wait = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    this.resultChunkGate = { started: markStarted, wait };
+    return {
+      started,
+      release,
+      maximumInFlight: () => this.maximumResultChunksInFlight,
     };
   }
 
@@ -817,6 +874,19 @@ class SequencedOutputExecutor implements DaemonCommandExecutor {
     const records =
       this.executionCount === 1 ? [{ stream: "stdout" as const, bytes: Buffer.from("xx") }] : [];
     return Promise.resolve({ output: new CommandOutputSnapshot(records), exitCode: 0 });
+  }
+}
+
+class MultipleRecordExecutor implements DaemonCommandExecutor {
+  execute(): Promise<CommandExecutionResult> {
+    return Promise.resolve({
+      output: new CommandOutputSnapshot([
+        { stream: "stdout", bytes: Buffer.from("one") },
+        { stream: "stderr", bytes: Buffer.from("two") },
+        { stream: "stdout", bytes: Buffer.from("three") },
+      ]),
+      exitCode: 0,
+    });
   }
 }
 

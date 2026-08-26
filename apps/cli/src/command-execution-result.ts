@@ -1,5 +1,3 @@
-import type { UsageEventInput } from "@symnav/telemetry";
-
 export type CommandOutputStream = "stdout" | "stderr";
 
 export interface CommandOutputFrame {
@@ -10,7 +8,6 @@ export interface CommandOutputFrame {
 export interface CommandExecutionResult {
   readonly frames: readonly CommandOutputFrame[];
   readonly exitCode: number;
-  readonly telemetry?: UsageEventInput;
 }
 
 export type CommandExecutionMode = "cold" | "warm" | "fallback";
@@ -25,7 +22,6 @@ export interface CliExecutionRequest {
   readonly cwd: string;
   readonly telemetryEnabled: boolean;
   readonly executionMode?: CommandExecutionMode;
-  readonly deferTelemetry?: boolean;
 }
 
 export class ControlledCommandResult {

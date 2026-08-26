@@ -1,5 +1,4 @@
 import { join, resolve } from "node:path";
-import type { UsageEventInput } from "@symnav/telemetry";
 import { describe, expect, it, vi } from "vitest";
 import type { CliExecutionRequest, CommandExecutionResult } from "../command-execution-result.js";
 import type { ProgramDependencies } from "../program-dependencies.js";
@@ -206,8 +205,7 @@ describe("DaemonCommandDispatcher", () => {
   });
 
   it("never records warm telemetry in the caller", async () => {
-    const warmTelemetry = telemetryInput("warm");
-    const harness = new DispatchHarness({ ...success, telemetry: warmTelemetry });
+    const harness = new DispatchHarness(success);
 
     await expect(
       harness.dispatcher().execute({ ...request, telemetryEnabled: true }),
@@ -379,20 +377,5 @@ function daemonRecord(instanceId = "instance-1"): DaemonRecord {
     readyAt: 2,
     fileCount: 1,
     memoryCapBytes: 1024,
-  };
-}
-
-function telemetryInput(executionMode: "warm" | "cold" | "fallback"): UsageEventInput {
-  return {
-    symnavVersion: "0.1.0",
-    command: "overview",
-    timestamp: 1,
-    durationMs: 2,
-    executionMode,
-    outcome: "success",
-    argShape: { kind: "path", lengthBucket: "short", flags: [] },
-    resultCounts: { symbols: 1 },
-    workspaceId: "workspace",
-    machineId: "machine",
   };
 }

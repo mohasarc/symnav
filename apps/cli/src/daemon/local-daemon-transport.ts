@@ -781,19 +781,26 @@ export class LocalDaemonTransport {
   }
 
   private static isExecutionRequest(value: unknown): boolean {
+    if (!LocalDaemonTransport.isRecord(value)) return false;
+    const expectedKeys = ["argv", "cwd", "telemetryEnabled"];
+    if (value.executionMode !== undefined) expectedKeys.push("executionMode");
     return (
-      LocalDaemonTransport.isRecord(value) &&
+      LocalDaemonTransport.hasExactKeys(value, expectedKeys) &&
       Array.isArray(value.argv) &&
       value.argv.every((arg) => typeof arg === "string") &&
       typeof value.cwd === "string" &&
       typeof value.telemetryEnabled === "boolean" &&
-      (value.deferTelemetry === undefined || typeof value.deferTelemetry === "boolean")
+      (value.executionMode === undefined ||
+        value.executionMode === "cold" ||
+        value.executionMode === "warm" ||
+        value.executionMode === "fallback")
     );
   }
 
   private static isExecutionResult(value: unknown): boolean {
     if (
       !LocalDaemonTransport.isRecord(value) ||
+      !LocalDaemonTransport.hasExactKeys(value, ["frames", "exitCode"]) ||
       !Array.isArray(value.frames) ||
       !Number.isInteger(value.exitCode)
     )
@@ -805,29 +812,7 @@ export class LocalDaemonTransport {
           (frame.stream === "stdout" || frame.stream === "stderr") &&
           typeof frame.bytesBase64 === "string" &&
           LocalDaemonTransport.isBase64(frame.bytesBase64),
-      ) &&
-      (value.telemetry === undefined || LocalDaemonTransport.isTelemetryInput(value.telemetry))
-    );
-  }
-
-  private static isTelemetryInput(value: unknown): boolean {
-    return (
-      LocalDaemonTransport.isRecord(value) &&
-      typeof value.symnavVersion === "string" &&
-      typeof value.command === "string" &&
-      typeof value.timestamp === "number" &&
-      typeof value.durationMs === "number" &&
-      value.executionMode === "warm" &&
-      (value.outcome === "success" ||
-        ((value.outcome === "user_error" || value.outcome === "crash") &&
-          typeof value.errorReason === "string")) &&
-      LocalDaemonTransport.isRecord(value.argShape) &&
-      typeof value.argShape.kind === "string" &&
-      typeof value.argShape.lengthBucket === "string" &&
-      Array.isArray(value.argShape.flags) &&
-      value.argShape.flags.every((flag) => typeof flag === "string") &&
-      typeof value.workspaceId === "string" &&
-      typeof value.machineId === "string"
+      )
     );
   }
 
@@ -838,5 +823,11 @@ export class LocalDaemonTransport {
 
   private static isRecord(value: unknown): value is Record<string, unknown> {
     return typeof value === "object" && value !== null && !Array.isArray(value);
+  }
+
+  private static hasExactKeys(value: Record<string, unknown>, keys: readonly string[]): boolean {
+    const actual = Object.keys(value).sort();
+    const expected = [...keys].sort();
+    return actual.length === expected.length && actual.every((key, index) => key === expected[index]);
   }
 }

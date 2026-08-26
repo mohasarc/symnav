@@ -1,6 +1,5 @@
 import { randomUUID } from "node:crypto";
 import { createWorkspace } from "@symnav/core";
-import type { Recorder, UsageEventInput } from "@symnav/telemetry";
 import { CliProgramExecutor } from "../cli-program-executor.js";
 import type {
   CliExecutionRequest,
@@ -151,7 +150,6 @@ export class DaemonCommandDispatcher {
         runtime,
         routeSnapshot.record,
         workspaceRequest,
-        workspaceDependencies.recorder,
       );
     }
     if (
@@ -209,7 +207,6 @@ export class DaemonCommandDispatcher {
     runtime: DaemonDispatchRuntime,
     record: DaemonRecord,
     request: CliExecutionRequest,
-    recorder: Recorder,
   ): Promise<DispatchedCommandResult> {
     let receipt: DaemonExecutionReceipt;
     try {
@@ -219,7 +216,7 @@ export class DaemonCommandDispatcher {
         instanceId: record.instanceId,
         processToken: record.processToken,
         requestId: this.requestId(),
-        request: { ...request, executionMode: "warm", deferTelemetry: true },
+        request: { ...request, executionMode: "warm" },
       });
     } catch (error) {
       if (DaemonCommandDispatcher.isRetrySafeFailure(error)) {
@@ -240,7 +237,7 @@ export class DaemonCommandDispatcher {
       }
       return {
         mode: "warm",
-        result: DaemonCommandDispatcher.commitWarmTelemetry(completion.result, recorder),
+        result: completion.result,
       };
     } catch {
       return { mode: "warm", result: ControlledCommandResult.acceptedRequestDidNotComplete() };
@@ -305,8 +302,7 @@ export class DaemonCommandDispatcher {
         (frame) =>
           (frame.stream === "stdout" || frame.stream === "stderr") &&
           DaemonCommandDispatcher.isBase64(frame.bytesBase64),
-      ) &&
-      (result.telemetry === undefined || DaemonCommandDispatcher.isTelemetryInput(result.telemetry))
+      )
     );
   }
 
@@ -318,39 +314,6 @@ export class DaemonCommandDispatcher {
     if (code === "controlled-resource") return ControlledCommandResult.workspaceCapacityExceeded();
     if (code === "response-capacity") return ControlledCommandResult.responseCapacityExceeded();
     return ControlledCommandResult.acceptedRequestDidNotComplete();
-  }
-
-  private static commitWarmTelemetry(
-    result: CommandExecutionResult,
-    recorder: Recorder,
-  ): CommandExecutionResult {
-    if (result.telemetry !== undefined) {
-      try {
-        recorder.record(result.telemetry);
-      } catch {}
-    }
-    return { frames: result.frames, exitCode: result.exitCode };
-  }
-
-  private static isTelemetryInput(value: UsageEventInput): boolean {
-    return (
-      typeof value.symnavVersion === "string" &&
-      typeof value.command === "string" &&
-      typeof value.timestamp === "number" &&
-      typeof value.durationMs === "number" &&
-      value.executionMode === "warm" &&
-      (value.outcome === "success" ||
-        ((value.outcome === "user_error" || value.outcome === "crash") &&
-          typeof value.errorReason === "string")) &&
-      typeof value.argShape === "object" &&
-      value.argShape !== null &&
-      typeof value.argShape.kind === "string" &&
-      typeof value.argShape.lengthBucket === "string" &&
-      Array.isArray(value.argShape.flags) &&
-      value.argShape.flags.every((flag) => typeof flag === "string") &&
-      typeof value.workspaceId === "string" &&
-      typeof value.machineId === "string"
-    );
   }
 
   private static isBase64(value: string): boolean {

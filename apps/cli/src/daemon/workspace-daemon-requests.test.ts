@@ -665,6 +665,47 @@ describe("WorkspaceDaemon requests", () => {
     expect(worker.releaseCount).toBe(1);
   });
 
+  it("replaces a failed shed before releasing queued work", async () => {
+    const policy = DaemonResourcePolicy.fromSystemMemory(1024 * 1024 * 1024);
+    let residentMemoryBytes = 0;
+    const firstExecutor = new SerializedExecutor();
+    const replacementExecutor = new RecordingExecutor();
+    const workers: ExecutorNavigationWorker[] = [];
+    const harness = await RequestHarness.start(undefined, {
+      navigationWorkerFactory: (generation) => {
+        const worker =
+          generation === 1
+            ? new ReleaseFailingNavigationWorker(firstExecutor, generation)
+            : new ExecutorNavigationWorker(replacementExecutor, generation);
+        workers.push(worker);
+        return worker;
+      },
+      resourcePolicy: policy,
+      resourceCheckIntervalMs: 5,
+      residentMemoryBytes: () => residentMemoryBytes,
+    });
+    harnesses.push(harness);
+    const first = harness.execute("first", ["refs", "input"]);
+    await firstExecutor.started(1);
+    const second = harness.execute("second", ["overview", "input.ts"]);
+    await waitUntil(async () => {
+      const response = await harness.ping();
+      return response.kind === "pong" && response.queued === 1;
+    });
+
+    residentMemoryBytes = policy.record.softProcessRssBytes + 1;
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    firstExecutor.complete(0);
+    await waitUntil(() => workers.length === 2);
+
+    await expect(first).resolves.toMatchObject({ kind: "result-end", requestId: "first" });
+    await expect(second).resolves.toMatchObject({ kind: "result-end", requestId: "second" });
+    expect(firstExecutor.requests).toHaveLength(1);
+    expect(replacementExecutor.requests).toHaveLength(1);
+    expect(workers.map((worker) => worker.generation)).toEqual([1, 2]);
+    await expect(harness.ping()).resolves.toMatchObject({ state: "ready" });
+  });
+
   it("recovers one real worker old-generation exhaustion during warm-up", async () => {
     const generations: number[] = [];
     const { daemon, harness, lease } = RequestHarness.create(undefined, {
@@ -1324,6 +1365,12 @@ class ReleaseGatedNavigationWorker extends ExecutorNavigationWorker {
 
   allowRelease(): void {
     this.releaseAllowed();
+  }
+}
+
+class ReleaseFailingNavigationWorker extends ExecutorNavigationWorker {
+  override releaseTransientResources(): Promise<DaemonNavigationWorkerResponse> {
+    return Promise.reject(new Error("release failed"));
   }
 }
 

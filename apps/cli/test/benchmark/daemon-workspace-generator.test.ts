@@ -39,8 +39,12 @@ describe("DaemonWorkspaceGenerator", () => {
     const generated = await TestWorkspace.generate(root, 1, "connected-seed");
     const manifest = TestWorkspace.manifest(root);
 
-    expect(readFileSync(join(root, "tsconfig.json"), "utf8")).toContain('"references"');
+    const rootConfiguration = readFileSync(join(root, "tsconfig.json"), "utf8");
+    expect(rootConfiguration).toContain('"references"');
+    expect(rootConfiguration).toContain('"paths"');
     expect(manifest.join("\n")).toContain("@workspace/");
+    expect(manifest.join("\n")).toContain("@alias/");
+    expect(manifest.join("\n")).toContain("../../package-");
     expect(manifest.join("\n")).toContain("benchmarkHub");
     expect(manifest.join("\n")).toContain("cycleEntry");
     expect(statSync(join(root, "ignored", "ignored.ts")).isFile()).toBe(true);
@@ -90,6 +94,8 @@ describe("DaemonWorkspaceGenerator", () => {
     expect(profiled.packageCount).toBe(reviewed.packageCount);
     expect(profiled.configCount).toBe(reviewed.configCount);
     expect(profiled.projectReferenceCount).toBe(reviewed.projectReferenceCount);
+    expect(profiled.aliasImportRatio).toBeCloseTo(reviewed.aliasImportRatio, 4);
+    expect(profiled.workspaceImportRatio).toBeCloseTo(reviewed.workspaceImportRatio, 4);
     expect(TestWorkspace.sourceOccurrences(root, "benchmarkHub") - 1).toBe(
       reviewed.representativeResultCounts.refs,
     );

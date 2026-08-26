@@ -85,6 +85,7 @@ export interface DaemonBenchmarkGateInput {
   readonly actualTelemetryCount: number;
   readonly expectedTelemetryCommands: readonly DaemonCommandName[];
   readonly actualTelemetryCommands: readonly DaemonCommandName[];
+  readonly invocationTelemetryComplete: boolean;
   readonly artifactComplete: boolean;
   readonly spoolBytesAfterCleanup: number;
   readonly diagnosticPhasesComplete: boolean;
@@ -142,6 +143,7 @@ export class DaemonBenchmarkGate {
       input.initialPid === input.finalPid &&
       input.initialInstanceId === input.finalInstanceId;
     const exactlyOnceTelemetry =
+      input.invocationTelemetryComplete &&
       input.actualTelemetryCount === input.expectedTelemetryCount &&
       input.actualTelemetryCommands.length === input.expectedTelemetryCommands.length &&
       input.actualTelemetryCommands.every(

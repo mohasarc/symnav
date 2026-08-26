@@ -22,6 +22,7 @@ export function fakeDependencies(
     recorder: overrides.recorder ?? { record: () => {} },
     clock: overrides.clock ?? createScriptedClock([1_000, 1_025]),
     telemetryEnabled: overrides.telemetryEnabled ?? false,
+    ...(overrides.executionMode === undefined ? {} : { executionMode: overrides.executionMode }),
     identity: overrides.identity ?? createFakeIdentityProvider(),
     symnavVersion: overrides.symnavVersion ?? "0.0.0-test",
   };

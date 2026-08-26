@@ -128,8 +128,7 @@ export class DaemonScaleBenchmarkHarness {
         totalmem(),
         process.constrainedMemory?.(),
       ).record;
-      const expectedTelemetryCount =
-        enrichedSamples.filter((sample) => sample.command !== "stats").length + 7;
+      const expectedTelemetryCount = enrichedSamples.length + 7;
       const gate = new DaemonBenchmarkGate().evaluate({
         scale: this.options.scale,
         samples: enrichedSamples,
@@ -155,9 +154,7 @@ export class DaemonScaleBenchmarkHarness {
         expectedTelemetryCount,
         actualTelemetryCount: telemetryCommands.length,
         expectedTelemetryCommands: [
-          ...enrichedSamples
-            .filter((sample) => sample.command !== "stats")
-            .map((sample) => sample.command),
+          ...enrichedSamples.map((sample) => sample.command),
           "overview",
           "resolve",
           "resolve",
@@ -167,6 +164,7 @@ export class DaemonScaleBenchmarkHarness {
           "overview",
         ],
         actualTelemetryCommands: telemetryCommands,
+        invocationTelemetryComplete: enrichedSamples.every((sample) => sample.telemetryMatched),
         artifactComplete: fixedArtifactComplete,
         spoolBytesAfterCleanup: DaemonScaleBenchmarkHarness.directoryBytes(identity.spoolDirectory),
         diagnosticPhasesComplete: diagnostics.phasesComplete,
@@ -231,6 +229,7 @@ export class DaemonScaleBenchmarkHarness {
         false,
       );
       for (let repetition = 0; repetition < DAEMON_BENCHMARK_WARM_REPETITIONS; repetition += 1) {
+        const telemetryBefore = this.telemetryEvents(stateDirectory);
         const startedAt = performance.now();
         const warm = await this.runCommandAsync(
           generated.workspaceRoot,
@@ -240,6 +239,7 @@ export class DaemonScaleBenchmarkHarness {
           true,
         );
         const wallMs = performance.now() - startedAt;
+        const telemetryAfter = this.telemetryEvents(stateDirectory);
         samples.push(
           BenchmarkSampleEvidence.from(
             command as keyof typeof generated.commands,
@@ -248,6 +248,11 @@ export class DaemonScaleBenchmarkHarness {
             warm,
             wallMs,
             benchmark,
+            BenchmarkSampleEvidence.telemetryMatched(
+              telemetryBefore,
+              telemetryAfter,
+              command as keyof typeof generated.commands,
+            ),
           ),
         );
       }
@@ -536,6 +541,7 @@ export interface BenchmarkSampleEvidence extends DaemonBenchmarkSample {
   readonly exitParity: boolean;
   readonly nonEmpty: boolean;
   readonly diagnosticMatched: boolean;
+  readonly telemetryMatched: boolean;
 }
 
 interface LargeResponseEvidence {
@@ -552,6 +558,19 @@ export class BenchmarkSampleEvidence {
     return samples.every((sample) => sample.nonEmpty);
   }
 
+  static telemetryMatched(
+    before: readonly Record<string, unknown>[],
+    after: readonly Record<string, unknown>[],
+    command: DaemonCommandName,
+  ): boolean {
+    const appended = after.slice(before.length);
+    return (
+      after.length === before.length + 1 &&
+      appended[0]?.command === command &&
+      appended[0]?.executionMode === "warm"
+    );
+  }
+
   static from(
     command: keyof GeneratedDaemonWorkspace["commands"],
     repetition: number,
@@ -559,6 +578,7 @@ export class BenchmarkSampleEvidence {
     warm: RunSymnavBinaryResult,
     wallMs: number,
     benchmark: DaemonBenchmarkCommand,
+    telemetryMatched = true,
   ): BenchmarkSampleEvidence {
     return {
       command,
@@ -580,6 +600,7 @@ export class BenchmarkSampleEvidence {
           warm.stdout.trim().length > 0 &&
           DaemonBenchmarkSemanticResult.matches(benchmark.expectation, warm.stdout)),
       diagnosticMatched: false,
+      telemetryMatched,
     };
   }
 
@@ -652,12 +673,14 @@ export class DaemonBenchmarkSemanticResult {
 }
 
 interface OperationMetrics {
+  readonly requestId: string;
   readonly command: string;
   readonly queueWaitMs: number;
   readonly serviceMs: number;
   readonly processRssPeakBytes: number;
   readonly workerHeapPeakBytes?: number;
   readonly spoolBytes: number;
+  readonly complete: boolean;
 }
 
 export class DaemonBenchmarkDiagnostics {
@@ -679,32 +702,43 @@ export class DaemonBenchmarkDiagnostics {
           .filter((line) => line.length > 0)
           .map((line) => JSON.parse(line) as Record<string, unknown>)
       : [];
-    const commands = new Map<string, string>();
-    const queueWaits = new Map<string, number>();
-    const spooledBytes = new Map<string, number>();
-    for (const event of events) {
-      if (event.kind === "request-accepted")
-        commands.set(String(event.requestId), String(event.command));
-      if (event.kind === "turn-started")
-        queueWaits.set(String(event.requestId), Number(event.queueWaitMs));
-      if (event.kind === "response-spooled")
-        spooledBytes.set(String(event.requestId), Number(event.rawBytes));
-    }
-    const operationMetrics = events
-      .filter((event) => event.kind === "execution-terminal")
-      .map((event) => ({
-        command: commands.get(String(event.requestId)) ?? "unknown",
-        queueWaitMs: queueWaits.get(String(event.requestId)) ?? 0,
-        serviceMs: Number(event.serviceMs),
-        processRssPeakBytes: Number(event.peakProcessRssBytes ?? event.processRssBytes ?? 0),
-        ...(event.workerHeapUsedBytes === undefined
-          ? {}
-          : { workerHeapPeakBytes: Number(event.workerHeapUsedBytes) }),
-        spoolBytes: Math.max(
-          Number(event.spoolBytes ?? 0),
-          spooledBytes.get(String(event.requestId)) ?? 0,
+    const accepted = events.filter((event) => event.kind === "request-accepted");
+    const operationMetrics = accepted.map((acceptedEvent) => {
+      const requestId = String(acceptedEvent.requestId);
+      const requestEvents = events.filter((event) => String(event.requestId) === requestId);
+      const acceptedEvents = requestEvents.filter((event) => event.kind === "request-accepted");
+      const turns = requestEvents.filter((event) => event.kind === "turn-started");
+      const workers = requestEvents.filter((event) => event.kind === "worker-completed");
+      const spools = requestEvents.filter((event) => event.kind === "response-spooled");
+      const terminals = requestEvents.filter((event) => event.kind === "execution-terminal");
+      const deliveries = requestEvents.filter((event) => event.kind === "delivery-terminal");
+      const turn = turns[0];
+      const spool = spools[0];
+      const terminal = terminals[0];
+      return {
+        requestId,
+        command: String(acceptedEvent.command),
+        queueWaitMs: Number(turn?.queueWaitMs ?? 0),
+        serviceMs: Number(terminal?.serviceMs ?? 0),
+        processRssPeakBytes: Number(
+          terminal?.peakProcessRssBytes ?? terminal?.processRssBytes ?? 0,
         ),
-      }));
+        ...(terminal?.workerHeapPeakBytes === undefined
+          ? {}
+          : { workerHeapPeakBytes: Number(terminal.workerHeapPeakBytes) }),
+        spoolBytes: Math.max(
+          Number(terminal?.spoolBytes ?? 0),
+          Number(spool?.rawBytes ?? 0),
+        ),
+        complete:
+          acceptedEvents.length === 1 &&
+          turns.length === 1 &&
+          workers.length === 1 &&
+          spools.length === 1 &&
+          terminals.length === 1 &&
+          deliveries.length === 1,
+      };
+    });
     const phases = new Set(events.map((event) => String(event.kind)));
     return new DaemonBenchmarkDiagnostics(
       operationMetrics,
@@ -729,11 +763,9 @@ export class DaemonBenchmarkDiagnostics {
   }
 
   enrich(samples: readonly BenchmarkSampleEvidence[]): BenchmarkSampleEvidence[] {
-    const available = [...this.operationMetrics];
-    return samples.map((sample) => {
-      const index = available.findIndex((metric) => metric.command === sample.command);
-      if (index < 0) return sample;
-      const [metric] = available.splice(index, 1);
+    return samples.map((sample, index) => {
+      const metric = this.operationMetrics[index];
+      if (metric === undefined || metric.command !== sample.command || !metric.complete) return sample;
       return {
         ...sample,
         serviceMsExcludingQueue: metric!.serviceMs,
@@ -749,7 +781,11 @@ export class DaemonBenchmarkDiagnostics {
   }
 
   complete(samples: readonly BenchmarkSampleEvidence[]): boolean {
-    return samples.every((sample) => sample.diagnosticMatched);
+    return (
+      this.operationMetrics.length === samples.length &&
+      this.operationMetrics.every((metric) => metric.complete) &&
+      samples.every((sample) => sample.diagnosticMatched)
+    );
   }
 
   private static maximumOptional(values: readonly (number | undefined)[]): number | undefined {

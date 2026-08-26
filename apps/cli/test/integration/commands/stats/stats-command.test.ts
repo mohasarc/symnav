@@ -5,12 +5,23 @@ import { afterEach, describe, expect, it } from "vitest";
 import { SCHEMA_VERSION, UsageAggregator, type UsageEvent } from "@symnav/telemetry";
 import { buildProgram } from "../../../../src/program.js";
 import type { ProgramContext } from "../../../../src/program-context.js";
-import { fakeDependencies } from "../helpers/fake-program-dependencies.js";
+import {
+  createCapturingRecorder,
+  fakeDependencies,
+  type FakeDependenciesOverrides,
+} from "../helpers/fake-program-dependencies.js";
 import { BufferStream } from "../helpers/fake-program-context.js";
 
-async function parse(argv: readonly string[], stateDir: string): Promise<CommandResult> {
+async function parse(
+  argv: readonly string[],
+  stateDir: string,
+  overrides: FakeDependenciesOverrides = {},
+): Promise<CommandResult> {
   const context = createStatsProgramContext();
-  const program = buildProgram(context, fakeDependencies({ stateDirectory: stateDir }));
+  const program = buildProgram(
+    context,
+    fakeDependencies({ stateDirectory: stateDir, ...overrides }),
+  );
   try {
     await program.parseAsync([...argv], { from: "user" });
   } catch (error) {
@@ -167,18 +178,32 @@ describe("symnav stats", () => {
     const stateDir = tempStateDir(roots);
     const events = seededEvents();
     const usageFilePath = seedUsageLog(stateDir, events);
-    const lineCountBefore = lineCount(usageFilePath);
+    const recorder = createCapturingRecorder();
 
-    const result = await parse(["stats"], stateDir);
+    const result = await parse(["stats"], stateDir, {
+      recorder,
+      telemetryEnabled: true,
+      executionMode: "warm",
+    });
 
     expect(result.stderr).toBe("");
     expect(result.exitCodes).toEqual([]);
-    expect(lineCount(usageFilePath)).toBe(lineCountBefore + 1);
     expect(result.stdout).toContain("Total events: 6");
-    const recorded = JSON.parse(readFileSync(usageFilePath, "utf8").trim().split("\n").at(-1)!) as {
-      command: string;
-    };
-    expect(recorded.command).toBe("stats");
+    expect(recorder.events).toEqual([
+      expect.objectContaining({ command: "stats", executionMode: "warm", outcome: "success" }),
+    ]);
+
+    seedUsageLog(stateDir, [
+      ...events,
+      usageEvent({
+        command: "stats",
+        durationMs: 1,
+        outcome: "success",
+        symnavVersion: "0.3.0",
+        timestamp: 1_000,
+        workspaceId: "workspace-c",
+      }),
+    ]);
 
     const repeated = await parse(["stats"], stateDir);
 
@@ -214,12 +239,6 @@ function seedLegacyUsageLog(stateDir: string, events: readonly UsageEvent[]): st
     "utf8",
   );
   return usageFilePath;
-}
-
-function lineCount(filePath: string): number {
-  return readFileSync(filePath, "utf8")
-    .split("\n")
-    .filter((line) => line !== "").length;
 }
 
 function seededEvents(): readonly UsageEvent[] {

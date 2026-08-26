@@ -17,8 +17,35 @@ export function registerStatsCommand(
     .command("stats", { hidden: true })
     .option("--json", "emit JSON instead of text", false)
     .action((options: StatsOptions) => {
-      const events = new NodeUsageLogReader().read(usageLogPath(dependencies.stateDirectory));
+      const telemetryStartedAt = dependencies.clock.now();
+      const events = new NodeUsageLogReader()
+        .read(usageLogPath(dependencies.stateDirectory))
+        .filter((event) => event.command !== "stats");
       const summary = new UsageAggregator(events).aggregate();
       context.stdout.write(options.json ? renderStatsJson(summary) : renderStatsText(summary));
+      if (!dependencies.telemetryEnabled) return;
+      try {
+        const identity = dependencies.identity.resolve({
+          cwd: context.cwd,
+          workspaceRoot: undefined,
+        });
+        dependencies.recorder.record({
+          symnavVersion: dependencies.symnavVersion,
+          command: "stats",
+          timestamp: telemetryStartedAt,
+          durationMs: dependencies.clock.now() - telemetryStartedAt,
+          executionMode: dependencies.executionMode ?? "cold",
+          outcome: "success",
+          argShape: {
+            kind: "empty",
+            lengthBucket: "empty",
+            flags: options.json ? ["json"] : [],
+          },
+          workspaceId: identity.workspaceId,
+          machineId: identity.machineId,
+        });
+      } catch {
+        return;
+      }
     });
 }

@@ -219,12 +219,22 @@ class TestDiagnostics {
       return [
         { kind: "request-accepted", requestId, command: "overview" },
         { kind: "turn-started", requestId, queueWaitMs: 1 },
+        {
+          kind: "worker-completed",
+          requestId,
+          freshnessMs: 1,
+          navigationMs: 1,
+          renderMs: 1,
+          workerOutputMs: 1,
+        },
+        { kind: "response-spooled", requestId, rawBytes: 1, spoolMs: 1 },
         ...Array.from({ length: executionTerminals }, () => ({
           kind: "execution-terminal",
           requestId,
           serviceMs: 2,
           peakProcessRssBytes: 3,
         })),
+        { kind: "delivery-terminal", requestId, outcome: "delivered", deliveryMs: 1 },
       ];
     }).flat();
     writeFileSync(logPath, `${events.map((event) => JSON.stringify(event)).join("\n")}\n`);

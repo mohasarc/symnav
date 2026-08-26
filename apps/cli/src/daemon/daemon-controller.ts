@@ -117,6 +117,9 @@ export class DaemonController {
           return undefined;
         }
         if (observation.kind === "starting") return this.startingStatus(record);
+        if (observation.kind === "responsive" && observation.pong.activity === undefined) {
+          return this.startingStatus(record);
+        }
         return this.statusForObservation(observation);
       }
       const owner = this.registry.startupOwner(identity);

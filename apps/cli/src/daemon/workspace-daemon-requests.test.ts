@@ -767,6 +767,30 @@ describe("WorkspaceDaemon requests", () => {
     expect(workers).toHaveLength(2);
   });
 
+  it("reports worker replacement recovery from the main thread", async () => {
+    const initial = new ExecutorNavigationWorker(new ImmediateExecutor(), 1);
+    const replacement = new DeferredInitializationWorker(2);
+    const harness = await RequestHarness.start(undefined, {
+      navigationWorkerFactory: (generation) => (generation === 1 ? initial : replacement),
+    });
+    harnesses.push(harness);
+
+    initial.fail({ generation: 1, cause: "out-of-memory", errorName: "WorkerOom" });
+    await replacement.initializationStarted;
+
+    await expect(harness.ping()).resolves.toMatchObject({
+      kind: "pong",
+      activity: {
+        lifecycle: "recovering",
+        recoveryDetail: "worker-replacement",
+        workerGeneration: 2,
+      },
+    });
+
+    replacement.completeInitialization();
+    await waitUntil(async () => (await harness.ping()).kind === "pong");
+  });
+
   it("completes scheduled shedding before the next queued worker turn", async () => {
     const policy = DaemonResourcePolicy.fromSystemMemory(1024 * 1024 * 1024);
     let residentMemoryBytes = 0;
@@ -795,7 +819,11 @@ describe("WorkspaceDaemon requests", () => {
     expect(executor.startedCount).toBe(1);
     await expect(harness.ping()).resolves.toMatchObject({
       kind: "pong",
-      activity: { lifecycle: "recovering", queued: 1 },
+      activity: {
+        lifecycle: "recovering",
+        recoveryDetail: "resource-pressure",
+        queued: 1,
+      },
     });
 
     worker.allowRelease();
@@ -1633,14 +1661,15 @@ class ReleaseFailingNavigationWorker extends ExecutorNavigationWorker {
 }
 
 class DeferredInitializationWorker implements DaemonNavigationWorker {
-  readonly generation = 1;
+  readonly generation: number;
   readonly exited = new Promise<DaemonNavigationWorkerExit>(() => undefined);
   readonly initializationStarted: Promise<void>;
   private resolveInitializationStarted!: () => void;
   private resolveReady!: (response: DaemonNavigationWorkerResponse) => void;
   private readonly ready: Promise<DaemonNavigationWorkerResponse>;
 
-  constructor() {
+  constructor(generation = 1) {
+    this.generation = generation;
     this.initializationStarted = new Promise((resolve) => {
       this.resolveInitializationStarted = resolve;
     });

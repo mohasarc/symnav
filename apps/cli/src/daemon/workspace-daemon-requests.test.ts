@@ -706,6 +706,86 @@ describe("WorkspaceDaemon requests", () => {
     await expect(harness.ping()).resolves.toMatchObject({ state: "ready" });
   });
 
+  it("sheds pressure first observed at turn completion before the next turn", async () => {
+    const policy = DaemonResourcePolicy.fromSystemMemory(1024 * 1024 * 1024);
+    let residentMemoryBytes = 0;
+    const executor = new SerializedExecutor();
+    const worker = new ReleaseGatedNavigationWorker(executor);
+    const harness = await RequestHarness.start(undefined, {
+      navigationWorker: worker,
+      resourcePolicy: policy,
+      resourceCheckIntervalMs: 60_000,
+      residentMemoryBytes: () => residentMemoryBytes,
+    });
+    harnesses.push(harness);
+    const first = harness.execute("turn-complete-first", ["refs", "input"]);
+    await executor.started(1);
+    const second = harness.execute("queued-after-pressure", ["overview", "input.ts"]);
+    await waitUntil(async () => {
+      const response = await harness.ping();
+      return response.kind === "pong" && response.queued === 1;
+    });
+
+    residentMemoryBytes = policy.record.softProcessRssBytes + 1;
+    executor.complete(0);
+    await worker.releaseStarted;
+    expect(worker.releaseCount).toBe(1);
+    expect(executor.startedCount).toBe(1);
+
+    worker.allowRelease();
+    await executor.started(2);
+    executor.complete(1);
+    await expect(Promise.all([first, second])).resolves.toEqual([
+      expect.objectContaining({ kind: "result-end", requestId: "turn-complete-first" }),
+      expect.objectContaining({ kind: "result-end", requestId: "queued-after-pressure" }),
+    ]);
+    await expect(harness.stop()).resolves.toMatchObject({ kind: "stopped" });
+    await expect(harness.exited).resolves.toBe(0);
+  });
+
+  it("replaces a failed turn-completion shed before the queued turn", async () => {
+    const policy = DaemonResourcePolicy.fromSystemMemory(1024 * 1024 * 1024);
+    let residentMemoryBytes = 0;
+    const firstExecutor = new SerializedExecutor();
+    const replacementExecutor = new RecordingExecutor();
+    const workers: ExecutorNavigationWorker[] = [];
+    const harness = await RequestHarness.start(undefined, {
+      navigationWorkerFactory: (generation) => {
+        const worker =
+          generation === 1
+            ? new ReleaseFailingNavigationWorker(firstExecutor, generation)
+            : new ExecutorNavigationWorker(replacementExecutor, generation);
+        workers.push(worker);
+        return worker;
+      },
+      resourcePolicy: policy,
+      resourceCheckIntervalMs: 60_000,
+      residentMemoryBytes: () => residentMemoryBytes,
+    });
+    harnesses.push(harness);
+    const first = harness.execute("failed-turn-complete-shed", ["refs", "input"]);
+    await firstExecutor.started(1);
+    const second = harness.execute("queued-after-replacement", ["overview", "input.ts"]);
+
+    residentMemoryBytes = policy.record.softProcessRssBytes + 1;
+    firstExecutor.complete(0);
+    await waitUntil(() => workers.length === 2);
+
+    await expect(first).resolves.toMatchObject({
+      kind: "result-end",
+      requestId: "failed-turn-complete-shed",
+    });
+    await expect(second).resolves.toMatchObject({
+      kind: "result-end",
+      requestId: "queued-after-replacement",
+    });
+    expect(firstExecutor.requests).toHaveLength(1);
+    expect(replacementExecutor.requests).toHaveLength(1);
+    expect(workers.map((worker) => worker.generation)).toEqual([1, 2]);
+    await expect(harness.stop()).resolves.toMatchObject({ kind: "stopped" });
+    await expect(harness.exited).resolves.toBe(0);
+  });
+
   it("recovers one real worker old-generation exhaustion during warm-up", async () => {
     const generations: number[] = [];
     const { daemon, harness, lease } = RequestHarness.create(undefined, {

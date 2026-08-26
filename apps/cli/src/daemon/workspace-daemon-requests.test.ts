@@ -719,6 +719,34 @@ describe("WorkspaceDaemon requests", () => {
     );
   });
 
+  it("expires disconnected traces without expiring resumable results", async () => {
+    const executor = new SerializedExecutor();
+    const harness = await RequestHarness.start(executor, { operationTraceRetentionMs: 10 });
+    harnesses.push(harness);
+    const disconnected = await harness.admit("expired-trace", ["overview", "input.ts"]);
+    await executor.started(1);
+    disconnected.disconnect();
+    executor.complete(0);
+    await waitUntil(async () => (await harness.status("expired-trace")).status.state === "completed");
+    await waitUntil(() => harness.retainedOperationTraceCount() === 0);
+
+    const resumed = await harness.fetch("expired-trace");
+    const completed = await resumed.terminal;
+    if (completed.kind !== "result-end") throw new Error("Expected completed result");
+    await harness.acknowledge("expired-trace", completed.transferId);
+
+    expect(executor.requests).toHaveLength(1);
+    await waitUntil(() =>
+      harness.logEvents().some((event) => event.kind === "client-reattached"),
+    );
+    expect(harness.logEvents()).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ kind: "delivery-terminal", outcome: "disconnected" }),
+        expect.objectContaining({ kind: "client-reattached" }),
+      ]),
+    );
+  });
+
   it("releases retained request traces during shutdown", async () => {
     const harness = await RequestHarness.start(new ImmediateExecutor());
     harnesses.push(harness);
@@ -1297,6 +1325,9 @@ class RequestHarness {
       ...(options.completionSpoolStorage === undefined
         ? {}
         : { completionSpoolStorage: options.completionSpoolStorage }),
+      ...(options.operationTraceRetentionMs === undefined
+        ? {}
+        : { operationTraceRetentionMs: options.operationTraceRetentionMs }),
       ...(options.resourcePolicy === undefined ? {} : { resourcePolicy: options.resourcePolicy }),
       ...(options.resourceCheckIntervalMs === undefined
         ? {}
@@ -1434,6 +1465,7 @@ interface RequestHarnessOptions {
   readonly startupHeartbeatIntervalMs?: number;
   readonly completionSpoolLimits?: WorkspaceDaemonOptions["completionSpoolLimits"];
   readonly completionSpoolStorage?: WorkspaceDaemonOptions["completionSpoolStorage"];
+  readonly operationTraceRetentionMs?: number;
 }
 
 class RequestTransport {

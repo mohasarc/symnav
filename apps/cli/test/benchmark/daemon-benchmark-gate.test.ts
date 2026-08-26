@@ -68,6 +68,13 @@ class BenchmarkEvidence {
     ["rss-limit", (input) => ({ ...input, processRssPeakBytes: input.hardProcessRssBytes })],
     ["telemetry-count", (input) => ({ ...input, actualTelemetryCount: 10 })],
     ["missing-sample", (input) => ({ ...input, samples: input.samples.slice(1) })],
+    [
+      "missing-sample",
+      (input) => ({
+        ...input,
+        samples: input.samples.map((sample) => ({ ...sample, repetition: 0 })),
+      }),
+    ],
     ["missing-artifact", (input) => ({ ...input, artifactComplete: false })],
     ["spool-leak", (input) => ({ ...input, spoolBytesAfterCleanup: 1 })],
     ["identity-discontinuity", (input) => ({ ...input, finalInstanceId: "replacement" })],

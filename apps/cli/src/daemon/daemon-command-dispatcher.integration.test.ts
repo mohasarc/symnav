@@ -1,4 +1,6 @@
-import { resolve } from "node:path";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import type { CliExecutionRequest, CommandExecutionResult } from "../command-execution-result.js";
 import type { ProgramDependencies } from "../program-dependencies.js";
@@ -6,87 +8,91 @@ import {
   DaemonCommandDispatcher,
   type DaemonDispatchRuntime,
 } from "./daemon-command-dispatcher.js";
-import {
-  DAEMON_PROTOCOL_VERSION,
-  DAEMON_RECORD_SCHEMA_VERSION,
-  type DaemonRecord,
-  type DaemonResponse,
-} from "./daemon-protocol.js";
+import { type DaemonRecord, type DaemonRequest, type DaemonResponse } from "./daemon-protocol.js";
+import type {
+  DaemonProcess,
+  DaemonProcessLauncher,
+  DaemonProcessTerminator,
+} from "./daemon-process-launcher.js";
+import { DaemonRegistry } from "./daemon-registry.js";
+import { DaemonStartupCoordinator } from "./daemon-startup-coordinator.js";
+import { DaemonWorkspaceIdentity } from "./daemon-workspace-identity.js";
+import type { LocalDaemonTransport } from "./local-daemon-transport.js";
 
 const workspaceRoot = resolve("reference-workspace");
 const REFERENCE_WORKSPACE_FILE_COUNT = 4_000;
 
 describe("DaemonCommandDispatcher startup routing", () => {
   it("finishes concurrent reference-workspace calls cold behind one independent startup barrier", async () => {
-    const barrier = new StartupBarrier();
-    let record: DaemonRecord | undefined;
-    let daemonStarts = 0;
-    const coldExecute = vi.fn(async (request: CliExecutionRequest) =>
-      result(`cold:${request.argv[1] ?? "unknown"}`),
-    );
-    const trigger = vi.fn(async () => {
-      if (record?.state === "starting") {
-        return { status: "starting", instanceId: record.instanceId, pid: record.pid } as const;
-      }
-      daemonStarts += 1;
-      record = daemonRecord("warming", "starting");
-      await barrier.wait();
-      record = daemonRecord("warming", "ready");
-      return { status: "launched", instanceId: record.instanceId, pid: record.pid } as const;
-    });
-    const runtime: DaemonDispatchRuntime = {
-      coordinator: { trigger },
-      registry: {
-        read: () => record,
-        removeIfProcess: () => false,
-      },
-      observer: {
-        observe: async (observedRecord) => ({
-          kind: "responsive",
-          record: observedRecord,
-          pong: {
-            kind: "pong",
-            protocolVersion: observedRecord.protocolVersion,
-            instanceId: observedRecord.instanceId,
-            symnavVersion: observedRecord.symnavVersion,
-            state: "ready",
-            fileCount: REFERENCE_WORKSPACE_FILE_COUNT,
-          },
-        }),
-      },
-      transport: {
-        request: async (_endpoint, daemonRequest): Promise<DaemonResponse> => ({
-          kind: "result",
-          requestId: daemonRequest.kind === "execute" ? daemonRequest.requestId : "unexpected",
-          result: result("warm"),
-        }),
-      },
-    };
-    const dispatcher = createDispatcher(runtime, coldExecute);
-    const requests = Array.from({ length: 24 }, (_, index) => ({
-      argv: ["overview", `src/module-${String(index).padStart(4, "0")}.ts`],
-      cwd: workspaceRoot,
-      telemetryEnabled: false,
-    }));
+    const stateDirectory = mkdtempSync(join(tmpdir(), "symnav-routing-barrier-"));
+    try {
+      const barrier = new StartupBarrier();
+      const identity = DaemonWorkspaceIdentity.from(workspaceRoot, stateDirectory);
+      const registry = new DaemonRegistry(identity.registryDirectory);
+      const processTerminator = new LiveTestProcessTerminator();
+      const launcher = new BarrierDaemonLauncher(registry, identity, processTerminator, barrier);
+      const coordinator = new DaemonStartupCoordinator(
+        registry,
+        launcher,
+        new RegistryDaemonTransport(registry, identity) as unknown as LocalDaemonTransport,
+        { pollIntervalMs: 1, processTerminator },
+      );
+      const coldExecute = vi.fn(async (request: CliExecutionRequest) =>
+        result(`cold:${request.argv[1] ?? "unknown"}`),
+      );
+      const runtime: DaemonDispatchRuntime = {
+        coordinator,
+        registry,
+        observer: {
+          observe: async (record) => ({
+            kind: "responsive",
+            record,
+            pong: {
+              kind: "pong",
+              protocolVersion: record.protocolVersion,
+              instanceId: record.instanceId,
+              symnavVersion: record.symnavVersion,
+              state: "ready",
+              fileCount: REFERENCE_WORKSPACE_FILE_COUNT,
+            },
+          }),
+        },
+        transport: {
+          request: async (_endpoint, daemonRequest): Promise<DaemonResponse> => ({
+            kind: "result",
+            requestId: daemonRequest.kind === "execute" ? daemonRequest.requestId : "unexpected",
+            result: result("warm"),
+          }),
+        },
+      };
+      const dispatcher = createDispatcher(runtime, coldExecute, stateDirectory);
+      const requests = Array.from({ length: 24 }, (_, index) => ({
+        argv: ["overview", `src/module-${String(index).padStart(4, "0")}.ts`],
+        cwd: workspaceRoot,
+        telemetryEnabled: false,
+      }));
 
-    const coldResults = await Promise.all(requests.map((request) => dispatcher.execute(request)));
+      const coldResults = await Promise.all(requests.map((request) => dispatcher.execute(request)));
 
-    expect(coldResults.map(({ mode }) => mode)).toEqual(Array(24).fill("cold"));
-    expect(coldExecute).toHaveBeenCalledTimes(24);
-    expect(daemonStarts).toBe(1);
-    expect(record?.state).toBe("starting");
+      expect(coldResults.map(({ mode }) => mode)).toEqual(Array(24).fill("cold"));
+      expect(coldExecute).toHaveBeenCalledTimes(24);
+      expect(launcher.launchCount).toBe(1);
+      expect(registry.read(identity)?.state).toBe("starting");
 
-    await expect(dispatcher.execute(requests[0]!)).resolves.toMatchObject({ mode: "cold" });
-    expect(trigger).toHaveBeenCalledTimes(24);
+      await expect(dispatcher.execute(requests[0]!)).resolves.toMatchObject({ mode: "cold" });
+      expect(launcher.launchCount).toBe(1);
 
-    barrier.release();
-    await vi.waitFor(() => expect(record?.state).toBe("ready"));
+      barrier.release();
+      await vi.waitFor(() => expect(registry.read(identity)?.state).toBe("ready"));
 
-    await expect(dispatcher.execute(requests[0]!)).resolves.toEqual({
-      mode: "warm",
-      result: result("warm"),
-    });
-    expect(coldExecute).toHaveBeenCalledTimes(25);
+      await expect(dispatcher.execute(requests[0]!)).resolves.toEqual({
+        mode: "warm",
+        result: result("warm"),
+      });
+      expect(coldExecute).toHaveBeenCalledTimes(25);
+    } finally {
+      rmSync(stateDirectory, { recursive: true, force: true });
+    }
   });
 });
 
@@ -109,9 +115,99 @@ class StartupBarrier {
   }
 }
 
+class BarrierDaemonLauncher implements DaemonProcessLauncher {
+  readonly symnavVersion = "0.1.0";
+  readonly memoryCapBytes = 1024;
+  launchCount = 0;
+  private readonly pid = 12_345;
+
+  constructor(
+    private readonly registry: DaemonRegistry,
+    private readonly identity: DaemonWorkspaceIdentity,
+    private readonly processTerminator: LiveTestProcessTerminator,
+    private readonly barrier: StartupBarrier,
+  ) {}
+
+  async launch(
+    _identity: DaemonWorkspaceIdentity,
+    instanceId: string,
+    _processToken: string,
+  ): Promise<DaemonProcess> {
+    this.launchCount += 1;
+    this.processTerminator.alive.add(this.pid);
+    void this.barrier.wait().then(() => this.publishReady(instanceId));
+    return {
+      pid: this.pid,
+      exited: new Promise<never>(() => {}),
+      terminate: async () => {
+        this.processTerminator.alive.delete(this.pid);
+      },
+    };
+  }
+
+  private publishReady(instanceId: string): void {
+    const starting = this.registry.readStoredInstance(this.identity, instanceId);
+    if (starting?.state !== "starting") return;
+    const ready: DaemonRecord = {
+      ...starting,
+      state: "ready" as const,
+      readyAt: 2,
+      fileCount: REFERENCE_WORKSPACE_FILE_COUNT,
+    };
+    this.registry.writeIfStartupOwner(this.identity, ready);
+    this.registry.removeStartupLockIfProcess(this.identity, ready);
+  }
+}
+
+class LiveTestProcessTerminator implements DaemonProcessTerminator {
+  readonly alive = new Set<number>([process.pid]);
+
+  isAlive(pid: number): boolean {
+    return this.alive.has(pid);
+  }
+
+  async terminate(pid: number): Promise<void> {
+    this.alive.delete(pid);
+  }
+}
+
+class RegistryDaemonTransport {
+  constructor(
+    private readonly registry: DaemonRegistry,
+    private readonly identity: DaemonWorkspaceIdentity,
+  ) {}
+
+  async request(_endpoint: string, request: DaemonRequest): Promise<DaemonResponse> {
+    const record = this.registry.readStoredInstance(this.identity, request.instanceId);
+    if (record === undefined) throw new Error("Missing daemon record");
+    if (request.kind === "identify") {
+      return {
+        kind: "identity",
+        instanceId: record.instanceId,
+        processToken: record.processToken,
+        pid: record.pid,
+        startedAt: record.startedAt,
+      };
+    }
+    if (request.kind === "ping") {
+      return {
+        kind: "pong",
+        protocolVersion: record.protocolVersion,
+        instanceId: record.instanceId,
+        symnavVersion: record.symnavVersion,
+        state: record.state,
+        startedAt: record.startedAt,
+        ...(record.fileCount === undefined ? {} : { fileCount: record.fileCount }),
+      };
+    }
+    throw new Error(`Unexpected startup request ${request.kind}`);
+  }
+}
+
 function createDispatcher(
   runtime: DaemonDispatchRuntime,
   coldExecute: (request: CliExecutionRequest) => Promise<CommandExecutionResult>,
+  stateDirectory: string,
 ): DaemonCommandDispatcher {
   return new DaemonCommandDispatcher({
     createDependencies: () =>
@@ -119,34 +215,12 @@ function createDispatcher(
         symnavVersion: "0.1.0",
         recorder: { record: () => {} },
       }) as unknown as ProgramDependencies,
-    stateDirectory: "/state",
+    stateDirectory,
     resolveWorkspaceRoot: async () => workspaceRoot,
     runtimeFactory: () => runtime,
     executorFactory: () => ({ execute: coldExecute }),
     requestId: () => "expected-request",
   });
-}
-
-function daemonRecord(instanceId: string, state: "starting" | "ready"): DaemonRecord {
-  const base = {
-    schemaVersion: DAEMON_RECORD_SCHEMA_VERSION,
-    protocolVersion: DAEMON_PROTOCOL_VERSION,
-    symnavVersion: "0.1.0",
-    workspaceRoot,
-    workspaceKey: "key",
-    stateKey: "state-key",
-    identityKey: "identity-key",
-    instanceId,
-    processToken: `${instanceId}-process`,
-    endpoint: "/endpoint",
-    pid: 123,
-    state,
-    startedAt: 1,
-    memoryCapBytes: 1024,
-  } as const;
-  return state === "ready"
-    ? { ...base, state, readyAt: 2, fileCount: REFERENCE_WORKSPACE_FILE_COUNT }
-    : base;
 }
 
 function result(output: string): CommandExecutionResult {

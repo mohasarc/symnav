@@ -29,6 +29,7 @@ import {
   NodeDaemonNavigationWorker,
 } from "./daemon-navigation-worker.js";
 import { DaemonResourceMonitor } from "./daemon-resource-monitor.js";
+import type { DaemonNavigationWorkerResponse } from "./daemon-navigation-worker-protocol.js";
 import {
   DAEMON_STARTUP_TIMEOUT_MS,
   type DaemonRegistry,
@@ -48,6 +49,7 @@ export interface WorkspaceDaemonOptions {
   readonly registry: DaemonRegistry;
   readonly transport: LocalDaemonTransport;
   readonly navigationWorker?: DaemonNavigationWorker;
+  readonly navigationWorkerFactory?: (generation: number) => DaemonNavigationWorker;
   readonly now?: () => number;
   readonly exit?: (code: number) => void;
   readonly idleTimeoutMs?: number;
@@ -62,10 +64,20 @@ export interface WorkspaceDaemonOptions {
   readonly completionSpoolStorage?: CompletionSpoolStorage;
 }
 
+export interface DaemonWorkerGeneration {
+  readonly id: number;
+  readonly worker: DaemonNavigationWorker;
+  readonly ready: Promise<DaemonNavigationWorkerResponse>;
+}
+
 export class WorkspaceDaemon {
   private readonly now: () => number;
   private readonly exit: (code: number) => void;
-  private readonly navigationWorker: DaemonNavigationWorker;
+  private readonly initialNavigationWorker: DaemonNavigationWorker;
+  private readonly navigationWorkerFactory:
+    | ((generation: number) => DaemonNavigationWorker)
+    | undefined;
+  private workerGeneration: DaemonWorkerGeneration | undefined;
   private readonly requestQueue: WorkspaceRequestQueue;
   private readonly logger: DaemonLogger;
   private readonly lifetime: DaemonLifetime;
@@ -105,12 +117,16 @@ export class WorkspaceDaemon {
         : { storage: options.completionSpoolStorage }),
     });
     this.logger = new DaemonLogger(options.identity.logPath, { now: this.now });
-    this.navigationWorker =
-      options.navigationWorker ??
-      new NodeDaemonNavigationWorker({
-        generation: 1,
-        stateDirectory: options.identity.stateDirectory,
-      });
+    this.navigationWorkerFactory =
+      options.navigationWorkerFactory ??
+      (options.navigationWorker === undefined
+        ? (generation) =>
+            new NodeDaemonNavigationWorker({
+              generation,
+              stateDirectory: options.identity.stateDirectory,
+            })
+        : undefined);
+    this.initialNavigationWorker = options.navigationWorker ?? this.createNavigationWorker(1);
     this.exit = options.exit ?? ((code) => process.exit(code));
     this.lifetime = new DaemonLifetime(
       { now: this.now },
@@ -126,16 +142,6 @@ export class WorkspaceDaemon {
         ? {}
         : { residentMemoryBytes: options.residentMemoryBytes }),
       onExceeded: () => this.shutdown("resource", true),
-    });
-    void this.navigationWorker.exited.then((exit) => {
-      if (this.shutdownStarted) return;
-      this.shutdownFailureCode = "worker-exit";
-      this.logger.record({
-        kind: "failure",
-        operation: "worker-exit",
-        message: `${exit.cause}${exit.errorName === undefined ? "" : ` (${exit.errorName})`}`,
-      });
-      void this.shutdown("resource", true);
     });
   }
 
@@ -161,7 +167,8 @@ export class WorkspaceDaemon {
         this.options.identity.endpoint(this.options.instanceId),
         (request, send) => this.handle(request, send),
       );
-      const response = await this.navigationWorker.start(this.options.identity.workspaceRoot);
+      const generation = this.startWorkerGeneration(this.initialNavigationWorker);
+      const response = await generation.ready;
       if (response.kind !== "ready") throw new Error("Navigation worker did not become ready");
       this.workerReady = true;
       this.fileCount = response.fileCount;
@@ -257,7 +264,7 @@ export class WorkspaceDaemon {
   private async cleanupFailedStartup(startupLease: DaemonStartupLease | undefined): Promise<void> {
     this.shutdownStarted = true;
     try {
-      await this.navigationWorker.terminate();
+      await (this.workerGeneration?.worker ?? this.initialNavigationWorker).terminate();
     } catch {}
     try {
       await this.server?.close();
@@ -481,7 +488,11 @@ export class WorkspaceDaemon {
         async () => {
           spool = await this.completionSpools.create(request.requestId);
           this.acceptedRequests.markRunning(request.requestId, this.now());
-          const response = await this.navigationWorker.execute(
+          const generation = this.workerGeneration;
+          if (generation === undefined) throw new Error("Navigation worker is unavailable");
+          const ready = await generation.ready;
+          if (ready.kind !== "ready") throw new Error("Navigation worker did not become ready");
+          const response = await generation.worker.execute(
             request.requestId,
             request.request,
             spool,
@@ -693,14 +704,14 @@ export class WorkspaceDaemon {
 
   private async gracefullyShutdownWorker(): Promise<void> {
     await this.requestQueue.drain();
-    const gracefulClose = this.navigationWorker.drainAndClose();
+    const gracefulClose = this.currentNavigationWorker().drainAndClose();
     await Promise.race([gracefulClose, this.forceEscalated.then(() => this.forceWorkerShutdown())]);
   }
 
   private forceWorkerShutdown(): Promise<void> {
     if (this.forcedWorkerShutdown !== undefined) return this.forcedWorkerShutdown;
     this.requestQueue.close();
-    this.forcedWorkerShutdown = this.navigationWorker
+    this.forcedWorkerShutdown = this.currentNavigationWorker()
       .terminate()
       .then(() => this.requestQueue.drain());
     this.resolveForceEscalated();
@@ -709,6 +720,39 @@ export class WorkspaceDaemon {
 
   private pause(): Promise<void> {
     return new Promise((resolve) => setTimeout(resolve, 10));
+  }
+
+  private createNavigationWorker(generation: number): DaemonNavigationWorker {
+    const worker = this.navigationWorkerFactory?.(generation);
+    if (worker === undefined) throw new Error("Navigation worker replacement is unavailable");
+    if (worker.generation !== generation) {
+      throw new Error("Navigation worker factory returned the wrong generation");
+    }
+    return worker;
+  }
+
+  private startWorkerGeneration(worker: DaemonNavigationWorker): DaemonWorkerGeneration {
+    const generation: DaemonWorkerGeneration = {
+      id: worker.generation,
+      worker,
+      ready: worker.start(this.options.identity.workspaceRoot),
+    };
+    this.workerGeneration = generation;
+    void worker.exited.then((exit) => {
+      if (this.shutdownStarted) return;
+      this.shutdownFailureCode = "worker-exit";
+      this.logger.record({
+        kind: "failure",
+        operation: "worker-exit",
+        message: `${exit.cause}${exit.errorName === undefined ? "" : ` (${exit.errorName})`}`,
+      });
+      void this.shutdown("resource", true);
+    });
+    return generation;
+  }
+
+  private currentNavigationWorker(): DaemonNavigationWorker {
+    return this.workerGeneration?.worker ?? this.initialNavigationWorker;
   }
 
   private static commandName(argv: readonly string[]): DaemonCommandName {

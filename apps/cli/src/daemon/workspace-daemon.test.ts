@@ -29,6 +29,7 @@ import {
   type DaemonServer,
 } from "./daemon-protocol.js";
 import { DaemonRegistry } from "./daemon-registry.js";
+import { DaemonResourcePolicy } from "./daemon-resource-monitor.js";
 import { DaemonWorkspaceIdentity } from "./daemon-workspace-identity.js";
 import { LocalDaemonTransport } from "./local-daemon-transport.js";
 import { WorkspaceDaemon } from "./workspace-daemon.js";
@@ -331,13 +332,16 @@ describe("WorkspaceDaemon runtime lifecycle", () => {
 
   it("force-closes active work without terminal output when resident memory exceeds the cap", async () => {
     let resourceExceeded = false;
+    const resourcePolicy = DaemonResourcePolicy.fromSystemMemory(512 * 1024 * 1024);
     const executor = new DeferredExecutor();
     const stdout = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
     const stderr = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
     const harness = await WorkspaceDaemonHarness.start(executor, {
       memoryCapBytes: 1,
+      resourcePolicy,
       resourceCheckIntervalMs: 5,
-      residentMemoryBytes: () => (resourceExceeded ? 2 : 0),
+      residentMemoryBytes: () =>
+        resourceExceeded ? resourcePolicy.record.hardProcessRssBytes + 1 : 0,
     });
     harnesses.push(harness);
     const activeRequest = harness.execute("resource-active");
@@ -372,6 +376,7 @@ describe("WorkspaceDaemon runtime lifecycle", () => {
 interface RuntimeOptions {
   readonly idleTimeoutMs?: number;
   readonly memoryCapBytes?: number;
+  readonly resourcePolicy?: DaemonResourcePolicy;
   readonly resourceCheckIntervalMs?: number;
   readonly residentMemoryBytes?: () => number;
   readonly transport?: LocalDaemonTransport;

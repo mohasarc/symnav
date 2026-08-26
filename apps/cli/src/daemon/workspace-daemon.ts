@@ -6,6 +6,7 @@ import {
 } from "./accepted-request-ledger.js";
 import type {
   DaemonActivitySnapshot,
+  DaemonDeliveryOutcome,
   DaemonExecutionFailureCode,
   DaemonExecutionServerFrame,
   DaemonRecord,
@@ -367,6 +368,7 @@ export class WorkspaceDaemon {
         });
       });
       this.acceptedRequests.acknowledge(request.requestId);
+      this.completeOperationTrace(request.requestId, "delivered");
       return {
         kind: "result-acknowledged",
         instanceId: this.options.instanceId,
@@ -530,7 +532,7 @@ export class WorkspaceDaemon {
     }
     if (entry.state.state === "failed") {
       await this.deliver(send, this.failedFrame(request.requestId, entry.state.code));
-      this.operationTraces.get(request.requestId)?.deliveryTerminated("delivered");
+      this.completeOperationTrace(request.requestId, "delivered");
       return;
     }
     let unsubscribe: (() => void) | undefined;
@@ -540,7 +542,7 @@ export class WorkspaceDaemon {
         unsubscribe?.();
       } else if (updated.state.state === "failed") {
         void this.deliver(send, this.failedFrame(request.requestId, updated.state.code))
-          .then(() => this.operationTraces.get(request.requestId)?.deliveryTerminated("delivered"))
+          .then(() => this.completeOperationTrace(request.requestId, "delivered"))
           .catch((error) => this.recordDeliveryFailure(request.requestId, error));
         unsubscribe?.();
       }
@@ -714,7 +716,7 @@ export class WorkspaceDaemon {
       });
       this.acceptedRequests.invalidateCompletion(requestId, "internal", this.now());
       await this.deliver(send, this.failedFrame(requestId, "internal"));
-      this.operationTraces.get(requestId)?.deliveryTerminated("failed");
+      this.completeOperationTrace(requestId, "failed");
     }
   }
 
@@ -776,6 +778,20 @@ export class WorkspaceDaemon {
       failureCode: "internal",
       errorName: DaemonLogger.errorName(error),
     });
+  }
+
+  private completeOperationTrace(requestId: string, outcome: DaemonDeliveryOutcome): void {
+    const trace = this.operationTraces.get(requestId);
+    if (trace === undefined) return;
+    trace.deliveryTerminated(outcome);
+    this.operationTraces.delete(requestId);
+  }
+
+  private completeRetainedOperationTraces(): void {
+    for (const trace of this.operationTraces.values()) {
+      trace.deliveryTerminated("disconnected");
+    }
+    this.operationTraces.clear();
   }
 
   private async drainAndShutdown(reason: "idle"): Promise<void> {
@@ -850,6 +866,7 @@ export class WorkspaceDaemon {
         errorName: DaemonLogger.errorName(error),
       });
     });
+    this.completeRetainedOperationTraces();
     await this.logger.close();
     this.exit(0);
   }

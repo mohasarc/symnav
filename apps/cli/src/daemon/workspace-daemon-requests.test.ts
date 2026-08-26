@@ -230,6 +230,80 @@ describe("WorkspaceDaemon requests", () => {
     await second;
   });
 
+  it("executes disconnected active and queued accepted requests once in FIFO order", async () => {
+    const executor = new SerializedExecutor();
+    const harness = await RequestHarness.start(executor);
+    harnesses.push(harness);
+
+    const first = await harness.admit("first", ["overview", "first.ts"]);
+    await executor.started(1);
+    const second = await harness.admit("second", ["overview", "second.ts"]);
+    first.disconnect();
+    second.disconnect();
+
+    executor.complete(0);
+    await executor.started(2);
+    executor.complete(1);
+    await waitUntil(async () => (await harness.status("second")).status.state === "completed");
+
+    expect(executor.requests.map((execution) => execution.argv.at(-1))).toEqual([
+      "first.ts",
+      "second.ts",
+    ]);
+    expect(first.frames).toHaveLength(1);
+    expect(second.frames).toHaveLength(1);
+  });
+
+  it("attaches identical duplicate identifiers without duplicate execution", async () => {
+    const executor = new SerializedExecutor();
+    const harness = await RequestHarness.start(executor);
+    harnesses.push(harness);
+
+    const first = await harness.admit("duplicate", ["overview", "input.ts"]);
+    await executor.started(1);
+    const duplicate = await harness.admit("duplicate", ["overview", "input.ts"]);
+    const corrupted = await harness.admit("duplicate", ["overview", "other.ts"]);
+    executor.complete(0);
+    await Promise.all([first.terminal, duplicate.terminal]);
+
+    expect(executor.startedCount).toBe(1);
+    expect(first.frames.map((frame) => frame.kind)).toEqual(["accepted", "completed"]);
+    expect(duplicate.frames.map((frame) => frame.kind)).toEqual(["accepted", "completed"]);
+    expect(corrupted.frames).toEqual([
+      expect.objectContaining({ kind: "rejected", retrySafe: false }),
+    ]);
+  });
+
+  it("reports unknown, queued, running, completed, and failed execution status", async () => {
+    const executor = new SerializedExecutor();
+    const harness = await RequestHarness.start(executor);
+    harnesses.push(harness);
+
+    expect((await harness.status("missing")).status).toEqual({ state: "unknown" });
+    const active = await harness.admit("active");
+    await executor.started(1);
+    expect((await harness.status("active")).status).toMatchObject({ state: "running" });
+    const queued = await harness.admit("queued");
+    expect((await harness.status("queued")).status).toMatchObject({
+      state: "queued",
+      queuePosition: 1,
+    });
+    executor.complete(0);
+    await executor.started(2);
+    executor.complete(1);
+    await Promise.all([active.terminal, queued.terminal]);
+    expect((await harness.status("active")).status).toEqual({ state: "completed" });
+
+    const failedHarness = await RequestHarness.start(new RejectingExecutor());
+    harnesses.push(failedHarness);
+    const failed = await failedHarness.admit("failed");
+    await failed.terminal;
+    expect((await failedHarness.status("failed")).status).toEqual({
+      state: "failed",
+      code: "internal",
+    });
+  });
+
   it("reports active command and queued count while worker execution is blocked", async () => {
     const executor = new SerializedExecutor();
     const harness = await RequestHarness.start(executor);

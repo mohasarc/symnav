@@ -1,9 +1,23 @@
 import type { CliExecutionRequest } from "../command-execution-result.js";
 import type { CompletionSpoolManifest } from "./completion-spool.js";
 import type { CommandOutputStream } from "../command-execution-result.js";
+import type { BackendRefreshSummary } from "@symnav/core";
 
 export const DAEMON_PROTOCOL_VERSION = 4;
 export const DAEMON_RECORD_SCHEMA_VERSION = 2;
+export const DAEMON_DIAGNOSTIC_SCHEMA_VERSION = 1;
+
+export type DaemonCommandName =
+  | "overview"
+  | "resolve"
+  | "def"
+  | "refs"
+  | "context"
+  | "graph"
+  | "stats"
+  | "help"
+  | "version"
+  | "unknown";
 
 export interface DaemonIdentityCoordinates {
   readonly workspaceRoot: string;
@@ -164,6 +178,112 @@ export interface DaemonResultAcknowledgement {
   readonly requestId: string;
   readonly transferId: string;
 }
+
+export interface DaemonWorkerPhaseDurations {
+  readonly freshnessMs: number;
+  readonly navigationMs: number;
+  readonly renderMs: number;
+  readonly workerOutputMs: number;
+}
+
+export type DaemonExecutionOutcome = "completed" | "failed";
+export type DaemonDeliveryOutcome = "delivered" | "disconnected" | "failed";
+
+export type DaemonOperationDiagnostic =
+  | {
+      readonly kind: "request-accepted";
+      readonly requestId: string;
+      readonly command: DaemonCommandName;
+      readonly queueDepth: number;
+      readonly workerGeneration: number;
+    }
+  | {
+      readonly kind: "turn-started";
+      readonly requestId: string;
+      readonly queueWaitMs: number;
+      readonly workerGeneration: number;
+    }
+  | ({
+      readonly kind: "worker-completed";
+      readonly requestId: string;
+    } & DaemonWorkerPhaseDurations &
+      BackendRefreshSummary)
+  | {
+      readonly kind: "response-spooled";
+      readonly requestId: string;
+      readonly rawBytes: number;
+      readonly recordCount: number;
+      readonly spoolMs: number;
+    }
+  | {
+      readonly kind: "execution-terminal";
+      readonly requestId: string;
+      readonly outcome: DaemonExecutionOutcome;
+      readonly serviceMs: number;
+      readonly processRssBytes?: number;
+      readonly workerHeapUsedBytes?: number;
+      readonly spoolBytes?: number;
+    }
+  | { readonly kind: "client-disconnected"; readonly requestId: string }
+  | { readonly kind: "client-reattached"; readonly requestId: string }
+  | {
+      readonly kind: "delivery-terminal";
+      readonly requestId: string;
+      readonly outcome: DaemonDeliveryOutcome;
+      readonly deliveryMs: number;
+    };
+
+export type DaemonFailureOperation =
+  | "start"
+  | "request"
+  | "resource-sample"
+  | "resource-drain"
+  | "worker-exit"
+  | "worker-replacement"
+  | "completion-delivery"
+  | "completion-cleanup"
+  | "transport-close"
+  | "diagnostics-write"
+  | "diagnostics-rotation";
+
+export type DaemonDiagnosticErrorName =
+  | "Error"
+  | "TypeError"
+  | "RangeError"
+  | "SyntaxError"
+  | "ReferenceError"
+  | "DaemonNavigationWorkerExitedError"
+  | "CompletionSpoolCapacityError"
+  | "CompletionSpoolReadError"
+  | "UnknownError";
+
+export type DaemonDiagnosticFailureCode = DaemonExecutionFailureCode | "operation-failed";
+
+export type DaemonDiagnosticEvent =
+  | { readonly kind: "start" }
+  | { readonly kind: "ready"; readonly fileCount: number }
+  | { readonly kind: "acceptance"; readonly requestId: string; readonly queuePosition: number }
+  | {
+      readonly kind: "request";
+      readonly command: DaemonCommandName;
+      readonly durationMs: number;
+      readonly exitCode: number;
+    }
+  | {
+      readonly kind: "freshness";
+      readonly added: number;
+      readonly changed: number;
+      readonly removed: number;
+      readonly unchanged: number;
+    }
+  | { readonly kind: "stop"; readonly reason: DaemonStopReason }
+  | {
+      readonly kind: "failure";
+      readonly operation: DaemonFailureOperation;
+      readonly failureCode: DaemonDiagnosticFailureCode;
+      readonly errorName: DaemonDiagnosticErrorName;
+    }
+  | DaemonOperationDiagnostic;
 
 export type DaemonLogEvent =
   | { readonly kind: "start"; readonly workspaceRoot: string; readonly instanceId: string }

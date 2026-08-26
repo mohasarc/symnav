@@ -431,6 +431,62 @@ describe("symnav daemon status", () => {
     expect(registry.read(identity)).toMatchObject({ instanceId, processToken, pid });
   });
 
+  it("reports malformed authenticated activity without leaking or replacing ownership", async () => {
+    const stateDir = temporaryStateDirectory(stateDirectories);
+    const workspaceRoot = temporaryWorkspace(stateDirectories);
+    const instanceId = "malformed-activity";
+    const processToken = "malformed-activity-process";
+    const startedAt = Date.now();
+    const readyPath = join(stateDir, "malformed-activity-ready");
+    const secret = "/private/source/PaymentProcessor::charge?token=secret";
+    const identity = DaemonWorkspaceIdentity.from(workspaceRoot, canonicalStateDir(stateDir));
+    const child = spawnMalformedActivityDaemon(
+      identity.endpoint(instanceId),
+      instanceId,
+      processToken,
+      startedAt,
+      readyPath,
+      secret,
+    );
+    helperProcesses.push(child);
+    await waitUntil(() => existsSync(readyPath));
+    const pid = Number(readFileSync(readyPath, "utf8"));
+    daemonPids.push(pid);
+    const registry = new DaemonRegistry(identity.registryDirectory);
+    registry.write({
+      schemaVersion: DAEMON_RECORD_SCHEMA_VERSION,
+      protocolVersion: DAEMON_PROTOCOL_VERSION,
+      symnavVersion: "0.1.0",
+      workspaceRoot,
+      workspaceKey: identity.workspaceKey,
+      stateKey: identity.stateKey,
+      identityKey: identity.identityKey,
+      instanceId,
+      processToken,
+      endpoint: identity.endpoint(instanceId),
+      pid,
+      state: "ready",
+      startedAt,
+      readyAt: startedAt,
+      fileCount: 1,
+      memoryCapBytes: Number.MAX_SAFE_INTEGER,
+    });
+
+    const statusStartedAt = Date.now();
+    const status = runSymnavBinary(["daemon", "status", "--json"], {
+      cwd: tmpdir(),
+      env: { SYMNAV_STATE_DIR: stateDir },
+    });
+
+    expect(Date.now() - statusStartedAt).toBeLessThan(1_000);
+    expect(status.stdout).not.toContain(secret);
+    expect(JSON.parse(status.stdout)).toEqual({
+      schemaVersion: 1,
+      daemons: [expect.objectContaining({ state: "unresponsive", workspaceRoot, pid })],
+    });
+    expect(registry.read(identity)).toMatchObject({ instanceId, processToken, pid });
+  });
+
   it("returns the cold workspace error and exits after workspace deletion", async () => {
     const stateDir = temporaryStateDirectory(stateDirectories);
     const workspaceRoot = mkdtempSync(join(tmpdir(), "symnav-deleted-workspace-"));
@@ -561,6 +617,30 @@ function spawnLiveSilentDaemon(
       processToken,
       String(startedAt),
       readyPath,
+    ],
+    { stdio: "ignore" },
+  );
+}
+
+function spawnMalformedActivityDaemon(
+  endpoint: string,
+  instanceId: string,
+  processToken: string,
+  startedAt: number,
+  readyPath: string,
+  secret: string,
+): ChildProcess {
+  return spawn(
+    process.execPath,
+    [
+      fileURLToPath(new URL("../../../node_modules/tsx/dist/cli.mjs", import.meta.url)),
+      fileURLToPath(new URL("../../helpers/daemon-malformed-activity.ts", import.meta.url)),
+      endpoint,
+      instanceId,
+      processToken,
+      String(startedAt),
+      readyPath,
+      secret,
     ],
     { stdio: "ignore" },
   );

@@ -1,36 +1,71 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { daemonMemoryCapBytes, DaemonResourceMonitor } from "./daemon-resource-monitor.js";
+import { describe, expect, it } from "vitest";
+import {
+  DAEMON_RESOURCE_SAMPLE_INTERVAL_MS,
+  DaemonResourcePolicy,
+} from "./daemon-resource-monitor.js";
 
-describe("daemonMemoryCapBytes", () => {
-  it("uses one quarter of total RAM within fixed bounds", () => {
-    const mebibyte = 1024 * 1024;
-    expect(daemonMemoryCapBytes(512 * mebibyte)).toBe(256 * mebibyte);
-    expect(daemonMemoryCapBytes(8 * 1024 * mebibyte)).toBe(2 * 1024 * mebibyte);
-    expect(daemonMemoryCapBytes(64 * 1024 * mebibyte)).toBe(4 * 1024 * mebibyte);
-  });
-});
+const MEBIBYTE = 1024 * 1024;
+const GIBIBYTE = 1024 * MEBIBYTE;
 
-describe("DaemonResourceMonitor", () => {
-  beforeEach(() => vi.useFakeTimers());
-  afterEach(() => vi.useRealTimers());
+describe("DaemonResourcePolicy", () => {
+  it.each([
+    {
+      memory: 256 * MEBIBYTE,
+      hard: 256 * MEBIBYTE,
+      soft: 204 * MEBIBYTE,
+      resume: 179 * MEBIBYTE,
+      worker: 128,
+    },
+    {
+      memory: 512 * MEBIBYTE,
+      hard: 256 * MEBIBYTE,
+      soft: 204 * MEBIBYTE,
+      resume: 179 * MEBIBYTE,
+      worker: 128,
+    },
+    {
+      memory: GIBIBYTE,
+      hard: 512 * MEBIBYTE,
+      soft: 409 * MEBIBYTE,
+      resume: 358 * MEBIBYTE,
+      worker: 256,
+    },
+    {
+      memory: 16 * GIBIBYTE,
+      hard: 8 * GIBIBYTE,
+      soft: 6553 * MEBIBYTE,
+      resume: 5734 * MEBIBYTE,
+      worker: 4096,
+    },
+    {
+      memory: 64 * GIBIBYTE,
+      hard: 8 * GIBIBYTE,
+      soft: 6553 * MEBIBYTE,
+      resume: 5734 * MEBIBYTE,
+      worker: 4096,
+    },
+  ])("derives bounded thresholds from $memory bytes", ({ memory, hard, soft, resume, worker }) => {
+    const record = DaemonResourcePolicy.fromSystemMemory(memory).record;
 
-  it("stops once when RSS breaches the cap", async () => {
-    let rss = 99;
-    const onExceeded = vi.fn(async () => undefined);
-    const monitor = new DaemonResourceMonitor({
-      memoryCapBytes: 100,
-      intervalMs: 10,
-      residentMemoryBytes: () => rss,
-      onExceeded,
+    expect(record).toEqual({
+      effectiveMemoryBytes: memory,
+      hardProcessRssBytes: hard,
+      softProcessRssBytes: soft,
+      resumeProcessRssBytes: resume,
+      workerMaxOldGenerationSizeMb: worker,
     });
+  });
 
-    monitor.start();
-    await vi.advanceTimersByTimeAsync(10);
-    expect(onExceeded).not.toHaveBeenCalled();
-    rss = 101;
-    await vi.advanceTimersByTimeAsync(10);
-    expect(onExceeded).toHaveBeenCalledOnce();
-    await vi.advanceTimersByTimeAsync(20);
-    expect(onExceeded).toHaveBeenCalledOnce();
+  it("prefers a smaller positive constrained-memory limit", () => {
+    expect(DaemonResourcePolicy.fromSystemMemory(64 * GIBIBYTE, GIBIBYTE).record).toEqual(
+      DaemonResourcePolicy.fromSystemMemory(GIBIBYTE).record,
+    );
+    expect(DaemonResourcePolicy.fromSystemMemory(GIBIBYTE, 16 * GIBIBYTE).record).toEqual(
+      DaemonResourcePolicy.fromSystemMemory(GIBIBYTE).record,
+    );
+  });
+
+  it("uses a 250 millisecond supervision interval", () => {
+    expect(DAEMON_RESOURCE_SAMPLE_INTERVAL_MS).toBe(250);
   });
 });

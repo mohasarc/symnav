@@ -38,6 +38,48 @@ export interface DaemonCompletionSpoolStoreOptions {
   readonly inlineBytes?: number;
   readonly maximumResultBytes?: number;
   readonly maximumAggregateBytes?: number;
+  readonly storage?: CompletionSpoolStorage;
+}
+
+export interface CompletionSpoolFile {
+  write(bytes: Uint8Array): Promise<unknown>;
+  sync(): Promise<void>;
+  close(): Promise<void>;
+}
+
+export interface CompletionSpoolStorage {
+  ensureDirectory(path: string): Promise<void>;
+  createFile(path: string): Promise<CompletionSpoolFile>;
+  records(path: string): AsyncIterable<CommandOutputRecord>;
+  unlink(path: string): Promise<void>;
+  removeInstance(path: string): Promise<void>;
+}
+
+export class NodeCompletionSpoolStorage implements CompletionSpoolStorage {
+  async ensureDirectory(path: string): Promise<void> {
+    await mkdir(path, { recursive: true, mode: 0o700 });
+    const metadata = await lstat(path);
+    if (metadata.isSymbolicLink() || !metadata.isDirectory()) {
+      throw new Error("Completion spool directory is unsafe");
+    }
+    await chmod(path, 0o700);
+  }
+
+  createFile(path: string): Promise<FileHandle> {
+    return open(path, "wx", 0o600);
+  }
+
+  records(path: string): AsyncIterable<CommandOutputRecord> {
+    return OrderedCommandOutput.decodeFileRecords(path);
+  }
+
+  async unlink(path: string): Promise<void> {
+    await unlink(path);
+  }
+
+  async removeInstance(path: string): Promise<void> {
+    await rm(path, { recursive: true, force: true });
+  }
 }
 
 interface CompletionSpoolOptions {
@@ -50,6 +92,9 @@ interface CompletionSpoolOptions {
   readonly release: (bytes: number) => void;
   readonly complete: () => void;
   readonly remove: () => void;
+  readonly releaseCompletion: () => void;
+  readonly cleanupComplete: () => void;
+  readonly storage: CompletionSpoolStorage;
 }
 
 export class CompletionSpoolCapacityError extends Error {
@@ -59,15 +104,24 @@ export class CompletionSpoolCapacityError extends Error {
   }
 }
 
+export class CompletionSpoolReadError extends Error {
+  constructor(cause: unknown) {
+    super(cause instanceof Error ? cause.message : String(cause), { cause });
+    this.name = "CompletionSpoolReadError";
+  }
+}
+
 export class CompletionSpool {
   private readonly hash = createHash("sha256");
   private readonly inlineRecords: CommandOutputRecord[] = [];
-  private file: FileHandle | undefined;
+  private file: CompletionSpoolFile | undefined;
   private filePath: string | undefined;
   private rawBytes = 0;
   private recordCount = 0;
   private terminal = false;
-  private removed = false;
+  private ownershipReleased = false;
+  private cleanupFinished = false;
+  private disposal: Promise<void> | undefined;
   private manifest: CompletionSpoolManifest | undefined;
 
   constructor(private readonly options: CompletionSpoolOptions) {}
@@ -113,21 +167,25 @@ export class CompletionSpool {
     if (this.terminal) throw new Error("Completion spool is already terminal");
     if (!Number.isSafeInteger(exitCode) || exitCode < 0)
       throw new Error("Invalid command exit code");
-    await this.file?.sync();
-    await this.file?.close();
-    this.file = undefined;
-    this.terminal = true;
-    this.manifest = {
-      transferId: this.options.identity.transferId,
-      requestId: this.options.requestId,
-      instanceId: this.options.identity.instanceId,
-      exitCode,
-      rawBytes: this.rawBytes,
-      recordCount: this.recordCount,
-      sha256: this.hash.digest("hex"),
-    };
-    this.options.complete();
-    return this.manifest;
+    try {
+      await this.file?.sync();
+      await this.closeFile();
+      this.terminal = true;
+      this.manifest = {
+        transferId: this.options.identity.transferId,
+        requestId: this.options.requestId,
+        instanceId: this.options.identity.instanceId,
+        exitCode,
+        rawBytes: this.rawBytes,
+        recordCount: this.recordCount,
+        sha256: this.hash.digest("hex"),
+      };
+      this.options.complete();
+      return this.manifest;
+    } catch (error) {
+      this.terminal = true;
+      return this.disposeAfterFailure(error);
+    }
   }
 
   async *read(offset: number): AsyncIterable<CommandOutputRecord> {
@@ -140,9 +198,13 @@ export class CompletionSpool {
     const records =
       this.filePath === undefined
         ? this.inlineRecords
-        : OrderedCommandOutput.decodeFileRecords(this.filePath);
-    for await (const record of records) {
-      if (record.sequence >= offset) yield record;
+        : this.options.storage.records(this.filePath);
+    try {
+      for await (const record of records) {
+        if (record.sequence >= offset) yield record;
+      }
+    } catch (error) {
+      throw new CompletionSpoolReadError(error);
     }
   }
 
@@ -152,18 +214,14 @@ export class CompletionSpool {
   }
 
   async dispose(): Promise<void> {
-    if (this.removed) return;
-    this.removed = true;
-    await this.file?.close();
-    this.file = undefined;
-    if (this.filePath !== undefined) {
-      await unlink(this.filePath).catch((error: NodeJS.ErrnoException) => {
-        if (error.code !== "ENOENT") throw error;
-      });
+    if (this.cleanupFinished) return;
+    if (this.disposal !== undefined) return this.disposal;
+    this.disposal = this.performDispose();
+    try {
+      await this.disposal;
+    } finally {
+      this.disposal = undefined;
     }
-    this.inlineRecords.length = 0;
-    this.options.release(this.rawBytes);
-    this.options.remove();
   }
 
   private async failCapacity(): Promise<never> {
@@ -173,23 +231,63 @@ export class CompletionSpool {
 
   private async spillInlineRecords(): Promise<void> {
     const instanceDirectory = join(this.options.directory, this.options.identity.instanceId);
-    await CompletionSpool.ensureDirectory(this.options.directory);
-    await CompletionSpool.ensureDirectory(instanceDirectory);
+    await this.options.storage.ensureDirectory(this.options.directory);
+    await this.options.storage.ensureDirectory(instanceDirectory);
     this.filePath = join(instanceDirectory, `${this.options.identity.transferId}.spool`);
-    this.file = await open(this.filePath, "wx", 0o600);
+    this.file = await this.options.storage.createFile(this.filePath);
     for (const record of this.inlineRecords) {
       await this.file.write(OrderedCommandOutput.encodeRecord(record));
     }
     this.inlineRecords.length = 0;
   }
 
-  private static async ensureDirectory(path: string): Promise<void> {
-    await mkdir(path, { recursive: true, mode: 0o700 });
-    const metadata = await lstat(path);
-    if (metadata.isSymbolicLink() || !metadata.isDirectory()) {
-      throw new Error("Completion spool directory is unsafe");
+  private async closeFile(): Promise<void> {
+    if (this.file === undefined) return;
+    await this.file.close();
+    this.file = undefined;
+  }
+
+  private async performDispose(): Promise<void> {
+    this.terminal = true;
+    let cleanupError: unknown;
+    try {
+      await this.closeFile();
+    } catch (error) {
+      cleanupError = error;
     }
-    await chmod(path, 0o700);
+    if (this.filePath !== undefined) {
+      try {
+        await this.options.storage.unlink(this.filePath);
+        this.filePath = undefined;
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code === "ENOENT") this.filePath = undefined;
+        else cleanupError ??= error;
+      }
+    }
+    this.releaseOwnership();
+    if (this.file === undefined && this.filePath === undefined) {
+      this.cleanupFinished = true;
+      this.options.cleanupComplete();
+    }
+    if (cleanupError !== undefined) throw cleanupError;
+  }
+
+  private releaseOwnership(): void {
+    if (this.ownershipReleased) return;
+    this.ownershipReleased = true;
+    this.inlineRecords.length = 0;
+    this.options.release(this.rawBytes);
+    this.options.releaseCompletion();
+    this.options.remove();
+  }
+
+  private async disposeAfterFailure(error: unknown): Promise<never> {
+    try {
+      await this.dispose();
+    } catch (cleanupError) {
+      throw new AggregateError([error, cleanupError], "Completion spool operation and cleanup failed");
+    }
+    throw error;
   }
 }
 
@@ -198,8 +296,10 @@ export class DaemonCompletionSpoolStore {
   private readonly inlineBytes: number;
   private readonly maximumResultBytes: number;
   private readonly maximumAggregateBytes: number;
+  private readonly storage: CompletionSpoolStorage;
   private rawBytes = 0;
   private completionCount = 0;
+  private readonly pendingCleanup = new Set<CompletionSpool>();
 
   constructor(private readonly options: DaemonCompletionSpoolStoreOptions) {
     DaemonCompletionSpoolStore.validateIdentity(options.instanceId);
@@ -207,6 +307,7 @@ export class DaemonCompletionSpoolStore {
     this.maximumResultBytes = options.maximumResultBytes ?? COMMAND_OUTPUT_LIMIT_BYTES;
     this.maximumAggregateBytes =
       options.maximumAggregateBytes ?? DAEMON_COMPLETION_SPOOL_LIMIT_BYTES;
+    this.storage = options.storage ?? new NodeCompletionSpoolStorage();
   }
 
   async create(requestId: string): Promise<CompletionSpool> {
@@ -234,10 +335,18 @@ export class DaemonCompletionSpoolStore {
       remove: () => {
         if (this.spools.get(requestId) !== spool) return;
         this.spools.delete(requestId);
-        if (completionCounted) this.completionCount -= 1;
       },
+      releaseCompletion: () => {
+        if (completionCounted) this.completionCount -= 1;
+        completionCounted = false;
+      },
+      cleanupComplete: () => {
+        this.pendingCleanup.delete(spool);
+      },
+      storage: this.storage,
     });
     this.spools.set(requestId, spool);
+    this.pendingCleanup.add(spool);
     return spool;
   }
 
@@ -251,8 +360,14 @@ export class DaemonCompletionSpoolStore {
 
   async cleanupInstance(instanceId: string): Promise<void> {
     if (instanceId !== this.options.instanceId) return;
-    for (const spool of [...this.spools.values()]) await spool.dispose();
-    await rm(join(this.options.directory, instanceId), { recursive: true, force: true });
+    const failures: unknown[] = [];
+    for (const spool of [...this.pendingCleanup]) {
+      await spool.dispose().catch((error) => failures.push(error));
+    }
+    await this.storage
+      .removeInstance(join(this.options.directory, instanceId))
+      .catch((error) => failures.push(error));
+    if (failures.length > 0) throw new AggregateError(failures, "Completion spool cleanup failed");
   }
 
   async cleanupConfirmedDeadInstance(instanceId: string): Promise<void> {

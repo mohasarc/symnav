@@ -1,4 +1,4 @@
-import { closeSync, mkdirSync, openSync } from "node:fs";
+import { mkdirSync } from "node:fs";
 import { tmpdir, totalmem } from "node:os";
 import { fileURLToPath } from "node:url";
 import { spawn } from "node:child_process";
@@ -151,22 +151,15 @@ export class NodeDaemonProcessLauncher implements DaemonProcessLauncher {
     const encodedConfiguration = Buffer.from(JSON.stringify(configuration)).toString("base64url");
     const daemonEntryPath = fileURLToPath(new URL("./daemon-entry.js", import.meta.url));
     mkdirSync(identity.identityDirectory, { recursive: true, mode: 0o700 });
-    const logDescriptor = openSync(identity.logPath, "a", 0o600);
 
     return new Promise((resolve, reject) => {
       let processSpawned = false;
-      let logClosed = false;
       let exitResolved = false;
       let resolveExit: (exit: DaemonProcessExit) => void = () => undefined;
       const exited = new Promise<DaemonProcessExit>((exitResolve) => {
         resolveExit = exitResolve;
       });
-      const closeLog = (): void => {
-        if (logClosed) return;
-        logClosed = true;
-        closeSync(logDescriptor);
-      };
-      const publishExit = (exit: DaemonProcessExit): void => {
+      const settleExit = (exit: DaemonProcessExit): void => {
         if (exitResolved) return;
         exitResolved = true;
         resolveExit(exit);
@@ -174,22 +167,25 @@ export class NodeDaemonProcessLauncher implements DaemonProcessLauncher {
       const child = spawn(process.execPath, [daemonEntryPath, encodedConfiguration], {
         cwd: tmpdir(),
         detached: true,
-        stdio: ["ignore", logDescriptor, logDescriptor],
+        stdio: ["ignore", "ignore", "ignore"],
         env: { ...process.env, SYMNAV_STATE_DIR: stateDirectory },
       });
       child.once("error", (error) => {
-        closeLog();
-        publishExit({ code: null, signal: null, cause: "spawn-error", errorName: error.name });
+        settleExit({
+          code: null,
+          signal: null,
+          cause: "spawn-error",
+          errorName: error.name,
+        });
         if (!processSpawned) reject(error);
       });
       child.once("spawn", () => {
         processSpawned = true;
-        closeLog();
         child.unref();
         resolve(new SpawnedDaemonProcess(child.pid!, exited, this.terminator));
       });
       child.once("exit", (code, signal) => {
-        publishExit({ code, signal, cause: "exit" });
+        settleExit({ code, signal, cause: "exit" });
       });
     });
   }

@@ -78,7 +78,12 @@ describe("persistent daemon resource pressure", () => {
     );
     processes.push(child);
     const childOutput = captureChildOutput(child);
-    await waitUntil(() => existsSync(`${readyPath}.boot`));
+    await Promise.race([
+      waitUntil(() => existsSync(`${readyPath}.boot`)),
+      childOutput.then((output) => {
+        throw new Error(`Pressure daemon exited before boot: ${JSON.stringify(output)}`);
+      }),
+    ]);
     const daemonPid = Number(readFileSync(`${readyPath}.boot`, "utf8"));
     const record: DaemonRecord = {
       schemaVersion: DAEMON_RECORD_SCHEMA_VERSION,
@@ -136,7 +141,7 @@ describe("persistent daemon resource pressure", () => {
     expect(readFileSync(executionOrderPath, "utf8").trim().split("\n")).toEqual([
       "overview active.ts@1",
       "overview queued-one.ts@2",
-      "overview queued-two.ts@2",
+      "overview queued-two.ts@3",
     ]);
     expect(queuedOneResult).toEqual({
       status: 0,
@@ -145,7 +150,7 @@ describe("persistent daemon resource pressure", () => {
     });
     expect(queuedTwoResult).toEqual({
       status: 0,
-      stdout: "worker generation 2\n",
+      stdout: "worker generation 3\n",
       stderr: "",
     });
     expect(registry.read(identity)).toMatchObject({ pid: daemonPid, instanceId, processToken });

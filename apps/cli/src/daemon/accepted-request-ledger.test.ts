@@ -53,6 +53,9 @@ describe("AcceptedRequestLedger", () => {
       completedAt: 30,
       resultId: "result",
     });
+    expect(ledger.hasUnacknowledgedCompletions).toBe(true);
+    ledger.acknowledge("request");
+    expect(ledger.hasUnacknowledgedCompletions).toBe(false);
     expect(ledger.status("request")).toEqual({ state: "completed" });
   });
 

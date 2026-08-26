@@ -105,6 +105,7 @@ export class WorkspaceDaemon {
   private readonly forceEscalated: Promise<void>;
   private resolveForceEscalated!: () => void;
   private readonly resourceInterruptedRequests = new Set<string>();
+  private readonly completionDeliveries = new Map<string, Promise<void>>();
   private workerRecoveryOperation: Promise<void> | undefined;
 
   constructor(private readonly options: WorkspaceDaemonOptions) {
@@ -161,7 +162,7 @@ export class WorkspaceDaemon {
       scheduleAtTurnBoundary: (operation) => this.requestQueue.scheduleAtTurnBoundary(operation),
       releaseTransientResources: () => this.releaseTransientResources(),
       replaceWorker: (cause) => this.replaceNavigationWorker(cause),
-      drain: () => this.shutdown("resource", true),
+      drain: () => this.initiateResourceDrain(),
     });
   }
 
@@ -491,9 +492,7 @@ export class WorkspaceDaemon {
     let unsubscribe: (() => void) | undefined;
     unsubscribe = this.acceptedRequests.subscribe(request.requestId, (updated) => {
       if (updated.state.state === "completed") {
-        void this.deliverStoredCompletion(request.requestId, send).catch((error) =>
-          this.recordDeliveryFailure(error),
-        );
+        this.trackCompletionDelivery(request.requestId, send);
         unsubscribe?.();
       } else if (updated.state.state === "failed") {
         void this.deliver(send, this.failedFrame(request.requestId, updated.state.code)).catch(
@@ -510,35 +509,38 @@ export class WorkspaceDaemon {
     const requestStartedAt = this.now();
     let spool: CompletionSpool | undefined;
     try {
-      const result = await this.requestQueue.enqueue(
+      await this.requestQueue.enqueue(
         {
           requestId: request.requestId,
           command: WorkspaceDaemon.commandName(request.request.argv),
           acceptedAt: this.now(),
         },
         async () => {
-          spool = await this.completionSpools.create(request.requestId);
-          this.acceptedRequests.markRunning(request.requestId, this.now());
-          const generation = this.workerGeneration;
-          if (generation === undefined) throw new Error("Navigation worker is unavailable");
-          const ready = await generation.ready;
-          if (ready.kind !== "ready") throw new Error("Navigation worker did not become ready");
-          const response = await generation.worker.execute(
-            request.requestId,
-            request.request,
-            spool,
-          );
-          if (response.kind !== "result" || response.requestId !== request.requestId) {
-            throw new Error("Navigation worker returned an uncorrelated result");
+          try {
+            spool = await this.completionSpools.create(request.requestId);
+            this.acceptedRequests.markRunning(request.requestId, this.now());
+            const generation = this.workerGeneration;
+            if (generation === undefined) throw new Error("Navigation worker is unavailable");
+            const ready = await generation.ready;
+            if (ready.kind !== "ready") throw new Error("Navigation worker did not become ready");
+            const response = await generation.worker.execute(
+              request.requestId,
+              request.request,
+              spool,
+            );
+            if (response.kind !== "result" || response.requestId !== request.requestId) {
+              throw new Error("Navigation worker returned an uncorrelated result");
+            }
+            this.logger.record({ kind: "freshness", ...response.refresh });
+            await spool.finish(response.result.exitCode);
+            await this.recordCompletion(request, requestStartedAt, response.result);
+            this.acceptedRequests.complete(request.requestId, request.requestId, this.now());
+            await this.completionDeliveries.get(request.requestId);
+          } finally {
+            this.scheduleTurnCompleteResourceSample();
           }
-          this.logger.record({ kind: "freshness", ...response.refresh });
-          return response.result;
         },
       );
-      if (spool === undefined) throw new Error("Completion spool was not created");
-      await spool.finish(result.exitCode);
-      await this.recordCompletion(request, requestStartedAt, result);
-      this.acceptedRequests.complete(request.requestId, request.requestId, this.now());
     } catch (error) {
       this.logger.record({
         kind: "failure",
@@ -565,15 +567,23 @@ export class WorkspaceDaemon {
       });
       this.acceptedRequests.fail(request.requestId, code, this.now());
     } finally {
-      await this.resourceSupervisor.sample("turn-complete").catch((error) => {
+      if (this.requestQueue.isIdle) this.lifetime.queueBecameIdle();
+    }
+  }
+
+  private scheduleTurnCompleteResourceSample(): void {
+    void this.requestQueue
+      .scheduleAtTurnBoundary(() => this.resourceSupervisor.sample("turn-complete"))
+      .catch((error) => {
         this.logger.record({
           kind: "failure",
           operation: "resource-sample",
           message: WorkspaceDaemon.errorMessage(error),
         });
+      })
+      .finally(() => {
+        if (this.requestQueue.isIdle) this.lifetime.queueBecameIdle();
       });
-      if (this.requestQueue.isIdle) this.lifetime.queueBecameIdle();
-    }
   }
 
   private async recordCompletion(
@@ -652,6 +662,18 @@ export class WorkspaceDaemon {
     }
   }
 
+  private trackCompletionDelivery(requestId: string, send: DaemonServerSend): void {
+    const delivery = this.deliverStoredCompletion(requestId, send).catch((error) =>
+      this.recordDeliveryFailure(error),
+    );
+    this.completionDeliveries.set(requestId, delivery);
+    void delivery.finally(() => {
+      if (this.completionDeliveries.get(requestId) === delivery) {
+        this.completionDeliveries.delete(requestId);
+      }
+    });
+  }
+
   private async deliverCompletion(
     requestId: string,
     spool: CompletionSpool,
@@ -700,6 +722,23 @@ export class WorkspaceDaemon {
   private async drainAndShutdown(reason: "idle"): Promise<void> {
     await this.requestQueue.drain();
     await this.shutdown(reason);
+  }
+
+  private async initiateResourceDrain(): Promise<void> {
+    const acknowledgementDeadline = Date.now() + 250;
+    while (
+      this.acceptedRequests.hasUnacknowledgedCompletions &&
+      Date.now() < acknowledgementDeadline
+    ) {
+      await new Promise((resolve) => setTimeout(resolve, 5));
+    }
+    void this.shutdown("resource", true).catch((error) => {
+      this.logger.record({
+        kind: "failure",
+        operation: "resource-drain",
+        message: WorkspaceDaemon.errorMessage(error),
+      });
+    });
   }
 
   private async shutdown(

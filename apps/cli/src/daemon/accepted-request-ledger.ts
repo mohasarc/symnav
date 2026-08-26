@@ -39,6 +39,13 @@ export class AcceptedRequestLedger {
     return this.entries.size;
   }
 
+  get hasUnacknowledgedCompletions(): boolean {
+    for (const entry of this.entries.values()) {
+      if (entry.state.state === "completed" && !this.acknowledged.has(entry.requestId)) return true;
+    }
+    return false;
+  }
+
   accept(requestId: string, request: CliExecutionRequest): AcceptedRequestEntry {
     const requestFingerprint = AcceptedRequestLedger.fingerprint(request);
     const existing = this.entries.get(requestId);

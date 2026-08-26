@@ -742,7 +742,11 @@ describe("WorkspaceDaemon requests", () => {
     await harness.acknowledge("expired-trace", completed.transferId);
 
     expect(executor.requests).toHaveLength(1);
-    await waitUntil(() => harness.logEvents().some((event) => event.kind === "client-reattached"));
+    await waitUntil(
+      () =>
+        harness.logEvents().filter((event) => event.kind === "client-reattached").length === 1 &&
+        harness.logEvents().filter((event) => event.kind === "delivery-terminal").length === 1,
+    );
     expect(harness.logEvents()).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ kind: "operation-trace-expired" }),

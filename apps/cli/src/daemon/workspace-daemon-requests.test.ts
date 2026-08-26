@@ -856,8 +856,12 @@ describe("WorkspaceDaemon requests", () => {
     await executor.started(1);
     initial.disconnect();
 
-    const reattached = await harness.admit("reattached-active", ["overview", "input.ts"]);
-    reattached.disconnect();
+    const firstReattached = await harness.admit("reattached-active", ["overview", "input.ts"]);
+    const secondReattached = await harness.admit("reattached-active", ["overview", "input.ts"]);
+    firstReattached.disconnect();
+    await new Promise((resolve) => setTimeout(resolve, 40));
+    expect(harness.retainedOperationTraceCount()).toBe(1);
+    secondReattached.disconnect();
 
     await waitUntil(
       () =>
@@ -876,9 +880,9 @@ describe("WorkspaceDaemon requests", () => {
     await harness.acknowledge("reattached-active", completed.transferId);
 
     expect(executor.requests).toHaveLength(1);
-    expect(harness.logEvents().filter((event) => event.kind === "client-disconnected")).toHaveLength(
-      2,
-    );
+    expect(
+      harness.logEvents().filter((event) => event.kind === "client-disconnected"),
+    ).toHaveLength(2);
     expect(harness.logEvents().filter((event) => event.kind === "client-reattached")).toHaveLength(
       2,
     );

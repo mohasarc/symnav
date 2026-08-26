@@ -124,6 +124,7 @@ export class WorkspaceDaemon {
   private readonly completionDeliveries = new Map<string, Promise<void>>();
   private readonly operationTraces = new Map<string, DaemonOperationTrace>();
   private readonly operationTraceExpirations = new Map<string, NodeJS.Timeout>();
+  private readonly operationTraceConnections = new Map<string, number>();
   private workerRecoveryOperation: Promise<void> | undefined;
 
   constructor(private readonly options: WorkspaceDaemonOptions) {
@@ -358,10 +359,17 @@ export class WorkspaceDaemon {
     }
     if (request.kind === "execute") return this.acceptExecution(request, send);
     if (request.kind === "result-fetch") {
+      let disconnectTraceConnection: (() => void) | undefined;
       if (this.acceptedRequests.entryFor(request.requestId)?.state.state === "completed") {
         this.reattachOperationTrace(request.requestId);
+        disconnectTraceConnection = this.attachOperationTraceConnection(request.requestId, send);
       }
-      await this.deliverStoredCompletion(request.requestId, send, request.offset);
+      try {
+        await this.deliverStoredCompletion(request.requestId, send, request.offset);
+      } catch (error) {
+        disconnectTraceConnection?.();
+        throw error;
+      }
       return;
     }
     if (request.kind === "result-ack") {
@@ -518,8 +526,8 @@ export class WorkspaceDaemon {
     }
     const acceptance = this.acceptances.get(request.requestId);
     if (acceptance === undefined) throw new Error("Accepted request is missing admission metadata");
+    const disconnectTraceConnection = this.attachOperationTraceConnection(request.requestId, send);
     if (existing === undefined) {
-      send.onClose(() => this.disconnectOperationTrace(request.requestId));
       this.lastNavigationAt = this.now();
       this.lifetime.navigationAccepted();
       void this.executeAccepted(request);
@@ -535,27 +543,39 @@ export class WorkspaceDaemon {
         ...acceptance,
       });
     } catch (error) {
-      this.disconnectOperationTrace(request.requestId);
+      disconnectTraceConnection();
       throw error;
     }
     if (entry.state.state === "completed") {
-      await this.deliverStoredCompletion(request.requestId, send);
+      try {
+        await this.deliverStoredCompletion(request.requestId, send);
+      } catch (error) {
+        disconnectTraceConnection();
+        throw error;
+      }
       return;
     }
     if (entry.state.state === "failed") {
-      await this.deliver(send, this.failedFrame(request.requestId, entry.state.code));
+      try {
+        await this.deliver(send, this.failedFrame(request.requestId, entry.state.code));
+      } catch (error) {
+        disconnectTraceConnection();
+        throw error;
+      }
       this.completeOperationTrace(request.requestId, "delivered");
       return;
     }
     let unsubscribe: (() => void) | undefined;
     unsubscribe = this.acceptedRequests.subscribe(request.requestId, (updated) => {
       if (updated.state.state === "completed") {
-        this.trackCompletionDelivery(request.requestId, send);
+        this.trackCompletionDelivery(request.requestId, send, disconnectTraceConnection);
         unsubscribe?.();
       } else if (updated.state.state === "failed") {
         void this.deliver(send, this.failedFrame(request.requestId, updated.state.code))
           .then(() => this.completeOperationTrace(request.requestId, "delivered"))
-          .catch((error) => this.recordDeliveryFailure(request.requestId, error));
+          .catch((error) =>
+            this.recordDeliveryFailure(request.requestId, error, disconnectTraceConnection),
+          );
         unsubscribe?.();
       }
     });
@@ -741,9 +761,13 @@ export class WorkspaceDaemon {
     }
   }
 
-  private trackCompletionDelivery(requestId: string, send: DaemonServerSend): void {
+  private trackCompletionDelivery(
+    requestId: string,
+    send: DaemonServerSend,
+    disconnectTraceConnection: () => void,
+  ): void {
     const delivery = this.deliverStoredCompletion(requestId, send).catch((error) =>
-      this.recordDeliveryFailure(requestId, error),
+      this.recordDeliveryFailure(requestId, error, disconnectTraceConnection),
     );
     this.completionDeliveries.set(requestId, delivery);
     void delivery.finally(() => {
@@ -791,8 +815,12 @@ export class WorkspaceDaemon {
     this.terminateOperationDelivery(requestId, "delivered");
   }
 
-  private recordDeliveryFailure(requestId: string, error: unknown): void {
-    this.disconnectOperationTrace(requestId);
+  private recordDeliveryFailure(
+    requestId: string,
+    error: unknown,
+    disconnectTraceConnection: () => void,
+  ): void {
+    disconnectTraceConnection();
     this.logger.record({
       kind: "failure",
       operation: "completion-delivery",
@@ -805,6 +833,7 @@ export class WorkspaceDaemon {
     const expiration = this.operationTraceExpirations.get(requestId);
     if (expiration !== undefined) clearTimeout(expiration);
     this.operationTraceExpirations.delete(requestId);
+    this.operationTraceConnections.delete(requestId);
     this.terminateOperationDelivery(requestId, outcome);
     this.operationTraces.delete(requestId);
   }
@@ -836,6 +865,25 @@ export class WorkspaceDaemon {
     this.enforceOperationTraceCapacity();
   }
 
+  private attachOperationTraceConnection(requestId: string, send: DaemonServerSend): () => void {
+    const connectionCount = this.operationTraceConnections.get(requestId) ?? 0;
+    this.operationTraceConnections.set(requestId, connectionCount + 1);
+    let connectionClosed = false;
+    const disconnect = (): void => {
+      if (connectionClosed) return;
+      connectionClosed = true;
+      const remainingConnections = (this.operationTraceConnections.get(requestId) ?? 1) - 1;
+      if (remainingConnections > 0) {
+        this.operationTraceConnections.set(requestId, remainingConnections);
+        return;
+      }
+      this.operationTraceConnections.delete(requestId);
+      this.disconnectOperationTrace(requestId);
+    };
+    send.onClose(disconnect);
+    return disconnect;
+  }
+
   private reattachOperationTrace(requestId: string): void {
     if (this.acceptedRequests.isDeliveryTerminated(requestId)) return;
     const expiration = this.operationTraceExpirations.get(requestId);
@@ -848,6 +896,7 @@ export class WorkspaceDaemon {
 
   private expireOperationTrace(requestId: string): void {
     this.operationTraceExpirations.delete(requestId);
+    this.operationTraceConnections.delete(requestId);
     if (!this.operationTraces.delete(requestId)) return;
     this.operationObserver.traceExpired(requestId);
   }

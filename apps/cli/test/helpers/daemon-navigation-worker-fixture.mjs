@@ -9,6 +9,7 @@ const pendingResults = new Map();
 
 parentPort.on("message", (message) => {
   if (message.kind === "initialize") {
+    if (workerData.mode === "initialize-heap-oom") exhaustOldGeneration();
     if (workerData.mode === "malformed") {
       parentPort.postMessage({ kind: "ready", generation, fileCount: "wrong" });
       return;
@@ -37,15 +38,7 @@ parentPort.on("message", (message) => {
       writeFileSync(`${workerData.requestStartedPath}.${executionCount}`, "started");
     }
     if (workerData.mode === "heap-oom") {
-      const retained = [];
-      while (true) {
-        retained.push(
-          Array.from({ length: 50_000 }, (_, index) => ({
-            index,
-            value: `${retained.length}:${index}`,
-          })),
-        );
-      }
+      exhaustOldGeneration();
     }
     if (workerData.mode === "external-pressure") {
       externalMemory = Buffer.alloc(192 * 1024 * 1024, 1);
@@ -106,3 +99,15 @@ parentPort.on("message", (message) => {
     parentPort.close();
   }
 });
+
+function exhaustOldGeneration() {
+  const retained = [];
+  while (true) {
+    retained.push(
+      Array.from({ length: 50_000 }, (_, index) => ({
+        index,
+        value: `${retained.length}:${index}`,
+      })),
+    );
+  }
+}

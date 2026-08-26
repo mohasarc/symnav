@@ -101,6 +101,7 @@ export class WorkspaceDaemon {
   private readonly forceEscalated: Promise<void>;
   private resolveForceEscalated!: () => void;
   private readonly resourceInterruptedRequests = new Set<string>();
+  private workerRecoveryOperation: Promise<void> | undefined;
 
   constructor(private readonly options: WorkspaceDaemonOptions) {
     this.forceEscalated = new Promise((resolve) => {
@@ -182,7 +183,7 @@ export class WorkspaceDaemon {
         (request, send) => this.handle(request, send),
       );
       const generation = this.startWorkerGeneration(this.initialNavigationWorker);
-      const response = await generation.ready;
+      const response = await this.waitForReadyGeneration(generation);
       if (response.kind !== "ready") throw new Error("Navigation worker did not become ready");
       this.workerReady = true;
       this.fileCount = response.fileCount;
@@ -785,13 +786,32 @@ export class WorkspaceDaemon {
       operation: "worker-exit",
       message: `${exit.cause}${exit.errorName === undefined ? "" : ` (${exit.errorName})`}`,
     });
-    void this.resourceSupervisor.workerExited(exit).catch((error) => {
+    const recovery = this.resourceSupervisor.workerExited(exit);
+    this.workerRecoveryOperation = recovery;
+    void recovery.catch((error) => {
       this.logger.record({
         kind: "failure",
         operation: "worker-replacement",
         message: WorkspaceDaemon.errorMessage(error),
       });
     });
+  }
+
+  private async waitForReadyGeneration(
+    generation: DaemonWorkerGeneration,
+  ): Promise<DaemonNavigationWorkerResponse> {
+    try {
+      return await generation.ready;
+    } catch (error) {
+      if (!(error instanceof DaemonNavigationWorkerExitedError)) throw error;
+      await generation.worker.exited;
+      const recovery = this.workerRecoveryOperation;
+      if (recovery === undefined) throw error;
+      await recovery;
+      const replacement = this.workerGeneration;
+      if (replacement === undefined || replacement.id === generation.id) throw error;
+      return replacement.ready;
+    }
   }
 
   private async replaceNavigationWorker(): Promise<number> {

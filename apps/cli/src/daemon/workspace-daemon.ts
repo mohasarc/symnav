@@ -33,7 +33,7 @@ import {
   type DaemonStartupLease,
 } from "./daemon-registry.js";
 import type { DaemonWorkspaceIdentity } from "./daemon-workspace-identity.js";
-import type { LocalDaemonTransport } from "./local-daemon-transport.js";
+import type { DaemonServerSend, LocalDaemonTransport } from "./local-daemon-transport.js";
 import { WorkspaceRequestQueue, type DaemonCommandName } from "./workspace-request-queue.js";
 
 export interface WorkspaceDaemonOptions {
@@ -266,7 +266,7 @@ export class WorkspaceDaemon {
 
   private async handle(
     request: DaemonRequest,
-    send: (response: DaemonServerMessage) => void,
+    send: DaemonServerSend,
   ): Promise<DaemonResponse | void> {
     if (request.kind === "identify") return this.identify(request);
     if (request.kind === "terminate" || request.kind === "kill") {
@@ -293,7 +293,7 @@ export class WorkspaceDaemon {
     if (request.kind === "result-fetch") {
       const spool = await this.completionSpools.open(request.requestId);
       if (spool === undefined) throw new Error("Accepted request completion is unavailable");
-      void this.deliverCompletion(request.requestId, spool, request.offset, send);
+      await this.deliverCompletion(request.requestId, spool, request.offset, send);
       return;
     }
     if (request.kind === "result-ack") {
@@ -387,10 +387,10 @@ export class WorkspaceDaemon {
     };
   }
 
-  private acceptExecution(
+  private async acceptExecution(
     request: Extract<DaemonRequest, { kind: "execute" }>,
-    send: (response: DaemonServerMessage) => void,
-  ): DaemonResponse | void {
+    send: DaemonServerSend,
+  ): Promise<DaemonResponse | void> {
     if (!this.workerReady) return this.rejection(request, "not-ready", true);
     if (this.requestQueue.state !== "accepting") {
       return this.rejection(request, "draining", true);
@@ -420,7 +420,12 @@ export class WorkspaceDaemon {
     }
     const acceptance = this.acceptances.get(request.requestId);
     if (acceptance === undefined) throw new Error("Accepted request is missing admission metadata");
-    this.deliver(send, {
+    if (existing === undefined) {
+      this.lastNavigationAt = this.now();
+      this.lifetime.navigationAccepted();
+      void this.executeAccepted(request);
+    }
+    await this.deliver(send, {
       kind: "accepted",
       instanceId: this.options.instanceId,
       processToken: this.options.processToken,
@@ -428,27 +433,25 @@ export class WorkspaceDaemon {
       ...acceptance,
     });
     if (entry.state.state === "completed") {
-      void this.deliverStoredCompletion(request.requestId, send);
+      await this.deliverStoredCompletion(request.requestId, send);
       return;
     }
     if (entry.state.state === "failed") {
-      this.deliver(send, this.failedFrame(request.requestId, entry.state.code));
+      await this.deliver(send, this.failedFrame(request.requestId, entry.state.code));
       return;
     }
     let unsubscribe: (() => void) | undefined;
     unsubscribe = this.acceptedRequests.subscribe(request.requestId, (updated) => {
       if (updated.state.state === "completed") {
-        void this.deliverStoredCompletion(request.requestId, send);
+        void this.deliverStoredCompletion(request.requestId, send).catch(() => undefined);
         unsubscribe?.();
       } else if (updated.state.state === "failed") {
-        this.deliver(send, this.failedFrame(request.requestId, updated.state.code));
+        void this.deliver(send, this.failedFrame(request.requestId, updated.state.code)).catch(
+          () => undefined,
+        );
         unsubscribe?.();
       }
     });
-    if (existing !== undefined) return;
-    this.lastNavigationAt = this.now();
-    this.lifetime.navigationAccepted();
-    void this.executeAccepted(request);
   }
 
   private async executeAccepted(
@@ -547,15 +550,13 @@ export class WorkspaceDaemon {
     };
   }
 
-  private deliver(send: (response: DaemonServerMessage) => void, frame: DaemonServerMessage): void {
-    try {
-      send(frame);
-    } catch {}
+  private deliver(send: DaemonServerSend, frame: DaemonServerMessage): Promise<void> {
+    return send(frame);
   }
 
   private async deliverStoredCompletion(
     requestId: string,
-    send: (response: DaemonServerMessage) => void,
+    send: DaemonServerSend,
   ): Promise<void> {
     const spool = await this.completionSpools.open(requestId);
     if (spool === undefined) throw new Error("Accepted request result is missing");
@@ -566,11 +567,11 @@ export class WorkspaceDaemon {
     requestId: string,
     spool: CompletionSpool,
     offset: number,
-    send: (response: DaemonServerMessage) => void,
+    send: DaemonServerSend,
   ): Promise<void> {
     const completedManifest = spool.completedManifest;
     if (completedManifest === undefined) throw new Error("Completion manifest is missing");
-    this.deliver(send, {
+    await this.deliver(send, {
       kind: "result-manifest",
       instanceId: this.options.instanceId,
       processToken: this.options.processToken,
@@ -578,7 +579,7 @@ export class WorkspaceDaemon {
       manifest: completedManifest,
     });
     for await (const record of spool.read(offset)) {
-      this.deliver(send, {
+      await this.deliver(send, {
         transferId: completedManifest.transferId,
         requestId,
         offset: record.sequence,
@@ -587,7 +588,7 @@ export class WorkspaceDaemon {
         bytes: record.bytes,
       });
     }
-    this.deliver(send, {
+    await this.deliver(send, {
       kind: "result-end",
       instanceId: this.options.instanceId,
       processToken: this.options.processToken,

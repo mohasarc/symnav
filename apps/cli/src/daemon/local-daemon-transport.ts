@@ -37,6 +37,8 @@ interface LocalDaemonTransportOptions {
   readonly outputInlineBytes?: number;
 }
 
+export type DaemonServerSend = (response: DaemonServerMessage) => Promise<void>;
+
 export type DaemonDeliveryState = "not-submitted" | "submitted-unconfirmed" | "accepted";
 
 export type DaemonTransportFailureCode =
@@ -796,10 +798,7 @@ export class LocalDaemonTransport {
 
   async listen(
     endpoint: string,
-    handler: (
-      request: DaemonRequest,
-      send: (response: DaemonServerMessage) => void,
-    ) => Promise<DaemonResponse | void>,
+    handler: (request: DaemonRequest, send: DaemonServerSend) => Promise<DaemonResponse | void>,
   ): Promise<DaemonServer> {
     if (process.platform !== "win32") {
       mkdirSync(dirname(endpoint), { recursive: true, mode: 0o700 });
@@ -843,23 +842,24 @@ export class LocalDaemonTransport {
 
   private serve(
     socket: Socket,
-    handler: (
-      request: DaemonRequest,
-      send: (response: DaemonServerMessage) => void,
-    ) => Promise<DaemonResponse | void>,
+    handler: (request: DaemonRequest, send: DaemonServerSend) => Promise<DaemonResponse | void>,
   ): void {
     const decoder = new DaemonFrameDecoder(this.maximumFrameBytes);
     let responses = Promise.resolve();
+    let writes = Promise.resolve();
+    const send: DaemonServerSend = (message) => {
+      const write = writes.then(() => this.writeServerMessage(socket, message));
+      writes = write;
+      return write;
+    };
     socket.on("data", (bytes) => {
       try {
         for (const value of decoder.append(Buffer.isBuffer(bytes) ? bytes : Buffer.from(bytes))) {
           LocalDaemonTransport.assertRequest(value);
           responses = responses
             .then(async () => {
-              const response = await handler(value, (serverFrame) => {
-                if (!socket.destroyed) this.writeServerMessage(socket, serverFrame);
-              });
-              if (response !== undefined && !socket.destroyed) this.writeFrame(socket, response);
+              const response = await handler(value, send);
+              if (response !== undefined) await send(response);
             })
             .catch(() => {
               socket.destroy();
@@ -883,12 +883,46 @@ export class LocalDaemonTransport {
     this.writeEncodedFrame(socket, this.encodeFrame(value));
   }
 
-  private writeServerMessage(socket: Socket, message: DaemonServerMessage): void {
+  private async writeServerMessage(socket: Socket, message: DaemonServerMessage): Promise<void> {
     if ("kind" in message) {
-      this.writeFrame(socket, message);
+      await this.writeEncodedServerFrame(socket, this.encodeFrame(message));
       return;
     }
-    this.writeEncodedFrame(socket, DaemonResultChunkCodec.encode(message));
+    await this.writeEncodedServerFrame(socket, DaemonResultChunkCodec.encode(message));
+  }
+
+  private async writeEncodedServerFrame(socket: Socket, frame: Buffer): Promise<void> {
+    const chunkSize = this.writeChunkSize ?? frame.length;
+    for (let offset = 0; offset < frame.length; offset += chunkSize) {
+      if (socket.destroyed) throw new Error("Daemon socket closed during response delivery");
+      const accepted = socket.write(frame.subarray(offset, offset + chunkSize));
+      if (!accepted) await LocalDaemonTransport.waitForDrain(socket);
+    }
+  }
+
+  private static waitForDrain(socket: Socket): Promise<void> {
+    return new Promise((resolve, reject) => {
+      const cleanup = (): void => {
+        socket.off("drain", drained);
+        socket.off("error", failed);
+        socket.off("close", closed);
+      };
+      const drained = (): void => {
+        cleanup();
+        resolve();
+      };
+      const failed = (error: Error): void => {
+        cleanup();
+        reject(error);
+      };
+      const closed = (): void => {
+        cleanup();
+        reject(new Error("Daemon socket closed during response delivery"));
+      };
+      socket.once("drain", drained);
+      socket.once("error", failed);
+      socket.once("close", closed);
+    });
   }
 
   private encodeFrame(value: unknown): Buffer {

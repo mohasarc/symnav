@@ -509,7 +509,7 @@ class BlockingCloseTransport extends LocalDaemonTransport {
   private handler:
     | ((
         request: DaemonRequest,
-        send: (response: DaemonServerMessage) => void,
+        send: (response: DaemonServerMessage) => Promise<void>,
       ) => Promise<DaemonResponse | void>)
     | undefined;
   private readonly closeStarted: Promise<void>;
@@ -531,7 +531,7 @@ class BlockingCloseTransport extends LocalDaemonTransport {
     _endpoint: string,
     handler: (
       request: DaemonRequest,
-      send: (response: DaemonServerMessage) => void,
+      send: (response: DaemonServerMessage) => Promise<void>,
     ) => Promise<DaemonResponse | void>,
   ): Promise<DaemonServer> {
     this.handler = handler;
@@ -548,7 +548,7 @@ class BlockingCloseTransport extends LocalDaemonTransport {
     request: DaemonLifecycleRequest,
   ): Promise<DaemonLifecycleResponse> {
     if (this.handler === undefined) throw new Error("Daemon transport is not listening");
-    return this.handler(request, () => undefined).then((response) => {
+    return this.handler(request, async () => undefined).then((response) => {
       if (response === undefined) throw new Error("Daemon transport returned no response");
       return response as DaemonLifecycleResponse;
     });

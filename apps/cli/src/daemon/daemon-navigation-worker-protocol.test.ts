@@ -17,6 +17,7 @@ describe("DaemonNavigationWorkerProtocol", () => {
   it.each<DaemonNavigationWorkerRequest>([
     { kind: "initialize", generation: 4, workspaceRoot: "/repo" },
     { kind: "execute", generation: 4, requestId: "request-1", request },
+    { kind: "output-ack", generation: 4, requestId: "request-1", sequence: 7 },
     { kind: "release-transient", generation: 4 },
     { kind: "close", generation: 4 },
   ])("accepts correlated $kind requests", (message) => {
@@ -24,6 +25,14 @@ describe("DaemonNavigationWorkerProtocol", () => {
   });
 
   it.each<DaemonNavigationWorkerResponse>([
+    {
+      kind: "output-chunk",
+      generation: 4,
+      requestId: "request-1",
+      sequence: 0,
+      stream: "stdout",
+      bytes: new Uint8Array([1, 2, 3]),
+    },
     {
       kind: "ready",
       generation: 4,
@@ -61,6 +70,7 @@ describe("DaemonNavigationWorkerProtocol", () => {
     {},
     { kind: "initialize", generation: -1, workspaceRoot: "/repo" },
     { kind: "execute", generation: 1, requestId: "", request },
+    { kind: "output-ack", generation: 1, requestId: "one", sequence: -1 },
     { kind: "execute", generation: 1, requestId: "one", request: { argv: "overview" } },
     { kind: "unknown", generation: 1 },
   ])("rejects malformed worker requests %#", (message) => {
@@ -72,6 +82,14 @@ describe("DaemonNavigationWorkerProtocol", () => {
     null,
     {},
     { kind: "ready", generation: 1, fileCount: -1, refresh, startupDurations: {} },
+    {
+      kind: "output-chunk",
+      generation: 1,
+      requestId: "one",
+      sequence: 0,
+      stream: "stdout",
+      bytes: new Uint8Array(64 * 1024 + 1),
+    },
     { kind: "result", generation: 1, requestId: "one", result: { frames: [] } },
     { kind: "failed", generation: 1, failureCode: "unknown" },
     { kind: "heap", generation: 1, usedHeapBytes: -1, heapLimitBytes: 10 },

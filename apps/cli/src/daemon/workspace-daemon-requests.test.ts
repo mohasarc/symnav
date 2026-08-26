@@ -579,10 +579,10 @@ describe("WorkspaceDaemon requests", () => {
     await harness.execute("observed", ["refs", "private-symbol"]);
     await waitUntil(() => harness.logEvents().some((event) => event.kind === "delivery-terminal"));
 
-    const operationEvents = harness
+    const operationDiagnostics = harness
       .logEvents()
-      .filter((event) => event.requestId === "observed")
-      .map((event) => event.kind);
+      .filter((event) => typeof event.requestId === "string");
+    const operationEvents = operationDiagnostics.map((event) => event.kind);
     expect(operationEvents).toEqual([
       "request-accepted",
       "turn-started",
@@ -591,18 +591,21 @@ describe("WorkspaceDaemon requests", () => {
       "execution-terminal",
       "delivery-terminal",
     ]);
+    const requestCorrelations = [...new Set(operationDiagnostics.map((event) => event.requestId))];
+    expect(requestCorrelations).toHaveLength(1);
+    expect(requestCorrelations[0]).toMatch(/^[a-f\d]{64}$/);
     expect(harness.logEvents()).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
           kind: "execution-terminal",
-          requestId: "observed",
+          requestId: expect.stringMatching(/^[a-f\d]{64}$/),
           outcome: "completed",
           serviceMs: expect.any(Number),
           processRssBytes: expect.any(Number),
         }),
         expect.objectContaining({
           kind: "delivery-terminal",
-          requestId: "observed",
+          requestId: expect.stringMatching(/^[a-f\d]{64}$/),
           outcome: "delivered",
           deliveryMs: expect.any(Number),
         }),

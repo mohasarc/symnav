@@ -140,6 +140,49 @@ describe("DaemonLogger", () => {
     expect(JSON.parse(contents)).toMatchObject({ kind: "start" });
   });
 
+  it("writes opaque fixed-size request correlation instead of caller identifiers", async () => {
+    const root = mkdtempSync(join(tmpdir(), "symnav-daemon-request-correlation-"));
+    roots.push(root);
+    const identity = DaemonWorkspaceIdentity.from("/repo", root);
+    const logger = new DaemonLogger(identity, "instance-one", new NodeDaemonClock());
+    const sourceShapedRequestId = "/private/source/PaymentProcessor::charge?token=secret";
+
+    logger.record({
+      kind: "request-accepted",
+      requestId: sourceShapedRequestId,
+      command: "refs",
+      queueDepth: 0,
+      workerGeneration: 1,
+    });
+    logger.record({
+      kind: "turn-started",
+      requestId: sourceShapedRequestId,
+      queueWaitMs: 1,
+      workerGeneration: 1,
+    });
+    logger.record({
+      kind: "request-accepted",
+      requestId: "different-request",
+      command: "refs",
+      queueDepth: 0,
+      workerGeneration: 1,
+    });
+    await logger.flush();
+
+    const contents = readFileSync(identity.logPath, "utf8");
+    const events = contents
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line) as { requestId: string });
+    expect(contents).not.toContain(sourceShapedRequestId);
+    expect(events.map((event) => event.requestId)).toEqual([
+      expect.stringMatching(/^[a-f\d]{64}$/),
+      events[0]?.requestId,
+      expect.stringMatching(/^[a-f\d]{64}$/),
+    ]);
+    expect(events[2]?.requestId).not.toBe(events[0]?.requestId);
+  });
+
   it("rotates before the byte limit and retains only four backups", async () => {
     const root = mkdtempSync(join(tmpdir(), "symnav-daemon-rotation-"));
     roots.push(root);

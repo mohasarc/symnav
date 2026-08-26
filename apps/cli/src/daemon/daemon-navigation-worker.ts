@@ -12,6 +12,16 @@ export interface DaemonNavigationWorkerExit {
   readonly errorName?: string;
 }
 
+export class DaemonNavigationWorkerExitedError extends Error {
+  constructor(
+    readonly exit: DaemonNavigationWorkerExit,
+    message = `Daemon navigation worker exited (${exit.cause})`,
+  ) {
+    super(message);
+    this.name = "DaemonNavigationWorkerExitedError";
+  }
+}
+
 export interface DaemonNavigationWorker {
   readonly generation: number;
   readonly exited: Promise<DaemonNavigationWorkerExit>;

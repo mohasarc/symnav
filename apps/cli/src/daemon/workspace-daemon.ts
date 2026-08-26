@@ -75,6 +75,8 @@ export interface WorkspaceDaemonOptions {
   readonly operationTraceRetentionMs?: number;
 }
 
+const DEFAULT_OPERATION_TRACE_RETENTION_MS = 5 * 60 * 1000;
+
 export interface DaemonWorkerGeneration {
   readonly id: number;
   readonly worker: DaemonNavigationWorker;
@@ -118,6 +120,7 @@ export class WorkspaceDaemon {
   private readonly resourceInterruptedRequests = new Set<string>();
   private readonly completionDeliveries = new Map<string, Promise<void>>();
   private readonly operationTraces = new Map<string, DaemonOperationTrace>();
+  private readonly operationTraceExpirations = new Map<string, NodeJS.Timeout>();
   private workerRecoveryOperation: Promise<void> | undefined;
 
   constructor(private readonly options: WorkspaceDaemonOptions) {
@@ -351,7 +354,9 @@ export class WorkspaceDaemon {
     }
     if (request.kind === "execute") return this.acceptExecution(request, send);
     if (request.kind === "result-fetch") {
-      this.operationTraces.get(request.requestId)?.reattached();
+      if (this.acceptedRequests.entryFor(request.requestId)?.state.state === "completed") {
+        this.reattachOperationTrace(request.requestId);
+      }
       await this.deliverStoredCompletion(request.requestId, send, request.offset);
       return;
     }
@@ -514,7 +519,7 @@ export class WorkspaceDaemon {
       this.lifetime.navigationAccepted();
       void this.executeAccepted(request);
     } else {
-      this.operationTraces.get(request.requestId)?.reattached();
+      this.reattachOperationTrace(request.requestId);
     }
     try {
       await this.deliver(send, {
@@ -525,7 +530,7 @@ export class WorkspaceDaemon {
         ...acceptance,
       });
     } catch (error) {
-      this.operationTraces.get(request.requestId)?.clientDisconnected();
+      this.disconnectOperationTrace(request.requestId);
       throw error;
     }
     if (entry.state.state === "completed") {
@@ -769,11 +774,13 @@ export class WorkspaceDaemon {
       recordCount: completedManifest.recordCount,
       sha256: completedManifest.sha256,
     });
-    this.operationTraces.get(requestId)?.deliveryTerminated("delivered");
+    const trace = this.operationTraces.get(requestId);
+    if (trace === undefined) this.operationObserver.deliveryTerminated(requestId, "delivered", 0);
+    else trace.deliveryTerminated("delivered");
   }
 
   private recordDeliveryFailure(requestId: string, error: unknown): void {
-    this.operationTraces.get(requestId)?.clientDisconnected();
+    this.disconnectOperationTrace(requestId);
     this.logger.record({
       kind: "failure",
       operation: "completion-delivery",
@@ -783,6 +790,9 @@ export class WorkspaceDaemon {
   }
 
   private completeOperationTrace(requestId: string, outcome: DaemonDeliveryOutcome): void {
+    const expiration = this.operationTraceExpirations.get(requestId);
+    if (expiration !== undefined) clearTimeout(expiration);
+    this.operationTraceExpirations.delete(requestId);
     const trace = this.operationTraces.get(requestId);
     if (trace === undefined) return;
     trace.deliveryTerminated(outcome);
@@ -790,10 +800,35 @@ export class WorkspaceDaemon {
   }
 
   private completeRetainedOperationTraces(): void {
-    for (const trace of this.operationTraces.values()) {
-      trace.deliveryTerminated("disconnected");
+    for (const requestId of this.operationTraces.keys()) {
+      this.completeOperationTrace(requestId, "disconnected");
     }
-    this.operationTraces.clear();
+  }
+
+  private disconnectOperationTrace(requestId: string): void {
+    const trace = this.operationTraces.get(requestId);
+    if (trace === undefined) return;
+    trace.clientDisconnected();
+    if (this.operationTraceExpirations.has(requestId)) return;
+    const expiration = setTimeout(
+      () => this.expireOperationTrace(requestId),
+      this.options.operationTraceRetentionMs ?? DEFAULT_OPERATION_TRACE_RETENTION_MS,
+    );
+    expiration.unref();
+    this.operationTraceExpirations.set(requestId, expiration);
+  }
+
+  private reattachOperationTrace(requestId: string): void {
+    const expiration = this.operationTraceExpirations.get(requestId);
+    if (expiration !== undefined) clearTimeout(expiration);
+    this.operationTraceExpirations.delete(requestId);
+    this.operationObserver.reattached(requestId);
+  }
+
+  private expireOperationTrace(requestId: string): void {
+    this.operationTraceExpirations.delete(requestId);
+    if (!this.operationTraces.delete(requestId)) return;
+    this.operationObserver.traceExpired(requestId);
   }
 
   private async drainAndShutdown(reason: "idle"): Promise<void> {

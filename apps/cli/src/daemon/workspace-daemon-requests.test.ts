@@ -741,9 +741,13 @@ describe("WorkspaceDaemon requests", () => {
     );
     expect(harness.logEvents()).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ kind: "delivery-terminal", outcome: "disconnected" }),
+        expect.objectContaining({ kind: "operation-trace-expired" }),
         expect.objectContaining({ kind: "client-reattached" }),
+        expect.objectContaining({ kind: "delivery-terminal", outcome: "delivered" }),
       ]),
+    );
+    expect(harness.logEvents().filter((event) => event.kind === "delivery-terminal")).toHaveLength(
+      1,
     );
   });
 

@@ -322,6 +322,7 @@ export type DaemonOperationDiagnostic =
     }
   | { readonly kind: "client-disconnected"; readonly requestId: string }
   | { readonly kind: "client-reattached"; readonly requestId: string }
+  | { readonly kind: "operation-trace-expired"; readonly requestId: string }
   | {
       readonly kind: "delivery-terminal";
       readonly requestId: string;

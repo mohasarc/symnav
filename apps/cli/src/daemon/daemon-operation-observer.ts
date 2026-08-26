@@ -66,6 +66,22 @@ export class DaemonOperationObserver {
     this.logger.record(event);
   }
 
+  reattached(requestId: string): void {
+    this.logger.record({ kind: "client-reattached", requestId });
+  }
+
+  traceExpired(requestId: string): void {
+    this.logger.record({ kind: "operation-trace-expired", requestId });
+  }
+
+  deliveryTerminated(
+    requestId: string,
+    outcome: DaemonDeliveryOutcome,
+    deliveryMs: number,
+  ): void {
+    this.logger.record({ kind: "delivery-terminal", requestId, outcome, deliveryMs });
+  }
+
   start(requestId: string, command: DaemonCommandName): DaemonOperationTrace {
     const acceptedAt = this.clock.monotonicNowMs();
     let turnStartedAt: number | undefined;
@@ -131,21 +147,17 @@ export class DaemonOperationObserver {
         this.logger.record({ kind: "client-disconnected", requestId });
       },
       reattached: () => {
-        this.logger.record({ kind: "client-reattached", requestId });
+        this.reattached(requestId);
       },
       deliveryTerminated: (outcome) => {
         if (deliveryTerminal) return;
         deliveryTerminal = true;
         const completedAt = this.clock.monotonicNowMs();
-        this.logger.record({
-          kind: "delivery-terminal",
+        this.deliveryTerminated(
           requestId,
           outcome,
-          deliveryMs: DaemonOperationObserver.elapsed(
-            deliveryStartedAt ?? completedAt,
-            completedAt,
-          ),
-        });
+          DaemonOperationObserver.elapsed(deliveryStartedAt ?? completedAt, completedAt),
+        );
       },
     };
   }

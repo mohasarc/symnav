@@ -71,6 +71,7 @@ const DIAGNOSTIC_KINDS = new Set([
   "execution-terminal",
   "client-disconnected",
   "client-reattached",
+  "operation-trace-expired",
   "delivery-terminal",
   "diagnostics-dropped",
   "startup-completed",

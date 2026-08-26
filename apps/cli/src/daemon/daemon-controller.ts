@@ -116,7 +116,8 @@ export class DaemonController {
           this.removeStartingOwnership(identity, record);
           return undefined;
         }
-        return this.startingStatus(record);
+        if (observation.kind === "starting") return this.startingStatus(record);
+        return this.statusForObservation(observation);
       }
       const owner = this.registry.startupOwner(identity);
       const armedLaunchIsWithinGrace =
@@ -321,7 +322,7 @@ export class DaemonController {
         memoryBytes: activity.processRssBytes,
       };
     }
-    const uptimeMs = Math.max(0, this.now() - record.startedAt);
+    const uptimeMs = activity.startupElapsedMs;
     if (activity.lifecycle === "busy" && activity.current !== undefined) {
       return {
         state: "busy",

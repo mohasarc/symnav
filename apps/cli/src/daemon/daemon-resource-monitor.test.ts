@@ -98,7 +98,7 @@ describe("DaemonResourceSupervisor", () => {
     expect(residentMemoryBytes).toHaveBeenCalledOnce();
   });
 
-  it("pauses admission at soft pressure and sheds once at a turn boundary", async () => {
+  it("pauses admission and sheds once per soft-pressure hysteresis cycle", async () => {
     const policy = DaemonResourcePolicy.fromSystemMemory(GIBIBYTE);
     let residentMemoryBytes = policy.record.softProcessRssBytes + 1;
     const releaseTransientResources = vi.fn(async () => undefined);
@@ -115,7 +115,7 @@ describe("DaemonResourceSupervisor", () => {
     await supervisor.sample("admission");
     await supervisor.sample("interval");
     expect(supervisor.snapshot.admissionPaused).toBe(true);
-    expect(releaseTransientResources).not.toHaveBeenCalled();
+    expect(releaseTransientResources).toHaveBeenCalledOnce();
 
     await supervisor.sample("turn-complete");
     await supervisor.sample("turn-complete");

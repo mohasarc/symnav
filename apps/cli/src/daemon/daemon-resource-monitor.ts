@@ -99,8 +99,8 @@ export class DaemonResourceSupervisor {
   private peakProcessRssBytes = 0;
   private currentSpoolBytes = 0;
   private admissionPaused = false;
-  private shedPending = false;
   private shedCompleted = false;
+  private shedOperation: Promise<void> | undefined;
   private workerHeapUsedBytes: number | undefined;
   private workerHeapLimitBytes: number | undefined;
   private replacementCount = 0;
@@ -150,18 +150,15 @@ export class DaemonResourceSupervisor {
     }
     if (this.currentProcessRssBytes <= policy.resumeProcessRssBytes) {
       this.admissionPaused = false;
-      this.shedPending = false;
       this.shedCompleted = false;
       this.currentState = "ready";
       return;
     }
     if (this.currentProcessRssBytes < policy.softProcessRssBytes) return;
     this.admissionPaused = true;
-    this.shedPending = true;
-    if (reason !== "turn-complete" || this.shedCompleted) return;
     this.currentState = "shedding";
-    await this.options.releaseTransientResources();
-    this.shedCompleted = true;
+    if (this.shedCompleted) return;
+    await this.shed();
   }
 
   workerHeapReported(generation: number, usedBytes: number, limitBytes: number): void {
@@ -209,7 +206,6 @@ export class DaemonResourceSupervisor {
         this.workerHeapLimitBytes = undefined;
         this.replacementCount += 1;
         this.replacementTimes.push(this.now());
-        this.shedPending = false;
         this.shedCompleted = false;
         this.admissionPaused = false;
         this.currentState = "ready";
@@ -223,5 +219,17 @@ export class DaemonResourceSupervisor {
         this.replacementOperation = undefined;
       });
     return this.replacementOperation;
+  }
+
+  private async shed(): Promise<void> {
+    if (this.shedOperation !== undefined) return this.shedOperation;
+    const operation = this.options.releaseTransientResources();
+    this.shedOperation = operation;
+    try {
+      await operation;
+      this.shedCompleted = true;
+    } finally {
+      if (this.shedOperation === operation) this.shedOperation = undefined;
+    }
   }
 }

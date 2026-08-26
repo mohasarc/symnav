@@ -10,6 +10,7 @@ import {
 } from "./daemon-workspace-generator.js";
 import {
   DaemonWorkspaceProfiler,
+  DaemonWorkspaceProfileValidator,
   type DaemonWorkspaceProfile,
 } from "./daemon-workspace-profile.js";
 
@@ -65,6 +66,34 @@ describe("DaemonWorkspaceGenerator", () => {
       expect(generated.expectedProfile.sourceBytes).toEqual(TestWorkspace.profile.sourceBytes);
     },
   );
+
+  it("preserves the reviewed 1x structural distributions", async () => {
+    const root = TestWorkspace.create(roots);
+    const reviewed = DaemonWorkspaceProfileValidator.parse(
+      JSON.parse(
+        readFileSync(
+          new URL("./profiles/daemon-workspace-1x.v1.json", import.meta.url),
+          "utf8",
+        ),
+      ),
+    );
+
+    await new DaemonWorkspaceGenerator({
+      profile: reviewed,
+      generatorVersion: "1.0.0",
+      seed: "reviewed-distributions",
+      scale: 1,
+    }).generate(root);
+    const profiled = await new DaemonWorkspaceProfiler().profile(root);
+
+    expect(profiled.sourceBytes).toEqual(reviewed.sourceBytes);
+    expect(profiled.sourceLines).toEqual(reviewed.sourceLines);
+    expect(profiled.symbolsPerFile).toEqual(reviewed.symbolsPerFile);
+    expect(profiled.importsPerFile).toEqual(reviewed.importsPerFile);
+    expect(profiled.packageCount).toBe(reviewed.packageCount);
+    expect(profiled.configCount).toBe(reviewed.configCount);
+    expect(profiled.projectReferenceCount).toBe(reviewed.projectReferenceCount);
+  }, 30_000);
 });
 
 class TestWorkspace {

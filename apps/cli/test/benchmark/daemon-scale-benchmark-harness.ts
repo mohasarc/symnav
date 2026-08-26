@@ -22,6 +22,7 @@ import { fileURLToPath } from "node:url";
 import { runSymnavBinary, type RunSymnavBinaryResult } from "@symnav/testing";
 import { canonicalStateDir } from "@symnav/telemetry";
 import { DaemonRegistry } from "../../src/daemon/daemon-registry.js";
+import type { DaemonCommandName } from "../../src/daemon/daemon-protocol.js";
 import { DaemonResourcePolicy } from "../../src/daemon/daemon-resource-monitor.js";
 import { DaemonWorkspaceIdentity } from "../../src/daemon/daemon-workspace-identity.js";
 import { canonicalWorkspaceRoot } from "../helpers/canonical-workspace-root.js";
@@ -119,7 +120,7 @@ export class DaemonScaleBenchmarkHarness {
 
       const diagnostics = DaemonBenchmarkDiagnostics.read(identity.logPath);
       const enrichedSamples = diagnostics.enrich(samples);
-      const telemetryCount = this.warmTelemetryCount(stateDirectory);
+      const telemetryCommands = this.warmTelemetryCommands(stateDirectory);
       const resourcePolicy = DaemonResourcePolicy.fromSystemMemory(
         totalmem(),
         process.constrainedMemory?.(),
@@ -153,7 +154,20 @@ export class DaemonScaleBenchmarkHarness {
         processRssPeakBytes: diagnostics.processRssPeakBytes,
         hardProcessRssBytes: resourcePolicy.hardProcessRssBytes,
         expectedTelemetryCount,
-        actualTelemetryCount: telemetryCount,
+        actualTelemetryCount: telemetryCommands.length,
+        expectedTelemetryCommands: [
+          ...enrichedSamples
+            .filter((sample) => sample.command !== "stats")
+            .map((sample) => sample.command),
+          "overview",
+          "resolve",
+          "resolve",
+          "overview",
+          "overview",
+          "overview",
+          "overview",
+        ],
+        actualTelemetryCommands: telemetryCommands,
         artifactComplete: diagnostics.complete(enrichedSamples.length),
         spoolBytesAfterCleanup: DaemonScaleBenchmarkHarness.directoryBytes(identity.spoolDirectory),
         diagnosticPhasesComplete: diagnostics.phasesComplete,
@@ -484,9 +498,10 @@ export class DaemonScaleBenchmarkHarness {
     });
   }
 
-  private warmTelemetryCount(stateDirectory: string): number {
-    return this.telemetryEvents(stateDirectory).filter((event) => event.executionMode === "warm")
-      .length;
+  private warmTelemetryCommands(stateDirectory: string): DaemonCommandName[] {
+    return this.telemetryEvents(stateDirectory)
+      .filter((event) => event.executionMode === "warm")
+      .map((event) => event.command as DaemonCommandName);
   }
 
   private fallbackTelemetryCount(stateDirectory: string): number {

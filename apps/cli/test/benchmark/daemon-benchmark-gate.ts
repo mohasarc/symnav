@@ -83,6 +83,8 @@ export interface DaemonBenchmarkGateInput {
   readonly hardProcessRssBytes: number;
   readonly expectedTelemetryCount: number;
   readonly actualTelemetryCount: number;
+  readonly expectedTelemetryCommands: readonly DaemonCommandName[];
+  readonly actualTelemetryCommands: readonly DaemonCommandName[];
   readonly artifactComplete: boolean;
   readonly spoolBytesAfterCleanup: number;
   readonly diagnosticPhasesComplete: boolean;

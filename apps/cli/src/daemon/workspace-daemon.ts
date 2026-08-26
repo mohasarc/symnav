@@ -351,6 +351,7 @@ export class WorkspaceDaemon {
     }
     if (request.kind === "execute") return this.acceptExecution(request, send);
     if (request.kind === "result-fetch") {
+      this.operationTraces.get(request.requestId)?.reattached();
       await this.deliverStoredCompletion(request.requestId, send, request.offset);
       return;
     }

@@ -711,6 +711,9 @@ describe("WorkspaceDaemon requests", () => {
     await harness.acknowledge("fetched-trace", completed.transferId);
 
     expect(executor.requests).toHaveLength(1);
+    await waitUntil(() =>
+      harness.logEvents().some((event) => event.kind === "client-reattached"),
+    );
     expect(harness.logEvents().filter((event) => event.kind === "client-reattached")).toHaveLength(
       1,
     );

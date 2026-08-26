@@ -69,6 +69,7 @@ export class NodeDaemonNavigationWorker implements DaemonNavigationWorker {
   private terminating = false;
   private closeAcknowledged = false;
   private communicationFailure: Error | undefined;
+  private communicationFailureCode: string | undefined;
 
   constructor(options: NodeDaemonNavigationWorkerOptions) {
     this.generation = options.generation;
@@ -232,14 +233,22 @@ export class NodeDaemonNavigationWorker implements DaemonNavigationWorker {
     if (this.exit !== undefined) return;
     const failure = error instanceof Error ? error : new Error(String(error));
     this.communicationFailure = failure;
+    this.communicationFailureCode =
+      typeof error === "object" &&
+      error !== null &&
+      "code" in error &&
+      typeof error.code === "string"
+        ? error.code
+        : undefined;
     void this.worker.terminate();
   }
 
   private finishExit(): void {
     if (this.exit !== undefined) return;
     const communicationErrorName = this.communicationFailure?.name;
-    const cause = communicationErrorName
-      ? communicationErrorName === "ERR_WORKER_OUT_OF_MEMORY"
+    const communicationFailureIdentity = this.communicationFailureCode ?? communicationErrorName;
+    const cause = communicationFailureIdentity
+      ? communicationFailureIdentity === "ERR_WORKER_OUT_OF_MEMORY"
         ? "out-of-memory"
         : "error"
       : this.terminating
@@ -250,7 +259,9 @@ export class NodeDaemonNavigationWorker implements DaemonNavigationWorker {
     this.exit = {
       generation: this.generation,
       cause,
-      ...(communicationErrorName === undefined ? {} : { errorName: communicationErrorName }),
+      ...(communicationFailureIdentity === undefined
+        ? {}
+        : { errorName: communicationFailureIdentity }),
     };
     const failure = new DaemonNavigationWorkerExitedError(
       this.exit,

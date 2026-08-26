@@ -120,6 +120,7 @@ export class DaemonRecordObserver {
         return { kind: "corrupt", record, evidence: DaemonRecordObserver.evidence(record) };
       }
     }
+    if (record.state === "starting") return { kind: "starting", record };
     return {
       kind: "unresponsive",
       record,

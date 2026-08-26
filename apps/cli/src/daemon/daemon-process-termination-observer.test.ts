@@ -52,4 +52,32 @@ describe("DaemonProcessTerminationObserver", () => {
       expect(exit).toHaveBeenCalledOnce();
     },
   );
+
+  it("exits after registry cleanup fails during fatal termination", async () => {
+    const events: DaemonDiagnosticEvent[] = [];
+    const flush = vi.fn(async () => undefined);
+    const cleanup = vi.fn(() => {
+      throw new Error("registry unavailable");
+    });
+    const exit = vi.fn((_code: number): never => {
+      throw new Error("process exited");
+    });
+    const observer = new DaemonProcessTerminationObserver(
+      { record: (event) => events.push(event), flush },
+      cleanup,
+      exit,
+    );
+
+    await expect(
+      observer.uncaughtException(new Error("secret"), "uncaughtException"),
+    ).rejects.toThrow("process exited");
+    await expect(observer.unhandledRejection(new Error("second secret"))).rejects.toThrow(
+      "process exited",
+    );
+
+    expect(events).toHaveLength(1);
+    expect(flush).toHaveBeenCalledOnce();
+    expect(cleanup).toHaveBeenCalledOnce();
+    expect(exit).toHaveBeenCalledOnce();
+  });
 });

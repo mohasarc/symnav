@@ -53,10 +53,11 @@ export class DaemonBenchmarkRunConfiguration {
     environment: DaemonBenchmarkRunEnvironment,
     scale: DaemonBenchmarkScale,
   ): number {
+    const declaredMinimum = scale === 10 ? 32 * 1024 ** 3 : 8 * 1024 ** 3;
     const configured = environment.SYMNAV_BENCHMARK_MIN_MEMORY_BYTES;
-    if (configured === undefined) return scale === 10 ? 32 * 1024 ** 3 : 8 * 1024 ** 3;
+    if (configured === undefined) return declaredMinimum;
     const parsed = Number(configured);
     if (!Number.isSafeInteger(parsed) || parsed <= 0) throw new Error(this.usage);
-    return parsed;
+    return Math.max(declaredMinimum, parsed);
   }
 }

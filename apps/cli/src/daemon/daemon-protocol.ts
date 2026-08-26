@@ -129,6 +129,7 @@ export interface DaemonExecutionStatusResponse {
 export type DaemonLogEvent =
   | { readonly kind: "start"; readonly workspaceRoot: string; readonly instanceId: string }
   | { readonly kind: "ready"; readonly fileCount: number }
+  | { readonly kind: "acceptance"; readonly requestId: string; readonly queuePosition: number }
   | {
       readonly kind: "request";
       readonly command: string;

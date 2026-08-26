@@ -3,11 +3,17 @@ import { existsSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { canonicalStateDir } from "@symnav/telemetry";
 import { createDefaultDependencies } from "../../src/program.js";
+import type { CliExecutionRequest } from "../../src/command-execution-result.js";
+import type {
+  DaemonNavigationWorker,
+  DaemonNavigationWorkerExit,
+} from "../../src/daemon/daemon-navigation-worker.js";
 import {
   DAEMON_PROTOCOL_VERSION,
   DAEMON_RECORD_SCHEMA_VERSION,
   type DaemonRecord,
 } from "../../src/daemon/daemon-protocol.js";
+import type { DaemonNavigationWorkerResponse } from "../../src/daemon/daemon-navigation-worker-protocol.js";
 import { DaemonRegistry } from "../../src/daemon/daemon-registry.js";
 import { DaemonWorkspaceIdentity } from "../../src/daemon/daemon-workspace-identity.js";
 import { LocalDaemonTransport } from "../../src/daemon/local-daemon-transport.js";
@@ -48,7 +54,18 @@ class DaemonStartupCallerExit {
     }
     const identity = DaemonWorkspaceIdentity.from(workspaceRoot, canonicalStateDir(stateDirectory));
     const registry = new DaemonRegistry(identity.registryDirectory);
-    if (registry.acquireStartup(identity, instanceId) === undefined) process.exit(3);
+    if (
+      registry.acquireStartup(identity, {
+        identityKey: identity.identityKey,
+        instanceId,
+        processToken,
+        ownerPid: process.pid,
+        ownerKind: "launcher",
+        heartbeatAt: Date.now(),
+      }) === undefined
+    ) {
+      process.exit(3);
+    }
     const dependencies = createDefaultDependencies(identity.stateDirectory);
     const startingRecord: DaemonRecord = {
       schemaVersion: DAEMON_RECORD_SCHEMA_VERSION,
@@ -67,7 +84,6 @@ class DaemonStartupCallerExit {
       memoryCapBytes: Number.MAX_SAFE_INTEGER,
     };
     if (!registry.writeStartingIfStartupOwner(identity, startingRecord)) process.exit(4);
-    if (!registry.armStartingProcessLaunch(identity, startingRecord)) process.exit(5);
     const child = spawn(
       process.execPath,
       [
@@ -112,9 +128,16 @@ class DaemonStartupCallerExit {
       process.exit(2);
     }
     const identity = DaemonWorkspaceIdentity.from(workspaceRoot, canonicalStateDir(stateDirectory));
-    writeFileSync(bootPath, String(process.pid));
-    await DaemonStartupCallerExit.waitUntil(() => existsSync(releasePath));
     const dependencies = createDefaultDependencies(identity.stateDirectory);
+    const navigationWorker = new StartupBarrierNavigationWorker(
+      new NodeDaemonNavigationWorker({
+        generation: 1,
+        stateDirectory: identity.stateDirectory,
+        entryUrl: new URL("../../dist/daemon/daemon-navigation-worker-entry.js", import.meta.url),
+      }),
+      bootPath,
+      releasePath,
+    );
     await new WorkspaceDaemon({
       identity,
       instanceId,
@@ -124,22 +147,60 @@ class DaemonStartupCallerExit {
       dependencies,
       registry: new DaemonRegistry(identity.registryDirectory),
       transport: new LocalDaemonTransport(),
-      navigationWorker: new NodeDaemonNavigationWorker({
-        generation: 1,
-        stateDirectory: identity.stateDirectory,
-        entryUrl: new URL("../../dist/daemon/daemon-navigation-worker-entry.js", import.meta.url),
-      }),
+      navigationWorker,
+      startupHeartbeatIntervalMs: 10,
     }).start();
     writeFileSync(readyPath, "ready");
   }
 
-  private static async waitUntil(predicate: () => boolean): Promise<void> {
+  static async waitUntil(predicate: () => boolean): Promise<void> {
     const deadline = Date.now() + 5_000;
     while (Date.now() <= deadline) {
       if (predicate()) return;
       await new Promise((resolve) => setTimeout(resolve, 10));
     }
     throw new Error("Timed out waiting for detached daemon startup");
+  }
+}
+
+class StartupBarrierNavigationWorker implements DaemonNavigationWorker {
+  get generation(): number {
+    return this.worker.generation;
+  }
+
+  get exited(): Promise<DaemonNavigationWorkerExit> {
+    return this.worker.exited;
+  }
+
+  constructor(
+    private readonly worker: DaemonNavigationWorker,
+    private readonly bootPath: string,
+    private readonly releasePath: string,
+  ) {}
+
+  async start(workspaceRoot: string): Promise<DaemonNavigationWorkerResponse> {
+    writeFileSync(this.bootPath, String(process.pid));
+    await DaemonStartupCallerExit.waitUntil(() => existsSync(this.releasePath));
+    return this.worker.start(workspaceRoot);
+  }
+
+  execute(
+    requestId: string,
+    request: CliExecutionRequest,
+  ): Promise<DaemonNavigationWorkerResponse> {
+    return this.worker.execute(requestId, request);
+  }
+
+  releaseTransientResources(): Promise<DaemonNavigationWorkerResponse> {
+    return this.worker.releaseTransientResources();
+  }
+
+  drainAndClose(): Promise<void> {
+    return this.worker.drainAndClose();
+  }
+
+  terminate(): Promise<void> {
+    return this.worker.terminate();
   }
 }
 

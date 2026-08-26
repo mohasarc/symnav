@@ -483,6 +483,24 @@ describe("WorkspaceDaemon requests", () => {
     });
   });
 
+  it("reports draining from the main thread while admitted work completes", async () => {
+    const executor = new SerializedExecutor();
+    const harness = await RequestHarness.start(executor);
+    harnesses.push(harness);
+    const execution = harness.execute("draining", ["graph", "input"]);
+    await executor.started(1);
+
+    const stopping = harness.stop();
+    await expect(harness.ping()).resolves.toMatchObject({
+      kind: "pong",
+      activity: { lifecycle: "draining", current: { requestId: "draining" } },
+    });
+
+    executor.complete(0);
+    await execution;
+    await stopping;
+  });
+
   it("force-terminates blocked worker execution with one controlled result", async () => {
     const executor = new SerializedExecutor();
     const harness = await RequestHarness.start(executor);
@@ -531,6 +549,21 @@ describe("WorkspaceDaemon requests", () => {
       () => harness.logEvents().filter((event) => event.kind === "freshness").length === 2,
     );
     expect(harness.logEvents().filter((event) => event.kind === "freshness")).toHaveLength(2);
+  });
+
+  it("reports retained spool bytes until completion acknowledgement", async () => {
+    const harness = await RequestHarness.start(new MultipleRecordExecutor());
+    harnesses.push(harness);
+
+    const completed = await harness.execute("retained-spool");
+    if (completed.kind !== "result-end") throw new Error("Expected completed result");
+    await waitUntil(async () => {
+      const pong = await harness.ping();
+      return pong.kind === "pong" && (pong.activity?.spoolBytes ?? 0) > 0;
+    });
+    await expect(
+      harness.acknowledge("retained-spool", completed.transferId),
+    ).resolves.toMatchObject({ kind: "result-acknowledged" });
   });
 
   it("logs startup failures before rethrowing them", async () => {
@@ -689,6 +722,10 @@ describe("WorkspaceDaemon requests", () => {
     executor.complete(0);
     await worker.releaseStarted;
     expect(executor.startedCount).toBe(1);
+    await expect(harness.ping()).resolves.toMatchObject({
+      kind: "pong",
+      activity: { lifecycle: "recovering", queued: 1 },
+    });
 
     worker.allowRelease();
     await executor.started(2);

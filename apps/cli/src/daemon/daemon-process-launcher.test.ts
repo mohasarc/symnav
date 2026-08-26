@@ -106,7 +106,7 @@ describe("NodeDaemonProcessLauncher", () => {
       expect(options.cwd).not.toBe(absoluteStateDirectory);
       expect(options.cwd).not.toBe(absoluteWorkspaceRoot);
       expect(options).toMatchObject({ detached: true });
-      expect(options.stdio[0]).toBe("ignore");
+      expect(options.stdio).toEqual(["ignore", "ignore", "ignore"]);
       expect(spawnMock.mock.results[0]?.value.unref).toHaveBeenCalledOnce();
     },
   );

@@ -3,7 +3,11 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { NodeDaemonClock } from "./daemon-clock.js";
-import { DAEMON_LOG_BACKUP_COUNT, DaemonLogger } from "./daemon-logger.js";
+import {
+  DAEMON_LOG_BACKUP_COUNT,
+  DaemonLogger,
+  type DaemonLogStorage,
+} from "./daemon-logger.js";
 import type { DaemonDiagnosticEvent } from "./daemon-protocol.js";
 import { DaemonWorkspaceIdentity } from "./daemon-workspace-identity.js";
 
@@ -152,4 +156,82 @@ describe("DaemonLogger", () => {
     expect(statSync(identity.logPath).mode & 0o777).toBe(0o600);
   });
 
+  it("reports dropped diagnostics after its bounded queue recovers", async () => {
+    const root = mkdtempSync(join(tmpdir(), "symnav-daemon-overflow-"));
+    roots.push(root);
+    const identity = DaemonWorkspaceIdentity.from("/repo", root);
+    const storage = new BlockingLogStorage();
+    const logger = new DaemonLogger(identity, "overflow", new NodeDaemonClock(), {
+      maximumQueuedEvents: 2,
+      storage,
+    });
+
+    logger.record({ kind: "ready", fileCount: 1 });
+    await storage.appendStarted;
+    logger.record({ kind: "ready", fileCount: 2 });
+    logger.record({ kind: "ready", fileCount: 3 });
+    logger.record({ kind: "ready", fileCount: 4 });
+    storage.release();
+    await logger.flush();
+
+    expect(storage.events().map((event) => event.kind)).toEqual([
+      "ready",
+      "ready",
+      "ready",
+      "diagnostics-dropped",
+    ]);
+    expect(storage.events().at(-1)).toMatchObject({ droppedCount: 1 });
+  });
+
 });
+
+class BlockingLogStorage implements DaemonLogStorage {
+  readonly appendStarted: Promise<void>;
+  private resolveAppendStarted!: () => void;
+  private releaseAppend!: () => void;
+  private readonly gate: Promise<void>;
+  private readonly lines: string[] = [];
+
+  constructor() {
+    this.appendStarted = new Promise((resolve) => {
+      this.resolveAppendStarted = resolve;
+    });
+    this.gate = new Promise((resolve) => {
+      this.releaseAppend = resolve;
+    });
+  }
+
+  prepare(): Promise<void> {
+    return Promise.resolve();
+  }
+
+  size(): Promise<number> {
+    return Promise.resolve(this.lines.reduce((total, line) => total + Buffer.byteLength(line), 0));
+  }
+
+  async append(_path: string, line: string): Promise<void> {
+    this.resolveAppendStarted();
+    await this.gate;
+    this.lines.push(line);
+  }
+
+  move(): Promise<void> {
+    return Promise.resolve();
+  }
+
+  remove(): Promise<void> {
+    return Promise.resolve();
+  }
+
+  sync(): Promise<void> {
+    return Promise.resolve();
+  }
+
+  release(): void {
+    this.releaseAppend();
+  }
+
+  events(): readonly Record<string, unknown>[] {
+    return this.lines.map((line) => JSON.parse(line) as Record<string, unknown>);
+  }
+}

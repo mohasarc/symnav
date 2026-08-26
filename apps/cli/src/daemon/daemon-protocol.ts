@@ -317,6 +317,7 @@ export type DaemonOperationDiagnostic =
       readonly outcome: DaemonExecutionOutcome;
       readonly serviceMs: number;
       readonly processRssBytes?: number;
+      readonly peakProcessRssBytes?: number;
       readonly workerHeapUsedBytes?: number;
       readonly spoolBytes?: number;
     }

@@ -14,7 +14,7 @@ import {
   NodeDaemonNavigationWorker,
 } from "./daemon-navigation-worker.js";
 import { DaemonResourceMonitor } from "./daemon-resource-monitor.js";
-import type { DaemonRegistry } from "./daemon-registry.js";
+import type { DaemonRegistry, DaemonStartupLease } from "./daemon-registry.js";
 import type { DaemonWorkspaceIdentity } from "./daemon-workspace-identity.js";
 import type { LocalDaemonTransport } from "./local-daemon-transport.js";
 import { WorkspaceRequestQueue, type DaemonCommandName } from "./workspace-request-queue.js";
@@ -34,6 +34,7 @@ export interface WorkspaceDaemonOptions {
   readonly idleTimeoutMs?: number;
   readonly resourceCheckIntervalMs?: number;
   readonly residentMemoryBytes?: () => number;
+  readonly startupHeartbeatIntervalMs?: number;
 }
 
 export class WorkspaceDaemon {
@@ -101,8 +102,17 @@ export class WorkspaceDaemon {
       workspaceRoot: this.options.identity.workspaceRoot,
       instanceId: this.options.instanceId,
     });
+    let startupLease: DaemonStartupLease | undefined;
+    let startupHeartbeat: NodeJS.Timeout | undefined;
     try {
-      const startingRecord = await this.waitForStartupAuthorization();
+      const authorization = await this.waitForStartupAuthorization();
+      startupLease = authorization.lease;
+      const startingRecord = authorization.record;
+      startupHeartbeat = setInterval(
+        () => startupLease?.heartbeat(),
+        this.options.startupHeartbeatIntervalMs ?? 100,
+      );
+      startupHeartbeat.unref();
       this.startedAt = startingRecord.startedAt;
       this.server = await this.options.transport.listen(
         this.options.identity.endpoint(this.options.instanceId),
@@ -132,13 +142,16 @@ export class WorkspaceDaemon {
         memoryCapBytes: this.options.memoryCapBytes,
       };
       if (!this.options.registry.writeIfStartupOwner(this.options.identity, readyRecord)) {
-        await this.server.close();
         throw new Error("Daemon startup ownership changed before readiness publication");
       }
-      this.options.registry.removeStartupLockIfProcess(this.options.identity, readyRecord);
+      if (startupHeartbeat !== undefined) clearInterval(startupHeartbeat);
+      startupHeartbeat = undefined;
+      startupLease.release();
       this.logger.record({ kind: "ready", fileCount: response.fileCount });
       this.resourceMonitor.start();
     } catch (error) {
+      if (startupHeartbeat !== undefined) clearInterval(startupHeartbeat);
+      await this.cleanupFailedStartup(startupLease);
       this.logger.record({
         kind: "failure",
         operation: "start",
@@ -148,7 +161,10 @@ export class WorkspaceDaemon {
     }
   }
 
-  private async waitForStartupAuthorization(): Promise<DaemonRecord> {
+  private async waitForStartupAuthorization(): Promise<{
+    readonly lease: DaemonStartupLease;
+    readonly record: DaemonRecord;
+  }> {
     const deadline = this.now() + 5_000;
     while (this.now() <= deadline) {
       const record = this.options.registry.readInstance(
@@ -160,34 +176,55 @@ export class WorkspaceDaemon {
         (record.pid === 0 || record.pid === process.pid) &&
         record.processToken === this.options.processToken
       ) {
-        if (record.pid === 0) {
-          this.options.registry.writeStartingIfStartupOwner(this.options.identity, {
-            ...record,
-            pid: process.pid,
-          });
+        const lease = this.options.registry.claimStartupForDaemon(
+          this.options.identity,
+          this.options.instanceId,
+          this.options.processToken,
+          process.pid,
+        );
+        if (lease === undefined) {
+          await this.pause();
+          continue;
         }
+        this.options.registry.writeStartingIfStartupOwner(this.options.identity, {
+          ...record,
+          pid: process.pid,
+        });
         const adoptedRecord = this.options.registry.readInstance(
           this.options.identity,
           this.options.instanceId,
         );
         if (adoptedRecord?.pid !== process.pid) {
+          lease.release();
           await this.pause();
           continue;
         }
         if (
-          !this.options.registry.startupOwnerMatchesProcess(this.options.identity, adoptedRecord)
-        ) {
-          this.options.registry.writeStartingIfStartupOwner(this.options.identity, adoptedRecord);
-        }
-        if (
           this.options.registry.startupOwnerMatchesProcess(this.options.identity, adoptedRecord)
         ) {
-          return adoptedRecord;
+          return { lease, record: adoptedRecord };
         }
+        lease.release();
       }
       await this.pause();
     }
     throw new Error("Daemon process did not receive startup authorization");
+  }
+
+  private async cleanupFailedStartup(startupLease: DaemonStartupLease | undefined): Promise<void> {
+    this.shutdownStarted = true;
+    try {
+      await this.navigationWorker.terminate();
+    } catch {}
+    try {
+      await this.server?.close();
+    } catch {}
+    startupLease?.release();
+    this.options.registry.removeIfProcess(
+      this.options.identity,
+      this.options.instanceId,
+      this.options.processToken,
+    );
   }
 
   private async handle(request: DaemonRequest): Promise<DaemonResponse> {
@@ -356,10 +393,7 @@ export class WorkspaceDaemon {
   private async gracefullyShutdownWorker(): Promise<void> {
     await this.requestQueue.drain();
     const gracefulClose = this.navigationWorker.drainAndClose();
-    await Promise.race([
-      gracefulClose,
-      this.forceEscalated.then(() => this.forceWorkerShutdown()),
-    ]);
+    await Promise.race([gracefulClose, this.forceEscalated.then(() => this.forceWorkerShutdown())]);
   }
 
   private forceWorkerShutdown(): Promise<void> {

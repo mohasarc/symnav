@@ -90,6 +90,44 @@ describe("daemon diagnostic output isolation", () => {
       }),
     ]);
   }, 15_000);
+
+  it("records one closed signal classification before exact ownership cleanup", async () => {
+    const stateDirectory = mkdtempSync(join(tmpdir(), "symnav-daemon-signal-state-"));
+    const workspaceRoot = mkdtempSync(join(tmpdir(), "symnav-daemon-signal-workspace-"));
+    directories.push(stateDirectory, workspaceRoot);
+    mkdirSync(join(workspaceRoot, ".git"));
+    writeFileSync(join(workspaceRoot, "input.ts"), "export const value = 1;\n");
+
+    const started = runSymnavBinary(["daemon", "start"], {
+      cwd: workspaceRoot,
+      env: { SYMNAV_STATE_DIR: stateDirectory },
+    });
+    const identity = DaemonWorkspaceIdentity.from(
+      canonicalWorkspaceRoot(realpathSync(workspaceRoot)),
+      canonicalStateDir(stateDirectory),
+    );
+    const registry = new DaemonRegistry(identity.registryDirectory);
+    const record = registry.read(identity);
+    expect(started.status).toBe(0);
+    expect(record).toBeDefined();
+    daemonPids.push(record!.pid);
+
+    process.kill(record!.pid, "SIGTERM");
+    await waitUntil(() => !isProcessAlive(record!.pid));
+    await waitUntil(() => registry.read(identity) === undefined);
+
+    const events = readdirSync(identity.identityDirectory)
+      .filter((name) => /^daemon\.log(?:\.\d+)?$/.test(name))
+      .flatMap((name) =>
+        readFileSync(join(identity.identityDirectory, name), "utf8")
+          .split("\n")
+          .filter((line) => line.length > 0)
+          .map((line) => JSON.parse(line) as Record<string, unknown>),
+      );
+    expect(events.filter((event) => event.kind === "process-termination")).toEqual([
+      expect.objectContaining({ terminationReason: "signal", signal: "SIGTERM" }),
+    ]);
+  }, 15_000);
 });
 
 async function waitUntil(predicate: () => boolean): Promise<void> {

@@ -14,7 +14,10 @@ import {
   NodeDaemonProcessLauncher,
   NodeDaemonProcessTerminator,
 } from "./daemon-process-launcher.js";
-import { DaemonStartupCoordinator } from "./daemon-startup-coordinator.js";
+import {
+  DaemonStartupCoordinator,
+  type DaemonWarmupTriggerResult,
+} from "./daemon-startup-coordinator.js";
 import { DaemonWorkspaceIdentity } from "./daemon-workspace-identity.js";
 import { InvocationWorkspaceSelector } from "./invocation-workspace-selector.js";
 import { DaemonTransportError, LocalDaemonTransport } from "./local-daemon-transport.js";
@@ -26,8 +29,8 @@ export type DaemonRouteSnapshot =
   | { readonly kind: "warm"; readonly record: DaemonRecord }
   | { readonly kind: "fallback"; readonly reason: "dead" | "incompatible" };
 
-interface DaemonWarmupTrigger {
-  trigger(identity: DaemonWorkspaceIdentity): Promise<unknown>;
+export interface DaemonWarmupTrigger {
+  trigger(identity: DaemonWorkspaceIdentity): Promise<DaemonWarmupTriggerResult>;
 }
 
 interface DaemonDispatchRegistry {

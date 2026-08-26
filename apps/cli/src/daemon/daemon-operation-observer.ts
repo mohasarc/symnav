@@ -75,11 +75,7 @@ export class DaemonOperationObserver {
     this.logger.record({ kind: "operation-trace-expired", requestId });
   }
 
-  deliveryTerminated(
-    requestId: string,
-    outcome: DaemonDeliveryOutcome,
-    deliveryMs: number,
-  ): void {
+  deliveryTerminated(requestId: string, outcome: DaemonDeliveryOutcome, deliveryMs: number): void {
     this.logger.record({ kind: "delivery-terminal", requestId, outcome, deliveryMs });
   }
 

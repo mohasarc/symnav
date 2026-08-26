@@ -703,7 +703,9 @@ describe("WorkspaceDaemon requests", () => {
     await executor.started(1);
     disconnected.disconnect();
     executor.complete(0);
-    await waitUntil(async () => (await harness.status("fetched-trace")).status.state === "completed");
+    await waitUntil(
+      async () => (await harness.status("fetched-trace")).status.state === "completed",
+    );
 
     const resumed = await harness.fetch("fetched-trace");
     const completed = await resumed.terminal;
@@ -711,9 +713,7 @@ describe("WorkspaceDaemon requests", () => {
     await harness.acknowledge("fetched-trace", completed.transferId);
 
     expect(executor.requests).toHaveLength(1);
-    await waitUntil(() =>
-      harness.logEvents().some((event) => event.kind === "client-reattached"),
-    );
+    await waitUntil(() => harness.logEvents().some((event) => event.kind === "client-reattached"));
     expect(harness.logEvents().filter((event) => event.kind === "client-reattached")).toHaveLength(
       1,
     );
@@ -727,7 +727,9 @@ describe("WorkspaceDaemon requests", () => {
     await executor.started(1);
     disconnected.disconnect();
     executor.complete(0);
-    await waitUntil(async () => (await harness.status("expired-trace")).status.state === "completed");
+    await waitUntil(
+      async () => (await harness.status("expired-trace")).status.state === "completed",
+    );
     await waitUntil(() => harness.retainedOperationTraceCount() === 0);
 
     const resumed = await harness.fetch("expired-trace");
@@ -736,9 +738,7 @@ describe("WorkspaceDaemon requests", () => {
     await harness.acknowledge("expired-trace", completed.transferId);
 
     expect(executor.requests).toHaveLength(1);
-    await waitUntil(() =>
-      harness.logEvents().some((event) => event.kind === "client-reattached"),
-    );
+    await waitUntil(() => harness.logEvents().some((event) => event.kind === "client-reattached"));
     expect(harness.logEvents()).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ kind: "operation-trace-expired" }),

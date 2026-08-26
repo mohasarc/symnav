@@ -1,4 +1,4 @@
-import { access, chmod, mkdtemp, readdir, stat, writeFile } from "node:fs/promises";
+import { access, chmod, mkdir, mkdtemp, readdir, stat, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -145,5 +145,23 @@ describe("DaemonCompletionSpoolStore", () => {
       blockedSpool.append({ sequence: 0, stream: "stdout", bytes: Buffer.from("x") }),
     ).rejects.toBeInstanceOf(Error);
     expect(blockedStore.usage()).toEqual({ rawBytes: 0, completionCount: 0 });
+
+    if (process.platform !== "win32") {
+      const external = join(directory, "external");
+      await mkdir(external);
+      await symlink(external, join(directory, "instance-link"));
+      const linkedStore = new completionSpoolModule.DaemonCompletionSpoolStore({
+        directory,
+        workspaceKey: "workspace-a",
+        instanceId: "instance-link",
+        inlineBytes: 0,
+      });
+      const linkedSpool = await linkedStore.create("linked-request");
+      await expect(
+        linkedSpool.append({ sequence: 0, stream: "stdout", bytes: Buffer.from("x") }),
+      ).rejects.toThrow("Completion spool directory is unsafe");
+      expect(await readdir(external)).toEqual([]);
+      expect(linkedStore.usage()).toEqual({ rawBytes: 0, completionCount: 0 });
+    }
   });
 });

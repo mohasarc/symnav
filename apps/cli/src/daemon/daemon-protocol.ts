@@ -49,6 +49,83 @@ export type DaemonStopResult =
 
 export type DaemonStopReason = "graceful" | "idle" | "resource" | "workspace-deleted";
 
+export type DaemonExecutionFailureCode =
+  | "worker-exit"
+  | "controlled-resource"
+  | "response-capacity"
+  | "stopping"
+  | "internal";
+
+export type DaemonExecuteRejectionCode =
+  | "not-ready"
+  | "draining"
+  | "resource-pressure"
+  | "incompatible";
+
+export interface DaemonExecuteRequest {
+  readonly kind: "execute";
+  readonly protocolVersion: number;
+  readonly instanceId: string;
+  readonly processToken: string;
+  readonly requestId: string;
+  readonly request: CliExecutionRequest;
+}
+
+export type DaemonExecutionServerFrame =
+  | {
+      readonly kind: "accepted";
+      readonly instanceId: string;
+      readonly processToken: string;
+      readonly requestId: string;
+      readonly acceptedAt: number;
+      readonly queuePosition: number;
+    }
+  | {
+      readonly kind: "rejected";
+      readonly instanceId: string;
+      readonly processToken: string;
+      readonly requestId: string;
+      readonly code: DaemonExecuteRejectionCode;
+      readonly retrySafe: boolean;
+    }
+  | {
+      readonly kind: "completed";
+      readonly instanceId: string;
+      readonly processToken: string;
+      readonly requestId: string;
+      readonly result: CommandExecutionResult;
+    }
+  | {
+      readonly kind: "execution-failed";
+      readonly instanceId: string;
+      readonly processToken: string;
+      readonly requestId: string;
+      readonly code: DaemonExecutionFailureCode;
+    };
+
+export type DaemonExecutionStatus =
+  | { readonly state: "unknown" }
+  | { readonly state: "queued"; readonly queuePosition: number }
+  | { readonly state: "running"; readonly startedAt: number }
+  | { readonly state: "completed" }
+  | { readonly state: "failed"; readonly code: DaemonExecutionFailureCode };
+
+export interface DaemonExecutionStatusRequest {
+  readonly kind: "execution-status";
+  readonly protocolVersion: number;
+  readonly instanceId: string;
+  readonly processToken: string;
+  readonly requestId: string;
+}
+
+export interface DaemonExecutionStatusResponse {
+  readonly kind: "execution-status";
+  readonly instanceId: string;
+  readonly processToken: string;
+  readonly requestId: string;
+  readonly status: DaemonExecutionStatus;
+}
+
 export type DaemonLogEvent =
   | { readonly kind: "start"; readonly workspaceRoot: string; readonly instanceId: string }
   | { readonly kind: "ready"; readonly fileCount: number }

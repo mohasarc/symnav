@@ -44,7 +44,13 @@ describe("DaemonOperationObserver", () => {
     trace.deliveryTerminated("delivered");
 
     expect(events).toEqual([
-      { kind: "request-accepted", requestId: "request-one", command: "refs", queueDepth: 2, workerGeneration: 3 },
+      {
+        kind: "request-accepted",
+        requestId: "request-one",
+        command: "refs",
+        queueDepth: 2,
+        workerGeneration: 3,
+      },
       { kind: "turn-started", requestId: "request-one", queueWaitMs: 20, workerGeneration: 3 },
       {
         kind: "worker-completed",
@@ -58,7 +64,13 @@ describe("DaemonOperationObserver", () => {
         removed: 3,
         unchanged: 4,
       },
-      { kind: "response-spooled", requestId: "request-one", rawBytes: 128, recordCount: 2, spoolMs: 7 },
+      {
+        kind: "response-spooled",
+        requestId: "request-one",
+        rawBytes: 128,
+        recordCount: 2,
+        spoolMs: 7,
+      },
       { kind: "execution-terminal", requestId: "request-one", outcome: "completed", serviceMs: 60 },
       { kind: "client-disconnected", requestId: "request-one" },
       { kind: "client-reattached", requestId: "request-one" },

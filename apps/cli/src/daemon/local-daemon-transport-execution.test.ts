@@ -309,6 +309,88 @@ describe("LocalDaemonTransport execution delivery", () => {
     if (completion.status === "completed") await completion.result.output?.dispose();
   });
 
+  it.each([
+    "duplicate-manifest",
+    "missing-manifest",
+    "wrong-transfer",
+    "wrong-raw-bytes",
+    "wrong-record-count",
+    "wrong-digest",
+  ] as const)("rejects corrupt resumed transfer control: %s", async (corruption) => {
+    const directory = mkdtempSync(join(tmpdir(), "symnav-corrupt-resume-"));
+    directories.push(directory);
+    const store = new DaemonCompletionSpoolStore({
+      directory: join(directory, "daemon"),
+      workspaceKey: "workspace",
+      instanceId: request.instanceId,
+    });
+    const spool = await store.create(request.requestId);
+    for (let sequence = 0; sequence < 4; sequence += 1) {
+      await spool.append({
+        sequence,
+        stream: sequence % 2 === 0 ? "stdout" : "stderr",
+        bytes: Buffer.from(`record-${sequence}\n`),
+      });
+    }
+    const manifest = await spool.finish(0);
+    const endpoint = await rawExecutionServer(servers, sockets, directories, (socket) => {
+      socket.once("data", (encoded) => {
+        const message = JSON.parse(encoded.subarray(4).toString()) as { kind: string };
+        if (message.kind === "execute") {
+          socket.write(frame(accepted()));
+          socket.write(frame(resultManifest(manifest)));
+          void sendRecords(socket, spool, manifest.transferId, 0, 2).then(() => socket.end());
+          return;
+        }
+        if (message.kind === "result-ack") {
+          socket.end(
+            frame({
+              kind: "result-acknowledged",
+              instanceId: request.instanceId,
+              processToken: request.processToken,
+              requestId: request.requestId,
+              transferId: manifest.transferId,
+            }),
+          );
+          return;
+        }
+        if (message.kind !== "result-fetch") return;
+        if (corruption !== "missing-manifest") socket.write(frame(resultManifest(manifest)));
+        if (corruption === "duplicate-manifest") socket.write(frame(resultManifest(manifest)));
+        void sendRecords(socket, spool, manifest.transferId, 2).then(() => {
+          const end = {
+            ...resultEnd(manifest),
+            ...(corruption === "wrong-transfer" ? { transferId: "other-transfer" } : {}),
+            ...(corruption === "wrong-raw-bytes" ? { rawBytes: manifest.rawBytes + 1 } : {}),
+            ...(corruption === "wrong-record-count"
+              ? { recordCount: manifest.recordCount + 1 }
+              : {}),
+            ...(corruption === "wrong-digest" ? { sha256: "0".repeat(64) } : {}),
+          };
+          socket.write(frame(end));
+        });
+      });
+    });
+    const clientDirectory = join(directory, "client");
+    const receipt = await new LocalDaemonTransport({
+      outputDirectory: clientDirectory,
+      outputInlineBytes: 0,
+    }).execute(endpoint, request);
+
+    await expect(receipt.completion).rejects.toMatchObject({
+      code: "corrupt",
+      delivery: "accepted",
+      retrySafe: false,
+    } satisfies Partial<DaemonTransportError>);
+    expect(store.usage()).toEqual({
+      rawBytes: manifest.rawBytes,
+      completionCount: 1,
+    });
+    expect(
+      await import("node:fs/promises").then(({ readdir }) => readdir(clientDirectory)),
+    ).toEqual([]);
+  });
+
   it.each(["eof", "close", "malformed", "multiple"] as const)(
     "settles an accepted completion when the acknowledgement response is %s",
     async (acknowledgementFailure) => {
@@ -567,7 +649,7 @@ function resultManifest(
 
 function resultEnd(
   manifest: import("./completion-spool.js").CompletionSpoolManifest,
-): DaemonExecutionServerFrame {
+): Extract<DaemonExecutionServerFrame, { kind: "result-end" }> {
   return {
     kind: "result-end",
     instanceId: request.instanceId,

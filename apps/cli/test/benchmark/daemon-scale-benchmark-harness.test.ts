@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { DAEMON_BENCHMARK_WARM_REPETITIONS } from "./daemon-benchmark-gate.js";
 import {
+  BenchmarkInvocationTelemetry,
   BenchmarkSampleEvidence,
   DaemonBenchmarkDiagnostics,
   DaemonBenchmarkPhaseStatistics,
@@ -108,6 +109,23 @@ describe("DaemonScaleBenchmarkHarness", () => {
     expect(BenchmarkSampleEvidence.telemetryMatched([], [event, event], "overview")).toBe(false);
     expect(BenchmarkSampleEvidence.telemetryMatched([], [], "overview")).toBe(false);
     expect(BenchmarkSampleEvidence.telemetryMatched([], [event], "overview")).toBe(true);
+  });
+
+  it("rejects offsetting duplicate and missing mutation telemetry windows", () => {
+    const event = { command: "overview", executionMode: "warm" } satisfies Record<string, unknown>;
+    const afterDuplicatedInvocation = [event, event];
+    const afterMissingInvocation = afterDuplicatedInvocation;
+
+    expect(
+      BenchmarkInvocationTelemetry.complete([
+        { before: [], after: afterDuplicatedInvocation, command: "overview" },
+        {
+          before: afterDuplicatedInvocation,
+          after: afterMissingInvocation,
+          command: "overview",
+        },
+      ]),
+    ).toBe(false);
   });
 
   it.each([

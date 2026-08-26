@@ -55,6 +55,161 @@ export class DaemonResourcePolicy {
   }
 }
 
+export type DaemonResourceState =
+  | "warming"
+  | "ready"
+  | "active"
+  | "shedding"
+  | "replacing"
+  | "draining"
+  | "stopped";
+
+export interface DaemonResourceSnapshot {
+  readonly state: DaemonResourceState;
+  readonly generation: number;
+  readonly processRssBytes: number;
+  readonly peakProcessRssBytes: number;
+  readonly workerHeapUsedBytes?: number;
+  readonly workerHeapLimitBytes?: number;
+  readonly spoolBytes: number;
+  readonly admissionPaused: boolean;
+  readonly replacementCount: number;
+}
+
+export interface DaemonResourceSupervisorOptions {
+  readonly policy: DaemonResourcePolicy;
+  readonly generation: number;
+  readonly intervalMs?: number;
+  readonly residentMemoryBytes?: () => number;
+  readonly spoolBytes: () => number;
+  readonly releaseTransientResources: () => Promise<void>;
+  readonly replaceWorker: () => Promise<number>;
+  readonly drain: () => Promise<void>;
+}
+
+export class DaemonResourceSupervisor {
+  private readonly residentMemoryBytes: () => number;
+  private timer: ReturnType<typeof setInterval> | undefined;
+  private currentState: DaemonResourceState = "ready";
+  private currentGeneration: number;
+  private currentProcessRssBytes = 0;
+  private peakProcessRssBytes = 0;
+  private currentSpoolBytes = 0;
+  private admissionPaused = false;
+  private shedPending = false;
+  private shedCompleted = false;
+  private workerHeapUsedBytes: number | undefined;
+  private workerHeapLimitBytes: number | undefined;
+  private replacementCount = 0;
+  private replacementOperation: Promise<void> | undefined;
+
+  constructor(private readonly options: DaemonResourceSupervisorOptions) {
+    this.currentGeneration = options.generation;
+    this.residentMemoryBytes = options.residentMemoryBytes ?? (() => process.memoryUsage().rss);
+  }
+
+  get snapshot(): DaemonResourceSnapshot {
+    return Object.freeze({
+      state: this.currentState,
+      generation: this.currentGeneration,
+      processRssBytes: this.currentProcessRssBytes,
+      peakProcessRssBytes: this.peakProcessRssBytes,
+      ...(this.workerHeapUsedBytes === undefined
+        ? {}
+        : { workerHeapUsedBytes: this.workerHeapUsedBytes }),
+      ...(this.workerHeapLimitBytes === undefined
+        ? {}
+        : { workerHeapLimitBytes: this.workerHeapLimitBytes }),
+      spoolBytes: this.currentSpoolBytes,
+      admissionPaused: this.admissionPaused,
+      replacementCount: this.replacementCount,
+    });
+  }
+
+  start(): void {
+    if (this.timer !== undefined || this.currentState === "stopped") return;
+    this.timer = setInterval(
+      () => void this.sample("interval").catch(() => undefined),
+      this.options.intervalMs ?? DAEMON_RESOURCE_SAMPLE_INTERVAL_MS,
+    );
+    this.timer.unref?.();
+  }
+
+  async sample(reason: "interval" | "admission" | "turn-complete"): Promise<void> {
+    if (this.currentState === "draining" || this.currentState === "stopped") return;
+    this.captureUsage();
+    const policy = this.options.policy.record;
+    if (this.currentProcessRssBytes >= policy.hardProcessRssBytes) {
+      await this.replace();
+      return;
+    }
+    if (this.currentProcessRssBytes <= policy.resumeProcessRssBytes) {
+      this.admissionPaused = false;
+      this.shedPending = false;
+      this.shedCompleted = false;
+      this.currentState = "ready";
+      return;
+    }
+    if (this.currentProcessRssBytes < policy.softProcessRssBytes) return;
+    this.admissionPaused = true;
+    this.shedPending = true;
+    if (reason !== "turn-complete" || this.shedCompleted) return;
+    this.currentState = "shedding";
+    await this.options.releaseTransientResources();
+    this.shedCompleted = true;
+  }
+
+  workerHeapReported(generation: number, usedBytes: number, limitBytes: number): void {
+    if (generation !== this.currentGeneration) return;
+    this.workerHeapUsedBytes = usedBytes;
+    this.workerHeapLimitBytes = limitBytes;
+  }
+
+  async workerExited(exit: import("./daemon-navigation-worker.js").DaemonNavigationWorkerExit) {
+    if (exit.generation !== this.currentGeneration || this.currentState === "stopped") return;
+    await this.replace();
+  }
+
+  stop(): void {
+    if (this.timer !== undefined) clearInterval(this.timer);
+    this.timer = undefined;
+    this.currentState = "stopped";
+  }
+
+  private captureUsage(): void {
+    this.currentProcessRssBytes = this.residentMemoryBytes();
+    this.peakProcessRssBytes = Math.max(this.peakProcessRssBytes, this.currentProcessRssBytes);
+    this.currentSpoolBytes = this.options.spoolBytes();
+  }
+
+  private replace(): Promise<void> {
+    if (this.replacementOperation !== undefined) return this.replacementOperation;
+    this.currentState = "replacing";
+    this.admissionPaused = true;
+    this.replacementOperation = this.options
+      .replaceWorker()
+      .then((generation) => {
+        this.currentGeneration = generation;
+        this.workerHeapUsedBytes = undefined;
+        this.workerHeapLimitBytes = undefined;
+        this.replacementCount += 1;
+        this.shedPending = false;
+        this.shedCompleted = false;
+        this.admissionPaused = false;
+        this.currentState = "ready";
+      })
+      .catch(async (error: unknown) => {
+        this.currentState = "draining";
+        await this.options.drain();
+        throw error;
+      })
+      .finally(() => {
+        this.replacementOperation = undefined;
+      });
+    return this.replacementOperation;
+  }
+}
+
 export function daemonMemoryCapBytes(totalMemoryBytes: number): number {
   return DaemonResourcePolicy.fromSystemMemory(totalMemoryBytes).record.hardProcessRssBytes;
 }

@@ -54,7 +54,7 @@ export class NodeDaemonNavigationWorker implements DaemonNavigationWorker {
   private exit: DaemonNavigationWorkerExit | undefined;
   private terminating = false;
   private closeAcknowledged = false;
-  private communicationErrorName: string | undefined;
+  private communicationFailure: Error | undefined;
 
   constructor(options: NodeDaemonNavigationWorkerOptions) {
     this.generation = options.generation;
@@ -164,16 +164,15 @@ export class NodeDaemonNavigationWorker implements DaemonNavigationWorker {
   private failCommunication(error: unknown): void {
     if (this.exit !== undefined) return;
     const failure = error instanceof Error ? error : new Error(String(error));
-    this.communicationErrorName = failure.name;
-    for (const pending of this.pending.values()) pending.reject(failure);
-    this.pending.clear();
+    this.communicationFailure = failure;
     void this.worker.terminate();
   }
 
   private finishExit(): void {
     if (this.exit !== undefined) return;
-    const cause = this.communicationErrorName
-      ? this.communicationErrorName === "ERR_WORKER_OUT_OF_MEMORY"
+    const communicationErrorName = this.communicationFailure?.name;
+    const cause = communicationErrorName
+      ? communicationErrorName === "ERR_WORKER_OUT_OF_MEMORY"
         ? "out-of-memory"
         : "error"
       : this.terminating
@@ -184,11 +183,12 @@ export class NodeDaemonNavigationWorker implements DaemonNavigationWorker {
     this.exit = {
       generation: this.generation,
       cause,
-      ...(this.communicationErrorName === undefined
-        ? {}
-        : { errorName: this.communicationErrorName }),
+      ...(communicationErrorName === undefined ? {} : { errorName: communicationErrorName }),
     };
-    const failure = new Error(`Daemon navigation worker exited (${cause})`);
+    const failure = new DaemonNavigationWorkerExitedError(
+      this.exit,
+      this.communicationFailure?.message,
+    );
     for (const pending of this.pending.values()) pending.reject(failure);
     this.pending.clear();
     this.resolveExited(this.exit);

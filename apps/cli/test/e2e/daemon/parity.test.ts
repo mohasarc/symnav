@@ -373,7 +373,7 @@ describe("symnav daemon parity", () => {
     const controlled = await harness.startControlledDaemon("--worker-exit");
     const execution = harness.warmAsync(["overview", "input.ts"], "1");
     await waitUntil(() => existsSync(controlled.requestStartedPath));
-    const requestId = acceptanceRequestId(controlled.logPath);
+    const requestId = readFileSync(controlled.requestIdPath, "utf8");
     const acceptedRequest = JSON.parse(
       readFileSync(controlled.requestPayloadPath, "utf8"),
     ) as CliExecutionRequest;
@@ -790,10 +790,10 @@ class DaemonParityHarness {
     if (readyRecord?.state !== "ready") throw new Error("Controlled daemon did not become ready");
     return {
       child,
-      logPath: identity.logPath,
       record: readyRecord,
       requestPayloadPath: `${requestStartedPath}.payload`,
       requestStartedPath,
+      requestIdPath: `${requestStartedPath}.request-id`,
       workerExitReleasePath: `${requestStartedPath}.release-worker-exit`,
     };
   }
@@ -905,21 +905,11 @@ function digest(value: string): string {
 
 interface ControlledDaemon {
   readonly child: ChildProcess;
-  readonly logPath: string;
   readonly record: DaemonRecord;
   readonly requestPayloadPath: string;
   readonly requestStartedPath: string;
+  readonly requestIdPath: string;
   readonly workerExitReleasePath: string;
-}
-
-function acceptanceRequestId(logPath: string): string {
-  const acceptance = readFileSync(logPath, "utf8")
-    .trimEnd()
-    .split("\n")
-    .map((line) => JSON.parse(line) as { readonly kind: string; readonly requestId?: string })
-    .find((event) => event.kind === "request-accepted");
-  if (acceptance?.requestId === undefined) throw new Error("Daemon did not log request acceptance");
-  return acceptance.requestId;
 }
 
 async function waitUntil(predicate: () => boolean | Promise<boolean>): Promise<void> {

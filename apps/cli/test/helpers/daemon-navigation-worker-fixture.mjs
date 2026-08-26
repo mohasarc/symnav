@@ -37,6 +37,7 @@ parentPort.on("message", (message) => {
     if (workerData.requestStartedPath !== undefined) {
       writeFileSync(workerData.requestStartedPath, "started");
       writeFileSync(`${workerData.requestStartedPath}.${executionCount}`, "started");
+      writeFileSync(`${workerData.requestStartedPath}.request-id`, message.requestId);
     }
     if (workerData.mode === "heap-oom") {
       exhaustOldGeneration();

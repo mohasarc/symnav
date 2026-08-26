@@ -338,7 +338,7 @@ describe("WorkspaceDaemon runtime lifecycle", () => {
         expect.objectContaining({ kind: "failure", operation: "request" }),
         expect.objectContaining({
           kind: "execution-terminal",
-          requestId: "recovered",
+          requestId: expect.stringMatching(/^[a-f0-9]{64}$/),
           outcome: "completed",
         }),
         expect.objectContaining({ kind: "stop", reason: "idle" }),

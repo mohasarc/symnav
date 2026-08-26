@@ -1,9 +1,9 @@
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, readdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { NodeDaemonClock } from "./daemon-clock.js";
-import { DaemonLogger } from "./daemon-logger.js";
+import { DAEMON_LOG_BACKUP_COUNT, DaemonLogger } from "./daemon-logger.js";
 import type { DaemonDiagnosticEvent } from "./daemon-protocol.js";
 import { DaemonWorkspaceIdentity } from "./daemon-workspace-identity.js";
 
@@ -105,4 +105,38 @@ describe("DaemonLogger", () => {
       errorName: "UnknownError",
     });
   });
+
+  it("rotates before the byte limit and retains only four backups", async () => {
+    const root = mkdtempSync(join(tmpdir(), "symnav-daemon-rotation-"));
+    roots.push(root);
+    const identity = DaemonWorkspaceIdentity.from("/repo", root);
+    let now = 1;
+    const logger = new DaemonLogger(
+      identity,
+      "rotation",
+      { wallNowMs: () => now++, monotonicNowMs: () => 0 },
+      { rotateBytes: 220 },
+    );
+
+    for (let index = 0; index < 12; index += 1) {
+      logger.record({ kind: "ready", fileCount: index });
+    }
+    await logger.flush();
+
+    const logFiles = readdirSync(identity.identityDirectory)
+      .filter((name) => name.startsWith("daemon.log"))
+      .sort();
+    expect(logFiles).toEqual([
+      "daemon.log",
+      ...Array.from({ length: DAEMON_LOG_BACKUP_COUNT }, (_, index) => `daemon.log.${index + 1}`),
+    ]);
+    const retained = [...logFiles]
+      .reverse()
+      .flatMap((name) => readFileSync(join(identity.identityDirectory, name), "utf8").trim().split("\n"))
+      .map((line) => JSON.parse(line) as { timestamp: number });
+    expect(retained.map((event) => event.timestamp)).toEqual(
+      [...retained].map((event) => event.timestamp).sort((left, right) => left - right),
+    );
+  });
+
 });

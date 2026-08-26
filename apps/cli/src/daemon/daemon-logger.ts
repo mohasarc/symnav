@@ -54,6 +54,8 @@ const DIAGNOSTIC_FIELDS = [
   "operation",
   "failureCode",
   "errorName",
+  "terminationReason",
+  "signal",
   "droppedCount",
 ] as const;
 
@@ -79,6 +81,7 @@ const DIAGNOSTIC_KINDS = new Set([
   "resources-released",
   "worker-replaced",
   "shutdown",
+  "process-termination",
 ]);
 
 const COMMAND_NAMES = new Set<DaemonCommandName>([
@@ -137,6 +140,8 @@ const CLOSED_DIAGNOSTIC_VALUES = new Map<string, ReadonlySet<string>>([
   ["outcome", new Set(["completed", "failed", "delivered", "disconnected"])],
   ["reason", new Set(["graceful", "idle", "resource", "workspace-deleted"])],
   ["cause", new Set(["hard-pressure", "out-of-memory", "shed-failure", "worker-exit"])],
+  ["terminationReason", new Set(["uncaught-exception", "unhandled-rejection", "signal"])],
+  ["signal", new Set(["SIGTERM", "SIGINT", "SIGHUP"])],
 ]);
 
 const NUMERIC_DIAGNOSTIC_FIELDS = new Set([
@@ -326,6 +331,11 @@ export class DaemonLogger {
       if (typeof value !== "number" || !Number.isFinite(value) || value < 0) return undefined;
     }
     if ("force" in closed && typeof closed.force !== "boolean") return undefined;
+    if (closed.kind === "process-termination") {
+      const isSignal = closed.terminationReason === "signal";
+      if (isSignal !== (closed.signal !== undefined)) return undefined;
+      if (isSignal === (closed.errorName !== undefined)) return undefined;
+    }
     return closed;
   }
 

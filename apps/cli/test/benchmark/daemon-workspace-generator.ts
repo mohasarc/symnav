@@ -1,4 +1,4 @@
-import type { DaemonWorkspaceProfile } from "./daemon-workspace-profile.js";
+import type { DaemonWorkspaceProfile, DistributionSummary } from "./daemon-workspace-profile.js";
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { mkdirSync, writeFileSync } from "node:fs";
@@ -52,18 +52,31 @@ export class DaemonWorkspaceGenerator {
   async generate(destination: string): Promise<GeneratedDaemonWorkspace> {
     const workspaceRoot = resolve(destination);
     const visibleTypeScriptFiles = this.options.profile.visibleTypeScriptFiles * this.options.scale;
-    const packageCount = Math.max(
-      2,
-      Math.min(visibleTypeScriptFiles, this.options.profile.packageCount * this.options.scale),
+    const totalPackageCount = Math.max(
+      3,
+      Math.min(visibleTypeScriptFiles + 1, this.options.profile.packageCount * this.options.scale),
     );
+    const packageDirectoryCount = totalPackageCount - 1;
+    const configCount = this.options.profile.configCount * this.options.scale;
+    const projectReferenceCount = this.options.profile.projectReferenceCount * this.options.scale;
     this.initializeRepository(workspaceRoot);
-    this.writeRootConfiguration(workspaceRoot, packageCount);
+    this.writeRootConfiguration(
+      workspaceRoot,
+      packageDirectoryCount,
+      Math.min(packageDirectoryCount, projectReferenceCount),
+    );
     const firstModuleByPackage = this.writePackages(
       workspaceRoot,
-      packageCount,
+      packageDirectoryCount,
       visibleTypeScriptFiles,
     );
     this.writePackageManifests(workspaceRoot, firstModuleByPackage);
+    this.writeAdditionalConfigurations(
+      workspaceRoot,
+      packageDirectoryCount,
+      configCount - packageDirectoryCount - 1,
+      Math.max(0, projectReferenceCount - packageDirectoryCount),
+    );
     this.writeBoundaries(workspaceRoot);
     this.commit(workspaceRoot, "generated-foundation", "2000-01-01T00:00:00Z");
     this.write(
@@ -75,7 +88,7 @@ export class DaemonWorkspaceGenerator {
     const targetFile = "packages/package-000/src/module-000000.ts";
     const target = `${targetFile}::benchmarkHub`;
     const removableIndex = visibleTypeScriptFiles - 1;
-    const removablePackage = removableIndex % packageCount;
+    const removablePackage = removableIndex % packageDirectoryCount;
     const removableFile = `packages/package-${String(removablePackage).padStart(3, "0")}/src/module-${String(removableIndex).padStart(6, "0")}.ts`;
     return {
       workspaceRoot,
@@ -98,7 +111,7 @@ export class DaemonWorkspaceGenerator {
         ignoreRule: ".gitignore",
         nestedWorkspaceFile: "nested/nested.ts",
       },
-      expectedProfile: this.scaledProfile(packageCount, visibleTypeScriptFiles),
+      expectedProfile: this.scaledProfile(totalPackageCount, visibleTypeScriptFiles),
     };
   }
 
@@ -119,7 +132,11 @@ export class DaemonWorkspaceGenerator {
     execFileSync("git", ["-C", workspaceRoot, "config", "user.email", "benchmark@example.invalid"]);
   }
 
-  private writeRootConfiguration(workspaceRoot: string, packageCount: number): void {
+  private writeRootConfiguration(
+    workspaceRoot: string,
+    packageCount: number,
+    projectReferenceCount: number,
+  ): void {
     const packageNames = Array.from(
       { length: packageCount },
       (_, index) => `package-${String(index).padStart(3, "0")}`,
@@ -139,7 +156,9 @@ export class DaemonWorkspaceGenerator {
             moduleResolution: "NodeNext",
             target: "ES2022",
           },
-          references: packageNames.map((name) => ({ path: `./packages/${name}` })),
+          references: packageNames
+            .slice(0, projectReferenceCount)
+            .map((name) => ({ path: `./packages/${name}` })),
         },
         undefined,
         2,
@@ -166,7 +185,7 @@ export class DaemonWorkspaceGenerator {
           "src",
           moduleName,
         ),
-        this.moduleSource(index),
+        this.moduleSource(index, visibleTypeScriptFiles),
       );
     }
     return firstModuleByPackage;
@@ -213,24 +232,107 @@ export class DaemonWorkspaceGenerator {
     }
   }
 
-  private moduleSource(index: number): string {
+  private writeAdditionalConfigurations(
+    workspaceRoot: string,
+    packageCount: number,
+    additionalConfigCount: number,
+    additionalReferenceCount: number,
+  ): void {
+    if (additionalConfigCount < 0) throw new Error("Profile config count is undersized");
+    let remainingReferences = additionalReferenceCount;
+    for (let index = 0; index < additionalConfigCount; index += 1) {
+      const remainingConfigs = additionalConfigCount - index;
+      const referenceCount = Math.ceil(remainingReferences / remainingConfigs);
+      const references = Array.from({ length: referenceCount }, (_, referenceIndex) => ({
+        path: `../packages/package-${String(referenceIndex % packageCount).padStart(3, "0")}`,
+      }));
+      remainingReferences -= referenceCount;
+      this.write(
+        join(workspaceRoot, "configs", `tsconfig-extra-${String(index).padStart(3, "0")}.json`),
+        JSON.stringify({ files: [], references }, undefined, 2) + "\n",
+      );
+    }
+    if (remainingReferences !== 0) throw new Error("Profile project references are undersized");
+  }
+
+  private moduleSource(index: number, fileCount: number): string {
+    const sourceBytes = this.distributionValue(this.options.profile.sourceBytes, index, fileCount);
+    const sourceLines = this.distributionValue(this.options.profile.sourceLines, index, fileCount);
+    const symbolCount = this.distributionValue(
+      this.options.profile.symbolsPerFile,
+      index,
+      fileCount,
+    );
+    const importCount = this.distributionValue(
+      this.options.profile.importsPerFile,
+      index,
+      fileCount,
+    );
+    const callCount = this.distributionValue(this.options.profile.callOutDegree, index, fileCount);
     if (index === 0) {
-      return [
+      const specialLines = [
+        ...Array.from(
+          { length: importCount },
+          (_, importIndex) =>
+            `import { symbol000001 as benchmarkImport${importIndex} } from "@workspace/package-001";`,
+        ),
         `export const generatorSeed = "${this.seedMarker}";`,
         "export function benchmarkHub(value: number): number { return value + 1; }",
         "export function cycleEntry(value: number): number { return value <= 0 ? 0 : cycleExit(value - 1); }",
         "export function cycleExit(value: number): number { return cycleEntry(value); }",
-        "",
-      ].join("\n");
+      ];
+      for (let symbolIndex = 4; symbolIndex < symbolCount; symbolIndex += 1) {
+        specialLines.push(`export const benchmarkValue${symbolIndex} = ${symbolIndex};`);
+      }
+      return this.fitSource(specialLines, sourceLines, sourceBytes);
     }
     const suffix = String(index).padStart(6, "0");
-    return [
-      'import { benchmarkHub } from "@workspace/package-000";',
-      `export function symbol${suffix}(value: number): number {`,
-      `  return benchmarkHub(value) + ${index % 17};`,
-      "}",
-      "",
-    ].join("\n");
+    const lines = Array.from(
+      { length: importCount },
+      (_, importIndex) =>
+        `import { benchmarkHub as benchmarkImport${importIndex} } from "@workspace/package-000";`,
+    );
+    if (symbolCount > 0) {
+      lines.push(`export function symbol${suffix}(value: number): number {`);
+      const executableCalls = Math.max(0, callCount - 2);
+      for (let callIndex = 0; callIndex < executableCalls && importCount > 0; callIndex += 1) {
+        lines.push(`  benchmarkImport${callIndex % importCount}(value);`);
+      }
+      lines.push(
+        importCount === 0
+          ? `  return value + ${index % 17};`
+          : `  return benchmarkImport0(value) + ${index % 17};`,
+        "}",
+      );
+      for (let symbolIndex = 1; symbolIndex < symbolCount; symbolIndex += 1) {
+        lines.push(`export const value${suffix}_${symbolIndex} = ${symbolIndex};`);
+      }
+    }
+    if (lines.length === 0) lines.push("// generated");
+    return this.fitSource(lines, sourceLines, sourceBytes);
+  }
+
+  private distributionValue(
+    distribution: DistributionSummary,
+    index: number,
+    fileCount: number,
+  ): number {
+    const medianIndex = Math.ceil(fileCount * 0.5) - 1;
+    const distributionIndex = index === 0 ? medianIndex : index === medianIndex ? 0 : index;
+    if (distributionIndex === 0) return distribution.minimum;
+    if (distributionIndex < Math.ceil(fileCount * 0.5)) return distribution.p50;
+    if (distributionIndex < Math.ceil(fileCount * 0.95)) return distribution.p95;
+    return distribution.maximum;
+  }
+
+  private fitSource(lines: string[], targetLines: number, targetBytes: number): string {
+    while (lines.length < targetLines) lines.push("//");
+    let source = `${lines.join("\n")}\n`;
+    const missingBytes = targetBytes - Buffer.byteLength(source);
+    if (missingBytes <= 0) return source;
+    lines[0] = `${lines[0]}${" ".repeat(missingBytes)}`;
+    source = `${lines.join("\n")}\n`;
+    return source;
   }
 
   private writeBoundaries(workspaceRoot: string): void {
@@ -260,8 +362,8 @@ export class DaemonWorkspaceGenerator {
       ...this.options.profile,
       visibleTypeScriptFiles,
       packageCount,
-      configCount: packageCount + 1,
-      projectReferenceCount: packageCount,
+      configCount: this.options.profile.configCount * this.options.scale,
+      projectReferenceCount: this.options.profile.projectReferenceCount * this.options.scale,
       declarationKindCounts: Object.fromEntries(
         Object.entries(this.options.profile.declarationKindCounts).map(([kind, count]) => [
           kind,

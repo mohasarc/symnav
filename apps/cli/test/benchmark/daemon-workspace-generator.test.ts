@@ -71,10 +71,7 @@ describe("DaemonWorkspaceGenerator", () => {
     const root = TestWorkspace.create(roots);
     const reviewed = DaemonWorkspaceProfileValidator.parse(
       JSON.parse(
-        readFileSync(
-          new URL("./profiles/daemon-workspace-1x.v1.json", import.meta.url),
-          "utf8",
-        ),
+        readFileSync(new URL("./profiles/daemon-workspace-1x.v1.json", import.meta.url), "utf8"),
       ),
     );
 

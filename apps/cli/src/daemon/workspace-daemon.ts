@@ -563,7 +563,6 @@ export class WorkspaceDaemon {
   private async executeAccepted(
     request: Extract<DaemonRequest, { kind: "execute" }>,
   ): Promise<void> {
-    const trace = this.operationTraces.get(request.requestId);
     let spool: CompletionSpool | undefined;
     try {
       await this.requestQueue.enqueue(
@@ -573,7 +572,9 @@ export class WorkspaceDaemon {
           acceptedAt: this.clock.monotonicNowMs(),
         },
         async () => {
-          trace?.turnStarted(this.resourceSupervisor.snapshot.generation);
+          this.operationTraces
+            .get(request.requestId)
+            ?.turnStarted(this.resourceSupervisor.snapshot.generation);
           try {
             spool = await this.completionSpools.create(request.requestId);
             this.acceptedRequests.markRunning(request.requestId, this.now());
@@ -595,7 +596,7 @@ export class WorkspaceDaemon {
               response.resources.workerHeapLimitBytes,
               response.resources.peakWorkerHeapUsedBytes,
             );
-            trace?.workerCompleted(
+            this.operationTraces.get(request.requestId)?.workerCompleted(
               {
                 freshnessMs: response.durations.freshnessMs,
                 navigationMs: response.durations.navigationMs,
@@ -606,9 +607,11 @@ export class WorkspaceDaemon {
             );
             const spoolStartedAt = this.clock.monotonicNowMs();
             const manifest = await spool.finish(response.result.exitCode);
-            trace?.spooled(manifest, Math.max(0, this.clock.monotonicNowMs() - spoolStartedAt));
+            this.operationTraces
+              .get(request.requestId)
+              ?.spooled(manifest, Math.max(0, this.clock.monotonicNowMs() - spoolStartedAt));
             await this.recordCompletion(request);
-            trace?.executionTerminated("completed");
+            this.operationTraces.get(request.requestId)?.executionTerminated("completed");
             this.acceptedRequests.complete(request.requestId, request.requestId, this.now());
             await this.completionDeliveries.get(request.requestId);
           } finally {
@@ -617,7 +620,7 @@ export class WorkspaceDaemon {
         },
       );
     } catch (error) {
-      trace?.executionTerminated("failed");
+      this.operationTraces.get(request.requestId)?.executionTerminated("failed");
       this.logger.record({
         kind: "failure",
         operation: "request",

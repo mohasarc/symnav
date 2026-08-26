@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, rmSync } from "node:fs";
 import { createConnection, createServer, type Server, type Socket } from "node:net";
 import { dirname } from "node:path";
-import type { CommandExecutionResult } from "../command-execution-result.js";
+import { OrderedCommandOutput, type CommandExecutionResult } from "../command-execution-result.js";
 import type {
   DaemonExecuteRequest,
   DaemonExecutionFailureCode,
@@ -11,10 +11,15 @@ import type {
   DaemonExecutionStatusResponse,
   DaemonLifecycleRequest,
   DaemonLifecycleResponse,
+  DaemonResultAcknowledgement,
+  DaemonResultChunk,
   DaemonRequest,
   DaemonResponse,
+  DaemonServerMessage,
   DaemonServer,
 } from "./daemon-protocol.js";
+import { DaemonResultChunkCodec, DaemonTransferFrameDecoder } from "./daemon-result-chunk-codec.js";
+import { DAEMON_MAXIMUM_CONTROL_FRAME_BYTES } from "./completion-spool.js";
 
 const DEFAULT_MAXIMUM_FRAME_BYTES = 8 * 1024 * 1024;
 const DEFAULT_REQUEST_TIMEOUT_MS = 250;
@@ -274,13 +279,19 @@ export class LocalDaemonTransport {
   ): Promise<DaemonExecutionReceipt> {
     LocalDaemonTransport.assertRequest(request);
     return new Promise((resolve, reject) => {
-      const decoder = new DaemonFrameDecoder(this.maximumFrameBytes);
+      const decoder = new DaemonTransferFrameDecoder(DAEMON_MAXIMUM_CONTROL_FRAME_BYTES);
+      const output = new OrderedCommandOutput();
+      let manifest:
+        | Extract<DaemonExecutionServerFrame, { kind: "result-manifest" }>["manifest"]
+        | undefined;
+      let nextOffset = 0;
       const socket = createConnection(endpoint);
       let delivery: DaemonDeliveryState = "not-submitted";
       let acceptance: DaemonExecutionAcceptance | undefined;
       let terminal = false;
       let outerSettled = false;
       let completionSettled = false;
+      let resumeStarted = false;
       let resolveCompletion!: (value: Awaited<DaemonExecutionReceipt["completion"]>) => void;
       let rejectCompletion!: (error: DaemonTransportError) => void;
       const completion = new Promise<Awaited<DaemonExecutionReceipt["completion"]>>(
@@ -302,10 +313,32 @@ export class LocalDaemonTransport {
           rejectCompletion(transportError);
         }
       };
+      const resume = (): boolean => {
+        if (
+          resumeStarted ||
+          completionSettled ||
+          acceptance === undefined ||
+          manifest === undefined ||
+          terminal
+        ) {
+          return false;
+        }
+        resumeStarted = true;
+        socket.destroy();
+        void this.fetchCompletion(endpoint, request, output, manifest, nextOffset)
+          .then((result) => {
+            if (completionSettled) return;
+            completionSettled = true;
+            resolveCompletion({ status: "completed", result });
+          })
+          .catch(fail);
+        return true;
+      };
       socket.setTimeout(this.executionRequestTimeoutMs, () =>
         fail(new DaemonTransportError("timeout", delivery, "Daemon request timed out")),
       );
       socket.once("error", (error) => {
+        if (resume()) return;
         fail(
           new DaemonTransportError(
             delivery === "not-submitted" ? "unreachable" : "closed",
@@ -329,6 +362,21 @@ export class LocalDaemonTransport {
           const values = decoder.append(Buffer.isBuffer(bytes) ? bytes : Buffer.from(bytes));
           let terminalValue: Awaited<DaemonExecutionReceipt["completion"]> | undefined;
           for (const value of values) {
+            if (LocalDaemonTransport.isResultChunk(value)) {
+              if (
+                acceptance === undefined ||
+                manifest === undefined ||
+                value.requestId !== request.requestId ||
+                value.transferId !== manifest.transferId ||
+                value.offset !== nextOffset ||
+                value.sequence !== nextOffset
+              ) {
+                throw new Error("Daemon returned an invalid result chunk");
+              }
+              output[value.stream].write(value.bytes);
+              nextOffset += 1;
+              continue;
+            }
             const frame = LocalDaemonTransport.executionFrameFor(request, value);
             if (frame.kind === "rejected") {
               if (acceptance !== undefined || terminal) {
@@ -358,8 +406,45 @@ export class LocalDaemonTransport {
             if (acceptance === undefined) {
               throw new Error("Daemon returned completion before acceptance");
             }
-            if (frame.kind === "result-manifest" || frame.kind === "result-end") {
-              throw new Error("Daemon streamed result transfer is not active");
+            if (frame.kind === "result-manifest") {
+              if (manifest !== undefined || terminal) throw new Error("Duplicate result manifest");
+              manifest = frame.manifest;
+              continue;
+            }
+            if (frame.kind === "result-end") {
+              if (
+                manifest === undefined ||
+                frame.transferId !== manifest.transferId ||
+                frame.rawBytes !== manifest.rawBytes ||
+                frame.recordCount !== manifest.recordCount ||
+                frame.sha256 !== manifest.sha256 ||
+                nextOffset !== manifest.recordCount
+              ) {
+                throw new Error("Daemon result transfer did not match its manifest");
+              }
+              terminal = true;
+              const completedManifest = manifest;
+              void output
+                .finish(completedManifest.exitCode)
+                .then(async (result) => {
+                  if (
+                    result.output === undefined ||
+                    result.output.summary.rawBytes !== completedManifest.rawBytes ||
+                    result.output.summary.recordCount !== completedManifest.recordCount ||
+                    result.output.summary.sha256 !== completedManifest.sha256
+                  ) {
+                    await result.output?.dispose();
+                    throw new Error("Daemon result transfer failed digest validation");
+                  }
+                  await this.acknowledgeResult(endpoint, request, completedManifest);
+                  if (!completionSettled) {
+                    completionSettled = true;
+                    socket.end();
+                    resolveCompletion({ status: "completed", result });
+                  }
+                })
+                .catch(fail);
+              continue;
             }
             if (terminal) throw new Error("Daemon returned duplicate terminal frame");
             terminal = true;
@@ -384,6 +469,7 @@ export class LocalDaemonTransport {
       });
       socket.once("end", () => {
         if (terminal && completionSettled) return;
+        if (resume()) return;
         try {
           decoder.assertComplete();
           fail(
@@ -415,6 +501,136 @@ export class LocalDaemonTransport {
     );
   }
 
+  private fetchCompletion(
+    endpoint: string,
+    request: DaemonExecuteRequest,
+    output: OrderedCommandOutput,
+    manifest: Extract<DaemonExecutionServerFrame, { kind: "result-manifest" }>["manifest"],
+    initialOffset: number,
+  ): Promise<CommandExecutionResult> {
+    return new Promise((resolve, reject) => {
+      const decoder = new DaemonTransferFrameDecoder(DAEMON_MAXIMUM_CONTROL_FRAME_BYTES);
+      const socket = createConnection(endpoint);
+      let nextOffset = initialOffset;
+      let ended = false;
+      const fail = (error: unknown): void => {
+        socket.destroy();
+        reject(LocalDaemonTransport.transportError(error, "accepted"));
+      };
+      socket.once("error", fail);
+      socket.once("connect", () => {
+        this.writeFrame(socket, {
+          kind: "result-fetch",
+          protocolVersion: request.protocolVersion,
+          instanceId: request.instanceId,
+          processToken: request.processToken,
+          requestId: request.requestId,
+          offset: initialOffset,
+        });
+      });
+      socket.on("data", (bytes) => {
+        try {
+          for (const value of decoder.append(Buffer.isBuffer(bytes) ? bytes : Buffer.from(bytes))) {
+            if (LocalDaemonTransport.isResultChunk(value)) {
+              if (
+                value.requestId !== request.requestId ||
+                value.transferId !== manifest.transferId ||
+                value.offset !== nextOffset ||
+                value.sequence !== nextOffset
+              ) {
+                throw new Error("Daemon resumed with an invalid result chunk");
+              }
+              output[value.stream].write(value.bytes);
+              nextOffset += 1;
+              continue;
+            }
+            const frame = LocalDaemonTransport.executionFrameFor(request, value);
+            if (frame.kind === "result-manifest") {
+              if (JSON.stringify(frame.manifest) !== JSON.stringify(manifest)) {
+                throw new Error("Daemon resumed with a different result manifest");
+              }
+              continue;
+            }
+            if (frame.kind !== "result-end" || nextOffset !== manifest.recordCount) {
+              throw new Error("Daemon resumed with an invalid terminal frame");
+            }
+            ended = true;
+            void output
+              .finish(manifest.exitCode)
+              .then(async (result) => {
+                if (
+                  result.output === undefined ||
+                  result.output.summary.sha256 !== manifest.sha256
+                ) {
+                  await result.output?.dispose();
+                  throw new Error("Daemon resumed result failed digest validation");
+                }
+                await this.acknowledgeResult(endpoint, request, manifest);
+                socket.end();
+                resolve(result);
+              })
+              .catch(fail);
+          }
+        } catch (error) {
+          fail(error);
+        }
+      });
+      socket.once("end", () => {
+        if (ended) return;
+        try {
+          decoder.assertComplete();
+          fail(new Error("Daemon result resume ended before completion"));
+        } catch (error) {
+          fail(error);
+        }
+      });
+    });
+  }
+
+  private async acknowledgeResult(
+    endpoint: string,
+    request: DaemonExecuteRequest,
+    manifest: Extract<DaemonExecutionServerFrame, { kind: "result-manifest" }>["manifest"],
+  ): Promise<void> {
+    const acknowledgement: DaemonResultAcknowledgement = {
+      kind: "result-ack",
+      protocolVersion: request.protocolVersion,
+      instanceId: request.instanceId,
+      processToken: request.processToken,
+      requestId: request.requestId,
+      transferId: manifest.transferId,
+    };
+    await new Promise<void>((resolve, reject) => {
+      const decoder = new DaemonFrameDecoder(this.maximumFrameBytes);
+      const socket = createConnection(endpoint);
+      socket.once("error", reject);
+      socket.once("connect", () => this.writeFrame(socket, acknowledgement));
+      socket.on("data", (bytes) => {
+        try {
+          const values = decoder.append(Buffer.isBuffer(bytes) ? bytes : Buffer.from(bytes));
+          if (values.length === 0) return;
+          if (values.length !== 1) throw new Error("Duplicate daemon result acknowledgement");
+          const response = values[0];
+          LocalDaemonTransport.assertResponse(response);
+          if (
+            response.kind !== "result-acknowledged" ||
+            response.instanceId !== request.instanceId ||
+            response.processToken !== request.processToken ||
+            response.requestId !== request.requestId ||
+            response.transferId !== manifest.transferId
+          ) {
+            throw new Error("Invalid daemon result acknowledgement");
+          }
+          socket.end();
+          resolve();
+        } catch (error) {
+          socket.destroy();
+          reject(error);
+        }
+      });
+    });
+  }
+
   async executionStatus(
     endpoint: string,
     request: DaemonExecutionStatusRequest,
@@ -434,7 +650,7 @@ export class LocalDaemonTransport {
     endpoint: string,
     handler: (
       request: DaemonRequest,
-      send: (response: DaemonResponse) => void,
+      send: (response: DaemonServerMessage) => void,
     ) => Promise<DaemonResponse | void>,
   ): Promise<DaemonServer> {
     if (process.platform !== "win32") {
@@ -481,7 +697,7 @@ export class LocalDaemonTransport {
     socket: Socket,
     handler: (
       request: DaemonRequest,
-      send: (response: DaemonResponse) => void,
+      send: (response: DaemonServerMessage) => void,
     ) => Promise<DaemonResponse | void>,
   ): void {
     const decoder = new DaemonFrameDecoder(this.maximumFrameBytes);
@@ -493,7 +709,7 @@ export class LocalDaemonTransport {
           responses = responses
             .then(async () => {
               const response = await handler(value, (serverFrame) => {
-                if (!socket.destroyed) this.writeFrame(socket, serverFrame);
+                if (!socket.destroyed) this.writeServerMessage(socket, serverFrame);
               });
               if (response !== undefined && !socket.destroyed) this.writeFrame(socket, response);
             })
@@ -517,6 +733,14 @@ export class LocalDaemonTransport {
 
   private writeFrame(socket: Socket, value: unknown): void {
     this.writeEncodedFrame(socket, this.encodeFrame(value));
+  }
+
+  private writeServerMessage(socket: Socket, message: DaemonServerMessage): void {
+    if ("kind" in message) {
+      this.writeFrame(socket, message);
+      return;
+    }
+    this.writeEncodedFrame(socket, DaemonResultChunkCodec.encode(message));
   }
 
   private encodeFrame(value: unknown): Buffer {
@@ -627,10 +851,15 @@ export class LocalDaemonTransport {
     }
     if (value.kind === "ping" || value.kind === "stop") return;
     if (
-      (value.kind !== "execute" && value.kind !== "execution-status") ||
+      (value.kind !== "execute" &&
+        value.kind !== "execution-status" &&
+        value.kind !== "result-fetch" &&
+        value.kind !== "result-ack") ||
       typeof value.processToken !== "string" ||
       typeof value.requestId !== "string" ||
-      (value.kind === "execute" && !LocalDaemonTransport.isExecutionRequest(value.request))
+      (value.kind === "execute" && !LocalDaemonTransport.isExecutionRequest(value.request)) ||
+      (value.kind === "result-fetch" && !LocalDaemonTransport.isCount(value.offset)) ||
+      (value.kind === "result-ack" && typeof value.transferId !== "string")
     ) {
       throw new Error("Malformed daemon execution request");
     }
@@ -687,6 +916,8 @@ export class LocalDaemonTransport {
       value.kind === "accepted" ||
       value.kind === "rejected" ||
       value.kind === "completed" ||
+      value.kind === "result-manifest" ||
+      value.kind === "result-end" ||
       value.kind === "execution-failed"
     ) {
       LocalDaemonTransport.assertExecutionFrame(value);
@@ -700,6 +931,17 @@ export class LocalDaemonTransport {
         !LocalDaemonTransport.isExecutionStatus(value.status)
       ) {
         throw new Error("Malformed daemon execution status");
+      }
+      return;
+    }
+    if (value.kind === "result-acknowledged") {
+      if (
+        typeof value.instanceId !== "string" ||
+        typeof value.processToken !== "string" ||
+        typeof value.requestId !== "string" ||
+        typeof value.transferId !== "string"
+      ) {
+        throw new Error("Malformed daemon result acknowledgement");
       }
       return;
     }
@@ -732,6 +974,8 @@ export class LocalDaemonTransport {
       value.kind !== "accepted" &&
       value.kind !== "rejected" &&
       value.kind !== "completed" &&
+      value.kind !== "result-manifest" &&
+      value.kind !== "result-end" &&
       value.kind !== "execution-failed"
     ) {
       throw new DaemonResponseError("corrupt", "Daemon returned a non-execution frame");
@@ -794,6 +1038,23 @@ export class LocalDaemonTransport {
     if (value.kind === "completed") {
       if (!LocalDaemonTransport.isExecutionResult(value.result)) {
         throw new Error("Malformed daemon execution completion");
+      }
+      return;
+    }
+    if (value.kind === "result-manifest") {
+      if (!LocalDaemonTransport.isRecord(value.manifest)) {
+        throw new Error("Malformed daemon result manifest");
+      }
+      return;
+    }
+    if (value.kind === "result-end") {
+      if (
+        typeof value.transferId !== "string" ||
+        !LocalDaemonTransport.isCount(value.rawBytes) ||
+        !LocalDaemonTransport.isCount(value.recordCount) ||
+        typeof value.sha256 !== "string"
+      ) {
+        throw new Error("Malformed daemon result end");
       }
       return;
     }
@@ -878,6 +1139,14 @@ export class LocalDaemonTransport {
 
   private static isRecord(value: unknown): value is Record<string, unknown> {
     return typeof value === "object" && value !== null && !Array.isArray(value);
+  }
+
+  private static isResultChunk(value: unknown): value is DaemonResultChunk {
+    return (
+      LocalDaemonTransport.isRecord(value) &&
+      !("kind" in value) &&
+      value.bytes instanceof Uint8Array
+    );
   }
 
   private static hasExactKeys(value: Record<string, unknown>, keys: readonly string[]): boolean {

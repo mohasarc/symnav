@@ -73,6 +73,10 @@ export class CompletionSpool {
 
   constructor(private readonly options: CompletionSpoolOptions) {}
 
+  get completedManifest(): CompletionSpoolManifest | undefined {
+    return this.manifest;
+  }
+
   async append(record: CommandOutputRecord): Promise<void> {
     if (this.terminal) throw new Error("Completion spool is already terminal");
     if (record.sequence !== this.recordCount) throw new Error("Unexpected command output sequence");

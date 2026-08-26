@@ -1,5 +1,5 @@
 import type { ProgramDependencies } from "../program-dependencies.js";
-import type { CommandExecutionResult } from "../command-execution-result.js";
+import type { CommandExecutionResult, CommandOutputRecord } from "../command-execution-result.js";
 import {
   AcceptedRequestCorruptionError,
   AcceptedRequestLedger,
@@ -10,8 +10,14 @@ import type {
   DaemonRecord,
   DaemonRequest,
   DaemonResponse,
+  DaemonServerMessage,
   DaemonServer,
 } from "./daemon-protocol.js";
+import {
+  CompletionSpoolCapacityError,
+  DaemonCompletionSpoolStore,
+  type CompletionSpool,
+} from "./completion-spool.js";
 import { DAEMON_PROTOCOL_VERSION, DAEMON_RECORD_SCHEMA_VERSION } from "./daemon-protocol.js";
 import { DAEMON_IDLE_TIMEOUT_MS, DaemonLifetime } from "./daemon-lifetime.js";
 import { DaemonLogger } from "./daemon-logger.js";
@@ -57,7 +63,7 @@ export class WorkspaceDaemon {
   private readonly lifetime: DaemonLifetime;
   private readonly resourceMonitor: DaemonResourceMonitor;
   private readonly acceptedRequests: AcceptedRequestLedger;
-  private readonly acceptedResults = new Map<string, CommandExecutionResult>();
+  private readonly completionSpools: DaemonCompletionSpoolStore;
   private readonly acceptances = new Map<
     string,
     { readonly acceptedAt: number; readonly queuePosition: number }
@@ -81,6 +87,11 @@ export class WorkspaceDaemon {
     this.now = options.now ?? Date.now;
     this.requestQueue = new WorkspaceRequestQueue(this.now);
     this.acceptedRequests = new AcceptedRequestLedger(this.now);
+    this.completionSpools = new DaemonCompletionSpoolStore({
+      directory: options.identity.spoolDirectory,
+      workspaceKey: options.identity.workspaceKey,
+      instanceId: options.instanceId,
+    });
     this.logger = new DaemonLogger(options.identity.logPath, { now: this.now });
     this.navigationWorker =
       options.navigationWorker ??
@@ -249,7 +260,7 @@ export class WorkspaceDaemon {
 
   private async handle(
     request: DaemonRequest,
-    send: (response: DaemonResponse) => void,
+    send: (response: DaemonServerMessage) => void,
   ): Promise<DaemonResponse | void> {
     if (request.kind === "identify") return this.identify(request);
     if (request.kind === "terminate" || request.kind === "kill") {
@@ -262,12 +273,36 @@ export class WorkspaceDaemon {
       throw new Error("Daemon request does not match protocol or instance");
     }
     if (request.kind === "ping") return this.pong();
-    if (request.kind === "execute" || request.kind === "execution-status") {
+    if (
+      request.kind === "execute" ||
+      request.kind === "execution-status" ||
+      request.kind === "result-fetch" ||
+      request.kind === "result-ack"
+    ) {
       if (request.processToken !== this.options.processToken) {
         throw new Error("Daemon execution request does not match process instance");
       }
     }
     if (request.kind === "execute") return this.acceptExecution(request, send);
+    if (request.kind === "result-fetch") {
+      const spool = await this.completionSpools.open(request.requestId);
+      if (spool === undefined) throw new Error("Accepted request completion is unavailable");
+      void this.deliverCompletion(request.requestId, spool, request.offset, send);
+      return;
+    }
+    if (request.kind === "result-ack") {
+      const spool = await this.completionSpools.open(request.requestId);
+      if (spool === undefined) throw new Error("Accepted request completion is unavailable");
+      await spool.acknowledge();
+      this.acceptedRequests.acknowledge(request.requestId);
+      return {
+        kind: "result-acknowledged",
+        instanceId: this.options.instanceId,
+        processToken: this.options.processToken,
+        requestId: request.requestId,
+        transferId: request.transferId,
+      };
+    }
     if (request.kind === "execution-status") {
       return {
         kind: "execution-status",
@@ -345,7 +380,7 @@ export class WorkspaceDaemon {
 
   private acceptExecution(
     request: Extract<DaemonRequest, { kind: "execute" }>,
-    send: (response: DaemonResponse) => void,
+    send: (response: DaemonServerMessage) => void,
   ): DaemonResponse | void {
     if (!this.workerReady) return this.rejection(request, "not-ready", true);
     if (this.requestQueue.state !== "accepting") {
@@ -384,9 +419,7 @@ export class WorkspaceDaemon {
       ...acceptance,
     });
     if (entry.state.state === "completed") {
-      const result = this.acceptedResults.get(entry.state.resultId);
-      if (result === undefined) throw new Error("Accepted request result is missing");
-      this.deliver(send, this.completedFrame(request.requestId, result));
+      void this.deliverStoredCompletion(request.requestId, send);
       return;
     }
     if (entry.state.state === "failed") {
@@ -396,9 +429,7 @@ export class WorkspaceDaemon {
     let unsubscribe: (() => void) | undefined;
     unsubscribe = this.acceptedRequests.subscribe(request.requestId, (updated) => {
       if (updated.state.state === "completed") {
-        const result = this.acceptedResults.get(updated.state.resultId);
-        if (result !== undefined)
-          this.deliver(send, this.completedFrame(request.requestId, result));
+        void this.deliverStoredCompletion(request.requestId, send);
         unsubscribe?.();
       } else if (updated.state.state === "failed") {
         this.deliver(send, this.failedFrame(request.requestId, updated.state.code));
@@ -416,6 +447,7 @@ export class WorkspaceDaemon {
   ): Promise<void> {
     const requestStartedAt = this.now();
     try {
+      let spool: CompletionSpool | undefined;
       const result = await this.requestQueue.enqueue(
         {
           requestId: request.requestId,
@@ -423,6 +455,7 @@ export class WorkspaceDaemon {
           acceptedAt: this.now(),
         },
         async () => {
+          spool = await this.completionSpools.create(request.requestId);
           this.acceptedRequests.markRunning(request.requestId, this.now());
           const response = await this.navigationWorker.execute(request.requestId, request.request);
           if (response.kind !== "result" || response.requestId !== request.requestId) {
@@ -432,15 +465,22 @@ export class WorkspaceDaemon {
           return response.result;
         },
       );
-      const completedFrame = this.completedFrame(request.requestId, result);
-      const capacityTransport = this.options.transport as LocalDaemonTransport & {
-        canFrame?: (value: unknown) => boolean;
-      };
-      if (capacityTransport.canFrame?.(completedFrame) === false) {
-        this.acceptedRequests.fail(request.requestId, "response-capacity", this.now());
-        return;
+      if (spool === undefined) throw new Error("Completion spool was not created");
+      if (result.output === undefined) {
+        let sequence = 0;
+        for (const frame of result.frames) {
+          await spool.append({
+            sequence,
+            stream: frame.stream,
+            bytes: Buffer.from(frame.bytesBase64, "base64"),
+          });
+          sequence += 1;
+        }
+      } else {
+        for await (const record of result.output.records()) await spool.append(record);
+        await result.output.dispose();
       }
-      this.acceptedResults.set(request.requestId, result);
+      await spool.finish(result.exitCode);
       this.acceptedRequests.complete(request.requestId, request.requestId, this.now());
       await this.recordCompletion(request, requestStartedAt, result);
     } catch (error) {
@@ -451,11 +491,13 @@ export class WorkspaceDaemon {
       });
       const code =
         this.shutdownFailureCode ??
-        (error instanceof DaemonNavigationWorkerExitedError
-          ? "worker-exit"
-          : this.shutdownStarted
-            ? "stopping"
-            : "internal");
+        (error instanceof CompletionSpoolCapacityError
+          ? "response-capacity"
+          : error instanceof DaemonNavigationWorkerExitedError
+            ? "worker-exit"
+            : this.shutdownStarted
+              ? "stopping"
+              : "internal");
       this.acceptedRequests.fail(request.requestId, code, this.now());
     } finally {
       if (this.requestQueue.isIdle) this.lifetime.queueBecameIdle();
@@ -493,19 +535,6 @@ export class WorkspaceDaemon {
     };
   }
 
-  private completedFrame(
-    requestId: string,
-    result: CommandExecutionResult,
-  ): DaemonExecutionServerFrame {
-    return {
-      kind: "completed",
-      instanceId: this.options.instanceId,
-      processToken: this.options.processToken,
-      requestId,
-      result,
-    };
-  }
-
   private failedFrame(
     requestId: string,
     code: DaemonExecutionFailureCode,
@@ -519,10 +548,56 @@ export class WorkspaceDaemon {
     };
   }
 
-  private deliver(send: (response: DaemonResponse) => void, frame: DaemonResponse): void {
+  private deliver(send: (response: DaemonServerMessage) => void, frame: DaemonServerMessage): void {
     try {
       send(frame);
     } catch {}
+  }
+
+  private async deliverStoredCompletion(
+    requestId: string,
+    send: (response: DaemonServerMessage) => void,
+  ): Promise<void> {
+    const spool = await this.completionSpools.open(requestId);
+    if (spool === undefined) throw new Error("Accepted request result is missing");
+    await this.deliverCompletion(requestId, spool, 0, send);
+  }
+
+  private async deliverCompletion(
+    requestId: string,
+    spool: CompletionSpool,
+    offset: number,
+    send: (response: DaemonServerMessage) => void,
+  ): Promise<void> {
+    const completedManifest = spool.completedManifest;
+    if (completedManifest === undefined) throw new Error("Completion manifest is missing");
+    this.deliver(send, {
+      kind: "result-manifest",
+      instanceId: this.options.instanceId,
+      processToken: this.options.processToken,
+      requestId,
+      manifest: completedManifest,
+    });
+    for await (const record of spool.read(offset)) {
+      this.deliver(send, {
+        transferId: completedManifest.transferId,
+        requestId,
+        offset: record.sequence,
+        sequence: record.sequence,
+        stream: record.stream,
+        bytes: record.bytes,
+      });
+    }
+    this.deliver(send, {
+      kind: "result-end",
+      instanceId: this.options.instanceId,
+      processToken: this.options.processToken,
+      requestId,
+      transferId: completedManifest.transferId,
+      rawBytes: completedManifest.rawBytes,
+      recordCount: completedManifest.recordCount,
+      sha256: completedManifest.sha256,
+    });
   }
 
   private async drainAndShutdown(reason: "idle"): Promise<void> {

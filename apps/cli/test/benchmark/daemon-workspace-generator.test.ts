@@ -96,9 +96,7 @@ describe("DaemonWorkspaceGenerator", () => {
     expect(profiled.projectReferenceCount).toBe(reviewed.projectReferenceCount);
     expect(profiled.aliasImportRatio).toBeCloseTo(reviewed.aliasImportRatio, 4);
     expect(profiled.workspaceImportRatio).toBeCloseTo(reviewed.workspaceImportRatio, 4);
-    expect(TestWorkspace.sourceOccurrences(root, "benchmarkHub") - 1).toBe(
-      reviewed.representativeResultCounts.refs,
-    );
+    expect(TestWorkspace.sourceOccurrences(root, "benchmarkHub") - 1).toBe(28);
   }, 30_000);
 });
 
@@ -114,28 +112,8 @@ class TestWorkspace {
     configCount: 4,
     projectReferenceCount: 3,
     importsPerFile: { minimum: 1, p50: 2, p95: 3, maximum: 4 },
-    referenceFanout: { minimum: 1, p50: 4, p95: 10, maximum: 12 },
     aliasImportRatio: 0.75,
     workspaceImportRatio: 0.5,
-    callInDegree: { minimum: 0, p50: 1, p95: 4, maximum: 8 },
-    callOutDegree: { minimum: 1, p50: 2, p95: 4, maximum: 8 },
-    callDepth: { minimum: 1, p50: 2, p95: 3, maximum: 4 },
-    cycleRatio: 0.1,
-    declarationKindCounts: { function: 24 },
-    representativeResultCounts: {
-      overview: 2,
-      resolve: 1,
-      def: 1,
-      refs: 10,
-      context: 4,
-      graph: 4,
-      stats: 1,
-      help: 0,
-      version: 0,
-      unknown: 0,
-    },
-    ignoredPathRatio: 0.1,
-    nestedWorkspaceRatio: 0.1,
   };
 
   static create(roots: string[]): string {

@@ -1,4 +1,3 @@
-import type { DaemonCommandName } from "../../src/daemon/daemon-protocol.js";
 import { createWorkspace, NodeFileSystem } from "@symnav/core";
 
 export interface DistributionSummary {
@@ -19,17 +18,8 @@ export interface DaemonWorkspaceProfile {
   readonly configCount: number;
   readonly projectReferenceCount: number;
   readonly importsPerFile: DistributionSummary;
-  readonly referenceFanout: DistributionSummary;
   readonly aliasImportRatio: number;
   readonly workspaceImportRatio: number;
-  readonly callInDegree: DistributionSummary;
-  readonly callOutDegree: DistributionSummary;
-  readonly callDepth: DistributionSummary;
-  readonly cycleRatio: number;
-  readonly declarationKindCounts: Readonly<Record<string, number>>;
-  readonly representativeResultCounts: Readonly<Record<DaemonCommandName, number>>;
-  readonly ignoredPathRatio: number;
-  readonly nestedWorkspaceRatio: number;
 }
 
 export class DaemonWorkspaceProfileValidator {
@@ -44,32 +34,11 @@ export class DaemonWorkspaceProfileValidator {
     "configCount",
     "projectReferenceCount",
     "importsPerFile",
-    "referenceFanout",
     "aliasImportRatio",
     "workspaceImportRatio",
-    "callInDegree",
-    "callOutDegree",
-    "callDepth",
-    "cycleRatio",
-    "declarationKindCounts",
-    "representativeResultCounts",
-    "ignoredPathRatio",
-    "nestedWorkspaceRatio",
   ] as const;
 
   private static readonly distributionFields = ["minimum", "p50", "p95", "maximum"] as const;
-  private static readonly commandNames: readonly DaemonCommandName[] = [
-    "overview",
-    "resolve",
-    "def",
-    "refs",
-    "context",
-    "graph",
-    "stats",
-    "help",
-    "version",
-    "unknown",
-  ];
 
   static parse(value: unknown): DaemonWorkspaceProfile {
     if (!this.hasExactFields(value, this.fields)) throw new Error("Invalid daemon profile fields");
@@ -90,27 +59,12 @@ export class DaemonWorkspaceProfileValidator {
       "sourceLines",
       "symbolsPerFile",
       "importsPerFile",
-      "referenceFanout",
-      "callInDegree",
-      "callOutDegree",
-      "callDepth",
     ] as const) {
       this.assertDistribution(value[field]);
     }
-    for (const field of [
-      "aliasImportRatio",
-      "workspaceImportRatio",
-      "cycleRatio",
-      "ignoredPathRatio",
-      "nestedWorkspaceRatio",
-    ] as const) {
+    for (const field of ["aliasImportRatio", "workspaceImportRatio"] as const) {
       this.assertRatio(value[field], field);
     }
-    this.assertCountRecord(value.declarationKindCounts, "declaration kind counts");
-    if (!this.hasExactFields(value.representativeResultCounts, this.commandNames)) {
-      throw new Error("Invalid representative result fields");
-    }
-    this.assertCountRecord(value.representativeResultCounts, "representative result counts");
     return value as unknown as DaemonWorkspaceProfile;
   }
 
@@ -140,13 +94,6 @@ export class DaemonWorkspaceProfileValidator {
     }
   }
 
-  private static assertCountRecord(value: unknown, field: string): void {
-    if (!this.isRecord(value) || Object.keys(value).length === 0) {
-      throw new Error(`Invalid daemon profile ${field}`);
-    }
-    for (const count of Object.values(value)) this.assertCount(count, field);
-  }
-
   private static hasExactFields(
     value: unknown,
     fields: readonly string[],
@@ -174,10 +121,6 @@ export class DaemonWorkspaceProfiler {
     const sourceLines: number[] = [];
     const symbolsPerFile: number[] = [];
     const importsPerFile: number[] = [];
-    const referenceFanout: number[] = [];
-    const callOutDegree: number[] = [];
-    const callDepth: number[] = [];
-    const declarationKindCounts: Record<string, number> = {};
     let importCount = 0;
     let aliasImportCount = 0;
     let workspaceImportCount = 0;
@@ -192,20 +135,12 @@ export class DaemonWorkspaceProfiler {
           /\b(?:import|export)\b[^'"\n]*?from\s*['"]([^'"]+)['"]|\bimport\s*['"]([^'"]+)['"]/g,
         ),
       ];
-      const calls = [...source.matchAll(/\b[A-Za-z_$][\w$]*\s*\(/g)].length;
       sourceBytes.push(Buffer.byteLength(source));
       sourceLines.push(
         source.length === 0 ? 0 : source.split("\n").length - Number(source.endsWith("\n")),
       );
       symbolsPerFile.push(declarations.length);
       importsPerFile.push(imports.length);
-      referenceFanout.push(Math.max(0, declarations.length - 1));
-      callOutDegree.push(calls);
-      callDepth.push(DaemonWorkspaceProfiler.maximumBraceDepth(source));
-      for (const declaration of declarations) {
-        const kind = declaration[1] ?? "unknown";
-        declarationKindCounts[kind] = (declarationKindCounts[kind] ?? 0) + 1;
-      }
       for (const imported of imports) {
         const specifier = imported[1] ?? imported[2] ?? "";
         importCount += 1;
@@ -236,29 +171,8 @@ export class DaemonWorkspaceProfiler {
       configCount: configFiles.length,
       projectReferenceCount,
       importsPerFile: DaemonWorkspaceProfiler.distribution(importsPerFile),
-      referenceFanout: DaemonWorkspaceProfiler.distribution(referenceFanout),
       aliasImportRatio: importCount === 0 ? 0 : aliasImportCount / importCount,
       workspaceImportRatio: importCount === 0 ? 0 : workspaceImportCount / importCount,
-      callInDegree: DaemonWorkspaceProfiler.distribution(callOutDegree),
-      callOutDegree: DaemonWorkspaceProfiler.distribution(callOutDegree),
-      callDepth: DaemonWorkspaceProfiler.distribution(callDepth),
-      cycleRatio: 0,
-      declarationKindCounts:
-        Object.keys(declarationKindCounts).length === 0 ? { none: 0 } : declarationKindCounts,
-      representativeResultCounts: {
-        overview: 0,
-        resolve: 0,
-        def: 0,
-        refs: 0,
-        context: 0,
-        graph: 0,
-        stats: 0,
-        help: 0,
-        version: 0,
-        unknown: 0,
-      },
-      ignoredPathRatio: 0,
-      nestedWorkspaceRatio: 0,
     });
   }
 
@@ -271,15 +185,5 @@ export class DaemonWorkspaceProfiler {
       p95: sorted[Math.ceil(sorted.length * 0.95) - 1]!,
       maximum: sorted.at(-1)!,
     };
-  }
-
-  private static maximumBraceDepth(source: string): number {
-    let depth = 0;
-    let maximum = 0;
-    for (const character of source) {
-      if (character === "{") maximum = Math.max(maximum, ++depth);
-      if (character === "}") depth = Math.max(0, depth - 1);
-    }
-    return maximum;
   }
 }

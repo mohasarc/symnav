@@ -50,14 +50,16 @@ describe("daemon workspace profile", () => {
       "nestedWorkspaceRatio",
     ] as const;
     const narrowed = Object.fromEntries(
-      Object.entries(reviewedProfile()).filter(([field]) => !unsupportedFields.includes(field as never)),
+      Object.entries(reviewedProfile()).filter(
+        ([field]) => !unsupportedFields.includes(field as never),
+      ),
     );
 
     expect(() => DaemonWorkspaceProfileValidator.parse(narrowed)).not.toThrow();
     for (const field of unsupportedFields) {
-      expect(() =>
-        DaemonWorkspaceProfileValidator.parse({ ...narrowed, [field]: 0 }),
-      ).toThrow("profile fields");
+      expect(() => DaemonWorkspaceProfileValidator.parse({ ...narrowed, [field]: 0 })).toThrow(
+        "profile fields",
+      );
     }
   });
 
@@ -113,27 +115,7 @@ function reviewedProfile(): DaemonWorkspaceProfile {
     configCount: 24,
     projectReferenceCount: 19,
     importsPerFile: distribution(0, 2, 8, 30),
-    referenceFanout: distribution(0, 2, 10, 100),
     aliasImportRatio: 0.2,
     workspaceImportRatio: 0.1,
-    callInDegree: distribution(0, 1, 6, 30),
-    callOutDegree: distribution(0, 1, 6, 30),
-    callDepth: distribution(0, 2, 5, 10),
-    cycleRatio: 0.02,
-    declarationKindCounts: { class: 100, function: 1_000 },
-    representativeResultCounts: {
-      overview: 10,
-      resolve: 10,
-      def: 1,
-      refs: 20,
-      context: 10,
-      graph: 10,
-      stats: 1,
-      help: 0,
-      version: 0,
-      unknown: 0,
-    },
-    ignoredPathRatio: 0.05,
-    nestedWorkspaceRatio: 0.01,
   };
 }

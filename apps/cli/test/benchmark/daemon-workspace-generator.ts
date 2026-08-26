@@ -280,7 +280,7 @@ export class DaemonWorkspaceGenerator {
       index,
       fileCount,
     );
-    const callCount = this.distributionValue(this.options.profile.callOutDegree, index, fileCount);
+    const callCount = Math.min(importCount, 2 + (index % 12));
     if (index === 0) {
       const specialLines = [
         ...Array.from(
@@ -299,8 +299,7 @@ export class DaemonWorkspaceGenerator {
       return this.fitSource(specialLines, sourceLines, sourceBytes);
     }
     const suffix = String(index).padStart(6, "0");
-    const directBenchmarkHubFiles =
-      this.options.profile.representativeResultCounts.refs * this.options.scale;
+    const directBenchmarkHubFiles = Math.min(28, fileCount - 1);
     const lines = Array.from({ length: importCount }, (_, importIndex) => {
       const directBenchmarkHub = index <= directBenchmarkHubFiles && importIndex === 0;
       const targetPackage = directBenchmarkHub
@@ -439,18 +438,6 @@ export class DaemonWorkspaceGenerator {
       packageCount,
       configCount: this.options.profile.configCount * this.options.scale,
       projectReferenceCount: this.options.profile.projectReferenceCount * this.options.scale,
-      declarationKindCounts: Object.fromEntries(
-        Object.entries(this.options.profile.declarationKindCounts).map(([kind, count]) => [
-          kind,
-          count * this.options.scale,
-        ]),
-      ),
-      representativeResultCounts: Object.fromEntries(
-        Object.entries(this.options.profile.representativeResultCounts).map(([command, count]) => [
-          command,
-          count * this.options.scale,
-        ]),
-      ) as DaemonWorkspaceProfile["representativeResultCounts"],
     };
   }
 

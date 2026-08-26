@@ -6,16 +6,13 @@ import { describe, expect, it } from "vitest";
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 
 describe("daemon scale benchmark CI", () => {
-  const workflow = readFileSync(
-    join(repoRoot, ".github/workflows/daemon-benchmarks.yml"),
-    "utf8",
-  );
+  const workflow = readFileSync(join(repoRoot, ".github/workflows/daemon-benchmarks.yml"), "utf8");
   const rootPackage = JSON.parse(readFileSync(join(repoRoot, "package.json"), "utf8")) as {
     scripts: Record<string, string>;
   };
-  const cliPackage = JSON.parse(
-    readFileSync(join(repoRoot, "apps/cli/package.json"), "utf8"),
-  ) as { scripts: Record<string, string> };
+  const cliPackage = JSON.parse(readFileSync(join(repoRoot, "apps/cli/package.json"), "utf8")) as {
+    scripts: Record<string, string>;
+  };
 
   it("exposes declarative benchmark and opt-in profiler commands", () => {
     expect(rootPackage.scripts["daemon:benchmark"]).toBe("pnpm --filter symnav daemon:benchmark");

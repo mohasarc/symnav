@@ -4,6 +4,8 @@
   "private": true,
   "packageManager": "pnpm@10.26.2",
   "scripts": {
+    "daemon:benchmark": "pnpm --filter symnav daemon:benchmark",
+    "daemon:profile": "pnpm --filter symnav daemon:profile",
     "test": "pnpm -r run test",
     "build": "tsc --build",
     "typecheck": "tsc --build && pnpm -r run typecheck:test",

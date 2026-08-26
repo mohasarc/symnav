@@ -9,11 +9,11 @@ describe("DaemonBenchmarkRunConfiguration", () => {
   });
 
   it.each([
-    [],
-    ["--scale"],
-    ["--scale", "4"],
-    ["--scale", "1", "extra"],
-  ])("rejects partial or unknown arguments %#", (argv) => {
+    { argv: [] },
+    { argv: ["--scale"] },
+    { argv: ["--scale", "4"] },
+    { argv: ["--scale", "1", "extra"] },
+  ])("rejects partial or unknown arguments %#", ({ argv }) => {
     expect(() => DaemonBenchmarkRunConfiguration.parse(argv, {}, 64 * 1024 ** 3)).toThrow(
       "Usage: pnpm daemon:benchmark --scale <1|2|3|10>",
     );

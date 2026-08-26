@@ -21,6 +21,7 @@ import {
   type DaemonLifecycleResponse,
   type DaemonRequest,
   type DaemonResponse,
+  type DaemonServerMessage,
   type DaemonServer,
 } from "./daemon-protocol.js";
 import { DaemonRegistry } from "./daemon-registry.js";
@@ -504,7 +505,7 @@ class BlockingCloseTransport extends LocalDaemonTransport {
   private handler:
     | ((
         request: DaemonRequest,
-        send: (response: DaemonResponse) => void,
+        send: (response: DaemonServerMessage) => void,
       ) => Promise<DaemonResponse | void>)
     | undefined;
   private readonly closeStarted: Promise<void>;
@@ -526,7 +527,7 @@ class BlockingCloseTransport extends LocalDaemonTransport {
     _endpoint: string,
     handler: (
       request: DaemonRequest,
-      send: (response: DaemonResponse) => void,
+      send: (response: DaemonServerMessage) => void,
     ) => Promise<DaemonResponse | void>,
   ): Promise<DaemonServer> {
     this.handler = handler;

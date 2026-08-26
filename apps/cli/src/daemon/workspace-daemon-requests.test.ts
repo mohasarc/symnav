@@ -9,6 +9,7 @@ import type {
   DaemonExecutionStatusResponse,
   DaemonRequest,
   DaemonResponse,
+  DaemonServerMessage,
   DaemonServer,
 } from "./daemon-protocol.js";
 import { DAEMON_PROTOCOL_VERSION, DAEMON_RECORD_SCHEMA_VERSION } from "./daemon-protocol.js";
@@ -202,12 +203,14 @@ describe("WorkspaceDaemon requests", () => {
     const harness = await RequestHarness.start(executor);
     harnesses.push(harness);
 
-    await expect(harness.execute("one")).resolves.toEqual({
-      kind: "completed",
+    await expect(harness.execute("one")).resolves.toMatchObject({
+      kind: "result-end",
       instanceId: harness.instanceId,
       processToken: harness.processToken,
       requestId: "one",
-      result: { frames: [], exitCode: 0 },
+      rawBytes: 0,
+      recordCount: 0,
+      sha256: expect.stringMatching(/^[a-f\d]{64}$/),
     });
     expect(executor.requests).toHaveLength(1);
   });
@@ -275,8 +278,16 @@ describe("WorkspaceDaemon requests", () => {
     await Promise.all([first.terminal, duplicate.terminal]);
 
     expect(executor.startedCount).toBe(1);
-    expect(first.frames.map((frame) => frame.kind)).toEqual(["accepted", "completed"]);
-    expect(duplicate.frames.map((frame) => frame.kind)).toEqual(["accepted", "completed"]);
+    expect(first.frames.map((frame) => ("kind" in frame ? frame.kind : "chunk"))).toEqual([
+      "accepted",
+      "result-manifest",
+      "result-end",
+    ]);
+    expect(duplicate.frames.map((frame) => ("kind" in frame ? frame.kind : "chunk"))).toEqual([
+      "accepted",
+      "result-manifest",
+      "result-end",
+    ]);
     expect(corrupted.frames).toEqual([
       expect.objectContaining({ kind: "rejected", retrySafe: false }),
     ]);
@@ -644,7 +655,7 @@ class RequestTransport {
   private handler:
     | ((
         request: DaemonRequest,
-        send: (response: DaemonResponse) => void,
+        send: (response: DaemonServerMessage) => void,
       ) => Promise<DaemonResponse | void>)
     | undefined;
   listenError: Error | undefined;
@@ -658,7 +669,7 @@ class RequestTransport {
     _endpoint: string,
     handler: (
       request: DaemonRequest,
-      send: (response: DaemonResponse) => void,
+      send: (response: DaemonServerMessage) => void,
     ) => Promise<DaemonResponse | void>,
   ): Promise<DaemonServer> {
     if (this.listenError !== undefined) throw this.listenError;
@@ -680,18 +691,18 @@ class RequestTransport {
 
   async connect(request: DaemonRequest): Promise<RequestConnection> {
     if (this.handler === undefined) throw new Error("Transport is not listening");
-    const frames: DaemonExecutionServerFrame[] = [];
+    const frames: DaemonServerMessage[] = [];
     let connected = true;
     let resolveTerminal!: (frame: DaemonExecutionServerFrame) => void;
     const terminal = new Promise<DaemonExecutionServerFrame>((resolve) => {
       resolveTerminal = resolve;
     });
-    const receive = (response: DaemonResponse): void => {
+    const receive = (response: DaemonServerMessage): void => {
       if (!connected || !RequestTransport.isExecutionFrame(response)) return;
       frames.push(response);
       if (
         response.kind === "rejected" ||
-        response.kind === "completed" ||
+        response.kind === "result-end" ||
         response.kind === "execution-failed"
       ) {
         resolveTerminal(response);
@@ -709,19 +720,22 @@ class RequestTransport {
   }
 
   private static isExecutionFrame(
-    response: DaemonResponse,
+    response: DaemonServerMessage,
   ): response is DaemonExecutionServerFrame {
+    if (!("kind" in response)) return false;
     return (
       response.kind === "accepted" ||
       response.kind === "rejected" ||
       response.kind === "completed" ||
+      response.kind === "result-manifest" ||
+      response.kind === "result-end" ||
       response.kind === "execution-failed"
     );
   }
 }
 
 interface RequestConnection {
-  readonly frames: DaemonExecutionServerFrame[];
+  readonly frames: DaemonServerMessage[];
   readonly terminal: Promise<DaemonExecutionServerFrame>;
   disconnect(): void;
 }

@@ -8,8 +8,11 @@ import {
   DAEMON_PROTOCOL_VERSION,
   type DaemonExecuteRequest,
   type DaemonExecutionServerFrame,
+  type DaemonServerMessage,
 } from "./daemon-protocol.js";
 import { DaemonTransportError, LocalDaemonTransport } from "./local-daemon-transport.js";
+import { COMMAND_OUTPUT_CHUNK_BYTES, DaemonCompletionSpoolStore } from "./completion-spool.js";
+import { DaemonResultChunkCodec } from "./daemon-result-chunk-codec.js";
 
 const request: DaemonExecuteRequest = {
   kind: "execute",
@@ -153,6 +156,159 @@ describe("LocalDaemonTransport execution delivery", () => {
     });
   });
 
+  it("transfers and acknowledges a generated twelve MiB mixed-stream result", async () => {
+    const directory = mkdtempSync(join(tmpdir(), "symnav-streamed-result-"));
+    directories.push(directory);
+    const endpoint = executionEndpoint(directories);
+    const store = new DaemonCompletionSpoolStore({
+      directory,
+      workspaceKey: "workspace",
+      instanceId: request.instanceId,
+    });
+    const spool = await store.create(request.requestId);
+    const chunkCount = (12 * 1024 * 1024) / COMMAND_OUTPUT_CHUNK_BYTES;
+    for (let sequence = 0; sequence < chunkCount; sequence += 1) {
+      await spool.append({
+        sequence,
+        stream: sequence % 2 === 0 ? "stdout" : "stderr",
+        bytes: Buffer.alloc(COMMAND_OUTPUT_CHUNK_BYTES, sequence),
+      });
+    }
+    const manifest = await spool.finish(0);
+    const serverTransport = new LocalDaemonTransport();
+    const server = await serverTransport.listen(endpoint, async (message, send) => {
+      if (message.kind === "result-ack") {
+        await spool.acknowledge();
+        return {
+          kind: "result-acknowledged",
+          instanceId: request.instanceId,
+          processToken: request.processToken,
+          requestId: request.requestId,
+          transferId: manifest.transferId,
+        };
+      }
+      if (message.kind !== "execute") throw new Error("Unexpected request");
+      send(accepted());
+      send({
+        kind: "result-manifest",
+        instanceId: request.instanceId,
+        processToken: request.processToken,
+        requestId: request.requestId,
+        manifest,
+      });
+      for await (const record of spool.read(0)) {
+        const chunk: DaemonServerMessage = {
+          transferId: manifest.transferId,
+          requestId: request.requestId,
+          offset: record.sequence,
+          sequence: record.sequence,
+          stream: record.stream,
+          bytes: record.bytes,
+        };
+        send(chunk);
+      }
+      send({
+        kind: "result-end",
+        instanceId: request.instanceId,
+        processToken: request.processToken,
+        requestId: request.requestId,
+        transferId: manifest.transferId,
+        rawBytes: manifest.rawBytes,
+        recordCount: manifest.recordCount,
+        sha256: manifest.sha256,
+      });
+    });
+    const receipt = await new LocalDaemonTransport().execute(endpoint, request);
+    const completion = await receipt.completion;
+
+    expect(completion.status).toBe("completed");
+    if (completion.status !== "completed" || completion.result.output === undefined) return;
+    expect(completion.result.output.summary).toEqual({
+      rawBytes: manifest.rawBytes,
+      recordCount: manifest.recordCount,
+      sha256: manifest.sha256,
+    });
+    expect(store.usage()).toEqual({ rawBytes: 0, completionCount: 0 });
+    await completion.result.output.dispose();
+    await server.close();
+  }, 20_000);
+
+  it("resumes a disconnected result transfer at the contiguous record offset", async () => {
+    const directory = mkdtempSync(join(tmpdir(), "symnav-resumed-result-"));
+    directories.push(directory);
+    const store = new DaemonCompletionSpoolStore({
+      directory,
+      workspaceKey: "workspace",
+      instanceId: request.instanceId,
+    });
+    const spool = await store.create(request.requestId);
+    for (let sequence = 0; sequence < 5; sequence += 1) {
+      await spool.append({
+        sequence,
+        stream: sequence % 2 === 0 ? "stdout" : "stderr",
+        bytes: Buffer.from(`record-${sequence}\n`),
+      });
+    }
+    const manifest = await spool.finish(0);
+    const fetchOffsets: number[] = [];
+    const endpoint = await rawExecutionServer(servers, sockets, directories, (socket) => {
+      socket.once("data", (encoded) => {
+        const bytes = Buffer.isBuffer(encoded) ? encoded : Buffer.from(encoded);
+        const message = JSON.parse(bytes.subarray(4).toString()) as {
+          kind: string;
+          offset?: number;
+        };
+        if (message.kind === "execute") {
+          socket.write(frame(accepted()));
+          socket.write(frame(resultManifest(manifest)));
+          void sendRecords(socket, spool, manifest.transferId, 0, 2).then(() => socket.end());
+          return;
+        }
+        if (message.kind === "result-fetch") {
+          fetchOffsets.push(message.offset ?? -1);
+          socket.write(frame(resultManifest(manifest)));
+          void sendRecords(socket, spool, manifest.transferId, message.offset ?? 0).then(() =>
+            socket.write(frame(resultEnd(manifest))),
+          );
+          return;
+        }
+        if (message.kind === "result-ack") {
+          void spool.acknowledge().then(() =>
+            socket.end(
+              frame({
+                kind: "result-acknowledged",
+                instanceId: request.instanceId,
+                processToken: request.processToken,
+                requestId: request.requestId,
+                transferId: manifest.transferId,
+              }),
+            ),
+          );
+        }
+      });
+    });
+
+    const receipt = await new LocalDaemonTransport().execute(endpoint, request);
+    const completion = await receipt.completion;
+
+    expect(fetchOffsets).toEqual([2]);
+    expect(completion).toMatchObject({
+      status: "completed",
+      result: {
+        exitCode: 0,
+        output: {
+          summary: {
+            rawBytes: manifest.rawBytes,
+            recordCount: manifest.recordCount,
+            sha256: manifest.sha256,
+          },
+        },
+      },
+    });
+    expect(store.usage()).toEqual({ rawBytes: 0, completionCount: 0 });
+    if (completion.status === "completed") await completion.result.output?.dispose();
+  });
+
   it("reports EOF after acceptance as a typed post-accept failure", async () => {
     const endpoint = await rawExecutionServer(servers, sockets, directories, (socket) => {
       socket.once("data", () => socket.end(frame(accepted())));
@@ -279,6 +435,55 @@ function accepted(): DaemonExecutionServerFrame {
     acceptedAt: 10,
     queuePosition: 0,
   };
+}
+
+function resultManifest(
+  manifest: import("./completion-spool.js").CompletionSpoolManifest,
+): DaemonExecutionServerFrame {
+  return {
+    kind: "result-manifest",
+    instanceId: request.instanceId,
+    processToken: request.processToken,
+    requestId: request.requestId,
+    manifest,
+  };
+}
+
+function resultEnd(
+  manifest: import("./completion-spool.js").CompletionSpoolManifest,
+): DaemonExecutionServerFrame {
+  return {
+    kind: "result-end",
+    instanceId: request.instanceId,
+    processToken: request.processToken,
+    requestId: request.requestId,
+    transferId: manifest.transferId,
+    rawBytes: manifest.rawBytes,
+    recordCount: manifest.recordCount,
+    sha256: manifest.sha256,
+  };
+}
+
+async function sendRecords(
+  socket: Socket,
+  spool: import("./completion-spool.js").CompletionSpool,
+  transferId: string,
+  offset: number,
+  stopBefore = Number.POSITIVE_INFINITY,
+): Promise<void> {
+  for await (const record of spool.read(offset)) {
+    if (record.sequence >= stopBefore) return;
+    socket.write(
+      DaemonResultChunkCodec.encode({
+        transferId,
+        requestId: request.requestId,
+        offset: record.sequence,
+        sequence: record.sequence,
+        stream: record.stream,
+        bytes: record.bytes,
+      }),
+    );
+  }
 }
 
 async function rawExecutionServer(

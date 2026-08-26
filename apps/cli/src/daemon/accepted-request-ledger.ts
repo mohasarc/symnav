@@ -17,6 +17,7 @@ export interface AcceptedRequestEntry {
   readonly requestFingerprint: string;
   readonly request: CliExecutionRequest;
   readonly state: AcceptedRequestState;
+  readonly deliveryTerminated: boolean;
 }
 
 export type AcceptedRequestSubscriber = (entry: AcceptedRequestEntry) => void;
@@ -59,6 +60,7 @@ export class AcceptedRequestLedger {
       requestId,
       requestFingerprint,
       request,
+      deliveryTerminated: false,
       state: {
         state: "queued",
         acceptedAt: this.now(),
@@ -137,6 +139,17 @@ export class AcceptedRequestLedger {
 
   isAcknowledged(requestId: string): boolean {
     return this.acknowledged.has(requestId);
+  }
+
+  terminateDelivery(requestId: string): boolean {
+    const entry = this.entry(requestId);
+    if (entry.deliveryTerminated) return false;
+    this.entries.set(requestId, { ...entry, deliveryTerminated: true });
+    return true;
+  }
+
+  isDeliveryTerminated(requestId: string): boolean {
+    return this.entry(requestId).deliveryTerminated;
   }
 
   subscribe(requestId: string, subscriber: AcceptedRequestSubscriber): () => void {

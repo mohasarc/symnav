@@ -778,9 +778,7 @@ export class WorkspaceDaemon {
       recordCount: completedManifest.recordCount,
       sha256: completedManifest.sha256,
     });
-    const trace = this.operationTraces.get(requestId);
-    if (trace === undefined) this.operationObserver.deliveryTerminated(requestId, "delivered", 0);
-    else trace.deliveryTerminated("delivered");
+    this.terminateOperationDelivery(requestId, "delivered");
   }
 
   private recordDeliveryFailure(requestId: string, error: unknown): void {
@@ -797,10 +795,15 @@ export class WorkspaceDaemon {
     const expiration = this.operationTraceExpirations.get(requestId);
     if (expiration !== undefined) clearTimeout(expiration);
     this.operationTraceExpirations.delete(requestId);
-    const trace = this.operationTraces.get(requestId);
-    if (trace === undefined) return;
-    trace.deliveryTerminated(outcome);
+    this.terminateOperationDelivery(requestId, outcome);
     this.operationTraces.delete(requestId);
+  }
+
+  private terminateOperationDelivery(requestId: string, outcome: DaemonDeliveryOutcome): void {
+    if (!this.acceptedRequests.terminateDelivery(requestId)) return;
+    const trace = this.operationTraces.get(requestId);
+    if (trace === undefined) this.operationObserver.deliveryTerminated(requestId, outcome, 0);
+    else trace.deliveryTerminated(outcome);
   }
 
   private completeRetainedOperationTraces(): void {
@@ -824,10 +827,13 @@ export class WorkspaceDaemon {
   }
 
   private reattachOperationTrace(requestId: string): void {
+    if (this.acceptedRequests.isDeliveryTerminated(requestId)) return;
     const expiration = this.operationTraceExpirations.get(requestId);
     if (expiration !== undefined) clearTimeout(expiration);
     this.operationTraceExpirations.delete(requestId);
-    this.operationObserver.reattached(requestId);
+    const trace = this.operationTraces.get(requestId);
+    if (trace === undefined) this.operationObserver.reattached(requestId);
+    else trace.reattached();
   }
 
   private expireOperationTrace(requestId: string): void {

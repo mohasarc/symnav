@@ -163,7 +163,8 @@ export class OrderedCommandOutput {
     const operation = this.tail.then(async () => {
       if (this.finished) throw new Error("Command output is already finished");
       await this.flushPending();
-      if (record.sequence !== this.recordCount) throw new Error("Unexpected command output sequence");
+      if (record.sequence !== this.recordCount)
+        throw new Error("Unexpected command output sequence");
       if (record.bytes.byteLength > MAXIMUM_RECORD_BYTES) {
         throw new Error("Command output record exceeds chunk capacity");
       }

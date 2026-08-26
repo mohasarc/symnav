@@ -18,10 +18,7 @@ import type {
   DaemonServer,
 } from "./daemon-protocol.js";
 import { DAEMON_PROTOCOL_VERSION, DAEMON_RECORD_SCHEMA_VERSION } from "./daemon-protocol.js";
-import {
-  NodeCompletionSpoolStorage,
-  type CompletionSpoolFile,
-} from "./completion-spool.js";
+import { NodeCompletionSpoolStorage, type CompletionSpoolFile } from "./completion-spool.js";
 import { DaemonRegistry } from "./daemon-registry.js";
 import { DaemonWorkspaceIdentity } from "./daemon-workspace-identity.js";
 import type { LocalDaemonTransport } from "./local-daemon-transport.js";
@@ -414,7 +411,9 @@ describe("WorkspaceDaemon requests", () => {
     const completed = await harness.execute("unlink-failure");
     if (completed.kind !== "result-end") throw new Error("Expected completed result");
 
-    await expect(harness.acknowledge("unlink-failure", completed.transferId)).resolves.toMatchObject({
+    await expect(
+      harness.acknowledge("unlink-failure", completed.transferId),
+    ).resolves.toMatchObject({
       kind: "result-acknowledged",
     });
     await expect(harness.ping()).resolves.toMatchObject({ kind: "pong", state: "ready" });

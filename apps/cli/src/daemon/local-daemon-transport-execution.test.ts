@@ -539,7 +539,7 @@ describe("LocalDaemonTransport execution delivery", () => {
               ? { recordCount: manifest.recordCount + 1 }
               : {}),
             ...(corruption === "wrong-digest" ? { sha256: "0".repeat(64) } : {}),
-          };
+          } satisfies Extract<DaemonExecutionServerFrame, { kind: "result-end" }>;
           const encodedEnd = frame(end);
           if (corruption === "duplicate-end") {
             socket.write(Buffer.concat([encodedEnd, encodedEnd]));

@@ -159,10 +159,10 @@ describe("LocalDaemonTransport", () => {
       writeServerMessage(socket: Socket, value: unknown): Promise<void>;
     };
 
-    const writing = serverWriter.writeServerMessage(
-      socket as unknown as Socket,
-      { kind: "stopped", instanceId: "instance" },
-    );
+    const writing = serverWriter.writeServerMessage(socket as unknown as Socket, {
+      kind: "stopped",
+      instanceId: "instance",
+    });
     await Promise.resolve();
 
     expect(writes).toHaveLength(1);

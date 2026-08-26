@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
-import { chmod, lstat, mkdir, open, rm, unlink, type FileHandle } from "node:fs/promises";
+import { chmod, lstat, mkdir, open, rm, unlink } from "node:fs/promises";
 import { join } from "node:path";
 import {
   OrderedCommandOutput,
@@ -65,7 +65,7 @@ export class NodeCompletionSpoolStorage implements CompletionSpoolStorage {
     await chmod(path, 0o700);
   }
 
-  createFile(path: string): Promise<FileHandle> {
+  createFile(path: string): Promise<CompletionSpoolFile> {
     return open(path, "wx", 0o600);
   }
 
@@ -285,7 +285,10 @@ export class CompletionSpool {
     try {
       await this.dispose();
     } catch (cleanupError) {
-      throw new AggregateError([error, cleanupError], "Completion spool operation and cleanup failed");
+      throw new AggregateError(
+        [error, cleanupError],
+        "Completion spool operation and cleanup failed",
+      );
     }
     throw error;
   }

@@ -511,7 +511,8 @@ export class LocalDaemonTransport {
         let failedCode: DaemonExecutionFailureCode | undefined;
         for (const value of values) {
           if (LocalDaemonTransport.isResultChunk(value)) {
-            if (acceptance === undefined) throw new Error("Daemon returned output before acceptance");
+            if (acceptance === undefined)
+              throw new Error("Daemon returned output before acceptance");
             await transfer.acceptChunk(value);
             continue;
           }
@@ -642,9 +643,7 @@ export class LocalDaemonTransport {
       socket.once("error", (error) => {
         void consumption
           .then(() =>
-            fail(
-              new DaemonTransportError("closed", "accepted", error.message, request.instanceId),
-            ),
+            fail(new DaemonTransportError("closed", "accepted", error.message, request.instanceId)),
           )
           .catch(fail);
       });

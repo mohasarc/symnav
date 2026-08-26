@@ -16,6 +16,7 @@ import { DAEMON_PROTOCOL_VERSION, DAEMON_RECORD_SCHEMA_VERSION } from "./daemon-
 import { DAEMON_IDLE_TIMEOUT_MS, DaemonLifetime } from "./daemon-lifetime.js";
 import { DaemonLogger } from "./daemon-logger.js";
 import {
+  DaemonNavigationWorkerExitedError,
   type DaemonNavigationWorker,
   NodeDaemonNavigationWorker,
 } from "./daemon-navigation-worker.js";
@@ -448,7 +449,13 @@ export class WorkspaceDaemon {
         operation: "request",
         message: WorkspaceDaemon.errorMessage(error),
       });
-      const code = this.shutdownFailureCode ?? (this.shutdownStarted ? "stopping" : "internal");
+      const code =
+        this.shutdownFailureCode ??
+        (error instanceof DaemonNavigationWorkerExitedError
+          ? "worker-exit"
+          : this.shutdownStarted
+            ? "stopping"
+            : "internal");
       this.acceptedRequests.fail(request.requestId, code, this.now());
     } finally {
       if (this.requestQueue.isIdle) this.lifetime.queueBecameIdle();

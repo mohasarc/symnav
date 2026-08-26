@@ -95,6 +95,12 @@ export class DaemonRecordObserver {
       if (response.startedAt !== undefined && response.startedAt !== record.startedAt) {
         return { kind: "corrupt", record, evidence: DaemonRecordObserver.evidence(record) };
       }
+      if (
+        response.activity !== undefined &&
+        (response.activity.pid !== record.pid || response.activity.startedAt !== record.startedAt)
+      ) {
+        return { kind: "corrupt", record, evidence: DaemonRecordObserver.evidence(record) };
+      }
       return { kind: "responsive", record, pong: response };
     }
 

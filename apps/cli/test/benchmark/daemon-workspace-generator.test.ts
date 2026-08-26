@@ -90,6 +90,9 @@ describe("DaemonWorkspaceGenerator", () => {
     expect(profiled.packageCount).toBe(reviewed.packageCount);
     expect(profiled.configCount).toBe(reviewed.configCount);
     expect(profiled.projectReferenceCount).toBe(reviewed.projectReferenceCount);
+    expect(TestWorkspace.sourceOccurrences(root, "benchmarkHub") - 1).toBe(
+      reviewed.representativeResultCounts.refs,
+    );
   }, 30_000);
 });
 
@@ -158,6 +161,15 @@ class TestWorkspace {
     return execFileSync("git", ["-C", root, "log", "--format=%s:%ct"], { encoding: "utf8" })
       .trim()
       .split("\n");
+  }
+
+  static sourceOccurrences(root: string, value: string): number {
+    return this.files(root)
+      .filter((path) => path.endsWith(".ts"))
+      .reduce(
+        (count, path) => count + readFileSync(path, "utf8").split(value).length - 1,
+        0,
+      );
   }
 
   private static files(root: string): readonly string[] {

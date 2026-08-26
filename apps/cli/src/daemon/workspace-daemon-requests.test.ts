@@ -545,10 +545,12 @@ describe("WorkspaceDaemon requests", () => {
 
     await harness.execute("refresh", ["overview", "input.ts"]);
 
-    await waitUntil(
-      () => harness.logEvents().filter((event) => event.kind === "freshness").length === 2,
-    );
-    expect(harness.logEvents().filter((event) => event.kind === "freshness")).toHaveLength(2);
+    await waitUntil(() => harness.logEvents().some((event) => event.kind === "worker-completed"));
+    expect(
+      harness
+        .logEvents()
+        .filter((event) => event.kind === "freshness" || event.kind === "worker-completed"),
+    ).toHaveLength(2);
   });
 
   it("records ordered execution and delivery terminals for one request", async () => {
@@ -556,9 +558,7 @@ describe("WorkspaceDaemon requests", () => {
     harnesses.push(harness);
 
     await harness.execute("observed", ["refs", "private-symbol"]);
-    await waitUntil(() =>
-      harness.logEvents().some((event) => event.kind === "delivery-terminal"),
-    );
+    await waitUntil(() => harness.logEvents().some((event) => event.kind === "delivery-terminal"));
 
     const operationEvents = harness
       .logEvents()

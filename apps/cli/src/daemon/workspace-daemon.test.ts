@@ -336,7 +336,11 @@ describe("WorkspaceDaemon runtime lifecycle", () => {
     expect(harness.logEvents()).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ kind: "failure", operation: "request" }),
-        expect.objectContaining({ kind: "request", exitCode: 0 }),
+        expect.objectContaining({
+          kind: "execution-terminal",
+          requestId: "recovered",
+          outcome: "completed",
+        }),
         expect.objectContaining({ kind: "stop", reason: "idle" }),
       ]),
     );

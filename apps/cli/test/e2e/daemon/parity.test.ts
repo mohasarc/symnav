@@ -917,7 +917,7 @@ function acceptanceRequestId(logPath: string): string {
     .trimEnd()
     .split("\n")
     .map((line) => JSON.parse(line) as { readonly kind: string; readonly requestId?: string })
-    .find((event) => event.kind === "acceptance");
+    .find((event) => event.kind === "request-accepted");
   if (acceptance?.requestId === undefined) throw new Error("Daemon did not log request acceptance");
   return acceptance.requestId;
 }

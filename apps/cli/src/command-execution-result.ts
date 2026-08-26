@@ -52,10 +52,12 @@ export interface CliExecutionRequest {
 export interface OrderedCommandOutputOptions {
   readonly inlineBytes?: number;
   readonly directory?: string;
+  readonly maximumBytes?: number;
 }
 
 const DEFAULT_INLINE_BYTES = 256 * 1024;
 const MAXIMUM_RECORD_BYTES = 64 * 1024;
+const DEFAULT_MAXIMUM_BYTES = 256 * 1024 * 1024;
 const RECORD_HEADER_BYTES = 9;
 
 class CommandOutputWritable extends Writable {
@@ -106,6 +108,7 @@ export class OrderedCommandOutput {
   readonly stderr: NodeJS.WritableStream;
   private readonly inlineBytes: number;
   private readonly directory: string;
+  private readonly maximumBytes: number;
   private readonly hash = createHash("sha256");
   private readonly inlineRecords: CommandOutputRecord[] = [];
   private pending: { stream: CommandOutputStream; bytes: Buffer } | undefined;
@@ -115,10 +118,13 @@ export class OrderedCommandOutput {
   private recordCount = 0;
   private finished = false;
   private tail: Promise<void> = Promise.resolve();
+  private capturedBytes = 0;
+  private failure: Error | undefined;
 
   constructor(options: OrderedCommandOutputOptions = {}) {
     this.inlineBytes = options.inlineBytes ?? DEFAULT_INLINE_BYTES;
     this.directory = options.directory ?? tmpdir();
+    this.maximumBytes = options.maximumBytes ?? DEFAULT_MAXIMUM_BYTES;
     this.stdout = new CommandOutputWritable("stdout", (stream, bytes) =>
       this.enqueue(stream, bytes),
     );
@@ -132,6 +138,7 @@ export class OrderedCommandOutput {
     this.stdout.end();
     this.stderr.end();
     await Promise.all([streamFinished(this.stdout), streamFinished(this.stderr)]);
+    if (this.failure !== undefined) throw this.failure;
     this.finished = true;
     await this.flushPending();
     await this.file?.close();
@@ -182,6 +189,10 @@ export class OrderedCommandOutput {
         bytes.byteOffset + offset,
         Math.min(MAXIMUM_RECORD_BYTES, bytes.byteLength - offset),
       );
+      if (this.capturedBytes + chunk.byteLength > this.maximumBytes) {
+        throw new CommandOutputCapacityError();
+      }
+      this.capturedBytes += chunk.byteLength;
       if (
         this.pending?.stream === stream &&
         this.pending.bytes.byteLength + chunk.byteLength <= MAXIMUM_RECORD_BYTES
@@ -195,8 +206,12 @@ export class OrderedCommandOutput {
   }
 
   private enqueue(stream: CommandOutputStream, bytes: Uint8Array): Promise<void> {
-    const operation = this.tail.then(() => this.append(stream, bytes));
-    this.tail = operation.catch(() => {});
+    const operation = this.tail
+      .then(() => this.append(stream, bytes))
+      .catch((error: unknown) => {
+        this.failure = error instanceof Error ? error : new Error(String(error));
+      });
+    this.tail = operation;
     return operation;
   }
 
@@ -258,6 +273,13 @@ export class OrderedCommandOutput {
       offset = nextOffset;
     }
     return records;
+  }
+}
+
+export class CommandOutputCapacityError extends Error {
+  constructor() {
+    super("Command output exceeds response capacity");
+    this.name = "CommandOutputCapacityError";
   }
 }
 

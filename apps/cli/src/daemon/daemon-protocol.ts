@@ -245,6 +245,44 @@ export interface DaemonWorkerPhaseDurations {
 
 export type DaemonExecutionOutcome = "completed" | "failed";
 export type DaemonDeliveryOutcome = "delivered" | "disconnected" | "failed";
+export type DaemonWorkerReplacementCause =
+  | "hard-pressure"
+  | "out-of-memory"
+  | "shed-failure"
+  | "worker-exit";
+
+export interface DaemonStartupDiagnostic {
+  readonly kind: "startup-completed";
+  readonly workerGeneration: number;
+  readonly fileCount: number;
+  readonly discoveryMs: number;
+  readonly indexingMs: number;
+  readonly totalMs: number;
+}
+
+export type DaemonWorkerDiagnostic =
+  | {
+      readonly kind: "resources-released";
+      readonly workerGeneration: number;
+      readonly workerHeapUsedBytes: number;
+      readonly workerHeapLimitBytes: number;
+    }
+  | {
+      readonly kind: "worker-replaced";
+      readonly cause: DaemonWorkerReplacementCause;
+      readonly previousWorkerGeneration: number;
+      readonly workerGeneration: number;
+      readonly fileCount: number;
+      readonly discoveryMs: number;
+      readonly indexingMs: number;
+      readonly totalMs: number;
+    };
+
+export interface DaemonShutdownDiagnostic {
+  readonly kind: "shutdown";
+  readonly reason: DaemonStopReason;
+  readonly force: boolean;
+}
 
 export type DaemonOperationDiagnostic =
   | {
@@ -341,6 +379,9 @@ export type DaemonDiagnosticEvent =
       readonly failureCode: DaemonDiagnosticFailureCode;
       readonly errorName: DaemonDiagnosticErrorName;
     }
+  | DaemonStartupDiagnostic
+  | DaemonWorkerDiagnostic
+  | DaemonShutdownDiagnostic
   | DaemonOperationDiagnostic;
 
 export type DaemonLogEvent = DaemonDiagnosticEvent & {

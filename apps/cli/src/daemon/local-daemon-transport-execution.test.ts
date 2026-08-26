@@ -309,6 +309,71 @@ describe("LocalDaemonTransport execution delivery", () => {
     if (completion.status === "completed") await completion.result.output?.dispose();
   });
 
+  it.each(["eof", "close", "malformed", "multiple"] as const)(
+    "settles an accepted completion when the acknowledgement response is %s",
+    async (acknowledgementFailure) => {
+      const directory = mkdtempSync(join(tmpdir(), "symnav-result-acknowledgement-"));
+      directories.push(directory);
+      const store = new DaemonCompletionSpoolStore({
+        directory: join(directory, "daemon"),
+        workspaceKey: "workspace",
+        instanceId: request.instanceId,
+      });
+      const spool = await store.create(request.requestId);
+      await spool.append({
+        sequence: 0,
+        stream: "stdout",
+        bytes: Buffer.alloc(COMMAND_OUTPUT_CHUNK_BYTES, 7),
+      });
+      const manifest = await spool.finish(0);
+      const acknowledgement = frame({
+        kind: "result-acknowledged",
+        instanceId: request.instanceId,
+        processToken: request.processToken,
+        requestId: request.requestId,
+        transferId: manifest.transferId,
+      });
+      const endpoint = await rawExecutionServer(servers, sockets, directories, (socket) => {
+        socket.once("data", (encoded) => {
+          const message = JSON.parse(encoded.subarray(4).toString()) as { kind: string };
+          if (message.kind === "execute") {
+            socket.write(frame(accepted()));
+            socket.write(frame(resultManifest(manifest)));
+            void sendRecords(socket, spool, manifest.transferId, 0).then(() =>
+              socket.write(frame(resultEnd(manifest))),
+            );
+            return;
+          }
+          if (message.kind !== "result-ack") return;
+          void spool.acknowledge().then(() => {
+            if (acknowledgementFailure === "eof") socket.end();
+            else if (acknowledgementFailure === "close") socket.destroy();
+            else if (acknowledgementFailure === "malformed") {
+              socket.end(Buffer.from([0, 0, 0, 4, 0x7b]));
+            } else {
+              socket.end(Buffer.concat([acknowledgement, acknowledgement]));
+            }
+          });
+        });
+      });
+      const clientDirectory = join(directory, "client");
+      const receipt = await new LocalDaemonTransport({
+        requestTimeoutMs: 100,
+        outputDirectory: clientDirectory,
+        outputInlineBytes: 0,
+      }).execute(endpoint, request);
+
+      await expect(settleWithin(receipt.completion, 500)).rejects.toMatchObject({
+        delivery: "accepted",
+        retrySafe: false,
+      } satisfies Partial<DaemonTransportError>);
+      expect(store.usage()).toEqual({ rawBytes: 0, completionCount: 0 });
+      expect(
+        await import("node:fs/promises").then(({ readdir }) => readdir(clientDirectory)),
+      ).toEqual([]);
+    },
+  );
+
   it("cleans client output and fails without replay when the daemon dies before resume", async () => {
     const directory = mkdtempSync(join(tmpdir(), "symnav-dead-resume-"));
     directories.push(directory);
@@ -570,4 +635,16 @@ function frame(value: unknown): Buffer {
   const prefix = Buffer.alloc(4);
   prefix.writeUInt32BE(payload.length);
   return Buffer.concat([prefix, payload]);
+}
+
+async function settleWithin<T>(operation: Promise<T>, milliseconds: number): Promise<T> {
+  let timeout: NodeJS.Timeout | undefined;
+  const expired = new Promise<never>((_resolve, reject) => {
+    timeout = setTimeout(() => reject(new Error("Operation did not settle")), milliseconds);
+  });
+  try {
+    return await Promise.race([operation, expired]);
+  } finally {
+    if (timeout !== undefined) clearTimeout(timeout);
+  }
 }

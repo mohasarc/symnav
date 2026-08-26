@@ -106,6 +106,59 @@ describe("DaemonScaleBenchmarkHarness", () => {
 
     expect(evidence.nonEmpty).toBe(false);
   });
+
+  it("rejects malformed overview, stats, and empty context history from fixed-suite evidence", () => {
+    const invalid = [
+      BenchmarkSampleEvidence.from(
+        "overview",
+        0,
+        { status: 0, stdout: '{"entries":[]}', stderr: "" },
+        { status: 0, stdout: '{"entries":[]}', stderr: "" },
+        10,
+        {
+          argv: ["overview", "target.ts", "--json"],
+          expectNonEmpty: true,
+          expectation: { kind: "overview", symbols: 5 },
+        },
+      ),
+      BenchmarkSampleEvidence.from(
+        "context",
+        0,
+        {
+          status: 0,
+          stdout:
+            '{"callers":{"sortedEdges":[],"omittedCertainEdgeCount":28},"callees":{"sortedEdges":[],"omittedCertainEdgeCount":1},"history":[]}',
+          stderr: "",
+        },
+        {
+          status: 0,
+          stdout:
+            '{"callers":{"sortedEdges":[],"omittedCertainEdgeCount":28},"callees":{"sortedEdges":[],"omittedCertainEdgeCount":1},"history":[]}',
+          stderr: "",
+        },
+        10,
+        {
+          argv: ["context", "target", "--json"],
+          expectNonEmpty: true,
+          expectation: { kind: "context", callers: 28, callees: 1, history: 1 },
+        },
+      ),
+      BenchmarkSampleEvidence.from(
+        "stats",
+        0,
+        { status: 0, stdout: '{"totalEvents":0}', stderr: "" },
+        { status: 0, stdout: '{"totalEvents":0}', stderr: "" },
+        10,
+        {
+          argv: ["stats", "--json"],
+          expectNonEmpty: true,
+          expectation: { kind: "stats-shape" },
+        },
+      ),
+    ];
+
+    expect(BenchmarkSampleEvidence.semanticResultsValid(invalid)).toBe(false);
+  });
 });
 
 class TestDiagnostics {

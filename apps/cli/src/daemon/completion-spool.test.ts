@@ -80,6 +80,33 @@ describe("DaemonCompletionSpoolStore", () => {
     expect(store.usage()).toEqual({ rawBytes: 6, completionCount: 1 });
   });
 
+  it("accepts exactly 256 MiB and deletes the partial spool one byte over", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "symnav-completion-exact-capacity-"));
+    roots.push(directory);
+    const store = new completionSpoolModule.DaemonCompletionSpoolStore({
+      directory,
+      workspaceKey: "workspace-a",
+      instanceId: "instance-a",
+      inlineBytes: 0,
+    });
+    const spool = await store.create("request-a");
+    const fullChunk = Buffer.alloc(completionSpoolModule.COMMAND_OUTPUT_CHUNK_BYTES);
+    const fullChunkCount =
+      completionSpoolModule.COMMAND_OUTPUT_LIMIT_BYTES /
+      completionSpoolModule.COMMAND_OUTPUT_CHUNK_BYTES;
+    for (let sequence = 0; sequence < fullChunkCount; sequence += 1) {
+      await spool.append({ sequence, stream: "stdout", bytes: fullChunk });
+    }
+
+    expect(store.usage().rawBytes).toBe(completionSpoolModule.COMMAND_OUTPUT_LIMIT_BYTES);
+    await expect(
+      spool.append({ sequence: fullChunkCount, stream: "stdout", bytes: Buffer.from("x") }),
+    ).rejects.toMatchObject({ name: "CompletionSpoolCapacityError" });
+    expect(await store.open("request-a")).toBeUndefined();
+    expect(store.usage()).toEqual({ rawBytes: 0, completionCount: 0 });
+    expect(await readdir(join(directory, "instance-a"))).toEqual([]);
+  }, 30_000);
+
   it("cleans only the confirmed dead instance and rejects unsafe existing storage", async () => {
     const directory = await mkdtemp(join(tmpdir(), "symnav-completion-cleanup-"));
     roots.push(directory);

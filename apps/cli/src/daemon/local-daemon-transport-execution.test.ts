@@ -403,6 +403,8 @@ describe("LocalDaemonTransport execution delivery", () => {
     "wrong-raw-bytes",
     "wrong-record-count",
     "wrong-digest",
+    "duplicate-end",
+    "chunk-after-end",
   ] as const)("rejects corrupt resumed transfer control: %s", async (corruption) => {
     const directory = mkdtempSync(join(tmpdir(), "symnav-corrupt-resume-"));
     directories.push(directory);
@@ -455,7 +457,26 @@ describe("LocalDaemonTransport execution delivery", () => {
               : {}),
             ...(corruption === "wrong-digest" ? { sha256: "0".repeat(64) } : {}),
           };
-          socket.write(frame(end));
+          const encodedEnd = frame(end);
+          if (corruption === "duplicate-end") {
+            socket.write(Buffer.concat([encodedEnd, encodedEnd]));
+          } else if (corruption === "chunk-after-end") {
+            socket.write(
+              Buffer.concat([
+                encodedEnd,
+                DaemonResultChunkCodec.encode({
+                  transferId: manifest.transferId,
+                  requestId: request.requestId,
+                  offset: manifest.recordCount,
+                  sequence: manifest.recordCount,
+                  stream: "stdout",
+                  bytes: Buffer.from("late"),
+                }),
+              ]),
+            );
+          } else {
+            socket.write(encodedEnd);
+          }
         });
       });
     });

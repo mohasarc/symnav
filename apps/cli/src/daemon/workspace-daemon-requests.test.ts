@@ -743,11 +743,12 @@ describe("WorkspaceDaemon requests", () => {
     expect(activeExecutor.requests).toHaveLength(1);
     expect(replacementExecutor.requests).toHaveLength(1);
     expect(workers.map((worker) => worker.generation)).toEqual([1, 2]);
+    await waitUntil(() => harness.logEvents().some((event) => event.kind === "worker-replaced"));
     expect(harness.logEvents()).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
           kind: "worker-replaced",
-          cause: "worker-exit",
+          cause: "out-of-memory",
           previousWorkerGeneration: 1,
           workerGeneration: 2,
           fileCount: 1,
@@ -805,6 +806,7 @@ describe("WorkspaceDaemon requests", () => {
       expect.objectContaining({ kind: "result-end", requestId: "second" }),
     ]);
     expect(worker.releaseCount).toBe(1);
+    await waitUntil(() => harness.logEvents().some((event) => event.kind === "resources-released"));
     expect(harness.logEvents()).toEqual(
       expect.arrayContaining([
         expect.objectContaining({

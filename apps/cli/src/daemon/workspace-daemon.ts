@@ -1005,14 +1005,6 @@ export class WorkspaceDaemon {
     const queue = this.requestQueue.snapshot;
     const resources = this.resourceSupervisor.snapshot;
     const now = this.clock.monotonicNowMs();
-    const current =
-      queue.active === undefined
-        ? undefined
-        : Object.freeze({
-            requestId: queue.active.requestId,
-            command: queue.active.command,
-            elapsedMs: Math.max(0, now - queue.active.startedAt),
-          });
     const lifecycle: DaemonActivitySnapshot["lifecycle"] =
       queue.state !== "accepting" || resources.state === "draining" || resources.state === "stopped"
         ? "draining"
@@ -1020,9 +1012,17 @@ export class WorkspaceDaemon {
           ? "recovering"
           : !this.workerReady
             ? "starting"
-            : current === undefined
+            : queue.active === undefined
               ? "ready"
               : "busy";
+    const current =
+      lifecycle !== "busy" || queue.active === undefined
+        ? undefined
+        : Object.freeze({
+            requestId: queue.active.requestId,
+            command: queue.active.command,
+            elapsedMs: Math.max(0, now - queue.active.startedAt),
+          });
     const recoveryDetail: DaemonActivitySnapshot["recoveryDetail"] =
       resources.state === "replacing"
         ? "worker-replacement"

@@ -628,6 +628,43 @@ describe("WorkspaceDaemon requests", () => {
     expect(workers).toHaveLength(2);
   });
 
+  it("completes scheduled shedding before the next queued worker turn", async () => {
+    const policy = DaemonResourcePolicy.fromSystemMemory(1024 * 1024 * 1024);
+    let residentMemoryBytes = 0;
+    const executor = new SerializedExecutor();
+    const worker = new ReleaseGatedNavigationWorker(executor);
+    const harness = await RequestHarness.start(undefined, {
+      navigationWorker: worker,
+      resourcePolicy: policy,
+      resourceCheckIntervalMs: 5,
+      residentMemoryBytes: () => residentMemoryBytes,
+    });
+    harnesses.push(harness);
+    const first = harness.execute("first", ["refs", "input"]);
+    await executor.started(1);
+    const second = harness.execute("second", ["overview", "input.ts"]);
+    await waitUntil(async () => {
+      const response = await harness.ping();
+      return response.kind === "pong" && response.queued === 1;
+    });
+
+    residentMemoryBytes = policy.record.softProcessRssBytes + 1;
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(worker.releaseCount).toBe(0);
+    executor.complete(0);
+    await worker.releaseStarted;
+    expect(executor.startedCount).toBe(1);
+
+    worker.allowRelease();
+    await executor.started(2);
+    executor.complete(1);
+    await expect(Promise.all([first, second])).resolves.toEqual([
+      expect.objectContaining({ kind: "result-end", requestId: "first" }),
+      expect.objectContaining({ kind: "result-end", requestId: "second" }),
+    ]);
+    expect(worker.releaseCount).toBe(1);
+  });
+
   it("recovers one real worker old-generation exhaustion during warm-up", async () => {
     const generations: number[] = [];
     const { daemon, harness, lease } = RequestHarness.create(undefined, {
@@ -824,6 +861,9 @@ class RequestHarness {
       ...(options.resourceCheckIntervalMs === undefined
         ? {}
         : { resourceCheckIntervalMs: options.resourceCheckIntervalMs }),
+      ...(options.residentMemoryBytes === undefined
+        ? {}
+        : { residentMemoryBytes: options.residentMemoryBytes }),
       exit: (code) => harness.resolveExit(code),
     });
     return { daemon, harness, lease };
@@ -931,6 +971,7 @@ interface RequestHarnessOptions {
   readonly navigationWorkerFactory?: (generation: number) => DaemonNavigationWorker;
   readonly resourcePolicy?: DaemonResourcePolicy;
   readonly resourceCheckIntervalMs?: number;
+  readonly residentMemoryBytes?: () => number;
   readonly startupHeartbeatIntervalMs?: number;
   readonly completionSpoolLimits?: WorkspaceDaemonOptions["completionSpoolLimits"];
   readonly completionSpoolStorage?: WorkspaceDaemonOptions["completionSpoolStorage"];
@@ -1242,6 +1283,35 @@ class ExecutorNavigationWorker implements DaemonNavigationWorker {
 
   fail(exit: DaemonNavigationWorkerExit): void {
     this.resolveExited(exit);
+  }
+}
+
+class ReleaseGatedNavigationWorker extends ExecutorNavigationWorker {
+  readonly releaseStarted: Promise<void>;
+  releaseCount = 0;
+  private resolveReleaseStarted!: () => void;
+  private releaseAllowed!: () => void;
+  private readonly releaseGate: Promise<void>;
+
+  constructor(executor: DaemonCommandExecutor) {
+    super(executor);
+    this.releaseStarted = new Promise((resolve) => {
+      this.resolveReleaseStarted = resolve;
+    });
+    this.releaseGate = new Promise((resolve) => {
+      this.releaseAllowed = resolve;
+    });
+  }
+
+  override async releaseTransientResources(): Promise<DaemonNavigationWorkerResponse> {
+    this.releaseCount += 1;
+    this.resolveReleaseStarted();
+    await this.releaseGate;
+    return { kind: "heap", generation: this.generation, usedHeapBytes: 1, heapLimitBytes: 2 };
+  }
+
+  allowRelease(): void {
+    this.releaseAllowed();
   }
 }
 

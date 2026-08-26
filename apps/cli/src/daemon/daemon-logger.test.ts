@@ -140,6 +140,47 @@ describe("DaemonLogger", () => {
     expect(JSON.parse(contents)).toMatchObject({ kind: "start" });
   });
 
+  it("persists only closed process termination classifications", async () => {
+    const root = mkdtempSync(join(tmpdir(), "symnav-daemon-termination-log-"));
+    roots.push(root);
+    const identity = DaemonWorkspaceIdentity.from("/repo", root);
+    const logger = new DaemonLogger(identity, "instance-one", new NodeDaemonClock());
+
+    logger.record({
+      kind: "process-termination",
+      terminationReason: "signal",
+      signal: "SIGTERM",
+    });
+    logger.record({
+      kind: "process-termination",
+      terminationReason: "unhandled-rejection",
+      errorName: "TypeError",
+    });
+    logger.record({
+      kind: "process-termination",
+      terminationReason: "open-secret",
+      signal: "SECRET_SIGNAL",
+    } as unknown as DaemonDiagnosticEvent);
+    await logger.flush();
+
+    const events = readFileSync(identity.logPath, "utf8")
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line) as Record<string, unknown>);
+    expect(events).toEqual([
+      expect.objectContaining({
+        kind: "process-termination",
+        terminationReason: "signal",
+        signal: "SIGTERM",
+      }),
+      expect.objectContaining({
+        kind: "process-termination",
+        terminationReason: "unhandled-rejection",
+        errorName: "TypeError",
+      }),
+    ]);
+  });
+
   it("writes opaque fixed-size request correlation instead of caller identifiers", async () => {
     const root = mkdtempSync(join(tmpdir(), "symnav-daemon-request-correlation-"));
     roots.push(root);

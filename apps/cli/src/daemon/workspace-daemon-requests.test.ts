@@ -57,14 +57,35 @@ describe("WorkspaceDaemon requests", () => {
     expect(harness.registry.read(harness.identity)?.state).toBe("ready");
   });
 
-  it("rejects startup authorization from an expired live owner", async () => {
-    let currentTime = 0;
-    const { daemon, harness, lease } = RequestHarness.create(new ImmediateExecutor(), {
-      now: () => {
-        currentTime += 5_001;
-        return currentTime;
-      },
+  it("claims and heartbeats daemon ownership throughout blocked initialization", async () => {
+    const worker = new DeferredInitializationWorker();
+    const { daemon, harness } = RequestHarness.create(undefined, {
+      navigationWorker: worker,
+      startupHeartbeatIntervalMs: 5,
     });
+    harnesses.push(harness);
+
+    const starting = daemon.start();
+    await worker.initializationStarted;
+    const claimedOwner = harness.registry.startupOwner(harness.identity);
+    expect(claimedOwner).toMatchObject({
+      ownerKind: "daemon",
+      ownerPid: process.pid,
+      processToken: harness.processToken,
+    });
+
+    await waitUntil(
+      () => harness.registry.startupOwner(harness.identity)?.revision !== claimedOwner?.revision,
+    );
+
+    worker.completeInitialization();
+    await starting;
+    expect(harness.registry.read(harness.identity)?.state).toBe("ready");
+    expect(harness.registry.startupOwner(harness.identity)).toBeUndefined();
+  });
+
+  it("claims startup from an exact live launcher despite an old heartbeat", async () => {
+    const { daemon, harness } = RequestHarness.create(new ImmediateExecutor());
     harnesses.push(harness);
     const owner = harness.registry.startupOwner(harness.identity);
     if (owner === undefined) throw new Error("Expected startup owner");
@@ -73,8 +94,23 @@ describe("WorkspaceDaemon requests", () => {
       JSON.stringify({ ...owner, acquiredAt: 1, heartbeatAt: 1 }),
     );
 
-    await expect(daemon.start()).rejects.toThrow("startup authorization");
-    lease.release();
+    await expect(daemon.start()).resolves.toBeUndefined();
+    expect(harness.registry.read(harness.identity)?.state).toBe("ready");
+  });
+
+  it("cleans exact starting ownership when worker initialization fails", async () => {
+    const worker = new RejectingInitializationWorker();
+    const { daemon, harness } = RequestHarness.create(undefined, { navigationWorker: worker });
+    harnesses.push(harness);
+
+    await expect(daemon.start()).rejects.toThrow("initialization failed");
+
+    expect(worker.terminateCount).toBe(1);
+    expect(harness.transport.isListening).toBe(false);
+    expect(harness.registry.startupOwner(harness.identity)).toBeUndefined();
+    expect(
+      harness.registry.readStoredInstance(harness.identity, harness.instanceId),
+    ).toBeUndefined();
   });
 
   it("authenticates identity requests", async () => {
@@ -374,7 +410,14 @@ class RequestHarness {
     readonly lease: NonNullable<ReturnType<DaemonRegistry["acquireStartup"]>>;
   } {
     const harness = new RequestHarness();
-    const lease = harness.registry.acquireStartup(harness.identity, harness.instanceId);
+    const lease = harness.registry.acquireStartup(harness.identity, {
+      identityKey: harness.identity.identityKey,
+      instanceId: harness.instanceId,
+      processToken: harness.processToken,
+      ownerPid: process.pid,
+      ownerKind: "launcher",
+      heartbeatAt: Date.now(),
+    });
     if (lease === undefined) throw new Error("Expected startup ownership");
     harness.registry.write({
       schemaVersion: DAEMON_RECORD_SCHEMA_VERSION,
@@ -405,6 +448,9 @@ class RequestHarness {
         options.navigationWorker ??
         new ExecutorNavigationWorker(executor ?? new ImmediateExecutor()),
       ...(options.now === undefined ? {} : { now: options.now }),
+      ...(options.startupHeartbeatIntervalMs === undefined
+        ? {}
+        : { startupHeartbeatIntervalMs: options.startupHeartbeatIntervalMs }),
       exit: (code) => harness.resolveExit(code),
     });
     return { daemon, harness, lease };
@@ -483,6 +529,7 @@ class RequestHarness {
 interface RequestHarnessOptions {
   readonly now?: () => number;
   readonly navigationWorker?: DaemonNavigationWorker;
+  readonly startupHeartbeatIntervalMs?: number;
 }
 
 class RequestTransport {
@@ -662,4 +709,26 @@ class DeferredInitializationWorker implements DaemonNavigationWorker {
       startupDurations: { discoveryMs: 0, indexingMs: 1, totalMs: 1 },
     });
   }
+}
+
+class RejectingInitializationWorker extends DeferredInitializationWorker {
+  terminateCount = 0;
+
+  override start(): Promise<DaemonNavigationWorkerResponse> {
+    return Promise.reject(new Error("initialization failed"));
+  }
+
+  override terminate(): Promise<void> {
+    this.terminateCount += 1;
+    return Promise.resolve();
+  }
+}
+
+async function waitUntil(predicate: () => boolean): Promise<void> {
+  const deadline = Date.now() + 1_000;
+  while (Date.now() <= deadline) {
+    if (predicate()) return;
+    await new Promise((resolve) => setTimeout(resolve, 5));
+  }
+  throw new Error("Timed out waiting for daemon startup state");
 }

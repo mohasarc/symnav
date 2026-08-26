@@ -795,6 +795,59 @@ describe("WorkspaceDaemon requests", () => {
     ).toHaveLength(7);
   });
 
+  it("severs evicted and expired traces while blocked requests remain resumable", async () => {
+    const executor = new SerializedExecutor();
+    const harness = await RequestHarness.start(executor, {
+      operationTraceRetentionMs: 20,
+      maximumRetainedOperationTraces: 1,
+    });
+    harnesses.push(harness);
+    const active = await harness.admit("evicted-active", ["overview", "active.ts"]);
+    await executor.started(1);
+    const queued = await harness.admit("expired-queued", ["overview", "queued.ts"]);
+    active.disconnect();
+    queued.disconnect();
+    harness.notifyTraceDisconnected("evicted-active");
+    harness.notifyTraceDisconnected("expired-queued");
+
+    await waitUntil(
+      () =>
+        harness.retainedOperationTraceCount() === 0 &&
+        harness.logEvents().filter((event) => event.kind === "operation-trace-expired").length ===
+          2,
+    );
+    executor.complete(0);
+    await executor.started(2);
+    executor.complete(1);
+    await waitUntil(
+      async () => (await harness.status("expired-queued")).status.state === "completed",
+    );
+
+    expect(
+      harness
+        .logEvents()
+        .filter((event) =>
+          ["worker-completed", "response-spooled", "execution-terminal"].includes(
+            String(event.kind),
+          ),
+        ),
+    ).toHaveLength(0);
+
+    for (const requestId of ["evicted-active", "expired-queued"]) {
+      const resumed = await harness.fetch(requestId);
+      const completed = await resumed.terminal;
+      if (completed.kind !== "result-end") throw new Error("Expected completed result");
+      await harness.acknowledge(requestId, completed.transferId);
+    }
+    await waitUntil(
+      () => harness.logEvents().filter((event) => event.kind === "delivery-terminal").length === 2,
+    );
+    expect(executor.requests).toHaveLength(2);
+    expect(harness.logEvents().filter((event) => event.kind === "client-reattached")).toHaveLength(
+      2,
+    );
+  });
+
   it("releases retained request traces during shutdown", async () => {
     const harness = await RequestHarness.start(new ImmediateExecutor());
     harnesses.push(harness);
@@ -1492,6 +1545,13 @@ class RequestHarness {
       readonly operationTraces: ReadonlyMap<string, unknown>;
     };
     return daemon.operationTraces.size;
+  }
+
+  notifyTraceDisconnected(requestId: string): void {
+    const daemon = this.daemon as unknown as {
+      disconnectOperationTrace(requestId: string): void;
+    };
+    daemon.disconnectOperationTrace(requestId);
   }
 
   async dispose(): Promise<void> {

@@ -35,6 +35,7 @@ import { DAEMON_BENCHMARK_WARM_REPETITIONS, DaemonBenchmarkGate } from "./daemon
 import {
   DaemonWorkspaceGenerator,
   type DaemonBenchmarkCommand,
+  type DaemonBenchmarkResultExpectation,
   type GeneratedDaemonWorkspace,
 } from "./daemon-workspace-generator.js";
 import type { DaemonBenchmarkScale } from "./daemon-workspace-generator.js";
@@ -136,7 +137,7 @@ export class DaemonScaleBenchmarkHarness {
         stdoutParity: samples.every((sample) => sample.stdoutParity) && largeResponse.stdoutParity,
         stderrParity: samples.every((sample) => sample.stderrParity) && largeResponse.stderrParity,
         exitParity: samples.every((sample) => sample.exitParity) && largeResponse.exitParity,
-        aliasResultsNonEmpty: samples
+        semanticResultsValid: samples
           .filter((sample) =>
             ["resolve", "def", "refs", "context", "graph"].includes(sample.command),
           )
@@ -577,13 +578,75 @@ export class BenchmarkSampleEvidence {
         !benchmark.expectNonEmpty ||
         (warm.status === 0 &&
           warm.stdout.trim().length > 0 &&
-          warm.stdout.includes("benchmarkHub")),
+          DaemonBenchmarkSemanticResult.matches(benchmark.expectation, warm.stdout)),
       diagnosticMatched: false,
     };
   }
 
   private static digest(value: string): string {
     return createHash("sha256").update(value).digest("hex");
+  }
+}
+
+export class DaemonBenchmarkSemanticResult {
+  static matches(
+    expectation: DaemonBenchmarkResultExpectation | undefined,
+    stdout: string,
+  ): boolean {
+    if (expectation === undefined) return stdout.trim().length > 0;
+    let result: Record<string, unknown>;
+    try {
+      const parsed = JSON.parse(stdout) as unknown;
+      if (!this.isRecord(parsed)) return false;
+      result = parsed;
+    } catch {
+      return false;
+    }
+    if (expectation.kind === "overview") {
+      return this.arrayLength(result.entries) === expectation.symbols;
+    }
+    if (expectation.kind === "resolve" || expectation.kind === "definition") {
+      return this.arrayLength(result.symbols) === expectation.symbols;
+    }
+    if (expectation.kind === "references") return result.total === expectation.total;
+    if (expectation.kind === "context") {
+      return (
+        this.edgeCount(result.callers) === expectation.callers &&
+        this.edgeCount(result.callees) === expectation.callees
+      );
+    }
+    if (expectation.kind === "graph") {
+      return (
+        this.pathCount(result.incoming) === expectation.incomingPaths &&
+        this.pathCount(result.outgoing) === expectation.outgoingPaths
+      );
+    }
+    return (
+      typeof result.totalEvents === "number" &&
+      Array.isArray(result.perCommand) &&
+      Array.isArray(result.outcomes) &&
+      this.isRecord(result.duration)
+    );
+  }
+
+  private static edgeCount(value: unknown): number {
+    if (!this.isRecord(value)) return -1;
+    const visible = this.arrayLength(value.sortedEdges);
+    const omitted = value.omittedCertainEdgeCount;
+    return visible < 0 || typeof omitted !== "number" ? -1 : visible + omitted;
+  }
+
+  private static pathCount(value: unknown): number {
+    if (!this.isRecord(value) || typeof value.totalPathCount !== "number") return -1;
+    return value.totalPathCount;
+  }
+
+  private static arrayLength(value: unknown): number {
+    return Array.isArray(value) ? value.length : -1;
+  }
+
+  private static isRecord(value: unknown): value is Record<string, unknown> {
+    return typeof value === "object" && value !== null && !Array.isArray(value);
   }
 }
 

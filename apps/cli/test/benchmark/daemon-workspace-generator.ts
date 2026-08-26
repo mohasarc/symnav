@@ -104,19 +104,65 @@ export class DaemonWorkspaceGenerator {
 
     const targetFile = "packages/package-000/src/module-000000.ts";
     const target = `${targetFile}::benchmarkHub`;
+    const representativeFileCount = Array.from(
+      { length: Math.min(28, visibleTypeScriptFiles - 1) },
+      (_, index) => index + 1,
+    ).filter(
+      (index) =>
+        this.distributionValue(this.options.profile.symbolsPerFile, index, visibleTypeScriptFiles) >
+          0 &&
+        this.distributionValue(this.options.profile.importsPerFile, index, visibleTypeScriptFiles) >
+          0,
+    ).length;
+    const representativeOverviewSymbols = Math.max(
+      4,
+      this.distributionValue(this.options.profile.symbolsPerFile, 0, visibleTypeScriptFiles),
+    );
     const removableIndex = visibleTypeScriptFiles - 1;
     const removablePackage = removableIndex % packageDirectoryCount;
     const removableFile = `packages/package-${String(removablePackage).padStart(3, "0")}/src/module-${String(removableIndex).padStart(6, "0")}.ts`;
     return {
       workspaceRoot,
       commands: {
-        overview: { argv: ["overview", targetFile], expectNonEmpty: true },
-        resolve: { argv: ["resolve", "benchmarkHub"], expectNonEmpty: true },
-        def: { argv: ["def", target], expectNonEmpty: true },
-        refs: { argv: ["refs", target, "--all"], expectNonEmpty: true },
-        context: { argv: ["context", target], expectNonEmpty: true },
-        graph: { argv: ["graph", target, "--depth", "1"], expectNonEmpty: true },
-        stats: { argv: ["stats", "--json"], expectNonEmpty: true },
+        overview: {
+          argv: ["overview", targetFile, "--json"],
+          expectNonEmpty: true,
+          expectation: { kind: "overview", symbols: representativeOverviewSymbols },
+        },
+        resolve: {
+          argv: ["resolve", "benchmarkHub", "--json"],
+          expectNonEmpty: true,
+          expectation: { kind: "resolve", symbols: 1 },
+        },
+        def: {
+          argv: ["def", target, "--json"],
+          expectNonEmpty: true,
+          expectation: { kind: "definition", symbols: 1 },
+        },
+        refs: {
+          argv: ["refs", target, "--all", "--json"],
+          expectNonEmpty: true,
+          expectation: { kind: "references", total: representativeFileCount * 3 },
+        },
+        context: {
+          argv: ["context", target, "--json"],
+          expectNonEmpty: true,
+          expectation: { kind: "context", callers: representativeFileCount, callees: 1 },
+        },
+        graph: {
+          argv: ["graph", target, "--depth", "1", "--json"],
+          expectNonEmpty: true,
+          expectation: {
+            kind: "graph",
+            incomingPaths: representativeFileCount,
+            outgoingPaths: 1,
+          },
+        },
+        stats: {
+          argv: ["stats", "--json"],
+          expectNonEmpty: true,
+          expectation: { kind: "stats-shape" },
+        },
       },
       mutations: {
         sameSizeEdit: targetFile,
@@ -299,7 +345,7 @@ export class DaemonWorkspaceGenerator {
             `import { symbol000001 as benchmarkImport${importIndex} } from "${this.importSpecifier(0, 1, this.nextImportKind())}";`,
         ),
         `export const generatorSeed = "${this.seedMarker}";`,
-        "export function benchmarkHub(value: number): number { return value + 1; }",
+        "export function benchmarkHub(value: number): number { return benchmarkImport0(value) + 1; }",
         "export function cycleEntry(value: number): number { return value <= 0 ? 0 : cycleExit(value - 1); }",
         "export function cycleExit(value: number): number { return cycleEntry(value); }",
       ];
@@ -327,7 +373,8 @@ export class DaemonWorkspaceGenerator {
     });
     if (symbolCount > 0) {
       lines.push(`export function symbol${suffix}(value: number): number {`);
-      const executableCalls = Math.max(0, callCount - 2);
+      const directBenchmarkHubFile = index <= directBenchmarkHubFiles;
+      const executableCalls = directBenchmarkHubFile ? 0 : Math.max(0, callCount - 2);
       for (let callIndex = 0; callIndex < executableCalls && importCount > 0; callIndex += 1) {
         lines.push(`  benchmarkImport${callIndex % importCount}(value);`);
       }

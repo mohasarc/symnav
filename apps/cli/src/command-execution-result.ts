@@ -378,9 +378,62 @@ export class CommandResultReplayer {
     result: CommandExecutionResult,
     context: ProgramContext,
   ): Promise<never | void> {
-    for await (const record of result.output.records()) context[record.stream].write(record.bytes);
-    await result.output.dispose();
+    try {
+      for await (const record of result.output.records()) {
+        await CommandResultReplayer.write(context[record.stream], record.bytes);
+      }
+    } finally {
+      await result.output.dispose();
+    }
     if (result.exitCode !== 0) context.exit(result.exitCode);
+  }
+
+  private static write(stream: NodeJS.WritableStream, bytes: Uint8Array): Promise<void> {
+    return new Promise((resolve, reject) => {
+      let callbackCompleted = false;
+      let drainCompleted = false;
+      let settled = false;
+      const cleanup = () => {
+        stream.removeListener("drain", onDrain);
+        stream.removeListener("error", onError);
+        stream.removeListener("close", onClose);
+      };
+      const fail = (error: Error) => {
+        if (settled) return;
+        settled = true;
+        cleanup();
+        reject(error);
+      };
+      const complete = () => {
+        if (settled || !callbackCompleted || !drainCompleted) return;
+        settled = true;
+        cleanup();
+        resolve();
+      };
+      const onDrain = () => {
+        drainCompleted = true;
+        complete();
+      };
+      const onError = (error: Error) => fail(error);
+      const onClose = () => fail(new Error("Command output stream closed during replay"));
+      stream.once("error", onError);
+      stream.once("close", onClose);
+      try {
+        const accepted = stream.write(bytes, (error?: Error | null) => {
+          if (error) {
+            fail(error);
+            return;
+          }
+          callbackCompleted = true;
+          complete();
+        });
+        drainCompleted = accepted;
+        if (!accepted) stream.once("drain", onDrain);
+        complete();
+      } catch (error) {
+        fail(error instanceof Error ? error : new Error(String(error)));
+      }
+    });
   }
 }
 

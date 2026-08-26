@@ -145,7 +145,7 @@ export class DaemonResourceSupervisor {
     this.timer.unref?.();
   }
 
-  async sample(reason: "interval" | "admission" | "turn-complete"): Promise<void> {
+  async sample(reason: "warmup" | "interval" | "admission" | "turn-complete"): Promise<void> {
     if (this.currentState === "draining" || this.currentState === "stopped") return;
     this.captureUsage();
     const policy = this.options.policy.record;

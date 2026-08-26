@@ -190,9 +190,10 @@ export class WorkspaceDaemon {
       const generation = this.startWorkerGeneration(this.initialNavigationWorker);
       const response = await this.waitForReadyGeneration(generation);
       if (response.kind !== "ready") throw new Error("Navigation worker did not become ready");
-      this.workerReady = true;
       this.fileCount = response.fileCount;
       this.logger.record({ kind: "freshness", ...response.refresh });
+      await this.resourceSupervisor.sample("warmup");
+      this.workerReady = true;
       const readyRecord: DaemonRecord = {
         schemaVersion: DAEMON_RECORD_SCHEMA_VERSION,
         protocolVersion: DAEMON_PROTOCOL_VERSION,

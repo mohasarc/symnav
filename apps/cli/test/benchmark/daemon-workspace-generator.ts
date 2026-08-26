@@ -73,6 +73,9 @@ export class DaemonWorkspaceGenerator {
 
     const targetFile = "packages/package-000/src/module-000000.ts";
     const target = `${targetFile}::benchmarkHub`;
+    const removableIndex = visibleTypeScriptFiles - 1;
+    const removablePackage = removableIndex % packageCount;
+    const removableFile = `packages/package-${String(removablePackage).padStart(3, "0")}/src/module-${String(removableIndex).padStart(6, "0")}.ts`;
     return {
       workspaceRoot,
       commands: {
@@ -87,7 +90,7 @@ export class DaemonWorkspaceGenerator {
       mutations: {
         sameSizeEdit: targetFile,
         add: "packages/package-000/src/added.ts",
-        remove: "packages/package-000/src/module-000000.ts",
+        remove: removableFile,
         renameFrom: "packages/package-001/src/module-000001.ts",
         renameTo: "packages/package-001/src/renamed.ts",
         ignoreRule: ".gitignore",

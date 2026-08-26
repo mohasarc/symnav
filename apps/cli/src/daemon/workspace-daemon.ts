@@ -359,6 +359,13 @@ export class WorkspaceDaemon {
         acceptedAt: entry.state.acceptedAt,
         queuePosition: entry.state.queuePosition,
       });
+      if (existing === undefined) {
+        this.logger.record({
+          kind: "acceptance",
+          requestId: request.requestId,
+          queuePosition: entry.state.queuePosition,
+        });
+      }
     }
     const acceptance = this.acceptances.get(request.requestId);
     if (acceptance === undefined) throw new Error("Accepted request is missing admission metadata");

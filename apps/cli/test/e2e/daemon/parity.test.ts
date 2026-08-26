@@ -184,7 +184,7 @@ describe("symnav daemon parity", () => {
     const releasePath = join(harness.root, "release-first-request");
     const controlled = await harness.startControlledDaemon(releasePath);
     const transport = new LocalDaemonTransport({ requestTimeoutMs: 10_000 });
-    const first = transport.request(controlled.record.endpoint, {
+    const first = transport.execute(controlled.record.endpoint, {
       kind: "execute",
       protocolVersion: DAEMON_PROTOCOL_VERSION,
       instanceId: controlled.record.instanceId,
@@ -204,15 +204,59 @@ describe("symnav daemon parity", () => {
     writeFileSync(join(harness.workspaceRoot, "input.ts"), "export const queuedEdit = 3;\n");
     writeFileSync(releasePath, "release");
 
-    const firstResponse = await first;
+    const firstResponse = await (await first).completion;
     const secondResult = await second;
 
-    expect(firstResponse).toMatchObject({ kind: "result", result: { exitCode: 0 } });
+    expect(firstResponse).toMatchObject({ status: "completed", result: { exitCode: 0 } });
     await waitUntil(() => existsSync(`${controlled.requestStartedPath}.2`));
     expect(secondResult).toEqual(harness.cold(["overview", "input.ts"]));
-    if (firstResponse.kind !== "result") throw new Error("Expected first FIFO result");
+    if (firstResponse.status !== "completed") throw new Error("Expected first FIFO result");
     expect(decodeFrames(firstResponse.result.frames)).toMatch(/^\d+\.\d+\.\d+/);
     expect(secondResult.stdout).toContain("queuedEdit");
+  }, 15_000);
+
+  it("finishes an accepted request after its caller exits and keeps the daemon warm", async () => {
+    const harness = new DaemonParityHarness();
+    harnesses.push(harness);
+    const releasePath = join(harness.root, "release-disconnected-request");
+    const acceptedPath = join(harness.root, "accepted-disconnected-request");
+    const controlled = await harness.startControlledDaemon(releasePath);
+    const caller = spawn(
+      process.execPath,
+      [
+        fileURLToPath(new URL("../../../node_modules/tsx/dist/cli.mjs", import.meta.url)),
+        fileURLToPath(new URL("../../helpers/daemon-accepted-caller.ts", import.meta.url)),
+        controlled.record.endpoint,
+        controlled.record.instanceId,
+        controlled.record.processToken,
+        harness.workspaceRoot,
+        acceptedPath,
+      ],
+      { stdio: "ignore" },
+    );
+
+    await waitUntil(() => existsSync(acceptedPath));
+    caller.kill("SIGKILL");
+    await waitForProcess(caller);
+    writeFileSync(releasePath, "release");
+    const transport = new LocalDaemonTransport({ requestTimeoutMs: 5_000 });
+    await waitUntil(async () => {
+      const status = await transport.executionStatus(controlled.record.endpoint, {
+        kind: "execution-status",
+        protocolVersion: DAEMON_PROTOCOL_VERSION,
+        instanceId: controlled.record.instanceId,
+        processToken: controlled.record.processToken,
+        requestId: "accepted-disconnect",
+      });
+      return status.state === "completed";
+    });
+
+    expect(harness.onlyDaemonPid()).toBe(controlled.record.pid);
+    await waitUntil(() => harness.telemetryModes().length === 1);
+    expect(harness.telemetryModes()).toEqual(["warm"]);
+    expect(harness.warm(["overview", "input.ts"])).toEqual(harness.cold(["overview", "input.ts"]));
+    expect(harness.onlyDaemonPid()).toBe(controlled.record.pid);
+    expect(harness.telemetryModes()).toEqual(["warm"]);
   }, 15_000);
 
   it("routes stats through and reuses the workspace daemon", () => {
@@ -733,6 +777,14 @@ function processIsAlive(pid: number): boolean {
   }
 }
 
+function waitForProcess(child: ChildProcess): Promise<void> {
+  if (child.exitCode !== null || child.signalCode !== null) return Promise.resolve();
+  return new Promise((resolve, reject) => {
+    child.once("error", reject);
+    child.once("close", () => resolve());
+  });
+}
+
 function decodeFrames(frames: readonly { readonly bytesBase64: string }[]): string {
   return frames.map((frame) => Buffer.from(frame.bytesBase64, "base64").toString()).join("");
 }
@@ -743,10 +795,10 @@ interface ControlledDaemon {
   readonly requestStartedPath: string;
 }
 
-async function waitUntil(predicate: () => boolean): Promise<void> {
+async function waitUntil(predicate: () => boolean | Promise<boolean>): Promise<void> {
   const deadline = Date.now() + 5_000;
   while (Date.now() <= deadline) {
-    if (predicate()) return;
+    if (await predicate()) return;
     await new Promise((resolve) => setTimeout(resolve, 10));
   }
   throw new Error("Timed out waiting for controlled daemon state");

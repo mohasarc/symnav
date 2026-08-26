@@ -121,7 +121,7 @@ export class DaemonScaleBenchmarkHarness {
       );
       const enrichedSamples = fixedDiagnostics.enrich(samples);
       const fixedArtifactComplete = fixedDiagnostics.complete(enrichedSamples);
-      const freshness = this.runMutations(generated, stateDirectory);
+      const mutations = this.runMutations(generated, stateDirectory);
       const largeResponse = await this.runLargeResponseAndBusyStatus(generated, stateDirectory);
       const finalRecord = registry.read(identity);
       if (finalRecord === undefined) throw new Error("Daemon benchmark final record is missing");
@@ -144,7 +144,7 @@ export class DaemonScaleBenchmarkHarness {
         stderrParity: samples.every((sample) => sample.stderrParity) && largeResponse.stderrParity,
         exitParity: samples.every((sample) => sample.exitParity) && largeResponse.exitParity,
         semanticResultsValid: BenchmarkSampleEvidence.semanticResultsValid(samples),
-        freshness,
+        freshness: mutations.current,
         statusMaximumMs: largeResponse.statusMaximumMs,
         busyStatusObserved: largeResponse.busyStatusObserved,
         initialPid: initialRecord.pid,
@@ -171,13 +171,16 @@ export class DaemonScaleBenchmarkHarness {
           "overview",
         ],
         actualTelemetryCommands: telemetryCommands,
-        invocationTelemetryComplete: enrichedSamples.every((sample) => sample.telemetryMatched),
+        invocationTelemetryComplete:
+          enrichedSamples.every((sample) => sample.telemetryMatched) &&
+          mutations.telemetryComplete &&
+          largeResponse.telemetryMatched,
         artifactComplete: fixedArtifactComplete,
         spoolBytesAfterCleanup: DaemonScaleBenchmarkHarness.directoryBytes(identity.spoolDirectory),
         diagnosticPhasesComplete: diagnostics.phasesComplete,
         generatedVisibleFiles: generatedProfile.visibleTypeScriptFiles,
         expectedVisibleFiles: generated.expectedProfile.visibleTypeScriptFiles,
-        mutationsCurrent: freshness,
+        mutationsCurrent: mutations.current,
       });
       return {
         schemaVersion: 1,
@@ -296,9 +299,13 @@ export class DaemonScaleBenchmarkHarness {
     return DaemonBenchmarkDiagnostics.eventCount(logPath);
   }
 
-  private runMutations(generated: GeneratedDaemonWorkspace, stateDirectory: string): boolean {
+  private runMutations(
+    generated: GeneratedDaemonWorkspace,
+    stateDirectory: string,
+  ): MutationEvidence {
     const root = generated.workspaceRoot;
     let current = true;
+    const telemetryMatches: boolean[] = [];
     const editedPath = join(root, generated.mutations.sameSizeEdit);
     const original = readFileSync(editedPath, "utf8");
     const originalTimes = statSync(editedPath);
@@ -313,14 +320,23 @@ export class DaemonScaleBenchmarkHarness {
     );
     writeFileSync(editedPath, edited, "utf8");
     utimesSync(editedPath, originalTimes.atime, originalTimes.mtime);
-    current =
-      this.changedParity(root, stateDirectory, generated.commands.overview.argv, beforeEdit) &&
-      current;
+    const editedEvidence = this.changedParity(
+      root,
+      stateDirectory,
+      generated.commands.overview.argv,
+      beforeEdit,
+    );
+    current = editedEvidence.current && current;
+    telemetryMatches.push(editedEvidence.telemetryMatched);
 
     const addedPath = join(root, generated.mutations.add);
     writeFileSync(addedPath, "export const AddedBenchmarkSymbol = 1;\n", "utf8");
-    current =
-      this.nonEmptyParity(root, stateDirectory, ["resolve", "AddedBenchmarkSymbol"]) && current;
+    const addedEvidence = this.nonEmptyParity(root, stateDirectory, [
+      "resolve",
+      "AddedBenchmarkSymbol",
+    ]);
+    current = addedEvidence.current && current;
+    telemetryMatches.push(addedEvidence.telemetryMatched);
 
     const beforeRemove = this.runCommand(
       root,
@@ -329,13 +345,14 @@ export class DaemonScaleBenchmarkHarness {
       false,
     );
     unlinkSync(join(root, generated.mutations.remove));
-    current =
-      this.changedParity(
-        root,
-        stateDirectory,
-        ["resolve", generated.mutations.removeSymbol],
-        beforeRemove,
-      ) && current;
+    const removedEvidence = this.changedParity(
+      root,
+      stateDirectory,
+      ["resolve", generated.mutations.removeSymbol],
+      beforeRemove,
+    );
+    current = removedEvidence.current && current;
+    telemetryMatches.push(removedEvidence.telemetryMatched);
 
     const beforeRename = this.runCommand(
       root,
@@ -347,10 +364,12 @@ export class DaemonScaleBenchmarkHarness {
       join(root, generated.mutations.renameFrom),
       join(root, generated.mutations.renameTo),
     );
-    current =
-      this.nonEmptyParity(root, stateDirectory, ["overview", generated.mutations.renameTo]) &&
-      beforeRename.status === 0 &&
-      current;
+    const renamedEvidence = this.nonEmptyParity(root, stateDirectory, [
+      "overview",
+      generated.mutations.renameTo,
+    ]);
+    current = renamedEvidence.current && beforeRename.status === 0 && current;
+    telemetryMatches.push(renamedEvidence.telemetryMatched);
 
     const beforeIgnore = this.runCommand(
       root,
@@ -359,19 +378,21 @@ export class DaemonScaleBenchmarkHarness {
       false,
     );
     appendFileSync(join(root, generated.mutations.ignoreRule), `${generated.mutations.add}\n`);
-    current =
-      this.changedParity(
-        root,
-        stateDirectory,
-        ["overview", generated.mutations.add],
-        beforeIgnore,
-      ) && current;
-    current =
-      this.errorParity(root, stateDirectory, [
-        "overview",
-        generated.mutations.nestedWorkspaceFile,
-      ]) && current;
-    return current;
+    const ignoredEvidence = this.changedParity(
+      root,
+      stateDirectory,
+      ["overview", generated.mutations.add],
+      beforeIgnore,
+    );
+    current = ignoredEvidence.current && current;
+    telemetryMatches.push(ignoredEvidence.telemetryMatched);
+    const nestedEvidence = this.errorParity(root, stateDirectory, [
+      "overview",
+      generated.mutations.nestedWorkspaceFile,
+    ]);
+    current = nestedEvidence.current && current;
+    telemetryMatches.push(nestedEvidence.telemetryMatched);
+    return { current, telemetryComplete: telemetryMatches.every(Boolean) };
   }
 
   private changedParity(
@@ -379,19 +400,36 @@ export class DaemonScaleBenchmarkHarness {
     stateDirectory: string,
     argv: readonly string[],
     before: RunSymnavBinaryResult,
-  ): boolean {
+  ): MutationInvocationEvidence {
     const result = this.parity(root, stateDirectory, argv);
-    return result.parity && result.cold.stdout !== before.stdout;
+    return {
+      current: result.parity && result.cold.stdout !== before.stdout,
+      telemetryMatched: result.telemetryMatched,
+    };
   }
 
-  private nonEmptyParity(root: string, stateDirectory: string, argv: readonly string[]): boolean {
+  private nonEmptyParity(
+    root: string,
+    stateDirectory: string,
+    argv: readonly string[],
+  ): MutationInvocationEvidence {
     const result = this.parity(root, stateDirectory, argv);
-    return result.parity && result.warm.status === 0 && result.warm.stdout.trim().length > 0;
+    return {
+      current: result.parity && result.warm.status === 0 && result.warm.stdout.trim().length > 0,
+      telemetryMatched: result.telemetryMatched,
+    };
   }
 
-  private errorParity(root: string, stateDirectory: string, argv: readonly string[]): boolean {
+  private errorParity(
+    root: string,
+    stateDirectory: string,
+    argv: readonly string[],
+  ): MutationInvocationEvidence {
     const result = this.parity(root, stateDirectory, argv);
-    return result.parity && result.warm.status !== 0;
+    return {
+      current: result.parity && result.warm.status !== 0,
+      telemetryMatched: result.telemetryMatched,
+    };
   }
 
   private parity(
@@ -402,14 +440,22 @@ export class DaemonScaleBenchmarkHarness {
     readonly cold: RunSymnavBinaryResult;
     readonly warm: RunSymnavBinaryResult;
     readonly parity: boolean;
+    readonly telemetryMatched: boolean;
   } {
     const cold = this.runCommand(root, stateDirectory, argv, false);
+    const telemetryBefore = this.telemetryEvents(stateDirectory);
     const warm = this.runCommand(root, stateDirectory, argv, true);
+    const telemetryAfter = this.telemetryEvents(stateDirectory);
     return {
       cold,
       warm,
       parity:
         cold.status === warm.status && cold.stdout === warm.stdout && cold.stderr === warm.stderr,
+      telemetryMatched: BenchmarkInvocationTelemetry.matches({
+        before: telemetryBefore,
+        after: telemetryAfter,
+        command: argv[0] as DaemonCommandName,
+      }),
     };
   }
 
@@ -434,6 +480,7 @@ export class DaemonScaleBenchmarkHarness {
       false,
       false,
     );
+    const telemetryBefore = this.telemetryEvents(stateDirectory);
     let warmSettled = false;
     const warmPromise = this.runCommandAsync(
       generated.workspaceRoot,
@@ -460,6 +507,7 @@ export class DaemonScaleBenchmarkHarness {
       if (!busyStatusObserved) await DaemonScaleBenchmarkHarness.yieldToChild();
     }
     const warm = await warmPromise;
+    const telemetryAfter = this.telemetryEvents(stateDirectory);
     unlinkSync(sourcePath);
     return {
       responseBytes: Buffer.byteLength(warm.stdout) + Buffer.byteLength(warm.stderr),
@@ -468,6 +516,11 @@ export class DaemonScaleBenchmarkHarness {
       exitParity: cold.status === warm.status,
       busyStatusObserved,
       statusMaximumMs,
+      telemetryMatched: BenchmarkInvocationTelemetry.matches({
+        before: telemetryBefore,
+        after: telemetryAfter,
+        command: "overview",
+      }),
     };
   }
 
@@ -587,6 +640,38 @@ interface LargeResponseEvidence {
   readonly exitParity: boolean;
   readonly busyStatusObserved: boolean;
   readonly statusMaximumMs: number;
+  readonly telemetryMatched: boolean;
+}
+
+interface MutationEvidence {
+  readonly current: boolean;
+  readonly telemetryComplete: boolean;
+}
+
+interface MutationInvocationEvidence {
+  readonly current: boolean;
+  readonly telemetryMatched: boolean;
+}
+
+interface BenchmarkTelemetryWindow {
+  readonly before: readonly Record<string, unknown>[];
+  readonly after: readonly Record<string, unknown>[];
+  readonly command: DaemonCommandName;
+}
+
+export class BenchmarkInvocationTelemetry {
+  static complete(windows: readonly BenchmarkTelemetryWindow[]): boolean {
+    return windows.every((window) => this.matches(window));
+  }
+
+  static matches(window: BenchmarkTelemetryWindow): boolean {
+    const appended = window.after.slice(window.before.length);
+    return (
+      window.after.length === window.before.length + 1 &&
+      appended[0]?.command === window.command &&
+      appended[0]?.executionMode === "warm"
+    );
+  }
 }
 
 export class BenchmarkSampleEvidence {
@@ -599,12 +684,7 @@ export class BenchmarkSampleEvidence {
     after: readonly Record<string, unknown>[],
     command: DaemonCommandName,
   ): boolean {
-    const appended = after.slice(before.length);
-    return (
-      after.length === before.length + 1 &&
-      appended[0]?.command === command &&
-      appended[0]?.executionMode === "warm"
-    );
+    return BenchmarkInvocationTelemetry.matches({ before, after, command });
   }
 
   static from(

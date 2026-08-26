@@ -457,7 +457,11 @@ export class WorkspaceDaemon {
         async () => {
           spool = await this.completionSpools.create(request.requestId);
           this.acceptedRequests.markRunning(request.requestId, this.now());
-          const response = await this.navigationWorker.execute(request.requestId, request.request);
+          const response = await this.navigationWorker.execute(
+            request.requestId,
+            request.request,
+            spool,
+          );
           if (response.kind !== "result" || response.requestId !== request.requestId) {
             throw new Error("Navigation worker returned an uncorrelated result");
           }

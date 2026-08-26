@@ -807,8 +807,6 @@ describe("WorkspaceDaemon requests", () => {
     const queued = await harness.admit("expired-queued", ["overview", "queued.ts"]);
     active.disconnect();
     queued.disconnect();
-    harness.notifyTraceDisconnected("evicted-active");
-    harness.notifyTraceDisconnected("expired-queued");
 
     await waitUntil(
       () =>
@@ -1545,13 +1543,6 @@ class RequestHarness {
       readonly operationTraces: ReadonlyMap<string, unknown>;
     };
     return daemon.operationTraces.size;
-  }
-
-  notifyTraceDisconnected(requestId: string): void {
-    const daemon = this.daemon as unknown as {
-      disconnectOperationTrace(requestId: string): void;
-    };
-    daemon.disconnectOperationTrace(requestId);
   }
 
   async dispose(): Promise<void> {

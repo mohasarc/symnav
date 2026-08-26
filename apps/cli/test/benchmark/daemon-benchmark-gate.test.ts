@@ -29,10 +29,12 @@ describe("DaemonBenchmarkGate", () => {
     const eightPassing = BenchmarkEvidence.samples([100, 100, 100, 100, 100, 100, 100, 100, 900]);
     const sevenPassing = BenchmarkEvidence.samples([100, 100, 100, 100, 100, 100, 100, 900, 900]);
 
-    expect(gate.evaluate({ ...BenchmarkEvidence.valid(), samples: eightPassing }).passed).toBe(true);
-    expect(gate.evaluate({ ...BenchmarkEvidence.valid(), samples: sevenPassing }).failures).toContain(
-      "latency-threshold",
+    expect(gate.evaluate({ ...BenchmarkEvidence.valid(), samples: eightPassing }).passed).toBe(
+      true,
     );
+    expect(
+      gate.evaluate({ ...BenchmarkEvidence.valid(), samples: sevenPassing }).failures,
+    ).toContain("latency-threshold");
   });
 
   it.each(BenchmarkEvidence.failures)("fails independently for %s", (failure, mutate) => {
@@ -103,7 +105,10 @@ class BenchmarkEvidence {
     };
   }
 
-  static samples(serviceTimes: readonly number[], queueWaitMs = 0): readonly DaemonBenchmarkSample[] {
+  static samples(
+    serviceTimes: readonly number[],
+    queueWaitMs = 0,
+  ): readonly DaemonBenchmarkSample[] {
     return serviceTimes.map((serviceMsExcludingQueue, repetition) => ({
       command: "overview",
       repetition,

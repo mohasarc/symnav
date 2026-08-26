@@ -99,7 +99,98 @@ export const DAEMON_BENCHMARK_THRESHOLDS_MS = {
 } as const;
 
 export class DaemonBenchmarkGate {
-  evaluate(_input: DaemonBenchmarkGateInput): DaemonBenchmarkGateResult {
-    throw new Error("Daemon benchmark gate evaluation is not implemented");
+  evaluate(input: DaemonBenchmarkGateInput): DaemonBenchmarkGateResult {
+    const commandStatistics: Record<string, DaemonBenchmarkStatistics> = {};
+    let latencyMet = true;
+    let samplesComplete = true;
+    for (const command of input.expectedCommands) {
+      const samples = input.samples
+        .filter((sample) => sample.command === command)
+        .sort((left, right) => left.repetition - right.repetition);
+      if (samples.length !== DAEMON_BENCHMARK_WARM_REPETITIONS) samplesComplete = false;
+      if (samples.length === 0) continue;
+      const threshold = DaemonBenchmarkGate.threshold(command);
+      const statistics = DaemonBenchmarkGate.statistics(samples, threshold);
+      commandStatistics[command] = statistics;
+      if (
+        input.scale === 1 &&
+        threshold !== undefined &&
+        (statistics.p50Ms > threshold ||
+          statistics.samplesMeetingThreshold < DAEMON_BENCHMARK_REQUIRED_SAMPLES)
+      ) {
+        latencyMet = false;
+      }
+    }
+
+    const parity = input.stdoutParity && input.stderrParity && input.exitParity;
+    const freshness = input.freshness && input.mutationsCurrent;
+    const statusResponsive = input.statusMaximumMs < 1_000;
+    const continuity =
+      input.restartCount === 0 &&
+      input.initialPid === input.finalPid &&
+      input.initialInstanceId === input.finalInstanceId;
+    const exactlyOnceTelemetry = input.actualTelemetryCount === input.expectedTelemetryCount;
+    const resourcesWithinPolicy = input.processRssPeakBytes < input.hardProcessRssBytes;
+    const spoolsCleaned = input.spoolBytesAfterCleanup === 0;
+    const failures: DaemonBenchmarkFailureCode[] = [];
+    if (!input.stdoutParity) failures.push("stdout-mismatch");
+    if (!input.stderrParity) failures.push("stderr-mismatch");
+    if (!input.exitParity) failures.push("exit-mismatch");
+    if (!input.aliasResultsNonEmpty) failures.push("alias-result-empty");
+    if (!freshness) failures.push("stale-mutation");
+    if (!latencyMet) failures.push("latency-threshold");
+    if (!statusResponsive) failures.push("status-unresponsive");
+    if (input.restartCount > 0) failures.push("daemon-restarted");
+    if (input.fallbackCount > 0) failures.push("fallback-observed");
+    if (input.capacityResultCount > 0) failures.push("capacity-result");
+    if (input.rawRuntimeFailureCount > 0) failures.push("raw-runtime-failure");
+    if (!resourcesWithinPolicy) failures.push("rss-limit");
+    if (!exactlyOnceTelemetry) failures.push("telemetry-count");
+    if (!samplesComplete) failures.push("missing-sample");
+    if (!input.artifactComplete) failures.push("missing-artifact");
+    if (!spoolsCleaned) failures.push("spool-leak");
+    if (input.initialPid !== input.finalPid || input.initialInstanceId !== input.finalInstanceId) {
+      failures.push("identity-discontinuity");
+    }
+    if (!input.diagnosticPhasesComplete) failures.push("diagnostic-phase-missing");
+    if (input.generatedVisibleFiles < input.expectedVisibleFiles) failures.push("undersized-run");
+    return {
+      passed: failures.length === 0,
+      failures,
+      commandStatistics,
+      parity,
+      freshness,
+      statusResponsive,
+      continuity,
+      exactlyOnceTelemetry,
+      resourcesWithinPolicy,
+      spoolsCleaned,
+    };
+  }
+
+  private static threshold(command: DaemonCommandName): number | undefined {
+    if (command in DAEMON_BENCHMARK_THRESHOLDS_MS) {
+      return DAEMON_BENCHMARK_THRESHOLDS_MS[command as keyof typeof DAEMON_BENCHMARK_THRESHOLDS_MS];
+    }
+    return undefined;
+  }
+
+  private static statistics(
+    samples: readonly DaemonBenchmarkSample[],
+    threshold: number | undefined,
+  ): DaemonBenchmarkStatistics {
+    const values = samples
+      .map((sample) => sample.serviceMsExcludingQueue)
+      .sort((left, right) => left - right);
+    return {
+      minimumMs: values[0]!,
+      p50Ms: values[Math.ceil(values.length * 0.5) - 1]!,
+      p95Ms: values[Math.ceil(values.length * 0.95) - 1]!,
+      maximumMs: values.at(-1)!,
+      samplesMeetingThreshold:
+        threshold === undefined
+          ? values.length
+          : values.filter((value) => value <= threshold).length,
+    };
   }
 }

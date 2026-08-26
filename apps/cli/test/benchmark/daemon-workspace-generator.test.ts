@@ -45,6 +45,8 @@ describe("DaemonWorkspaceGenerator", () => {
     expect(statSync(join(root, "ignored", "ignored.ts")).isFile()).toBe(true);
     expect(statSync(join(root, "nested", ".git")).isDirectory()).toBe(true);
     expect(generated.commands.refs.expectNonEmpty).toBe(true);
+    expect(generated.mutations.remove).not.toBe(generated.mutations.sameSizeEdit);
+    expect(statSync(join(root, generated.mutations.remove)).isFile()).toBe(true);
 
     const profiled = await new DaemonWorkspaceProfiler().profile(root);
     expect(profiled.visibleTypeScriptFiles).toBe(12);

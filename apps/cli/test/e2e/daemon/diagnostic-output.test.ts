@@ -72,15 +72,23 @@ describe("daemon diagnostic output isolation", () => {
     expect(logNames).toContain("daemon.log");
     expect(logNames).not.toContain(`daemon.log.${DAEMON_LOG_BACKUP_COUNT + 1}`);
     expect(logNames.length).toBeLessThanOrEqual(DAEMON_LOG_BACKUP_COUNT + 1);
+    const events: Record<string, unknown>[] = [];
     for (const name of logNames) {
       const path = join(identity.identityDirectory, name);
       expect(statSync(path).size).toBeLessThanOrEqual(DAEMON_LOG_ROTATE_BYTES);
       const contents = readFileSync(path, "utf8");
       expect(contents).not.toContain(secret);
       for (const line of contents.split("\n").filter((value) => value.length > 0)) {
-        expect(() => JSON.parse(line)).not.toThrow();
+        const event = JSON.parse(line) as Record<string, unknown>;
+        events.push(event);
       }
     }
+    expect(events.filter((event) => event.kind === "process-termination")).toEqual([
+      expect.objectContaining({
+        terminationReason: "uncaught-exception",
+        errorName: "Error",
+      }),
+    ]);
   }, 15_000);
 });
 

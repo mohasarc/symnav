@@ -27,6 +27,7 @@ describe("DaemonScaleBenchmarkHarness", () => {
     expect(artifact.samples).toHaveLength(7 * DAEMON_BENCHMARK_WARM_REPETITIONS);
     expect(artifact.largeResponseBytes).toBeGreaterThan(8 * 1024 * 1024);
     expect(artifact.responsePeakBytes).toBe(artifact.largeResponseBytes);
+    expect(artifact.spoolPeakBytes).toBeGreaterThan(8 * 1024 * 1024);
     expect(artifact.busyStatusObserved).toBe(true);
     expect(artifact.processRssPeakBytes).toBeGreaterThan(0);
     expect(artifact.processRssPeakBytes).toBeLessThan(artifact.resourcePolicy.hardProcessRssBytes);

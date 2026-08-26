@@ -357,6 +357,13 @@ export type DaemonDiagnosticErrorName =
 
 export type DaemonDiagnosticFailureCode = DaemonExecutionFailureCode | "operation-failed";
 
+export type DaemonProcessTerminationReason =
+  | "uncaught-exception"
+  | "unhandled-rejection"
+  | "signal";
+
+export type DaemonProcessTerminationSignal = "SIGTERM" | "SIGINT" | "SIGHUP";
+
 export type DaemonDiagnosticEvent =
   | { readonly kind: "start" }
   | { readonly kind: "ready"; readonly fileCount: number }
@@ -376,6 +383,12 @@ export type DaemonDiagnosticEvent =
     }
   | { readonly kind: "stop"; readonly reason: DaemonStopReason }
   | { readonly kind: "diagnostics-dropped"; readonly droppedCount: number }
+  | {
+      readonly kind: "process-termination";
+      readonly terminationReason: DaemonProcessTerminationReason;
+      readonly signal?: DaemonProcessTerminationSignal;
+      readonly errorName?: DaemonDiagnosticErrorName;
+    }
   | {
       readonly kind: "failure";
       readonly operation: DaemonFailureOperation;

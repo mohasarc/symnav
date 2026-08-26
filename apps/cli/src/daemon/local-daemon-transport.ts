@@ -614,30 +614,65 @@ export class LocalDaemonTransport {
     await new Promise<void>((resolve, reject) => {
       const decoder = new DaemonFrameDecoder(this.maximumFrameBytes);
       const socket = createConnection(endpoint);
-      socket.once("error", reject);
-      socket.once("connect", () => this.writeFrame(socket, acknowledgement));
+      let responseReceived = false;
+      let settled = false;
+      const fail = (error: unknown): void => {
+        if (settled) return;
+        settled = true;
+        socket.destroy();
+        reject(error);
+      };
+      const succeed = (): void => {
+        if (settled) return;
+        settled = true;
+        socket.destroy();
+        resolve();
+      };
+      const complete = (): void => {
+        try {
+          decoder.assertComplete();
+          if (!responseReceived) throw new Error("Daemon acknowledgement response is missing");
+          succeed();
+        } catch (error) {
+          fail(error);
+        }
+      };
+      socket.setTimeout(this.requestTimeoutMs, () =>
+        fail(new Error("Daemon result acknowledgement timed out")),
+      );
+      socket.once("error", fail);
+      socket.once("connect", () => {
+        try {
+          this.writeFrame(socket, acknowledgement);
+        } catch (error) {
+          fail(error);
+        }
+      });
       socket.on("data", (bytes) => {
         try {
           const values = decoder.append(Buffer.isBuffer(bytes) ? bytes : Buffer.from(bytes));
-          if (values.length === 0) return;
-          if (values.length !== 1) throw new Error("Duplicate daemon result acknowledgement");
-          const response = values[0];
-          LocalDaemonTransport.assertResponse(response);
-          if (
-            response.kind !== "result-acknowledged" ||
-            response.instanceId !== request.instanceId ||
-            response.processToken !== request.processToken ||
-            response.requestId !== request.requestId ||
-            response.transferId !== manifest.transferId
-          ) {
-            throw new Error("Invalid daemon result acknowledgement");
+          for (const response of values) {
+            if (responseReceived) throw new Error("Duplicate daemon result acknowledgement");
+            LocalDaemonTransport.assertResponse(response);
+            if (
+              response.kind !== "result-acknowledged" ||
+              response.instanceId !== request.instanceId ||
+              response.processToken !== request.processToken ||
+              response.requestId !== request.requestId ||
+              response.transferId !== manifest.transferId
+            ) {
+              throw new Error("Invalid daemon result acknowledgement");
+            }
+            responseReceived = true;
           }
-          socket.end();
-          resolve();
+          if (responseReceived) socket.end();
         } catch (error) {
-          socket.destroy();
-          reject(error);
+          fail(error);
         }
+      });
+      socket.once("end", complete);
+      socket.once("close", () => {
+        if (!settled) complete();
       });
     });
   }

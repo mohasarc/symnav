@@ -112,7 +112,12 @@ export class DaemonBenchmarkGate {
       const samples = input.samples
         .filter((sample) => sample.command === command)
         .sort((left, right) => left.repetition - right.repetition);
-      if (samples.length !== DAEMON_BENCHMARK_WARM_REPETITIONS) samplesComplete = false;
+      if (
+        samples.length !== DAEMON_BENCHMARK_WARM_REPETITIONS ||
+        samples.some((sample, repetition) => sample.repetition !== repetition)
+      ) {
+        samplesComplete = false;
+      }
       if (samples.length === 0) continue;
       const threshold = DaemonBenchmarkGate.threshold(command);
       const statistics = DaemonBenchmarkGate.statistics(samples, threshold);

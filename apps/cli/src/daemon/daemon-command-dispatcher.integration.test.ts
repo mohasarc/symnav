@@ -17,7 +17,7 @@ import type {
 import { DaemonRegistry } from "./daemon-registry.js";
 import { DaemonStartupCoordinator } from "./daemon-startup-coordinator.js";
 import { DaemonWorkspaceIdentity } from "./daemon-workspace-identity.js";
-import type { LocalDaemonTransport } from "./local-daemon-transport.js";
+import type { DaemonExecutionReceipt, LocalDaemonTransport } from "./local-daemon-transport.js";
 
 const workspaceRoot = resolve("reference-workspace");
 const REFERENCE_WORKSPACE_FILE_COUNT = 4_000;
@@ -58,6 +58,15 @@ describe("DaemonCommandDispatcher startup routing", () => {
           }),
         },
         transport: {
+          execute: async (_endpoint, daemonRequest): Promise<DaemonExecutionReceipt> => ({
+            acceptance: {
+              requestId: daemonRequest.requestId,
+              instanceId: daemonRequest.instanceId,
+              acceptedAt: 1,
+              queuePosition: 0,
+            },
+            completion: Promise.resolve({ status: "completed", result: result("warm") }),
+          }),
           request: async (_endpoint, daemonRequest): Promise<DaemonResponse> => ({
             kind: "result",
             requestId: daemonRequest.kind === "execute" ? daemonRequest.requestId : "unexpected",

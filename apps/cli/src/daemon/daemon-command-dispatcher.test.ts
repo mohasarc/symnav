@@ -304,9 +304,26 @@ class DispatchHarness {
         },
       },
       transport: {
+        execute: async (_endpoint, daemonRequest) => {
+          this.requests.push(daemonRequest);
+          if (this.daemonAnswer instanceof Error) throw this.daemonAnswer;
+          return {
+            acceptance: {
+              requestId: daemonRequest.requestId,
+              instanceId: daemonRequest.instanceId,
+              acceptedAt: 1,
+              queuePosition: 0,
+            },
+            completion:
+              "failed" in this.daemonAnswer
+                ? Promise.resolve({ status: "failed" as const, code: this.daemonAnswer.failed })
+                : Promise.resolve({ status: "completed" as const, result: this.daemonAnswer }),
+          };
+        },
         request: async (_endpoint: string, daemonRequest: DaemonRequest) => {
           this.requests.push(daemonRequest);
           if (this.daemonAnswer instanceof Error) throw this.daemonAnswer;
+          if (!("frames" in this.daemonAnswer)) throw new Error("legacy request failed");
           return {
             kind: "result",
             requestId: daemonRequest.kind === "execute" ? daemonRequest.requestId : "unexpected",

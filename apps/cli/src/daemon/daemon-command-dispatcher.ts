@@ -7,8 +7,15 @@ import type {
   CommandExecutionResult,
   DispatchedCommandResult,
 } from "../command-execution-result.js";
+import { ControlledCommandResult } from "../command-execution-result.js";
 import type { ProgramDependencies } from "../program-dependencies.js";
-import type { DaemonRecord, DaemonRequest, DaemonResponse } from "./daemon-protocol.js";
+import type {
+  DaemonExecuteRequest,
+  DaemonExecutionFailureCode,
+  DaemonRecord,
+  DaemonRequest,
+  DaemonResponse,
+} from "./daemon-protocol.js";
 import { DaemonRegistry } from "./daemon-registry.js";
 import {
   NodeDaemonProcessLauncher,
@@ -20,7 +27,11 @@ import {
 } from "./daemon-startup-coordinator.js";
 import { DaemonWorkspaceIdentity } from "./daemon-workspace-identity.js";
 import { InvocationWorkspaceSelector } from "./invocation-workspace-selector.js";
-import { DaemonTransportError, LocalDaemonTransport } from "./local-daemon-transport.js";
+import {
+  DaemonTransportError,
+  type DaemonExecutionReceipt,
+  LocalDaemonTransport,
+} from "./local-daemon-transport.js";
 import { DaemonRecordObserver, type DaemonObservation } from "./daemon-record-observer.js";
 
 export type DaemonRouteSnapshot =
@@ -44,6 +55,7 @@ interface DaemonDispatchRegistry {
 
 interface DaemonDispatchTransport {
   request(endpoint: string, request: DaemonRequest): Promise<DaemonResponse>;
+  execute(endpoint: string, request: DaemonExecuteRequest): Promise<DaemonExecutionReceipt>;
 }
 
 interface DaemonDispatchObserver {
@@ -199,8 +211,9 @@ export class DaemonCommandDispatcher {
     request: CliExecutionRequest,
     recorder: Recorder,
   ): Promise<DispatchedCommandResult> {
+    let receipt: DaemonExecutionReceipt;
     try {
-      const response = await runtime.transport.request(record.endpoint, {
+      receipt = await runtime.transport.execute(record.endpoint, {
         kind: "execute",
         protocolVersion: record.protocolVersion,
         instanceId: record.instanceId,
@@ -208,21 +221,29 @@ export class DaemonCommandDispatcher {
         requestId: this.requestId(),
         request: { ...request, executionMode: "warm", deferTelemetry: true },
       });
-      if (
-        response.kind !== "result" ||
-        !DaemonCommandDispatcher.isCompleteResult(response.result)
-      ) {
-        throw new Error("Daemon returned an incomplete command result");
+    } catch (error) {
+      if (DaemonCommandDispatcher.isRetrySafeFailure(error)) {
+        return this.executeLocally(request, "fallback");
+      }
+      return { mode: "warm", result: ControlledCommandResult.acceptedRequestDidNotComplete() };
+    }
+    try {
+      const completion = await receipt.completion;
+      if (completion.status === "failed") {
+        return {
+          mode: "warm",
+          result: DaemonCommandDispatcher.controlledFailure(completion.code),
+        };
+      }
+      if (!DaemonCommandDispatcher.isCompleteResult(completion.result)) {
+        return { mode: "warm", result: ControlledCommandResult.acceptedRequestDidNotComplete() };
       }
       return {
         mode: "warm",
-        result: DaemonCommandDispatcher.commitWarmTelemetry(response.result, recorder),
+        result: DaemonCommandDispatcher.commitWarmTelemetry(completion.result, recorder),
       };
-    } catch (error) {
-      if (DaemonCommandDispatcher.isPreAdmissionFailure(error)) {
-        return this.executeLocally(request, "fallback");
-      }
-      throw error;
+    } catch {
+      return { mode: "warm", result: ControlledCommandResult.acceptedRequestDidNotComplete() };
     }
   }
 
@@ -289,8 +310,14 @@ export class DaemonCommandDispatcher {
     );
   }
 
-  private static isPreAdmissionFailure(error: unknown): boolean {
-    return error instanceof DaemonTransportError && error.delivery === "not-submitted";
+  private static isRetrySafeFailure(error: unknown): boolean {
+    return error instanceof DaemonTransportError && error.retrySafe;
+  }
+
+  private static controlledFailure(code: DaemonExecutionFailureCode): CommandExecutionResult {
+    if (code === "controlled-resource") return ControlledCommandResult.workspaceCapacityExceeded();
+    if (code === "response-capacity") return ControlledCommandResult.responseCapacityExceeded();
+    return ControlledCommandResult.acceptedRequestDidNotComplete();
   }
 
   private static commitWarmTelemetry(

@@ -28,7 +28,11 @@ import {
   type DaemonNavigationWorker,
   NodeDaemonNavigationWorker,
 } from "./daemon-navigation-worker.js";
-import { DaemonResourcePolicy, DaemonResourceSupervisor } from "./daemon-resource-monitor.js";
+import {
+  DaemonResourcePolicy,
+  DaemonResourceSupervisor,
+  type DaemonWorkerReplacementCause,
+} from "./daemon-resource-monitor.js";
 import type { DaemonNavigationWorkerResponse } from "./daemon-navigation-worker-protocol.js";
 import {
   DAEMON_STARTUP_TIMEOUT_MS,
@@ -146,7 +150,7 @@ export class WorkspaceDaemon {
     );
     this.resourceSupervisor = new DaemonResourceSupervisor({
       policy: resourcePolicy,
-      generation: 1,
+      generation: this.initialNavigationWorker.generation,
       ...(options.resourceCheckIntervalMs === undefined
         ? {}
         : { intervalMs: options.resourceCheckIntervalMs }),
@@ -155,7 +159,7 @@ export class WorkspaceDaemon {
         : { residentMemoryBytes: options.residentMemoryBytes }),
       spoolBytes: () => this.completionSpools.usage().rawBytes,
       releaseTransientResources: () => this.releaseTransientResources(),
-      replaceWorker: () => this.replaceNavigationWorker(),
+      replaceWorker: (cause) => this.replaceNavigationWorker(cause),
       drain: () => this.shutdown("resource", true),
     });
   }
@@ -543,14 +547,13 @@ export class WorkspaceDaemon {
         (this.resourceInterruptedRequests.delete(request.requestId)
           ? "controlled-resource"
           : undefined) ??
-        this.shutdownFailureCode ??
         (error instanceof CompletionSpoolCapacityError
           ? "response-capacity"
           : error instanceof DaemonNavigationWorkerExitedError
-            ? "worker-exit"
-            : this.shutdownStarted
+            ? this.shutdownFailureCode === "stopping"
               ? "stopping"
-              : "internal");
+              : "worker-exit"
+            : (this.shutdownFailureCode ?? (this.shutdownStarted ? "stopping" : "internal")));
       await spool?.dispose().catch((cleanupError) => {
         this.logger.record({
           kind: "failure",
@@ -814,11 +817,13 @@ export class WorkspaceDaemon {
     }
   }
 
-  private async replaceNavigationWorker(): Promise<number> {
+  private async replaceNavigationWorker(cause: DaemonWorkerReplacementCause): Promise<number> {
     const current = this.workerGeneration;
     if (current === undefined) throw new Error("Navigation worker generation is unavailable");
     const activeRequest = this.requestQueue.snapshot.active;
-    if (activeRequest !== undefined) this.resourceInterruptedRequests.add(activeRequest.requestId);
+    if (activeRequest !== undefined && cause !== "worker-exit") {
+      this.resourceInterruptedRequests.add(activeRequest.requestId);
+    }
     const nextWorker = this.createNavigationWorker(current.id + 1);
     this.workerReady = false;
     const next = this.startWorkerGeneration(nextWorker);

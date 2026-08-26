@@ -83,9 +83,11 @@ export interface DaemonResourceSupervisorOptions {
   readonly residentMemoryBytes?: () => number;
   readonly spoolBytes: () => number;
   readonly releaseTransientResources: () => Promise<void>;
-  readonly replaceWorker: () => Promise<number>;
+  readonly replaceWorker: (cause: DaemonWorkerReplacementCause) => Promise<number>;
   readonly drain: () => Promise<void>;
 }
+
+export type DaemonWorkerReplacementCause = "hard-pressure" | "out-of-memory" | "worker-exit";
 
 export class DaemonResourceSupervisor {
   private readonly residentMemoryBytes: () => number;
@@ -143,7 +145,7 @@ export class DaemonResourceSupervisor {
     this.captureUsage();
     const policy = this.options.policy.record;
     if (this.currentProcessRssBytes >= policy.hardProcessRssBytes) {
-      await this.replace();
+      await this.replace("hard-pressure");
       return;
     }
     if (this.currentProcessRssBytes <= policy.resumeProcessRssBytes) {
@@ -170,7 +172,7 @@ export class DaemonResourceSupervisor {
 
   async workerExited(exit: import("./daemon-navigation-worker.js").DaemonNavigationWorkerExit) {
     if (exit.generation !== this.currentGeneration || this.currentState === "stopped") return;
-    await this.replace();
+    await this.replace(exit.cause === "out-of-memory" ? "out-of-memory" : "worker-exit");
   }
 
   stop(): void {
@@ -185,7 +187,7 @@ export class DaemonResourceSupervisor {
     this.currentSpoolBytes = this.options.spoolBytes();
   }
 
-  private replace(): Promise<void> {
+  private replace(cause: DaemonWorkerReplacementCause): Promise<void> {
     if (this.replacementOperation !== undefined) return this.replacementOperation;
     const cutoff = this.now() - DAEMON_RESOURCE_RESTART_WINDOW_MS;
     this.replacementTimes = this.replacementTimes.filter((replacedAt) => replacedAt > cutoff);
@@ -200,7 +202,7 @@ export class DaemonResourceSupervisor {
     this.currentState = "replacing";
     this.admissionPaused = true;
     this.replacementOperation = this.options
-      .replaceWorker()
+      .replaceWorker(cause)
       .then((generation) => {
         this.currentGeneration = generation;
         this.workerHeapUsedBytes = undefined;

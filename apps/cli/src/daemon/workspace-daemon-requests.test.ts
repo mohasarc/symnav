@@ -710,7 +710,10 @@ describe("WorkspaceDaemon requests", () => {
 
     const active = harness.execute("rss-active", ["refs", "input"]);
     const queued = harness.execute("rss-queued", ["overview", "input.ts"]);
-    await waitUntil(async () => (await harness.ping()).state === "busy");
+    await waitUntil(async () => {
+      const response = await harness.ping();
+      return response.kind === "pong" && response.state === "busy";
+    });
     await expect(harness.ping()).resolves.toMatchObject({ state: "busy" });
 
     await expect(active).resolves.toMatchObject({
@@ -789,6 +792,11 @@ class RequestHarness {
       startedAt: Date.now(),
       memoryCapBytes: 1024,
     });
+    const navigationWorker =
+      options.navigationWorker ??
+      (options.navigationWorkerFactory === undefined
+        ? new ExecutorNavigationWorker(executor ?? new ImmediateExecutor())
+        : undefined);
     const daemon = new WorkspaceDaemon({
       identity: harness.identity,
       instanceId: harness.instanceId,
@@ -798,11 +806,7 @@ class RequestHarness {
       dependencies: createDefaultDependencies(harness.identity.stateDirectory),
       registry: harness.registry,
       transport: harness.transport as unknown as LocalDaemonTransport,
-      navigationWorker:
-        options.navigationWorker ??
-        (options.navigationWorkerFactory === undefined
-          ? new ExecutorNavigationWorker(executor ?? new ImmediateExecutor())
-          : undefined),
+      ...(navigationWorker === undefined ? {} : { navigationWorker }),
       ...(options.navigationWorkerFactory === undefined
         ? {}
         : { navigationWorkerFactory: options.navigationWorkerFactory }),

@@ -72,7 +72,7 @@ class DaemonNavigationWorkerEntry {
       return;
     }
     if (request.kind === "release-transient") {
-      await this.releaseTransientResources();
+      await this.releaseTransientResources(request.operationId);
       return;
     }
     await this.close();
@@ -123,11 +123,11 @@ class DaemonNavigationWorkerEntry {
         },
       });
     } catch (error) {
-      this.fail("execution", error, request.requestId);
+      this.fail("execution", error, { requestId: request.requestId });
     }
   }
 
-  private async releaseTransientResources(): Promise<void> {
+  private async releaseTransientResources(operationId: string): Promise<void> {
     try {
       await Promise.all(
         this.retainedProgram?.backends.map((backend) => backend.releaseTransientResources()) ?? [],
@@ -136,11 +136,12 @@ class DaemonNavigationWorkerEntry {
       this.send({
         kind: "heap",
         generation: this.data.generation,
+        operationId,
         usedHeapBytes: heap.used_heap_size,
         heapLimitBytes: heap.heap_size_limit,
       });
     } catch (error) {
-      this.fail("resource", error);
+      this.fail("resource", error, { operationId });
     }
   }
 
@@ -152,11 +153,18 @@ class DaemonNavigationWorkerEntry {
     this.port.close();
   }
 
-  private fail(failureCode: DaemonExecutionFailureCode, error: unknown, requestId?: string): void {
+  private fail(
+    failureCode: DaemonExecutionFailureCode,
+    error: unknown,
+    correlation:
+      | { readonly requestId: string }
+      | { readonly operationId: string }
+      | undefined = undefined,
+  ): void {
     this.send({
       kind: "failed",
       generation: this.data.generation,
-      ...(requestId === undefined ? {} : { requestId }),
+      ...correlation,
       failureCode,
       ...(error instanceof Error ? { errorName: error.name } : {}),
     });

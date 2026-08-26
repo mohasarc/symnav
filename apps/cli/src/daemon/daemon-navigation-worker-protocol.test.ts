@@ -18,7 +18,7 @@ describe("DaemonNavigationWorkerProtocol", () => {
     { kind: "initialize", generation: 4, workspaceRoot: "/repo" },
     { kind: "execute", generation: 4, requestId: "request-1", request },
     { kind: "output-ack", generation: 4, requestId: "request-1", sequence: 7 },
-    { kind: "release-transient", generation: 4 },
+    { kind: "release-transient", generation: 4, operationId: "release-1" },
     { kind: "close", generation: 4 },
   ])("accepts correlated $kind requests", (message) => {
     expect(DaemonNavigationWorkerProtocol.request(message)).toEqual(message);
@@ -55,7 +55,13 @@ describe("DaemonNavigationWorkerProtocol", () => {
       failureCode: "execution",
       errorName: "Error",
     },
-    { kind: "heap", generation: 4, usedHeapBytes: 20, heapLimitBytes: 100 },
+    {
+      kind: "heap",
+      generation: 4,
+      operationId: "release-1",
+      usedHeapBytes: 20,
+      heapLimitBytes: 100,
+    },
     { kind: "closed", generation: 4 },
   ])("accepts validated $kind responses", (message) => {
     expect(DaemonNavigationWorkerProtocol.response(message)).toEqual(message);
@@ -89,7 +95,13 @@ describe("DaemonNavigationWorkerProtocol", () => {
     },
     { kind: "result", generation: 1, requestId: "one", result: {} },
     { kind: "failed", generation: 1, failureCode: "unknown" },
-    { kind: "heap", generation: 1, usedHeapBytes: -1, heapLimitBytes: 10 },
+    {
+      kind: "heap",
+      generation: 1,
+      operationId: "release-1",
+      usedHeapBytes: -1,
+      heapLimitBytes: 10,
+    },
     { kind: "closed", generation: 1, extra: true },
   ])("rejects malformed worker responses %#", (message) => {
     expect(() => DaemonNavigationWorkerProtocol.response(message)).toThrow(/worker response/i);

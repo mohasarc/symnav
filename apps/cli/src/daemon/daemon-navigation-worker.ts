@@ -70,6 +70,7 @@ export class NodeDaemonNavigationWorker implements DaemonNavigationWorker {
   private closeAcknowledged = false;
   private communicationFailure: Error | undefined;
   private communicationFailureCode: string | undefined;
+  private releaseSequence = 0;
 
   constructor(options: NodeDaemonNavigationWorkerOptions) {
     this.generation = options.generation;
@@ -118,9 +119,12 @@ export class NodeDaemonNavigationWorker implements DaemonNavigationWorker {
   }
 
   releaseTransientResources(): Promise<DaemonNavigationWorkerResponse> {
-    return this.send("release-transient", {
+    const operationId = `${this.generation}:${this.releaseSequence}`;
+    this.releaseSequence += 1;
+    return this.send(`release-transient:${operationId}`, {
       kind: "release-transient",
       generation: this.generation,
+      operationId,
     });
   }
 
@@ -275,8 +279,11 @@ export class NodeDaemonNavigationWorker implements DaemonNavigationWorker {
   private static responseKey(response: DaemonNavigationWorkerResponse): string {
     if (response.kind === "ready") return "initialize";
     if (response.kind === "result") return `execute:${response.requestId}`;
-    if (response.kind === "heap") return "release-transient";
+    if (response.kind === "heap") return `release-transient:${response.operationId}`;
     if (response.kind === "closed") return "close";
+    if (response.kind === "failed" && response.operationId !== undefined) {
+      return `release-transient:${response.operationId}`;
+    }
     return response.requestId === undefined ? "initialize" : `execute:${response.requestId}`;
   }
 }

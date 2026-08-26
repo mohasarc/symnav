@@ -1267,7 +1267,13 @@ class ExecutorNavigationWorker implements DaemonNavigationWorker {
   }
 
   async releaseTransientResources(): Promise<DaemonNavigationWorkerResponse> {
-    return { kind: "heap", generation: this.generation, usedHeapBytes: 1, heapLimitBytes: 2 };
+    return {
+      kind: "heap",
+      generation: this.generation,
+      operationId: "executor-release",
+      usedHeapBytes: 1,
+      heapLimitBytes: 2,
+    };
   }
 
   drainAndClose(): Promise<void> {
@@ -1307,7 +1313,13 @@ class ReleaseGatedNavigationWorker extends ExecutorNavigationWorker {
     this.releaseCount += 1;
     this.resolveReleaseStarted();
     await this.releaseGate;
-    return { kind: "heap", generation: this.generation, usedHeapBytes: 1, heapLimitBytes: 2 };
+    return {
+      kind: "heap",
+      generation: this.generation,
+      operationId: "gated-release",
+      usedHeapBytes: 1,
+      heapLimitBytes: 2,
+    };
   }
 
   allowRelease(): void {

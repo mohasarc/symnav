@@ -91,6 +91,7 @@ parentPort.on("message", (message) => {
       parentPort.postMessage({
         kind: "failed",
         generation,
+        operationId: message.operationId,
         failureCode: "resource",
         errorName: "ReleaseFailure",
       });
@@ -100,6 +101,7 @@ parentPort.on("message", (message) => {
     parentPort.postMessage({
       kind: "heap",
       generation,
+      operationId: message.operationId,
       usedHeapBytes: heap.used_heap_size,
       heapLimitBytes: heap.heap_size_limit,
     });

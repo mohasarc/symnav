@@ -131,7 +131,13 @@ class ControlledNavigationWorker implements DaemonNavigationWorker {
   }
 
   async releaseTransientResources(): Promise<DaemonNavigationWorkerResponse> {
-    return { kind: "heap", generation: this.generation, usedHeapBytes: 1, heapLimitBytes: 2 };
+    return {
+      kind: "heap",
+      generation: this.generation,
+      operationId: "controlled-release",
+      usedHeapBytes: 1,
+      heapLimitBytes: 2,
+    };
   }
 
   drainAndClose(): Promise<void> {

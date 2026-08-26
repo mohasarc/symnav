@@ -31,7 +31,11 @@ export type DaemonNavigationWorkerRequest =
       readonly requestId: string;
       readonly sequence: number;
     }
-  | { readonly kind: "release-transient"; readonly generation: number }
+  | {
+      readonly kind: "release-transient";
+      readonly generation: number;
+      readonly operationId: string;
+    }
   | { readonly kind: "close"; readonly generation: number };
 
 export type DaemonNavigationWorkerResponse =
@@ -64,10 +68,12 @@ export type DaemonNavigationWorkerResponse =
       readonly requestId?: string;
       readonly failureCode: DaemonExecutionFailureCode;
       readonly errorName?: string;
+      readonly operationId?: string;
     }
   | {
       readonly kind: "heap";
       readonly generation: number;
+      readonly operationId: string;
       readonly usedHeapBytes: number;
       readonly heapLimitBytes: number;
     }
@@ -102,9 +108,13 @@ export class DaemonNavigationWorkerProtocol {
       return value as unknown as DaemonNavigationWorkerRequest;
     }
     if (
-      (value.kind === "release-transient" || value.kind === "close") &&
-      this.hasKeys(value, ["kind", "generation"])
+      value.kind === "release-transient" &&
+      this.hasKeys(value, ["kind", "generation", "operationId"]) &&
+      this.isNonEmptyString(value.operationId)
     ) {
+      return value as unknown as DaemonNavigationWorkerRequest;
+    }
+    if (value.kind === "close" && this.hasKeys(value, ["kind", "generation"])) {
       return value as unknown as DaemonNavigationWorkerRequest;
     }
     throw new Error("Invalid daemon navigation worker request");
@@ -149,7 +159,14 @@ export class DaemonNavigationWorkerProtocol {
     }
     if (
       value.kind === "heap" &&
-      this.hasKeys(value, ["kind", "generation", "usedHeapBytes", "heapLimitBytes"]) &&
+      this.hasKeys(value, [
+        "kind",
+        "generation",
+        "operationId",
+        "usedHeapBytes",
+        "heapLimitBytes",
+      ]) &&
+      this.isNonEmptyString(value.operationId) &&
       this.isCount(value.usedHeapBytes) &&
       this.isCount(value.heapLimitBytes)
     ) {
@@ -198,10 +215,13 @@ export class DaemonNavigationWorkerProtocol {
   private static isFailed(value: Record<string, unknown>): boolean {
     const keys = ["kind", "generation", "failureCode"];
     if (value.requestId !== undefined) keys.push("requestId");
+    if (value.operationId !== undefined) keys.push("operationId");
     if (value.errorName !== undefined) keys.push("errorName");
     return (
       this.hasKeys(value, keys) &&
       (value.requestId === undefined || this.isNonEmptyString(value.requestId)) &&
+      (value.operationId === undefined || this.isNonEmptyString(value.operationId)) &&
+      !(value.requestId !== undefined && value.operationId !== undefined) &&
       (value.failureCode === "initialization" ||
         value.failureCode === "execution" ||
         value.failureCode === "protocol" ||

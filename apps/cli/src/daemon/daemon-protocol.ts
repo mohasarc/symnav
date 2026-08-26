@@ -146,7 +146,7 @@ export type DaemonLogEvent =
   | { readonly kind: "stop"; readonly reason: DaemonStopReason }
   | { readonly kind: "failure"; readonly operation: string; readonly message: string };
 
-export type DaemonRequest =
+export type DaemonLifecycleRequest =
   | {
       readonly kind: "identify";
       readonly instanceId: string;
@@ -163,11 +163,14 @@ export type DaemonRequest =
       readonly processToken: string;
     }
   | { readonly kind: "ping"; readonly protocolVersion: number; readonly instanceId: string }
-  | DaemonExecuteRequest
-  | DaemonExecutionStatusRequest
   | { readonly kind: "stop"; readonly protocolVersion: number; readonly instanceId: string };
 
-export type DaemonResponse =
+export type DaemonRequest =
+  | DaemonLifecycleRequest
+  | DaemonExecuteRequest
+  | DaemonExecutionStatusRequest;
+
+export type DaemonLifecycleResponse =
   | {
       readonly kind: "identity";
       readonly instanceId: string;
@@ -199,10 +202,13 @@ export type DaemonResponse =
       readonly currentCommandElapsedMs?: number;
       readonly queued?: number;
     }
+  | { readonly kind: "stopped"; readonly instanceId: string };
+
+export type DaemonResponse =
+  | DaemonLifecycleResponse
   | DaemonExecutionServerFrame
   | DaemonExecutionStatusResponse
-  | { readonly kind: "result"; readonly requestId: string; readonly result: CommandExecutionResult }
-  | { readonly kind: "stopped"; readonly instanceId: string };
+  | { readonly kind: "result"; readonly requestId: string; readonly result: CommandExecutionResult };
 
 export type DaemonPong = Extract<DaemonResponse, { readonly kind: "pong" }>;
 

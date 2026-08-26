@@ -17,6 +17,8 @@ import type { DaemonProcessTerminator } from "./daemon-process-launcher.js";
 import {
   DAEMON_PROTOCOL_VERSION,
   DAEMON_RECORD_SCHEMA_VERSION,
+  type DaemonLifecycleRequest,
+  type DaemonLifecycleResponse,
   type DaemonRequest,
   type DaemonResponse,
   type DaemonServer,
@@ -537,11 +539,14 @@ class BlockingCloseTransport extends LocalDaemonTransport {
     };
   }
 
-  override request(_endpoint: string, request: DaemonRequest): Promise<DaemonResponse> {
+  override request(
+    _endpoint: string,
+    request: DaemonLifecycleRequest,
+  ): Promise<DaemonLifecycleResponse> {
     if (this.handler === undefined) throw new Error("Daemon transport is not listening");
     return this.handler(request, () => undefined).then((response) => {
       if (response === undefined) throw new Error("Daemon transport returned no response");
-      return response;
+      return response as DaemonLifecycleResponse;
     });
   }
 

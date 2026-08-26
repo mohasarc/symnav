@@ -24,7 +24,12 @@ export type DaemonBenchmarkResultExpectation =
   | { readonly kind: "resolve"; readonly symbols: number }
   | { readonly kind: "definition"; readonly symbols: number }
   | { readonly kind: "references"; readonly total: number }
-  | { readonly kind: "context"; readonly callers: number; readonly callees: number }
+  | {
+      readonly kind: "context";
+      readonly callers: number;
+      readonly callees: number;
+      readonly history: number;
+    }
   | { readonly kind: "graph"; readonly incomingPaths: number; readonly outgoingPaths: number }
   | { readonly kind: "stats-shape" };
 
@@ -147,7 +152,12 @@ export class DaemonWorkspaceGenerator {
         context: {
           argv: ["context", target, "--json"],
           expectNonEmpty: true,
-          expectation: { kind: "context", callers: representativeFileCount, callees: 1 },
+          expectation: {
+            kind: "context",
+            callers: representativeFileCount,
+            callees: 1,
+            history: 1,
+          },
         },
         graph: {
           argv: ["graph", target, "--depth", "1", "--json"],

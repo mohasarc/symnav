@@ -137,11 +137,7 @@ export class DaemonScaleBenchmarkHarness {
         stdoutParity: samples.every((sample) => sample.stdoutParity) && largeResponse.stdoutParity,
         stderrParity: samples.every((sample) => sample.stderrParity) && largeResponse.stderrParity,
         exitParity: samples.every((sample) => sample.exitParity) && largeResponse.exitParity,
-        semanticResultsValid: samples
-          .filter((sample) =>
-            ["resolve", "def", "refs", "context", "graph"].includes(sample.command),
-          )
-          .every((sample) => sample.nonEmpty),
+        semanticResultsValid: BenchmarkSampleEvidence.semanticResultsValid(samples),
         freshness,
         statusMaximumMs: largeResponse.statusMaximumMs,
         busyStatusObserved: largeResponse.busyStatusObserved,
@@ -552,6 +548,10 @@ interface LargeResponseEvidence {
 }
 
 export class BenchmarkSampleEvidence {
+  static semanticResultsValid(samples: readonly BenchmarkSampleEvidence[]): boolean {
+    return samples.every((sample) => sample.nonEmpty);
+  }
+
   static from(
     command: keyof GeneratedDaemonWorkspace["commands"],
     repetition: number,
@@ -612,7 +612,8 @@ export class DaemonBenchmarkSemanticResult {
     if (expectation.kind === "context") {
       return (
         this.edgeCount(result.callers) === expectation.callers &&
-        this.edgeCount(result.callees) === expectation.callees
+        this.edgeCount(result.callees) === expectation.callees &&
+        this.arrayLength(result.history) === expectation.history
       );
     }
     if (expectation.kind === "graph") {

@@ -87,7 +87,7 @@ describe("DaemonScaleBenchmarkHarness", () => {
       command: "context" as const,
       stdout:
         '{"identity":"benchmarkHub","callers":{"sortedEdges":[],"omittedCertainEdgeCount":0},"callees":{"sortedEdges":[],"omittedCertainEdgeCount":0}}',
-      expectation: { kind: "context" as const, callers: 28, callees: 1 },
+      expectation: { kind: "context" as const, callers: 28, callees: 1, history: 1 },
     },
     {
       command: "refs" as const,

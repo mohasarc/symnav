@@ -25,6 +25,7 @@ import { DAEMON_PROTOCOL_VERSION, DAEMON_RECORD_SCHEMA_VERSION } from "./daemon-
 import { DAEMON_IDLE_TIMEOUT_MS, DaemonLifetime } from "./daemon-lifetime.js";
 import { DaemonLogger } from "./daemon-logger.js";
 import { NodeDaemonClock, type DaemonClock } from "./daemon-clock.js";
+import { DaemonOperationObserver, type DaemonOperationTrace } from "./daemon-operation-observer.js";
 import {
   DaemonNavigationWorkerExitedError,
   type DaemonNavigationWorker,
@@ -92,6 +93,7 @@ export class WorkspaceDaemon {
   private readonly lifetime: DaemonLifetime;
   private readonly resourceSupervisor: DaemonResourceSupervisor;
   private readonly resourcePolicy: DaemonResourcePolicy;
+  private readonly operationObserver: DaemonOperationObserver;
   private readonly acceptedRequests: AcceptedRequestLedger;
   private readonly completionSpools: DaemonCompletionSpoolStore;
   private readonly acceptances = new Map<
@@ -113,6 +115,7 @@ export class WorkspaceDaemon {
   private resolveForceEscalated!: () => void;
   private readonly resourceInterruptedRequests = new Set<string>();
   private readonly completionDeliveries = new Map<string, Promise<void>>();
+  private readonly operationTraces = new Map<string, DaemonOperationTrace>();
   private workerRecoveryOperation: Promise<void> | undefined;
 
   constructor(private readonly options: WorkspaceDaemonOptions) {
@@ -174,6 +177,11 @@ export class WorkspaceDaemon {
       replaceWorker: (cause) => this.replaceNavigationWorker(cause),
       drain: () => this.initiateResourceDrain(),
     });
+    this.operationObserver = new DaemonOperationObserver(
+      this.logger,
+      this.clock,
+      this.resourceSupervisor,
+    );
   }
 
   async start(): Promise<void> {
@@ -481,11 +489,12 @@ export class WorkspaceDaemon {
         queuePosition: entry.state.queuePosition,
       });
       if (existing === undefined) {
-        this.logger.record({
-          kind: "acceptance",
-          requestId: request.requestId,
-          queuePosition: entry.state.queuePosition,
-        });
+        const trace = this.operationObserver.start(
+          request.requestId,
+          WorkspaceDaemon.commandName(request.request.argv),
+        );
+        this.operationTraces.set(request.requestId, trace);
+        trace.accepted(entry.state.queuePosition, this.resourceSupervisor.snapshot.generation);
       }
     }
     const acceptance = this.acceptances.get(request.requestId);
@@ -494,20 +503,28 @@ export class WorkspaceDaemon {
       this.lastNavigationAt = this.now();
       this.lifetime.navigationAccepted();
       void this.executeAccepted(request);
+    } else {
+      this.operationTraces.get(request.requestId)?.reattached();
     }
-    await this.deliver(send, {
-      kind: "accepted",
-      instanceId: this.options.instanceId,
-      processToken: this.options.processToken,
-      requestId: request.requestId,
-      ...acceptance,
-    });
+    try {
+      await this.deliver(send, {
+        kind: "accepted",
+        instanceId: this.options.instanceId,
+        processToken: this.options.processToken,
+        requestId: request.requestId,
+        ...acceptance,
+      });
+    } catch (error) {
+      this.operationTraces.get(request.requestId)?.clientDisconnected();
+      throw error;
+    }
     if (entry.state.state === "completed") {
       await this.deliverStoredCompletion(request.requestId, send);
       return;
     }
     if (entry.state.state === "failed") {
       await this.deliver(send, this.failedFrame(request.requestId, entry.state.code));
+      this.operationTraces.get(request.requestId)?.deliveryTerminated("delivered");
       return;
     }
     let unsubscribe: (() => void) | undefined;
@@ -516,9 +533,9 @@ export class WorkspaceDaemon {
         this.trackCompletionDelivery(request.requestId, send);
         unsubscribe?.();
       } else if (updated.state.state === "failed") {
-        void this.deliver(send, this.failedFrame(request.requestId, updated.state.code)).catch(
-          (error) => this.recordDeliveryFailure(error),
-        );
+        void this.deliver(send, this.failedFrame(request.requestId, updated.state.code))
+          .then(() => this.operationTraces.get(request.requestId)?.deliveryTerminated("delivered"))
+          .catch((error) => this.recordDeliveryFailure(request.requestId, error));
         unsubscribe?.();
       }
     });
@@ -527,7 +544,7 @@ export class WorkspaceDaemon {
   private async executeAccepted(
     request: Extract<DaemonRequest, { kind: "execute" }>,
   ): Promise<void> {
-    const requestStartedAt = this.now();
+    const trace = this.operationTraces.get(request.requestId);
     let spool: CompletionSpool | undefined;
     try {
       await this.requestQueue.enqueue(
@@ -537,6 +554,7 @@ export class WorkspaceDaemon {
           acceptedAt: this.clock.monotonicNowMs(),
         },
         async () => {
+          trace?.turnStarted(this.resourceSupervisor.snapshot.generation);
           try {
             spool = await this.completionSpools.create(request.requestId);
             this.acceptedRequests.markRunning(request.requestId, this.now());
@@ -552,9 +570,20 @@ export class WorkspaceDaemon {
             if (response.kind !== "result" || response.requestId !== request.requestId) {
               throw new Error("Navigation worker returned an uncorrelated result");
             }
-            this.logger.record({ kind: "freshness", ...response.refresh });
-            await spool.finish(response.result.exitCode);
-            await this.recordCompletion(request, requestStartedAt, response.result);
+            trace?.workerCompleted(
+              {
+                freshnessMs: response.durations.freshnessMs,
+                navigationMs: response.durations.navigationMs,
+                renderMs: response.durations.renderMs,
+                workerOutputMs: response.durations.outputMs,
+              },
+              response.refresh,
+            );
+            const spoolStartedAt = this.clock.monotonicNowMs();
+            const manifest = await spool.finish(response.result.exitCode);
+            trace?.spooled(manifest, Math.max(0, this.clock.monotonicNowMs() - spoolStartedAt));
+            await this.recordCompletion(request);
+            trace?.executionTerminated("completed");
             this.acceptedRequests.complete(request.requestId, request.requestId, this.now());
             await this.completionDeliveries.get(request.requestId);
           } finally {
@@ -563,6 +592,7 @@ export class WorkspaceDaemon {
         },
       );
     } catch (error) {
+      trace?.executionTerminated("failed");
       this.logger.record({
         kind: "failure",
         operation: "request",
@@ -612,15 +642,7 @@ export class WorkspaceDaemon {
 
   private async recordCompletion(
     request: Extract<DaemonRequest, { kind: "execute" }>,
-    requestStartedAt: number,
-    result: { readonly exitCode: number },
   ): Promise<void> {
-    this.logger.record({
-      kind: "request",
-      command: WorkspaceDaemon.commandName(request.request.argv),
-      durationMs: Math.max(0, this.now() - requestStartedAt),
-      exitCode: result.exitCode,
-    });
     this.lastCompletedMonotonicAt = this.clock.monotonicNowMs();
     if (!(await this.options.dependencies.fs.exists(this.options.identity.workspaceRoot))) {
       setTimeout(() => void this.shutdown("workspace-deleted", true), 0);
@@ -686,12 +708,13 @@ export class WorkspaceDaemon {
       });
       this.acceptedRequests.invalidateCompletion(requestId, "internal", this.now());
       await this.deliver(send, this.failedFrame(requestId, "internal"));
+      this.operationTraces.get(requestId)?.deliveryTerminated("failed");
     }
   }
 
   private trackCompletionDelivery(requestId: string, send: DaemonServerSend): void {
     const delivery = this.deliverStoredCompletion(requestId, send).catch((error) =>
-      this.recordDeliveryFailure(error),
+      this.recordDeliveryFailure(requestId, error),
     );
     this.completionDeliveries.set(requestId, delivery);
     void delivery.finally(() => {
@@ -736,9 +759,11 @@ export class WorkspaceDaemon {
       recordCount: completedManifest.recordCount,
       sha256: completedManifest.sha256,
     });
+    this.operationTraces.get(requestId)?.deliveryTerminated("delivered");
   }
 
-  private recordDeliveryFailure(error: unknown): void {
+  private recordDeliveryFailure(requestId: string, error: unknown): void {
+    this.operationTraces.get(requestId)?.clientDisconnected();
     this.logger.record({
       kind: "failure",
       operation: "completion-delivery",

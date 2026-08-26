@@ -85,6 +85,37 @@ describe("DaemonRecordObserver", () => {
     });
   });
 
+  it.each([
+    ["pid", { pid: 202, startedAt: 10 }],
+    ["start timestamp", { pid: 101, startedAt: 20 }],
+  ] as const)("rejects activity with mismatched %s identity", async (_label, coordinates) => {
+    const transport = new ObserverTransport([
+      identityResponse(),
+      {
+        kind: "pong",
+        protocolVersion: DAEMON_PROTOCOL_VERSION,
+        instanceId: "instance",
+        symnavVersion: "0.1.0",
+        activity: {
+          lifecycle: "ready",
+          ...coordinates,
+          startupElapsedMs: 50,
+          fileCount: 2,
+          processRssBytes: 100,
+          hardProcessRssBytes: 200,
+          workerGeneration: 1,
+          queued: 0,
+          spoolBytes: 0,
+        },
+      },
+    ]);
+
+    await expect(observer(transport, [101]).observe(record("ready"))).resolves.toMatchObject({
+      kind: "corrupt",
+      record: { instanceId: "instance", pid: 101, startedAt: 10 },
+    });
+  });
+
   it("probes identity and status concurrently within one observation bound", async () => {
     const transport = new ConcurrentObserverTransport();
     const observation = observer(transport, [101]).observe(record("ready"));

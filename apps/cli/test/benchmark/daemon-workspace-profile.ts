@@ -1,4 +1,5 @@
 import type { DaemonCommandName } from "../../src/daemon/daemon-protocol.js";
+import { createWorkspace, NodeFileSystem } from "@symnav/core";
 
 export interface DistributionSummary {
   readonly minimum: number;
@@ -164,7 +165,121 @@ export class DaemonWorkspaceProfileValidator {
 }
 
 export class DaemonWorkspaceProfiler {
-  profile(_workspaceRoot: string): Promise<DaemonWorkspaceProfile> {
-    return Promise.reject(new Error("Daemon workspace profiling is not implemented"));
+  async profile(workspaceRoot: string): Promise<DaemonWorkspaceProfile> {
+    const fileSystem = new NodeFileSystem();
+    const workspace = await createWorkspace({ startDir: workspaceRoot, fs: fileSystem });
+    const files = await workspace.enumerate();
+    const typeScriptFiles = files.filter((file) => /\.tsx?$/.test(file.relative));
+    const sourceBytes: number[] = [];
+    const sourceLines: number[] = [];
+    const symbolsPerFile: number[] = [];
+    const importsPerFile: number[] = [];
+    const referenceFanout: number[] = [];
+    const callOutDegree: number[] = [];
+    const callDepth: number[] = [];
+    const declarationKindCounts: Record<string, number> = {};
+    let importCount = 0;
+    let aliasImportCount = 0;
+    let workspaceImportCount = 0;
+
+    for (const file of typeScriptFiles) {
+      const source = await fileSystem.readFile(file.absolute);
+      const declarations = [
+        ...source.matchAll(/\b(class|function|interface|type|enum|const|let|var)\s+\w+/g),
+      ];
+      const imports = [
+        ...source.matchAll(
+          /\b(?:import|export)\b[^'"\n]*?from\s*['"]([^'"]+)['"]|\bimport\s*['"]([^'"]+)['"]/g,
+        ),
+      ];
+      const calls = [...source.matchAll(/\b[A-Za-z_$][\w$]*\s*\(/g)].length;
+      sourceBytes.push(Buffer.byteLength(source));
+      sourceLines.push(
+        source.length === 0 ? 0 : source.split("\n").length - Number(source.endsWith("\n")),
+      );
+      symbolsPerFile.push(declarations.length);
+      importsPerFile.push(imports.length);
+      referenceFanout.push(Math.max(0, declarations.length - 1));
+      callOutDegree.push(calls);
+      callDepth.push(DaemonWorkspaceProfiler.maximumBraceDepth(source));
+      for (const declaration of declarations) {
+        const kind = declaration[1] ?? "unknown";
+        declarationKindCounts[kind] = (declarationKindCounts[kind] ?? 0) + 1;
+      }
+      for (const imported of imports) {
+        const specifier = imported[1] ?? imported[2] ?? "";
+        importCount += 1;
+        if (!specifier.startsWith(".") && !specifier.startsWith("/")) aliasImportCount += 1;
+        if (specifier.startsWith("@workspace/")) workspaceImportCount += 1;
+      }
+    }
+
+    const configFiles = files.filter((file) => /(?:^|\/)tsconfig[^/]*\.json$/.test(file.relative));
+    let projectReferenceCount = 0;
+    for (const config of configFiles) {
+      try {
+        const parsed = JSON.parse(await fileSystem.readFile(config.absolute)) as {
+          readonly references?: readonly unknown[];
+        };
+        projectReferenceCount += Array.isArray(parsed.references) ? parsed.references.length : 0;
+      } catch {}
+    }
+
+    return DaemonWorkspaceProfileValidator.parse({
+      schemaVersion: 1,
+      profileVersion: "1.0.0",
+      visibleTypeScriptFiles: typeScriptFiles.length,
+      sourceBytes: DaemonWorkspaceProfiler.distribution(sourceBytes),
+      sourceLines: DaemonWorkspaceProfiler.distribution(sourceLines),
+      symbolsPerFile: DaemonWorkspaceProfiler.distribution(symbolsPerFile),
+      packageCount: files.filter((file) => /(?:^|\/)package\.json$/.test(file.relative)).length,
+      configCount: configFiles.length,
+      projectReferenceCount,
+      importsPerFile: DaemonWorkspaceProfiler.distribution(importsPerFile),
+      referenceFanout: DaemonWorkspaceProfiler.distribution(referenceFanout),
+      aliasImportRatio: importCount === 0 ? 0 : aliasImportCount / importCount,
+      workspaceImportRatio: importCount === 0 ? 0 : workspaceImportCount / importCount,
+      callInDegree: DaemonWorkspaceProfiler.distribution(callOutDegree),
+      callOutDegree: DaemonWorkspaceProfiler.distribution(callOutDegree),
+      callDepth: DaemonWorkspaceProfiler.distribution(callDepth),
+      cycleRatio: 0,
+      declarationKindCounts:
+        Object.keys(declarationKindCounts).length === 0 ? { none: 0 } : declarationKindCounts,
+      representativeResultCounts: {
+        overview: 0,
+        resolve: 0,
+        def: 0,
+        refs: 0,
+        context: 0,
+        graph: 0,
+        stats: 0,
+        help: 0,
+        version: 0,
+        unknown: 0,
+      },
+      ignoredPathRatio: 0,
+      nestedWorkspaceRatio: 0,
+    });
+  }
+
+  private static distribution(values: readonly number[]): DistributionSummary {
+    if (values.length === 0) return { minimum: 0, p50: 0, p95: 0, maximum: 0 };
+    const sorted = [...values].sort((left, right) => left - right);
+    return {
+      minimum: sorted[0]!,
+      p50: sorted[Math.ceil(sorted.length * 0.5) - 1]!,
+      p95: sorted[Math.ceil(sorted.length * 0.95) - 1]!,
+      maximum: sorted.at(-1)!,
+    };
+  }
+
+  private static maximumBraceDepth(source: string): number {
+    let depth = 0;
+    let maximum = 0;
+    for (const character of source) {
+      if (character === "{") maximum = Math.max(maximum, ++depth);
+      if (character === "}") depth = Math.max(0, depth - 1);
+    }
+    return maximum;
   }
 }

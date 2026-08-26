@@ -1006,8 +1006,15 @@ export class WorkspaceDaemon {
             : current === undefined
               ? "ready"
               : "busy";
+    const recoveryDetail: DaemonActivitySnapshot["recoveryDetail"] =
+      resources.state === "replacing"
+        ? "worker-replacement"
+        : resources.state === "shedding"
+          ? "resource-pressure"
+          : undefined;
     return Object.freeze({
       lifecycle,
+      ...(recoveryDetail === undefined ? {} : { recoveryDetail }),
       pid: process.pid,
       startedAt: this.startedAt,
       startupElapsedMs: Math.max(0, now - this.startedMonotonicAt),
@@ -1017,7 +1024,7 @@ export class WorkspaceDaemon {
       ...(resources.workerHeapUsedBytes === undefined
         ? {}
         : { workerHeapUsedBytes: resources.workerHeapUsedBytes }),
-      workerGeneration: resources.generation,
+      workerGeneration: this.workerGeneration?.id ?? resources.generation,
       ...(current === undefined ? {} : { current }),
       queued: queue.queued,
       ...(this.lastCompletedMonotonicAt === undefined

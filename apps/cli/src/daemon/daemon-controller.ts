@@ -335,12 +335,14 @@ export class DaemonController {
       };
     }
     if (activity.lifecycle === "recovering" || activity.lifecycle === "draining") {
+      const detail = activity.lifecycle === "draining" ? "draining" : activity.recoveryDetail;
+      if (detail === undefined) return this.unresponsiveStatus(record);
       return {
         state: "recovering",
         workspaceRoot: record.workspaceRoot,
         pid: record.pid,
         uptimeMs,
-        detail: activity.lifecycle === "draining" ? "draining" : "resource-pressure",
+        detail,
         queued: activity.queued,
         memoryBytes: activity.processRssBytes,
       };

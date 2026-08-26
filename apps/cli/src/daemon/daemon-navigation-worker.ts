@@ -39,6 +39,9 @@ export interface DaemonNavigationWorker {
 export interface NodeDaemonNavigationWorkerOptions {
   readonly generation: number;
   readonly stateDirectory: string;
+  readonly resourceLimits?: {
+    readonly maxOldGenerationSizeMb: number;
+  };
   readonly entryUrl?: URL;
   readonly workerData?: Readonly<Record<string, unknown>>;
 }
@@ -76,6 +79,7 @@ export class NodeDaemonNavigationWorker implements DaemonNavigationWorker {
           generation: options.generation,
           ...options.workerData,
         },
+        ...(options.resourceLimits === undefined ? {} : { resourceLimits: options.resourceLimits }),
       },
     );
     this.worker.on("message", (value: unknown) => void this.receive(value));

@@ -1,5 +1,6 @@
 import { parentPort, workerData } from "node:worker_threads";
 import { existsSync, writeFileSync } from "node:fs";
+import { getHeapStatistics } from "node:v8";
 
 const generation = 7;
 let executionCount = 0;
@@ -75,7 +76,13 @@ parentPort.on("message", (message) => {
     return;
   }
   if (message.kind === "release-transient") {
-    parentPort.postMessage({ kind: "heap", generation, usedHeapBytes: 1, heapLimitBytes: 2 });
+    const heap = getHeapStatistics();
+    parentPort.postMessage({
+      kind: "heap",
+      generation,
+      usedHeapBytes: heap.used_heap_size,
+      heapLimitBytes: heap.heap_size_limit,
+    });
     return;
   }
   if (message.kind === "close") {

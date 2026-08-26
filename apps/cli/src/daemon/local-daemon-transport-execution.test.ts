@@ -335,7 +335,8 @@ describe("LocalDaemonTransport execution delivery", () => {
     const manifest = await spool.finish(0);
     const endpoint = await rawExecutionServer(servers, sockets, directories, (socket) => {
       socket.once("data", (encoded) => {
-        const message = JSON.parse(encoded.subarray(4).toString()) as { kind: string };
+        const bytes = Buffer.isBuffer(encoded) ? encoded : Buffer.from(encoded);
+        const message = JSON.parse(bytes.subarray(4).toString()) as { kind: string };
         if (message.kind === "execute") {
           socket.write(frame(accepted()));
           socket.write(frame(resultManifest(manifest)));
@@ -417,7 +418,8 @@ describe("LocalDaemonTransport execution delivery", () => {
       });
       const endpoint = await rawExecutionServer(servers, sockets, directories, (socket) => {
         socket.once("data", (encoded) => {
-          const message = JSON.parse(encoded.subarray(4).toString()) as { kind: string };
+          const bytes = Buffer.isBuffer(encoded) ? encoded : Buffer.from(encoded);
+          const message = JSON.parse(bytes.subarray(4).toString()) as { kind: string };
           if (message.kind === "execute") {
             socket.write(frame(accepted()));
             socket.write(frame(resultManifest(manifest)));

@@ -159,6 +159,26 @@ export class OrderedCommandOutput {
     );
   }
 
+  appendRecord(record: CommandOutputRecord): Promise<void> {
+    const operation = this.tail.then(async () => {
+      if (this.finished) throw new Error("Command output is already finished");
+      await this.flushPending();
+      if (record.sequence !== this.recordCount) throw new Error("Unexpected command output sequence");
+      if (record.bytes.byteLength > MAXIMUM_RECORD_BYTES) {
+        throw new Error("Command output record exceeds chunk capacity");
+      }
+      if (this.capturedBytes + record.bytes.byteLength > this.maximumBytes) {
+        throw new CommandOutputCapacityError();
+      }
+      this.capturedBytes += record.bytes.byteLength;
+      await this.storeRecord({ ...record, bytes: Buffer.from(record.bytes) });
+    });
+    this.tail = operation.catch((error: unknown) => {
+      this.failure = error instanceof Error ? error : new Error(String(error));
+    });
+    return operation;
+  }
+
   async finish(exitCode: number): Promise<CommandExecutionResult> {
     if (this.finished) throw new Error("Command output is already finished");
     this.stdout.end();
@@ -240,6 +260,11 @@ export class OrderedCommandOutput {
       stream: this.pending.stream,
       bytes: this.pending.bytes,
     };
+    this.pending = undefined;
+    await this.storeRecord(record);
+  }
+
+  private async storeRecord(record: CommandOutputRecord): Promise<void> {
     const encoded = OrderedCommandOutput.encodeRecord(record);
     if (this.file === undefined && this.rawBytes + record.bytes.byteLength > this.inlineBytes) {
       await this.spillInlineRecords();
@@ -249,7 +274,6 @@ export class OrderedCommandOutput {
     this.hash.update(encoded.subarray(4));
     this.rawBytes += record.bytes.byteLength;
     this.recordCount += 1;
-    this.pending = undefined;
   }
 
   private async spillInlineRecords(): Promise<void> {

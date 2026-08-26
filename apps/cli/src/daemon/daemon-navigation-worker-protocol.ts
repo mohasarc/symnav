@@ -1,5 +1,9 @@
 import type { BackendRefreshSummary } from "@symnav/core";
-import type { CliExecutionRequest, CommandExecutionResult } from "../command-execution-result.js";
+import type {
+  CliExecutionRequest,
+  CommandExecutionResult,
+  CommandOutputStream,
+} from "../command-execution-result.js";
 
 export type DaemonExecutionFailureCode = "initialization" | "execution" | "protocol" | "resource";
 
@@ -24,10 +28,24 @@ export type DaemonNavigationWorkerRequest =
       readonly requestId: string;
       readonly request: CliExecutionRequest;
     }
+  | {
+      readonly kind: "output-ack";
+      readonly generation: number;
+      readonly requestId: string;
+      readonly sequence: number;
+    }
   | { readonly kind: "release-transient"; readonly generation: number }
   | { readonly kind: "close"; readonly generation: number };
 
 export type DaemonNavigationWorkerResponse =
+  | {
+      readonly kind: "output-chunk";
+      readonly generation: number;
+      readonly requestId: string;
+      readonly sequence: number;
+      readonly stream: CommandOutputStream;
+      readonly bytes: Uint8Array;
+    }
   | {
       readonly kind: "ready";
       readonly generation: number;

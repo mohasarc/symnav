@@ -1,4 +1,5 @@
 import { chmod, mkdir, open, rename, rm, stat, appendFile } from "node:fs/promises";
+import { createHash } from "node:crypto";
 import { dirname } from "node:path";
 import type { DaemonClock } from "./daemon-clock.js";
 import {
@@ -328,6 +329,10 @@ export class DaemonLogger {
   private serialize(event: DaemonDiagnosticEvent): string | undefined {
     const diagnostic = DaemonLogger.closedEvent(event);
     if (diagnostic === undefined) return undefined;
+    if ("requestId" in diagnostic) {
+      if (typeof diagnostic.requestId !== "string") return undefined;
+      diagnostic.requestId = this.requestCorrelation(diagnostic.requestId);
+    }
     return `${JSON.stringify(
       {
         ...diagnostic,
@@ -338,6 +343,14 @@ export class DaemonLogger {
       },
       [...DIAGNOSTIC_FIELDS],
     )}\n`;
+  }
+
+  private requestCorrelation(requestId: string): string {
+    return createHash("sha256")
+      .update(this.identity.workspaceKey)
+      .update("\0")
+      .update(requestId)
+      .digest("hex");
   }
 
   private startDrain(): void {

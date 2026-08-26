@@ -617,6 +617,35 @@ describe("WorkspaceDaemon requests", () => {
     expect(workers).toHaveLength(2);
   });
 
+  it("recovers one real worker old-generation exhaustion during warm-up", async () => {
+    const generations: number[] = [];
+    const { daemon, harness, lease } = RequestHarness.create(undefined, {
+      navigationWorkerFactory: (generation) => {
+        generations.push(generation);
+        return new NodeDaemonNavigationWorker({
+          generation,
+          stateDirectory: "/state",
+          entryUrl: new URL(
+            "../../test/helpers/daemon-navigation-worker-fixture.mjs",
+            import.meta.url,
+          ),
+          workerData: { mode: generation === 1 ? "initialize-heap-oom" : "normal" },
+          resourceLimits: { maxOldGenerationSizeMb: 24 },
+        });
+      },
+    });
+    harnesses.push(harness);
+
+    await daemon.start();
+    lease.release();
+
+    expect(generations).toEqual([1, 2]);
+    await expect(harness.ping()).resolves.toMatchObject({ state: "ready" });
+    await expect(harness.execute("after-warmup-pressure")).resolves.toMatchObject({
+      kind: "result-end",
+    });
+  }, 10_000);
+
   it("recovers a real old-generation exhaustion without replaying active work", async () => {
     const harness = await RequestHarness.start(undefined, {
       navigationWorkerFactory: (generation) =>

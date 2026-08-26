@@ -751,6 +751,34 @@ describe("WorkspaceDaemon requests", () => {
     );
   });
 
+  it("bounds retained traces during sustained abandoned disconnect churn", async () => {
+    const executor = new SerializedExecutor();
+    const harness = await RequestHarness.start(executor, {
+      operationTraceRetentionMs: 10_000,
+      maximumRetainedOperationTraces: 3,
+    });
+    harnesses.push(harness);
+
+    for (let index = 0; index < 10; index += 1) {
+      const requestId = `abandoned-${index}`;
+      const disconnected = await harness.admit(requestId, ["overview", "input.ts"]);
+      await executor.started(index + 1);
+      disconnected.disconnect();
+      executor.complete(index);
+      await waitUntil(async () => (await harness.status(requestId)).status.state === "completed");
+      await waitUntil(
+        () =>
+          harness.logEvents().filter((event) => event.kind === "client-disconnected").length ===
+          index + 1,
+      );
+    }
+
+    expect(harness.retainedOperationTraceCount()).toBe(3);
+    expect(
+      harness.logEvents().filter((event) => event.kind === "operation-trace-expired"),
+    ).toHaveLength(7);
+  });
+
   it("releases retained request traces during shutdown", async () => {
     const harness = await RequestHarness.start(new ImmediateExecutor());
     harnesses.push(harness);
@@ -1332,6 +1360,9 @@ class RequestHarness {
       ...(options.operationTraceRetentionMs === undefined
         ? {}
         : { operationTraceRetentionMs: options.operationTraceRetentionMs }),
+      ...(options.maximumRetainedOperationTraces === undefined
+        ? {}
+        : { maximumRetainedOperationTraces: options.maximumRetainedOperationTraces }),
       ...(options.resourcePolicy === undefined ? {} : { resourcePolicy: options.resourcePolicy }),
       ...(options.resourceCheckIntervalMs === undefined
         ? {}
@@ -1470,6 +1501,7 @@ interface RequestHarnessOptions {
   readonly completionSpoolLimits?: WorkspaceDaemonOptions["completionSpoolLimits"];
   readonly completionSpoolStorage?: WorkspaceDaemonOptions["completionSpoolStorage"];
   readonly operationTraceRetentionMs?: number;
+  readonly maximumRetainedOperationTraces?: number;
 }
 
 class RequestTransport {

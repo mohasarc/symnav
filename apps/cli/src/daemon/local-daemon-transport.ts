@@ -19,6 +19,7 @@ import type {
   DaemonServer,
 } from "./daemon-protocol.js";
 import { DaemonResultChunkCodec, DaemonTransferFrameDecoder } from "./daemon-result-chunk-codec.js";
+import { DaemonRuntimeValues } from "./daemon-runtime-values.js";
 import {
   DAEMON_MAXIMUM_CONTROL_FRAME_BYTES,
   type CompletionSpoolManifest,
@@ -1056,7 +1057,7 @@ export class LocalDaemonTransport {
         value.kind !== "result-fetch" &&
         value.kind !== "result-ack") ||
       typeof value.processToken !== "string" ||
-      typeof value.requestId !== "string" ||
+      !DaemonRuntimeValues.isRequestId(value.requestId) ||
       (value.kind === "execute" && !LocalDaemonTransport.isExecutionRequest(value.request)) ||
       (value.kind === "result-fetch" && !LocalDaemonTransport.isCount(value.offset)) ||
       (value.kind === "result-ack" && typeof value.transferId !== "string")
@@ -1127,7 +1128,7 @@ export class LocalDaemonTransport {
       if (
         typeof value.instanceId !== "string" ||
         typeof value.processToken !== "string" ||
-        typeof value.requestId !== "string" ||
+        !DaemonRuntimeValues.isRequestId(value.requestId) ||
         !LocalDaemonTransport.isExecutionStatus(value.status)
       ) {
         throw new Error("Malformed daemon execution status");
@@ -1138,7 +1139,7 @@ export class LocalDaemonTransport {
       if (
         typeof value.instanceId !== "string" ||
         typeof value.processToken !== "string" ||
-        typeof value.requestId !== "string" ||
+        !DaemonRuntimeValues.isRequestId(value.requestId) ||
         typeof value.transferId !== "string"
       ) {
         throw new Error("Malformed daemon result acknowledgement");
@@ -1212,7 +1213,7 @@ export class LocalDaemonTransport {
     if (
       typeof value.instanceId !== "string" ||
       typeof value.processToken !== "string" ||
-      typeof value.requestId !== "string"
+      !DaemonRuntimeValues.isRequestId(value.requestId)
     ) {
       throw new Error("Malformed daemon execution frame");
     }
@@ -1316,8 +1317,7 @@ export class LocalDaemonTransport {
       ]) &&
       typeof value.transferId === "string" &&
       value.transferId.length > 0 &&
-      typeof value.requestId === "string" &&
-      value.requestId.length > 0 &&
+      DaemonRuntimeValues.isRequestId(value.requestId) &&
       typeof value.instanceId === "string" &&
       value.instanceId.length > 0 &&
       LocalDaemonTransport.isCount(value.exitCode) &&
@@ -1362,29 +1362,57 @@ export class LocalDaemonTransport {
     if (!LocalDaemonTransport.isRecord(value)) return false;
     const lifecycle = value.lifecycle;
     const current = value.current;
+    const expectedKeys = [
+      "lifecycle",
+      "pid",
+      "startedAt",
+      "startupElapsedMs",
+      "processRssBytes",
+      "hardProcessRssBytes",
+      "workerGeneration",
+      "queued",
+      "spoolBytes",
+    ];
+    if (value.workerHeapUsedBytes !== undefined) expectedKeys.push("workerHeapUsedBytes");
+    if (value.lastCompletedAgoMs !== undefined) expectedKeys.push("lastCompletedAgoMs");
+    if (
+      lifecycle === "ready" ||
+      lifecycle === "busy" ||
+      ((lifecycle === "recovering" || lifecycle === "draining") && value.fileCount !== undefined)
+    ) {
+      expectedKeys.push("fileCount");
+    }
+    if (lifecycle === "busy") expectedKeys.push("current");
+    if (lifecycle === "recovering") expectedKeys.push("recoveryDetail");
     return (
       (lifecycle === "starting" ||
         lifecycle === "ready" ||
         lifecycle === "busy" ||
         lifecycle === "recovering" ||
         lifecycle === "draining") &&
-      (value.recoveryDetail === undefined ||
+      LocalDaemonTransport.hasExactKeys(value, expectedKeys) &&
+      (lifecycle !== "recovering" ||
         value.recoveryDetail === "resource-pressure" ||
         value.recoveryDetail === "worker-replacement") &&
-      (lifecycle !== "recovering" || value.recoveryDetail !== undefined) &&
-      LocalDaemonTransport.isCount(value.pid) &&
+      Number.isInteger(value.pid) &&
+      (value.pid as number) > 0 &&
       LocalDaemonTransport.isMetric(value.startedAt) &&
       LocalDaemonTransport.isMetric(value.startupElapsedMs) &&
-      (value.fileCount === undefined || LocalDaemonTransport.isCount(value.fileCount)) &&
+      (lifecycle === "ready" || lifecycle === "busy"
+        ? LocalDaemonTransport.isCount(value.fileCount)
+        : lifecycle === "starting"
+          ? value.fileCount === undefined
+          : value.fileCount === undefined || LocalDaemonTransport.isCount(value.fileCount)) &&
       LocalDaemonTransport.isCount(value.processRssBytes) &&
       LocalDaemonTransport.isCount(value.hardProcessRssBytes) &&
       (value.workerHeapUsedBytes === undefined ||
         LocalDaemonTransport.isCount(value.workerHeapUsedBytes)) &&
       LocalDaemonTransport.isCount(value.workerGeneration) &&
-      (current === undefined ||
+      (lifecycle !== "busy" ||
         (LocalDaemonTransport.isRecord(current) &&
-          typeof current.requestId === "string" &&
-          typeof current.command === "string" &&
+          LocalDaemonTransport.hasExactKeys(current, ["requestId", "command", "elapsedMs"]) &&
+          DaemonRuntimeValues.isRequestId(current.requestId) &&
+          DaemonRuntimeValues.isCommandName(current.command) &&
           LocalDaemonTransport.isMetric(current.elapsedMs))) &&
       LocalDaemonTransport.isCount(value.queued) &&
       (value.lastCompletedAgoMs === undefined ||

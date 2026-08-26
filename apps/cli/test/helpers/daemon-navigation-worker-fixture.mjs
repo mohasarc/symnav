@@ -2,8 +2,9 @@ import { parentPort, workerData } from "node:worker_threads";
 import { existsSync, writeFileSync } from "node:fs";
 import { getHeapStatistics } from "node:v8";
 
-const generation = 7;
+const generation = workerData.generation;
 let executionCount = 0;
+let externalMemory;
 const pendingResults = new Map();
 
 parentPort.on("message", (message) => {
@@ -34,6 +35,21 @@ parentPort.on("message", (message) => {
     if (workerData.requestStartedPath !== undefined) {
       writeFileSync(workerData.requestStartedPath, "started");
       writeFileSync(`${workerData.requestStartedPath}.${executionCount}`, "started");
+    }
+    if (workerData.mode === "heap-oom") {
+      const retained = [];
+      while (true) {
+        retained.push(
+          Array.from({ length: 50_000 }, (_, index) => ({
+            index,
+            value: `${retained.length}:${index}`,
+          })),
+        );
+      }
+    }
+    if (workerData.mode === "external-pressure") {
+      externalMemory = Buffer.alloc(192 * 1024 * 1024, 1);
+      while (true) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 1_000);
     }
     if (workerData.mode === "block" || workerData.mode === "block-execution") {
       Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, workerData.blockMs ?? 150);

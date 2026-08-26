@@ -9,12 +9,12 @@ import {
   realpathSync,
   readdirSync,
   renameSync,
-  rmSync,
   statSync,
   unlinkSync,
   utimesSync,
   writeFileSync,
 } from "node:fs";
+import { rm as remove } from "node:fs/promises";
 import { cpus, tmpdir, totalmem } from "node:os";
 import { join } from "node:path";
 import { performance } from "node:perf_hooks";
@@ -199,8 +199,8 @@ export class DaemonScaleBenchmarkHarness {
       if (daemonStarted) {
         this.runCommand(workspaceRoot, stateDirectory, ["daemon", "stop"], false);
       }
-      if (ownsWorkspace) rmSync(workspaceRoot, { recursive: true, force: true });
-      if (ownsState) rmSync(stateDirectory, { recursive: true, force: true });
+      if (ownsWorkspace) await DaemonScaleBenchmarkHarness.removeOwnedDirectory(workspaceRoot);
+      if (ownsState) await DaemonScaleBenchmarkHarness.removeOwnedDirectory(stateDirectory);
     }
   }
 
@@ -444,6 +444,18 @@ export class DaemonScaleBenchmarkHarness {
     return new Promise((resolveYield) => setTimeout(resolveYield, 10));
   }
 
+  private static async removeOwnedDirectory(path: string): Promise<void> {
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      try {
+        await remove(path, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+        return;
+      } catch (error) {
+        if (attempt === 4) throw error;
+        await new Promise((resolveRetry) => setTimeout(resolveRetry, 250));
+      }
+    }
+  }
+
   private runCommand(
     workspaceRoot: string,
     stateDirectory: string,
@@ -574,11 +586,14 @@ class DaemonBenchmarkDiagnostics {
       : [];
     const commands = new Map<string, string>();
     const queueWaits = new Map<string, number>();
+    const spooledBytes = new Map<string, number>();
     for (const event of events) {
       if (event.kind === "request-accepted")
         commands.set(String(event.requestId), String(event.command));
       if (event.kind === "turn-started")
         queueWaits.set(String(event.requestId), Number(event.queueWaitMs));
+      if (event.kind === "response-spooled")
+        spooledBytes.set(String(event.requestId), Number(event.rawBytes));
     }
     const operationMetrics = events
       .filter((event) => event.kind === "execution-terminal")
@@ -590,7 +605,10 @@ class DaemonBenchmarkDiagnostics {
         ...(event.workerHeapUsedBytes === undefined
           ? {}
           : { workerHeapPeakBytes: Number(event.workerHeapUsedBytes) }),
-        spoolBytes: Number(event.spoolBytes ?? 0),
+        spoolBytes: Math.max(
+          Number(event.spoolBytes ?? 0),
+          spooledBytes.get(String(event.requestId)) ?? 0,
+        ),
       }));
     const phases = new Set(events.map((event) => String(event.kind)));
     return new DaemonBenchmarkDiagnostics(

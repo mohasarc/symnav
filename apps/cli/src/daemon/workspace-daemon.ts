@@ -221,6 +221,7 @@ export class WorkspaceDaemon {
       startupLease.release();
       this.logger.record({ kind: "ready", fileCount: response.fileCount });
       this.resourceSupervisor.start();
+      await this.logger.flush();
     } catch (error) {
       if (startupHeartbeat !== undefined) clearInterval(startupHeartbeat);
       await this.cleanupFailedStartup(startupLease);
@@ -230,6 +231,7 @@ export class WorkspaceDaemon {
         failureCode: "operation-failed",
         errorName: DaemonLogger.errorName(error),
       });
+      await this.logger.flush();
       throw error;
     }
   }
@@ -803,6 +805,7 @@ export class WorkspaceDaemon {
         errorName: DaemonLogger.errorName(error),
       });
     });
+    await this.logger.close();
     this.exit(0);
   }
 

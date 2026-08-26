@@ -502,6 +502,9 @@ describe("WorkspaceDaemon requests", () => {
 
     await harness.execute("refresh", ["overview", "input.ts"]);
 
+    await waitUntil(
+      () => harness.logEvents().filter((event) => event.kind === "freshness").length === 2,
+    );
     expect(harness.logEvents().filter((event) => event.kind === "freshness")).toHaveLength(2);
   });
 

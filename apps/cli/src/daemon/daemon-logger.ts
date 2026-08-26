@@ -1,4 +1,4 @@
-import { appendFileSync, chmodSync, mkdirSync } from "node:fs";
+import { chmod, mkdir, open, rename, rm, stat, appendFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import type { DaemonClock } from "./daemon-clock.js";
 import {
@@ -90,47 +90,114 @@ const ERROR_NAMES = new Set<DaemonDiagnosticErrorName>([
   "UnknownError",
 ]);
 
+export const DAEMON_LOG_ROTATE_BYTES = 10 * 1024 * 1024;
+export const DAEMON_LOG_BACKUP_COUNT = 4;
+
+export interface DaemonLogStorage {
+  prepare(directory: string, logPath: string): Promise<void>;
+  size(path: string): Promise<number>;
+  append(path: string, line: string): Promise<void>;
+  move(source: string, destination: string): Promise<void>;
+  remove(path: string): Promise<void>;
+  sync(path: string): Promise<void>;
+}
+
+interface DaemonLoggerOptions {
+  readonly rotateBytes?: number;
+  readonly maximumQueuedEvents?: number;
+  readonly storage?: DaemonLogStorage;
+}
+
+class NodeDaemonLogStorage implements DaemonLogStorage {
+  async prepare(directory: string, logPath: string): Promise<void> {
+    await mkdir(directory, { recursive: true, mode: 0o700 });
+    await chmod(directory, 0o700);
+    await appendFile(logPath, "", { encoding: "utf8", flag: "a", mode: 0o600 });
+    await chmod(logPath, 0o600);
+  }
+
+  async size(path: string): Promise<number> {
+    try {
+      return (await stat(path)).size;
+    } catch (error) {
+      if (NodeDaemonLogStorage.errorCode(error) === "ENOENT") return 0;
+      throw error;
+    }
+  }
+
+  append(path: string, line: string): Promise<void> {
+    return appendFile(path, line, { encoding: "utf8", flag: "a", mode: 0o600 });
+  }
+
+  async move(source: string, destination: string): Promise<void> {
+    try {
+      await rename(source, destination);
+    } catch (error) {
+      if (NodeDaemonLogStorage.errorCode(error) !== "ENOENT") throw error;
+    }
+  }
+
+  remove(path: string): Promise<void> {
+    return rm(path, { force: true });
+  }
+
+  async sync(path: string): Promise<void> {
+    let file;
+    try {
+      file = await open(path, "r");
+      await file.sync();
+    } catch (error) {
+      if (NodeDaemonLogStorage.errorCode(error) !== "ENOENT") throw error;
+    } finally {
+      await file?.close();
+    }
+  }
+
+  private static errorCode(error: unknown): string | undefined {
+    return typeof error === "object" && error !== null && "code" in error
+      ? String(error.code)
+      : undefined;
+  }
+}
+
 export class DaemonLogger {
+  private readonly storage: DaemonLogStorage;
+  private readonly pendingLines: string[] = [];
+  private drainOperation: Promise<void> | undefined;
+  private closed = false;
+
   constructor(
     private readonly identity: DaemonWorkspaceIdentity,
     private readonly instanceId: string,
     private readonly clock: DaemonClock,
-  ) {}
+    options: DaemonLoggerOptions = {},
+  ) {
+    this.storage = options.storage ?? new NodeDaemonLogStorage();
+  }
 
   record(event: DaemonDiagnosticEvent): void {
     try {
-      const diagnostic = DaemonLogger.closedEvent(event);
-      if (diagnostic === undefined) return;
-      const logDirectory = dirname(this.identity.logPath);
-      mkdirSync(logDirectory, { recursive: true, mode: 0o700 });
-      chmodSync(logDirectory, 0o700);
-      const serialized = JSON.stringify(
-        {
-          ...diagnostic,
-          schemaVersion: DAEMON_DIAGNOSTIC_SCHEMA_VERSION,
-          timestamp: this.clock.wallNowMs(),
-          instanceId: this.instanceId,
-          workspaceKey: this.identity.workspaceKey,
-        },
-        [...DIAGNOSTIC_FIELDS],
-      );
-      appendFileSync(this.identity.logPath, `${serialized}\n`, {
-        encoding: "utf8",
-        flag: "a",
-        mode: 0o600,
-      });
-      chmodSync(this.identity.logPath, 0o600);
+      if (this.closed) return;
+      const line = this.serialize(event);
+      if (line === undefined) return;
+      this.pendingLines.push(line);
+      this.startDrain();
     } catch {
       return;
     }
   }
 
-  flush(): Promise<void> {
-    return Promise.resolve();
+  async flush(): Promise<void> {
+    while (this.drainOperation !== undefined || this.pendingLines.length > 0) {
+      this.startDrain();
+      await this.drainOperation;
+    }
+    await this.storage.sync(this.identity.logPath).catch(() => undefined);
   }
 
-  close(): Promise<void> {
-    return this.flush();
+  async close(): Promise<void> {
+    this.closed = true;
+    await this.flush();
   }
 
   static errorName(error: unknown): DaemonDiagnosticErrorName {
@@ -156,5 +223,48 @@ export class DaemonLogger {
       closed.errorName = "UnknownError";
     }
     return closed;
+  }
+
+  private serialize(event: DaemonDiagnosticEvent): string | undefined {
+    const diagnostic = DaemonLogger.closedEvent(event);
+    if (diagnostic === undefined) return undefined;
+    return `${JSON.stringify(
+      {
+        ...diagnostic,
+        schemaVersion: DAEMON_DIAGNOSTIC_SCHEMA_VERSION,
+        timestamp: this.clock.wallNowMs(),
+        instanceId: this.instanceId,
+        workspaceKey: this.identity.workspaceKey,
+      },
+      [...DIAGNOSTIC_FIELDS],
+    )}\n`;
+  }
+
+  private startDrain(): void {
+    if (this.drainOperation !== undefined) return;
+    const operation = this.drain();
+    this.drainOperation = operation.finally(() => {
+      this.drainOperation = undefined;
+      if (this.pendingLines.length > 0) this.startDrain();
+    });
+  }
+
+  private async drain(): Promise<void> {
+    const logDirectory = dirname(this.identity.logPath);
+    try {
+      await this.storage.prepare(logDirectory, this.identity.logPath);
+    } catch {
+      this.pendingLines.length = 0;
+      return;
+    }
+    while (this.pendingLines.length > 0) {
+      const line = this.pendingLines.shift();
+      if (line === undefined) continue;
+      try {
+        await this.storage.append(this.identity.logPath, line);
+      } catch {
+        continue;
+      }
+    }
   }
 }

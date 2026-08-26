@@ -103,6 +103,71 @@ const ERROR_NAMES = new Set<DaemonDiagnosticErrorName>([
   "UnknownError",
 ]);
 
+const CLOSED_DIAGNOSTIC_VALUES = new Map<string, ReadonlySet<string>>([
+  [
+    "operation",
+    new Set([
+      "start",
+      "request",
+      "resource-sample",
+      "resource-drain",
+      "worker-exit",
+      "worker-replacement",
+      "completion-delivery",
+      "completion-cleanup",
+      "transport-close",
+      "diagnostics-write",
+      "diagnostics-rotation",
+    ]),
+  ],
+  [
+    "failureCode",
+    new Set([
+      "worker-exit",
+      "controlled-resource",
+      "response-capacity",
+      "stopping",
+      "internal",
+      "operation-failed",
+    ]),
+  ],
+  ["outcome", new Set(["completed", "failed", "delivered", "disconnected"])],
+  ["reason", new Set(["graceful", "idle", "resource", "workspace-deleted"])],
+  ["cause", new Set(["hard-pressure", "out-of-memory", "shed-failure", "worker-exit"])],
+]);
+
+const NUMERIC_DIAGNOSTIC_FIELDS = new Set([
+  "queueDepth",
+  "queuePosition",
+  "workerGeneration",
+  "previousWorkerGeneration",
+  "queueWaitMs",
+  "freshnessMs",
+  "navigationMs",
+  "renderMs",
+  "workerOutputMs",
+  "added",
+  "changed",
+  "removed",
+  "unchanged",
+  "rawBytes",
+  "recordCount",
+  "spoolMs",
+  "serviceMs",
+  "deliveryMs",
+  "processRssBytes",
+  "workerHeapUsedBytes",
+  "workerHeapLimitBytes",
+  "spoolBytes",
+  "fileCount",
+  "discoveryMs",
+  "indexingMs",
+  "totalMs",
+  "durationMs",
+  "exitCode",
+  "droppedCount",
+]);
+
 export const DAEMON_LOG_ROTATE_BYTES = 10 * 1024 * 1024;
 export const DAEMON_LOG_BACKUP_COUNT = 4;
 
@@ -241,13 +306,22 @@ export class DaemonLogger {
   private static closedEvent(event: DaemonDiagnosticEvent): Record<string, unknown> | undefined {
     const diagnostic = event as unknown as Record<string, unknown>;
     if (!DIAGNOSTIC_KINDS.has(String(diagnostic.kind))) return undefined;
-    const closed = { ...diagnostic };
+    const closed: Record<string, unknown> = { ...diagnostic };
     if ("command" in closed && !COMMAND_NAMES.has(closed.command as DaemonCommandName)) {
       closed.command = "unknown";
     }
     if ("errorName" in closed && !ERROR_NAMES.has(closed.errorName as DaemonDiagnosticErrorName)) {
       closed.errorName = "UnknownError";
     }
+    for (const [field, values] of CLOSED_DIAGNOSTIC_VALUES) {
+      if (field in closed && !values.has(String(closed[field]))) return undefined;
+    }
+    for (const field of NUMERIC_DIAGNOSTIC_FIELDS) {
+      if (!(field in closed)) continue;
+      const value = closed[field];
+      if (typeof value !== "number" || !Number.isFinite(value) || value < 0) return undefined;
+    }
+    if ("force" in closed && typeof closed.force !== "boolean") return undefined;
     return closed;
   }
 

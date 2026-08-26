@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, readdirSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, readdirSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -137,6 +137,19 @@ describe("DaemonLogger", () => {
     expect(retained.map((event) => event.timestamp)).toEqual(
       [...retained].map((event) => event.timestamp).sort((left, right) => left - right),
     );
+  });
+
+  it("creates private diagnostic directories and files", async () => {
+    const root = mkdtempSync(join(tmpdir(), "symnav-daemon-permissions-"));
+    roots.push(root);
+    const identity = DaemonWorkspaceIdentity.from("/repo", root);
+    const logger = new DaemonLogger(identity, "permissions", new NodeDaemonClock());
+
+    logger.record({ kind: "ready", fileCount: 1 });
+    await logger.close();
+
+    expect(statSync(identity.identityDirectory).mode & 0o777).toBe(0o700);
+    expect(statSync(identity.logPath).mode & 0o777).toBe(0o600);
   });
 
 });

@@ -1,4 +1,5 @@
 import type { DaemonDiagnosticEvent, DaemonProcessTerminationSignal } from "./daemon-protocol.js";
+import { DaemonLogger } from "./daemon-logger.js";
 
 interface DaemonTerminationRecorder {
   record(event: DaemonDiagnosticEvent): void;
@@ -6,6 +7,8 @@ interface DaemonTerminationRecorder {
 }
 
 export class DaemonProcessTerminationObserver {
+  private terminationOperation: Promise<void> | undefined;
+
   constructor(
     private readonly recorder: DaemonTerminationRecorder,
     private readonly cleanup: () => void,
@@ -13,18 +16,51 @@ export class DaemonProcessTerminationObserver {
   ) {}
 
   install(): void {
-    throw new Error("Daemon process termination observation is not implemented");
+    process.on("uncaughtException", (error, origin) => {
+      void this.uncaughtException(error, origin);
+    });
+    process.on("unhandledRejection", (reason) => {
+      void this.unhandledRejection(reason);
+    });
+    for (const signal of ["SIGTERM", "SIGINT", "SIGHUP"] as const) {
+      process.on(signal, () => void this.signal(signal));
+    }
   }
 
-  uncaughtException(_error: unknown, _origin: string): Promise<void> {
-    return Promise.reject(new Error("Daemon process termination observation is not implemented"));
+  uncaughtException(error: unknown, origin: string): Promise<void> {
+    return this.terminate({
+      kind: "process-termination",
+      terminationReason:
+        origin === "unhandledRejection" ? "unhandled-rejection" : "uncaught-exception",
+      errorName: DaemonLogger.errorName(error),
+    });
   }
 
-  unhandledRejection(_reason: unknown): Promise<void> {
-    return Promise.reject(new Error("Daemon process termination observation is not implemented"));
+  unhandledRejection(reason: unknown): Promise<void> {
+    return this.terminate({
+      kind: "process-termination",
+      terminationReason: "unhandled-rejection",
+      errorName: DaemonLogger.errorName(reason),
+    });
   }
 
-  signal(_signal: DaemonProcessTerminationSignal): Promise<void> {
-    return Promise.reject(new Error("Daemon process termination observation is not implemented"));
+  signal(signal: DaemonProcessTerminationSignal): Promise<void> {
+    return this.terminate({ kind: "process-termination", terminationReason: "signal", signal });
+  }
+
+  private terminate(event: DaemonDiagnosticEvent): Promise<void> {
+    if (this.terminationOperation !== undefined) return this.terminationOperation;
+    this.terminationOperation = this.recordAndExit(event);
+    return this.terminationOperation;
+  }
+
+  private async recordAndExit(event: DaemonDiagnosticEvent): Promise<void> {
+    this.recorder.record(event);
+    try {
+      await this.recorder.flush();
+    } finally {
+      this.cleanup();
+      this.exit(1);
+    }
   }
 }

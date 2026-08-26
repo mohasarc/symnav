@@ -285,25 +285,12 @@ export type DaemonDiagnosticEvent =
     }
   | DaemonOperationDiagnostic;
 
-export type DaemonLogEvent =
-  | { readonly kind: "start"; readonly workspaceRoot: string; readonly instanceId: string }
-  | { readonly kind: "ready"; readonly fileCount: number }
-  | { readonly kind: "acceptance"; readonly requestId: string; readonly queuePosition: number }
-  | {
-      readonly kind: "request";
-      readonly command: string;
-      readonly durationMs: number;
-      readonly exitCode: number;
-    }
-  | {
-      readonly kind: "freshness";
-      readonly added: number;
-      readonly changed: number;
-      readonly removed: number;
-      readonly unchanged: number;
-    }
-  | { readonly kind: "stop"; readonly reason: DaemonStopReason }
-  | { readonly kind: "failure"; readonly operation: string; readonly message: string };
+export type DaemonLogEvent = DaemonDiagnosticEvent & {
+  readonly schemaVersion: 1;
+  readonly timestamp: number;
+  readonly instanceId: string;
+  readonly workspaceKey: string;
+};
 
 export type DaemonLifecycleRequest =
   | {

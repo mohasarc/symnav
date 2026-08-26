@@ -1,61 +1,20 @@
-import type { BackendRefreshSummary } from "@symnav/core";
 import type { CompletionSpoolManifest } from "./completion-spool.js";
 import type { DaemonClock } from "./daemon-clock.js";
-import type { DaemonCommandName } from "./workspace-request-queue.js";
+import type { BackendRefreshSummary } from "@symnav/core";
+import type {
+  DaemonCommandName,
+  DaemonDeliveryOutcome,
+  DaemonExecutionOutcome,
+  DaemonOperationDiagnostic,
+  DaemonWorkerPhaseDurations,
+} from "./daemon-protocol.js";
 
-export interface DaemonWorkerPhaseDurations {
-  readonly freshnessMs: number;
-  readonly navigationMs: number;
-  readonly renderMs: number;
-  readonly workerOutputMs: number;
-}
-
-export type DaemonExecutionOutcome = "completed" | "failed";
-export type DaemonDeliveryOutcome = "delivered" | "disconnected" | "failed";
-
-export type DaemonOperationDiagnostic =
-  | {
-      readonly kind: "request-accepted";
-      readonly requestId: string;
-      readonly command: DaemonCommandName;
-      readonly queueDepth: number;
-      readonly workerGeneration: number;
-    }
-  | {
-      readonly kind: "turn-started";
-      readonly requestId: string;
-      readonly queueWaitMs: number;
-      readonly workerGeneration: number;
-    }
-  | ({
-      readonly kind: "worker-completed";
-      readonly requestId: string;
-    } & DaemonWorkerPhaseDurations &
-      BackendRefreshSummary)
-  | {
-      readonly kind: "response-spooled";
-      readonly requestId: string;
-      readonly rawBytes: number;
-      readonly recordCount: number;
-      readonly spoolMs: number;
-    }
-  | {
-      readonly kind: "execution-terminal";
-      readonly requestId: string;
-      readonly outcome: DaemonExecutionOutcome;
-      readonly serviceMs: number;
-      readonly processRssBytes?: number;
-      readonly workerHeapUsedBytes?: number;
-      readonly spoolBytes?: number;
-    }
-  | { readonly kind: "client-disconnected"; readonly requestId: string }
-  | { readonly kind: "client-reattached"; readonly requestId: string }
-  | {
-      readonly kind: "delivery-terminal";
-      readonly requestId: string;
-      readonly outcome: DaemonDeliveryOutcome;
-      readonly deliveryMs: number;
-    };
+export type {
+  DaemonDeliveryOutcome,
+  DaemonExecutionOutcome,
+  DaemonOperationDiagnostic,
+  DaemonWorkerPhaseDurations,
+} from "./daemon-protocol.js";
 
 export interface DaemonOperationTrace {
   accepted(queueDepth: number, generation: number): void;

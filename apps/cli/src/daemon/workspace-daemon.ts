@@ -23,6 +23,7 @@ import {
 import { DAEMON_PROTOCOL_VERSION, DAEMON_RECORD_SCHEMA_VERSION } from "./daemon-protocol.js";
 import { DAEMON_IDLE_TIMEOUT_MS, DaemonLifetime } from "./daemon-lifetime.js";
 import { DaemonLogger } from "./daemon-logger.js";
+import { NodeDaemonClock, type DaemonClock } from "./daemon-clock.js";
 import {
   DaemonNavigationWorkerExitedError,
   type DaemonNavigationWorker,
@@ -56,6 +57,7 @@ export interface WorkspaceDaemonOptions {
   readonly navigationWorkerFactory?: (generation: number) => DaemonNavigationWorker;
   readonly resourcePolicy?: DaemonResourcePolicy;
   readonly now?: () => number;
+  readonly clock?: DaemonClock;
   readonly exit?: (code: number) => void;
   readonly idleTimeoutMs?: number;
   readonly resourceCheckIntervalMs?: number;
@@ -77,6 +79,7 @@ export interface DaemonWorkerGeneration {
 
 export class WorkspaceDaemon {
   private readonly now: () => number;
+  private readonly clock: DaemonClock;
   private readonly exit: (code: number) => void;
   private readonly initialNavigationWorker: DaemonNavigationWorker;
   private readonly navigationWorkerFactory:
@@ -113,6 +116,7 @@ export class WorkspaceDaemon {
       this.resolveForceEscalated = resolve;
     });
     this.now = options.now ?? Date.now;
+    this.clock = options.clock ?? new NodeDaemonClock();
     this.requestQueue = new WorkspaceRequestQueue(this.now);
     this.acceptedRequests = new AcceptedRequestLedger(this.now);
     this.completionSpools = new DaemonCompletionSpoolStore({
@@ -124,7 +128,7 @@ export class WorkspaceDaemon {
         ? {}
         : { storage: options.completionSpoolStorage }),
     });
-    this.logger = new DaemonLogger(options.identity.logPath, { now: this.now });
+    this.logger = new DaemonLogger(options.identity, options.instanceId, this.clock);
     const resourcePolicy =
       options.resourcePolicy ??
       DaemonResourcePolicy.fromSystemMemory(
@@ -167,11 +171,7 @@ export class WorkspaceDaemon {
   }
 
   async start(): Promise<void> {
-    this.logger.record({
-      kind: "start",
-      workspaceRoot: this.options.identity.workspaceRoot,
-      instanceId: this.options.instanceId,
-    });
+    this.logger.record({ kind: "start" });
     let startupLease: DaemonStartupLease | undefined;
     let startupHeartbeat: NodeJS.Timeout | undefined;
     try {
@@ -227,7 +227,8 @@ export class WorkspaceDaemon {
       this.logger.record({
         kind: "failure",
         operation: "start",
-        message: WorkspaceDaemon.errorMessage(error),
+        failureCode: "operation-failed",
+        errorName: DaemonLogger.errorName(error),
       });
       throw error;
     }
@@ -339,7 +340,8 @@ export class WorkspaceDaemon {
         this.logger.record({
           kind: "failure",
           operation: "completion-cleanup",
-          message: WorkspaceDaemon.errorMessage(error),
+          failureCode: "internal",
+          errorName: DaemonLogger.errorName(error),
         });
       });
       this.acceptedRequests.acknowledge(request.requestId);
@@ -438,7 +440,8 @@ export class WorkspaceDaemon {
       this.logger.record({
         kind: "failure",
         operation: "resource-sample",
-        message: WorkspaceDaemon.errorMessage(error),
+        failureCode: "operation-failed",
+        errorName: DaemonLogger.errorName(error),
       });
     });
     if (!this.workerReady) return this.rejection(request, "not-ready", true);
@@ -549,7 +552,8 @@ export class WorkspaceDaemon {
       this.logger.record({
         kind: "failure",
         operation: "request",
-        message: WorkspaceDaemon.errorMessage(error),
+        failureCode: "internal",
+        errorName: DaemonLogger.errorName(error),
       });
       const code =
         (this.resourceInterruptedRequests.delete(request.requestId)
@@ -566,7 +570,8 @@ export class WorkspaceDaemon {
         this.logger.record({
           kind: "failure",
           operation: "completion-cleanup",
-          message: WorkspaceDaemon.errorMessage(cleanupError),
+          failureCode: "internal",
+          errorName: DaemonLogger.errorName(cleanupError),
         });
       });
       this.acceptedRequests.fail(request.requestId, code, this.now());
@@ -582,7 +587,8 @@ export class WorkspaceDaemon {
         this.logger.record({
           kind: "failure",
           operation: "resource-sample",
-          message: WorkspaceDaemon.errorMessage(error),
+          failureCode: "operation-failed",
+          errorName: DaemonLogger.errorName(error),
         });
       })
       .finally(() => {
@@ -652,13 +658,15 @@ export class WorkspaceDaemon {
       this.logger.record({
         kind: "failure",
         operation: "completion-delivery",
-        message: WorkspaceDaemon.errorMessage(error),
+        failureCode: "internal",
+        errorName: DaemonLogger.errorName(error),
       });
       await spool.dispose().catch((cleanupError) => {
         this.logger.record({
           kind: "failure",
           operation: "completion-cleanup",
-          message: WorkspaceDaemon.errorMessage(cleanupError),
+          failureCode: "internal",
+          errorName: DaemonLogger.errorName(cleanupError),
         });
       });
       this.acceptedRequests.invalidateCompletion(requestId, "internal", this.now());
@@ -719,7 +727,8 @@ export class WorkspaceDaemon {
     this.logger.record({
       kind: "failure",
       operation: "completion-delivery",
-      message: WorkspaceDaemon.errorMessage(error),
+      failureCode: "internal",
+      errorName: DaemonLogger.errorName(error),
     });
   }
 
@@ -739,7 +748,8 @@ export class WorkspaceDaemon {
       this.logger.record({
         kind: "failure",
         operation: "resource-drain",
-        message: WorkspaceDaemon.errorMessage(error),
+        failureCode: "controlled-resource",
+        errorName: DaemonLogger.errorName(error),
       });
     });
   }
@@ -781,14 +791,16 @@ export class WorkspaceDaemon {
       this.logger.record({
         kind: "failure",
         operation: "transport-close",
-        message: WorkspaceDaemon.errorMessage(error),
+        failureCode: "operation-failed",
+        errorName: DaemonLogger.errorName(error),
       });
     }
     await this.completionSpools.cleanupInstance(this.options.instanceId).catch((error) => {
       this.logger.record({
         kind: "failure",
         operation: "completion-cleanup",
-        message: WorkspaceDaemon.errorMessage(error),
+        failureCode: "internal",
+        errorName: DaemonLogger.errorName(error),
       });
     });
     this.exit(0);
@@ -841,7 +853,10 @@ export class WorkspaceDaemon {
     this.logger.record({
       kind: "failure",
       operation: "worker-exit",
-      message: `${exit.cause}${exit.errorName === undefined ? "" : ` (${exit.errorName})`}`,
+      failureCode: "worker-exit",
+      errorName: DaemonLogger.errorName(
+        exit.errorName === undefined ? undefined : { name: exit.errorName },
+      ),
     });
     const recovery = this.resourceSupervisor.workerExited(exit);
     this.workerRecoveryOperation = recovery;
@@ -849,7 +864,8 @@ export class WorkspaceDaemon {
       this.logger.record({
         kind: "failure",
         operation: "worker-replacement",
-        message: WorkspaceDaemon.errorMessage(error),
+        failureCode: "controlled-resource",
+        errorName: DaemonLogger.errorName(error),
       });
     });
   }
@@ -923,9 +939,5 @@ export class WorkspaceDaemon {
     if (argv.includes("--version") || argv.includes("-v")) return "version";
     if (argv.includes("--help") || argv.includes("-h")) return "help";
     return "unknown";
-  }
-
-  private static errorMessage(error: unknown): string {
-    return error instanceof Error ? error.message : String(error);
   }
 }

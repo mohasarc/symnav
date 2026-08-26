@@ -1,16 +1,6 @@
-import type { WorkspaceRequestQueueState } from "./daemon-protocol.js";
+import type { DaemonCommandName, WorkspaceRequestQueueState } from "./daemon-protocol.js";
 
-export type DaemonCommandName =
-  | "overview"
-  | "resolve"
-  | "def"
-  | "refs"
-  | "context"
-  | "graph"
-  | "stats"
-  | "help"
-  | "version"
-  | "unknown";
+export type { DaemonCommandName } from "./daemon-protocol.js";
 
 export interface WorkspaceQueuedRequest {
   readonly requestId: string;

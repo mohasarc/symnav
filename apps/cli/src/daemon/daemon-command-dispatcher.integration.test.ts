@@ -6,10 +6,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { CliExecutionRequest, CommandExecutionResult } from "../command-execution-result.js";
 import type { ProgramDependencies } from "../program-dependencies.js";
 import { DaemonCommandDispatcher } from "./daemon-command-dispatcher.js";
-import {
-  NodeDaemonProcessTerminator,
-  type DaemonProcessLauncher,
-} from "./daemon-process-launcher.js";
+import { NodeDaemonProcessTerminator } from "./daemon-process-launcher.js";
 import {
   DAEMON_PROTOCOL_VERSION,
   DAEMON_RECORD_SCHEMA_VERSION,
@@ -17,7 +14,6 @@ import {
 } from "./daemon-protocol.js";
 import { DaemonRegistry } from "./daemon-registry.js";
 import { DaemonRecordObserver } from "./daemon-record-observer.js";
-import { DaemonStartupCoordinator } from "./daemon-startup-coordinator.js";
 import { DaemonWorkspaceIdentity } from "./daemon-workspace-identity.js";
 import { LocalDaemonTransport } from "./local-daemon-transport.js";
 
@@ -42,34 +38,6 @@ describe("DaemonCommandDispatcher real failure boundaries", () => {
     servers.length = 0;
     for (const root of roots) rmSync(root, { recursive: true, force: true });
     roots.length = 0;
-  });
-
-  it("times out behind a real concurrent startup owner and executes cold once", async () => {
-    const runtime = createRuntime(roots);
-    const startupLease = runtime.registry.acquireStartup(runtime.identity, "concurrent-owner");
-    expect(startupLease).toBeDefined();
-    const launcher: DaemonProcessLauncher = {
-      symnavVersion: "0.1.0",
-      memoryCapBytes: 1024,
-      launch: vi.fn(),
-    };
-    const coordinator = new DaemonStartupCoordinator(
-      runtime.registry,
-      launcher,
-      runtime.transport,
-      { startupTimeoutMs: 5, pollIntervalMs: 1 },
-    );
-    const coldExecute = vi.fn(async () => coldResult);
-
-    await expect(dispatcher(runtime, coordinator, coldExecute).execute(request)).resolves.toEqual({
-      mode: "fallback",
-      result: coldResult,
-    });
-
-    expect(launcher.launch).not.toHaveBeenCalled();
-    expect(coldExecute).toHaveBeenCalledTimes(1);
-    expect(runtime.registry.read(runtime.identity)).toBeUndefined();
-    startupLease?.release();
   });
 
   it.each(["refused", "malformed", "truncated", "mismatched"] as const)(

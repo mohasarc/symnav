@@ -78,6 +78,10 @@ export class WorkspaceRequestQueue {
     return result;
   }
 
+  scheduleAtTurnBoundary(operation: () => Promise<void>): Promise<void> {
+    return operation();
+  }
+
   async drain(): Promise<void> {
     if (this.currentState !== "closed") this.currentState = "draining";
     await this.tail;

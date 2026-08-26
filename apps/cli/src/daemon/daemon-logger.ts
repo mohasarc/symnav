@@ -161,6 +161,7 @@ class NodeDaemonLogStorage implements DaemonLogStorage {
 }
 
 export class DaemonLogger {
+  private readonly rotateBytes: number;
   private readonly storage: DaemonLogStorage;
   private readonly pendingLines: string[] = [];
   private drainOperation: Promise<void> | undefined;
@@ -172,6 +173,7 @@ export class DaemonLogger {
     private readonly clock: DaemonClock,
     options: DaemonLoggerOptions = {},
   ) {
+    this.rotateBytes = options.rotateBytes ?? DAEMON_LOG_ROTATE_BYTES;
     this.storage = options.storage ?? new NodeDaemonLogStorage();
   }
 
@@ -251,8 +253,10 @@ export class DaemonLogger {
 
   private async drain(): Promise<void> {
     const logDirectory = dirname(this.identity.logPath);
+    let currentBytes: number;
     try {
       await this.storage.prepare(logDirectory, this.identity.logPath);
+      currentBytes = await this.storage.size(this.identity.logPath);
     } catch {
       this.pendingLines.length = 0;
       return;
@@ -260,11 +264,29 @@ export class DaemonLogger {
     while (this.pendingLines.length > 0) {
       const line = this.pendingLines.shift();
       if (line === undefined) continue;
+      const lineBytes = Buffer.byteLength(line);
       try {
+        if (currentBytes + lineBytes > this.rotateBytes) {
+          await this.rotate();
+          await this.storage.prepare(logDirectory, this.identity.logPath);
+          currentBytes = 0;
+        }
         await this.storage.append(this.identity.logPath, line);
+        currentBytes += lineBytes;
       } catch {
         continue;
       }
     }
+  }
+
+  private async rotate(): Promise<void> {
+    await this.storage.remove(`${this.identity.logPath}.${DAEMON_LOG_BACKUP_COUNT}`);
+    for (let index = DAEMON_LOG_BACKUP_COUNT - 1; index >= 1; index -= 1) {
+      await this.storage.move(
+        `${this.identity.logPath}.${index}`,
+        `${this.identity.logPath}.${index + 1}`,
+      );
+    }
+    await this.storage.move(this.identity.logPath, `${this.identity.logPath}.1`);
   }
 }

@@ -39,6 +39,16 @@ describe("DaemonRecordObserver", () => {
     });
   });
 
+  it("authenticates stop ownership without waiting for a status probe", async () => {
+    const transport = new ObserverTransport([identityResponse()]);
+
+    await expect(observer(transport, [101]).observeIdentity(record("ready"))).resolves.toEqual({
+      kind: "authenticated",
+      record: record("ready"),
+    });
+    expect(transport.requests.map((request) => request.kind)).toEqual(["identify"]);
+  });
+
   it("retains a live silent daemon as unresponsive", async () => {
     const transport = new ObserverTransport([
       identityResponse(),

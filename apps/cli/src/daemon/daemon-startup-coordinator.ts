@@ -472,6 +472,7 @@ export class DaemonStartupCoordinator {
       kind: "execute",
       protocolVersion: DAEMON_PROTOCOL_VERSION,
       instanceId: record.instanceId,
+      processToken: record.processToken,
       requestId: randomUUID(),
       request: {
         argv: ["--version"],

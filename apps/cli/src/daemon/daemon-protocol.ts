@@ -162,13 +162,8 @@ export type DaemonRequest =
       readonly processToken: string;
     }
   | { readonly kind: "ping"; readonly protocolVersion: number; readonly instanceId: string }
-  | {
-      readonly kind: "execute";
-      readonly protocolVersion: number;
-      readonly instanceId: string;
-      readonly requestId: string;
-      readonly request: CliExecutionRequest;
-    }
+  | DaemonExecuteRequest
+  | DaemonExecutionStatusRequest
   | { readonly kind: "stop"; readonly protocolVersion: number; readonly instanceId: string };
 
 export type DaemonResponse =
@@ -203,6 +198,8 @@ export type DaemonResponse =
       readonly currentCommandElapsedMs?: number;
       readonly queued?: number;
     }
+  | DaemonExecutionServerFrame
+  | DaemonExecutionStatusResponse
   | { readonly kind: "result"; readonly requestId: string; readonly result: CommandExecutionResult }
   | { readonly kind: "stopped"; readonly instanceId: string };
 

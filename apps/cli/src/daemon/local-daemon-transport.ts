@@ -1,7 +1,17 @@
 import { existsSync, mkdirSync, rmSync } from "node:fs";
 import { createConnection, createServer, type Server, type Socket } from "node:net";
 import { dirname } from "node:path";
-import type { DaemonRequest, DaemonResponse, DaemonServer } from "./daemon-protocol.js";
+import type { CommandExecutionResult } from "../command-execution-result.js";
+import type {
+  DaemonExecuteRequest,
+  DaemonExecutionFailureCode,
+  DaemonExecutionServerFrame,
+  DaemonExecutionStatus,
+  DaemonExecutionStatusRequest,
+  DaemonRequest,
+  DaemonResponse,
+  DaemonServer,
+} from "./daemon-protocol.js";
 
 const DEFAULT_MAXIMUM_FRAME_BYTES = 8 * 1024 * 1024;
 const DEFAULT_REQUEST_TIMEOUT_MS = 250;
@@ -22,22 +32,41 @@ export type DaemonTransportFailureCode =
   | "corrupt"
   | "incompatible"
   | "authentication"
-  | "closed";
+  | "closed"
+  | "rejected";
+
+export interface DaemonExecutionAcceptance {
+  readonly requestId: string;
+  readonly instanceId: string;
+  readonly acceptedAt: number;
+  readonly queuePosition: number;
+}
+
+export interface DaemonExecutionReceipt {
+  readonly acceptance: DaemonExecutionAcceptance;
+  readonly completion: Promise<
+    | { readonly status: "completed"; readonly result: CommandExecutionResult }
+    | { readonly status: "failed"; readonly code: DaemonExecutionFailureCode }
+  >;
+}
 
 export class DaemonTransportError extends Error {
   readonly authenticatedInstanceId?: string;
+  readonly retrySafe: boolean;
 
   constructor(
     readonly code: DaemonTransportFailureCode,
     readonly delivery: DaemonDeliveryState,
     message: string,
     authenticatedInstanceId?: string,
+    retrySafe = delivery === "not-submitted",
   ) {
     super(message);
     this.name = "DaemonTransportError";
     if (authenticatedInstanceId !== undefined) {
       this.authenticatedInstanceId = authenticatedInstanceId;
     }
+    this.retrySafe = retrySafe;
   }
 }
 
@@ -187,13 +216,160 @@ export class LocalDaemonTransport {
     });
   }
 
+  execute(endpoint: string, request: DaemonExecuteRequest): Promise<DaemonExecutionReceipt> {
+    LocalDaemonTransport.assertRequest(request);
+    return new Promise((resolve, reject) => {
+      const decoder = new DaemonFrameDecoder(this.maximumFrameBytes);
+      const socket = createConnection(endpoint);
+      let delivery: DaemonDeliveryState = "not-submitted";
+      let acceptance: DaemonExecutionAcceptance | undefined;
+      let terminal = false;
+      let outerSettled = false;
+      let completionSettled = false;
+      let resolveCompletion!: (value: Awaited<DaemonExecutionReceipt["completion"]>) => void;
+      let rejectCompletion!: (error: DaemonTransportError) => void;
+      const completion = new Promise<Awaited<DaemonExecutionReceipt["completion"]>>(
+        (completionResolve, completionReject) => {
+          resolveCompletion = completionResolve;
+          rejectCompletion = completionReject;
+        },
+      );
+      const fail = (error: unknown): void => {
+        const transportError = LocalDaemonTransport.transportError(error, delivery);
+        socket.destroy();
+        if (!outerSettled) {
+          outerSettled = true;
+          reject(transportError);
+          return;
+        }
+        if (!completionSettled) {
+          completionSettled = true;
+          rejectCompletion(transportError);
+        }
+      };
+      socket.setTimeout(this.requestTimeoutMs, () =>
+        fail(new DaemonTransportError("timeout", delivery, "Daemon request timed out")),
+      );
+      socket.once("error", (error) => {
+        fail(
+          new DaemonTransportError(
+            delivery === "not-submitted" ? "unreachable" : "closed",
+            delivery,
+            error.message,
+            acceptance?.instanceId,
+          ),
+        );
+      });
+      socket.once("connect", () => {
+        try {
+          const encoded = this.encodeFrame(request);
+          delivery = "submitted-unconfirmed";
+          this.writeEncodedFrame(socket, encoded);
+        } catch (error) {
+          fail(error);
+        }
+      });
+      socket.on("data", (bytes) => {
+        try {
+          const values = decoder.append(Buffer.isBuffer(bytes) ? bytes : Buffer.from(bytes));
+          let terminalValue: Awaited<DaemonExecutionReceipt["completion"]> | undefined;
+          for (const value of values) {
+            const frame = LocalDaemonTransport.executionFrameFor(request, value);
+            if (frame.kind === "rejected") {
+              if (acceptance !== undefined || terminal) {
+                throw new Error("Daemon rejected an already accepted request");
+              }
+              throw new DaemonTransportError(
+                "rejected",
+                "submitted-unconfirmed",
+                `Daemon rejected execution: ${frame.code}`,
+                frame.instanceId,
+                frame.retrySafe,
+              );
+            }
+            if (frame.kind === "accepted") {
+              if (acceptance !== undefined || terminal) {
+                throw new Error("Daemon returned duplicate acceptance");
+              }
+              delivery = "accepted";
+              acceptance = {
+                requestId: frame.requestId,
+                instanceId: frame.instanceId,
+                acceptedAt: frame.acceptedAt,
+                queuePosition: frame.queuePosition,
+              };
+              continue;
+            }
+            if (acceptance === undefined) {
+              throw new Error("Daemon returned completion before acceptance");
+            }
+            if (terminal) throw new Error("Daemon returned duplicate terminal frame");
+            terminal = true;
+            terminalValue =
+              frame.kind === "completed"
+                ? { status: "completed", result: frame.result }
+                : { status: "failed", code: frame.code };
+          }
+          if (acceptance !== undefined && !outerSettled) {
+            outerSettled = true;
+            socket.setTimeout(0);
+            resolve({ acceptance, completion });
+          }
+          if (terminalValue !== undefined && !completionSettled) {
+            completionSettled = true;
+            socket.end();
+            resolveCompletion(terminalValue);
+          }
+        } catch (error) {
+          fail(error);
+        }
+      });
+      socket.once("end", () => {
+        if (terminal && completionSettled) return;
+        try {
+          decoder.assertComplete();
+          fail(
+            new DaemonTransportError(
+              "closed",
+              delivery,
+              acceptance === undefined
+                ? "Daemon connection ended before acceptance"
+                : "Daemon connection ended after acceptance before completion",
+              acceptance?.instanceId,
+            ),
+          );
+        } catch (error) {
+          fail(error);
+        }
+      });
+    });
+  }
+
+  async executionStatus(
+    endpoint: string,
+    request: DaemonExecutionStatusRequest,
+  ): Promise<DaemonExecutionStatus> {
+    const response = await this.request(endpoint, request);
+    if (response.kind !== "execution-status") {
+      throw new DaemonTransportError(
+        "corrupt",
+        "accepted",
+        "Daemon returned a non-status response",
+      );
+    }
+    return response.status;
+  }
+
   private timeoutFor(request: DaemonRequest): number {
     return request.kind === "execute" ? this.executionRequestTimeoutMs : this.requestTimeoutMs;
   }
 
   async listen(
     endpoint: string,
-    handler: (request: DaemonRequest) => Promise<DaemonResponse>,
+    handler: (
+      request: DaemonRequest,
+      send: (response: DaemonResponse) => void,
+    ) => Promise<DaemonResponse | void>,
   ): Promise<DaemonServer> {
     if (process.platform !== "win32") {
       mkdirSync(dirname(endpoint), { recursive: true, mode: 0o700 });
@@ -237,7 +413,10 @@ export class LocalDaemonTransport {
 
   private serve(
     socket: Socket,
-    handler: (request: DaemonRequest) => Promise<DaemonResponse>,
+    handler: (
+      request: DaemonRequest,
+      send: (response: DaemonResponse) => void,
+    ) => Promise<DaemonResponse | void>,
   ): void {
     const decoder = new DaemonFrameDecoder(this.maximumFrameBytes);
     let responses = Promise.resolve();
@@ -247,7 +426,10 @@ export class LocalDaemonTransport {
           LocalDaemonTransport.assertRequest(value);
           responses = responses
             .then(async () => {
-              this.writeFrame(socket, await handler(value));
+              const response = await handler(value, (serverFrame) => {
+                if (!socket.destroyed) this.writeFrame(socket, serverFrame);
+              });
+              if (response !== undefined && !socket.destroyed) this.writeFrame(socket, response);
             })
             .catch(() => {
               socket.destroy();
@@ -268,13 +450,20 @@ export class LocalDaemonTransport {
   }
 
   private writeFrame(socket: Socket, value: unknown): void {
+    this.writeEncodedFrame(socket, this.encodeFrame(value));
+  }
+
+  private encodeFrame(value: unknown): Buffer {
     const payload = Buffer.from(JSON.stringify(value), "utf8");
     if (payload.length > this.maximumFrameBytes) {
       throw new Error(`Daemon frame exceeds ${this.maximumFrameBytes} bytes`);
     }
     const prefix = Buffer.alloc(4);
     prefix.writeUInt32BE(payload.length);
-    const frame = Buffer.concat([prefix, payload]);
+    return Buffer.concat([prefix, payload]);
+  }
+
+  private writeEncodedFrame(socket: Pick<Socket, "write">, frame: Buffer): void {
     if (this.writeChunkSize === undefined) {
       socket.write(frame);
       return;
@@ -344,6 +533,13 @@ export class LocalDaemonTransport {
       }
       return value;
     }
+    if (request.kind === "execution-status") {
+      if (value.kind !== "execution-status") {
+        throw new DaemonResponseError("corrupt", "Daemon returned a non-status response");
+      }
+      LocalDaemonTransport.assertExecutionCoordinates(request, value);
+      return value;
+    }
     if (value.kind !== "stopped") {
       throw new DaemonResponseError("corrupt", "Daemon returned a non-stop response");
     }
@@ -371,11 +567,12 @@ export class LocalDaemonTransport {
     }
     if (value.kind === "ping" || value.kind === "stop") return;
     if (
-      value.kind !== "execute" ||
+      (value.kind !== "execute" && value.kind !== "execution-status") ||
+      typeof value.processToken !== "string" ||
       typeof value.requestId !== "string" ||
-      !LocalDaemonTransport.isExecutionRequest(value.request)
+      (value.kind === "execute" && !LocalDaemonTransport.isExecutionRequest(value.request))
     ) {
-      throw new Error("Malformed daemon execute request");
+      throw new Error("Malformed daemon execution request");
     }
   }
 
@@ -427,6 +624,26 @@ export class LocalDaemonTransport {
       return;
     }
     if (
+      value.kind === "accepted" ||
+      value.kind === "rejected" ||
+      value.kind === "completed" ||
+      value.kind === "execution-failed"
+    ) {
+      LocalDaemonTransport.assertExecutionFrame(value);
+      return;
+    }
+    if (value.kind === "execution-status") {
+      if (
+        typeof value.instanceId !== "string" ||
+        typeof value.processToken !== "string" ||
+        typeof value.requestId !== "string" ||
+        !LocalDaemonTransport.isExecutionStatus(value.status)
+      ) {
+        throw new Error("Malformed daemon execution status");
+      }
+      return;
+    }
+    if (
       value.kind !== "result" ||
       typeof value.requestId !== "string" ||
       !LocalDaemonTransport.isExecutionResult(value.result)
@@ -450,6 +667,117 @@ export class LocalDaemonTransport {
     }
     const message = error instanceof Error ? error.message : String(error);
     return new DaemonTransportError("corrupt", delivery, message);
+  }
+
+  private static executionFrameFor(
+    request: DaemonExecuteRequest,
+    value: unknown,
+  ): DaemonExecutionServerFrame {
+    LocalDaemonTransport.assertResponse(value);
+    if (
+      value.kind !== "accepted" &&
+      value.kind !== "rejected" &&
+      value.kind !== "completed" &&
+      value.kind !== "execution-failed"
+    ) {
+      throw new DaemonResponseError("corrupt", "Daemon returned a non-execution frame");
+    }
+    LocalDaemonTransport.assertExecutionCoordinates(request, value);
+    return value;
+  }
+
+  private static assertExecutionCoordinates(
+    request: Pick<DaemonExecuteRequest, "instanceId" | "processToken" | "requestId">,
+    response: Pick<DaemonExecutionServerFrame, "instanceId" | "processToken" | "requestId">,
+  ): void {
+    if (response.instanceId !== request.instanceId) {
+      throw new DaemonResponseError("authentication", "Daemon execution instance does not match");
+    }
+    if (response.processToken !== request.processToken) {
+      throw new DaemonResponseError(
+        "authentication",
+        "Daemon execution process token does not match",
+        response.instanceId,
+      );
+    }
+    if (response.requestId !== request.requestId) {
+      throw new DaemonResponseError(
+        "corrupt",
+        "Daemon execution request identifier does not match",
+        response.instanceId,
+      );
+    }
+  }
+
+  private static assertExecutionFrame(
+    value: Record<string, unknown>,
+  ): asserts value is DaemonExecutionServerFrame {
+    if (
+      typeof value.instanceId !== "string" ||
+      typeof value.processToken !== "string" ||
+      typeof value.requestId !== "string"
+    ) {
+      throw new Error("Malformed daemon execution frame");
+    }
+    if (value.kind === "accepted") {
+      if (!LocalDaemonTransport.isMetric(value.acceptedAt) || !LocalDaemonTransport.isCount(value.queuePosition)) {
+        throw new Error("Malformed daemon acceptance");
+      }
+      return;
+    }
+    if (value.kind === "rejected") {
+      if (
+        !LocalDaemonTransport.isExecuteRejectionCode(value.code) ||
+        typeof value.retrySafe !== "boolean"
+      ) {
+        throw new Error("Malformed daemon execution rejection");
+      }
+      return;
+    }
+    if (value.kind === "completed") {
+      if (!LocalDaemonTransport.isExecutionResult(value.result)) {
+        throw new Error("Malformed daemon execution completion");
+      }
+      return;
+    }
+    if (!LocalDaemonTransport.isExecutionFailureCode(value.code)) {
+      throw new Error("Malformed daemon execution failure");
+    }
+  }
+
+  private static isExecuteRejectionCode(value: unknown): boolean {
+    return (
+      value === "not-ready" ||
+      value === "draining" ||
+      value === "resource-pressure" ||
+      value === "incompatible"
+    );
+  }
+
+  private static isExecutionFailureCode(value: unknown): value is DaemonExecutionFailureCode {
+    return (
+      value === "worker-exit" ||
+      value === "controlled-resource" ||
+      value === "response-capacity" ||
+      value === "stopping" ||
+      value === "internal"
+    );
+  }
+
+  private static isExecutionStatus(value: unknown): value is DaemonExecutionStatus {
+    if (!LocalDaemonTransport.isRecord(value)) return false;
+    if (value.state === "unknown" || value.state === "completed") return true;
+    if (value.state === "queued") return LocalDaemonTransport.isCount(value.queuePosition);
+    if (value.state === "running") return LocalDaemonTransport.isMetric(value.startedAt);
+    return value.state === "failed" && LocalDaemonTransport.isExecutionFailureCode(value.code);
+  }
+
+  private static isCount(value: unknown): boolean {
+    return Number.isInteger(value) && (value as number) >= 0;
+  }
+
+  private static isMetric(value: unknown): boolean {
+    return typeof value === "number" && Number.isFinite(value) && value >= 0;
   }
 
   private static isExecutionRequest(value: unknown): boolean {

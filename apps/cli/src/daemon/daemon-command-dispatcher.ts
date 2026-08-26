@@ -204,6 +204,7 @@ export class DaemonCommandDispatcher {
         kind: "execute",
         protocolVersion: record.protocolVersion,
         instanceId: record.instanceId,
+        processToken: record.processToken,
         requestId: this.requestId(),
         request: { ...request, executionMode: "warm", deferTelemetry: true },
       });

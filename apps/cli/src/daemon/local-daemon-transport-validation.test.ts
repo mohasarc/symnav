@@ -44,6 +44,7 @@ describe("LocalDaemonTransport validation", () => {
         kind: "execute",
         protocolVersion: DAEMON_PROTOCOL_VERSION,
         instanceId: "instance",
+        processToken: "token",
         requestId: "request",
         request: { argv: ["resolve", "target"], cwd: "/repo", telemetryEnabled: false },
       } satisfies DaemonRequest,
@@ -245,6 +246,7 @@ describe("LocalDaemonTransport validation", () => {
       kind: "execute",
       protocolVersion: DAEMON_PROTOCOL_VERSION,
       instanceId: "instance",
+      processToken: "token",
       requestId: "request",
       request: { argv: ["--version"], cwd: "/repo", telemetryEnabled: false },
     } satisfies DaemonRequest;
@@ -405,6 +407,7 @@ describe("LocalDaemonTransport validation", () => {
       kind: "execute",
       protocolVersion: DAEMON_PROTOCOL_VERSION,
       instanceId: "instance",
+      processToken: "token",
       requestId: "request",
       request: {
         argv: ["--version"],
@@ -415,7 +418,7 @@ describe("LocalDaemonTransport validation", () => {
     } as unknown as DaemonRequest;
 
     expect(() => transport.request("/missing-daemon-endpoint", request)).toThrow(
-      "Malformed daemon execute request",
+      "Malformed daemon execution request",
     );
   });
 
@@ -440,6 +443,7 @@ describe("LocalDaemonTransport validation", () => {
         kind: "execute",
         protocolVersion: DAEMON_PROTOCOL_VERSION,
         instanceId: "instance",
+        processToken: "token",
         requestId: "request",
         request: { argv: ["--version"], cwd: "/workspace", telemetryEnabled: false },
       }),

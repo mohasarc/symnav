@@ -146,6 +146,16 @@ export class DaemonResourceSupervisor {
   }
 
   async sample(reason: "warmup" | "interval" | "admission" | "turn-complete"): Promise<void> {
+    await this.sampleWithinBoundary(this.options.scheduleAtTurnBoundary);
+  }
+
+  async sampleAtTurnBoundary(): Promise<void> {
+    await this.sampleWithinBoundary((operation) => operation());
+  }
+
+  private async sampleWithinBoundary(
+    runAtBoundary: (operation: () => Promise<void>) => Promise<void>,
+  ): Promise<void> {
     if (this.currentState === "draining" || this.currentState === "stopped") return;
     this.captureUsage();
     const policy = this.options.policy.record;
@@ -163,7 +173,7 @@ export class DaemonResourceSupervisor {
     this.admissionPaused = true;
     this.currentState = "shedding";
     if (this.shedCompleted) return;
-    await this.shed();
+    await this.shed(runAtBoundary);
   }
 
   workerHeapReported(generation: number, usedBytes: number, limitBytes: number): void {
@@ -226,9 +236,11 @@ export class DaemonResourceSupervisor {
     return this.replacementOperation;
   }
 
-  private async shed(): Promise<void> {
+  private async shed(
+    runAtBoundary: (operation: () => Promise<void>) => Promise<void>,
+  ): Promise<void> {
     if (this.shedOperation !== undefined) return this.shedOperation;
-    const operation = this.options.scheduleAtTurnBoundary(async () => {
+    const operation = runAtBoundary(async () => {
       try {
         await this.options.releaseTransientResources();
         this.shedCompleted = true;

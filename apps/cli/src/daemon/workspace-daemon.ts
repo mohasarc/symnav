@@ -577,7 +577,7 @@ export class WorkspaceDaemon {
 
   private scheduleTurnCompleteResourceSample(): void {
     void this.requestQueue
-      .scheduleAtTurnBoundary(() => this.resourceSupervisor.sample("turn-complete"))
+      .scheduleAtTurnBoundary(() => this.resourceSupervisor.sampleAtTurnBoundary())
       .catch((error) => {
         this.logger.record({
           kind: "failure",

@@ -417,6 +417,14 @@ export class WorkspaceDaemon {
           return response.result;
         },
       );
+      const completedFrame = this.completedFrame(request.requestId, result);
+      const capacityTransport = this.options.transport as LocalDaemonTransport & {
+        canFrame?: (value: unknown) => boolean;
+      };
+      if (capacityTransport.canFrame?.(completedFrame) === false) {
+        this.acceptedRequests.fail(request.requestId, "response-capacity", this.now());
+        return;
+      }
       this.acceptedResults.set(request.requestId, result);
       this.acceptedRequests.complete(request.requestId, request.requestId, this.now());
       await this.recordCompletion(request, requestStartedAt, result);

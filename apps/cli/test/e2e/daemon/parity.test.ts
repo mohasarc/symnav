@@ -118,7 +118,7 @@ describe("symnav daemon parity", () => {
     expect(failed.status).not.toBe(0);
     expect(failed.stdout).toBe("");
     expect(existsSync(`${controlled.requestStartedPath}.1`)).toBe(true);
-    expect(harness.telemetryModes()).toEqual([]);
+    expect(harness.telemetryModes()).toEqual(["warm"]);
     expect(harness.daemonRecordCount()).toBe(1);
     expect(harness.onlyDaemonPid()).toBe(controlled.record.pid);
   }, 15_000);

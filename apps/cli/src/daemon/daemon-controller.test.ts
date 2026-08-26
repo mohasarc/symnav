@@ -155,7 +155,7 @@ describe("DaemonController", () => {
         workspaceRoot: "/repo",
         state: "starting",
         pid: 0,
-        uptimeMs: 10,
+        startupElapsedMs: 10,
       },
     ]);
   });

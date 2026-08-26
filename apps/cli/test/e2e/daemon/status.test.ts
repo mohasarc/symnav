@@ -50,7 +50,11 @@ describe("symnav daemon status", () => {
     });
 
     expect(text).toEqual({ stdout: "No daemons running.\n", stderr: "", status: 0 });
-    expect(json).toEqual({ stdout: "[]\n", stderr: "", status: 0 });
+    expect(json).toEqual({
+      stdout: '{"schemaVersion":1,"daemons":[]}\n',
+      stderr: "",
+      status: 0,
+    });
   });
 
   it("lists a validated daemon with stable JSON fields", () => {
@@ -74,9 +78,10 @@ describe("symnav daemon status", () => {
     expect(text.status).toBe(0);
     expect(text.stderr).toBe("");
     expect(text.stdout).toMatch(/pid \d+.*files.*(?:B|KB|MB|GB)/);
-    expect(JSON.parse(json.stdout)).toEqual([
-      expect.objectContaining({ state: "ready", pid: expect.any(Number) }),
-    ]);
+    expect(JSON.parse(json.stdout)).toEqual({
+      schemaVersion: 1,
+      daemons: [expect.objectContaining({ state: "ready", pid: expect.any(Number) })],
+    });
   });
 
   it("lists multiple daemons in workspace order", () => {
@@ -99,7 +104,9 @@ describe("symnav daemon status", () => {
     });
 
     expect(
-      JSON.parse(status.stdout).map((entry: { workspaceRoot: string }) => entry.workspaceRoot),
+      (JSON.parse(status.stdout).daemons as { workspaceRoot: string }[]).map(
+        (entry) => entry.workspaceRoot,
+      ),
     ).toEqual(
       [realpathSync(alpha), realpathSync(beta)]
         .map(canonicalWorkspaceRoot)
@@ -127,7 +134,7 @@ describe("symnav daemon status", () => {
       cwd: tmpdir(),
       env: { SYMNAV_STATE_DIR: stateDir },
     });
-    expect(JSON.parse(starting.stdout)).toEqual([
+    expect(JSON.parse(starting.stdout).daemons).toEqual([
       expect.objectContaining({ workspaceRoot, state: "starting", pid: 0 }),
     ]);
 
@@ -138,7 +145,7 @@ describe("symnav daemon status", () => {
       cwd: tmpdir(),
       env: { SYMNAV_STATE_DIR: stateDir },
     });
-    expect(JSON.parse(stopped.stdout)).toEqual([]);
+    expect(JSON.parse(stopped.stdout)).toEqual({ schemaVersion: 1, daemons: [] });
   });
 
   it("keeps one daemon-owned warm-up when its initiating caller is killed", async () => {
@@ -195,7 +202,7 @@ describe("symnav daemon status", () => {
     });
 
     expect(starting.status).toBe(0);
-    expect(JSON.parse(starting.stdout)).toEqual([
+    expect(JSON.parse(starting.stdout).daemons).toEqual([
       expect.objectContaining({
         workspaceRoot,
         state: "starting",
@@ -353,18 +360,71 @@ describe("symnav daemon status", () => {
 
     expect(status.status).toBe(0);
     expect(statusDurationMs).toBeLessThan(1_000);
-    expect(JSON.parse(status.stdout)).toEqual([
+    expect(JSON.parse(status.stdout).daemons).toEqual([
       expect.objectContaining({
         workspaceRoot,
         state: "busy",
         pid: originalRecord!.pid,
-        currentCommand: "overview",
+        command: "overview",
         queued: 0,
       }),
     ]);
     expect(recordsAfterStatus).toHaveLength(1);
     expect(recordsAfterStatus[0]?.pid).toBe(originalRecord!.pid);
     expect(recordsAfterStatus[0]?.instanceId).toBe(instanceId);
+  });
+
+  it("retains authenticated ownership when a live daemon stops answering ping", async () => {
+    const stateDir = temporaryStateDirectory(stateDirectories);
+    const workspaceRoot = temporaryWorkspace(stateDirectories);
+    const instanceId = "live-silent";
+    const processToken = "live-silent-process";
+    const startedAt = Date.now();
+    const readyPath = join(stateDir, "live-silent-ready");
+    const identity = DaemonWorkspaceIdentity.from(workspaceRoot, canonicalStateDir(stateDir));
+    const child = spawnLiveSilentDaemon(
+      identity.endpoint(instanceId),
+      instanceId,
+      processToken,
+      startedAt,
+      readyPath,
+    );
+    helperProcesses.push(child);
+    await waitUntil(() => existsSync(readyPath));
+    const pid = Number(readFileSync(readyPath, "utf8"));
+    daemonPids.push(pid);
+    const registry = new DaemonRegistry(identity.registryDirectory);
+    registry.write({
+      schemaVersion: DAEMON_RECORD_SCHEMA_VERSION,
+      protocolVersion: DAEMON_PROTOCOL_VERSION,
+      symnavVersion: "0.1.0",
+      workspaceRoot,
+      workspaceKey: identity.workspaceKey,
+      stateKey: identity.stateKey,
+      identityKey: identity.identityKey,
+      instanceId,
+      processToken,
+      endpoint: identity.endpoint(instanceId),
+      pid,
+      state: "ready",
+      startedAt,
+      readyAt: startedAt,
+      fileCount: 1,
+      memoryCapBytes: Number.MAX_SAFE_INTEGER,
+    });
+
+    const statusStartedAt = Date.now();
+    const status = runSymnavBinary(["daemon", "status", "--json"], {
+      cwd: tmpdir(),
+      env: { SYMNAV_STATE_DIR: stateDir },
+    });
+
+    expect(Date.now() - statusStartedAt).toBeLessThan(1_000);
+    expect(JSON.parse(status.stdout)).toEqual({
+      schemaVersion: 1,
+      daemons: [expect.objectContaining({ state: "unresponsive", workspaceRoot, pid })],
+    });
+    expect(registry.read(identity)).toMatchObject({ instanceId, processToken, pid });
   });
 
   it("returns the cold workspace error and exits after workspace deletion", async () => {
@@ -475,6 +535,28 @@ function spawnStuckDaemon(
       requestStartedPath,
       "--no-release",
       "0.1.0",
+    ],
+    { stdio: "ignore" },
+  );
+}
+
+function spawnLiveSilentDaemon(
+  endpoint: string,
+  instanceId: string,
+  processToken: string,
+  startedAt: number,
+  readyPath: string,
+): ChildProcess {
+  return spawn(
+    process.execPath,
+    [
+      fileURLToPath(new URL("../../../node_modules/tsx/dist/cli.mjs", import.meta.url)),
+      fileURLToPath(new URL("../../helpers/daemon-live-silent.ts", import.meta.url)),
+      endpoint,
+      instanceId,
+      processToken,
+      String(startedAt),
+      readyPath,
     ],
     { stdio: "ignore" },
   );

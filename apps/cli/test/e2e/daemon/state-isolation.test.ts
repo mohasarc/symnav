@@ -123,9 +123,9 @@ function statusProcessIds(stateDirectory: string): readonly number[] {
     env: { SYMNAV_STATE_DIR: stateDirectory },
   });
   expect(result.status).toBe(0);
-  return (JSON.parse(result.stdout) as readonly { readonly pid: number }[]).map(
-    (entry) => entry.pid,
-  );
+  return (
+    JSON.parse(result.stdout) as { readonly daemons: readonly { readonly pid: number }[] }
+  ).daemons.map((entry) => entry.pid);
 }
 
 function overview(workspace: string, stateDirectory: string) {

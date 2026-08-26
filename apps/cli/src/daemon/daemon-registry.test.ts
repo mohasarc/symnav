@@ -571,7 +571,7 @@ describe("daemon registry", () => {
         workspaceRoot: "/alpha",
         state: "starting",
         pid: 302,
-        uptimeMs: 90,
+        startupElapsedMs: 90,
       },
       {
         workspaceRoot: "/beta",
@@ -604,7 +604,6 @@ describe("daemon registry", () => {
         state: "unresponsive",
         pid: 401,
         uptimeMs: expect.any(Number),
-        fileCount: 2,
       },
     ]);
     expect(registry.readStoredInstance(identity, "stale")).toBeDefined();

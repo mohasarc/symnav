@@ -4,14 +4,16 @@ import { fileURLToPath } from "node:url";
 import { spawn } from "node:child_process";
 import type { DaemonWorkspaceIdentity } from "./daemon-workspace-identity.js";
 import type { DaemonIdentityCoordinates } from "./daemon-protocol.js";
-import { daemonMemoryCapBytes } from "./daemon-resource-monitor.js";
-
-const MEBIBYTE = 1024 * 1024;
+import {
+  DaemonResourcePolicy,
+  type DaemonResourcePolicyRecord,
+} from "./daemon-resource-monitor.js";
 
 interface DaemonProcessConfiguration extends DaemonIdentityCoordinates {
   readonly stateDirectory: string;
   readonly symnavVersion: string;
   readonly memoryCapBytes: number;
+  readonly resourcePolicy: DaemonResourcePolicyRecord;
   readonly startupOwnerKind: "daemon";
 }
 
@@ -36,6 +38,7 @@ export interface DaemonProcessTerminator {
 export interface DaemonProcessLauncher {
   readonly symnavVersion: string;
   readonly memoryCapBytes: number;
+  readonly resourcePolicy: DaemonResourcePolicy;
   launch(
     identity: DaemonWorkspaceIdentity,
     instanceId: string,
@@ -107,16 +110,23 @@ export class NodeDaemonProcessTerminator implements DaemonProcessTerminator {
 }
 
 export class NodeDaemonProcessLauncher implements DaemonProcessLauncher {
-  readonly memoryCapBytes: number;
+  readonly resourcePolicy: DaemonResourcePolicy;
   private readonly terminator: DaemonProcessTerminator;
 
   constructor(
     readonly symnavVersion: string,
-    memoryCapBytes = NodeDaemonProcessLauncher.defaultMemoryCapBytes(),
+    resourcePolicy: DaemonResourcePolicy | number = NodeDaemonProcessLauncher.defaultPolicy(),
     terminator: DaemonProcessTerminator = new NodeDaemonProcessTerminator(),
   ) {
-    this.memoryCapBytes = memoryCapBytes;
+    this.resourcePolicy =
+      typeof resourcePolicy === "number"
+        ? DaemonResourcePolicy.fromSystemMemory(resourcePolicy * 2)
+        : resourcePolicy;
     this.terminator = terminator;
+  }
+
+  get memoryCapBytes(): number {
+    return this.resourcePolicy.record.hardProcessRssBytes;
   }
 
   launch(
@@ -136,6 +146,7 @@ export class NodeDaemonProcessLauncher implements DaemonProcessLauncher {
       endpoint: identity.endpoint(instanceId),
       symnavVersion: this.symnavVersion,
       memoryCapBytes: this.memoryCapBytes,
+      resourcePolicy: this.resourcePolicy.record,
       startupOwnerKind: "daemon",
     };
     const encodedConfiguration = Buffer.from(JSON.stringify(configuration)).toString("base64url");
@@ -161,20 +172,12 @@ export class NodeDaemonProcessLauncher implements DaemonProcessLauncher {
         exitResolved = true;
         resolveExit(exit);
       };
-      const child = spawn(
-        process.execPath,
-        [
-          `--max-old-space-size=${Math.floor(this.memoryCapBytes / MEBIBYTE)}`,
-          daemonEntryPath,
-          encodedConfiguration,
-        ],
-        {
-          cwd: tmpdir(),
-          detached: true,
-          stdio: ["ignore", logDescriptor, logDescriptor],
-          env: { ...process.env, SYMNAV_STATE_DIR: stateDirectory },
-        },
-      );
+      const child = spawn(process.execPath, [daemonEntryPath, encodedConfiguration], {
+        cwd: tmpdir(),
+        detached: true,
+        stdio: ["ignore", logDescriptor, logDescriptor],
+        env: { ...process.env, SYMNAV_STATE_DIR: stateDirectory },
+      });
       child.once("error", (error) => {
         closeLog();
         publishExit({ code: null, signal: null, cause: "spawn-error", errorName: error.name });
@@ -192,8 +195,8 @@ export class NodeDaemonProcessLauncher implements DaemonProcessLauncher {
     });
   }
 
-  private static defaultMemoryCapBytes(): number {
-    return daemonMemoryCapBytes(totalmem());
+  private static defaultPolicy(): DaemonResourcePolicy {
+    return DaemonResourcePolicy.fromSystemMemory(totalmem(), process.constrainedMemory?.());
   }
 }
 
@@ -221,7 +224,20 @@ export class DaemonProcessConfigurationParser {
       typeof configuration.endpoint === "string" &&
       typeof configuration.symnavVersion === "string" &&
       typeof configuration.memoryCapBytes === "number" &&
+      DaemonProcessConfigurationParser.isResourcePolicy(configuration.resourcePolicy) &&
       configuration.startupOwnerKind === "daemon"
+    );
+  }
+
+  private static isResourcePolicy(value: unknown): value is DaemonResourcePolicyRecord {
+    if (typeof value !== "object" || value === null) return false;
+    const policy = value as Record<string, unknown>;
+    return (
+      typeof policy.effectiveMemoryBytes === "number" &&
+      typeof policy.hardProcessRssBytes === "number" &&
+      typeof policy.softProcessRssBytes === "number" &&
+      typeof policy.resumeProcessRssBytes === "number" &&
+      typeof policy.workerMaxOldGenerationSizeMb === "number"
     );
   }
 }

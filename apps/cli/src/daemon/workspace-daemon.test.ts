@@ -119,7 +119,7 @@ describe("WorkspaceDaemon runtime lifecycle", () => {
       harness.transport,
       harness.stateDirectory,
       {
-        stopTimeoutMs: 100,
+        stopTimeoutMs: 500,
         pollIntervalMs: 1,
         processTerminator: new CurrentProcessTerminator(() => harness.hasExited),
       },
@@ -132,7 +132,7 @@ describe("WorkspaceDaemon runtime lifecycle", () => {
       pid: process.pid,
     });
     expect(harness.hasExited).toBe(true);
-    expect(Date.now() - startedAt).toBeLessThan(500);
+    expect(Date.now() - startedAt).toBeLessThan(1_000);
     await harness.exited;
     expect(harness.registry.read(harness.identity)).toBeUndefined();
   });

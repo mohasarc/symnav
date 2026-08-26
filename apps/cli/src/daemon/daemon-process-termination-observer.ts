@@ -55,12 +55,15 @@ export class DaemonProcessTerminationObserver {
   }
 
   private async recordAndExit(event: DaemonDiagnosticEvent): Promise<void> {
-    this.recorder.record(event);
     try {
+      this.recorder.record(event);
       await this.recorder.flush();
     } finally {
-      this.cleanup();
-      this.exit(1);
+      try {
+        this.cleanup();
+      } finally {
+        this.exit(1);
+      }
     }
   }
 }

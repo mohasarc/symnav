@@ -97,12 +97,25 @@ describe("NodeDaemonNavigationWorker", () => {
 
     await expect(worker.exited).resolves.toEqual({ generation: 7, cause: "terminated" });
   });
+
+  it("applies the configured old-generation limit to the navigation worker only", async () => {
+    const worker = createWorker("heap-limit", 32);
+    await worker.start("/repo");
+
+    const response = await worker.releaseTransientResources();
+    if (response.kind !== "heap") throw new Error("Expected worker heap report");
+    expect(response.generation).toBe(7);
+    expect(response.heapLimitBytes).toBeGreaterThan(16 * 1024 * 1024);
+    expect(response.heapLimitBytes).toBeLessThan(96 * 1024 * 1024);
+    await worker.drainAndClose();
+  });
 });
 
-function createWorker(mode: string): NodeDaemonNavigationWorker {
+function createWorker(mode: string, maxOldGenerationSizeMb = 128): NodeDaemonNavigationWorker {
   return new NodeDaemonNavigationWorker({
     generation: 7,
     stateDirectory: "/state",
+    resourceLimits: { maxOldGenerationSizeMb },
     entryUrl: new URL("../../test/helpers/daemon-navigation-worker-fixture.mjs", import.meta.url),
     workerData: { mode },
   });

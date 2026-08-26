@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
-import { mkdir, open, rm, unlink, type FileHandle } from "node:fs/promises";
+import { chmod, lstat, mkdir, open, rm, unlink, type FileHandle } from "node:fs/promises";
 import { join } from "node:path";
 import {
   OrderedCommandOutput,
@@ -173,14 +173,23 @@ export class CompletionSpool {
 
   private async spillInlineRecords(): Promise<void> {
     const instanceDirectory = join(this.options.directory, this.options.identity.instanceId);
-    await mkdir(this.options.directory, { recursive: true, mode: 0o700 });
-    await mkdir(instanceDirectory, { recursive: true, mode: 0o700 });
+    await CompletionSpool.ensureDirectory(this.options.directory);
+    await CompletionSpool.ensureDirectory(instanceDirectory);
     this.filePath = join(instanceDirectory, `${this.options.identity.transferId}.spool`);
     this.file = await open(this.filePath, "wx", 0o600);
     for (const record of this.inlineRecords) {
       await this.file.write(OrderedCommandOutput.encodeRecord(record));
     }
     this.inlineRecords.length = 0;
+  }
+
+  private static async ensureDirectory(path: string): Promise<void> {
+    await mkdir(path, { recursive: true, mode: 0o700 });
+    const metadata = await lstat(path);
+    if (metadata.isSymbolicLink() || !metadata.isDirectory()) {
+      throw new Error("Completion spool directory is unsafe");
+    }
+    await chmod(path, 0o700);
   }
 }
 

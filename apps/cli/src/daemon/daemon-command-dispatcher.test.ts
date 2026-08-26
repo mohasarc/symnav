@@ -49,15 +49,7 @@ describe("DaemonCommandDispatcher", () => {
     ["disabled", { daemonEnabled: false }, "cold", 1, 0, 0, 0],
   ])(
     "routes %s through exactly one executor",
-    async (
-      _name,
-      options,
-      mode,
-      localExecutions,
-      warmExecutions,
-      triggers,
-      removals,
-    ) => {
+    async (_name, options, mode, localExecutions, warmExecutions, triggers, removals) => {
       const harness = new DispatchHarness(success, options as DispatchHarnessOptions);
 
       await expect(harness.dispatcher().execute(request)).resolves.toMatchObject({ mode });
@@ -188,9 +180,7 @@ describe("DaemonCommandDispatcher", () => {
 
     await harness.dispatcher().execute({ ...request, telemetryEnabled: true });
 
-    expect(harness.coldExecute).toHaveBeenCalledWith(
-      expect.objectContaining({ executionMode }),
-    );
+    expect(harness.coldExecute).toHaveBeenCalledWith(expect.objectContaining({ executionMode }));
   });
 });
 

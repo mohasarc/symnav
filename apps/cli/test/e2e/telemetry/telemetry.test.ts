@@ -5,6 +5,7 @@ import { beforeAll, describe, expect, it } from "vitest";
 import { fixturePath, runSymnavBinary } from "@symnav/testing";
 
 import { ensureFixtureGitMarker } from "../ensure-fixture-git-marker.js";
+import { DaemonStateFiles } from "../../helpers/daemon-state-files.js";
 
 const fixtureRoot = fixturePath("overview-cases");
 const overviewArgs = ["overview", "class-with-methods.ts"] as const;
@@ -86,10 +87,10 @@ describe("symnav telemetry e2e", () => {
     expect(enabled.stderr).toBe(disabled.stderr);
   });
 
-  it("records warm execution through an automatically started daemon", () => {
+  it("records cold during automatic warm-up and warm after readiness", () => {
     const stateDir = newStateDir();
     try {
-      const result = runSymnavBinary(overviewArgs, {
+      const cold = runSymnavBinary(overviewArgs, {
         cwd: fixtureRoot,
         env: {
           SYMNAV_DAEMON: "1",
@@ -97,13 +98,47 @@ describe("symnav telemetry e2e", () => {
           SYMNAV_TELEMETRY: "1",
         },
       });
-      const event = JSON.parse(singleUsageLine(stateDir)) as UsageEventLine;
+      const ready = runSymnavBinary(["daemon", "start"], {
+        cwd: fixtureRoot,
+        env: { SYMNAV_DAEMON: "1", SYMNAV_STATE_DIR: stateDir },
+      });
+      const warm = runSymnavBinary(overviewArgs, {
+        cwd: fixtureRoot,
+        env: {
+          SYMNAV_DAEMON: "1",
+          SYMNAV_STATE_DIR: stateDir,
+          SYMNAV_TELEMETRY: "1",
+        },
+      });
+      const executionModes = usageLines(stateDir).map(
+        (line) => (JSON.parse(line) as UsageEventLine).executionMode,
+      );
 
-      expect(result.status).toBe(0);
-      expect(event.executionMode).toBe("warm");
+      expect(cold.status).toBe(0);
+      expect(ready.status).toBe(0);
+      expect(warm.status).toBe(0);
+      expect(executionModes).toEqual(["cold", "warm"]);
     } finally {
       stopDaemon(stateDir);
     }
+  });
+
+  it("keeps disabled daemon execution cold without daemon artifacts", () => {
+    const stateDir = newStateDir();
+    const result = runSymnavBinary(overviewArgs, {
+      cwd: fixtureRoot,
+      env: {
+        SYMNAV_DAEMON: "0",
+        SYMNAV_STATE_DIR: stateDir,
+        SYMNAV_TELEMETRY: "1",
+      },
+    });
+    const event = JSON.parse(singleUsageLine(stateDir)) as UsageEventLine;
+
+    expect(result.status).toBe(0);
+    expect(event.executionMode).toBe("cold");
+    expect(existsSync(join(stateDir, "daemons"))).toBe(false);
+    expect(DaemonStateFiles.matchingPaths(stateDir, ".json")).toEqual([]);
   });
 
   it("keeps daemon telemetry inert for an opted-out client", () => {
@@ -188,7 +223,11 @@ function stopDaemon(stateDir: string): void {
 }
 
 function singleUsageLine(stateDir: string): string {
-  const lines = readFileSync(usageLogPath(stateDir), "utf8").trimEnd().split("\n");
+  const lines = usageLines(stateDir);
   expect(lines).toHaveLength(1);
   return lines[0]!;
+}
+
+function usageLines(stateDir: string): readonly string[] {
+  return readFileSync(usageLogPath(stateDir), "utf8").trimEnd().split("\n");
 }

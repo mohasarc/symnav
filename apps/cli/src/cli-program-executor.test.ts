@@ -1,8 +1,8 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { Writable } from "node:stream";
-import { afterEach, describe, expect, it } from "vitest";
+import { Writable } from "node:stream";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { InMemoryFileSystem, WorkspaceCatalog, type OverviewFileEntries } from "@symnav/core";
 import * as commandExecutionResult from "./command-execution-result.js";
 import { CliProgramExecutor, CommandResultReplayer } from "./cli-program-executor.js";
@@ -108,6 +108,57 @@ describe("CliProgramExecutor", () => {
     expect(inline.records.map(({ sequence, stream }) => ({ sequence, stream }))).toEqual(
       expectedStreams.map((stream, sequence) => ({ sequence, stream })),
     );
+  });
+
+  it("serializes replay through terminal backpressure and disposes after completion", async () => {
+    const output = new commandExecutionResult.CommandOutputSnapshot([
+      { stream: "stdout", bytes: Buffer.from("one") },
+      { stream: "stderr", bytes: Buffer.from("two") },
+      { stream: "stdout", bytes: Buffer.from("three") },
+    ]);
+    const dispose = vi.spyOn(output, "dispose");
+    const writes: string[] = [];
+    const stdout = new GatedWritable(writes, "stdout");
+    const stderr = new GatedWritable(writes, "stderr");
+    const replay = CommandResultReplayer.replay(
+      { output, exitCode: 0 },
+      { cwd: "/repo", stdout, stderr, exit: () => undefined as never },
+    );
+
+    await vi.waitFor(() => expect(stdout.pendingCount).toBe(1));
+    expect(stderr.pendingCount).toBe(0);
+    expect(writes).toEqual(["stdout:one"]);
+    stdout.release();
+    await vi.waitFor(() => expect(stderr.pendingCount).toBe(1));
+    expect(writes).toEqual(["stdout:one", "stderr:two"]);
+    stderr.release();
+    await vi.waitFor(() => expect(stdout.pendingCount).toBe(1));
+    expect(writes).toEqual(["stdout:one", "stderr:two", "stdout:three"]);
+    stdout.release();
+
+    await replay;
+    expect(dispose).toHaveBeenCalledOnce();
+  });
+
+  it("disposes retained output when terminal replay fails", async () => {
+    const output = new commandExecutionResult.CommandOutputSnapshot([
+      { stream: "stdout", bytes: Buffer.from("one") },
+      { stream: "stderr", bytes: Buffer.from("two") },
+    ]);
+    const dispose = vi.spyOn(output, "dispose");
+    const stdout = new GatedWritable([], "stdout");
+    const stderr = new GatedWritable([], "stderr");
+    const replay = CommandResultReplayer.replay(
+      { output, exitCode: 0 },
+      { cwd: "/repo", stdout, stderr, exit: () => undefined as never },
+    );
+
+    await vi.waitFor(() => expect(stdout.pendingCount).toBe(1));
+    stdout.fail(new Error("terminal disappeared"));
+
+    await expect(replay).rejects.toThrow("terminal disappeared");
+    expect(stderr.pendingCount).toBe(0);
+    expect(dispose).toHaveBeenCalledOnce();
   });
 
   it.each([
@@ -227,6 +278,38 @@ describe("CliProgramExecutor", () => {
     expect(fs.directoryReads).toEqual([]);
   });
 });
+
+class GatedWritable extends Writable {
+  private readonly callbacks: Array<(error?: Error | null) => void> = [];
+
+  constructor(
+    private readonly writes: string[],
+    private readonly name: string,
+  ) {
+    super({ highWaterMark: 1 });
+  }
+
+  get pendingCount(): number {
+    return this.callbacks.length;
+  }
+
+  release(): void {
+    this.callbacks.shift()?.();
+  }
+
+  fail(error: Error): void {
+    this.destroy(error);
+  }
+
+  override _write(
+    chunk: Buffer,
+    _encoding: BufferEncoding,
+    callback: (error?: Error | null) => void,
+  ): void {
+    this.writes.push(`${this.name}:${chunk.toString()}`);
+    this.callbacks.push(callback);
+  }
+}
 
 class ListingCountingFileSystem extends InMemoryFileSystem {
   readonly directoryReads: string[] = [];

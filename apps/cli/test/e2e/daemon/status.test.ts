@@ -331,6 +331,7 @@ describe("symnav daemon status", () => {
         kind: "execute",
         protocolVersion: DAEMON_PROTOCOL_VERSION,
         instanceId,
+        processToken,
         requestId: "stuck-navigation",
         request: {
           argv: ["overview", "input.ts"],
@@ -389,6 +390,7 @@ describe("symnav daemon status", () => {
       kind: "execute",
       protocolVersion: DAEMON_PROTOCOL_VERSION,
       instanceId: record!.instanceId,
+      processToken: record!.processToken,
       requestId: "deleted-workspace",
       request: {
         argv: ["overview", "input.ts"],

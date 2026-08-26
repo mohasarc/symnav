@@ -158,6 +158,7 @@ describe("symnav daemon stop", () => {
       kind: "execute",
       protocolVersion: DAEMON_PROTOCOL_VERSION,
       instanceId: runtime.record.instanceId,
+      processToken: runtime.record.processToken,
       requestId: "built-drain",
       request: { argv: ["--version"], cwd, telemetryEnabled: false },
     });
@@ -192,6 +193,7 @@ describe("symnav daemon stop", () => {
       kind: "execute",
       protocolVersion: DAEMON_PROTOCOL_VERSION,
       instanceId: runtime.record.instanceId,
+      processToken: runtime.record.processToken,
       requestId: "built-force",
       request: { argv: ["--version"], cwd, telemetryEnabled: false },
     });

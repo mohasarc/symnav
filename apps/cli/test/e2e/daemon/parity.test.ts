@@ -188,6 +188,7 @@ describe("symnav daemon parity", () => {
       kind: "execute",
       protocolVersion: DAEMON_PROTOCOL_VERSION,
       instanceId: controlled.record.instanceId,
+      processToken: controlled.record.processToken,
       requestId: "fifo-first",
       request: {
         argv: ["--version"],
@@ -275,6 +276,7 @@ describe("symnav daemon parity", () => {
         kind: "execute",
         protocolVersion: DAEMON_PROTOCOL_VERSION,
         instanceId: controlled.record.instanceId,
+        processToken: controlled.record.processToken,
         requestId: "crash-blocker",
         request: {
           argv: ["--version"],

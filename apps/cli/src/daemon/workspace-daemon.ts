@@ -1,6 +1,9 @@
 import type { ProgramDependencies } from "../program-dependencies.js";
 import type { CommandExecutionResult } from "../command-execution-result.js";
+import { AcceptedRequestCorruptionError, AcceptedRequestLedger } from "./accepted-request-ledger.js";
 import type {
+  DaemonExecutionFailureCode,
+  DaemonExecutionServerFrame,
   DaemonRecord,
   DaemonRequest,
   DaemonResponse,
@@ -49,12 +52,19 @@ export class WorkspaceDaemon {
   private readonly logger: DaemonLogger;
   private readonly lifetime: DaemonLifetime;
   private readonly resourceMonitor: DaemonResourceMonitor;
+  private readonly acceptedRequests: AcceptedRequestLedger;
+  private readonly acceptedResults = new Map<string, CommandExecutionResult>();
+  private readonly acceptances = new Map<
+    string,
+    { readonly acceptedAt: number; readonly queuePosition: number }
+  >();
   private server: DaemonServer | undefined;
   private startedAt = 0;
   private fileCount = 0;
   private lastNavigationAt: number | undefined;
   private workerReady = false;
   private shutdownStarted = false;
+  private shutdownFailureCode: DaemonExecutionFailureCode | undefined;
   private shutdownOperation: Promise<void> | undefined;
   private forcedWorkerShutdown: Promise<void> | undefined;
   private readonly forceEscalated: Promise<void>;
@@ -66,6 +76,7 @@ export class WorkspaceDaemon {
     });
     this.now = options.now ?? Date.now;
     this.requestQueue = new WorkspaceRequestQueue(this.now);
+    this.acceptedRequests = new AcceptedRequestLedger(this.now);
     this.logger = new DaemonLogger(options.identity.logPath, { now: this.now });
     this.navigationWorker =
       options.navigationWorker ??
@@ -91,6 +102,7 @@ export class WorkspaceDaemon {
     });
     void this.navigationWorker.exited.then((exit) => {
       if (this.shutdownStarted) return;
+      this.shutdownFailureCode = "worker-exit";
       this.logger.record({
         kind: "failure",
         operation: "worker-exit",
@@ -120,7 +132,7 @@ export class WorkspaceDaemon {
       this.startedAt = startingRecord.startedAt;
       this.server = await this.options.transport.listen(
         this.options.identity.endpoint(this.options.instanceId),
-        (request) => this.handle(request),
+        (request, send) => this.handle(request, send),
       );
       const response = await this.navigationWorker.start(this.options.identity.workspaceRoot);
       if (response.kind !== "ready") throw new Error("Navigation worker did not become ready");
@@ -231,19 +243,33 @@ export class WorkspaceDaemon {
     );
   }
 
-  private async handle(request: DaemonRequest): Promise<DaemonResponse> {
+  private async handle(
+    request: DaemonRequest,
+    send: (response: DaemonResponse) => void,
+  ): Promise<DaemonResponse | void> {
     if (request.kind === "identify") return this.identify(request);
     if (request.kind === "terminate" || request.kind === "kill") {
       return this.terminate(request);
     }
-    if (
-      request.protocolVersion !== DAEMON_PROTOCOL_VERSION ||
-      request.instanceId !== this.options.instanceId
-    ) {
+    if (request.protocolVersion !== DAEMON_PROTOCOL_VERSION || request.instanceId !== this.options.instanceId) {
       throw new Error("Daemon request does not match protocol or instance");
     }
     if (request.kind === "ping") return this.pong();
-    if (request.kind === "execute") return this.execute(request);
+    if (request.kind === "execute" || request.kind === "execution-status") {
+      if (request.processToken !== this.options.processToken) {
+        throw new Error("Daemon execution request does not match process instance");
+      }
+    }
+    if (request.kind === "execute") return this.acceptExecution(request, send);
+    if (request.kind === "execution-status") {
+      return {
+        kind: "execution-status",
+        instanceId: this.options.instanceId,
+        processToken: this.options.processToken,
+        requestId: request.requestId,
+        status: this.acceptedRequests.status(request.requestId),
+      };
+    }
     await this.requestQueue.drain();
     setTimeout(() => void this.shutdown("graceful"), 0);
     return { kind: "stopped", instanceId: this.options.instanceId };
@@ -310,22 +336,79 @@ export class WorkspaceDaemon {
     };
   }
 
-  private async execute(
+  private acceptExecution(
     request: Extract<DaemonRequest, { kind: "execute" }>,
-  ): Promise<DaemonResponse> {
-    if (!this.workerReady) throw new Error("Daemon navigation worker is still starting");
+    send: (response: DaemonResponse) => void,
+  ): DaemonResponse | void {
+    if (!this.workerReady) return this.rejection(request, "not-ready", true);
+    if (this.requestQueue.state !== "accepting") {
+      return this.rejection(request, "draining", true);
+    }
+    const existing = this.acceptedRequests.entryFor(request.requestId);
+    let entry;
+    try {
+      entry = this.acceptedRequests.accept(request.requestId, request.request);
+    } catch (error) {
+      if (error instanceof AcceptedRequestCorruptionError) {
+        return this.rejection(request, "incompatible", false);
+      }
+      throw error;
+    }
+    if (entry.state.state === "queued") {
+      this.acceptances.set(request.requestId, {
+        acceptedAt: entry.state.acceptedAt,
+        queuePosition: entry.state.queuePosition,
+      });
+    }
+    const acceptance = this.acceptances.get(request.requestId);
+    if (acceptance === undefined) throw new Error("Accepted request is missing admission metadata");
+    this.deliver(send, {
+      kind: "accepted",
+      instanceId: this.options.instanceId,
+      processToken: this.options.processToken,
+      requestId: request.requestId,
+      ...acceptance,
+    });
+    if (entry.state.state === "completed") {
+      const result = this.acceptedResults.get(entry.state.resultId);
+      if (result === undefined) throw new Error("Accepted request result is missing");
+      this.deliver(send, this.completedFrame(request.requestId, result));
+      return;
+    }
+    if (entry.state.state === "failed") {
+      this.deliver(send, this.failedFrame(request.requestId, entry.state.code));
+      return;
+    }
+    let unsubscribe: (() => void) | undefined;
+    unsubscribe = this.acceptedRequests.subscribe(request.requestId, (updated) => {
+      if (updated.state.state === "completed") {
+        const result = this.acceptedResults.get(updated.state.resultId);
+        if (result !== undefined) this.deliver(send, this.completedFrame(request.requestId, result));
+        unsubscribe?.();
+      } else if (updated.state.state === "failed") {
+        this.deliver(send, this.failedFrame(request.requestId, updated.state.code));
+        unsubscribe?.();
+      }
+    });
+    if (existing !== undefined) return;
     this.lastNavigationAt = this.now();
     this.lifetime.navigationAccepted();
+    void this.executeAccepted(request);
+  }
+
+  private async executeAccepted(
+    request: Extract<DaemonRequest, { kind: "execute" }>,
+  ): Promise<void> {
     const requestStartedAt = this.now();
-    let result: CommandExecutionResult;
     try {
-      result = await this.requestQueue.enqueue(
+      const result = await this.requestQueue.enqueue(
         {
           requestId: request.requestId,
           command: WorkspaceDaemon.commandName(request.request.argv),
           acceptedAt: this.now(),
         },
         async () => {
+          this.acceptedRequests.markRunning(request.requestId, this.now());
           const response = await this.navigationWorker.execute(request.requestId, request.request);
           if (response.kind !== "result" || response.requestId !== request.requestId) {
             throw new Error("Navigation worker returned an uncorrelated result");
@@ -334,17 +417,27 @@ export class WorkspaceDaemon {
           return response.result;
         },
       );
+      this.acceptedResults.set(request.requestId, result);
+      this.acceptedRequests.complete(request.requestId, request.requestId, this.now());
+      await this.recordCompletion(request, requestStartedAt, result);
     } catch (error) {
       this.logger.record({
         kind: "failure",
         operation: "request",
         message: WorkspaceDaemon.errorMessage(error),
       });
-      if (!this.shutdownStarted) throw error;
-      result = WorkspaceDaemon.stoppedResult();
+      const code = this.shutdownFailureCode ?? (this.shutdownStarted ? "stopping" : "internal");
+      this.acceptedRequests.fail(request.requestId, code, this.now());
     } finally {
       if (this.requestQueue.isIdle) this.lifetime.queueBecameIdle();
     }
+  }
+
+  private async recordCompletion(
+    request: Extract<DaemonRequest, { kind: "execute" }>,
+    requestStartedAt: number,
+    result: CommandExecutionResult,
+  ): Promise<void> {
     this.logger.record({
       kind: "request",
       command: WorkspaceDaemon.commandName(request.request.argv),
@@ -354,7 +447,53 @@ export class WorkspaceDaemon {
     if (!(await this.options.dependencies.fs.exists(this.options.identity.workspaceRoot))) {
       setTimeout(() => void this.shutdown("workspace-deleted", true), 0);
     }
-    return { kind: "result", requestId: request.requestId, result };
+  }
+
+  private rejection(
+    request: Extract<DaemonRequest, { kind: "execute" }>,
+    code: "not-ready" | "draining" | "incompatible",
+    retrySafe: boolean,
+  ): DaemonExecutionServerFrame {
+    return {
+      kind: "rejected",
+      instanceId: this.options.instanceId,
+      processToken: this.options.processToken,
+      requestId: request.requestId,
+      code,
+      retrySafe,
+    };
+  }
+
+  private completedFrame(
+    requestId: string,
+    result: CommandExecutionResult,
+  ): DaemonExecutionServerFrame {
+    return {
+      kind: "completed",
+      instanceId: this.options.instanceId,
+      processToken: this.options.processToken,
+      requestId,
+      result,
+    };
+  }
+
+  private failedFrame(
+    requestId: string,
+    code: DaemonExecutionFailureCode,
+  ): DaemonExecutionServerFrame {
+    return {
+      kind: "execution-failed",
+      instanceId: this.options.instanceId,
+      processToken: this.options.processToken,
+      requestId,
+      code,
+    };
+  }
+
+  private deliver(send: (response: DaemonResponse) => void, frame: DaemonResponse): void {
+    try {
+      send(frame);
+    } catch {}
   }
 
   private async drainAndShutdown(reason: "idle"): Promise<void> {
@@ -366,6 +505,7 @@ export class WorkspaceDaemon {
     reason: "graceful" | "idle" | "resource" | "workspace-deleted",
     force = false,
   ): Promise<void> {
+    this.shutdownFailureCode ??= reason === "resource" ? "controlled-resource" : "stopping";
     if (force) this.forceWorkerShutdown();
     if (this.shutdownOperation !== undefined) return this.shutdownOperation;
     this.shutdownStarted = true;

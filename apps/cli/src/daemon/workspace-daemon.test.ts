@@ -51,8 +51,7 @@ describe("WorkspaceDaemon runtime lifecycle", () => {
     });
 
     await expect(execution).resolves.toMatchObject({
-      kind: "result",
-      requestId: "navigation",
+      status: "completed",
       result: { exitCode: 0 },
     });
     await expect(stopping).resolves.toEqual({
@@ -191,13 +190,15 @@ describe("WorkspaceDaemon runtime lifecycle", () => {
     lease?.release();
     const transport = new LocalDaemonTransport({ requestTimeoutMs: 200 });
     void transport
-      .request(identity.endpoint(instanceId), {
+      .execute(identity.endpoint(instanceId), {
         kind: "execute",
         protocolVersion: DAEMON_PROTOCOL_VERSION,
         instanceId,
+        processToken,
         requestId: "stuck-child-request",
         request: { argv: ["--version"], cwd: workspaceRoot, telemetryEnabled: false },
       })
+      .then((receipt) => receipt.completion.catch(() => undefined))
       .catch(() => undefined);
     await waitUntil(() => existsSync(requestStartedPath));
     const controller = new DaemonController(registry, transport, stateDirectory, {
@@ -274,10 +275,12 @@ describe("WorkspaceDaemon runtime lifecycle", () => {
     });
     harnesses.push(harness);
 
-    await expect(harness.execute("rejected")).rejects.toThrow();
+    await expect(harness.execute("rejected")).resolves.toEqual({
+      status: "failed",
+      code: "internal",
+    });
     await expect(harness.execute("recovered")).resolves.toMatchObject({
-      kind: "result",
-      requestId: "recovered",
+      status: "completed",
       result: { exitCode: 0 },
     });
     await harness.exited;
@@ -340,9 +343,8 @@ describe("WorkspaceDaemon runtime lifecycle", () => {
 
     expect(Date.now() - startedAt).toBeLessThan(500);
     await expect(activeRequest).resolves.toMatchObject({
-      kind: "result",
-      requestId: "resource-active",
-      result: { exitCode: 1 },
+      status: "failed",
+      code: "controlled-resource",
     });
     expect(harness.registry.read(harness.identity)).toMatchObject({
       instanceId: harness.instanceId,
@@ -446,13 +448,14 @@ class WorkspaceDaemonHarness {
   }
 
   execute(requestId: string) {
-    return this.transport.request(this.identity.endpoint(this.instanceId), {
+    return this.transport.execute(this.identity.endpoint(this.instanceId), {
       kind: "execute",
       protocolVersion: DAEMON_PROTOCOL_VERSION,
       instanceId: this.instanceId,
+      processToken: "runtime-token",
       requestId,
       request: { argv: ["--version"], cwd: this.workspaceRoot, telemetryEnabled: false },
-    });
+    }).then((receipt) => receipt.completion);
   }
 
   stop() {
@@ -495,7 +498,12 @@ class WorkspaceDaemonHarness {
 }
 
 class BlockingCloseTransport extends LocalDaemonTransport {
-  private handler: ((request: DaemonRequest) => Promise<DaemonResponse>) | undefined;
+  private handler:
+    | ((
+        request: DaemonRequest,
+        send: (response: DaemonResponse) => void,
+      ) => Promise<DaemonResponse | void>)
+    | undefined;
   private readonly closeStarted: Promise<void>;
   private resolveCloseStarted!: () => void;
   private readonly closeAllowed: Promise<void>;
@@ -513,7 +521,10 @@ class BlockingCloseTransport extends LocalDaemonTransport {
 
   override async listen(
     _endpoint: string,
-    handler: (request: DaemonRequest) => Promise<DaemonResponse>,
+    handler: (
+      request: DaemonRequest,
+      send: (response: DaemonResponse) => void,
+    ) => Promise<DaemonResponse | void>,
   ): Promise<DaemonServer> {
     this.handler = handler;
     return {
@@ -526,7 +537,10 @@ class BlockingCloseTransport extends LocalDaemonTransport {
 
   override request(_endpoint: string, request: DaemonRequest): Promise<DaemonResponse> {
     if (this.handler === undefined) throw new Error("Daemon transport is not listening");
-    return this.handler(request);
+    return this.handler(request, () => undefined).then((response) => {
+      if (response === undefined) throw new Error("Daemon transport returned no response");
+      return response;
+    });
   }
 
   waitUntilCloseStarted(): Promise<void> {

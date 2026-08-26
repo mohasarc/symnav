@@ -4,7 +4,13 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { CliExecutionRequest, CommandExecutionResult } from "../command-execution-result.js";
 import { createDefaultDependencies } from "../program.js";
-import type { DaemonRequest, DaemonResponse, DaemonServer } from "./daemon-protocol.js";
+import type {
+  DaemonExecutionServerFrame,
+  DaemonExecutionStatusResponse,
+  DaemonRequest,
+  DaemonResponse,
+  DaemonServer,
+} from "./daemon-protocol.js";
 import { DAEMON_PROTOCOL_VERSION, DAEMON_RECORD_SCHEMA_VERSION } from "./daemon-protocol.js";
 import { DaemonRegistry } from "./daemon-registry.js";
 import { DaemonWorkspaceIdentity } from "./daemon-workspace-identity.js";
@@ -197,7 +203,9 @@ describe("WorkspaceDaemon requests", () => {
     harnesses.push(harness);
 
     await expect(harness.execute("one")).resolves.toEqual({
-      kind: "result",
+      kind: "completed",
+      instanceId: harness.instanceId,
+      processToken: harness.processToken,
       requestId: "one",
       result: { frames: [], exitCode: 0 },
     });
@@ -351,19 +359,11 @@ describe("WorkspaceDaemon requests", () => {
       processToken: harness.processToken,
     });
     await expect(execution).resolves.toEqual({
-      kind: "result",
+      kind: "execution-failed",
+      instanceId: harness.instanceId,
+      processToken: harness.processToken,
       requestId: "blocked",
-      result: {
-        frames: [
-          {
-            stream: "stderr",
-            bytesBase64: Buffer.from("Cannot answer: daemon navigation was stopped.\n").toString(
-              "base64",
-            ),
-          },
-        ],
-        exitCode: 1,
-      },
+      code: "stopping",
     });
     await harness.exited;
     expect(harness.registry.read(harness.identity)).toMatchObject({
@@ -574,13 +574,28 @@ class RequestHarness {
   }
 
   execute(requestId: string, argv: readonly string[] = ["--version"]): Promise<DaemonResponse> {
-    return this.transport.receive({
+    return this.admit(requestId, argv).then((connection) => connection.terminal);
+  }
+
+  admit(requestId: string, argv: readonly string[] = ["--version"]): Promise<RequestConnection> {
+    return this.transport.connect({
       kind: "execute",
       protocolVersion: DAEMON_PROTOCOL_VERSION,
       instanceId: this.instanceId,
+      processToken: this.processToken,
       requestId,
       request: { argv, cwd: this.workspaceRoot, telemetryEnabled: false },
     });
+  }
+
+  status(requestId: string): Promise<DaemonExecutionStatusResponse> {
+    return this.transport.receive({
+      kind: "execution-status",
+      protocolVersion: DAEMON_PROTOCOL_VERSION,
+      instanceId: this.instanceId,
+      processToken: this.processToken,
+      requestId,
+    }) as Promise<DaemonExecutionStatusResponse>;
   }
 
   stop(): Promise<DaemonResponse> {
@@ -626,7 +641,12 @@ interface RequestHarnessOptions {
 }
 
 class RequestTransport {
-  private handler: ((request: DaemonRequest) => Promise<DaemonResponse>) | undefined;
+  private handler:
+    | ((
+        request: DaemonRequest,
+        send: (response: DaemonResponse) => void,
+      ) => Promise<DaemonResponse | void>)
+    | undefined;
   listenError: Error | undefined;
   closeError: Error | undefined;
 
@@ -636,7 +656,10 @@ class RequestTransport {
 
   async listen(
     _endpoint: string,
-    handler: (request: DaemonRequest) => Promise<DaemonResponse>,
+    handler: (
+      request: DaemonRequest,
+      send: (response: DaemonResponse) => void,
+    ) => Promise<DaemonResponse | void>,
   ): Promise<DaemonServer> {
     if (this.listenError !== undefined) throw this.listenError;
     this.handler = handler;
@@ -648,10 +671,57 @@ class RequestTransport {
     };
   }
 
-  receive(request: DaemonRequest): Promise<DaemonResponse> {
+  async receive(request: DaemonRequest): Promise<DaemonResponse> {
     if (this.handler === undefined) return Promise.reject(new Error("Transport is not listening"));
-    return this.handler(request);
+    const response = await this.handler(request, () => undefined);
+    if (response === undefined) throw new Error("Transport handler returned no response");
+    return response;
   }
+
+  async connect(request: DaemonRequest): Promise<RequestConnection> {
+    if (this.handler === undefined) throw new Error("Transport is not listening");
+    const frames: DaemonExecutionServerFrame[] = [];
+    let connected = true;
+    let resolveTerminal!: (frame: DaemonExecutionServerFrame) => void;
+    const terminal = new Promise<DaemonExecutionServerFrame>((resolve) => {
+      resolveTerminal = resolve;
+    });
+    const receive = (response: DaemonResponse): void => {
+      if (!connected || !RequestTransport.isExecutionFrame(response)) return;
+      frames.push(response);
+      if (
+        response.kind === "rejected" ||
+        response.kind === "completed" ||
+        response.kind === "execution-failed"
+      ) {
+        resolveTerminal(response);
+      }
+    };
+    const response = await this.handler(request, receive);
+    if (response !== undefined) receive(response);
+    return {
+      frames,
+      terminal,
+      disconnect: () => {
+        connected = false;
+      },
+    };
+  }
+
+  private static isExecutionFrame(response: DaemonResponse): response is DaemonExecutionServerFrame {
+    return (
+      response.kind === "accepted" ||
+      response.kind === "rejected" ||
+      response.kind === "completed" ||
+      response.kind === "execution-failed"
+    );
+  }
+}
+
+interface RequestConnection {
+  readonly frames: DaemonExecutionServerFrame[];
+  readonly terminal: Promise<DaemonExecutionServerFrame>;
+  disconnect(): void;
 }
 
 interface DaemonCommandExecutor {
@@ -675,12 +745,14 @@ class RecordingExecutor implements DaemonCommandExecutor {
 
 class SerializedExecutor implements DaemonCommandExecutor {
   private readonly results: (() => void)[] = [];
+  readonly requests: CliExecutionRequest[] = [];
 
   get startedCount(): number {
     return this.results.length;
   }
 
-  async execute(_request: CliExecutionRequest): Promise<CommandExecutionResult> {
+  async execute(request: CliExecutionRequest): Promise<CommandExecutionResult> {
+    this.requests.push(request);
     await new Promise<void>((resolve) => this.results.push(resolve));
     return { frames: [], exitCode: 0 };
   }
@@ -691,6 +763,12 @@ class SerializedExecutor implements DaemonCommandExecutor {
 
   complete(index: number): void {
     this.results[index]?.();
+  }
+}
+
+class RejectingExecutor implements DaemonCommandExecutor {
+  execute(): Promise<CommandExecutionResult> {
+    return Promise.reject(new Error("execution failed"));
   }
 }
 
@@ -817,10 +895,10 @@ class RejectingInitializationWorker extends DeferredInitializationWorker {
   }
 }
 
-async function waitUntil(predicate: () => boolean): Promise<void> {
+async function waitUntil(predicate: () => boolean | Promise<boolean>): Promise<void> {
   const deadline = Date.now() + 1_000;
   while (Date.now() <= deadline) {
-    if (predicate()) return;
+    if (await predicate()) return;
     await new Promise((resolve) => setTimeout(resolve, 5));
   }
   throw new Error("Timed out waiting for daemon startup state");

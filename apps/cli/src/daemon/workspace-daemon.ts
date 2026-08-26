@@ -206,6 +206,12 @@ export class WorkspaceDaemon {
       const response = await this.waitForReadyGeneration(generation);
       if (response.kind !== "ready") throw new Error("Navigation worker did not become ready");
       this.fileCount = response.fileCount;
+      this.operationObserver.startup({
+        kind: "startup-completed",
+        workerGeneration: response.generation,
+        fileCount: response.fileCount,
+        ...response.startupDurations,
+      });
       this.logger.record({ kind: "freshness", ...response.refresh });
       await this.resourceSupervisor.sample("warmup");
       this.workerReady = true;
@@ -824,6 +830,7 @@ export class WorkspaceDaemon {
     this.resourceSupervisor.stop();
     if (force) await this.forceWorkerShutdown();
     else await this.gracefullyShutdownWorker();
+    this.operationObserver.shutdown({ kind: "shutdown", reason, force });
     this.logger.record({ kind: "stop", reason });
     try {
       await this.server?.close();
@@ -943,6 +950,14 @@ export class WorkspaceDaemon {
     if (response.kind !== "ready") throw new Error("Replacement navigation worker did not start");
     this.fileCount = response.fileCount;
     this.workerReady = true;
+    this.operationObserver.worker({
+      kind: "worker-replaced",
+      cause,
+      previousWorkerGeneration: current.id,
+      workerGeneration: next.id,
+      fileCount: response.fileCount,
+      ...response.startupDurations,
+    });
     this.logger.record({ kind: "freshness", ...response.refresh });
     return next.id;
   }
@@ -957,6 +972,12 @@ export class WorkspaceDaemon {
       response.usedHeapBytes,
       response.heapLimitBytes,
     );
+    this.operationObserver.worker({
+      kind: "resources-released",
+      workerGeneration: response.generation,
+      workerHeapUsedBytes: response.usedHeapBytes,
+      workerHeapLimitBytes: response.heapLimitBytes,
+    });
   }
 
   private currentNavigationWorker(): DaemonNavigationWorker {

@@ -81,6 +81,31 @@ describe("DaemonScaleBenchmarkHarness", () => {
     expect(enriched.filter((sample) => sample.serviceMsExcludingQueue === 10)).toHaveLength(1);
     expect(diagnostics.complete(enriched)).toBe(false);
   });
+
+  it.each([
+    {
+      command: "context" as const,
+      stdout:
+        '{"identity":"benchmarkHub","callers":{"sortedEdges":[],"omittedCertainEdgeCount":0},"callees":{"sortedEdges":[],"omittedCertainEdgeCount":0}}',
+      expectation: { kind: "context" as const, callers: 28, callees: 1 },
+    },
+    {
+      command: "refs" as const,
+      stdout: '{"identity":"benchmarkHub","total":252}',
+      expectation: { kind: "references" as const, total: 84 },
+    },
+  ])("rejects untruthful structured $command evidence", ({ command, stdout, expectation }) => {
+    const evidence = BenchmarkSampleEvidence.from(
+      command,
+      0,
+      { status: 0, stdout, stderr: "" },
+      { status: 0, stdout, stderr: "" },
+      10,
+      { argv: [command, "target"], expectNonEmpty: true, expectation },
+    );
+
+    expect(evidence.nonEmpty).toBe(false);
+  });
 });
 
 class TestDiagnostics {

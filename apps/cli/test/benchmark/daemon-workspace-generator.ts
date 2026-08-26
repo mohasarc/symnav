@@ -16,7 +16,17 @@ export interface DaemonWorkspaceGeneratorOptions {
 export interface DaemonBenchmarkCommand {
   readonly argv: readonly string[];
   readonly expectNonEmpty: boolean;
+  readonly expectation?: DaemonBenchmarkResultExpectation;
 }
+
+export type DaemonBenchmarkResultExpectation =
+  | { readonly kind: "overview"; readonly symbols: number }
+  | { readonly kind: "resolve"; readonly symbols: number }
+  | { readonly kind: "definition"; readonly symbols: number }
+  | { readonly kind: "references"; readonly total: number }
+  | { readonly kind: "context"; readonly callers: number; readonly callees: number }
+  | { readonly kind: "graph"; readonly incomingPaths: number; readonly outgoingPaths: number }
+  | { readonly kind: "stats-shape" };
 
 export interface DaemonBenchmarkCommandSuite {
   readonly overview: DaemonBenchmarkCommand;

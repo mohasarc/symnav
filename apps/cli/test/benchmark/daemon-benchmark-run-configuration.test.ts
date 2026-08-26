@@ -30,6 +30,29 @@ describe("DaemonBenchmarkRunConfiguration", () => {
     ).toThrow("Daemon benchmark runner memory is undersized");
   });
 
+  it.each([
+    { scale: "1", systemMemoryBytes: 4 * 1024 ** 3 },
+    { scale: "10", systemMemoryBytes: 16 * 1024 ** 3 },
+  ])("does not let the environment lower the $scale x memory floor", (input) => {
+    expect(() =>
+      DaemonBenchmarkRunConfiguration.parse(
+        ["--scale", input.scale],
+        { SYMNAV_BENCHMARK_MIN_MEMORY_BYTES: "1" },
+        input.systemMemoryBytes,
+      ),
+    ).toThrow("Daemon benchmark runner memory is undersized");
+  });
+
+  it("lets the environment raise the declared memory floor", () => {
+    expect(() =>
+      DaemonBenchmarkRunConfiguration.parse(
+        ["--scale", "1"],
+        { SYMNAV_BENCHMARK_MIN_MEMORY_BYTES: String(40 * 1024 ** 3) },
+        32 * 1024 ** 3,
+      ),
+    ).toThrow("Daemon benchmark runner memory is undersized");
+  });
+
   it("honors an explicit aggregate artifact directory", () => {
     expect(
       DaemonBenchmarkRunConfiguration.parse(

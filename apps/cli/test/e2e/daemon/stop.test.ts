@@ -154,7 +154,7 @@ describe("symnav daemon stop", () => {
     );
     helperProcesses.push(runtime.child);
     const transport = new LocalDaemonTransport({ requestTimeoutMs: 10_000 });
-    const execution = transport.request(runtime.record.endpoint, {
+    const execution = transport.execute(runtime.record.endpoint, {
       kind: "execute",
       protocolVersion: DAEMON_PROTOCOL_VERSION,
       instanceId: runtime.record.instanceId,
@@ -167,10 +167,10 @@ describe("symnav daemon stop", () => {
     await new Promise((resolve) => setTimeout(resolve, 100));
     writeFileSync(releasePath, "release");
 
-    const response = await execution;
+    const response = await (await execution).completion;
     const stopped = await stopping;
 
-    expect(response).toMatchObject({ kind: "result", result: { exitCode: 0 } });
+    expect(response).toMatchObject({ status: "completed", result: { exitCode: 0 } });
     expect(stopped).toEqual({
       status: 0,
       stdout: expect.stringMatching(/^\{"status":"stopped"/),
@@ -189,7 +189,7 @@ describe("symnav daemon stop", () => {
     );
     helperProcesses.push(runtime.child);
     const transport = new LocalDaemonTransport({ requestTimeoutMs: 10_000 });
-    const execution = transport.request(runtime.record.endpoint, {
+    const execution = transport.execute(runtime.record.endpoint, {
       kind: "execute",
       protocolVersion: DAEMON_PROTOCOL_VERSION,
       instanceId: runtime.record.instanceId,
@@ -207,10 +207,9 @@ describe("symnav daemon stop", () => {
       stderr: "",
     });
     expect(() => process.kill(runtime.record.pid, 0)).toThrow();
-    await expect(execution).resolves.toMatchObject({
-      kind: "result",
-      requestId: "built-force",
-      result: { exitCode: 1 },
+    await expect(execution.then((receipt) => receipt.completion)).resolves.toMatchObject({
+      status: "failed",
+      code: "stopping",
     });
     await waitForProcess(runtime.child);
     helperProcesses.splice(helperProcesses.indexOf(runtime.child), 1);

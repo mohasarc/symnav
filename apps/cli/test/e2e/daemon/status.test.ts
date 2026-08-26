@@ -325,9 +325,9 @@ describe("symnav daemon status", () => {
     const originalRecord = daemonRecords(stateDir)[0];
     expect(originalRecord).toBeDefined();
     daemonPids.push(originalRecord!.pid);
-    const transport = new LocalDaemonTransport({ executionRequestTimeoutMs: 5_000 });
+    const transport = new LocalDaemonTransport({ requestTimeoutMs: 5_000 });
     void transport
-      .request(originalRecord!.endpoint, {
+      .execute(originalRecord!.endpoint, {
         kind: "execute",
         protocolVersion: DAEMON_PROTOCOL_VERSION,
         instanceId,
@@ -339,6 +339,7 @@ describe("symnav daemon status", () => {
           telemetryEnabled: false,
         },
       })
+      .then((receipt) => receipt.completion.catch(() => undefined))
       .catch(() => undefined);
     await waitUntil(() => existsSync(requestStartedPath));
 
@@ -386,21 +387,23 @@ describe("symnav daemon status", () => {
       cwd: tmpdir(),
       env: { SYMNAV_DAEMON: "0" },
     });
-    const response = await new LocalDaemonTransport().request(record!.endpoint, {
-      kind: "execute",
-      protocolVersion: DAEMON_PROTOCOL_VERSION,
-      instanceId: record!.instanceId,
-      processToken: record!.processToken,
-      requestId: "deleted-workspace",
-      request: {
-        argv: ["overview", "input.ts"],
-        cwd: workspaceRoot,
-        telemetryEnabled: false,
-      },
-    });
+    const response = await (
+      await new LocalDaemonTransport().execute(record!.endpoint, {
+        kind: "execute",
+        protocolVersion: DAEMON_PROTOCOL_VERSION,
+        instanceId: record!.instanceId,
+        processToken: record!.processToken,
+        requestId: "deleted-workspace",
+        request: {
+          argv: ["overview", "input.ts"],
+          cwd: workspaceRoot,
+          telemetryEnabled: false,
+        },
+      })
+    ).completion;
 
-    expect(response.kind).toBe("result");
-    if (response.kind !== "result") throw new Error("Expected command result");
+    expect(response.status).toBe("completed");
+    if (response.status !== "completed") throw new Error("Expected command result");
     expect(replay(response.result.frames, "stdout")).toBe(cold.stdout);
     expect(replay(response.result.frames, "stderr")).toBe(cold.stderr);
     expect(response.result.exitCode).toBe(cold.status);

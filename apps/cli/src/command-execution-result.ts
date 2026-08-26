@@ -27,3 +27,26 @@ export interface CliExecutionRequest {
   readonly executionMode?: CommandExecutionMode;
   readonly deferTelemetry?: boolean;
 }
+
+export class ControlledCommandResult {
+  static acceptedRequestDidNotComplete(): CommandExecutionResult {
+    return ControlledCommandResult.failure(
+      "Cannot answer: accepted daemon request did not complete.\n",
+    );
+  }
+
+  static workspaceCapacityExceeded(): CommandExecutionResult {
+    return ControlledCommandResult.failure("Cannot answer: daemon workspace capacity exceeded.\n");
+  }
+
+  static responseCapacityExceeded(): CommandExecutionResult {
+    return ControlledCommandResult.failure("Cannot answer: daemon response capacity exceeded.\n");
+  }
+
+  private static failure(message: string): CommandExecutionResult {
+    return {
+      frames: [{ stream: "stderr", bytesBase64: Buffer.from(message).toString("base64") }],
+      exitCode: 1,
+    };
+  }
+}

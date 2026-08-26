@@ -79,7 +79,7 @@ describe("DaemonScaleBenchmarkHarness", () => {
     const enriched = diagnostics.enrich(samples);
 
     expect(enriched.filter((sample) => sample.serviceMsExcludingQueue === 10)).toHaveLength(1);
-    expect(diagnostics.complete(samples.length)).toBe(false);
+    expect(diagnostics.complete(enriched)).toBe(false);
   });
 });
 

@@ -110,6 +110,9 @@ export class DaemonScaleBenchmarkHarness {
         throw new Error("Daemon benchmark startup record is missing");
 
       const samples = await this.runFixedSuite(generated, stateDirectory);
+      const fixedDiagnostics = DaemonBenchmarkDiagnostics.read(identity.logPath);
+      const enrichedSamples = fixedDiagnostics.enrich(samples);
+      const fixedArtifactComplete = fixedDiagnostics.complete(enrichedSamples);
       const freshness = this.runMutations(generated, stateDirectory);
       const largeResponse = await this.runLargeResponseAndBusyStatus(generated, stateDirectory);
       const finalRecord = registry.read(identity);
@@ -119,7 +122,6 @@ export class DaemonScaleBenchmarkHarness {
       if (stopped.status !== 0) throw new Error("Daemon benchmark shutdown failed");
 
       const diagnostics = DaemonBenchmarkDiagnostics.read(identity.logPath);
-      const enrichedSamples = diagnostics.enrich(samples);
       const telemetryCommands = this.warmTelemetryCommands(stateDirectory);
       const resourcePolicy = DaemonResourcePolicy.fromSystemMemory(
         totalmem(),
@@ -168,7 +170,7 @@ export class DaemonScaleBenchmarkHarness {
           "overview",
         ],
         actualTelemetryCommands: telemetryCommands,
-        artifactComplete: diagnostics.complete(enrichedSamples.length),
+        artifactComplete: fixedArtifactComplete,
         spoolBytesAfterCleanup: DaemonScaleBenchmarkHarness.directoryBytes(identity.spoolDirectory),
         diagnosticPhasesComplete: diagnostics.phasesComplete,
         generatedVisibleFiles: generatedProfile.visibleTypeScriptFiles,
@@ -531,11 +533,12 @@ export class DaemonScaleBenchmarkHarness {
   }
 }
 
-interface BenchmarkSampleEvidence extends DaemonBenchmarkSample {
+export interface BenchmarkSampleEvidence extends DaemonBenchmarkSample {
   readonly stdoutParity: boolean;
   readonly stderrParity: boolean;
   readonly exitParity: boolean;
   readonly nonEmpty: boolean;
+  readonly diagnosticMatched: boolean;
 }
 
 interface LargeResponseEvidence {
@@ -575,6 +578,7 @@ export class BenchmarkSampleEvidence {
         (warm.status === 0 &&
           warm.stdout.trim().length > 0 &&
           warm.stdout.includes("benchmarkHub")),
+      diagnosticMatched: false,
     };
   }
 
@@ -675,12 +679,13 @@ export class DaemonBenchmarkDiagnostics {
           ? {}
           : { workerHeapPeakBytes: metric!.workerHeapPeakBytes }),
         spoolPeakBytes: metric!.spoolBytes,
+        diagnosticMatched: true,
       };
     });
   }
 
-  complete(sampleCount: number): boolean {
-    return this.operationMetrics.length >= sampleCount;
+  complete(samples: readonly BenchmarkSampleEvidence[]): boolean {
+    return samples.every((sample) => sample.diagnosticMatched);
   }
 
   private static maximumOptional(values: readonly (number | undefined)[]): number | undefined {

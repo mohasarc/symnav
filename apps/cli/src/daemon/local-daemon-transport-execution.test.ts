@@ -596,6 +596,58 @@ describe("LocalDaemonTransport execution delivery", () => {
     ).toEqual([]);
   });
 
+  it("disposes partial client output when daemon delivery fails after its manifest", async () => {
+    const directory = mkdtempSync(join(tmpdir(), "symnav-failed-delivery-"));
+    directories.push(directory);
+    const store = new DaemonCompletionSpoolStore({
+      directory: join(directory, "daemon"),
+      workspaceKey: "workspace",
+      instanceId: request.instanceId,
+    });
+    const spool = await store.create(request.requestId);
+    await spool.append({
+      sequence: 0,
+      stream: "stdout",
+      bytes: Buffer.alloc(COMMAND_OUTPUT_CHUNK_BYTES, 3),
+    });
+    const manifest = await spool.finish(0);
+    let acknowledgementCount = 0;
+    const endpoint = await rawExecutionServer(servers, sockets, directories, (socket) => {
+      socket.once("data", (encoded) => {
+        const bytes = Buffer.isBuffer(encoded) ? encoded : Buffer.from(encoded);
+        const message = JSON.parse(bytes.subarray(4).toString()) as { kind: string };
+        if (message.kind === "result-ack") {
+          acknowledgementCount += 1;
+          return;
+        }
+        socket.write(frame(accepted()));
+        socket.write(frame(resultManifest(manifest)));
+        void sendRecords(socket, spool, manifest.transferId, 0).then(() =>
+          socket.write(
+            frame({
+              kind: "execution-failed",
+              instanceId: request.instanceId,
+              processToken: request.processToken,
+              requestId: request.requestId,
+              code: "internal",
+            }),
+          ),
+        );
+      });
+    });
+    const clientDirectory = join(directory, "client");
+    const receipt = await new LocalDaemonTransport({
+      outputDirectory: clientDirectory,
+      outputInlineBytes: 0,
+    }).execute(endpoint, request);
+
+    await expect(receipt.completion).resolves.toEqual({ status: "failed", code: "internal" });
+    expect(acknowledgementCount).toBe(0);
+    expect(
+      await import("node:fs/promises").then(({ readdir }) => readdir(clientDirectory)),
+    ).toEqual([]);
+  });
+
   it("reports EOF after acceptance as a typed post-accept failure", async () => {
     const endpoint = await rawExecutionServer(servers, sockets, directories, (socket) => {
       socket.once("data", () => socket.end(frame(accepted())));

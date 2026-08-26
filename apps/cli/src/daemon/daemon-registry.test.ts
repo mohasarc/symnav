@@ -201,7 +201,9 @@ describe("daemon registry", () => {
     registry.write(record(identity, "starting", "old"));
     expect(registry.removeStartupLockIfInstance(identity, "old")).toBe(true);
     const replacementLease = registry.acquireStartup(identity, "replacement");
-    registry.write(record(identity, "starting", "replacement"));
+    expect(
+      registry.writeStartingIfStartupOwner(identity, record(identity, "starting", "replacement")),
+    ).toBe(true);
 
     expect(
       registry.writeIfStartupOwner(identity, {

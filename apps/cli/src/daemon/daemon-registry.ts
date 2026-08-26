@@ -156,11 +156,20 @@ export class DaemonRegistry {
   }
 
   writeIfStartupOwner(identity: DaemonWorkspaceIdentity, record: DaemonRecord): boolean {
-    if (!this.isStartupOwner(identity, record.instanceId)) return false;
+    const owner = this.startupOwner(identity);
+    if (
+      owner?.identityKey !== identity.identityKey ||
+      owner.instanceId !== record.instanceId ||
+      owner.processToken !== record.processToken ||
+      owner.ownerKind !== "daemon" ||
+      owner.ownerPid !== record.pid
+    ) {
+      return false;
+    }
     const current = this.readInstance(identity, record.instanceId);
     if (current?.state !== "starting") return false;
     this.write(record);
-    if (this.isStartupOwner(identity, record.instanceId)) return true;
+    if (DaemonRegistry.sameStartupOwner(this.startupOwner(identity), owner)) return true;
     this.removeIfProcess(identity, record.instanceId, record.processToken);
     return false;
   }
@@ -168,6 +177,18 @@ export class DaemonRegistry {
   writeStartingIfStartupOwner(identity: DaemonWorkspaceIdentity, record: DaemonRecord): boolean {
     if (record.state !== "starting" || !this.isStartupOwner(identity, record.instanceId)) {
       return false;
+    }
+    const owner = this.startupOwner(identity);
+    if (
+      record.pid > 0 &&
+      owner?.identityKey === identity.identityKey &&
+      owner.instanceId === record.instanceId &&
+      owner.processToken === record.processToken &&
+      owner.ownerKind === "daemon" &&
+      owner.ownerPid === record.pid
+    ) {
+      this.write(record);
+      return DaemonRegistry.sameStartupOwner(this.startupOwner(identity), owner);
     }
     if (record.pid > 0) return this.writeClaimedStartingRecord(identity, record);
     this.write(record);

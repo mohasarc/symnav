@@ -5,6 +5,7 @@ import {
   AcceptedRequestLedger,
 } from "./accepted-request-ledger.js";
 import type {
+  DaemonActivitySnapshot,
   DaemonExecutionFailureCode,
   DaemonExecutionServerFrame,
   DaemonRecord,
@@ -90,6 +91,7 @@ export class WorkspaceDaemon {
   private readonly logger: DaemonLogger;
   private readonly lifetime: DaemonLifetime;
   private readonly resourceSupervisor: DaemonResourceSupervisor;
+  private readonly resourcePolicy: DaemonResourcePolicy;
   private readonly acceptedRequests: AcceptedRequestLedger;
   private readonly completionSpools: DaemonCompletionSpoolStore;
   private readonly acceptances = new Map<
@@ -98,8 +100,10 @@ export class WorkspaceDaemon {
   >();
   private server: DaemonServer | undefined;
   private startedAt = 0;
+  private readonly startedMonotonicAt: number;
   private fileCount = 0;
   private lastNavigationAt: number | undefined;
+  private lastCompletedMonotonicAt: number | undefined;
   private workerReady = false;
   private shutdownStarted = false;
   private shutdownFailureCode: DaemonExecutionFailureCode | undefined;
@@ -117,7 +121,8 @@ export class WorkspaceDaemon {
     });
     this.now = options.now ?? Date.now;
     this.clock = options.clock ?? new NodeDaemonClock();
-    this.requestQueue = new WorkspaceRequestQueue(this.now);
+    this.startedMonotonicAt = this.clock.monotonicNowMs();
+    this.requestQueue = new WorkspaceRequestQueue(() => this.clock.monotonicNowMs());
     this.acceptedRequests = new AcceptedRequestLedger(this.now);
     this.completionSpools = new DaemonCompletionSpoolStore({
       directory: options.identity.spoolDirectory,
@@ -134,6 +139,7 @@ export class WorkspaceDaemon {
       DaemonResourcePolicy.fromSystemMemory(
         Math.max(options.memoryCapBytes * 2, 512 * 1024 * 1024),
       );
+    this.resourcePolicy = resourcePolicy;
     this.navigationWorkerFactory =
       options.navigationWorkerFactory ??
       (options.navigationWorker === undefined
@@ -412,23 +418,29 @@ export class WorkspaceDaemon {
   }
 
   private pong(): DaemonResponse {
-    const activity = this.requestQueue.snapshot;
-    const active = activity.active;
+    const activity = this.activitySnapshot();
+    const active = activity.current;
     return {
       kind: "pong",
       protocolVersion: DAEMON_PROTOCOL_VERSION,
       instanceId: this.options.instanceId,
       symnavVersion: this.options.symnavVersion,
-      state: this.workerReady ? (active === undefined ? "ready" : "busy") : "starting",
+      state:
+        activity.lifecycle === "busy"
+          ? "busy"
+          : activity.lifecycle === "starting"
+            ? "starting"
+            : "ready",
       startedAt: this.startedAt,
       fileCount: this.fileCount,
-      memoryBytes: process.memoryUsage().rss,
+      memoryBytes: activity.processRssBytes,
       queued: activity.queued,
+      activity,
       ...(active === undefined
         ? {}
         : {
             currentCommand: active.command,
-            currentCommandElapsedMs: Math.max(0, this.now() - active.startedAt),
+            currentCommandElapsedMs: active.elapsedMs,
           }),
       ...(this.lastNavigationAt === undefined ? {} : { lastNavigationAt: this.lastNavigationAt }),
     };
@@ -522,7 +534,7 @@ export class WorkspaceDaemon {
         {
           requestId: request.requestId,
           command: WorkspaceDaemon.commandName(request.request.argv),
-          acceptedAt: this.now(),
+          acceptedAt: this.clock.monotonicNowMs(),
         },
         async () => {
           try {
@@ -609,6 +621,7 @@ export class WorkspaceDaemon {
       durationMs: Math.max(0, this.now() - requestStartedAt),
       exitCode: result.exitCode,
     });
+    this.lastCompletedMonotonicAt = this.clock.monotonicNowMs();
     if (!(await this.options.dependencies.fs.exists(this.options.identity.workspaceRoot))) {
       setTimeout(() => void this.shutdown("workspace-deleted", true), 0);
     }
@@ -923,6 +936,49 @@ export class WorkspaceDaemon {
 
   private currentNavigationWorker(): DaemonNavigationWorker {
     return this.workerGeneration?.worker ?? this.initialNavigationWorker;
+  }
+
+  private activitySnapshot(): DaemonActivitySnapshot {
+    const queue = this.requestQueue.snapshot;
+    const resources = this.resourceSupervisor.snapshot;
+    const now = this.clock.monotonicNowMs();
+    const current =
+      queue.active === undefined
+        ? undefined
+        : Object.freeze({
+            requestId: queue.active.requestId,
+            command: queue.active.command,
+            elapsedMs: Math.max(0, now - queue.active.startedAt),
+          });
+    const lifecycle: DaemonActivitySnapshot["lifecycle"] =
+      queue.state !== "accepting" || resources.state === "draining" || resources.state === "stopped"
+        ? "draining"
+        : resources.state === "replacing" || resources.state === "shedding"
+          ? "recovering"
+          : !this.workerReady
+            ? "starting"
+            : current === undefined
+              ? "ready"
+              : "busy";
+    return Object.freeze({
+      lifecycle,
+      pid: process.pid,
+      startedAt: this.startedAt,
+      startupElapsedMs: Math.max(0, now - this.startedMonotonicAt),
+      ...(this.workerReady ? { fileCount: this.fileCount } : {}),
+      processRssBytes: process.memoryUsage().rss,
+      hardProcessRssBytes: this.resourcePolicy.record.hardProcessRssBytes,
+      ...(resources.workerHeapUsedBytes === undefined
+        ? {}
+        : { workerHeapUsedBytes: resources.workerHeapUsedBytes }),
+      workerGeneration: resources.generation,
+      ...(current === undefined ? {} : { current }),
+      queued: queue.queued,
+      ...(this.lastCompletedMonotonicAt === undefined
+        ? {}
+        : { lastCompletedAgoMs: Math.max(0, now - this.lastCompletedMonotonicAt) }),
+      spoolBytes: resources.spoolBytes,
+    });
   }
 
   private static commandName(argv: readonly string[]): DaemonCommandName {

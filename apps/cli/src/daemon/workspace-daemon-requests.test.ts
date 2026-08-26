@@ -50,6 +50,18 @@ describe("WorkspaceDaemon requests", () => {
       processToken: harness.processToken,
       fileCount: 1,
     });
+    expect(harness.logEvents()).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          kind: "startup-completed",
+          workerGeneration: 1,
+          fileCount: 1,
+          discoveryMs: 0,
+          indexingMs: 1,
+          totalMs: 1,
+        }),
+      ]),
+    );
   });
 
   it("binds lifecycle transport while navigation initialization is blocked", async () => {
@@ -76,10 +88,11 @@ describe("WorkspaceDaemon requests", () => {
         spoolBytes: 0,
       },
     });
-    if (startingStatus.kind !== "pong" || startingStatus.activity === undefined) {
+    const startingActivity = startingStatus.kind === "pong" ? startingStatus.activity : undefined;
+    if (startingActivity === undefined) {
       throw new Error("Expected daemon activity snapshot");
     }
-    expect(() => Object.assign(startingStatus.activity, { queued: 9 })).toThrow();
+    expect(() => Object.assign(startingActivity, { queued: 9 })).toThrow();
     expect(harness.registry.read(harness.identity)?.state).toBe("starting");
 
     worker.completeInitialization();
@@ -481,6 +494,12 @@ describe("WorkspaceDaemon requests", () => {
       kind: "stopped",
       instanceId: harness.instanceId,
     });
+    await harness.exited;
+    expect(harness.logEvents()).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ kind: "shutdown", reason: "graceful", force: false }),
+      ]),
+    );
   });
 
   it("reports draining from the main thread while admitted work completes", async () => {
@@ -724,6 +743,17 @@ describe("WorkspaceDaemon requests", () => {
     expect(activeExecutor.requests).toHaveLength(1);
     expect(replacementExecutor.requests).toHaveLength(1);
     expect(workers.map((worker) => worker.generation)).toEqual([1, 2]);
+    expect(harness.logEvents()).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          kind: "worker-replaced",
+          cause: "worker-exit",
+          previousWorkerGeneration: 1,
+          workerGeneration: 2,
+          fileCount: 1,
+        }),
+      ]),
+    );
     await expect(harness.ping()).resolves.toMatchObject({ state: "ready" });
     expect(harness.registry.read(harness.identity)).toMatchObject({
       pid: process.pid,
@@ -775,6 +805,16 @@ describe("WorkspaceDaemon requests", () => {
       expect.objectContaining({ kind: "result-end", requestId: "second" }),
     ]);
     expect(worker.releaseCount).toBe(1);
+    expect(harness.logEvents()).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          kind: "resources-released",
+          workerGeneration: 1,
+          workerHeapUsedBytes: 1,
+          workerHeapLimitBytes: 2,
+        }),
+      ]),
+    );
   });
 
   it("replaces a failed shed before releasing queued work", async () => {

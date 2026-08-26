@@ -47,6 +47,11 @@ describe("DaemonNavigationWorkerProtocol", () => {
       result: { exitCode: 0 },
       refresh,
       durations: { freshnessMs: 1, navigationMs: 2, renderMs: 3, outputMs: 4 },
+      resources: {
+        workerHeapUsedBytes: 20,
+        peakWorkerHeapUsedBytes: 40,
+        workerHeapLimitBytes: 100,
+      },
     },
     {
       kind: "failed",
@@ -138,5 +143,10 @@ function resultWith(result: unknown): unknown {
     result,
     refresh,
     durations: { freshnessMs: 1, navigationMs: 2, renderMs: 3, outputMs: 4 },
+    resources: {
+      workerHeapUsedBytes: 20,
+      peakWorkerHeapUsedBytes: 40,
+      workerHeapLimitBytes: 100,
+    },
   };
 }

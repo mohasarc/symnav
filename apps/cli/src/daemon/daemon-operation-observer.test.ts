@@ -104,6 +104,7 @@ describe("DaemonOperationObserver", () => {
         snapshot: {
           processRssBytes: 80,
           peakProcessRssBytes: 120,
+          peakWorkerHeapUsedBytes: 400,
           spoolBytes: 0,
         },
       },
@@ -120,6 +121,7 @@ describe("DaemonOperationObserver", () => {
       serviceMs: 0,
       processRssBytes: 80,
       peakProcessRssBytes: 120,
+      peakWorkerHeapUsedBytes: 400,
       spoolBytes: 0,
     });
   });

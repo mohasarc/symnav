@@ -230,7 +230,7 @@ describe("DaemonResourceSupervisor", () => {
       replaceWorker,
       drain: async () => undefined,
     });
-    supervisor.workerHeapReported(1, 100, 200);
+    supervisor.workerHeapReported(1, 100, 200, 400);
 
     await Promise.all([supervisor.sample("admission"), supervisor.sample("interval")]);
 
@@ -243,12 +243,14 @@ describe("DaemonResourceSupervisor", () => {
       spoolBytes: 4096,
       admissionPaused: false,
       replacementCount: 1,
+      peakWorkerHeapUsedBytes: 400,
     });
     expect(supervisor.snapshot.workerHeapUsedBytes).toBeUndefined();
-    supervisor.workerHeapReported(1, 300, 400);
+    supervisor.workerHeapReported(1, 300, 400, 600);
     expect(supervisor.snapshot.workerHeapUsedBytes).toBeUndefined();
-    supervisor.workerHeapReported(2, 500, 600);
-    expect(supervisor.snapshot.workerHeapUsedBytes).toBe(500);
+    supervisor.workerHeapReported(2, 200, 600, 300);
+    expect(supervisor.snapshot.workerHeapUsedBytes).toBe(200);
+    expect(supervisor.snapshot.peakWorkerHeapUsedBytes).toBe(400);
     expect(supervisor.snapshot.processRssBytes).toBe(policy.record.hardProcessRssBytes + 1);
   });
 

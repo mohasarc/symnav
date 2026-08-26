@@ -6,6 +6,7 @@ import { DAEMON_BENCHMARK_WARM_REPETITIONS } from "./daemon-benchmark-gate.js";
 import {
   BenchmarkSampleEvidence,
   DaemonBenchmarkDiagnostics,
+  DaemonBenchmarkPhaseStatistics,
   DaemonScaleBenchmarkHarness,
 } from "./daemon-scale-benchmark-harness.js";
 import { DaemonWorkspaceProfileValidator } from "./daemon-workspace-profile.js";
@@ -185,6 +186,32 @@ describe("DaemonScaleBenchmarkHarness", () => {
     ];
 
     expect(BenchmarkSampleEvidence.semanticResultsValid(invalid)).toBe(false);
+  });
+
+  it("publishes nearest-rank statistics for every attributed command phase", () => {
+    const samples = Array.from({ length: 9 }, (_, repetition) => ({
+      ...BenchmarkSampleEvidence.from(
+        "overview",
+        repetition,
+        { status: 0, stdout: "ok", stderr: "" },
+        { status: 0, stdout: "ok", stderr: "" },
+        10,
+        { argv: ["overview", "target.ts"], expectNonEmpty: true },
+      ),
+      freshnessMs: repetition + 1,
+      navigationMs: repetition + 1,
+      renderMs: repetition + 1,
+      workerOutputMs: repetition + 1,
+      spoolMs: repetition + 1,
+    }));
+
+    expect(DaemonBenchmarkPhaseStatistics.from(samples).overview).toEqual({
+      freshness: { minimumMs: 1, p50Ms: 5, p95Ms: 9, maximumMs: 9 },
+      navigation: { minimumMs: 1, p50Ms: 5, p95Ms: 9, maximumMs: 9 },
+      render: { minimumMs: 1, p50Ms: 5, p95Ms: 9, maximumMs: 9 },
+      workerOutput: { minimumMs: 1, p50Ms: 5, p95Ms: 9, maximumMs: 9 },
+      spool: { minimumMs: 1, p50Ms: 5, p95Ms: 9, maximumMs: 9 },
+    });
   });
 });
 

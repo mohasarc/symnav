@@ -144,7 +144,7 @@ export class WorkspaceDaemon {
         ? {}
         : { storage: options.completionSpoolStorage }),
     });
-    this.logger = new DaemonLogger(options.identity, options.instanceId, this.clock);
+    this.logger = options.logger ?? new DaemonLogger(options.identity, options.instanceId, this.clock);
     const resourcePolicy =
       options.resourcePolicy ??
       DaemonResourcePolicy.fromSystemMemory(

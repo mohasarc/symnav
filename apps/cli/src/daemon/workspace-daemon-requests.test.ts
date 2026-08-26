@@ -515,7 +515,12 @@ describe("WorkspaceDaemon requests", () => {
 
     expect(harness.logEvents()).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ kind: "failure", operation: "start", message: "listen failed" }),
+        expect.objectContaining({
+          kind: "failure",
+          operation: "start",
+          failureCode: "operation-failed",
+          errorName: "Error",
+        }),
       ]),
     );
   });
@@ -545,7 +550,8 @@ describe("WorkspaceDaemon requests", () => {
         expect.objectContaining({
           kind: "failure",
           operation: "transport-close",
-          message: "transport cleanup failed",
+          failureCode: "operation-failed",
+          errorName: "Error",
         }),
       ]),
     );
@@ -568,7 +574,8 @@ describe("WorkspaceDaemon requests", () => {
         expect.objectContaining({
           kind: "failure",
           operation: "worker-exit",
-          message: "error (WorkerError)",
+          failureCode: "worker-exit",
+          errorName: "UnknownError",
         }),
       ]),
     );

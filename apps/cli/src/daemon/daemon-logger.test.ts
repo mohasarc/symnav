@@ -18,19 +18,27 @@ describe("DaemonLogger", () => {
   it("writes ordered JSON lifecycle, request, freshness, and failure events", () => {
     const root = mkdtempSync(join(tmpdir(), "symnav-daemon-log-"));
     roots.push(root);
-    const logPath = join(root, "workspace.log");
+    const identity = DaemonWorkspaceIdentity.from("/repo", root);
     let now = 10;
-    const logger = new DaemonLogger(logPath, { now: () => now });
+    const logger = new DaemonLogger(identity, "one", {
+      wallNowMs: () => now,
+      monotonicNowMs: () => now,
+    });
 
-    logger.record({ kind: "start", workspaceRoot: "/repo", instanceId: "one" });
+    logger.record({ kind: "start" });
     now = 11;
     logger.record({ kind: "ready", fileCount: 2 });
     logger.record({ kind: "request", command: "refs", durationMs: 4, exitCode: 0 });
     logger.record({ kind: "freshness", added: 1, changed: 2, removed: 3, unchanged: 4 });
-    logger.record({ kind: "failure", operation: "request", message: "boom" });
+    logger.record({
+      kind: "failure",
+      operation: "request",
+      failureCode: "internal",
+      errorName: "Error",
+    });
     logger.record({ kind: "stop", reason: "graceful" });
 
-    const events = readFileSync(logPath, "utf8")
+    const events = readFileSync(identity.logPath, "utf8")
       .trim()
       .split("\n")
       .map((line) => JSON.parse(line) as { kind: string; timestamp: number });
@@ -46,7 +54,11 @@ describe("DaemonLogger", () => {
   });
 
   it("silently ignores write failures", () => {
-    const logger = new DaemonLogger("/missing/parent/workspace.log", { now: () => 10 });
+    const identity = DaemonWorkspaceIdentity.from("/repo", "/missing/parent");
+    const logger = new DaemonLogger(identity, "one", {
+      wallNowMs: () => 10,
+      monotonicNowMs: () => 10,
+    });
     expect(() => logger.record({ kind: "stop", reason: "idle" })).not.toThrow();
   });
 

@@ -38,7 +38,6 @@ export interface DaemonProcessTerminator {
 export interface DaemonProcessLauncher {
   readonly symnavVersion: string;
   readonly memoryCapBytes: number;
-  readonly resourcePolicy: DaemonResourcePolicy;
   launch(
     identity: DaemonWorkspaceIdentity,
     instanceId: string,

@@ -574,6 +574,17 @@ describe("WorkspaceDaemon requests", () => {
     );
   });
 
+  it("observes an unexpected exit from a non-initial worker generation", async () => {
+    const worker = new ExecutorNavigationWorker(new ImmediateExecutor(), 7);
+    const harness = await RequestHarness.start(undefined, { navigationWorker: worker });
+    harnesses.push(harness);
+
+    worker.fail({ generation: worker.generation, cause: "error", errorName: "WorkerError" });
+
+    await expect(harness.exited).resolves.toBe(0);
+    expect(harness.transport.isListening).toBe(false);
+  });
+
   it("fails active work once and preserves queued FIFO across worker replacement", async () => {
     const activeExecutor = new SerializedExecutor();
     const replacementExecutor = new RecordingExecutor();

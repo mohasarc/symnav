@@ -51,6 +51,16 @@ describe("DaemonRecordObserver", () => {
     });
   });
 
+  it("probes identity and status concurrently within one observation bound", async () => {
+    const transport = new ConcurrentObserverTransport();
+    const observation = observer(transport, [101]).observe(record("ready"));
+
+    await expect(transport.pingRequested).resolves.toBeUndefined();
+    transport.allowIdentity();
+
+    await expect(observation).resolves.toMatchObject({ kind: "responsive" });
+  });
+
   it("reports confirmed process exit without probing transport", async () => {
     const transport = new ObserverTransport([]);
 
@@ -98,6 +108,44 @@ class ObserverTransport {
     if (outcome instanceof Error) throw outcome;
     if (outcome === undefined) throw new Error("Unexpected observer request");
     return outcome;
+  }
+}
+
+class ConcurrentObserverTransport extends ObserverTransport {
+  readonly pingRequested: Promise<void>;
+  private resolvePingRequested!: () => void;
+  private readonly identityAllowed: Promise<void>;
+  private resolveIdentityAllowed!: () => void;
+
+  constructor() {
+    super([]);
+    this.pingRequested = new Promise((resolve) => {
+      this.resolvePingRequested = resolve;
+    });
+    this.identityAllowed = new Promise((resolve) => {
+      this.resolveIdentityAllowed = resolve;
+    });
+  }
+
+  override async request(_endpoint: string, request: DaemonRequest): Promise<DaemonResponse> {
+    if (request.kind === "identify") {
+      await this.identityAllowed;
+      return identityResponse();
+    }
+    if (request.kind === "ping") {
+      this.resolvePingRequested();
+      return {
+        kind: "pong",
+        protocolVersion: DAEMON_PROTOCOL_VERSION,
+        instanceId: "instance",
+        symnavVersion: "0.1.0",
+      };
+    }
+    throw new Error("Unexpected observer request");
+  }
+
+  allowIdentity(): void {
+    this.resolveIdentityAllowed();
   }
 }
 

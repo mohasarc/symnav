@@ -695,6 +695,27 @@ describe("WorkspaceDaemon requests", () => {
     );
   });
 
+  it("records result-fetch as reattachment without replaying execution", async () => {
+    const executor = new SerializedExecutor();
+    const harness = await RequestHarness.start(executor);
+    harnesses.push(harness);
+    const disconnected = await harness.admit("fetched-trace", ["overview", "input.ts"]);
+    await executor.started(1);
+    disconnected.disconnect();
+    executor.complete(0);
+    await waitUntil(async () => (await harness.status("fetched-trace")).status.state === "completed");
+
+    const resumed = await harness.fetch("fetched-trace");
+    const completed = await resumed.terminal;
+    if (completed.kind !== "result-end") throw new Error("Expected completed result");
+    await harness.acknowledge("fetched-trace", completed.transferId);
+
+    expect(executor.requests).toHaveLength(1);
+    expect(harness.logEvents().filter((event) => event.kind === "client-reattached")).toHaveLength(
+      1,
+    );
+  });
+
   it("releases retained request traces during shutdown", async () => {
     const harness = await RequestHarness.start(new ImmediateExecutor());
     harnesses.push(harness);
@@ -1343,6 +1364,17 @@ class RequestHarness {
       processToken: this.processToken,
       requestId,
       transferId,
+    });
+  }
+
+  fetch(requestId: string, offset = 0): Promise<RequestConnection> {
+    return this.transport.connect({
+      kind: "result-fetch",
+      protocolVersion: DAEMON_PROTOCOL_VERSION,
+      instanceId: this.instanceId,
+      processToken: this.processToken,
+      requestId,
+      offset,
     });
   }
 

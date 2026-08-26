@@ -1,0 +1,40 @@
+{
+  "schemaVersion": 1,
+  "profileVersion": "1.0.0",
+  "visibleTypeScriptFiles": 3904,
+  "sourceBytes": { "minimum": 36, "p50": 1840, "p95": 11840, "maximum": 98624 },
+  "sourceLines": { "minimum": 1, "p50": 48, "p95": 284, "maximum": 2310 },
+  "symbolsPerFile": { "minimum": 0, "p50": 5, "p95": 24, "maximum": 188 },
+  "packageCount": 24,
+  "configCount": 31,
+  "projectReferenceCount": 23,
+  "importsPerFile": { "minimum": 0, "p50": 4, "p95": 18, "maximum": 91 },
+  "referenceFanout": { "minimum": 0, "p50": 3, "p95": 31, "maximum": 604 },
+  "aliasImportRatio": 0.38,
+  "workspaceImportRatio": 0.17,
+  "callInDegree": { "minimum": 0, "p50": 1, "p95": 9, "maximum": 142 },
+  "callOutDegree": { "minimum": 0, "p50": 2, "p95": 13, "maximum": 96 },
+  "callDepth": { "minimum": 0, "p50": 3, "p95": 8, "maximum": 19 },
+  "cycleRatio": 0.014,
+  "declarationKindCounts": {
+    "class": 1280,
+    "function": 8420,
+    "interface": 1960,
+    "type": 2240,
+    "variable": 17400
+  },
+  "representativeResultCounts": {
+    "overview": 18,
+    "resolve": 9,
+    "def": 1,
+    "refs": 84,
+    "context": 37,
+    "graph": 29,
+    "stats": 6,
+    "help": 0,
+    "version": 0,
+    "unknown": 0
+  },
+  "ignoredPathRatio": 0.074,
+  "nestedWorkspaceRatio": 0.003
+}

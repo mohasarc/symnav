@@ -23,9 +23,9 @@ describe("daemon workspace profile", () => {
   it("rejects extra fields and invalid aggregate quantiles", () => {
     const valid = reviewedProfile();
 
-    expect(() => DaemonWorkspaceProfileValidator.parse({ ...valid, workspacePath: "/secret" })).toThrow(
-      "profile fields",
-    );
+    expect(() =>
+      DaemonWorkspaceProfileValidator.parse({ ...valid, workspacePath: "/secret" }),
+    ).toThrow("profile fields");
     expect(() =>
       DaemonWorkspaceProfileValidator.parse({
         ...valid,
@@ -36,7 +36,12 @@ describe("daemon workspace profile", () => {
 });
 
 function reviewedProfile(): DaemonWorkspaceProfile {
-  const distribution = (minimum: number, p50: number, p95: number, maximum: number): DistributionSummary => ({
+  const distribution = (
+    minimum: number,
+    p50: number,
+    p95: number,
+    maximum: number,
+  ): DistributionSummary => ({
     minimum,
     p50,
     p95,

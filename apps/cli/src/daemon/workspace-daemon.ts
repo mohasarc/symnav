@@ -74,6 +74,7 @@ export interface WorkspaceDaemonOptions {
   readonly completionSpoolStorage?: CompletionSpoolStorage;
   readonly operationTraceRetentionMs?: number;
   readonly maximumRetainedOperationTraces?: number;
+  readonly logger?: DaemonLogger;
 }
 
 const DEFAULT_OPERATION_TRACE_RETENTION_MS = 5 * 60 * 1000;

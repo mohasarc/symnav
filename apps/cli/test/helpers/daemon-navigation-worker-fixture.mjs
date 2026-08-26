@@ -1,7 +1,8 @@
 import { parentPort, workerData } from "node:worker_threads";
-import { writeFileSync } from "node:fs";
+import { existsSync, writeFileSync } from "node:fs";
 
 const generation = 7;
+let executionCount = 0;
 
 parentPort.on("message", (message) => {
   if (message.kind === "initialize") {
@@ -24,11 +25,22 @@ parentPort.on("message", (message) => {
     return;
   }
   if (message.kind === "execute") {
+    executionCount += 1;
+    if (workerData.requestPayloadPath !== undefined) {
+      writeFileSync(workerData.requestPayloadPath, JSON.stringify(message.request));
+    }
     if (workerData.requestStartedPath !== undefined) {
       writeFileSync(workerData.requestStartedPath, "started");
+      writeFileSync(`${workerData.requestStartedPath}.${executionCount}`, "started");
     }
     if (workerData.mode === "block" || workerData.mode === "block-execution") {
       Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, workerData.blockMs ?? 150);
+    }
+    if (workerData.mode === "exit-on-release") {
+      while (!existsSync(workerData.releasePath)) {
+        Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 10);
+      }
+      throw new Error("intentional daemon navigation worker exit");
     }
     const result = {
       kind: "result",

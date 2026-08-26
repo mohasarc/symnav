@@ -39,8 +39,11 @@ if (
 }
 const acceptedRequestStartedPath = requestStartedPath;
 const oversizedResponse = releasePathArgument === "--oversized-response";
+const workerExit = releasePathArgument === "--worker-exit";
 const releasePath =
-  releasePathArgument === "--no-release" || oversizedResponse ? undefined : releasePathArgument;
+  releasePathArgument === "--no-release" || oversizedResponse || workerExit
+    ? undefined
+    : releasePathArgument;
 const symnavVersion = configuredSymnavVersion ?? "test";
 const canonicalStateDirectory = canonicalStateDir(stateDirectory);
 const dependencies = createDefaultDependencies(canonicalStateDirectory);
@@ -126,8 +129,20 @@ class ControlledNavigationWorker implements DaemonNavigationWorker {
 }
 
 const identity = DaemonWorkspaceIdentity.from(workspaceRoot, canonicalStateDirectory);
-const navigationWorker =
-  releasePath === undefined && !oversizedResponse
+const workerExitReleasePath = `${acceptedRequestStartedPath}.release-worker-exit`;
+const navigationWorker = workerExit
+  ? new NodeDaemonNavigationWorker({
+      generation: 7,
+      stateDirectory: canonicalStateDirectory,
+      entryUrl: new URL("./daemon-navigation-worker-fixture.mjs", import.meta.url),
+      workerData: {
+        mode: "exit-on-release",
+        requestPayloadPath: `${acceptedRequestStartedPath}.payload`,
+        requestStartedPath: acceptedRequestStartedPath,
+        releasePath: workerExitReleasePath,
+      },
+    })
+  : releasePath === undefined && !oversizedResponse
     ? new NodeDaemonNavigationWorker({
         generation: 7,
         stateDirectory: canonicalStateDirectory,

@@ -189,6 +189,15 @@ describe("CliProgramExecutor", () => {
     expect(result).not.toHaveProperty("telemetry");
   });
 
+  it("replaces local output over the result limit without partial bytes", async () => {
+    const result = await new CliProgramExecutor(fakeDependencies(), undefined, {
+      maximumBytes: 1,
+    }).execute({ argv: ["--version"], cwd: "/repo", telemetryEnabled: false });
+
+    expect(result.exitCode).toBe(1);
+    expect(decode(result)).toBe("Cannot answer: daemon response capacity exceeded.\n");
+  });
+
   it("reuses an injected request scope factory across executions", async () => {
     const fs = new ListingCountingFileSystem({
       "/repo/.git/HEAD": "ref: refs/heads/main\n",

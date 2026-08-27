@@ -524,6 +524,16 @@ function spawnDaemonStart(workspaceRoot: string, stateDirectory: string): ChildP
 }
 
 function waitForProcess(child: ChildProcess): Promise<void> {
+  if (child.exitCode !== null) {
+    return child.exitCode === 0
+      ? Promise.resolve()
+      : Promise.reject(new Error(`Startup publisher exited with code ${String(child.exitCode)}`));
+  }
+  if (child.signalCode !== null) {
+    return Promise.reject(
+      new Error(`Startup publisher exited with signal ${String(child.signalCode)}`),
+    );
+  }
   return new Promise((resolve, reject) => {
     child.once("error", reject);
     child.once("exit", (code) => {
@@ -534,6 +544,12 @@ function waitForProcess(child: ChildProcess): Promise<void> {
 }
 
 function waitForKilledProcess(child: ChildProcess): Promise<void> {
+  if (child.signalCode !== null || (child.exitCode !== null && child.exitCode !== 0)) {
+    return Promise.resolve();
+  }
+  if (child.exitCode === 0) {
+    return Promise.reject(new Error("Startup caller did not exit abruptly"));
+  }
   return new Promise((resolve, reject) => {
     child.once("error", reject);
     child.once("exit", (code, signal) => {

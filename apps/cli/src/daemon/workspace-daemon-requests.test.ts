@@ -35,8 +35,8 @@ describe("WorkspaceDaemon requests", () => {
   const harnesses: RequestHarness[] = [];
 
   afterEach(async () => {
-    await Promise.all(harnesses.map((harness) => harness.dispose()));
-    harnesses.length = 0;
+    const harnessesToDispose = harnesses.splice(0);
+    await Promise.all(harnessesToDispose.map((harness) => harness.dispose()));
   });
 
   it("authorizes startup before listening and publishes readiness", async () => {
@@ -1643,10 +1643,23 @@ class RequestHarness {
       await this.transport
         .receive({ kind: "kill", instanceId: this.instanceId, processToken: this.processToken })
         .catch(() => undefined);
-      await Promise.race([this.exited, new Promise((resolve) => setTimeout(resolve, 100))]);
+      await this.waitForExit();
     }
     rmSync(this.stateDirectory, { recursive: true, force: true });
     rmSync(this.workspaceRoot, { recursive: true, force: true });
+  }
+
+  private waitForExit(): Promise<void> {
+    return new Promise((resolve, reject) => {
+      const timeout = setTimeout(
+        () => reject(new Error("Timed out waiting for request harness shutdown")),
+        5_000,
+      );
+      void this.exited.then(() => {
+        clearTimeout(timeout);
+        resolve();
+      });
+    });
   }
 }
 

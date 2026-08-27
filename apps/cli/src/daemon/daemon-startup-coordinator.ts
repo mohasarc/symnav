@@ -128,9 +128,7 @@ export class DaemonStartupCoordinator {
   }
 
   async waitUntilReady(identity: DaemonWorkspaceIdentity): Promise<DaemonStartResult> {
-    let missingOwner:
-      | { readonly instanceId: string; readonly firstObservedAt: number }
-      | undefined;
+    let missingOwner: { readonly instanceId: string; readonly firstObservedAt: number } | undefined;
     while (true) {
       const record = this.registry.read(identity);
       if (record?.state === "ready" && record.symnavVersion === this.launcher.symnavVersion) {

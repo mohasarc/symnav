@@ -148,7 +148,7 @@ describe("DaemonStartupCoordinator", () => {
 
   it("bounds a persistent missing startup owner by the registry mutation grace", async () => {
     const harness = new CoordinatorHarness(roots);
-    const startingRecord = {
+    const startingRecord: DaemonRecord = {
       ...harness.readyRecord("missing-owner", harness.launcher.symnavVersion, 6001),
       state: "starting" as const,
     };
@@ -156,12 +156,14 @@ describe("DaemonStartupCoordinator", () => {
     let now = 0;
 
     await expect(
-      harness.coordinator({
-        now: () => {
-          now += DAEMON_STARTUP_TIMEOUT_MS;
-          return now;
-        },
-      }).waitUntilReady(harness.identity),
+      harness
+        .coordinator({
+          now: () => {
+            now += DAEMON_STARTUP_TIMEOUT_MS;
+            return now;
+          },
+        })
+        .waitUntilReady(harness.identity),
     ).rejects.toThrow("Daemon startup failed before readiness");
 
     expect(now).toBeGreaterThan(DAEMON_STARTUP_TIMEOUT_MS);

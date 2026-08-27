@@ -2,9 +2,12 @@ import {
   cpSync,
   mkdirSync,
   mkdtempSync,
+  readFileSync,
   readdirSync,
   rmSync,
+  statSync,
   unlinkSync,
+  utimesSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -155,7 +158,19 @@ describe("TypeScriptProjectGraph", () => {
 
     const first = await graph.refresh(snapshot);
     const languageService = graph.languageServiceFor("packages/app/src/index.ts");
-    const second = await graph.refresh(await projectFixture.snapshot());
+    let absoluteReads = 0;
+    const unchangedSnapshot: WorkspaceSnapshot = {
+      root: snapshot.root,
+      files: snapshot.files.map((file) => ({
+        relative: file.relative,
+        get absolute() {
+          absoluteReads += 1;
+          return file.absolute;
+        },
+        metadata: file.metadata,
+      })),
+    };
+    const second = await graph.refresh(unchangedSnapshot);
 
     expect(first).toEqual({
       root: snapshot.root,
@@ -164,8 +179,77 @@ describe("TypeScriptProjectGraph", () => {
       changedConfigurationCount: 6,
     });
     expect(second.changedConfigurationCount).toBe(0);
+    expect(absoluteReads).toBe(0);
     expect(graph.languageServiceFor("packages/app/src/index.ts")).toBe(languageService);
     expect(graph.programFor("scratch/outside.ts")).toBeDefined();
+  });
+
+  it("keeps full project ownership across a selection refresh", async () => {
+    const projectFixture = fixture();
+    const graph = new TypeScriptProjectGraph(projectFixture.fileSystem);
+    const backend = new TypeScriptBackend(projectFixture.fileSystem, undefined, graph);
+    const snapshot = await projectFixture.snapshot();
+    await backend.refresh({ snapshot, coverage: "workspace" });
+    const languageService = graph.languageServiceFor("packages/app/src/index.ts");
+
+    await backend.refresh({
+      snapshot: { root: snapshot.root, files: [snapshot.files[0]!] },
+      coverage: "selection",
+    });
+    await backend.refresh({ snapshot, coverage: "workspace" });
+
+    expect(graph.languageServiceFor("packages/app/src/index.ts")).toBe(languageService);
+    expect(graph.programFor("packages/domain/src/index.ts")).toBeDefined();
+  });
+
+  it("discovers a previously missing referenced configuration without source changes", async () => {
+    const projectFixture = fixture();
+    projectFixture.write(
+      "tsconfig.json",
+      JSON.stringify({
+        files: [],
+        references: [
+          { path: "packages/app" },
+          { path: "packages/domain" },
+          { path: "packages/pending" },
+        ],
+      }),
+    );
+    projectFixture.write("packages/pending/src/index.ts", "export const pendingTarget = true;\n");
+    const graph = new TypeScriptProjectGraph(projectFixture.fileSystem);
+    const snapshot = await projectFixture.snapshot();
+    const before = await graph.refresh(snapshot);
+
+    projectFixture.write(
+      "packages/pending/tsconfig.json",
+      JSON.stringify({ include: ["src/**/*.ts"] }),
+    );
+    const after = await graph.refresh(snapshot);
+
+    expect(before.configuredProjectCount).toBe(3);
+    expect(after.configuredProjectCount).toBe(4);
+    expect(after.changedConfigurationCount).toBe(1);
+  });
+
+  it("invalidates equal-size configuration content after modification time is restored", async () => {
+    const projectFixture = fixture();
+    const configurationPath = join(projectFixture.root, "packages/app/tsconfig.base.json");
+    const originalContent = readFileSync(configurationPath, "utf8");
+    const originalTimes = statSync(configurationPath);
+    const graph = new TypeScriptProjectGraph(projectFixture.fileSystem);
+    const snapshot = await projectFixture.snapshot();
+    await graph.refresh(snapshot);
+
+    const changedContent = originalContent.replace("@domain/*", "@demand/*");
+    expect(changedContent).toHaveLength(originalContent.length);
+    projectFixture.write("packages/app/tsconfig.base.json", changedContent);
+    utimesSync(configurationPath, originalTimes.atime, originalTimes.mtime);
+    const changed = await graph.refresh(snapshot);
+    const paths = graph.programFor("packages/app/src/index.ts")?.getCompilerOptions().paths;
+
+    expect(changed.changedConfigurationCount).toBe(1);
+    expect(paths?.["@demand/*"]).toBeDefined();
+    expect(paths?.["@domain/*"]).toBeUndefined();
   });
 
   it("invalidates compiler options and project references on the next refresh", async () => {

@@ -98,7 +98,8 @@ export class TypeScriptProjectGraph implements TypeScriptSemanticSourceProvider 
   private configuredProjectByFile = new Map<string, TypeScriptSemanticProject>();
   private inferredProject: TypeScriptSemanticProject;
   private configurationInputs = new Map<string, string>();
-  private workspaceRevision = "";
+  private projectInputContents = new Map<string, string | null>();
+  private workspaceRoot: string | undefined;
   private initialized = false;
 
   constructor(
@@ -109,8 +110,16 @@ export class TypeScriptProjectGraph implements TypeScriptSemanticSourceProvider 
   }
 
   async refresh(snapshot: WorkspaceSnapshot): Promise<TypeScriptProjectGraphRefresh> {
-    const configurations = this.readConfigurations(snapshot);
-    const workspacePackages = this.readWorkspacePackages(snapshot, configurations);
+    if (this.workspaceSourcesUnchanged(snapshot) && this.projectInputsUnchanged()) {
+      return this.currentRefresh(snapshot.root);
+    }
+    const observedProjectInputs = new Map<string, string | null>();
+    const configurations = this.readConfigurations(snapshot, observedProjectInputs);
+    const workspacePackages = this.readWorkspacePackages(
+      snapshot,
+      configurations,
+      observedProjectInputs,
+    );
     const nextInputs = new Map<string, string>();
     for (const configuration of configurations) {
       nextInputs.set(configuration.path, configuration.content);
@@ -125,28 +134,13 @@ export class TypeScriptProjectGraph implements TypeScriptSemanticSourceProvider 
       this.configurationInputs,
       nextInputs,
     );
-    const workspaceRevision = snapshot.files
-      .map((file) => `${file.relative}:${file.metadata.changeToken}`)
-      .join("\n");
-    if (
-      changedConfigurationCount > 0 ||
-      !this.initialized ||
-      workspaceRevision !== this.workspaceRevision
-    ) {
-      this.configureProjects(snapshot, configurations, workspacePackages);
-    }
+    this.configureProjects(snapshot, configurations, workspacePackages);
     this.initialized = true;
+    this.workspaceRoot = snapshot.root;
     this.configurationInputs = nextInputs;
-    this.workspaceRevision = workspaceRevision;
+    this.projectInputContents = observedProjectInputs;
     this.acceptedFiles = new Map(snapshot.files.map((file) => [file.relative, file]));
-    return {
-      root: snapshot.root,
-      configuredProjectCount: configurations.length,
-      inferredFileCount: snapshot.files.filter(
-        (file) => !this.configuredProjectByFile.has(file.relative),
-      ).length,
-      changedConfigurationCount,
-    };
+    return this.currentRefresh(snapshot.root, changedConfigurationCount);
   }
 
   programFor(relativePath: string): ts.Program | undefined {
@@ -227,6 +221,7 @@ export class TypeScriptProjectGraph implements TypeScriptSemanticSourceProvider 
 
   private readConfigurations(
     snapshot: WorkspaceSnapshot,
+    observedProjectInputs: Map<string, string | null>,
   ): readonly ParsedTypeScriptConfiguration[] {
     const paths = new WorkspacePathDialect(snapshot.root);
     const pending = [paths.join(snapshot.root, "tsconfig.json")];
@@ -236,7 +231,7 @@ export class TypeScriptProjectGraph implements TypeScriptSemanticSourceProvider 
       const path = pending.shift() as string;
       if (seen.has(path)) continue;
       seen.add(path);
-      const parsed = this.readConfiguration(path, snapshot);
+      const parsed = this.readConfiguration(path, snapshot, observedProjectInputs);
       if (!parsed) continue;
       configurations.push(parsed);
       const references = Array.isArray(parsed.value.references) ? parsed.value.references : [];
@@ -253,16 +248,12 @@ export class TypeScriptProjectGraph implements TypeScriptSemanticSourceProvider 
   private readConfiguration(
     path: string,
     snapshot: WorkspaceSnapshot,
+    observedProjectInputs: Map<string, string | null>,
   ): ParsedTypeScriptConfiguration | undefined {
     const paths = new WorkspacePathDialect(snapshot.root);
     const normalizedPath = paths.normalize(path);
-    if (
-      !this.fileSystem.existsSync(normalizedPath) ||
-      this.fileSystem.isDirectorySync(normalizedPath)
-    ) {
-      return undefined;
-    }
-    const content = this.fileSystem.readFileSync(normalizedPath);
+    const content = this.captureProjectInput(normalizedPath, observedProjectInputs);
+    if (content === undefined) return undefined;
     const parsed = ts.parseConfigFileTextToJson(normalizedPath, content);
     if (parsed.error || !parsed.config || typeof parsed.config !== "object") return undefined;
     const value = parsed.config as Record<string, unknown>;
@@ -273,20 +264,15 @@ export class TypeScriptProjectGraph implements TypeScriptSemanticSourceProvider 
         useCaseSensitiveFileNames: paths.caseSensitive,
         fileExists: (candidate) => {
           const normalizedCandidate = paths.normalize(candidate);
-          return (
-            this.fileSystem.existsSync(normalizedCandidate) &&
-            !this.fileSystem.isDirectorySync(normalizedCandidate)
-          );
+          return this.captureProjectInput(normalizedCandidate, observedProjectInputs) !== undefined;
         },
         readFile: (candidate) => {
           const normalizedCandidate = paths.normalize(candidate);
-          if (
-            !this.fileSystem.existsSync(normalizedCandidate) ||
-            this.fileSystem.isDirectorySync(normalizedCandidate)
-          ) {
-            return undefined;
-          }
-          const candidateContent = this.fileSystem.readFileSync(normalizedCandidate);
+          const candidateContent = this.captureProjectInput(
+            normalizedCandidate,
+            observedProjectInputs,
+          );
+          if (candidateContent === undefined) return undefined;
           extendedInputs.set(normalizedCandidate, candidateContent);
           return candidateContent;
         },
@@ -348,6 +334,7 @@ export class TypeScriptProjectGraph implements TypeScriptSemanticSourceProvider 
   private readWorkspacePackages(
     snapshot: WorkspaceSnapshot,
     configurations: readonly ParsedTypeScriptConfiguration[],
+    observedProjectInputs: Map<string, string | null>,
   ): readonly WorkspacePackage[] {
     const paths = new WorkspacePathDialect(snapshot.root);
     const directories = new Map<string, string>([[paths.key(snapshot.root), snapshot.root]]);
@@ -365,8 +352,8 @@ export class TypeScriptProjectGraph implements TypeScriptSemanticSourceProvider 
     const packages: WorkspacePackage[] = [];
     for (const directory of directories.values()) {
       const path = paths.join(directory, "package.json");
-      if (!this.fileSystem.existsSync(path) || this.fileSystem.isDirectorySync(path)) continue;
-      const content = this.fileSystem.readFileSync(path);
+      const content = this.captureProjectInput(path, observedProjectInputs);
+      if (content === undefined) continue;
       const value = TypeScriptProjectGraph.parseJson(content);
       const name = value?.name;
       if (typeof name !== "string" || !value) continue;
@@ -378,6 +365,49 @@ export class TypeScriptProjectGraph implements TypeScriptSemanticSourceProvider 
       packages.push({ path, content, mappings });
     }
     return packages;
+  }
+
+  private workspaceSourcesUnchanged(snapshot: WorkspaceSnapshot): boolean {
+    if (!this.initialized || this.workspaceRoot !== snapshot.root) return false;
+    if (this.acceptedFiles.size !== snapshot.files.length) return false;
+    return snapshot.files.every((file) => {
+      const acceptedFile = this.acceptedFiles.get(file.relative);
+      return acceptedFile?.metadata.changeToken === file.metadata.changeToken;
+    });
+  }
+
+  private projectInputsUnchanged(): boolean {
+    for (const [path, content] of this.projectInputContents) {
+      if (this.readCurrentProjectInput(path) !== content) return false;
+    }
+    return true;
+  }
+
+  private readCurrentProjectInput(path: string): string | null {
+    if (!this.fileSystem.existsSync(path) || this.fileSystem.isDirectorySync(path)) return null;
+    return this.fileSystem.readFileSync(path);
+  }
+
+  private captureProjectInput(
+    path: string,
+    observedProjectInputs: Map<string, string | null>,
+  ): string | undefined {
+    if (!observedProjectInputs.has(path)) {
+      observedProjectInputs.set(path, this.readCurrentProjectInput(path));
+    }
+    return observedProjectInputs.get(path) ?? undefined;
+  }
+
+  private currentRefresh(
+    root: string,
+    changedConfigurationCount = 0,
+  ): TypeScriptProjectGraphRefresh {
+    return {
+      root,
+      configuredProjectCount: this.configuredProjects.length,
+      inferredFileCount: this.acceptedFiles.size - this.configuredProjectByFile.size,
+      changedConfigurationCount,
+    };
   }
 
   private configuredFiles(

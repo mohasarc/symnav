@@ -238,15 +238,11 @@ export class LocalDaemonTransport {
     });
   }
 
-  async execute(
-    endpoint: string,
-    request: DaemonExecuteRequest,
-  ): Promise<DaemonExecutionReceipt> {
-    const receipt = await this.executeOnce(endpoint, request);
-    return {
+  execute(endpoint: string, request: DaemonExecuteRequest): Promise<DaemonExecutionReceipt> {
+    return this.executeOnce(endpoint, request).then((receipt) => ({
       acceptance: receipt.acceptance,
       completion: this.completeWithOneReattachment(endpoint, request, receipt.completion),
-    };
+    }));
   }
 
   private async completeWithOneReattachment(

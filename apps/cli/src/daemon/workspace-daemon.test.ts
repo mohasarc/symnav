@@ -311,8 +311,7 @@ describe("WorkspaceDaemon runtime lifecycle", () => {
     rmSync(harness.workspaceRoot, { recursive: true, force: true });
 
     await expect(harness.execute("deleted-workspace")).resolves.toMatchObject({
-      kind: "result",
-      requestId: "deleted-workspace",
+      status: "completed",
       result: { exitCode: 0 },
     });
     await harness.exited;

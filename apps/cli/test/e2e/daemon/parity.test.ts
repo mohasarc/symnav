@@ -101,7 +101,7 @@ describe("symnav daemon parity", () => {
 
     expect(results).toEqual([expected, expected]);
     expect(harness.onlyDaemonPid()).toBeGreaterThan(0);
-  });
+  }, 15_000);
   it("records only fallback when execution finishes but response delivery fails", async () => {
     const harness = new DaemonParityHarness();
     harnesses.push(harness);

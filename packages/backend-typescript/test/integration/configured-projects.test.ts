@@ -9,7 +9,7 @@ import {
 
 import { TypeScriptBackend } from "../../src/typescript-backend/typescript-backend.js";
 
-const workspaceRoot = fixturePath("configured-project-cases");
+const workspaceRoot = fixturePath("configured-project-cases").replaceAll("\\", "/");
 
 describe("TypeScriptBackend configured projects", () => {
   it("resolves references and call targets through path and workspace package imports", async () => {

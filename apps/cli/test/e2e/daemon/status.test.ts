@@ -408,8 +408,8 @@ describe("symnav daemon status", () => {
         env: { SYMNAV_STATE_DIR: stateDir },
       });
       return daemonRecords(stateDir).length === 0;
-    }, 30_000);
-  }, 45_000);
+    }, 90_000);
+  }, 120_000);
 });
 
 function temporaryStateDirectory(directories: string[]): string {

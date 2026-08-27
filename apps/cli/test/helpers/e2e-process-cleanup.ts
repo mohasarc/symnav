@@ -87,7 +87,7 @@ export class E2eProcessCleanup {
       removeDirectory(directory, {
         recursive: true,
         force: true,
-        maxRetries: 10,
+        maxRetries: 30,
         retryDelay: 100,
       });
     }

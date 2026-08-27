@@ -15,11 +15,11 @@ describe("E2eProcessCleanup", () => {
     expect(removals).toEqual([
       {
         directory: "first",
-        options: { recursive: true, force: true, maxRetries: 10, retryDelay: 100 },
+        options: { recursive: true, force: true, maxRetries: 30, retryDelay: 100 },
       },
       {
         directory: "second",
-        options: { recursive: true, force: true, maxRetries: 10, retryDelay: 100 },
+        options: { recursive: true, force: true, maxRetries: 30, retryDelay: 100 },
       },
     ]);
   });

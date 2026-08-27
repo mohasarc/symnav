@@ -1296,6 +1296,7 @@ describe("WorkspaceDaemon requests", () => {
   it("recovers one real worker old-generation exhaustion during warm-up", async () => {
     const generations: number[] = [];
     const { daemon, harness, lease } = RequestHarness.create(undefined, {
+      residentMemoryBytes: () => 0,
       navigationWorkerFactory: (generation) => {
         generations.push(generation);
         return new NodeDaemonNavigationWorker({
@@ -1348,6 +1349,7 @@ describe("WorkspaceDaemon requests", () => {
 
   it("recovers a real old-generation exhaustion without replaying active work", async () => {
     const harness = await RequestHarness.start(undefined, {
+      residentMemoryBytes: () => 0,
       navigationWorkerFactory: (generation) =>
         new NodeDaemonNavigationWorker({
           generation,
@@ -1380,9 +1382,14 @@ describe("WorkspaceDaemon requests", () => {
 
   it("recovers real external RSS pressure while lifecycle control stays responsive", async () => {
     const policy = DaemonResourcePolicy.fromSystemMemory(512 * 1024 * 1024);
+    const residentMemoryBaselineBytes = process.memoryUsage().rss;
     const harness = await RequestHarness.start(undefined, {
       resourcePolicy: policy,
       resourceCheckIntervalMs: 25,
+      residentMemoryBytes: () =>
+        policy.record.resumeProcessRssBytes -
+        1 +
+        Math.max(0, process.memoryUsage().rss - residentMemoryBaselineBytes),
       navigationWorkerFactory: (generation) =>
         new NodeDaemonNavigationWorker({
           generation,

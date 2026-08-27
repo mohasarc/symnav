@@ -5,6 +5,25 @@ import type { DaemonProcessTerminator } from "../../src/daemon/daemon-process-la
 import { E2eProcessCleanup } from "./e2e-process-cleanup.js";
 
 describe("E2eProcessCleanup", () => {
+  it("gives terminated processes time to release Windows directory handles", () => {
+    const removals: Array<{ readonly directory: string; readonly options: unknown }> = [];
+
+    E2eProcessCleanup.removeDirectories(["first", "second"], (directory, options) => {
+      removals.push({ directory: String(directory), options });
+    });
+
+    expect(removals).toEqual([
+      {
+        directory: "first",
+        options: { recursive: true, force: true, maxRetries: 10, retryDelay: 100 },
+      },
+      {
+        directory: "second",
+        options: { recursive: true, force: true, maxRetries: 10, retryDelay: 100 },
+      },
+    ]);
+  });
+
   it("attempts every deduplicated pid and reports failures in input order", async () => {
     const attempted: number[] = [];
     const processTerminator: DaemonProcessTerminator = {

@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { fixturePath, runSymnavBinary, type RunSymnavBinaryResult } from "@symnav/testing";
+import { canonicalWorkspaceRoot } from "../../helpers/canonical-workspace-root.js";
 import { E2eProcessCleanup } from "../../helpers/e2e-process-cleanup.js";
 import { ensureFixtureGitMarker } from "../ensure-fixture-git-marker.js";
 import { symbolCommands } from "../symbol-command.js";
@@ -21,9 +22,11 @@ describe("nested Git workspaces", () => {
     expect(harness.startParentDaemon()).toMatchObject({ status: 0, stderr: "" });
 
     const nestedPath = "nested/src/nested.ts";
+    const nestedRoot = canonicalWorkspaceRoot(harness.nestedRoot);
+    const workspaceRoot = canonicalWorkspaceRoot(harness.workspaceRoot);
     const expectedError =
-      `Cannot answer: ${nestedPath} belongs to nested Git workspace rooted at ${harness.nestedRoot}, ` +
-      `not selected workspace ${harness.workspaceRoot}; run from ${harness.nestedRoot} or use --cwd ${harness.nestedRoot}.\n`;
+      `Cannot answer: ${nestedPath} belongs to nested Git workspace rooted at ${nestedRoot}, ` +
+      `not selected workspace ${workspaceRoot}; run from ${nestedRoot} or use --cwd ${nestedRoot}.\n`;
     const parentCommands: readonly (readonly string[])[] = [
       ["overview", nestedPath],
       ...symbolCommands.map((command) => [command, `${nestedPath}::nestedTarget`] as const),

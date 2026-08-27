@@ -500,9 +500,10 @@ describe("DaemonStartupCoordinator", () => {
   });
 
   it("renews startup ownership while readiness is pending", async () => {
-    const harness = new CoordinatorHarness(roots, { readyDelayMs: 80 });
+    const readinessPublicationGate = new ReadinessPublicationGate();
+    const harness = new CoordinatorHarness(roots, { readinessPublicationGate });
     const starting = harness
-      .coordinator({ startupTimeoutMs: 500, heartbeatIntervalMs: 5 })
+      .coordinator({ startupTimeoutMs: 5_000, heartbeatIntervalMs: 5 })
       .ensureRunning(harness.identity);
     await waitUntil(() => harness.registry.read(harness.identity)?.state === "starting");
     const initialRevision = harness.registry.startupOwner(harness.identity)?.revision;
@@ -516,6 +517,7 @@ describe("DaemonStartupCoordinator", () => {
       );
     });
 
+    readinessPublicationGate.release();
     await expect(starting).resolves.toMatchObject({ status: "ready" });
   });
 

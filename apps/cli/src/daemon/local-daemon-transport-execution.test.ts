@@ -774,24 +774,42 @@ describe("LocalDaemonTransport execution delivery", () => {
   });
 
   it("reattaches once with the same request after accepted delivery closes", async () => {
-    let connectionCount = 0;
+    const directory = mkdtempSync(join(tmpdir(), "symnav-accepted-reattach-"));
+    directories.push(directory);
+    const store = new DaemonCompletionSpoolStore({
+      directory: join(directory, "daemon"),
+      workspaceKey: "workspace",
+      instanceId: request.instanceId,
+    });
+    const spool = await store.create(request.requestId);
+    const manifest = await spool.finish(0);
+    let executeCount = 0;
     const endpoint = await rawExecutionServer(servers, sockets, directories, (socket) => {
-      connectionCount += 1;
-      socket.once("data", () => {
-        if (connectionCount === 1) {
+      socket.once("data", (encoded) => {
+        const bytes = Buffer.isBuffer(encoded) ? encoded : Buffer.from(encoded);
+        const message = JSON.parse(bytes.subarray(4).toString()) as { kind: string };
+        if (message.kind === "result-ack") {
+          socket.end(
+            frame({
+              kind: "result-acknowledged",
+              instanceId: request.instanceId,
+              processToken: request.processToken,
+              requestId: request.requestId,
+              transferId: manifest.transferId,
+            }),
+          );
+          return;
+        }
+        executeCount += 1;
+        if (executeCount === 1) {
           socket.end(frame(accepted()));
           return;
         }
         socket.end(
           Buffer.concat([
             frame(accepted()),
-            frame({
-              kind: "completed",
-              instanceId: request.instanceId,
-              processToken: request.processToken,
-              requestId: request.requestId,
-              result: { frames: [], exitCode: 0 },
-            } satisfies DaemonExecutionServerFrame),
+            frame(resultManifest(manifest)),
+            frame(resultEnd(manifest)),
           ]),
         );
       });
@@ -802,11 +820,11 @@ describe("LocalDaemonTransport execution delivery", () => {
       request,
     );
 
-    await expect(receipt.completion).resolves.toEqual({
-      status: "completed",
-      result: { frames: [], exitCode: 0 },
-    });
-    expect(connectionCount).toBe(2);
+    const completion = await receipt.completion;
+
+    expect(completion).toMatchObject({ status: "completed", result: { exitCode: 0 } });
+    expect(executeCount).toBe(2);
+    if (completion.status === "completed") await completion.result.output.dispose();
   });
 
   it.each([

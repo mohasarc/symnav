@@ -233,7 +233,7 @@ describe("symnav daemon status", () => {
     const readyRecords = daemonRecords(stateDir);
     const readyRecord = readyRecords[0];
 
-    expect(navigation.status).toBe(0);
+    expect(navigation.status, navigation.stderr).toBe(0);
     expect(navigation.stdout).toContain("value");
     expect(readyRecords).toEqual([
       expect.objectContaining({ instanceId, processToken, pid: childPid, state: "ready" }),

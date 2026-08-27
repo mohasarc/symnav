@@ -92,6 +92,36 @@ describe("LocalDaemonTransport execution delivery", () => {
     } satisfies Partial<DaemonTransportError>);
   });
 
+  it("allows execution admission beyond the lifecycle request timeout", async () => {
+    const endpoint = await rawExecutionServer(servers, sockets, directories, (socket) => {
+      socket.once("data", () => {
+        setTimeout(
+          () =>
+            socket.end(
+              Buffer.concat([
+                frame(accepted()),
+                frame({
+                  kind: "completed",
+                  instanceId: request.instanceId,
+                  processToken: request.processToken,
+                  requestId: request.requestId,
+                  result: { frames: [], exitCode: 0 },
+                } satisfies DaemonExecutionServerFrame),
+              ]),
+            ),
+          40,
+        );
+      });
+    });
+
+    const receipt = await new LocalDaemonTransport({ requestTimeoutMs: 10 }).execute(
+      endpoint,
+      request,
+    );
+
+    await expect(receipt.completion).resolves.toMatchObject({ status: "completed" });
+  });
+
   it("has no completion deadline after acceptance", async () => {
     const endpoint = await rawExecutionServer(servers, sockets, directories, (socket) => {
       socket.once("data", () => {

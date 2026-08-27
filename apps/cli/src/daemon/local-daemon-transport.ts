@@ -18,10 +18,12 @@ import type {
 
 const DEFAULT_MAXIMUM_FRAME_BYTES = 8 * 1024 * 1024;
 const DEFAULT_REQUEST_TIMEOUT_MS = 250;
+const DEFAULT_EXECUTION_REQUEST_TIMEOUT_MS = 5_000;
 
 interface LocalDaemonTransportOptions {
   readonly maximumFrameBytes?: number;
   readonly requestTimeoutMs?: number;
+  readonly executionRequestTimeoutMs?: number;
   readonly writeChunkSize?: number;
 }
 
@@ -139,11 +141,14 @@ class ListeningDaemonServer implements DaemonServer {
 export class LocalDaemonTransport {
   private readonly maximumFrameBytes: number;
   private readonly requestTimeoutMs: number;
+  private readonly executionRequestTimeoutMs: number;
   private readonly writeChunkSize: number | undefined;
 
   constructor(options: LocalDaemonTransportOptions = {}) {
     this.maximumFrameBytes = options.maximumFrameBytes ?? DEFAULT_MAXIMUM_FRAME_BYTES;
     this.requestTimeoutMs = options.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS;
+    this.executionRequestTimeoutMs =
+      options.executionRequestTimeoutMs ?? DEFAULT_EXECUTION_REQUEST_TIMEOUT_MS;
     this.writeChunkSize = options.writeChunkSize;
   }
 
@@ -297,7 +302,7 @@ export class LocalDaemonTransport {
           rejectCompletion(transportError);
         }
       };
-      socket.setTimeout(this.requestTimeoutMs, () =>
+      socket.setTimeout(this.executionRequestTimeoutMs, () =>
         fail(new DaemonTransportError("timeout", delivery, "Daemon request timed out")),
       );
       socket.once("error", (error) => {

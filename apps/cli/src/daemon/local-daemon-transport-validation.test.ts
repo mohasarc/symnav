@@ -55,7 +55,10 @@ describe("LocalDaemonTransport validation", () => {
     const endpoint = await rawServer(servers, sockets, directories, () => undefined);
 
     await expect(
-      new LocalDaemonTransport({ requestTimeoutMs: 10 }).execute(endpoint, executionRequest()),
+      new LocalDaemonTransport({ executionRequestTimeoutMs: 10 }).execute(
+        endpoint,
+        executionRequest(),
+      ),
     ).rejects.toMatchObject({
       code: "timeout",
       delivery: "submitted-unconfirmed",

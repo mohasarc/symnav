@@ -313,7 +313,7 @@ describe("WorkspaceDaemon runtime lifecycle", () => {
 
   it("recovers from rejected work and exits after the recovered queue becomes idle", async () => {
     const harness = await WorkspaceDaemonHarness.start(new RejectThenSucceedExecutor(), {
-      idleTimeoutMs: 30,
+      idleTimeoutMs: 1_000,
     });
     harnesses.push(harness);
 

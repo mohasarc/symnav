@@ -348,7 +348,7 @@ export class WorkspaceDaemon {
       exitCode: result.exitCode,
     });
     if (!(await this.options.dependencies.fs.exists(this.options.identity.workspaceRoot))) {
-      setTimeout(() => void this.shutdown("workspace-deleted"), 0);
+      setTimeout(() => void this.shutdown("workspace-deleted", true), 0);
     }
     return { kind: "result", requestId: request.requestId, result };
   }

@@ -297,6 +297,29 @@ describe("WorkspaceDaemon runtime lifecycle", () => {
     );
   });
 
+  it("force-closes a blocked worker after the workspace disappears", async () => {
+    const navigationWorker = new BlockingDrainNavigationWorker();
+    const harness = await WorkspaceDaemonHarness.start(new ImmediateExecutor(), {
+      navigationWorker,
+    });
+    harnesses.push(harness);
+    rmSync(harness.workspaceRoot, { recursive: true, force: true });
+
+    await expect(harness.execute("deleted-workspace")).resolves.toMatchObject({
+      kind: "result",
+      requestId: "deleted-workspace",
+      result: { exitCode: 0 },
+    });
+    await harness.exited;
+
+    expect(navigationWorker.terminateCount).toBe(1);
+    expect(harness.logEvents()).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ kind: "stop", reason: "workspace-deleted" }),
+      ]),
+    );
+  });
+
   it("force-closes active work without terminal output when resident memory exceeds the cap", async () => {
     let resourceExceeded = false;
     const executor = new DeferredExecutor();

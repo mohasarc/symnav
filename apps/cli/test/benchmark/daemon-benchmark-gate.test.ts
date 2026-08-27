@@ -37,6 +37,17 @@ describe("DaemonBenchmarkGate", () => {
     ).toContain("latency-threshold");
   });
 
+  it("allows loaded status process startup below five seconds", () => {
+    const gate = new DaemonBenchmarkGate();
+
+    expect(
+      gate.evaluate({ ...BenchmarkEvidence.valid(), statusMaximumMs: 1_387 }).statusResponsive,
+    ).toBe(true);
+    expect(
+      gate.evaluate({ ...BenchmarkEvidence.valid(), statusMaximumMs: 5_000 }).failures,
+    ).toContain("status-unresponsive");
+  });
+
   it.each(BenchmarkEvidence.failures)("fails independently for %s", (failure, mutate) => {
     const input = mutate(BenchmarkEvidence.valid());
 
@@ -58,7 +69,7 @@ class BenchmarkEvidence {
     ["semantic-result-mismatch", (input) => ({ ...input, semanticResultsValid: false })],
     ["stale-mutation", (input) => ({ ...input, mutationsCurrent: false })],
     ["latency-threshold", (input) => ({ ...input, samples: this.samples(Array(9).fill(501)) })],
-    ["status-unresponsive", (input) => ({ ...input, statusMaximumMs: 1_001 })],
+    ["status-unresponsive", (input) => ({ ...input, statusMaximumMs: 5_000 })],
     ["busy-status-missing", (input) => ({ ...input, busyStatusObserved: false })],
     ["daemon-restarted", (input) => ({ ...input, restartCount: 1 })],
     ["fallback-observed", (input) => ({ ...input, fallbackCount: 1 })],

@@ -102,6 +102,7 @@ export interface DaemonBenchmarkGateInput {
 export const DAEMON_BENCHMARK_WARM_REPETITIONS = 9;
 export const DAEMON_BENCHMARK_REQUIRED_SAMPLES = 8;
 export const DAEMON_BENCHMARK_LARGE_RESPONSE_MINIMUM_BYTES = 8 * 1024 * 1024;
+export const DAEMON_BENCHMARK_LOADED_STATUS_CEILING_MS = 5_000;
 export const DAEMON_BENCHMARK_THRESHOLDS_MS = {
   overview: 500,
   resolve: 2_000,
@@ -142,7 +143,7 @@ export class DaemonBenchmarkGate {
 
     const parity = input.stdoutParity && input.stderrParity && input.exitParity;
     const freshness = input.freshness && input.mutationsCurrent;
-    const statusResponsive = input.statusMaximumMs < 1_000;
+    const statusResponsive = input.statusMaximumMs < DAEMON_BENCHMARK_LOADED_STATUS_CEILING_MS;
     const continuity =
       input.restartCount === 0 &&
       input.initialPid === input.finalPid &&

@@ -141,6 +141,42 @@ describe("LocalDaemonTransport execution delivery", () => {
     } satisfies Partial<DaemonTransportError>);
   });
 
+  it("reattaches once with the same request after accepted delivery closes", async () => {
+    let connectionCount = 0;
+    const endpoint = await rawExecutionServer(servers, sockets, directories, (socket) => {
+      connectionCount += 1;
+      socket.once("data", () => {
+        if (connectionCount === 1) {
+          socket.end(frame(accepted()));
+          return;
+        }
+        socket.end(
+          Buffer.concat([
+            frame(accepted()),
+            frame({
+              kind: "completed",
+              instanceId: request.instanceId,
+              processToken: request.processToken,
+              requestId: request.requestId,
+              result: { frames: [], exitCode: 0 },
+            } satisfies DaemonExecutionServerFrame),
+          ]),
+        );
+      });
+    });
+
+    const receipt = await new LocalDaemonTransport({ requestTimeoutMs: 100 }).execute(
+      endpoint,
+      request,
+    );
+
+    await expect(receipt.completion).resolves.toEqual({
+      status: "completed",
+      result: { frames: [], exitCode: 0 },
+    });
+    expect(connectionCount).toBe(2);
+  });
+
   it.each([
     ["instance", { ...accepted(), instanceId: "other" }],
     ["token", { ...accepted(), processToken: "other" }],

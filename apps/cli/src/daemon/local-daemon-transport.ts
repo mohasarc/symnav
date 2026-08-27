@@ -238,7 +238,39 @@ export class LocalDaemonTransport {
     });
   }
 
-  execute(endpoint: string, request: DaemonExecuteRequest): Promise<DaemonExecutionReceipt> {
+  async execute(
+    endpoint: string,
+    request: DaemonExecuteRequest,
+  ): Promise<DaemonExecutionReceipt> {
+    const receipt = await this.executeOnce(endpoint, request);
+    return {
+      acceptance: receipt.acceptance,
+      completion: this.completeWithOneReattachment(endpoint, request, receipt.completion),
+    };
+  }
+
+  private async completeWithOneReattachment(
+    endpoint: string,
+    request: DaemonExecuteRequest,
+    completion: DaemonExecutionReceipt["completion"],
+  ): DaemonExecutionReceipt["completion"] {
+    try {
+      return await completion;
+    } catch (firstError) {
+      if (!LocalDaemonTransport.isAcceptedConnectionClose(firstError, request)) throw firstError;
+      try {
+        const reattached = await this.executeOnce(endpoint, request);
+        return await reattached.completion;
+      } catch {
+        throw firstError;
+      }
+    }
+  }
+
+  private executeOnce(
+    endpoint: string,
+    request: DaemonExecuteRequest,
+  ): Promise<DaemonExecutionReceipt> {
     LocalDaemonTransport.assertRequest(request);
     return new Promise((resolve, reject) => {
       const decoder = new DaemonFrameDecoder(this.maximumFrameBytes);
@@ -365,6 +397,18 @@ export class LocalDaemonTransport {
         }
       });
     });
+  }
+
+  private static isAcceptedConnectionClose(
+    error: unknown,
+    request: DaemonExecuteRequest,
+  ): error is DaemonTransportError {
+    return (
+      error instanceof DaemonTransportError &&
+      error.code === "closed" &&
+      error.delivery === "accepted" &&
+      error.authenticatedInstanceId === request.instanceId
+    );
   }
 
   async executionStatus(

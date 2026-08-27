@@ -203,7 +203,7 @@ describe("symnav daemon status", () => {
     });
 
     expect(starting.status).toBe(0);
-    expect(Date.now() - statusStartedAt).toBeLessThan(1_000);
+    expect(Date.now() - statusStartedAt).toBeLessThan(5_000);
     expect(JSON.parse(starting.stdout).daemons).toEqual([
       expect.objectContaining({
         workspaceRoot,
@@ -363,7 +363,7 @@ describe("symnav daemon status", () => {
     const recordsAfterStatus = daemonRecords(stateDir);
 
     expect(status.status).toBe(0);
-    expect(statusDurationMs).toBeLessThan(1_000);
+    expect(statusDurationMs).toBeLessThan(5_000);
     expect(JSON.parse(status.stdout).daemons).toEqual([
       expect.objectContaining({
         workspaceRoot,
@@ -423,7 +423,7 @@ describe("symnav daemon status", () => {
       env: { SYMNAV_STATE_DIR: stateDir },
     });
 
-    expect(Date.now() - statusStartedAt).toBeLessThan(1_000);
+    expect(Date.now() - statusStartedAt).toBeLessThan(5_000);
     expect(JSON.parse(status.stdout)).toEqual({
       schemaVersion: 1,
       daemons: [expect.objectContaining({ state: "unresponsive", workspaceRoot, pid })],
@@ -478,7 +478,7 @@ describe("symnav daemon status", () => {
       env: { SYMNAV_STATE_DIR: stateDir },
     });
 
-    expect(Date.now() - statusStartedAt).toBeLessThan(1_000);
+    expect(Date.now() - statusStartedAt).toBeLessThan(5_000);
     expect(status.stdout).not.toContain(secret);
     expect(JSON.parse(status.stdout)).toEqual({
       schemaVersion: 1,

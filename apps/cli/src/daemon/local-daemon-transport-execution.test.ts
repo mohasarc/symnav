@@ -918,7 +918,7 @@ async function sendRecords(
   stopBefore = Number.POSITIVE_INFINITY,
 ): Promise<void> {
   for await (const record of spool.read(offset)) {
-    if (record.sequence >= stopBefore) return;
+    if (record.sequence >= stopBefore || socket.destroyed || !socket.writable) return;
     socket.write(
       DaemonResultChunkCodec.encode({
         transferId,
@@ -979,6 +979,10 @@ async function rawExecutionServer(
   const endpoint = executionEndpoint(directories);
   const server = createServer((socket) => {
     sockets.push(socket);
+    socket.on("error", (error: NodeJS.ErrnoException) => {
+      if (error.code === "EPIPE" || error.code === "ECONNRESET") return;
+      throw error;
+    });
     connected(socket);
   });
   servers.push(server);

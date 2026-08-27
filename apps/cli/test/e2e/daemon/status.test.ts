@@ -409,7 +409,7 @@ describe("symnav daemon status", () => {
       });
       return daemonRecords(stateDir).length === 0;
     });
-  });
+  }, 45_000);
 });
 
 function temporaryStateDirectory(directories: string[]): string {

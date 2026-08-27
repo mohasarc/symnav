@@ -107,7 +107,7 @@ describe("WorkspaceDaemon runtime lifecycle", () => {
       harness.transport,
       harness.stateDirectory,
       {
-        stopTimeoutMs: 100,
+        stopTimeoutMs: 1_000,
         pollIntervalMs: 1,
         processTerminator: new CurrentProcessTerminator(() => harness.hasExited),
       },

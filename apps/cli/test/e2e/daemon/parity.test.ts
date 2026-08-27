@@ -685,10 +685,12 @@ class DaemonParityHarness {
   }
 
   async dispose(): Promise<void> {
-    const daemonProcessIds = this.daemonProcessIds();
-    await E2eProcessCleanup.terminate(daemonProcessIds, this.helperProcesses);
+    await E2eProcessCleanup.terminateAndRemoveDirectories(
+      [this.root],
+      () => this.daemonProcessIds(),
+      { children: this.helperProcesses },
+    );
     this.helperProcesses.length = 0;
-    E2eProcessCleanup.removeDirectories([this.root]);
   }
 
   private daemonProcessIds(): readonly number[] {

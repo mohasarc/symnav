@@ -24,6 +24,36 @@ describe("E2eProcessCleanup", () => {
     ]);
   });
 
+  it("terminates a daemon that appears while directory removal is retrying", async () => {
+    const attempted: number[] = [];
+    let discoveryCount = 0;
+    let removalCount = 0;
+    const processTerminator: DaemonProcessTerminator = {
+      isAlive: () => true,
+      terminate: async (processId) => {
+        attempted.push(processId);
+      },
+    };
+
+    await E2eProcessCleanup.terminateAndRemoveDirectories(
+      ["root"],
+      () => (discoveryCount++ === 0 ? [] : [505]),
+      {
+        processTerminator,
+        removeDirectory: () => {
+          removalCount += 1;
+          if (removalCount === 1) {
+            throw Object.assign(new Error("late writer"), { code: "ENOTEMPTY" });
+          }
+        },
+        retryDelayMs: 0,
+      },
+    );
+
+    expect(attempted).toEqual([505]);
+    expect(removalCount).toBe(2);
+  });
+
   it("attempts every deduplicated pid and reports failures in input order", async () => {
     const attempted: number[] = [];
     const processTerminator: DaemonProcessTerminator = {

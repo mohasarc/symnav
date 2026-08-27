@@ -7,6 +7,7 @@ const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 
 describe("daemon CI matrix", () => {
   const workflow = readFileSync(join(repoRoot, ".github/workflows/ci.yml"), "utf8");
+  const cliVitestConfiguration = readFileSync(join(repoRoot, "apps/cli/vitest.config.ts"), "utf8");
   const cliPackage = JSON.parse(readFileSync(join(repoRoot, "apps/cli/package.json"), "utf8")) as {
     scripts: Record<string, string>;
   };
@@ -27,6 +28,10 @@ describe("daemon CI matrix", () => {
   it("keeps lint and typecheck on Linux", () => {
     expect(job("lint")).toContain("runs-on: ubuntu-latest");
     expect(job("typecheck")).toContain("runs-on: ubuntu-latest");
+  });
+
+  it("serializes CLI test files to isolate daemon lifecycle and resource pressure", () => {
+    expect(cliVitestConfiguration).toContain("fileParallelism: false");
   });
 
   it("runs cold and warm modes through the same navigation source runner", () => {

@@ -34,6 +34,13 @@ describe("daemon scale benchmark CI", () => {
     expect(blocking).not.toContain("continue-on-error");
   });
 
+  it("cancels superseded benchmark runs for the same pull request", () => {
+    expect(workflow).toContain(
+      "group: daemon-benchmarks-${{ github.workflow }}-${{ github.event.pull_request.number || github.event.schedule || github.ref }}",
+    );
+    expect(workflow).toContain("cancel-in-progress: true");
+  });
+
   it("runs nightly 2x and 3x plus weekly provisioned 10x without partial success", () => {
     expect(workflow).toContain('cron: "0 3 * * *"');
     expect(workflow).toContain('cron: "0 4 * * 0"');

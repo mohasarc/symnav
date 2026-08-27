@@ -6,6 +6,9 @@ on:
   schedule:
     - cron: "0 3 * * *"
     - cron: "0 4 * * 0"
+concurrency:
+  group: daemon-benchmarks-${{ github.workflow }}-${{ github.event.pull_request.number || github.event.schedule || github.ref }}
+  cancel-in-progress: true
 jobs:
   blocking-1x:
     if: github.event_name != 'schedule'

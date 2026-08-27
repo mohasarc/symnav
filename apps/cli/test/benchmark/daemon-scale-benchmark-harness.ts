@@ -72,6 +72,7 @@ export interface DaemonBenchmarkArtifact {
   readonly responsePeakBytes: number;
   readonly largeResponseBytes: number;
   readonly busyStatusObserved: boolean;
+  readonly statusMaximumMs: number;
   readonly parity: boolean;
   readonly freshness: boolean;
   readonly statusResponsive: boolean;
@@ -210,6 +211,7 @@ export class DaemonScaleBenchmarkHarness {
         ),
         largeResponseBytes: largeResponse.responseBytes,
         busyStatusObserved: largeResponse.busyStatusObserved,
+        statusMaximumMs: largeResponse.statusMaximumMs,
         parity: gate.parity,
         freshness: gate.freshness,
         statusResponsive: gate.statusResponsive,

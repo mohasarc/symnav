@@ -633,10 +633,14 @@ export class WorkspaceDaemon {
             this.operationTraces
               .get(request.requestId)
               ?.spooled(manifest, Math.max(0, this.clock.monotonicNowMs() - spoolStartedAt));
-            await this.recordCompletion(request);
+            const workspaceDeleted = await this.recordCompletion();
             this.operationTraces.get(request.requestId)?.executionTerminated("completed");
             this.acceptedRequests.complete(request.requestId, request.requestId, this.now());
             await this.completionDeliveries.get(request.requestId);
+            if (workspaceDeleted) {
+              await this.waitForCompletionAcknowledgements();
+              setTimeout(() => void this.shutdown("workspace-deleted", true), 0);
+            }
           } finally {
             this.scheduleTurnCompleteResourceSample();
           }
@@ -691,13 +695,9 @@ export class WorkspaceDaemon {
       });
   }
 
-  private async recordCompletion(
-    request: Extract<DaemonRequest, { kind: "execute" }>,
-  ): Promise<void> {
+  private async recordCompletion(): Promise<boolean> {
     this.lastCompletedMonotonicAt = this.clock.monotonicNowMs();
-    if (!(await this.options.dependencies.fs.exists(this.options.identity.workspaceRoot))) {
-      setTimeout(() => void this.shutdown("workspace-deleted", true), 0);
-    }
+    return !(await this.options.dependencies.fs.exists(this.options.identity.workspaceRoot));
   }
 
   private rejection(

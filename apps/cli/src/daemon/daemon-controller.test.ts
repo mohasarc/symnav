@@ -1,9 +1,9 @@
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { DaemonController } from "./daemon-controller.js";
-import type { DaemonProcessTerminator } from "./daemon-process-launcher.js";
+import type { DaemonProcessLauncher, DaemonProcessTerminator } from "./daemon-process-launcher.js";
 import {
   DAEMON_PROTOCOL_VERSION,
   DAEMON_RECORD_SCHEMA_VERSION,
@@ -12,6 +12,7 @@ import {
   type DaemonResponse,
 } from "./daemon-protocol.js";
 import { DaemonRegistry } from "./daemon-registry.js";
+import { DaemonStartupCoordinator } from "./daemon-startup-coordinator.js";
 import { DaemonWorkspaceIdentity } from "./daemon-workspace-identity.js";
 import type { LocalDaemonTransport } from "./local-daemon-transport.js";
 
@@ -19,8 +20,42 @@ describe("DaemonController", () => {
   const roots: string[] = [];
 
   afterEach(() => {
+    vi.restoreAllMocks();
     for (const root of roots) rmSync(root, { recursive: true, force: true });
     roots.length = 0;
+  });
+
+  it("uses coordinator startup recovery for explicit starts", async () => {
+    const stateDirectory = temporaryDirectory(roots);
+    const registry = new DaemonRegistry(stateDirectory);
+    const result = {
+      status: "ready",
+      workspaceRoot: "/repo",
+      fileCount: 2,
+      loadDurationMs: 10,
+    } as const;
+    const ensureRunning = vi
+      .spyOn(DaemonStartupCoordinator.prototype, "ensureRunning")
+      .mockResolvedValue(result);
+    const trigger = vi
+      .spyOn(DaemonStartupCoordinator.prototype, "trigger")
+      .mockRejectedValue(new Error("Explicit start bypassed recovery"));
+    const launcher: DaemonProcessLauncher = {
+      symnavVersion: "0.1.0",
+      memoryCapBytes: 1024,
+      launch: vi.fn(),
+    };
+    const controller = new DaemonController(
+      registry,
+      new ControllerTransport() as unknown as LocalDaemonTransport,
+      stateDirectory,
+      { launcher },
+    );
+
+    await expect(controller.start("/repo")).resolves.toEqual(result);
+
+    expect(ensureRunning).toHaveBeenCalledOnce();
+    expect(trigger).not.toHaveBeenCalled();
   });
 
   it("waits for an armed launch to publish its process before stopping it", async () => {

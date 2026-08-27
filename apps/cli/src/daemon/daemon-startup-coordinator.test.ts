@@ -62,6 +62,23 @@ describe("DaemonStartupCoordinator", () => {
     readinessGate.release();
   });
 
+  it("retries for a caller already waiting on another coordinator's failed child", async () => {
+    const harness = new CoordinatorHarness(roots, { exitingLaunches: 1 });
+    const initiatingCoordinator = harness.coordinator();
+    const waitingCoordinator = harness.coordinator();
+
+    await expect(initiatingCoordinator.trigger(harness.identity)).resolves.toMatchObject({
+      status: "launched",
+    });
+
+    await expect(waitingCoordinator.ensureRunning(harness.identity)).resolves.toMatchObject({
+      status: "ready",
+    });
+
+    expect(harness.launcher.launchCount).toBe(2);
+    expect(harness.registry.startupOwner(harness.identity)).toBeUndefined();
+  });
+
   it("shares one readiness record without a healthy startup deadline", async () => {
     const readinessGate = new ReadinessPublicationGate();
     const harness = new CoordinatorHarness(roots, { readinessPublicationGate: readinessGate });
@@ -946,10 +963,13 @@ class ReadyTestLauncher implements DaemonProcessLauncher {
       childExit === undefined
         ? new Promise(() => undefined)
         : new Promise((resolve) =>
-            setTimeout(() => {
-              this.terminator.alive.delete(pid);
-              resolve(childExit);
-            }, exitsBeforeReadiness ? 5 : (this.options.childExitDelayMs ?? 0)),
+            setTimeout(
+              () => {
+                this.terminator.alive.delete(pid);
+                resolve(childExit);
+              },
+              exitsBeforeReadiness ? 5 : (this.options.childExitDelayMs ?? 0),
+            ),
           );
     return {
       pid,

@@ -43,6 +43,8 @@ class DaemonChildExitError extends Error {
   }
 }
 
+class DaemonWarmupLostError extends Error {}
+
 class DaemonOwnedButUnresponsiveError extends Error {}
 
 export class DaemonStartupCoordinator {
@@ -77,14 +79,16 @@ export class DaemonStartupCoordinator {
     try {
       return await this.triggerAndWait(identity);
     } catch (error) {
-      if (!(error instanceof DaemonChildExitError)) throw error;
+      if (!(error instanceof DaemonChildExitError || error instanceof DaemonWarmupLostError)) {
+        throw error;
+      }
       return this.triggerAndWait(identity);
     }
   }
 
   private async triggerAndWait(identity: DaemonWorkspaceIdentity): Promise<DaemonStartResult> {
-    await this.trigger(identity);
-    return this.waitUntilReady(identity);
+    const trigger = await this.trigger(identity);
+    return this.waitUntilReady(identity, trigger.instanceId);
   }
 
   async trigger(identity: DaemonWorkspaceIdentity): Promise<DaemonWarmupTriggerResult> {
@@ -127,7 +131,10 @@ export class DaemonStartupCoordinator {
     }
   }
 
-  async waitUntilReady(identity: DaemonWorkspaceIdentity): Promise<DaemonStartResult> {
+  async waitUntilReady(
+    identity: DaemonWorkspaceIdentity,
+    expectedInstanceId?: string,
+  ): Promise<DaemonStartResult> {
     let missingOwner: { readonly instanceId: string; readonly firstObservedAt: number } | undefined;
     while (true) {
       const record = this.registry.read(identity);
@@ -162,8 +169,11 @@ export class DaemonStartupCoordinator {
       }
       if (storedRecord?.state === "starting") {
         if (owner !== undefined && this.startupOwnerIsAbandoned(identity, owner)) {
-          this.cleanupAbandonedStartup(identity, owner);
-          throw new Error("Daemon child exited before readiness");
+          if (this.cleanupAbandonedStartup(identity, owner)) {
+            throw new DaemonWarmupLostError("Daemon child exited before readiness");
+          }
+          await this.pause();
+          continue;
         }
         const daemonProcess = this.launchedProcesses.get(storedRecord.instanceId);
         if (daemonProcess !== undefined) {
@@ -194,6 +204,11 @@ export class DaemonStartupCoordinator {
       if (owner !== undefined) {
         await this.pause();
         continue;
+      }
+      if (expectedInstanceId !== undefined) {
+        throw new DaemonWarmupLostError(
+          `Daemon startup ${expectedInstanceId} ended before readiness`,
+        );
       }
       throw new Error("Daemon startup failed before readiness");
     }

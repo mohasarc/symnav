@@ -50,8 +50,7 @@ export class DaemonController {
     if (this.launcher === undefined) throw new Error("Daemon controller has no process launcher");
     const identity = DaemonWorkspaceIdentity.from(workspaceRoot, this.stateDirectory);
     const coordinator = new DaemonStartupCoordinator(this.registry, this.launcher, this.transport);
-    await coordinator.trigger(identity);
-    return coordinator.waitUntilReady(identity);
+    return coordinator.ensureRunning(identity);
   }
 
   async status(): Promise<readonly RunningDaemonStatus[]> {

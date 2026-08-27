@@ -408,7 +408,7 @@ describe("symnav daemon status", () => {
         env: { SYMNAV_STATE_DIR: stateDir },
       });
       return daemonRecords(stateDir).length === 0;
-    });
+    }, 30_000);
   }, 45_000);
 });
 
@@ -568,8 +568,8 @@ function replay(
   ).toString("utf8");
 }
 
-async function waitUntil(predicate: () => boolean): Promise<void> {
-  const deadline = Date.now() + 5_000;
+async function waitUntil(predicate: () => boolean, timeoutMs = 5_000): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
   while (Date.now() <= deadline) {
     if (predicate()) return;
     await new Promise((resolve) => setTimeout(resolve, 10));

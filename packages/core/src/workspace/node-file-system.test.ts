@@ -15,6 +15,8 @@ describe("NodeFileSystem metadata", () => {
   });
 
   it("changes revision when equal-size content replaces a file with restored modification time", async () => {
+    const waitBeyondHostedWindowsTimestampQuantum = (): Promise<void> =>
+      new Promise((resolve) => setTimeout(resolve, 100));
     const directory = await mkdtemp(join(tmpdir(), "symnav-metadata-"));
     temporaryDirectories.push(directory);
     const path = join(directory, "source.ts");
@@ -25,6 +27,7 @@ describe("NodeFileSystem metadata", () => {
     await utimes(path, modifiedAt, modifiedAt);
     const before = await fileSystem.metadata(path);
 
+    await waitBeyondHostedWindowsTimestampQuantum();
     await writeFile(path, "export const value = 2;\n");
     await utimes(path, modifiedAt, modifiedAt);
     const after = await fileSystem.metadata(path);

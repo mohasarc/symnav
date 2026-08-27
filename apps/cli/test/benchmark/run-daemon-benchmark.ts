@@ -1,6 +1,7 @@
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
 import { totalmem } from "node:os";
 import { join, resolve } from "node:path";
+import { DaemonBenchmarkFailureReporter } from "./daemon-benchmark-failure-reporter.js";
 import { DaemonBenchmarkRunConfiguration } from "./daemon-benchmark-run-configuration.js";
 import { DaemonScaleBenchmarkHarness } from "./daemon-scale-benchmark-harness.js";
 import { DaemonWorkspaceProfileValidator } from "./daemon-workspace-profile.js";
@@ -17,17 +18,18 @@ class DaemonBenchmarkRunner {
       readFileSync(new URL("./profiles/daemon-workspace-1x.v1.json", import.meta.url), "utf8"),
     );
     const profile = DaemonWorkspaceProfileValidator.parse(reviewed);
-    const artifact = await new DaemonScaleBenchmarkHarness({
-      profile,
-      scale: configuration.scale,
-      generatorVersion: "1.0.0",
-      seed: "daemon-workspace-v1",
-    }).run();
     const artifactDirectory = resolve(
       process.env.INIT_CWD ?? process.cwd(),
       configuration.artifactDirectory,
     );
-    mkdirSync(artifactDirectory, { recursive: true });
+    const artifact = await new DaemonBenchmarkFailureReporter(configuration, artifactDirectory).run(
+      new DaemonScaleBenchmarkHarness({
+        profile,
+        scale: configuration.scale,
+        generatorVersion: "1.0.0",
+        seed: "daemon-workspace-v1",
+      }),
+    );
     const artifactPath = join(
       artifactDirectory,
       `daemon-benchmark-${configuration.scale}x-${process.platform}.json`,

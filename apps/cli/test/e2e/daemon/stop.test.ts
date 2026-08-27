@@ -45,7 +45,7 @@ describe("symnav daemon stop", () => {
       cwd,
       env: { SYMNAV_STATE_DIR: stateDir },
     });
-    expect(started.status).toBe(0);
+    expect(started).toMatchObject({ status: 0, stderr: "" });
     captureDaemonPids(stateDir, daemonPids);
 
     const stopped = runSymnavBinary(["daemon", "stop"], {

@@ -259,7 +259,7 @@ describe("DaemonLogger", () => {
     );
   });
 
-  it("creates private diagnostic directories and files", async () => {
+  it("creates diagnostic directories and files", async () => {
     const root = mkdtempSync(join(tmpdir(), "symnav-daemon-permissions-"));
     roots.push(root);
     const identity = DaemonWorkspaceIdentity.from("/repo", root);
@@ -268,9 +268,25 @@ describe("DaemonLogger", () => {
     logger.record({ kind: "ready", fileCount: 1 });
     await logger.close();
 
-    expect(statSync(identity.identityDirectory).mode & 0o777).toBe(0o700);
-    expect(statSync(identity.logPath).mode & 0o777).toBe(0o600);
+    expect(statSync(identity.identityDirectory).isDirectory()).toBe(true);
+    expect(statSync(identity.logPath).isFile()).toBe(true);
   });
+
+  it.skipIf(process.platform === "win32")(
+    "creates private POSIX diagnostic directories and files",
+    async () => {
+      const root = mkdtempSync(join(tmpdir(), "symnav-daemon-permissions-"));
+      roots.push(root);
+      const identity = DaemonWorkspaceIdentity.from("/repo", root);
+      const logger = new DaemonLogger(identity, "permissions", new NodeDaemonClock());
+
+      logger.record({ kind: "ready", fileCount: 1 });
+      await logger.close();
+
+      expect(statSync(identity.identityDirectory).mode & 0o777).toBe(0o700);
+      expect(statSync(identity.logPath).mode & 0o777).toBe(0o600);
+    },
+  );
 
   it("reports dropped diagnostics after its bounded queue recovers", async () => {
     const root = mkdtempSync(join(tmpdir(), "symnav-daemon-overflow-"));

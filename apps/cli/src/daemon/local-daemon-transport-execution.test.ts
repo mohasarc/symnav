@@ -106,11 +106,11 @@ describe("LocalDaemonTransport execution delivery", () => {
               Buffer.concat([
                 frame(accepted()),
                 frame({
-                  kind: "completed",
+                  kind: "execution-failed",
                   instanceId: request.instanceId,
                   processToken: request.processToken,
                   requestId: request.requestId,
-                  result: { frames: [], exitCode: 0 },
+                  code: "internal",
                 } satisfies DaemonExecutionServerFrame),
               ]),
             ),
@@ -124,7 +124,7 @@ describe("LocalDaemonTransport execution delivery", () => {
       request,
     );
 
-    await expect(receipt.completion).resolves.toMatchObject({ status: "completed" });
+    await expect(receipt.completion).resolves.toEqual({ status: "failed", code: "internal" });
   });
 
   it("has no completion deadline after acceptance", async () => {

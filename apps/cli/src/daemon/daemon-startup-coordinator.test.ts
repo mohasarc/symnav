@@ -119,6 +119,86 @@ describe("DaemonStartupCoordinator", () => {
     });
   });
 
+  it("keeps a later caller waiting through a transient missing startup owner", async () => {
+    const readinessGate = new ReadinessPublicationGate();
+    const harness = new CoordinatorHarness(roots, { readinessPublicationGate: readinessGate });
+    const trigger = await harness.coordinator().trigger(harness.identity);
+    const laterCoordinator = harness.coordinator();
+    vi.spyOn(harness.registry, "startupOwner").mockImplementationOnce(() => {
+      readinessGate.release();
+      return undefined;
+    });
+
+    const ready = laterCoordinator.waitUntilReady(harness.identity);
+
+    await expect(ready).resolves.toMatchObject({
+      status: "already-running",
+      workspaceRoot: "/repo",
+      pid: trigger.pid,
+    });
+    expect(harness.launcher.launchCount).toBe(1);
+  });
+
+  it("rechecks readiness when publication releases startup ownership between reads", async () => {
+    const readinessGate = new ReadinessPublicationGate();
+    const harness = new CoordinatorHarness(roots, { readinessPublicationGate: readinessGate });
+    const coordinator = harness.coordinator();
+    await coordinator.trigger(harness.identity);
+    const startingRecord = harness.registry.readStored(harness.identity)!;
+    const originalReadStored = harness.registry.readStored.bind(harness.registry);
+    vi.spyOn(harness.registry, "read").mockReturnValueOnce(startingRecord);
+    vi.spyOn(harness.registry, "readStored").mockImplementationOnce((identity) => {
+      const readyRecord: DaemonRecord = {
+        ...startingRecord,
+        state: "ready",
+        readyAt: Date.now(),
+        fileCount: 2,
+      };
+      expect(harness.registry.writeIfStartupOwner(identity, readyRecord)).toBe(true);
+      harness.registry.removeStartupLockIfProcess(identity, readyRecord);
+      return originalReadStored(identity);
+    });
+
+    await expect(coordinator.waitUntilReady(harness.identity)).resolves.toMatchObject({
+      status: "ready",
+      workspaceRoot: "/repo",
+    });
+
+    expect(harness.launcher.launchCount).toBe(1);
+    expect(harness.registry.startupOwner(harness.identity)).toBeUndefined();
+    expect(harness.registry.readStored(harness.identity)?.state).toBe("ready");
+    readinessGate.release();
+  });
+
+  it("does not report an earlier child exit against a replacement startup", async () => {
+    const harness = new CoordinatorHarness(roots, {
+      neverReady: true,
+      childExit: { code: 17, signal: null, cause: "exit" },
+      childExitDelayMs: 5,
+    });
+    const coordinator = harness.coordinator();
+    await coordinator.trigger(harness.identity);
+    await waitUntil(() => harness.registry.readStored(harness.identity) === undefined);
+    const replacement = harness.readyRecord(
+      "replacement",
+      harness.launcher.symnavVersion,
+      process.pid,
+    );
+    const lease = harness.registry.acquireStartup(harness.identity, replacement.instanceId)!;
+    harness.registry.write({ ...replacement, state: "starting" });
+
+    const ready = coordinator.waitUntilReady(harness.identity);
+    setTimeout(() => {
+      harness.registry.write(replacement);
+      lease.release();
+    }, 5);
+
+    await expect(ready).resolves.toMatchObject({
+      status: "already-running",
+      pid: process.pid,
+    });
+  });
+
   it("reuses a validated daemon running the same version", async () => {
     const harness = new CoordinatorHarness(roots);
     harness.seedReady("existing", "0.1.0", 4001);
@@ -314,17 +394,25 @@ describe("DaemonStartupCoordinator", () => {
     );
   });
 
-  it("cleans exact startup ownership promptly when the launched child exits", async () => {
+  it("reports its launched child's exit after startup cleanup removes the record", async () => {
     const harness = new CoordinatorHarness(roots, {
       neverReady: true,
-      childExit: { code: 1, signal: null, cause: "exit" },
+      childExit: { code: 17, signal: null, cause: "exit" },
       childExitDelayMs: 5,
     });
+    const coordinator = harness.coordinator({ startupTimeoutMs: 1_000 });
     const startedAt = Date.now();
 
-    await expect(
-      harness.coordinator({ startupTimeoutMs: 1_000 }).ensureRunning(harness.identity),
-    ).rejects.toThrow(/exited before readiness/i);
+    await coordinator.trigger(harness.identity);
+    await waitUntil(
+      () =>
+        harness.registry.readStored(harness.identity) === undefined &&
+        harness.registry.startupOwner(harness.identity) === undefined,
+    );
+
+    await expect(coordinator.waitUntilReady(harness.identity)).rejects.toThrow(
+      "Daemon child exited before readiness (code 17, signal null)",
+    );
 
     expect(Date.now() - startedAt).toBeLessThan(500);
     expect(harness.registry.readStored(harness.identity)).toBeUndefined();

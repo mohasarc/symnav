@@ -52,6 +52,7 @@ export class DaemonStartupCoordinator {
   private readonly launchedInstances = new Set<string>();
   private readonly launchedProcesses = new Map<string, DaemonProcess>();
   private readonly launchedExits = new Map<string, DaemonProcessExit>();
+  private readonly launchedInstanceIdsByIdentity = new Map<string, string>();
 
   constructor(
     private readonly registry: DaemonRegistry,
@@ -123,6 +124,7 @@ export class DaemonStartupCoordinator {
   }
 
   async waitUntilReady(identity: DaemonWorkspaceIdentity): Promise<DaemonStartResult> {
+    let missingOwnerInstanceId: string | undefined;
     while (true) {
       const record = this.registry.read(identity);
       if (record?.state === "ready" && record.symnavVersion === this.launcher.symnavVersion) {
@@ -139,29 +141,44 @@ export class DaemonStartupCoordinator {
             : this.alreadyRunning(record);
         }
       }
-      const startingRecord = this.registry.readStored(identity);
+      const storedRecord = this.registry.readStored(identity);
+      const observedInstanceId =
+        storedRecord?.instanceId ?? this.launchedInstanceIdsByIdentity.get(identity.identityKey);
       const launchedExit =
-        startingRecord === undefined
-          ? undefined
-          : this.launchedExits.get(startingRecord.instanceId);
+        observedInstanceId === undefined ? undefined : this.launchedExits.get(observedInstanceId);
       if (launchedExit !== undefined) throw new DaemonChildExitError(launchedExit);
       const owner = this.registry.startupOwner(identity);
-      if (startingRecord?.state === "starting" && owner !== undefined) {
-        if (this.startupOwnerIsAbandoned(identity, owner)) {
+      if (owner !== undefined) missingOwnerInstanceId = undefined;
+      if (
+        storedRecord?.state === "ready" &&
+        storedRecord.symnavVersion === this.launcher.symnavVersion
+      ) {
+        await this.pause();
+        continue;
+      }
+      if (storedRecord?.state === "starting") {
+        if (owner !== undefined && this.startupOwnerIsAbandoned(identity, owner)) {
           this.cleanupAbandonedStartup(identity, owner);
           throw new Error("Daemon child exited before readiness");
         }
-        const daemonProcess = this.launchedProcesses.get(startingRecord.instanceId);
+        const daemonProcess = this.launchedProcesses.get(storedRecord.instanceId);
         if (daemonProcess !== undefined) {
           const childExit = await Promise.race([
             this.pause().then(() => undefined),
             daemonProcess.exited,
           ]);
           if (childExit !== undefined) throw new DaemonChildExitError(childExit);
-        } else {
-          await this.pause();
+          continue;
         }
-        continue;
+        if (owner !== undefined) {
+          await this.pause();
+          continue;
+        }
+        if (missingOwnerInstanceId !== storedRecord.instanceId) {
+          missingOwnerInstanceId = storedRecord.instanceId;
+          await this.pause();
+          continue;
+        }
       }
       if (owner !== undefined) {
         await this.pause();
@@ -224,6 +241,7 @@ export class DaemonStartupCoordinator {
       }
       this.launchedInstances.add(instanceId);
       this.launchedProcesses.set(instanceId, daemonProcess);
+      this.launchedInstanceIdsByIdentity.set(identity.identityKey, instanceId);
       this.observeLaunchedProcess(identity, instanceId, processToken, daemonProcess);
       return {
         status: "launched",

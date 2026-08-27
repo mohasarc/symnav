@@ -22,7 +22,7 @@ import {
   type DaemonRequest,
   type DaemonResponse,
 } from "./daemon-protocol.js";
-import { DaemonRegistry } from "./daemon-registry.js";
+import { DAEMON_STARTUP_TIMEOUT_MS, DaemonRegistry } from "./daemon-registry.js";
 import { DaemonWorkspaceIdentity } from "./daemon-workspace-identity.js";
 import { LocalDaemonTransport } from "./local-daemon-transport.js";
 
@@ -124,9 +124,15 @@ describe("DaemonStartupCoordinator", () => {
     const harness = new CoordinatorHarness(roots, { readinessPublicationGate: readinessGate });
     const trigger = await harness.coordinator().trigger(harness.identity);
     const laterCoordinator = harness.coordinator();
-    vi.spyOn(harness.registry, "startupOwner").mockImplementationOnce(() => {
-      readinessGate.release();
-      return undefined;
+    const startupOwner = harness.registry.startupOwner.bind(harness.registry);
+    let missingOwnerReads = 0;
+    vi.spyOn(harness.registry, "startupOwner").mockImplementation((identity) => {
+      missingOwnerReads += 1;
+      if (missingOwnerReads <= 3) {
+        if (missingOwnerReads === 3) readinessGate.release();
+        return undefined;
+      }
+      return startupOwner(identity);
     });
 
     const ready = laterCoordinator.waitUntilReady(harness.identity);
@@ -137,6 +143,29 @@ describe("DaemonStartupCoordinator", () => {
       pid: trigger.pid,
     });
     expect(harness.launcher.launchCount).toBe(1);
+    expect(missingOwnerReads).toBeGreaterThanOrEqual(3);
+  });
+
+  it("bounds a persistent missing startup owner by the registry mutation grace", async () => {
+    const harness = new CoordinatorHarness(roots);
+    const startingRecord = {
+      ...harness.readyRecord("missing-owner", harness.launcher.symnavVersion, 6001),
+      state: "starting" as const,
+    };
+    harness.registry.write(startingRecord);
+    let now = 0;
+
+    await expect(
+      harness.coordinator({
+        now: () => {
+          now += DAEMON_STARTUP_TIMEOUT_MS;
+          return now;
+        },
+      }).waitUntilReady(harness.identity),
+    ).rejects.toThrow("Daemon startup failed before readiness");
+
+    expect(now).toBeGreaterThan(DAEMON_STARTUP_TIMEOUT_MS);
+    expect(harness.launcher.launchCount).toBe(0);
   });
 
   it("rechecks readiness when publication releases startup ownership between reads", async () => {

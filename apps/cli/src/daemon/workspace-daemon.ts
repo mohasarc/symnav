@@ -14,7 +14,11 @@ import {
   NodeDaemonNavigationWorker,
 } from "./daemon-navigation-worker.js";
 import { DaemonResourceMonitor } from "./daemon-resource-monitor.js";
-import type { DaemonRegistry, DaemonStartupLease } from "./daemon-registry.js";
+import {
+  DAEMON_STARTUP_TIMEOUT_MS,
+  type DaemonRegistry,
+  type DaemonStartupLease,
+} from "./daemon-registry.js";
 import type { DaemonWorkspaceIdentity } from "./daemon-workspace-identity.js";
 import type { LocalDaemonTransport } from "./local-daemon-transport.js";
 import { WorkspaceRequestQueue, type DaemonCommandName } from "./workspace-request-queue.js";
@@ -165,7 +169,7 @@ export class WorkspaceDaemon {
     readonly lease: DaemonStartupLease;
     readonly record: DaemonRecord;
   }> {
-    const deadline = this.now() + 5_000;
+    const deadline = this.now() + DAEMON_STARTUP_TIMEOUT_MS;
     while (this.now() <= deadline) {
       const record = this.options.registry.readInstance(
         this.options.identity,

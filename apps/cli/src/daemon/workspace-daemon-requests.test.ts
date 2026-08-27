@@ -98,6 +98,25 @@ describe("WorkspaceDaemon requests", () => {
     expect(harness.registry.read(harness.identity)?.state).toBe("ready");
   });
 
+  it("waits through the registry mutation grace for startup authorization", async () => {
+    let claimAttempts = 0;
+    const { daemon, harness } = RequestHarness.create(new ImmediateExecutor(), {
+      now: () => claimAttempts * 1_000,
+    });
+    harnesses.push(harness);
+    const claimStartupForDaemon = harness.registry.claimStartupForDaemon.bind(harness.registry);
+    vi.spyOn(harness.registry, "claimStartupForDaemon").mockImplementation((...arguments_) => {
+      claimAttempts += 1;
+      if (claimAttempts <= 6) return undefined;
+      return claimStartupForDaemon(...arguments_);
+    });
+
+    await expect(daemon.start()).resolves.toBeUndefined();
+
+    expect(claimAttempts).toBe(7);
+    expect(harness.registry.read(harness.identity)?.state).toBe("ready");
+  });
+
   it("cleans exact starting ownership when worker initialization fails", async () => {
     const worker = new RejectingInitializationWorker();
     const { daemon, harness } = RequestHarness.create(undefined, { navigationWorker: worker });

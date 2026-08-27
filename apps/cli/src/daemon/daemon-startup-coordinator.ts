@@ -9,7 +9,11 @@ import {
 } from "./daemon-process-launcher.js";
 import type { DaemonRecord, DaemonStartResult } from "./daemon-protocol.js";
 import { DAEMON_PROTOCOL_VERSION, DAEMON_RECORD_SCHEMA_VERSION } from "./daemon-protocol.js";
-import type { DaemonRegistry, StartupOwner } from "./daemon-registry.js";
+import {
+  DAEMON_STARTUP_TIMEOUT_MS,
+  type DaemonRegistry,
+  type StartupOwner,
+} from "./daemon-registry.js";
 import { DaemonRecordObserver } from "./daemon-record-observer.js";
 import type { DaemonWorkspaceIdentity } from "./daemon-workspace-identity.js";
 import type { LocalDaemonTransport } from "./local-daemon-transport.js";
@@ -124,7 +128,9 @@ export class DaemonStartupCoordinator {
   }
 
   async waitUntilReady(identity: DaemonWorkspaceIdentity): Promise<DaemonStartResult> {
-    let missingOwnerInstanceId: string | undefined;
+    let missingOwner:
+      | { readonly instanceId: string; readonly firstObservedAt: number }
+      | undefined;
     while (true) {
       const record = this.registry.read(identity);
       if (record?.state === "ready" && record.symnavVersion === this.launcher.symnavVersion) {
@@ -148,7 +154,7 @@ export class DaemonStartupCoordinator {
         observedInstanceId === undefined ? undefined : this.launchedExits.get(observedInstanceId);
       if (launchedExit !== undefined) throw new DaemonChildExitError(launchedExit);
       const owner = this.registry.startupOwner(identity);
-      if (owner !== undefined) missingOwnerInstanceId = undefined;
+      if (owner !== undefined) missingOwner = undefined;
       if (
         storedRecord?.state === "ready" &&
         storedRecord.symnavVersion === this.launcher.symnavVersion
@@ -174,8 +180,15 @@ export class DaemonStartupCoordinator {
           await this.pause();
           continue;
         }
-        if (missingOwnerInstanceId !== storedRecord.instanceId) {
-          missingOwnerInstanceId = storedRecord.instanceId;
+        if (missingOwner?.instanceId !== storedRecord.instanceId) {
+          missingOwner = {
+            instanceId: storedRecord.instanceId,
+            firstObservedAt: this.now(),
+          };
+          await this.pause();
+          continue;
+        }
+        if (this.now() - missingOwner.firstObservedAt <= DAEMON_STARTUP_TIMEOUT_MS) {
           await this.pause();
           continue;
         }

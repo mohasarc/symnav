@@ -25,7 +25,7 @@ describe("daemon scale benchmark CI", () => {
 
   it("blocks on 1x for Ubuntu, Windows, and macOS with a pinned environment", () => {
     const blocking = job("blocking-1x");
-    expect(blocking).toContain("os: [ubuntu-latest, windows-latest, macos-latest]");
+    expect(blocking).toContain("os: [ubuntu-latest, windows-latest, macos-15-intel]");
     expect(blocking).toContain("node-version-file: .nvmrc");
     expect(blocking).toContain("pnpm install --frozen-lockfile");
     expect(blocking).toContain("pnpm daemon:benchmark --scale 1");

@@ -21,7 +21,15 @@ interface DaemonProcessConfiguration {
 
 export interface DaemonProcess {
   readonly pid: number;
+  readonly exited: Promise<DaemonProcessExit>;
   terminate(): Promise<void>;
+}
+
+export interface DaemonProcessExit {
+  readonly code: number | null;
+  readonly signal: NodeJS.Signals | null;
+  readonly cause: "exit" | "spawn-error";
+  readonly errorName?: string;
 }
 
 export interface DaemonProcessTerminator {
@@ -44,6 +52,7 @@ export class DaemonProcessTerminationError extends Error {}
 class SpawnedDaemonProcess implements DaemonProcess {
   constructor(
     readonly pid: number,
+    readonly exited: Promise<DaemonProcessExit>,
     private readonly terminator: DaemonProcessTerminator,
   ) {}
 
@@ -135,6 +144,23 @@ export class NodeDaemonProcessLauncher implements DaemonProcessLauncher {
     const logDescriptor = openSync(identity.logPath, "a", 0o600);
 
     return new Promise((resolve, reject) => {
+      let processSpawned = false;
+      let logClosed = false;
+      let exitResolved = false;
+      let resolveExit: (exit: DaemonProcessExit) => void = () => undefined;
+      const exited = new Promise<DaemonProcessExit>((exitResolve) => {
+        resolveExit = exitResolve;
+      });
+      const closeLog = (): void => {
+        if (logClosed) return;
+        logClosed = true;
+        closeSync(logDescriptor);
+      };
+      const publishExit = (exit: DaemonProcessExit): void => {
+        if (exitResolved) return;
+        exitResolved = true;
+        resolveExit(exit);
+      };
       const child = spawn(
         process.execPath,
         [
@@ -150,13 +176,18 @@ export class NodeDaemonProcessLauncher implements DaemonProcessLauncher {
         },
       );
       child.once("error", (error) => {
-        closeSync(logDescriptor);
-        reject(error);
+        closeLog();
+        publishExit({ code: null, signal: null, cause: "spawn-error", errorName: error.name });
+        if (!processSpawned) reject(error);
       });
       child.once("spawn", () => {
-        closeSync(logDescriptor);
+        processSpawned = true;
+        closeLog();
         child.unref();
-        resolve(new SpawnedDaemonProcess(child.pid!, this.terminator));
+        resolve(new SpawnedDaemonProcess(child.pid!, exited, this.terminator));
+      });
+      child.once("exit", (code, signal) => {
+        publishExit({ code, signal, cause: "exit" });
       });
     });
   }

@@ -190,6 +190,7 @@ describe("symnav daemon parity", () => {
     expect(harness.telemetryModes()).toEqual(["warm", "fallback"]);
     expect(harness.daemonRecordCount()).toBe(0);
 
+    expect(harness.daemonStart()).toMatchObject({ status: 0, stderr: "" });
     expect(harness.warmWithTelemetry(["overview", "input.ts"])).toEqual(first);
     expect(harness.telemetryModes()).toEqual(["warm", "fallback", "warm"]);
     expect(harness.onlyDaemonPid()).not.toBe(firstPid);
@@ -332,6 +333,10 @@ class DaemonParityHarness {
 
   daemonStatus(): RunSymnavBinaryResult {
     return this.run(["daemon", "status"], "1");
+  }
+
+  daemonStart(): RunSymnavBinaryResult {
+    return this.run(["daemon", "start"], "1");
   }
 
   async orphanStartupMutation(): Promise<void> {

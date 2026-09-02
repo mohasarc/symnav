@@ -15,6 +15,13 @@ export interface ContextArgs {
 
 export const contextCommand: Command<ContextResult, ContextArgs> = {
   name: "context",
+  validate(args: ContextArgs) {
+    SymbolTargetResolver.validateRequest({
+      rawTarget: args.target,
+      line: args.line,
+      regex: args.regex,
+    });
+  },
   describeArgs(args: ContextArgs) {
     return {
       kind: classifyArgKind(args.target),

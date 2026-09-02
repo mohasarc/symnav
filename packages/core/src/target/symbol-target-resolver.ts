@@ -36,10 +36,20 @@ interface OwnedCandidate {
   readonly backend: LanguageBackend;
 }
 
+interface ValidatedSymbolTargetRequest {
+  readonly containingLine: number | undefined;
+  readonly request: SymbolTargetRequest;
+}
+
 export class SymbolTargetResolver {
+  static validateRequest(
+    args: Pick<ResolveSymbolTargetArgs, "rawTarget" | "line" | "regex">,
+  ): void {
+    SymbolTargetResolver.validatedRequestFrom(args);
+  }
+
   static async resolve(args: ResolveSymbolTargetArgs): Promise<ResolvedSymbolTarget> {
-    const containingLine = SymbolTargetResolver.containingLineFrom(args.line);
-    const request = SymbolTargetRequestParser.parse(args.rawTarget, args.regex);
+    const { containingLine, request } = SymbolTargetResolver.validatedRequestFrom(args);
     const files = await args.workspace.enumerate();
     await SymbolTargetResolver.throwIfFileSuffixUnresolvable(args, files, request);
     const acceptedFilesByBackend = SymbolTargetResolver.groupFilesByAcceptingBackend(
@@ -86,6 +96,15 @@ export class SymbolTargetResolver {
       winner.backend,
       acceptedFilesByBackend,
     );
+  }
+
+  private static validatedRequestFrom(
+    args: Pick<ResolveSymbolTargetArgs, "rawTarget" | "line" | "regex">,
+  ): ValidatedSymbolTargetRequest {
+    return {
+      containingLine: SymbolTargetResolver.containingLineFrom(args.line),
+      request: SymbolTargetRequestParser.parse(args.rawTarget, args.regex),
+    };
   }
 
   private static containingLineFrom(line: ResolveSymbolTargetArgs["line"]): number | undefined {

@@ -1,6 +1,6 @@
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { readFile, readdir, stat } from "node:fs/promises";
-import type { FileSystem } from "./file-system.js";
+import type { FileMetadata, FileSystem } from "./file-system.js";
 
 export class NodeFileSystem implements FileSystem {
   async readFile(absPath: string): Promise<string> {
@@ -23,6 +23,11 @@ export class NodeFileSystem implements FileSystem {
     }
   }
 
+  async metadata(absPath: string): Promise<FileMetadata> {
+    const fileStat = await stat(absPath);
+    return { size: fileStat.size, modifiedAtMs: fileStat.mtimeMs };
+  }
+
   existsSync(absPath: string): boolean {
     return existsSync(absPath);
   }
@@ -41,5 +46,10 @@ export class NodeFileSystem implements FileSystem {
     } catch {
       return false;
     }
+  }
+
+  metadataSync(absPath: string): FileMetadata {
+    const fileStat = statSync(absPath);
+    return { size: fileStat.size, modifiedAtMs: fileStat.mtimeMs };
   }
 }

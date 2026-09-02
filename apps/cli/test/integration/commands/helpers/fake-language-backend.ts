@@ -1,10 +1,12 @@
 import type {
   CallEdge,
   CallTargetResolution,
+  BackendRefreshSummary,
   LanguageBackend,
   OverviewFileEntries,
   SymbolReference,
   ResolvedPath,
+  WorkspaceFile,
   SymbolOverviewNode,
 } from "@symnav/core";
 
@@ -17,6 +19,7 @@ export interface FakeLanguageBackendOptions {
 export class FakeLanguageBackend implements LanguageBackend {
   readonly calls: string[] = [];
   readonly declarationCalls: string[][] = [];
+  readonly refreshCalls: (readonly WorkspaceFile[])[] = [];
   private readonly acceptFn: (filePath: string) => boolean;
   private readonly entriesFn: (filePath: string) => OverviewFileEntries;
   private readonly declarationSymbols: readonly SymbolOverviewNode[];
@@ -29,6 +32,11 @@ export class FakeLanguageBackend implements LanguageBackend {
 
   accepts(filePath: string): boolean {
     return this.acceptFn(filePath);
+  }
+
+  async refresh(files: readonly WorkspaceFile[]): Promise<BackendRefreshSummary> {
+    this.refreshCalls.push(files);
+    return { added: files.length, changed: 0, removed: 0, unchanged: 0 };
   }
 
   async fileEntries(path: ResolvedPath): Promise<OverviewFileEntries> {

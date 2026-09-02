@@ -18,6 +18,13 @@ export interface RefsArgs {
 
 export const refsCommand: Command<RefsResult, RefsArgs> = {
   name: "refs",
+  validate(args: RefsArgs) {
+    SymbolTargetResolver.validateRequest({
+      rawTarget: args.target,
+      line: args.line,
+      regex: args.regex,
+    });
+  },
   describeArgs(args: RefsArgs) {
     return {
       kind: classifyArgKind(args.target),

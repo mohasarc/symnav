@@ -1,8 +1,16 @@
 import { describe, expect, it, vi } from "vitest";
-import { InMemoryFileSystem, type ResultWithDiagnostics, UserFacingError } from "@symnav/core";
+import { TypeScriptBackend, TypeScriptWorkspaceState } from "@symnav/backend-typescript";
+import {
+  InMemoryFileSystem,
+  type FileMetadata,
+  type FileSystem,
+  type ResultWithDiagnostics,
+  type SymbolIdentity,
+  UserFacingError,
+} from "@symnav/core";
 import type { ArgShape } from "@symnav/telemetry";
 import { runCommand } from "../../../src/command.js";
-import type { Command, CommandContext } from "../../../src/command.js";
+import type { Command, CommandContext, CommandInvocation } from "../../../src/command.js";
 import {
   createCapturingRecorder,
   createFakeIdentityProvider,
@@ -10,6 +18,8 @@ import {
   fakeDependencies,
 } from "./helpers/fake-program-dependencies.js";
 import { createFakeProgramContext } from "./helpers/fake-program-context.js";
+import { FakeLanguageBackend } from "./helpers/fake-language-backend.js";
+import { NavigationDiagnosticsCollector } from "../../../src/commands/navigation-diagnostics-collector.js";
 
 interface StubArgs {
   readonly note: string;
@@ -63,6 +73,117 @@ class StubCommand implements Command<StubResult, StubArgs> {
 const stubArgs = (note: string): StubArgs => ({ note });
 
 describe("runCommand lifecycle", () => {
+  it("snapshots and refreshes once before compute reuses workspace files", async () => {
+    const context = createFakeProgramContext({ cwd: "/repo" });
+    const fs = new CountingFileSystem(
+      new InMemoryFileSystem({
+        "/repo/.git/HEAD": "ref: refs/heads/main\n",
+        "/repo/src/a.ts": "export const x = 1;\n",
+        "/repo/src/nested/.gitignore": "ignored.ts\n",
+        "/repo/src/nested/b.ts": "export const b = 2;\n",
+        "/repo/src/nested/ignored.ts": "export const ignored = 3;\n",
+      }),
+    );
+    const backend = new FakeLanguageBackend({ accept: (filePath) => filePath.endsWith(".ts") });
+
+    await runCommand(
+      new StubCommand({
+        compute: async (commandContext) => {
+          const first = await commandContext.workspace.enumerate();
+          const second = await commandContext.workspace.enumerate();
+          expect(second).toBe(first);
+          return NavigationDiagnosticsCollector.attach<StubResult>(
+            { value: "computed" },
+            commandContext.workspace,
+            commandContext.router,
+          );
+        },
+      }),
+      {
+        context,
+        dependencies: fakeDependencies({ fs, backends: () => [backend] }),
+        cwdOverride: undefined,
+        json: false,
+        args: stubArgs("hi"),
+      },
+    );
+
+    expect(context.stdout.text()).toBe("text:computed");
+    expect(context.stderr.text()).toBe("");
+    expect(backend.refreshCalls).toHaveLength(1);
+    expect(backend.refreshCalls[0]?.map((file) => file.relative)).toEqual([
+      "src/a.ts",
+      "src/nested/b.ts",
+    ]);
+    expect(backend.calls).toEqual(["src/a.ts", "src/nested/b.ts"]);
+    expect(fs.directoryReads).toEqual(["async:/repo", "async:/repo/src", "async:/repo/src/nested"]);
+    expect(fs.metadataCalls).toEqual([
+      "/repo/src/a.ts",
+      "/repo/src/nested/.gitignore",
+      "/repo/src/nested/b.ts",
+    ]);
+  });
+
+  it("purges newly ignored files before retained reference and caller queries", async () => {
+    const context = createFakeProgramContext({ cwd: "/repo" });
+    const fs = new MutableCommandFileSystem({
+      "/repo/.git/HEAD": "ref: refs/heads/main\n",
+      "/repo/.gitignore": "",
+      "/repo/src/a.ts": "export function target(): void {}\n",
+      "/repo/src/b.ts": [
+        'import { target } from "./a.js";',
+        "export function caller(): void { target(); }",
+        "",
+      ].join("\n"),
+    });
+    const state = new TypeScriptWorkspaceState(fs);
+    const backend = new TypeScriptBackend(fs, state);
+    const observations: {
+      readonly referenceFiles: readonly string[];
+      readonly callerSiteFiles: readonly string[];
+    }[] = [];
+    const command = new StubCommand({
+      compute: async (commandContext) => {
+        const typescript = commandContext.router.findOrThrow("src/a.ts");
+        const files = (await commandContext.workspace.enumerate()).filter((file) =>
+          typescript.accepts(file.relative),
+        );
+        const identity: SymbolIdentity = {
+          file: "src/a.ts",
+          segments: [{ name: "target" }],
+        };
+        const references = await typescript.findReferences(files, identity);
+        const callers = await typescript.findCallers(files, identity);
+        observations.push({
+          referenceFiles: references.map((reference) => reference.file),
+          callerSiteFiles: callers.flatMap((caller) => caller.sites.map((site) => site.file)),
+        });
+        return { value: "computed" };
+      },
+    });
+    const invocation: CommandInvocation<StubArgs> = {
+      context,
+      dependencies: fakeDependencies({ fs, backends: () => [backend] }),
+      cwdOverride: undefined,
+      json: false,
+      args: stubArgs("hi"),
+    };
+
+    await runCommand(command, invocation);
+    fs.setFile("/repo/.gitignore", "src/b.ts\n");
+    await runCommand(command, invocation);
+
+    expect(observations).toEqual([
+      {
+        referenceFiles: ["src/b.ts", "src/b.ts"],
+        callerSiteFiles: ["src/b.ts"],
+      },
+      { referenceFiles: [], callerSiteFiles: [] },
+    ]);
+    expect(state.currentFileCount()).toBe(1);
+    expect(state.sourceFile("src/b.ts")).toBeUndefined();
+  });
+
   it("writes the rendered text result to stdout on success", async () => {
     const context = createFakeProgramContext({ cwd: "/repo" });
 
@@ -571,3 +692,124 @@ describe("runCommand lifecycle", () => {
     expect(order).toEqual(["record", "exit:2"]);
   });
 });
+
+class CountingFileSystem implements FileSystem {
+  readonly directoryReads: string[] = [];
+  readonly metadataCalls: string[] = [];
+
+  constructor(private readonly inner: InMemoryFileSystem) {}
+
+  readFile(absPath: string): Promise<string> {
+    return this.inner.readFile(absPath);
+  }
+
+  exists(absPath: string): Promise<boolean> {
+    return this.inner.exists(absPath);
+  }
+
+  listDir(absPath: string): Promise<readonly string[]> {
+    this.directoryReads.push(`async:${absPath}`);
+    return this.inner.listDir(absPath);
+  }
+
+  isDirectory(absPath: string): Promise<boolean> {
+    return this.inner.isDirectory(absPath);
+  }
+
+  metadata(absPath: string): Promise<FileMetadata> {
+    this.metadataCalls.push(absPath);
+    return this.inner.metadata(absPath);
+  }
+
+  existsSync(absPath: string): boolean {
+    return this.inner.existsSync(absPath);
+  }
+
+  readFileSync(absPath: string): string {
+    return this.inner.readFileSync(absPath);
+  }
+
+  listDirSync(absPath: string): readonly string[] {
+    this.directoryReads.push(`sync:${absPath}`);
+    return this.inner.listDirSync(absPath);
+  }
+
+  isDirectorySync(absPath: string): boolean {
+    return this.inner.isDirectorySync(absPath);
+  }
+
+  metadataSync(absPath: string): FileMetadata {
+    this.metadataCalls.push(absPath);
+    return this.inner.metadataSync(absPath);
+  }
+}
+
+class MutableCommandFileSystem implements FileSystem {
+  private readonly contents = new Map<string, string>();
+  private readonly modifiedAtByPath = new Map<string, number>();
+  private modifiedAtMs = 0;
+
+  constructor(files: Record<string, string>) {
+    for (const [path, content] of Object.entries(files)) {
+      this.setFile(path, content);
+    }
+  }
+
+  setFile(path: string, content: string): void {
+    this.modifiedAtMs += 1;
+    this.contents.set(path, content);
+    this.modifiedAtByPath.set(path, this.modifiedAtMs);
+  }
+
+  readFile(absPath: string): Promise<string> {
+    return Promise.resolve(this.readFileSync(absPath));
+  }
+
+  exists(absPath: string): Promise<boolean> {
+    return Promise.resolve(this.existsSync(absPath));
+  }
+
+  listDir(absPath: string): Promise<readonly string[]> {
+    return Promise.resolve(this.listDirSync(absPath));
+  }
+
+  isDirectory(absPath: string): Promise<boolean> {
+    return Promise.resolve(this.isDirectorySync(absPath));
+  }
+
+  metadata(absPath: string): Promise<FileMetadata> {
+    return Promise.resolve(this.metadataSync(absPath));
+  }
+
+  existsSync(absPath: string): boolean {
+    return this.delegate().existsSync(absPath);
+  }
+
+  readFileSync(absPath: string): string {
+    const content = this.contents.get(absPath);
+    if (content === undefined) {
+      throw new Error(`ENOENT: no such file: ${absPath}`);
+    }
+    return content;
+  }
+
+  listDirSync(absPath: string): readonly string[] {
+    return this.delegate().listDirSync(absPath);
+  }
+
+  isDirectorySync(absPath: string): boolean {
+    return this.delegate().isDirectorySync(absPath);
+  }
+
+  metadataSync(absPath: string): FileMetadata {
+    const content = this.readFileSync(absPath);
+    return {
+      size: Buffer.byteLength(content),
+      modifiedAtMs: this.modifiedAtByPath.get(absPath) ?? 0,
+    };
+  }
+
+  private delegate(): InMemoryFileSystem {
+    return new InMemoryFileSystem(Object.fromEntries(this.contents));
+  }
+}

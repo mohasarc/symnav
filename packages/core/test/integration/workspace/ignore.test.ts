@@ -85,11 +85,16 @@ describe("Workspace ignore handling", () => {
     );
   });
 
-  it("skips walking into ignored directories during workspace construction", async () => {
+  it("skips walking into ignored directories during snapshot collection", async () => {
     const listed: string[] = [];
     class TrackingFs extends InMemoryFileSystem {
+      override async listDir(absPath: string): Promise<readonly string[]> {
+        listed.push(`async:${absPath}`);
+        return super.listDir(absPath);
+      }
+
       override listDirSync(absPath: string): readonly string[] {
-        listed.push(absPath);
+        listed.push(`sync:${absPath}`);
         return super.listDirSync(absPath);
       }
     }
@@ -99,9 +104,11 @@ describe("Workspace ignore handling", () => {
       "/repo/node_modules/foo/index.js": "",
       "/repo/src/x.ts": "",
     });
-    await createWorkspace({ startDir: "/repo", fs });
-    expect(listed).not.toContain("/repo/node_modules");
-    expect(listed).toContain("/repo/src");
+    const workspace = await createWorkspace({ startDir: "/repo", fs });
+    await workspace.snapshot();
+    expect(listed).not.toContain("async:/repo/node_modules");
+    expect(listed).not.toContain("sync:/repo/node_modules");
+    expect(listed).toContain("async:/repo/src");
   });
 
   it("ignores nothing (except .git/) when no .gitignore exists", async () => {

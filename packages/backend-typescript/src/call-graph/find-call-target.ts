@@ -5,11 +5,11 @@ import type {
   SymbolIdentity,
 } from "@symnav/core";
 
-import type { WorkspaceDeclarationIndex } from "../identity/workspace-declaration-index.js";
+import type { TypeScriptWorkspaceState } from "../typescript-backend/typescript-workspace-state.js";
 import { findDefinitions } from "../definition/find-definitions.js";
 
 export interface FindCallTargetArgs {
-  readonly declarationIndex: WorkspaceDeclarationIndex;
+  readonly workspaceState: TypeScriptWorkspaceState;
   readonly files: readonly ResolvedPath[];
   readonly identity: SymbolIdentity;
 }

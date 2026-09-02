@@ -1,16 +1,11 @@
-import type {
-  FileSystem,
-  ResolveSymbolsOptions,
-  ResolvedPath,
-  SymbolOverviewNode,
-} from "@symnav/core";
+import type { ResolveSymbolsOptions, ResolvedPath, SymbolOverviewNode } from "@symnav/core";
 import { formatSymbolIdentity, OverviewTree } from "@symnav/core";
 import fuzzysort from "fuzzysort";
 
-import { loadFileEntries } from "../extract/load-file-entries.js";
+import type { TypeScriptWorkspaceState } from "../typescript-backend/typescript-workspace-state.js";
 
 export interface ResolveSymbolsArgs {
-  readonly fs: FileSystem;
+  readonly state: TypeScriptWorkspaceState;
   readonly files: readonly ResolvedPath[];
   readonly query: string;
   readonly options: ResolveSymbolsOptions;
@@ -18,7 +13,7 @@ export interface ResolveSymbolsArgs {
 
 export class SymbolResolver {
   static async resolveSymbols(args: ResolveSymbolsArgs): Promise<readonly SymbolOverviewNode[]> {
-    const candidates = SymbolResolver.extractAllSymbols(args.fs, args.files);
+    const candidates = args.state.allDeclarations(args.files);
     if (args.options.mode === "fuzzy") {
       return SymbolResolver.fuzzyMatch(candidates, args.query);
     }
@@ -26,17 +21,6 @@ export class SymbolResolver {
       return SymbolResolver.regexMatch(candidates, args.options.regex);
     }
     return SymbolResolver.exactMatch(candidates, args.query);
-  }
-
-  private static extractAllSymbols(
-    fs: FileSystem,
-    files: readonly ResolvedPath[],
-  ): readonly SymbolOverviewNode[] {
-    const all: SymbolOverviewNode[] = [];
-    for (const file of files) {
-      all.push(...OverviewTree.walkSymbols(loadFileEntries(fs, file).entries));
-    }
-    return all;
   }
 
   private static exactMatch(

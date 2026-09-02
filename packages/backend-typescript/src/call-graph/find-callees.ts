@@ -17,18 +17,18 @@ import type {
 } from "@symnav/core";
 
 import { DeclarationLocator } from "../identity/locate-declarations.js";
-import type { WorkspaceDeclarationIndex } from "../identity/workspace-declaration-index.js";
+import type { TypeScriptWorkspaceState } from "../typescript-backend/typescript-workspace-state.js";
 
 const DYNAMIC_DISPATCH_REASON = "dynamic dispatch: exact callee not statically resolvable";
 
 export interface FindCalleesArgs {
-  readonly declarationIndex: WorkspaceDeclarationIndex;
+  readonly workspaceState: TypeScriptWorkspaceState;
   readonly files: readonly ResolvedPath[];
   readonly identity: SymbolIdentity;
 }
 
 export async function findCallees(args: FindCalleesArgs): Promise<readonly CallEdge[]> {
-  args.declarationIndex.ensureFiles(args.files);
+  args.workspaceState.ensureFiles(args.files);
   return new CalleeFinder(args).find();
 }
 
@@ -44,10 +44,10 @@ interface DynamicCandidate {
 }
 
 class CalleeFinder {
-  private readonly declarationIndex: WorkspaceDeclarationIndex;
+  private readonly workspaceState: TypeScriptWorkspaceState;
 
   constructor(private readonly args: FindCalleesArgs) {
-    this.declarationIndex = args.declarationIndex;
+    this.workspaceState = args.workspaceState;
   }
 
   find(): readonly CallEdge[] {
@@ -57,7 +57,7 @@ class CalleeFinder {
   }
 
   private targetBodyNode(): Node | undefined {
-    const matches = this.declarationIndex.locate(this.args.identity);
+    const matches = this.workspaceState.locate(this.args.identity);
     const withBody = matches.find((match) => carriesBody(match.node));
     return (withBody ?? matches[0])?.node;
   }
@@ -233,12 +233,12 @@ class CalleeFinder {
   }
 
   private workspaceSymbolFor(node: Node): SymbolOverviewNode | undefined {
-    return this.declarationIndex.declarationAt(node);
+    return this.workspaceState.declarationAt(node);
   }
 
   private siteFor(node: Node): CallSite {
     const sourceFile = node.getSourceFile();
-    const relative = this.declarationIndex.relativePathOf(sourceFile) ?? "";
+    const relative = this.workspaceState.relativePathOf(sourceFile) ?? "";
     const { line, character } = sourceFile.compilerNode.getLineAndCharacterOfPosition(
       node.getStart(),
     );

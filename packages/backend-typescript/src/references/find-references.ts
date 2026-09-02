@@ -1,59 +1,32 @@
-import { Node, Project, type ReferencedSymbolEntry, type SourceFile } from "ts-morph";
+import { Node, type ReferencedSymbolEntry, type SourceFile } from "ts-morph";
 import {
   SymbolNotFoundError,
-  type FileSystem,
   type SymbolReference,
   type ResolvedPath,
   type SymbolIdentity,
 } from "@symnav/core";
 
-import { DeclarationLocator } from "../identity/locate-declarations.js";
-import { WorkspaceFileSystemHost } from "../typescript-backend/workspace-file-system-host.js";
+import type { TypeScriptWorkspaceState } from "../typescript-backend/typescript-workspace-state.js";
 import { classifyReferenceKind } from "./classify-reference-kind.js";
 
 export interface FindReferencesArgs {
-  readonly fs: FileSystem;
+  readonly state: TypeScriptWorkspaceState;
   readonly files: readonly ResolvedPath[];
   readonly identity: SymbolIdentity;
 }
 
 export class ReferenceFinder {
-  private readonly project: Project;
-  private readonly relativePathByAbsolute = new Map<string, string>();
-
-  public constructor(private readonly args: FindReferencesArgs) {
-    this.project = new Project({ fileSystem: new WorkspaceFileSystemHost(args.fs) });
-  }
+  public constructor(private readonly args: FindReferencesArgs) {}
 
   public async find(): Promise<readonly SymbolReference[]> {
-    this.loadWorkspaceFiles();
+    this.args.state.ensureFiles(this.args.files);
     const declarationNodes = this.declarationNodesMatchingIdentity();
     if (declarationNodes.length === 0) throw new SymbolNotFoundError(this.args.identity);
     return this.referencesFrom(declarationNodes);
   }
 
-  private loadWorkspaceFiles(): void {
-    for (const path of this.args.files) {
-      this.project.addSourceFileAtPath(path.absolute);
-      this.relativePathByAbsolute.set(path.absolute, path.relative);
-    }
-  }
-
   private declarationNodesMatchingIdentity(): readonly Node[] {
-    const targetSource = this.targetSourceFile();
-    if (!targetSource) return [];
-    return new DeclarationLocator(targetSource)
-      .locate(this.args.identity)
-      .map((located) => located.node);
-  }
-
-  private targetSourceFile(): SourceFile | undefined {
-    for (const path of this.args.files) {
-      if (path.relative === this.args.identity.file) {
-        return this.project.getSourceFile(path.absolute);
-      }
-    }
-    return undefined;
+    return this.args.state.locate(this.args.identity).map((located) => located.node);
   }
 
   private referencesFrom(declarationNodes: readonly Node[]): SymbolReference[] {
@@ -75,7 +48,7 @@ export class ReferenceFinder {
   private toReference(entry: ReferencedSymbolEntry): SymbolReference | undefined {
     const node = entry.getNode();
     const sourceFile = node.getSourceFile();
-    const relative = this.relativePathByAbsolute.get(sourceFile.getFilePath());
+    const relative = this.args.state.relativePathOf(sourceFile);
     if (!relative) return undefined;
     const { line, character } = sourceFile.compilerNode.getLineAndCharacterOfPosition(
       node.getStart(),

@@ -30,6 +30,14 @@ export interface GraphArgs {
 
 export const graphCommand: Command<GraphResult, GraphArgs> = {
   name: "graph",
+  validate(args: GraphArgs) {
+    graphRequestFrom(args);
+    SymbolTargetResolver.validateRequest({
+      rawTarget: args.target,
+      line: args.line,
+      regex: args.regex,
+    });
+  },
   describeArgs(args: GraphArgs) {
     return {
       kind: classifyArgKind(args.target),

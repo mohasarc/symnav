@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { InMemoryFileSystem, type ResolvedPath } from "@symnav/core";
 
+import { TypeScriptWorkspaceState } from "../typescript-backend/typescript-workspace-state.js";
 import { SymbolResolver } from "./resolve-symbols.js";
 
 const FIXTURE: Record<string, string> = {
@@ -66,8 +67,8 @@ function pathsFor(relativePaths: readonly string[]): readonly ResolvedPath[] {
   return relativePaths.map((relative) => ({ relative, absolute: `/repo/${relative}` }));
 }
 
-function fsWithFixture() {
-  return new InMemoryFileSystem(FIXTURE);
+function stateWithFixture(): TypeScriptWorkspaceState {
+  return new TypeScriptWorkspaceState(new InMemoryFileSystem(FIXTURE));
 }
 
 const ALL_FILES = pathsFor([
@@ -88,7 +89,7 @@ function names(
 describe("resolveSymbols (exact)", () => {
   it("returns the one symbol that matches by exact name", async () => {
     const result = await SymbolResolver.resolveSymbols({
-      fs: fsWithFixture(),
+      state: stateWithFixture(),
       files: ALL_FILES,
       query: "PaymentProcessor",
       options: { mode: "exact" },
@@ -98,7 +99,7 @@ describe("resolveSymbols (exact)", () => {
 
   it("is case-sensitive: lowercased query returns nothing", async () => {
     const result = await SymbolResolver.resolveSymbols({
-      fs: fsWithFixture(),
+      state: stateWithFixture(),
       files: ALL_FILES,
       query: "paymentprocessor",
       options: { mode: "exact" },
@@ -108,7 +109,7 @@ describe("resolveSymbols (exact)", () => {
 
   it("finds nested symbols (a method on a class)", async () => {
     const result = await SymbolResolver.resolveSymbols({
-      fs: fsWithFixture(),
+      state: stateWithFixture(),
       files: ALL_FILES,
       query: "charge",
       options: { mode: "exact" },
@@ -120,7 +121,7 @@ describe("resolveSymbols (exact)", () => {
 
   it("finds declarations nested inside executable control-flow blocks", async () => {
     const result = await SymbolResolver.resolveSymbols({
-      fs: fsWithFixture(),
+      state: stateWithFixture(),
       files: ALL_FILES,
       query: "insideIf",
       options: { mode: "exact" },
@@ -134,7 +135,7 @@ describe("resolveSymbols (exact)", () => {
 
   it("finds declarations nested inside folds by full canonical id", async () => {
     const result = await SymbolResolver.resolveSymbols({
-      fs: fsWithFixture(),
+      state: stateWithFixture(),
       files: ALL_FILES,
       query: "src/control-flow/LocalDeclarations.ts::outer::insideIf",
       options: { mode: "exact" },
@@ -148,7 +149,7 @@ describe("resolveSymbols (exact)", () => {
 
   it("surfaces every occurrence of a name across files", async () => {
     const result = await SymbolResolver.resolveSymbols({
-      fs: fsWithFixture(),
+      state: stateWithFixture(),
       files: ALL_FILES,
       query: "Payment",
       options: { mode: "exact" },
@@ -161,7 +162,7 @@ describe("resolveSymbols (exact)", () => {
 
   it("returns empty for a no-match query", async () => {
     const result = await SymbolResolver.resolveSymbols({
-      fs: fsWithFixture(),
+      state: stateWithFixture(),
       files: ALL_FILES,
       query: "NoSuchSymbol",
       options: { mode: "exact" },
@@ -173,7 +174,7 @@ describe("resolveSymbols (exact)", () => {
 describe("resolveSymbols (fuzzy)", () => {
   it("matches case-insensitively as a subsequence", async () => {
     const result = await SymbolResolver.resolveSymbols({
-      fs: fsWithFixture(),
+      state: stateWithFixture(),
       files: ALL_FILES,
       query: "payproc",
       options: { mode: "fuzzy" },
@@ -183,7 +184,7 @@ describe("resolveSymbols (fuzzy)", () => {
 
   it("ranks consecutive/boundary matches above scattered matches", async () => {
     const result = await SymbolResolver.resolveSymbols({
-      fs: fsWithFixture(),
+      state: stateWithFixture(),
       files: ALL_FILES,
       query: "payment",
       options: { mode: "fuzzy" },
@@ -201,7 +202,7 @@ describe("resolveSymbols (fuzzy)", () => {
 describe("resolveSymbols (regex)", () => {
   it("matches by own symbol name, not the full canonical id", async () => {
     const result = await SymbolResolver.resolveSymbols({
-      fs: fsWithFixture(),
+      state: stateWithFixture(),
       files: ALL_FILES,
       query: "^to[A-Z].*",
       options: { mode: "regex", regex: /^to[A-Z].*/ },

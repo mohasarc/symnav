@@ -6,7 +6,16 @@ import type {
   OverviewFileEntries,
   SymbolOverviewNode,
 } from "../intermediate-representation/overview-tree.js";
-import type { ResolvedPath } from "../workspace/workspace.js";
+import type { ResolvedPath, WorkspaceFile } from "../workspace/workspace.js";
+
+export interface BackendRefreshSummary {
+  readonly added: number;
+  readonly changed: number;
+  readonly removed: number;
+  readonly unchanged: number;
+}
+
+export type BackendRefreshCoverage = "workspace" | "selection";
 
 export type ResolveSymbolsMode = "exact" | "fuzzy" | "regex";
 
@@ -17,6 +26,10 @@ export type ResolveSymbolsOptions =
 
 export interface LanguageBackend {
   accepts(filePath: string): boolean;
+  refresh(
+    files: readonly WorkspaceFile[],
+    coverage?: BackendRefreshCoverage,
+  ): Promise<BackendRefreshSummary>;
   fileEntries(path: ResolvedPath): Promise<OverviewFileEntries>;
   resolveSymbols(
     files: readonly ResolvedPath[],

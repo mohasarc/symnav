@@ -1,5 +1,5 @@
 import { isAbsolute, posix, resolve } from "node:path";
-import type { FileSystem } from "./file-system.js";
+import type { FileMetadata, FileSystem } from "./file-system.js";
 import {
   FileNotFoundError,
   IgnoredFileError,
@@ -19,20 +19,35 @@ export interface ResolvedPath {
   readonly absolute: string;
 }
 
+export interface WorkspaceFile extends ResolvedPath {
+  readonly metadata: FileMetadata;
+}
+
+export interface WorkspaceSnapshot {
+  readonly root: string;
+  readonly files: readonly WorkspaceFile[];
+}
+
 export interface Workspace {
   readonly root: string;
   resolveInputPath(inputPath: string, cwd: string): Promise<ResolvedPath>;
-  enumerate(): Promise<readonly ResolvedPath[]>;
+  enumerate(): Promise<readonly WorkspaceFile[]>;
+  snapshot(selection?: readonly ResolvedPath[]): Promise<WorkspaceSnapshot>;
 }
 
 class DefaultWorkspace implements Workspace {
+  private pathsPromise: Promise<readonly ResolvedPath[]> | undefined;
+  private snapshotPromise: Promise<WorkspaceSnapshot> | undefined;
+  private enumerationError: UnreadableDirectoryWarningCandidateError | undefined;
+  private readonly ignore = new WorkspaceIgnore();
+
   constructor(
     public readonly root: string,
     private readonly fs: FileSystem,
-    private readonly ignore: WorkspaceIgnore,
   ) {}
 
   async resolveInputPath(inputPath: string, cwd: string): Promise<ResolvedPath> {
+    await this.paths();
     const absolutePath = posixify(isAbsolute(inputPath) ? inputPath : resolve(cwd, inputPath));
     if (!(await this.fs.exists(absolutePath))) {
       throw new FileNotFoundError(inputPath);
@@ -50,13 +65,43 @@ class DefaultWorkspace implements Workspace {
     return { relative: relativePath, absolute: absolutePath };
   }
 
-  async enumerate(): Promise<readonly ResolvedPath[]> {
-    const results = await this.collect();
-    results.sort((a, b) => (a.relative < b.relative ? -1 : a.relative > b.relative ? 1 : 0));
-    return results;
+  async enumerate(): Promise<readonly WorkspaceFile[]> {
+    const snapshot = await this.snapshot();
+    if (this.enumerationError) {
+      throw this.enumerationError;
+    }
+    return snapshot.files;
   }
 
-  private async collect(): Promise<ResolvedPath[]> {
+  snapshot(selection?: readonly ResolvedPath[]): Promise<WorkspaceSnapshot> {
+    if (selection) {
+      return this.captureSnapshot(selection);
+    }
+    this.snapshotPromise ??= this.captureSnapshot();
+    return this.snapshotPromise;
+  }
+
+  private async captureSnapshot(selection?: readonly ResolvedPath[]): Promise<WorkspaceSnapshot> {
+    const paths = selection ?? (await this.paths());
+    const files: WorkspaceFile[] = [];
+    for (const path of paths) {
+      files.push({ ...path, metadata: await this.fs.metadata(path.absolute) });
+    }
+    return { root: this.root, files };
+  }
+
+  private paths(): Promise<readonly ResolvedPath[]> {
+    this.pathsPromise ??= this.capturePaths();
+    return this.pathsPromise;
+  }
+
+  private async capturePaths(): Promise<readonly ResolvedPath[]> {
+    const paths = await this.collectPaths();
+    paths.sort((a, b) => (a.relative < b.relative ? -1 : a.relative > b.relative ? 1 : 0));
+    return paths;
+  }
+
+  private async collectPaths(): Promise<ResolvedPath[]> {
     const results: ResolvedPath[] = [];
     const pending: string[] = [this.root];
     while (pending.length > 0) {
@@ -65,15 +110,22 @@ class DefaultWorkspace implements Workspace {
       try {
         entries = await this.fs.listDir(dirAbs);
       } catch (error) {
-        throw new UnreadableDirectoryWarningCandidateError(dirAbs, error);
+        if (!DefaultWorkspace.isExpectedListDirError(error)) {
+          throw error;
+        }
+        this.enumerationError ??= new UnreadableDirectoryWarningCandidateError(dirAbs, error);
+        continue;
       }
+      await this.loadIgnoreScope(dirAbs, entries);
       for (const entry of entries) {
         const childAbs = posix.join(dirAbs, entry);
         const childRel = relPathFromRoot(childAbs, this.root);
-        if (this.ignore.isIgnored(childRel)) {
+        const childIsDirectory = await this.fs.isDirectory(childAbs);
+        const ignoreCandidate = childIsDirectory ? `${childRel}/` : childRel;
+        if (this.ignore.isIgnored(ignoreCandidate)) {
           continue;
         }
-        if (await this.fs.isDirectory(childAbs)) {
+        if (childIsDirectory) {
           pending.push(childAbs);
         } else {
           results.push({ relative: childRel, absolute: childAbs });
@@ -81,6 +133,29 @@ class DefaultWorkspace implements Workspace {
       }
     }
     return results;
+  }
+
+  private static isExpectedListDirError(error: unknown): boolean {
+    if (typeof error !== "object" || error === null) {
+      return false;
+    }
+    const code = (error as { code?: unknown }).code;
+    return code === "ENOENT" || code === "EACCES";
+  }
+
+  private async loadIgnoreScope(
+    directoryAbsolute: string,
+    entries: readonly string[],
+  ): Promise<void> {
+    if (!entries.includes(".gitignore")) {
+      return;
+    }
+    const gitignoreAbsolute = posix.join(directoryAbsolute, ".gitignore");
+    if (await this.fs.isDirectory(gitignoreAbsolute)) {
+      return;
+    }
+    const directoryRelative = relPathFromRoot(directoryAbsolute, this.root);
+    this.ignore.addScope(directoryRelative, await this.fs.readFile(gitignoreAbsolute));
   }
 }
 
@@ -94,6 +169,5 @@ export async function createWorkspace(opts: {
   if (root === null) {
     throw new NotInWorkspaceError(opts.startDir);
   }
-  const ignore = WorkspaceIgnore.build(root, fs);
-  return new DefaultWorkspace(root, fs, ignore);
+  return new DefaultWorkspace(root, fs);
 }

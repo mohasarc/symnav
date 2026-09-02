@@ -8,6 +8,7 @@ import {
 } from "@symnav/core";
 
 import { ReferenceFinder } from "./find-references.js";
+import { TypeScriptWorkspaceState } from "../typescript-backend/typescript-workspace-state.js";
 
 async function refsIn(
   files: Record<string, string>,
@@ -21,7 +22,11 @@ async function refsIn(
     relative,
     absolute: `/repo/${relative}`,
   }));
-  return new ReferenceFinder({ fs, files: paths, identity }).find();
+  return new ReferenceFinder({
+    state: new TypeScriptWorkspaceState(fs),
+    files: paths,
+    identity,
+  }).find();
 }
 
 function identityOf(file: string, ...names: string[]): SymbolIdentity {

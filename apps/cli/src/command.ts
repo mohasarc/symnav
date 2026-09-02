@@ -1,11 +1,12 @@
 import {
-  BackendRouter,
   createWorkspace,
+  type BackendRouter,
   type GitHistory,
   type NavigationDiagnosticSeverity,
   type ResultWithDiagnostics,
   UserFacingError,
   type Workspace,
+  type WorkspaceSnapshot,
 } from "@symnav/core";
 
 const severityPrefixes: Record<NavigationDiagnosticSeverity, string> = {
@@ -14,6 +15,7 @@ const severityPrefixes: Record<NavigationDiagnosticSeverity, string> = {
 import type { ArgShape, OutcomeReport } from "@symnav/telemetry";
 import type { ProgramContext } from "./program-context.js";
 import type { ProgramDependencies } from "./program-dependencies.js";
+import { WorkspaceRequestScopeFactory } from "./workspace-request-scope.js";
 
 export interface CommandContext<Args> {
   readonly workspace: Workspace;
@@ -33,6 +35,8 @@ export interface CommandInvocation<Args> {
 
 export interface Command<Result extends ResultWithDiagnostics, Args> {
   readonly name: string;
+  validate?(args: Args): void;
+  snapshotForBackendRefresh?(ctx: CommandContext<Args>): Promise<WorkspaceSnapshot>;
   describeArgs(args: Args): ArgShape;
   countResults(result: Result): Record<string, number>;
   compute(ctx: CommandContext<Args>): Promise<Result>;
@@ -53,8 +57,28 @@ export async function runCommand<Result extends ResultWithDiagnostics, Args>(
 
   try {
     workspace = await createWorkspace({ startDir: cwd, fs });
-    const router = new BackendRouter(dependencies.backends());
-    const result = await command.compute({ workspace, router, git: dependencies.git, cwd, args });
+    command.validate?.(args);
+    const scopeFactory = new WorkspaceRequestScopeFactory(fs, dependencies.backends());
+    const snapshotSelector = command.snapshotForBackendRefresh;
+    const preparedScope = snapshotSelector
+      ? await scopeFactory.prepareWorkspace(workspace, (scopeWorkspace, scopeRouter) =>
+          snapshotSelector({
+            workspace: scopeWorkspace,
+            router: scopeRouter,
+            git: dependencies.git,
+            cwd,
+            args,
+          }),
+        )
+      : await scopeFactory.prepareWorkspace(workspace);
+    const commandContext: CommandContext<Args> = {
+      workspace,
+      router: preparedScope.router,
+      git: dependencies.git,
+      cwd,
+      args,
+    };
+    const result = await command.compute(commandContext);
     const rendered = json ? command.renderJson(result) : command.renderText(result);
     for (const diagnostic of result.diagnostics ?? []) {
       context.stderr.write(`${severityPrefixes[diagnostic.severity]}: ${diagnostic.message}\n`);

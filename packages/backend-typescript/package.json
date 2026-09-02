@@ -25,5 +25,8 @@
     "@symnav/core": "workspace:*",
     "fuzzysort": "^3.1.0",
     "ts-morph": "^24.0.0"
+  },
+  "devDependencies": {
+    "@symnav/testing": "workspace:*"
   }
 }

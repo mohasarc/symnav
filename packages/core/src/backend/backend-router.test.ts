@@ -8,7 +8,8 @@ import type { ResolvedPath, WorkspaceFile, WorkspaceSnapshot } from "../workspac
 
 interface FakeBackend extends LanguageBackend {
   readonly label: string;
-  readonly refreshCalls: readonly (readonly WorkspaceFile[])[];
+  readonly refreshCalls: readonly unknown[];
+  readonly releaseCalls: number;
 }
 
 function fakeBackend(
@@ -16,14 +17,22 @@ function fakeBackend(
   accepts: (path: string) => boolean,
   refreshResult = { added: 0, changed: 0, removed: 0, unchanged: 0 },
 ): FakeBackend {
-  const refreshCalls: (readonly WorkspaceFile[])[] = [];
+  const refreshCalls: unknown[] = [];
+  let releaseCalls = 0;
   return {
     label,
     refreshCalls,
+    get releaseCalls() {
+      return releaseCalls;
+    },
     accepts,
-    refresh(files) {
-      refreshCalls.push(files);
+    refresh(request) {
+      refreshCalls.push(request);
       return Promise.resolve(refreshResult);
+    },
+    releaseTransientResources() {
+      releaseCalls += 1;
+      return Promise.resolve();
     },
     fileEntries(path: ResolvedPath): Promise<OverviewFileEntries> {
       return Promise.resolve({ file: path.relative, entries: [] });
@@ -79,9 +88,15 @@ describe("BackendRouter", () => {
       removed: 1,
       unchanged: 1,
     });
-    expect(tsBackend.refreshCalls).toEqual([[snapshot.files[0]]]);
-    expect(pyBackend.refreshCalls).toEqual([[snapshot.files[1]]]);
-    expect(unusedBackend.refreshCalls).toEqual([[]]);
+    expect(tsBackend.refreshCalls).toEqual([
+      { snapshot: { root: "/repo", files: [snapshot.files[0]] }, coverage: "workspace" },
+    ]);
+    expect(pyBackend.refreshCalls).toEqual([
+      { snapshot: { root: "/repo", files: [snapshot.files[1]] }, coverage: "workspace" },
+    ]);
+    expect(unusedBackend.refreshCalls).toEqual([
+      { snapshot: { root: "/repo", files: [] }, coverage: "workspace" },
+    ]);
   });
 
   it("assigns overlapping files to the first accepting backend", async () => {
@@ -92,8 +107,47 @@ describe("BackendRouter", () => {
 
     await router.refresh({ root: "/repo", files: [file] });
 
-    expect(first.refreshCalls).toEqual([[file]]);
-    expect(second.refreshCalls).toEqual([[]]);
+    expect(first.refreshCalls).toEqual([
+      { snapshot: { root: "/repo", files: [file] }, coverage: "workspace" },
+    ]);
+    expect(second.refreshCalls).toEqual([
+      { snapshot: { root: "/repo", files: [] }, coverage: "workspace" },
+    ]);
+  });
+
+  it("preserves selection coverage and canonical root for every backend", async () => {
+    const tsBackend = fakeBackend("ts", (path) => path.endsWith(".ts"));
+    const pyBackend = fakeBackend("py", (path) => path.endsWith(".py"));
+    const router = new BackendRouter([tsBackend, pyBackend]);
+    const file = workspaceFile("src/a.ts");
+
+    await router.refresh({ root: "/canonical/repo", files: [file] }, "selection");
+
+    expect(tsBackend.refreshCalls).toEqual([
+      {
+        snapshot: { root: "/canonical/repo", files: [file] },
+        coverage: "selection",
+      },
+    ]);
+    expect(pyBackend.refreshCalls).toEqual([
+      {
+        snapshot: { root: "/canonical/repo", files: [] },
+        coverage: "selection",
+      },
+    ]);
+  });
+
+  it("releases transient resources on every backend", async () => {
+    const first = fakeBackend("first", () => true);
+    const second = fakeBackend("second", () => true);
+    const router = new BackendRouter([first, second]);
+
+    await (
+      router as BackendRouter & { releaseTransientResources(): Promise<void> }
+    ).releaseTransientResources();
+
+    expect(first.releaseCalls).toBe(1);
+    expect(second.releaseCalls).toBe(1);
   });
 
   it("returns the first backend whose accepts() is true", () => {

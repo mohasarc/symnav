@@ -30,7 +30,13 @@ export class BackendRouter {
 
     let total: BackendRefreshSummary = { added: 0, changed: 0, removed: 0, unchanged: 0 };
     for (const backend of this.#backends) {
-      const summary = await backend.refresh(filesByBackend.get(backend) ?? [], coverage);
+      const summary = await backend.refresh({
+        snapshot: {
+          root: snapshot.root,
+          files: filesByBackend.get(backend) ?? [],
+        },
+        coverage,
+      });
       total = {
         added: total.added + summary.added,
         changed: total.changed + summary.changed,
@@ -39,6 +45,10 @@ export class BackendRouter {
       };
     }
     return total;
+  }
+
+  async releaseTransientResources(): Promise<void> {
+    await Promise.all(this.#backends.map((backend) => backend.releaseTransientResources()));
   }
 
   find(filePath: string): LanguageBackend | undefined {

@@ -3,7 +3,7 @@ import { basename } from "node:path";
 import type {
   CallEdge,
   CallTargetResolution,
-  BackendRefreshCoverage,
+  BackendRefreshRequest,
   BackendRefreshSummary,
   FileSystem,
   LanguageBackend,
@@ -13,17 +13,19 @@ import type {
   ResolvedPath,
   SymbolOverviewNode,
   SymbolIdentity,
-  WorkspaceFile,
 } from "@symnav/core";
 import { FileNotFoundError } from "@symnav/core";
 
-import { findCallees } from "../call-graph/find-callees.js";
-import { findCallers } from "../call-graph/find-callers.js";
-import { findCallTarget } from "../call-graph/find-call-target.js";
-import { findDefinitions } from "../definition/find-definitions.js";
-import { ReferenceFinder } from "../references/find-references.js";
 import { SymbolResolver } from "../resolve/resolve-symbols.js";
-import { TypeScriptWorkspaceState } from "./typescript-workspace-state.js";
+import { TypeScriptProjectGraph } from "./typescript-project-graph.js";
+import type { TypeScriptSemanticQueryObserver } from "./typescript-semantic-query-observer.js";
+import { TypeScriptSemanticQueryService } from "./typescript-semantic-query-service.js";
+import {
+  TypeScriptFileEntryExtractor,
+  TypeScriptWorkspaceState,
+  type TypeScriptFileExtractor,
+} from "./typescript-workspace-state.js";
+import { WorkspaceSourceCache } from "./workspace-source-cache.js";
 
 export class TypeScriptBackend implements LanguageBackend {
   static readonly extensions: readonly string[] = [".d.ts", ".ts", ".tsx", ".mts", ".cts"];
@@ -38,20 +40,53 @@ export class TypeScriptBackend implements LanguageBackend {
     return false;
   }
 
+  private readonly state: TypeScriptWorkspaceState;
+  private readonly projectGraph: TypeScriptProjectGraph | undefined;
+  private readonly sourceCache: WorkspaceSourceCache | undefined;
+  private readonly semanticQueries: TypeScriptSemanticQueryService;
+
   constructor(
     private readonly fs: FileSystem,
-    private readonly state = new TypeScriptWorkspaceState(fs),
-  ) {}
+    state?: TypeScriptWorkspaceState,
+    projectGraph?: TypeScriptProjectGraph,
+    observer?: TypeScriptSemanticQueryObserver,
+    extractor: TypeScriptFileExtractor = new TypeScriptFileEntryExtractor(),
+  ) {
+    if (state) {
+      this.state = state;
+      this.projectGraph = projectGraph;
+      this.sourceCache = undefined;
+      this.semanticQueries = new TypeScriptSemanticQueryService(
+        this.projectGraph,
+        this.state,
+        observer,
+      );
+      return;
+    }
+    this.sourceCache = new WorkspaceSourceCache(fs);
+    this.projectGraph = projectGraph ?? new TypeScriptProjectGraph(this.sourceCache, observer);
+    this.state = new TypeScriptWorkspaceState(this.sourceCache, extractor, this.projectGraph);
+    this.semanticQueries = new TypeScriptSemanticQueryService(
+      this.projectGraph,
+      this.state,
+      observer,
+    );
+  }
 
   accepts(filePath: string): boolean {
     return TypeScriptBackend.accepts(filePath);
   }
 
-  async refresh(
-    files: readonly WorkspaceFile[],
-    coverage: BackendRefreshCoverage = "workspace",
-  ): Promise<BackendRefreshSummary> {
-    return this.state.refresh(files, coverage);
+  async refresh(request: BackendRefreshRequest): Promise<BackendRefreshSummary> {
+    this.sourceCache?.refresh(request.snapshot);
+    await this.projectGraph?.refresh(request.snapshot);
+    const summary = this.state.refresh(request.snapshot.files, request.coverage);
+    this.semanticQueries.beginTurn(request.snapshot);
+    return summary;
+  }
+
+  async releaseTransientResources(): Promise<void> {
+    this.semanticQueries.releaseTransientResources();
   }
 
   async fileEntries(file: ResolvedPath): Promise<OverviewFileEntries> {
@@ -77,34 +112,39 @@ export class TypeScriptBackend implements LanguageBackend {
     files: readonly ResolvedPath[],
     identity: SymbolIdentity,
   ): Promise<readonly SymbolOverviewNode[]> {
-    return findDefinitions({ workspaceState: this.state, files, identity });
+    this.state.ensureFiles(files);
+    return this.semanticQueries.findDefinitions(identity);
   }
 
   async findReferences(
     files: readonly ResolvedPath[],
     identity: SymbolIdentity,
   ): Promise<readonly SymbolReference[]> {
-    return new ReferenceFinder({ state: this.state, files, identity }).find();
+    this.state.ensureFiles(files);
+    return this.semanticQueries.findReferences(identity);
   }
 
   async findCallTarget(
     files: readonly ResolvedPath[],
     identity: SymbolIdentity,
   ): Promise<CallTargetResolution> {
-    return findCallTarget({ workspaceState: this.state, files, identity });
+    this.state.ensureFiles(files);
+    return this.semanticQueries.findCallTarget(identity);
   }
 
   async findCallees(
     files: readonly ResolvedPath[],
     identity: SymbolIdentity,
   ): Promise<readonly CallEdge[]> {
-    return findCallees({ workspaceState: this.state, files, identity });
+    this.state.ensureFiles(files);
+    return this.semanticQueries.findCallees(identity);
   }
 
   async findCallers(
     files: readonly ResolvedPath[],
     identity: SymbolIdentity,
   ): Promise<readonly CallEdge[]> {
-    return findCallers({ workspaceState: this.state, files, identity });
+    this.state.ensureFiles(files);
+    return this.semanticQueries.findCallers(identity);
   }
 }

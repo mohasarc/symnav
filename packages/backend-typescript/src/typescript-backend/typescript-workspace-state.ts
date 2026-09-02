@@ -42,6 +42,11 @@ export interface TypeScriptFileExtractor {
   extract(request: TypeScriptFileExtractionRequest): OverviewFileEntries;
 }
 
+export interface TypeScriptSemanticSourceProvider {
+  sourceFileFor(relativePath: string): SourceFile | undefined;
+  sourceFilesFor(relativePath: string): readonly SourceFile[];
+}
+
 export class TypeScriptFileEntryExtractor implements TypeScriptFileExtractor {
   extract(request: TypeScriptFileExtractionRequest): OverviewFileEntries {
     return extractFileEntries(request);
@@ -87,6 +92,7 @@ export class TypeScriptWorkspaceState {
   constructor(
     private readonly fs: FileSystem,
     private readonly extractor: TypeScriptFileExtractor = new TypeScriptFileEntryExtractor(),
+    private readonly semanticSources?: TypeScriptSemanticSourceProvider,
   ) {
     this.project = new Project({ fileSystem: new WorkspaceFileSystemHost(fs) });
   }
@@ -176,21 +182,48 @@ export class TypeScriptWorkspaceState {
   sourceFile(relativePath: string): SourceFile | undefined {
     const prepared = this.preparedIndex.byRelativePath.get(relativePath);
     if (!prepared) return undefined;
+    const semanticSource = this.semanticSources?.sourceFileFor(relativePath);
+    if (semanticSource) return semanticSource;
     return this.project.getSourceFile(prepared.file.absolute);
   }
 
   locate(identity: SymbolIdentity): readonly LocatedDeclaration[] {
+    const semanticSource = this.semanticSources?.sourceFileFor(identity.file);
+    return this.locateIn(identity, semanticSource ? [semanticSource] : undefined);
+  }
+
+  locateSemanticCopies(identity: SymbolIdentity): readonly LocatedDeclaration[] {
+    const semanticSources = this.semanticSources?.sourceFilesFor(identity.file);
+    return this.locateIn(identity, semanticSources);
+  }
+
+  private locateIn(
+    identity: SymbolIdentity,
+    semanticSources: readonly SourceFile[] | undefined,
+  ): readonly LocatedDeclaration[] {
     const prepared = this.preparedIndex.byRelativePath.get(identity.file);
     if (!prepared) return [];
-    const sourceFile = this.project.getSourceFile(prepared.file.absolute);
-    if (!sourceFile) return [];
-    return new DeclarationLocator(sourceFile).locate(identity, prepared.entries.entries);
+    const sourceFiles =
+      semanticSources && semanticSources.length > 0
+        ? semanticSources
+        : [this.project.getSourceFile(prepared.file.absolute)].filter(
+            (sourceFile): sourceFile is SourceFile => sourceFile !== undefined,
+          );
+    return sourceFiles.flatMap((sourceFile) =>
+      new DeclarationLocator(sourceFile).locate(identity, prepared.entries.entries),
+    );
   }
 
   declarationAt(node: Node): SymbolOverviewNode | undefined {
     const relative = this.relativePathOf(node.getSourceFile());
     if (!relative) return undefined;
     return this.preparedIndex.declarationsByPosition.get(relative)?.get(node.getStart());
+  }
+
+  nodeAt(relativePath: string, start: number): Node | undefined {
+    const prepared = this.preparedIndex.byRelativePath.get(relativePath);
+    if (!prepared) return undefined;
+    return this.project.getSourceFile(prepared.file.absolute)?.getDescendantAtPos(start);
   }
 
   declarationForIdentity(identity: SymbolIdentity): IndexedDeclaration | undefined {
@@ -231,13 +264,16 @@ export class TypeScriptWorkspaceState {
     const candidates = revisions.map((revision) => {
       const existingPath = this.preparedIndex.byRelativePath.get(revision.relativePath)?.file;
       const existingSourceFile =
-        existingPath?.absolute === revision.absolutePath
+        existingPath === undefined || existingPath.absolute === revision.absolutePath
           ? this.project.getSourceFile(revision.absolutePath)
           : undefined;
       return {
         revision,
         existingSourceFile,
-        content: existingSourceFile ? this.fs.readFileSync(revision.absolutePath) : undefined,
+        content:
+          existingSourceFile && existingPath
+            ? this.fs.readFileSync(revision.absolutePath)
+            : undefined,
       };
     });
     const mutations: ProjectMutation[] = [];
@@ -250,10 +286,12 @@ export class TypeScriptWorkspaceState {
         };
         let sourceFile: SourceFile;
 
-        if (existingSourceFile) {
+        if (existingSourceFile && content !== undefined) {
           const previousText = existingSourceFile.getFullText();
-          existingSourceFile.replaceWithText(content!);
+          existingSourceFile.replaceWithText(content);
           mutations.push({ rollback: () => existingSourceFile.replaceWithText(previousText) });
+          sourceFile = existingSourceFile;
+        } else if (existingSourceFile) {
           sourceFile = existingSourceFile;
         } else {
           sourceFile = this.project.addSourceFileAtPath(revision.absolutePath);

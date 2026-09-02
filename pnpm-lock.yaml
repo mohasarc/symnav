@@ -83,6 +83,10 @@ importers:
       ts-morph:
         specifier: ^24.0.0
         version: 24.0.0
+    devDependencies:
+      '@symnav/testing':
+        specifier: workspace:*
+        version: link:../testing
 
   packages/core:
     dependencies:

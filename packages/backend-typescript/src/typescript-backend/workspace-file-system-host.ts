@@ -46,8 +46,18 @@ export class WorkspaceFileSystemHost implements FileSystemHost {
     return "/";
   }
 
-  readDirSync(_dirPath: string): RuntimeDirEntry[] {
-    return unsupported();
+  readDirSync(dirPath: string): RuntimeDirEntry[] {
+    if (!this.fs.existsSync(dirPath) || !this.fs.isDirectorySync(dirPath)) return [];
+    return this.fs.listDirSync(dirPath).map((name) => {
+      const path = `${dirPath.replace(/\/$/, "")}/${name}`;
+      const directory = this.fs.isDirectorySync(path);
+      return {
+        name,
+        isDirectory: directory,
+        isFile: !directory,
+        isSymlink: false,
+      };
+    });
   }
 
   async delete(_path: string): Promise<void> {

@@ -3,32 +3,19 @@ import {
   SyntaxKind,
   type CallExpression,
   type NewExpression,
-  type ReferencedSymbolEntry,
   type SourceFile,
 } from "ts-morph";
-import type {
-  CallEdge,
-  CallSite,
-  EdgeConfidence,
-  ResolvedPath,
-  SymbolOverviewNode,
-  SymbolIdentity,
-} from "@symnav/core";
+import type { CallEdge, CallSite, EdgeConfidence, SymbolOverviewNode } from "@symnav/core";
 
 import { DeclarationLocator } from "../identity/locate-declarations.js";
 import type { TypeScriptWorkspaceState } from "../typescript-backend/typescript-workspace-state.js";
 
 const DYNAMIC_DISPATCH_REASON = "dynamic dispatch: call target not statically resolvable";
 
-export interface FindCallersArgs {
-  readonly workspaceState: TypeScriptWorkspaceState;
-  readonly files: readonly ResolvedPath[];
-  readonly identity: SymbolIdentity;
-}
-
-export async function findCallers(args: FindCallersArgs): Promise<readonly CallEdge[]> {
-  args.workspaceState.ensureFiles(args.files);
-  return new CallerFinder(args).find();
+export interface CallerReferenceLocation {
+  readonly relativePath: string;
+  readonly start: number;
+  readonly isDefinition: boolean;
 }
 
 interface CallPosition {
@@ -36,30 +23,17 @@ interface CallPosition {
   readonly reason?: string;
 }
 
-class CallerFinder {
-  private readonly workspaceState: TypeScriptWorkspaceState;
+export class CallerFinder {
+  constructor(private readonly workspaceState: TypeScriptWorkspaceState) {}
 
-  constructor(private readonly args: FindCallersArgs) {
-    this.workspaceState = args.workspaceState;
-  }
-
-  find(): readonly CallEdge[] {
-    const declarationNodes = this.targetDeclarationNodes();
-    if (declarationNodes.length === 0) return [];
-    return this.edgesFrom(declarationNodes);
-  }
-
-  private targetDeclarationNodes(): readonly Node[] {
-    return this.workspaceState.locate(this.args.identity).map((located) => located.node);
-  }
-
-  private edgesFrom(declarationNodes: readonly Node[]): readonly CallEdge[] {
+  find(referenceLocations: readonly CallerReferenceLocation[]): readonly CallEdge[] {
     const edgesByKey = new Map<string, MutableEdge>();
     const seenReferences = new Set<string>();
-    for (const declarationNode of declarationNodes) {
-      for (const referenceNode of this.referenceNodesOf(declarationNode)) {
-        this.addCallerEdge(referenceNode, edgesByKey, seenReferences);
-      }
+    for (const location of referenceLocations) {
+      if (location.isDefinition) continue;
+      const referenceNode = this.workspaceState.nodeAt(location.relativePath, location.start);
+      if (!referenceNode) continue;
+      this.addCallerEdge(referenceNode, edgesByKey, seenReferences);
     }
     return [...edgesByKey.values()].map(finalizeEdge).sort(compareEdges);
   }
@@ -89,15 +63,6 @@ class CallerFinder {
       reason: callPosition.reason,
       sites: [site],
     });
-  }
-
-  private referenceNodesOf(declarationNode: Node): readonly Node[] {
-    if (!Node.isReferenceFindable(declarationNode)) return [];
-    return declarationNode
-      .findReferences()
-      .flatMap((referencedSymbol) => referencedSymbol.getReferences())
-      .filter((entry) => !entry.isDefinition())
-      .map((entry: ReferencedSymbolEntry) => entry.getNode());
   }
 
   private enclosingSymbolOf(referenceNode: Node): SymbolOverviewNode | undefined {

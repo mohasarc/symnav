@@ -111,7 +111,7 @@ describe("runCommand lifecycle", () => {
     expect(context.stdout.text()).toBe("text:computed");
     expect(context.stderr.text()).toBe("");
     expect(backend.refreshCalls).toHaveLength(1);
-    expect(backend.refreshCalls[0]?.map((file) => file.relative)).toEqual([
+    expect(backend.refreshCalls[0]?.snapshot.files.map((file) => file.relative)).toEqual([
       "src/a.ts",
       "src/nested/b.ts",
     ]);

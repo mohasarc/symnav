@@ -198,7 +198,7 @@ describe("TypeScriptWorkspaceState.refresh", () => {
     const target: SymbolIdentity = { file: "src/app.ts", segments: [{ name: "target" }] };
     const caller: SymbolIdentity = { file: "src/app.ts", segments: [{ name: "caller" }] };
 
-    await backend.refresh(files);
+    await backend.refresh({ snapshot: { root: "/repo", files }, coverage: "workspace" });
     const preparedTarget = state
       .declarationsIn("src/app.ts")
       ?.find((declaration) => declaration.identity.segments.at(-1)?.name === "target");
@@ -377,7 +377,7 @@ describe("TypeScriptWorkspaceState.refresh", () => {
     const state = new TypeScriptWorkspaceState(fs);
     const backend = new TypeScriptBackend(fs, state);
     let files = fs.workspaceFiles("src/app.ts", "src/lib.ts");
-    await backend.refresh(files);
+    await backend.refresh({ snapshot: { root: "/repo", files }, coverage: "workspace" });
     const oldIdentity: SymbolIdentity = { file: "src/lib.ts", segments: [{ name: "oldName" }] };
     expect(await backend.findReferences(files, oldIdentity)).toHaveLength(2);
 
@@ -391,7 +391,7 @@ describe("TypeScriptWorkspaceState.refresh", () => {
       ].join("\n"),
     );
     files = fs.workspaceFiles("src/app.ts", "src/lib.ts");
-    await backend.refresh(files);
+    await backend.refresh({ snapshot: { root: "/repo", files }, coverage: "workspace" });
     const newIdentity: SymbolIdentity = { file: "src/lib.ts", segments: [{ name: "newName" }] };
 
     expect(await backend.resolveSymbols(files, "oldName", { mode: "exact" })).toEqual([]);
@@ -406,7 +406,7 @@ describe("TypeScriptWorkspaceState.refresh", () => {
 
     fs.deleteFile("/repo/src/lib.ts");
     files = fs.workspaceFiles("src/app.ts");
-    await backend.refresh(files);
+    await backend.refresh({ snapshot: { root: "/repo", files }, coverage: "workspace" });
     expect(await backend.findDefinitions(files, newIdentity)).toEqual([]);
     expect(state.sourceFile("src/lib.ts")).toBeUndefined();
   });

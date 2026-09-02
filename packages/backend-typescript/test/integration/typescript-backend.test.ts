@@ -207,7 +207,7 @@ describe("TypeScriptBackend parse sharing", () => {
     const helper: SymbolIdentity = { file: "src/lib.ts", segments: [{ name: "helper" }] };
     const main: SymbolIdentity = { file: "src/app.ts", segments: [{ name: "main" }] };
 
-    await expect(backend.refresh(files)).resolves.toEqual({
+    await expect(backend.refresh(refreshRequest(files))).resolves.toEqual({
       added: 2,
       changed: 0,
       removed: 0,
@@ -271,6 +271,10 @@ function workspaceFile(relative: string, fs: InMemoryFileSystem): WorkspaceFile 
       changeToken: fs.metadataSync(absolute).changeToken,
     },
   };
+}
+
+function refreshRequest(files: readonly WorkspaceFile[]) {
+  return { snapshot: { root: "/repo", files }, coverage: "workspace" as const };
 }
 
 describe("TypeScriptBackend.findReferences", () => {
@@ -410,7 +414,7 @@ describe("TypeScriptBackend retained workspace refresh", () => {
     const oldIdentity: SymbolIdentity = { file: "src/lib.ts", segments: [{ name: "oldName" }] };
     const mainIdentity: SymbolIdentity = { file: "src/app.ts", segments: [{ name: "main" }] };
 
-    await backend.refresh(files);
+    await backend.refresh(refreshRequest(files));
     expect((await backend.fileEntries(files[1]!)).entries).toHaveLength(1);
     expect(await backend.resolveSymbols(files, "oldName", { mode: "exact" })).toHaveLength(1);
     expect(await backend.findDefinitions(files, oldIdentity)).toHaveLength(1);
@@ -431,7 +435,7 @@ describe("TypeScriptBackend retained workspace refresh", () => {
       ].join("\n"),
     );
     files = fs.workspaceFiles("src/app.ts", "src/lib.ts");
-    await expect(backend.refresh(files)).resolves.toEqual({
+    await expect(backend.refresh(refreshRequest(files))).resolves.toEqual({
       added: 0,
       changed: 2,
       removed: 0,
@@ -449,7 +453,7 @@ describe("TypeScriptBackend retained workspace refresh", () => {
       ['import { newName } from "./lib.js";', "export const extra = newName;", ""].join("\n"),
     );
     files = fs.workspaceFiles("src/app.ts", "src/extra.ts", "src/lib.ts");
-    await expect(backend.refresh(files)).resolves.toEqual({
+    await expect(backend.refresh(refreshRequest(files))).resolves.toEqual({
       added: 1,
       changed: 0,
       removed: 0,
@@ -459,7 +463,7 @@ describe("TypeScriptBackend retained workspace refresh", () => {
 
     fs.deleteFile("/repo/src/extra.ts");
     files = fs.workspaceFiles("src/app.ts", "src/lib.ts");
-    await expect(backend.refresh(files)).resolves.toEqual({
+    await expect(backend.refresh(refreshRequest(files))).resolves.toEqual({
       added: 0,
       changed: 0,
       removed: 1,
@@ -478,7 +482,7 @@ describe("TypeScriptBackend retained workspace refresh", () => {
       ].join("\n"),
     );
     files = fs.workspaceFiles("src/app.ts", "src/renamed.ts");
-    await expect(backend.refresh(files)).resolves.toEqual({
+    await expect(backend.refresh(refreshRequest(files))).resolves.toEqual({
       added: 1,
       changed: 1,
       removed: 1,

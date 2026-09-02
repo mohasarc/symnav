@@ -2,11 +2,11 @@ import type {
   CallEdge,
   CallTargetResolution,
   BackendRefreshSummary,
+  BackendRefreshRequest,
   LanguageBackend,
   OverviewFileEntries,
   SymbolReference,
   ResolvedPath,
-  WorkspaceFile,
   SymbolOverviewNode,
 } from "../../../../src/index.js";
 
@@ -33,8 +33,12 @@ export class FakeLanguageBackend implements LanguageBackend {
     return this.acceptFn(filePath);
   }
 
-  async refresh(files: readonly WorkspaceFile[]): Promise<BackendRefreshSummary> {
-    return { added: files.length, changed: 0, removed: 0, unchanged: 0 };
+  async refresh(request: BackendRefreshRequest): Promise<BackendRefreshSummary> {
+    return { added: request.snapshot.files.length, changed: 0, removed: 0, unchanged: 0 };
+  }
+
+  async releaseTransientResources(): Promise<void> {
+    return Promise.resolve();
   }
 
   async fileEntries(path: ResolvedPath): Promise<OverviewFileEntries> {

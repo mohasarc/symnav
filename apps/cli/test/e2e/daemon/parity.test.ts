@@ -1,4 +1,5 @@
 import {
+  cpSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
@@ -17,7 +18,7 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawn } from "node:child_process";
 import { afterEach, describe, expect, it } from "vitest";
-import { runSymnavBinary, type RunSymnavBinaryResult } from "@symnav/testing";
+import { fixturePath, runSymnavBinary, type RunSymnavBinaryResult } from "@symnav/testing";
 import type { ChildProcess } from "node:child_process";
 import { DAEMON_PROTOCOL_VERSION, type DaemonRecord } from "../../../src/daemon/daemon-protocol.js";
 import { DaemonRegistry } from "../../../src/daemon/daemon-registry.js";
@@ -306,6 +307,166 @@ describe("symnav daemon parity", () => {
     );
     expect(harness.daemonRecordCount()).toBe(0);
   });
+
+  it.each([
+    ["resolve through path alias", ["resolve", "pathTarget"], "pathTarget"],
+    ["resolve through workspace import", ["resolve", "workspaceTarget"], "workspaceTarget"],
+    ["def through path alias", ["def", "packages/domain/src/index.ts::pathTarget"], "pathTarget"],
+    [
+      "def through workspace import",
+      ["def", "packages/domain/src/index.ts::workspaceTarget"],
+      "workspaceTarget",
+    ],
+    [
+      "refs through path alias",
+      ["refs", "packages/domain/src/index.ts::pathTarget", "--all"],
+      "@domain/index",
+    ],
+    [
+      "refs through workspace import",
+      ["refs", "packages/domain/src/index.ts::workspaceTarget", "--all"],
+      "@configured/domain",
+    ],
+    [
+      "context through path alias",
+      ["context", "packages/domain/src/index.ts::pathTarget"],
+      "useConfiguredImports",
+    ],
+    [
+      "context through workspace import",
+      ["context", "packages/domain/src/index.ts::workspaceTarget"],
+      "useConfiguredImports",
+    ],
+    [
+      "depth-one graph through path alias",
+      ["graph", "packages/app/src/index.ts::useConfiguredImports", "--depth", "1"],
+      "pathTarget",
+    ],
+    [
+      "depth-one graph through workspace import",
+      ["graph", "packages/app/src/index.ts::useConfiguredImports", "--depth", "1"],
+      "workspaceTarget",
+    ],
+    [
+      "refs through a project-owned repeated alias",
+      ["refs", "packages/domain/src/local.ts::domainLocalTarget", "--all"],
+      "@local/local",
+    ],
+    [
+      "depth-one graph through a project-owned repeated alias",
+      ["graph", "packages/domain/src/index.ts::useDomainLocal", "--depth", "1"],
+      "domainLocalTarget",
+    ],
+    [
+      "refs through extended compiler options",
+      ["refs", "packages/domain/src/inherited.ts::inheritedTarget", "--all"],
+      "@inherited/inherited",
+    ],
+    [
+      "depth-one graph through extended compiler options",
+      ["graph", "packages/app/src/index.ts::useInheritedConfiguration", "--depth", "1"],
+      "inheritedTarget",
+    ],
+    [
+      "refs through a workspace subpath export",
+      ["refs", "packages/domain/src/feature.ts::subpathTarget", "--all"],
+      "@configured/domain/feature",
+    ],
+    [
+      "context through a workspace subpath export",
+      ["context", "packages/domain/src/feature.ts::subpathTarget"],
+      "useWorkspaceSubpaths",
+    ],
+    [
+      "depth-one graph through a workspace subpath export",
+      ["graph", "packages/app/src/index.ts::useWorkspaceSubpaths", "--depth", "1"],
+      "subpathTarget",
+    ],
+    [
+      "refs through a patterned workspace subpath export",
+      ["refs", "packages/domain/src/features/patterned.ts::patternedSubpathTarget", "--all"],
+      "@configured/domain/features/patterned",
+    ],
+    [
+      "refs through an inferred workspace import",
+      ["refs", "packages/domain/src/index.ts::workspaceTarget", "--all"],
+      "scratch/outside.ts",
+    ],
+    [
+      "context through an inferred workspace import",
+      ["context", "packages/domain/src/feature.ts::subpathTarget"],
+      "useWorkspacePackagesFromInferred",
+    ],
+    [
+      "depth-one graph through inferred workspace imports",
+      ["graph", "scratch/outside.ts::useWorkspacePackagesFromInferred", "--depth", "1"],
+      "patternedSubpathTarget",
+    ],
+  ])(
+    "keeps configured project %s non-empty and byte-identical",
+    (_name, args, expected) => {
+      const harness = new DaemonParityHarness("configured-project-cases");
+      harnesses.push(harness);
+
+      const warm = harness.warm(args);
+
+      expect(warm).toEqual(harness.cold(args));
+      expect(warm).toMatchObject({ status: 0, stderr: "" });
+      expect(warm.stdout).toContain(expected);
+    },
+    20_000,
+  );
+
+  it("keeps configured aliases out of cold and warm inferred semantics", () => {
+    const harness = new DaemonParityHarness("configured-project-cases");
+    harnesses.push(harness);
+    const args = ["refs", "packages/app/src/local.ts::appLocalTarget", "--all"];
+
+    const warm = harness.warm(args);
+
+    expect(warm).toEqual(harness.cold(args));
+    expect(warm).toMatchObject({ status: 0, stderr: "" });
+    expect(warm.stdout).toContain("packages/app/src/index.ts");
+    expect(warm.stdout).not.toContain("scratch/outside.ts");
+  }, 20_000);
+
+  it.each([
+    ["malformed", "{ malformed"],
+    ["missing", undefined],
+  ])(
+    "falls back without raw failures when root tsconfig is %s",
+    (_name, config) => {
+      const harness = new DaemonParityHarness("configured-project-cases");
+      harnesses.push(harness);
+      if (config === undefined) {
+        harness.removeWorkspaceFile("tsconfig.json");
+      } else {
+        harness.writeWorkspaceFile("tsconfig.json", config);
+      }
+      const cases = [
+        {
+          args: ["refs", "packages/domain/src/index.ts::workspaceTarget", "--all"],
+          expected: "scratch/outside.ts",
+        },
+        {
+          args: ["context", "packages/domain/src/feature.ts::subpathTarget"],
+          expected: "useWorkspacePackagesFromInferred",
+        },
+        {
+          args: ["graph", "scratch/outside.ts::useWorkspacePackagesFromInferred", "--depth", "1"],
+          expected: "patternedSubpathTarget",
+        },
+      ];
+
+      for (const { args, expected } of cases) {
+        const warm = harness.warm(args);
+        expect(warm).toEqual(harness.cold(args));
+        expect(warm).toMatchObject({ status: 0, stderr: "" });
+        expect(warm.stdout).toContain(expected);
+      }
+    },
+    40_000,
+  );
 });
 
 class DaemonParityHarness {
@@ -314,16 +475,29 @@ class DaemonParityHarness {
   private readonly stateDirectory = join(this.root, "state");
   private readonly helperProcesses: ChildProcess[] = [];
 
-  constructor() {
+  constructor(fixtureName?: string) {
+    if (fixtureName) {
+      cpSync(fixturePath(fixtureName), this.workspaceRoot, { recursive: true });
+    }
     mkdirSync(join(this.workspaceRoot, ".git"), { recursive: true });
-    writeFileSync(
-      join(this.workspaceRoot, "input.ts"),
-      'export function target(value: string): string { return value; }\nexport function caller(): string { return target("x"); }\n',
-    );
-    writeFileSync(
-      join(this.workspaceRoot, "warning.ts"),
-      'export function stillVisible(): string { return "ok"; }\n\n@orphaned\n',
-    );
+    if (!fixtureName) {
+      writeFileSync(
+        join(this.workspaceRoot, "input.ts"),
+        'export function target(value: string): string { return value; }\nexport function caller(): string { return target("x"); }\n',
+      );
+      writeFileSync(
+        join(this.workspaceRoot, "warning.ts"),
+        'export function stillVisible(): string { return "ok"; }\n\n@orphaned\n',
+      );
+    }
+  }
+
+  writeWorkspaceFile(relativePath: string, content: string): void {
+    writeFileSync(join(this.workspaceRoot, relativePath), content);
+  }
+
+  removeWorkspaceFile(relativePath: string): void {
+    unlinkSync(join(this.workspaceRoot, relativePath));
   }
 
   warm(args: readonly string[]): RunSymnavBinaryResult {

@@ -49,9 +49,9 @@ describe("daemon registry", () => {
     roots.length = 0;
   });
 
-  it("uses second-generation record and transport coordinates", () => {
+  it("uses second-generation records with accepted-request transport coordinates", () => {
     expect(DAEMON_RECORD_SCHEMA_VERSION).toBe(2);
-    expect(DAEMON_PROTOCOL_VERSION).toBe(2);
+    expect(DAEMON_PROTOCOL_VERSION).toBe(3);
   });
 
   it("keys repositories, worktrees, and submodules by exact workspace root", () => {
@@ -850,6 +850,16 @@ function spawnRegistryCleaner(
 }
 
 function waitForProcess(child: ChildProcess): Promise<void> {
+  if (child.exitCode !== null) {
+    return child.exitCode === 0
+      ? Promise.resolve()
+      : Promise.reject(new Error(`Registry cleaner exited with code ${String(child.exitCode)}`));
+  }
+  if (child.signalCode !== null) {
+    return Promise.reject(
+      new Error(`Registry cleaner exited with signal ${String(child.signalCode)}`),
+    );
+  }
   return new Promise((resolve, reject) => {
     child.once("error", reject);
     child.once("exit", (code) => {

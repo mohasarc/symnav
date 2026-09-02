@@ -1,5 +1,4 @@
 import { Writable } from "node:stream";
-import type { Recorder, UsageEventInput } from "@symnav/telemetry";
 import type {
   CliExecutionRequest,
   CommandExecutionResult,
@@ -36,14 +35,6 @@ class CommandFrameStream extends Writable {
   }
 }
 
-class DeferredTelemetryRecorder implements Recorder {
-  event: UsageEventInput | undefined;
-
-  record(input: UsageEventInput): void {
-    this.event = input;
-  }
-}
-
 export class CliProgramExecutor {
   constructor(
     private readonly dependencies: ProgramDependencies,
@@ -52,7 +43,6 @@ export class CliProgramExecutor {
 
   async execute(request: CliExecutionRequest): Promise<CommandExecutionResult> {
     const frames: CommandOutputFrame[] = [];
-    const deferredTelemetry = request.deferTelemetry ? new DeferredTelemetryRecorder() : undefined;
     const context: ProgramContext = {
       stdout: new CommandFrameStream("stdout", frames),
       stderr: new CommandFrameStream("stderr", frames),
@@ -63,7 +53,7 @@ export class CliProgramExecutor {
     };
     const dependencies: ProgramDependencies = {
       ...this.dependencies,
-      recorder: deferredTelemetry ?? this.dependencies.recorder,
+      recorder: this.dependencies.recorder,
       telemetryEnabled: request.telemetryEnabled,
       executionMode: request.executionMode ?? "cold",
       ...(this.scopeFactory === undefined ? {} : { scopeFactory: this.scopeFactory }),
@@ -71,21 +61,13 @@ export class CliProgramExecutor {
 
     try {
       await buildProgram(context, dependencies).parseAsync([...request.argv], { from: "user" });
-      return CliProgramExecutor.result(frames, 0, deferredTelemetry?.event);
+      return { frames, exitCode: 0 };
     } catch (error) {
       if (error instanceof CapturedProgramExit) {
-        return CliProgramExecutor.result(frames, error.exitCode, deferredTelemetry?.event);
+        return { frames, exitCode: error.exitCode };
       }
       throw error;
     }
-  }
-
-  private static result(
-    frames: readonly CommandOutputFrame[],
-    exitCode: number,
-    telemetry: UsageEventInput | undefined,
-  ): CommandExecutionResult {
-    return telemetry === undefined ? { frames, exitCode } : { frames, exitCode, telemetry };
   }
 }
 

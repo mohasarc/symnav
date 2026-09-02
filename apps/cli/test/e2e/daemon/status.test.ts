@@ -233,7 +233,7 @@ describe("symnav daemon status", () => {
     const readyRecords = daemonRecords(stateDir);
     const readyRecord = readyRecords[0];
 
-    expect(navigation.status).toBe(0);
+    expect(navigation.status, navigation.stderr).toBe(0);
     expect(navigation.stdout).toContain("value");
     expect(readyRecords).toEqual([
       expect.objectContaining({ instanceId, processToken, pid: childPid, state: "ready" }),
@@ -325,12 +325,13 @@ describe("symnav daemon status", () => {
     const originalRecord = daemonRecords(stateDir)[0];
     expect(originalRecord).toBeDefined();
     daemonPids.push(originalRecord!.pid);
-    const transport = new LocalDaemonTransport({ executionRequestTimeoutMs: 5_000 });
+    const transport = new LocalDaemonTransport({ requestTimeoutMs: 5_000 });
     void transport
-      .request(originalRecord!.endpoint, {
+      .execute(originalRecord!.endpoint, {
         kind: "execute",
         protocolVersion: DAEMON_PROTOCOL_VERSION,
         instanceId,
+        processToken,
         requestId: "stuck-navigation",
         request: {
           argv: ["overview", "input.ts"],
@@ -338,6 +339,7 @@ describe("symnav daemon status", () => {
           telemetryEnabled: false,
         },
       })
+      .then((receipt) => receipt.completion.catch(() => undefined))
       .catch(() => undefined);
     await waitUntil(() => existsSync(requestStartedPath));
 
@@ -385,20 +387,23 @@ describe("symnav daemon status", () => {
       cwd: tmpdir(),
       env: { SYMNAV_DAEMON: "0" },
     });
-    const response = await new LocalDaemonTransport().request(record!.endpoint, {
-      kind: "execute",
-      protocolVersion: DAEMON_PROTOCOL_VERSION,
-      instanceId: record!.instanceId,
-      requestId: "deleted-workspace",
-      request: {
-        argv: ["overview", "input.ts"],
-        cwd: workspaceRoot,
-        telemetryEnabled: false,
-      },
-    });
+    const response = await (
+      await new LocalDaemonTransport().execute(record!.endpoint, {
+        kind: "execute",
+        protocolVersion: DAEMON_PROTOCOL_VERSION,
+        instanceId: record!.instanceId,
+        processToken: record!.processToken,
+        requestId: "deleted-workspace",
+        request: {
+          argv: ["overview", "input.ts"],
+          cwd: workspaceRoot,
+          telemetryEnabled: false,
+        },
+      })
+    ).completion;
 
-    expect(response.kind).toBe("result");
-    if (response.kind !== "result") throw new Error("Expected command result");
+    expect(response.status).toBe("completed");
+    if (response.status !== "completed") throw new Error("Expected command result");
     expect(replay(response.result.frames, "stdout")).toBe(cold.stdout);
     expect(replay(response.result.frames, "stderr")).toBe(cold.stderr);
     expect(response.result.exitCode).toBe(cold.status);
@@ -519,6 +524,16 @@ function spawnDaemonStart(workspaceRoot: string, stateDirectory: string): ChildP
 }
 
 function waitForProcess(child: ChildProcess): Promise<void> {
+  if (child.exitCode !== null) {
+    return child.exitCode === 0
+      ? Promise.resolve()
+      : Promise.reject(new Error(`Startup publisher exited with code ${String(child.exitCode)}`));
+  }
+  if (child.signalCode !== null) {
+    return Promise.reject(
+      new Error(`Startup publisher exited with signal ${String(child.signalCode)}`),
+    );
+  }
   return new Promise((resolve, reject) => {
     child.once("error", reject);
     child.once("exit", (code) => {
@@ -529,6 +544,12 @@ function waitForProcess(child: ChildProcess): Promise<void> {
 }
 
 function waitForKilledProcess(child: ChildProcess): Promise<void> {
+  if (child.signalCode !== null || (child.exitCode !== null && child.exitCode !== 0)) {
+    return Promise.resolve();
+  }
+  if (child.exitCode === 0) {
+    return Promise.reject(new Error("Startup caller did not exit abruptly"));
+  }
   return new Promise((resolve, reject) => {
     child.once("error", reject);
     child.once("exit", (code, signal) => {

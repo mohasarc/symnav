@@ -20,6 +20,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { fixturePath, runSymnavBinary, type RunSymnavBinaryResult } from "@symnav/testing";
 import { canonicalStateDir } from "@symnav/telemetry";
 import type { ChildProcess } from "node:child_process";
+import type { CliExecutionRequest } from "../../../src/command-execution-result.js";
 import {
   DAEMON_PROTOCOL_VERSION,
   DAEMON_RECORD_SCHEMA_VERSION,
@@ -118,7 +119,7 @@ describe("symnav daemon parity", () => {
     expect(failed.status).not.toBe(0);
     expect(failed.stdout).toBe("");
     expect(existsSync(`${controlled.requestStartedPath}.1`)).toBe(true);
-    expect(harness.telemetryModes()).toEqual([]);
+    expect(harness.telemetryModes()).toEqual(["warm"]);
     expect(harness.daemonRecordCount()).toBe(1);
     expect(harness.onlyDaemonPid()).toBe(controlled.record.pid);
   }, 15_000);
@@ -184,14 +185,15 @@ describe("symnav daemon parity", () => {
     const releasePath = join(harness.root, "release-first-request");
     const controlled = await harness.startControlledDaemon(releasePath);
     const transport = new LocalDaemonTransport({ requestTimeoutMs: 10_000 });
-    const first = transport.request(controlled.record.endpoint, {
+    const first = transport.execute(controlled.record.endpoint, {
       kind: "execute",
       protocolVersion: DAEMON_PROTOCOL_VERSION,
       instanceId: controlled.record.instanceId,
+      processToken: controlled.record.processToken,
       requestId: "fifo-first",
       request: {
         argv: ["--version"],
-        cwd: harness.workspaceRoot,
+        cwd: controlled.record.workspaceRoot,
         telemetryEnabled: false,
         executionMode: "warm",
       },
@@ -203,15 +205,59 @@ describe("symnav daemon parity", () => {
     writeFileSync(join(harness.workspaceRoot, "input.ts"), "export const queuedEdit = 3;\n");
     writeFileSync(releasePath, "release");
 
-    const firstResponse = await first;
+    const firstResponse = await (await first).completion;
     const secondResult = await second;
 
-    expect(firstResponse).toMatchObject({ kind: "result", result: { exitCode: 0 } });
+    expect(firstResponse).toMatchObject({ status: "completed", result: { exitCode: 0 } });
     await waitUntil(() => existsSync(`${controlled.requestStartedPath}.2`));
     expect(secondResult).toEqual(harness.cold(["overview", "input.ts"]));
-    if (firstResponse.kind !== "result") throw new Error("Expected first FIFO result");
+    if (firstResponse.status !== "completed") throw new Error("Expected first FIFO result");
     expect(decodeFrames(firstResponse.result.frames)).toMatch(/^\d+\.\d+\.\d+/);
     expect(secondResult.stdout).toContain("queuedEdit");
+  }, 15_000);
+
+  it("finishes an accepted request after its caller exits and keeps the daemon warm", async () => {
+    const harness = new DaemonParityHarness();
+    harnesses.push(harness);
+    const releasePath = join(harness.root, "release-disconnected-request");
+    const acceptedPath = join(harness.root, "accepted-disconnected-request");
+    const controlled = await harness.startControlledDaemon(releasePath);
+    const caller = spawn(
+      process.execPath,
+      [
+        fileURLToPath(new URL("../../../node_modules/tsx/dist/cli.mjs", import.meta.url)),
+        fileURLToPath(new URL("../../helpers/daemon-accepted-caller.ts", import.meta.url)),
+        controlled.record.endpoint,
+        controlled.record.instanceId,
+        controlled.record.processToken,
+        harness.workspaceRoot,
+        acceptedPath,
+      ],
+      { stdio: "ignore" },
+    );
+
+    await waitUntil(() => existsSync(acceptedPath));
+    caller.kill("SIGKILL");
+    await waitForProcess(caller);
+    writeFileSync(releasePath, "release");
+    const transport = new LocalDaemonTransport({ requestTimeoutMs: 5_000 });
+    await waitUntil(async () => {
+      const status = await transport.executionStatus(controlled.record.endpoint, {
+        kind: "execution-status",
+        protocolVersion: DAEMON_PROTOCOL_VERSION,
+        instanceId: controlled.record.instanceId,
+        processToken: controlled.record.processToken,
+        requestId: "accepted-disconnect",
+      });
+      return status.state === "completed";
+    });
+
+    expect(harness.onlyDaemonPid()).toBe(controlled.record.pid);
+    await waitUntil(() => harness.telemetryModes().length === 1);
+    expect(harness.telemetryModes()).toEqual(["warm"]);
+    expect(harness.warm(["overview", "input.ts"])).toEqual(harness.cold(["overview", "input.ts"]));
+    expect(harness.onlyDaemonPid()).toBe(controlled.record.pid);
+    expect(harness.telemetryModes()).toEqual(["warm"]);
   }, 15_000);
 
   it("routes stats through and reuses the workspace daemon", () => {
@@ -265,32 +311,41 @@ describe("symnav daemon parity", () => {
     expect(harness.telemetryModes()).toEqual(["cold", "warm"]);
   }, 15_000);
 
-  it("discards a disconnected daemon response and returns one complete cold answer", async () => {
+  it("returns one complete controlled result without replay after an accepted worker exit", async () => {
     const harness = new DaemonParityHarness();
     harnesses.push(harness);
-    const controlled = await harness.startControlledDaemon();
-    const transport = new LocalDaemonTransport({ requestTimeoutMs: 10_000 });
-    void transport
-      .request(controlled.record.endpoint, {
-        kind: "execute",
-        protocolVersion: DAEMON_PROTOCOL_VERSION,
-        instanceId: controlled.record.instanceId,
-        requestId: "crash-blocker",
-        request: {
-          argv: ["--version"],
-          cwd: harness.workspaceRoot,
-          telemetryEnabled: false,
-          executionMode: "warm",
-        },
-      })
-      .catch(() => undefined);
+    const controlled = await harness.startControlledDaemon("--worker-exit");
+    const execution = harness.warmAsync(["overview", "input.ts"], "1");
     await waitUntil(() => existsSync(controlled.requestStartedPath));
-    const execution = harness.warmAsync(["overview", "input.ts"]);
-    await new Promise((resolve) => setTimeout(resolve, 100));
-    process.kill(controlled.record.pid, "SIGKILL");
+    const requestId = acceptanceRequestId(controlled.logPath);
+    const acceptedRequest = JSON.parse(
+      readFileSync(controlled.requestPayloadPath, "utf8"),
+    ) as CliExecutionRequest;
+    const transport = new LocalDaemonTransport({ requestTimeoutMs: 5_000 });
+    const duplicate = await transport.execute(controlled.record.endpoint, {
+      kind: "execute",
+      protocolVersion: DAEMON_PROTOCOL_VERSION,
+      instanceId: controlled.record.instanceId,
+      processToken: controlled.record.processToken,
+      requestId,
+      request: acceptedRequest,
+    });
+    writeFileSync(controlled.workerExitReleasePath, "release");
 
-    expect(await execution).toEqual(harness.cold(["overview", "input.ts"]));
-    expect(harness.warm(["overview", "input.ts"])).toEqual(harness.cold(["overview", "input.ts"]));
+    await expect(duplicate.completion).resolves.toEqual({ status: "failed", code: "worker-exit" });
+    const controlledResult = await execution;
+
+    expect(controlledResult).toEqual({
+      status: 1,
+      stdout: "",
+      stderr: "Cannot answer: accepted daemon request did not complete.\n",
+    });
+    expect(existsSync(`${controlled.requestStartedPath}.1`)).toBe(true);
+    expect(existsSync(`${controlled.requestStartedPath}.2`)).toBe(false);
+    expect(harness.telemetryModes()).toEqual([]);
+    expect(harness.daemonRecordCount()).toBe(1);
+    await waitForProcess(controlled.child);
+    expect(processIsAlive(controlled.record.pid)).toBe(false);
   }, 15_000);
 
   it("keeps cold bytes and status when daemon state path is an existing file", () => {
@@ -529,7 +584,7 @@ class DaemonParityHarness {
     return this.run(args, "0", cwd);
   }
 
-  warmAsync(args: readonly string[]): Promise<RunSymnavBinaryResult> {
+  warmAsync(args: readonly string[], telemetry = "0"): Promise<RunSymnavBinaryResult> {
     const cliBinPath = resolve(
       dirname(fileURLToPath(import.meta.url)),
       "..",
@@ -541,7 +596,7 @@ class DaemonParityHarness {
     return new Promise((resolveResult, reject) => {
       const child = spawn(process.execPath, [cliBinPath, ...args], {
         cwd: this.workspaceRoot,
-        env: this.environment("1"),
+        env: this.environment("1", telemetry),
       });
       let stdout = "";
       let stderr = "";
@@ -655,7 +710,14 @@ class DaemonParityHarness {
     lease.release();
     const readyRecord = registry.read(identity);
     if (readyRecord?.state !== "ready") throw new Error("Controlled daemon did not become ready");
-    return { child, requestStartedPath, record: readyRecord };
+    return {
+      child,
+      logPath: identity.logPath,
+      record: readyRecord,
+      requestPayloadPath: `${requestStartedPath}.payload`,
+      requestStartedPath,
+      workerExitReleasePath: `${requestStartedPath}.release-worker-exit`,
+    };
   }
 
   onlyDaemonPid(): number {
@@ -731,20 +793,41 @@ function processIsAlive(pid: number): boolean {
   }
 }
 
+function waitForProcess(child: ChildProcess): Promise<void> {
+  if (child.exitCode !== null || child.signalCode !== null) return Promise.resolve();
+  return new Promise((resolve, reject) => {
+    child.once("error", reject);
+    child.once("close", () => resolve());
+  });
+}
+
 function decodeFrames(frames: readonly { readonly bytesBase64: string }[]): string {
   return frames.map((frame) => Buffer.from(frame.bytesBase64, "base64").toString()).join("");
 }
 
 interface ControlledDaemon {
   readonly child: ChildProcess;
+  readonly logPath: string;
   readonly record: DaemonRecord;
+  readonly requestPayloadPath: string;
   readonly requestStartedPath: string;
+  readonly workerExitReleasePath: string;
 }
 
-async function waitUntil(predicate: () => boolean): Promise<void> {
+function acceptanceRequestId(logPath: string): string {
+  const acceptance = readFileSync(logPath, "utf8")
+    .trimEnd()
+    .split("\n")
+    .map((line) => JSON.parse(line) as { readonly kind: string; readonly requestId?: string })
+    .find((event) => event.kind === "acceptance");
+  if (acceptance?.requestId === undefined) throw new Error("Daemon did not log request acceptance");
+  return acceptance.requestId;
+}
+
+async function waitUntil(predicate: () => boolean | Promise<boolean>): Promise<void> {
   const deadline = Date.now() + 5_000;
   while (Date.now() <= deadline) {
-    if (predicate()) return;
+    if (await predicate()) return;
     await new Promise((resolve) => setTimeout(resolve, 10));
   }
   throw new Error("Timed out waiting for controlled daemon state");

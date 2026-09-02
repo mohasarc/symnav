@@ -18,13 +18,15 @@ import {
 import {
   DAEMON_PROTOCOL_VERSION,
   DAEMON_RECORD_SCHEMA_VERSION,
+  type DaemonLifecycleRequest,
+  type DaemonLifecycleResponse,
   type DaemonRecord,
   type DaemonRequest,
   type DaemonResponse,
 } from "./daemon-protocol.js";
 import { DAEMON_STARTUP_TIMEOUT_MS, DaemonRegistry } from "./daemon-registry.js";
 import { DaemonWorkspaceIdentity } from "./daemon-workspace-identity.js";
-import { LocalDaemonTransport } from "./local-daemon-transport.js";
+import { type DaemonExecutionReceipt, LocalDaemonTransport } from "./local-daemon-transport.js";
 
 describe("DaemonStartupCoordinator", () => {
   const roots: string[] = [];
@@ -542,7 +544,7 @@ describe("DaemonStartupCoordinator", () => {
     const existing = harness.readyRecord("existing", "0.0.9", 4002);
     harness.seedReady(existing.instanceId, existing.symnavVersion, existing.pid);
     vi.spyOn(harness.transport, "request").mockImplementation(
-      async (_endpoint, request): Promise<DaemonResponse> => {
+      async (_endpoint, request): Promise<DaemonLifecycleResponse> => {
         if (request.kind === "ping") {
           return {
             kind: "pong",
@@ -1004,7 +1006,10 @@ class RegistryTransport {
     this.remainingReadyAuthenticationFailures = readyAuthenticationFailures;
   }
 
-  async request(_endpoint: string, request: DaemonRequest): Promise<DaemonResponse> {
+  async request(
+    _endpoint: string,
+    request: DaemonLifecycleRequest,
+  ): Promise<DaemonLifecycleResponse> {
     if (request.kind === "stop") {
       return { kind: "stopped", instanceId: request.instanceId };
     }
@@ -1035,13 +1040,6 @@ class RegistryTransport {
         startedAt: record.startedAt,
       };
     }
-    if (request.kind === "execute") {
-      return {
-        kind: "result",
-        requestId: request.requestId,
-        result: { frames: [], exitCode: 0 },
-      };
-    }
     const record = this.registry.readStoredInstance(this.identity, request.instanceId);
     if (record === undefined) throw new Error("missing daemon");
     return {
@@ -1049,6 +1047,24 @@ class RegistryTransport {
       protocolVersion: DAEMON_PROTOCOL_VERSION,
       instanceId: request.instanceId,
       symnavVersion: record.symnavVersion,
+    };
+  }
+
+  async execute(
+    _endpoint: string,
+    request: Extract<DaemonRequest, { kind: "execute" }>,
+  ): Promise<DaemonExecutionReceipt> {
+    return {
+      acceptance: {
+        requestId: request.requestId,
+        instanceId: request.instanceId,
+        acceptedAt: 1,
+        queuePosition: 0,
+      },
+      completion: Promise.resolve({
+        status: "completed",
+        result: { frames: [], exitCode: 0 },
+      }),
     };
   }
 
@@ -1223,37 +1239,51 @@ class InProcessReadyLauncher implements DaemonProcessLauncher {
   ): Promise<DaemonProcess> {
     const startingRecord = this.registry.readInstance(identity, instanceId);
     if (startingRecord?.state !== "starting") throw new Error("missing starting record");
-    this.server = await this.transport.listen(identity.endpoint(instanceId), async (request) => {
-      if (request.kind === "identify") {
-        return {
-          kind: "identity",
-          instanceId,
-          processToken,
-          pid: process.pid,
-          startedAt: startingRecord.startedAt,
-        };
-      }
-      if (request.kind === "terminate") {
-        setTimeout(() => void this.close(), 0);
-        return { kind: "terminating", instanceId, processToken };
-      }
-      if (request.kind === "ping") {
-        return {
-          kind: "pong",
-          protocolVersion: DAEMON_PROTOCOL_VERSION,
-          instanceId,
-          symnavVersion: this.symnavVersion,
-        };
-      }
-      if (request.kind === "execute") {
-        return {
-          kind: "result",
-          requestId: request.requestId,
-          result: { frames: [], exitCode: 0 },
-        };
-      }
-      return { kind: "stopped", instanceId };
-    });
+    this.server = await this.transport.listen(
+      identity.endpoint(instanceId),
+      async (request, send) => {
+        if (request.kind === "identify") {
+          return {
+            kind: "identity",
+            instanceId,
+            processToken,
+            pid: process.pid,
+            startedAt: startingRecord.startedAt,
+          };
+        }
+        if (request.kind === "terminate") {
+          setTimeout(() => void this.close(), 0);
+          return { kind: "terminating", instanceId, processToken };
+        }
+        if (request.kind === "ping") {
+          return {
+            kind: "pong",
+            protocolVersion: DAEMON_PROTOCOL_VERSION,
+            instanceId,
+            symnavVersion: this.symnavVersion,
+          };
+        }
+        if (request.kind === "execute") {
+          send({
+            kind: "accepted",
+            instanceId,
+            processToken,
+            requestId: request.requestId,
+            acceptedAt: 1,
+            queuePosition: 0,
+          });
+          send({
+            kind: "completed",
+            instanceId,
+            processToken,
+            requestId: request.requestId,
+            result: { frames: [], exitCode: 0 },
+          });
+          return;
+        }
+        return { kind: "stopped", instanceId };
+      },
+    );
     setTimeout(() => {
       const record = this.registry.readInstance(identity, instanceId);
       if (record?.state !== "starting") return;

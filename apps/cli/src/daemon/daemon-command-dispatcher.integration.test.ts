@@ -8,7 +8,11 @@ import {
   DaemonCommandDispatcher,
   type DaemonDispatchRuntime,
 } from "./daemon-command-dispatcher.js";
-import { type DaemonRecord, type DaemonRequest, type DaemonResponse } from "./daemon-protocol.js";
+import type {
+  DaemonLifecycleRequest,
+  DaemonLifecycleResponse,
+  DaemonRecord,
+} from "./daemon-protocol.js";
 import type {
   DaemonProcess,
   DaemonProcessLauncher,
@@ -17,7 +21,7 @@ import type {
 import { DaemonRegistry } from "./daemon-registry.js";
 import { DaemonStartupCoordinator } from "./daemon-startup-coordinator.js";
 import { DaemonWorkspaceIdentity } from "./daemon-workspace-identity.js";
-import type { LocalDaemonTransport } from "./local-daemon-transport.js";
+import type { DaemonExecutionReceipt, LocalDaemonTransport } from "./local-daemon-transport.js";
 
 const workspaceRoot = resolve("reference-workspace");
 const REFERENCE_WORKSPACE_FILE_COUNT = 4_000;
@@ -58,10 +62,14 @@ describe("DaemonCommandDispatcher startup routing", () => {
           }),
         },
         transport: {
-          request: async (_endpoint, daemonRequest): Promise<DaemonResponse> => ({
-            kind: "result",
-            requestId: daemonRequest.kind === "execute" ? daemonRequest.requestId : "unexpected",
-            result: result("warm"),
+          execute: async (_endpoint, daemonRequest): Promise<DaemonExecutionReceipt> => ({
+            acceptance: {
+              requestId: daemonRequest.requestId,
+              instanceId: daemonRequest.instanceId,
+              acceptedAt: 1,
+              queuePosition: 0,
+            },
+            completion: Promise.resolve({ status: "completed", result: result("warm") }),
           }),
         },
       };
@@ -177,7 +185,10 @@ class RegistryDaemonTransport {
     private readonly identity: DaemonWorkspaceIdentity,
   ) {}
 
-  async request(_endpoint: string, request: DaemonRequest): Promise<DaemonResponse> {
+  async request(
+    _endpoint: string,
+    request: DaemonLifecycleRequest,
+  ): Promise<DaemonLifecycleResponse> {
     const record = this.registry.readStoredInstance(this.identity, request.instanceId);
     if (record === undefined) throw new Error("Missing daemon record");
     if (request.kind === "identify") {

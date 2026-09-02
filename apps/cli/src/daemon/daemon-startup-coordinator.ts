@@ -468,10 +468,11 @@ export class DaemonStartupCoordinator {
   }
 
   private async probeExecution(record: DaemonRecord): Promise<void> {
-    const response = await this.transport.request(record.endpoint, {
+    const receipt = await this.transport.execute(record.endpoint, {
       kind: "execute",
       protocolVersion: DAEMON_PROTOCOL_VERSION,
       instanceId: record.instanceId,
+      processToken: record.processToken,
       requestId: randomUUID(),
       request: {
         argv: ["--version"],
@@ -479,7 +480,8 @@ export class DaemonStartupCoordinator {
         telemetryEnabled: false,
       },
     });
-    if (response.kind !== "result" || response.result.exitCode !== 0) {
+    const completion = await receipt.completion;
+    if (completion.status !== "completed" || completion.result.exitCode !== 0) {
       throw new Error("Daemon execution readiness probe failed");
     }
   }

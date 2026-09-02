@@ -131,7 +131,6 @@ export class DaemonNavigationWorkerProtocol {
     if (!this.isRecord(value)) return false;
     const keys = ["argv", "cwd", "telemetryEnabled"];
     if (value.executionMode !== undefined) keys.push("executionMode");
-    if (value.deferTelemetry !== undefined) keys.push("deferTelemetry");
     return (
       this.hasKeys(value, keys) &&
       Array.isArray(value.argv) &&
@@ -141,15 +140,13 @@ export class DaemonNavigationWorkerProtocol {
       (value.executionMode === undefined ||
         value.executionMode === "cold" ||
         value.executionMode === "warm" ||
-        value.executionMode === "fallback") &&
-      (value.deferTelemetry === undefined || typeof value.deferTelemetry === "boolean")
+        value.executionMode === "fallback")
     );
   }
 
   private static isExecutionResult(value: unknown): value is CommandExecutionResult {
     if (!this.isRecord(value)) return false;
     const keys = ["frames", "exitCode"];
-    if (value.telemetry !== undefined) keys.push("telemetry");
     return (
       this.hasKeys(value, keys) &&
       Array.isArray(value.frames) &&
@@ -160,71 +157,7 @@ export class DaemonNavigationWorkerProtocol {
           (frame.stream === "stdout" || frame.stream === "stderr") &&
           this.isCanonicalBase64(frame.bytesBase64),
       ) &&
-      this.isCount(value.exitCode) &&
-      (value.telemetry === undefined || this.isTelemetry(value.telemetry))
-    );
-  }
-
-  private static isTelemetry(
-    value: unknown,
-  ): value is NonNullable<CommandExecutionResult["telemetry"]> {
-    if (!this.isRecord(value)) return false;
-    const keys = [
-      "symnavVersion",
-      "command",
-      "timestamp",
-      "durationMs",
-      "executionMode",
-      "outcome",
-      "argShape",
-      "workspaceId",
-      "machineId",
-    ];
-    if (value.resultCounts !== undefined) keys.push("resultCounts");
-    if (value.errorReason !== undefined) keys.push("errorReason");
-    const validOutcome =
-      value.outcome === "success"
-        ? value.errorReason === undefined
-        : (value.outcome === "user_error" || value.outcome === "crash") &&
-          this.isNonEmptyString(value.errorReason);
-    return (
-      this.hasKeys(value, keys) &&
-      this.isNonEmptyString(value.symnavVersion) &&
-      this.isNonEmptyString(value.command) &&
-      this.isMetric(value.timestamp) &&
-      this.isMetric(value.durationMs) &&
-      value.executionMode === "warm" &&
-      validOutcome &&
-      this.isArgShape(value.argShape) &&
-      (value.resultCounts === undefined || this.isResultCounts(value.resultCounts)) &&
-      this.isNonEmptyString(value.workspaceId) &&
-      this.isNonEmptyString(value.machineId)
-    );
-  }
-
-  private static isArgShape(value: unknown): boolean {
-    return (
-      this.isRecord(value) &&
-      this.hasKeys(value, ["kind", "lengthBucket", "flags"]) &&
-      (value.kind === "symbol_id" ||
-        value.kind === "path" ||
-        value.kind === "bare" ||
-        value.kind === "empty") &&
-      (value.lengthBucket === "empty" ||
-        value.lengthBucket === "short" ||
-        value.lengthBucket === "medium" ||
-        value.lengthBucket === "long") &&
-      Array.isArray(value.flags) &&
-      value.flags.every((flag) => typeof flag === "string")
-    );
-  }
-
-  private static isResultCounts(value: unknown): boolean {
-    return (
-      this.isRecord(value) &&
-      Object.entries(value).every(
-        ([name, count]) => this.isNonEmptyString(name) && this.isCount(count),
-      )
+      this.isCount(value.exitCode)
     );
   }
 

@@ -1,5 +1,4 @@
 import { join, resolve } from "node:path";
-import type { UsageEventInput } from "@symnav/telemetry";
 import { describe, expect, it, vi } from "vitest";
 import type { CliExecutionRequest, CommandExecutionResult } from "../command-execution-result.js";
 import type { ProgramDependencies } from "../program-dependencies.js";
@@ -10,10 +9,9 @@ import {
 import {
   DAEMON_PROTOCOL_VERSION,
   DAEMON_RECORD_SCHEMA_VERSION,
+  type DaemonExecuteRequest,
   type DaemonPong,
   type DaemonRecord,
-  type DaemonRequest,
-  type DaemonResponse,
 } from "./daemon-protocol.js";
 import type { DaemonObservation } from "./daemon-record-observer.js";
 import { DaemonTransportError } from "./local-daemon-transport.js";
@@ -108,27 +106,76 @@ describe("DaemonCommandDispatcher", () => {
 
   it.each([
     new DaemonTransportError("timeout", "submitted-unconfirmed", "request timed out"),
-    new DaemonTransportError("closed", "accepted", "request closed"),
-    new Error("ambiguous transport failure"),
-  ])("never replays or mutates after ambiguous warm failure %#", async (failure) => {
-    const harness = new DispatchHarness(failure);
+    new DaemonTransportError("closed", "accepted", "request closed", "instance-1"),
+    new DaemonTransportError(
+      "rejected",
+      "submitted-unconfirmed",
+      "non-retry rejection",
+      "instance-1",
+      false,
+    ),
+    new Error("malformed accepted completion"),
+  ])(
+    "returns a controlled result without replay or mutation after uncertain delivery %#",
+    async (failure) => {
+      const harness = new DispatchHarness(failure);
 
-    await expect(harness.dispatcher().execute(request)).rejects.toBe(failure);
+      await expect(harness.dispatcher().execute(request)).resolves.toMatchObject({
+        mode: "warm",
+        result: { exitCode: 1, frames: [expect.objectContaining({ stream: "stderr" })] },
+      });
 
-    expect(harness.coldExecute).not.toHaveBeenCalled();
-    expect(harness.removeIfProcess).not.toHaveBeenCalled();
-    expect(harness.trigger).not.toHaveBeenCalled();
-  });
+      expect(harness.coldExecute).not.toHaveBeenCalled();
+      expect(harness.removeIfProcess).not.toHaveBeenCalled();
+      expect(harness.trigger).not.toHaveBeenCalled();
+    },
+  );
 
-  it("does not replay an incomplete accepted result", async () => {
+  it("returns a controlled result without replay for a malformed completion", async () => {
     const harness = new DispatchHarness({ frames: [], exitCode: 1.5 });
 
-    await expect(harness.dispatcher().execute(request)).rejects.toThrow(
-      "Daemon returned an incomplete command result",
-    );
+    await expect(harness.dispatcher().execute(request)).resolves.toMatchObject({
+      mode: "warm",
+      result: { exitCode: 1 },
+    });
 
     expect(harness.coldExecute).not.toHaveBeenCalled();
   });
+
+  it("falls back once after an authenticated retry-safe rejection", async () => {
+    const harness = new DispatchHarness(
+      new DaemonTransportError(
+        "rejected",
+        "submitted-unconfirmed",
+        "not ready",
+        "instance-1",
+        true,
+      ),
+    );
+
+    await expect(harness.dispatcher().execute(request)).resolves.toEqual({
+      mode: "fallback",
+      result: success,
+    });
+
+    expect(harness.coldExecute).toHaveBeenCalledOnce();
+    expect(harness.removeIfProcess).not.toHaveBeenCalled();
+  });
+
+  it.each(["worker-exit", "controlled-resource", "response-capacity", "stopping", "internal"])(
+    "returns one controlled result and never replays terminal daemon failure %s",
+    async (code) => {
+      const harness = new DispatchHarness({ failed: code as DaemonFailureCode });
+
+      await expect(harness.dispatcher().execute(request)).resolves.toMatchObject({
+        mode: "warm",
+        result: { exitCode: 1 },
+      });
+
+      expect(harness.coldExecute).not.toHaveBeenCalled();
+      expect(harness.removeIfProcess).not.toHaveBeenCalled();
+    },
+  );
 
   it("does not mutate or trigger from an unresponsive observation", async () => {
     const harness = new DispatchHarness(success, { observationKind: "unresponsive" });
@@ -159,16 +206,14 @@ describe("DaemonCommandDispatcher", () => {
     ]);
   });
 
-  it("commits one deferred warm telemetry event", async () => {
-    const warmTelemetry = telemetryInput("warm");
-    const harness = new DispatchHarness({ ...success, telemetry: warmTelemetry });
+  it("never records warm telemetry in the caller", async () => {
+    const harness = new DispatchHarness(success);
 
     await expect(
       harness.dispatcher().execute({ ...request, telemetryEnabled: true }),
     ).resolves.toEqual({ mode: "warm", result: success });
 
-    expect(harness.recordTelemetry).toHaveBeenCalledWith(warmTelemetry);
-    expect(harness.recordTelemetry).toHaveBeenCalledTimes(1);
+    expect(harness.recordTelemetry).not.toHaveBeenCalled();
   });
 
   it.each([
@@ -201,12 +246,15 @@ class DispatchHarness {
   readonly coldExecute = vi.fn(async () => success);
   readonly recordTelemetry = vi.fn();
   readonly runtimeFactory = vi.fn(() => this.runtime);
-  private readonly requests: DaemonRequest[] = [];
+  private readonly requests: DaemonExecuteRequest[] = [];
   private registered: DaemonRecord | undefined;
   private readonly runtime: DaemonDispatchRuntime;
 
   constructor(
-    private readonly daemonAnswer: CommandExecutionResult | Error,
+    private readonly daemonAnswer:
+      | CommandExecutionResult
+      | Error
+      | { readonly failed: DaemonFailureCode },
     private readonly options: DispatchHarnessOptions = {},
   ) {
     this.registered =
@@ -255,14 +303,21 @@ class DispatchHarness {
         },
       },
       transport: {
-        request: async (_endpoint: string, daemonRequest: DaemonRequest) => {
+        execute: async (_endpoint, daemonRequest) => {
           this.requests.push(daemonRequest);
           if (this.daemonAnswer instanceof Error) throw this.daemonAnswer;
           return {
-            kind: "result",
-            requestId: daemonRequest.kind === "execute" ? daemonRequest.requestId : "unexpected",
-            result: this.daemonAnswer,
-          } satisfies DaemonResponse;
+            acceptance: {
+              requestId: daemonRequest.requestId,
+              instanceId: daemonRequest.instanceId,
+              acceptedAt: 1,
+              queuePosition: 0,
+            },
+            completion:
+              "failed" in this.daemonAnswer
+                ? Promise.resolve({ status: "failed" as const, code: this.daemonAnswer.failed })
+                : Promise.resolve({ status: "completed" as const, result: this.daemonAnswer }),
+          };
         },
       },
     };
@@ -284,10 +339,17 @@ class DispatchHarness {
     });
   }
 
-  executeRequests(): readonly DaemonRequest[] {
+  executeRequests(): readonly DaemonExecuteRequest[] {
     return this.requests.filter((daemonRequest) => daemonRequest.kind === "execute");
   }
 }
+
+type DaemonFailureCode =
+  | "worker-exit"
+  | "controlled-resource"
+  | "response-capacity"
+  | "stopping"
+  | "internal";
 
 function daemonRecord(instanceId = "instance-1"): DaemonRecord {
   return {
@@ -307,20 +369,5 @@ function daemonRecord(instanceId = "instance-1"): DaemonRecord {
     readyAt: 2,
     fileCount: 1,
     memoryCapBytes: 1024,
-  };
-}
-
-function telemetryInput(executionMode: "warm" | "cold" | "fallback"): UsageEventInput {
-  return {
-    symnavVersion: "0.1.0",
-    command: "overview",
-    timestamp: 1,
-    durationMs: 2,
-    executionMode,
-    outcome: "success",
-    argShape: { kind: "path", lengthBucket: "short", flags: [] },
-    resultCounts: { symbols: 1 },
-    workspaceId: "workspace",
-    machineId: "machine",
   };
 }

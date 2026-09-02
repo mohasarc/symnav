@@ -4,7 +4,13 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { CliExecutionRequest, CommandExecutionResult } from "../command-execution-result.js";
 import { createDefaultDependencies } from "../program.js";
-import type { DaemonRequest, DaemonResponse, DaemonServer } from "./daemon-protocol.js";
+import type {
+  DaemonExecutionServerFrame,
+  DaemonExecutionStatusResponse,
+  DaemonRequest,
+  DaemonResponse,
+  DaemonServer,
+} from "./daemon-protocol.js";
 import { DAEMON_PROTOCOL_VERSION, DAEMON_RECORD_SCHEMA_VERSION } from "./daemon-protocol.js";
 import { DaemonRegistry } from "./daemon-registry.js";
 import { DaemonWorkspaceIdentity } from "./daemon-workspace-identity.js";
@@ -197,7 +203,9 @@ describe("WorkspaceDaemon requests", () => {
     harnesses.push(harness);
 
     await expect(harness.execute("one")).resolves.toEqual({
-      kind: "result",
+      kind: "completed",
+      instanceId: harness.instanceId,
+      processToken: harness.processToken,
       requestId: "one",
       result: { frames: [], exitCode: 0 },
     });
@@ -228,6 +236,80 @@ describe("WorkspaceDaemon requests", () => {
     await executor.started(2);
     executor.complete(1);
     await second;
+  });
+
+  it("executes disconnected active and queued accepted requests once in FIFO order", async () => {
+    const executor = new SerializedExecutor();
+    const harness = await RequestHarness.start(executor);
+    harnesses.push(harness);
+
+    const first = await harness.admit("first", ["overview", "first.ts"]);
+    await executor.started(1);
+    const second = await harness.admit("second", ["overview", "second.ts"]);
+    first.disconnect();
+    second.disconnect();
+
+    executor.complete(0);
+    await executor.started(2);
+    executor.complete(1);
+    await waitUntil(async () => (await harness.status("second")).status.state === "completed");
+
+    expect(executor.requests.map((execution) => execution.argv.at(-1))).toEqual([
+      "first.ts",
+      "second.ts",
+    ]);
+    expect(first.frames).toHaveLength(1);
+    expect(second.frames).toHaveLength(1);
+  });
+
+  it("attaches identical duplicate identifiers without duplicate execution", async () => {
+    const executor = new SerializedExecutor();
+    const harness = await RequestHarness.start(executor);
+    harnesses.push(harness);
+
+    const first = await harness.admit("duplicate", ["overview", "input.ts"]);
+    await executor.started(1);
+    const duplicate = await harness.admit("duplicate", ["overview", "input.ts"]);
+    const corrupted = await harness.admit("duplicate", ["overview", "other.ts"]);
+    executor.complete(0);
+    await Promise.all([first.terminal, duplicate.terminal]);
+
+    expect(executor.startedCount).toBe(1);
+    expect(first.frames.map((frame) => frame.kind)).toEqual(["accepted", "completed"]);
+    expect(duplicate.frames.map((frame) => frame.kind)).toEqual(["accepted", "completed"]);
+    expect(corrupted.frames).toEqual([
+      expect.objectContaining({ kind: "rejected", retrySafe: false }),
+    ]);
+  });
+
+  it("reports unknown, queued, running, completed, and failed execution status", async () => {
+    const executor = new SerializedExecutor();
+    const harness = await RequestHarness.start(executor);
+    harnesses.push(harness);
+
+    expect((await harness.status("missing")).status).toEqual({ state: "unknown" });
+    const active = await harness.admit("active");
+    await executor.started(1);
+    expect((await harness.status("active")).status).toMatchObject({ state: "running" });
+    const queued = await harness.admit("queued");
+    expect((await harness.status("queued")).status).toMatchObject({
+      state: "queued",
+      queuePosition: 1,
+    });
+    executor.complete(0);
+    await executor.started(2);
+    executor.complete(1);
+    await Promise.all([active.terminal, queued.terminal]);
+    expect((await harness.status("active")).status).toEqual({ state: "completed" });
+
+    const failedHarness = await RequestHarness.start(new RejectingExecutor());
+    harnesses.push(failedHarness);
+    const failed = await failedHarness.admit("failed");
+    await failed.terminal;
+    expect((await failedHarness.status("failed")).status).toEqual({
+      state: "failed",
+      code: "internal",
+    });
   });
 
   it("reports active command and queued count while worker execution is blocked", async () => {
@@ -277,19 +359,11 @@ describe("WorkspaceDaemon requests", () => {
       processToken: harness.processToken,
     });
     await expect(execution).resolves.toEqual({
-      kind: "result",
+      kind: "execution-failed",
+      instanceId: harness.instanceId,
+      processToken: harness.processToken,
       requestId: "blocked",
-      result: {
-        frames: [
-          {
-            stream: "stderr",
-            bytesBase64: Buffer.from("Cannot answer: daemon navigation was stopped.\n").toString(
-              "base64",
-            ),
-          },
-        ],
-        exitCode: 1,
-      },
+      code: "stopping",
     });
     await harness.exited;
     expect(harness.registry.read(harness.identity)).toMatchObject({
@@ -500,13 +574,28 @@ class RequestHarness {
   }
 
   execute(requestId: string, argv: readonly string[] = ["--version"]): Promise<DaemonResponse> {
-    return this.transport.receive({
+    return this.admit(requestId, argv).then((connection) => connection.terminal);
+  }
+
+  admit(requestId: string, argv: readonly string[] = ["--version"]): Promise<RequestConnection> {
+    return this.transport.connect({
       kind: "execute",
       protocolVersion: DAEMON_PROTOCOL_VERSION,
       instanceId: this.instanceId,
+      processToken: this.processToken,
       requestId,
       request: { argv, cwd: this.workspaceRoot, telemetryEnabled: false },
     });
+  }
+
+  status(requestId: string): Promise<DaemonExecutionStatusResponse> {
+    return this.transport.receive({
+      kind: "execution-status",
+      protocolVersion: DAEMON_PROTOCOL_VERSION,
+      instanceId: this.instanceId,
+      processToken: this.processToken,
+      requestId,
+    }) as Promise<DaemonExecutionStatusResponse>;
   }
 
   stop(): Promise<DaemonResponse> {
@@ -552,7 +641,12 @@ interface RequestHarnessOptions {
 }
 
 class RequestTransport {
-  private handler: ((request: DaemonRequest) => Promise<DaemonResponse>) | undefined;
+  private handler:
+    | ((
+        request: DaemonRequest,
+        send: (response: DaemonResponse) => void,
+      ) => Promise<DaemonResponse | void>)
+    | undefined;
   listenError: Error | undefined;
   closeError: Error | undefined;
 
@@ -562,7 +656,10 @@ class RequestTransport {
 
   async listen(
     _endpoint: string,
-    handler: (request: DaemonRequest) => Promise<DaemonResponse>,
+    handler: (
+      request: DaemonRequest,
+      send: (response: DaemonResponse) => void,
+    ) => Promise<DaemonResponse | void>,
   ): Promise<DaemonServer> {
     if (this.listenError !== undefined) throw this.listenError;
     this.handler = handler;
@@ -574,10 +671,59 @@ class RequestTransport {
     };
   }
 
-  receive(request: DaemonRequest): Promise<DaemonResponse> {
+  async receive(request: DaemonRequest): Promise<DaemonResponse> {
     if (this.handler === undefined) return Promise.reject(new Error("Transport is not listening"));
-    return this.handler(request);
+    const response = await this.handler(request, () => undefined);
+    if (response === undefined) throw new Error("Transport handler returned no response");
+    return response;
   }
+
+  async connect(request: DaemonRequest): Promise<RequestConnection> {
+    if (this.handler === undefined) throw new Error("Transport is not listening");
+    const frames: DaemonExecutionServerFrame[] = [];
+    let connected = true;
+    let resolveTerminal!: (frame: DaemonExecutionServerFrame) => void;
+    const terminal = new Promise<DaemonExecutionServerFrame>((resolve) => {
+      resolveTerminal = resolve;
+    });
+    const receive = (response: DaemonResponse): void => {
+      if (!connected || !RequestTransport.isExecutionFrame(response)) return;
+      frames.push(response);
+      if (
+        response.kind === "rejected" ||
+        response.kind === "completed" ||
+        response.kind === "execution-failed"
+      ) {
+        resolveTerminal(response);
+      }
+    };
+    const response = await this.handler(request, receive);
+    if (response !== undefined) receive(response);
+    return {
+      frames,
+      terminal,
+      disconnect: () => {
+        connected = false;
+      },
+    };
+  }
+
+  private static isExecutionFrame(
+    response: DaemonResponse,
+  ): response is DaemonExecutionServerFrame {
+    return (
+      response.kind === "accepted" ||
+      response.kind === "rejected" ||
+      response.kind === "completed" ||
+      response.kind === "execution-failed"
+    );
+  }
+}
+
+interface RequestConnection {
+  readonly frames: DaemonExecutionServerFrame[];
+  readonly terminal: Promise<DaemonExecutionServerFrame>;
+  disconnect(): void;
 }
 
 interface DaemonCommandExecutor {
@@ -601,12 +747,14 @@ class RecordingExecutor implements DaemonCommandExecutor {
 
 class SerializedExecutor implements DaemonCommandExecutor {
   private readonly results: (() => void)[] = [];
+  readonly requests: CliExecutionRequest[] = [];
 
   get startedCount(): number {
     return this.results.length;
   }
 
-  async execute(_request: CliExecutionRequest): Promise<CommandExecutionResult> {
+  async execute(request: CliExecutionRequest): Promise<CommandExecutionResult> {
+    this.requests.push(request);
     await new Promise<void>((resolve) => this.results.push(resolve));
     return { frames: [], exitCode: 0 };
   }
@@ -617,6 +765,12 @@ class SerializedExecutor implements DaemonCommandExecutor {
 
   complete(index: number): void {
     this.results[index]?.();
+  }
+}
+
+class RejectingExecutor implements DaemonCommandExecutor {
+  execute(): Promise<CommandExecutionResult> {
+    return Promise.reject(new Error("execution failed"));
   }
 }
 
@@ -743,10 +897,10 @@ class RejectingInitializationWorker extends DeferredInitializationWorker {
   }
 }
 
-async function waitUntil(predicate: () => boolean): Promise<void> {
+async function waitUntil(predicate: () => boolean | Promise<boolean>): Promise<void> {
   const deadline = Date.now() + 1_000;
   while (Date.now() <= deadline) {
-    if (predicate()) return;
+    if (await predicate()) return;
     await new Promise((resolve) => setTimeout(resolve, 5));
   }
   throw new Error("Timed out waiting for daemon startup state");

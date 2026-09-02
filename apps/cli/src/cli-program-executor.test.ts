@@ -102,7 +102,7 @@ describe("CliProgramExecutor", () => {
     expect(JSON.parse(decode(stats))).toMatchObject({ totalEvents: 0 });
   });
 
-  it("defers one telemetry event into the execution result", async () => {
+  it("records one warm telemetry event at the executing process", async () => {
     const recorder = createCapturingRecorder();
     const result = await new CliProgramExecutor(
       fakeDependencies({ recorder, telemetryEnabled: true }),
@@ -111,15 +111,16 @@ describe("CliProgramExecutor", () => {
       cwd: "/repo",
       telemetryEnabled: true,
       executionMode: "warm",
-      deferTelemetry: true,
     });
 
-    expect(recorder.events).toEqual([]);
-    expect(result.telemetry).toMatchObject({
-      command: "overview",
-      executionMode: "warm",
-      outcome: "success",
-    });
+    expect(recorder.events).toEqual([
+      expect.objectContaining({
+        command: "overview",
+        executionMode: "warm",
+        outcome: "success",
+      }),
+    ]);
+    expect(result).not.toHaveProperty("telemetry");
   });
 
   it("reuses an injected request scope factory across executions", async () => {

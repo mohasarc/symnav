@@ -116,7 +116,7 @@ describe("symnav telemetry e2e", () => {
 
       expect(cold.status).toBe(0);
       expect(ready.status).toBe(0);
-      expect(warm.status).toBe(0);
+      expect(warm.status, warm.stderr).toBe(0);
       expect(executionModes).toEqual(["cold", "warm"]);
     } finally {
       stopDaemon(stateDir);

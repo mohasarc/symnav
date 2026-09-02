@@ -4,7 +4,11 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { DaemonRequest } from "./daemon-protocol.js";
+import type {
+  DaemonExecuteRequest,
+  DaemonExecutionServerFrame,
+  DaemonLifecycleRequest,
+} from "./daemon-protocol.js";
 import { DAEMON_PROTOCOL_VERSION } from "./daemon-protocol.js";
 import { DaemonTransportError, LocalDaemonTransport } from "./local-daemon-transport.js";
 
@@ -36,24 +40,25 @@ describe("LocalDaemonTransport validation", () => {
     } satisfies Partial<DaemonTransportError>);
   });
 
-  it.each([
-    ["lifecycle", pingRequest(), { requestTimeoutMs: 10 }],
-    [
-      "admission",
-      {
-        kind: "execute",
-        protocolVersion: DAEMON_PROTOCOL_VERSION,
-        instanceId: "instance",
-        requestId: "request",
-        request: { argv: ["resolve", "target"], cwd: "/repo", telemetryEnabled: false },
-      } satisfies DaemonRequest,
-      { requestTimeoutMs: 100, executionRequestTimeoutMs: 10 },
-    ],
-  ] as const)("classifies %s timeout after request submission", async (_kind, request, options) => {
+  it("classifies lifecycle timeout after request submission", async () => {
     const endpoint = await rawServer(servers, sockets, directories, () => undefined);
 
     await expect(
-      new LocalDaemonTransport(options).request(endpoint, request),
+      new LocalDaemonTransport({ requestTimeoutMs: 10 }).request(endpoint, pingRequest()),
+    ).rejects.toMatchObject({
+      code: "timeout",
+      delivery: "submitted-unconfirmed",
+    } satisfies Partial<DaemonTransportError>);
+  });
+
+  it("classifies admission timeout after request submission", async () => {
+    const endpoint = await rawServer(servers, sockets, directories, () => undefined);
+
+    await expect(
+      new LocalDaemonTransport({ executionRequestTimeoutMs: 10 }).execute(
+        endpoint,
+        executionRequest(),
+      ),
     ).rejects.toMatchObject({
       code: "timeout",
       delivery: "submitted-unconfirmed",
@@ -93,7 +98,7 @@ describe("LocalDaemonTransport validation", () => {
         kind: "identify",
         instanceId: "instance",
         processToken: "expected",
-      } satisfies DaemonRequest,
+      } satisfies DaemonLifecycleRequest,
       {
         kind: "identity",
         instanceId: "instance",
@@ -221,46 +226,49 @@ describe("LocalDaemonTransport validation", () => {
 
     await expect(
       new LocalDaemonTransport({ requestTimeoutMs: 100 }).request(endpoint, pingRequest()),
-    ).rejects.toThrow("Malformed daemon result");
+    ).rejects.toThrow("Malformed daemon response");
   });
 
   it.each([
-    { kind: "result", requestId: "request", result: { frames: [], exitCode: "invalid" } },
+    { frames: [], exitCode: "invalid" },
     {
-      kind: "result",
-      requestId: "request",
-      result: { frames: [{ stream: "invalid", bytesBase64: "" }], exitCode: 0 },
+      frames: [{ stream: "invalid", bytesBase64: "" }],
+      exitCode: 0,
     },
     {
-      kind: "result",
-      requestId: "request",
-      result: { frames: [{ stream: "stdout", bytesBase64: "***" }], exitCode: 0 },
+      frames: [{ stream: "stdout", bytesBase64: "***" }],
+      exitCode: 0,
     },
-  ])("rejects malformed daemon result payload %#", async (response) => {
+  ])("rejects malformed daemon completion payload %#", async (result) => {
     const endpoint = await rawServer(servers, sockets, directories, (socket) => {
-      socket.write(frame(response));
+      socket.write(
+        Buffer.concat([
+          frame(acceptedFrame()),
+          frame({
+            kind: "completed",
+            instanceId: "instance",
+            processToken: "token",
+            requestId: "request",
+            result,
+          }),
+        ]),
+      );
       setTimeout(() => socket.destroy(), 50);
     });
-    const request = {
-      kind: "execute",
-      protocolVersion: DAEMON_PROTOCOL_VERSION,
-      instanceId: "instance",
-      requestId: "request",
-      request: { argv: ["--version"], cwd: "/repo", telemetryEnabled: false },
-    } satisfies DaemonRequest;
 
     await expect(
-      new LocalDaemonTransport({ requestTimeoutMs: 100 }).request(endpoint, request),
-    ).rejects.toThrow("Malformed daemon result");
+      new LocalDaemonTransport({ requestTimeoutMs: 100 })
+        .execute(endpoint, executionRequest())
+        .then((receipt) => receipt.completion),
+    ).rejects.toThrow("Malformed daemon execution completion");
   });
 
   it("rejects a response kind for a different request", async () => {
     const endpoint = await rawServer(servers, sockets, directories, (socket) => {
       socket.write(
         frame({
-          kind: "result",
-          requestId: "wrong",
-          result: { frames: [], exitCode: 0 },
+          kind: "stopped",
+          instanceId: "instance",
         }),
       );
       setTimeout(() => socket.destroy(), 50);
@@ -405,6 +413,7 @@ describe("LocalDaemonTransport validation", () => {
       kind: "execute",
       protocolVersion: DAEMON_PROTOCOL_VERSION,
       instanceId: "instance",
+      processToken: "token",
       requestId: "request",
       request: {
         argv: ["--version"],
@@ -412,46 +421,67 @@ describe("LocalDaemonTransport validation", () => {
         telemetryEnabled: false,
         deferTelemetry: "invalid",
       },
-    } as unknown as DaemonRequest;
+    } as unknown as DaemonExecuteRequest;
 
-    expect(() => transport.request("/missing-daemon-endpoint", request)).toThrow(
-      "Malformed daemon execute request",
+    expect(() => transport.execute("/missing-daemon-endpoint", request)).toThrow(
+      "Malformed daemon execution request",
     );
   });
 
   it("rejects malformed deferred telemetry results", async () => {
     const endpoint = await rawServer(servers, sockets, directories, (socket) => {
       socket.end(
-        frame({
-          kind: "result",
-          requestId: "request",
-          result: {
-            frames: [],
-            exitCode: 0,
-            telemetry: { executionMode: "warm" },
-          },
-        }),
+        Buffer.concat([
+          frame(acceptedFrame()),
+          frame({
+            kind: "completed",
+            instanceId: "instance",
+            processToken: "token",
+            requestId: "request",
+            result: {
+              frames: [],
+              exitCode: 0,
+              telemetry: { executionMode: "warm" },
+            },
+          }),
+        ]),
       );
     });
     const transport = new LocalDaemonTransport({ requestTimeoutMs: 100 });
 
     await expect(
-      transport.request(endpoint, {
-        kind: "execute",
-        protocolVersion: DAEMON_PROTOCOL_VERSION,
-        instanceId: "instance",
-        requestId: "request",
-        request: { argv: ["--version"], cwd: "/workspace", telemetryEnabled: false },
-      }),
-    ).rejects.toThrow("Malformed daemon result");
+      transport.execute(endpoint, executionRequest()).then((receipt) => receipt.completion),
+    ).rejects.toThrow("Malformed daemon execution completion");
   });
 });
 
-function pingRequest(): DaemonRequest {
+function pingRequest(): DaemonLifecycleRequest {
   return {
     kind: "ping",
     protocolVersion: DAEMON_PROTOCOL_VERSION,
     instanceId: "instance",
+  };
+}
+
+function executionRequest(): DaemonExecuteRequest {
+  return {
+    kind: "execute",
+    protocolVersion: DAEMON_PROTOCOL_VERSION,
+    instanceId: "instance",
+    processToken: "token",
+    requestId: "request",
+    request: { argv: ["--version"], cwd: "/repo", telemetryEnabled: false },
+  };
+}
+
+function acceptedFrame(): DaemonExecutionServerFrame {
+  return {
+    kind: "accepted",
+    instanceId: "instance",
+    processToken: "token",
+    requestId: "request",
+    acceptedAt: 1,
+    queuePosition: 0,
   };
 }
 

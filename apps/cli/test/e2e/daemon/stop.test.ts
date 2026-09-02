@@ -45,7 +45,7 @@ describe("symnav daemon stop", () => {
       cwd,
       env: { SYMNAV_STATE_DIR: stateDir },
     });
-    expect(started.status).toBe(0);
+    expect(started).toMatchObject({ status: 0, stderr: "" });
     captureDaemonPids(stateDir, daemonPids);
 
     const stopped = runSymnavBinary(["daemon", "stop"], {
@@ -65,8 +65,9 @@ describe("symnav daemon stop", () => {
       expect.arrayContaining([
         expect.objectContaining({ kind: "start" }),
         expect.objectContaining({ kind: "ready" }),
-        expect.objectContaining({ kind: "request", command: "version", exitCode: 0 }),
-        expect.objectContaining({ kind: "freshness" }),
+        expect.objectContaining({ kind: "request-accepted", command: "version" }),
+        expect.objectContaining({ kind: "execution-terminal", outcome: "completed" }),
+        expect.objectContaining({ kind: "startup-completed" }),
         expect.objectContaining({ kind: "stop", reason: "graceful" }),
       ]),
     );

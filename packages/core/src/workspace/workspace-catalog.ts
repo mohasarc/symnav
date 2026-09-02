@@ -82,6 +82,7 @@ export class WorkspaceCatalog {
         ignore,
         ignoreFiles,
       );
+      const directoryFiles: Promise<WorkspaceFile>[] = [];
 
       for (const entry of directory.entries) {
         const absolute = posix.join(directoryAbsolute, entry.name);
@@ -92,16 +93,17 @@ export class WorkspaceCatalog {
           continue;
         }
         if (ignore.isIgnored(relative)) continue;
-        const metadata =
-          entry.name === ".gitignore" && ignoreMetadata !== undefined
-            ? ignoreMetadata
-            : await this.fs.metadata(absolute);
-        const previousFile = previous?.files.get(relative);
-        const file =
-          previousFile?.metadata.changeToken === metadata.changeToken
-            ? previousFile
-            : WorkspaceCatalog.file(relative, absolute, metadata);
-        files.set(relative, file);
+        directoryFiles.push(
+          this.captureFile(
+            relative,
+            absolute,
+            previous,
+            entry.name === ".gitignore" ? ignoreMetadata : undefined,
+          ),
+        );
+      }
+      for (const file of await Promise.all(directoryFiles)) {
+        files.set(file.relative, file);
       }
     }
 
@@ -150,6 +152,19 @@ export class WorkspaceCatalog {
     ignore.addScope(relPathFromRoot(directoryAbsolute, root), content);
     ignoreFiles.set(absolute, { metadata, content });
     return metadata;
+  }
+
+  private async captureFile(
+    relative: string,
+    absolute: string,
+    previous: CatalogState | undefined,
+    knownMetadata: FileMetadata | undefined,
+  ): Promise<WorkspaceFile> {
+    const metadata = knownMetadata ?? (await this.fs.metadata(absolute));
+    const previousFile = previous?.files.get(relative);
+    return previousFile?.metadata.changeToken === metadata.changeToken
+      ? previousFile
+      : WorkspaceCatalog.file(relative, absolute, metadata);
   }
 
   private static file(relative: string, absolute: string, metadata: FileMetadata): WorkspaceFile {

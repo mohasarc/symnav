@@ -93,7 +93,11 @@ class DaemonStatusAction {
   ): Promise<void> {
     const stateDirectory = dependencies.stateDirectory;
     const registry = new DaemonRegistry(DaemonWorkspaceIdentity.registryDirectory(stateDirectory));
-    const controller = new DaemonController(registry, new LocalDaemonTransport(), stateDirectory);
+    const controller = new DaemonController(
+      registry,
+      new LocalDaemonTransport({ requestTimeoutMs: 100 }),
+      stateDirectory,
+    );
     const results = await controller.status();
     context.stdout.write(
       options.json

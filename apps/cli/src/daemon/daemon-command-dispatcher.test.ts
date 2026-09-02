@@ -1,6 +1,10 @@
 import { join, resolve } from "node:path";
 import { describe, expect, it, vi } from "vitest";
-import type { CliExecutionRequest, CommandExecutionResult } from "../command-execution-result.js";
+import {
+  CommandOutputSnapshot,
+  type CliExecutionRequest,
+  type CommandExecutionResult,
+} from "../command-execution-result.js";
 import type { ProgramDependencies } from "../program-dependencies.js";
 import {
   DaemonCommandDispatcher,
@@ -23,7 +27,7 @@ const request: CliExecutionRequest = {
   telemetryEnabled: false,
 };
 const success: CommandExecutionResult = {
-  frames: [{ stream: "stdout", bytesBase64: Buffer.from("answer\n").toString("base64") }],
+  output: new CommandOutputSnapshot([{ stream: "stdout", bytes: Buffer.from("answer\n") }]),
   exitCode: 0,
 };
 
@@ -122,7 +126,7 @@ describe("DaemonCommandDispatcher", () => {
 
       await expect(harness.dispatcher().execute(request)).resolves.toMatchObject({
         mode: "warm",
-        result: { exitCode: 1, frames: [expect.objectContaining({ stream: "stderr" })] },
+        result: { exitCode: 1, output: expect.any(CommandOutputSnapshot) },
       });
 
       expect(harness.coldExecute).not.toHaveBeenCalled();
@@ -132,7 +136,7 @@ describe("DaemonCommandDispatcher", () => {
   );
 
   it("returns a controlled result without replay for a malformed completion", async () => {
-    const harness = new DispatchHarness({ frames: [], exitCode: 1.5 });
+    const harness = new DispatchHarness({ output: new CommandOutputSnapshot([]), exitCode: 1.5 });
 
     await expect(harness.dispatcher().execute(request)).resolves.toMatchObject({
       mode: "warm",

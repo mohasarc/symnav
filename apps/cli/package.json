@@ -21,7 +21,8 @@
     "node": ">=20"
   },
   "scripts": {
-    "benchmark:daemon": "tsx test/benchmark/run-daemon-benchmark.ts",
+    "daemon:benchmark": "tsx test/benchmark/run-daemon-benchmark.ts",
+    "daemon:profile": "tsx test/benchmark/run-daemon-profile.ts",
     "test": "vitest run",
     "test:e2e:cold": "tsx test/e2e/run-navigation-mode.ts 0",
     "test:e2e:warm": "tsx test/e2e/run-navigation-mode.ts 1",

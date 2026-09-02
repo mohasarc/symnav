@@ -2,6 +2,7 @@ import { performance } from "node:perf_hooks";
 import { parentPort, workerData } from "node:worker_threads";
 import { getHeapStatistics } from "node:v8";
 import type { BackendRefreshSummary } from "@symnav/core";
+import type { CommandPhaseDurations } from "../program-dependencies.js";
 import { createDefaultDependencies } from "../program.js";
 import { RetainedWorkspaceProgram } from "./retained-workspace-program.js";
 import {
@@ -25,6 +26,13 @@ class DaemonNavigationWorkerEntry {
     unchanged: 0,
   };
   private tail: Promise<void> = Promise.resolve();
+  private readonly outputAcknowledgements = new Map<string, () => void>();
+  private activeHeapMonitor: WorkerHeapHighWater | undefined;
+  private commandDurations: CommandPhaseDurations = {
+    freshnessMs: 0,
+    navigationMs: 0,
+    renderMs: 0,
+  };
 
   constructor(
     private readonly port: NonNullable<typeof parentPort>,
@@ -33,6 +41,22 @@ class DaemonNavigationWorkerEntry {
 
   run(): void {
     this.port.on("message", (value: unknown) => {
+      if (
+        typeof value === "object" &&
+        value !== null &&
+        "kind" in value &&
+        value.kind === "output-ack"
+      ) {
+        try {
+          const request = DaemonNavigationWorkerProtocol.request(value);
+          if (request.kind !== "output-ack") throw new Error("Invalid output acknowledgement");
+          this.acknowledgeOutput(request.requestId, request.sequence);
+          return;
+        } catch (error) {
+          this.fail("protocol", error);
+          return;
+        }
+      }
       this.tail = this.tail.then(() => this.handle(value));
     });
   }
@@ -55,7 +79,7 @@ class DaemonNavigationWorkerEntry {
       return;
     }
     if (request.kind === "release-transient") {
-      await this.releaseTransientResources();
+      await this.releaseTransientResources(request.operationId);
       return;
     }
     await this.close();
@@ -65,6 +89,10 @@ class DaemonNavigationWorkerEntry {
     const startedAt = performance.now();
     try {
       const dependencies = createDefaultDependencies(this.data.stateDirectory);
+      dependencies.commandPhasesObserved = (durations) => {
+        this.commandDurations = durations;
+        this.activeHeapMonitor?.sample();
+      };
       this.retainedProgram = new RetainedWorkspaceProgram(dependencies, (refresh) => {
         this.latestRefresh = refresh;
       });
@@ -84,29 +112,42 @@ class DaemonNavigationWorkerEntry {
   }
 
   private async execute(request: Extract<DaemonNavigationWorkerRequest, { kind: "execute" }>) {
-    const startedAt = performance.now();
+    const heapMonitor = new WorkerHeapHighWater();
+    this.activeHeapMonitor = heapMonitor;
+    this.commandDurations = { freshnessMs: 0, navigationMs: 0, renderMs: 0 };
     try {
       if (this.retainedProgram === undefined) throw new Error("Navigation worker is not ready");
       const result = await this.retainedProgram.execute(request.request);
+      heapMonitor.sample();
+      const outputStartedAt = performance.now();
+      for await (const record of result.output?.records() ?? []) {
+        await this.sendOutput(request.requestId, record);
+        heapMonitor.sample();
+      }
+      await result.output?.dispose();
+      const outputMs = performance.now() - outputStartedAt;
+      const resources = heapMonitor.finish();
       this.send({
         kind: "result",
         generation: this.data.generation,
         requestId: request.requestId,
-        result,
+        result: { exitCode: result.exitCode },
         refresh: this.latestRefresh,
         durations: {
-          freshnessMs: 0,
-          navigationMs: performance.now() - startedAt,
-          renderMs: 0,
-          outputMs: 0,
+          ...this.commandDurations,
+          outputMs,
         },
+        resources,
       });
     } catch (error) {
-      this.fail("execution", error, request.requestId);
+      this.fail("execution", error, { requestId: request.requestId });
+    } finally {
+      heapMonitor.close();
+      this.activeHeapMonitor = undefined;
     }
   }
 
-  private async releaseTransientResources(): Promise<void> {
+  private async releaseTransientResources(operationId: string): Promise<void> {
     try {
       await Promise.all(
         this.retainedProgram?.backends.map((backend) => backend.releaseTransientResources()) ?? [],
@@ -115,11 +156,12 @@ class DaemonNavigationWorkerEntry {
       this.send({
         kind: "heap",
         generation: this.data.generation,
+        operationId,
         usedHeapBytes: heap.used_heap_size,
         heapLimitBytes: heap.heap_size_limit,
       });
     } catch (error) {
-      this.fail("resource", error);
+      this.fail("resource", error, { operationId });
     }
   }
 
@@ -131,18 +173,99 @@ class DaemonNavigationWorkerEntry {
     this.port.close();
   }
 
-  private fail(failureCode: DaemonExecutionFailureCode, error: unknown, requestId?: string): void {
+  private fail(
+    failureCode: DaemonExecutionFailureCode,
+    error: unknown,
+    correlation:
+      | { readonly requestId: string }
+      | { readonly operationId: string }
+      | undefined = undefined,
+  ): void {
     this.send({
       kind: "failed",
       generation: this.data.generation,
-      ...(requestId === undefined ? {} : { requestId }),
+      ...correlation,
       failureCode,
       ...(error instanceof Error ? { errorName: error.name } : {}),
     });
   }
 
   private send(response: DaemonNavigationWorkerResponse): void {
-    this.port.postMessage(DaemonNavigationWorkerProtocol.response(response));
+    const validated = DaemonNavigationWorkerProtocol.response(response);
+    if (validated.kind === "output-chunk") {
+      this.port.postMessage(validated, [validated.bytes.buffer as ArrayBuffer]);
+      return;
+    }
+    this.port.postMessage(validated);
+  }
+
+  private sendOutput(
+    requestId: string,
+    record: import("../command-execution-result.js").CommandOutputRecord,
+  ): Promise<void> {
+    const key = `${requestId}:${record.sequence}`;
+    if (this.outputAcknowledgements.has(key)) {
+      return Promise.reject(new Error("Duplicate worker output sequence"));
+    }
+    const acknowledgement = new Promise<void>((resolve) => {
+      this.outputAcknowledgements.set(key, resolve);
+    });
+    const bytes = Uint8Array.from(record.bytes);
+    this.send({
+      kind: "output-chunk",
+      generation: this.data.generation,
+      requestId,
+      sequence: record.sequence,
+      stream: record.stream,
+      bytes,
+    });
+    return acknowledgement;
+  }
+
+  private acknowledgeOutput(requestId: string, sequence: number): void {
+    const key = `${requestId}:${sequence}`;
+    const resolve = this.outputAcknowledgements.get(key);
+    if (resolve === undefined) throw new Error("Unexpected worker output acknowledgement");
+    this.outputAcknowledgements.delete(key);
+    resolve();
+  }
+}
+
+class WorkerHeapHighWater {
+  private currentUsedBytes = 0;
+  private peakUsedBytes = 0;
+  private heapLimitBytes = 0;
+  private readonly timer: ReturnType<typeof setInterval>;
+
+  constructor() {
+    this.sample();
+    this.timer = setInterval(() => this.sample(), 25);
+    this.timer.unref?.();
+  }
+
+  sample(): void {
+    const heap = getHeapStatistics();
+    this.currentUsedBytes = heap.used_heap_size;
+    this.peakUsedBytes = Math.max(this.peakUsedBytes, this.currentUsedBytes);
+    this.heapLimitBytes = heap.heap_size_limit;
+  }
+
+  finish(): {
+    readonly workerHeapUsedBytes: number;
+    readonly peakWorkerHeapUsedBytes: number;
+    readonly workerHeapLimitBytes: number;
+  } {
+    this.sample();
+    this.close();
+    return {
+      workerHeapUsedBytes: this.currentUsedBytes,
+      peakWorkerHeapUsedBytes: this.peakUsedBytes,
+      workerHeapLimitBytes: this.heapLimitBytes,
+    };
+  }
+
+  close(): void {
+    clearInterval(this.timer);
   }
 }
 

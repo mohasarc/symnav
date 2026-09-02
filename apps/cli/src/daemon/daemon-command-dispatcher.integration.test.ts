@@ -2,7 +2,11 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { describe, expect, it, vi } from "vitest";
-import type { CliExecutionRequest, CommandExecutionResult } from "../command-execution-result.js";
+import {
+  CommandOutputSnapshot,
+  type CliExecutionRequest,
+  type CommandExecutionResult,
+} from "../command-execution-result.js";
 import type { ProgramDependencies } from "../program-dependencies.js";
 import {
   DaemonCommandDispatcher,
@@ -236,7 +240,7 @@ function createDispatcher(
 
 function result(output: string): CommandExecutionResult {
   return {
-    frames: [{ stream: "stdout", bytesBase64: Buffer.from(output).toString("base64") }],
+    output: new CommandOutputSnapshot([{ stream: "stdout", bytes: Buffer.from(output) }]),
     exitCode: 0,
   };
 }

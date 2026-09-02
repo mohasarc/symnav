@@ -2,11 +2,39 @@ import { spawnSync } from "node:child_process";
 import { mkdtempSync, readdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, relative, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { E2eProcessCleanup } from "../helpers/e2e-process-cleanup.js";
 import { NavigationModeCleanup, type NavigationModeDaemon } from "./navigation-mode-cleanup.js";
 
 type E2eDaemonMode = "0" | "1";
+
+export class NavigationModeDaemonStatusDecoder {
+  static decode(status: unknown): readonly NavigationModeDaemon[] {
+    if (
+      !NavigationModeDaemonStatusDecoder.isRecord(status) ||
+      status.schemaVersion !== 1 ||
+      !Array.isArray(status.daemons) ||
+      !status.daemons.every((daemon) => NavigationModeDaemonStatusDecoder.isDaemon(daemon))
+    ) {
+      throw new Error("Invalid daemon status envelope");
+    }
+    return status.daemons;
+  }
+
+  private static isDaemon(value: unknown): value is NavigationModeDaemon {
+    return (
+      NavigationModeDaemonStatusDecoder.isRecord(value) &&
+      typeof value.workspaceRoot === "string" &&
+      typeof value.pid === "number" &&
+      Number.isInteger(value.pid) &&
+      value.pid >= 0
+    );
+  }
+
+  private static isRecord(value: unknown): value is Record<string, unknown> {
+    return typeof value === "object" && value !== null && !Array.isArray(value);
+  }
+}
 
 class NavigationModeRunner {
   private readonly cliRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
@@ -109,7 +137,7 @@ class NavigationModeRunner {
     if (result.status !== 0) {
       throw new Error(`Failed to validate E2E daemons: ${result.stderr || result.stdout}`);
     }
-    return JSON.parse(result.stdout) as readonly NavigationModeDaemon[];
+    return NavigationModeDaemonStatusDecoder.decode(JSON.parse(result.stdout) as unknown);
   }
 
   private environment(): NodeJS.ProcessEnv {
@@ -122,8 +150,20 @@ class NavigationModeRunner {
   }
 }
 
-const daemonMode = process.argv[2];
-if (daemonMode !== "0" && daemonMode !== "1") {
-  throw new Error("Expected E2E daemon mode 0 or 1");
+class NavigationModeEntryPoint {
+  static async runIfInvoked(): Promise<void> {
+    if (!NavigationModeEntryPoint.isInvoked()) return;
+    const daemonMode = process.argv[2];
+    if (daemonMode !== "0" && daemonMode !== "1") {
+      throw new Error("Expected E2E daemon mode 0 or 1");
+    }
+    process.exitCode = await new NavigationModeRunner(daemonMode).run();
+  }
+
+  private static isInvoked(): boolean {
+    const invokedPath = process.argv[1];
+    return invokedPath !== undefined && import.meta.url === pathToFileURL(invokedPath).href;
+  }
 }
-process.exitCode = await new NavigationModeRunner(daemonMode).run();
+
+await NavigationModeEntryPoint.runIfInvoked();

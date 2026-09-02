@@ -3,6 +3,7 @@ import {
   existsSync,
   mkdirSync,
   mkdtempSync,
+  readdirSync,
   readFileSync,
   realpathSync,
   renameSync,
@@ -16,6 +17,7 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawn } from "node:child_process";
+import { createHash } from "node:crypto";
 import { afterEach, describe, expect, it } from "vitest";
 import { fixturePath, runSymnavBinary, type RunSymnavBinaryResult } from "@symnav/testing";
 import { canonicalStateDir } from "@symnav/telemetry";
@@ -109,20 +111,74 @@ describe("symnav daemon parity", () => {
     expect(results).toEqual([expected, expected]);
     expect(harness.onlyDaemonPid()).toBeGreaterThan(0);
   }, 15_000);
-  it("does not replay or invalidate a live daemon after ambiguous response delivery", async () => {
+  it("streams a formerly oversized response without replay or daemon invalidation", async () => {
     const harness = new DaemonParityHarness();
     harnesses.push(harness);
     const controlled = await harness.startControlledDaemon("--oversized-response");
 
-    const failed = harness.warmWithTelemetry(["overview", "input.ts"]);
+    const result = await harness.warmAsync(["overview", "input.ts"], "1");
+    const cold = harness.cold(["overview", "input.ts"]);
 
-    expect(failed.status).not.toBe(0);
-    expect(failed.stdout).toBe("");
+    expect(result).toMatchObject({ status: 0, stderr: cold.stderr });
+    expect(result.stdout.startsWith(cold.stdout)).toBe(true);
+    expect(Buffer.byteLength(result.stdout)).toBe(Buffer.byteLength(cold.stdout) + 9 * 1024 * 1024);
+    expect(result.stdout.slice(cold.stdout.length)).toBe("x".repeat(9 * 1024 * 1024));
     expect(existsSync(`${controlled.requestStartedPath}.1`)).toBe(true);
     expect(harness.telemetryModes()).toEqual(["warm"]);
     expect(harness.daemonRecordCount()).toBe(1);
     expect(harness.onlyDaemonPid()).toBe(controlled.record.pid);
+    expect(harness.completionSpoolFileCount()).toBe(0);
+    const next = await harness.warmAsync(["overview", "input.ts"]);
+    expect(next).toMatchObject({ status: 0, stderr: cold.stderr });
+    expect(next.stdout.startsWith(cold.stdout)).toBe(true);
+    expect(existsSync(`${controlled.requestStartedPath}.2`)).toBe(true);
+    expect(harness.onlyDaemonPid()).toBe(controlled.record.pid);
   }, 15_000);
+
+  it("streams a valid JSON response larger than the former frame limit", async () => {
+    const harness = new DaemonParityHarness();
+    harnesses.push(harness);
+    const controlled = await harness.startControlledDaemon("--oversized-json-response");
+
+    const result = await harness.warmAsync(["overview", "input.ts", "--json"], "1");
+
+    expect(result).toMatchObject({ status: 0, stderr: "" });
+    expect((JSON.parse(result.stdout) as { data: string }).data).toBe("x".repeat(9 * 1024 * 1024));
+    expect(Buffer.byteLength(result.stdout)).toBeGreaterThan(8 * 1024 * 1024);
+    expect(existsSync(`${controlled.requestStartedPath}.1`)).toBe(true);
+    expect(harness.telemetryModes()).toEqual(["warm"]);
+    expect(harness.daemonRecordCount()).toBe(1);
+    expect(harness.onlyDaemonPid()).toBe(controlled.record.pid);
+    expect(harness.completionSpoolFileCount()).toBe(0);
+  }, 15_000);
+
+  it.each([
+    ["text", ["overview", "large.ts"]],
+    ["JSON", ["overview", "large.ts", "--json"]],
+  ] as const)(
+    "keeps a real >8 MiB %s result byte-identical between cold and warm",
+    async (_name, args) => {
+      const harness = new DaemonParityHarness();
+      harnesses.push(harness);
+      harness.writeLargeOverviewFile();
+      const cold = await harness.coldAsync(args);
+      expect(cold.status).toBe(0);
+      expect(Buffer.byteLength(cold.stdout)).toBeGreaterThan(8 * 1024 * 1024);
+      expect(harness.daemonStart()).toMatchObject({ status: 0, stderr: "" });
+      const daemonPid = harness.onlyDaemonPid();
+
+      const warm = await harness.warmAsync(args, "1");
+
+      expect(warm.status).toBe(cold.status);
+      expect(digest(warm.stdout)).toBe(digest(cold.stdout));
+      expect(digest(warm.stderr)).toBe(digest(cold.stderr));
+      expect(warm.stderr).not.toContain("frame");
+      expect(harness.onlyDaemonPid()).toBe(daemonPid);
+      expect(harness.completionSpoolFileCount()).toBe(0);
+      expect(harness.telemetryModes()).toEqual(["warm"]);
+    },
+    60_000,
+  );
 
   it("refreshes filesystem and ownership mutations before the next warm request", () => {
     const harness = new DaemonParityHarness();
@@ -212,7 +268,7 @@ describe("symnav daemon parity", () => {
     await waitUntil(() => existsSync(`${controlled.requestStartedPath}.2`));
     expect(secondResult).toEqual(harness.cold(["overview", "input.ts"]));
     if (firstResponse.status !== "completed") throw new Error("Expected first FIFO result");
-    expect(decodeFrames(firstResponse.result.frames)).toMatch(/^\d+\.\d+\.\d+/);
+    expect(await decodeOutput(firstResponse.result.output)).toMatch(/^\d+\.\d+\.\d+/);
     expect(secondResult.stdout).toContain("queuedEdit");
   }, 15_000);
 
@@ -317,7 +373,7 @@ describe("symnav daemon parity", () => {
     const controlled = await harness.startControlledDaemon("--worker-exit");
     const execution = harness.warmAsync(["overview", "input.ts"], "1");
     await waitUntil(() => existsSync(controlled.requestStartedPath));
-    const requestId = acceptanceRequestId(controlled.logPath);
+    const requestId = readFileSync(controlled.requestIdPath, "utf8");
     const acceptedRequest = JSON.parse(
       readFileSync(controlled.requestPayloadPath, "utf8"),
     ) as CliExecutionRequest;
@@ -560,6 +616,16 @@ class DaemonParityHarness {
     writeFileSync(join(this.workspaceRoot, relativePath), content);
   }
 
+  writeLargeOverviewFile(): void {
+    const longType = `"${"x".repeat(90_000)}"`;
+    const declarations = Array.from(
+      { length: 100 },
+      (_, index) =>
+        `export function symbol${String(index).padStart(5, "0")}(value: ${longType}): string { return value; }\n`,
+    );
+    writeFileSync(join(this.workspaceRoot, "large.ts"), declarations.join(""));
+  }
+
   removeWorkspaceFile(relativePath: string): void {
     unlinkSync(join(this.workspaceRoot, relativePath));
   }
@@ -585,6 +651,18 @@ class DaemonParityHarness {
   }
 
   warmAsync(args: readonly string[], telemetry = "0"): Promise<RunSymnavBinaryResult> {
+    return this.runAsync(args, "1", telemetry);
+  }
+
+  coldAsync(args: readonly string[]): Promise<RunSymnavBinaryResult> {
+    return this.runAsync(args, "0", "0");
+  }
+
+  private runAsync(
+    args: readonly string[],
+    daemon: string,
+    telemetry: string,
+  ): Promise<RunSymnavBinaryResult> {
     const cliBinPath = resolve(
       dirname(fileURLToPath(import.meta.url)),
       "..",
@@ -596,7 +674,7 @@ class DaemonParityHarness {
     return new Promise((resolveResult, reject) => {
       const child = spawn(process.execPath, [cliBinPath, ...args], {
         cwd: this.workspaceRoot,
-        env: this.environment("1", telemetry),
+        env: this.environment(daemon, telemetry),
       });
       let stdout = "";
       let stderr = "";
@@ -712,10 +790,10 @@ class DaemonParityHarness {
     if (readyRecord?.state !== "ready") throw new Error("Controlled daemon did not become ready");
     return {
       child,
-      logPath: identity.logPath,
       record: readyRecord,
       requestPayloadPath: `${requestStartedPath}.payload`,
       requestStartedPath,
+      requestIdPath: `${requestStartedPath}.request-id`,
       workerExitReleasePath: `${requestStartedPath}.release-worker-exit`,
     };
   }
@@ -731,6 +809,17 @@ class DaemonParityHarness {
 
   daemonRecordCount(): number {
     return DaemonStateFiles.matchingPaths(this.stateDirectory, ".json").length;
+  }
+
+  completionSpoolFileCount(): number {
+    const identity = DaemonWorkspaceIdentity.from(
+      canonicalWorkspaceRoot(realpathSync(this.workspaceRoot)),
+      canonicalStateDir(this.stateDirectory),
+    );
+    if (!existsSync(identity.spoolDirectory)) return 0;
+    return readdirSync(identity.spoolDirectory, { recursive: true }).filter((entry) =>
+      String(entry).endsWith(".spool"),
+    ).length;
   }
 
   replaceStateDirectoryWithFile(): void {
@@ -801,27 +890,26 @@ function waitForProcess(child: ChildProcess): Promise<void> {
   });
 }
 
-function decodeFrames(frames: readonly { readonly bytesBase64: string }[]): string {
-  return frames.map((frame) => Buffer.from(frame.bytesBase64, "base64").toString()).join("");
+async function decodeOutput(
+  output: import("../../../src/command-execution-result.js").CommandOutput,
+): Promise<string> {
+  const chunks = [];
+  for await (const record of output.records()) chunks.push(Buffer.from(record.bytes));
+  await output.dispose();
+  return Buffer.concat(chunks).toString();
+}
+
+function digest(value: string): string {
+  return createHash("sha256").update(value).digest("hex");
 }
 
 interface ControlledDaemon {
   readonly child: ChildProcess;
-  readonly logPath: string;
   readonly record: DaemonRecord;
   readonly requestPayloadPath: string;
   readonly requestStartedPath: string;
+  readonly requestIdPath: string;
   readonly workerExitReleasePath: string;
-}
-
-function acceptanceRequestId(logPath: string): string {
-  const acceptance = readFileSync(logPath, "utf8")
-    .trimEnd()
-    .split("\n")
-    .map((line) => JSON.parse(line) as { readonly kind: string; readonly requestId?: string })
-    .find((event) => event.kind === "acceptance");
-  if (acceptance?.requestId === undefined) throw new Error("Daemon did not log request acceptance");
-  return acceptance.requestId;
 }
 
 async function waitUntil(predicate: () => boolean | Promise<boolean>): Promise<void> {

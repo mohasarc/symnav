@@ -1,10 +1,11 @@
-import { Writable } from "node:stream";
-import type {
-  CliExecutionRequest,
-  CommandExecutionResult,
-  CommandOutputFrame,
-  CommandOutputStream,
+import type { CliExecutionRequest, CommandExecutionResult } from "./command-execution-result.js";
+import {
+  CommandOutputCapacityError,
+  ControlledCommandResult,
+  OrderedCommandOutput,
+  type OrderedCommandOutputOptions,
 } from "./command-execution-result.js";
+export { CommandResultReplayer } from "./command-execution-result.js";
 import type { ProgramContext } from "./program-context.js";
 import type { ProgramDependencies } from "./program-dependencies.js";
 import { buildProgram } from "./program.js";
@@ -16,36 +17,18 @@ class CapturedProgramExit extends Error {
   }
 }
 
-class CommandFrameStream extends Writable {
-  constructor(
-    private readonly stream: CommandOutputStream,
-    private readonly frames: CommandOutputFrame[],
-  ) {
-    super();
-  }
-
-  override _write(
-    chunk: unknown,
-    encoding: BufferEncoding,
-    callback: (error?: Error | null) => void,
-  ): void {
-    const bytes = Buffer.isBuffer(chunk) ? chunk : Buffer.from(String(chunk), encoding);
-    this.frames.push({ stream: this.stream, bytesBase64: bytes.toString("base64") });
-    callback();
-  }
-}
-
 export class CliProgramExecutor {
   constructor(
     private readonly dependencies: ProgramDependencies,
     private readonly scopeFactory?: WorkspaceRequestScopeFactory,
+    private readonly outputOptions: OrderedCommandOutputOptions = {},
   ) {}
 
   async execute(request: CliExecutionRequest): Promise<CommandExecutionResult> {
-    const frames: CommandOutputFrame[] = [];
+    const output = new OrderedCommandOutput(this.outputOptions);
     const context: ProgramContext = {
-      stdout: new CommandFrameStream("stdout", frames),
-      stderr: new CommandFrameStream("stderr", frames),
+      stdout: output.stdout,
+      stderr: output.stderr,
       cwd: request.cwd,
       exit: (exitCode) => {
         throw new CapturedProgramExit(exitCode);
@@ -61,23 +44,28 @@ export class CliProgramExecutor {
 
     try {
       await buildProgram(context, dependencies).parseAsync([...request.argv], { from: "user" });
-      return { frames, exitCode: 0 };
+      return await this.finish(output, 0);
     } catch (error) {
-      if (error instanceof CapturedProgramExit) {
-        return { frames, exitCode: error.exitCode };
+      if (error instanceof CapturedProgramExit) return await this.finish(output, error.exitCode);
+      if (error instanceof CommandOutputCapacityError) {
+        return output.replaceWith(ControlledCommandResult.responseCapacityExceeded());
       }
+      await output.dispose();
       throw error;
     }
   }
-}
 
-export class CommandResultReplayer {
-  static replay(result: CommandExecutionResult, context: ProgramContext): never | void {
-    for (const frame of result.frames) {
-      context[frame.stream].write(Buffer.from(frame.bytesBase64, "base64"));
-    }
-    if (result.exitCode !== 0) {
-      context.exit(result.exitCode);
+  private async finish(
+    output: OrderedCommandOutput,
+    exitCode: number,
+  ): Promise<CommandExecutionResult> {
+    try {
+      return await output.finish(exitCode);
+    } catch (error) {
+      if (error instanceof CommandOutputCapacityError) {
+        return output.replaceWith(ControlledCommandResult.responseCapacityExceeded());
+      }
+      throw error;
     }
   }
 }

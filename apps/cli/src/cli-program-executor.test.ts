@@ -1,8 +1,10 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { Writable } from "node:stream";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { InMemoryFileSystem, WorkspaceCatalog, type OverviewFileEntries } from "@symnav/core";
+import * as commandExecutionResult from "./command-execution-result.js";
 import { CliProgramExecutor, CommandResultReplayer } from "./cli-program-executor.js";
 import { fakeDependencies } from "../test/integration/commands/helpers/fake-program-dependencies.js";
 import { createCapturingRecorder } from "../test/integration/commands/helpers/fake-program-dependencies.js";
@@ -36,12 +38,127 @@ describe("CliProgramExecutor", () => {
     });
 
     expect(result.exitCode).toBe(0);
-    expect(result.frames.map((frame) => frame.stream)).toEqual(["stderr", "stdout"]);
+    expect((await records(result)).map((record) => record.stream)).toEqual(["stderr", "stdout"]);
     const context = createFakeProgramContext({ cwd: "/repo" });
-    CommandResultReplayer.replay(result, context);
+    await CommandResultReplayer.replay(result, context);
     expect(context.stderr.text()).toBe("Warning: unicode ✓\nnext\n");
     expect(context.stdout.text()).toBe("Overview: src/a.ts\n(no symbols)\n");
     expect(context.exitCodes).toEqual([]);
+  });
+
+  it("replays identical ordered bytes from inline and spilled command output", async () => {
+    const spillDirectory = mkdtempSync(join(tmpdir(), "symnav-ordered-output-"));
+    temporaryRoots.push(spillDirectory);
+    const OrderedCommandOutput = (
+      commandExecutionResult as unknown as {
+        OrderedCommandOutput: new (options: {
+          readonly directory?: string;
+          readonly inlineBytes: number;
+        }) => {
+          readonly stdout: Writable;
+          readonly stderr: Writable;
+          finish(exitCode: number): Promise<{
+            readonly exitCode: number;
+            readonly output: {
+              readonly summary: { readonly rawBytes: number; readonly recordCount: number };
+              records(): AsyncIterable<{
+                readonly sequence: number;
+                readonly stream: "stdout" | "stderr";
+                readonly bytes: Uint8Array;
+              }>;
+              dispose(): Promise<void>;
+            };
+          }>;
+        };
+      }
+    ).OrderedCommandOutput;
+    const writes = Array.from({ length: 128 }, (_, index) => ({
+      stream: index % 3 === 0 ? ("stderr" as const) : ("stdout" as const),
+      bytes: Buffer.from(`${index}:unicode-✓\n`),
+    }));
+    const expectedStreams = writes.reduce<Array<"stdout" | "stderr">>((streams, write) => {
+      if (streams.at(-1) !== write.stream) streams.push(write.stream);
+      return streams;
+    }, []);
+    const capture = async (inlineBytes: number) => {
+      const output = new OrderedCommandOutput({ directory: spillDirectory, inlineBytes });
+      for (const write of writes) {
+        await new Promise<void>((resolve, reject) => {
+          output[write.stream].write(write.bytes, (error) => (error ? reject(error) : resolve()));
+        });
+      }
+      const result = await output.finish(7);
+      const records = [];
+      for await (const record of result.output.records()) {
+        records.push({ ...record, bytes: Buffer.from(record.bytes).toString("hex") });
+      }
+      await result.output.dispose();
+      return { result, records };
+    };
+
+    const inline = await capture(Number.MAX_SAFE_INTEGER);
+    const spilled = await capture(1);
+
+    expect(spilled.records).toEqual(inline.records);
+    expect(inline.result.exitCode).toBe(7);
+    expect(inline.result.output.summary.rawBytes).toBe(
+      writes.reduce((total, write) => total + write.bytes.byteLength, 0),
+    );
+    expect(inline.result.output.summary.recordCount).toBe(expectedStreams.length);
+    expect(inline.records.map(({ sequence, stream }) => ({ sequence, stream }))).toEqual(
+      expectedStreams.map((stream, sequence) => ({ sequence, stream })),
+    );
+  });
+
+  it("serializes replay through terminal backpressure and disposes after completion", async () => {
+    const output = new commandExecutionResult.CommandOutputSnapshot([
+      { stream: "stdout", bytes: Buffer.from("one") },
+      { stream: "stderr", bytes: Buffer.from("two") },
+      { stream: "stdout", bytes: Buffer.from("three") },
+    ]);
+    const dispose = vi.spyOn(output, "dispose");
+    const writes: string[] = [];
+    const stdout = new GatedWritable(writes, "stdout");
+    const stderr = new GatedWritable(writes, "stderr");
+    const replay = CommandResultReplayer.replay(
+      { output, exitCode: 0 },
+      { cwd: "/repo", stdout, stderr, exit: () => undefined as never },
+    );
+
+    await vi.waitFor(() => expect(stdout.pendingCount).toBe(1));
+    expect(stderr.pendingCount).toBe(0);
+    expect(writes).toEqual(["stdout:one"]);
+    stdout.release();
+    await vi.waitFor(() => expect(stderr.pendingCount).toBe(1));
+    expect(writes).toEqual(["stdout:one", "stderr:two"]);
+    stderr.release();
+    await vi.waitFor(() => expect(stdout.pendingCount).toBe(1));
+    expect(writes).toEqual(["stdout:one", "stderr:two", "stdout:three"]);
+    stdout.release();
+
+    await replay;
+    expect(dispose).toHaveBeenCalledOnce();
+  });
+
+  it("disposes retained output when terminal replay fails", async () => {
+    const output = new commandExecutionResult.CommandOutputSnapshot([
+      { stream: "stdout", bytes: Buffer.from("one") },
+      { stream: "stderr", bytes: Buffer.from("two") },
+    ]);
+    const dispose = vi.spyOn(output, "dispose");
+    const stdout = new GatedWritable([], "stdout");
+    const stderr = new GatedWritable([], "stderr");
+    const replay = CommandResultReplayer.replay(
+      { output, exitCode: 0 },
+      { cwd: "/repo", stdout, stderr, exit: () => undefined as never },
+    );
+
+    await vi.waitFor(() => expect(stdout.pendingCount).toBe(1));
+    stdout.fail(new Error("terminal disappeared"));
+
+    await expect(replay).rejects.toThrow("terminal disappeared");
+    expect(stderr.pendingCount).toBe(0);
+    expect(dispose).toHaveBeenCalledOnce();
   });
 
   it.each([
@@ -59,8 +176,10 @@ describe("CliProgramExecutor", () => {
     });
 
     expect(result.exitCode).toBe(code);
-    expect(result.frames.length).toBeGreaterThan(0);
-    expect(result.frames.every((frame) => frame.stream === stream)).toBe(true);
+    const captured = await records(result);
+    expect(captured.length).toBeGreaterThan(0);
+    expect(captured.every((record) => record.stream === stream)).toBe(true);
+    await result.output.dispose();
   });
 
   it("captures user errors, crashes, JSON, and hidden stats", async () => {
@@ -95,11 +214,11 @@ describe("CliProgramExecutor", () => {
     });
 
     expect(userError.exitCode).toBe(1);
-    expect(decode(userError)).toContain("Cannot answer: file not found");
+    expect(await decode(userError)).toContain("Cannot answer: file not found");
     expect(crash.exitCode).toBe(2);
-    expect(decode(crash)).toBe("boom\n");
-    expect(JSON.parse(decode(json))).toMatchObject({ file: "src/a.ts" });
-    expect(JSON.parse(decode(stats))).toMatchObject({ totalEvents: 0 });
+    expect(await decode(crash)).toBe("boom\n");
+    expect(JSON.parse(await decode(json))).toMatchObject({ file: "src/a.ts" });
+    expect(JSON.parse(await decode(stats))).toMatchObject({ totalEvents: 0 });
   });
 
   it("records one warm telemetry event at the executing process", async () => {
@@ -121,6 +240,15 @@ describe("CliProgramExecutor", () => {
       }),
     ]);
     expect(result).not.toHaveProperty("telemetry");
+  });
+
+  it("replaces local output over the result limit without partial bytes", async () => {
+    const result = await new CliProgramExecutor(fakeDependencies(), undefined, {
+      maximumBytes: 1,
+    }).execute({ argv: ["--version"], cwd: "/repo", telemetryEnabled: false });
+
+    expect(result.exitCode).toBe(1);
+    expect(await decode(result)).toBe("Cannot answer: daemon response capacity exceeded.\n");
   });
 
   it("reuses an injected request scope factory across executions", async () => {
@@ -151,6 +279,38 @@ describe("CliProgramExecutor", () => {
   });
 });
 
+class GatedWritable extends Writable {
+  private readonly callbacks: Array<(error?: Error | null) => void> = [];
+
+  constructor(
+    private readonly writes: string[],
+    private readonly name: string,
+  ) {
+    super({ highWaterMark: 1 });
+  }
+
+  get pendingCount(): number {
+    return this.callbacks.length;
+  }
+
+  release(): void {
+    this.callbacks.shift()?.();
+  }
+
+  fail(error: Error): void {
+    this.destroy(error);
+  }
+
+  override _write(
+    chunk: Buffer,
+    _encoding: BufferEncoding,
+    callback: (error?: Error | null) => void,
+  ): void {
+    this.writes.push(`${this.name}:${chunk.toString()}`);
+    this.callbacks.push(callback);
+  }
+}
+
 class ListingCountingFileSystem extends InMemoryFileSystem {
   readonly directoryReads: string[] = [];
 
@@ -176,6 +336,14 @@ class ListingCountingFileSystem extends InMemoryFileSystem {
   }
 }
 
-function decode(result: { readonly frames: readonly { readonly bytesBase64: string }[] }): string {
-  return result.frames.map((frame) => Buffer.from(frame.bytesBase64, "base64").toString()).join("");
+async function records(result: commandExecutionResult.CommandExecutionResult) {
+  const captured = [];
+  for await (const record of result.output.records()) captured.push(record);
+  return captured;
+}
+
+async function decode(result: commandExecutionResult.CommandExecutionResult): Promise<string> {
+  return Buffer.concat(
+    (await records(result)).map((record) => Buffer.from(record.bytes)),
+  ).toString();
 }

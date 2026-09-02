@@ -4,6 +4,12 @@ import type { TelemetryIdentityProvider } from "./telemetry/telemetry-identity.j
 import type { CommandExecutionMode } from "./command-execution-result.js";
 import type { WorkspaceRequestScopeFactory } from "./workspace-request-scope.js";
 
+export interface CommandPhaseDurations {
+  readonly freshnessMs: number;
+  readonly navigationMs: number;
+  readonly renderMs: number;
+}
+
 export interface ProgramDependencies {
   readonly stateDirectory: string;
   fs: FileSystem;
@@ -16,5 +22,6 @@ export interface ProgramDependencies {
   identity: TelemetryIdentityProvider;
   symnavVersion: string;
   backendRefreshed?: (summary: BackendRefreshSummary) => void;
+  commandPhasesObserved?: (durations: CommandPhaseDurations) => void;
   scopeFactory?: WorkspaceRequestScopeFactory;
 }

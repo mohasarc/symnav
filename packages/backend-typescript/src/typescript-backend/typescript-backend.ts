@@ -79,7 +79,7 @@ export class TypeScriptBackend implements LanguageBackend {
 
   async refresh(request: BackendRefreshRequest): Promise<BackendRefreshSummary> {
     this.sourceCache?.refresh(request.snapshot);
-    await this.projectGraph?.refresh(request.snapshot);
+    if (request.coverage === "workspace") await this.projectGraph?.refresh(request.snapshot);
     const summary = this.state.refresh(request.snapshot.files, request.coverage);
     this.semanticQueries.beginTurn(request.snapshot);
     return summary;

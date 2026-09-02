@@ -119,6 +119,44 @@ class MutableCatalogFileSystem implements FileSystem {
   }
 }
 
+class GatedMetadataFileSystem extends MutableCatalogFileSystem {
+  readonly heldMetadataReads: string[] = [];
+  private readonly firstHeldMetadataRead: Promise<void>;
+  private releaseFirstHeldMetadataRead!: () => void;
+  private readonly metadataRelease: Promise<void>;
+  private releaseMetadata!: () => void;
+  private holdingMetadata = false;
+
+  constructor(files: Record<string, string>) {
+    super(files);
+    this.firstHeldMetadataRead = new Promise((resolve) => {
+      this.releaseFirstHeldMetadataRead = resolve;
+    });
+    this.metadataRelease = new Promise((resolve) => {
+      this.releaseMetadata = resolve;
+    });
+  }
+
+  holdMetadata(): Promise<void> {
+    this.holdingMetadata = true;
+    return this.firstHeldMetadataRead;
+  }
+
+  releaseHeldMetadata(): void {
+    this.releaseMetadata();
+  }
+
+  override async metadata(absPath: string): Promise<FileMetadata> {
+    if (!this.holdingMetadata || !absPath.startsWith("/repo/src/")) {
+      return super.metadata(absPath);
+    }
+    this.heldMetadataReads.push(absPath);
+    this.releaseFirstHeldMetadataRead();
+    await this.metadataRelease;
+    return this.metadataSync(absPath);
+  }
+}
+
 function paths(workspace: Awaited<ReturnType<WorkspaceCatalog["refresh"]>>): Promise<string[]> {
   return workspace.snapshot().then((snapshot) => snapshot.files.map((file) => file.relative));
 }
@@ -204,6 +242,25 @@ describe("WorkspaceCatalog", () => {
     fileSystem.resetCounts();
     await catalog.refresh("/repo");
     expect(fileSystem.directoryReads).toEqual(["/repo/src"]);
+  });
+
+  it("checks retained file revisions concurrently within a directory", async () => {
+    const fileSystem = new GatedMetadataFileSystem({
+      "/repo/.git/HEAD": "ref: refs/heads/main\n",
+      "/repo/src/a.ts": "export const a = 1;\n",
+      "/repo/src/b.ts": "export const b = 1;\n",
+    });
+    const catalog = new WorkspaceCatalog(fileSystem);
+    await catalog.refresh("/repo");
+
+    const firstMetadataRead = fileSystem.holdMetadata();
+    const refreshing = catalog.refresh("/repo");
+    await firstMetadataRead;
+    const readsStartedBeforeRelease = [...fileSystem.heldMetadataReads];
+    fileSystem.releaseHeldMetadata();
+    await refreshing;
+
+    expect(readsStartedBeforeRelease).toEqual(["/repo/src/a.ts", "/repo/src/b.ts"]);
   });
 
   it("normalizes drive-qualified start paths before retained lookup and target resolution", async () => {

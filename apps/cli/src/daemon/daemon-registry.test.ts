@@ -49,9 +49,9 @@ describe("daemon registry", () => {
     roots.length = 0;
   });
 
-  it("uses second-generation records with accepted-request transport coordinates", () => {
+  it("uses current records with chunked-result transport coordinates", () => {
     expect(DAEMON_RECORD_SCHEMA_VERSION).toBe(2);
-    expect(DAEMON_PROTOCOL_VERSION).toBe(3);
+    expect(DAEMON_PROTOCOL_VERSION).toBe(4);
   });
 
   it("keys repositories, worktrees, and submodules by exact workspace root", () => {
@@ -571,7 +571,7 @@ describe("daemon registry", () => {
         workspaceRoot: "/alpha",
         state: "starting",
         pid: 302,
-        uptimeMs: 90,
+        startupElapsedMs: 90,
       },
       {
         workspaceRoot: "/beta",
@@ -604,7 +604,6 @@ describe("daemon registry", () => {
         state: "unresponsive",
         pid: 401,
         uptimeMs: expect.any(Number),
-        fileCount: 2,
       },
     ]);
     expect(registry.readStoredInstance(identity, "stale")).toBeDefined();

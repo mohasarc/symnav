@@ -2,16 +2,23 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "nod
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { CliExecutionRequest, CommandExecutionResult } from "../command-execution-result.js";
+import {
+  CommandOutputSnapshot,
+  type CliExecutionRequest,
+  type CommandExecutionResult,
+  type CommandOutputRecord,
+} from "../command-execution-result.js";
 import { createDefaultDependencies } from "../program.js";
 import type {
   DaemonExecutionServerFrame,
   DaemonExecutionStatusResponse,
   DaemonRequest,
   DaemonResponse,
+  DaemonServerMessage,
   DaemonServer,
 } from "./daemon-protocol.js";
 import { DAEMON_PROTOCOL_VERSION, DAEMON_RECORD_SCHEMA_VERSION } from "./daemon-protocol.js";
+import { NodeCompletionSpoolStorage, type CompletionSpoolFile } from "./completion-spool.js";
 import { DaemonRegistry } from "./daemon-registry.js";
 import { DaemonWorkspaceIdentity } from "./daemon-workspace-identity.js";
 import type { LocalDaemonTransport } from "./local-daemon-transport.js";
@@ -19,15 +26,17 @@ import type {
   DaemonNavigationWorker,
   DaemonNavigationWorkerExit,
 } from "./daemon-navigation-worker.js";
+import { NodeDaemonNavigationWorker } from "./daemon-navigation-worker.js";
 import type { DaemonNavigationWorkerResponse } from "./daemon-navigation-worker-protocol.js";
-import { WorkspaceDaemon } from "./workspace-daemon.js";
+import { DaemonResourcePolicy } from "./daemon-resource-monitor.js";
+import { WorkspaceDaemon, type WorkspaceDaemonOptions } from "./workspace-daemon.js";
 
 describe("WorkspaceDaemon requests", () => {
   const harnesses: RequestHarness[] = [];
 
   afterEach(async () => {
-    await Promise.all(harnesses.map((harness) => harness.dispose()));
-    harnesses.length = 0;
+    const harnessesToDispose = harnesses.splice(0);
+    await Promise.all(harnessesToDispose.map((harness) => harness.dispose()));
   });
 
   it("authorizes startup before listening and publishes readiness", async () => {
@@ -41,6 +50,18 @@ describe("WorkspaceDaemon requests", () => {
       processToken: harness.processToken,
       fileCount: 1,
     });
+    expect(harness.logEvents()).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          kind: "startup-completed",
+          workerGeneration: 1,
+          fileCount: 1,
+          discoveryMs: 0,
+          indexingMs: 1,
+          totalMs: 1,
+        }),
+      ]),
+    );
   });
 
   it("binds lifecycle transport while navigation initialization is blocked", async () => {
@@ -54,7 +75,24 @@ describe("WorkspaceDaemon requests", () => {
     await worker.initializationStarted;
 
     expect(harness.transport.isListening).toBe(true);
-    await expect(harness.ping()).resolves.toMatchObject({ kind: "pong", state: "starting" });
+    const startingStatus = await harness.ping();
+    expect(startingStatus).toMatchObject({
+      kind: "pong",
+      state: "starting",
+      activity: {
+        lifecycle: "starting",
+        pid: process.pid,
+        startupElapsedMs: expect.any(Number),
+        queued: 0,
+        workerGeneration: 1,
+        spoolBytes: 0,
+      },
+    });
+    const startingActivity = startingStatus.kind === "pong" ? startingStatus.activity : undefined;
+    if (startingActivity === undefined) {
+      throw new Error("Expected daemon activity snapshot");
+    }
+    expect(() => Object.assign(startingActivity, { queued: 9 })).toThrow();
     expect(harness.registry.read(harness.identity)?.state).toBe("starting");
 
     worker.completeInitialization();
@@ -202,12 +240,14 @@ describe("WorkspaceDaemon requests", () => {
     const harness = await RequestHarness.start(executor);
     harnesses.push(harness);
 
-    await expect(harness.execute("one")).resolves.toEqual({
-      kind: "completed",
+    await expect(harness.execute("one")).resolves.toMatchObject({
+      kind: "result-end",
       instanceId: harness.instanceId,
       processToken: harness.processToken,
       requestId: "one",
-      result: { frames: [], exitCode: 0 },
+      rawBytes: 0,
+      recordCount: 0,
+      sha256: expect.stringMatching(/^[a-f\d]{64}$/),
     });
     expect(executor.requests).toHaveLength(1);
   });
@@ -275,8 +315,16 @@ describe("WorkspaceDaemon requests", () => {
     await Promise.all([first.terminal, duplicate.terminal]);
 
     expect(executor.startedCount).toBe(1);
-    expect(first.frames.map((frame) => frame.kind)).toEqual(["accepted", "completed"]);
-    expect(duplicate.frames.map((frame) => frame.kind)).toEqual(["accepted", "completed"]);
+    expect(first.frames.map((frame) => ("kind" in frame ? frame.kind : "chunk"))).toEqual([
+      "accepted",
+      "result-manifest",
+      "result-end",
+    ]);
+    expect(duplicate.frames.map((frame) => ("kind" in frame ? frame.kind : "chunk"))).toEqual([
+      "accepted",
+      "result-manifest",
+      "result-end",
+    ]);
     expect(corrupted.frames).toEqual([
       expect.objectContaining({ kind: "rejected", retrySafe: false }),
     ]);
@@ -312,6 +360,99 @@ describe("WorkspaceDaemon requests", () => {
     });
   });
 
+  it("keeps serving after a result exceeds daemon completion capacity", async () => {
+    const harness = await RequestHarness.start(new SequencedOutputExecutor(), {
+      completionSpoolLimits: { inlineBytes: 0, maximumResultBytes: 1 },
+    });
+    harnesses.push(harness);
+
+    await expect(harness.execute("too-large")).resolves.toMatchObject({
+      kind: "execution-failed",
+      code: "response-capacity",
+    });
+    await expect(harness.ping()).resolves.toMatchObject({ kind: "pong", state: "ready" });
+    await expect(harness.execute("small")).resolves.toMatchObject({ kind: "result-end" });
+  });
+
+  it("keeps one result chunk in flight while the attachment sink is stalled", async () => {
+    const harness = await RequestHarness.start(new MultipleRecordExecutor());
+    harnesses.push(harness);
+    const stalled = harness.transport.stallNextResultChunk();
+
+    const connection = await harness.admit("stalled-result");
+    await stalled.started;
+
+    expect(stalled.maximumInFlight()).toBe(1);
+    expect(connection.frames.some((frame) => "kind" in frame && frame.kind === "result-end")).toBe(
+      false,
+    );
+    stalled.release();
+    await expect(connection.terminal).resolves.toMatchObject({ kind: "result-end" });
+    expect(connection.frames.filter((frame) => !("kind" in frame))).toHaveLength(3);
+  });
+
+  it("fails a completion cleanly after spool sync failure and keeps serving", async () => {
+    const harness = await RequestHarness.start(new MultipleRecordExecutor(), {
+      completionSpoolLimits: { inlineBytes: 0, maximumAggregateBytes: 11 },
+      completionSpoolStorage: new RequestFailingCompletionStorage("sync"),
+    });
+    harnesses.push(harness);
+
+    await expect(harness.execute("sync-failure")).resolves.toMatchObject({
+      kind: "execution-failed",
+      code: "internal",
+    });
+    expect((await harness.status("sync-failure")).status).toEqual({
+      state: "failed",
+      code: "internal",
+    });
+    await expect(harness.ping()).resolves.toMatchObject({ kind: "pong", state: "ready" });
+    await expect(harness.execute("after-sync-failure")).resolves.toMatchObject({
+      kind: "result-end",
+    });
+  });
+
+  it("maps completion read failure to one controlled result and keeps serving", async () => {
+    const harness = await RequestHarness.start(new MultipleRecordExecutor(), {
+      completionSpoolLimits: { inlineBytes: 0, maximumAggregateBytes: 11 },
+      completionSpoolStorage: new RequestFailingCompletionStorage("read"),
+    });
+    harnesses.push(harness);
+
+    await expect(harness.execute("read-failure")).resolves.toMatchObject({
+      kind: "execution-failed",
+      code: "internal",
+    });
+    expect((await harness.status("read-failure")).status).toEqual({
+      state: "failed",
+      code: "internal",
+    });
+    await expect(harness.ping()).resolves.toMatchObject({ kind: "pong", state: "ready" });
+    await expect(harness.execute("after-read-failure")).resolves.toMatchObject({
+      kind: "result-end",
+    });
+  });
+
+  it("acknowledges logical cleanup when physical unlink fails and keeps serving", async () => {
+    const harness = await RequestHarness.start(new MultipleRecordExecutor(), {
+      completionSpoolLimits: { inlineBytes: 0, maximumAggregateBytes: 11 },
+      completionSpoolStorage: new RequestFailingCompletionStorage("unlink"),
+    });
+    harnesses.push(harness);
+    const completed = await harness.execute("unlink-failure");
+    if (completed.kind !== "result-end") throw new Error("Expected completed result");
+
+    await expect(
+      harness.acknowledge("unlink-failure", completed.transferId),
+    ).resolves.toMatchObject({
+      kind: "result-acknowledged",
+    });
+    await expect(harness.ping()).resolves.toMatchObject({ kind: "pong", state: "ready" });
+    await expect(harness.execute("after-unlink-failure")).resolves.toMatchObject({
+      kind: "result-end",
+    });
+  });
+
   it("reports active command and queued count while worker execution is blocked", async () => {
     const executor = new SerializedExecutor();
     const harness = await RequestHarness.start(executor);
@@ -326,6 +467,15 @@ describe("WorkspaceDaemon requests", () => {
       state: "busy",
       currentCommand: "refs",
       queued: 1,
+      activity: {
+        lifecycle: "busy",
+        current: {
+          requestId: "first",
+          command: "refs",
+          elapsedMs: expect.any(Number),
+        },
+        queued: 1,
+      },
     });
     expect(Date.now() - pingStartedAt).toBeLessThan(1_000);
 
@@ -344,6 +494,32 @@ describe("WorkspaceDaemon requests", () => {
       kind: "stopped",
       instanceId: harness.instanceId,
     });
+    await harness.exited;
+    expect(harness.logEvents()).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ kind: "shutdown", reason: "graceful", force: false }),
+      ]),
+    );
+  });
+
+  it("reports draining from the main thread while admitted work completes", async () => {
+    const executor = new SerializedExecutor();
+    const harness = await RequestHarness.start(executor);
+    harnesses.push(harness);
+    const execution = harness.execute("draining", ["graph", "input"]);
+    await executor.started(1);
+
+    const stopping = harness.stop();
+    const draining = await harness.ping();
+    expect(draining).toMatchObject({
+      kind: "pong",
+      activity: { lifecycle: "draining" },
+    });
+    expect(draining.kind === "pong" ? draining.activity?.current : undefined).toBeUndefined();
+
+    executor.complete(0);
+    await execution;
+    await stopping;
   });
 
   it("force-terminates blocked worker execution with one controlled result", async () => {
@@ -390,7 +566,385 @@ describe("WorkspaceDaemon requests", () => {
 
     await harness.execute("refresh", ["overview", "input.ts"]);
 
-    expect(harness.logEvents().filter((event) => event.kind === "freshness")).toHaveLength(2);
+    await waitUntil(() => harness.logEvents().some((event) => event.kind === "worker-completed"));
+    expect(
+      harness
+        .logEvents()
+        .filter((event) => event.kind === "freshness" || event.kind === "worker-completed"),
+    ).toHaveLength(2);
+  });
+
+  it("records ordered execution and delivery terminals for one request", async () => {
+    const harness = await RequestHarness.start(new ImmediateExecutor());
+    harnesses.push(harness);
+
+    await harness.execute("observed", ["refs", "private-symbol"]);
+    await waitUntil(() => harness.logEvents().some((event) => event.kind === "delivery-terminal"));
+
+    const operationDiagnostics = harness
+      .logEvents()
+      .filter((event) => typeof event.requestId === "string");
+    const operationEvents = operationDiagnostics.map((event) => event.kind);
+    expect(operationEvents).toEqual([
+      "request-accepted",
+      "turn-started",
+      "worker-completed",
+      "response-spooled",
+      "execution-terminal",
+      "delivery-terminal",
+    ]);
+    const requestCorrelations = [...new Set(operationDiagnostics.map((event) => event.requestId))];
+    expect(requestCorrelations).toHaveLength(1);
+    expect(requestCorrelations[0]).toMatch(/^[a-f\d]{64}$/);
+    expect(harness.logEvents()).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          kind: "execution-terminal",
+          requestId: expect.stringMatching(/^[a-f\d]{64}$/),
+          outcome: "completed",
+          serviceMs: expect.any(Number),
+          processRssBytes: expect.any(Number),
+        }),
+        expect.objectContaining({
+          kind: "delivery-terminal",
+          requestId: expect.stringMatching(/^[a-f\d]{64}$/),
+          outcome: "delivered",
+          deliveryMs: expect.any(Number),
+        }),
+      ]),
+    );
+  });
+
+  it("reports retained spool bytes until completion acknowledgement", async () => {
+    const harness = await RequestHarness.start(new MultipleRecordExecutor());
+    harnesses.push(harness);
+
+    const completed = await harness.execute("retained-spool");
+    if (completed.kind !== "result-end") throw new Error("Expected completed result");
+    await waitUntil(async () => {
+      const pong = await harness.ping();
+      return pong.kind === "pong" && (pong.activity?.spoolBytes ?? 0) > 0;
+    });
+    await expect(
+      harness.acknowledge("retained-spool", completed.transferId),
+    ).resolves.toMatchObject({ kind: "result-acknowledged" });
+  });
+
+  it("releases successful request traces after acknowledgement under sustained churn", async () => {
+    const harness = await RequestHarness.start(new ImmediateExecutor());
+    harnesses.push(harness);
+
+    for (let index = 0; index < 100; index += 1) {
+      const requestId = `completed-${index}`;
+      const completed = await harness.execute(requestId);
+      if (completed.kind !== "result-end") throw new Error("Expected completed result");
+      await harness.acknowledge(requestId, completed.transferId);
+    }
+
+    expect(harness.retainedOperationTraceCount()).toBe(0);
+  });
+
+  it("releases non-replayable failed request traces after delivery", async () => {
+    const harness = await RequestHarness.start(new RejectingExecutor());
+    harnesses.push(harness);
+
+    await expect(harness.execute("failed-trace")).resolves.toMatchObject({
+      kind: "execution-failed",
+      code: "internal",
+    });
+
+    expect(harness.retainedOperationTraceCount()).toBe(0);
+    await waitUntil(() => harness.logEvents().some((event) => event.kind === "delivery-terminal"));
+    expect(harness.logEvents().filter((event) => event.kind === "execution-terminal")).toHaveLength(
+      1,
+    );
+    expect(harness.logEvents().filter((event) => event.kind === "delivery-terminal")).toHaveLength(
+      1,
+    );
+  });
+
+  it("retains disconnected request traces only until replay acknowledgement", async () => {
+    const executor = new SerializedExecutor();
+    const harness = await RequestHarness.start(executor);
+    harnesses.push(harness);
+    const disconnected = await harness.admit("reattached-trace", ["overview", "input.ts"]);
+    await executor.started(1);
+    disconnected.disconnect();
+    executor.complete(0);
+    await waitUntil(
+      async () => (await harness.status("reattached-trace")).status.state === "completed",
+    );
+
+    expect(harness.retainedOperationTraceCount()).toBe(1);
+    const reattached = await harness.admit("reattached-trace", ["overview", "input.ts"]);
+    const completed = await reattached.terminal;
+    if (completed.kind !== "result-end") throw new Error("Expected completed result");
+    await harness.acknowledge("reattached-trace", completed.transferId);
+
+    expect(harness.retainedOperationTraceCount()).toBe(0);
+    await waitUntil(() => harness.logEvents().some((event) => event.kind === "delivery-terminal"));
+    const terminalEvents = harness
+      .logEvents()
+      .filter((event) => event.kind === "delivery-terminal");
+    expect(terminalEvents).toHaveLength(1);
+    expect(
+      harness.logEvents().filter((event) => event.kind === "client-disconnected"),
+    ).toHaveLength(1);
+    expect(harness.logEvents().filter((event) => event.kind === "client-reattached")).toHaveLength(
+      1,
+    );
+  });
+
+  it("records result-fetch as reattachment without replaying execution", async () => {
+    const executor = new SerializedExecutor();
+    const harness = await RequestHarness.start(executor);
+    harnesses.push(harness);
+    const disconnected = await harness.admit("fetched-trace", ["overview", "input.ts"]);
+    await executor.started(1);
+    disconnected.disconnect();
+    executor.complete(0);
+    await waitUntil(
+      async () => (await harness.status("fetched-trace")).status.state === "completed",
+    );
+
+    const resumed = await harness.fetch("fetched-trace");
+    const completed = await resumed.terminal;
+    if (completed.kind !== "result-end") throw new Error("Expected completed result");
+    await harness.acknowledge("fetched-trace", completed.transferId);
+
+    expect(executor.requests).toHaveLength(1);
+    await waitUntil(() => harness.logEvents().some((event) => event.kind === "client-reattached"));
+    expect(harness.logEvents().filter((event) => event.kind === "client-reattached")).toHaveLength(
+      1,
+    );
+  });
+
+  it("keeps a delivered trace while a result-fetch caller remains connected", async () => {
+    const executor = new SerializedExecutor();
+    const harness = await RequestHarness.start(executor, { operationTraceRetentionMs: 20 });
+    harnesses.push(harness);
+    const initial = await harness.admit("delivered-refetch", ["overview", "input.ts"]);
+    await executor.started(1);
+    executor.complete(0);
+    const initialCompletion = await initial.terminal;
+    if (initialCompletion.kind !== "result-end") throw new Error("Expected completed result");
+    initial.disconnect();
+    await waitUntil(
+      () =>
+        harness.logEvents().filter((event) => event.kind === "client-disconnected").length === 1,
+    );
+
+    const refetched = await harness.fetch("delivered-refetch");
+    const refetchedCompletion = await refetched.terminal;
+    if (refetchedCompletion.kind !== "result-end") throw new Error("Expected completed result");
+    expect(refetchedCompletion.transferId).toBe(initialCompletion.transferId);
+    await new Promise((resolve) => setTimeout(resolve, 40));
+    expect(harness.retainedOperationTraceCount()).toBe(1);
+    expect(
+      harness.logEvents().filter((event) => event.kind === "operation-trace-expired"),
+    ).toHaveLength(0);
+
+    refetched.disconnect();
+    await waitUntil(
+      () =>
+        harness.retainedOperationTraceCount() === 0 &&
+        harness.logEvents().filter((event) => event.kind === "operation-trace-expired").length ===
+          1,
+    );
+    const resumed = await harness.fetch("delivered-refetch");
+    const resumedCompletion = await resumed.terminal;
+    if (resumedCompletion.kind !== "result-end") throw new Error("Expected completed result");
+    expect(resumedCompletion.transferId).toBe(initialCompletion.transferId);
+    await harness.acknowledge("delivered-refetch", initialCompletion.transferId);
+
+    expect(executor.requests).toHaveLength(1);
+    expect(harness.logEvents().filter((event) => event.kind === "delivery-terminal")).toHaveLength(
+      1,
+    );
+  });
+
+  it("expires disconnected traces without expiring resumable results", async () => {
+    const executor = new SerializedExecutor();
+    const harness = await RequestHarness.start(executor, { operationTraceRetentionMs: 10 });
+    harnesses.push(harness);
+    const disconnected = await harness.admit("expired-trace", ["overview", "input.ts"]);
+    await executor.started(1);
+    disconnected.disconnect();
+    executor.complete(0);
+    await waitUntil(
+      async () => (await harness.status("expired-trace")).status.state === "completed",
+    );
+    await waitUntil(() => harness.retainedOperationTraceCount() === 0);
+
+    const resumed = await harness.fetch("expired-trace");
+    const completed = await resumed.terminal;
+    if (completed.kind !== "result-end") throw new Error("Expected completed result");
+    const retried = await harness.fetch("expired-trace");
+    const retriedCompletion = await retried.terminal;
+    if (retriedCompletion.kind !== "result-end") throw new Error("Expected completed result");
+    expect(retriedCompletion.transferId).toBe(completed.transferId);
+    await harness.acknowledge("expired-trace", completed.transferId);
+
+    expect(executor.requests).toHaveLength(1);
+    await waitUntil(
+      () =>
+        harness.logEvents().filter((event) => event.kind === "client-reattached").length === 1 &&
+        harness.logEvents().filter((event) => event.kind === "delivery-terminal").length === 1,
+    );
+    expect(harness.logEvents()).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ kind: "operation-trace-expired" }),
+        expect.objectContaining({ kind: "client-reattached" }),
+        expect.objectContaining({ kind: "delivery-terminal", outcome: "delivered" }),
+      ]),
+    );
+    expect(harness.logEvents().filter((event) => event.kind === "delivery-terminal")).toHaveLength(
+      1,
+    );
+    expect(harness.logEvents().filter((event) => event.kind === "client-reattached")).toHaveLength(
+      1,
+    );
+  });
+
+  it("bounds retained traces during sustained abandoned disconnect churn", async () => {
+    const executor = new SerializedExecutor();
+    const harness = await RequestHarness.start(executor, {
+      operationTraceRetentionMs: 10_000,
+      maximumRetainedOperationTraces: 3,
+    });
+    harnesses.push(harness);
+
+    for (let index = 0; index < 10; index += 1) {
+      const requestId = `abandoned-${index}`;
+      const disconnected = await harness.admit(requestId, ["overview", "input.ts"]);
+      await executor.started(index + 1);
+      disconnected.disconnect();
+      executor.complete(index);
+      await waitUntil(async () => (await harness.status(requestId)).status.state === "completed");
+      await waitUntil(
+        () =>
+          harness.logEvents().filter((event) => event.kind === "client-disconnected").length ===
+          index + 1,
+      );
+    }
+
+    expect(harness.retainedOperationTraceCount()).toBe(3);
+    await waitUntil(
+      () =>
+        harness.logEvents().filter((event) => event.kind === "operation-trace-expired").length ===
+        7,
+    );
+    expect(
+      harness.logEvents().filter((event) => event.kind === "operation-trace-expired"),
+    ).toHaveLength(7);
+  });
+
+  it("severs evicted and expired traces while blocked requests remain resumable", async () => {
+    const executor = new SerializedExecutor();
+    const harness = await RequestHarness.start(executor, {
+      operationTraceRetentionMs: 20,
+      maximumRetainedOperationTraces: 1,
+    });
+    harnesses.push(harness);
+    const active = await harness.admit("evicted-active", ["overview", "active.ts"]);
+    await executor.started(1);
+    const queued = await harness.admit("expired-queued", ["overview", "queued.ts"]);
+    active.disconnect();
+    queued.disconnect();
+
+    await waitUntil(
+      () =>
+        harness.retainedOperationTraceCount() === 0 &&
+        harness.logEvents().filter((event) => event.kind === "operation-trace-expired").length ===
+          2,
+    );
+    executor.complete(0);
+    await executor.started(2);
+    executor.complete(1);
+    await waitUntil(
+      async () => (await harness.status("expired-queued")).status.state === "completed",
+    );
+
+    expect(
+      harness
+        .logEvents()
+        .filter((event) =>
+          ["worker-completed", "response-spooled", "execution-terminal"].includes(
+            String(event.kind),
+          ),
+        ),
+    ).toHaveLength(0);
+
+    for (const requestId of ["evicted-active", "expired-queued"]) {
+      const resumed = await harness.fetch(requestId);
+      const completed = await resumed.terminal;
+      if (completed.kind !== "result-end") throw new Error("Expected completed result");
+      await harness.acknowledge(requestId, completed.transferId);
+    }
+    await waitUntil(
+      () => harness.logEvents().filter((event) => event.kind === "delivery-terminal").length === 2,
+    );
+    expect(executor.requests).toHaveLength(2);
+    expect(harness.logEvents().filter((event) => event.kind === "client-reattached")).toHaveLength(
+      2,
+    );
+  });
+
+  it("expires a blocked trace after its reattached caller disconnects", async () => {
+    const executor = new SerializedExecutor();
+    const harness = await RequestHarness.start(executor, {
+      operationTraceRetentionMs: 20,
+    });
+    harnesses.push(harness);
+    const initial = await harness.admit("reattached-active", ["overview", "input.ts"]);
+    await executor.started(1);
+    initial.disconnect();
+
+    const firstReattached = await harness.admit("reattached-active", ["overview", "input.ts"]);
+    const secondReattached = await harness.admit("reattached-active", ["overview", "input.ts"]);
+    firstReattached.disconnect();
+    await new Promise((resolve) => setTimeout(resolve, 40));
+    expect(harness.retainedOperationTraceCount()).toBe(1);
+    secondReattached.disconnect();
+
+    await waitUntil(
+      () =>
+        harness.retainedOperationTraceCount() === 0 &&
+        harness.logEvents().filter((event) => event.kind === "operation-trace-expired").length ===
+          1,
+    );
+    executor.complete(0);
+    await waitUntil(
+      async () => (await harness.status("reattached-active")).status.state === "completed",
+    );
+
+    const resumed = await harness.fetch("reattached-active");
+    const completed = await resumed.terminal;
+    if (completed.kind !== "result-end") throw new Error("Expected completed result");
+    await harness.acknowledge("reattached-active", completed.transferId);
+
+    expect(executor.requests).toHaveLength(1);
+    expect(
+      harness.logEvents().filter((event) => event.kind === "client-disconnected"),
+    ).toHaveLength(2);
+    expect(harness.logEvents().filter((event) => event.kind === "client-reattached")).toHaveLength(
+      1,
+    );
+  });
+
+  it("releases retained request traces during shutdown", async () => {
+    const harness = await RequestHarness.start(new ImmediateExecutor());
+    harnesses.push(harness);
+    await harness.execute("shutdown-trace");
+    expect(harness.retainedOperationTraceCount()).toBe(1);
+
+    await harness.kill();
+    await harness.exited;
+
+    expect(harness.retainedOperationTraceCount()).toBe(0);
+    expect(harness.logEvents().filter((event) => event.kind === "delivery-terminal")).toHaveLength(
+      1,
+    );
   });
 
   it("logs startup failures before rethrowing them", async () => {
@@ -403,7 +957,12 @@ describe("WorkspaceDaemon requests", () => {
 
     expect(harness.logEvents()).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ kind: "failure", operation: "start", message: "listen failed" }),
+        expect.objectContaining({
+          kind: "failure",
+          operation: "start",
+          failureCode: "operation-failed",
+          errorName: "Error",
+        }),
       ]),
     );
   });
@@ -433,7 +992,8 @@ describe("WorkspaceDaemon requests", () => {
         expect.objectContaining({
           kind: "failure",
           operation: "transport-close",
-          message: "transport cleanup failed",
+          failureCode: "operation-failed",
+          errorName: "Error",
         }),
       ]),
     );
@@ -456,11 +1016,411 @@ describe("WorkspaceDaemon requests", () => {
         expect.objectContaining({
           kind: "failure",
           operation: "worker-exit",
-          message: "error (WorkerError)",
+          failureCode: "worker-exit",
+          errorName: "UnknownError",
         }),
       ]),
     );
   });
+
+  it("observes an unexpected exit from a non-initial worker generation", async () => {
+    const worker = new ExecutorNavigationWorker(new ImmediateExecutor(), 7);
+    const harness = await RequestHarness.start(undefined, { navigationWorker: worker });
+    harnesses.push(harness);
+
+    worker.fail({ generation: worker.generation, cause: "error", errorName: "WorkerError" });
+
+    await expect(harness.exited).resolves.toBe(0);
+    expect(harness.transport.isListening).toBe(false);
+  });
+
+  it("fails active work once and preserves queued FIFO across worker replacement", async () => {
+    const activeExecutor = new SerializedExecutor();
+    const replacementExecutor = new RecordingExecutor();
+    const workers: ExecutorNavigationWorker[] = [];
+    const harness = await RequestHarness.start(undefined, {
+      navigationWorkerFactory: (generation) => {
+        const worker = new ExecutorNavigationWorker(
+          generation === 1 ? activeExecutor : replacementExecutor,
+          generation,
+        );
+        workers.push(worker);
+        return worker;
+      },
+    });
+    harnesses.push(harness);
+    const active = harness.execute("active", ["refs", "input"]);
+    await activeExecutor.started(1);
+    const queued = harness.execute("queued", ["overview", "input.ts"]);
+    await expect(harness.ping()).resolves.toMatchObject({ state: "busy", queued: 1 });
+
+    workers[0]?.fail({ generation: 1, cause: "out-of-memory", errorName: "WorkerOom" });
+
+    await expect(active).resolves.toMatchObject({
+      kind: "execution-failed",
+      requestId: "active",
+      code: "controlled-resource",
+    });
+    await expect(queued).resolves.toMatchObject({ kind: "result-end", requestId: "queued" });
+    expect(activeExecutor.requests).toHaveLength(1);
+    expect(replacementExecutor.requests).toHaveLength(1);
+    expect(workers.map((worker) => worker.generation)).toEqual([1, 2]);
+    await waitUntil(() => harness.logEvents().some((event) => event.kind === "worker-replaced"));
+    expect(harness.logEvents()).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          kind: "worker-replaced",
+          cause: "out-of-memory",
+          previousWorkerGeneration: 1,
+          workerGeneration: 2,
+          fileCount: 1,
+        }),
+      ]),
+    );
+    await expect(harness.ping()).resolves.toMatchObject({ state: "ready" });
+    expect(harness.registry.read(harness.identity)).toMatchObject({
+      pid: process.pid,
+      instanceId: harness.instanceId,
+      processToken: harness.processToken,
+    });
+
+    workers[0]?.fail({ generation: 1, cause: "error", errorName: "LateOldGeneration" });
+    await expect(harness.ping()).resolves.toMatchObject({ state: "ready" });
+    expect(workers).toHaveLength(2);
+  });
+
+  it("reports worker replacement recovery from the main thread", async () => {
+    const initial = new ExecutorNavigationWorker(new ImmediateExecutor(), 1);
+    const replacement = new DeferredInitializationWorker(2);
+    const harness = await RequestHarness.start(undefined, {
+      navigationWorkerFactory: (generation) => (generation === 1 ? initial : replacement),
+    });
+    harnesses.push(harness);
+
+    initial.fail({ generation: 1, cause: "out-of-memory", errorName: "WorkerOom" });
+    await replacement.initializationStarted;
+
+    await expect(harness.ping()).resolves.toMatchObject({
+      kind: "pong",
+      activity: {
+        lifecycle: "recovering",
+        recoveryDetail: "worker-replacement",
+        workerGeneration: 2,
+      },
+    });
+
+    replacement.completeInitialization();
+    await waitUntil(async () => {
+      const pong = await harness.ping();
+      return pong.kind === "pong" && pong.state === "ready";
+    });
+  });
+
+  it("completes scheduled shedding before the next queued worker turn", async () => {
+    const policy = DaemonResourcePolicy.fromSystemMemory(1024 * 1024 * 1024);
+    let residentMemoryBytes = 0;
+    const executor = new SerializedExecutor();
+    const worker = new ReleaseGatedNavigationWorker(executor);
+    const harness = await RequestHarness.start(undefined, {
+      navigationWorker: worker,
+      resourcePolicy: policy,
+      resourceCheckIntervalMs: 5,
+      residentMemoryBytes: () => residentMemoryBytes,
+    });
+    harnesses.push(harness);
+    const first = harness.execute("first", ["refs", "input"]);
+    await executor.started(1);
+    const second = harness.execute("second", ["overview", "input.ts"]);
+    await waitUntil(async () => {
+      const response = await harness.ping();
+      return response.kind === "pong" && response.queued === 1;
+    });
+
+    residentMemoryBytes = policy.record.softProcessRssBytes + 1;
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(worker.releaseCount).toBe(0);
+    executor.complete(0);
+    await worker.releaseStarted;
+    expect(executor.startedCount).toBe(1);
+    await expect(harness.ping()).resolves.toMatchObject({
+      kind: "pong",
+      activity: {
+        lifecycle: "recovering",
+        recoveryDetail: "resource-pressure",
+        queued: 1,
+      },
+    });
+
+    worker.allowRelease();
+    await executor.started(2);
+    executor.complete(1);
+    await expect(Promise.all([first, second])).resolves.toEqual([
+      expect.objectContaining({ kind: "result-end", requestId: "first" }),
+      expect.objectContaining({ kind: "result-end", requestId: "second" }),
+    ]);
+    expect(worker.releaseCount).toBe(1);
+    await waitUntil(() => harness.logEvents().some((event) => event.kind === "resources-released"));
+    expect(harness.logEvents()).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          kind: "resources-released",
+          workerGeneration: 1,
+          workerHeapUsedBytes: 1,
+          workerHeapLimitBytes: 2,
+        }),
+      ]),
+    );
+  });
+
+  it("replaces a failed shed before releasing queued work", async () => {
+    const policy = DaemonResourcePolicy.fromSystemMemory(1024 * 1024 * 1024);
+    let residentMemoryBytes = 0;
+    const firstExecutor = new SerializedExecutor();
+    const replacementExecutor = new RecordingExecutor();
+    const workers: ExecutorNavigationWorker[] = [];
+    const harness = await RequestHarness.start(undefined, {
+      navigationWorkerFactory: (generation) => {
+        const worker =
+          generation === 1
+            ? new ReleaseFailingNavigationWorker(firstExecutor, generation)
+            : new ExecutorNavigationWorker(replacementExecutor, generation);
+        workers.push(worker);
+        return worker;
+      },
+      resourcePolicy: policy,
+      resourceCheckIntervalMs: 5,
+      residentMemoryBytes: () => residentMemoryBytes,
+    });
+    harnesses.push(harness);
+    const first = harness.execute("first", ["refs", "input"]);
+    await firstExecutor.started(1);
+    const second = harness.execute("second", ["overview", "input.ts"]);
+    await waitUntil(async () => {
+      const response = await harness.ping();
+      return response.kind === "pong" && response.queued === 1;
+    });
+
+    residentMemoryBytes = policy.record.softProcessRssBytes + 1;
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    firstExecutor.complete(0);
+    await waitUntil(() => workers.length === 2);
+
+    await expect(first).resolves.toMatchObject({ kind: "result-end", requestId: "first" });
+    await expect(second).resolves.toMatchObject({ kind: "result-end", requestId: "second" });
+    expect(firstExecutor.requests).toHaveLength(1);
+    expect(replacementExecutor.requests).toHaveLength(1);
+    expect(workers.map((worker) => worker.generation)).toEqual([1, 2]);
+    await expect(harness.ping()).resolves.toMatchObject({ state: "ready" });
+  });
+
+  it("sheds pressure first observed at turn completion before the next turn", async () => {
+    const policy = DaemonResourcePolicy.fromSystemMemory(1024 * 1024 * 1024);
+    let residentMemoryBytes = 0;
+    const executor = new SerializedExecutor();
+    const worker = new ReleaseGatedNavigationWorker(executor);
+    const harness = await RequestHarness.start(undefined, {
+      navigationWorker: worker,
+      resourcePolicy: policy,
+      resourceCheckIntervalMs: 60_000,
+      residentMemoryBytes: () => residentMemoryBytes,
+    });
+    harnesses.push(harness);
+    const first = harness.execute("turn-complete-first", ["refs", "input"]);
+    await executor.started(1);
+    const second = harness.execute("queued-after-pressure", ["overview", "input.ts"]);
+    await waitUntil(async () => {
+      const response = await harness.ping();
+      return response.kind === "pong" && response.queued === 1;
+    });
+
+    residentMemoryBytes = policy.record.softProcessRssBytes + 1;
+    executor.complete(0);
+    await worker.releaseStarted;
+    expect(worker.releaseCount).toBe(1);
+    expect(executor.startedCount).toBe(1);
+
+    worker.allowRelease();
+    await executor.started(2);
+    executor.complete(1);
+    await expect(Promise.all([first, second])).resolves.toEqual([
+      expect.objectContaining({ kind: "result-end", requestId: "turn-complete-first" }),
+      expect.objectContaining({ kind: "result-end", requestId: "queued-after-pressure" }),
+    ]);
+    await expect(harness.stop()).resolves.toMatchObject({ kind: "stopped" });
+    await expect(harness.exited).resolves.toBe(0);
+  });
+
+  it("replaces a failed turn-completion shed before the queued turn", async () => {
+    const policy = DaemonResourcePolicy.fromSystemMemory(1024 * 1024 * 1024);
+    let residentMemoryBytes = 0;
+    const firstExecutor = new SerializedExecutor();
+    const replacementExecutor = new RecordingExecutor();
+    const workers: ExecutorNavigationWorker[] = [];
+    const harness = await RequestHarness.start(undefined, {
+      navigationWorkerFactory: (generation) => {
+        const worker =
+          generation === 1
+            ? new ReleaseFailingNavigationWorker(firstExecutor, generation)
+            : new ExecutorNavigationWorker(replacementExecutor, generation);
+        workers.push(worker);
+        return worker;
+      },
+      resourcePolicy: policy,
+      resourceCheckIntervalMs: 60_000,
+      residentMemoryBytes: () => residentMemoryBytes,
+    });
+    harnesses.push(harness);
+    const first = harness.execute("failed-turn-complete-shed", ["refs", "input"]);
+    await firstExecutor.started(1);
+    const second = harness.execute("queued-after-replacement", ["overview", "input.ts"]);
+
+    residentMemoryBytes = policy.record.softProcessRssBytes + 1;
+    firstExecutor.complete(0);
+    await waitUntil(() => workers.length === 2);
+
+    await expect(first).resolves.toMatchObject({
+      kind: "result-end",
+      requestId: "failed-turn-complete-shed",
+    });
+    await expect(second).resolves.toMatchObject({
+      kind: "result-end",
+      requestId: "queued-after-replacement",
+    });
+    expect(firstExecutor.requests).toHaveLength(1);
+    expect(replacementExecutor.requests).toHaveLength(1);
+    expect(workers.map((worker) => worker.generation)).toEqual([1, 2]);
+    await expect(harness.stop()).resolves.toMatchObject({ kind: "stopped" });
+    await expect(harness.exited).resolves.toBe(0);
+  });
+
+  it("recovers one real worker old-generation exhaustion during warm-up", async () => {
+    const generations: number[] = [];
+    const { daemon, harness, lease } = RequestHarness.create(undefined, {
+      residentMemoryBytes: () => 0,
+      navigationWorkerFactory: (generation) => {
+        generations.push(generation);
+        return new NodeDaemonNavigationWorker({
+          generation,
+          configuration: { stateDirectory: "/state" },
+          entryUrl: new URL(
+            "../../test/helpers/daemon-navigation-worker-fixture.mjs",
+            import.meta.url,
+          ),
+          workerData: { mode: generation === 1 ? "initialize-heap-oom" : "normal" },
+          resourceLimits: { maxOldGenerationSizeMb: 24 },
+        });
+      },
+    });
+    harnesses.push(harness);
+
+    await daemon.start();
+    lease.release();
+
+    expect(generations).toEqual([1, 2]);
+    await expect(harness.ping()).resolves.toMatchObject({ state: "ready" });
+    await expect(harness.execute("after-warmup-pressure")).resolves.toMatchObject({
+      kind: "result-end",
+    });
+  }, 10_000);
+
+  it("sheds soft pressure before warm-up publishes readiness", async () => {
+    const policy = DaemonResourcePolicy.fromSystemMemory(1024 * 1024 * 1024);
+    const worker = new ReleaseGatedNavigationWorker(new ImmediateExecutor());
+    const { daemon, harness, lease } = RequestHarness.create(undefined, {
+      navigationWorker: worker,
+      resourcePolicy: policy,
+      residentMemoryBytes: () => policy.record.softProcessRssBytes + 1,
+    });
+    harnesses.push(harness);
+    let ready = false;
+    const starting = daemon.start().then(() => {
+      ready = true;
+    });
+
+    await worker.releaseStarted;
+    expect(ready).toBe(false);
+    expect(harness.registry.read(harness.identity)?.state).toBe("starting");
+    worker.allowRelease();
+    await starting;
+    lease.release();
+
+    await expect(harness.ping()).resolves.toMatchObject({ state: "ready" });
+  });
+
+  it("recovers a real old-generation exhaustion without replaying active work", async () => {
+    const harness = await RequestHarness.start(undefined, {
+      residentMemoryBytes: () => 0,
+      navigationWorkerFactory: (generation) =>
+        new NodeDaemonNavigationWorker({
+          generation,
+          configuration: { stateDirectory: "/state" },
+          entryUrl: new URL(
+            "../../test/helpers/daemon-navigation-worker-fixture.mjs",
+            import.meta.url,
+          ),
+          workerData: { mode: generation === 1 ? "heap-oom" : "normal" },
+          resourceLimits: { maxOldGenerationSizeMb: 24 },
+        }),
+    });
+    harnesses.push(harness);
+
+    const active = harness.execute("heap-active", ["refs", "input"]);
+    const queued = harness.execute("heap-queued", ["overview", "input.ts"]);
+
+    await expect(active).resolves.toMatchObject({
+      kind: "execution-failed",
+      requestId: "heap-active",
+      code: "controlled-resource",
+    });
+    await expect(queued).resolves.toMatchObject({
+      kind: "result-end",
+      requestId: "heap-queued",
+    });
+    await expect(harness.ping()).resolves.toMatchObject({ state: "ready" });
+    expect(harness.registry.read(harness.identity)).toMatchObject({ pid: process.pid });
+  }, 10_000);
+
+  it("recovers real external RSS pressure while lifecycle control stays responsive", async () => {
+    const policy = DaemonResourcePolicy.fromSystemMemory(512 * 1024 * 1024);
+    const residentMemoryBaselineBytes = process.memoryUsage().rss;
+    const harness = await RequestHarness.start(undefined, {
+      resourcePolicy: policy,
+      resourceCheckIntervalMs: 25,
+      residentMemoryBytes: () =>
+        policy.record.resumeProcessRssBytes -
+        1 +
+        Math.max(0, process.memoryUsage().rss - residentMemoryBaselineBytes),
+      navigationWorkerFactory: (generation) =>
+        new NodeDaemonNavigationWorker({
+          generation,
+          configuration: { stateDirectory: "/state" },
+          entryUrl: new URL(
+            "../../test/helpers/daemon-navigation-worker-fixture.mjs",
+            import.meta.url,
+          ),
+          workerData: { mode: generation === 1 ? "external-pressure" : "normal" },
+          resourceLimits: { maxOldGenerationSizeMb: 64 },
+        }),
+    });
+    harnesses.push(harness);
+
+    const active = harness.execute("rss-active", ["refs", "input"]);
+    const queued = harness.execute("rss-queued", ["overview", "input.ts"]);
+    await waitUntil(async () => {
+      const response = await harness.ping();
+      return response.kind === "pong" && response.state === "busy";
+    });
+    await expect(harness.ping()).resolves.toMatchObject({ state: "busy" });
+
+    await expect(active).resolves.toMatchObject({
+      kind: "execution-failed",
+      requestId: "rss-active",
+      code: "controlled-resource",
+    });
+    await expect(queued).resolves.toMatchObject({ kind: "result-end", requestId: "rss-queued" });
+    await expect(harness.ping()).resolves.toMatchObject({ state: "ready" });
+    expect(harness.registry.read(harness.identity)).toMatchObject({ pid: process.pid });
+  }, 10_000);
 });
 
 class RequestHarness {
@@ -472,6 +1432,7 @@ class RequestHarness {
   readonly instanceId = "request-instance";
   readonly processToken = "request-token";
   readonly exited: Promise<number>;
+  private daemon: WorkspaceDaemon | undefined;
   private resolveExit!: (code: number) => void;
 
   private constructor() {
@@ -528,6 +1489,11 @@ class RequestHarness {
       startedAt: Date.now(),
       memoryCapBytes: 1024,
     });
+    const navigationWorker =
+      options.navigationWorker ??
+      (options.navigationWorkerFactory === undefined
+        ? new ExecutorNavigationWorker(executor ?? new ImmediateExecutor())
+        : undefined);
     const daemon = new WorkspaceDaemon({
       identity: harness.identity,
       instanceId: harness.instanceId,
@@ -537,15 +1503,36 @@ class RequestHarness {
       dependencies: createDefaultDependencies(harness.identity.stateDirectory),
       registry: harness.registry,
       transport: harness.transport as unknown as LocalDaemonTransport,
-      navigationWorker:
-        options.navigationWorker ??
-        new ExecutorNavigationWorker(executor ?? new ImmediateExecutor()),
+      ...(navigationWorker === undefined ? {} : { navigationWorker }),
+      ...(options.navigationWorkerFactory === undefined
+        ? {}
+        : { navigationWorkerFactory: options.navigationWorkerFactory }),
       ...(options.now === undefined ? {} : { now: options.now }),
       ...(options.startupHeartbeatIntervalMs === undefined
         ? {}
         : { startupHeartbeatIntervalMs: options.startupHeartbeatIntervalMs }),
+      ...(options.completionSpoolLimits === undefined
+        ? {}
+        : { completionSpoolLimits: options.completionSpoolLimits }),
+      ...(options.completionSpoolStorage === undefined
+        ? {}
+        : { completionSpoolStorage: options.completionSpoolStorage }),
+      ...(options.operationTraceRetentionMs === undefined
+        ? {}
+        : { operationTraceRetentionMs: options.operationTraceRetentionMs }),
+      ...(options.maximumRetainedOperationTraces === undefined
+        ? {}
+        : { maximumRetainedOperationTraces: options.maximumRetainedOperationTraces }),
+      ...(options.resourcePolicy === undefined ? {} : { resourcePolicy: options.resourcePolicy }),
+      ...(options.resourceCheckIntervalMs === undefined
+        ? {}
+        : { resourceCheckIntervalMs: options.resourceCheckIntervalMs }),
+      ...(options.residentMemoryBytes === undefined
+        ? {}
+        : { residentMemoryBytes: options.residentMemoryBytes }),
       exit: (code) => harness.resolveExit(code),
     });
+    harness.daemon = daemon;
     return { daemon, harness, lease };
   }
 
@@ -598,6 +1585,28 @@ class RequestHarness {
     }) as Promise<DaemonExecutionStatusResponse>;
   }
 
+  acknowledge(requestId: string, transferId: string): Promise<DaemonResponse> {
+    return this.transport.receive({
+      kind: "result-ack",
+      protocolVersion: DAEMON_PROTOCOL_VERSION,
+      instanceId: this.instanceId,
+      processToken: this.processToken,
+      requestId,
+      transferId,
+    });
+  }
+
+  fetch(requestId: string, offset = 0): Promise<RequestConnection> {
+    return this.transport.connect({
+      kind: "result-fetch",
+      protocolVersion: DAEMON_PROTOCOL_VERSION,
+      instanceId: this.instanceId,
+      processToken: this.processToken,
+      requestId,
+      offset,
+    });
+  }
+
   stop(): Promise<DaemonResponse> {
     return this.transport.receive({
       kind: "stop",
@@ -622,33 +1631,69 @@ class RequestHarness {
       .map((line) => JSON.parse(line) as Record<string, unknown>);
   }
 
+  retainedOperationTraceCount(): number {
+    const daemon = this.daemon as unknown as {
+      readonly operationTraces: ReadonlyMap<string, unknown>;
+    };
+    return daemon.operationTraces.size;
+  }
+
   async dispose(): Promise<void> {
     if (this.transport.isListening) {
       await this.transport
         .receive({ kind: "kill", instanceId: this.instanceId, processToken: this.processToken })
         .catch(() => undefined);
-      await Promise.race([this.exited, new Promise((resolve) => setTimeout(resolve, 100))]);
+      await this.waitForExit();
     }
     rmSync(this.stateDirectory, { recursive: true, force: true });
     rmSync(this.workspaceRoot, { recursive: true, force: true });
+  }
+
+  private waitForExit(): Promise<void> {
+    return new Promise((resolve, reject) => {
+      const timeout = setTimeout(
+        () => reject(new Error("Timed out waiting for request harness shutdown")),
+        5_000,
+      );
+      void this.exited.then(() => {
+        clearTimeout(timeout);
+        resolve();
+      });
+    });
   }
 }
 
 interface RequestHarnessOptions {
   readonly now?: () => number;
   readonly navigationWorker?: DaemonNavigationWorker;
+  readonly navigationWorkerFactory?: (generation: number) => DaemonNavigationWorker;
+  readonly resourcePolicy?: DaemonResourcePolicy;
+  readonly resourceCheckIntervalMs?: number;
+  readonly residentMemoryBytes?: () => number;
   readonly startupHeartbeatIntervalMs?: number;
+  readonly completionSpoolLimits?: WorkspaceDaemonOptions["completionSpoolLimits"];
+  readonly completionSpoolStorage?: WorkspaceDaemonOptions["completionSpoolStorage"];
+  readonly operationTraceRetentionMs?: number;
+  readonly maximumRetainedOperationTraces?: number;
 }
 
 class RequestTransport {
   private handler:
     | ((
         request: DaemonRequest,
-        send: (response: DaemonResponse) => void,
+        send: (response: DaemonServerMessage) => Promise<void>,
       ) => Promise<DaemonResponse | void>)
     | undefined;
   listenError: Error | undefined;
   closeError: Error | undefined;
+  private resultChunkGate:
+    | {
+        readonly started: () => void;
+        readonly wait: Promise<void>;
+      }
+    | undefined;
+  private resultChunksInFlight = 0;
+  private maximumResultChunksInFlight = 0;
 
   get isListening(): boolean {
     return this.handler !== undefined;
@@ -658,7 +1703,7 @@ class RequestTransport {
     _endpoint: string,
     handler: (
       request: DaemonRequest,
-      send: (response: DaemonResponse) => void,
+      send: (response: DaemonServerMessage) => Promise<void>,
     ) => Promise<DaemonResponse | void>,
   ): Promise<DaemonServer> {
     if (this.listenError !== undefined) throw this.listenError;
@@ -673,55 +1718,98 @@ class RequestTransport {
 
   async receive(request: DaemonRequest): Promise<DaemonResponse> {
     if (this.handler === undefined) return Promise.reject(new Error("Transport is not listening"));
-    const response = await this.handler(request, () => undefined);
+    const response = await this.handler(request, async () => undefined);
     if (response === undefined) throw new Error("Transport handler returned no response");
     return response;
   }
 
   async connect(request: DaemonRequest): Promise<RequestConnection> {
     if (this.handler === undefined) throw new Error("Transport is not listening");
-    const frames: DaemonExecutionServerFrame[] = [];
+    const frames: DaemonServerMessage[] = [];
     let connected = true;
+    const closeListeners = new Set<() => void>();
     let resolveTerminal!: (frame: DaemonExecutionServerFrame) => void;
     const terminal = new Promise<DaemonExecutionServerFrame>((resolve) => {
       resolveTerminal = resolve;
     });
-    const receive = (response: DaemonResponse): void => {
-      if (!connected || !RequestTransport.isExecutionFrame(response)) return;
+    const receive = async (response: DaemonServerMessage): Promise<void> => {
+      if (!("kind" in response) && this.resultChunkGate !== undefined) {
+        this.resultChunksInFlight += 1;
+        this.maximumResultChunksInFlight = Math.max(
+          this.maximumResultChunksInFlight,
+          this.resultChunksInFlight,
+        );
+        this.resultChunkGate.started();
+        await this.resultChunkGate.wait;
+        this.resultChunksInFlight -= 1;
+      }
+      if (!connected) throw new Error("Request connection is closed");
       frames.push(response);
+      if (!RequestTransport.isExecutionFrame(response)) return;
       if (
         response.kind === "rejected" ||
-        response.kind === "completed" ||
+        response.kind === "result-end" ||
         response.kind === "execution-failed"
       ) {
         resolveTerminal(response);
       }
     };
-    const response = await this.handler(request, receive);
-    if (response !== undefined) receive(response);
+    const send = Object.assign(receive, {
+      onClose: (listener: () => void): (() => void) => {
+        closeListeners.add(listener);
+        return () => closeListeners.delete(listener);
+      },
+    });
+    const response = await this.handler(request, send);
+    if (response !== undefined) await receive(response);
     return {
       frames,
       terminal,
       disconnect: () => {
         connected = false;
+        for (const listener of closeListeners) listener();
+        closeListeners.clear();
       },
     };
   }
 
+  stallNextResultChunk(): {
+    readonly started: Promise<void>;
+    readonly release: () => void;
+    readonly maximumInFlight: () => number;
+  } {
+    let markStarted!: () => void;
+    let release!: () => void;
+    const started = new Promise<void>((resolve) => {
+      markStarted = resolve;
+    });
+    const wait = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    this.resultChunkGate = { started: markStarted, wait };
+    return {
+      started,
+      release,
+      maximumInFlight: () => this.maximumResultChunksInFlight,
+    };
+  }
+
   private static isExecutionFrame(
-    response: DaemonResponse,
+    response: DaemonServerMessage,
   ): response is DaemonExecutionServerFrame {
+    if (!("kind" in response)) return false;
     return (
       response.kind === "accepted" ||
       response.kind === "rejected" ||
-      response.kind === "completed" ||
+      response.kind === "result-manifest" ||
+      response.kind === "result-end" ||
       response.kind === "execution-failed"
     );
   }
 }
 
 interface RequestConnection {
-  readonly frames: DaemonExecutionServerFrame[];
+  readonly frames: DaemonServerMessage[];
   readonly terminal: Promise<DaemonExecutionServerFrame>;
   disconnect(): void;
 }
@@ -732,7 +1820,7 @@ interface DaemonCommandExecutor {
 
 class ImmediateExecutor implements DaemonCommandExecutor {
   async execute(_request: CliExecutionRequest): Promise<CommandExecutionResult> {
-    return { frames: [], exitCode: 0 };
+    return emptyResult();
   }
 }
 
@@ -741,7 +1829,7 @@ class RecordingExecutor implements DaemonCommandExecutor {
 
   async execute(request: CliExecutionRequest): Promise<CommandExecutionResult> {
     this.requests.push(request);
-    return { frames: [], exitCode: 0 };
+    return emptyResult();
   }
 }
 
@@ -756,7 +1844,7 @@ class SerializedExecutor implements DaemonCommandExecutor {
   async execute(request: CliExecutionRequest): Promise<CommandExecutionResult> {
     this.requests.push(request);
     await new Promise<void>((resolve) => this.results.push(resolve));
-    return { frames: [], exitCode: 0 };
+    return emptyResult();
   }
 
   async started(count: number): Promise<void> {
@@ -774,14 +1862,82 @@ class RejectingExecutor implements DaemonCommandExecutor {
   }
 }
 
+class SequencedOutputExecutor implements DaemonCommandExecutor {
+  private executionCount = 0;
+
+  execute(): Promise<CommandExecutionResult> {
+    this.executionCount += 1;
+    const records =
+      this.executionCount === 1 ? [{ stream: "stdout" as const, bytes: Buffer.from("xx") }] : [];
+    return Promise.resolve({ output: new CommandOutputSnapshot(records), exitCode: 0 });
+  }
+}
+
+class MultipleRecordExecutor implements DaemonCommandExecutor {
+  execute(): Promise<CommandExecutionResult> {
+    return Promise.resolve({
+      output: new CommandOutputSnapshot([
+        { stream: "stdout", bytes: Buffer.from("one") },
+        { stream: "stderr", bytes: Buffer.from("two") },
+        { stream: "stdout", bytes: Buffer.from("three") },
+      ]),
+      exitCode: 0,
+    });
+  }
+}
+
+class RequestFailingCompletionStorage extends NodeCompletionSpoolStorage {
+  private failed = false;
+
+  constructor(private readonly operation: "sync" | "read" | "unlink") {
+    super();
+  }
+
+  override async createFile(path: string): Promise<CompletionSpoolFile> {
+    const file = await super.createFile(path);
+    return {
+      write: (bytes) => file.write(bytes),
+      sync: async () => {
+        if (this.fail("sync")) throw new Error("sync failed");
+        await file.sync();
+      },
+      close: () => file.close(),
+    };
+  }
+
+  override async *records(path: string): AsyncIterable<CommandOutputRecord> {
+    if (this.fail("read")) throw new Error("read failed");
+    for await (const record of super.records(path)) yield record;
+  }
+
+  override async unlink(path: string): Promise<void> {
+    if (this.fail("unlink")) throw new Error("unlink failed");
+    await super.unlink(path);
+  }
+
+  private fail(operation: "sync" | "read" | "unlink"): boolean {
+    if (this.failed || this.operation !== operation) return false;
+    this.failed = true;
+    return true;
+  }
+}
+
+function emptyResult(): CommandExecutionResult {
+  return { output: new CommandOutputSnapshot([]), exitCode: 0 };
+}
+
 class ExecutorNavigationWorker implements DaemonNavigationWorker {
-  readonly generation = 1;
+  readonly generation: number;
   readonly exited: Promise<DaemonNavigationWorkerExit>;
   private resolveExited!: (exit: DaemonNavigationWorkerExit) => void;
   private rejectTermination!: (error: Error) => void;
   private readonly termination: Promise<never>;
 
-  constructor(private readonly executor: DaemonCommandExecutor) {
+  constructor(
+    private readonly executor: DaemonCommandExecutor,
+    generation = 1,
+  ) {
+    this.generation = generation;
     this.exited = new Promise((resolve) => {
       this.resolveExited = resolve;
     });
@@ -804,19 +1960,34 @@ class ExecutorNavigationWorker implements DaemonNavigationWorker {
   async execute(
     requestId: string,
     request: CliExecutionRequest,
+    output: Parameters<DaemonNavigationWorker["execute"]>[2],
   ): Promise<DaemonNavigationWorkerResponse> {
+    const result = await Promise.race([this.executor.execute(request), this.termination]);
+    for await (const record of result.output.records()) await output.append(record);
+    await result.output.dispose();
     return {
       kind: "result",
       generation: this.generation,
       requestId,
-      result: await Promise.race([this.executor.execute(request), this.termination]),
+      result: { exitCode: result.exitCode },
       refresh: { added: 0, changed: 0, removed: 0, unchanged: 1 },
       durations: { freshnessMs: 0, navigationMs: 1, renderMs: 0, outputMs: 0 },
+      resources: {
+        workerHeapUsedBytes: 1,
+        peakWorkerHeapUsedBytes: 1,
+        workerHeapLimitBytes: 2,
+      },
     };
   }
 
   async releaseTransientResources(): Promise<DaemonNavigationWorkerResponse> {
-    return { kind: "heap", generation: this.generation, usedHeapBytes: 1, heapLimitBytes: 2 };
+    return {
+      kind: "heap",
+      generation: this.generation,
+      operationId: "executor-release",
+      usedHeapBytes: 1,
+      heapLimitBytes: 2,
+    };
   }
 
   drainAndClose(): Promise<void> {
@@ -835,15 +2006,57 @@ class ExecutorNavigationWorker implements DaemonNavigationWorker {
   }
 }
 
+class ReleaseGatedNavigationWorker extends ExecutorNavigationWorker {
+  readonly releaseStarted: Promise<void>;
+  releaseCount = 0;
+  private resolveReleaseStarted!: () => void;
+  private releaseAllowed!: () => void;
+  private readonly releaseGate: Promise<void>;
+
+  constructor(executor: DaemonCommandExecutor) {
+    super(executor);
+    this.releaseStarted = new Promise((resolve) => {
+      this.resolveReleaseStarted = resolve;
+    });
+    this.releaseGate = new Promise((resolve) => {
+      this.releaseAllowed = resolve;
+    });
+  }
+
+  override async releaseTransientResources(): Promise<DaemonNavigationWorkerResponse> {
+    this.releaseCount += 1;
+    this.resolveReleaseStarted();
+    await this.releaseGate;
+    return {
+      kind: "heap",
+      generation: this.generation,
+      operationId: "gated-release",
+      usedHeapBytes: 1,
+      heapLimitBytes: 2,
+    };
+  }
+
+  allowRelease(): void {
+    this.releaseAllowed();
+  }
+}
+
+class ReleaseFailingNavigationWorker extends ExecutorNavigationWorker {
+  override releaseTransientResources(): Promise<DaemonNavigationWorkerResponse> {
+    return Promise.reject(new Error("release failed"));
+  }
+}
+
 class DeferredInitializationWorker implements DaemonNavigationWorker {
-  readonly generation = 1;
+  readonly generation: number;
   readonly exited = new Promise<DaemonNavigationWorkerExit>(() => undefined);
   readonly initializationStarted: Promise<void>;
   private resolveInitializationStarted!: () => void;
   private resolveReady!: (response: DaemonNavigationWorkerResponse) => void;
   private readonly ready: Promise<DaemonNavigationWorkerResponse>;
 
-  constructor() {
+  constructor(generation = 1) {
+    this.generation = generation;
     this.initializationStarted = new Promise((resolve) => {
       this.resolveInitializationStarted = resolve;
     });

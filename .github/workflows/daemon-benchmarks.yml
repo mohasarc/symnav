@@ -1,0 +1,89 @@
+name: Daemon scale benchmarks
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    - cron: "0 3 * * *"
+    - cron: "0 4 * * 0"
+concurrency:
+  group: daemon-benchmarks-${{ github.workflow }}-${{ github.event.pull_request.number || github.event.schedule || github.ref }}
+  cancel-in-progress: true
+jobs:
+  blocking-1x:
+    if: github.event_name != 'schedule'
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-15-intel]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 180
+    env:
+      SYMNAV_BENCHMARK_MIN_MEMORY_BYTES: 8589934592
+      SYMNAV_BENCHMARK_ARTIFACT_DIR: artifacts
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+      - run: pnpm daemon:benchmark --scale 1
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: daemon-benchmark-1x-${{ matrix.os }}
+          path: artifacts/*.json
+          if-no-files-found: error
+  nightly-scale:
+    if: github.event_name == 'schedule' && github.event.schedule == '0 3 * * *'
+    strategy:
+      fail-fast: false
+      matrix:
+        scale: [2, 3]
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    env:
+      SYMNAV_BENCHMARK_MIN_MEMORY_BYTES: 8589934592
+      SYMNAV_BENCHMARK_ARTIFACT_DIR: artifacts
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+      - run: pnpm daemon:benchmark --scale ${{ matrix.scale }}
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: daemon-benchmark-${{ matrix.scale }}x-ubuntu
+          path: artifacts/*.json
+          if-no-files-found: error
+  weekly-10x:
+    if: github.event_name == 'schedule' && github.event.schedule == '0 4 * * 0'
+    runs-on: [self-hosted, daemon-benchmark-10x]
+    timeout-minutes: 1200
+    env:
+      SYMNAV_BENCHMARK_MIN_MEMORY_BYTES: 34359738368
+      SYMNAV_BENCHMARK_ARTIFACT_DIR: artifacts
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+      - run: pnpm daemon:benchmark --scale 10
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: daemon-benchmark-10x-provisioned
+          path: artifacts/*.json
+          if-no-files-found: error

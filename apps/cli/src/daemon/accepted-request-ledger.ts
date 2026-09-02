@@ -17,6 +17,7 @@ export interface AcceptedRequestEntry {
   readonly requestFingerprint: string;
   readonly request: CliExecutionRequest;
   readonly state: AcceptedRequestState;
+  readonly deliveryTerminated: boolean;
 }
 
 export type AcceptedRequestSubscriber = (entry: AcceptedRequestEntry) => void;
@@ -39,6 +40,13 @@ export class AcceptedRequestLedger {
     return this.entries.size;
   }
 
+  get hasUnacknowledgedCompletions(): boolean {
+    for (const entry of this.entries.values()) {
+      if (entry.state.state === "completed" && !this.acknowledged.has(entry.requestId)) return true;
+    }
+    return false;
+  }
+
   accept(requestId: string, request: CliExecutionRequest): AcceptedRequestEntry {
     const requestFingerprint = AcceptedRequestLedger.fingerprint(request);
     const existing = this.entries.get(requestId);
@@ -52,6 +60,7 @@ export class AcceptedRequestLedger {
       requestId,
       requestFingerprint,
       request,
+      deliveryTerminated: false,
       state: {
         state: "queued",
         acceptedAt: this.now(),
@@ -93,6 +102,22 @@ export class AcceptedRequestLedger {
     });
   }
 
+  invalidateCompletion(
+    requestId: string,
+    code: DaemonExecutionFailureCode,
+    completedAt: number,
+  ): AcceptedRequestEntry {
+    const entry = this.entry(requestId);
+    if (entry.state.state === "failed" && entry.state.code === code) return entry;
+    if (entry.state.state !== "completed") {
+      throw new Error(`Accepted request ${requestId} is not completed`);
+    }
+    return this.publish({
+      ...entry,
+      state: { state: "failed", completedAt, code },
+    });
+  }
+
   status(requestId: string): DaemonExecutionStatus {
     const state = this.entries.get(requestId)?.state;
     if (state === undefined) return { state: "unknown" };
@@ -114,6 +139,17 @@ export class AcceptedRequestLedger {
 
   isAcknowledged(requestId: string): boolean {
     return this.acknowledged.has(requestId);
+  }
+
+  terminateDelivery(requestId: string): boolean {
+    const entry = this.entry(requestId);
+    if (entry.deliveryTerminated) return false;
+    this.entries.set(requestId, { ...entry, deliveryTerminated: true });
+    return true;
+  }
+
+  isDeliveryTerminated(requestId: string): boolean {
+    return this.entry(requestId).deliveryTerminated;
   }
 
   subscribe(requestId: string, subscriber: AcceptedRequestSubscriber): () => void {

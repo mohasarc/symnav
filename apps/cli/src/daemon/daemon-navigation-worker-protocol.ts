@@ -1,5 +1,6 @@
 import type { BackendRefreshSummary } from "@symnav/core";
-import type { CliExecutionRequest, CommandExecutionResult } from "../command-execution-result.js";
+import type { CliExecutionRequest, CommandOutputStream } from "../command-execution-result.js";
+import { COMMAND_OUTPUT_CHUNK_BYTES } from "./completion-spool.js";
 
 export type DaemonExecutionFailureCode = "initialization" | "execution" | "protocol" | "resource";
 
@@ -24,10 +25,28 @@ export type DaemonNavigationWorkerRequest =
       readonly requestId: string;
       readonly request: CliExecutionRequest;
     }
-  | { readonly kind: "release-transient"; readonly generation: number }
+  | {
+      readonly kind: "output-ack";
+      readonly generation: number;
+      readonly requestId: string;
+      readonly sequence: number;
+    }
+  | {
+      readonly kind: "release-transient";
+      readonly generation: number;
+      readonly operationId: string;
+    }
   | { readonly kind: "close"; readonly generation: number };
 
 export type DaemonNavigationWorkerResponse =
+  | {
+      readonly kind: "output-chunk";
+      readonly generation: number;
+      readonly requestId: string;
+      readonly sequence: number;
+      readonly stream: CommandOutputStream;
+      readonly bytes: Uint8Array;
+    }
   | {
       readonly kind: "ready";
       readonly generation: number;
@@ -39,9 +58,14 @@ export type DaemonNavigationWorkerResponse =
       readonly kind: "result";
       readonly generation: number;
       readonly requestId: string;
-      readonly result: CommandExecutionResult;
+      readonly result: { readonly exitCode: number };
       readonly refresh: BackendRefreshSummary;
       readonly durations: WorkerCommandDurations;
+      readonly resources: {
+        readonly workerHeapUsedBytes: number;
+        readonly peakWorkerHeapUsedBytes: number;
+        readonly workerHeapLimitBytes: number;
+      };
     }
   | {
       readonly kind: "failed";
@@ -49,10 +73,12 @@ export type DaemonNavigationWorkerResponse =
       readonly requestId?: string;
       readonly failureCode: DaemonExecutionFailureCode;
       readonly errorName?: string;
+      readonly operationId?: string;
     }
   | {
       readonly kind: "heap";
       readonly generation: number;
+      readonly operationId: string;
       readonly usedHeapBytes: number;
       readonly heapLimitBytes: number;
     }
@@ -79,9 +105,21 @@ export class DaemonNavigationWorkerProtocol {
       return value as unknown as DaemonNavigationWorkerRequest;
     }
     if (
-      (value.kind === "release-transient" || value.kind === "close") &&
-      this.hasKeys(value, ["kind", "generation"])
+      value.kind === "output-ack" &&
+      this.hasKeys(value, ["kind", "generation", "requestId", "sequence"]) &&
+      this.isNonEmptyString(value.requestId) &&
+      this.isCount(value.sequence)
     ) {
+      return value as unknown as DaemonNavigationWorkerRequest;
+    }
+    if (
+      value.kind === "release-transient" &&
+      this.hasKeys(value, ["kind", "generation", "operationId"]) &&
+      this.isNonEmptyString(value.operationId)
+    ) {
+      return value as unknown as DaemonNavigationWorkerRequest;
+    }
+    if (value.kind === "close" && this.hasKeys(value, ["kind", "generation"])) {
       return value as unknown as DaemonNavigationWorkerRequest;
     }
     throw new Error("Invalid daemon navigation worker request");
@@ -101,12 +139,32 @@ export class DaemonNavigationWorkerProtocol {
       return value as unknown as DaemonNavigationWorkerResponse;
     }
     if (
+      value.kind === "output-chunk" &&
+      this.hasKeys(value, ["kind", "generation", "requestId", "sequence", "stream", "bytes"]) &&
+      this.isNonEmptyString(value.requestId) &&
+      this.isCount(value.sequence) &&
+      (value.stream === "stdout" || value.stream === "stderr") &&
+      value.bytes instanceof Uint8Array &&
+      value.bytes.byteLength <= COMMAND_OUTPUT_CHUNK_BYTES
+    ) {
+      return value as unknown as DaemonNavigationWorkerResponse;
+    }
+    if (
       value.kind === "result" &&
-      this.hasKeys(value, ["kind", "generation", "requestId", "result", "refresh", "durations"]) &&
+      this.hasKeys(value, [
+        "kind",
+        "generation",
+        "requestId",
+        "result",
+        "refresh",
+        "durations",
+        "resources",
+      ]) &&
       this.isNonEmptyString(value.requestId) &&
       this.isExecutionResult(value.result) &&
       this.isRefresh(value.refresh) &&
-      this.isDurations(value.durations, ["freshnessMs", "navigationMs", "renderMs", "outputMs"])
+      this.isDurations(value.durations, ["freshnessMs", "navigationMs", "renderMs", "outputMs"]) &&
+      this.isWorkerResources(value.resources)
     ) {
       return value as unknown as DaemonNavigationWorkerResponse;
     }
@@ -115,7 +173,14 @@ export class DaemonNavigationWorkerProtocol {
     }
     if (
       value.kind === "heap" &&
-      this.hasKeys(value, ["kind", "generation", "usedHeapBytes", "heapLimitBytes"]) &&
+      this.hasKeys(value, [
+        "kind",
+        "generation",
+        "operationId",
+        "usedHeapBytes",
+        "heapLimitBytes",
+      ]) &&
+      this.isNonEmptyString(value.operationId) &&
       this.isCount(value.usedHeapBytes) &&
       this.isCount(value.heapLimitBytes)
     ) {
@@ -125,6 +190,21 @@ export class DaemonNavigationWorkerProtocol {
       return value as unknown as DaemonNavigationWorkerResponse;
     }
     throw new Error("Invalid daemon navigation worker response");
+  }
+
+  private static isWorkerResources(value: unknown): boolean {
+    return (
+      this.isRecord(value) &&
+      this.hasKeys(value, [
+        "workerHeapUsedBytes",
+        "peakWorkerHeapUsedBytes",
+        "workerHeapLimitBytes",
+      ]) &&
+      this.isCount(value.workerHeapUsedBytes) &&
+      this.isCount(value.peakWorkerHeapUsedBytes) &&
+      this.isCount(value.workerHeapLimitBytes) &&
+      value.peakWorkerHeapUsedBytes >= value.workerHeapUsedBytes
+    );
   }
 
   private static isExecutionRequest(value: unknown): value is CliExecutionRequest {
@@ -144,20 +224,9 @@ export class DaemonNavigationWorkerProtocol {
     );
   }
 
-  private static isExecutionResult(value: unknown): value is CommandExecutionResult {
-    if (!this.isRecord(value)) return false;
-    const keys = ["frames", "exitCode"];
+  private static isExecutionResult(value: unknown): value is { readonly exitCode: number } {
     return (
-      this.hasKeys(value, keys) &&
-      Array.isArray(value.frames) &&
-      value.frames.every(
-        (frame) =>
-          this.isRecord(frame) &&
-          this.hasKeys(frame, ["stream", "bytesBase64"]) &&
-          (frame.stream === "stdout" || frame.stream === "stderr") &&
-          this.isCanonicalBase64(frame.bytesBase64),
-      ) &&
-      this.isCount(value.exitCode)
+      this.isRecord(value) && this.hasKeys(value, ["exitCode"]) && this.isCount(value.exitCode)
     );
   }
 
@@ -175,10 +244,13 @@ export class DaemonNavigationWorkerProtocol {
   private static isFailed(value: Record<string, unknown>): boolean {
     const keys = ["kind", "generation", "failureCode"];
     if (value.requestId !== undefined) keys.push("requestId");
+    if (value.operationId !== undefined) keys.push("operationId");
     if (value.errorName !== undefined) keys.push("errorName");
     return (
       this.hasKeys(value, keys) &&
       (value.requestId === undefined || this.isNonEmptyString(value.requestId)) &&
+      (value.operationId === undefined || this.isNonEmptyString(value.operationId)) &&
+      !(value.requestId !== undefined && value.operationId !== undefined) &&
       (value.failureCode === "initialization" ||
         value.failureCode === "execution" ||
         value.failureCode === "protocol" ||
@@ -212,15 +284,6 @@ export class DaemonNavigationWorkerProtocol {
 
   private static isMetric(value: unknown): value is number {
     return typeof value === "number" && Number.isFinite(value) && value >= 0;
-  }
-
-  private static isCanonicalBase64(value: unknown): value is string {
-    return (
-      typeof value === "string" &&
-      value.length % 4 === 0 &&
-      /^(?:[A-Za-z\d+/]{4})*(?:[A-Za-z\d+/]{2}==|[A-Za-z\d+/]{3}=)?$/.test(value) &&
-      Buffer.from(value, "base64").toString("base64") === value
-    );
   }
 
   private static isNonEmptyString(value: unknown): value is string {

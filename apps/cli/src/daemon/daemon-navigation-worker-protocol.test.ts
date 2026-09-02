@@ -17,13 +17,22 @@ describe("DaemonNavigationWorkerProtocol", () => {
   it.each<DaemonNavigationWorkerRequest>([
     { kind: "initialize", generation: 4, workspaceRoot: "/repo" },
     { kind: "execute", generation: 4, requestId: "request-1", request },
-    { kind: "release-transient", generation: 4 },
+    { kind: "output-ack", generation: 4, requestId: "request-1", sequence: 7 },
+    { kind: "release-transient", generation: 4, operationId: "release-1" },
     { kind: "close", generation: 4 },
   ])("accepts correlated $kind requests", (message) => {
     expect(DaemonNavigationWorkerProtocol.request(message)).toEqual(message);
   });
 
   it.each<DaemonNavigationWorkerResponse>([
+    {
+      kind: "output-chunk",
+      generation: 4,
+      requestId: "request-1",
+      sequence: 0,
+      stream: "stdout",
+      bytes: new Uint8Array([1, 2, 3]),
+    },
     {
       kind: "ready",
       generation: 4,
@@ -35,12 +44,14 @@ describe("DaemonNavigationWorkerProtocol", () => {
       kind: "result",
       generation: 4,
       requestId: "request-1",
-      result: {
-        frames: [{ stream: "stdout", bytesBase64: "c3ltbmF2Cg==" }],
-        exitCode: 0,
-      },
+      result: { exitCode: 0 },
       refresh,
       durations: { freshnessMs: 1, navigationMs: 2, renderMs: 3, outputMs: 4 },
+      resources: {
+        workerHeapUsedBytes: 20,
+        peakWorkerHeapUsedBytes: 40,
+        workerHeapLimitBytes: 100,
+      },
     },
     {
       kind: "failed",
@@ -49,7 +60,13 @@ describe("DaemonNavigationWorkerProtocol", () => {
       failureCode: "execution",
       errorName: "Error",
     },
-    { kind: "heap", generation: 4, usedHeapBytes: 20, heapLimitBytes: 100 },
+    {
+      kind: "heap",
+      generation: 4,
+      operationId: "release-1",
+      usedHeapBytes: 20,
+      heapLimitBytes: 100,
+    },
     { kind: "closed", generation: 4 },
   ])("accepts validated $kind responses", (message) => {
     expect(DaemonNavigationWorkerProtocol.response(message)).toEqual(message);
@@ -61,6 +78,7 @@ describe("DaemonNavigationWorkerProtocol", () => {
     {},
     { kind: "initialize", generation: -1, workspaceRoot: "/repo" },
     { kind: "execute", generation: 1, requestId: "", request },
+    { kind: "output-ack", generation: 1, requestId: "one", sequence: -1 },
     { kind: "execute", generation: 1, requestId: "one", request: { argv: "overview" } },
     { kind: "unknown", generation: 1 },
   ])("rejects malformed worker requests %#", (message) => {
@@ -72,19 +90,31 @@ describe("DaemonNavigationWorkerProtocol", () => {
     null,
     {},
     { kind: "ready", generation: 1, fileCount: -1, refresh, startupDurations: {} },
-    { kind: "result", generation: 1, requestId: "one", result: { frames: [] } },
+    {
+      kind: "output-chunk",
+      generation: 1,
+      requestId: "one",
+      sequence: 0,
+      stream: "stdout",
+      bytes: new Uint8Array(64 * 1024 + 1),
+    },
+    { kind: "result", generation: 1, requestId: "one", result: {} },
     { kind: "failed", generation: 1, failureCode: "unknown" },
-    { kind: "heap", generation: 1, usedHeapBytes: -1, heapLimitBytes: 10 },
+    {
+      kind: "heap",
+      generation: 1,
+      operationId: "release-1",
+      usedHeapBytes: -1,
+      heapLimitBytes: 10,
+    },
     { kind: "closed", generation: 1, extra: true },
   ])("rejects malformed worker responses %#", (message) => {
     expect(() => DaemonNavigationWorkerProtocol.response(message)).toThrow(/worker response/i);
   });
 
   it.each([
-    resultWith({ frames: [{ stream: "stdout", bytesBase64: "%%%" }], exitCode: 0 }),
-    resultWith({ frames: [{ stream: "stdout", bytesBase64: "Zh==" }], exitCode: 0 }),
-    resultWith({ frames: [], exitCode: -1 }),
-    resultWith({ frames: [], exitCode: 0, telemetry: {} }),
+    resultWith({ exitCode: -1 }),
+    resultWith({ exitCode: 0, telemetry: {} }),
     {
       kind: "ready",
       generation: 1,
@@ -96,7 +126,7 @@ describe("DaemonNavigationWorkerProtocol", () => {
       kind: "result",
       generation: 1,
       requestId: "one",
-      result: { frames: [], exitCode: 0 },
+      result: { exitCode: 0 },
       refresh: { ...refresh, added: 0.5 },
       durations: { freshnessMs: 1, navigationMs: 2, renderMs: 3, outputMs: 4 },
     },
@@ -113,5 +143,10 @@ function resultWith(result: unknown): unknown {
     result,
     refresh,
     durations: { freshnessMs: 1, navigationMs: 2, renderMs: 3, outputMs: 4 },
+    resources: {
+      workerHeapUsedBytes: 20,
+      peakWorkerHeapUsedBytes: 40,
+      workerHeapLimitBytes: 100,
+    },
   };
 }

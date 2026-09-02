@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type {
+  DaemonActivitySnapshot,
   DaemonExecuteRequest,
   DaemonExecutionServerFrame,
   DaemonLifecycleRequest,
@@ -230,26 +231,36 @@ describe("LocalDaemonTransport validation", () => {
   });
 
   it.each([
-    { frames: [], exitCode: "invalid" },
+    { transferId: "transfer", requestId: "request", instanceId: "instance", exitCode: 0 },
     {
-      frames: [{ stream: "invalid", bytesBase64: "" }],
+      transferId: "transfer",
+      requestId: "request",
+      instanceId: "instance",
       exitCode: 0,
+      rawBytes: -1,
+      recordCount: 0,
+      sha256: "0".repeat(64),
     },
     {
-      frames: [{ stream: "stdout", bytesBase64: "***" }],
+      transferId: "transfer",
+      requestId: "other",
+      instanceId: "instance",
       exitCode: 0,
+      rawBytes: 0,
+      recordCount: 0,
+      sha256: "invalid",
     },
-  ])("rejects malformed daemon completion payload %#", async (result) => {
+  ])("rejects malformed daemon result manifests %#", async (manifest) => {
     const endpoint = await rawServer(servers, sockets, directories, (socket) => {
       socket.write(
         Buffer.concat([
           frame(acceptedFrame()),
           frame({
-            kind: "completed",
+            kind: "result-manifest",
             instanceId: "instance",
             processToken: "token",
             requestId: "request",
-            result,
+            manifest,
           }),
         ]),
       );
@@ -260,7 +271,7 @@ describe("LocalDaemonTransport validation", () => {
       new LocalDaemonTransport({ requestTimeoutMs: 100 })
         .execute(endpoint, executionRequest())
         .then((receipt) => receipt.completion),
-    ).rejects.toThrow("Malformed daemon execution completion");
+    ).rejects.toThrow("Malformed daemon result manifest");
   });
 
   it("rejects a response kind for a different request", async () => {
@@ -315,6 +326,65 @@ describe("LocalDaemonTransport validation", () => {
     await listening.close();
   });
 
+  it.each([
+    {
+      kind: "execute",
+      protocolVersion: DAEMON_PROTOCOL_VERSION,
+      instanceId: "instance",
+      processToken: "token",
+      requestId: "/private/source/PaymentProcessor::charge",
+      request: { argv: ["refs", "symbol"], cwd: "/repo", telemetryEnabled: false },
+    },
+    {
+      kind: "execution-status",
+      protocolVersion: DAEMON_PROTOCOL_VERSION,
+      instanceId: "instance",
+      processToken: "token",
+      requestId: "/private/source/PaymentProcessor::charge",
+    },
+    {
+      kind: "result-fetch",
+      protocolVersion: DAEMON_PROTOCOL_VERSION,
+      instanceId: "instance",
+      processToken: "token",
+      requestId: "/private/source/PaymentProcessor::charge",
+      offset: 0,
+    },
+    {
+      kind: "result-ack",
+      protocolVersion: DAEMON_PROTOCOL_VERSION,
+      instanceId: "instance",
+      processToken: "token",
+      requestId: "/private/source/PaymentProcessor::charge",
+      transferId: "transfer",
+    },
+  ] as const)(
+    "rejects source-shaped $kind request correlation before dispatch",
+    async (request) => {
+      const endpoint = validationEndpoint(directories);
+      let handled = false;
+      const transport = new LocalDaemonTransport({ requestTimeoutMs: 100 });
+      const listening = await transport.listen(endpoint, async () => {
+        handled = true;
+        return { kind: "stopped", instanceId: "instance" };
+      });
+      const socket = createConnection(endpoint);
+      await new Promise<void>((resolve, reject) => {
+        socket.once("error", reject);
+        socket.once("connect", () => {
+          socket.write(frame(request));
+          setTimeout(() => {
+            socket.destroy();
+            resolve();
+          }, 20);
+        });
+      });
+
+      expect(handled).toBe(false);
+      await listening.close();
+    },
+  );
+
   it("uses native Windows named pipe endpoints", () => {
     expect(validationEndpoint(directories, "win32", "endpoint")).toBe(
       "\\\\.\\pipe\\symnav-transport-validation-endpoint",
@@ -333,6 +403,69 @@ describe("LocalDaemonTransport validation", () => {
         }),
       );
       setTimeout(() => socket.destroy(), 50);
+    });
+
+    await expect(
+      new LocalDaemonTransport({ requestTimeoutMs: 100 }).request(endpoint, pingRequest()),
+    ).rejects.toThrow("Malformed daemon pong");
+  });
+
+  it.each([
+    ["busy without current", { lifecycle: "busy" }],
+    [
+      "ready with current",
+      {
+        lifecycle: "ready",
+        current: { requestId: "request", command: "refs", elapsedMs: 1 },
+      },
+    ],
+    ["recovering without detail", { lifecycle: "recovering" }],
+    ["ready with recovery detail", { lifecycle: "ready", recoveryDetail: "resource-pressure" }],
+    [
+      "path-shaped current command",
+      {
+        lifecycle: "busy",
+        current: { requestId: "request", command: "/private/source.ts", elapsedMs: 1 },
+      },
+    ],
+    [
+      "source-shaped current request",
+      {
+        lifecycle: "busy",
+        current: {
+          requestId: "/private/source/PaymentProcessor::charge",
+          command: "refs",
+          elapsedMs: 1,
+        },
+      },
+    ],
+    ["starting with indexed files", { lifecycle: "starting", fileCount: 7 }],
+  ] as const)("rejects %s activity snapshots", async (_label, contradiction) => {
+    const baselineActivity = {
+      lifecycle: "ready" as const,
+      pid: 123,
+      startedAt: 10,
+      startupElapsedMs: 20,
+      fileCount: 2,
+      processRssBytes: 100,
+      hardProcessRssBytes: 200,
+      workerGeneration: 1,
+      queued: 0,
+      spoolBytes: 0,
+    } satisfies DaemonActivitySnapshot;
+    const endpoint = await rawServer(servers, sockets, directories, (socket) => {
+      socket.end(
+        frame({
+          kind: "pong",
+          protocolVersion: DAEMON_PROTOCOL_VERSION,
+          instanceId: "instance",
+          symnavVersion: "test",
+          activity: {
+            ...baselineActivity,
+            ...contradiction,
+          },
+        }),
+      );
     });
 
     await expect(
@@ -428,7 +561,7 @@ describe("LocalDaemonTransport validation", () => {
     );
   });
 
-  it("rejects malformed deferred telemetry results", async () => {
+  it("rejects legacy embedded completion results", async () => {
     const endpoint = await rawServer(servers, sockets, directories, (socket) => {
       socket.end(
         Buffer.concat([
@@ -438,11 +571,7 @@ describe("LocalDaemonTransport validation", () => {
             instanceId: "instance",
             processToken: "token",
             requestId: "request",
-            result: {
-              frames: [],
-              exitCode: 0,
-              telemetry: { executionMode: "warm" },
-            },
+            result: { exitCode: 0 },
           }),
         ]),
       );
@@ -451,7 +580,7 @@ describe("LocalDaemonTransport validation", () => {
 
     await expect(
       transport.execute(endpoint, executionRequest()).then((receipt) => receipt.completion),
-    ).rejects.toThrow("Malformed daemon execution completion");
+    ).rejects.toThrow("Malformed daemon response");
   });
 });
 

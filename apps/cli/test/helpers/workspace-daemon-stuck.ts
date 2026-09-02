@@ -3,7 +3,9 @@ import { canonicalStateDir } from "@symnav/telemetry";
 import type {
   CliExecutionRequest,
   CommandExecutionResult,
+  CommandOutputRecord,
 } from "../../src/command-execution-result.js";
+import { OrderedCommandOutput } from "../../src/command-execution-result.js";
 import { createDefaultDependencies } from "../../src/program.js";
 import { CliProgramExecutor } from "../../src/cli-program-executor.js";
 import { DaemonRegistry } from "../../src/daemon/daemon-registry.js";
@@ -39,9 +41,10 @@ if (
 }
 const acceptedRequestStartedPath = requestStartedPath;
 const oversizedResponse = releasePathArgument === "--oversized-response";
+const oversizedJsonResponse = releasePathArgument === "--oversized-json-response";
 const workerExit = releasePathArgument === "--worker-exit";
 const releasePath =
-  releasePathArgument === "--no-release" || oversizedResponse || workerExit
+  releasePathArgument === "--no-release" || oversizedResponse || oversizedJsonResponse || workerExit
     ? undefined
     : releasePathArgument;
 const symnavVersion = configuredSymnavVersion ?? "test";
@@ -56,18 +59,27 @@ class ControlledExecutor {
     executionCount += 1;
     writeFileSync(acceptedRequestStartedPath, "started");
     writeFileSync(`${acceptedRequestStartedPath}.${executionCount}`, "started");
-    if (oversizedResponse) {
+    if (oversizedResponse || oversizedJsonResponse) {
       const result = await executor.execute(request);
-      return {
-        ...result,
-        frames: [
-          ...result.frames,
-          {
-            stream: "stdout",
-            bytesBase64: Buffer.alloc(9 * 1024 * 1024).toString("base64"),
-          },
-        ],
-      };
+      const output = new OrderedCommandOutput();
+      if (oversizedJsonResponse) {
+        await writeRecord(output, {
+          sequence: 0,
+          stream: "stdout",
+          bytes: Buffer.from(`${JSON.stringify({ data: "x".repeat(9 * 1024 * 1024) })}\n`),
+        });
+      } else {
+        for await (const record of result.output?.records() ?? []) {
+          await writeRecord(output, record);
+        }
+        await writeRecord(output, {
+          sequence: result.output?.summary.recordCount ?? 0,
+          stream: "stdout",
+          bytes: Buffer.alloc(9 * 1024 * 1024, "x"),
+        });
+      }
+      await result.output?.dispose();
+      return output.finish(result.exitCode);
     }
     if (releasePath === undefined) return new Promise(() => undefined);
     while (!existsSync(releasePath)) {
@@ -103,19 +115,34 @@ class ControlledNavigationWorker implements DaemonNavigationWorker {
   async execute(
     requestId: string,
     request: CliExecutionRequest,
+    output: { append(record: CommandOutputRecord): Promise<void> },
   ): Promise<DaemonNavigationWorkerResponse> {
+    const result = await Promise.race([this.controlledExecutor.execute(request), this.termination]);
+    for await (const record of result.output.records()) await output.append(record);
+    await result.output.dispose();
     return {
       kind: "result",
       generation: this.generation,
       requestId,
-      result: await Promise.race([this.controlledExecutor.execute(request), this.termination]),
+      result: { exitCode: result.exitCode },
       refresh: { added: 0, changed: 0, removed: 0, unchanged: 1 },
       durations: { freshnessMs: 0, navigationMs: 1, renderMs: 0, outputMs: 0 },
+      resources: {
+        workerHeapUsedBytes: 1,
+        peakWorkerHeapUsedBytes: 1,
+        workerHeapLimitBytes: 2,
+      },
     };
   }
 
   async releaseTransientResources(): Promise<DaemonNavigationWorkerResponse> {
-    return { kind: "heap", generation: this.generation, usedHeapBytes: 1, heapLimitBytes: 2 };
+    return {
+      kind: "heap",
+      generation: this.generation,
+      operationId: "controlled-release",
+      usedHeapBytes: 1,
+      heapLimitBytes: 2,
+    };
   }
 
   drainAndClose(): Promise<void> {
@@ -133,7 +160,8 @@ const workerExitReleasePath = `${acceptedRequestStartedPath}.release-worker-exit
 const navigationWorker = workerExit
   ? new NodeDaemonNavigationWorker({
       generation: 7,
-      stateDirectory: canonicalStateDirectory,
+      configuration: { stateDirectory: canonicalStateDirectory },
+      resourceLimits: { maxOldGenerationSizeMb: 4096 },
       entryUrl: new URL("./daemon-navigation-worker-fixture.mjs", import.meta.url),
       workerData: {
         mode: "exit-on-release",
@@ -142,10 +170,11 @@ const navigationWorker = workerExit
         releasePath: workerExitReleasePath,
       },
     })
-  : releasePath === undefined && !oversizedResponse
+  : releasePath === undefined && !oversizedResponse && !oversizedJsonResponse
     ? new NodeDaemonNavigationWorker({
         generation: 7,
-        stateDirectory: canonicalStateDirectory,
+        configuration: { stateDirectory: canonicalStateDirectory },
+        resourceLimits: { maxOldGenerationSizeMb: 4096 },
         entryUrl: new URL("./daemon-navigation-worker-fixture.mjs", import.meta.url),
         workerData: {
           mode: "block-execution",
@@ -168,3 +197,9 @@ const daemon = new WorkspaceDaemon({
 });
 await daemon.start();
 writeFileSync(readyPath, "ready");
+
+function writeRecord(output: OrderedCommandOutput, record: CommandOutputRecord): Promise<void> {
+  return new Promise((resolve, reject) => {
+    output[record.stream].write(record.bytes, (error) => (error ? reject(error) : resolve()));
+  });
+}

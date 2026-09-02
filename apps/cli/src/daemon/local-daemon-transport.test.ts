@@ -1,5 +1,6 @@
 import { mkdtempSync, rmSync } from "node:fs";
-import { createConnection, createServer } from "node:net";
+import { EventEmitter } from "node:events";
+import { createConnection, createServer, type Socket } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -58,6 +59,41 @@ describe("LocalDaemonTransport", () => {
     await server.close();
   });
 
+  it("notifies the request handler when its client socket closes", async () => {
+    const endpoint = endpointFor(roots);
+    let notifyDisconnected!: () => void;
+    const disconnected = new Promise<void>((resolve) => {
+      notifyDisconnected = resolve;
+    });
+    const server = await new LocalDaemonTransport().listen(endpoint, async (request, send) => {
+      send.onClose(notifyDisconnected);
+      return {
+        kind: "pong",
+        protocolVersion: DAEMON_PROTOCOL_VERSION,
+        instanceId: request.instanceId,
+        symnavVersion: "test",
+      };
+    });
+    const request = {
+      kind: "ping",
+      protocolVersion: DAEMON_PROTOCOL_VERSION,
+      instanceId: "instance",
+    } satisfies DaemonRequest;
+
+    await new Promise<void>((resolve, reject) => {
+      const socket = createConnection(endpoint);
+      socket.once("error", reject);
+      socket.once("connect", () => socket.write(frame(request)));
+      socket.once("data", () => {
+        socket.destroy();
+        resolve();
+      });
+    });
+
+    await expect(disconnected).resolves.toBeUndefined();
+    await server.close();
+  });
+
   it("writes one client request and resolves one response", async () => {
     const endpoint = endpointFor(roots);
     const server = createServer((socket) => {
@@ -94,6 +130,7 @@ describe("LocalDaemonTransport", () => {
     const transport = new LocalDaemonTransport({ writeChunkSize: 1 });
     const server = await transport.listen(endpoint, async (request, send) => {
       if (request.kind !== "execute") throw new Error("Expected execution request");
+      expect(request.request.argv).toEqual(["resolve", "\n✓"]);
       send({
         kind: "accepted",
         instanceId: request.instanceId,
@@ -103,14 +140,11 @@ describe("LocalDaemonTransport", () => {
         queuePosition: 0,
       });
       send({
-        kind: "completed",
+        kind: "execution-failed",
         instanceId: request.instanceId,
         processToken: request.processToken,
         requestId: request.requestId,
-        result: {
-          frames: [{ stream: "stdout", bytesBase64: Buffer.from("✓\n\ntext").toString("base64") }],
-          exitCode: 0,
-        },
+        code: "internal",
       });
     });
 
@@ -125,7 +159,7 @@ describe("LocalDaemonTransport", () => {
       })
     ).completion;
 
-    expect(response).toMatchObject({ status: "completed", result: { exitCode: 0 } });
+    expect(response).toEqual({ status: "failed", code: "internal" });
     await server.close();
   });
 
@@ -142,6 +176,34 @@ describe("LocalDaemonTransport", () => {
     expect(Buffer.concat(write.mock.calls.map(([chunk]) => chunk))).toEqual(
       frame({ kind: "stopped", instanceId: "instance" }),
     );
+  });
+
+  it("waits for socket drain before writing the next server fragment", async () => {
+    const writes: Buffer[] = [];
+    const socket = new EventEmitter() as EventEmitter & {
+      destroyed: boolean;
+      write: (bytes: Buffer) => boolean;
+    };
+    socket.destroyed = false;
+    socket.write = (bytes) => {
+      writes.push(bytes);
+      return writes.length !== 1;
+    };
+    const transport = new LocalDaemonTransport({ writeChunkSize: 1 });
+    const serverWriter = transport as unknown as {
+      writeServerMessage(socket: Socket, value: unknown): Promise<void>;
+    };
+
+    const writing = serverWriter.writeServerMessage(socket as unknown as Socket, {
+      kind: "stopped",
+      instanceId: "instance",
+    });
+    await Promise.resolve();
+
+    expect(writes).toHaveLength(1);
+    socket.emit("drain");
+    await writing;
+    expect(Buffer.concat(writes)).toEqual(frame({ kind: "stopped", instanceId: "instance" }));
   });
 
   it("decodes coalesced request frames independently", async () => {

@@ -132,7 +132,8 @@ class DaemonStartupCallerExit {
     const navigationWorker = new StartupBarrierNavigationWorker(
       new NodeDaemonNavigationWorker({
         generation: 1,
-        stateDirectory: identity.stateDirectory,
+        configuration: { stateDirectory: identity.stateDirectory },
+        resourceLimits: { maxOldGenerationSizeMb: 4096 },
         entryUrl: new URL("../../dist/daemon/daemon-navigation-worker-entry.js", import.meta.url),
       }),
       bootPath,
@@ -193,8 +194,9 @@ class StartupBarrierNavigationWorker implements DaemonNavigationWorker {
   execute(
     requestId: string,
     request: CliExecutionRequest,
+    output: Parameters<DaemonNavigationWorker["execute"]>[2],
   ): Promise<DaemonNavigationWorkerResponse> {
-    return this.worker.execute(requestId, request);
+    return this.worker.execute(requestId, request, output);
   }
 
   releaseTransientResources(): Promise<DaemonNavigationWorkerResponse> {

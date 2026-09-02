@@ -51,6 +51,84 @@ describe("WorkspaceRequestQueue", () => {
     await expect(recovered).resolves.toBe("recovered");
   });
 
+  it("runs scheduled maintenance after the active turn and before an admitted next turn", async () => {
+    const queue = new WorkspaceRequestQueue();
+    const events: string[] = [];
+    let releaseFirst!: () => void;
+    let releaseMaintenance!: () => void;
+    const firstGate = new Promise<void>((resolve) => {
+      releaseFirst = resolve;
+    });
+    const maintenanceGate = new Promise<void>((resolve) => {
+      releaseMaintenance = resolve;
+    });
+    const first = queue.enqueue(metadata("first", "refs", 1), async () => {
+      events.push("first-start");
+      await firstGate;
+      events.push("first-end");
+    });
+    const second = queue.enqueue(metadata("second", "overview", 2), async () => {
+      events.push("second");
+    });
+    await Promise.resolve();
+
+    const maintenance = queue.scheduleAtTurnBoundary(async () => {
+      events.push("maintenance-start");
+      await maintenanceGate;
+      events.push("maintenance-end");
+    });
+    await Promise.resolve();
+    expect(events).toEqual(["first-start"]);
+
+    releaseFirst();
+    await first;
+    await Promise.resolve();
+    expect(events).toEqual(["first-start", "first-end", "maintenance-start"]);
+    releaseMaintenance();
+    await expect(Promise.all([maintenance, second])).resolves.toEqual([undefined, undefined]);
+    expect(events).toEqual([
+      "first-start",
+      "first-end",
+      "maintenance-start",
+      "maintenance-end",
+      "second",
+    ]);
+  });
+
+  it("blocks a newly admitted turn behind idle scheduled maintenance", async () => {
+    const queue = new WorkspaceRequestQueue();
+    const events: string[] = [];
+    let releaseMaintenance!: () => void;
+    const maintenanceGate = new Promise<void>((resolve) => {
+      releaseMaintenance = resolve;
+    });
+    const maintenance = queue.scheduleAtTurnBoundary(async () => {
+      events.push("maintenance-start");
+      await maintenanceGate;
+      events.push("maintenance-end");
+    });
+    const request = queue.enqueue(metadata("after", "def", 1), async () => {
+      events.push("request");
+    });
+    await Promise.resolve();
+
+    expect(events).toEqual(["maintenance-start"]);
+    releaseMaintenance();
+    await expect(Promise.all([maintenance, request])).resolves.toEqual([undefined, undefined]);
+    expect(events).toEqual(["maintenance-start", "maintenance-end", "request"]);
+  });
+
+  it("continues queued work after scheduled maintenance rejects", async () => {
+    const queue = new WorkspaceRequestQueue();
+    const maintenance = queue.scheduleAtTurnBoundary(() =>
+      Promise.reject(new Error("maintenance failed")),
+    );
+    const request = queue.enqueue(metadata("after", "graph", 1), () => Promise.resolve("done"));
+
+    await expect(maintenance).rejects.toThrow("maintenance failed");
+    await expect(request).resolves.toBe("done");
+  });
+
   it("becomes idle only after active work completes", async () => {
     const queue = new WorkspaceRequestQueue();
     expect(queue.isIdle).toBe(true);

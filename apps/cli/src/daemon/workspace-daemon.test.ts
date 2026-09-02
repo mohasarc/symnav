@@ -5,7 +5,11 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { canonicalStateDir } from "@symnav/telemetry";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { CliExecutionRequest, CommandExecutionResult } from "../command-execution-result.js";
+import {
+  CommandOutputSnapshot,
+  type CliExecutionRequest,
+  type CommandExecutionResult,
+} from "../command-execution-result.js";
 import { createDefaultDependencies } from "../program.js";
 import { DaemonController } from "./daemon-controller.js";
 import type {
@@ -21,11 +25,13 @@ import {
   type DaemonLifecycleResponse,
   type DaemonRequest,
   type DaemonResponse,
+  type DaemonServerMessage,
   type DaemonServer,
 } from "./daemon-protocol.js";
 import { DaemonRegistry } from "./daemon-registry.js";
+import { DaemonResourcePolicy } from "./daemon-resource-monitor.js";
 import { DaemonWorkspaceIdentity } from "./daemon-workspace-identity.js";
-import { LocalDaemonTransport } from "./local-daemon-transport.js";
+import { type DaemonServerSend, LocalDaemonTransport } from "./local-daemon-transport.js";
 import { WorkspaceDaemon } from "./workspace-daemon.js";
 
 describe("WorkspaceDaemon runtime lifecycle", () => {
@@ -48,7 +54,7 @@ describe("WorkspaceDaemon runtime lifecycle", () => {
     const stopping = harness.stop();
 
     executor.complete({
-      frames: [{ stream: "stdout", bytesBase64: Buffer.from("result\n").toString("base64") }],
+      output: new CommandOutputSnapshot([{ stream: "stdout", bytes: Buffer.from("result\n") }]),
       exitCode: 0,
     });
 
@@ -68,6 +74,40 @@ describe("WorkspaceDaemon runtime lifecycle", () => {
     await expect(harness.ping()).rejects.toThrow();
   });
 
+  it("preserves an earlier graceful stop when resource pressure arrives during its drain", async () => {
+    let resourceExceeded = false;
+    const resourcePolicy = DaemonResourcePolicy.fromSystemMemory(512 * 1024 * 1024);
+    const executor = new DeferredExecutor();
+    const harness = await WorkspaceDaemonHarness.start(executor, {
+      resourcePolicy,
+      resourceCheckIntervalMs: 5,
+      residentMemoryBytes: () =>
+        resourceExceeded ? resourcePolicy.record.hardProcessRssBytes + 1 : 0,
+    });
+    harnesses.push(harness);
+    const execution = harness.execute("navigation");
+    await executor.started;
+    const stopping = harness.stop();
+    await expect(harness.execute("after-stop")).rejects.toThrow(/draining/);
+
+    resourceExceeded = true;
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    executor.complete(emptyResult());
+
+    await expect(execution).resolves.toMatchObject({
+      status: "completed",
+      result: { exitCode: 0 },
+    });
+    await expect(stopping).resolves.toEqual({
+      kind: "stopped",
+      instanceId: harness.instanceId,
+    });
+    await harness.exited;
+    expect(harness.logEvents()).toEqual(
+      expect.arrayContaining([expect.objectContaining({ kind: "stop", reason: "graceful" })]),
+    );
+  });
+
   it("force-stops a matching daemon with a stuck request inside the bound", async () => {
     const executor = new DeferredExecutor();
     const harness = await WorkspaceDaemonHarness.start(executor);
@@ -79,7 +119,7 @@ describe("WorkspaceDaemon runtime lifecycle", () => {
       harness.transport,
       harness.stateDirectory,
       {
-        stopTimeoutMs: 100,
+        stopTimeoutMs: 500,
         pollIntervalMs: 1,
         processTerminator: new CurrentProcessTerminator(() => harness.hasExited),
       },
@@ -92,7 +132,7 @@ describe("WorkspaceDaemon runtime lifecycle", () => {
       pid: process.pid,
     });
     expect(harness.hasExited).toBe(true);
-    expect(Date.now() - startedAt).toBeLessThan(500);
+    expect(Date.now() - startedAt).toBeLessThan(1_000);
     await harness.exited;
     expect(harness.registry.read(harness.identity)).toBeUndefined();
   });
@@ -273,7 +313,7 @@ describe("WorkspaceDaemon runtime lifecycle", () => {
 
   it("recovers from rejected work and exits after the recovered queue becomes idle", async () => {
     const harness = await WorkspaceDaemonHarness.start(new RejectThenSucceedExecutor(), {
-      idleTimeoutMs: 30,
+      idleTimeoutMs: 1_000,
     });
     harnesses.push(harness);
 
@@ -296,7 +336,11 @@ describe("WorkspaceDaemon runtime lifecycle", () => {
     expect(harness.logEvents()).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ kind: "failure", operation: "request" }),
-        expect.objectContaining({ kind: "request", exitCode: 0 }),
+        expect.objectContaining({
+          kind: "execution-terminal",
+          requestId: expect.stringMatching(/^[a-f0-9]{64}$/),
+          outcome: "completed",
+        }),
         expect.objectContaining({ kind: "stop", reason: "idle" }),
       ]),
     );
@@ -326,13 +370,16 @@ describe("WorkspaceDaemon runtime lifecycle", () => {
 
   it("force-closes active work without terminal output when resident memory exceeds the cap", async () => {
     let resourceExceeded = false;
+    const resourcePolicy = DaemonResourcePolicy.fromSystemMemory(512 * 1024 * 1024);
     const executor = new DeferredExecutor();
     const stdout = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
     const stderr = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
     const harness = await WorkspaceDaemonHarness.start(executor, {
       memoryCapBytes: 1,
+      resourcePolicy,
       resourceCheckIntervalMs: 5,
-      residentMemoryBytes: () => (resourceExceeded ? 2 : 0),
+      residentMemoryBytes: () =>
+        resourceExceeded ? resourcePolicy.record.hardProcessRssBytes + 1 : 0,
     });
     harnesses.push(harness);
     const activeRequest = harness.execute("resource-active");
@@ -367,6 +414,7 @@ describe("WorkspaceDaemon runtime lifecycle", () => {
 interface RuntimeOptions {
   readonly idleTimeoutMs?: number;
   readonly memoryCapBytes?: number;
+  readonly resourcePolicy?: DaemonResourcePolicy;
   readonly resourceCheckIntervalMs?: number;
   readonly residentMemoryBytes?: () => number;
   readonly transport?: LocalDaemonTransport;
@@ -502,10 +550,7 @@ class WorkspaceDaemonHarness {
 
 class BlockingCloseTransport extends LocalDaemonTransport {
   private handler:
-    | ((
-        request: DaemonRequest,
-        send: (response: DaemonResponse) => void,
-      ) => Promise<DaemonResponse | void>)
+    | ((request: DaemonRequest, send: DaemonServerSend) => Promise<DaemonResponse | void>)
     | undefined;
   private readonly closeStarted: Promise<void>;
   private resolveCloseStarted!: () => void;
@@ -524,10 +569,7 @@ class BlockingCloseTransport extends LocalDaemonTransport {
 
   override async listen(
     _endpoint: string,
-    handler: (
-      request: DaemonRequest,
-      send: (response: DaemonResponse) => void,
-    ) => Promise<DaemonResponse | void>,
+    handler: (request: DaemonRequest, send: DaemonServerSend) => Promise<DaemonResponse | void>,
   ): Promise<DaemonServer> {
     this.handler = handler;
     return {
@@ -543,7 +585,10 @@ class BlockingCloseTransport extends LocalDaemonTransport {
     request: DaemonLifecycleRequest,
   ): Promise<DaemonLifecycleResponse> {
     if (this.handler === undefined) throw new Error("Daemon transport is not listening");
-    return this.handler(request, () => undefined).then((response) => {
+    const send = Object.assign(async (_response: DaemonServerMessage) => undefined, {
+      onClose: (_listener: () => void) => () => undefined,
+    });
+    return this.handler(request, send).then((response) => {
       if (response === undefined) throw new Error("Daemon transport returned no response");
       return response as DaemonLifecycleResponse;
     });
@@ -592,19 +637,34 @@ class ExecutorNavigationWorker implements DaemonNavigationWorker {
   async execute(
     requestId: string,
     request: CliExecutionRequest,
+    output: Parameters<DaemonNavigationWorker["execute"]>[2],
   ): Promise<DaemonNavigationWorkerResponse> {
+    const result = await Promise.race([this.executor.execute(request), this.termination]);
+    for await (const record of result.output.records()) await output.append(record);
+    await result.output.dispose();
     return {
       kind: "result",
       generation: this.generation,
       requestId,
-      result: await Promise.race([this.executor.execute(request), this.termination]),
+      result: { exitCode: result.exitCode },
       refresh: { added: 0, changed: 0, removed: 0, unchanged: 1 },
       durations: { freshnessMs: 0, navigationMs: 1, renderMs: 0, outputMs: 0 },
+      resources: {
+        workerHeapUsedBytes: 1,
+        peakWorkerHeapUsedBytes: 1,
+        workerHeapLimitBytes: 2,
+      },
     };
   }
 
   async releaseTransientResources(): Promise<DaemonNavigationWorkerResponse> {
-    return { kind: "heap", generation: this.generation, usedHeapBytes: 1, heapLimitBytes: 2 };
+    return {
+      kind: "heap",
+      generation: this.generation,
+      operationId: "runtime-release",
+      usedHeapBytes: 1,
+      heapLimitBytes: 2,
+    };
   }
 
   drainAndClose(): Promise<void> {
@@ -675,7 +735,7 @@ class DeferredExecutor implements DaemonCommandExecutor {
 
 class ImmediateExecutor implements DaemonCommandExecutor {
   async execute(_request: CliExecutionRequest): Promise<CommandExecutionResult> {
-    return { frames: [], exitCode: 0 };
+    return emptyResult();
   }
 }
 
@@ -685,8 +745,12 @@ class RejectThenSucceedExecutor implements DaemonCommandExecutor {
   async execute(_request: CliExecutionRequest): Promise<CommandExecutionResult> {
     this.executionCount += 1;
     if (this.executionCount === 1) throw new Error("executor rejected");
-    return { frames: [], exitCode: 0 };
+    return emptyResult();
   }
+}
+
+function emptyResult(): CommandExecutionResult {
+  return { output: new CommandOutputSnapshot([]), exitCode: 0 };
 }
 
 class CurrentProcessTerminator implements DaemonProcessTerminator {

@@ -25,7 +25,7 @@ export class DaemonLifecycleRenderer {
   }
 
   static renderStatusJson(results: readonly RunningDaemonStatus[]): string {
-    return `${JSON.stringify(results)}\n`;
+    return `${JSON.stringify({ schemaVersion: 1, daemons: results })}\n`;
   }
 
   static renderStopText(result: DaemonStopResult): string {
@@ -43,19 +43,28 @@ export class DaemonLifecycleRenderer {
   }
 
   private static statusLine(result: RunningDaemonStatus): string {
+    if (result.state === "starting") {
+      const memory =
+        result.memoryBytes === undefined
+          ? ""
+          : `  ${DaemonLifecycleRenderer.bytes(result.memoryBytes)}`;
+      return `${result.workspaceRoot}  pid ${result.pid}  starting ${DaemonLifecycleRenderer.uptime(result.startupElapsedMs)}${memory}`;
+    }
     const prefix = `${result.workspaceRoot}  pid ${result.pid}  up ${DaemonLifecycleRenderer.uptime(result.uptimeMs)}`;
-    if (result.state === "starting") return `${prefix}  starting`;
     if (result.state === "unresponsive") return `${prefix}  unresponsive`;
     if (result.state === "busy") {
-      return `${prefix}  busy ${result.currentCommand ?? "unknown"}  ${DaemonLifecycleRenderer.uptime(result.currentCommandElapsedMs ?? 0)}  queued ${result.queued ?? 0}`;
+      return `${prefix}  busy ${result.command}  ${DaemonLifecycleRenderer.uptime(result.elapsedMs)}  queued ${result.queued}  ${DaemonLifecycleRenderer.bytes(result.memoryBytes)}`;
     }
-    const fileCount = `${result.fileCount ?? 0} files`;
-    const memory = DaemonLifecycleRenderer.bytes(result.memoryBytes ?? 0);
+    if (result.state === "recovering") {
+      return `${prefix}  recovering ${result.detail}  queued ${result.queued}  ${DaemonLifecycleRenderer.bytes(result.memoryBytes)}`;
+    }
+    const fileCount = `${result.fileCount} files`;
+    const memory = DaemonLifecycleRenderer.bytes(result.memoryBytes);
     const lastRequest =
       result.lastRequestAgoMs === undefined
         ? "no requests"
         : `last request ${DaemonLifecycleRenderer.uptime(result.lastRequestAgoMs)} ago`;
-    return `${prefix}  ${fileCount}  ${memory}  ${lastRequest}`;
+    return `${prefix}  ready  ${fileCount}  ${memory}  ${lastRequest}`;
   }
 
   private static duration(durationMs: number): string {
@@ -79,7 +88,7 @@ export class DaemonLifecycleRenderer {
       value /= 1024;
       unit += 1;
     }
-    const precision = value >= 10 || unit === 0 ? 0 : 1;
+    const precision = value >= 10 || unit === 0 || Number.isInteger(value) ? 0 : 1;
     return `${value.toFixed(precision)} ${units[unit]}`;
   }
 }

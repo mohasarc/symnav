@@ -2,16 +2,27 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { performance } from "node:perf_hooks";
-import { TypeScriptBackend } from "@symnav/backend-typescript";
+import {
+  TypeScriptBackend,
+  TypeScriptFileEntryExtractor,
+  TypeScriptWorkspaceState,
+  type TypeScriptFileExtractionRequest,
+  type TypeScriptFileExtractor,
+} from "@symnav/backend-typescript";
 import { NodeFileSystem } from "@symnav/core";
 import type {
   BackendRefreshCoverage,
   BackendRefreshSummary,
   FileMetadata,
   FileSystem,
+  ResolvedPath,
+  SymbolIdentity,
   WorkspaceFile,
 } from "@symnav/core";
-import type { CommandExecutionResult } from "../../src/command-execution-result.js";
+import type {
+  CliExecutionRequest,
+  CommandExecutionResult,
+} from "../../src/command-execution-result.js";
 import { RetainedWorkspaceProgram } from "../../src/daemon/retained-workspace-program.js";
 import { fakeDependencies } from "../integration/commands/helpers/fake-program-dependencies.js";
 
@@ -21,6 +32,9 @@ export interface DaemonBenchmarkMeasurement {
     readonly projectLoads: number;
     readonly snapshots: number;
     readonly refreshes: number;
+    readonly definitionLookups: number;
+    readonly sourceReads: number;
+    readonly extractions: number;
   };
   readonly refreshes: readonly BackendRefreshSummary[];
   readonly firstResolveMs: number;
@@ -30,6 +44,8 @@ export interface DaemonBenchmarkMeasurement {
 
 interface BenchmarkCounters {
   projectLoads: number;
+  definitionLookups: number;
+  extractions: number;
   readonly refreshes: BackendRefreshSummary[];
 }
 
@@ -89,13 +105,18 @@ export class DaemonBenchmarkHarness {
 
   private async measure(workspaceRoot: string): Promise<DaemonBenchmarkMeasurement> {
     const fileSystem = new SnapshotCountingFileSystem(new NodeFileSystem());
-    const counters: BenchmarkCounters = { projectLoads: 0, refreshes: [] };
+    const counters: BenchmarkCounters = {
+      projectLoads: 0,
+      definitionLookups: 0,
+      extractions: 0,
+      refreshes: [],
+    };
     const retainedProgram = new RetainedWorkspaceProgram(
       fakeDependencies({
         fs: fileSystem,
         backends: () => {
           counters.projectLoads += 1;
-          return [new InstrumentedTypeScriptBackend(fileSystem, counters.refreshes)];
+          return [new InstrumentedTypeScriptBackend(fileSystem, counters)];
         },
       }),
     );
@@ -107,6 +128,13 @@ export class DaemonBenchmarkHarness {
     } as const;
     const first = await this.timeExecution(() => retainedProgram.execute(request));
     const second = await this.timeExecution(() => retainedProgram.execute(request));
+    const targetSuffix = String(this.fileCount - 1).padStart(4, "0");
+    const definitionRequest: CliExecutionRequest = {
+      ...request,
+      argv: ["def", `src/module-${targetSuffix}.ts::symbol${targetSuffix}`],
+    };
+    const firstDefinition = await retainedProgram.execute(definitionRequest);
+    const secondDefinition = await retainedProgram.execute(definitionRequest);
     if (first.result.exitCode !== 0 || second.result.exitCode !== 0) {
       throw new Error(
         `Benchmark commands exited ${first.result.exitCode} and ${second.result.exitCode}`,
@@ -115,12 +143,23 @@ export class DaemonBenchmarkHarness {
     if (JSON.stringify(first.result.frames) !== JSON.stringify(second.result.frames)) {
       throw new Error("First and second benchmark commands produced different output");
     }
+    if (firstDefinition.exitCode !== 0 || secondDefinition.exitCode !== 0) {
+      throw new Error(
+        `Benchmark definition commands exited ${firstDefinition.exitCode} and ${secondDefinition.exitCode}`,
+      );
+    }
+    if (JSON.stringify(firstDefinition.frames) !== JSON.stringify(secondDefinition.frames)) {
+      throw new Error("First and second benchmark definition commands produced different output");
+    }
     return {
       fileCount: this.fileCount,
       counts: {
         projectLoads: counters.projectLoads,
         snapshots: fileSystem.completeSnapshots(this.fileCount),
         refreshes: counters.refreshes.length,
+        definitionLookups: counters.definitionLookups,
+        sourceReads: fileSystem.sourceReadCount(),
+        extractions: counters.extractions,
       },
       refreshes: counters.refreshes,
       firstResolveMs: first.durationMs,
@@ -141,9 +180,17 @@ export class DaemonBenchmarkHarness {
 class InstrumentedTypeScriptBackend extends TypeScriptBackend {
   constructor(
     fileSystem: FileSystem,
-    private readonly refreshes: BackendRefreshSummary[],
+    private readonly counters: BenchmarkCounters,
   ) {
-    super(fileSystem);
+    super(
+      fileSystem,
+      new TypeScriptWorkspaceState(
+        fileSystem,
+        new CountingTypeScriptFileExtractor(() => {
+          counters.extractions += 1;
+        }),
+      ),
+    );
   }
 
   override async refresh(
@@ -151,13 +198,30 @@ class InstrumentedTypeScriptBackend extends TypeScriptBackend {
     coverage: BackendRefreshCoverage = "workspace",
   ): Promise<BackendRefreshSummary> {
     const summary = await super.refresh(files, coverage);
-    this.refreshes.push(summary);
+    this.counters.refreshes.push(summary);
     return summary;
+  }
+
+  override async findDefinitions(files: readonly ResolvedPath[], identity: SymbolIdentity) {
+    this.counters.definitionLookups += 1;
+    return super.findDefinitions(files, identity);
+  }
+}
+
+class CountingTypeScriptFileExtractor implements TypeScriptFileExtractor {
+  private readonly extractor = new TypeScriptFileEntryExtractor();
+
+  constructor(private readonly extracted: () => void) {}
+
+  extract(request: TypeScriptFileExtractionRequest) {
+    this.extracted();
+    return this.extractor.extract(request);
   }
 }
 
 class SnapshotCountingFileSystem implements FileSystem {
   private metadataReads = 0;
+  private sourceReads = 0;
 
   constructor(private readonly fileSystem: FileSystem) {}
 
@@ -166,6 +230,10 @@ class SnapshotCountingFileSystem implements FileSystem {
       throw new Error(`${this.metadataReads} metadata reads do not form complete snapshots`);
     }
     return this.metadataReads / fileCount;
+  }
+
+  sourceReadCount(): number {
+    return this.sourceReads;
   }
 
   readFile(absPath: string): Promise<string> {
@@ -185,7 +253,7 @@ class SnapshotCountingFileSystem implements FileSystem {
   }
 
   metadata(absPath: string): Promise<FileMetadata> {
-    this.metadataReads += 1;
+    if (!this.fileSystem.isDirectorySync(absPath)) this.metadataReads += 1;
     return this.fileSystem.metadata(absPath);
   }
 
@@ -194,6 +262,7 @@ class SnapshotCountingFileSystem implements FileSystem {
   }
 
   readFileSync(absPath: string): string {
+    if (TypeScriptBackend.accepts(absPath)) this.sourceReads += 1;
     return this.fileSystem.readFileSync(absPath);
   }
 

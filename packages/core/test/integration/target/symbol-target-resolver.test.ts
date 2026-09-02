@@ -90,7 +90,7 @@ class ResolverScenario {
   private static fakeWorkspace(files: readonly ResolvedPath[]): Workspace {
     const workspaceFiles = files.map((file) => ({
       ...file,
-      metadata: { size: 0, modifiedAtMs: 0 },
+      metadata: { size: 0, modifiedAtMs: 0, changeToken: "revision-1" },
     }));
     return {
       root: "/repo",

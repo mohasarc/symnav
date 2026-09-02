@@ -89,7 +89,9 @@ function copiedCandidate(stderr: string): string {
   return candidate;
 }
 
-describe("symnav agent workflow smoke", () => {
+const AGENT_WORKFLOW_E2E_TIMEOUT_MS = 20_000;
+
+describe("symnav agent workflow smoke", { timeout: AGENT_WORKFLOW_E2E_TIMEOUT_MS }, () => {
   it("renders compact overview and expands a copied fold header", async () => {
     const overview = runSymnav(["overview", "src/agent-workflow.ts"]);
     expect(overview.stderr).toBe("");

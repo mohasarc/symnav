@@ -7,8 +7,6 @@ import {
   type SymbolPathSegment,
 } from "@symnav/core";
 
-import { extractFileEntries } from "../extract/extract-file-entries.js";
-
 export interface LocatedDeclaration {
   readonly declaration: SymbolOverviewNode;
   readonly node: Node;
@@ -27,16 +25,14 @@ export class DeclarationLocator {
 
   constructor(private readonly sourceFile: SourceFile) {}
 
-  locate(identity: SymbolIdentity): readonly LocatedDeclaration[] {
+  locate(
+    identity: SymbolIdentity,
+    preparedEntries: readonly OverviewNode[],
+  ): readonly LocatedDeclaration[] {
     const { segments } = identity;
     const ownSegment = segments[segments.length - 1];
     if (!ownSegment) return [];
-    let candidates = OverviewTree.scopeSymbols(
-      extractFileEntries({
-        sourceFile: this.sourceFile,
-        filePath: identity.file,
-      }).entries,
-    );
+    let candidates = OverviewTree.scopeSymbols(preparedEntries);
     for (const ancestorSegment of segments.slice(0, -1)) {
       candidates = candidates
         .filter((candidate) => this.ownSegmentMatches(candidate, ancestorSegment))

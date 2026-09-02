@@ -9,6 +9,7 @@ import type {
 import type { ProgramContext } from "./program-context.js";
 import type { ProgramDependencies } from "./program-dependencies.js";
 import { buildProgram } from "./program.js";
+import type { WorkspaceRequestScopeFactory } from "./workspace-request-scope.js";
 
 class CapturedProgramExit extends Error {
   constructor(readonly exitCode: number) {
@@ -44,7 +45,10 @@ class DeferredTelemetryRecorder implements Recorder {
 }
 
 export class CliProgramExecutor {
-  constructor(private readonly dependencies: ProgramDependencies) {}
+  constructor(
+    private readonly dependencies: ProgramDependencies,
+    private readonly scopeFactory?: WorkspaceRequestScopeFactory,
+  ) {}
 
   async execute(request: CliExecutionRequest): Promise<CommandExecutionResult> {
     const frames: CommandOutputFrame[] = [];
@@ -62,6 +66,7 @@ export class CliProgramExecutor {
       recorder: deferredTelemetry ?? this.dependencies.recorder,
       telemetryEnabled: request.telemetryEnabled,
       executionMode: request.executionMode ?? "cold",
+      ...(this.scopeFactory === undefined ? {} : { scopeFactory: this.scopeFactory }),
     };
 
     try {

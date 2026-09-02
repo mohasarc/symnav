@@ -121,6 +121,19 @@ describe("TypeScriptBackend.fileEntries", () => {
     expect(counting.readFileCalls).toContain("/repo/src/x.ts");
   });
 
+  it("returns the same prepared diagnostic entries across repeated lookups", async () => {
+    const { backend, path } = backendOver({
+      "/repo/src/warning.ts": "export const visible = true;\n@orphaned\n",
+    });
+    const warningPath = path("src/warning.ts");
+
+    const first = await backend.fileEntries(warningPath);
+    const second = await backend.fileEntries(warningPath);
+
+    expect(first.diagnostics).toHaveLength(1);
+    expect(second).toBe(first);
+  });
+
   it("on a nonexistent file throws FileNotFoundError", async () => {
     const { backend, path } = backendOver({});
     await expect(backend.fileEntries(path("src/missing.ts"))).rejects.toBeInstanceOf(
@@ -252,7 +265,11 @@ function workspaceFile(relative: string, fs: InMemoryFileSystem): WorkspaceFile 
   return {
     relative,
     absolute,
-    metadata: { size: fs.readFileSync(absolute).length, modifiedAtMs: 100 },
+    metadata: {
+      size: fs.readFileSync(absolute).length,
+      modifiedAtMs: 100,
+      changeToken: fs.metadataSync(absolute).changeToken,
+    },
   };
 }
 
@@ -367,6 +384,8 @@ class MutableBackendFileSystem implements FileSystem {
     return {
       size: Buffer.byteLength(content),
       modifiedAtMs: this.modifiedAtByPath.get(absPath) ?? 0,
+      changeToken: `${this.modifiedAtByPath.get(absPath) ?? 0}:${content}`,
+      fileIdentity: absPath,
     };
   }
 

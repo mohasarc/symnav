@@ -1,4 +1,5 @@
 import {
+  CollectingDiagnosticSink,
   FileNotFoundError,
   OverviewTree,
   type BackendRefreshCoverage,
@@ -6,6 +7,7 @@ import {
   type DiagnosticSink,
   type FileSystem,
   type OverviewFileEntries,
+  type NavigationDiagnostic,
   type ResolvedPath,
   type SymbolIdentity,
   type SymbolOverviewNode,
@@ -27,14 +29,46 @@ export interface TypeScriptFileRevision {
   readonly absolutePath: string;
   readonly size: number;
   readonly modifiedAtMs: number;
+  readonly changeToken: string;
 }
 
-interface PreparedFileIndex {
+export interface TypeScriptFileExtractionRequest {
+  readonly sourceFile: SourceFile;
+  readonly filePath: string;
+  readonly diagnostics?: DiagnosticSink;
+}
+
+export interface TypeScriptFileExtractor {
+  extract(request: TypeScriptFileExtractionRequest): OverviewFileEntries;
+}
+
+export class TypeScriptFileEntryExtractor implements TypeScriptFileExtractor {
+  extract(request: TypeScriptFileExtractionRequest): OverviewFileEntries {
+    return extractFileEntries(request);
+  }
+}
+
+export interface PreparedFileRevision {
+  readonly file: WorkspaceFile;
+  readonly entries: OverviewFileEntries;
+  readonly diagnostics: readonly NavigationDiagnostic[];
+}
+
+export interface PreparedFileIndex {
+  readonly byRelativePath: ReadonlyMap<string, PreparedFileRevision>;
+  readonly declarationsByIdentity: ReadonlyMap<string, readonly SymbolOverviewNode[]>;
+}
+
+interface PreparedFileState extends PreparedFileRevision {
   readonly revision: TypeScriptFileRevision;
-  readonly path: ResolvedPath;
   readonly declarations: readonly SymbolOverviewNode[];
-  readonly declarationsByIdentity: ReadonlyMap<string, IndexedDeclaration>;
   readonly declarationsByPosition: ReadonlyMap<number, SymbolOverviewNode>;
+}
+
+interface WorkspacePreparedFileIndex extends PreparedFileIndex {
+  readonly byRelativePath: ReadonlyMap<string, PreparedFileState>;
+  readonly declarationsByPosition: ReadonlyMap<string, ReadonlyMap<number, SymbolOverviewNode>>;
+  readonly relativePathByAbsolute: ReadonlyMap<string, string>;
 }
 
 interface ProjectMutation {
@@ -43,14 +77,17 @@ interface ProjectMutation {
 
 export class TypeScriptWorkspaceState {
   private readonly project: Project;
-  private readonly revisionsByRelativePath = new Map<string, TypeScriptFileRevision>();
-  private readonly fileByRelativePath = new Map<string, ResolvedPath>();
-  private readonly relativePathByAbsolute = new Map<string, string>();
-  private readonly declarationsByIdentity = new Map<string, IndexedDeclaration>();
-  private readonly declarationsByPosition = new Map<string, Map<number, SymbolOverviewNode>>();
-  private readonly declarationsByFile = new Map<string, readonly SymbolOverviewNode[]>();
+  private preparedIndex: WorkspacePreparedFileIndex = {
+    byRelativePath: new Map(),
+    declarationsByIdentity: new Map(),
+    declarationsByPosition: new Map(),
+    relativePathByAbsolute: new Map(),
+  };
 
-  constructor(private readonly fs: FileSystem) {
+  constructor(
+    private readonly fs: FileSystem,
+    private readonly extractor: TypeScriptFileExtractor = new TypeScriptFileEntryExtractor(),
+  ) {
     this.project = new Project({ fileSystem: new WorkspaceFileSystemHost(fs) });
   }
 
@@ -66,7 +103,7 @@ export class TypeScriptWorkspaceState {
     let unchanged = 0;
 
     for (const revision of incomingRevisions) {
-      const current = this.revisionsByRelativePath.get(revision.relativePath);
+      const current = this.preparedIndex.byRelativePath.get(revision.relativePath)?.revision;
       if (!current) {
         added.push(revision);
         revisionsToPrepare.push(revision);
@@ -82,18 +119,14 @@ export class TypeScriptWorkspaceState {
 
     const removed =
       coverage === "workspace"
-        ? [...this.revisionsByRelativePath.keys()].filter(
+        ? [...this.preparedIndex.byRelativePath.keys()].filter(
             (relativePath) => !incomingPaths.has(relativePath),
           )
         : [];
     const prepared = this.prepareFiles(revisionsToPrepare);
-
-    for (const relativePath of removed) {
-      this.removeFile(relativePath);
-    }
-    for (const preparedFile of prepared) {
-      this.publishFile(preparedFile);
-    }
+    const nextIndex = this.buildPreparedIndex(prepared, removed);
+    this.publishProjectRemovals(prepared, removed);
+    this.preparedIndex = nextIndex;
 
     return {
       added: added.length,
@@ -104,12 +137,12 @@ export class TypeScriptWorkspaceState {
   }
 
   currentFileCount(): number {
-    return this.revisionsByRelativePath.size;
+    return this.preparedIndex.byRelativePath.size;
   }
 
   ensureFiles(files: readonly ResolvedPath[]): void {
     for (const file of files) {
-      if (!this.fileByRelativePath.has(file.relative)) {
+      if (!this.preparedIndex.byRelativePath.has(file.relative)) {
         this.addFile(file);
       }
     }
@@ -117,15 +150,22 @@ export class TypeScriptWorkspaceState {
 
   fileEntries(file: ResolvedPath, diagnostics?: DiagnosticSink): OverviewFileEntries {
     this.ensureFiles([file]);
-    const sourceFile = this.sourceFile(file.relative);
-    if (!sourceFile) {
+    const prepared = this.preparedIndex.byRelativePath.get(file.relative);
+    if (!prepared) {
       throw new FileNotFoundError(file.relative);
     }
-    return extractFileEntries({ sourceFile, filePath: file.relative, diagnostics });
+    for (const diagnostic of prepared.diagnostics) {
+      diagnostics?.report(diagnostic);
+    }
+    return prepared.entries;
+  }
+
+  diagnostics(file: ResolvedPath): readonly NavigationDiagnostic[] {
+    return this.preparedIndex.byRelativePath.get(file.relative)?.diagnostics ?? [];
   }
 
   declarationsIn(relativePath: string): readonly SymbolOverviewNode[] | undefined {
-    return this.declarationsByFile.get(relativePath);
+    return this.preparedIndex.byRelativePath.get(relativePath)?.declarations;
   }
 
   allDeclarations(files: readonly ResolvedPath[]): readonly SymbolOverviewNode[] {
@@ -134,29 +174,40 @@ export class TypeScriptWorkspaceState {
   }
 
   sourceFile(relativePath: string): SourceFile | undefined {
-    const path = this.fileByRelativePath.get(relativePath);
-    if (!path) return undefined;
-    return this.project.getSourceFile(path.absolute);
+    const prepared = this.preparedIndex.byRelativePath.get(relativePath);
+    if (!prepared) return undefined;
+    return this.project.getSourceFile(prepared.file.absolute);
   }
 
   locate(identity: SymbolIdentity): readonly LocatedDeclaration[] {
-    const sourceFile = this.sourceFile(identity.file);
+    const prepared = this.preparedIndex.byRelativePath.get(identity.file);
+    if (!prepared) return [];
+    const sourceFile = this.project.getSourceFile(prepared.file.absolute);
     if (!sourceFile) return [];
-    return new DeclarationLocator(sourceFile).locate(identity);
+    return new DeclarationLocator(sourceFile).locate(identity, prepared.entries.entries);
   }
 
   declarationAt(node: Node): SymbolOverviewNode | undefined {
     const relative = this.relativePathOf(node.getSourceFile());
     if (!relative) return undefined;
-    return this.declarationsByPosition.get(relative)?.get(node.getStart());
+    return this.preparedIndex.declarationsByPosition.get(relative)?.get(node.getStart());
   }
 
   declarationForIdentity(identity: SymbolIdentity): IndexedDeclaration | undefined {
-    return this.declarationsByIdentity.get(DeclarationLocator.identityKey(identity));
+    const declaration = this.preparedIndex.declarationsByIdentity.get(
+      DeclarationLocator.identityKey(identity),
+    )?.[0];
+    if (!declaration) return undefined;
+    const prepared = this.preparedIndex.byRelativePath.get(declaration.identity.file);
+    if (!prepared) return undefined;
+    return {
+      declaration,
+      file: { relative: prepared.file.relative, absolute: prepared.file.absolute },
+    };
   }
 
   relativePathOf(sourceFile: SourceFile): string | undefined {
-    return this.relativePathByAbsolute.get(sourceFile.getFilePath());
+    return this.preparedIndex.relativePathByAbsolute.get(sourceFile.getFilePath());
   }
 
   private addFile(path: ResolvedPath): void {
@@ -167,17 +218,18 @@ export class TypeScriptWorkspaceState {
         absolutePath: path.absolute,
         size: metadata.size,
         modifiedAtMs: metadata.modifiedAtMs,
+        changeToken: metadata.changeToken,
       },
     ]);
     const preparedFile = prepared[0];
     if (preparedFile) {
-      this.publishFile(preparedFile);
+      this.preparedIndex = this.buildPreparedIndex([preparedFile], []);
     }
   }
 
-  private prepareFiles(revisions: readonly TypeScriptFileRevision[]): readonly PreparedFileIndex[] {
+  private prepareFiles(revisions: readonly TypeScriptFileRevision[]): readonly PreparedFileState[] {
     const candidates = revisions.map((revision) => {
-      const existingPath = this.fileByRelativePath.get(revision.relativePath);
+      const existingPath = this.preparedIndex.byRelativePath.get(revision.relativePath)?.file;
       const existingSourceFile =
         existingPath?.absolute === revision.absolutePath
           ? this.project.getSourceFile(revision.absolutePath)
@@ -222,74 +274,98 @@ export class TypeScriptWorkspaceState {
     sourceFile: SourceFile,
     path: ResolvedPath,
     revision: TypeScriptFileRevision,
-  ): PreparedFileIndex {
+  ): PreparedFileState {
     const byPosition = new Map<number, SymbolOverviewNode>();
     const declarations: SymbolOverviewNode[] = [];
-    const byIdentity = new Map<string, IndexedDeclaration>();
-    const { entries } = extractFileEntries({ sourceFile, filePath: path.relative });
-    for (const declaration of OverviewTree.walkSymbols(entries)) {
+    const diagnosticSink = new CollectingDiagnosticSink();
+    const extracted = this.extractor.extract({
+      sourceFile,
+      filePath: path.relative,
+      diagnostics: diagnosticSink,
+    });
+    const diagnostics = diagnosticSink.diagnostics();
+    const entries = diagnostics.length === 0 ? extracted : { ...extracted, diagnostics };
+    for (const declaration of OverviewTree.walkSymbols(entries.entries)) {
       declarations.push(declaration);
-      byIdentity.set(DeclarationLocator.identityKey(declaration.identity), {
-        declaration,
-        file: path,
-      });
     }
-    for (const { declaration, node } of new DeclarationLocator(sourceFile).locateAll(entries)) {
+    for (const { declaration, node } of new DeclarationLocator(sourceFile).locateAll(
+      entries.entries,
+    )) {
       byPosition.set(node.getStart(), declaration);
     }
     return {
       revision,
-      path,
+      file: {
+        ...path,
+        metadata: {
+          size: revision.size,
+          modifiedAtMs: revision.modifiedAtMs,
+          changeToken: revision.changeToken,
+        },
+      },
+      entries,
+      diagnostics,
       declarations,
-      declarationsByIdentity: byIdentity,
       declarationsByPosition: byPosition,
     };
   }
 
-  private publishFile(prepared: PreparedFileIndex): void {
-    const previousPath = this.fileByRelativePath.get(prepared.path.relative);
-    this.purgeIndexes(prepared.path.relative);
-    if (previousPath && previousPath.absolute !== prepared.path.absolute) {
-      const previousSourceFile = this.project.getSourceFile(previousPath.absolute);
-      if (previousSourceFile) {
-        this.project.removeSourceFile(previousSourceFile);
-      }
-      this.relativePathByAbsolute.delete(previousPath.absolute);
+  private buildPreparedIndex(
+    preparedFiles: readonly PreparedFileState[],
+    removedRelativePaths: readonly string[],
+  ): WorkspacePreparedFileIndex {
+    if (preparedFiles.length === 0 && removedRelativePaths.length === 0) {
+      return this.preparedIndex;
+    }
+    const byRelativePath = new Map(this.preparedIndex.byRelativePath);
+    for (const relativePath of removedRelativePaths) {
+      byRelativePath.delete(relativePath);
+    }
+    for (const prepared of preparedFiles) {
+      byRelativePath.set(prepared.file.relative, prepared);
     }
 
-    this.revisionsByRelativePath.set(prepared.path.relative, prepared.revision);
-    this.fileByRelativePath.set(prepared.path.relative, prepared.path);
-    this.relativePathByAbsolute.set(prepared.path.absolute, prepared.path.relative);
-    for (const [identity, declaration] of prepared.declarationsByIdentity) {
-      this.declarationsByIdentity.set(identity, declaration);
+    const declarationsByIdentity = new Map<string, SymbolOverviewNode[]>();
+    const declarationsByPosition = new Map<string, ReadonlyMap<number, SymbolOverviewNode>>();
+    const relativePathByAbsolute = new Map<string, string>();
+    for (const prepared of byRelativePath.values()) {
+      for (const declaration of prepared.declarations) {
+        const identity = DeclarationLocator.identityKey(declaration.identity);
+        const declarations = declarationsByIdentity.get(identity) ?? [];
+        declarations.push(declaration);
+        declarationsByIdentity.set(identity, declarations);
+      }
+      declarationsByPosition.set(prepared.file.relative, prepared.declarationsByPosition);
+      relativePathByAbsolute.set(prepared.file.absolute, prepared.file.relative);
     }
-    this.declarationsByPosition.set(
-      prepared.path.relative,
-      new Map(prepared.declarationsByPosition),
-    );
-    this.declarationsByFile.set(prepared.path.relative, prepared.declarations);
+    return {
+      byRelativePath,
+      declarationsByIdentity,
+      declarationsByPosition,
+      relativePathByAbsolute,
+    };
   }
 
-  private removeFile(relativePath: string): void {
-    const path = this.fileByRelativePath.get(relativePath);
-    if (path) {
-      const sourceFile = this.project.getSourceFile(path.absolute);
+  private publishProjectRemovals(
+    preparedFiles: readonly PreparedFileState[],
+    removedRelativePaths: readonly string[],
+  ): void {
+    const obsoleteAbsolutePaths = removedRelativePaths.flatMap((relativePath) => {
+      const prepared = this.preparedIndex.byRelativePath.get(relativePath);
+      return prepared ? [prepared.file.absolute] : [];
+    });
+    for (const prepared of preparedFiles) {
+      const previous = this.preparedIndex.byRelativePath.get(prepared.file.relative);
+      if (previous && previous.file.absolute !== prepared.file.absolute) {
+        obsoleteAbsolutePaths.push(previous.file.absolute);
+      }
+    }
+    for (const absolutePath of obsoleteAbsolutePaths) {
+      const sourceFile = this.project.getSourceFile(absolutePath);
       if (sourceFile) {
         this.project.removeSourceFile(sourceFile);
       }
-      this.relativePathByAbsolute.delete(path.absolute);
     }
-    this.purgeIndexes(relativePath);
-    this.fileByRelativePath.delete(relativePath);
-    this.revisionsByRelativePath.delete(relativePath);
-  }
-
-  private purgeIndexes(relativePath: string): void {
-    for (const declaration of this.declarationsByFile.get(relativePath) ?? []) {
-      this.declarationsByIdentity.delete(DeclarationLocator.identityKey(declaration.identity));
-    }
-    this.declarationsByPosition.delete(relativePath);
-    this.declarationsByFile.delete(relativePath);
   }
 
   private static revisionFor(file: WorkspaceFile): TypeScriptFileRevision {
@@ -298,6 +374,7 @@ export class TypeScriptWorkspaceState {
       absolutePath: file.absolute,
       size: file.metadata.size,
       modifiedAtMs: file.metadata.modifiedAtMs,
+      changeToken: file.metadata.changeToken,
     };
   }
 
@@ -308,8 +385,7 @@ export class TypeScriptWorkspaceState {
     return (
       current.relativePath === incoming.relativePath &&
       current.absolutePath === incoming.absolutePath &&
-      current.size === incoming.size &&
-      current.modifiedAtMs === incoming.modifiedAtMs
+      current.changeToken === incoming.changeToken
     );
   }
 }

@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import {
   InMemoryFileSystem,
@@ -9,7 +9,33 @@ import {
 } from "@symnav/core";
 
 import { TypeScriptBackend } from "./typescript-backend.js";
-import { TypeScriptWorkspaceState } from "./typescript-workspace-state.js";
+import * as fileEntryExtraction from "../extract/extract-file-entries.js";
+import {
+  TypeScriptWorkspaceState,
+  type TypeScriptFileExtractionRequest,
+  type TypeScriptFileExtractor,
+} from "./typescript-workspace-state.js";
+
+class CountingTypeScriptFileExtractor implements TypeScriptFileExtractor {
+  readonly calls: string[] = [];
+  private readonly failingPaths = new Set<string>();
+
+  failFor(filePath: string): void {
+    this.failingPaths.add(filePath);
+  }
+
+  restore(filePath: string): void {
+    this.failingPaths.delete(filePath);
+  }
+
+  extract(request: TypeScriptFileExtractionRequest) {
+    this.calls.push(request.filePath);
+    if (this.failingPaths.has(request.filePath)) {
+      throw new Error(`extraction failed: ${request.filePath}`);
+    }
+    return fileEntryExtraction.extractFileEntries(request);
+  }
+}
 
 class MutableWorkspaceFileSystem implements FileSystem {
   private readonly contents = new Map<string, string>();
@@ -19,7 +45,11 @@ class MutableWorkspaceFileSystem implements FileSystem {
 
   constructor(files: Record<string, string>) {
     for (const [path, content] of Object.entries(files)) {
-      this.setFile(path, content, { size: Buffer.byteLength(content), modifiedAtMs: 1 });
+      this.setFile(path, content, {
+        size: Buffer.byteLength(content),
+        modifiedAtMs: 1,
+        changeToken: `1:${content}`,
+      });
     }
   }
 
@@ -31,6 +61,7 @@ class MutableWorkspaceFileSystem implements FileSystem {
       metadata ?? {
         size: Buffer.byteLength(content),
         modifiedAtMs: (previous?.modifiedAtMs ?? 0) + 1,
+        changeToken: `${(previous?.modifiedAtMs ?? 0) + 1}:${content}`,
       },
     );
   }
@@ -128,6 +159,115 @@ function declarationNames(
 }
 
 describe("TypeScriptWorkspaceState.refresh", () => {
+  it("extracts each file revision once across prepared lookups and no-change refresh", () => {
+    const fs = new MutableWorkspaceFileSystem({
+      "/repo/src/a.ts": "export const before = 1;\n",
+    });
+    const extractor = new CountingTypeScriptFileExtractor();
+    const state = new TypeScriptWorkspaceState(fs, extractor);
+    const firstRevision = fs.workspaceFiles("src/a.ts");
+
+    state.refresh(firstRevision);
+    const firstEntries = state.fileEntries(firstRevision[0]!);
+    expect(state.fileEntries(firstRevision[0]!)).toBe(firstEntries);
+    expect(state.allDeclarations(firstRevision)).toHaveLength(1);
+    state.refresh(firstRevision);
+    expect(state.fileEntries(firstRevision[0]!)).toBe(firstEntries);
+    expect(extractor.calls).toEqual(["src/a.ts"]);
+
+    fs.setFile("/repo/src/a.ts", "export const afterx = 2;\n");
+    const secondRevision = fs.workspaceFiles("src/a.ts");
+    state.refresh(secondRevision);
+
+    expect(state.fileEntries(secondRevision[0]!)).not.toBe(firstEntries);
+    expect(extractor.calls).toEqual(["src/a.ts", "src/a.ts"]);
+  });
+
+  it("reuses prepared declarations across repeated semantic lookups", async () => {
+    const fs = new MutableWorkspaceFileSystem({
+      "/repo/src/app.ts": [
+        "export function target(): void {}",
+        "export function caller(): void { target(); }",
+        "",
+      ].join("\n"),
+    });
+    const extraction = vi.spyOn(fileEntryExtraction, "extractFileEntries");
+    const state = new TypeScriptWorkspaceState(fs);
+    const backend = new TypeScriptBackend(fs, state);
+    const files = fs.workspaceFiles("src/app.ts");
+    const target: SymbolIdentity = { file: "src/app.ts", segments: [{ name: "target" }] };
+    const caller: SymbolIdentity = { file: "src/app.ts", segments: [{ name: "caller" }] };
+
+    await backend.refresh(files);
+    const preparedTarget = state
+      .declarationsIn("src/app.ts")
+      ?.find((declaration) => declaration.identity.segments.at(-1)?.name === "target");
+
+    for (let repetition = 0; repetition < 2; repetition += 1) {
+      expect(await backend.findDefinitions(files, target)).toHaveLength(1);
+      expect(await backend.findReferences(files, target)).toHaveLength(1);
+      expect(await backend.findCallees(files, caller)).toHaveLength(1);
+      expect(await backend.findCallers(files, target)).toHaveLength(1);
+      expect(state.locate(target)[0]?.declaration).toBe(preparedTarget);
+    }
+
+    expect(extraction).toHaveBeenCalledTimes(1);
+    extraction.mockRestore();
+  });
+
+  it("publishes changed declarations and diagnostics only after every extraction succeeds", () => {
+    const fs = new MutableWorkspaceFileSystem({
+      "/repo/src/a.ts": "export const beforeA = 1;\n@orphaned\n",
+      "/repo/src/b.ts": "export const beforeB = 1;\n",
+    });
+    const extractor = new CountingTypeScriptFileExtractor();
+    const state = new TypeScriptWorkspaceState(fs, extractor);
+    const beforeFiles = fs.workspaceFiles("src/a.ts", "src/b.ts");
+    state.refresh(beforeFiles);
+    const beforeEntries = state.fileEntries(beforeFiles[0]!);
+    const beforeDiagnostics = state.diagnostics(beforeFiles[0]!);
+
+    fs.setFile("/repo/src/a.ts", "export const afterA = 2;\n");
+    fs.setFile("/repo/src/b.ts", "export const afterB = 2;\n");
+    const afterFiles = fs.workspaceFiles("src/a.ts", "src/b.ts");
+    extractor.failFor("src/b.ts");
+
+    expect(() => state.refresh(afterFiles)).toThrow("extraction failed: src/b.ts");
+    expect(state.fileEntries(beforeFiles[0]!)).toBe(beforeEntries);
+    expect(state.diagnostics(beforeFiles[0]!)).toBe(beforeDiagnostics);
+    expect(declarationNames(state, beforeFiles)).toEqual(["beforeA", "beforeB"]);
+
+    extractor.restore("src/b.ts");
+    state.refresh(afterFiles);
+
+    expect(state.fileEntries(afterFiles[0]!)).not.toBe(beforeEntries);
+    expect(state.diagnostics(afterFiles[0]!)).toEqual([]);
+    expect(declarationNames(state, afterFiles)).toEqual(["afterA", "afterB"]);
+  });
+
+  it("retains unselected diagnostics and purges removed diagnostics", () => {
+    const fs = new MutableWorkspaceFileSystem({
+      "/repo/src/a.ts": "export const a = 1;\n",
+      "/repo/src/b.ts": "export const b = 1;\n@orphaned\n",
+    });
+    const state = new TypeScriptWorkspaceState(fs);
+    const files = fs.workspaceFiles("src/a.ts", "src/b.ts");
+    state.refresh(files);
+    const siblingDiagnostics = state.diagnostics(files[1]!);
+
+    fs.setFile("/repo/src/a.ts", "export const changedA = 2;\n");
+    state.refresh(fs.workspaceFiles("src/a.ts"), "selection");
+
+    expect(state.diagnostics(files[1]!)).toBe(siblingDiagnostics);
+    expect(state.declarationsIn("src/b.ts")).toBeDefined();
+
+    fs.deleteFile("/repo/src/b.ts");
+    state.refresh(fs.workspaceFiles("src/a.ts"));
+
+    expect(state.diagnostics(files[1]!)).toEqual([]);
+    expect(state.declarationsIn("src/b.ts")).toBeUndefined();
+  });
+
   it("keeps an unchanged source object while sibling deltas are applied", () => {
     const fs = new MutableWorkspaceFileSystem({
       "/repo/src/stable.ts": "export const stable = 1;\n",
@@ -166,13 +306,13 @@ describe("TypeScriptWorkspaceState.refresh", () => {
     {
       trigger: "size only",
       source: "export const longerName = 1;\n",
-      metadata: { size: 29, modifiedAtMs: 1 },
+      metadata: { size: 29, modifiedAtMs: 1, changeToken: "revision-1" },
       expectedName: "longerName",
     },
     {
       trigger: "modification time only",
       source: "export const b = 2;\n",
-      metadata: { size: 20, modifiedAtMs: 2 },
+      metadata: { size: 20, modifiedAtMs: 2, changeToken: "revision-2" },
       expectedName: "b",
     },
   ])(
@@ -340,7 +480,7 @@ describe("TypeScriptWorkspaceState.refresh", () => {
     expect(state.declarationForIdentity(addedIdentity)).toBeDefined();
   });
 
-  it("keeps old content when a write preserves both modification time and size", () => {
+  it("reloads content when only the filesystem change token changes", () => {
     const fs = new MutableWorkspaceFileSystem({
       "/repo/src/a.ts": "export const before = 1;\n",
     });
@@ -349,10 +489,18 @@ describe("TypeScriptWorkspaceState.refresh", () => {
     state.refresh(files);
     const metadata = files[0]!.metadata;
 
-    fs.setFile("/repo/src/a.ts", "export const afterx = 2;\n", metadata);
-    const sameRevision = fs.workspaceFiles("src/a.ts");
+    fs.setFile("/repo/src/a.ts", "export const afterx = 2;\n", {
+      ...metadata,
+      changeToken: "equal-size-restored-time-edit",
+    });
+    const changedRevision = fs.workspaceFiles("src/a.ts");
 
-    expect(state.refresh(sameRevision)).toEqual({ added: 0, changed: 0, removed: 0, unchanged: 1 });
-    expect(declarationNames(state, sameRevision)).toEqual(["before"]);
+    expect(state.refresh(changedRevision)).toEqual({
+      added: 0,
+      changed: 1,
+      removed: 0,
+      unchanged: 0,
+    });
+    expect(declarationNames(state, changedRevision)).toEqual(["afterx"]);
   });
 });

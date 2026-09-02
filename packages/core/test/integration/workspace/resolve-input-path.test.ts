@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { createWorkspace } from "../../../src/workspace/workspace.js";
 import { InMemoryFileSystem } from "../../../src/workspace/in-memory/in-memory-file-system.js";
+import type { FileMetadata, FileSystem } from "../../../src/workspace/file-system.js";
 import {
   DirectoryInputError,
   FileNotFoundError,
@@ -172,4 +173,80 @@ describe("Workspace.resolveInputPath", () => {
       absolute: "/repo/.worktrees/ordinary/src/a.ts",
     });
   });
+
+  it("validates one target without listing thousands of siblings", async () => {
+    const siblingFiles = Object.fromEntries(
+      Array.from({ length: 4_000 }, (_, index) => [
+        `/repo/siblings/file-${index}.ts`,
+        `export const value${index} = ${index};\n`,
+      ]),
+    );
+    const fileSystem = new TargetCountingFileSystem(
+      new InMemoryFileSystem({
+        "/repo/.git/HEAD": "ref: refs/heads/main\n",
+        "/repo/.gitignore": "generated/\n",
+        "/repo/src/.gitignore": "ignored.ts\n",
+        "/repo/src/target.ts": "export const target = true;\n",
+        ...siblingFiles,
+      }),
+    );
+    const workspace = await createWorkspace({ startDir: "/repo", fs: fileSystem });
+
+    await expect(workspace.resolveInputPath("src/target.ts", "/repo")).resolves.toEqual({
+      relative: "src/target.ts",
+      absolute: "/repo/src/target.ts",
+    });
+    expect(fileSystem.directoryReads).toEqual([]);
+    expect(fileSystem.sourceReads).toEqual(["/repo/.gitignore", "/repo/src/.gitignore"]);
+  });
 });
+
+class TargetCountingFileSystem implements FileSystem {
+  readonly directoryReads: string[] = [];
+  readonly sourceReads: string[] = [];
+
+  constructor(private readonly inner: InMemoryFileSystem) {}
+
+  readFile(absPath: string): Promise<string> {
+    this.sourceReads.push(absPath);
+    return this.inner.readFile(absPath);
+  }
+
+  exists(absPath: string): Promise<boolean> {
+    return this.inner.exists(absPath);
+  }
+
+  listDir(absPath: string): Promise<readonly string[]> {
+    this.directoryReads.push(absPath);
+    return this.inner.listDir(absPath);
+  }
+
+  isDirectory(absPath: string): Promise<boolean> {
+    return this.inner.isDirectory(absPath);
+  }
+
+  metadata(absPath: string): Promise<FileMetadata> {
+    return this.inner.metadata(absPath);
+  }
+
+  existsSync(absPath: string): boolean {
+    return this.inner.existsSync(absPath);
+  }
+
+  readFileSync(absPath: string): string {
+    return this.inner.readFileSync(absPath);
+  }
+
+  listDirSync(absPath: string): readonly string[] {
+    this.directoryReads.push(absPath);
+    return this.inner.listDirSync(absPath);
+  }
+
+  isDirectorySync(absPath: string): boolean {
+    return this.inner.isDirectorySync(absPath);
+  }
+
+  metadataSync(absPath: string): FileMetadata {
+    return this.inner.metadataSync(absPath);
+  }
+}

@@ -2,12 +2,13 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import type { OverviewFileEntries } from "@symnav/core";
+import { InMemoryFileSystem, WorkspaceCatalog, type OverviewFileEntries } from "@symnav/core";
 import { CliProgramExecutor, CommandResultReplayer } from "./cli-program-executor.js";
 import { fakeDependencies } from "../test/integration/commands/helpers/fake-program-dependencies.js";
 import { createCapturingRecorder } from "../test/integration/commands/helpers/fake-program-dependencies.js";
 import { createFakeProgramContext } from "../test/integration/commands/helpers/fake-program-context.js";
 import { FakeLanguageBackend } from "../test/integration/commands/helpers/fake-language-backend.js";
+import { WorkspaceRequestScopeFactory } from "./workspace-request-scope.js";
 
 describe("CliProgramExecutor", () => {
   const temporaryRoots: string[] = [];
@@ -120,7 +121,59 @@ describe("CliProgramExecutor", () => {
       outcome: "success",
     });
   });
+
+  it("reuses an injected request scope factory across executions", async () => {
+    const fs = new ListingCountingFileSystem({
+      "/repo/.git/HEAD": "ref: refs/heads/main\n",
+      "/repo/src/a.ts": "export const a = 1;\n",
+    });
+    const backend = new FakeLanguageBackend({ accept: (path) => path.endsWith(".ts") });
+    const factory = new WorkspaceRequestScopeFactory(fs, [backend], new WorkspaceCatalog(fs));
+    const executor = new CliProgramExecutor(
+      fakeDependencies({ fs, backends: () => [backend] }),
+      factory,
+    );
+
+    await executor.execute({
+      argv: ["resolve", "a"],
+      cwd: "/repo",
+      telemetryEnabled: false,
+    });
+    fs.directoryReads.length = 0;
+    await executor.execute({
+      argv: ["resolve", "a"],
+      cwd: "/repo",
+      telemetryEnabled: false,
+    });
+
+    expect(fs.directoryReads).toEqual([]);
+  });
 });
+
+class ListingCountingFileSystem extends InMemoryFileSystem {
+  readonly directoryReads: string[] = [];
+
+  override async listDir(absPath: string): Promise<readonly string[]> {
+    this.directoryReads.push(absPath);
+    return super.listDir(absPath);
+  }
+
+  override listDirSync(absPath: string): readonly string[] {
+    this.directoryReads.push(absPath);
+    return super.listDirSync(absPath);
+  }
+
+  override metadataSync(absPath: string) {
+    if (!this.isDirectorySync(absPath)) return super.metadataSync(absPath);
+    const entries = super.listDirSync(absPath);
+    return {
+      size: entries.length,
+      modifiedAtMs: 0,
+      changeToken: entries.join("\0"),
+      fileIdentity: absPath,
+    };
+  }
+}
 
 function decode(result: { readonly frames: readonly { readonly bytesBase64: string }[] }): string {
   return result.frames.map((frame) => Buffer.from(frame.bytesBase64, "base64").toString()).join("");

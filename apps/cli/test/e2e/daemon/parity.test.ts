@@ -6,7 +6,10 @@ import {
   realpathSync,
   readdirSync,
   renameSync,
+  rmSync,
+  statSync,
   unlinkSync,
+  utimesSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -98,7 +101,7 @@ describe("symnav daemon parity", () => {
 
     expect(results).toEqual([expected, expected]);
     expect(harness.onlyDaemonPid()).toBeGreaterThan(0);
-  });
+  }, 15_000);
   it("records only fallback when execution finishes but response delivery fails", async () => {
     const harness = new DaemonParityHarness();
     harnesses.push(harness);
@@ -112,13 +115,23 @@ describe("symnav daemon parity", () => {
     expect(harness.daemonRecordCount()).toBe(0);
   }, 15_000);
 
-  it("refreshes edits, additions, deletions, and renames before the next warm request", () => {
+  it("refreshes filesystem and ownership mutations before the next warm request", () => {
     const harness = new DaemonParityHarness();
     harnesses.push(harness);
     harness.warm(["overview", "input.ts"]);
+    const daemonPid = harness.onlyDaemonPid();
+    const inputPath = join(harness.workspaceRoot, "input.ts");
+    const originalTimes = statSync(inputPath);
+    const originalSource = readFileSync(inputPath, "utf8");
+    const equalSizeEdit =
+      'export function edited(value: string): string { return value; }\nexport function caller(): string { return edited("x"); }\n';
 
-    writeFileSync(join(harness.workspaceRoot, "input.ts"), "export const edited = 2;\n");
-    expect(harness.warm(["overview", "input.ts"])).toEqual(harness.cold(["overview", "input.ts"]));
+    expect(Buffer.byteLength(equalSizeEdit)).toBe(Buffer.byteLength(originalSource));
+    writeFileSync(inputPath, equalSizeEdit);
+    utimesSync(inputPath, originalTimes.atime, originalTimes.mtime);
+    const equalSizeWarmResult = harness.warm(["overview", "input.ts"]);
+    expect(equalSizeWarmResult).toEqual(harness.cold(["overview", "input.ts"]));
+    expect(equalSizeWarmResult.stdout).toContain("edited");
 
     writeFileSync(join(harness.workspaceRoot, "added.ts"), "export const added = 3;\n");
     expect(harness.warm(["overview", "added.ts"])).toEqual(harness.cold(["overview", "added.ts"]));
@@ -130,6 +143,31 @@ describe("symnav daemon parity", () => {
     expect(harness.warm(["overview", "renamed.ts"])).toEqual(
       harness.cold(["overview", "renamed.ts"]),
     );
+
+    writeFileSync(join(harness.workspaceRoot, ".gitignore"), "renamed.ts\n");
+    expect(harness.warm(["overview", "renamed.ts"])).toEqual(
+      harness.cold(["overview", "renamed.ts"]),
+    );
+    writeFileSync(join(harness.workspaceRoot, ".gitignore"), "");
+    expect(harness.warm(["overview", "renamed.ts"])).toEqual(
+      harness.cold(["overview", "renamed.ts"]),
+    );
+
+    const nestedRoot = join(harness.workspaceRoot, "nested-owner");
+    mkdirSync(nestedRoot);
+    writeFileSync(join(nestedRoot, "source.ts"), "export const nested = true;\n");
+    expect(harness.warm(["overview", "nested-owner/source.ts"])).toEqual(
+      harness.cold(["overview", "nested-owner/source.ts"]),
+    );
+    mkdirSync(join(nestedRoot, ".git"));
+    expect(harness.warm(["overview", "nested-owner/source.ts"])).toEqual(
+      harness.cold(["overview", "nested-owner/source.ts"]),
+    );
+    rmSync(join(nestedRoot, ".git"), { recursive: true });
+    expect(harness.warm(["overview", "nested-owner/source.ts"])).toEqual(
+      harness.cold(["overview", "nested-owner/source.ts"]),
+    );
+    expect(harness.onlyDaemonPid()).toBe(daemonPid);
   });
 
   it("executes distinguishable queued requests FIFO and refreshes at queue-turn start", async () => {

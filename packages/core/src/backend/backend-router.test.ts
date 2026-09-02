@@ -149,6 +149,6 @@ function workspaceFile(relative: string): WorkspaceFile {
   return {
     relative,
     absolute: `/repo/${relative}`,
-    metadata: { size: 10, modifiedAtMs: 100 },
+    metadata: { size: 10, modifiedAtMs: 100, changeToken: "revision-1" },
   };
 }

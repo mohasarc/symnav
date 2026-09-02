@@ -14,14 +14,23 @@ import {
   NodeDaemonProcessLauncher,
   NodeDaemonProcessTerminator,
 } from "./daemon-process-launcher.js";
-import { DaemonStartupCoordinator } from "./daemon-startup-coordinator.js";
+import {
+  DaemonStartupCoordinator,
+  type DaemonWarmupTriggerResult,
+} from "./daemon-startup-coordinator.js";
 import { DaemonWorkspaceIdentity } from "./daemon-workspace-identity.js";
 import { InvocationWorkspaceSelector } from "./invocation-workspace-selector.js";
-import { LocalDaemonTransport } from "./local-daemon-transport.js";
+import { DaemonTransportError, LocalDaemonTransport } from "./local-daemon-transport.js";
 import { DaemonRecordObserver, type DaemonObservation } from "./daemon-record-observer.js";
 
-interface DaemonStarter {
-  ensureRunning(identity: DaemonWorkspaceIdentity): Promise<unknown>;
+export type DaemonRouteSnapshot =
+  | { readonly kind: "disabled" }
+  | { readonly kind: "cold"; readonly reason: "absent" | "starting" | "recovering" }
+  | { readonly kind: "warm"; readonly record: DaemonRecord }
+  | { readonly kind: "fallback"; readonly reason: "dead" | "incompatible" };
+
+export interface DaemonWarmupTrigger {
+  trigger(identity: DaemonWorkspaceIdentity): Promise<DaemonWarmupTriggerResult>;
 }
 
 interface DaemonDispatchRegistry {
@@ -42,7 +51,7 @@ interface DaemonDispatchObserver {
 }
 
 export interface DaemonDispatchRuntime {
-  readonly coordinator: DaemonStarter;
+  readonly coordinator: DaemonWarmupTrigger;
   readonly observer: DaemonDispatchObserver;
   readonly registry: DaemonDispatchRegistry;
   readonly transport: DaemonDispatchTransport;
@@ -106,7 +115,9 @@ export class DaemonCommandDispatcher {
       ...request,
       argv: selected.argv,
     };
-    if (!this.daemonEnabled()) return this.executeLocally(workspaceRequest, "cold");
+    if (!this.daemonEnabled()) {
+      return this.executeRoute({ kind: "disabled" }, workspaceRequest);
+    }
 
     const workspaceDependencies = this.options.createDependencies(this.options.stateDirectory);
     let workspaceRoot: string;
@@ -118,22 +129,83 @@ export class DaemonCommandDispatcher {
 
     const identity = DaemonWorkspaceIdentity.from(workspaceRoot, this.options.stateDirectory);
     const runtime = this.runtimeFactory(identity, workspaceDependencies);
+    const routeSnapshot = await this.routeFor(
+      identity,
+      runtime,
+      workspaceDependencies.symnavVersion,
+    );
+    if (routeSnapshot.kind === "warm") {
+      return this.executeWarm(
+        runtime,
+        routeSnapshot.record,
+        workspaceRequest,
+        workspaceDependencies.recorder,
+      );
+    }
+    if (
+      (routeSnapshot.kind === "cold" && routeSnapshot.reason === "absent") ||
+      routeSnapshot.kind === "fallback"
+    ) {
+      DaemonCommandDispatcher.triggerIndependently(runtime.coordinator, identity);
+    }
+    return this.executeRoute(routeSnapshot, workspaceRequest);
+  }
+
+  private async routeFor(
+    identity: DaemonWorkspaceIdentity,
+    runtime: DaemonDispatchRuntime,
+    symnavVersion: string,
+  ): Promise<DaemonRouteSnapshot> {
     let record: DaemonRecord | undefined;
-    let registryReadCompleted = false;
     try {
       record = runtime.registry.read(identity);
-      registryReadCompleted = true;
-      if (DaemonCommandDispatcher.requiresStartup(record, workspaceDependencies)) {
-        await runtime.coordinator.ensureRunning(identity);
-        record = runtime.registry.read(identity);
+    } catch {
+      return { kind: "cold", reason: "recovering" };
+    }
+    if (record === undefined) return { kind: "cold", reason: "absent" };
+    if (record.state === "starting") return { kind: "cold", reason: "starting" };
+    if (record.symnavVersion !== symnavVersion) {
+      return { kind: "fallback", reason: "incompatible" };
+    }
+    let observation: DaemonObservation;
+    try {
+      observation = await runtime.observer.observe(record);
+    } catch {
+      return { kind: "cold", reason: "recovering" };
+    }
+    if (observation.kind === "responsive") {
+      if (observation.pong.symnavVersion !== symnavVersion) {
+        return { kind: "fallback", reason: "incompatible" };
       }
-      if (record?.state !== "ready") throw new Error("Daemon did not publish a ready record");
+      if (observation.pong.state === "starting") {
+        return { kind: "cold", reason: "recovering" };
+      }
+      return { kind: "warm", record };
+    }
+    if (observation.kind === "starting") return { kind: "cold", reason: "starting" };
+    if (observation.kind === "unresponsive") return { kind: "cold", reason: "recovering" };
+    if (observation.kind === "exited") {
+      try {
+        runtime.registry.removeIfProcess(identity, record.instanceId, record.processToken);
+      } catch {}
+      return { kind: "fallback", reason: "dead" };
+    }
+    return { kind: "fallback", reason: "incompatible" };
+  }
+
+  private async executeWarm(
+    runtime: DaemonDispatchRuntime,
+    record: DaemonRecord,
+    request: CliExecutionRequest,
+    recorder: Recorder,
+  ): Promise<DispatchedCommandResult> {
+    try {
       const response = await runtime.transport.request(record.endpoint, {
         kind: "execute",
         protocolVersion: record.protocolVersion,
         instanceId: record.instanceId,
         requestId: this.requestId(),
-        request: { ...workspaceRequest, executionMode: "warm", deferTelemetry: true },
+        request: { ...request, executionMode: "warm", deferTelemetry: true },
       });
       if (
         response.kind !== "result" ||
@@ -143,20 +215,21 @@ export class DaemonCommandDispatcher {
       }
       return {
         mode: "warm",
-        result: DaemonCommandDispatcher.commitWarmTelemetry(
-          response.result,
-          workspaceDependencies.recorder,
-        ),
+        result: DaemonCommandDispatcher.commitWarmTelemetry(response.result, recorder),
       };
-    } catch {
-      if (registryReadCompleted && record === undefined) {
-        try {
-          record = runtime.registry.read(identity);
-        } catch {}
+    } catch (error) {
+      if (DaemonCommandDispatcher.isPreAdmissionFailure(error)) {
+        return this.executeLocally(request, "fallback");
       }
-      if (record !== undefined) await this.reconcileFailure(runtime, identity, record);
-      return this.executeLocally(workspaceRequest, "fallback");
+      throw error;
     }
+  }
+
+  private executeRoute(
+    route: Exclude<DaemonRouteSnapshot, { readonly kind: "warm" }>,
+    request: CliExecutionRequest,
+  ): Promise<DispatchedCommandResult> {
+    return this.executeLocally(request, route.kind === "fallback" ? "fallback" : "cold");
   }
 
   private executeLocally(
@@ -171,15 +244,12 @@ export class DaemonCommandDispatcher {
       .then((result) => ({ mode, result }));
   }
 
-  private async reconcileFailure(
-    runtime: DaemonDispatchRuntime,
+  private static triggerIndependently(
+    trigger: DaemonWarmupTrigger,
     identity: DaemonWorkspaceIdentity,
-    record: DaemonRecord,
-  ): Promise<void> {
+  ): void {
     try {
-      const observation = await runtime.observer.observe(record);
-      if (observation.kind !== "exited") return;
-      runtime.registry.removeIfProcess(identity, record.instanceId, record.processToken);
+      void trigger.trigger(identity).catch(() => {});
     } catch {}
   }
 
@@ -218,15 +288,8 @@ export class DaemonCommandDispatcher {
     );
   }
 
-  private static requiresStartup(
-    record: DaemonRecord | undefined,
-    dependencies: ProgramDependencies,
-  ): boolean {
-    return (
-      record === undefined ||
-      record.state === "starting" ||
-      record.symnavVersion !== dependencies.symnavVersion
-    );
+  private static isPreAdmissionFailure(error: unknown): boolean {
+    return error instanceof DaemonTransportError && error.delivery === "not-submitted";
   }
 
   private static commitWarmTelemetry(

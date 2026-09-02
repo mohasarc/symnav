@@ -161,6 +161,12 @@ class DaemonStartupCallerExit {
     }
     throw new Error("Timed out waiting for detached daemon startup");
   }
+
+  static async waitForRelease(releasePath: string): Promise<void> {
+    while (!existsSync(releasePath)) {
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+  }
 }
 
 class StartupBarrierNavigationWorker implements DaemonNavigationWorker {
@@ -180,7 +186,7 @@ class StartupBarrierNavigationWorker implements DaemonNavigationWorker {
 
   async start(workspaceRoot: string): Promise<DaemonNavigationWorkerResponse> {
     writeFileSync(this.bootPath, String(process.pid));
-    await DaemonStartupCallerExit.waitUntil(() => existsSync(this.releasePath));
+    await DaemonStartupCallerExit.waitForRelease(this.releasePath);
     return this.worker.start(workspaceRoot);
   }
 

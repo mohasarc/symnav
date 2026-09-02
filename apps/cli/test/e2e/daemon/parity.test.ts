@@ -108,16 +108,17 @@ describe("symnav daemon parity", () => {
     expect(results).toEqual([expected, expected]);
     expect(harness.onlyDaemonPid()).toBeGreaterThan(0);
   }, 15_000);
-  it("records fallback without invalidating a live daemon after response delivery fails", async () => {
+  it("does not replay or invalidate a live daemon after ambiguous response delivery", async () => {
     const harness = new DaemonParityHarness();
     harnesses.push(harness);
     const controlled = await harness.startControlledDaemon("--oversized-response");
 
-    expect(harness.warmWithTelemetry(["overview", "input.ts"])).toEqual(
-      harness.cold(["overview", "input.ts"]),
-    );
+    const failed = harness.warmWithTelemetry(["overview", "input.ts"]);
+
+    expect(failed.status).not.toBe(0);
+    expect(failed.stdout).toBe("");
     expect(existsSync(`${controlled.requestStartedPath}.1`)).toBe(true);
-    expect(harness.telemetryModes()).toEqual(["fallback"]);
+    expect(harness.telemetryModes()).toEqual([]);
     expect(harness.daemonRecordCount()).toBe(1);
     expect(harness.onlyDaemonPid()).toBe(controlled.record.pid);
   }, 15_000);
@@ -223,9 +224,10 @@ describe("symnav daemon parity", () => {
     expect(harness.onlyDaemonPid()).toBe(daemonPid);
   });
 
-  it("falls back without replacement after a crash, then restarts warm", async () => {
+  it("falls back after a confirmed crash while an independent replacement warms", async () => {
     const harness = new DaemonParityHarness();
     harnesses.push(harness);
+    expect(harness.daemonStart()).toMatchObject({ status: 0, stderr: "" });
     const first = harness.warmWithTelemetry(["overview", "input.ts"]);
     const firstPid = harness.onlyDaemonPid();
     process.kill(firstPid, "SIGKILL");
@@ -233,7 +235,6 @@ describe("symnav daemon parity", () => {
 
     expect(harness.warmWithTelemetry(["overview", "input.ts"])).toEqual(first);
     expect(harness.telemetryModes()).toEqual(["warm", "fallback"]);
-    expect(harness.daemonRecordCount()).toBe(0);
 
     expect(harness.daemonStart()).toMatchObject({ status: 0, stderr: "" });
     expect(harness.warmWithTelemetry(["overview", "input.ts"])).toEqual(first);
@@ -252,6 +253,8 @@ describe("symnav daemon parity", () => {
       status: 0,
       stderr: "",
     });
+    expect(harness.telemetryModes()).toEqual(["cold"]);
+    expect(harness.daemonStart()).toMatchObject({ status: 0, stderr: "" });
     const daemonPid = harness.onlyDaemonPid();
     expect(harness.daemonRecordCount()).toBe(1);
     expect(harness.warmWithTelemetry(["overview", "input.ts"])).toMatchObject({
@@ -259,7 +262,7 @@ describe("symnav daemon parity", () => {
       stderr: "",
     });
     expect(harness.onlyDaemonPid()).toBe(daemonPid);
-    expect(harness.telemetryModes()).toEqual(["warm", "warm"]);
+    expect(harness.telemetryModes()).toEqual(["cold", "warm"]);
   }, 15_000);
 
   it("discards a disconnected daemon response and returns one complete cold answer", async () => {
@@ -673,17 +676,21 @@ class DaemonParityHarness {
   }
 
   telemetryModes(): readonly string[] {
-    return readFileSync(join(this.stateDirectory, "usage.jsonl"), "utf8")
+    const usagePath = join(this.stateDirectory, "usage.jsonl");
+    if (!existsSync(usagePath)) return [];
+    return readFileSync(usagePath, "utf8")
       .trimEnd()
       .split("\n")
       .map((line) => (JSON.parse(line) as { executionMode: string }).executionMode);
   }
 
   async dispose(): Promise<void> {
-    const daemonProcessIds = this.daemonProcessIds();
-    await E2eProcessCleanup.terminate(daemonProcessIds, this.helperProcesses);
+    await E2eProcessCleanup.terminateAndRemoveDirectories(
+      [this.root],
+      () => this.daemonProcessIds(),
+      { children: this.helperProcesses },
+    );
     this.helperProcesses.length = 0;
-    E2eProcessCleanup.removeDirectories([this.root]);
   }
 
   private daemonProcessIds(): readonly number[] {

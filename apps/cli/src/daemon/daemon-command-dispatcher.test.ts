@@ -1,24 +1,24 @@
 import { join, resolve } from "node:path";
-import { describe, expect, it, vi } from "vitest";
 import type { UsageEventInput } from "@symnav/telemetry";
+import { describe, expect, it, vi } from "vitest";
 import type { CliExecutionRequest, CommandExecutionResult } from "../command-execution-result.js";
 import type { ProgramDependencies } from "../program-dependencies.js";
 import {
+  DaemonCommandDispatcher,
+  type DaemonDispatchRuntime,
+} from "./daemon-command-dispatcher.js";
+import {
   DAEMON_PROTOCOL_VERSION,
   DAEMON_RECORD_SCHEMA_VERSION,
+  type DaemonPong,
   type DaemonRecord,
   type DaemonRequest,
   type DaemonResponse,
 } from "./daemon-protocol.js";
 import type { DaemonObservation } from "./daemon-record-observer.js";
 import { DaemonTransportError } from "./local-daemon-transport.js";
-import {
-  DaemonCommandDispatcher,
-  type DaemonDispatchRuntime,
-} from "./daemon-command-dispatcher.js";
 
 const workspaceRoot = resolve("synthetic-workspace");
-const nestedWorkspaceDirectory = join(workspaceRoot, "nested");
 const request: CliExecutionRequest = {
   argv: ["overview", "src/a.ts"],
   cwd: workspaceRoot,
@@ -28,51 +28,128 @@ const success: CommandExecutionResult = {
   frames: [{ stream: "stdout", bytesBase64: Buffer.from("answer\n").toString("base64") }],
   exitCode: 0,
 };
-const userError: CommandExecutionResult = {
-  frames: [{ stream: "stderr", bytesBase64: Buffer.from("bad\n").toString("base64") }],
-  exitCode: 1,
-};
 
 describe("DaemonCommandDispatcher", () => {
-  it("returns one complete result from an existing daemon", async () => {
-    const harness = new DispatchHarness(success);
+  it.each([
+    ["ready idle", { pongState: "ready" as const }, "warm", 0, 1, 0, 0],
+    ["ready busy", { pongState: "busy" as const }, "warm", 0, 1, 0, 0],
+    ["absent", { initiallyRegistered: false }, "cold", 1, 0, 1, 0],
+    [
+      "starting",
+      { record: { state: "starting" as const, readyAt: undefined, fileCount: undefined } },
+      "cold",
+      1,
+      0,
+      0,
+      0,
+    ],
+    ["recovering", { observationKind: "unresponsive" as const }, "cold", 1, 0, 0, 0],
+    ["confirmed dead", { observationKind: "exited" as const }, "fallback", 1, 0, 1, 1],
+    ["incompatible", { record: { symnavVersion: "0.0.9" } }, "fallback", 1, 0, 1, 0],
+    ["disabled", { daemonEnabled: false }, "cold", 1, 0, 0, 0],
+  ])(
+    "routes %s through exactly one executor",
+    async (_name, options, mode, localExecutions, warmExecutions, triggers, removals) => {
+      const harness = new DispatchHarness(success, options as DispatchHarnessOptions);
 
-    await expect(harness.dispatcher().execute(request)).resolves.toEqual({
-      mode: "warm",
-      result: success,
-    });
-    expect(harness.ensureRunning).not.toHaveBeenCalled();
-    expect(harness.coldExecute).not.toHaveBeenCalled();
-    expect(harness.executeRequests()).toEqual([
-      expect.objectContaining({
-        kind: "execute",
-        request: expect.objectContaining({ executionMode: "warm" }),
-      }),
-    ]);
-  });
+      await expect(harness.dispatcher().execute(request)).resolves.toMatchObject({ mode });
+
+      expect(harness.coldExecute).toHaveBeenCalledTimes(localExecutions as number);
+      expect(harness.executeRequests()).toHaveLength(warmExecutions as number);
+      expect(harness.trigger).toHaveBeenCalledTimes(triggers as number);
+      expect(harness.removeIfProcess).toHaveBeenCalledTimes(removals as number);
+    },
+  );
 
   it.each([
-    { frames: [], exitCode: 1.5 },
-    { frames: "invalid", exitCode: 0 },
-    { frames: [{ stream: "invalid", bytesBase64: "" }], exitCode: 0 },
-    { frames: [{ stream: "stdout", bytesBase64: "***" }], exitCode: 0 },
-  ])("falls back from incomplete daemon result %#", async (incomplete) => {
-    const harness = new DispatchHarness(incomplete as unknown as CommandExecutionResult);
+    ["absent", { initiallyRegistered: false }],
+    ["incompatible", { record: { symnavVersion: "0.0.9" } }],
+  ])("does not await a never-resolving %s trigger", async (_name, options) => {
+    const harness = new DispatchHarness(success, {
+      ...options,
+      triggerResult: new Promise(() => {}),
+    });
+
+    await expect(harness.dispatcher().execute(request)).resolves.toMatchObject({ result: success });
+
+    expect(harness.trigger).toHaveBeenCalledOnce();
+    expect(harness.coldExecute).toHaveBeenCalledOnce();
+  });
+
+  it("keeps a cold route after readiness publishes", async () => {
+    const harness = new DispatchHarness(success, {
+      initiallyRegistered: false,
+      publishReadyWhenTriggered: true,
+    });
+
+    await expect(harness.dispatcher().execute(request)).resolves.toEqual({
+      mode: "cold",
+      result: success,
+    });
+
+    expect(harness.executeRequests()).toHaveLength(0);
+    expect(harness.coldExecute).toHaveBeenCalledOnce();
+  });
+
+  it("falls back once after authenticated warm pre-admission failure", async () => {
+    const harness = new DispatchHarness(
+      new DaemonTransportError("unreachable", "not-submitted", "connection refused"),
+    );
 
     await expect(harness.dispatcher().execute(request)).resolves.toEqual({
       mode: "fallback",
       result: success,
     });
+
     expect(harness.coldExecute).toHaveBeenCalledOnce();
+    expect(harness.removeIfProcess).not.toHaveBeenCalled();
+    expect(harness.trigger).not.toHaveBeenCalled();
   });
 
-  it("sends an absolute cwd override to the daemon", async () => {
+  it.each([
+    new DaemonTransportError("timeout", "submitted-unconfirmed", "request timed out"),
+    new DaemonTransportError("closed", "accepted", "request closed"),
+    new Error("ambiguous transport failure"),
+  ])("never replays or mutates after ambiguous warm failure %#", async (failure) => {
+    const harness = new DispatchHarness(failure);
+
+    await expect(harness.dispatcher().execute(request)).rejects.toBe(failure);
+
+    expect(harness.coldExecute).not.toHaveBeenCalled();
+    expect(harness.removeIfProcess).not.toHaveBeenCalled();
+    expect(harness.trigger).not.toHaveBeenCalled();
+  });
+
+  it("does not replay an incomplete accepted result", async () => {
+    const harness = new DispatchHarness({ frames: [], exitCode: 1.5 });
+
+    await expect(harness.dispatcher().execute(request)).rejects.toThrow(
+      "Daemon returned an incomplete command result",
+    );
+
+    expect(harness.coldExecute).not.toHaveBeenCalled();
+  });
+
+  it("does not mutate or trigger from an unresponsive observation", async () => {
+    const harness = new DispatchHarness(success, { observationKind: "unresponsive" });
+
+    await expect(harness.dispatcher().execute(request)).resolves.toEqual({
+      mode: "cold",
+      result: success,
+    });
+
+    expect(harness.removeIfProcess).not.toHaveBeenCalled();
+    expect(harness.trigger).not.toHaveBeenCalled();
+    expect(harness.executeRequests()).toHaveLength(0);
+  });
+
+  it("sends an absolute cwd override to the selected warm daemon", async () => {
     const harness = new DispatchHarness(success);
 
     await harness.dispatcher().execute({
       ...request,
       argv: ["--cwd", "..", ...request.argv],
-      cwd: nestedWorkspaceDirectory,
+      cwd: join(workspaceRoot, "nested"),
     });
 
     expect(harness.executeRequests()).toEqual([
@@ -82,175 +159,28 @@ describe("DaemonCommandDispatcher", () => {
     ]);
   });
 
-  it("elects a starter when no daemon is registered", async () => {
-    const harness = new DispatchHarness(success, { initiallyRegistered: false });
-
-    const dispatched = await harness.dispatcher().execute(request);
-
-    expect(dispatched.mode).toBe("warm");
-    expect(harness.ensureRunning).toHaveBeenCalledOnce();
-  });
-
-  it.each([
-    ["concurrent initial startup", { state: "starting" as const }],
-    ["version replacement", { symnavVersion: "0.0.9" }],
-  ])("waits for %s before warm execution", async (_name, record) => {
-    const harness = new DispatchHarness(success, { record });
-
-    await expect(harness.dispatcher().execute(request)).resolves.toMatchObject({ mode: "warm" });
-
-    expect(harness.ensureRunning).toHaveBeenCalledOnce();
-    expect(harness.coldExecute).not.toHaveBeenCalled();
-  });
-
-  it.each([
-    "connection refused",
-    "malformed result",
-    "truncated result",
-    "mismatched result",
-    "mid-request disconnect",
-  ])("executes one cold fallback after %s", async (message) => {
-    const harness = new DispatchHarness(new Error(message));
-
-    await expect(harness.dispatcher().execute(request)).resolves.toEqual({
-      mode: "fallback",
-      result: success,
-    });
-    expect(harness.coldExecute).toHaveBeenCalledTimes(1);
-    expect(harness.coldExecute).toHaveBeenCalledWith(
-      expect.objectContaining({ executionMode: "fallback" }),
-    );
-    expect(harness.removeIfProcess).not.toHaveBeenCalled();
-  });
-
-  it("cleans a confirmed exited daemon and restarts on the next invocation", async () => {
-    const harness = new DispatchHarness(success, { observationKind: "exited" });
-    const dispatcher = harness.dispatcher();
-    await expect(dispatcher.execute(request)).resolves.toMatchObject({ mode: "warm" });
-    harness.answer(new Error("connection refused"));
-
-    await expect(dispatcher.execute(request)).resolves.toEqual({
-      mode: "fallback",
-      result: success,
-    });
-    expect(harness.ensureRunning).not.toHaveBeenCalled();
-    expect(harness.registeredRecord()).toBeUndefined();
-    expect(harness.coldExecute).toHaveBeenCalledTimes(1);
-
-    harness.answer(success);
-    await expect(dispatcher.execute(request)).resolves.toMatchObject({ mode: "warm" });
-    expect(harness.ensureRunning).toHaveBeenCalledOnce();
-  });
-
-  it("retains a live daemon after a submitted request times out", async () => {
-    const harness = new DispatchHarness(
-      new DaemonTransportError("timeout", "submitted-unconfirmed", "request timed out"),
-    );
-
-    await expect(harness.dispatcher().execute(request)).resolves.toEqual({
-      mode: "fallback",
-      result: success,
-    });
-
-    expect(harness.removeIfProcess).not.toHaveBeenCalled();
-    expect(harness.registeredRecord()).toBeDefined();
-    expect(harness.requestsOfKind("kill")).toEqual([]);
-    expect(harness.coldExecute).toHaveBeenCalledOnce();
-  });
-
-  it("executes fallback when confirmed-exit record cleanup fails", async () => {
-    const harness = new DispatchHarness(new Error("connection refused"), {
-      observationKind: "exited",
-    });
-    harness.failRemoval(new Error("registry cleanup failed"));
-
-    await expect(harness.dispatcher().execute(request)).resolves.toEqual({
-      mode: "fallback",
-      result: success,
-    });
-
-    expect(harness.removeIfProcess).toHaveBeenCalledOnce();
-    expect(harness.coldExecute).toHaveBeenCalledOnce();
-  });
-
-  it("executes one fallback when initial registry discovery throws", async () => {
-    const harness = new DispatchHarness(success, { registryReadFailures: [1] });
-
-    await expect(harness.dispatcher().execute(request)).resolves.toEqual({
-      mode: "fallback",
-      result: success,
-    });
-
-    expect(harness.ensureRunning).not.toHaveBeenCalled();
-    expect(harness.removeIfProcess).not.toHaveBeenCalled();
-    expect(harness.coldExecute).toHaveBeenCalledTimes(1);
-  });
-
-  it("executes one fallback when recovery registry discovery throws", async () => {
-    const harness = new DispatchHarness(success, {
-      initiallyRegistered: false,
-      ensureFailure: new Error("startup failed"),
-      registryReadFailures: [2],
-    });
-
-    await expect(harness.dispatcher().execute(request)).resolves.toEqual({
-      mode: "fallback",
-      result: success,
-    });
-
-    expect(harness.ensureRunning).toHaveBeenCalledOnce();
-    expect(harness.removeIfProcess).not.toHaveBeenCalled();
-    expect(harness.coldExecute).toHaveBeenCalledTimes(1);
-  });
-  it("does not touch daemon state when disabled", async () => {
-    const harness = new DispatchHarness(success, { daemonEnabled: false });
-
-    await expect(harness.dispatcher().execute(request)).resolves.toEqual({
-      mode: "cold",
-      result: success,
-    });
-    expect(harness.runtimeFactory).not.toHaveBeenCalled();
-    expect(harness.coldExecute).toHaveBeenCalledWith(
-      expect.objectContaining({ executionMode: "cold" }),
-    );
-  });
-
-  it("replays normal nonzero daemon results without retrying", async () => {
-    const harness = new DispatchHarness(userError);
-
-    await expect(harness.dispatcher().execute(request)).resolves.toEqual({
-      mode: "warm",
-      result: userError,
-    });
-    expect(harness.coldExecute).not.toHaveBeenCalled();
-  });
-
-  it("commits deferred warm telemetry only after receiving the complete result", async () => {
+  it("commits one deferred warm telemetry event", async () => {
     const warmTelemetry = telemetryInput("warm");
     const harness = new DispatchHarness({ ...success, telemetry: warmTelemetry });
 
     await expect(
       harness.dispatcher().execute({ ...request, telemetryEnabled: true }),
-    ).resolves.toEqual({
-      mode: "warm",
-      result: success,
-    });
+    ).resolves.toEqual({ mode: "warm", result: success });
 
     expect(harness.recordTelemetry).toHaveBeenCalledWith(warmTelemetry);
     expect(harness.recordTelemetry).toHaveBeenCalledTimes(1);
   });
 
-  it("falls back without recording malformed deferred telemetry", async () => {
-    const harness = new DispatchHarness({
-      ...success,
-      telemetry: { executionMode: "warm" } as UsageEventInput,
-    });
+  it.each([
+    ["disabled", { daemonEnabled: false }, "cold"],
+    ["absent", { initiallyRegistered: false }, "cold"],
+    ["dead", { observationKind: "exited" as const }, "fallback"],
+  ])("attributes %s telemetry to the actual local route", async (_name, options, executionMode) => {
+    const harness = new DispatchHarness(success, options as DispatchHarnessOptions);
 
-    await expect(
-      harness.dispatcher().execute({ ...request, telemetryEnabled: true }),
-    ).resolves.toEqual({ mode: "fallback", result: success });
-    expect(harness.recordTelemetry).not.toHaveBeenCalled();
-    expect(harness.coldExecute).toHaveBeenCalledOnce();
+    await harness.dispatcher().execute({ ...request, telemetryEnabled: true });
+
+    expect(harness.coldExecute).toHaveBeenCalledWith(expect.objectContaining({ executionMode }));
   });
 });
 
@@ -258,13 +188,14 @@ interface DispatchHarnessOptions {
   readonly daemonEnabled?: boolean;
   readonly initiallyRegistered?: boolean;
   readonly record?: Partial<DaemonRecord>;
-  readonly ensureFailure?: Error;
-  readonly registryReadFailures?: readonly number[];
   readonly observationKind?: DaemonObservation["kind"];
+  readonly pongState?: DaemonPong["state"];
+  readonly triggerResult?: Promise<unknown>;
+  readonly publishReadyWhenTriggered?: boolean;
 }
 
 class DispatchHarness {
-  readonly ensureRunning: ReturnType<typeof vi.fn>;
+  readonly trigger: ReturnType<typeof vi.fn>;
   readonly removeIfProcess = vi.fn();
   readonly observe = vi.fn();
   readonly coldExecute = vi.fn(async () => success);
@@ -273,29 +204,19 @@ class DispatchHarness {
   private readonly requests: DaemonRequest[] = [];
   private registered: DaemonRecord | undefined;
   private readonly runtime: DaemonDispatchRuntime;
-  private daemonAnswer: CommandExecutionResult | Error;
-  private removalFailure: Error | undefined;
-  private registryReadCount = 0;
 
   constructor(
-    daemonAnswer: CommandExecutionResult | Error,
+    private readonly daemonAnswer: CommandExecutionResult | Error,
     private readonly options: DispatchHarnessOptions = {},
   ) {
-    this.daemonAnswer = daemonAnswer;
     this.registered =
       options.initiallyRegistered === false ? undefined : { ...daemonRecord(), ...options.record };
-    this.ensureRunning = vi.fn(async () => {
-      if (options.ensureFailure !== undefined) throw options.ensureFailure;
-      this.registered = daemonRecord("replacement");
-      return {
-        status: "ready" as const,
-        workspaceRoot,
-        fileCount: 1,
-        loadDurationMs: 10,
-      };
+    this.trigger = vi.fn(() => {
+      if (options.publishReadyWhenTriggered) this.registered = daemonRecord("replacement");
+      return options.triggerResult ?? Promise.resolve({ status: "launched" });
     });
     this.observe.mockImplementation(async (record: DaemonRecord): Promise<DaemonObservation> => {
-      const kind = this.options.observationKind ?? "unresponsive";
+      const kind = this.options.observationKind ?? "responsive";
       if (kind === "exited" || kind === "starting") return { kind, record };
       if (kind === "responsive") {
         return {
@@ -306,6 +227,7 @@ class DispatchHarness {
             protocolVersion: record.protocolVersion,
             instanceId: record.instanceId,
             symnavVersion: record.symnavVersion,
+            state: this.options.pongState ?? "ready",
           },
         };
       }
@@ -322,19 +244,12 @@ class DispatchHarness {
       };
     });
     this.runtime = {
-      coordinator: { ensureRunning: this.ensureRunning },
+      coordinator: { trigger: this.trigger },
       observer: { observe: this.observe },
       registry: {
-        read: () => {
-          this.registryReadCount += 1;
-          if (this.options.registryReadFailures?.includes(this.registryReadCount) === true) {
-            throw new Error("registry read failed");
-          }
-          return this.registered;
-        },
+        read: () => this.registered,
         removeIfProcess: (identity, instanceId, processToken) => {
           this.removeIfProcess(identity, instanceId, processToken);
-          if (this.removalFailure !== undefined) throw this.removalFailure;
           this.registered = undefined;
           return true;
         },
@@ -371,22 +286,6 @@ class DispatchHarness {
 
   executeRequests(): readonly DaemonRequest[] {
     return this.requests.filter((daemonRequest) => daemonRequest.kind === "execute");
-  }
-
-  requestsOfKind(kind: DaemonRequest["kind"]): readonly DaemonRequest[] {
-    return this.requests.filter((daemonRequest) => daemonRequest.kind === kind);
-  }
-
-  answer(daemonAnswer: CommandExecutionResult | Error): void {
-    this.daemonAnswer = daemonAnswer;
-  }
-
-  registeredRecord(): DaemonRecord | undefined {
-    return this.registered;
-  }
-
-  failRemoval(error: Error): void {
-    this.removalFailure = error;
   }
 }
 

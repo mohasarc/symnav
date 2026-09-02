@@ -12,6 +12,14 @@ export class E2eProcessCleanupError extends Error {
   }
 }
 
+interface TerminateAndRemoveDirectoriesOptions {
+  readonly children?: readonly ChildProcess[];
+  readonly processTerminator?: DaemonProcessTerminator;
+  readonly removeDirectory?: typeof rmSync;
+  readonly retryTimeoutMs?: number;
+  readonly retryDelayMs?: number;
+}
+
 export class E2eProcessCleanup {
   static async terminate(
     daemonProcessIds: readonly number[],
@@ -93,6 +101,31 @@ export class E2eProcessCleanup {
     }
   }
 
+  static async terminateAndRemoveDirectories(
+    directories: readonly string[],
+    daemonProcessIds: () => readonly number[],
+    options: TerminateAndRemoveDirectoriesOptions = {},
+  ): Promise<void> {
+    const processTerminator =
+      options.processTerminator ?? new NodeDaemonProcessTerminator(1_000, 10);
+    const removeDirectory = options.removeDirectory ?? rmSync;
+    const deadline = Date.now() + (options.retryTimeoutMs ?? 5_000);
+    let children = options.children ?? [];
+    while (true) {
+      await E2eProcessCleanup.terminate(daemonProcessIds(), children, processTerminator);
+      children = [];
+      try {
+        E2eProcessCleanup.removeDirectories(directories, removeDirectory);
+        return;
+      } catch (error) {
+        if (!E2eProcessCleanup.directoryRemovalCanRetry(error) || Date.now() >= deadline) {
+          throw error;
+        }
+        await new Promise((resolve) => setTimeout(resolve, options.retryDelayMs ?? 10));
+      }
+    }
+  }
+
   private static waitForChildExit(child: ChildProcess): Promise<void> {
     if (child.exitCode !== null || child.signalCode !== null) return Promise.resolve();
     return new Promise((resolve, reject) => {
@@ -122,6 +155,12 @@ export class E2eProcessCleanup {
 
   private static errorMessage(error: unknown): string {
     return error instanceof Error ? error.message : String(error);
+  }
+
+  private static directoryRemovalCanRetry(error: unknown): boolean {
+    return ["EBUSY", "EMFILE", "ENFILE", "ENOTEMPTY", "EPERM"].includes(
+      E2eProcessCleanup.errorCode(error) ?? "",
+    );
   }
 
   private static errorCode(error: unknown): string | undefined {

@@ -108,7 +108,7 @@ describe("symnav daemon parity", () => {
     expect(results).toEqual([expected, expected]);
     expect(harness.onlyDaemonPid()).toBeGreaterThan(0);
   }, 15_000);
-  it("records only fallback when execution finishes but response delivery fails", async () => {
+  it("records fallback without invalidating a live daemon after response delivery fails", async () => {
     const harness = new DaemonParityHarness();
     harnesses.push(harness);
     const controlled = await harness.startControlledDaemon("--oversized-response");
@@ -118,7 +118,8 @@ describe("symnav daemon parity", () => {
     );
     expect(existsSync(`${controlled.requestStartedPath}.1`)).toBe(true);
     expect(harness.telemetryModes()).toEqual(["fallback"]);
-    expect(harness.daemonRecordCount()).toBe(0);
+    expect(harness.daemonRecordCount()).toBe(1);
+    expect(harness.onlyDaemonPid()).toBe(controlled.record.pid);
   }, 15_000);
 
   it("refreshes filesystem and ownership mutations before the next warm request", () => {

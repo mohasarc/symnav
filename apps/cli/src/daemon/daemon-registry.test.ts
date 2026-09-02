@@ -32,6 +32,15 @@ interface StartupMutationLeaseTestAccess {
   ): { isOwned(): boolean; release(): void } | undefined;
 }
 
+interface StartupProcessRegistryTestAccess {
+  startupOwnerMatchesProcess(identity: DaemonWorkspaceIdentity, record: DaemonRecord): boolean;
+  removeStartupLockIfProcess(identity: DaemonWorkspaceIdentity, record: DaemonRecord): boolean;
+}
+
+interface DaemonRegistryClassTestAccess {
+  startupMutationClaimWasContended(error: unknown): boolean;
+}
+
 describe("daemon registry", () => {
   const roots: string[] = [];
 
@@ -96,6 +105,18 @@ describe("daemon registry", () => {
     expect(registry.read(identity)).toBeUndefined();
   });
 
+  it("compare-removes a dead process only for its exact instance and token", () => {
+    const identity = DaemonWorkspaceIdentity.from("/repo", temporaryDirectory(roots));
+    const registry = new DaemonRegistry(identity.registryDirectory);
+    registry.write(record(identity, "ready", "instance"));
+
+    expect(registry.removeIfProcess(identity, "instance", "wrong-token")).toBe(false);
+    expect(registry.readStoredInstance(identity, "instance")).toBeDefined();
+    expect(registry.removeIfProcess(identity, "replacement", "instance-process")).toBe(false);
+    expect(registry.removeIfProcess(identity, "instance", "instance-process")).toBe(true);
+    expect(registry.readStoredInstance(identity, "instance")).toBeUndefined();
+  });
+
   it("does not release a replacement startup owner from an old lease", () => {
     const identity = DaemonWorkspaceIdentity.from("/repo", temporaryDirectory(roots));
     const registry = new DaemonRegistry(identity.registryDirectory);
@@ -109,6 +130,46 @@ describe("daemon registry", () => {
 
     expect(registry.startupOwner(identity)?.instanceId).toBe("replacement");
     replacementLease?.release();
+  });
+
+  it("does not let the initiating caller lease release daemon-owned startup", () => {
+    const identity = DaemonWorkspaceIdentity.from("/repo", temporaryDirectory(roots));
+    const registry = new DaemonRegistry(identity.registryDirectory);
+    const lease = registry.acquireStartup(identity, "starting");
+    const starting = {
+      ...record(identity, "starting", "starting"),
+      pid: 777,
+    } satisfies DaemonRecord;
+    expect(registry.writeStartingIfStartupOwner(identity, starting)).toBe(true);
+
+    lease?.release();
+
+    expect(registry.startupOwnerMatchesProcess(identity, starting)).toBe(true);
+  });
+
+  it("keeps an armed launch claim after the initiating caller releases its lease", () => {
+    const identity = DaemonWorkspaceIdentity.from("/repo", temporaryDirectory(roots));
+    const registry = new DaemonRegistry(identity.registryDirectory);
+    const lease = registry.acquireStartup(identity, "starting");
+    const launchClaim = {
+      ...record(identity, "starting", "starting"),
+      pid: 0,
+    } satisfies DaemonRecord;
+
+    expect(registry.writeStartingIfStartupOwner(identity, launchClaim)).toBe(true);
+    expect(registry.armStartingProcessLaunch(identity, launchClaim)).toBe(true);
+    lease?.release();
+
+    expect(registry.startupOwner(identity)).toMatchObject({
+      instanceId: launchClaim.instanceId,
+      processToken: launchClaim.processToken,
+    });
+    expect(registry.acquireStartup(identity, "replacement")).toBeUndefined();
+    expect(registry.writeStartingIfStartupOwner(identity, { ...launchClaim, pid: 777 })).toBe(true);
+    expect(registry.startupOwner(identity)).toMatchObject({
+      ownerPid: 777,
+      processToken: launchClaim.processToken,
+    });
   });
 
   it("keeps replacement ownership when two processes clean the old owner", async () => {
@@ -140,7 +201,9 @@ describe("daemon registry", () => {
     registry.write(record(identity, "starting", "old"));
     expect(registry.removeStartupLockIfInstance(identity, "old")).toBe(true);
     const replacementLease = registry.acquireStartup(identity, "replacement");
-    registry.write(record(identity, "starting", "replacement"));
+    expect(
+      registry.writeStartingIfStartupOwner(identity, record(identity, "starting", "replacement")),
+    ).toBe(true);
 
     expect(
       registry.writeIfStartupOwner(identity, {
@@ -178,6 +241,102 @@ describe("daemon registry", () => {
     expect(registry.readStoredInstance(identity, "starting")?.pid).toBe(0);
 
     lease?.release();
+  });
+
+  it("transfers startup ownership to the published daemon process", () => {
+    const identity = DaemonWorkspaceIdentity.from("/repo", temporaryDirectory(roots));
+    const registry = new DaemonRegistry(identity.registryDirectory);
+    expect(registry.acquireStartup(identity, "starting")).toBeDefined();
+    const starting = {
+      ...record(identity, "starting", "starting"),
+      pid: 777,
+    } satisfies DaemonRecord;
+
+    expect(registry.writeStartingIfStartupOwner(identity, starting)).toBe(true);
+
+    expect(registry.startupOwner(identity)).toMatchObject({
+      instanceId: starting.instanceId,
+      ownerPid: starting.pid,
+      processToken: starting.processToken,
+    });
+  });
+
+  it("atomically transfers an authenticated launcher lease to the daemon", () => {
+    const identity = DaemonWorkspaceIdentity.from("/repo", temporaryDirectory(roots));
+    const registry = new DaemonRegistry(identity.registryDirectory);
+    const launcherLease = registry.acquireStartup(identity, {
+      identityKey: identity.identityKey,
+      instanceId: "starting",
+      processToken: "process-token",
+      ownerPid: process.pid,
+      ownerKind: "launcher",
+      heartbeatAt: Date.now(),
+    });
+    expect(launcherLease).toBeDefined();
+
+    expect(launcherLease?.transferToDaemon(777, "process-token")).toBe(true);
+    expect(registry.startupOwner(identity)).toMatchObject({
+      identityKey: identity.identityKey,
+      instanceId: "starting",
+      processToken: "process-token",
+      ownerPid: 777,
+      ownerKind: "daemon",
+    });
+    expect(launcherLease?.heartbeat()).toBe(false);
+    expect(launcherLease?.release()).toBe(false);
+  });
+
+  it("lets only the exact daemon claim heartbeat and release transferred startup", () => {
+    const identity = DaemonWorkspaceIdentity.from("/repo", temporaryDirectory(roots));
+    const registry = new DaemonRegistry(identity.registryDirectory);
+    expect(
+      registry.acquireStartup(identity, {
+        identityKey: identity.identityKey,
+        instanceId: "starting",
+        processToken: "process-token",
+        ownerPid: process.pid,
+        ownerKind: "launcher",
+        heartbeatAt: Date.now(),
+      }),
+    ).toBeDefined();
+
+    expect(
+      registry.claimStartupForDaemon(identity, "starting", "wrong-token", 777),
+    ).toBeUndefined();
+    const daemonLease = registry.claimStartupForDaemon(identity, "starting", "process-token", 777);
+    expect(daemonLease).toBeDefined();
+    const revisionBeforeHeartbeat = registry.startupOwner(identity)?.revision;
+
+    expect(daemonLease?.heartbeat()).toBe(true);
+    expect(registry.startupOwner(identity)?.revision).not.toBe(revisionBeforeHeartbeat);
+    expect(
+      registry.claimStartupForDaemon(identity, "starting", "process-token", 778),
+    ).toBeUndefined();
+    expect(daemonLease?.release()).toBe(true);
+    expect(registry.startupOwner(identity)).toBeUndefined();
+  });
+
+  it("releases only the exact daemon-owned startup process", () => {
+    const identity = DaemonWorkspaceIdentity.from("/repo", temporaryDirectory(roots));
+    const registry = new DaemonRegistry(identity.registryDirectory);
+    const processRegistry = registry as unknown as StartupProcessRegistryTestAccess;
+    expect(registry.acquireStartup(identity, "starting")).toBeDefined();
+    const starting = {
+      ...record(identity, "starting", "starting"),
+      pid: 777,
+    } satisfies DaemonRecord;
+    expect(registry.writeStartingIfStartupOwner(identity, starting)).toBe(true);
+
+    expect(processRegistry.startupOwnerMatchesProcess(identity, starting)).toBe(true);
+    expect(
+      processRegistry.removeStartupLockIfProcess(identity, {
+        ...starting,
+        processToken: "replacement-process",
+      }),
+    ).toBe(false);
+    expect(registry.startupOwner(identity)).toBeDefined();
+    expect(processRegistry.removeStartupLockIfProcess(identity, starting)).toBe(true);
+    expect(registry.startupOwner(identity)).toBeUndefined();
   });
 
   it("renews startup ownership with a new revision", () => {
@@ -250,6 +409,16 @@ describe("daemon registry", () => {
     expect(first).toBeDefined();
     expect(mutations.beginStartupMutation(identity)).toBeUndefined();
   });
+
+  it.each(["EEXIST", "ENOTEMPTY"])(
+    "treats %s as a lost startup mutation claim after the winner releases",
+    (code) => {
+      const registryClass = DaemonRegistry as unknown as DaemonRegistryClassTestAccess;
+
+      expect(registryClass.startupMutationClaimWasContended({ code })).toBe(true);
+      expect(registryClass.startupMutationClaimWasContended({ code: "EACCES" })).toBe(false);
+    },
+  );
 
   it("releases startup mutation ownership for the next lease", () => {
     const identity = DaemonWorkspaceIdentity.from("/repo", temporaryDirectory(roots));
@@ -380,11 +549,16 @@ describe("daemon registry", () => {
     const beta = DaemonWorkspaceIdentity.from("/beta", stateDirectory);
     const alpha = DaemonWorkspaceIdentity.from("/alpha", stateDirectory);
     registry.write({ ...record(beta, "ready", "beta"), pid: 301, lastNavigationAt: 80 });
-    registry.write({ ...record(alpha, "starting", "alpha"), pid: 302 });
     const alphaLease = registry.acquireStartup(alpha, "alpha");
+    expect(
+      registry.writeStartingIfStartupOwner(alpha, {
+        ...record(alpha, "starting", "alpha"),
+        pid: 302,
+      }),
+    ).toBe(true);
     const transport = new ControllerTransport(registry);
     transport.live.add("beta");
-    const terminator = new ControllerTerminator([process.pid]);
+    const terminator = new ControllerTerminator([301, 302]);
     const controller = new DaemonController(
       registry,
       transport as unknown as LocalDaemonTransport,
@@ -412,7 +586,7 @@ describe("daemon registry", () => {
     alphaLease?.release();
   });
 
-  it("cleans stale records and does not trust a live PID without a matching ping", async () => {
+  it("retains live ownership when a daemon does not answer ping", async () => {
     const stateDirectory = temporaryDirectory(roots);
     const identity = DaemonWorkspaceIdentity.from("/repo", stateDirectory);
     const registry = new DaemonRegistry(identity.registryDirectory);
@@ -424,8 +598,16 @@ describe("daemon registry", () => {
       { processTerminator: new ControllerTerminator([401]) },
     );
 
-    await expect(controller.status()).resolves.toEqual([]);
-    expect(registry.readStoredInstance(identity, "stale")).toBeUndefined();
+    await expect(controller.status()).resolves.toEqual([
+      {
+        workspaceRoot: "/repo",
+        state: "unresponsive",
+        pid: 401,
+        uptimeMs: expect.any(Number),
+        fileCount: 2,
+      },
+    ]);
+    expect(registry.readStoredInstance(identity, "stale")).toBeDefined();
   });
 
   it("drains a validated daemon and compare-removes only its record", async () => {
@@ -542,6 +724,26 @@ describe("daemon registry", () => {
       workspaceRoot: "/repo",
     });
     expect(registry.readStoredInstance(identity, "stale-stop")).toBeUndefined();
+  });
+
+  it("does not remove or terminate a live daemon when stop authentication times out", async () => {
+    const stateDirectory = temporaryDirectory(roots);
+    const identity = DaemonWorkspaceIdentity.from("/repo", stateDirectory);
+    const registry = new DaemonRegistry(identity.registryDirectory);
+    registry.write({ ...record(identity, "ready", "silent-stop"), pid: 701 });
+    const transport = new ControllerTransport(registry);
+    const terminator = new ControllerTerminator([701]);
+    const controller = new DaemonController(
+      registry,
+      transport as unknown as LocalDaemonTransport,
+      stateDirectory,
+      { processTerminator: terminator, stopTimeoutMs: 5, pollIntervalMs: 1 },
+    );
+
+    await expect(controller.stop("/repo")).rejects.toThrow(/unresponsive/i);
+    expect(registry.readStoredInstance(identity, "silent-stop")).toBeDefined();
+    expect(transport.killed).toEqual([]);
+    expect(terminator.terminated).toEqual([]);
   });
 });
 

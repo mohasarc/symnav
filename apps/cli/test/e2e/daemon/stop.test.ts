@@ -96,6 +96,53 @@ describe("symnav daemon stop", () => {
     );
   });
 
+  it("waits for a launched starting process to exit before reporting stopped", async () => {
+    const stateDir = temporaryStateDirectory(stateDirectories);
+    const cwd = temporaryWorkspace(stateDirectories);
+    const identity = DaemonWorkspaceIdentity.from(
+      canonicalWorkspaceRoot(realpathSync(cwd)),
+      canonicalStateDir(stateDir),
+    );
+    const registry = new DaemonRegistry(identity.registryDirectory);
+    const instanceId = "starting-stop";
+    const processToken = "starting-stop-process";
+    const child = spawn(process.execPath, ["-e", "setInterval(() => undefined, 1000)"], {
+      stdio: "ignore",
+    });
+    helperProcesses.push(child);
+    if (child.pid === undefined) throw new Error("Starting process did not receive a PID");
+    expect(registry.acquireStartup(identity, instanceId)).toBeDefined();
+    const record: DaemonRecord = {
+      schemaVersion: DAEMON_RECORD_SCHEMA_VERSION,
+      protocolVersion: DAEMON_PROTOCOL_VERSION,
+      symnavVersion: "test",
+      workspaceRoot: identity.workspaceRoot,
+      workspaceKey: identity.workspaceKey,
+      stateKey: identity.stateKey,
+      identityKey: identity.identityKey,
+      instanceId,
+      processToken,
+      endpoint: identity.endpoint(instanceId),
+      pid: child.pid,
+      state: "starting",
+      startedAt: Date.now(),
+      memoryCapBytes: Number.MAX_SAFE_INTEGER,
+    };
+    expect(registry.writeStartingIfStartupOwner(identity, record)).toBe(true);
+
+    const stopped = await runBuiltStop(cwd, stateDir);
+
+    expect(stopped).toEqual({
+      status: 0,
+      stdout: expect.stringMatching(/^\{"status":"stopped"/),
+      stderr: "",
+    });
+    expect(processIsAlive(record.pid)).toBe(false);
+    expect(registry.readStoredInstance(identity, instanceId)).toBeUndefined();
+    expect(registry.startupOwner(identity)).toBeUndefined();
+    helperProcesses.splice(helperProcesses.indexOf(child), 1);
+  }, 15_000);
+
   it("drains an in-flight request before the built stop command returns", async () => {
     const stateDir = temporaryStateDirectory(stateDirectories);
     const cwd = temporaryWorkspace(stateDirectories);
@@ -141,15 +188,13 @@ describe("symnav daemon stop", () => {
     );
     helperProcesses.push(runtime.child);
     const transport = new LocalDaemonTransport({ requestTimeoutMs: 10_000 });
-    void transport
-      .request(runtime.record.endpoint, {
-        kind: "execute",
-        protocolVersion: DAEMON_PROTOCOL_VERSION,
-        instanceId: runtime.record.instanceId,
-        requestId: "built-force",
-        request: { argv: ["--version"], cwd, telemetryEnabled: false },
-      })
-      .catch(() => undefined);
+    const execution = transport.request(runtime.record.endpoint, {
+      kind: "execute",
+      protocolVersion: DAEMON_PROTOCOL_VERSION,
+      instanceId: runtime.record.instanceId,
+      requestId: "built-force",
+      request: { argv: ["--version"], cwd, telemetryEnabled: false },
+    });
     await waitUntil(() => existsSync(runtime.requestStartedPath));
 
     const stopped = await runBuiltStop(cwd, stateDir);
@@ -160,6 +205,11 @@ describe("symnav daemon stop", () => {
       stderr: "",
     });
     expect(() => process.kill(runtime.record.pid, 0)).toThrow();
+    await expect(execution).resolves.toMatchObject({
+      kind: "result",
+      requestId: "built-force",
+      result: { exitCode: 1 },
+    });
     await waitForProcess(runtime.child);
     helperProcesses.splice(helperProcesses.indexOf(runtime.child), 1);
   }, 15_000);
@@ -276,6 +326,15 @@ async function waitUntil(predicate: () => boolean): Promise<void> {
     await new Promise((resolve) => setTimeout(resolve, 10));
   }
   throw new Error("Timed out waiting for controlled daemon state");
+}
+
+function processIsAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 function temporaryStateDirectory(directories: string[]): string {

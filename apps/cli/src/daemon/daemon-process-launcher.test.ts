@@ -21,6 +21,7 @@ interface FakeChildProcess {
   readonly pid: number;
   readonly once: ReturnType<typeof vi.fn>;
   readonly unref: ReturnType<typeof vi.fn>;
+  emit(event: string, ...args: unknown[]): void;
 }
 
 describe("NodeDaemonProcessLauncher", () => {
@@ -38,6 +39,9 @@ describe("NodeDaemonProcessLauncher", () => {
           return child;
         }),
         unref: vi.fn(),
+        emit(event: string, ...args: unknown[]) {
+          processListeners.get(event)?.(...args);
+        },
       };
       return child;
     });
@@ -72,7 +76,12 @@ describe("NodeDaemonProcessLauncher", () => {
       const [, args, options] = spawnMock.mock.calls[0] as [
         string,
         readonly string[],
-        { readonly cwd: string; readonly env: NodeJS.ProcessEnv },
+        {
+          readonly cwd: string;
+          readonly detached: boolean;
+          readonly env: NodeJS.ProcessEnv;
+          readonly stdio: readonly unknown[];
+        },
       ];
       const configuration = DaemonProcessConfigurationParser.parse(args[2]);
       const absoluteStateDirectory = canonicalStateDir(resolve(stateDirectory));
@@ -84,27 +93,55 @@ describe("NodeDaemonProcessLauncher", () => {
       expect(configuration.identityKey).toBe(identity.identityKey);
       expect(configuration.instanceId).toBe("instance");
       expect(configuration.processToken).toBe("process-token");
+      expect(configuration.startupOwnerKind).toBe("daemon");
       expect(configuration.endpoint).toBe(identity.endpoint("instance"));
       expect(options.env.SYMNAV_STATE_DIR).toBe(absoluteStateDirectory);
       expect(options.cwd).toBe(tmpdir());
       expect(isAbsolute(options.cwd)).toBe(true);
       expect(options.cwd).not.toBe(absoluteStateDirectory);
       expect(options.cwd).not.toBe(absoluteWorkspaceRoot);
+      expect(options).toMatchObject({ detached: true });
+      expect(options.stdio[0]).toBe("ignore");
+      expect(spawnMock.mock.results[0]?.value.unref).toHaveBeenCalledOnce();
     },
   );
 
-  it("reports child exit after the detached process spawns", async () => {
-    const root = mkdtempSync(join(tmpdir(), "symnav-launcher-exit-"));
-    roots.push(root);
-    const identity = DaemonWorkspaceIdentity.from(join(root, "workspace"), join(root, "state"));
-    mkdirSync(identity.registryDirectory, { recursive: true });
+  it("rejects promptly when the detached child cannot spawn", async () => {
+    const error = new Error("spawn refused");
+    spawnMock.mockImplementationOnce(() => {
+      const child: FakeChildProcess = {
+        pid: 4321,
+        once: vi.fn((event: string, listener: (...args: unknown[]) => void) => {
+          if (event === "error") queueMicrotask(() => listener(error));
+          return child;
+        }),
+        unref: vi.fn(),
+        emit: vi.fn(),
+      };
+      return child;
+    });
+    const identity = launcherIdentity(roots);
+
+    await expect(
+      new NodeDaemonProcessLauncher("1.2.3", 128 * 1024 * 1024).launch(
+        identity,
+        "instance",
+        "process-token",
+      ),
+    ).rejects.toThrow("spawn refused");
+    expect(spawnMock.mock.results[0]?.value.unref).not.toHaveBeenCalled();
+  });
+
+  it("reports child exit through the launched process immediately", async () => {
+    const identity = launcherIdentity(roots);
     const daemonProcess = await new NodeDaemonProcessLauncher("1.2.3", 128 * 1024 * 1024).launch(
       identity,
       "instance",
       "process-token",
     );
+    const child = spawnMock.mock.results[0]?.value as FakeChildProcess;
 
-    processListeners.get("exit")?.(7, "SIGTERM");
+    child.emit("exit", 7, "SIGTERM");
 
     await expect(daemonProcess.exited).resolves.toEqual({
       code: 7,
@@ -112,4 +149,33 @@ describe("NodeDaemonProcessLauncher", () => {
       cause: "exit",
     });
   });
+
+  it("reports a child spawn error after launch", async () => {
+    const identity = launcherIdentity(roots);
+    const daemonProcess = await new NodeDaemonProcessLauncher("1.2.3", 128 * 1024 * 1024).launch(
+      identity,
+      "instance",
+      "process-token",
+    );
+    const child = spawnMock.mock.results[0]?.value as FakeChildProcess;
+    const error = new Error("child failed");
+    error.name = "ChildProcessError";
+
+    child.emit("error", error);
+
+    await expect(daemonProcess.exited).resolves.toEqual({
+      code: null,
+      signal: null,
+      cause: "spawn-error",
+      errorName: "ChildProcessError",
+    });
+  });
 });
+
+function launcherIdentity(roots: string[]): DaemonWorkspaceIdentity {
+  const root = mkdtempSync(join(tmpdir(), "symnav-launcher-exit-"));
+  roots.push(root);
+  const identity = DaemonWorkspaceIdentity.from(join(root, "workspace"), join(root, "state"));
+  mkdirSync(identity.identityDirectory, { recursive: true });
+  return identity;
+}

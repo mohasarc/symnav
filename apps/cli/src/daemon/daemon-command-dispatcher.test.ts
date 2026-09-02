@@ -10,6 +10,8 @@ import {
   type DaemonRequest,
   type DaemonResponse,
 } from "./daemon-protocol.js";
+import type { DaemonObservation } from "./daemon-record-observer.js";
+import { DaemonTransportError } from "./local-daemon-transport.js";
 import {
   DaemonCommandDispatcher,
   type DaemonDispatchRuntime,
@@ -118,10 +120,11 @@ describe("DaemonCommandDispatcher", () => {
     expect(harness.coldExecute).toHaveBeenCalledWith(
       expect.objectContaining({ executionMode: "fallback" }),
     );
+    expect(harness.removeIfProcess).not.toHaveBeenCalled();
   });
 
-  it("invalidates a failed daemon and restarts on the next invocation", async () => {
-    const harness = new DispatchHarness(success);
+  it("cleans a confirmed exited daemon and restarts on the next invocation", async () => {
+    const harness = new DispatchHarness(success, { observationKind: "exited" });
     const dispatcher = harness.dispatcher();
     await expect(dispatcher.execute(request)).resolves.toMatchObject({ mode: "warm" });
     harness.answer(new Error("connection refused"));
@@ -139,22 +142,26 @@ describe("DaemonCommandDispatcher", () => {
     expect(harness.ensureRunning).toHaveBeenCalledOnce();
   });
 
-  it("removes a failed daemon record when kill delivery fails", async () => {
-    const harness = new DispatchHarness(new Error("connection refused"));
-    harness.failKill(new Error("kill refused"));
+  it("retains a live daemon after a submitted request times out", async () => {
+    const harness = new DispatchHarness(
+      new DaemonTransportError("timeout", "submitted-unconfirmed", "request timed out"),
+    );
 
     await expect(harness.dispatcher().execute(request)).resolves.toEqual({
       mode: "fallback",
       result: success,
     });
 
-    expect(harness.removeIfInstance).toHaveBeenCalledOnce();
-    expect(harness.registeredRecord()).toBeUndefined();
+    expect(harness.removeIfProcess).not.toHaveBeenCalled();
+    expect(harness.registeredRecord()).toBeDefined();
+    expect(harness.requestsOfKind("kill")).toEqual([]);
     expect(harness.coldExecute).toHaveBeenCalledOnce();
   });
 
-  it("executes fallback when failed daemon record cleanup fails", async () => {
-    const harness = new DispatchHarness(new Error("connection refused"));
+  it("executes fallback when confirmed-exit record cleanup fails", async () => {
+    const harness = new DispatchHarness(new Error("connection refused"), {
+      observationKind: "exited",
+    });
     harness.failRemoval(new Error("registry cleanup failed"));
 
     await expect(harness.dispatcher().execute(request)).resolves.toEqual({
@@ -162,7 +169,7 @@ describe("DaemonCommandDispatcher", () => {
       result: success,
     });
 
-    expect(harness.removeIfInstance).toHaveBeenCalledOnce();
+    expect(harness.removeIfProcess).toHaveBeenCalledOnce();
     expect(harness.coldExecute).toHaveBeenCalledOnce();
   });
 
@@ -175,7 +182,7 @@ describe("DaemonCommandDispatcher", () => {
     });
 
     expect(harness.ensureRunning).not.toHaveBeenCalled();
-    expect(harness.removeIfInstance).not.toHaveBeenCalled();
+    expect(harness.removeIfProcess).not.toHaveBeenCalled();
     expect(harness.coldExecute).toHaveBeenCalledTimes(1);
   });
 
@@ -192,7 +199,7 @@ describe("DaemonCommandDispatcher", () => {
     });
 
     expect(harness.ensureRunning).toHaveBeenCalledOnce();
-    expect(harness.removeIfInstance).not.toHaveBeenCalled();
+    expect(harness.removeIfProcess).not.toHaveBeenCalled();
     expect(harness.coldExecute).toHaveBeenCalledTimes(1);
   });
   it("does not touch daemon state when disabled", async () => {
@@ -253,11 +260,13 @@ interface DispatchHarnessOptions {
   readonly record?: Partial<DaemonRecord>;
   readonly ensureFailure?: Error;
   readonly registryReadFailures?: readonly number[];
+  readonly observationKind?: DaemonObservation["kind"];
 }
 
 class DispatchHarness {
   readonly ensureRunning: ReturnType<typeof vi.fn>;
-  readonly removeIfInstance = vi.fn();
+  readonly removeIfProcess = vi.fn();
+  readonly observe = vi.fn();
   readonly coldExecute = vi.fn(async () => success);
   readonly recordTelemetry = vi.fn();
   readonly runtimeFactory = vi.fn(() => this.runtime);
@@ -265,7 +274,6 @@ class DispatchHarness {
   private registered: DaemonRecord | undefined;
   private readonly runtime: DaemonDispatchRuntime;
   private daemonAnswer: CommandExecutionResult | Error;
-  private killFailure: Error | undefined;
   private removalFailure: Error | undefined;
   private registryReadCount = 0;
 
@@ -286,8 +294,36 @@ class DispatchHarness {
         loadDurationMs: 10,
       };
     });
+    this.observe.mockImplementation(async (record: DaemonRecord): Promise<DaemonObservation> => {
+      const kind = this.options.observationKind ?? "unresponsive";
+      if (kind === "exited" || kind === "starting") return { kind, record };
+      if (kind === "responsive") {
+        return {
+          kind,
+          record,
+          pong: {
+            kind: "pong",
+            protocolVersion: record.protocolVersion,
+            instanceId: record.instanceId,
+            symnavVersion: record.symnavVersion,
+          },
+        };
+      }
+      if (kind === "unresponsive") return { kind, record, failureCode: "timeout" };
+      return {
+        kind,
+        record,
+        evidence: {
+          instanceId: record.instanceId,
+          processToken: record.processToken,
+          pid: record.pid,
+          startedAt: record.startedAt,
+        },
+      };
+    });
     this.runtime = {
       coordinator: { ensureRunning: this.ensureRunning },
+      observer: { observe: this.observe },
       registry: {
         read: () => {
           this.registryReadCount += 1;
@@ -296,23 +332,16 @@ class DispatchHarness {
           }
           return this.registered;
         },
-        removeIfInstance: (identity, instanceId) => {
-          this.removeIfInstance(identity, instanceId);
+        removeIfProcess: (identity, instanceId, processToken) => {
+          this.removeIfProcess(identity, instanceId, processToken);
           if (this.removalFailure !== undefined) throw this.removalFailure;
           this.registered = undefined;
+          return true;
         },
       },
       transport: {
         request: async (_endpoint: string, daemonRequest: DaemonRequest) => {
           this.requests.push(daemonRequest);
-          if (daemonRequest.kind === "kill") {
-            if (this.killFailure !== undefined) throw this.killFailure;
-            return {
-              kind: "killing",
-              instanceId: daemonRequest.instanceId,
-              processToken: daemonRequest.processToken,
-            };
-          }
           if (this.daemonAnswer instanceof Error) throw this.daemonAnswer;
           return {
             kind: "result",
@@ -344,16 +373,16 @@ class DispatchHarness {
     return this.requests.filter((daemonRequest) => daemonRequest.kind === "execute");
   }
 
+  requestsOfKind(kind: DaemonRequest["kind"]): readonly DaemonRequest[] {
+    return this.requests.filter((daemonRequest) => daemonRequest.kind === kind);
+  }
+
   answer(daemonAnswer: CommandExecutionResult | Error): void {
     this.daemonAnswer = daemonAnswer;
   }
 
   registeredRecord(): DaemonRecord | undefined {
     return this.registered;
-  }
-
-  failKill(error: Error): void {
-    this.killFailure = error;
   }
 
   failRemoval(error: Error): void {

@@ -9,9 +9,19 @@ import {
 } from "./daemon-process-launcher.js";
 import type { DaemonRecord, DaemonStartResult } from "./daemon-protocol.js";
 import { DAEMON_PROTOCOL_VERSION, DAEMON_RECORD_SCHEMA_VERSION } from "./daemon-protocol.js";
-import type { DaemonRegistry, StartupOwner } from "./daemon-registry.js";
+import {
+  DAEMON_STARTUP_TIMEOUT_MS,
+  type DaemonRegistry,
+  type StartupOwner,
+} from "./daemon-registry.js";
+import { DaemonRecordObserver } from "./daemon-record-observer.js";
 import type { DaemonWorkspaceIdentity } from "./daemon-workspace-identity.js";
 import type { LocalDaemonTransport } from "./local-daemon-transport.js";
+
+export type DaemonWarmupTriggerResult =
+  | { readonly status: "launched"; readonly instanceId: string; readonly pid: number }
+  | { readonly status: "starting"; readonly instanceId: string; readonly pid: number }
+  | { readonly status: "ready"; readonly instanceId: string; readonly pid: number };
 
 interface DaemonStartupCoordinatorOptions {
   readonly startupTimeoutMs?: number;
@@ -20,21 +30,22 @@ interface DaemonStartupCoordinatorOptions {
   readonly now?: () => number;
   readonly instanceId?: () => string;
   readonly processTerminator?: DaemonProcessTerminator;
-  readonly heartbeatIntervalMs?: number;
 }
 
-const STARTUP_HEARTBEAT_INTERVAL_MS = 100;
 const DAEMON_TERMINATION_TIMEOUT_MS = 5 * 60_000;
-
 class DaemonChildExitError extends Error {
   constructor(readonly exit: DaemonProcessExit) {
-    const detail =
+    super(
       exit.cause === "spawn-error"
-        ? `spawn error ${exit.errorName ?? "unknown"}`
-        : `code ${exit.code ?? "null"}, signal ${exit.signal ?? "null"}`;
-    super(`Daemon child exited before readiness (${detail})`);
+        ? `Daemon child failed after spawn (${exit.errorName ?? "Error"})`
+        : `Daemon child exited before readiness (code ${String(exit.code)}, signal ${String(exit.signal)})`,
+    );
   }
 }
+
+class DaemonWarmupLostError extends Error {}
+
+class DaemonOwnedButUnresponsiveError extends Error {}
 
 export class DaemonStartupCoordinator {
   private readonly startupTimeoutMs: number;
@@ -43,7 +54,11 @@ export class DaemonStartupCoordinator {
   private readonly now: () => number;
   private readonly nextInstanceId: () => string;
   private readonly processTerminator: DaemonProcessTerminator;
-  private readonly heartbeatIntervalMs: number;
+  private readonly observer: DaemonRecordObserver;
+  private readonly launchedInstances = new Set<string>();
+  private readonly launchedProcesses = new Map<string, DaemonProcess>();
+  private readonly launchedExits = new Map<string, DaemonProcessExit>();
+  private readonly launchedInstanceIdsByIdentity = new Map<string, string>();
 
   constructor(
     private readonly registry: DaemonRegistry,
@@ -57,57 +72,155 @@ export class DaemonStartupCoordinator {
     this.now = options.now ?? Date.now;
     this.nextInstanceId = options.instanceId ?? randomUUID;
     this.processTerminator = options.processTerminator ?? new NodeDaemonProcessTerminator();
-    this.heartbeatIntervalMs = options.heartbeatIntervalMs ?? STARTUP_HEARTBEAT_INTERVAL_MS;
+    this.observer = new DaemonRecordObserver(this.transport, this.processTerminator, this.now);
   }
 
   async ensureRunning(identity: DaemonWorkspaceIdentity): Promise<DaemonStartResult> {
     try {
-      return await this.ensureRunningOnce(identity);
+      return await this.triggerAndWait(identity);
     } catch (error) {
-      if (!(error instanceof DaemonChildExitError)) throw error;
-      return this.ensureRunningOnce(identity);
+      if (!(error instanceof DaemonChildExitError || error instanceof DaemonWarmupLostError)) {
+        throw error;
+      }
+      return this.triggerAndWait(identity);
     }
   }
 
-  private async ensureRunningOnce(identity: DaemonWorkspaceIdentity): Promise<DaemonStartResult> {
+  private async triggerAndWait(identity: DaemonWorkspaceIdentity): Promise<DaemonStartResult> {
+    const trigger = await this.trigger(identity);
+    return this.waitUntilReady(identity, trigger.instanceId);
+  }
+
+  async trigger(identity: DaemonWorkspaceIdentity): Promise<DaemonWarmupTriggerResult> {
     const readyRecord = await this.validatedReadyRecord(identity);
     if (readyRecord?.symnavVersion === this.launcher.symnavVersion) {
-      return this.alreadyRunning(readyRecord);
+      return {
+        status: "ready",
+        instanceId: readyRecord.instanceId,
+        pid: readyRecord.pid,
+      };
     }
 
     const instanceId = this.nextInstanceId();
-    const lease = this.registry.acquireStartup(identity, instanceId);
-    if (lease === undefined) return this.waitForWinner(identity);
-    const heartbeat = setInterval(
-      () => this.registry.refreshStartupOwner(identity, instanceId),
-      this.heartbeatIntervalMs,
-    );
-    heartbeat.unref?.();
-
-    let releaseLease = true;
+    const processToken = randomUUID();
+    const lease = this.registry.acquireStartup(identity, {
+      identityKey: identity.identityKey,
+      instanceId,
+      processToken,
+      ownerPid: process.pid,
+      ownerKind: "launcher",
+      heartbeatAt: this.now(),
+    });
+    if (lease === undefined) return this.observeElectedWarmup(identity);
     try {
       const currentRecord = await this.validatedReadyRecord(identity);
       if (currentRecord?.symnavVersion === this.launcher.symnavVersion) {
-        return this.alreadyRunning(currentRecord);
+        lease.release();
+        return {
+          status: "ready",
+          instanceId: currentRecord.instanceId,
+          pid: currentRecord.pid,
+        };
       }
       const storedRecord = this.registry.readStored(identity);
       if (storedRecord !== undefined) await this.replaceStoredRecord(identity, storedRecord);
-      return await this.launchAndWait(identity, instanceId);
+      return await this.launch(identity, instanceId, processToken, lease);
     } catch (error) {
-      if (error instanceof DaemonProcessTerminationError) releaseLease = false;
+      lease.release();
       throw error;
-    } finally {
-      clearInterval(heartbeat);
-      if (releaseLease) lease.release();
     }
   }
 
-  private async launchAndWait(
+  async waitUntilReady(
+    identity: DaemonWorkspaceIdentity,
+    expectedInstanceId?: string,
+  ): Promise<DaemonStartResult> {
+    let missingOwner: { readonly instanceId: string; readonly firstObservedAt: number } | undefined;
+    while (true) {
+      const record = this.registry.read(identity);
+      if (record?.state === "ready" && record.symnavVersion === this.launcher.symnavVersion) {
+        const validated = await this.validatedChildRecord(identity);
+        if (validated?.instanceId === record.instanceId) {
+          await this.probeExecution(validated);
+          return this.launchedInstances.has(record.instanceId)
+            ? {
+                status: "ready",
+                workspaceRoot: record.workspaceRoot,
+                fileCount: record.fileCount ?? 0,
+                loadDurationMs: (record.readyAt ?? this.now()) - record.startedAt,
+              }
+            : this.alreadyRunning(record);
+        }
+      }
+      const storedRecord = this.registry.readStored(identity);
+      const observedInstanceId =
+        storedRecord?.instanceId ?? this.launchedInstanceIdsByIdentity.get(identity.identityKey);
+      const launchedExit =
+        observedInstanceId === undefined ? undefined : this.launchedExits.get(observedInstanceId);
+      if (launchedExit !== undefined) throw new DaemonChildExitError(launchedExit);
+      const owner = this.registry.startupOwner(identity);
+      if (owner !== undefined) missingOwner = undefined;
+      if (
+        storedRecord?.state === "ready" &&
+        storedRecord.symnavVersion === this.launcher.symnavVersion
+      ) {
+        await this.pause();
+        continue;
+      }
+      if (storedRecord?.state === "starting") {
+        if (owner !== undefined && this.startupOwnerIsAbandoned(identity, owner)) {
+          if (this.cleanupAbandonedStartup(identity, owner)) {
+            throw new DaemonWarmupLostError("Daemon child exited before readiness");
+          }
+          await this.pause();
+          continue;
+        }
+        const daemonProcess = this.launchedProcesses.get(storedRecord.instanceId);
+        if (daemonProcess !== undefined) {
+          const childExit = await Promise.race([
+            this.pause().then(() => undefined),
+            daemonProcess.exited,
+          ]);
+          if (childExit !== undefined) throw new DaemonChildExitError(childExit);
+          continue;
+        }
+        if (owner !== undefined) {
+          await this.pause();
+          continue;
+        }
+        if (missingOwner?.instanceId !== storedRecord.instanceId) {
+          missingOwner = {
+            instanceId: storedRecord.instanceId,
+            firstObservedAt: this.now(),
+          };
+          await this.pause();
+          continue;
+        }
+        if (this.now() - missingOwner.firstObservedAt <= DAEMON_STARTUP_TIMEOUT_MS) {
+          await this.pause();
+          continue;
+        }
+      }
+      if (owner !== undefined) {
+        await this.pause();
+        continue;
+      }
+      if (expectedInstanceId !== undefined) {
+        throw new DaemonWarmupLostError(
+          `Daemon startup ${expectedInstanceId} ended before readiness`,
+        );
+      }
+      throw new Error("Daemon startup failed before readiness");
+    }
+  }
+
+  private async launch(
     identity: DaemonWorkspaceIdentity,
     instanceId: string,
-  ): Promise<DaemonStartResult> {
+    processToken: string,
+    lease: NonNullable<ReturnType<DaemonRegistry["acquireStartup"]>>,
+  ): Promise<DaemonWarmupTriggerResult> {
     const startedAt = this.now();
-    const processToken = randomUUID();
     const startingRecord: DaemonRecord = {
       schemaVersion: DAEMON_RECORD_SCHEMA_VERSION,
       protocolVersion: DAEMON_PROTOCOL_VERSION,
@@ -130,6 +243,20 @@ export class DaemonStartupCoordinator {
     let daemonProcess: DaemonProcess | undefined;
     try {
       daemonProcess = await this.launcher.launch(identity, instanceId, processToken);
+      const transferred = lease.transferToDaemon(daemonProcess.pid, processToken);
+      const daemonOwner = this.registry.startupOwner(identity);
+      if (
+        !transferred &&
+        !(
+          daemonOwner?.identityKey === identity.identityKey &&
+          daemonOwner.instanceId === instanceId &&
+          daemonOwner.processToken === processToken &&
+          daemonOwner.ownerKind === "daemon" &&
+          daemonOwner.ownerPid === daemonProcess.pid
+        )
+      ) {
+        throw new Error("Daemon startup ownership changed after process launch");
+      }
       if (
         !this.registry.writeStartingIfStartupOwner(identity, {
           ...startingRecord,
@@ -138,16 +265,18 @@ export class DaemonStartupCoordinator {
       ) {
         throw new Error("Daemon startup ownership changed after process launch");
       }
-      const ready = await this.waitForReady(identity, instanceId, startedAt, daemonProcess);
+      this.launchedInstances.add(instanceId);
+      this.launchedProcesses.set(instanceId, daemonProcess);
+      this.launchedInstanceIdsByIdentity.set(identity.identityKey, instanceId);
+      this.observeLaunchedProcess(identity, instanceId, processToken, daemonProcess);
       return {
-        status: "ready",
-        workspaceRoot: ready.workspaceRoot,
-        fileCount: ready.fileCount ?? 0,
-        loadDurationMs: (ready.readyAt ?? this.now()) - ready.startedAt,
+        status: "launched",
+        instanceId,
+        pid: daemonProcess.pid,
       };
     } catch (error) {
       if (error instanceof DaemonChildExitError) {
-        this.registry.removeIfInstance(identity, instanceId);
+        this.cleanupLaunchedProcess(identity, instanceId, processToken);
         throw error;
       }
       if (daemonProcess !== undefined) {
@@ -158,67 +287,111 @@ export class DaemonStartupCoordinator {
           throw new DaemonProcessTerminationError(String(terminationError));
         }
       }
-      this.registry.removeIfInstance(identity, instanceId);
+      this.cleanupLaunchedProcess(identity, instanceId, processToken);
       throw error;
     }
   }
 
-  private async waitForWinner(identity: DaemonWorkspaceIdentity): Promise<DaemonStartResult> {
-    const waitStartedAt = this.now();
-    while (this.now() - waitStartedAt <= this.startupTimeoutMs) {
+  private observeLaunchedProcess(
+    identity: DaemonWorkspaceIdentity,
+    instanceId: string,
+    processToken: string,
+    daemonProcess: DaemonProcess,
+  ): void {
+    void daemonProcess.exited.then((exit) => {
+      this.launchedExits.set(instanceId, exit);
+      const record = this.registry.readStoredInstance(identity, instanceId);
+      if (record?.state === "starting" && record.processToken === processToken) {
+        this.cleanupLaunchedProcess(identity, instanceId, processToken);
+      }
+    });
+  }
+
+  private cleanupLaunchedProcess(
+    identity: DaemonWorkspaceIdentity,
+    instanceId: string,
+    processToken: string,
+  ): void {
+    const record = this.registry.readStoredInstance(identity, instanceId);
+    if (record?.processToken === processToken) {
+      if (record.pid > 0) {
+        this.registry.removeStartupLockIfProcess(identity, record);
+      } else {
+        const owner = this.registry.startupOwner(identity);
+        if (owner?.instanceId === instanceId && owner.processToken === processToken) {
+          this.registry.removeStartupLockIfOwner(identity, owner);
+        }
+      }
+    }
+    this.registry.removeIfProcess(identity, instanceId, processToken);
+  }
+
+  private async observeElectedWarmup(
+    identity: DaemonWorkspaceIdentity,
+  ): Promise<DaemonWarmupTriggerResult> {
+    while (true) {
       const record = await this.validatedReadyRecord(identity);
       if (record?.symnavVersion === this.launcher.symnavVersion) {
-        return this.alreadyRunning(record);
+        return { status: "ready", instanceId: record.instanceId, pid: record.pid };
       }
       const owner = this.registry.startupOwner(identity);
-      if (owner === undefined) return this.ensureRunningOnce(identity);
-      if (this.startupOwnerIsAbandoned(owner)) {
-        if (this.cleanupAbandonedStartup(identity, owner)) return this.ensureRunningOnce(identity);
+      if (owner === undefined) return this.trigger(identity);
+      if (this.startupOwnerIsAbandoned(identity, owner)) {
+        if (this.cleanupAbandonedStartup(identity, owner)) return this.trigger(identity);
+      }
+      const startingRecord = this.registry.readStoredInstance(identity, owner.instanceId);
+      if (
+        startingRecord?.state === "starting" &&
+        startingRecord.pid > 0 &&
+        owner.ownerKind === "daemon"
+      ) {
+        return {
+          status: "starting",
+          instanceId: owner.instanceId,
+          pid: startingRecord.pid,
+        };
       }
       await this.pause();
     }
-    const owner = this.registry.startupOwner(identity);
-    if (owner !== undefined && this.startupOwnerIsAbandoned(owner)) {
-      this.cleanupAbandonedStartup(identity, owner);
-    }
-    throw new Error("Daemon startup timed out while waiting for another process");
   }
 
   private cleanupAbandonedStartup(identity: DaemonWorkspaceIdentity, owner: StartupOwner): boolean {
+    const record = this.registry.readStoredInstance(identity, owner.instanceId);
+    if (
+      record !== undefined &&
+      ((owner.processToken.length > 0 && record.processToken !== owner.processToken) ||
+        (owner.ownerKind === "daemon" && record.pid !== owner.ownerPid))
+    ) {
+      return false;
+    }
     if (!this.registry.removeStartupLockIfOwner(identity, owner)) return false;
-    this.registry.removeIfInstance(identity, owner.instanceId);
+    if (record !== undefined) {
+      this.registry.removeIfProcess(identity, record.instanceId, record.processToken);
+    }
     return true;
   }
 
-  private startupOwnerIsAbandoned(owner: StartupOwner): boolean {
+  private startupOwnerIsAbandoned(identity: DaemonWorkspaceIdentity, owner: StartupOwner): boolean {
+    const record = this.registry.readStoredInstance(identity, owner.instanceId);
+    if (record !== undefined && record.pid > 0) {
+      return !this.processTerminator.isAlive(record.pid);
+    }
+    if (owner.ownerKind === "daemon") return !this.processTerminator.isAlive(owner.ownerPid);
     return (
       !this.processTerminator.isAlive(owner.ownerPid) ||
       !this.registry.startupOwnerIsWithinGrace(owner)
     );
   }
 
-  private async waitForReady(
+  private async validatedChildRecord(
     identity: DaemonWorkspaceIdentity,
-    instanceId: string,
-    waitStartedAt: number,
-    daemonProcess: DaemonProcess,
-  ): Promise<DaemonRecord> {
-    while (this.now() - waitStartedAt <= this.startupTimeoutMs) {
-      const record = this.registry.readInstance(identity, instanceId);
-      if (record?.state === "ready") {
-        const validated = await this.validatedReadyRecord(identity);
-        if (validated?.instanceId === instanceId) {
-          await this.probeExecution(validated);
-          return validated;
-        }
-      }
-      const childExit = await Promise.race([
-        this.pause().then(() => undefined),
-        daemonProcess.exited,
-      ]);
-      if (childExit !== undefined) throw new DaemonChildExitError(childExit);
+  ): Promise<DaemonRecord | undefined> {
+    try {
+      return await this.validatedReadyRecord(identity);
+    } catch (error) {
+      if (error instanceof DaemonOwnedButUnresponsiveError) return undefined;
+      throw error;
     }
-    throw new Error("Daemon startup timed out before readiness probe completed");
   }
 
   private async validatedReadyRecord(
@@ -226,34 +399,42 @@ export class DaemonStartupCoordinator {
   ): Promise<DaemonRecord | undefined> {
     const record = this.registry.read(identity);
     if (record?.state !== "ready") return undefined;
-    try {
-      const response = await this.transport.request(record.endpoint, {
-        kind: "ping",
-        protocolVersion: DAEMON_PROTOCOL_VERSION,
-        instanceId: record.instanceId,
-      });
-      if (response.kind !== "pong" || response.symnavVersion !== record.symnavVersion) {
-        return undefined;
-      }
+    const observation = await this.observer.observe(record);
+    if (observation.kind === "responsive") {
+      this.registry.removeStartupLockIfProcess(identity, record);
       return record;
-    } catch {
+    }
+    if (observation.kind === "exited") {
+      this.registry.removeIfProcess(identity, record.instanceId, record.processToken);
       return undefined;
     }
+    if (observation.kind === "incompatible" || observation.kind === "corrupt") return undefined;
+    throw new DaemonOwnedButUnresponsiveError(
+      `Daemon process ${record.pid} is live but unresponsive; ownership was retained`,
+    );
   }
 
   private async replaceStoredRecord(
     identity: DaemonWorkspaceIdentity,
     record: DaemonRecord,
   ): Promise<void> {
-    if (await this.identifiesRecordedProcess(record)) {
-      await this.transport.request(record.endpoint, {
-        kind: "terminate",
-        instanceId: record.instanceId,
-        processToken: record.processToken,
-      });
-      await this.waitForProcessExitAndEndpointRelease(record);
+    const observation = await this.observer.observe(record);
+    if (observation.kind === "exited") {
+      this.registry.removeIfProcess(identity, record.instanceId, record.processToken);
+      return;
     }
-    this.registry.removeIfInstance(identity, record.instanceId);
+    if (observation.kind === "starting" || observation.kind === "unresponsive") {
+      throw new DaemonOwnedButUnresponsiveError(
+        `Daemon process ${record.pid} is live but unresponsive; ownership was retained`,
+      );
+    }
+    await this.transport.request(record.endpoint, {
+      kind: "terminate",
+      instanceId: record.instanceId,
+      processToken: record.processToken,
+    });
+    await this.waitForProcessExitAndEndpointRelease(record);
+    this.registry.removeIfProcess(identity, record.instanceId, record.processToken);
   }
 
   private async waitForProcessExitAndEndpointRelease(record: DaemonRecord): Promise<void> {

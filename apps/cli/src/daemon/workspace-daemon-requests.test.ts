@@ -3,14 +3,18 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { CliExecutionRequest, CommandExecutionResult } from "../command-execution-result.js";
-import type { ProgramDependencies } from "../program-dependencies.js";
 import { createDefaultDependencies } from "../program.js";
 import type { DaemonRequest, DaemonResponse, DaemonServer } from "./daemon-protocol.js";
 import { DAEMON_PROTOCOL_VERSION, DAEMON_RECORD_SCHEMA_VERSION } from "./daemon-protocol.js";
 import { DaemonRegistry } from "./daemon-registry.js";
 import { DaemonWorkspaceIdentity } from "./daemon-workspace-identity.js";
 import type { LocalDaemonTransport } from "./local-daemon-transport.js";
-import { type DaemonCommandExecutor, WorkspaceDaemon } from "./workspace-daemon.js";
+import type {
+  DaemonNavigationWorker,
+  DaemonNavigationWorkerExit,
+} from "./daemon-navigation-worker.js";
+import type { DaemonNavigationWorkerResponse } from "./daemon-navigation-worker-protocol.js";
+import { WorkspaceDaemon } from "./workspace-daemon.js";
 
 describe("WorkspaceDaemon requests", () => {
   const harnesses: RequestHarness[] = [];
@@ -33,14 +37,55 @@ describe("WorkspaceDaemon requests", () => {
     });
   });
 
-  it("rejects startup authorization from an expired live owner", async () => {
-    let currentTime = 0;
-    const { daemon, harness, lease } = RequestHarness.create(new ImmediateExecutor(), {
-      now: () => {
-        currentTime += 5_001;
-        return currentTime;
-      },
+  it("binds lifecycle transport while navigation initialization is blocked", async () => {
+    const worker = new DeferredInitializationWorker();
+    const { daemon, harness, lease } = RequestHarness.create(undefined, {
+      navigationWorker: worker,
     });
+    harnesses.push(harness);
+
+    const starting = daemon.start();
+    await worker.initializationStarted;
+
+    expect(harness.transport.isListening).toBe(true);
+    await expect(harness.ping()).resolves.toMatchObject({ kind: "pong", state: "starting" });
+    expect(harness.registry.read(harness.identity)?.state).toBe("starting");
+
+    worker.completeInitialization();
+    await starting;
+    lease.release();
+    expect(harness.registry.read(harness.identity)?.state).toBe("ready");
+  });
+
+  it("claims and heartbeats daemon ownership throughout blocked initialization", async () => {
+    const worker = new DeferredInitializationWorker();
+    const { daemon, harness } = RequestHarness.create(undefined, {
+      navigationWorker: worker,
+      startupHeartbeatIntervalMs: 5,
+    });
+    harnesses.push(harness);
+
+    const starting = daemon.start();
+    await worker.initializationStarted;
+    const claimedOwner = harness.registry.startupOwner(harness.identity);
+    expect(claimedOwner).toMatchObject({
+      ownerKind: "daemon",
+      ownerPid: process.pid,
+      processToken: harness.processToken,
+    });
+
+    await waitUntil(
+      () => harness.registry.startupOwner(harness.identity)?.revision !== claimedOwner?.revision,
+    );
+
+    worker.completeInitialization();
+    await starting;
+    expect(harness.registry.read(harness.identity)?.state).toBe("ready");
+    expect(harness.registry.startupOwner(harness.identity)).toBeUndefined();
+  });
+
+  it("claims startup from an exact live launcher despite an old heartbeat", async () => {
+    const { daemon, harness } = RequestHarness.create(new ImmediateExecutor());
     harnesses.push(harness);
     const owner = harness.registry.startupOwner(harness.identity);
     if (owner === undefined) throw new Error("Expected startup owner");
@@ -49,8 +94,42 @@ describe("WorkspaceDaemon requests", () => {
       JSON.stringify({ ...owner, acquiredAt: 1, heartbeatAt: 1 }),
     );
 
-    await expect(daemon.start()).rejects.toThrow("startup authorization");
-    lease.release();
+    await expect(daemon.start()).resolves.toBeUndefined();
+    expect(harness.registry.read(harness.identity)?.state).toBe("ready");
+  });
+
+  it("waits through the registry mutation grace for startup authorization", async () => {
+    let claimAttempts = 0;
+    const { daemon, harness } = RequestHarness.create(new ImmediateExecutor(), {
+      now: () => claimAttempts * 1_000,
+    });
+    harnesses.push(harness);
+    const claimStartupForDaemon = harness.registry.claimStartupForDaemon.bind(harness.registry);
+    vi.spyOn(harness.registry, "claimStartupForDaemon").mockImplementation((...arguments_) => {
+      claimAttempts += 1;
+      if (claimAttempts <= 6) return undefined;
+      return claimStartupForDaemon(...arguments_);
+    });
+
+    await expect(daemon.start()).resolves.toBeUndefined();
+
+    expect(claimAttempts).toBe(7);
+    expect(harness.registry.read(harness.identity)?.state).toBe("ready");
+  });
+
+  it("cleans exact starting ownership when worker initialization fails", async () => {
+    const worker = new RejectingInitializationWorker();
+    const { daemon, harness } = RequestHarness.create(undefined, { navigationWorker: worker });
+    harnesses.push(harness);
+
+    await expect(daemon.start()).rejects.toThrow("initialization failed");
+
+    expect(worker.terminateCount).toBe(1);
+    expect(harness.transport.isListening).toBe(false);
+    expect(harness.registry.startupOwner(harness.identity)).toBeUndefined();
+    expect(
+      harness.registry.readStoredInstance(harness.identity, harness.instanceId),
+    ).toBeUndefined();
   });
 
   it("authenticates identity requests", async () => {
@@ -151,6 +230,30 @@ describe("WorkspaceDaemon requests", () => {
     await second;
   });
 
+  it("reports active command and queued count while worker execution is blocked", async () => {
+    const executor = new SerializedExecutor();
+    const harness = await RequestHarness.start(executor);
+    harnesses.push(harness);
+    const first = harness.execute("first", ["refs", "input"]);
+    await executor.started(1);
+    const second = harness.execute("second", ["overview", "input.ts"]);
+
+    const pingStartedAt = Date.now();
+    await expect(harness.ping()).resolves.toMatchObject({
+      kind: "pong",
+      state: "busy",
+      currentCommand: "refs",
+      queued: 1,
+    });
+    expect(Date.now() - pingStartedAt).toBeLessThan(1_000);
+
+    executor.complete(0);
+    await first;
+    await executor.started(2);
+    executor.complete(1);
+    await second;
+  });
+
   it("acknowledges graceful stop requests", async () => {
     const harness = await RequestHarness.start(new ImmediateExecutor());
     harnesses.push(harness);
@@ -161,33 +264,59 @@ describe("WorkspaceDaemon requests", () => {
     });
   });
 
-  it("removes registry and transport state before exiting", async () => {
+  it("force-terminates blocked worker execution with one controlled result", async () => {
+    const executor = new SerializedExecutor();
+    const harness = await RequestHarness.start(executor);
+    harnesses.push(harness);
+    const execution = harness.execute("blocked", ["refs", "input"]);
+    await executor.started(1);
+
+    await expect(harness.kill()).resolves.toEqual({
+      kind: "killing",
+      instanceId: harness.instanceId,
+      processToken: harness.processToken,
+    });
+    await expect(execution).resolves.toEqual({
+      kind: "result",
+      requestId: "blocked",
+      result: {
+        frames: [
+          {
+            stream: "stderr",
+            bytesBase64: Buffer.from("Cannot answer: daemon navigation was stopped.\n").toString(
+              "base64",
+            ),
+          },
+        ],
+        exitCode: 1,
+      },
+    });
+    await harness.exited;
+    expect(harness.registry.read(harness.identity)).toMatchObject({
+      processToken: harness.processToken,
+    });
+  });
+
+  it("closes transport while leaving ready ownership for an exit observer", async () => {
     const harness = await RequestHarness.start(new ImmediateExecutor());
     harnesses.push(harness);
 
     await harness.stop();
     await harness.exited;
 
-    expect(harness.registry.read(harness.identity)).toBeUndefined();
+    expect(harness.registry.read(harness.identity)).toMatchObject({
+      processToken: harness.processToken,
+    });
     expect(harness.transport.isListening).toBe(false);
   });
 
-  it("forwards refresh summaries and records freshness diagnostics", async () => {
-    const backendRefreshed = vi.fn();
-    const harness = await RequestHarness.start(undefined, {
-      createDependencies: (stateDirectory) => ({
-        ...createDefaultDependencies(stateDirectory),
-        backendRefreshed,
-      }),
-    });
+  it("records worker freshness diagnostics for every execution turn", async () => {
+    const harness = await RequestHarness.start(new ImmediateExecutor());
     harnesses.push(harness);
 
     await harness.execute("refresh", ["overview", "input.ts"]);
 
-    expect(backendRefreshed).toHaveBeenCalledOnce();
-    expect(harness.logEvents()).toEqual(
-      expect.arrayContaining([expect.objectContaining({ kind: "freshness" })]),
-    );
+    expect(harness.logEvents().filter((event) => event.kind === "freshness")).toHaveLength(2);
   });
 
   it("logs startup failures before rethrowing them", async () => {
@@ -205,24 +334,16 @@ describe("WorkspaceDaemon requests", () => {
     );
   });
 
-  it("closes transport and exits after registry cleanup fails", async () => {
+  it("does not mutate registry ownership during process-local shutdown", async () => {
     const harness = await RequestHarness.start(new ImmediateExecutor());
     harnesses.push(harness);
-    harness.failRegistryRemoval();
+    const remove = vi.spyOn(harness.registry, "removeIfProcess");
 
     await harness.stop();
     await harness.exited;
 
     expect(harness.transport.isListening).toBe(false);
-    expect(harness.logEvents()).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          kind: "failure",
-          operation: "registry-cleanup",
-          message: "registry cleanup failed",
-        }),
-      ]),
-    );
+    expect(remove).not.toHaveBeenCalled();
   });
 
   it("exits after transport cleanup fails", async () => {
@@ -239,6 +360,29 @@ describe("WorkspaceDaemon requests", () => {
           kind: "failure",
           operation: "transport-close",
           message: "transport cleanup failed",
+        }),
+      ]),
+    );
+  });
+
+  it("shuts down when the navigation worker exits unexpectedly", async () => {
+    const worker = new ExecutorNavigationWorker(new ImmediateExecutor());
+    const harness = await RequestHarness.start(undefined, { navigationWorker: worker });
+    harnesses.push(harness);
+
+    worker.fail({ generation: worker.generation, cause: "error", errorName: "WorkerError" });
+
+    await expect(harness.exited).resolves.toBe(0);
+    expect(harness.transport.isListening).toBe(false);
+    expect(harness.registry.read(harness.identity)).toMatchObject({
+      processToken: harness.processToken,
+    });
+    expect(harness.logEvents()).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          kind: "failure",
+          operation: "worker-exit",
+          message: "error (WorkerError)",
         }),
       ]),
     );
@@ -285,7 +429,14 @@ class RequestHarness {
     readonly lease: NonNullable<ReturnType<DaemonRegistry["acquireStartup"]>>;
   } {
     const harness = new RequestHarness();
-    const lease = harness.registry.acquireStartup(harness.identity, harness.instanceId);
+    const lease = harness.registry.acquireStartup(harness.identity, {
+      identityKey: harness.identity.identityKey,
+      instanceId: harness.instanceId,
+      processToken: harness.processToken,
+      ownerPid: process.pid,
+      ownerKind: "launcher",
+      heartbeatAt: Date.now(),
+    });
     if (lease === undefined) throw new Error("Expected startup ownership");
     harness.registry.write({
       schemaVersion: DAEMON_RECORD_SCHEMA_VERSION,
@@ -309,14 +460,16 @@ class RequestHarness {
       processToken: harness.processToken,
       symnavVersion: "test",
       memoryCapBytes: 1024,
-      dependencies:
-        options.dependencies ??
-        options.createDependencies?.(harness.identity.stateDirectory) ??
-        createDefaultDependencies(harness.identity.stateDirectory),
+      dependencies: createDefaultDependencies(harness.identity.stateDirectory),
       registry: harness.registry,
       transport: harness.transport as unknown as LocalDaemonTransport,
-      ...(executor === undefined ? {} : { executor }),
+      navigationWorker:
+        options.navigationWorker ??
+        new ExecutorNavigationWorker(executor ?? new ImmediateExecutor()),
       ...(options.now === undefined ? {} : { now: options.now }),
+      ...(options.startupHeartbeatIntervalMs === undefined
+        ? {}
+        : { startupHeartbeatIntervalMs: options.startupHeartbeatIntervalMs }),
       exit: (code) => harness.resolveExit(code),
     });
     return { daemon, harness, lease };
@@ -364,18 +517,20 @@ class RequestHarness {
     });
   }
 
+  kill(): Promise<DaemonResponse> {
+    return this.transport.receive({
+      kind: "kill",
+      instanceId: this.instanceId,
+      processToken: this.processToken,
+    });
+  }
+
   logEvents(): readonly Record<string, unknown>[] {
     return readFileSync(this.identity.logPath, "utf8")
       .trim()
       .split("\n")
       .filter((line) => line.length > 0)
       .map((line) => JSON.parse(line) as Record<string, unknown>);
-  }
-
-  failRegistryRemoval(): void {
-    vi.spyOn(this.registry, "removeIfInstance").mockImplementation(() => {
-      throw new Error("registry cleanup failed");
-    });
   }
 
   async dispose(): Promise<void> {
@@ -391,9 +546,9 @@ class RequestHarness {
 }
 
 interface RequestHarnessOptions {
-  readonly dependencies?: ProgramDependencies;
-  readonly createDependencies?: (stateDirectory: string) => ProgramDependencies;
   readonly now?: () => number;
+  readonly navigationWorker?: DaemonNavigationWorker;
+  readonly startupHeartbeatIntervalMs?: number;
 }
 
 class RequestTransport {
@@ -423,6 +578,10 @@ class RequestTransport {
     if (this.handler === undefined) return Promise.reject(new Error("Transport is not listening"));
     return this.handler(request);
   }
+}
+
+interface DaemonCommandExecutor {
+  execute(request: CliExecutionRequest): Promise<CommandExecutionResult>;
 }
 
 class ImmediateExecutor implements DaemonCommandExecutor {
@@ -459,4 +618,136 @@ class SerializedExecutor implements DaemonCommandExecutor {
   complete(index: number): void {
     this.results[index]?.();
   }
+}
+
+class ExecutorNavigationWorker implements DaemonNavigationWorker {
+  readonly generation = 1;
+  readonly exited: Promise<DaemonNavigationWorkerExit>;
+  private resolveExited!: (exit: DaemonNavigationWorkerExit) => void;
+  private rejectTermination!: (error: Error) => void;
+  private readonly termination: Promise<never>;
+
+  constructor(private readonly executor: DaemonCommandExecutor) {
+    this.exited = new Promise((resolve) => {
+      this.resolveExited = resolve;
+    });
+    this.termination = new Promise((_resolve, reject) => {
+      this.rejectTermination = reject;
+    });
+    void this.termination.catch(() => undefined);
+  }
+
+  async start(): Promise<DaemonNavigationWorkerResponse> {
+    return {
+      kind: "ready",
+      generation: this.generation,
+      fileCount: 1,
+      refresh: { added: 1, changed: 0, removed: 0, unchanged: 0 },
+      startupDurations: { discoveryMs: 0, indexingMs: 1, totalMs: 1 },
+    };
+  }
+
+  async execute(
+    requestId: string,
+    request: CliExecutionRequest,
+  ): Promise<DaemonNavigationWorkerResponse> {
+    return {
+      kind: "result",
+      generation: this.generation,
+      requestId,
+      result: await Promise.race([this.executor.execute(request), this.termination]),
+      refresh: { added: 0, changed: 0, removed: 0, unchanged: 1 },
+      durations: { freshnessMs: 0, navigationMs: 1, renderMs: 0, outputMs: 0 },
+    };
+  }
+
+  async releaseTransientResources(): Promise<DaemonNavigationWorkerResponse> {
+    return { kind: "heap", generation: this.generation, usedHeapBytes: 1, heapLimitBytes: 2 };
+  }
+
+  drainAndClose(): Promise<void> {
+    this.resolveExited({ generation: this.generation, cause: "closed" });
+    return Promise.resolve();
+  }
+
+  terminate(): Promise<void> {
+    this.rejectTermination(new Error("worker terminated"));
+    this.resolveExited({ generation: this.generation, cause: "terminated" });
+    return Promise.resolve();
+  }
+
+  fail(exit: DaemonNavigationWorkerExit): void {
+    this.resolveExited(exit);
+  }
+}
+
+class DeferredInitializationWorker implements DaemonNavigationWorker {
+  readonly generation = 1;
+  readonly exited = new Promise<DaemonNavigationWorkerExit>(() => undefined);
+  readonly initializationStarted: Promise<void>;
+  private resolveInitializationStarted!: () => void;
+  private resolveReady!: (response: DaemonNavigationWorkerResponse) => void;
+  private readonly ready: Promise<DaemonNavigationWorkerResponse>;
+
+  constructor() {
+    this.initializationStarted = new Promise((resolve) => {
+      this.resolveInitializationStarted = resolve;
+    });
+    this.ready = new Promise((resolve) => {
+      this.resolveReady = resolve;
+    });
+  }
+
+  start(): Promise<DaemonNavigationWorkerResponse> {
+    this.resolveInitializationStarted();
+    return this.ready;
+  }
+
+  execute(): Promise<DaemonNavigationWorkerResponse> {
+    throw new Error("Deferred initialization worker is not executable");
+  }
+
+  releaseTransientResources(): Promise<DaemonNavigationWorkerResponse> {
+    throw new Error("Deferred initialization worker has no transient resources");
+  }
+
+  drainAndClose(): Promise<void> {
+    return Promise.resolve();
+  }
+
+  terminate(): Promise<void> {
+    return Promise.resolve();
+  }
+
+  completeInitialization(): void {
+    this.resolveReady({
+      kind: "ready",
+      generation: this.generation,
+      fileCount: 1,
+      refresh: { added: 1, changed: 0, removed: 0, unchanged: 0 },
+      startupDurations: { discoveryMs: 0, indexingMs: 1, totalMs: 1 },
+    });
+  }
+}
+
+class RejectingInitializationWorker extends DeferredInitializationWorker {
+  terminateCount = 0;
+
+  override start(): Promise<DaemonNavigationWorkerResponse> {
+    return Promise.reject(new Error("initialization failed"));
+  }
+
+  override terminate(): Promise<void> {
+    this.terminateCount += 1;
+    return Promise.resolve();
+  }
+}
+
+async function waitUntil(predicate: () => boolean): Promise<void> {
+  const deadline = Date.now() + 1_000;
+  while (Date.now() <= deadline) {
+    if (predicate()) return;
+    await new Promise((resolve) => setTimeout(resolve, 5));
+  }
+  throw new Error("Timed out waiting for daemon startup state");
 }

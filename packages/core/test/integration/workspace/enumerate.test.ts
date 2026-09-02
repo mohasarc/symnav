@@ -157,4 +157,37 @@ describe("Workspace.enumerate", () => {
     const second = await ws.enumerate();
     expect(second).toEqual(first);
   });
+
+  it("stops at nested Git workspace boundaries before ignore matching or descent", async () => {
+    class NestedBoundaryFileSystem extends InMemoryFileSystem {
+      readonly nestedDescendantReads: string[] = [];
+
+      override async listDir(absPath: string): Promise<readonly string[]> {
+        if (absPath.startsWith("/repo/vendor/package/src")) {
+          this.nestedDescendantReads.push(absPath);
+          throw Object.assign(new Error("denied"), { code: "EACCES" });
+        }
+        return super.listDir(absPath);
+      }
+    }
+
+    const fs = new NestedBoundaryFileSystem({
+      "/repo/.git/HEAD": "ref: refs/heads/main\n",
+      "/repo/.gitignore": "vendor/\n!vendor/\n!vendor/**\n",
+      "/repo/src/root.ts": "export const root = true;\n",
+      "/repo/vendor/package/.git/HEAD": "ref: refs/heads/nested\n",
+      "/repo/vendor/package/src/unreadable.ts": "export const nested = true;\n",
+      "/repo/submodule/.git": "gitdir: ../.git/modules/submodule\n",
+      "/repo/submodule/src/submodule.ts": "export const submodule = true;\n",
+      "/repo/.worktrees/ordinary/src/ordinary.ts": "export const ordinary = true;\n",
+    });
+    const ws = await createWorkspace({ startDir: "/repo", fs });
+
+    const sourcePaths = (await ws.enumerate())
+      .map((file) => file.relative)
+      .filter((path) => path.endsWith(".ts"));
+
+    expect(sourcePaths).toEqual([".worktrees/ordinary/src/ordinary.ts", "src/root.ts"]);
+    expect(fs.nestedDescendantReads).toEqual([]);
+  });
 });

@@ -3,7 +3,10 @@ import { tmpdir } from "node:os";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const { spawnMock } = vi.hoisted(() => ({ spawnMock: vi.fn() }));
+const { processListeners, spawnMock } = vi.hoisted(() => ({
+  processListeners: new Map<string, (...args: unknown[]) => void>(),
+  spawnMock: vi.fn(),
+}));
 
 vi.mock("node:child_process", () => ({ spawn: spawnMock }));
 
@@ -23,13 +26,13 @@ describe("NodeDaemonProcessLauncher", () => {
   const roots: string[] = [];
 
   beforeEach(() => {
+    processListeners.clear();
     spawnMock.mockReset();
     spawnMock.mockImplementation(() => {
-      const listeners = new Map<string, (...args: unknown[]) => void>();
       const child: FakeChildProcess = {
         pid: 4321,
         once: vi.fn((event: string, listener: (...args: unknown[]) => void) => {
-          listeners.set(event, listener);
+          processListeners.set(event, listener);
           if (event === "spawn") queueMicrotask(() => listener());
           return child;
         }),
@@ -81,4 +84,24 @@ describe("NodeDaemonProcessLauncher", () => {
       expect(options.cwd).not.toBe(absoluteWorkspaceRoot);
     },
   );
+
+  it("reports child exit after the detached process spawns", async () => {
+    const root = mkdtempSync(join(tmpdir(), "symnav-launcher-exit-"));
+    roots.push(root);
+    const identity = DaemonWorkspaceIdentity.from(join(root, "workspace"), join(root, "state"));
+    mkdirSync(identity.registryDirectory, { recursive: true });
+    const daemonProcess = await new NodeDaemonProcessLauncher("1.2.3", 128 * 1024 * 1024).launch(
+      identity,
+      "instance",
+      "process-token",
+    );
+
+    processListeners.get("exit")?.(7, "SIGTERM");
+
+    await expect(daemonProcess.exited).resolves.toEqual({
+      code: 7,
+      signal: "SIGTERM",
+      cause: "exit",
+    });
+  });
 });

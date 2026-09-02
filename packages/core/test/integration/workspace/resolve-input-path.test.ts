@@ -5,6 +5,7 @@ import {
   DirectoryInputError,
   FileNotFoundError,
   IgnoredFileError,
+  NestedWorkspacePathError,
   OutsideWorkspaceError,
 } from "../../../src/workspace/errors.js";
 
@@ -103,5 +104,72 @@ describe("Workspace.resolveInputPath", () => {
     await expect(ws.resolveInputPath("src/rules", "/repo")).rejects.toBeInstanceOf(
       DirectoryInputError,
     );
+  });
+
+  it.each([
+    {
+      marker: { "/repo/vendor/package/.git/HEAD": "ref: refs/heads/nested\n" },
+      nestedRoot: "/repo/vendor/package",
+    },
+    {
+      marker: { "/repo/worktrees/feature/.git": "gitdir: /repo/.git/worktrees/feature\n" },
+      nestedRoot: "/repo/worktrees/feature",
+    },
+  ])(
+    "rejects a direct file owned by nested workspace $nestedRoot",
+    async ({ marker, nestedRoot }) => {
+      const inputPath = `${nestedRoot.slice("/repo/".length)}/src/a.ts`;
+      const ws = await createWorkspace({
+        startDir: "/repo",
+        fs: new InMemoryFileSystem({
+          "/repo/.git/HEAD": "ref: refs/heads/main\n",
+          "/repo/.gitignore": `${nestedRoot.slice("/repo/".length)}/\n`,
+          [`${nestedRoot}/src/a.ts`]: "export const x = 1;\n",
+          ...marker,
+        }),
+      });
+
+      const error = await ws.resolveInputPath(inputPath, "/repo").then(
+        () => undefined,
+        (thrown: unknown) => thrown,
+      );
+
+      expect(error).toBeInstanceOf(NestedWorkspacePathError);
+      expect(error).toMatchObject({
+        inputPath,
+        workspaceRoot: "/repo",
+        nestedWorkspaceRoot: nestedRoot,
+      });
+    },
+  );
+
+  it("reports nested ownership before rejecting a nested directory input", async () => {
+    const ws = await createWorkspace({
+      startDir: "/repo",
+      fs: new InMemoryFileSystem({
+        "/repo/.git/HEAD": "ref: refs/heads/main\n",
+        "/repo/vendor/package/.git/HEAD": "ref: refs/heads/nested\n",
+        "/repo/vendor/package/src/a.ts": "export const x = 1;\n",
+      }),
+    });
+
+    await expect(ws.resolveInputPath("vendor/package/src", "/repo")).rejects.toBeInstanceOf(
+      NestedWorkspacePathError,
+    );
+  });
+
+  it("resolves an ordinary path under a marker-free .worktrees directory", async () => {
+    const ws = await createWorkspace({
+      startDir: "/repo",
+      fs: new InMemoryFileSystem({
+        "/repo/.git/HEAD": "ref: refs/heads/main\n",
+        "/repo/.worktrees/ordinary/src/a.ts": "export const x = 1;\n",
+      }),
+    });
+
+    expect(await ws.resolveInputPath(".worktrees/ordinary/src/a.ts", "/repo")).toEqual({
+      relative: ".worktrees/ordinary/src/a.ts",
+      absolute: "/repo/.worktrees/ordinary/src/a.ts",
+    });
   });
 });

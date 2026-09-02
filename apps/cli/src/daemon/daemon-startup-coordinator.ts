@@ -3,6 +3,7 @@ import {
   DaemonProcessTerminationError,
   NodeDaemonProcessTerminator,
   type DaemonProcess,
+  type DaemonProcessExit,
   type DaemonProcessLauncher,
   type DaemonProcessTerminator,
 } from "./daemon-process-launcher.js";
@@ -14,6 +15,7 @@ import type { LocalDaemonTransport } from "./local-daemon-transport.js";
 
 interface DaemonStartupCoordinatorOptions {
   readonly startupTimeoutMs?: number;
+  readonly terminationTimeoutMs?: number;
   readonly pollIntervalMs?: number;
   readonly now?: () => number;
   readonly instanceId?: () => string;
@@ -22,10 +24,21 @@ interface DaemonStartupCoordinatorOptions {
 }
 
 const STARTUP_HEARTBEAT_INTERVAL_MS = 100;
-const DAEMON_READINESS_TIMEOUT_MS = 5 * 60_000;
+const DAEMON_TERMINATION_TIMEOUT_MS = 5 * 60_000;
+
+class DaemonChildExitError extends Error {
+  constructor(readonly exit: DaemonProcessExit) {
+    const detail =
+      exit.cause === "spawn-error"
+        ? `spawn error ${exit.errorName ?? "unknown"}`
+        : `code ${exit.code ?? "null"}, signal ${exit.signal ?? "null"}`;
+    super(`Daemon child exited before readiness (${detail})`);
+  }
+}
 
 export class DaemonStartupCoordinator {
   private readonly startupTimeoutMs: number;
+  private readonly terminationTimeoutMs: number;
   private readonly pollIntervalMs: number;
   private readonly now: () => number;
   private readonly nextInstanceId: () => string;
@@ -38,7 +51,8 @@ export class DaemonStartupCoordinator {
     private readonly transport: LocalDaemonTransport,
     options: DaemonStartupCoordinatorOptions = {},
   ) {
-    this.startupTimeoutMs = options.startupTimeoutMs ?? DAEMON_READINESS_TIMEOUT_MS;
+    this.startupTimeoutMs = options.startupTimeoutMs ?? Number.POSITIVE_INFINITY;
+    this.terminationTimeoutMs = options.terminationTimeoutMs ?? DAEMON_TERMINATION_TIMEOUT_MS;
     this.pollIntervalMs = options.pollIntervalMs ?? 20;
     this.now = options.now ?? Date.now;
     this.nextInstanceId = options.instanceId ?? randomUUID;
@@ -47,6 +61,15 @@ export class DaemonStartupCoordinator {
   }
 
   async ensureRunning(identity: DaemonWorkspaceIdentity): Promise<DaemonStartResult> {
+    try {
+      return await this.ensureRunningOnce(identity);
+    } catch (error) {
+      if (!(error instanceof DaemonChildExitError)) throw error;
+      return this.ensureRunningOnce(identity);
+    }
+  }
+
+  private async ensureRunningOnce(identity: DaemonWorkspaceIdentity): Promise<DaemonStartResult> {
     const readyRecord = await this.validatedReadyRecord(identity);
     if (readyRecord?.symnavVersion === this.launcher.symnavVersion) {
       return this.alreadyRunning(readyRecord);
@@ -113,7 +136,7 @@ export class DaemonStartupCoordinator {
       ) {
         throw new Error("Daemon startup ownership changed after process launch");
       }
-      const ready = await this.waitForReady(identity, instanceId, startedAt);
+      const ready = await this.waitForReady(identity, instanceId, startedAt, daemonProcess);
       return {
         status: "ready",
         workspaceRoot: ready.workspaceRoot,
@@ -121,6 +144,10 @@ export class DaemonStartupCoordinator {
         loadDurationMs: (ready.readyAt ?? this.now()) - ready.startedAt,
       };
     } catch (error) {
+      if (error instanceof DaemonChildExitError) {
+        this.registry.removeIfInstance(identity, instanceId);
+        throw error;
+      }
       if (daemonProcess !== undefined) {
         try {
           await daemonProcess.terminate();
@@ -142,9 +169,9 @@ export class DaemonStartupCoordinator {
         return this.alreadyRunning(record);
       }
       const owner = this.registry.startupOwner(identity);
-      if (owner === undefined) return this.ensureRunning(identity);
+      if (owner === undefined) return this.ensureRunningOnce(identity);
       if (this.startupOwnerIsAbandoned(owner)) {
-        if (this.cleanupAbandonedStartup(identity, owner)) return this.ensureRunning(identity);
+        if (this.cleanupAbandonedStartup(identity, owner)) return this.ensureRunningOnce(identity);
       }
       await this.pause();
     }
@@ -172,6 +199,7 @@ export class DaemonStartupCoordinator {
     identity: DaemonWorkspaceIdentity,
     instanceId: string,
     waitStartedAt: number,
+    daemonProcess: DaemonProcess,
   ): Promise<DaemonRecord> {
     while (this.now() - waitStartedAt <= this.startupTimeoutMs) {
       const record = this.registry.readInstance(identity, instanceId);
@@ -182,7 +210,11 @@ export class DaemonStartupCoordinator {
           return validated;
         }
       }
-      await this.pause();
+      const childExit = await Promise.race([
+        this.pause().then(() => undefined),
+        daemonProcess.exited,
+      ]);
+      if (childExit !== undefined) throw new DaemonChildExitError(childExit);
     }
     throw new Error("Daemon startup timed out before readiness probe completed");
   }
@@ -224,7 +256,7 @@ export class DaemonStartupCoordinator {
 
   private async waitForProcessExitAndEndpointRelease(record: DaemonRecord): Promise<void> {
     const waitStartedAt = this.now();
-    while (this.now() - waitStartedAt <= this.startupTimeoutMs) {
+    while (this.now() - waitStartedAt <= this.terminationTimeoutMs) {
       const endpointReleased = !(await this.identifiesRecordedProcess(record));
       const processExited = !this.processTerminator.isAlive(record.pid);
       if (endpointReleased && processExited) return;

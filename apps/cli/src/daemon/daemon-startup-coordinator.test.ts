@@ -10,6 +10,7 @@ import {
   DaemonProcessTerminationError,
   NodeDaemonProcessTerminator,
   type DaemonProcess,
+  type DaemonProcessExit,
   type DaemonProcessLauncher,
   type DaemonProcessTerminator,
 } from "./daemon-process-launcher.js";
@@ -157,13 +158,33 @@ describe("DaemonStartupCoordinator", () => {
     harness.seedReady("existing", "0.0.9", 4004);
 
     await expect(
-      harness.coordinator({ startupTimeoutMs: 5 }).ensureRunning(harness.identity),
+      harness.coordinator({ terminationTimeoutMs: 5 }).ensureRunning(harness.identity),
     ).rejects.toBeInstanceOf(DaemonProcessTerminationError);
 
     expect(harness.launcher.launchCount).toBe(0);
     expect(harness.registry.readStored(harness.identity)?.instanceId).toBe("existing");
     expect(harness.registry.startupOwner(harness.identity)).toBeDefined();
   });
+
+  it("keeps replacement termination bounded when readiness has no default deadline", async () => {
+    const harness = new CoordinatorHarness(roots, { oldDaemonExitsAfterTerminate: false });
+    harness.seedReady("existing", "0.0.9", 4005);
+    let elapsedMs = 0;
+
+    await expect(
+      harness
+        .coordinator({
+          now: () => {
+            elapsedMs += 300_001;
+            return elapsedMs;
+          },
+        })
+        .ensureRunning(harness.identity),
+    ).rejects.toBeInstanceOf(DaemonProcessTerminationError);
+
+    expect(harness.launcher.launchCount).toBe(0);
+    expect(harness.registry.readStored(harness.identity)?.instanceId).toBe("existing");
+  }, 1_000);
 
   it("terminates and cleans a daemon that misses its readiness deadline", async () => {
     const harness = new CoordinatorHarness(roots, { neverReady: true });
@@ -174,6 +195,60 @@ describe("DaemonStartupCoordinator", () => {
 
     expect(harness.terminator.terminated).toContain(harness.launcher.lastPid);
     expect(harness.registry.readStored(harness.identity)).toBeUndefined();
+    expect(harness.registry.startupOwner(harness.identity)).toBeUndefined();
+  });
+
+  it("has no default readiness deadline while the launched child stays live", async () => {
+    const harness = new CoordinatorHarness(roots, { readyDelayMs: 5 });
+    let elapsedMs = 0;
+
+    await expect(
+      harness
+        .coordinator({
+          now: () => {
+            elapsedMs += 300_001;
+            return elapsedMs;
+          },
+        })
+        .ensureRunning(harness.identity),
+    ).resolves.toMatchObject({ status: "ready" });
+
+    expect(harness.launcher.launchCount).toBe(1);
+    expect(harness.terminator.terminated).toEqual([]);
+  });
+
+  it("retries one child exit before readiness without waiting for a deadline", async () => {
+    const harness = new CoordinatorHarness(roots, { exitingLaunches: 1 });
+
+    await expect(harness.coordinator().ensureRunning(harness.identity)).resolves.toMatchObject({
+      status: "ready",
+    });
+
+    expect(harness.launcher.launchCount).toBe(2);
+    expect(harness.registry.startupOwner(harness.identity)).toBeUndefined();
+  });
+
+  it("surfaces a second child exit instead of retrying indefinitely", async () => {
+    const harness = new CoordinatorHarness(roots, { exitingLaunches: 2 });
+
+    await expect(harness.coordinator().ensureRunning(harness.identity)).rejects.toThrow(
+      "Daemon child exited before readiness (code 1, signal null)",
+    );
+
+    expect(harness.launcher.launchCount).toBe(2);
+    expect(harness.registry.startupOwner(harness.identity)).toBeUndefined();
+  });
+
+  it("does not reset the retry budget after waiting for startup ownership", async () => {
+    const harness = new CoordinatorHarness(roots, { exitingLaunches: 2 });
+    const earlierLease = harness.registry.acquireStartup(harness.identity, "earlier-owner");
+    setTimeout(() => earlierLease?.release(), 5);
+
+    await expect(harness.coordinator().ensureRunning(harness.identity)).rejects.toThrow(
+      "Daemon child exited before readiness (code 1, signal null)",
+    );
+
+    expect(harness.launcher.launchCount).toBe(2);
     expect(harness.registry.startupOwner(harness.identity)).toBeUndefined();
   });
 
@@ -212,7 +287,7 @@ describe("DaemonStartupCoordinator", () => {
     );
 
     await expect(
-      harness.coordinator({ startupTimeoutMs: 5 }).ensureRunning(harness.identity),
+      harness.coordinator({ terminationTimeoutMs: 5 }).ensureRunning(harness.identity),
     ).rejects.toBeInstanceOf(DaemonProcessTerminationError);
     expect(harness.registry.startupOwner(harness.identity)).toBeDefined();
   });
@@ -481,6 +556,7 @@ interface CoordinatorHarnessOptions {
   readonly readyDelayMs?: number;
   readonly readinessPublicationGate?: ReadinessPublicationGate;
   readonly oldDaemonExitsAfterTerminate?: boolean;
+  readonly exitingLaunches?: number;
 }
 
 class ReadinessPublicationGate {
@@ -522,6 +598,7 @@ class CoordinatorHarness {
   coordinator(
     options: {
       readonly startupTimeoutMs?: number;
+      readonly terminationTimeoutMs?: number;
       readonly processTerminator?: DaemonProcessTerminator;
       readonly heartbeatIntervalMs?: number;
       readonly now?: () => number;
@@ -535,6 +612,9 @@ class CoordinatorHarness {
         ...(options.startupTimeoutMs === undefined
           ? {}
           : { startupTimeoutMs: options.startupTimeoutMs }),
+        ...(options.terminationTimeoutMs === undefined
+          ? {}
+          : { terminationTimeoutMs: options.terminationTimeoutMs }),
         pollIntervalMs: 1,
         processTerminator: options.processTerminator ?? this.terminator,
         ...(options.now === undefined ? {} : { now: options.now }),
@@ -590,7 +670,8 @@ class ReadyTestLauncher implements DaemonProcessLauncher {
     const pid = this.options.newDaemonPid ?? this.nextPid++;
     this.lastPid = pid;
     this.terminator.alive.add(pid);
-    if (!this.options.neverReady) {
+    const exitsBeforeReadiness = this.launchCount <= (this.options.exitingLaunches ?? 0);
+    if (!this.options.neverReady && !exitsBeforeReadiness) {
       const readinessPublicationGate = this.options.readinessPublicationGate;
       if (readinessPublicationGate === undefined) {
         setTimeout(() => this.publishReady(instanceId), this.options.readyDelayMs ?? 0);
@@ -598,8 +679,17 @@ class ReadyTestLauncher implements DaemonProcessLauncher {
         void readinessPublicationGate.wait().then(() => this.publishReady(instanceId));
       }
     }
+    const exited: Promise<DaemonProcessExit> = exitsBeforeReadiness
+      ? new Promise((resolve) =>
+          setTimeout(() => {
+            this.terminator.alive.delete(pid);
+            resolve({ code: 1, signal: null, cause: "exit" });
+          }, 5),
+        )
+      : new Promise(() => undefined);
     return {
       pid,
+      exited,
       terminate: () => this.terminator.terminate(pid),
     };
   }
@@ -715,8 +805,12 @@ class DelayedMarkerLauncher implements DaemonProcessLauncher {
       child.once("spawn", () => {
         this.processIds.push(child.pid!);
         const terminator = new NodeDaemonProcessTerminator(100, 5);
+        const exited = new Promise<DaemonProcessExit>((exitResolve) => {
+          child.once("exit", (code, signal) => exitResolve({ code, signal, cause: "exit" }));
+        });
         resolve({
           pid: child.pid!,
+          exited,
           terminate: () => terminator.terminate(child.pid!),
         });
       });
@@ -878,7 +972,11 @@ class InProcessReadyLauncher implements DaemonProcessLauncher {
         fileCount: 2,
       });
     }, 0);
-    return { pid: process.pid, terminate: () => this.close() };
+    return {
+      pid: process.pid,
+      exited: new Promise(() => undefined),
+      terminate: () => this.close(),
+    };
   }
 
   async close(): Promise<void> {

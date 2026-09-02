@@ -79,13 +79,16 @@ export class E2eProcessCleanup {
     throw new Error(`Daemon endpoint did not release: ${endpoint}`);
   }
 
-  static removeDirectories(directories: readonly string[]): void {
+  static removeDirectories(
+    directories: readonly string[],
+    removeDirectory: typeof rmSync = rmSync,
+  ): void {
     for (const directory of directories) {
-      rmSync(directory, {
+      removeDirectory(directory, {
         recursive: true,
         force: true,
-        maxRetries: 5,
-        retryDelay: 50,
+        maxRetries: 30,
+        retryDelay: 100,
       });
     }
   }

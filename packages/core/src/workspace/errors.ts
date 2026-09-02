@@ -71,3 +71,18 @@ export class OutsideWorkspaceError extends UserFacingError {
     return `${this.inputPath} is outside the workspace rooted at ${this.workspaceRoot}`;
   }
 }
+
+export class NestedWorkspacePathError extends UserFacingError {
+  constructor(
+    readonly inputPath: string,
+    readonly workspaceRoot: string,
+    readonly nestedWorkspaceRoot: string,
+  ) {
+    super();
+    this.name = "NestedWorkspacePathError";
+  }
+
+  get reason(): string {
+    return `${this.inputPath} belongs to nested Git workspace rooted at ${this.nestedWorkspaceRoot}, not selected workspace ${this.workspaceRoot}; run from ${this.nestedWorkspaceRoot} or use --cwd ${this.nestedWorkspaceRoot}`;
+  }
+}

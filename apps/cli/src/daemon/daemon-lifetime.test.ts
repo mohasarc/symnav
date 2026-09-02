@@ -1,0 +1,51 @@
+import type { Clock } from "@symnav/telemetry";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { DAEMON_IDLE_TIMEOUT_MS, DaemonLifetime } from "./daemon-lifetime.js";
+
+describe("DaemonLifetime", () => {
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => vi.useRealTimers());
+
+  it("resets its idle deadline only for navigation", async () => {
+    let now = 0;
+    const clock: Clock = { now: () => now };
+    const onIdle = vi.fn(async () => undefined);
+    const lifetime = new DaemonLifetime(clock, DAEMON_IDLE_TIMEOUT_MS, onIdle);
+
+    now = DAEMON_IDLE_TIMEOUT_MS - 1;
+    vi.advanceTimersByTime(DAEMON_IDLE_TIMEOUT_MS - 1);
+    lifetime.navigationAccepted();
+    lifetime.queueBecameIdle();
+    now += DAEMON_IDLE_TIMEOUT_MS - 1;
+    await vi.advanceTimersByTimeAsync(DAEMON_IDLE_TIMEOUT_MS - 1);
+    expect(onIdle).not.toHaveBeenCalled();
+
+    now += 1;
+    await vi.advanceTimersByTimeAsync(1);
+    expect(onIdle).toHaveBeenCalledOnce();
+  });
+
+  it("waits for active navigation to finish after deadline", async () => {
+    let now = 0;
+    const onIdle = vi.fn(async () => undefined);
+    const lifetime = new DaemonLifetime({ now: () => now }, 10, onIdle);
+    lifetime.navigationAccepted();
+
+    now = 10;
+    await vi.advanceTimersByTimeAsync(10);
+    expect(onIdle).not.toHaveBeenCalled();
+    lifetime.queueBecameIdle();
+    await Promise.resolve();
+    expect(onIdle).toHaveBeenCalledOnce();
+  });
+
+  it("stops its timer permanently", async () => {
+    let now = 0;
+    const onIdle = vi.fn(async () => undefined);
+    const lifetime = new DaemonLifetime({ now: () => now }, 10, onIdle);
+    lifetime.stop();
+    now = 20;
+    await vi.advanceTimersByTimeAsync(20);
+    expect(onIdle).not.toHaveBeenCalled();
+  });
+});

@@ -1,4 +1,18 @@
 #!/usr/bin/env node
-import { buildProgram } from "./program.js";
+import { resolveStateDir } from "@symnav/telemetry";
+import { CommandResultReplayer } from "./cli-program-executor.js";
+import { DaemonCommandDispatcher } from "./daemon/daemon-command-dispatcher.js";
+import { createDefaultDependencies, createDefaultProgramContext } from "./program.js";
 
-buildProgram().parse(process.argv);
+const dependencies = createDefaultDependencies();
+const dispatched = await new DaemonCommandDispatcher({
+  createDependencies: createDefaultDependencies,
+  stateDirectory: resolveStateDir(process.env),
+  daemonEnabled: () => process.env.SYMNAV_DAEMON !== "0",
+}).execute({
+  argv: process.argv.slice(2),
+  cwd: process.cwd(),
+  telemetryEnabled: dependencies.telemetryEnabled,
+  executionMode: "cold",
+});
+CommandResultReplayer.replay(dispatched.result, createDefaultProgramContext());

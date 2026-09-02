@@ -40,12 +40,12 @@ describe("NodeUsageRecorder integration", () => {
     expect(lines).toHaveLength(2);
     expect(lines.map((line) => JSON.parse(line))).toEqual([
       {
-        schemaVersion: 1,
+        schemaVersion: 2,
         ...usageEventInput("overview", 1),
         sessionId: "session-1",
       },
       {
-        schemaVersion: 1,
+        schemaVersion: 2,
         ...usageEventInput("def", 2),
         sessionId: "session-1",
       },
@@ -59,6 +59,7 @@ function usageEventInput(command: string, timestamp: number): UsageEventInput {
     command,
     timestamp,
     durationMs: 42,
+    executionMode: "cold",
     outcome: "success",
     argShape: {
       kind: "path",

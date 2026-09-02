@@ -257,6 +257,7 @@ function usageEvent(overrides: UsageEventOverrides): UsageEvent {
     command: overrides.command,
     timestamp: overrides.timestamp,
     durationMs: overrides.durationMs,
+    executionMode: "cold",
     argShape: {
       kind: "path",
       lengthBucket: "medium",

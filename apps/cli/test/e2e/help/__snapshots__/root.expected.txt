@@ -13,3 +13,4 @@ Commands:
   context [options] <target>  Show a symbol's definition, callers, callees,
                               references, and recent history
   graph [options] <target>    Show call paths around a symbol
+  daemon                      Manage the workspace daemon

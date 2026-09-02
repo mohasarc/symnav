@@ -1,0 +1,254 @@
+import { randomUUID } from "node:crypto";
+import { createWorkspace } from "@symnav/core";
+import type { Recorder, UsageEventInput } from "@symnav/telemetry";
+import { CliProgramExecutor } from "../cli-program-executor.js";
+import type {
+  CliExecutionRequest,
+  CommandExecutionResult,
+  DispatchedCommandResult,
+} from "../command-execution-result.js";
+import type { ProgramDependencies } from "../program-dependencies.js";
+import type { DaemonRecord, DaemonRequest, DaemonResponse } from "./daemon-protocol.js";
+import { DaemonRegistry } from "./daemon-registry.js";
+import { NodeDaemonProcessLauncher } from "./daemon-process-launcher.js";
+import { DaemonStartupCoordinator } from "./daemon-startup-coordinator.js";
+import { DaemonWorkspaceIdentity } from "./daemon-workspace-identity.js";
+import { InvocationWorkspaceSelector } from "./invocation-workspace-selector.js";
+import { LocalDaemonTransport } from "./local-daemon-transport.js";
+
+interface DaemonStarter {
+  ensureRunning(identity: DaemonWorkspaceIdentity): Promise<unknown>;
+}
+
+interface DaemonDispatchRegistry {
+  read(identity: DaemonWorkspaceIdentity): DaemonRecord | undefined;
+  removeIfInstance(identity: DaemonWorkspaceIdentity, instanceId: string): void;
+}
+
+interface DaemonDispatchTransport {
+  request(endpoint: string, request: DaemonRequest): Promise<DaemonResponse>;
+}
+
+export interface DaemonDispatchRuntime {
+  readonly coordinator: DaemonStarter;
+  readonly registry: DaemonDispatchRegistry;
+  readonly transport: DaemonDispatchTransport;
+}
+
+interface CommandExecutor {
+  execute(request: CliExecutionRequest): Promise<CommandExecutionResult>;
+}
+
+export interface DaemonCommandDispatcherOptions {
+  readonly createDependencies: () => ProgramDependencies;
+  readonly stateDirectory: string;
+  readonly daemonEnabled?: () => boolean;
+  readonly selector?: InvocationWorkspaceSelector;
+  readonly resolveWorkspaceRoot?: (
+    startDir: string,
+    dependencies: ProgramDependencies,
+  ) => Promise<string>;
+  readonly runtimeFactory?: (
+    identity: DaemonWorkspaceIdentity,
+    dependencies: ProgramDependencies,
+  ) => DaemonDispatchRuntime;
+  readonly executorFactory?: (dependencies: ProgramDependencies) => CommandExecutor;
+  readonly requestId?: () => string;
+}
+
+export class DaemonCommandDispatcher {
+  private readonly selector: InvocationWorkspaceSelector;
+  private readonly daemonEnabled: () => boolean;
+  private readonly resolveWorkspaceRoot: (
+    startDir: string,
+    dependencies: ProgramDependencies,
+  ) => Promise<string>;
+  private readonly runtimeFactory: (
+    identity: DaemonWorkspaceIdentity,
+    dependencies: ProgramDependencies,
+  ) => DaemonDispatchRuntime;
+  private readonly executorFactory: (dependencies: ProgramDependencies) => CommandExecutor;
+  private readonly requestId: () => string;
+
+  constructor(private readonly options: DaemonCommandDispatcherOptions) {
+    this.selector = options.selector ?? new InvocationWorkspaceSelector();
+    this.daemonEnabled = options.daemonEnabled ?? (() => true);
+    this.resolveWorkspaceRoot =
+      options.resolveWorkspaceRoot ??
+      (async (startDir, dependencies) =>
+        (await createWorkspace({ startDir, fs: dependencies.fs })).root);
+    this.runtimeFactory = options.runtimeFactory ?? DaemonCommandDispatcher.createRuntime;
+    this.executorFactory =
+      options.executorFactory ?? ((dependencies) => new CliProgramExecutor(dependencies));
+    this.requestId = options.requestId ?? randomUUID;
+  }
+
+  async execute(request: CliExecutionRequest): Promise<DispatchedCommandResult> {
+    const selected = this.selector.select(request.argv, request.cwd);
+    const route = selected.route;
+    if (route.kind !== "workspace") {
+      return this.executeLocally(request, "cold");
+    }
+    const workspaceRequest: CliExecutionRequest = {
+      ...request,
+      argv: selected.argv,
+    };
+    if (!this.daemonEnabled()) return this.executeLocally(workspaceRequest, "cold");
+
+    const workspaceDependencies = this.options.createDependencies();
+    let workspaceRoot: string;
+    try {
+      workspaceRoot = await this.resolveWorkspaceRoot(route.startDir, workspaceDependencies);
+    } catch {
+      return this.executeLocally(workspaceRequest, "cold");
+    }
+
+    const identity = DaemonWorkspaceIdentity.from(workspaceRoot, this.options.stateDirectory);
+    const runtime = this.runtimeFactory(identity, workspaceDependencies);
+    let record: DaemonRecord | undefined;
+    let registryReadCompleted = false;
+    try {
+      record = runtime.registry.read(identity);
+      registryReadCompleted = true;
+      if (DaemonCommandDispatcher.requiresStartup(record, workspaceDependencies)) {
+        await runtime.coordinator.ensureRunning(identity);
+        record = runtime.registry.read(identity);
+      }
+      if (record?.state !== "ready") throw new Error("Daemon did not publish a ready record");
+      const response = await runtime.transport.request(record.endpoint, {
+        kind: "execute",
+        protocolVersion: record.protocolVersion,
+        instanceId: record.instanceId,
+        requestId: this.requestId(),
+        request: { ...workspaceRequest, executionMode: "warm", deferTelemetry: true },
+      });
+      if (
+        response.kind !== "result" ||
+        !DaemonCommandDispatcher.isCompleteResult(response.result)
+      ) {
+        throw new Error("Daemon returned an incomplete command result");
+      }
+      return {
+        mode: "warm",
+        result: DaemonCommandDispatcher.commitWarmTelemetry(
+          response.result,
+          workspaceDependencies.recorder,
+        ),
+      };
+    } catch {
+      if (registryReadCompleted && record === undefined) {
+        try {
+          record = runtime.registry.read(identity);
+        } catch {}
+      }
+      if (record !== undefined) await this.invalidate(runtime, identity, record);
+      return this.executeLocally(workspaceRequest, "fallback");
+    }
+  }
+
+  private executeLocally(
+    request: CliExecutionRequest,
+    mode: "cold" | "fallback",
+  ): Promise<DispatchedCommandResult> {
+    const executor = this.executorFactory(this.options.createDependencies());
+    return executor
+      .execute({ ...request, executionMode: mode })
+      .then((result) => ({ mode, result }));
+  }
+
+  private async invalidate(
+    runtime: DaemonDispatchRuntime,
+    identity: DaemonWorkspaceIdentity,
+    record: DaemonRecord,
+  ): Promise<void> {
+    try {
+      await runtime.transport.request(record.endpoint, {
+        kind: "kill",
+        instanceId: record.instanceId,
+        processToken: record.processToken,
+      });
+    } catch {}
+    try {
+      runtime.registry.removeIfInstance(identity, record.instanceId);
+    } catch {}
+  }
+
+  private static createRuntime(
+    identity: DaemonWorkspaceIdentity,
+    dependencies: ProgramDependencies,
+  ): DaemonDispatchRuntime {
+    const registry = new DaemonRegistry(identity.registryDirectory);
+    const transport = new LocalDaemonTransport();
+    return {
+      registry,
+      transport,
+      coordinator: new DaemonStartupCoordinator(
+        registry,
+        new NodeDaemonProcessLauncher(dependencies.symnavVersion),
+        transport,
+      ),
+    };
+  }
+
+  private static isCompleteResult(result: CommandExecutionResult): boolean {
+    return (
+      Number.isInteger(result.exitCode) &&
+      Array.isArray(result.frames) &&
+      result.frames.every(
+        (frame) =>
+          (frame.stream === "stdout" || frame.stream === "stderr") &&
+          DaemonCommandDispatcher.isBase64(frame.bytesBase64),
+      ) &&
+      (result.telemetry === undefined || DaemonCommandDispatcher.isTelemetryInput(result.telemetry))
+    );
+  }
+
+  private static requiresStartup(
+    record: DaemonRecord | undefined,
+    dependencies: ProgramDependencies,
+  ): boolean {
+    return (
+      record === undefined ||
+      record.state === "starting" ||
+      record.symnavVersion !== dependencies.symnavVersion
+    );
+  }
+
+  private static commitWarmTelemetry(
+    result: CommandExecutionResult,
+    recorder: Recorder,
+  ): CommandExecutionResult {
+    if (result.telemetry !== undefined) {
+      try {
+        recorder.record(result.telemetry);
+      } catch {}
+    }
+    return { frames: result.frames, exitCode: result.exitCode };
+  }
+
+  private static isTelemetryInput(value: UsageEventInput): boolean {
+    return (
+      typeof value.symnavVersion === "string" &&
+      typeof value.command === "string" &&
+      typeof value.timestamp === "number" &&
+      typeof value.durationMs === "number" &&
+      value.executionMode === "warm" &&
+      (value.outcome === "success" ||
+        ((value.outcome === "user_error" || value.outcome === "crash") &&
+          typeof value.errorReason === "string")) &&
+      typeof value.argShape === "object" &&
+      value.argShape !== null &&
+      typeof value.argShape.kind === "string" &&
+      typeof value.argShape.lengthBucket === "string" &&
+      Array.isArray(value.argShape.flags) &&
+      value.argShape.flags.every((flag) => typeof flag === "string") &&
+      typeof value.workspaceId === "string" &&
+      typeof value.machineId === "string"
+    );
+  }
+
+  private static isBase64(value: string): boolean {
+    if (value.length % 4 !== 0) return false;
+    return /^(?:[A-Za-z\d+/]{4})*(?:[A-Za-z\d+/]{2}==|[A-Za-z\d+/]{3}=)?$/.test(value);
+  }
+}

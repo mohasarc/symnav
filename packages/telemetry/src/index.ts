@@ -10,6 +10,7 @@ export { SCHEMA_VERSION } from "./usage-event.js";
 export type {
   ArgKind,
   ArgShape,
+  ExecutionMode,
   LengthBucket,
   Outcome,
   OutcomeReport,

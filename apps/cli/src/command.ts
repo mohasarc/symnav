@@ -71,6 +71,9 @@ export async function runCommand<Result extends ResultWithDiagnostics, Args>(
           }),
         )
       : await scopeFactory.prepareWorkspace(workspace);
+    try {
+      dependencies.backendRefreshed?.(preparedScope.refresh);
+    } catch {}
     const commandContext: CommandContext<Args> = {
       workspace,
       router: preparedScope.router,
@@ -145,6 +148,7 @@ function recordTelemetry<Result extends ResultWithDiagnostics, Args>(
         command: command.name,
         timestamp: input.timestamp,
         durationMs,
+        executionMode: dependencies.executionMode ?? "cold",
         outcome: "success",
         argShape,
         resultCounts: command.countResults(input.result!),
@@ -159,6 +163,7 @@ function recordTelemetry<Result extends ResultWithDiagnostics, Args>(
       command: command.name,
       timestamp: input.timestamp,
       durationMs,
+      executionMode: dependencies.executionMode ?? "cold",
       argShape,
       workspaceId: identity.workspaceId,
       machineId: identity.machineId,

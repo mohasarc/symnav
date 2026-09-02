@@ -33,10 +33,10 @@ describe("NodeUsageRecorder", () => {
 
     const appendedLine = onlyAppendedLine(writePort);
     expect(appendedLine).toBe(
-      '{"schemaVersion":1,"symnavVersion":"0.1.0","command":"overview","timestamp":1790000000000,"durationMs":42,"outcome":"user_error","errorReason":"no-match","argShape":{"kind":"path","lengthBucket":"medium","flags":["json"]},"resultCounts":{"symbols":3},"workspaceId":"workspace","machineId":"machine","sessionId":"session-1"}',
+      '{"schemaVersion":2,"symnavVersion":"0.1.0","command":"overview","timestamp":1790000000000,"durationMs":42,"executionMode":"warm","outcome":"user_error","errorReason":"no-match","argShape":{"kind":"path","lengthBucket":"medium","flags":["json"]},"resultCounts":{"symbols":3},"workspaceId":"workspace","machineId":"machine","sessionId":"session-1"}',
     );
     expect(JSON.parse(appendedLine)).toEqual({
-      schemaVersion: 1,
+      schemaVersion: 2,
       ...input,
       sessionId: "session-1",
     });
@@ -50,6 +50,7 @@ describe("NodeUsageRecorder", () => {
       command: "overview",
       timestamp: 1_790_000_000_000,
       durationMs: 42,
+      executionMode: "warm",
       outcome: "success",
       argShape: {
         kind: "path",
@@ -63,7 +64,7 @@ describe("NodeUsageRecorder", () => {
     recorder.record(input);
 
     expect(onlyAppendedLine(writePort)).toBe(
-      '{"schemaVersion":1,"symnavVersion":"0.1.0","command":"overview","timestamp":1790000000000,"durationMs":42,"outcome":"success","argShape":{"kind":"path","lengthBucket":"medium","flags":["json"]},"workspaceId":"workspace","machineId":"machine","sessionId":"session-1"}',
+      '{"schemaVersion":2,"symnavVersion":"0.1.0","command":"overview","timestamp":1790000000000,"durationMs":42,"executionMode":"warm","outcome":"success","argShape":{"kind":"path","lengthBucket":"medium","flags":["json"]},"workspaceId":"workspace","machineId":"machine","sessionId":"session-1"}',
     );
   });
 
@@ -80,6 +81,7 @@ function usageEventInput(): UsageEventInput {
     command: "overview",
     timestamp: 1_790_000_000_000,
     durationMs: 42,
+    executionMode: "warm",
     outcome: "user_error",
     errorReason: "no-match",
     argShape: {

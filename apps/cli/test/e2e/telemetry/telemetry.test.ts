@@ -13,6 +13,7 @@ interface UsageEventLine {
   readonly schemaVersion: number;
   readonly command: string;
   readonly outcome: string;
+  readonly executionMode: string;
   readonly argShape: {
     readonly kind: string;
     readonly lengthBucket: string;
@@ -38,9 +39,10 @@ describe("symnav telemetry e2e", () => {
     const event = JSON.parse(line) as UsageEventLine;
 
     expect(event).toMatchObject({
-      schemaVersion: 1,
+      schemaVersion: 2,
       command: "overview",
       outcome: "success",
+      executionMode: "cold",
       argShape: {
         kind: "bare",
         lengthBucket: "medium",
@@ -82,6 +84,42 @@ describe("symnav telemetry e2e", () => {
     expect(enabled.status).toBe(disabled.status);
     expect(enabled.stdout).toBe(disabled.stdout);
     expect(enabled.stderr).toBe(disabled.stderr);
+  });
+
+  it("records warm execution through an automatically started daemon", () => {
+    const stateDir = newStateDir();
+    try {
+      const result = runSymnavBinary(overviewArgs, {
+        cwd: fixtureRoot,
+        env: {
+          SYMNAV_DAEMON: "1",
+          SYMNAV_STATE_DIR: stateDir,
+          SYMNAV_TELEMETRY: "1",
+        },
+      });
+      const event = JSON.parse(singleUsageLine(stateDir)) as UsageEventLine;
+
+      expect(result.status).toBe(0);
+      expect(event.executionMode).toBe("warm");
+    } finally {
+      stopDaemon(stateDir);
+    }
+  });
+
+  it("keeps daemon telemetry inert for an opted-out client", () => {
+    const stateDir = newStateDir();
+    const result = runSymnavBinary(overviewArgs, {
+      cwd: fixtureRoot,
+      env: {
+        SYMNAV_DAEMON: "1",
+        SYMNAV_STATE_DIR: stateDir,
+        SYMNAV_TELEMETRY: "0",
+      },
+    });
+
+    expect(result.status).toBe(0);
+    expect(existsSync(usageLogPath(stateDir))).toBe(false);
+    stopDaemon(stateDir);
   });
 
   it("records a user_error outcome when resolve flags conflict", () => {
@@ -139,6 +177,14 @@ function newStateDir(): string {
 
 function usageLogPath(stateDir: string): string {
   return join(stateDir, "usage.jsonl");
+}
+
+function stopDaemon(stateDir: string): void {
+  const result = runSymnavBinary(["daemon", "stop"], {
+    cwd: fixtureRoot,
+    env: { SYMNAV_STATE_DIR: stateDir },
+  });
+  expect(result.status).toBe(0);
 }
 
 function singleUsageLine(stateDir: string): string {

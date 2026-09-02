@@ -28,10 +28,11 @@ export function runSymnavBinary(
   args: readonly string[],
   opts: RunSymnavBinaryOptions,
 ): RunSymnavBinaryResult {
+  const daemonEnvironment = args.includes("daemon") ? {} : { SYMNAV_DAEMON: "0" };
   const result = spawnSync(process.execPath, [cliBinPath, ...args], {
     cwd: opts.cwd,
     encoding: "utf8",
-    env: { ...process.env, SYMNAV_TELEMETRY: "0", ...opts.env },
+    env: { ...process.env, SYMNAV_TELEMETRY: "0", ...daemonEnvironment, ...opts.env },
   });
   return { status: result.status, stdout: result.stdout, stderr: result.stderr };
 }

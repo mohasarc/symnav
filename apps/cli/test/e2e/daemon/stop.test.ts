@@ -3,7 +3,6 @@ import {
   existsSync,
   mkdirSync,
   mkdtempSync,
-  readdirSync,
   readFileSync,
   realpathSync,
   writeFileSync,
@@ -13,12 +12,18 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
 import { runSymnavBinary } from "@symnav/testing";
-import { DAEMON_PROTOCOL_VERSION, type DaemonRecord } from "../../../src/daemon/daemon-protocol.js";
+import { canonicalStateDir } from "@symnav/telemetry";
+import {
+  DAEMON_PROTOCOL_VERSION,
+  DAEMON_RECORD_SCHEMA_VERSION,
+  type DaemonRecord,
+} from "../../../src/daemon/daemon-protocol.js";
 import { DaemonRegistry } from "../../../src/daemon/daemon-registry.js";
 import { DaemonWorkspaceIdentity } from "../../../src/daemon/daemon-workspace-identity.js";
 import { LocalDaemonTransport } from "../../../src/daemon/local-daemon-transport.js";
 import { canonicalWorkspaceRoot } from "../../helpers/canonical-workspace-root.js";
 import { E2eProcessCleanup } from "../../helpers/e2e-process-cleanup.js";
+import { DaemonStateFiles } from "../../helpers/daemon-state-files.js";
 
 describe("symnav daemon stop", () => {
   const stateDirectories: string[] = [];
@@ -171,7 +176,7 @@ async function startControlledDaemon(
   workspaceRoot: string,
   releasePath?: string,
 ): Promise<ControlledDaemon> {
-  const identity = DaemonWorkspaceIdentity.from(workspaceRoot, stateDirectory);
+  const identity = DaemonWorkspaceIdentity.from(workspaceRoot, canonicalStateDir(stateDirectory));
   const registry = new DaemonRegistry(identity.registryDirectory);
   const instanceId = `controlled-${releasePath === undefined ? "forced" : "draining"}`;
   const processToken = `${instanceId}-token`;
@@ -197,11 +202,13 @@ async function startControlledDaemon(
   await waitUntil(() => existsSync(`${readyPath}.boot`));
   const daemonPid = Number(readFileSync(`${readyPath}.boot`, "utf8"));
   const record: DaemonRecord = {
-    schemaVersion: 1,
+    schemaVersion: DAEMON_RECORD_SCHEMA_VERSION,
     protocolVersion: DAEMON_PROTOCOL_VERSION,
     symnavVersion: "test",
     workspaceRoot,
     workspaceKey: identity.workspaceKey,
+    stateKey: identity.stateKey,
+    identityKey: identity.identityKey,
     instanceId,
     processToken,
     endpoint: identity.endpoint(instanceId),
@@ -286,20 +293,16 @@ function temporaryWorkspace(directories: string[]): string {
 }
 
 function captureDaemonPids(stateDir: string, pids: number[]): void {
-  const recordsDirectory = join(stateDir, "daemons");
-  for (const recordName of readdirSync(recordsDirectory).filter((name) => name.endsWith(".json"))) {
-    const record = JSON.parse(readFileSync(join(recordsDirectory, recordName), "utf8")) as {
-      pid: number;
-    };
+  for (const recordPath of DaemonStateFiles.matchingPaths(stateDir, ".json")) {
+    const record = JSON.parse(readFileSync(recordPath, "utf8")) as { pid: number };
     pids.push(record.pid);
   }
 }
 
 function daemonLogEvents(stateDir: string): readonly Record<string, unknown>[] {
-  const recordsDirectory = join(stateDir, "daemons");
-  const logName = readdirSync(recordsDirectory).find((name) => name.endsWith(".log"));
-  if (logName === undefined) return [];
-  return readFileSync(join(recordsDirectory, logName), "utf8")
+  const logPath = DaemonStateFiles.matchingPaths(stateDir, ".log")[0];
+  if (logPath === undefined) return [];
+  return readFileSync(logPath, "utf8")
     .trim()
     .split("\n")
     .filter((line) => line.startsWith("{"))

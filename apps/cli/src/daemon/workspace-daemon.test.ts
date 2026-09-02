@@ -3,12 +3,13 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { canonicalStateDir } from "@symnav/telemetry";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { CliExecutionRequest, CommandExecutionResult } from "../command-execution-result.js";
 import { createDefaultDependencies } from "../program.js";
 import { DaemonController } from "./daemon-controller.js";
 import type { DaemonProcessTerminator } from "./daemon-process-launcher.js";
-import { DAEMON_PROTOCOL_VERSION } from "./daemon-protocol.js";
+import { DAEMON_PROTOCOL_VERSION, DAEMON_RECORD_SCHEMA_VERSION } from "./daemon-protocol.js";
 import { DaemonRegistry } from "./daemon-registry.js";
 import { DaemonWorkspaceIdentity } from "./daemon-workspace-identity.js";
 import { LocalDaemonTransport } from "./local-daemon-transport.js";
@@ -82,7 +83,9 @@ describe("WorkspaceDaemon runtime lifecycle", () => {
   });
 
   it("force-stops a real matching daemon process with a stuck request", async () => {
-    const stateDirectory = mkdtempSync(join(tmpdir(), "symnav-daemon-child-state-"));
+    const stateDirectory = canonicalStateDir(
+      mkdtempSync(join(tmpdir(), "symnav-daemon-child-state-")),
+    );
     const workspaceRoot = mkdtempSync(join(tmpdir(), "symnav-daemon-child-workspace-"));
     mkdirSync(join(workspaceRoot, ".git"));
     writeFileSync(join(workspaceRoot, "input.ts"), "export const value = 1;\n");
@@ -108,11 +111,13 @@ describe("WorkspaceDaemon runtime lifecycle", () => {
     const daemonPid = Number(readFileSync(`${readyPath}.boot`, "utf8"));
     expect(
       registry.writeStartingIfStartupOwner(identity, {
-        schemaVersion: 1,
+        schemaVersion: DAEMON_RECORD_SCHEMA_VERSION,
         protocolVersion: DAEMON_PROTOCOL_VERSION,
         symnavVersion: "test",
         workspaceRoot,
         workspaceKey: identity.workspaceKey,
+        stateKey: identity.stateKey,
+        identityKey: identity.identityKey,
         instanceId,
         processToken,
         endpoint: identity.endpoint(instanceId),
@@ -271,11 +276,13 @@ class WorkspaceDaemonHarness {
     const lease = harness.registry.acquireStartup(harness.identity, harness.instanceId);
     if (lease === undefined) throw new Error("Expected startup ownership");
     harness.registry.write({
-      schemaVersion: 1,
+      schemaVersion: DAEMON_RECORD_SCHEMA_VERSION,
       protocolVersion: DAEMON_PROTOCOL_VERSION,
       symnavVersion: "test",
       workspaceRoot: harness.workspaceRoot,
       workspaceKey: harness.identity.workspaceKey,
+      stateKey: harness.identity.stateKey,
+      identityKey: harness.identity.identityKey,
       instanceId: harness.instanceId,
       processToken: "runtime-token",
       endpoint: harness.identity.endpoint(harness.instanceId),
@@ -290,7 +297,7 @@ class WorkspaceDaemonHarness {
       processToken: "runtime-token",
       symnavVersion: "test",
       memoryCapBytes: runtime.memoryCapBytes ?? 1024,
-      dependencies: createDefaultDependencies(),
+      dependencies: createDefaultDependencies(harness.identity.stateDirectory),
       registry: harness.registry,
       transport: harness.transport,
       executor,

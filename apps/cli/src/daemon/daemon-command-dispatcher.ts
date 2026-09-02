@@ -40,7 +40,7 @@ interface CommandExecutor {
 }
 
 export interface DaemonCommandDispatcherOptions {
-  readonly createDependencies: () => ProgramDependencies;
+  readonly createDependencies: (stateDirectory: string) => ProgramDependencies;
   readonly stateDirectory: string;
   readonly daemonEnabled?: () => boolean;
   readonly selector?: InvocationWorkspaceSelector;
@@ -95,7 +95,7 @@ export class DaemonCommandDispatcher {
     };
     if (!this.daemonEnabled()) return this.executeLocally(workspaceRequest, "cold");
 
-    const workspaceDependencies = this.options.createDependencies();
+    const workspaceDependencies = this.options.createDependencies(this.options.stateDirectory);
     let workspaceRoot: string;
     try {
       workspaceRoot = await this.resolveWorkspaceRoot(route.startDir, workspaceDependencies);
@@ -150,7 +150,9 @@ export class DaemonCommandDispatcher {
     request: CliExecutionRequest,
     mode: "cold" | "fallback",
   ): Promise<DispatchedCommandResult> {
-    const executor = this.executorFactory(this.options.createDependencies());
+    const executor = this.executorFactory(
+      this.options.createDependencies(this.options.stateDirectory),
+    );
     return executor
       .execute({ ...request, executionMode: mode })
       .then((result) => ({ mode, result }));

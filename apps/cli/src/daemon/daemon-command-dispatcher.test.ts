@@ -3,7 +3,13 @@ import { describe, expect, it, vi } from "vitest";
 import type { UsageEventInput } from "@symnav/telemetry";
 import type { CliExecutionRequest, CommandExecutionResult } from "../command-execution-result.js";
 import type { ProgramDependencies } from "../program-dependencies.js";
-import type { DaemonRecord, DaemonRequest, DaemonResponse } from "./daemon-protocol.js";
+import {
+  DAEMON_PROTOCOL_VERSION,
+  DAEMON_RECORD_SCHEMA_VERSION,
+  type DaemonRecord,
+  type DaemonRequest,
+  type DaemonResponse,
+} from "./daemon-protocol.js";
 import {
   DaemonCommandDispatcher,
   type DaemonDispatchRuntime,
@@ -357,11 +363,13 @@ class DispatchHarness {
 
 function daemonRecord(instanceId = "instance-1"): DaemonRecord {
   return {
-    schemaVersion: 1,
-    protocolVersion: 1,
+    schemaVersion: DAEMON_RECORD_SCHEMA_VERSION,
+    protocolVersion: DAEMON_PROTOCOL_VERSION,
     symnavVersion: "0.1.0",
     workspaceRoot,
     workspaceKey: "key",
+    stateKey: "state-key",
+    identityKey: "identity-key",
     instanceId,
     processToken: `${instanceId}-token`,
     endpoint: "/endpoint",

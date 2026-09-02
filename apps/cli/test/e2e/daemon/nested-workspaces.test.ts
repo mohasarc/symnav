@@ -1,10 +1,11 @@
-import { cpSync, existsSync, mkdtempSync, readFileSync, readdirSync, realpathSync } from "node:fs";
+import { cpSync, existsSync, mkdtempSync, readFileSync, realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { fixturePath, runSymnavBinary, type RunSymnavBinaryResult } from "@symnav/testing";
 import { canonicalWorkspaceRoot } from "../../helpers/canonical-workspace-root.js";
 import { E2eProcessCleanup } from "../../helpers/e2e-process-cleanup.js";
+import { DaemonStateFiles } from "../../helpers/daemon-state-files.js";
 import { ensureFixtureGitMarker } from "../ensure-fixture-git-marker.js";
 import { symbolCommands } from "../symbol-command.js";
 
@@ -87,15 +88,9 @@ class NestedWorkspaceHarness {
   }
 
   private daemonProcessIds(): readonly number[] {
-    const recordsDirectory = join(this.stateDirectory, "daemons");
-    if (!existsSync(recordsDirectory)) return [];
-    return readdirSync(recordsDirectory)
-      .filter((name) => name.endsWith(".json"))
-      .map((name) => {
-        const record = JSON.parse(readFileSync(join(recordsDirectory, name), "utf8")) as {
-          readonly pid: number;
-        };
-        return record.pid;
-      });
+    return DaemonStateFiles.matchingPaths(this.stateDirectory, ".json").map((path) => {
+      const record = JSON.parse(readFileSync(path, "utf8")) as { readonly pid: number };
+      return record.pid;
+    });
   }
 }

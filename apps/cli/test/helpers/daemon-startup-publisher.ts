@@ -1,4 +1,5 @@
 import { existsSync, writeFileSync } from "node:fs";
+import { canonicalStateDir } from "@symnav/telemetry";
 import { DaemonRegistry } from "../../src/daemon/daemon-registry.js";
 import { DaemonWorkspaceIdentity } from "../../src/daemon/daemon-workspace-identity.js";
 import {
@@ -18,7 +19,7 @@ if (
   process.exit(2);
 }
 
-const identity = DaemonWorkspaceIdentity.from(workspaceRoot, stateDirectory);
+const identity = DaemonWorkspaceIdentity.from(workspaceRoot, canonicalStateDir(stateDirectory));
 const registry = new DaemonRegistry(identity.registryDirectory);
 const instanceId = "cross-process-startup";
 const lease = registry.acquireStartup(identity, instanceId);
@@ -29,6 +30,8 @@ const startingRecord: DaemonRecord = {
   symnavVersion: "test",
   workspaceRoot,
   workspaceKey: identity.workspaceKey,
+  stateKey: identity.stateKey,
+  identityKey: identity.identityKey,
   instanceId,
   processToken: "cross-process-token",
   endpoint: identity.endpoint(instanceId),

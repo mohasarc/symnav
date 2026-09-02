@@ -5,6 +5,7 @@ import type { CommandExecutionMode } from "./command-execution-result.js";
 import type { WorkspaceRequestScopeFactory } from "./workspace-request-scope.js";
 
 export interface ProgramDependencies {
+  readonly stateDirectory: string;
   fs: FileSystem;
   backends: () => readonly LanguageBackend[];
   git: GitHistory;

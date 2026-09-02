@@ -9,31 +9,20 @@ import { fakeDependencies } from "../helpers/fake-program-dependencies.js";
 import { BufferStream } from "../helpers/fake-program-context.js";
 
 async function parse(argv: readonly string[], stateDir: string): Promise<CommandResult> {
-  const previousStateDir = process.env.SYMNAV_STATE_DIR;
-  process.env.SYMNAV_STATE_DIR = stateDir;
-
+  const context = createStatsProgramContext();
+  const program = buildProgram(context, fakeDependencies({ stateDirectory: stateDir }));
   try {
-    const context = createStatsProgramContext();
-    const program = buildProgram(context, fakeDependencies());
-    try {
-      await program.parseAsync([...argv], { from: "user" });
-    } catch (error) {
-      if (!(error instanceof CapturedExit)) {
-        throw error;
-      }
-    }
-    return {
-      stdout: context.stdout.text(),
-      stderr: context.stderr.text(),
-      exitCodes: context.exitCodes,
-    };
-  } finally {
-    if (previousStateDir === undefined) {
-      delete process.env.SYMNAV_STATE_DIR;
-    } else {
-      process.env.SYMNAV_STATE_DIR = previousStateDir;
+    await program.parseAsync([...argv], { from: "user" });
+  } catch (error) {
+    if (!(error instanceof CapturedExit)) {
+      throw error;
     }
   }
+  return {
+    stdout: context.stdout.text(),
+    stderr: context.stderr.text(),
+    exitCodes: context.exitCodes,
+  };
 }
 
 interface CommandResult {

@@ -104,6 +104,8 @@ export class WorkspaceDaemon {
         symnavVersion: this.options.symnavVersion,
         workspaceRoot: this.options.identity.workspaceRoot,
         workspaceKey: this.options.identity.workspaceKey,
+        stateKey: this.options.identity.stateKey,
+        identityKey: this.options.identity.identityKey,
         instanceId: this.options.instanceId,
         processToken: this.options.processToken,
         endpoint: this.options.identity.endpoint(this.options.instanceId),

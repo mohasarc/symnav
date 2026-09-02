@@ -1,17 +1,22 @@
 import type { CliExecutionRequest, CommandExecutionResult } from "../command-execution-result.js";
 
-export const DAEMON_PROTOCOL_VERSION = 1;
-export const DAEMON_RECORD_SCHEMA_VERSION = 1;
+export const DAEMON_PROTOCOL_VERSION = 2;
+export const DAEMON_RECORD_SCHEMA_VERSION = 2;
 
-export interface DaemonRecord {
-  readonly schemaVersion: number;
-  readonly protocolVersion: number;
-  readonly symnavVersion: string;
+export interface DaemonIdentityCoordinates {
   readonly workspaceRoot: string;
   readonly workspaceKey: string;
+  readonly stateKey: string;
+  readonly identityKey: string;
   readonly instanceId: string;
   readonly processToken: string;
   readonly endpoint: string;
+}
+
+export interface DaemonRecord extends DaemonIdentityCoordinates {
+  readonly schemaVersion: number;
+  readonly protocolVersion: number;
+  readonly symnavVersion: string;
   readonly pid: number;
   readonly state: "starting" | "ready";
   readonly startedAt: number;

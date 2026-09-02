@@ -6,7 +6,7 @@ import type { CliExecutionRequest, CommandExecutionResult } from "../command-exe
 import type { ProgramDependencies } from "../program-dependencies.js";
 import { createDefaultDependencies } from "../program.js";
 import type { DaemonRequest, DaemonResponse, DaemonServer } from "./daemon-protocol.js";
-import { DAEMON_PROTOCOL_VERSION } from "./daemon-protocol.js";
+import { DAEMON_PROTOCOL_VERSION, DAEMON_RECORD_SCHEMA_VERSION } from "./daemon-protocol.js";
 import { DaemonRegistry } from "./daemon-registry.js";
 import { DaemonWorkspaceIdentity } from "./daemon-workspace-identity.js";
 import type { LocalDaemonTransport } from "./local-daemon-transport.js";
@@ -174,8 +174,12 @@ describe("WorkspaceDaemon requests", () => {
 
   it("forwards refresh summaries and records freshness diagnostics", async () => {
     const backendRefreshed = vi.fn();
-    const dependencies: ProgramDependencies = { ...createDefaultDependencies(), backendRefreshed };
-    const harness = await RequestHarness.start(undefined, { dependencies });
+    const harness = await RequestHarness.start(undefined, {
+      createDependencies: (stateDirectory) => ({
+        ...createDefaultDependencies(stateDirectory),
+        backendRefreshed,
+      }),
+    });
     harnesses.push(harness);
 
     await harness.execute("refresh", ["overview", "input.ts"]);
@@ -284,11 +288,13 @@ class RequestHarness {
     const lease = harness.registry.acquireStartup(harness.identity, harness.instanceId);
     if (lease === undefined) throw new Error("Expected startup ownership");
     harness.registry.write({
-      schemaVersion: 1,
+      schemaVersion: DAEMON_RECORD_SCHEMA_VERSION,
       protocolVersion: DAEMON_PROTOCOL_VERSION,
       symnavVersion: "test",
       workspaceRoot: harness.workspaceRoot,
       workspaceKey: harness.identity.workspaceKey,
+      stateKey: harness.identity.stateKey,
+      identityKey: harness.identity.identityKey,
       instanceId: harness.instanceId,
       processToken: harness.processToken,
       endpoint: harness.identity.endpoint(harness.instanceId),
@@ -303,7 +309,10 @@ class RequestHarness {
       processToken: harness.processToken,
       symnavVersion: "test",
       memoryCapBytes: 1024,
-      dependencies: options.dependencies ?? createDefaultDependencies(),
+      dependencies:
+        options.dependencies ??
+        options.createDependencies?.(harness.identity.stateDirectory) ??
+        createDefaultDependencies(harness.identity.stateDirectory),
       registry: harness.registry,
       transport: harness.transport as unknown as LocalDaemonTransport,
       ...(executor === undefined ? {} : { executor }),
@@ -383,6 +392,7 @@ class RequestHarness {
 
 interface RequestHarnessOptions {
   readonly dependencies?: ProgramDependencies;
+  readonly createDependencies?: (stateDirectory: string) => ProgramDependencies;
   readonly now?: () => number;
 }
 

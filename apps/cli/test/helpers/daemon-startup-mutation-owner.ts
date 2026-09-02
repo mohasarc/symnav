@@ -1,6 +1,10 @@
 import { mkdirSync, renameSync, writeFileSync } from "node:fs";
 import { randomUUID } from "node:crypto";
-import { DAEMON_PROTOCOL_VERSION } from "../../src/daemon/daemon-protocol.js";
+import { canonicalStateDir } from "@symnav/telemetry";
+import {
+  DAEMON_PROTOCOL_VERSION,
+  DAEMON_RECORD_SCHEMA_VERSION,
+} from "../../src/daemon/daemon-protocol.js";
 import { DaemonRegistry } from "../../src/daemon/daemon-registry.js";
 import { DaemonWorkspaceIdentity } from "../../src/daemon/daemon-workspace-identity.js";
 
@@ -15,18 +19,20 @@ if (
 
 await new Promise<void>((resolve) => setTimeout(resolve, Number(startupDelayMsText)));
 
-const identity = DaemonWorkspaceIdentity.from(workspaceRoot, stateDirectory);
+const identity = DaemonWorkspaceIdentity.from(workspaceRoot, canonicalStateDir(stateDirectory));
 const registry = new DaemonRegistry(identity.registryDirectory);
 const instanceId = "orphaned-mutation";
 const lease = registry.acquireStartup(identity, instanceId);
 if (lease === undefined) process.exit(3);
 if (
   !registry.writeStartingIfStartupOwner(identity, {
-    schemaVersion: 1,
+    schemaVersion: DAEMON_RECORD_SCHEMA_VERSION,
     protocolVersion: DAEMON_PROTOCOL_VERSION,
     symnavVersion: "0.1.0",
     workspaceRoot,
     workspaceKey: identity.workspaceKey,
+    stateKey: identity.stateKey,
+    identityKey: identity.identityKey,
     instanceId,
     processToken: "orphaned-mutation-token",
     endpoint: identity.endpoint(instanceId),

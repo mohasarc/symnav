@@ -19,6 +19,7 @@ import { DaemonRegistry } from "./daemon-registry.js";
 import { DaemonWorkspaceIdentity } from "./daemon-workspace-identity.js";
 import {
   DAEMON_PROTOCOL_VERSION,
+  DAEMON_RECORD_SCHEMA_VERSION,
   type DaemonRecord,
   type DaemonRequest,
   type DaemonResponse,
@@ -37,6 +38,11 @@ describe("daemon registry", () => {
   afterEach(() => {
     for (const root of roots) rmSync(root, { recursive: true, force: true });
     roots.length = 0;
+  });
+
+  it("uses second-generation record and transport coordinates", () => {
+    expect(DAEMON_RECORD_SCHEMA_VERSION).toBe(2);
+    expect(DAEMON_PROTOCOL_VERSION).toBe(2);
   });
 
   it("keys repositories, worktrees, and submodules by exact workspace root", () => {
@@ -303,10 +309,12 @@ describe("daemon registry", () => {
   });
 
   it.each([
-    { field: "schemaVersion", value: 2 },
+    { field: "schemaVersion", value: DAEMON_RECORD_SCHEMA_VERSION + 1 },
     { field: "protocolVersion", value: DAEMON_PROTOCOL_VERSION + 1 },
     { field: "workspaceRoot", value: "/other" },
     { field: "workspaceKey", value: "other-key" },
+    { field: "stateKey", value: "other-state-key" },
+    { field: "identityKey", value: "other-identity-key" },
     { field: "endpoint", value: "other-endpoint" },
     { field: "memoryBytes", value: "invalid" },
   ] as const)("rejects records with incompatible $field", ({ field, value }) => {
@@ -326,6 +334,8 @@ describe("daemon registry", () => {
     if (
       field === "workspaceRoot" ||
       field === "workspaceKey" ||
+      field === "stateKey" ||
+      field === "identityKey" ||
       field === "endpoint" ||
       field === "memoryBytes"
     ) {
@@ -333,6 +343,35 @@ describe("daemon registry", () => {
     } else {
       expect(registry.readStored(identity)?.instanceId).toBe("incompatible");
     }
+  });
+
+  it("rejects legacy records without state-scoped coordinates", () => {
+    const identity = DaemonWorkspaceIdentity.from("/repo", temporaryDirectory(roots));
+    const registry = new DaemonRegistry(identity.registryDirectory);
+    mkdirSync(identity.identityDirectory, { recursive: true });
+    writeFileSync(
+      identity.recordPath("legacy"),
+      JSON.stringify({
+        schemaVersion: 1,
+        protocolVersion: 1,
+        symnavVersion: "0.1.0",
+        workspaceRoot: identity.workspaceRoot,
+        workspaceKey: identity.workspaceKey,
+        instanceId: "legacy",
+        processToken: "legacy-process",
+        endpoint: identity.endpoint("legacy"),
+        pid: 123,
+        state: "ready",
+        startedAt: 10,
+        readyAt: 20,
+        fileCount: 2,
+        memoryCapBytes: 256 * 1024 * 1024,
+      }),
+    );
+
+    expect(registry.read(identity)).toBeUndefined();
+    expect(registry.readStored(identity)).toBeUndefined();
+    expect(registry.list()).toEqual([]);
   });
   it("reports validated ready and live starting daemons sorted by workspace", async () => {
     const stateDirectory = temporaryDirectory(roots);
@@ -633,11 +672,13 @@ function record(
   instanceId = "instance",
 ): DaemonRecord {
   const base: DaemonRecord = {
-    schemaVersion: 1,
+    schemaVersion: DAEMON_RECORD_SCHEMA_VERSION,
     protocolVersion: DAEMON_PROTOCOL_VERSION,
     symnavVersion: "0.1.0",
     workspaceRoot: identity.workspaceRoot,
     workspaceKey: identity.workspaceKey,
+    stateKey: identity.stateKey,
+    identityKey: identity.identityKey,
     instanceId,
     processToken: `${instanceId}-process`,
     endpoint: identity.endpoint(instanceId),

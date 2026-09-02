@@ -114,6 +114,8 @@ export class DaemonStartupCoordinator {
       symnavVersion: this.launcher.symnavVersion,
       workspaceRoot: identity.workspaceRoot,
       workspaceKey: identity.workspaceKey,
+      stateKey: identity.stateKey,
+      identityKey: identity.identityKey,
       instanceId,
       processToken,
       endpoint: identity.endpoint(instanceId),

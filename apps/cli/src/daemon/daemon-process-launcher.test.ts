@@ -2,6 +2,7 @@ import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { canonicalStateDir } from "@symnav/telemetry";
 
 const { processListeners, spawnMock } = vi.hoisted(() => ({
   processListeners: new Map<string, (...args: unknown[]) => void>(),
@@ -58,9 +59,9 @@ describe("NodeDaemonProcessLauncher", () => {
       const stateDirectory = join(root, "state");
       const identity = DaemonWorkspaceIdentity.from(
         join(root, "workspace"),
-        identityStateDirectory(stateDirectory),
+        canonicalStateDir(identityStateDirectory(stateDirectory)),
       );
-      mkdirSync(identity.registryDirectory, { recursive: true });
+      mkdirSync(identity.identityDirectory, { recursive: true });
 
       await new NodeDaemonProcessLauncher("1.2.3", 128 * 1024 * 1024).launch(
         identity,
@@ -74,9 +75,16 @@ describe("NodeDaemonProcessLauncher", () => {
         { readonly cwd: string; readonly env: NodeJS.ProcessEnv },
       ];
       const configuration = DaemonProcessConfigurationParser.parse(args[2]);
-      const absoluteStateDirectory = resolve(stateDirectory);
+      const absoluteStateDirectory = canonicalStateDir(resolve(stateDirectory));
       const absoluteWorkspaceRoot = resolve(root, "workspace");
-      expect(configuration.stateDir).toBe(absoluteStateDirectory);
+      expect(configuration.stateDirectory).toBe(absoluteStateDirectory);
+      expect(configuration.workspaceRoot).toBe(identity.workspaceRoot);
+      expect(configuration.workspaceKey).toBe(identity.workspaceKey);
+      expect(configuration.stateKey).toBe(identity.stateKey);
+      expect(configuration.identityKey).toBe(identity.identityKey);
+      expect(configuration.instanceId).toBe("instance");
+      expect(configuration.processToken).toBe("process-token");
+      expect(configuration.endpoint).toBe(identity.endpoint("instance"));
       expect(options.env.SYMNAV_STATE_DIR).toBe(absoluteStateDirectory);
       expect(options.cwd).toBe(tmpdir());
       expect(isAbsolute(options.cwd)).toBe(true);

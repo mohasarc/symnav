@@ -4,10 +4,11 @@ import { CommandResultReplayer } from "./cli-program-executor.js";
 import { DaemonCommandDispatcher } from "./daemon/daemon-command-dispatcher.js";
 import { createDefaultDependencies, createDefaultProgramContext } from "./program.js";
 
-const dependencies = createDefaultDependencies();
+const stateDirectory = resolveStateDir(process.env);
+const dependencies = createDefaultDependencies(stateDirectory);
 const dispatched = await new DaemonCommandDispatcher({
   createDependencies: createDefaultDependencies,
-  stateDirectory: resolveStateDir(process.env),
+  stateDirectory,
   daemonEnabled: () => process.env.SYMNAV_DAEMON !== "0",
 }).execute({
   argv: process.argv.slice(2),

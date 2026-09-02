@@ -1,3 +1,4 @@
+import { join, resolve } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import type { UsageEventInput } from "@symnav/telemetry";
 import type { CliExecutionRequest, CommandExecutionResult } from "../command-execution-result.js";
@@ -8,9 +9,11 @@ import {
   type DaemonDispatchRuntime,
 } from "./daemon-command-dispatcher.js";
 
+const workspaceRoot = resolve("synthetic-workspace");
+const nestedWorkspaceDirectory = join(workspaceRoot, "nested");
 const request: CliExecutionRequest = {
   argv: ["overview", "src/a.ts"],
-  cwd: "/repo",
+  cwd: workspaceRoot,
   telemetryEnabled: false,
 };
 const success: CommandExecutionResult = {
@@ -58,13 +61,15 @@ describe("DaemonCommandDispatcher", () => {
   it("sends an absolute cwd override to the daemon", async () => {
     const harness = new DispatchHarness(success);
 
-    await harness
-      .dispatcher()
-      .execute({ ...request, argv: ["--cwd", "..", ...request.argv], cwd: "/repo/nested" });
+    await harness.dispatcher().execute({
+      ...request,
+      argv: ["--cwd", "..", ...request.argv],
+      cwd: nestedWorkspaceDirectory,
+    });
 
     expect(harness.executeRequests()).toEqual([
       expect.objectContaining({
-        request: expect.objectContaining({ argv: ["--cwd", "/repo", ...request.argv] }),
+        request: expect.objectContaining({ argv: ["--cwd", workspaceRoot, ...request.argv] }),
       }),
     ]);
   });
@@ -270,7 +275,7 @@ class DispatchHarness {
       this.registered = daemonRecord("replacement");
       return {
         status: "ready" as const,
-        workspaceRoot: "/repo",
+        workspaceRoot,
         fileCount: 1,
         loadDurationMs: 10,
       };
@@ -322,7 +327,7 @@ class DispatchHarness {
         }) as unknown as ProgramDependencies,
       daemonEnabled: () => this.options.daemonEnabled ?? true,
       stateDirectory: "/state",
-      resolveWorkspaceRoot: async () => "/repo",
+      resolveWorkspaceRoot: async () => workspaceRoot,
       runtimeFactory: this.runtimeFactory,
       executorFactory: () => ({ execute: this.coldExecute }),
       requestId: () => "request-1",
@@ -355,7 +360,7 @@ function daemonRecord(instanceId = "instance-1"): DaemonRecord {
     schemaVersion: 1,
     protocolVersion: 1,
     symnavVersion: "0.1.0",
-    workspaceRoot: "/repo",
+    workspaceRoot,
     workspaceKey: "key",
     instanceId,
     processToken: `${instanceId}-token`,

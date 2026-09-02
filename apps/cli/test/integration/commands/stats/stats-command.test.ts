@@ -149,6 +149,19 @@ describe("symnav stats", () => {
     expect(JSON.parse(result.stdout)).toEqual(new UsageAggregator(events).aggregate());
   });
 
+  it("keeps stats output stable for schema-v1 events", async () => {
+    const currentStateDir = tempStateDir(roots);
+    const legacyStateDir = tempStateDir(roots);
+    const events = seededEvents();
+    seedUsageLog(currentStateDir, events);
+    seedLegacyUsageLog(legacyStateDir, events);
+
+    const current = await parse(["stats"], currentStateDir);
+    const legacy = await parse(["stats"], legacyStateDir);
+
+    expect(legacy).toEqual(current);
+  });
+
   it("renders a clean empty summary when the usage log is missing", async () => {
     const stateDir = tempStateDir(roots);
     const usageFilePath = join(stateDir, "usage.jsonl");
@@ -186,6 +199,20 @@ function seedUsageLog(stateDir: string, events: readonly UsageEvent[]): string {
   writeFileSync(
     usageFilePath,
     `${events.map((event) => JSON.stringify(event)).join("\n")}\n`,
+    "utf8",
+  );
+  return usageFilePath;
+}
+
+function seedLegacyUsageLog(stateDir: string, events: readonly UsageEvent[]): string {
+  const legacyEvents = events.map(({ executionMode: _executionMode, ...event }) => ({
+    ...event,
+    schemaVersion: 1,
+  }));
+  const usageFilePath = join(stateDir, "usage.jsonl");
+  writeFileSync(
+    usageFilePath,
+    `${legacyEvents.map((event) => JSON.stringify(event)).join("\n")}\n`,
     "utf8",
   );
   return usageFilePath;

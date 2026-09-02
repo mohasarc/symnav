@@ -28,7 +28,11 @@ export function runSymnavBinary(
   args: readonly string[],
   opts: RunSymnavBinaryOptions,
 ): RunSymnavBinaryResult {
-  const daemonEnvironment = args.includes("daemon") ? {} : { SYMNAV_DAEMON: "0" };
+  const isolatedStateDirectory = opts.env?.SYMNAV_STATE_DIR !== undefined;
+  const configuredDaemonMode = process.env.SYMNAV_E2E_DAEMON_MODE ?? "0";
+  const daemonEnvironment = args.includes("daemon")
+    ? {}
+    : { SYMNAV_DAEMON: isolatedStateDirectory ? "0" : configuredDaemonMode };
   const result = spawnSync(process.execPath, [cliBinPath, ...args], {
     cwd: opts.cwd,
     encoding: "utf8",

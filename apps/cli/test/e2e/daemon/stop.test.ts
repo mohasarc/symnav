@@ -6,7 +6,6 @@ import {
   readdirSync,
   readFileSync,
   realpathSync,
-  rmSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -18,22 +17,19 @@ import { DAEMON_PROTOCOL_VERSION, type DaemonRecord } from "../../../src/daemon/
 import { DaemonRegistry } from "../../../src/daemon/daemon-registry.js";
 import { DaemonWorkspaceIdentity } from "../../../src/daemon/daemon-workspace-identity.js";
 import { LocalDaemonTransport } from "../../../src/daemon/local-daemon-transport.js";
+import { canonicalWorkspaceRoot } from "../../helpers/canonical-workspace-root.js";
+import { E2eProcessCleanup } from "../../helpers/e2e-process-cleanup.js";
 
 describe("symnav daemon stop", () => {
   const stateDirectories: string[] = [];
   const daemonPids: number[] = [];
   const helperProcesses: ChildProcess[] = [];
 
-  afterEach(() => {
-    for (const pid of daemonPids) {
-      try {
-        process.kill(pid, "SIGTERM");
-      } catch {}
-    }
+  afterEach(async () => {
+    await E2eProcessCleanup.terminate(daemonPids, helperProcesses);
     daemonPids.length = 0;
-    for (const child of helperProcesses) child.kill("SIGTERM");
     helperProcesses.length = 0;
-    for (const directory of stateDirectories) rmSync(directory, { recursive: true, force: true });
+    E2eProcessCleanup.removeDirectories(stateDirectories);
     stateDirectories.length = 0;
   });
 
@@ -99,7 +95,11 @@ describe("symnav daemon stop", () => {
     const stateDir = temporaryStateDirectory(stateDirectories);
     const cwd = temporaryWorkspace(stateDirectories);
     const releasePath = join(stateDir, "release-request");
-    const runtime = await startControlledDaemon(stateDir, realpathSync(cwd), releasePath);
+    const runtime = await startControlledDaemon(
+      stateDir,
+      canonicalWorkspaceRoot(realpathSync(cwd)),
+      releasePath,
+    );
     helperProcesses.push(runtime.child);
     const transport = new LocalDaemonTransport({ requestTimeoutMs: 10_000 });
     const execution = transport.request(runtime.record.endpoint, {
@@ -130,7 +130,10 @@ describe("symnav daemon stop", () => {
   it("force-kills stuck work before the built stop command renders success", async () => {
     const stateDir = temporaryStateDirectory(stateDirectories);
     const cwd = temporaryWorkspace(stateDirectories);
-    const runtime = await startControlledDaemon(stateDir, realpathSync(cwd));
+    const runtime = await startControlledDaemon(
+      stateDir,
+      canonicalWorkspaceRoot(realpathSync(cwd)),
+    );
     helperProcesses.push(runtime.child);
     const transport = new LocalDaemonTransport({ requestTimeoutMs: 10_000 });
     void transport

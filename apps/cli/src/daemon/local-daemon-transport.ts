@@ -5,10 +5,12 @@ import type { DaemonRequest, DaemonResponse, DaemonServer } from "./daemon-proto
 
 const DEFAULT_MAXIMUM_FRAME_BYTES = 8 * 1024 * 1024;
 const DEFAULT_REQUEST_TIMEOUT_MS = 5_000;
+const DEFAULT_EXECUTION_REQUEST_TIMEOUT_MS = 5 * 60_000;
 
 interface LocalDaemonTransportOptions {
   readonly maximumFrameBytes?: number;
   readonly requestTimeoutMs?: number;
+  readonly executionRequestTimeoutMs?: number;
   readonly writeChunkSize?: number;
 }
 
@@ -67,11 +69,14 @@ class ListeningDaemonServer implements DaemonServer {
 export class LocalDaemonTransport {
   private readonly maximumFrameBytes: number;
   private readonly requestTimeoutMs: number;
+  private readonly executionRequestTimeoutMs: number;
   private readonly writeChunkSize: number | undefined;
 
   constructor(options: LocalDaemonTransportOptions = {}) {
     this.maximumFrameBytes = options.maximumFrameBytes ?? DEFAULT_MAXIMUM_FRAME_BYTES;
     this.requestTimeoutMs = options.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS;
+    this.executionRequestTimeoutMs =
+      options.executionRequestTimeoutMs ?? DEFAULT_EXECUTION_REQUEST_TIMEOUT_MS;
     this.writeChunkSize = options.writeChunkSize;
   }
 
@@ -87,7 +92,9 @@ export class LocalDaemonTransport {
         socket.destroy();
         reject(error instanceof Error ? error : new Error(String(error)));
       };
-      socket.setTimeout(this.requestTimeoutMs, () => fail(new Error("Daemon request timed out")));
+      socket.setTimeout(this.timeoutFor(request), () =>
+        fail(new Error("Daemon request timed out")),
+      );
       socket.once("error", fail);
       socket.once("connect", () => this.writeFrame(socket, request));
       socket.on("data", (bytes) => {
@@ -117,6 +124,10 @@ export class LocalDaemonTransport {
         }
       });
     });
+  }
+
+  private timeoutFor(request: DaemonRequest): number {
+    return request.kind === "execute" ? this.executionRequestTimeoutMs : this.requestTimeoutMs;
   }
 
   async listen(

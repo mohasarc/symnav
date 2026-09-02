@@ -1,5 +1,5 @@
 import { spawn, type ChildProcess } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -131,6 +131,40 @@ describe("DaemonStartupCoordinator", () => {
     expect(harness.registry.startupOwner(harness.identity)).toBeUndefined();
   });
 
+  it("does not launch a replacement until the authenticated daemon process exits", async () => {
+    const harness = new CoordinatorHarness(roots, { oldDaemonExitsAfterTerminate: false });
+    harness.seedReady("existing", "0.0.9", 4003);
+
+    const starting = harness
+      .coordinator({ startupTimeoutMs: 1_000 })
+      .ensureRunning(harness.identity);
+    await waitUntil(() => harness.transport.terminationCount === 1);
+    await new Promise((resolve) => setTimeout(resolve, 10));
+
+    expect(harness.launcher.launchCount).toBe(0);
+    expect(harness.registry.readStored(harness.identity)?.instanceId).toBe("existing");
+
+    harness.terminator.alive.delete(4003);
+    await expect(starting).resolves.toMatchObject({ status: "ready" });
+    expect(harness.launcher.launchCount).toBe(1);
+  });
+
+  it("preserves termination failure precedence and startup ownership when the process stays alive", async () => {
+    const harness = new CoordinatorHarness(roots, {
+      launchFailure: new Error("replacement launch must remain blocked"),
+      oldDaemonExitsAfterTerminate: false,
+    });
+    harness.seedReady("existing", "0.0.9", 4004);
+
+    await expect(
+      harness.coordinator({ startupTimeoutMs: 5 }).ensureRunning(harness.identity),
+    ).rejects.toBeInstanceOf(DaemonProcessTerminationError);
+
+    expect(harness.launcher.launchCount).toBe(0);
+    expect(harness.registry.readStored(harness.identity)?.instanceId).toBe("existing");
+    expect(harness.registry.startupOwner(harness.identity)).toBeDefined();
+  });
+
   it("terminates and cleans a daemon that misses its readiness deadline", async () => {
     const harness = new CoordinatorHarness(roots, { neverReady: true });
 
@@ -182,6 +216,144 @@ describe("DaemonStartupCoordinator", () => {
     ).rejects.toBeInstanceOf(DaemonProcessTerminationError);
     expect(harness.registry.startupOwner(harness.identity)).toBeDefined();
   });
+
+  it("waits beyond startup-owner grace for a live daemon to finish warming", async () => {
+    const harness = new CoordinatorHarness(roots);
+    let elapsedMs = 0;
+
+    await expect(
+      harness
+        .coordinator({
+          now: () => {
+            elapsedMs += 45_000;
+            return elapsedMs;
+          },
+        })
+        .ensureRunning(harness.identity),
+    ).resolves.toMatchObject({ status: "ready", workspaceRoot: "/repo" });
+  });
+
+  it("recovers a durable startup lock when its owner published no record", async () => {
+    const harness = new CoordinatorHarness(roots, { neverReady: true });
+    expect(harness.registry.acquireStartup(harness.identity, "orphan")).toBeDefined();
+
+    await expect(
+      harness
+        .coordinator({
+          startupTimeoutMs: 5,
+          processTerminator: new TestProcessTerminator(false),
+        })
+        .ensureRunning(harness.identity),
+    ).rejects.toThrow(/timed out/i);
+
+    expect(harness.registry.startupOwner(harness.identity)).toBeUndefined();
+    expect(harness.registry.acquireStartup(harness.identity, "recovered")).toBeDefined();
+  });
+
+  it("does not launch after startup ownership changes before publication", async () => {
+    const harness = new CoordinatorHarness(roots);
+    vi.spyOn(harness.registry, "writeStartingIfStartupOwner").mockReturnValue(false);
+
+    await expect(harness.coordinator().ensureRunning(harness.identity)).rejects.toThrow(
+      "ownership changed before process launch",
+    );
+    expect(harness.launcher.launchCount).toBe(0);
+  });
+
+  it("terminates a child after startup ownership changes during launch", async () => {
+    const harness = new CoordinatorHarness(roots);
+    const publishStarting = harness.registry.writeStartingIfStartupOwner.bind(harness.registry);
+    vi.spyOn(harness.registry, "writeStartingIfStartupOwner")
+      .mockImplementationOnce(publishStarting)
+      .mockReturnValueOnce(false);
+
+    await expect(harness.coordinator().ensureRunning(harness.identity)).rejects.toThrow(
+      "ownership changed after process launch",
+    );
+    expect(harness.launcher.launchCount).toBe(1);
+    expect(harness.terminator.terminated).toContain(harness.launcher.lastPid);
+  });
+
+  it("keeps a live startup authoritative through a slow warm and delayed heartbeat", async () => {
+    const readinessPublicationGate = new ReadinessPublicationGate();
+    const harness = new CoordinatorHarness(roots, { readinessPublicationGate });
+    const starting = harness
+      .coordinator({ startupTimeoutMs: 3_000, heartbeatIntervalMs: 2_000 })
+      .ensureRunning(harness.identity);
+    const startingOutcome = starting.then(
+      (result) => ({ status: "fulfilled" as const, result }),
+      (error: unknown) => ({ status: "rejected" as const, error }),
+    );
+    let assertionFailure: unknown;
+    try {
+      await waitUntil(() => harness.registry.read(harness.identity)?.state === "starting");
+      const ownerBeforeStatus = harness.registry.startupOwner(harness.identity);
+      const controller = new DaemonController(
+        harness.registry,
+        harness.transport as unknown as LocalDaemonTransport,
+        dirname(harness.identity.registryDirectory),
+        { processTerminator: harness.terminator },
+      );
+
+      await expect(controller.status()).resolves.toEqual([
+        expect.objectContaining({ workspaceRoot: "/repo", state: "starting" }),
+      ]);
+      await expect(
+        harness.coordinator({ startupTimeoutMs: 100 }).ensureRunning(harness.identity),
+      ).rejects.toThrow(/timed out/i);
+      expect(harness.registry.startupOwner(harness.identity)).toEqual(ownerBeforeStatus);
+    } catch (error) {
+      assertionFailure = error;
+    } finally {
+      readinessPublicationGate.release();
+    }
+    const settledStarting = await startingOutcome;
+    if (assertionFailure !== undefined) throw assertionFailure;
+    if (settledStarting.status === "rejected") throw settledStarting.error;
+    expect(settledStarting.result).toMatchObject({ status: "ready", workspaceRoot: "/repo" });
+    expect(harness.launcher.launchCount).toBe(1);
+  }, 5_000);
+
+  it("recovers after a slow startup mutation owner is killed and elects one fresh daemon", async () => {
+    const harness = new CoordinatorHarness(roots);
+    const stateDirectory = dirname(harness.identity.registryDirectory);
+    const mutationOwner = await spawnStartupMutationOwner(
+      harness.identity.workspaceRoot,
+      stateDirectory,
+      1_100,
+      realProcessIds,
+    );
+    const mutationOwnerPid = mutationOwner.ownerPid;
+    await new NodeDaemonProcessTerminator(100, 5).terminate(mutationOwnerPid);
+    mutationOwner.process.kill("SIGKILL");
+    expect(harness.registry.list()).toHaveLength(1);
+    expect(harness.registry.startupOwner(harness.identity)).toMatchObject({
+      instanceId: "orphaned-mutation",
+    });
+    expect(() => process.kill(mutationOwnerPid, 0)).toThrow();
+    const controller = new DaemonController(
+      harness.registry,
+      harness.transport as unknown as LocalDaemonTransport,
+      stateDirectory,
+      { processTerminator: harness.terminator },
+    );
+
+    await expect(controller.status()).resolves.toEqual([]);
+    expect(harness.registry.startupOwner(harness.identity)).toBeUndefined();
+    expect(
+      harness.registry.readStoredInstance(harness.identity, "orphaned-mutation"),
+    ).toBeUndefined();
+    const [first, second] = await Promise.all([
+      harness.coordinator().ensureRunning(harness.identity),
+      harness.coordinator().ensureRunning(harness.identity),
+    ]);
+    expect([first.status, second.status].sort()).toEqual(["already-running", "ready"]);
+    expect(harness.launcher.launchCount).toBe(1);
+    await expect(harness.coordinator().ensureRunning(harness.identity)).resolves.toMatchObject({
+      status: "already-running",
+    });
+    expect(harness.launcher.launchCount).toBe(1);
+  }, 10_000);
 
   it("kills a real timed-out child before releasing startup ownership", async () => {
     const root = temporaryDirectory(roots);
@@ -275,17 +447,15 @@ describe("DaemonStartupCoordinator", () => {
   it("elects one fresh daemon after a mutation owner is killed", async () => {
     const harness = new CoordinatorHarness(roots);
     const stateDirectory = dirname(harness.identity.registryDirectory);
-    const readyPath = join(stateDirectory, "mutation-owner-ready");
-    const mutationOwner = spawnStartupMutationOwner(
+    const mutationOwner = await spawnStartupMutationOwner(
       harness.identity.workspaceRoot,
       stateDirectory,
-      readyPath,
+      10,
+      realProcessIds,
     );
-    await waitUntil(() => existsSync(readyPath));
-    const mutationOwnerPid = Number(readFileSync(readyPath, "utf8"));
-    realProcessIds.push(mutationOwnerPid);
+    const mutationOwnerPid = mutationOwner.ownerPid;
     await new NodeDaemonProcessTerminator(100, 5).terminate(mutationOwnerPid);
-    mutationOwner.kill("SIGKILL");
+    mutationOwner.process.kill("SIGKILL");
     const controller = new DaemonController(
       harness.registry,
       harness.transport as unknown as LocalDaemonTransport,
@@ -309,6 +479,27 @@ interface CoordinatorHarnessOptions {
   readonly neverReady?: boolean;
   readonly newDaemonPid?: number;
   readonly readyDelayMs?: number;
+  readonly readinessPublicationGate?: ReadinessPublicationGate;
+  readonly oldDaemonExitsAfterTerminate?: boolean;
+}
+
+class ReadinessPublicationGate {
+  private readonly publicationAllowed: Promise<void>;
+  private releasePublication!: () => void;
+
+  constructor() {
+    this.publicationAllowed = new Promise((resolve) => {
+      this.releasePublication = resolve;
+    });
+  }
+
+  wait(): Promise<void> {
+    return this.publicationAllowed;
+  }
+
+  release(): void {
+    this.releasePublication();
+  }
 }
 
 class CoordinatorHarness {
@@ -323,7 +514,9 @@ class CoordinatorHarness {
     this.identity = DaemonWorkspaceIdentity.from("/repo", stateDir);
     this.registry = new DaemonRegistry(this.identity.registryDirectory);
     this.launcher = new ReadyTestLauncher(this.registry, this.identity, this.terminator, options);
-    this.transport = new RegistryTransport(this.registry, this.identity);
+    this.transport = new RegistryTransport(this.registry, this.identity, (pid) => {
+      if (options.oldDaemonExitsAfterTerminate !== false) this.terminator.alive.delete(pid);
+    });
   }
 
   coordinator(
@@ -331,6 +524,7 @@ class CoordinatorHarness {
       readonly startupTimeoutMs?: number;
       readonly processTerminator?: DaemonProcessTerminator;
       readonly heartbeatIntervalMs?: number;
+      readonly now?: () => number;
     } = {},
   ): DaemonStartupCoordinator {
     return new DaemonStartupCoordinator(
@@ -343,6 +537,7 @@ class CoordinatorHarness {
           : { startupTimeoutMs: options.startupTimeoutMs }),
         pollIntervalMs: 1,
         processTerminator: options.processTerminator ?? this.terminator,
+        ...(options.now === undefined ? {} : { now: options.now }),
         ...(options.heartbeatIntervalMs === undefined
           ? {}
           : { heartbeatIntervalMs: options.heartbeatIntervalMs }),
@@ -396,21 +591,28 @@ class ReadyTestLauncher implements DaemonProcessLauncher {
     this.lastPid = pid;
     this.terminator.alive.add(pid);
     if (!this.options.neverReady) {
-      setTimeout(() => {
-        const starting = this.registry.readInstance(this.identity, instanceId);
-        if (starting?.state !== "starting") return;
-        this.registry.writeIfStartupOwner(this.identity, {
-          ...starting,
-          state: "ready",
-          readyAt: Date.now(),
-          fileCount: 2,
-        });
-      }, this.options.readyDelayMs ?? 0);
+      const readinessPublicationGate = this.options.readinessPublicationGate;
+      if (readinessPublicationGate === undefined) {
+        setTimeout(() => this.publishReady(instanceId), this.options.readyDelayMs ?? 0);
+      } else {
+        void readinessPublicationGate.wait().then(() => this.publishReady(instanceId));
+      }
     }
     return {
       pid,
       terminate: () => this.terminator.terminate(pid),
     };
+  }
+
+  private publishReady(instanceId: string): void {
+    const starting = this.registry.readInstance(this.identity, instanceId);
+    if (starting?.state !== "starting") return;
+    this.registry.writeIfStartupOwner(this.identity, {
+      ...starting,
+      state: "ready",
+      readyAt: Date.now(),
+      fileCount: 2,
+    });
   }
 }
 
@@ -421,6 +623,7 @@ class RegistryTransport {
   constructor(
     private readonly registry: DaemonRegistry,
     private readonly identity: DaemonWorkspaceIdentity,
+    private readonly daemonTerminated: (pid: number) => void = () => undefined,
   ) {}
 
   async request(_endpoint: string, request: DaemonRequest): Promise<DaemonResponse> {
@@ -430,6 +633,8 @@ class RegistryTransport {
     if (request.kind === "terminate") {
       this.terminationCount += 1;
       this.terminatedInstances.add(request.instanceId);
+      const record = this.registry.readStoredInstance(this.identity, request.instanceId);
+      if (record !== undefined) this.daemonTerminated(record.pid);
       return {
         kind: "terminating",
         instanceId: request.instanceId,
@@ -537,12 +742,18 @@ function spawnIdleProcess(processIds: number[]): Promise<number> {
   });
 }
 
+interface StartupMutationOwner {
+  readonly process: ChildProcess;
+  readonly ownerPid: number;
+}
+
 function spawnStartupMutationOwner(
   workspaceRoot: string,
   stateDirectory: string,
-  readyPath: string,
-): ChildProcess {
-  return spawn(
+  startupDelayMs: number,
+  processIds: number[],
+): Promise<StartupMutationOwner> {
+  const mutationOwner = spawn(
     process.execPath,
     [
       fileURLToPath(new URL("../../node_modules/tsx/dist/cli.mjs", import.meta.url)),
@@ -551,10 +762,25 @@ function spawnStartupMutationOwner(
       ),
       workspaceRoot,
       stateDirectory,
-      readyPath,
+      String(startupDelayMs),
     ],
-    { stdio: "ignore" },
+    { stdio: ["ignore", "ignore", "ignore", "ipc"] },
   );
+  return new Promise((resolve, reject) => {
+    mutationOwner.once("error", reject);
+    mutationOwner.once("spawn", () => processIds.push(mutationOwner.pid!));
+    mutationOwner.once("exit", (code, signal) => {
+      reject(new Error(`Mutation owner exited before readiness: code=${code} signal=${signal}`));
+    });
+    mutationOwner.once("message", (message) => {
+      if (typeof message !== "number" || !Number.isSafeInteger(message) || message <= 0) {
+        reject(new Error(`Mutation owner published invalid pid: ${String(message)}`));
+        return;
+      }
+      if (!processIds.includes(message)) processIds.push(message);
+      resolve({ process: mutationOwner, ownerPid: message });
+    });
+  });
 }
 
 async function waitUntil(predicate: () => boolean): Promise<void> {

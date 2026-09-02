@@ -72,4 +72,27 @@ describe("runSymnavBinary", () => {
     expect(vi.mocked(spawnSync).mock.calls[1]?.[2]?.env).not.toHaveProperty("SYMNAV_DAEMON");
     expect(vi.mocked(spawnSync).mock.calls[2]?.[2]?.env).toMatchObject({ SYMNAV_DAEMON: "1" });
   });
+
+  it("uses the configured E2E daemon mode for shared test state", () => {
+    process.env.SYMNAV_E2E_DAEMON_MODE = "1";
+
+    runSymnavBinary(["overview", "src/index.ts"], { cwd: "/fixture" });
+
+    expect(vi.mocked(spawnSync).mock.calls[0]?.[2]).toMatchObject({
+      env: { SYMNAV_DAEMON: "1" },
+    });
+  });
+
+  it("keeps caller-owned state directories cold unless explicitly overridden", () => {
+    process.env.SYMNAV_E2E_DAEMON_MODE = "1";
+
+    runSymnavBinary(["overview", "src/index.ts"], {
+      cwd: "/fixture",
+      env: { SYMNAV_STATE_DIR: "/isolated-state" },
+    });
+
+    expect(vi.mocked(spawnSync).mock.calls[0]?.[2]).toMatchObject({
+      env: { SYMNAV_DAEMON: "0", SYMNAV_STATE_DIR: "/isolated-state" },
+    });
+  });
 });

@@ -1,6 +1,6 @@
 import { closeSync, openSync } from "node:fs";
-import { totalmem } from "node:os";
-import { dirname } from "node:path";
+import { tmpdir, totalmem } from "node:os";
+import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawn } from "node:child_process";
 import type { DaemonWorkspaceIdentity } from "./daemon-workspace-identity.js";
@@ -119,9 +119,10 @@ export class NodeDaemonProcessLauncher implements DaemonProcessLauncher {
     instanceId: string,
     processToken: string,
   ): Promise<DaemonProcess> {
+    const stateDirectory = resolve(dirname(identity.registryDirectory));
     const configuration: DaemonProcessConfiguration = {
       workspaceRoot: identity.workspaceRoot,
-      stateDir: dirname(identity.registryDirectory),
+      stateDir: stateDirectory,
       workspaceKey: identity.workspaceKey,
       instanceId,
       processToken,
@@ -142,9 +143,10 @@ export class NodeDaemonProcessLauncher implements DaemonProcessLauncher {
           encodedConfiguration,
         ],
         {
+          cwd: tmpdir(),
           detached: true,
           stdio: ["ignore", logDescriptor, logDescriptor],
-          env: process.env,
+          env: { ...process.env, SYMNAV_STATE_DIR: stateDirectory },
         },
       );
       child.once("error", (error) => {

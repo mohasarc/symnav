@@ -1,5 +1,4 @@
 import type { ProgramDependencies } from "../program-dependencies.js";
-import { CliProgramExecutor } from "../cli-program-executor.js";
 import type { CliExecutionRequest, CommandExecutionResult } from "../command-execution-result.js";
 import { WorkspaceRequestScopeFactory } from "../workspace-request-scope.js";
 import type {
@@ -13,6 +12,7 @@ import { NodeDaemonProcessTerminator } from "./daemon-process-launcher.js";
 import { DAEMON_IDLE_TIMEOUT_MS, DaemonLifetime } from "./daemon-lifetime.js";
 import { DaemonLogger } from "./daemon-logger.js";
 import { DaemonResourceMonitor } from "./daemon-resource-monitor.js";
+import { RetainedWorkspaceProgram } from "./retained-workspace-program.js";
 import type { DaemonRegistry } from "./daemon-registry.js";
 import type { DaemonWorkspaceIdentity } from "./daemon-workspace-identity.js";
 import type { LocalDaemonTransport } from "./local-daemon-transport.js";
@@ -55,19 +55,17 @@ export class WorkspaceDaemon {
   private shutdownStarted = false;
 
   constructor(private readonly options: WorkspaceDaemonOptions) {
-    const retainedBackends = options.dependencies.backends();
-    const retainedDependencies: ProgramDependencies = {
-      ...options.dependencies,
-      backends: () => retainedBackends,
-      backendRefreshed: (summary) => {
-        options.dependencies.backendRefreshed?.(summary);
-        this.logger.record({ kind: "freshness", ...summary });
-      },
-    };
     this.now = options.now ?? Date.now;
     this.logger = new DaemonLogger(options.identity.logPath, { now: this.now });
-    this.executor = options.executor ?? new CliProgramExecutor(retainedDependencies);
-    this.scopeFactory = new WorkspaceRequestScopeFactory(options.dependencies.fs, retainedBackends);
+    const retainedProgram = new RetainedWorkspaceProgram(options.dependencies, (summary) => {
+      options.dependencies.backendRefreshed?.(summary);
+      this.logger.record({ kind: "freshness", ...summary });
+    });
+    this.executor = options.executor ?? retainedProgram;
+    this.scopeFactory = new WorkspaceRequestScopeFactory(
+      options.dependencies.fs,
+      retainedProgram.backends,
+    );
     this.exit = options.exit ?? ((code) => process.exit(code));
     this.lifetime = new DaemonLifetime(
       { now: this.now },

@@ -6,7 +6,6 @@ import {
   realpathSync,
   readdirSync,
   renameSync,
-  rmSync,
   unlinkSync,
   writeFileSync,
 } from "node:fs";
@@ -22,12 +21,14 @@ import { DaemonRegistry } from "../../../src/daemon/daemon-registry.js";
 import { DaemonWorkspaceIdentity } from "../../../src/daemon/daemon-workspace-identity.js";
 import { LocalDaemonTransport } from "../../../src/daemon/local-daemon-transport.js";
 import { createDefaultDependencies } from "../../../src/program.js";
+import { canonicalWorkspaceRoot } from "../../helpers/canonical-workspace-root.js";
+import { E2eProcessCleanup } from "../../helpers/e2e-process-cleanup.js";
 
 describe("symnav daemon parity", () => {
   const harnesses: DaemonParityHarness[] = [];
 
-  afterEach(() => {
-    for (const harness of harnesses) harness.dispose();
+  afterEach(async () => {
+    for (const harness of harnesses) await harness.dispose();
     harnesses.length = 0;
   });
 
@@ -237,7 +238,7 @@ describe("symnav daemon parity", () => {
     await waitUntil(() => existsSync(controlled.requestStartedPath));
     const execution = harness.warmAsync(["overview", "input.ts"]);
     await new Promise((resolve) => setTimeout(resolve, 100));
-    process.kill(controlled.child.pid!, "SIGKILL");
+    process.kill(controlled.record.pid, "SIGKILL");
 
     expect(await execution).toEqual(harness.cold(["overview", "input.ts"]));
     expect(harness.warm(["overview", "input.ts"])).toEqual(harness.cold(["overview", "input.ts"]));
@@ -272,6 +273,7 @@ class DaemonParityHarness {
   readonly root = mkdtempSync(join(tmpdir(), "symnav-daemon-parity-"));
   readonly workspaceRoot = join(this.root, "workspace");
   private readonly stateDirectory = join(this.root, "state");
+  private readonly helperProcesses: ChildProcess[] = [];
 
   constructor() {
     mkdirSync(join(this.workspaceRoot, ".git"), { recursive: true });
@@ -333,8 +335,7 @@ class DaemonParityHarness {
   }
 
   async orphanStartupMutation(): Promise<void> {
-    const controlledWorkspaceRoot = realpathSync(this.workspaceRoot);
-    const readyPath = join(this.stateDirectory, "orphaned-mutation-ready");
+    const controlledWorkspaceRoot = canonicalWorkspaceRoot(realpathSync(this.workspaceRoot));
     const child = spawn(
       process.execPath,
       [
@@ -342,19 +343,31 @@ class DaemonParityHarness {
         fileURLToPath(new URL("../../helpers/daemon-startup-mutation-owner.ts", import.meta.url)),
         controlledWorkspaceRoot,
         this.stateDirectory,
-        readyPath,
+        "0",
       ],
-      { stdio: "ignore" },
+      { stdio: ["ignore", "ignore", "ignore", "ipc"] },
     );
-    await waitUntil(() => existsSync(readyPath));
-    const mutationOwnerPid = Number(readFileSync(readyPath, "utf8"));
+    this.helperProcesses.push(child);
+    const mutationOwnerPid = await new Promise<number>((resolve, reject) => {
+      child.once("error", reject);
+      child.once("exit", (code, signal) => {
+        reject(new Error(`Mutation owner exited before readiness: code=${code} signal=${signal}`));
+      });
+      child.once("message", (message) => {
+        if (typeof message !== "number" || !Number.isSafeInteger(message) || message <= 0) {
+          reject(new Error(`Mutation owner published invalid pid: ${String(message)}`));
+          return;
+        }
+        resolve(message);
+      });
+    });
     process.kill(mutationOwnerPid, "SIGKILL");
     child.kill("SIGKILL");
     await waitUntil(() => !processIsAlive(mutationOwnerPid));
   }
 
   async startControlledDaemon(releaseArgument = "--no-release"): Promise<ControlledDaemon> {
-    const controlledWorkspaceRoot = realpathSync(this.workspaceRoot);
+    const controlledWorkspaceRoot = canonicalWorkspaceRoot(realpathSync(this.workspaceRoot));
     const identity = DaemonWorkspaceIdentity.from(controlledWorkspaceRoot, this.stateDirectory);
     const registry = new DaemonRegistry(identity.registryDirectory);
     const instanceId = "controlled-crash";
@@ -387,6 +400,7 @@ class DaemonParityHarness {
         },
       },
     );
+    this.helperProcesses.push(child);
     await waitUntil(() => existsSync(`${readyPath}.boot`));
     const daemonPid = Number(readFileSync(`${readyPath}.boot`, "utf8"));
     const record: DaemonRecord = {
@@ -440,11 +454,24 @@ class DaemonParityHarness {
       .map((line) => (JSON.parse(line) as { executionMode: string }).executionMode);
   }
 
-  dispose(): void {
-    try {
-      process.kill(this.onlyDaemonPid(), "SIGTERM");
-    } catch {}
-    rmSync(this.root, { recursive: true, force: true });
+  async dispose(): Promise<void> {
+    const daemonProcessIds = this.daemonProcessIds();
+    await E2eProcessCleanup.terminate(daemonProcessIds, this.helperProcesses);
+    this.helperProcesses.length = 0;
+    E2eProcessCleanup.removeDirectories([this.root]);
+  }
+
+  private daemonProcessIds(): readonly number[] {
+    const recordsDirectory = join(this.stateDirectory, "daemons");
+    if (!existsSync(recordsDirectory)) return [];
+    return readdirSync(recordsDirectory)
+      .filter((name) => name.endsWith(".json"))
+      .map((name) => {
+        const record = JSON.parse(readFileSync(join(recordsDirectory, name), "utf8")) as {
+          readonly pid: number;
+        };
+        return record.pid;
+      });
   }
 
   private run(

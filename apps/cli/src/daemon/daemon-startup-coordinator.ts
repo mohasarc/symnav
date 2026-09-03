@@ -43,6 +43,7 @@ class DaemonOwnedButUnresponsiveError extends Error {}
 
 export class DaemonStartupCoordinator {
   private readonly coordinationGraceMs: number;
+  private readonly childFailureRetryLimit: number;
   private readonly terminationTimeoutMs: number;
   private readonly pollIntervalMs: number;
   private readonly now: () => number;
@@ -62,6 +63,7 @@ export class DaemonStartupCoordinator {
   ) {
     const policy = options.policy;
     this.coordinationGraceMs = policy.startup.coordinationGraceMs;
+    this.childFailureRetryLimit = policy.startup.childFailureRetryLimit;
     this.terminationTimeoutMs = policy.startup.previousInstanceTerminationTimeoutMs;
     this.pollIntervalMs = policy.startup.observationPollIntervalMs;
     this.now = options.now ?? Date.now;
@@ -72,13 +74,19 @@ export class DaemonStartupCoordinator {
   }
 
   async ensureRunning(identity: DaemonWorkspaceIdentity): Promise<DaemonStartResult> {
-    try {
-      return await this.triggerAndWait(identity);
-    } catch (error) {
-      if (!(error instanceof DaemonChildExitError || error instanceof DaemonWarmupLostError)) {
-        throw error;
+    let failureCount = 0;
+    while (true) {
+      try {
+        return await this.triggerAndWait(identity);
+      } catch (error) {
+        if (
+          !(error instanceof DaemonChildExitError || error instanceof DaemonWarmupLostError) ||
+          failureCount >= this.childFailureRetryLimit
+        ) {
+          throw error;
+        }
+        failureCount += 1;
       }
-      return this.triggerAndWait(identity);
     }
   }
 

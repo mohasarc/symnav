@@ -24,11 +24,15 @@ import { DaemonRuntimeValues } from "./daemon-runtime-values.js";
 import type { CompletionSpoolManifest } from "./completion-spool.js";
 
 interface LocalDaemonTransportOptions {
+  readonly responseTimeoutPurpose?: "ordinary" | "status-observer";
   readonly writeChunkSize?: number;
   readonly outputDirectory?: string;
 }
 
-export type LocalDaemonTransportPolicy = Pick<DaemonPolicyValues, "transport" | "output">;
+export type LocalDaemonTransportPolicy = Pick<
+  DaemonPolicyValues,
+  "transport" | "delivery" | "output"
+>;
 
 export interface DaemonServerSend {
   (response: DaemonServerMessage): Promise<void>;
@@ -280,14 +284,19 @@ export class LocalDaemonTransport {
   private readonly maximumControlFrameBytes: number;
   private readonly maximumChunkRawBytes: number;
   private readonly outputPolicy: DaemonPolicyValues["output"];
+  private readonly deliveryPolicy: DaemonPolicyValues["delivery"];
 
   constructor(policy: LocalDaemonTransportPolicy, options: LocalDaemonTransportOptions = {}) {
     this.maximumFrameBytes = policy.transport.maximumJsonPayloadBytes;
-    this.requestTimeoutMs = policy.transport.singleResponseTimeoutMs;
+    this.requestTimeoutMs =
+      options.responseTimeoutPurpose === "status-observer"
+        ? policy.transport.statusResponseTimeoutMs
+        : policy.transport.singleResponseTimeoutMs;
     this.executionRequestTimeoutMs = policy.transport.executionAdmissionTimeoutMs;
     this.maximumControlFrameBytes = policy.transport.maximumExecutionControlPayloadBytes;
     this.maximumChunkRawBytes = policy.output.maximumChunkRawBytes;
     this.outputPolicy = policy.output;
+    this.deliveryPolicy = policy.delivery;
     this.writeChunkSize = options.writeChunkSize;
     this.outputDirectory = options.outputDirectory;
   }
@@ -386,24 +395,34 @@ export class LocalDaemonTransport {
   execute(endpoint: string, request: DaemonExecuteRequest): Promise<DaemonExecutionReceipt> {
     return this.executeOnce(endpoint, request).then((receipt) => ({
       acceptance: receipt.acceptance,
-      completion: this.completeWithOneReattachment(endpoint, request, receipt.completion),
+      completion: this.completeWithReattachments(endpoint, request, receipt.completion),
     }));
   }
 
-  private async completeWithOneReattachment(
+  private async completeWithReattachments(
     endpoint: string,
     request: DaemonExecuteRequest,
     completion: DaemonExecutionReceipt["completion"],
   ): DaemonExecutionReceipt["completion"] {
-    try {
-      return await completion;
-    } catch (firstError) {
-      if (!LocalDaemonTransport.isAcceptedConnectionClose(firstError, request)) throw firstError;
+    let currentCompletion = completion;
+    let reattachmentCount = 0;
+    while (true) {
       try {
-        const reattached = await this.executeOnce(endpoint, request);
-        return await reattached.completion;
-      } catch {
-        throw firstError;
+        return await currentCompletion;
+      } catch (firstError) {
+        if (
+          !LocalDaemonTransport.isAcceptedConnectionClose(firstError, request) ||
+          reattachmentCount >= this.deliveryPolicy.postAcceptanceExecutionReattachmentLimit
+        ) {
+          throw firstError;
+        }
+        try {
+          const reattached = await this.executeOnce(endpoint, request);
+          currentCompletion = reattached.completion;
+          reattachmentCount += 1;
+        } catch {
+          throw firstError;
+        }
       }
     }
   }
@@ -429,7 +448,7 @@ export class LocalDaemonTransport {
       let terminal = false;
       let outerSettled = false;
       let completionSettled = false;
-      let resumeStarted = false;
+      let resumeCount = 0;
       let resolveCompletion!: (value: Awaited<DaemonExecutionReceipt["completion"]>) => void;
       let rejectCompletion!: (error: DaemonTransportError) => void;
       const completion = new Promise<Awaited<DaemonExecutionReceipt["completion"]>>(
@@ -454,7 +473,7 @@ export class LocalDaemonTransport {
       };
       const resume = (): boolean => {
         if (
-          resumeStarted ||
+          resumeCount >= this.deliveryPolicy.resultTransferResumeLimitPerExecutionAttempt ||
           completionSettled ||
           acceptance === undefined ||
           transfer.manifest === undefined ||
@@ -462,7 +481,7 @@ export class LocalDaemonTransport {
         ) {
           return false;
         }
-        resumeStarted = true;
+        resumeCount += 1;
         socket.destroy();
         transfer.beginConnection();
         void this.fetchCompletion(endpoint, request, output, transfer)

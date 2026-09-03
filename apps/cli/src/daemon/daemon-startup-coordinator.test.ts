@@ -91,12 +91,10 @@ describe("DaemonStartupCoordinator", () => {
   it("shares one readiness record without a healthy startup deadline", async () => {
     const readinessGate = new ReadinessPublicationGate();
     const harness = new CoordinatorHarness(roots, { readinessPublicationGate: readinessGate });
-    const coordinator = harness.coordinator({ startupTimeoutMs: 5 });
+    const coordinator = harness.coordinator();
     const trigger = await coordinator.trigger(harness.identity);
     const firstWait = coordinator.waitUntilReady(harness.identity);
-    const secondWait = harness
-      .coordinator({ startupTimeoutMs: 5 })
-      .waitUntilReady(harness.identity);
+    const secondWait = harness.coordinator().waitUntilReady(harness.identity);
     let settled = false;
     void Promise.all([firstWait, secondWait]).then(() => {
       settled = true;
@@ -134,9 +132,10 @@ describe("DaemonStartupCoordinator", () => {
   it("keeps waiting for its live child after a transient ready-record probe failure", async () => {
     const harness = new CoordinatorHarness(roots, { readyAuthenticationFailures: 1 });
 
-    await expect(
-      harness.coordinator({ startupTimeoutMs: 1_000 }).ensureRunning(harness.identity),
-    ).resolves.toMatchObject({ status: "ready", workspaceRoot: "/repo" });
+    await expect(harness.coordinator().ensureRunning(harness.identity)).resolves.toMatchObject({
+      status: "ready",
+      workspaceRoot: "/repo",
+    });
 
     expect(harness.launcher.launchCount).toBe(1);
     expect(harness.registry.readStored(harness.identity)).toMatchObject({
@@ -341,9 +340,7 @@ describe("DaemonStartupCoordinator", () => {
     const harness = new CoordinatorHarness(roots, { oldDaemonExitsAfterTerminate: false });
     harness.seedReady("existing", "0.0.9", 4003);
 
-    const starting = harness
-      .coordinator({ startupTimeoutMs: 1_000 })
-      .ensureRunning(harness.identity);
+    const starting = harness.coordinator().ensureRunning(harness.identity);
     await waitUntil(() => harness.transport.terminationCount === 1);
     await new Promise((resolve) => setTimeout(resolve, 10));
 
@@ -435,9 +432,7 @@ describe("DaemonStartupCoordinator", () => {
     expect(originalRecord?.pid).toBe(harness.launcher.lastPid);
     harness.terminator.currentProcessIsAlive = false;
 
-    const laterCaller = harness
-      .coordinator({ startupTimeoutMs: 1_000 })
-      .ensureRunning(harness.identity);
+    const laterCaller = harness.coordinator().ensureRunning(harness.identity);
     readinessPublicationGate.release();
 
     await expect(laterCaller).resolves.toMatchObject({
@@ -457,7 +452,7 @@ describe("DaemonStartupCoordinator", () => {
       childExit: { code: 17, signal: null, cause: "exit" },
       childExitDelayMs: 5,
     });
-    const coordinator = harness.coordinator({ startupTimeoutMs: 1_000 });
+    const coordinator = harness.coordinator();
     const startedAt = Date.now();
 
     await coordinator.trigger(harness.identity);
@@ -558,9 +553,10 @@ describe("DaemonStartupCoordinator", () => {
       state: "starting",
     });
 
-    await expect(
-      harness.coordinator({ startupTimeoutMs: 100 }).ensureRunning(harness.identity),
-    ).resolves.toMatchObject({ status: "ready", workspaceRoot: "/repo" });
+    await expect(harness.coordinator().ensureRunning(harness.identity)).resolves.toMatchObject({
+      status: "ready",
+      workspaceRoot: "/repo",
+    });
 
     expect(harness.launcher.launchCount).toBe(1);
     expect(harness.registry.readStored(harness.identity)?.instanceId).not.toBe("legacy-starting");
@@ -905,7 +901,6 @@ class CoordinatorHarness {
 
   coordinator(
     options: {
-      readonly startupTimeoutMs?: number;
       readonly terminationTimeoutMs?: number;
       readonly policy?: Pick<DaemonPolicyValues, "startup" | "shutdown">;
       readonly processTerminator?: DaemonProcessTerminator;
@@ -917,9 +912,6 @@ class CoordinatorHarness {
       this.launcher,
       this.transport as unknown as LocalDaemonTransport,
       {
-        ...(options.startupTimeoutMs === undefined
-          ? {}
-          : { startupTimeoutMs: options.startupTimeoutMs }),
         ...(options.terminationTimeoutMs === undefined
           ? {}
           : { terminationTimeoutMs: options.terminationTimeoutMs }),

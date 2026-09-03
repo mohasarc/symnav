@@ -225,6 +225,8 @@ describe("@symnav/daemon package boundary", () => {
       "startupHeartbeatIntervalMs",
       "stopTimeoutMs?:",
       "terminationTimeoutMs?:",
+      "startupTimeoutMs",
+      "DaemonPolicyCodec",
       "DaemonResourcePolicy",
     ]) {
       expect(sources).not.toContain(retiredSeam);

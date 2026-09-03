@@ -93,11 +93,7 @@ describe("LocalDaemonTransport validation", () => {
           );
         });
       });
-      const StatusObserverTransport = RuntimeLocalDaemonTransport as unknown as new (
-        snapshot: typeof policy.values,
-        options: { readonly responseTimeoutPurpose: "status-observer" },
-      ) => RuntimeLocalDaemonTransport;
-      const transport = new StatusObserverTransport(policy.values, {
+      const transport = new RuntimeLocalDaemonTransport(policy.values, {
         responseTimeoutPurpose: "status-observer",
       });
 

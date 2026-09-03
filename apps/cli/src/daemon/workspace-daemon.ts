@@ -1,5 +1,10 @@
 import type { ProgramDependencies } from "../program-dependencies.js";
-import type { DaemonPolicy, DaemonPolicyValues } from "@symnav/daemon";
+import {
+  DaemonExecutionFailures,
+  type DaemonExecutionFailureCode,
+  type DaemonPolicy,
+  type DaemonPolicyValues,
+} from "@symnav/daemon";
 import type { CommandExecutionResult, CommandOutputRecord } from "../command-execution-result.js";
 import {
   AcceptedRequestCorruptionError,
@@ -8,7 +13,6 @@ import {
 import type {
   DaemonActivitySnapshot,
   DaemonDeliveryOutcome,
-  DaemonExecutionFailureCode,
   DaemonExecutionServerFrame,
   DaemonRecord,
   DaemonRequest,
@@ -98,7 +102,7 @@ export class WorkspaceDaemon {
   private lastCompletedMonotonicAt: number | undefined;
   private workerReady = false;
   private shutdownStarted = false;
-  private shutdownFailureCode: DaemonExecutionFailureCode | undefined;
+  private shutdownFailureCode: "stopping" | "controlled-resource" | undefined;
   private shutdownOperation: Promise<void> | undefined;
   private forcedWorkerShutdown: Promise<void> | undefined;
   private readonly forceEscalated: Promise<void>;
@@ -634,17 +638,15 @@ export class WorkspaceDaemon {
         failureCode: "internal",
         errorName: DaemonLogger.errorName(error),
       });
-      const code =
-        (this.resourceInterruptedRequests.delete(request.requestId)
-          ? "controlled-resource"
-          : undefined) ??
-        (error instanceof CompletionSpoolCapacityError
-          ? "response-capacity"
-          : error instanceof DaemonNavigationWorkerExitedError
-            ? this.shutdownFailureCode === "stopping"
-              ? "stopping"
-              : "worker-exit"
-            : (this.shutdownFailureCode ?? (this.shutdownStarted ? "stopping" : "internal")));
+      const code = DaemonExecutionFailures.classify({
+        resourceInterrupted: this.resourceInterruptedRequests.delete(request.requestId),
+        responseCapacityExceeded: error instanceof CompletionSpoolCapacityError,
+        workerExited: error instanceof DaemonNavigationWorkerExitedError,
+        ...(this.shutdownFailureCode === undefined
+          ? {}
+          : { shutdownFailureCode: this.shutdownFailureCode }),
+        shutdownStarted: this.shutdownStarted,
+      });
       await spool?.dispose().catch((cleanupError) => {
         this.logger.record({
           kind: "failure",

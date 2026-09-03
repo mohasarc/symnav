@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { createWorkspace } from "@symnav/core";
-import type { DaemonCommandName, DaemonPolicy } from "@symnav/daemon";
+import type { DaemonCommandName, DaemonExecutionFailureCode, DaemonPolicy } from "@symnav/daemon";
 import { CliProgramExecutor } from "../cli-program-executor.js";
 import type {
   CliExecutionRequest,
@@ -9,11 +9,7 @@ import type {
 } from "../command-execution-result.js";
 import { ControlledCommandResult } from "../command-execution-result.js";
 import type { ProgramDependencies } from "../program-dependencies.js";
-import type {
-  DaemonExecuteRequest,
-  DaemonExecutionFailureCode,
-  DaemonRecord,
-} from "./daemon-protocol.js";
+import type { DaemonExecuteRequest, DaemonRecord } from "./daemon-protocol.js";
 import { DaemonRegistry } from "./daemon-registry.js";
 import {
   NodeDaemonProcessLauncher,

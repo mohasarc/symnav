@@ -32,8 +32,7 @@ export interface PreparedWorkspaceScope {
 export class WorkspaceSession {
   readonly #fileSystem: FileSystem;
   readonly #backends: readonly LanguageBackend[];
-  #catalog: WorkspaceCatalog | undefined;
-  #retainedStartDirectory: string | undefined;
+  readonly #catalog: WorkspaceCatalog | undefined;
 
   constructor(options: {
     readonly fileSystem: FileSystem;
@@ -60,13 +59,6 @@ export class WorkspaceSession {
     if (coverage === "selection" || this.#catalog === undefined) {
       return createWorkspace({ startDir: startDirectory, fs: this.#fileSystem });
     }
-    if (
-      this.#retainedStartDirectory !== undefined &&
-      this.#retainedStartDirectory !== startDirectory
-    ) {
-      this.#catalog = new WorkspaceCatalog(this.#fileSystem);
-    }
-    this.#retainedStartDirectory = startDirectory;
     return this.#catalog.refresh(startDirectory);
   }
 

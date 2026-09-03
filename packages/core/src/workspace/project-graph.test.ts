@@ -469,9 +469,9 @@ describe("ProjectGraph", () => {
     const publishedProject = graph.primary("owned.ts");
     graph.configuredProjectCountAdjustment = 1;
 
-    await expect(
-      graph.refresh(snapshot(workspaceFile("owned.ts", "candidate"))),
-    ).rejects.toThrow("Project graph preparation returned 2 configured projects for 1 configurations");
+    await expect(graph.refresh(snapshot(workspaceFile("owned.ts", "candidate")))).rejects.toThrow(
+      "Project graph preparation returned 2 configured projects for 1 configurations",
+    );
 
     expect(graph.primary("owned.ts")).toBe(publishedProject);
     expect(graph.file("owned.ts")).toBe(publishedFile);

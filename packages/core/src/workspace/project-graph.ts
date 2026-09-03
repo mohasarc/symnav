@@ -118,6 +118,7 @@ export abstract class ProjectGraph<
       inferredFiles,
       inputCollector,
     });
+    this.validatePreparedProjectCount(configurations, prepared);
     const activeInputs = [...discovered.flatMap(({ parsed }) => parsed.inputs), ...prepared.inputs];
     const observations = inputCollector.observations();
     ProjectGraph.validateActiveInputs(activeInputs, observations);
@@ -284,6 +285,16 @@ export abstract class ProjectGraph<
       left.metadata.modifiedAtMs === right.metadata.modifiedAtMs &&
       left.metadata.changeToken === right.metadata.changeToken &&
       left.metadata.fileIdentity === right.metadata.fileIdentity
+    );
+  }
+
+  private validatePreparedProjectCount(
+    configurations: readonly ProjectConfigurationMembership<ConfigurationUnit>[],
+    prepared: PreparedProjectGraph<Project>,
+  ): void {
+    if (prepared.configuredProjects.length === configurations.length) return;
+    throw new Error(
+      `Project graph preparation returned ${prepared.configuredProjects.length} configured projects for ${configurations.length} configurations`,
     );
   }
 

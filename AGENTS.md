@@ -6,10 +6,12 @@
 
 ## Repo layout
 
-- `apps/cli` — the `symnav` binary. Wires Commander, owns the user-facing CLI surface, depends on the three production libraries below.
+- `apps/cli` — the `symnav` binary. Wires Commander, owns the user-facing CLI surface, depends on the five production libraries below.
 - `packages/core` — language-agnostic primitives and the cross-language backend interface. Has no internal dependencies.
-- `packages/renderer` — output formatters (text, JSON). Depends only on `@symnav/core`.
+- `packages/daemon` — portable host execution, output, diagnostic, command, and lifecycle report contracts. Has no internal dependencies. Daemon mechanisms move here only when their real implementations migrate.
+- `packages/renderer` — output formatters (text, JSON). May depend only on `@symnav/core` and `@symnav/daemon`.
 - `packages/backend-typescript` — the TypeScript language backend. Depends only on `@symnav/core`.
+- `packages/telemetry` — shape-only usage capture, storage, and aggregation. Has no internal dependencies.
 - `packages/testing` — test-only utilities (fixture loader, ESLint config helper, fixtures themselves). Importable from any package's _test_ code; never from production code. Private; never published.
 
 ## Day-to-day commands
@@ -81,13 +83,15 @@ Writing rules:
 
 The package dependency graph is locked. A given package may import only from the packages listed below.
 
-| Package                      | May depend on (internal)                                         |
-| ---------------------------- | ---------------------------------------------------------------- |
-| `@symnav/core`               | (nothing)                                                        |
-| `@symnav/renderer`           | `@symnav/core`                                                   |
-| `@symnav/backend-typescript` | `@symnav/core`                                                   |
-| `symnav` (apps/cli)          | `@symnav/core`, `@symnav/renderer`, `@symnav/backend-typescript` |
-| `@symnav/testing`            | (nothing)                                                        |
+| Package                      | May depend on (internal)                                                                                |
+| ---------------------------- | ------------------------------------------------------------------------------------------------------- |
+| `@symnav/core`               | (nothing)                                                                                               |
+| `@symnav/daemon`             | (nothing)                                                                                               |
+| `@symnav/renderer`           | `@symnav/core`, `@symnav/daemon`                                                                        |
+| `@symnav/backend-typescript` | `@symnav/core`                                                                                          |
+| `@symnav/telemetry`          | (nothing)                                                                                               |
+| `symnav` (apps/cli)          | `@symnav/core`, `@symnav/daemon`, `@symnav/renderer`, `@symnav/backend-typescript`, `@symnav/telemetry` |
+| `@symnav/testing`            | (nothing)                                                                                               |
 
 `@symnav/testing` is additionally importable from any package's test files. Production code may not import it.
 

@@ -33,6 +33,7 @@ class FakeProjectGraph extends ProjectGraph<FakeConfiguration, FakeProject> {
   configurations = new Map<string, FakeConfiguration>();
   preparedInputPaths: readonly string[] = [];
   preparedInputs: readonly ProjectInput[] = [];
+  membershipFiles: readonly WorkspaceFile[] | undefined;
 
   constructor(fileSystem: FileSystem) {
     super(fileSystem);
@@ -84,6 +85,7 @@ class FakeProjectGraph extends ProjectGraph<FakeConfiguration, FakeProject> {
     configuration: FakeConfiguration,
     snapshot: WorkspaceSnapshot,
   ): readonly WorkspaceFile[] {
+    if (this.membershipFiles) return this.membershipFiles;
     return snapshot.files.filter((file) => configuration.filePaths.includes(file.relative));
   }
 
@@ -387,6 +389,61 @@ describe("ProjectGraph", () => {
       "Project input /repo/active.json does not match observed content",
     );
 
+    expect(graph.primary("owned.ts")).toBe(publishedProject);
+    expect(graph.file("owned.ts")).toBe(publishedFile);
+  });
+
+  it("passes canonical snapshot members into project preparation", async () => {
+    const graph = new FakeProjectGraph(
+      new InMemoryFileSystem({
+        "/repo/root.json": "root",
+      }),
+    );
+    graph.initialPaths = ["/repo/root.json"];
+    graph.configurations.set("/repo/root.json", {
+      referencedPaths: [],
+      filePaths: ["owned.ts"],
+    });
+    const snapshotFile = workspaceFile("owned.ts", "revision");
+    graph.membershipFiles = [{ ...snapshotFile, metadata: { ...snapshotFile.metadata } }];
+
+    await graph.refresh(snapshot(snapshotFile));
+
+    expect(graph.preparationRequests[0]?.configurations[0]?.files[0]).toBe(snapshotFile);
+  });
+
+  it("rejects same-relative foreign membership without replacing the graph", async () => {
+    const graph = new FakeProjectGraph(
+      new InMemoryFileSystem({
+        "/repo/root.json": "root",
+      }),
+    );
+    graph.initialPaths = ["/repo/root.json"];
+    graph.configurations.set("/repo/root.json", {
+      referencedPaths: [],
+      filePaths: ["owned.ts"],
+    });
+    const publishedFile = workspaceFile("owned.ts", "published");
+    await graph.refresh(snapshot(publishedFile));
+    const publishedProject = graph.primary("owned.ts");
+    graph.membershipFiles = [
+      {
+        relative: "owned.ts",
+        absolute: "/outside/owned.ts",
+        metadata: {
+          size: 999,
+          modifiedAtMs: 999,
+          changeToken: "foreign",
+          fileIdentity: "foreign",
+        },
+      },
+    ];
+
+    await expect(
+      graph.refresh(snapshot(workspaceFile("owned.ts", "candidate"))),
+    ).rejects.toThrow("Project configuration /repo/root.json returned non-snapshot file owned.ts");
+
+    expect(graph.preparationRequests).toHaveLength(1);
     expect(graph.primary("owned.ts")).toBe(publishedProject);
     expect(graph.file("owned.ts")).toBe(publishedFile);
   });

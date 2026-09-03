@@ -2,7 +2,8 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, relative } from "node:path";
 
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { SyntaxKind } from "ts-morph";
 
 import {
   GraphTraverser,
@@ -14,6 +15,8 @@ import {
 } from "@symnav/core";
 
 import { TypeScriptBackend } from "./typescript-backend.js";
+import { TypeScriptSemanticQueryService } from "./typescript-semantic-query-service.js";
+import { TypeScriptWorkspaceState } from "./typescript-workspace-state.js";
 
 const mutableFixtures: MutableSemanticFixture[] = [];
 
@@ -22,6 +25,146 @@ afterEach(() => {
 });
 
 describe("TypeScriptSemanticQueryService", () => {
+  it("shares each identity query promise independently within one turn", async () => {
+    const fileSystem = new InMemoryFileSystem({
+      "/repo/src/app.ts": [
+        "export function target(): void {}",
+        "export function caller(): void { target(); }",
+        "",
+      ].join("\n"),
+    });
+    const files = workspaceFiles(fileSystem, "src/app.ts");
+    const snapshot: WorkspaceSnapshot = { root: "/repo", files };
+    const state = new TypeScriptWorkspaceState(fileSystem);
+    await state.refresh(files);
+    const queries = new TypeScriptSemanticQueryService(undefined, state);
+    const target = identity("src/app.ts", "target");
+    const caller = identity("src/app.ts", "caller");
+    queries.beginTurn(snapshot);
+
+    const definitions = queries.findDefinitions(target);
+    const callTarget = queries.findCallTarget(target);
+    const callers = queries.findCallers(target);
+    const callees = queries.findCallees(caller);
+
+    expect(queries.findDefinitions(target)).toBe(definitions);
+    expect(queries.findCallTarget(target)).toBe(callTarget);
+    expect(queries.findCallers(target)).toBe(callers);
+    expect(queries.findCallees(caller)).toBe(callees);
+    await expect(definitions).resolves.toHaveLength(1);
+    await expect(callTarget).resolves.toMatchObject({ outcome: "resolved" });
+    await expect(callers).resolves.toHaveLength(1);
+    await expect(callees).resolves.toHaveLength(1);
+  });
+
+  it("caches empty position results while rehydrating nodes for every access", async () => {
+    const fileSystem = new InMemoryFileSystem({
+      "/repo/src/app.ts": [
+        "export function target(): void {}",
+        "export function caller(): void { target(); missing(); }",
+        "",
+      ].join("\n"),
+    });
+    const files = workspaceFiles(fileSystem, "src/app.ts");
+    const state = new TypeScriptWorkspaceState(fileSystem);
+    await state.refresh(files);
+    const resolvedPositions: number[] = [];
+    const queries = new TypeScriptSemanticQueryService(undefined, state, {
+      callTargetResolution: (_relativePath, start) => resolvedPositions.push(start),
+    });
+    queries.beginTurn({ root: "/repo", files });
+    const sourceFile = state.sourceFile("src/app.ts");
+    const identifiers = sourceFile?.getDescendantsOfKind(SyntaxKind.Identifier) ?? [];
+    const targetCall = [...identifiers].reverse().find((node) => node.getText() === "target");
+    const missingCall = [...identifiers].reverse().find((node) => node.getText() === "missing");
+    if (!targetCall || !missingCall) throw new Error("expected call identifiers");
+
+    const firstDefinitions = queries.definitionNodesOf(targetCall);
+    const secondDefinitions = queries.definitionNodesOf(targetCall);
+    const firstMissing = queries.definitionNodesOf(missingCall);
+    const secondMissing = queries.definitionNodesOf(missingCall);
+
+    expect(firstDefinitions).not.toBe(secondDefinitions);
+    expect(firstDefinitions[0]).toBe(secondDefinitions[0]);
+    expect(firstMissing).toEqual([]);
+    expect(secondMissing).toEqual([]);
+    expect(resolvedPositions).toEqual([targetCall.getStart(), missingCall.getStart()]);
+  });
+
+  it("retains asynchronous definition and callee failures for the turn", async () => {
+    const failure = new Error("semantic failure");
+    const ensureFiles = vi.fn(() => Promise.reject(failure));
+    const state = { ensureFiles } as unknown as TypeScriptWorkspaceState;
+    const queries = new TypeScriptSemanticQueryService(undefined, state);
+    const target = identity("src/app.ts", "target");
+    queries.beginTurn({ root: "/repo", files: [] });
+
+    const definitions = queries.findDefinitions(target);
+    const callees = queries.findCallees(target);
+
+    expect(queries.findDefinitions(target)).toBe(definitions);
+    expect(queries.findCallees(target)).toBe(callees);
+    await expect(definitions).rejects.toBe(failure);
+    await expect(callees).rejects.toBe(failure);
+    expect(ensureFiles).toHaveBeenCalledTimes(2);
+  });
+
+  it("retries synchronous reference discovery failures", async () => {
+    const failure = new Error("reference failure");
+    const locateSemanticCopies = vi.fn(() => {
+      throw failure;
+    });
+    const state = { locateSemanticCopies } as unknown as TypeScriptWorkspaceState;
+    let referenceSearches = 0;
+    const queries = new TypeScriptSemanticQueryService(undefined, state, {
+      referenceSearch: () => {
+        referenceSearches += 1;
+      },
+    });
+    const target = identity("src/app.ts", "target");
+    queries.beginTurn({ root: "/repo", files: [] });
+
+    await expect(queries.findReferences(target)).rejects.toBe(failure);
+    await expect(queries.findReferences(target)).rejects.toBe(failure);
+
+    expect(locateSemanticCopies).toHaveBeenCalledTimes(2);
+    expect(referenceSearches).toBe(2);
+  });
+
+  it("preserves the current turn when backend refresh fails", async () => {
+    const failure = new Error("refresh failure");
+    let refreshFails = false;
+    const state = {
+      refresh: vi.fn(() => {
+        if (refreshFails) return Promise.reject(failure);
+        return Promise.resolve({ added: 0, changed: 0, removed: 0, unchanged: 0 });
+      }),
+      ensureFiles: vi.fn(() => Promise.resolve()),
+      locate: vi.fn(() => []),
+    } as unknown as TypeScriptWorkspaceState;
+    let definitionSearches = 0;
+    const backend = new TypeScriptBackend(
+      new InMemoryFileSystem({}),
+      state,
+      undefined,
+      {
+        definitionSearch: () => {
+          definitionSearches += 1;
+        },
+      },
+    );
+    const snapshot: WorkspaceSnapshot = { root: "/repo", files: [] };
+    const target = identity("src/app.ts", "target");
+    await backend.refresh({ snapshot, coverage: "workspace" });
+    const definitions = await backend.findDefinitions([], target);
+    refreshFails = true;
+
+    await expect(backend.refresh({ snapshot, coverage: "workspace" })).rejects.toBe(failure);
+
+    await expect(backend.findDefinitions([], target)).resolves.toBe(definitions);
+    expect(definitionSearches).toBe(1);
+  });
+
   it("shares one reference search across caller and reference projections", async () => {
     const fileSystem = new InMemoryFileSystem({
       "/repo/src/lib.ts": "export function target(): void {}\n",

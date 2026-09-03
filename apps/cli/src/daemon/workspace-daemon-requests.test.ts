@@ -257,6 +257,15 @@ describe("WorkspaceDaemon requests", () => {
     expect(executor.requests).toHaveLength(1);
   });
 
+  it("rejects the prior execute-envelope generation before command execution", async () => {
+    const executor = new RecordingExecutor();
+    const harness = await RequestHarness.start(executor);
+    harnesses.push(harness);
+
+    await expect(harness.executeAtProtocol("prior-generation", 4)).rejects.toThrow("protocol");
+    expect(executor.requests).toEqual([]);
+  });
+
   it("timestamps daemon requests when they are accepted", async () => {
     const harness = await RequestHarness.start(new ImmediateExecutor(), { now: () => 1_234 });
     harnesses.push(harness);
@@ -1583,6 +1592,20 @@ class RequestHarness {
     commandName: DaemonCommandName = this.commandName(argv),
   ): Promise<DaemonResponse> {
     return this.admit(requestId, argv, commandName).then((connection) => connection.terminal);
+  }
+
+  executeAtProtocol(requestId: string, protocolVersion: number): Promise<DaemonResponse> {
+    return this.transport
+      .connect({
+        kind: "execute",
+        protocolVersion,
+        instanceId: this.instanceId,
+        processToken: this.processToken,
+        requestId,
+        commandName: "version",
+        request: { argv: ["--version"], cwd: this.workspaceRoot, telemetryEnabled: false },
+      })
+      .then((connection) => connection.terminal);
   }
 
   admit(

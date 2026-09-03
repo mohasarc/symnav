@@ -4,7 +4,7 @@ import type { CompletionSpoolManifest } from "./completion-spool.js";
 import type { CommandOutputStream } from "../command-execution-result.js";
 import type { BackendRefreshSummary } from "@symnav/core";
 
-export const DAEMON_PROTOCOL_VERSION = 4;
+export const DAEMON_PROTOCOL_VERSION = 5;
 export const DAEMON_RECORD_SCHEMA_VERSION = 2;
 export const DAEMON_DIAGNOSTIC_SCHEMA_VERSION = 1;
 

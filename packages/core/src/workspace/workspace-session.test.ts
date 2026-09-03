@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import type { CallEdge } from "../intermediate-representation/call-edge.js";
 import type { CallTargetResolution } from "../intermediate-representation/call-target.js";
@@ -140,6 +140,70 @@ describe("WorkspaceSession", () => {
       expect(backend.refreshCalls.at(-1)?.coverage).toBe("workspace");
     },
   );
+
+  it("does not refresh backends when selection fails", async () => {
+    const backend = new RecordingBackend("backend");
+    const session = new WorkspaceSession({
+      fileSystem: workspaceFileSystem(),
+      backends: [backend],
+      discoveryRetention: "session",
+    });
+
+    await expect(
+      session.prepare("/repo", {
+        coverage: "selection",
+        selectSnapshot: async () => {
+          throw new Error("selection failed");
+        },
+      }),
+    ).rejects.toThrow("selection failed");
+    expect(backend.refreshCalls).toEqual([]);
+  });
+
+  it("returns no stale scope when retained catalog discovery fails", async () => {
+    const fileSystem = new SelectiveFailureFileSystem({
+      "/repo/.git/HEAD": "ref: refs/heads/main\n",
+      "/repo/src/a.ts": "export const a = true;\n",
+    });
+    const backend = new RecordingBackend("backend");
+    const session = new WorkspaceSession({
+      fileSystem,
+      backends: [backend],
+      discoveryRetention: "session",
+    });
+    await session.prepare("/repo");
+    fileSystem.failPath = "/repo/src/a.ts";
+
+    await expect(session.prepare("/repo")).rejects.toThrow("metadata failed: /repo/src/a.ts");
+    expect(backend.refreshCalls).toHaveLength(1);
+  });
+
+  it("does not return a scope after a later backend fails following an earlier commit", async () => {
+    const first = new RecordingBackend("first", (path) => path.endsWith(".ts"), {
+      added: 1,
+      changed: 0,
+      removed: 0,
+      unchanged: 0,
+    });
+    const second = new RecordingBackend(
+      "second",
+      () => false,
+      undefined,
+      async () => undefined,
+    );
+    second.refresh = vi.fn(async () => {
+      throw new Error("later backend failed");
+    });
+    const session = new WorkspaceSession({
+      fileSystem: workspaceFileSystem(),
+      backends: [first, second],
+      discoveryRetention: "request",
+    });
+
+    await expect(session.prepare("/repo")).rejects.toThrow("later backend failed");
+    expect(first.refreshCalls).toHaveLength(1);
+    expect(second.refresh).toHaveBeenCalledOnce();
+  });
 });
 
 function workspaceFileSystem(): InMemoryFileSystem {

@@ -47,6 +47,7 @@ interface DeclarationCompilation {
 
 class DaemonContractExpectation {
   public static readonly exports: readonly ExportedSymbol[] = [
+    { kind: "runtime", name: "DaemonPolicy" },
     { kind: "type", name: "DaemonActivitySnapshot" },
     { kind: "type", name: "DaemonCommandName" },
     { kind: "type", name: "DaemonDiagnostics" },
@@ -63,13 +64,12 @@ class DaemonContractExpectation {
     { kind: "type", name: "DaemonExecutorRequest" },
     { kind: "type", name: "DaemonOutputRecord" },
     { kind: "type", name: "DaemonOutputStream" },
-    { kind: "runtime", name: "DaemonPolicy" },
     { kind: "type", name: "DaemonPolicyValues" },
     { kind: "type", name: "DaemonStartResult" },
     { kind: "type", name: "DaemonStatusEnvelope" },
     { kind: "type", name: "DaemonStopResult" },
-    { kind: "type", name: "RunningDaemonStatus" },
     { kind: "type", name: "DaemonSystemMemory" },
+    { kind: "type", name: "RunningDaemonStatus" },
   ];
 
   public static readonly policyMembers = [

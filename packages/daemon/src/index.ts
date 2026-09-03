@@ -21,3 +21,5 @@ export type {
   DaemonStopResult,
   RunningDaemonStatus,
 } from "./daemon-lifecycle-report.js";
+export { DaemonPolicy } from "./daemon-policy.js";
+export type { DaemonPolicyValues, DaemonSystemMemory } from "./daemon-policy.js";

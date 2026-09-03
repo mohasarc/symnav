@@ -42,7 +42,7 @@ class DaemonPackageMetadata {
 }
 
 describe("@symnav/daemon package boundary", () => {
-  it("has the exact private ESM root export and no deep export path", () => {
+  it("has the exact private ESM root and temporary policy-testing exports", () => {
     const manifest = DaemonPackageMetadata.manifest();
     expect({
       name: manifest.name,
@@ -62,9 +62,13 @@ describe("@symnav/daemon package boundary", () => {
           types: "./dist/index.d.ts",
           default: "./dist/index.js",
         },
+        "./policy-testing": {
+          types: "./dist/policy-testing.d.ts",
+          default: "./dist/policy-testing.js",
+        },
       },
     });
-    expect(Object.keys(manifest.exports)).toEqual(["."]);
+    expect(Object.keys(manifest.exports)).toEqual([".", "./policy-testing"]);
   });
 
   it("has zero internal packages in every production dependency field", () => {

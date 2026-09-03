@@ -9,6 +9,10 @@
     ".": {
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
+    },
+    "./policy-testing": {
+      "types": "./dist/policy-testing.d.ts",
+      "default": "./dist/policy-testing.js"
     }
   },
   "files": ["dist"],

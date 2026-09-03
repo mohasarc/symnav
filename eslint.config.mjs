@@ -91,6 +91,17 @@ export default [
     rules: {
       ...prettierConfig.rules,
       "prettier/prettier": "error",
+      "no-restricted-imports": [
+        "error",
+        {
+          paths: [
+            {
+              name: "@symnav/daemon/policy-testing",
+              message: "Daemon policy overrides are test-only.",
+            },
+          ],
+        },
+      ],
       "no-restricted-syntax": [
         "error",
         {
@@ -105,6 +116,7 @@ export default [
   {
     files: ["**/*.test.ts", "**/test/**/*.ts"],
     rules: {
+      "no-restricted-imports": "off",
       "boundaries/dependencies": ["error", { default: "disallow", rules: testRules() }],
     },
   },

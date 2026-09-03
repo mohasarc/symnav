@@ -181,9 +181,40 @@ export abstract class RevisionedBackendState<PreparedDetails> {
     request: RevisionedBackendPreparationRequest<PreparedDetails>,
     preparedFiles: readonly RevisionedBackendPreparedFile<PreparedDetails>[],
   ): RevisionedBackendIndex<PreparedDetails> {
-    const preparedByRelativePath = new Map(
-      preparedFiles.map((prepared) => [prepared.file.relative, prepared]),
+    const effectiveByRelativePath = new Map(
+      request.effectiveFiles.map((file) => [file.relative, file]),
     );
+    if (effectiveByRelativePath.size !== request.effectiveFiles.length) {
+      throw new Error("Revisioned backend preparation has an incomplete final key set");
+    }
+    const preparedByRelativePath = new Map<
+      string,
+      RevisionedBackendPreparedFile<PreparedDetails>
+    >();
+    for (const prepared of preparedFiles) {
+      if (preparedByRelativePath.has(prepared.file.relative)) {
+        throw new Error(`Revisioned backend preparation duplicated ${prepared.file.relative}`);
+      }
+      const effective = effectiveByRelativePath.get(prepared.file.relative);
+      if (!effective) {
+        throw new Error(
+          `Revisioned backend preparation returned outside path ${prepared.file.relative}`,
+        );
+      }
+      if (!RevisionedBackendState.sameRevision(prepared.file, effective)) {
+        throw new Error(
+          `Revisioned backend preparation returned wrong revision for ${prepared.file.relative}`,
+        );
+      }
+      preparedByRelativePath.set(prepared.file.relative, prepared);
+    }
+    for (const change of request.changes) {
+      if (!preparedByRelativePath.has(change.file.relative)) {
+        throw new Error(
+          `Revisioned backend preparation omitted changed path ${change.file.relative}`,
+        );
+      }
+    }
     const candidateByRelativePath = new Map(this.index.byRelativePath);
     for (const removed of request.removedFiles) {
       candidateByRelativePath.delete(removed.file.relative);
@@ -191,6 +222,12 @@ export abstract class RevisionedBackendState<PreparedDetails> {
     for (const change of request.changes) {
       const prepared = preparedByRelativePath.get(change.file.relative);
       if (prepared) candidateByRelativePath.set(change.file.relative, prepared);
+    }
+    if (
+      candidateByRelativePath.size !== effectiveByRelativePath.size ||
+      [...candidateByRelativePath.keys()].some((path) => !effectiveByRelativePath.has(path))
+    ) {
+      throw new Error("Revisioned backend preparation has an incomplete final key set");
     }
     return RevisionedBackendState.buildIndex(candidateByRelativePath, this.index);
   }

@@ -14,6 +14,8 @@ interface PreparedDetails {
   readonly content: string;
 }
 
+type CandidateFault = "duplicate" | "outside" | "wrong-revision" | "missing-change";
+
 class TrackingFileSystem implements FileSystem {
   readonly reads: string[] = [];
   readonly metadataReads: string[] = [];
@@ -70,6 +72,7 @@ class TrackingFileSystem implements FileSystem {
 
 class FakeRevisionedBackendState extends RevisionedBackendState<PreparedDetails> {
   readonly requests: RevisionedBackendPreparationRequest<PreparedDetails>[] = [];
+  candidateFault: CandidateFault | undefined;
 
   constructor(private readonly trackingFileSystem: TrackingFileSystem) {
     super(trackingFileSystem);
@@ -83,12 +86,13 @@ class FakeRevisionedBackendState extends RevisionedBackendState<PreparedDetails>
     request: RevisionedBackendPreparationRequest<PreparedDetails>,
   ): RevisionedBackendPreparation<PreparedDetails> {
     this.requests.push(request);
-    return new FakeRevisionedBackendPreparation(this.trackingFileSystem, request);
+    return new FakeRevisionedBackendPreparation(this, this.trackingFileSystem, request);
   }
 }
 
 class FakeRevisionedBackendPreparation extends RevisionedBackendPreparation<PreparedDetails> {
   constructor(
+    private readonly state: FakeRevisionedBackendState,
     private readonly fileSystem: TrackingFileSystem,
     private readonly request: RevisionedBackendPreparationRequest<PreparedDetails>,
   ) {
@@ -101,12 +105,31 @@ class FakeRevisionedBackendPreparation extends RevisionedBackendPreparation<Prep
       const content = await this.fileSystem.readFile(change.file.absolute);
       prepared.push(preparedFile(change.file, content));
     }
-    return prepared;
+    return this.withFault(prepared);
   }
 
   async commit(): Promise<void> {}
 
   async rollback(): Promise<void> {}
+
+  private withFault(
+    prepared: readonly RevisionedBackendPreparedFile<PreparedDetails>[],
+  ): readonly RevisionedBackendPreparedFile<PreparedDetails>[] {
+    const first = prepared[0];
+    if (!first) return prepared;
+    switch (this.state.candidateFault) {
+      case "duplicate":
+        return [first, first];
+      case "outside":
+        return [{ ...first, file: workspaceFile("outside.ts", "outside") }];
+      case "wrong-revision":
+        return [{ ...first, file: { ...first.file, metadata: metadata("wrong") } }];
+      case "missing-change":
+        return [];
+      case undefined:
+        return prepared;
+    }
+  }
 }
 
 function preparedFile(
@@ -204,5 +227,27 @@ describe("RevisionedBackendState", () => {
     expect(state.declarationsIn("a.ts")).toBe(declarations);
     expect(fileSystem.reads).toEqual([]);
     expect(fileSystem.metadataReads).toEqual([]);
+  });
+
+  it.each<CandidateFault>(["missing-change", "duplicate", "outside", "wrong-revision"])(
+    "rejects a %s preparation result without publishing it",
+    async (candidateFault) => {
+      const fileSystem = new TrackingFileSystem({ "/repo/a.ts": "a" });
+      const state = new FakeRevisionedBackendState(fileSystem);
+      state.candidateFault = candidateFault;
+
+      await expect(state.refresh([workspaceFile("a.ts", "a")])).rejects.toThrow();
+      expect(state.currentFileCount()).toBe(0);
+    },
+  );
+
+  it("rejects an incomplete final key set", async () => {
+    const fileSystem = new TrackingFileSystem({ "/repo/a.ts": "a" });
+    const state = new FakeRevisionedBackendState(fileSystem);
+
+    await expect(
+      state.refresh([workspaceFile("a.ts", "a"), workspaceFile("a.ts", "a")]),
+    ).rejects.toThrow();
+    expect(state.currentFileCount()).toBe(0);
   });
 });

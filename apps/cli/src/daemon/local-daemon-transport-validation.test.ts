@@ -4,6 +4,8 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { DaemonPolicy } from "@symnav/daemon";
+import { DaemonPolicyTestFactory } from "@symnav/daemon/policy-testing";
 import type {
   DaemonActivitySnapshot,
   DaemonExecuteRequest,
@@ -14,6 +16,20 @@ import { DAEMON_PROTOCOL_VERSION } from "./daemon-protocol.js";
 import { DaemonTransportError, LocalDaemonTransport } from "./local-daemon-transport.js";
 
 describe("LocalDaemonTransport validation", () => {
+  it("uses the required transport-policy JSON capacity", () => {
+    const policy = DaemonPolicyTestFactory.withOverrides(
+      DaemonPolicy.fromSystemMemory({ totalBytes: 1024 ** 3 }),
+      { transport: { maximumJsonPayloadBytes: 32 } },
+    );
+    const transport = new LocalDaemonTransport({
+      policy: {
+        transport: policy.values.transport,
+        output: policy.values.output,
+      },
+    } as unknown as ConstructorParameters<typeof LocalDaemonTransport>[0]);
+
+    expect(transport.canFrame({ payload: "x".repeat(64) })).toBe(false);
+  });
   const servers: Server[] = [];
   const sockets: Socket[] = [];
   const directories: string[] = [];

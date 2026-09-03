@@ -1,4 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { DaemonPolicy } from "@symnav/daemon";
+import { DaemonPolicyTestFactory } from "@symnav/daemon/policy-testing";
 import {
   DAEMON_RESOURCE_SAMPLE_INTERVAL_MS,
   DaemonResourcePolicy,
@@ -97,6 +99,42 @@ describe("DaemonResourceSupervisor", () => {
     supervisor.stop();
     await vi.advanceTimersByTimeAsync(500);
     expect(residentMemoryBytes).toHaveBeenCalledOnce();
+  });
+
+  it("uses the required resource-policy cadence and thresholds", async () => {
+    const policy = DaemonPolicyTestFactory.withOverrides(
+      DaemonPolicy.fromSystemMemory({ totalBytes: GIBIBYTE }),
+      {
+        resources: {
+          supervisionIntervalMs: 17,
+          hardProcessRssBytes: 103,
+          softProcessRssBytes: 102,
+          resumeProcessRssBytes: 101,
+        },
+      },
+    );
+    let residentMemoryBytes = 102;
+    const releaseTransientResources = vi.fn(async () => undefined);
+    const supervisor = new DaemonResourceSupervisor({
+      policy: policy.values.resources,
+      generation: 1,
+      residentMemoryBytes: () => residentMemoryBytes,
+      spoolBytes: () => 0,
+      scheduleAtTurnBoundary: runImmediately,
+      releaseTransientResources,
+      replaceWorker: async () => 2,
+      drain: async () => undefined,
+    } as unknown as ConstructorParameters<typeof DaemonResourceSupervisor>[0]);
+
+    supervisor.start();
+    await vi.advanceTimersByTimeAsync(16);
+    expect(releaseTransientResources).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(1);
+    expect(releaseTransientResources).toHaveBeenCalledOnce();
+    residentMemoryBytes = 100;
+    await supervisor.sample("interval");
+    expect(supervisor.snapshot.admissionPaused).toBe(false);
+    supervisor.stop();
   });
 
   it("pauses admission and sheds once per soft-pressure hysteresis cycle", async () => {

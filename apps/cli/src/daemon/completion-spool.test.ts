@@ -2,6 +2,8 @@ import { access, chmod, mkdir, mkdtemp, readdir, stat, symlink, writeFile } from
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
+import { DaemonPolicy } from "@symnav/daemon";
+import { DaemonPolicyTestFactory } from "@symnav/daemon/policy-testing";
 import * as completionSpoolModule from "./completion-spool.js";
 
 describe("DaemonCompletionSpoolStore", () => {
@@ -10,6 +12,35 @@ describe("DaemonCompletionSpoolStore", () => {
   afterEach(async () => {
     const { rm } = await import("node:fs/promises");
     await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
+  });
+
+  it("uses the required output-policy capacities", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "symnav-completion-policy-"));
+    roots.push(directory);
+    const policy = DaemonPolicyTestFactory.withOverrides(
+      DaemonPolicy.fromSystemMemory({ totalBytes: 1024 ** 3 }),
+      {
+        output: {
+          maximumChunkRawBytes: 2,
+          inlineRawBytes: 3,
+          maximumResultRawBytes: 6,
+          maximumAggregateSpoolRawBytes: 9,
+        },
+      },
+    );
+    const store = new completionSpoolModule.DaemonCompletionSpoolStore({
+      directory,
+      workspaceKey: "workspace-a",
+      instanceId: "instance-a",
+      policy: policy.values.output,
+    } as unknown as ConstructorParameters<
+      typeof completionSpoolModule.DaemonCompletionSpoolStore
+    >[0]);
+    const spool = await store.create("request-a");
+
+    await expect(
+      spool.append({ sequence: 0, stream: "stdout", bytes: Buffer.from("123") }),
+    ).rejects.toThrow(/chunk capacity/i);
   });
 
   it("spills threshold-plus-one output securely and acknowledges exact completion cleanup", async () => {

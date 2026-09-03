@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { Writable } from "node:stream";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { InMemoryFileSystem, type OverviewFileEntries, WorkspaceSession } from "@symnav/core";
+import { DaemonPolicyTestFactory } from "@symnav/daemon/policy-testing";
 import * as commandExecutionResult from "./command-execution-result.js";
 import { CliProgramExecutor, CommandResultReplayer } from "./cli-program-executor.js";
 import { fakeDependencies } from "../test/integration/commands/helpers/fake-program-dependencies.js";
@@ -51,8 +52,8 @@ describe("CliProgramExecutor", () => {
     const OrderedCommandOutput = (
       commandExecutionResult as unknown as {
         OrderedCommandOutput: new (options: {
+          readonly policy: ReturnType<typeof fakeDependencies>["daemonPolicy"]["values"]["output"];
           readonly directory?: string;
-          readonly inlineBytes: number;
         }) => {
           readonly stdout: Writable;
           readonly stderr: Writable;
@@ -79,8 +80,29 @@ describe("CliProgramExecutor", () => {
       if (streams.at(-1) !== write.stream) streams.push(write.stream);
       return streams;
     }, []);
+    const basePolicy = fakeDependencies().daemonPolicy;
     const capture = async (inlineBytes: number) => {
-      const output = new OrderedCommandOutput({ directory: spillDirectory, inlineBytes });
+      const policy = DaemonPolicyTestFactory.withOverrides(basePolicy, {
+        output: {
+          maximumChunkRawBytes: Math.min(
+            basePolicy.values.output.maximumChunkRawBytes,
+            inlineBytes,
+          ),
+          inlineRawBytes: inlineBytes,
+          maximumResultRawBytes: Math.max(
+            basePolicy.values.output.maximumResultRawBytes,
+            inlineBytes,
+          ),
+          maximumAggregateSpoolRawBytes: Math.max(
+            basePolicy.values.output.maximumAggregateSpoolRawBytes,
+            inlineBytes,
+          ),
+        },
+      });
+      const output = new OrderedCommandOutput({
+        directory: spillDirectory,
+        policy: policy.values.output,
+      });
       for (const write of writes) {
         await new Promise<void>((resolve, reject) => {
           output[write.stream].write(write.bytes, (error) => (error ? reject(error) : resolve()));
@@ -96,7 +118,7 @@ describe("CliProgramExecutor", () => {
     };
 
     const inline = await capture(Number.MAX_SAFE_INTEGER);
-    const spilled = await capture(1);
+    const spilled = await capture(32);
 
     expect(spilled.records).toEqual(inline.records);
     expect(inline.result.exitCode).toBe(7);
@@ -107,6 +129,25 @@ describe("CliProgramExecutor", () => {
     expect(inline.records.map(({ sequence, stream }) => ({ sequence, stream }))).toEqual(
       expectedStreams.map((stream, sequence) => ({ sequence, stream })),
     );
+  });
+
+  it("advances nonempty output at the smallest valid chunk capacity", async () => {
+    const dependencies = fakeDependencies();
+    const policy = DaemonPolicyTestFactory.withOverrides(dependencies.daemonPolicy, {
+      output: { maximumChunkRawBytes: 1 },
+    });
+    const output = new commandExecutionResult.OrderedCommandOutput({
+      policy: policy.values.output,
+    });
+
+    await new Promise<void>((resolve, reject) => {
+      output.stdout.write(Buffer.from("ab"), (error) => (error ? reject(error) : resolve()));
+    });
+    const result = await output.finish(0);
+
+    expect(await decode(result)).toBe("ab");
+    expect(result.output.summary.rawBytes).toBe(2);
+    await result.output.dispose();
   });
 
   it("serializes replay through terminal backpressure and disposes after completion", async () => {

@@ -34,11 +34,11 @@ const aliasMap = [
 
 function productionRules() {
   return [
-    { from: { type: "renderer" }, allow: { to: { type: ["core"] } } },
+    { from: { type: "renderer" }, allow: { to: { type: ["core", "daemon"] } } },
     { from: { type: "backend" }, allow: { to: { type: ["core"] } } },
     {
       from: { type: "cli" },
-      allow: { to: { type: ["core", "renderer", "backend", "telemetry"] } },
+      allow: { to: { type: ["core", "daemon", "renderer", "backend", "telemetry"] } },
     },
   ];
 }
@@ -46,11 +46,15 @@ function productionRules() {
 function testRules() {
   return [
     { from: { type: "core" }, allow: { to: { type: ["testing"] } } },
-    { from: { type: "renderer" }, allow: { to: { type: ["core", "testing"] } } },
+    { from: { type: "daemon" }, allow: { to: { type: ["testing"] } } },
+    { from: { type: "renderer" }, allow: { to: { type: ["core", "daemon", "testing"] } } },
     { from: { type: "backend" }, allow: { to: { type: ["core", "testing"] } } },
+    { from: { type: "telemetry" }, allow: { to: { type: ["testing"] } } },
     {
       from: { type: "cli" },
-      allow: { to: { type: ["core", "renderer", "backend", "telemetry", "testing"] } },
+      allow: {
+        to: { type: ["core", "daemon", "renderer", "backend", "telemetry", "testing"] },
+      },
     },
   ];
 }
@@ -95,19 +99,13 @@ export default [
             "Annotate object-literal declarations with a type (`const x: T = {…}`) or use `satisfies`.",
         },
       ],
-      "boundaries/dependencies": [
-        "error",
-        { default: "disallow", rules: productionRules() },
-      ],
+      "boundaries/dependencies": ["error", { default: "disallow", rules: productionRules() }],
     },
   },
   {
     files: ["**/*.test.ts", "**/test/**/*.ts"],
     rules: {
-      "boundaries/dependencies": [
-        "error",
-        { default: "disallow", rules: testRules() },
-      ],
+      "boundaries/dependencies": ["error", { default: "disallow", rules: testRules() }],
     },
   },
 ];

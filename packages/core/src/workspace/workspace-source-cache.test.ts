@@ -118,4 +118,26 @@ describe("WorkspaceSourceCache", () => {
     await expect(cache.readFile(b.absolute)).resolves.toBe("b-after");
     expect(fileSystem.calls).toEqual(["readFile:/repo/src/b.ts"]);
   });
+
+  it("invalidates cached contents after an incoming absolute path change", async () => {
+    const fileSystem = new RecordingFileSystem({
+      "/repo/src/a.ts": "before",
+      "/repo/src/moved-a.ts": "moved",
+    });
+    const cache = new WorkspaceSourceCache(fileSystem);
+    const initialFile = WorkspaceSnapshotBuilder.file("src/a.ts", "/repo/src/a.ts", "a-1");
+    cache.refresh(WorkspaceSnapshotBuilder.snapshot(initialFile));
+    await expect(cache.readFile(initialFile.absolute)).resolves.toBe("before");
+    fileSystem.setFile(initialFile.absolute, "after");
+    fileSystem.resetCalls();
+
+    cache.refresh(
+      WorkspaceSnapshotBuilder.snapshot(
+        WorkspaceSnapshotBuilder.file("src/a.ts", "/repo/src/moved-a.ts", "a-1"),
+      ),
+    );
+
+    await expect(cache.readFile(initialFile.absolute)).resolves.toBe("after");
+    expect(fileSystem.calls).toEqual(["readFile:/repo/src/a.ts"]);
+  });
 });

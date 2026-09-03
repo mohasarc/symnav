@@ -302,9 +302,19 @@ describe("CliProgramExecutor", () => {
   });
 
   it("replaces local output over the result limit without partial bytes", async () => {
-    const result = await new CliProgramExecutor(fakeDependencies(), undefined, {
-      maximumBytes: 1,
-    }).execute({ argv: ["--version"], cwd: "/repo", telemetryEnabled: false });
+    const dependencies = fakeDependencies();
+    const daemonPolicy = DaemonPolicyTestFactory.withOverrides(dependencies.daemonPolicy, {
+      output: {
+        maximumChunkRawBytes: 1,
+        inlineRawBytes: 1,
+        maximumResultRawBytes: 1,
+      },
+    });
+    const result = await new CliProgramExecutor({ ...dependencies, daemonPolicy }).execute({
+      argv: ["--version"],
+      cwd: "/repo",
+      telemetryEnabled: false,
+    });
 
     expect(result.exitCode).toBe(1);
     expect(await decode(result)).toBe("Cannot answer: daemon response capacity exceeded.\n");

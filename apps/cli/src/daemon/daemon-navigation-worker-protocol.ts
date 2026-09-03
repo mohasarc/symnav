@@ -1,6 +1,5 @@
 import type { BackendRefreshSummary } from "@symnav/core";
 import type { CliExecutionRequest, CommandOutputStream } from "../command-execution-result.js";
-import { COMMAND_OUTPUT_CHUNK_BYTES } from "./completion-spool.js";
 
 export type DaemonExecutionFailureCode = "initialization" | "execution" | "protocol" | "resource";
 
@@ -125,7 +124,7 @@ export class DaemonNavigationWorkerProtocol {
     throw new Error("Invalid daemon navigation worker request");
   }
 
-  static response(value: unknown): DaemonNavigationWorkerResponse {
+  static response(value: unknown, maximumChunkRawBytes: number): DaemonNavigationWorkerResponse {
     if (!this.isRecord(value) || !this.isGeneration(value.generation)) {
       throw new Error("Invalid daemon navigation worker response");
     }
@@ -145,7 +144,7 @@ export class DaemonNavigationWorkerProtocol {
       this.isCount(value.sequence) &&
       (value.stream === "stdout" || value.stream === "stderr") &&
       value.bytes instanceof Uint8Array &&
-      value.bytes.byteLength <= COMMAND_OUTPUT_CHUNK_BYTES
+      value.bytes.byteLength <= maximumChunkRawBytes
     ) {
       return value as unknown as DaemonNavigationWorkerResponse;
     }

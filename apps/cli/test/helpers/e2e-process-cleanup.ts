@@ -4,7 +4,7 @@ import {
   type DaemonProcessTerminator,
   NodeDaemonProcessTerminator,
 } from "../../src/daemon/daemon-process-launcher.js";
-import { LocalDaemonTransport } from "../../src/daemon/local-daemon-transport.js";
+import { TestLocalDaemonTransport as LocalDaemonTransport } from "./local-daemon-transport.js";
 
 export class E2eProcessCleanupError extends Error {
   constructor(readonly failures: readonly string[]) {

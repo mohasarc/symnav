@@ -277,7 +277,7 @@ export class DaemonCommandDispatcher {
     policy: DaemonPolicy,
   ): DaemonDispatchRuntime {
     const registry = new DaemonRegistry(identity.registryDirectory);
-    const transport = new LocalDaemonTransport();
+    const transport = new LocalDaemonTransport(policy.values);
     const processTerminator = new NodeDaemonProcessTerminator();
     const launcher = new NodeDaemonProcessLauncher(
       dependencies.symnavVersion,

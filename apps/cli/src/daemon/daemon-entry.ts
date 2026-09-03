@@ -7,7 +7,6 @@ import { DaemonProcessTerminationObserver } from "./daemon-process-termination-o
 import { DaemonRegistry } from "./daemon-registry.js";
 import { DaemonWorkspaceIdentity } from "./daemon-workspace-identity.js";
 import { LocalDaemonTransport } from "./local-daemon-transport.js";
-import { DaemonResourcePolicy } from "./daemon-resource-monitor.js";
 import { WorkspaceDaemon } from "./workspace-daemon.js";
 
 class DaemonEntry {
@@ -40,14 +39,10 @@ class DaemonEntry {
       instanceId: configuration.instanceId,
       processToken: configuration.processToken,
       symnavVersion: configuration.symnavVersion,
-      memoryCapBytes: policy.values.resources.hardProcessRssBytes,
-      resourcePolicy: DaemonResourcePolicy.fromSystemMemory(
-        policy.values.resources.effectiveMemoryBytes,
-      ),
       policy,
       dependencies,
       registry,
-      transport: new LocalDaemonTransport(),
+      transport: new LocalDaemonTransport(policy.values),
       clock,
       logger,
     }).start();

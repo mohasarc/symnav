@@ -29,8 +29,11 @@ import type {
 } from "./daemon-navigation-worker.js";
 import { NodeDaemonNavigationWorker } from "./daemon-navigation-worker.js";
 import type { DaemonNavigationWorkerResponse } from "./daemon-navigation-worker-protocol.js";
-import { DaemonResourcePolicy } from "./daemon-resource-monitor.js";
-import { WorkspaceDaemon, type WorkspaceDaemonOptions } from "./workspace-daemon.js";
+import { TestDaemonResourcePolicy as DaemonResourcePolicy } from "../../test/helpers/daemon-resource-policy.js";
+import {
+  TestWorkspaceDaemon as WorkspaceDaemon,
+  type TestWorkspaceDaemonOptions as WorkspaceDaemonOptions,
+} from "../../test/helpers/workspace-daemon.js";
 
 describe("WorkspaceDaemon requests", () => {
   const harnesses: RequestHarness[] = [];
@@ -1880,7 +1883,12 @@ class SequencedOutputExecutor implements DaemonCommandExecutor {
   execute(): Promise<CommandExecutionResult> {
     this.executionCount += 1;
     const records =
-      this.executionCount === 1 ? [{ stream: "stdout" as const, bytes: Buffer.from("xx") }] : [];
+      this.executionCount === 1
+        ? [
+            { stream: "stdout" as const, bytes: Buffer.from("x") },
+            { stream: "stdout" as const, bytes: Buffer.from("x") },
+          ]
+        : [];
     return Promise.resolve({ output: new CommandOutputSnapshot(records), exitCode: 0 });
   }
 }
@@ -1917,9 +1925,12 @@ class RequestFailingCompletionStorage extends NodeCompletionSpoolStorage {
     };
   }
 
-  override async *records(path: string): AsyncIterable<CommandOutputRecord> {
+  override async *records(
+    path: string,
+    maximumChunkBytes: number,
+  ): AsyncIterable<CommandOutputRecord> {
     if (this.fail("read")) throw new Error("read failed");
-    for await (const record of super.records(path)) yield record;
+    for await (const record of super.records(path, maximumChunkBytes)) yield record;
   }
 
   override async unlink(path: string): Promise<void> {

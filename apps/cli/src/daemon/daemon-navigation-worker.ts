@@ -1,5 +1,5 @@
 import { Worker } from "node:worker_threads";
-import type { DaemonPolicy } from "@symnav/daemon";
+import { DaemonPolicy } from "@symnav/daemon";
 import type { CliExecutionRequest, CommandOutputRecord } from "../command-execution-result.js";
 import {
   DaemonNavigationWorkerProtocol,
@@ -73,9 +73,13 @@ export class NodeDaemonNavigationWorker implements DaemonNavigationWorker {
   private communicationFailure: Error | undefined;
   private communicationFailureCode: string | undefined;
   private releaseSequence = 0;
+  private readonly maximumChunkRawBytes: number;
 
   constructor(options: NodeDaemonNavigationWorkerOptions) {
     this.generation = options.generation;
+    this.maximumChunkRawBytes = DaemonPolicy.fromSerialized(
+      options.configuration.policy,
+    ).values.output.maximumChunkRawBytes;
     this.exited = new Promise((resolve) => {
       this.resolveExited = resolve;
     });
@@ -171,7 +175,7 @@ export class NodeDaemonNavigationWorker implements DaemonNavigationWorker {
   private async receive(value: unknown): Promise<void> {
     let response: DaemonNavigationWorkerResponse;
     try {
-      response = DaemonNavigationWorkerProtocol.response(value);
+      response = DaemonNavigationWorkerProtocol.response(value, this.maximumChunkRawBytes);
     } catch (error) {
       this.failCommunication(error);
       return;

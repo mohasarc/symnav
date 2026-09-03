@@ -13,7 +13,8 @@ import type {
   DaemonLifecycleRequest,
 } from "./daemon-protocol.js";
 import { DAEMON_PROTOCOL_VERSION } from "./daemon-protocol.js";
-import { DaemonTransportError, LocalDaemonTransport } from "./local-daemon-transport.js";
+import { DaemonTransportError } from "./local-daemon-transport.js";
+import { TestLocalDaemonTransport as LocalDaemonTransport } from "../../test/helpers/local-daemon-transport.js";
 
 describe("LocalDaemonTransport validation", () => {
   it("uses the required transport-policy JSON capacity", () => {
@@ -22,11 +23,9 @@ describe("LocalDaemonTransport validation", () => {
       { transport: { maximumJsonPayloadBytes: 32 } },
     );
     const transport = new LocalDaemonTransport({
-      policy: {
-        transport: policy.values.transport,
-        output: policy.values.output,
-      },
-    } as unknown as ConstructorParameters<typeof LocalDaemonTransport>[0]);
+      transport: policy.values.transport,
+      output: policy.values.output,
+    });
 
     expect(transport.canFrame({ payload: "x".repeat(64) })).toBe(false);
   });

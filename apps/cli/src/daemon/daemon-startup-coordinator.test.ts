@@ -27,7 +27,8 @@ import {
 } from "./daemon-protocol.js";
 import { DAEMON_STARTUP_TIMEOUT_MS, DaemonRegistry } from "./daemon-registry.js";
 import { DaemonWorkspaceIdentity } from "./daemon-workspace-identity.js";
-import { type DaemonExecutionReceipt, LocalDaemonTransport } from "./local-daemon-transport.js";
+import type { DaemonExecutionReceipt } from "./local-daemon-transport.js";
+import { TestLocalDaemonTransport as LocalDaemonTransport } from "../../test/helpers/local-daemon-transport.js";
 
 describe("DaemonStartupCoordinator", () => {
   const roots: string[] = [];

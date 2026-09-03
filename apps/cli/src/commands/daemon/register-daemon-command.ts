@@ -63,7 +63,7 @@ class DaemonStartAction {
       const registry = new DaemonRegistry(identity.registryDirectory);
       const controller = new DaemonController(
         registry,
-        new LocalDaemonTransport(),
+        new LocalDaemonTransport(dependencies.daemonPolicy.values),
         stateDirectory,
         {
           launcher: new NodeDaemonProcessLauncher(
@@ -100,7 +100,7 @@ class DaemonStatusAction {
     const registry = new DaemonRegistry(DaemonWorkspaceIdentity.registryDirectory(stateDirectory));
     const controller = new DaemonController(
       registry,
-      new LocalDaemonTransport({ requestTimeoutMs: 100 }),
+      new LocalDaemonTransport(dependencies.daemonPolicy.values),
       stateDirectory,
     );
     const results = await controller.status();
@@ -126,7 +126,11 @@ class DaemonStopAction {
       const registry = new DaemonRegistry(
         DaemonWorkspaceIdentity.registryDirectory(stateDirectory),
       );
-      const controller = new DaemonController(registry, new LocalDaemonTransport(), stateDirectory);
+      const controller = new DaemonController(
+        registry,
+        new LocalDaemonTransport(dependencies.daemonPolicy.values),
+        stateDirectory,
+      );
       const result = await controller.stop(workspace.root);
       context.stdout.write(
         options.json

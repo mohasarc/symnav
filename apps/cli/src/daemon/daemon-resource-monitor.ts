@@ -1,60 +1,5 @@
+import type { DaemonPolicyValues } from "@symnav/daemon";
 import type { DaemonWorkerReplacementCause } from "./daemon-protocol.js";
-
-const MEBIBYTE = 1024 * 1024;
-const MINIMUM_PROCESS_MEMORY_MIB = 256;
-const MAXIMUM_PROCESS_MEMORY_MIB = 8 * 1024;
-const MINIMUM_WORKER_OLD_GENERATION_MIB = 128;
-const MAXIMUM_WORKER_OLD_GENERATION_MIB = 4 * 1024;
-
-export const DAEMON_RESOURCE_SAMPLE_INTERVAL_MS = 250;
-export const DAEMON_RESOURCE_RESTART_WINDOW_MS = 10 * 60 * 1000;
-export const DAEMON_RESOURCE_RESTART_LIMIT = 2;
-
-export interface DaemonResourcePolicyRecord {
-  readonly effectiveMemoryBytes: number;
-  readonly hardProcessRssBytes: number;
-  readonly softProcessRssBytes: number;
-  readonly resumeProcessRssBytes: number;
-  readonly workerMaxOldGenerationSizeMb: number;
-}
-
-export class DaemonResourcePolicy {
-  private constructor(readonly record: DaemonResourcePolicyRecord) {}
-
-  static fromSystemMemory(
-    totalMemoryBytes: number,
-    constrainedMemoryBytes?: number,
-  ): DaemonResourcePolicy {
-    const effectiveMemoryBytes =
-      constrainedMemoryBytes !== undefined &&
-      constrainedMemoryBytes > 0 &&
-      constrainedMemoryBytes < totalMemoryBytes
-        ? constrainedMemoryBytes
-        : totalMemoryBytes;
-    const effectiveMemoryMib = Math.max(1, Math.floor(effectiveMemoryBytes / MEBIBYTE));
-    const hardProcessRssMib = DaemonResourcePolicy.clamp(
-      Math.floor(effectiveMemoryMib / 2),
-      MINIMUM_PROCESS_MEMORY_MIB,
-      MAXIMUM_PROCESS_MEMORY_MIB,
-    );
-    const workerMaxOldGenerationSizeMb = DaemonResourcePolicy.clamp(
-      Math.floor(effectiveMemoryMib / 4),
-      MINIMUM_WORKER_OLD_GENERATION_MIB,
-      MAXIMUM_WORKER_OLD_GENERATION_MIB,
-    );
-    return new DaemonResourcePolicy({
-      effectiveMemoryBytes,
-      hardProcessRssBytes: hardProcessRssMib * MEBIBYTE,
-      softProcessRssBytes: Math.floor(hardProcessRssMib * 0.8) * MEBIBYTE,
-      resumeProcessRssBytes: Math.floor(hardProcessRssMib * 0.7) * MEBIBYTE,
-      workerMaxOldGenerationSizeMb,
-    });
-  }
-
-  private static clamp(value: number, minimum: number, maximum: number): number {
-    return Math.max(minimum, Math.min(maximum, value));
-  }
-}
 
 export type DaemonResourceState =
   | "warming"
@@ -79,10 +24,9 @@ export interface DaemonResourceSnapshot {
 }
 
 export interface DaemonResourceSupervisorOptions {
-  readonly policy: DaemonResourcePolicy;
+  readonly policy: DaemonPolicyValues["resources"];
   readonly generation: number;
   readonly now?: () => number;
-  readonly intervalMs?: number;
   readonly residentMemoryBytes?: () => number;
   readonly spoolBytes: () => number;
   readonly scheduleAtTurnBoundary: (operation: () => Promise<void>) => Promise<void>;
@@ -143,7 +87,7 @@ export class DaemonResourceSupervisor {
     if (this.timer !== undefined || this.currentState === "stopped") return;
     this.timer = setInterval(
       () => void this.sample("interval").catch(() => undefined),
-      this.options.intervalMs ?? DAEMON_RESOURCE_SAMPLE_INTERVAL_MS,
+      this.options.policy.supervisionIntervalMs,
     );
     this.timer.unref?.();
   }
@@ -161,7 +105,7 @@ export class DaemonResourceSupervisor {
   ): Promise<void> {
     if (this.currentState === "draining" || this.currentState === "stopped") return;
     this.captureUsage();
-    const policy = this.options.policy.record;
+    const policy = this.options.policy;
     if (this.currentProcessRssBytes >= policy.hardProcessRssBytes) {
       await this.replace("hard-pressure");
       return;
@@ -210,9 +154,9 @@ export class DaemonResourceSupervisor {
 
   private replace(cause: DaemonWorkerReplacementCause): Promise<void> {
     if (this.replacementOperation !== undefined) return this.replacementOperation;
-    const cutoff = this.now() - DAEMON_RESOURCE_RESTART_WINDOW_MS;
+    const cutoff = this.now() - this.options.policy.replacementWindowMs;
     this.replacementTimes = this.replacementTimes.filter((replacedAt) => replacedAt > cutoff);
-    if (this.replacementTimes.length >= DAEMON_RESOURCE_RESTART_LIMIT) {
+    if (this.replacementTimes.length >= this.options.policy.replacementLimit) {
       this.currentState = "draining";
       this.admissionPaused = true;
       this.replacementOperation = this.options.drain().finally(() => {

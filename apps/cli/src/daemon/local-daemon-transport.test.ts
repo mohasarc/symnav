@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { DAEMON_PROTOCOL_VERSION, type DaemonRequest } from "./daemon-protocol.js";
-import { LocalDaemonTransport } from "./local-daemon-transport.js";
+import { TestLocalDaemonTransport as LocalDaemonTransport } from "../../test/helpers/local-daemon-transport.js";
 
 describe("LocalDaemonTransport", () => {
   const roots: string[] = [];

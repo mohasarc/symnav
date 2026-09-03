@@ -1,5 +1,5 @@
 import type { ProgramDependencies } from "../program-dependencies.js";
-import type { DaemonPolicy } from "@symnav/daemon";
+import type { DaemonPolicy, DaemonPolicyValues } from "@symnav/daemon";
 import type { CommandExecutionResult, CommandOutputRecord } from "../command-execution-result.js";
 import {
   AcceptedRequestCorruptionError,
@@ -34,7 +34,6 @@ import {
   NodeDaemonNavigationWorker,
 } from "./daemon-navigation-worker.js";
 import {
-  DaemonResourcePolicy,
   DaemonResourceSupervisor,
   type DaemonWorkerReplacementCause,
 } from "./daemon-resource-monitor.js";
@@ -53,26 +52,18 @@ export interface WorkspaceDaemonOptions {
   readonly instanceId: string;
   readonly processToken: string;
   readonly symnavVersion: string;
-  readonly memoryCapBytes: number;
   readonly policy: DaemonPolicy;
   readonly dependencies: ProgramDependencies;
   readonly registry: DaemonRegistry;
   readonly transport: LocalDaemonTransport;
   readonly navigationWorker?: DaemonNavigationWorker;
   readonly navigationWorkerFactory?: (generation: number) => DaemonNavigationWorker;
-  readonly resourcePolicy?: DaemonResourcePolicy;
   readonly now?: () => number;
   readonly clock?: DaemonClock;
   readonly exit?: (code: number) => void;
   readonly idleTimeoutMs?: number;
-  readonly resourceCheckIntervalMs?: number;
   readonly residentMemoryBytes?: () => number;
   readonly startupHeartbeatIntervalMs?: number;
-  readonly completionSpoolLimits?: {
-    readonly inlineBytes?: number;
-    readonly maximumResultBytes?: number;
-    readonly maximumAggregateBytes?: number;
-  };
   readonly completionSpoolStorage?: CompletionSpoolStorage;
   readonly operationTraceRetentionMs?: number;
   readonly maximumRetainedOperationTraces?: number;
@@ -101,8 +92,7 @@ export class WorkspaceDaemon {
   private readonly logger: DaemonLogger;
   private readonly lifetime: DaemonLifetime;
   private readonly resourceSupervisor: DaemonResourceSupervisor;
-  private readonly resourcePolicy: DaemonResourcePolicy;
-  private readonly policy: DaemonPolicy;
+  private readonly resourcePolicy: DaemonPolicyValues["resources"];
   private readonly operationObserver: DaemonOperationObserver;
   private readonly acceptedRequests: AcceptedRequestLedger;
   private readonly completionSpools: DaemonCompletionSpoolStore;
@@ -132,7 +122,6 @@ export class WorkspaceDaemon {
 
   constructor(private readonly options: WorkspaceDaemonOptions) {
     const policy = options.policy;
-    this.policy = policy;
     this.forceEscalated = new Promise((resolve) => {
       this.resolveForceEscalated = resolve;
     });
@@ -145,18 +134,14 @@ export class WorkspaceDaemon {
       directory: options.identity.spoolDirectory,
       workspaceKey: options.identity.workspaceKey,
       instanceId: options.instanceId,
-      ...options.completionSpoolLimits,
+      policy: policy.values.output,
       ...(options.completionSpoolStorage === undefined
         ? {}
         : { storage: options.completionSpoolStorage }),
     });
     this.logger =
       options.logger ?? new DaemonLogger(options.identity, options.instanceId, this.clock);
-    const resourcePolicy =
-      options.resourcePolicy ??
-      DaemonResourcePolicy.fromSystemMemory(
-        Math.max(options.memoryCapBytes * 2, 512 * 1024 * 1024),
-      );
+    const resourcePolicy = policy.values.resources;
     this.resourcePolicy = resourcePolicy;
     this.navigationWorkerFactory =
       options.navigationWorkerFactory ??
@@ -169,7 +154,7 @@ export class WorkspaceDaemon {
                 policy: policy.toSerialized(),
               },
               resourceLimits: {
-                maxOldGenerationSizeMb: resourcePolicy.record.workerMaxOldGenerationSizeMb,
+                maxOldGenerationSizeMb: resourcePolicy.workerMaxOldGenerationSizeMiB,
               },
             })
         : undefined);
@@ -183,9 +168,6 @@ export class WorkspaceDaemon {
     this.resourceSupervisor = new DaemonResourceSupervisor({
       policy: resourcePolicy,
       generation: this.initialNavigationWorker.generation,
-      ...(options.resourceCheckIntervalMs === undefined
-        ? {}
-        : { intervalMs: options.resourceCheckIntervalMs }),
       ...(options.residentMemoryBytes === undefined
         ? {}
         : { residentMemoryBytes: options.residentMemoryBytes }),
@@ -249,7 +231,7 @@ export class WorkspaceDaemon {
         startedAt: startingRecord.startedAt,
         readyAt: this.now(),
         fileCount: response.fileCount,
-        memoryCapBytes: this.options.memoryCapBytes,
+        memoryCapBytes: this.resourcePolicy.hardProcessRssBytes,
       };
       if (!this.options.registry.writeIfStartupOwner(this.options.identity, readyRecord)) {
         throw new Error("Daemon startup ownership changed before readiness publication");
@@ -1172,7 +1154,7 @@ export class WorkspaceDaemon {
       startupElapsedMs: Math.max(0, now - this.startedMonotonicAt),
       ...(this.workerReady ? { fileCount: this.fileCount } : {}),
       processRssBytes: process.memoryUsage().rss,
-      hardProcessRssBytes: this.resourcePolicy.record.hardProcessRssBytes,
+      hardProcessRssBytes: this.resourcePolicy.hardProcessRssBytes,
       ...(resources.workerHeapUsedBytes === undefined
         ? {}
         : { workerHeapUsedBytes: resources.workerHeapUsedBytes }),

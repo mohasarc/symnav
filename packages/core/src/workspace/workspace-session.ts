@@ -76,6 +76,6 @@ export class WorkspaceSession {
   }
 
   async releaseTransientResources(): Promise<void> {
-    throw new Error("Workspace session release is not implemented");
+    await Promise.all(this.#backends.map((backend) => backend.releaseTransientResources()));
   }
 }

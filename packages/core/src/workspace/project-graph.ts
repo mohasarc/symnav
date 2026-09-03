@@ -94,7 +94,7 @@ export abstract class ProjectGraph<
 > {
   private state: ProjectGraphState<Project> | undefined;
 
-  protected constructor(private readonly fileSystem: FileSystem) {}
+  protected constructor(protected readonly fileSystem: FileSystem) {}
 
   protected async refreshProjectGraph(
     snapshot: WorkspaceSnapshot,

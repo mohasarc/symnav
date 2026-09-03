@@ -40,6 +40,54 @@ describe("ESLint workspace config", () => {
     expect(result!.errorCount).toBe(0);
   });
 
+  it("reports a boundaries violation when daemon imports @symnav/core", async () => {
+    const eslint = await makeESLint();
+    const code = `import type { Workspace } from "@symnav/core";\nexport type X = Workspace;\n`;
+    const [result] = await eslint.lintText(code, {
+      filePath: join(repoRoot, "packages/daemon/src/forbidden.ts"),
+    });
+    const boundaries = result!.messages.filter(
+      (message) => message.ruleId === "boundaries/dependencies",
+    );
+    expect(boundaries).toHaveLength(1);
+  });
+
+  it("reports a boundaries violation when daemon imports CLI", async () => {
+    const eslint = await makeESLint();
+    const code = `import type * as Cli from "symnav";\nexport type X = typeof Cli;\n`;
+    const [result] = await eslint.lintText(code, {
+      filePath: join(repoRoot, "packages/daemon/src/forbidden.ts"),
+    });
+    const boundaries = result!.messages.filter(
+      (message) => message.ruleId === "boundaries/dependencies",
+    );
+    expect(boundaries).toHaveLength(1);
+  });
+
+  it("reports a boundaries violation when backend imports @symnav/daemon", async () => {
+    const eslint = await makeESLint();
+    const code = `import type { DaemonExecutor } from "@symnav/daemon";\nexport type X = DaemonExecutor;\n`;
+    const [result] = await eslint.lintText(code, {
+      filePath: join(repoRoot, "packages/backend-typescript/src/forbidden.ts"),
+    });
+    const boundaries = result!.messages.filter(
+      (message) => message.ruleId === "boundaries/dependencies",
+    );
+    expect(boundaries).toHaveLength(1);
+  });
+
+  it("reports a boundaries violation when telemetry imports @symnav/daemon", async () => {
+    const eslint = await makeESLint();
+    const code = `import type { DaemonExecutor } from "@symnav/daemon";\nexport type X = DaemonExecutor;\n`;
+    const [result] = await eslint.lintText(code, {
+      filePath: join(repoRoot, "packages/telemetry/src/forbidden.ts"),
+    });
+    const boundaries = result!.messages.filter(
+      (message) => message.ruleId === "boundaries/dependencies",
+    );
+    expect(boundaries).toHaveLength(1);
+  });
+
   it("reports a boundaries violation when renderer imports @symnav/telemetry", async () => {
     const eslint = await makeESLint();
     const code = `import type { UsageEvent } from "@symnav/telemetry";\nexport type X = UsageEvent;\n`;

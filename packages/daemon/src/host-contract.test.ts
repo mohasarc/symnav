@@ -125,6 +125,11 @@ class TypeScriptExportInventory {
       return;
     }
 
+    if (ts.isImportEqualsDeclaration(statement)) {
+      output.push({ kind: statement.isTypeOnly ? "type" : "runtime", name: statement.name.text });
+      return;
+    }
+
     const name = TypeScriptExportInventory.declarationName(statement);
     if (name === undefined) {
       return;

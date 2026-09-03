@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync, statSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -42,6 +42,21 @@ class DaemonPackageMetadata {
 
   public static policyDocument(): string {
     return readFileSync(join(DaemonPackageMetadata.repoRoot, "plans/005/daemon-policy.md"), "utf8");
+  }
+
+  public static appProductionSources(): string {
+    const sourceRoot = join(DaemonPackageMetadata.repoRoot, "apps/cli/src");
+    return DaemonPackageMetadata.files(sourceRoot)
+      .filter((path) => path.endsWith(".ts") && !path.endsWith(".test.ts"))
+      .map((path) => readFileSync(path, "utf8"))
+      .join("\n");
+  }
+
+  private static files(directory: string): readonly string[] {
+    return readdirSync(directory).flatMap((name) => {
+      const path = join(directory, name);
+      return statSync(path).isDirectory() ? DaemonPackageMetadata.files(path) : [path];
+    });
   }
 }
 
@@ -171,6 +186,17 @@ describe("@symnav/daemon package boundary", () => {
       "unacknowledged result",
     ]) {
       expect(document).toContain(`| ${absence} | None |`);
+    }
+  });
+
+  it("requires the composed daemon policy instead of reconstructing it", () => {
+    const sources = DaemonPackageMetadata.appProductionSources();
+    for (const retiredSeam of [
+      "daemonPolicy: DaemonPolicy =",
+      "readonly policy?: DaemonPolicy",
+      "readonly policy: DaemonPolicy =",
+    ]) {
+      expect(sources).not.toContain(retiredSeam);
     }
   });
 });

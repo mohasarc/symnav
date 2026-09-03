@@ -1,4 +1,6 @@
 import { afterEach, expect, it, vi } from "vitest";
+import { DaemonPolicy } from "@symnav/daemon";
+import { DaemonPolicyTestFactory } from "@symnav/daemon/policy-testing";
 import { CommandOutputSnapshot, type DispatchedCommandResult } from "./command-execution-result.js";
 import type { ProgramDependencies } from "./program-dependencies.js";
 import { DaemonWorkspaceIdentity } from "./daemon/daemon-workspace-identity.js";
@@ -10,6 +12,7 @@ afterEach(() => {
   vi.doUnmock("./daemon/daemon-command-dispatcher.js");
   vi.doUnmock("./program.js");
   vi.doUnmock("./state-directory-resolver.js");
+  vi.doUnmock("@symnav/daemon");
 });
 
 it("owns one canonical state directory across one client invocation", async () => {
@@ -79,4 +82,56 @@ it("owns one canonical state directory across one client invocation", async () =
   expect(dispatcherStateDirectory).toBe(initialStateDirectory);
   expect(daemonRecordPath).toBe(expectedIdentity.recordPath("instance"));
   expect(daemonEndpoint).toBe(expectedIdentity.endpoint("instance"));
+});
+
+it("owns one exact daemon policy snapshot across one client invocation", async () => {
+  const policy = DaemonPolicyTestFactory.withOverrides(
+    DaemonPolicy.fromSystemMemory({ totalBytes: 8 * 1024 ** 3 }),
+    {
+      transport: { singleResponseTimeoutMs: 471 },
+      resources: {
+        hardProcessRssBytes: 474 * 1024 ** 2,
+        softProcessRssBytes: 473 * 1024 ** 2,
+        resumeProcessRssBytes: 472 * 1024 ** 2,
+      },
+      output: { maximumAggregateSpoolRawBytes: 700 * 1024 ** 2 },
+      shutdown: { idleTimeoutMs: 480 },
+      diagnostics: { maximumDisconnectedTraces: 483 },
+    },
+  );
+  const dependencyPolicies: DaemonPolicy[] = [];
+  const dispatcherPolicies: DaemonPolicy[] = [];
+
+  vi.doMock("@symnav/daemon", () => ({
+    DaemonPolicy: { currentSystem: () => policy },
+  }));
+  vi.doMock("./program.js", () => ({
+    createDefaultDependencies: (_stateDirectory: string, daemonPolicy: DaemonPolicy) => {
+      dependencyPolicies.push(daemonPolicy);
+      return { telemetryEnabled: true } as unknown as ProgramDependencies;
+    },
+    createDefaultProgramContext: () => ({ stdout: {}, stderr: {}, cwd: "/client" }),
+  }));
+  vi.doMock("./cli-program-executor.js", () => ({
+    CommandResultReplayer: { replay: vi.fn() },
+  }));
+  vi.doMock("./daemon/daemon-command-dispatcher.js", () => ({
+    DaemonCommandDispatcher: class {
+      constructor(options: { readonly policy: DaemonPolicy }) {
+        dispatcherPolicies.push(options.policy);
+      }
+
+      execute(): Promise<DispatchedCommandResult> {
+        return Promise.resolve({
+          mode: "cold",
+          result: { output: new CommandOutputSnapshot([]), exitCode: 0 },
+        });
+      }
+    },
+  }));
+
+  await import("./cli.js");
+
+  expect(dependencyPolicies).toEqual([policy]);
+  expect(dispatcherPolicies).toEqual([policy]);
 });

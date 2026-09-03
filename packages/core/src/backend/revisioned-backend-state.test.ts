@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import type { FileMetadata, FileSystem } from "../workspace/file-system.js";
 import { InMemoryFileSystem } from "../workspace/in-memory/in-memory-file-system.js";
 import type { WorkspaceFile } from "../workspace/workspace.js";
+import type { SymbolIdentity } from "../intermediate-representation/symbol-identity.js";
 import {
   RevisionedBackendPreparation,
   RevisionedBackendState,
@@ -15,6 +16,7 @@ interface PreparedDetails {
 }
 
 type CandidateFault = "duplicate" | "outside" | "wrong-revision" | "missing-change";
+type FailureStage = "prepare" | "commit";
 
 class TrackingFileSystem implements FileSystem {
   readonly reads: string[] = [];
@@ -73,6 +75,9 @@ class TrackingFileSystem implements FileSystem {
 class FakeRevisionedBackendState extends RevisionedBackendState<PreparedDetails> {
   readonly requests: RevisionedBackendPreparationRequest<PreparedDetails>[] = [];
   candidateFault: CandidateFault | undefined;
+  failureStage: FailureStage | undefined;
+  rollbackCalls = 0;
+  commitCalls = 0;
 
   constructor(private readonly trackingFileSystem: TrackingFileSystem) {
     super(trackingFileSystem);
@@ -80,6 +85,10 @@ class FakeRevisionedBackendState extends RevisionedBackendState<PreparedDetails>
 
   prepared(relativePath: string): RevisionedBackendPreparedFile<PreparedDetails> | undefined {
     return this.preparedFile(relativePath);
+  }
+
+  relativeFor(absolutePath: string): string | undefined {
+    return this.relativePathForAbsolute(absolutePath);
   }
 
   protected createPreparation(
@@ -91,6 +100,8 @@ class FakeRevisionedBackendState extends RevisionedBackendState<PreparedDetails>
 }
 
 class FakeRevisionedBackendPreparation extends RevisionedBackendPreparation<PreparedDetails> {
+  private rolledBack = false;
+
   constructor(
     private readonly state: FakeRevisionedBackendState,
     private readonly fileSystem: TrackingFileSystem,
@@ -100,6 +111,7 @@ class FakeRevisionedBackendPreparation extends RevisionedBackendPreparation<Prep
   }
 
   async prepare(): Promise<readonly RevisionedBackendPreparedFile<PreparedDetails>[]> {
+    if (this.state.failureStage === "prepare") throw new Error("prepare failed");
     const prepared: RevisionedBackendPreparedFile<PreparedDetails>[] = [];
     for (const change of this.request.changes) {
       const content = await this.fileSystem.readFile(change.file.absolute);
@@ -108,9 +120,16 @@ class FakeRevisionedBackendPreparation extends RevisionedBackendPreparation<Prep
     return this.withFault(prepared);
   }
 
-  async commit(): Promise<void> {}
+  async commit(): Promise<void> {
+    this.state.commitCalls += 1;
+    if (this.state.failureStage === "commit") throw new Error("commit failed");
+  }
 
-  async rollback(): Promise<void> {}
+  async rollback(): Promise<void> {
+    if (this.rolledBack) return;
+    this.rolledBack = true;
+    this.state.rollbackCalls += 1;
+  }
 
   private withFault(
     prepared: readonly RevisionedBackendPreparedFile<PreparedDetails>[],
@@ -238,6 +257,7 @@ describe("RevisionedBackendState", () => {
 
       await expect(state.refresh([workspaceFile("a.ts", "a")])).rejects.toThrow();
       expect(state.currentFileCount()).toBe(0);
+      expect(state.rollbackCalls).toBe(1);
     },
   );
 
@@ -249,5 +269,40 @@ describe("RevisionedBackendState", () => {
       state.refresh([workspaceFile("a.ts", "a"), workspaceFile("a.ts", "a")]),
     ).rejects.toThrow();
     expect(state.currentFileCount()).toBe(0);
+    expect(state.rollbackCalls).toBe(1);
   });
+
+  it.each<FailureStage>(["prepare", "commit"])(
+    "rolls back once and preserves every index when %s fails",
+    async (failureStage) => {
+      const fileSystem = new TrackingFileSystem({
+        "/repo/a.ts": "a",
+        "/repo/b.ts": "b",
+      });
+      const state = new FakeRevisionedBackendState(fileSystem);
+      const first = workspaceFile("a.ts", "a");
+      await state.refresh([first]);
+      const priorPrepared = state.prepared("a.ts");
+      const priorEntries = await state.fileEntries(first);
+      const priorDiagnostics = state.diagnostics(first);
+      const identity: SymbolIdentity = { file: "a.ts", segments: [{ name: "a" }] };
+      const priorDeclaration = state.declarationForIdentity(identity);
+      state.failureStage = failureStage;
+
+      await expect(
+        state.refresh([workspaceFile("a.ts", "changed"), workspaceFile("b.ts", "b")]),
+      ).rejects.toThrow(`${failureStage} failed`);
+      expect(state.prepared("a.ts")).toBe(priorPrepared);
+      await expect(state.fileEntries(first)).resolves.toBe(priorEntries);
+      expect(state.diagnostics(first)).toBe(priorDiagnostics);
+      await expect(state.declarations([first])).resolves.toEqual([priorDeclaration?.declaration]);
+      expect(state.declarationForIdentity(identity)?.declaration).toBe(
+        priorDeclaration?.declaration,
+      );
+      expect(state.declarationForIdentity(identity)?.file).toEqual(priorDeclaration?.file);
+      expect(state.relativeFor("/repo/a.ts")).toBe("a.ts");
+      expect(state.currentFileCount()).toBe(1);
+      expect(state.rollbackCalls).toBe(1);
+    },
+  );
 });

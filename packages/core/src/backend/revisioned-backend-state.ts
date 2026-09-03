@@ -68,10 +68,15 @@ export abstract class RevisionedBackendState<PreparedDetails> {
   ): Promise<BackendRefreshSummary> {
     const request = this.preparationRequest(files, coverage);
     const preparation = this.createPreparation(request);
-    const preparedFiles = await preparation.prepare();
-    const candidate = this.candidateIndex(request, preparedFiles);
-    await preparation.commit();
-    this.index = candidate;
+    try {
+      const preparedFiles = await preparation.prepare();
+      const candidate = this.candidateIndex(request, preparedFiles);
+      await preparation.commit();
+      this.index = candidate;
+    } catch (error) {
+      await preparation.rollback();
+      throw error;
+    }
     return this.refreshSummary(request, files);
   }
 

@@ -274,6 +274,33 @@ describe("TypeScriptProjectGraph", () => {
     expect(graph.languageServiceFor("packages/app/src/index.ts")).toBe(inferredService);
   });
 
+  it("orders every owning project and uses the last owner as primary", async () => {
+    const projectFixture = fixture();
+    projectFixture.write(
+      "packages/app/tsconfig.json",
+      JSON.stringify({
+        extends: "./tsconfig.base.json",
+        compilerOptions: { composite: true },
+        references: [{ path: "../domain" }],
+        files: ["src/index.ts", "../domain/src/index.ts"],
+      }),
+    );
+    projectFixture.write("scratch/outside.ts", "export const outside = true;\n");
+    const graph = new TypeScriptProjectGraph(projectFixture.fileSystem);
+    await graph.refresh(await projectFixture.snapshot());
+
+    const sourceFiles = graph.sourceFilesFor("packages/domain/src/index.ts");
+    const primary = graph.sourceFileFor("packages/domain/src/index.ts");
+
+    expect(
+      sourceFiles.map((sourceFile) => sourceFile.getProject().getCompilerOptions().baseUrl),
+    ).toEqual([
+      projectFixture.root.replaceAll("\\", "/") + "/packages/domain",
+      projectFixture.root.replaceAll("\\", "/") + "/packages/app",
+    ]);
+    expect(primary).toBe(sourceFiles.at(-1));
+  });
+
   it("invalidates equal-size configuration content after modification time is restored", async () => {
     const projectFixture = fixture();
     const configurationPath = join(projectFixture.root, "packages/app/tsconfig.base.json");

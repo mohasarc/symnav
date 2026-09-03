@@ -269,6 +269,28 @@ describe("CliProgramExecutor", () => {
     expect(await decode(result)).toBe("Cannot answer: daemon response capacity exceeded.\n");
   });
 
+  it("creates a fresh request session for each non-injected navigation", async () => {
+    const fs = new ListingCountingFileSystem({
+      "/repo/.git/HEAD": "ref: refs/heads/main\n",
+      "/repo/src/a.ts": "export const a = 1;\n",
+    });
+    const createdBackends: FakeLanguageBackend[] = [];
+    const backends = vi.fn(() => {
+      const backend = new FakeLanguageBackend({ accept: (path) => path.endsWith(".ts") });
+      createdBackends.push(backend);
+      return [backend];
+    });
+    const executor = new CliProgramExecutor(fakeDependencies({ fs, backends }));
+
+    await executor.execute({ argv: ["resolve", "a"], cwd: "/repo", telemetryEnabled: false });
+    fs.directoryReads.length = 0;
+    await executor.execute({ argv: ["resolve", "a"], cwd: "/repo", telemetryEnabled: false });
+
+    expect(backends).toHaveBeenCalledTimes(2);
+    expect(createdBackends).toHaveLength(2);
+    expect(fs.directoryReads).not.toEqual([]);
+  });
+
   it("reuses an injected workspace session across executions", async () => {
     const fs = new ListingCountingFileSystem({
       "/repo/.git/HEAD": "ref: refs/heads/main\n",

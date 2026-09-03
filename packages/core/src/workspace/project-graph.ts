@@ -79,6 +79,8 @@ interface DiscoveredProjectConfiguration<ConfigurationUnit> {
 interface ProjectGraphState<Project> {
   readonly root: string;
   readonly configuredProjects: readonly Project[];
+  readonly projectsByRelativePath: ReadonlyMap<string, readonly Project[]>;
+  readonly primaryProjectByRelativePath: ReadonlyMap<string, Project>;
   readonly inferredProject: Project;
   readonly inferredFileCount: number;
   readonly inputsByPath: ReadonlyMap<string, string>;
@@ -121,15 +123,25 @@ export abstract class ProjectGraph<
       this.state?.inputsByPath ?? new Map(),
       inputsByPath,
     );
+    const ownership = ProjectGraph.buildOwnership(configurations, prepared.configuredProjects);
     this.state = {
       root: snapshot.root,
       configuredProjects: prepared.configuredProjects,
+      ...ownership,
       inferredProject: prepared.inferredProject,
       inferredFileCount: inferredFiles.length,
       inputsByPath,
       observations: inputCollector.observations(),
     };
     return this.currentSummary(changedInputCount);
+  }
+
+  protected primaryProjectFor(relativePath: string): Project | undefined {
+    return this.state?.primaryProjectByRelativePath.get(relativePath);
+  }
+
+  protected projectsFor(relativePath: string): readonly Project[] {
+    return this.state?.projectsByRelativePath.get(relativePath) ?? [];
   }
 
   protected abstract initialConfigurationPaths(root: string): readonly string[];
@@ -198,5 +210,27 @@ export abstract class ProjectGraph<
   ): number {
     const paths = new Set([...current.keys(), ...next.keys()]);
     return [...paths].filter((path) => current.get(path) !== next.get(path)).length;
+  }
+
+  private static buildOwnership<ConfigurationUnit, Project>(
+    configurations: readonly ProjectConfigurationMembership<ConfigurationUnit>[],
+    configuredProjects: readonly Project[],
+  ): {
+    readonly projectsByRelativePath: ReadonlyMap<string, readonly Project[]>;
+    readonly primaryProjectByRelativePath: ReadonlyMap<string, Project>;
+  } {
+    const projectsByRelativePath = new Map<string, Project[]>();
+    const primaryProjectByRelativePath = new Map<string, Project>();
+    for (const [index, configuration] of configurations.entries()) {
+      const project = configuredProjects[index];
+      if (!project) continue;
+      for (const file of configuration.files) {
+        const projects = projectsByRelativePath.get(file.relative) ?? [];
+        projects.push(project);
+        projectsByRelativePath.set(file.relative, projects);
+        primaryProjectByRelativePath.set(file.relative, project);
+      }
+    }
+    return { projectsByRelativePath, primaryProjectByRelativePath };
   }
 }

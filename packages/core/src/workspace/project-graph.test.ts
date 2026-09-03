@@ -162,10 +162,7 @@ describe("ProjectGraph", () => {
     );
     graph.initialPaths = ["/repo/a.json", "/repo/b.json"];
     graph.configurations = new Map([
-      [
-        "/repo/a.json",
-        { referencedPaths: ["/repo/c.json"], filePaths: ["shared.ts"] },
-      ],
+      ["/repo/a.json", { referencedPaths: ["/repo/c.json"], filePaths: ["shared.ts"] }],
       ["/repo/b.json", { referencedPaths: [], filePaths: ["shared.ts"] }],
       ["/repo/c.json", { referencedPaths: [], filePaths: ["shared.ts"] }],
     ]);

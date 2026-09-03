@@ -15,6 +15,7 @@ import {
 } from "@symnav/core";
 
 import { TypeScriptBackend } from "./typescript-backend.js";
+import type { TypeScriptProjectGraph } from "./typescript-project-graph.js";
 import { TypeScriptSemanticQueryService } from "./typescript-semantic-query-service.js";
 import { TypeScriptWorkspaceState } from "./typescript-workspace-state.js";
 
@@ -163,6 +164,61 @@ describe("TypeScriptSemanticQueryService", () => {
 
     await expect(backend.findDefinitions([], target)).resolves.toBe(definitions);
     expect(definitionSearches).toBe(1);
+  });
+
+  it("clears caches before awaiting project release and rejects at the backend boundary", async () => {
+    const releaseFailure = new Error("project release failed");
+    let rejectProjectRelease: ((reason: unknown) => void) | undefined;
+    const projectRelease = new Promise<void>((_resolve, reject) => {
+      rejectProjectRelease = reject;
+    });
+    void projectRelease.catch(() => undefined);
+    const projectGraph = {
+      releaseTransientResources: vi.fn(() => projectRelease),
+    } as unknown as TypeScriptProjectGraph;
+    const state = {
+      refresh: vi.fn(() =>
+        Promise.resolve({ added: 0, changed: 0, removed: 0, unchanged: 0 }),
+      ),
+      ensureFiles: vi.fn(() => Promise.resolve()),
+      locate: vi.fn(() => []),
+    } as unknown as TypeScriptWorkspaceState;
+    let definitionSearches = 0;
+    const backend = new TypeScriptBackend(
+      new InMemoryFileSystem({}),
+      state,
+      projectGraph,
+      {
+        definitionSearch: () => {
+          definitionSearches += 1;
+        },
+      },
+    );
+    const snapshot: WorkspaceSnapshot = { root: "/repo", files: [] };
+    const target = identity("src/app.ts", "target");
+    await backend.refresh({ snapshot, coverage: "selection" });
+    const beforeRelease = await backend.findDefinitions([], target);
+
+    const release = backend.releaseTransientResources();
+    let releaseSettled = false;
+    void release.then(
+      () => {
+        releaseSettled = true;
+      },
+      () => {
+        releaseSettled = true;
+      },
+    );
+    const afterRelease = await backend.findDefinitions([], target);
+
+    expect(afterRelease).not.toBe(beforeRelease);
+    expect(definitionSearches).toBe(2);
+    expect(projectGraph.releaseTransientResources).toHaveBeenCalledOnce();
+    await Promise.resolve();
+    expect(releaseSettled).toBe(false);
+
+    rejectProjectRelease?.(releaseFailure);
+    await expect(release).rejects.toBe(releaseFailure);
   });
 
   it("shares one reference search across caller and reference projections", async () => {

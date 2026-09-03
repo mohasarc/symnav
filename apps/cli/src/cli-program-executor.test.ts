@@ -3,14 +3,13 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Writable } from "node:stream";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { InMemoryFileSystem, WorkspaceCatalog, type OverviewFileEntries } from "@symnav/core";
+import { InMemoryFileSystem, type OverviewFileEntries, WorkspaceSession } from "@symnav/core";
 import * as commandExecutionResult from "./command-execution-result.js";
 import { CliProgramExecutor, CommandResultReplayer } from "./cli-program-executor.js";
 import { fakeDependencies } from "../test/integration/commands/helpers/fake-program-dependencies.js";
 import { createCapturingRecorder } from "../test/integration/commands/helpers/fake-program-dependencies.js";
 import { createFakeProgramContext } from "../test/integration/commands/helpers/fake-program-context.js";
 import { FakeLanguageBackend } from "../test/integration/commands/helpers/fake-language-backend.js";
-import { WorkspaceRequestScopeFactory } from "./workspace-request-scope.js";
 
 describe("CliProgramExecutor", () => {
   const temporaryRoots: string[] = [];
@@ -251,16 +250,20 @@ describe("CliProgramExecutor", () => {
     expect(await decode(result)).toBe("Cannot answer: daemon response capacity exceeded.\n");
   });
 
-  it("reuses an injected request scope factory across executions", async () => {
+  it("reuses an injected workspace session across executions", async () => {
     const fs = new ListingCountingFileSystem({
       "/repo/.git/HEAD": "ref: refs/heads/main\n",
       "/repo/src/a.ts": "export const a = 1;\n",
     });
     const backend = new FakeLanguageBackend({ accept: (path) => path.endsWith(".ts") });
-    const factory = new WorkspaceRequestScopeFactory(fs, [backend], new WorkspaceCatalog(fs));
+    const workspaceSession = new WorkspaceSession({
+      fileSystem: fs,
+      backends: [backend],
+      discoveryRetention: "session",
+    });
     const executor = new CliProgramExecutor(
       fakeDependencies({ fs, backends: () => [backend] }),
-      factory,
+      workspaceSession,
     );
 
     await executor.execute({

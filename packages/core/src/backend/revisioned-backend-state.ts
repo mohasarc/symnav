@@ -81,15 +81,11 @@ export abstract class RevisionedBackendState<PreparedDetails> {
   }
 
   async ensureFiles(files: readonly ResolvedPath[]): Promise<void> {
-    const missingFiles = files.filter((file) => !this.index.byRelativePath.has(file.relative));
-    if (missingFiles.length === 0) return;
-    const workspaceFiles = await Promise.all(
-      missingFiles.map(async (file) => ({
-        ...file,
-        metadata: await this.fileSystem.metadata(file.absolute),
-      })),
-    );
-    await this.refresh(workspaceFiles, "selection");
+    for (const file of files) {
+      if (this.index.byRelativePath.has(file.relative)) continue;
+      const metadata = await this.fileSystem.metadata(file.absolute);
+      await this.refresh([{ ...file, metadata }], "selection");
+    }
   }
 
   async fileEntries(file: ResolvedPath): Promise<OverviewFileEntries> {

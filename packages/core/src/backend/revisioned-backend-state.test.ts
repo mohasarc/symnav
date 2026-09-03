@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import type { FileMetadata, FileSystem } from "../workspace/file-system.js";
 import { InMemoryFileSystem } from "../workspace/in-memory/in-memory-file-system.js";
-import type { WorkspaceFile } from "../workspace/workspace.js";
+import type { ResolvedPath, WorkspaceFile } from "../workspace/workspace.js";
 import type { SymbolIdentity } from "../intermediate-representation/symbol-identity.js";
 import {
   RevisionedBackendPreparation,
@@ -79,6 +79,8 @@ class FakeRevisionedBackendState extends RevisionedBackendState<PreparedDetails>
   rollbackCalls = 0;
   commitCalls = 0;
   preparationMode: "incremental" | "full" = "incremental";
+  failPreparationNumber: number | undefined;
+  private preparationCount = 0;
 
   constructor(private readonly trackingFileSystem: TrackingFileSystem) {
     super(trackingFileSystem);
@@ -100,7 +102,13 @@ class FakeRevisionedBackendState extends RevisionedBackendState<PreparedDetails>
     request: RevisionedBackendPreparationRequest<PreparedDetails>,
   ): RevisionedBackendPreparation<PreparedDetails> {
     this.requests.push(request);
-    return new FakeRevisionedBackendPreparation(this, this.trackingFileSystem, request);
+    this.preparationCount += 1;
+    return new FakeRevisionedBackendPreparation(
+      this,
+      this.trackingFileSystem,
+      request,
+      this.preparationCount === this.failPreparationNumber,
+    );
   }
 }
 
@@ -111,12 +119,15 @@ class FakeRevisionedBackendPreparation extends RevisionedBackendPreparation<Prep
     private readonly state: FakeRevisionedBackendState,
     private readonly fileSystem: TrackingFileSystem,
     private readonly request: RevisionedBackendPreparationRequest<PreparedDetails>,
+    private readonly prepareFailure: boolean,
   ) {
     super();
   }
 
   async prepare(): Promise<readonly RevisionedBackendPreparedFile<PreparedDetails>[]> {
-    if (this.state.failureStage === "prepare") throw new Error("prepare failed");
+    if (this.state.failureStage === "prepare" || this.prepareFailure) {
+      throw new Error("prepare failed");
+    }
     const files =
       this.state.preparationMode === "full"
         ? this.request.effectiveFiles
@@ -196,6 +207,10 @@ function workspaceFile(
   absolute = `/repo/${relative}`,
 ): WorkspaceFile {
   return { relative, absolute, metadata: metadata(changeToken) };
+}
+
+function paths(...relativePaths: string[]): readonly ResolvedPath[] {
+  return relativePaths.map((relative) => ({ relative, absolute: `/repo/${relative}` }));
 }
 
 describe("RevisionedBackendState", () => {
@@ -326,5 +341,20 @@ describe("RevisionedBackendState", () => {
     await state.refresh(files);
     expect(state.prepared("a.ts")).not.toBe(retainedA);
     expect(state.allPrepared()).toHaveLength(2);
+  });
+
+  it("ensures absent files sequentially and retains earlier progress after failure", async () => {
+    const fileSystem = new TrackingFileSystem({ "/repo/a.ts": "a", "/repo/b.ts": "b" });
+    const state = new FakeRevisionedBackendState(fileSystem);
+    state.failPreparationNumber = 2;
+
+    await expect(state.ensureFiles(paths("a.ts", "b.ts"))).rejects.toThrow("prepare failed");
+    expect(state.prepared("a.ts")).toBeDefined();
+    expect(state.prepared("b.ts")).toBeUndefined();
+    expect(state.requests.map((request) => request.coverage)).toEqual(["selection", "selection"]);
+
+    fileSystem.metadataReads.length = 0;
+    await state.ensureFiles(paths("a.ts"));
+    expect(fileSystem.metadataReads).toEqual([]);
   });
 });

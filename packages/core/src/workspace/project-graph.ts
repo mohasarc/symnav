@@ -117,10 +117,10 @@ export abstract class ProjectGraph<
       inferredFiles,
       inputCollector,
     });
-    const inputsByPath = ProjectGraph.collectInputs([
-      ...discovered.flatMap(({ parsed }) => parsed.inputs),
-      ...prepared.inputs,
-    ]);
+    const activeInputs = [...discovered.flatMap(({ parsed }) => parsed.inputs), ...prepared.inputs];
+    const observations = inputCollector.observations();
+    ProjectGraph.validateActiveInputs(activeInputs, observations);
+    const inputsByPath = ProjectGraph.collectInputs(activeInputs);
     const changedInputCount = ProjectGraph.changedInputCount(
       this.state?.inputsByPath ?? new Map(),
       inputsByPath,
@@ -134,7 +134,7 @@ export abstract class ProjectGraph<
       inferredProject: prepared.inferredProject,
       inferredFileCount: inferredFiles.length,
       inputsByPath,
-      observations: inputCollector.observations(),
+      observations,
     };
     return this.currentSummary(changedInputCount);
   }
@@ -236,6 +236,24 @@ export abstract class ProjectGraph<
     const byPath = new Map<string, string>();
     for (const input of inputs) byPath.set(input.path, input.content);
     return byPath;
+  }
+
+  private static validateActiveInputs(
+    inputs: readonly ProjectInput[],
+    observations: readonly ProjectInputObservation[],
+  ): void {
+    const observationByPath = new Map(
+      observations.map((observation) => [observation.path, observation]),
+    );
+    for (const input of inputs) {
+      const observation = observationByPath.get(input.path);
+      if (!observation || observation.content === null) {
+        throw new Error(`Project input ${input.path} was not observed successfully`);
+      }
+      if (observation.content !== input.content) {
+        throw new Error(`Project input ${input.path} does not match observed content`);
+      }
+    }
   }
 
   private static changedInputCount(

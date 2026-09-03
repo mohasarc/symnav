@@ -358,9 +358,9 @@ describe("ProjectGraph", () => {
     const publishedProject = graph.primary("owned.ts");
     graph.preparedInputs = [{ path: "/repo/active.json", content: "active" }];
 
-    await expect(
-      graph.refresh(snapshot(workspaceFile("owned.ts", "candidate"))),
-    ).rejects.toThrow("Project input /repo/active.json was not observed successfully");
+    await expect(graph.refresh(snapshot(workspaceFile("owned.ts", "candidate")))).rejects.toThrow(
+      "Project input /repo/active.json was not observed successfully",
+    );
 
     expect(graph.primary("owned.ts")).toBe(publishedProject);
     expect(graph.file("owned.ts")).toBe(publishedFile);
@@ -383,9 +383,9 @@ describe("ProjectGraph", () => {
     graph.preparedInputPaths = ["/repo/active.json"];
     graph.preparedInputs = [{ path: "/repo/active.json", content: "stale" }];
 
-    await expect(
-      graph.refresh(snapshot(workspaceFile("owned.ts", "candidate"))),
-    ).rejects.toThrow("Project input /repo/active.json does not match observed content");
+    await expect(graph.refresh(snapshot(workspaceFile("owned.ts", "candidate")))).rejects.toThrow(
+      "Project input /repo/active.json does not match observed content",
+    );
 
     expect(graph.primary("owned.ts")).toBe(publishedProject);
     expect(graph.file("owned.ts")).toBe(publishedFile);

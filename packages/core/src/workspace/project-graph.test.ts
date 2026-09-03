@@ -35,6 +35,7 @@ class FakeProjectGraph extends ProjectGraph<FakeConfiguration, FakeProject> {
   preparedInputs: readonly ProjectInput[] = [];
   membershipFiles: readonly WorkspaceFile[] | undefined;
   configuredProjectCountAdjustment = 0;
+  prepareFailure: Error | undefined;
 
   constructor(fileSystem: FileSystem) {
     super(fileSystem);
@@ -94,6 +95,7 @@ class FakeProjectGraph extends ProjectGraph<FakeConfiguration, FakeProject> {
     request: ProjectGraphPreparationRequest<FakeConfiguration>,
   ): Promise<PreparedProjectGraph<FakeProject>> {
     this.preparationRequests.push(request);
+    if (this.prepareFailure) throw this.prepareFailure;
     const inputs = this.preparedInputPaths.flatMap((path) => {
       const content = request.inputCollector.read(path);
       return content === undefined ? [] : [{ path, content }];
@@ -471,6 +473,30 @@ describe("ProjectGraph", () => {
 
     await expect(graph.refresh(snapshot(workspaceFile("owned.ts", "candidate")))).rejects.toThrow(
       "Project graph preparation returned 2 configured projects for 1 configurations",
+    );
+
+    expect(graph.primary("owned.ts")).toBe(publishedProject);
+    expect(graph.file("owned.ts")).toBe(publishedFile);
+  });
+
+  it("preserves the complete graph when project preparation fails", async () => {
+    const graph = new FakeProjectGraph(
+      new InMemoryFileSystem({
+        "/repo/root.json": "root",
+      }),
+    );
+    graph.initialPaths = ["/repo/root.json"];
+    graph.configurations.set("/repo/root.json", {
+      referencedPaths: [],
+      filePaths: ["owned.ts"],
+    });
+    const publishedFile = workspaceFile("owned.ts", "published");
+    await graph.refresh(snapshot(publishedFile));
+    const publishedProject = graph.primary("owned.ts");
+    graph.prepareFailure = new Error("preparation failed");
+
+    await expect(graph.refresh(snapshot(workspaceFile("owned.ts", "candidate")))).rejects.toThrow(
+      "preparation failed",
     );
 
     expect(graph.primary("owned.ts")).toBe(publishedProject);

@@ -79,15 +79,7 @@ export class WorkspaceSession {
       preparation.coverage === "selection"
         ? await preparation.selectSnapshot(workspace, router)
         : await workspace.snapshot();
-    const emptyRefresh: BackendRefreshSummary = {
-      added: 0,
-      changed: 0,
-      removed: 0,
-      unchanged: 0,
-    };
-    const refresh = await router
-      .refresh(snapshot, preparation.coverage)
-      .catch(() => emptyRefresh);
+    const refresh = await router.refresh(snapshot, preparation.coverage);
     return { workspace, snapshot, router, refresh };
   }
 

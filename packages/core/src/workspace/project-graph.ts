@@ -102,11 +102,12 @@ export abstract class ProjectGraph<
     if (this.projectStateUnchanged(snapshot)) return this.currentSummary(0);
     const inputCollector = new ProjectInputCollector(this.fileSystem);
     const discovered = await this.discoverConfigurations(snapshot, inputCollector);
-    const configurations = discovered.map(({ path, parsed }) => ({
+    const candidateConfigurations = discovered.map(({ path, parsed }) => ({
       path,
       configuration: parsed.configuration,
       files: this.filesForConfiguration(parsed.configuration, snapshot),
     }));
+    const configurations = ProjectGraph.canonicalizeMembership(snapshot, candidateConfigurations);
     const ownedRelativePaths = new Set(
       configurations.flatMap((configuration) => configuration.files.map((file) => file.relative)),
     );
@@ -254,6 +255,36 @@ export abstract class ProjectGraph<
         throw new Error(`Project input ${input.path} does not match observed content`);
       }
     }
+  }
+
+  private static canonicalizeMembership<ConfigurationUnit>(
+    snapshot: WorkspaceSnapshot,
+    configurations: readonly ProjectConfigurationMembership<ConfigurationUnit>[],
+  ): readonly ProjectConfigurationMembership<ConfigurationUnit>[] {
+    const snapshotFileByRelativePath = new Map(snapshot.files.map((file) => [file.relative, file]));
+    return configurations.map((configuration) => ({
+      ...configuration,
+      files: configuration.files.map((file) => {
+        const snapshotFile = snapshotFileByRelativePath.get(file.relative);
+        if (snapshotFile && ProjectGraph.sameWorkspaceFile(file, snapshotFile)) {
+          return snapshotFile;
+        }
+        throw new Error(
+          `Project configuration ${configuration.path} returned non-snapshot file ${file.relative}`,
+        );
+      }),
+    }));
+  }
+
+  private static sameWorkspaceFile(left: WorkspaceFile, right: WorkspaceFile): boolean {
+    return (
+      left.relative === right.relative &&
+      left.absolute === right.absolute &&
+      left.metadata.size === right.metadata.size &&
+      left.metadata.modifiedAtMs === right.metadata.modifiedAtMs &&
+      left.metadata.changeToken === right.metadata.changeToken &&
+      left.metadata.fileIdentity === right.metadata.fileIdentity
+    );
   }
 
   private static changedInputCount(

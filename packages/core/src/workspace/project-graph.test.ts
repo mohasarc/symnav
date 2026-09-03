@@ -439,9 +439,9 @@ describe("ProjectGraph", () => {
       },
     ];
 
-    await expect(
-      graph.refresh(snapshot(workspaceFile("owned.ts", "candidate"))),
-    ).rejects.toThrow("Project configuration /repo/root.json returned non-snapshot file owned.ts");
+    await expect(graph.refresh(snapshot(workspaceFile("owned.ts", "candidate")))).rejects.toThrow(
+      "Project configuration /repo/root.json returned non-snapshot file owned.ts",
+    );
 
     expect(graph.preparationRequests).toHaveLength(1);
     expect(graph.primary("owned.ts")).toBe(publishedProject);

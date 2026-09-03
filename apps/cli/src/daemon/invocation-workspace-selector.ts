@@ -63,7 +63,9 @@ export class InvocationWorkspaceSelector {
     };
   }
 
-  private static workspaceCommandName(command: string | undefined): WorkspaceCommandName | undefined {
+  private static workspaceCommandName(
+    command: string | undefined,
+  ): WorkspaceCommandName | undefined {
     if (command === undefined || !Object.hasOwn(workspaceCommandNames, command)) return undefined;
     return workspaceCommandNames[command as WorkspaceCommandName];
   }

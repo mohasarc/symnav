@@ -5,10 +5,10 @@ import type { DaemonPolicyValues } from "@symnav/daemon";
 import type { DaemonClock } from "./daemon-clock.js";
 import {
   DAEMON_DIAGNOSTIC_SCHEMA_VERSION,
-  type DaemonCommandName,
   type DaemonDiagnosticErrorName,
   type DaemonDiagnosticEvent,
 } from "./daemon-protocol.js";
+import { DaemonRuntimeValues } from "./daemon-runtime-values.js";
 import type { DaemonWorkspaceIdentity } from "./daemon-workspace-identity.js";
 
 const DIAGNOSTIC_FIELDS = [
@@ -84,19 +84,6 @@ const DIAGNOSTIC_KINDS = new Set([
   "worker-replaced",
   "shutdown",
   "process-termination",
-]);
-
-const COMMAND_NAMES = new Set<DaemonCommandName>([
-  "overview",
-  "resolve",
-  "def",
-  "refs",
-  "context",
-  "graph",
-  "stats",
-  "help",
-  "version",
-  "unknown",
 ]);
 
 const ERROR_NAMES = new Set<DaemonDiagnosticErrorName>([
@@ -318,7 +305,7 @@ export class DaemonLogger {
     const diagnostic = event as unknown as Record<string, unknown>;
     if (!DIAGNOSTIC_KINDS.has(String(diagnostic.kind))) return undefined;
     const closed: Record<string, unknown> = { ...diagnostic };
-    if ("command" in closed && !COMMAND_NAMES.has(closed.command as DaemonCommandName)) {
+    if ("command" in closed && !DaemonRuntimeValues.isCommandName(closed.command)) {
       closed.command = "unknown";
     }
     if ("errorName" in closed && !ERROR_NAMES.has(closed.errorName as DaemonDiagnosticErrorName)) {

@@ -36,8 +36,8 @@ describe("DaemonCommandNames", () => {
 
   it("publishes an immutable tuple", () => {
     expect(Object.isFrozen(DAEMON_COMMAND_NAMES)).toBe(true);
-    expect(() =>
-      (DAEMON_COMMAND_NAMES as unknown as DaemonCommandName[]).push("unknown"),
-    ).toThrow(TypeError);
+    expect(() => (DAEMON_COMMAND_NAMES as unknown as DaemonCommandName[]).push("unknown")).toThrow(
+      TypeError,
+    );
   });
 });

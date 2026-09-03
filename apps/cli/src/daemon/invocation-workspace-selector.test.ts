@@ -30,13 +30,13 @@ describe("InvocationWorkspaceSelector", () => {
   );
 
   it("routes cwd overrides through the selected workspace", () => {
-    expect(
-      selector.select(["--cwd", otherWorkspaceRoot, "refs", "target"], workspaceRoot),
-    ).toEqual({
-      route: { kind: "workspace", startDir: otherWorkspaceRoot },
-      commandName: "refs",
-      argv: ["--cwd", otherWorkspaceRoot, "refs", "target"],
-    });
+    expect(selector.select(["--cwd", otherWorkspaceRoot, "refs", "target"], workspaceRoot)).toEqual(
+      {
+        route: { kind: "workspace", startDir: otherWorkspaceRoot },
+        commandName: "refs",
+        argv: ["--cwd", otherWorkspaceRoot, "refs", "target"],
+      },
+    );
     expect(selector.select(["--cwd", "..", "refs", "target"], nestedWorkspaceDirectory)).toEqual({
       route: { kind: "workspace", startDir: workspaceRoot },
       commandName: "refs",
@@ -93,14 +93,14 @@ describe("InvocationWorkspaceSelector", () => {
     { argv: [], commandName: "unknown" },
     { argv: ["unknown"], commandName: "unknown" },
     { argv: ["daemon", "unknown"], commandName: "unknown" },
-  ] satisfies readonly { readonly argv: readonly string[]; readonly commandName: DaemonCommandName }[])(
-    "maps local invocation $argv to $commandName",
-    ({ argv, commandName }) => {
-      expect(selector.select(argv, workspaceRoot)).toEqual({
-        route: { kind: "local" },
-        commandName,
-        argv,
-      });
-    },
-  );
+  ] satisfies readonly {
+    readonly argv: readonly string[];
+    readonly commandName: DaemonCommandName;
+  }[])("maps local invocation $argv to $commandName", ({ argv, commandName }) => {
+    expect(selector.select(argv, workspaceRoot)).toEqual({
+      route: { kind: "local" },
+      commandName,
+      argv,
+    });
+  });
 });

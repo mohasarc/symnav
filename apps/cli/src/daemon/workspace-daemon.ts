@@ -41,7 +41,7 @@ import type { DaemonNavigationWorkerResponse } from "./daemon-navigation-worker-
 import type { DaemonRegistry, DaemonStartupLease } from "./daemon-registry.js";
 import type { DaemonWorkspaceIdentity } from "./daemon-workspace-identity.js";
 import type { DaemonServerSend, LocalDaemonTransport } from "./local-daemon-transport.js";
-import { WorkspaceRequestQueue, type DaemonCommandName } from "./workspace-request-queue.js";
+import { WorkspaceRequestQueue } from "./workspace-request-queue.js";
 
 export interface WorkspaceDaemonOptions {
   readonly identity: DaemonWorkspaceIdentity;
@@ -486,7 +486,7 @@ export class WorkspaceDaemon {
     const existing = this.acceptedRequests.entryFor(request.requestId);
     let entry;
     try {
-      entry = this.acceptedRequests.accept(request.requestId, request.request);
+      entry = this.acceptedRequests.accept(request.requestId, request.commandName, request.request);
     } catch (error) {
       if (error instanceof AcceptedRequestCorruptionError) {
         return this.rejection(request, "incompatible", false);
@@ -499,10 +499,7 @@ export class WorkspaceDaemon {
         queuePosition: entry.state.queuePosition,
       });
       if (existing === undefined) {
-        const trace = this.operationObserver.start(
-          request.requestId,
-          WorkspaceDaemon.commandName(request.request.argv),
-        );
+        const trace = this.operationObserver.start(request.requestId, request.commandName);
         this.operationTraces.set(request.requestId, trace);
         trace.accepted(entry.state.queuePosition, this.resourceSupervisor.snapshot.generation);
       }
@@ -573,7 +570,7 @@ export class WorkspaceDaemon {
       await this.requestQueue.enqueue(
         {
           requestId: request.requestId,
-          command: WorkspaceDaemon.commandName(request.request.argv),
+          command: request.commandName,
           acceptedAt: this.clock.monotonicNowMs(),
         },
         async () => {
@@ -589,6 +586,7 @@ export class WorkspaceDaemon {
             if (ready.kind !== "ready") throw new Error("Navigation worker did not become ready");
             const response = await generation.worker.execute(
               request.requestId,
+              request.commandName,
               request.request,
               spool,
             );
@@ -1160,24 +1158,5 @@ export class WorkspaceDaemon {
         : { lastCompletedAgoMs: Math.max(0, now - this.lastCompletedMonotonicAt) }),
       spoolBytes: resources.spoolBytes,
     });
-  }
-
-  private static commandName(argv: readonly string[]): DaemonCommandName {
-    const commands: readonly DaemonCommandName[] = [
-      "overview",
-      "resolve",
-      "def",
-      "refs",
-      "context",
-      "graph",
-      "stats",
-    ];
-    const command = argv.find((argument): argument is DaemonCommandName =>
-      commands.includes(argument as DaemonCommandName),
-    );
-    if (command !== undefined) return command;
-    if (argv.includes("--version") || argv.includes("-v")) return "version";
-    if (argv.includes("--help") || argv.includes("-h")) return "help";
-    return "unknown";
   }
 }

@@ -34,6 +34,7 @@ const request: DaemonExecuteRequest = {
   instanceId: "instance",
   processToken: "token",
   requestId: "request",
+  commandName: "overview",
   request: { argv: ["overview", "src/a.ts"], cwd: "/repo", telemetryEnabled: false },
 };
 

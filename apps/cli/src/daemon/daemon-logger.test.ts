@@ -2,6 +2,8 @@ import { mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
+import { DaemonPolicy } from "@symnav/daemon";
+import { DaemonPolicyTestFactory } from "@symnav/daemon/policy-testing";
 import { NodeDaemonClock } from "./daemon-clock.js";
 import { DAEMON_LOG_BACKUP_COUNT, DaemonLogger, type DaemonLogStorage } from "./daemon-logger.js";
 import type { DaemonDiagnosticEvent } from "./daemon-protocol.js";
@@ -313,6 +315,34 @@ describe("DaemonLogger", () => {
       "diagnostics-dropped",
     ]);
     expect(storage.events().at(-1)).toMatchObject({ droppedCount: 1 });
+  });
+
+  it("uses the required diagnostic-policy queue capacity", async () => {
+    const root = mkdtempSync(join(tmpdir(), "symnav-daemon-policy-overflow-"));
+    roots.push(root);
+    const identity = DaemonWorkspaceIdentity.from("/repo", root);
+    const storage = new BlockingLogStorage();
+    const policy = DaemonPolicyTestFactory.withOverrides(
+      DaemonPolicy.fromSystemMemory({ totalBytes: 1024 ** 3 }),
+      { diagnostics: { maximumQueuedEvents: 1 } },
+    );
+    const logger = new DaemonLogger(identity, "overflow", new NodeDaemonClock(), {
+      policy: policy.values.diagnostics,
+      storage,
+    } as unknown as ConstructorParameters<typeof DaemonLogger>[3]);
+
+    logger.record({ kind: "ready", fileCount: 1 });
+    await storage.appendStarted;
+    logger.record({ kind: "ready", fileCount: 2 });
+    logger.record({ kind: "ready", fileCount: 3 });
+    storage.release();
+    await logger.flush();
+
+    expect(storage.events().map((event) => event.kind)).toEqual([
+      "ready",
+      "ready",
+      "diagnostics-dropped",
+    ]);
   });
 
   it("isolates append and rotation failures from records and flush", async () => {

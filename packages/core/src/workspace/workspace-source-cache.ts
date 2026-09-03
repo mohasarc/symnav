@@ -1,7 +1,7 @@
-import type { FileSystem } from "./file-system.js";
+import type { FileMetadata, FileSystem } from "./file-system.js";
 import type { WorkspaceSnapshot } from "./workspace.js";
 
-export class WorkspaceSourceCache {
+export class WorkspaceSourceCache implements FileSystem {
   private revisions = new Map<string, string>();
   private contents = new Map<string, string>();
 
@@ -31,5 +31,37 @@ export class WorkspaceSourceCache {
     const content = this.fileSystem.readFileSync(absPath);
     if (this.revisions.has(absPath)) this.contents.set(absPath, content);
     return content;
+  }
+
+  exists(absPath: string): Promise<boolean> {
+    return this.fileSystem.exists(absPath);
+  }
+
+  listDir(absPath: string): Promise<readonly string[]> {
+    return this.fileSystem.listDir(absPath);
+  }
+
+  isDirectory(absPath: string): Promise<boolean> {
+    return this.fileSystem.isDirectory(absPath);
+  }
+
+  metadata(absPath: string): Promise<FileMetadata> {
+    return this.fileSystem.metadata(absPath);
+  }
+
+  existsSync(absPath: string): boolean {
+    return this.fileSystem.existsSync(absPath);
+  }
+
+  listDirSync(absPath: string): readonly string[] {
+    return this.fileSystem.listDirSync(absPath);
+  }
+
+  isDirectorySync(absPath: string): boolean {
+    return this.fileSystem.isDirectorySync(absPath);
+  }
+
+  metadataSync(absPath: string): FileMetadata {
+    return this.fileSystem.metadataSync(absPath);
   }
 }

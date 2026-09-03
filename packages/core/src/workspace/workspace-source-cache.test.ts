@@ -198,4 +198,36 @@ describe("WorkspaceSourceCache", () => {
     await expect(cache.readFile(initialFile.absolute)).resolves.toBe("after");
     expect(fileSystem.calls).toEqual(["readFileSync:/repo/src/a.ts"]);
   });
+
+  it("delegates unrelated filesystem operations unchanged", async () => {
+    const fileSystem = new RecordingFileSystem({ "/repo/src/a.ts": "source" });
+    const cache = new WorkspaceSourceCache(fileSystem);
+
+    await expect(cache.exists("/repo/src/a.ts")).resolves.toBe(true);
+    await expect(cache.listDir("/repo/src")).resolves.toEqual(["child.ts"]);
+    await expect(cache.isDirectory("/repo/src")).resolves.toBe(true);
+    await expect(cache.metadata("/repo/src/a.ts")).resolves.toEqual({
+      size: 6,
+      modifiedAtMs: 1,
+      changeToken: "source",
+    });
+    expect(cache.existsSync("/repo/src/a.ts")).toBe(true);
+    expect(cache.listDirSync("/repo/src")).toEqual(["child.ts"]);
+    expect(cache.isDirectorySync("/repo/src")).toBe(true);
+    expect(cache.metadataSync("/repo/src/a.ts")).toEqual({
+      size: 6,
+      modifiedAtMs: 1,
+      changeToken: "source",
+    });
+    expect(fileSystem.calls).toEqual([
+      "exists:/repo/src/a.ts",
+      "listDir:/repo/src",
+      "isDirectory:/repo/src",
+      "metadata:/repo/src/a.ts",
+      "existsSync:/repo/src/a.ts",
+      "listDirSync:/repo/src",
+      "isDirectorySync:/repo/src",
+      "metadataSync:/repo/src/a.ts",
+    ]);
+  });
 });

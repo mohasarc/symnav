@@ -12,12 +12,28 @@ function readReferences(tsconfigRelPath: string): string[] {
 }
 
 describe("tsconfig project references", () => {
+  it("root build references every production and testing project", () => {
+    expect(readReferences("tsconfig.json")).toEqual([
+      "./packages/core",
+      "./packages/daemon",
+      "./packages/renderer",
+      "./packages/backend-typescript",
+      "./packages/telemetry",
+      "./packages/testing",
+      "./apps/cli",
+    ]);
+  });
+
   it("@symnav/core has no internal references", () => {
     expect(readReferences("packages/core/tsconfig.json")).toEqual([]);
   });
 
-  it("@symnav/renderer references only @symnav/core", () => {
-    expect(readReferences("packages/renderer/tsconfig.json")).toEqual(["../core"]);
+  it("@symnav/daemon has no internal references", () => {
+    expect(readReferences("packages/daemon/tsconfig.json")).toEqual([]);
+  });
+
+  it("@symnav/renderer references only @symnav/core and @symnav/daemon", () => {
+    expect(readReferences("packages/renderer/tsconfig.json")).toEqual(["../core", "../daemon"]);
   });
 
   it("@symnav/backend-typescript references only @symnav/core", () => {
@@ -28,9 +44,14 @@ describe("tsconfig project references", () => {
     expect(readReferences("packages/testing/tsconfig.json")).toEqual([]);
   });
 
-  it("apps/cli references all four production libs", () => {
+  it("@symnav/telemetry has no internal references", () => {
+    expect(readReferences("packages/telemetry/tsconfig.json")).toEqual([]);
+  });
+
+  it("apps/cli references all five production libraries", () => {
     expect(readReferences("apps/cli/tsconfig.json")).toEqual([
       "../../packages/core",
+      "../../packages/daemon",
       "../../packages/renderer",
       "../../packages/backend-typescript",
       "../../packages/telemetry",
@@ -40,6 +61,7 @@ describe("tsconfig project references", () => {
   it("no production tsconfig.json references @symnav/testing", () => {
     const productionConfigs = [
       "packages/core/tsconfig.json",
+      "packages/daemon/tsconfig.json",
       "packages/renderer/tsconfig.json",
       "packages/backend-typescript/tsconfig.json",
       "packages/telemetry/tsconfig.json",
@@ -54,6 +76,7 @@ describe("tsconfig project references", () => {
   it("each package's tsconfig.test.json references its production tsconfig.json and @symnav/testing", () => {
     const testConfigs: { path: string; testingRef: string }[] = [
       { path: "packages/core/tsconfig.test.json", testingRef: "../testing" },
+      { path: "packages/daemon/tsconfig.test.json", testingRef: "../testing" },
       { path: "packages/renderer/tsconfig.test.json", testingRef: "../testing" },
       { path: "packages/backend-typescript/tsconfig.test.json", testingRef: "../testing" },
       { path: "packages/telemetry/tsconfig.test.json", testingRef: "../testing" },

@@ -1,3 +1,4 @@
+import type { FileSystem } from "./file-system.js";
 import type { WorkspaceFile } from "./workspace.js";
 
 export interface ProjectInput {
@@ -8,6 +9,30 @@ export interface ProjectInput {
 export interface ProjectInputObservation {
   readonly path: string;
   readonly content: string | null;
+}
+
+export class ProjectInputCollector {
+  private readonly observationByPath = new Map<string, ProjectInputObservation>();
+
+  constructor(private readonly fileSystem: FileSystem) {}
+
+  read(path: string): string | undefined {
+    let observation = this.observationByPath.get(path);
+    if (!observation) {
+      observation = { path, content: this.readCurrentInput(path) };
+      this.observationByPath.set(path, observation);
+    }
+    return observation.content ?? undefined;
+  }
+
+  observations(): readonly ProjectInputObservation[] {
+    return [...this.observationByPath.values()];
+  }
+
+  private readCurrentInput(path: string): string | null {
+    if (!this.fileSystem.existsSync(path) || this.fileSystem.isDirectorySync(path)) return null;
+    return this.fileSystem.readFileSync(path);
+  }
 }
 
 export interface ParsedProjectConfiguration<ConfigurationUnit> {

@@ -225,6 +225,28 @@ describe("WorkspaceSession", () => {
     expect(first.refreshCalls).toHaveLength(1);
     expect(second.refresh).toHaveBeenCalledOnce();
   });
+
+  it("retains independent catalogs for multiple accepted roots", async () => {
+    const fileSystem = new InMemoryFileSystem({
+      "/first/.git/HEAD": "ref: refs/heads/main\n",
+      "/first/a.ts": "export const a = true;\n",
+      "/second/.git/HEAD": "ref: refs/heads/main\n",
+      "/second/b.ts": "export const b = true;\n",
+    });
+    const session = new WorkspaceSession({
+      fileSystem,
+      backends: [new RecordingBackend("backend")],
+      discoveryRetention: "session",
+    });
+
+    const first = await session.prepare("/first");
+    const second = await session.prepare("/second");
+    const retainedFirst = await session.prepare("/first");
+
+    expect(first.workspace.root).toBe("/first");
+    expect(second.workspace.root).toBe("/second");
+    expect(first.snapshot.files[0]).toBe(retainedFirst.snapshot.files[0]);
+  });
 });
 
 function workspaceFileSystem(): InMemoryFileSystem {

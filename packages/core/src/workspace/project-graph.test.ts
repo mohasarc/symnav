@@ -21,9 +21,14 @@ interface FakeConfiguration {
 }
 
 class FakeProject {
-  constructor(readonly name: string) {}
+  constructor(
+    readonly name: string,
+    private readonly releaseProject: () => void | Promise<void> = () => undefined,
+  ) {}
 
-  releaseTransientResources(): void {}
+  releaseTransientResources(): void | Promise<void> {
+    return this.releaseProject();
+  }
 }
 
 class FakeProjectGraph extends ProjectGraph<FakeConfiguration, FakeProject> {
@@ -36,6 +41,7 @@ class FakeProjectGraph extends ProjectGraph<FakeConfiguration, FakeProject> {
   membershipFiles: readonly WorkspaceFile[] | undefined;
   configuredProjectCountAdjustment = 0;
   prepareFailure: Error | undefined;
+  releaseProject: (name: string) => void | Promise<void> = () => undefined;
 
   constructor(fileSystem: FileSystem) {
     super(fileSystem);
@@ -100,13 +106,15 @@ class FakeProjectGraph extends ProjectGraph<FakeConfiguration, FakeProject> {
       const content = request.inputCollector.read(path);
       return content === undefined ? [] : [{ path, content }];
     });
-    const configuredProjects = request.configurations.map(({ path }) => new FakeProject(path));
+    const configuredProjects = request.configurations.map(
+      ({ path }) => new FakeProject(path, () => this.releaseProject(path)),
+    );
     for (let index = 0; index < this.configuredProjectCountAdjustment; index += 1) {
       configuredProjects.push(new FakeProject(`extra-${index}`));
     }
     return {
       configuredProjects,
-      inferredProject: new FakeProject("inferred"),
+      inferredProject: new FakeProject("inferred", () => this.releaseProject("inferred")),
       inputs,
     };
   }
@@ -501,5 +509,47 @@ describe("ProjectGraph", () => {
 
     expect(graph.primary("owned.ts")).toBe(publishedProject);
     expect(graph.file("owned.ts")).toBe(publishedFile);
+  });
+
+  it("releases configured projects sequentially and the inferred project last", async () => {
+    const graph = new FakeProjectGraph(
+      new InMemoryFileSystem({
+        "/repo/a.json": "a",
+        "/repo/b.json": "b",
+      }),
+    );
+    graph.initialPaths = ["/repo/a.json", "/repo/b.json"];
+    graph.configurations = new Map([
+      ["/repo/a.json", { referencedPaths: [], filePaths: ["a.ts"] }],
+      ["/repo/b.json", { referencedPaths: [], filePaths: ["b.ts"] }],
+    ]);
+    await graph.refresh(
+      snapshot(workspaceFile("a.ts"), workspaceFile("b.ts"), workspaceFile("other.ts")),
+    );
+    const retainedProject = graph.primary("a.ts");
+    const releases: string[] = [];
+    let finishFirstRelease: () => void = () => undefined;
+    const firstRelease = new Promise<void>((resolve) => {
+      finishFirstRelease = () => resolve();
+    });
+    graph.releaseProject = async (name) => {
+      releases.push(name);
+      if (name === "/repo/a.json") await firstRelease;
+    };
+
+    const release = graph.releaseTransientResources();
+    expect(releases).toEqual(["/repo/a.json"]);
+    finishFirstRelease();
+    await release;
+    expect(releases).toEqual(["/repo/a.json", "/repo/b.json", "inferred"]);
+
+    releases.length = 0;
+    graph.releaseProject = (name) => {
+      releases.push(name);
+      if (name === "/repo/a.json") throw new Error("release failed");
+    };
+    await expect(graph.releaseTransientResources()).rejects.toThrow("release failed");
+    expect(releases).toEqual(["/repo/a.json"]);
+    expect(graph.primary("a.ts")).toBe(retainedProject);
   });
 });

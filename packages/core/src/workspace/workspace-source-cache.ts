@@ -24,4 +24,12 @@ export class WorkspaceSourceCache {
     if (this.revisions.has(absPath)) this.contents.set(absPath, content);
     return content;
   }
+
+  readFileSync(absPath: string): string {
+    const cached = this.contents.get(absPath);
+    if (cached !== undefined) return cached;
+    const content = this.fileSystem.readFileSync(absPath);
+    if (this.revisions.has(absPath)) this.contents.set(absPath, content);
+    return content;
+  }
 }

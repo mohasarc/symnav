@@ -175,4 +175,27 @@ describe("WorkspaceSourceCache", () => {
     expect(await cache.readFile(file.absolute)).toBe(initialContent);
     expect(fileSystem.calls).toEqual([]);
   });
+
+  it("shares cached contents between asynchronous and synchronous reads", async () => {
+    const fileSystem = new RecordingFileSystem({ "/repo/src/a.ts": "before" });
+    const cache = new WorkspaceSourceCache(fileSystem);
+    const initialFile = WorkspaceSnapshotBuilder.file("src/a.ts", "/repo/src/a.ts", "a-1");
+    cache.refresh(WorkspaceSnapshotBuilder.snapshot(initialFile));
+
+    await expect(cache.readFile(initialFile.absolute)).resolves.toBe("before");
+    expect(cache.readFileSync(initialFile.absolute)).toBe("before");
+    expect(fileSystem.calls).toEqual(["readFile:/repo/src/a.ts"]);
+
+    fileSystem.setFile(initialFile.absolute, "after");
+    cache.refresh(
+      WorkspaceSnapshotBuilder.snapshot(
+        WorkspaceSnapshotBuilder.file("src/a.ts", "/repo/src/a.ts", "a-2"),
+      ),
+    );
+    fileSystem.resetCalls();
+
+    expect(cache.readFileSync(initialFile.absolute)).toBe("after");
+    await expect(cache.readFile(initialFile.absolute)).resolves.toBe("after");
+    expect(fileSystem.calls).toEqual(["readFileSync:/repo/src/a.ts"]);
+  });
 });

@@ -1,4 +1,5 @@
-import type { FileMetadata, FileSystem, WorkspaceSnapshot } from "@symnav/core";
+import type { FileMetadata, FileSystem } from "./file-system.js";
+import type { WorkspaceSnapshot } from "./workspace.js";
 
 export class WorkspaceSourceCache implements FileSystem {
   private revisions = new Map<string, string>();

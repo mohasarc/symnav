@@ -2,11 +2,11 @@
 
 ## Goal
 
-Five behavior changes to the daemon surfaced by the architecture reviews and deferred until after the daemon restructuring in `daemon-architecture-functional-spec.md`. Each amends `daemon-functional-spec.md`; that document stays the source of truth for everything not named here. This is not a rewrite of routing, admission, or delivery, and not a change to any navigation command's output. This spec defines product behavior only; implementation choices live in the phased plans.
+Six behavior changes surfaced by the architecture reviews and deferred until after the daemon restructuring in `daemon-architecture-functional-spec.md`. Each amends `daemon-functional-spec.md`; that document stays the source of truth for everything not named here. This is not a rewrite of routing, admission, or delivery, and not a change to any navigation command's output. This spec defines product behavior only; implementation choices live in the phased plans.
 
 ## Primary User
 
-Same as `daemon-functional-spec.md`: an AI coding agent issuing `symnav` commands, plus the human running `daemon start|status|stop`. Default experience is unchanged; the changes below remove four ways a daemon can degrade silently and evaluate one simpler election mechanism.
+Same as `daemon-functional-spec.md`: an AI coding agent issuing `symnav` commands, plus the human running `daemon start|status|stop`. Default experience is unchanged; the changes below remove five ways a daemon can degrade silently and evaluate one simpler election mechanism.
 
 ## Core Guarantees
 
@@ -41,6 +41,7 @@ There is no unbounded-retention override.
 - Startup silence bound.
 - `daemon start` readiness proved on the control plane.
 - Endpoints under the state directory.
+- Selection-aware source-cache retention.
 - Election by socket bind (evaluation; adopted only if it passes the existing daemon suites).
 
 ### Excluded
@@ -153,6 +154,22 @@ Endpoint relocation and the election evaluation change how a daemon is found and
 
 **Outcome.** If the evaluation fails a suite or violates a guarantee, the file lease stays and this section is withdrawn.
 
+## Selection-Aware Source-Cache Retention
+
+**Purpose.** Avoid discarding unchanged sibling source bytes when a retained command refreshes only its selected file.
+
+**Produces.** A selection refresh updates cached revisions for supplied files without evicting omitted files from the last authoritative workspace refresh. A later workspace refresh still replaces the authoritative revision set, invalidates changed bytes, and removes deleted files before a whole-workspace semantic query runs.
+
+**Does not produce.** Eager metadata or source reads for omitted siblings during a selection command. A stale navigation answer. Cache ownership of workspace discovery or project membership.
+
+**Examples.**
+
+- A full refresh caches `src/a.ts` and `src/b.ts`; an `overview src/a.ts` selection retains cached bytes for `src/b.ts` without statting or reading it.
+- A later `refs` turn finds `src/b.ts` unchanged during its workspace refresh and reuses the retained bytes.
+- A later workspace refresh finds `src/b.ts` changed or deleted and invalidates its old bytes before navigation starts.
+
+**Edge cases.** A selection with a changed absolute path or change token invalidates the prior bytes for that supplied file. Omitted entries remain bounded by the most recent authoritative workspace snapshot.
+
 ## Summary
 
 | Change                        | One line                                                                    |
@@ -161,4 +178,5 @@ Endpoint relocation and the election evaluation change how a daemon is found and
 | Startup silence bound         | A starting daemon silent for `6 hours` is abandoned and replaced             |
 | Control-plane readiness       | `daemon start` returns when admission opens, not after queued navigation     |
 | Endpoints under state dir     | Removing a state directory removes its endpoints                             |
+| Selection-aware source cache  | Selection refreshes retain unchanged omitted bytes without eager sibling reads |
 | Election by socket bind       | Evaluate OS-enforced single owner in place of file lease; adopt only if suites pass |

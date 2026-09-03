@@ -110,6 +110,7 @@ export { splitHeaderLines } from "./intermediate-representation/split-header-lin
 export { assignDisambiguators } from "./intermediate-representation/assign-disambiguators.js";
 export type { FileMetadata, FileSystem } from "./workspace/file-system.js";
 export { NodeFileSystem } from "./workspace/node-file-system.js";
+export { WorkspaceSourceCache } from "./workspace/workspace-source-cache.js";
 export type {
   ResolvedPath,
   Workspace,

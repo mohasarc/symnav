@@ -247,6 +247,38 @@ describe("WorkspaceSession", () => {
     expect(second.workspace.root).toBe("/second");
     expect(first.snapshot.files[0]).toBe(retainedFirst.snapshot.files[0]);
   });
+
+  it("starts every release concurrently, retains state, and retries every backend", async () => {
+    let releaseFirst: (() => void) | undefined;
+    const firstGate = new Promise<void>((resolve) => {
+      releaseFirst = resolve;
+    });
+    const first = new RecordingBackend(
+      "first",
+      () => true,
+      undefined,
+      () => firstGate,
+    );
+    const second = new RecordingBackend("second");
+    const session = new WorkspaceSession({
+      fileSystem: workspaceFileSystem(),
+      backends: [first, second],
+      discoveryRetention: "session",
+    });
+    const beforeRelease = await session.prepare("/repo");
+
+    const releasing = session.releaseTransientResources();
+    expect(first.releaseCalls).toHaveLength(1);
+    expect(second.releaseCalls).toHaveLength(1);
+    releaseFirst?.();
+    await releasing;
+    await session.releaseTransientResources();
+    const afterRelease = await session.prepare("/repo");
+
+    expect(first.releaseCalls).toHaveLength(2);
+    expect(second.releaseCalls).toHaveLength(2);
+    expect(afterRelease.snapshot.files[0]).toBe(beforeRelease.snapshot.files[0]);
+  });
 });
 
 function workspaceFileSystem(): InMemoryFileSystem {

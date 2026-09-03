@@ -461,7 +461,7 @@ describe("WorkspaceDaemon requests", () => {
     const executor = new SerializedExecutor();
     const harness = await RequestHarness.start(executor);
     harnesses.push(harness);
-    const first = harness.execute("first", ["refs", "input"]);
+    const first = harness.execute("first", ["--cwd", "/repo", "overview", "input"], "refs");
     await executor.started(1);
     const second = harness.execute("second", ["overview", "input.ts"]);
 
@@ -481,6 +481,7 @@ describe("WorkspaceDaemon requests", () => {
         queued: 1,
       },
     });
+    expect(executor.requests[0]?.argv).toEqual(["--cwd", "/repo", "overview", "input"]);
     expect(Date.now() - pingStartedAt).toBeLessThan(1_000);
 
     executor.complete(0);

@@ -17,12 +17,16 @@ describe("AcceptedRequestLedger", () => {
   it("atomically inserts one queued owner and attaches an identical duplicate", () => {
     const ledger = new AcceptedRequestLedger(() => 10);
 
-    const accepted = ledger.accept("request", request);
-    const duplicate = ledger.accept("request", { ...request, argv: [...request.argv] });
+    const accepted = ledger.accept("request", "overview", request);
+    const duplicate = ledger.accept("request", "overview", {
+      ...request,
+      argv: [...request.argv],
+    });
 
     expect(accepted).toBe(duplicate);
     expect(accepted).toMatchObject({
       requestId: "request",
+      commandName: "overview",
       request,
       state: { state: "queued", acceptedAt: 10, queuePosition: 0 },
     });
@@ -31,9 +35,12 @@ describe("AcceptedRequestLedger", () => {
 
   it("reports request identifier corruption for a different payload", () => {
     const ledger = new AcceptedRequestLedger(() => 10);
-    ledger.accept("request", request);
+    ledger.accept("request", "overview", request);
 
-    expect(() => ledger.accept("request", { ...request, argv: ["overview", "src/b.ts"] })).toThrow(
+    expect(() =>
+      ledger.accept("request", "overview", { ...request, argv: ["overview", "src/b.ts"] }),
+    ).toThrow(AcceptedRequestCorruptionError);
+    expect(() => ledger.accept("request", "refs", request)).toThrow(
       AcceptedRequestCorruptionError,
     );
     expect(ledger.size).toBe(1);

@@ -49,6 +49,25 @@ describe("DaemonStartupCoordinator", () => {
     roots.length = 0;
   });
 
+  it("uses the explicit version readiness probe", async () => {
+    const harness = new CoordinatorHarness(roots);
+
+    await expect(harness.coordinator().ensureRunning(harness.identity)).resolves.toMatchObject({
+      status: "ready",
+    });
+
+    expect(harness.transport.executionRequests).toEqual([
+      expect.objectContaining({
+        commandName: "version",
+        request: {
+          argv: ["--version"],
+          cwd: harness.identity.workspaceRoot,
+          telemetryEnabled: false,
+        },
+      }),
+    ]);
+  });
+
   it("returns concurrent warm-up triggers after electing one detached child", async () => {
     const readinessGate = new ReadinessPublicationGate();
     const harness = new CoordinatorHarness(roots, { readinessPublicationGate: readinessGate });
@@ -1023,6 +1042,7 @@ class ReadyTestLauncher implements DaemonProcessLauncher {
 
 class RegistryTransport {
   terminationCount = 0;
+  readonly executionRequests: Extract<DaemonRequest, { kind: "execute" }>[] = [];
   private readonly terminatedInstances = new Set<string>();
   private remainingReadyAuthenticationFailures: number;
 
@@ -1083,6 +1103,7 @@ class RegistryTransport {
     _endpoint: string,
     request: Extract<DaemonRequest, { kind: "execute" }>,
   ): Promise<DaemonExecutionReceipt> {
+    this.executionRequests.push(request);
     return {
       acceptance: {
         requestId: request.requestId,

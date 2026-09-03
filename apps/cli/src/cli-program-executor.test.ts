@@ -181,6 +181,25 @@ describe("CliProgramExecutor", () => {
     await result.output.dispose();
   });
 
+  it.each([["--version"], ["--help"], ["overview", "--help"]])(
+    "does not construct backends for help invocation %j",
+    async (...argv) => {
+      const backends = vi.fn(() => {
+        throw new Error("help must not construct backends");
+      });
+
+      const result = await new CliProgramExecutor(fakeDependencies({ backends })).execute({
+        argv,
+        cwd: "/repo",
+        telemetryEnabled: false,
+      });
+
+      expect(result.exitCode).toBe(0);
+      expect(backends).not.toHaveBeenCalled();
+      await result.output.dispose();
+    },
+  );
+
   it("captures user errors, crashes, JSON, and hidden stats", async () => {
     const stateDir = mkdtempSync(join(tmpdir(), "symnav-executor-"));
     temporaryRoots.push(stateDir);

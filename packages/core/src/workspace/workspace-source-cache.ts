@@ -11,8 +11,8 @@ export class WorkspaceSourceCache {
     const nextRevisions = new Map(
       snapshot.files.map((file) => [file.absolute, file.metadata.changeToken]),
     );
-    for (const path of this.revisions.keys()) {
-      if (!nextRevisions.has(path)) this.contents.delete(path);
+    for (const [path, revision] of this.revisions) {
+      if (nextRevisions.get(path) !== revision) this.contents.delete(path);
     }
     this.revisions = nextRevisions;
   }

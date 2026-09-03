@@ -543,4 +543,22 @@ describe("TypeScriptWorkspaceState.refresh", () => {
     });
     expect(await declarationNames(state, changedRevision)).toEqual(["afterx"]);
   });
+
+  it("publishes earlier ensureFiles progress when a later file fails", async () => {
+    const fs = new MutableWorkspaceFileSystem({
+      "/repo/src/a.ts": "export const a = 1;\n",
+      "/repo/src/b.ts": "export const b = 1;\n",
+    });
+    const state = new TypeScriptWorkspaceState(fs);
+    fs.failReadsFor("/repo/src/b.ts");
+
+    await expect(
+      state.ensureFiles([
+        { relative: "src/a.ts", absolute: "/repo/src/a.ts" },
+        { relative: "src/b.ts", absolute: "/repo/src/b.ts" },
+      ]),
+    ).rejects.toThrow("read failed: /repo/src/b.ts");
+    expect(state.declarationsIn("src/a.ts")).toBeDefined();
+    expect(state.declarationsIn("src/b.ts")).toBeUndefined();
+  });
 });

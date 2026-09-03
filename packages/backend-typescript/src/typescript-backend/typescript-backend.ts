@@ -79,7 +79,7 @@ export class TypeScriptBackend implements LanguageBackend {
   async refresh(request: BackendRefreshRequest): Promise<BackendRefreshSummary> {
     this.sourceCache?.refresh(request.snapshot);
     if (request.coverage === "workspace") await this.projectGraph?.refresh(request.snapshot);
-    const summary = this.state.refresh(request.snapshot.files, request.coverage);
+    const summary = await this.state.refresh(request.snapshot.files, request.coverage);
     this.semanticQueries.beginTurn(request.snapshot);
     return summary;
   }
@@ -92,7 +92,7 @@ export class TypeScriptBackend implements LanguageBackend {
     if (!this.fs.existsSync(file.absolute) || this.fs.isDirectorySync(file.absolute)) {
       throw new FileNotFoundError(file.relative);
     }
-    return this.state.fileEntries(file);
+    return await this.state.fileEntries(file);
   }
 
   async resolveSymbols(
@@ -104,14 +104,14 @@ export class TypeScriptBackend implements LanguageBackend {
   }
 
   async declarations(files: readonly ResolvedPath[]): Promise<readonly SymbolOverviewNode[]> {
-    return this.state.allDeclarations(files);
+    return await this.state.declarations(files);
   }
 
   async findDefinitions(
     files: readonly ResolvedPath[],
     identity: SymbolIdentity,
   ): Promise<readonly SymbolOverviewNode[]> {
-    this.state.ensureFiles(files);
+    await this.state.ensureFiles(files);
     return this.semanticQueries.findDefinitions(identity);
   }
 
@@ -119,7 +119,7 @@ export class TypeScriptBackend implements LanguageBackend {
     files: readonly ResolvedPath[],
     identity: SymbolIdentity,
   ): Promise<readonly SymbolReference[]> {
-    this.state.ensureFiles(files);
+    await this.state.ensureFiles(files);
     return this.semanticQueries.findReferences(identity);
   }
 
@@ -127,7 +127,7 @@ export class TypeScriptBackend implements LanguageBackend {
     files: readonly ResolvedPath[],
     identity: SymbolIdentity,
   ): Promise<CallTargetResolution> {
-    this.state.ensureFiles(files);
+    await this.state.ensureFiles(files);
     return this.semanticQueries.findCallTarget(identity);
   }
 
@@ -135,7 +135,7 @@ export class TypeScriptBackend implements LanguageBackend {
     files: readonly ResolvedPath[],
     identity: SymbolIdentity,
   ): Promise<readonly CallEdge[]> {
-    this.state.ensureFiles(files);
+    await this.state.ensureFiles(files);
     return this.semanticQueries.findCallees(identity);
   }
 
@@ -143,7 +143,7 @@ export class TypeScriptBackend implements LanguageBackend {
     files: readonly ResolvedPath[],
     identity: SymbolIdentity,
   ): Promise<readonly CallEdge[]> {
-    this.state.ensureFiles(files);
+    await this.state.ensureFiles(files);
     return this.semanticQueries.findCallers(identity);
   }
 }

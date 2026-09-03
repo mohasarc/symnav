@@ -13,7 +13,7 @@ export interface ResolveSymbolsArgs {
 
 export class SymbolResolver {
   static async resolveSymbols(args: ResolveSymbolsArgs): Promise<readonly SymbolOverviewNode[]> {
-    const candidates = args.state.allDeclarations(args.files);
+    const candidates = await args.state.declarations(args.files);
     if (args.options.mode === "fuzzy") {
       return SymbolResolver.fuzzyMatch(candidates, args.query);
     }

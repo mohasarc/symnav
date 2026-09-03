@@ -41,7 +41,7 @@ describe("TypeScriptSemanticQueryService", () => {
     const queries = new TypeScriptSemanticQueryService(undefined, state);
     const target = identity("src/app.ts", "target");
     const caller = identity("src/app.ts", "caller");
-    queries.beginTurn(snapshot);
+    queries.beginTurn(snapshot.files);
 
     const definitions = queries.findDefinitions(target);
     const callTarget = queries.findCallTarget(target);
@@ -73,7 +73,7 @@ describe("TypeScriptSemanticQueryService", () => {
     const queries = new TypeScriptSemanticQueryService(undefined, state, {
       callTargetResolution: (_relativePath, start) => resolvedPositions.push(start),
     });
-    queries.beginTurn({ root: "/repo", files });
+    queries.beginTurn(files);
     const sourceFile = state.sourceFile("src/app.ts");
     const identifiers = sourceFile?.getDescendantsOfKind(SyntaxKind.Identifier) ?? [];
     const targetCall = [...identifiers].reverse().find((node) => node.getText() === "target");
@@ -98,7 +98,7 @@ describe("TypeScriptSemanticQueryService", () => {
     const state = { ensureFiles } as unknown as TypeScriptWorkspaceState;
     const queries = new TypeScriptSemanticQueryService(undefined, state);
     const target = identity("src/app.ts", "target");
-    queries.beginTurn({ root: "/repo", files: [] });
+    queries.beginTurn([]);
 
     const definitions = queries.findDefinitions(target);
     const callees = queries.findCallees(target);
@@ -123,7 +123,7 @@ describe("TypeScriptSemanticQueryService", () => {
       },
     });
     const target = identity("src/app.ts", "target");
-    queries.beginTurn({ root: "/repo", files: [] });
+    queries.beginTurn([]);
 
     await expect(queries.findReferences(target)).rejects.toBe(failure);
     await expect(queries.findReferences(target)).rejects.toBe(failure);
@@ -144,16 +144,11 @@ describe("TypeScriptSemanticQueryService", () => {
       locate: vi.fn(() => []),
     } as unknown as TypeScriptWorkspaceState;
     let definitionSearches = 0;
-    const backend = new TypeScriptBackend(
-      new InMemoryFileSystem({}),
-      state,
-      undefined,
-      {
-        definitionSearch: () => {
-          definitionSearches += 1;
-        },
+    const backend = new TypeScriptBackend(new InMemoryFileSystem({}), state, undefined, {
+      definitionSearch: () => {
+        definitionSearches += 1;
       },
-    );
+    });
     const snapshot: WorkspaceSnapshot = { root: "/repo", files: [] };
     const target = identity("src/app.ts", "target");
     await backend.refresh({ snapshot, coverage: "workspace" });
@@ -173,27 +168,25 @@ describe("TypeScriptSemanticQueryService", () => {
       rejectProjectRelease = reject;
     });
     void projectRelease.catch(() => undefined);
+    const firstProjectRelease = vi.fn(() => projectRelease);
+    const laterProjectRelease = vi.fn();
     const projectGraph = {
-      releaseTransientResources: vi.fn(() => projectRelease),
+      releaseTransientResources: vi.fn(async () => {
+        await firstProjectRelease();
+        laterProjectRelease();
+      }),
     } as unknown as TypeScriptProjectGraph;
     const state = {
-      refresh: vi.fn(() =>
-        Promise.resolve({ added: 0, changed: 0, removed: 0, unchanged: 0 }),
-      ),
+      refresh: vi.fn(() => Promise.resolve({ added: 0, changed: 0, removed: 0, unchanged: 0 })),
       ensureFiles: vi.fn(() => Promise.resolve()),
       locate: vi.fn(() => []),
     } as unknown as TypeScriptWorkspaceState;
     let definitionSearches = 0;
-    const backend = new TypeScriptBackend(
-      new InMemoryFileSystem({}),
-      state,
-      projectGraph,
-      {
-        definitionSearch: () => {
-          definitionSearches += 1;
-        },
+    const backend = new TypeScriptBackend(new InMemoryFileSystem({}), state, projectGraph, {
+      definitionSearch: () => {
+        definitionSearches += 1;
       },
-    );
+    });
     const snapshot: WorkspaceSnapshot = { root: "/repo", files: [] };
     const target = identity("src/app.ts", "target");
     await backend.refresh({ snapshot, coverage: "selection" });
@@ -219,6 +212,8 @@ describe("TypeScriptSemanticQueryService", () => {
 
     rejectProjectRelease?.(releaseFailure);
     await expect(release).rejects.toBe(releaseFailure);
+    expect(firstProjectRelease).toHaveBeenCalledOnce();
+    expect(laterProjectRelease).not.toHaveBeenCalled();
   });
 
   it("shares one reference search across caller and reference projections", async () => {

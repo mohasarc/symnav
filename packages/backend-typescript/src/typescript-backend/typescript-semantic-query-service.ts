@@ -1,12 +1,13 @@
 import {
   SymbolNotFoundError,
+  TurnScopedCacheScope,
   formatSymbolIdentity,
   type CallEdge,
   type CallTargetResolution,
   type SymbolIdentity,
   type SymbolOverviewNode,
   type SymbolReference,
-  type WorkspaceSnapshot,
+  type WorkspaceFile,
 } from "@symnav/core";
 import { Node, type ReferencedSymbolEntry, type SourceFile } from "ts-morph";
 
@@ -26,19 +27,32 @@ export interface SemanticReferenceLocation {
 }
 
 export class TypeScriptSemanticQueryService implements PositionDefinitionResolver {
-  private files: WorkspaceSnapshot["files"] = [];
-  private readonly definitionsByIdentity = new Map<
+  private files: readonly WorkspaceFile[] = [];
+  private readonly cacheScope = new TurnScopedCacheScope();
+  private readonly definitionsByIdentity = this.cacheScope.createCache<
     string,
     Promise<readonly SymbolOverviewNode[]>
   >();
-  private readonly referencesByIdentity = new Map<
+  private readonly referencesByIdentity = this.cacheScope.createCache<
     string,
     Promise<readonly SemanticReferenceLocation[]>
   >();
-  private readonly callTargetsByIdentity = new Map<string, Promise<CallTargetResolution>>();
-  private readonly callersByIdentity = new Map<string, Promise<readonly CallEdge[]>>();
-  private readonly calleesByIdentity = new Map<string, Promise<readonly CallEdge[]>>();
-  private readonly definitionsByPosition = new Map<string, readonly SemanticNodeLocation[]>();
+  private readonly callTargetsByIdentity = this.cacheScope.createCache<
+    string,
+    Promise<CallTargetResolution>
+  >();
+  private readonly callersByIdentity = this.cacheScope.createCache<
+    string,
+    Promise<readonly CallEdge[]>
+  >();
+  private readonly calleesByIdentity = this.cacheScope.createCache<
+    string,
+    Promise<readonly CallEdge[]>
+  >();
+  private readonly definitionsByPosition = this.cacheScope.createCache<
+    string,
+    readonly SemanticNodeLocation[]
+  >();
 
   constructor(
     private readonly projects: TypeScriptProjectGraph | undefined,
@@ -46,23 +60,21 @@ export class TypeScriptSemanticQueryService implements PositionDefinitionResolve
     private readonly observer?: TypeScriptSemanticQueryObserver,
   ) {}
 
-  beginTurn(snapshot: WorkspaceSnapshot): void {
-    this.files = snapshot.files;
-    this.clearQueryCaches();
+  beginTurn(files: readonly WorkspaceFile[]): void {
+    this.files = files;
+    this.cacheScope.beginTurn();
   }
 
   findDefinitions(identity: SymbolIdentity): Promise<readonly SymbolOverviewNode[]> {
     const key = formatSymbolIdentity(identity);
-    const existing = this.definitionsByIdentity.get(key);
-    if (existing) return existing;
-    this.observer?.definitionSearch?.(identity);
-    const definitions = findDefinitions({
-      workspaceState: this.workspaceState,
-      files: this.files,
-      identity,
+    return this.definitionsByIdentity.getOrCreate(key, () => {
+      this.observer?.definitionSearch?.(identity);
+      return findDefinitions({
+        workspaceState: this.workspaceState,
+        files: this.files,
+        identity,
+      });
     });
-    this.definitionsByIdentity.set(key, definitions);
-    return definitions;
   }
 
   async findReferences(identity: SymbolIdentity): Promise<readonly SymbolReference[]> {
@@ -90,41 +102,33 @@ export class TypeScriptSemanticQueryService implements PositionDefinitionResolve
 
   findCallTarget(identity: SymbolIdentity): Promise<CallTargetResolution> {
     const key = formatSymbolIdentity(identity);
-    const existing = this.callTargetsByIdentity.get(key);
-    if (existing) return existing;
-    const resolution = this.resolveCallTarget(identity);
-    this.callTargetsByIdentity.set(key, resolution);
-    return resolution;
+    return this.callTargetsByIdentity.getOrCreate(key, () => this.resolveCallTarget(identity));
   }
 
   findCallers(identity: SymbolIdentity): Promise<readonly CallEdge[]> {
     const key = formatSymbolIdentity(identity);
-    const existing = this.callersByIdentity.get(key);
-    if (existing) return existing;
-    const callers = this.referenceLocations(identity).then((locations) =>
-      new CallerFinder(this.workspaceState).find(locations),
+    return this.callersByIdentity.getOrCreate(key, () =>
+      this.referenceLocations(identity).then((locations) =>
+        new CallerFinder(this.workspaceState).find(locations),
+      ),
     );
-    this.callersByIdentity.set(key, callers);
-    return callers;
   }
 
   findCallees(identity: SymbolIdentity): Promise<readonly CallEdge[]> {
     const key = formatSymbolIdentity(identity);
-    const existing = this.calleesByIdentity.get(key);
-    if (existing) return existing;
-    const callees = findCallees({
-      workspaceState: this.workspaceState,
-      files: this.files,
-      identity,
-      definitionResolver: this,
-    });
-    this.calleesByIdentity.set(key, callees);
-    return callees;
+    return this.calleesByIdentity.getOrCreate(key, () =>
+      findCallees({
+        workspaceState: this.workspaceState,
+        files: this.files,
+        identity,
+        definitionResolver: this,
+      }),
+    );
   }
 
-  releaseTransientResources(): void {
-    this.clearQueryCaches();
-    this.projects?.releaseTransientResources();
+  async releaseTransientResources(): Promise<void> {
+    this.cacheScope.releaseTransientResources();
+    await this.projects?.releaseTransientResources();
   }
 
   definitionNodesOf(node: Node): readonly Node[] {
@@ -132,10 +136,9 @@ export class TypeScriptSemanticQueryService implements PositionDefinitionResolve
     const relativePath = this.workspaceState.relativePathOf(node.getSourceFile());
     if (!relativePath) return [];
     const key = `${relativePath}:${node.getStart()}`;
-    let locations = this.definitionsByPosition.get(key);
-    if (!locations) {
+    const locations = this.definitionsByPosition.getOrCreate(key, () => {
       this.observer?.callTargetResolution?.(relativePath, node.getStart());
-      locations = node.getDefinitionNodes().flatMap((definition) => {
+      return node.getDefinitionNodes().flatMap((definition) => {
         const definitionRelativePath = this.workspaceState.relativePathOf(
           definition.getSourceFile(),
         );
@@ -149,8 +152,7 @@ export class TypeScriptSemanticQueryService implements PositionDefinitionResolve
             ]
           : [];
       });
-      this.definitionsByPosition.set(key, locations);
-    }
+    });
     return locations.flatMap((location) => {
       const sourceFile = this.projects?.sourceFileFor(location.relativePath);
       const definition = this.nodeAtSemanticLocation(location, sourceFile);
@@ -162,12 +164,10 @@ export class TypeScriptSemanticQueryService implements PositionDefinitionResolve
     identity: SymbolIdentity,
   ): Promise<readonly SemanticReferenceLocation[]> {
     const key = formatSymbolIdentity(identity);
-    const existing = this.referencesByIdentity.get(key);
-    if (existing) return existing;
-    this.observer?.referenceSearch?.(identity);
-    const locations = Promise.resolve(this.findReferenceLocations(identity));
-    this.referencesByIdentity.set(key, locations);
-    return locations;
+    return this.referencesByIdentity.getOrCreate(key, () => {
+      this.observer?.referenceSearch?.(identity);
+      return Promise.resolve(this.findReferenceLocations(identity));
+    });
   }
 
   private findReferenceLocations(identity: SymbolIdentity): readonly SemanticReferenceLocation[] {
@@ -214,15 +214,6 @@ export class TypeScriptSemanticQueryService implements PositionDefinitionResolve
       return { outcome: "resolved", target: implementations[0]! };
     }
     return { outcome: "resolved", target: definitions[0]! };
-  }
-
-  private clearQueryCaches(): void {
-    this.definitionsByIdentity.clear();
-    this.referencesByIdentity.clear();
-    this.callTargetsByIdentity.clear();
-    this.callersByIdentity.clear();
-    this.calleesByIdentity.clear();
-    this.definitionsByPosition.clear();
   }
 
   private nodeAtSemanticLocation(

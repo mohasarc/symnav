@@ -82,21 +82,35 @@ class UnexpectedSiblingDirectoryFileSystem extends InMemoryFileSystem {
 
 class RetainedSiblingMetadataFileSystem extends InMemoryFileSystem {
   siblingMetadataReads = 0;
+  readonly typescriptSourceReads: string[] = [];
   private siblingMetadataFails = false;
+
+  constructor(
+    files: Record<string, string>,
+    private readonly siblingPath: string,
+  ) {
+    super(files);
+  }
 
   failSiblingMetadata(): void {
     this.siblingMetadataFails = true;
     this.siblingMetadataReads = 0;
+    this.typescriptSourceReads.length = 0;
   }
 
   override async metadata(absPath: string) {
-    if (absPath === "/repo/src/unreadable.ts") {
+    if (absPath.startsWith(this.siblingPath)) {
       this.siblingMetadataReads += 1;
       if (this.siblingMetadataFails) {
         throw new Error("unrelated metadata failure");
       }
     }
     return super.metadata(absPath);
+  }
+
+  override readFileSync(absPath: string): string {
+    if (absPath.endsWith(".ts")) this.typescriptSourceReads.push(absPath);
+    return super.readFileSync(absPath);
   }
 }
 
@@ -163,11 +177,14 @@ describe("symnav overview happy path", () => {
   });
 
   it("matches cold overview after an unrelated retained sibling starts failing", async () => {
-    const fs = new RetainedSiblingMetadataFileSystem({
-      "/repo/.git/HEAD": "ref: refs/heads/main\n",
-      "/repo/src/a.ts": "export const accessible = true;\n",
-      "/repo/src/unreadable.ts": "export const unreadable = true;\n",
-    });
+    const fs = new RetainedSiblingMetadataFileSystem(
+      {
+        "/repo/.git/HEAD": "ref: refs/heads/main\n",
+        "/repo/src/a.ts": "export const accessible = true;\n",
+        "/repo/src/unreadable.ts": "export const unreadable = true;\n",
+      },
+      "/repo/src/unreadable.ts",
+    );
     const coldBackend = new TypeScriptBackend(fs);
     const cold = await parse(
       ["overview", "src/a.ts"],
@@ -187,6 +204,61 @@ describe("symnav overview happy path", () => {
     expect(warm).toEqual(cold);
     expect(fs.siblingMetadataReads).toBe(0);
   });
+
+  it.each([
+    {
+      target: "src/target.ts",
+      stdoutContains: "target",
+      stderr: "",
+      exitCodes: [] as readonly number[],
+      sourceReads: ["/repo/src/target.ts"],
+    },
+    {
+      target: "src/missing.ts",
+      stdoutContains: undefined,
+      stderr: "Cannot answer: file not found: src/missing.ts.\n",
+      exitCodes: [1] as readonly number[],
+      sourceReads: [] as readonly string[],
+    },
+  ])(
+    "keeps $target handling isolated from 4,000 retained siblings",
+    async ({ target, stdoutContains, stderr, exitCodes, sourceReads }) => {
+      const siblings = Object.fromEntries(
+        Array.from({ length: 4_000 }, (_, index) => [
+          `/repo/siblings/file-${index}.ts`,
+          `export const sibling${index} = ${index};\n`,
+        ]),
+      );
+      const fs = new RetainedSiblingMetadataFileSystem(
+        {
+          "/repo/.git/HEAD": "ref: refs/heads/main\n",
+          "/repo/src/target.ts": "export const target = true;\n",
+          ...siblings,
+        },
+        "/repo/siblings/",
+      );
+      const catalog = new WorkspaceCatalog(fs);
+      await catalog.refresh("/repo");
+      fs.failSiblingMetadata();
+      const backend = new TypeScriptBackend(fs);
+      const scopeFactory = new WorkspaceRequestScopeFactory(fs, [backend], catalog);
+
+      const result = await parse(["overview", target], {
+        ...fakeDependencies({ fs, backends: () => [backend] }),
+        scopeFactory,
+      });
+
+      if (stdoutContains === undefined) {
+        expect(result.stdout).toBe("");
+      } else {
+        expect(result.stdout).toContain(stdoutContains);
+      }
+      expect(result.stderr).toBe(stderr);
+      expect(result.exitCodes).toEqual(exitCodes);
+      expect(fs.siblingMetadataReads).toBe(0);
+      expect(fs.typescriptSourceReads).toEqual(sourceReads);
+    },
+  );
 
   it("writes text-rendered IR to stdout with exit 0", async () => {
     const entries: OverviewFileEntries = {

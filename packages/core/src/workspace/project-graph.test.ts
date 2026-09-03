@@ -32,6 +32,7 @@ class FakeProjectGraph extends ProjectGraph<FakeConfiguration, FakeProject> {
   initialPaths: readonly string[] = [];
   configurations = new Map<string, FakeConfiguration>();
   preparedInputPaths: readonly string[] = [];
+  preparedInputs: readonly ProjectInput[] = [];
 
   constructor(fileSystem: FileSystem) {
     super(fileSystem);
@@ -75,7 +76,7 @@ class FakeProjectGraph extends ProjectGraph<FakeConfiguration, FakeProject> {
     return {
       configuration,
       referencedConfigurationPaths: configuration.referencedPaths,
-      inputs,
+      inputs: [...inputs, ...this.preparedInputs],
     };
   }
 
@@ -339,5 +340,54 @@ describe("ProjectGraph", () => {
     expect(rootChanged.root).toBe("/other");
     expect(rootChanged.changedInputCount).toBe(0);
     expect(graph.primary("owned.ts")).not.toBe(changedSourceProject);
+  });
+
+  it("rejects unobserved active inputs without replacing the graph", async () => {
+    const fileSystem = new MutableProjectFileSystem({
+      "/repo/root.json": "root",
+      "/repo/active.json": "active",
+    });
+    const graph = new FakeProjectGraph(fileSystem);
+    graph.initialPaths = ["/repo/root.json"];
+    graph.configurations.set("/repo/root.json", {
+      referencedPaths: [],
+      filePaths: ["owned.ts"],
+    });
+    const publishedFile = workspaceFile("owned.ts", "published");
+    await graph.refresh(snapshot(publishedFile));
+    const publishedProject = graph.primary("owned.ts");
+    graph.preparedInputs = [{ path: "/repo/active.json", content: "active" }];
+
+    await expect(
+      graph.refresh(snapshot(workspaceFile("owned.ts", "candidate"))),
+    ).rejects.toThrow("Project input /repo/active.json was not observed successfully");
+
+    expect(graph.primary("owned.ts")).toBe(publishedProject);
+    expect(graph.file("owned.ts")).toBe(publishedFile);
+  });
+
+  it("rejects active input content that disagrees with its observation", async () => {
+    const fileSystem = new MutableProjectFileSystem({
+      "/repo/root.json": "root",
+      "/repo/active.json": "current",
+    });
+    const graph = new FakeProjectGraph(fileSystem);
+    graph.initialPaths = ["/repo/root.json"];
+    graph.configurations.set("/repo/root.json", {
+      referencedPaths: [],
+      filePaths: ["owned.ts"],
+    });
+    const publishedFile = workspaceFile("owned.ts", "published");
+    await graph.refresh(snapshot(publishedFile));
+    const publishedProject = graph.primary("owned.ts");
+    graph.preparedInputPaths = ["/repo/active.json"];
+    graph.preparedInputs = [{ path: "/repo/active.json", content: "stale" }];
+
+    await expect(
+      graph.refresh(snapshot(workspaceFile("owned.ts", "candidate"))),
+    ).rejects.toThrow("Project input /repo/active.json does not match observed content");
+
+    expect(graph.primary("owned.ts")).toBe(publishedProject);
+    expect(graph.file("owned.ts")).toBe(publishedFile);
   });
 });

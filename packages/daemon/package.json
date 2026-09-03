@@ -1,5 +1,5 @@
 {
-  "name": "@symnav/renderer",
+  "name": "@symnav/daemon",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -11,9 +11,7 @@
       "default": "./dist/index.js"
     }
   },
-  "files": [
-    "dist"
-  ],
+  "files": ["dist"],
   "scripts": {
     "test": "vitest run",
     "build": "tsc --build",
@@ -21,8 +19,7 @@
     "lint": "eslint src",
     "typecheck:test": "tsc -p tsconfig.test.json --noEmit"
   },
-  "dependencies": {
-    "@symnav/core": "workspace:*",
-    "@symnav/daemon": "workspace:*"
+  "devDependencies": {
+    "@symnav/testing": "workspace:*"
   }
 }

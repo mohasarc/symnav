@@ -6,6 +6,7 @@ import { describe, expect, expectTypeOf, it } from "vitest";
 import ts from "typescript";
 
 import * as daemonRuntime from "./index.js";
+import * as policyTestingRuntime from "./policy-testing.js";
 import type {
   DaemonActivitySnapshot,
   DaemonCommandName,
@@ -23,11 +24,14 @@ import type {
   DaemonExecutorRequest,
   DaemonOutputRecord,
   DaemonOutputStream,
+  DaemonPolicyValues,
+  DaemonSystemMemory,
   DaemonStartResult,
   DaemonStatusEnvelope,
   DaemonStopResult,
   RunningDaemonStatus,
 } from "./index.js";
+import { DaemonPolicy } from "./index.js";
 
 type ExportKind = "runtime" | "type";
 
@@ -59,10 +63,25 @@ class DaemonContractExpectation {
     { kind: "type", name: "DaemonExecutorRequest" },
     { kind: "type", name: "DaemonOutputRecord" },
     { kind: "type", name: "DaemonOutputStream" },
+    { kind: "runtime", name: "DaemonPolicy" },
+    { kind: "type", name: "DaemonPolicyValues" },
     { kind: "type", name: "DaemonStartResult" },
     { kind: "type", name: "DaemonStatusEnvelope" },
     { kind: "type", name: "DaemonStopResult" },
     { kind: "type", name: "RunningDaemonStatus" },
+    { kind: "type", name: "DaemonSystemMemory" },
+  ];
+
+  public static readonly policyMembers = [
+    "instance:toSerialized",
+    "instance:values",
+    "static:currentSystem",
+    "static:fromSerialized",
+    "static:fromSystemMemory",
+  ];
+
+  public static readonly policyTestingExports: readonly ExportedSymbol[] = [
+    { kind: "runtime", name: "DaemonPolicyTestFactory" },
   ];
 
   public static readonly productionSources: readonly string[] = [
@@ -70,8 +89,50 @@ class DaemonContractExpectation {
     "daemon-diagnostics.ts",
     "daemon-executor.ts",
     "daemon-lifecycle-report.ts",
+    "daemon-policy.ts",
     "index.ts",
+    "policy-testing.ts",
   ];
+}
+
+class TypeScriptClassMemberInventory {
+  public static read(sourceText: string, className: string): readonly string[] {
+    const sourceFile = ts.createSourceFile(
+      "source.ts",
+      sourceText,
+      ts.ScriptTarget.Latest,
+      true,
+      ts.ScriptKind.TS,
+    );
+    const declaration = sourceFile.statements.find(
+      (statement): statement is ts.ClassDeclaration =>
+        ts.isClassDeclaration(statement) && statement.name?.text === className,
+    );
+    if (declaration === undefined) return [];
+
+    return declaration.members
+      .filter(
+        (member) =>
+          !TypeScriptClassMemberInventory.hasModifier(member, ts.SyntaxKind.PrivateKeyword),
+      )
+      .flatMap((member) => {
+        if (ts.isConstructorDeclaration(member) || member.name === undefined) return [];
+        const scope = TypeScriptClassMemberInventory.hasModifier(
+          member,
+          ts.SyntaxKind.StaticKeyword,
+        )
+          ? "static"
+          : "instance";
+        return [`${scope}:${member.name.getText(sourceFile)}`];
+      })
+      .sort();
+  }
+
+  private static hasModifier(node: ts.Node, kind: ts.SyntaxKind): boolean {
+    return ts.canHaveModifiers(node)
+      ? (ts.getModifiers(node)?.some((modifier) => modifier.kind === kind) ?? false)
+      : false;
+  }
 }
 
 class TypeScriptExportInventory {
@@ -238,6 +299,41 @@ class NodeFreeDeclarationCompiler {
 }
 
 describe("daemon host contract", () => {
+  it("defines the exact daemon policy static and instance API", () => {
+    expectTypeOf<keyof typeof DaemonPolicy>().toEqualTypeOf<
+      "prototype" | "currentSystem" | "fromSystemMemory" | "fromSerialized"
+    >();
+    expectTypeOf<DaemonPolicy>().toEqualTypeOf<{
+      readonly values: DaemonPolicyValues;
+      toSerialized(): Readonly<{
+        readonly schemaVersion: 1;
+        readonly values: DaemonPolicyValues;
+      }>;
+    }>();
+    expectTypeOf<typeof DaemonPolicy.currentSystem>().returns.toEqualTypeOf<DaemonPolicy>();
+    expectTypeOf<typeof DaemonPolicy.fromSystemMemory>().parameters.toEqualTypeOf<
+      [DaemonSystemMemory]
+    >();
+    expectTypeOf<typeof DaemonPolicy.fromSerialized>().parameters.toEqualTypeOf<[unknown]>();
+
+    const sourceRoot = dirname(new URL(import.meta.url).pathname);
+    const policySource = ts.sys.readFile(join(sourceRoot, "daemon-policy.ts"));
+    expect(policySource).toBeDefined();
+    expect(TypeScriptClassMemberInventory.read(policySource ?? "", "DaemonPolicy")).toEqual(
+      DaemonContractExpectation.policyMembers,
+    );
+
+    const compilation = NodeFreeDeclarationCompiler.compile([join(sourceRoot, "daemon-policy.ts")]);
+    expect(compilation.diagnostics).toEqual([]);
+    const declaration = [...compilation.outputs].find(([path]) =>
+      path.endsWith("/daemon-policy.d.ts"),
+    );
+    expect(declaration).toBeDefined();
+    expect(TypeScriptClassMemberInventory.read(declaration?.[1] ?? "", "DaemonPolicy")).toEqual(
+      DaemonContractExpectation.policyMembers,
+    );
+  });
+
   it("defines the exact portable execution contract", () => {
     expectTypeOf<DaemonExecutionMode>().toEqualTypeOf<"cold" | "warm" | "fallback">();
     expectTypeOf<DaemonOutputStream>().toEqualTypeOf<"stdout" | "stderr">();
@@ -426,14 +522,47 @@ describe("daemon host contract", () => {
     ]);
   });
 
-  it("exports exactly the planned types and no runtime values", () => {
+  it("exports exactly the planned root types and runtime values", () => {
     const sourceRoot = dirname(new URL(import.meta.url).pathname);
     const indexSource = ts.sys.readFile(join(sourceRoot, "index.ts"));
     expect(indexSource).toBeDefined();
     expect(TypeScriptExportInventory.read(indexSource ?? "")).toEqual(
       DaemonContractExpectation.exports,
     );
-    expect(Object.keys(daemonRuntime)).toEqual([]);
+    expect(Object.keys(daemonRuntime)).toEqual(["DaemonPolicy"]);
+  });
+
+  it("detects a public member added to DaemonPolicy", () => {
+    const sourceRoot = dirname(new URL(import.meta.url).pathname);
+    const policySource = ts.sys.readFile(join(sourceRoot, "daemon-policy.ts")) ?? "";
+    const mutatedSource = policySource.replace(
+      "export class DaemonPolicy {",
+      "export class DaemonPolicy { public static withOverrides(): void {}",
+    );
+    expect(TypeScriptClassMemberInventory.read(mutatedSource, "DaemonPolicy")).not.toEqual(
+      DaemonContractExpectation.policyMembers,
+    );
+  });
+
+  it("exports exactly one policy-testing source and runtime symbol", () => {
+    const sourceRoot = dirname(new URL(import.meta.url).pathname);
+    const source = ts.sys.readFile(join(sourceRoot, "policy-testing.ts"));
+    expect(source).toBeDefined();
+    expect(TypeScriptExportInventory.read(source ?? "")).toEqual(
+      DaemonContractExpectation.policyTestingExports,
+    );
+    expect(Object.keys(policyTestingRuntime)).toEqual(["DaemonPolicyTestFactory"]);
+  });
+
+  it.each([
+    ["type", "export interface ExtraPolicyTestingType {}"],
+    ["runtime", "export const extraPolicyTestingRuntime = true;"],
+  ])("detects an extra policy-testing %s export", (_, addition) => {
+    const sourceRoot = dirname(new URL(import.meta.url).pathname);
+    const source = ts.sys.readFile(join(sourceRoot, "policy-testing.ts")) ?? "";
+    expect(TypeScriptExportInventory.read(`${source}\n${addition}\n`)).not.toEqual(
+      DaemonContractExpectation.policyTestingExports,
+    );
   });
 
   it("contains only the recursively allowlisted Phase 7 production sources", () => {
@@ -451,6 +580,21 @@ describe("daemon host contract", () => {
     expect(emittedIndex).toBeDefined();
     expect(TypeScriptExportInventory.read(emittedIndex?.[1] ?? "")).toEqual(
       DaemonContractExpectation.exports,
+    );
+  });
+
+  it("emits only the policy test factory from the temporary subpath", () => {
+    const sourceRoot = dirname(new URL(import.meta.url).pathname);
+    const compilation = NodeFreeDeclarationCompiler.compile([
+      join(sourceRoot, "policy-testing.ts"),
+    ]);
+    expect(compilation.diagnostics).toEqual([]);
+    const declaration = [...compilation.outputs].find(([path]) =>
+      path.endsWith("/policy-testing.d.ts"),
+    );
+    expect(declaration).toBeDefined();
+    expect(TypeScriptExportInventory.read(declaration?.[1] ?? "")).toEqual(
+      DaemonContractExpectation.policyTestingExports,
     );
   });
 

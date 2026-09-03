@@ -106,6 +106,27 @@ describe("ESLint workspace config", () => {
     expect(result!.errorCount).toBe(0);
   });
 
+  it("allows CLI test files to import the temporary daemon policy factory", async () => {
+    const eslint = await makeESLint();
+    const code = `import { DaemonPolicyTestFactory } from "@symnav/daemon/policy-testing";\nexport const value = DaemonPolicyTestFactory;\n`;
+    const [result] = await eslint.lintText(code, {
+      filePath: join(repoRoot, "apps/cli/src/daemon/policy.test.ts"),
+    });
+    expect(result!.errorCount).toBe(0);
+  });
+
+  it("rejects production imports of the temporary daemon policy factory", async () => {
+    const eslint = await makeESLint();
+    const code = `import { DaemonPolicyTestFactory } from "@symnav/daemon/policy-testing";\nexport const value = DaemonPolicyTestFactory;\n`;
+    const [result] = await eslint.lintText(code, {
+      filePath: join(repoRoot, "apps/cli/src/daemon/policy.ts"),
+    });
+    const restricted = result!.messages.filter(
+      (message) => message.ruleId === "no-restricted-imports",
+    );
+    expect(restricted).toHaveLength(1);
+  });
+
   it("allows daemon test files to import @symnav/testing", async () => {
     const eslint = await makeESLint();
     const code = `import { placeholder } from "@symnav/testing";\nexport const value = placeholder;\n`;

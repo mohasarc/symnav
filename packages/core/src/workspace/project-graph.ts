@@ -99,6 +99,7 @@ export abstract class ProjectGraph<
   protected async refreshProjectGraph(
     snapshot: WorkspaceSnapshot,
   ): Promise<ProjectGraphRefreshSummary> {
+    if (this.projectStateUnchanged(snapshot)) return this.currentSummary(0);
     const inputCollector = new ProjectInputCollector(this.fileSystem);
     const discovered = await this.discoverConfigurations(snapshot, inputCollector);
     const configurations = discovered.map(({ path, parsed }) => ({
@@ -208,6 +209,27 @@ export abstract class ProjectGraph<
       inferredFileCount: state.inferredFileCount,
       changedInputCount,
     };
+  }
+
+  private projectStateUnchanged(snapshot: WorkspaceSnapshot): boolean {
+    if (!this.workspaceFilesUnchanged(snapshot)) return false;
+    return this.state!.observations.every(
+      (observation) => this.readCurrentInput(observation.path) === observation.content,
+    );
+  }
+
+  private workspaceFilesUnchanged(snapshot: WorkspaceSnapshot): boolean {
+    if (!this.state || this.state.root !== snapshot.root) return false;
+    if (this.state.filesByRelativePath.size !== snapshot.files.length) return false;
+    return snapshot.files.every((file) => {
+      const current = this.state?.filesByRelativePath.get(file.relative);
+      return current?.metadata.changeToken === file.metadata.changeToken;
+    });
+  }
+
+  private readCurrentInput(path: string): string | null {
+    if (!this.fileSystem.existsSync(path) || this.fileSystem.isDirectorySync(path)) return null;
+    return this.fileSystem.readFileSync(path);
   }
 
   private static collectInputs(inputs: readonly ProjectInput[]): ReadonlyMap<string, string> {

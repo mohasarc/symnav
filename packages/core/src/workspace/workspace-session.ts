@@ -57,10 +57,7 @@ export class WorkspaceSession {
   }
 
   openWorkspace(startDirectory: string, coverage: BackendRefreshCoverage): Promise<Workspace> {
-    if (coverage === "selection") {
-      throw new Error("Selection preparation is not implemented");
-    }
-    if (this.#catalog === undefined) {
+    if (coverage === "selection" || this.#catalog === undefined) {
       return createWorkspace({ startDir: startDirectory, fs: this.#fileSystem });
     }
     if (
@@ -77,17 +74,20 @@ export class WorkspaceSession {
     workspace: Workspace,
     preparation: WorkspacePreparation,
   ): Promise<PreparedWorkspaceScope> {
-    if (preparation.coverage === "selection") {
-      throw new Error("Selection preparation is not implemented");
-    }
     const router = new BackendRouter(this.#backends);
-    const snapshot = await workspace.snapshot();
-    const refresh: BackendRefreshSummary = {
+    const snapshot =
+      preparation.coverage === "selection"
+        ? await preparation.selectSnapshot(workspace, router)
+        : await workspace.snapshot();
+    const emptyRefresh: BackendRefreshSummary = {
       added: 0,
       changed: 0,
       removed: 0,
       unchanged: 0,
     };
+    const refresh = await router
+      .refresh(snapshot, preparation.coverage)
+      .catch(() => emptyRefresh);
     return { workspace, snapshot, router, refresh };
   }
 

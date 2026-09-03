@@ -88,6 +88,42 @@ describe("ESLint workspace config", () => {
     expect(boundaries).toHaveLength(1);
   });
 
+  it("allows renderer files to import @symnav/daemon", async () => {
+    const eslint = await makeESLint();
+    const code = `import type { DaemonStartResult } from "@symnav/daemon";\nexport type X = DaemonStartResult;\n`;
+    const [result] = await eslint.lintText(code, {
+      filePath: join(repoRoot, "packages/renderer/src/daemon.ts"),
+    });
+    expect(result!.errorCount).toBe(0);
+  });
+
+  it("allows CLI files to import @symnav/daemon", async () => {
+    const eslint = await makeESLint();
+    const code = `import type { DaemonExecutor } from "@symnav/daemon";\nexport type X = DaemonExecutor;\n`;
+    const [result] = await eslint.lintText(code, {
+      filePath: join(repoRoot, "apps/cli/src/daemon-contract.ts"),
+    });
+    expect(result!.errorCount).toBe(0);
+  });
+
+  it("allows daemon test files to import @symnav/testing", async () => {
+    const eslint = await makeESLint();
+    const code = `import { placeholder } from "@symnav/testing";\nexport const value = placeholder;\n`;
+    const [result] = await eslint.lintText(code, {
+      filePath: join(repoRoot, "packages/daemon/src/contract.test.ts"),
+    });
+    expect(result!.errorCount).toBe(0);
+  });
+
+  it("allows telemetry test files to import @symnav/testing", async () => {
+    const eslint = await makeESLint();
+    const code = `import { placeholder } from "@symnav/testing";\nexport const value = placeholder;\n`;
+    const [result] = await eslint.lintText(code, {
+      filePath: join(repoRoot, "packages/telemetry/src/usage.test.ts"),
+    });
+    expect(result!.errorCount).toBe(0);
+  });
+
   it("reports a boundaries violation when renderer imports @symnav/telemetry", async () => {
     const eslint = await makeESLint();
     const code = `import type { UsageEvent } from "@symnav/telemetry";\nexport type X = UsageEvent;\n`;

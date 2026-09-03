@@ -15,6 +15,7 @@ const pkg = (sub) => join(repoRoot, sub);
 /** @type {{ name: string; type: string; dir: string }[]} */
 const packages = [
   { name: "@symnav/core", type: "core", dir: "packages/core" },
+  { name: "@symnav/daemon", type: "daemon", dir: "packages/daemon" },
   { name: "@symnav/renderer", type: "renderer", dir: "packages/renderer" },
   { name: "@symnav/backend-typescript", type: "backend", dir: "packages/backend-typescript" },
   { name: "@symnav/telemetry", type: "telemetry", dir: "packages/telemetry" },
@@ -26,9 +27,10 @@ const elements = [
   { type: "cli", pattern: "apps/cli/**" },
 ];
 
-const aliasMap = packages.map(
-  (p) => /** @type {[string, string]} */ ([p.name, pkg(`${p.dir}/src/index.ts`)]),
-);
+const aliasMap = [
+  ...packages.map((p) => /** @type {[string, string]} */ ([p.name, pkg(`${p.dir}/src/index.ts`)])),
+  /** @type {[string, string]} */ (["symnav", pkg("apps/cli/src/index.ts")]),
+];
 
 function productionRules() {
   return [

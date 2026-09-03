@@ -46,6 +46,10 @@ class FakeProjectGraph extends ProjectGraph<FakeConfiguration, FakeProject> {
     return this.projectsFor(relativePath);
   }
 
+  file(relativePath: string): WorkspaceFile | undefined {
+    return this.workspaceFile(relativePath);
+  }
+
   protected initialConfigurationPaths(): readonly string[] {
     return this.initialPaths;
   }
@@ -175,5 +179,30 @@ describe("ProjectGraph", () => {
       "/repo/c.json",
     ]);
     expect(graph.primary("shared.ts")?.name).toBe("/repo/c.json");
+  });
+
+  it("uses the inferred project only for unowned workspace files", async () => {
+    const graph = new FakeProjectGraph(
+      new InMemoryFileSystem({
+        "/repo/root.json": "root",
+      }),
+    );
+    graph.initialPaths = ["/repo/root.json"];
+    graph.configurations.set("/repo/root.json", {
+      referencedPaths: [],
+      filePaths: ["owned.ts"],
+    });
+    const owned = workspaceFile("owned.ts");
+    const unowned = workspaceFile("unowned.ts");
+
+    await graph.refresh(snapshot(owned, unowned));
+
+    expect(graph.preparationRequests[0]?.inferredFiles).toEqual([unowned]);
+    expect(graph.projects("unowned.ts").map(({ name }) => name)).toEqual(["inferred"]);
+    expect(graph.primary("unowned.ts")?.name).toBe("inferred");
+    expect(graph.file("unowned.ts")).toBe(unowned);
+    expect(graph.projects("outside.ts")).toEqual([]);
+    expect(graph.primary("outside.ts")).toBeUndefined();
+    expect(graph.file("outside.ts")).toBeUndefined();
   });
 });

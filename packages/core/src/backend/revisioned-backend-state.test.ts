@@ -78,6 +78,7 @@ class FakeRevisionedBackendState extends RevisionedBackendState<PreparedDetails>
   failureStage: FailureStage | undefined;
   rollbackCalls = 0;
   commitCalls = 0;
+  preparationMode: "incremental" | "full" = "incremental";
 
   constructor(private readonly trackingFileSystem: TrackingFileSystem) {
     super(trackingFileSystem);
@@ -85,6 +86,10 @@ class FakeRevisionedBackendState extends RevisionedBackendState<PreparedDetails>
 
   prepared(relativePath: string): RevisionedBackendPreparedFile<PreparedDetails> | undefined {
     return this.preparedFile(relativePath);
+  }
+
+  allPrepared(): readonly RevisionedBackendPreparedFile<PreparedDetails>[] {
+    return this.preparedFiles();
   }
 
   relativeFor(absolutePath: string): string | undefined {
@@ -112,10 +117,14 @@ class FakeRevisionedBackendPreparation extends RevisionedBackendPreparation<Prep
 
   async prepare(): Promise<readonly RevisionedBackendPreparedFile<PreparedDetails>[]> {
     if (this.state.failureStage === "prepare") throw new Error("prepare failed");
+    const files =
+      this.state.preparationMode === "full"
+        ? this.request.effectiveFiles
+        : this.request.changes.map((change) => change.file);
     const prepared: RevisionedBackendPreparedFile<PreparedDetails>[] = [];
-    for (const change of this.request.changes) {
-      const content = await this.fileSystem.readFile(change.file.absolute);
-      prepared.push(preparedFile(change.file, content));
+    for (const file of files) {
+      const content = await this.fileSystem.readFile(file.absolute);
+      prepared.push(preparedFile(file, content));
     }
     return this.withFault(prepared);
   }
@@ -305,4 +314,17 @@ describe("RevisionedBackendState", () => {
       expect(state.rollbackCalls).toBe(1);
     },
   );
+
+  it("accepts incremental and full-rebuild preparation results", async () => {
+    const fileSystem = new TrackingFileSystem({ "/repo/a.ts": "a", "/repo/b.ts": "b" });
+    const state = new FakeRevisionedBackendState(fileSystem);
+    const files = [workspaceFile("a.ts", "a"), workspaceFile("b.ts", "b")];
+    await state.refresh(files);
+    const retainedA = state.prepared("a.ts");
+
+    state.preparationMode = "full";
+    await state.refresh(files);
+    expect(state.prepared("a.ts")).not.toBe(retainedA);
+    expect(state.allPrepared()).toHaveLength(2);
+  });
 });

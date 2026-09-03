@@ -224,9 +224,8 @@ export abstract class RevisionedBackendState<PreparedDetails> {
     for (const removed of request.removedFiles) {
       candidateByRelativePath.delete(removed.file.relative);
     }
-    for (const change of request.changes) {
-      const prepared = preparedByRelativePath.get(change.file.relative);
-      if (prepared) candidateByRelativePath.set(change.file.relative, prepared);
+    for (const prepared of preparedFiles) {
+      candidateByRelativePath.set(prepared.file.relative, prepared);
     }
     if (
       candidateByRelativePath.size !== effectiveByRelativePath.size ||

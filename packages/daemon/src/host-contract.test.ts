@@ -404,6 +404,7 @@ describe("daemon host contract", () => {
       export { local as renamed, type LocalType as RenamedType };
       export type { ExternalType } from "external";
       export * from "wildcard";
+      export import type ImportEqualsType = require("external");
     `;
     expect(TypeScriptExportInventory.read(source)).toEqual([
       { kind: "runtime", name: "*" },
@@ -413,6 +414,7 @@ describe("daemon host contract", () => {
       { kind: "runtime", name: "runtimeFunction" },
       { kind: "runtime", name: "runtimeValue" },
       { kind: "type", name: "ExternalType" },
+      { kind: "type", name: "ImportEqualsType" },
       { kind: "type", name: "PublicInterface" },
       { kind: "type", name: "PublicType" },
       { kind: "type", name: "RenamedType" },

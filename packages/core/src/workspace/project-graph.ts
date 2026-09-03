@@ -1,5 +1,5 @@
 import type { FileSystem } from "./file-system.js";
-import type { WorkspaceFile } from "./workspace.js";
+import type { WorkspaceFile, WorkspaceSnapshot } from "./workspace.js";
 
 export interface ProjectInput {
   readonly path: string;
@@ -45,6 +45,13 @@ export interface ProjectConfigurationMembership<ConfigurationUnit> {
   readonly path: string;
   readonly configuration: ConfigurationUnit;
   readonly files: readonly WorkspaceFile[];
+}
+
+export interface ProjectGraphPreparationRequest<ConfigurationUnit> {
+  readonly snapshot: WorkspaceSnapshot;
+  readonly configurations: readonly ProjectConfigurationMembership<ConfigurationUnit>[];
+  readonly inferredFiles: readonly WorkspaceFile[];
+  readonly inputCollector: ProjectInputCollector;
 }
 
 export interface PreparedProjectGraph<Project> {

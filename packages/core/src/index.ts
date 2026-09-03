@@ -116,6 +116,7 @@ export type {
   ParsedProjectConfiguration,
   PreparedProjectGraph,
   ProjectConfigurationMembership,
+  ProjectGraphPreparationRequest,
   ProjectGraphRefreshSummary,
   ProjectInput,
   ProjectInputObservation,

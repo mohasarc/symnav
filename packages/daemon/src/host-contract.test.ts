@@ -13,6 +13,8 @@ import type {
   DaemonCommandName,
   DaemonDiagnostics,
   DaemonDiagnosticValue,
+  DaemonExecutionFailureCode,
+  DaemonExecutionFailureContext,
   DaemonExecutionMode,
   DaemonExecutor,
   DaemonExecutorExecutionResult,
@@ -28,12 +30,13 @@ import type {
   DaemonPolicyValues,
   DaemonReadinessProbe,
   DaemonSystemMemory,
+  DaemonWorkerFailureCode,
   DaemonStartResult,
   DaemonStatusEnvelope,
   DaemonStopResult,
   RunningDaemonStatus,
 } from "./index.js";
-import { DAEMON_COMMAND_NAMES, DaemonPolicy } from "./index.js";
+import { DAEMON_COMMAND_NAMES, DaemonExecutionFailures, DaemonPolicy } from "./index.js";
 
 type ExportKind = "runtime" | "type";
 
@@ -56,11 +59,14 @@ class DaemonContractSourcePath {
 class DaemonContractExpectation {
   public static readonly exports: readonly ExportedSymbol[] = [
     { kind: "runtime", name: "DAEMON_COMMAND_NAMES" },
+    { kind: "runtime", name: "DaemonExecutionFailures" },
     { kind: "runtime", name: "DaemonPolicy" },
     { kind: "type", name: "DaemonActivitySnapshot" },
     { kind: "type", name: "DaemonCommandName" },
     { kind: "type", name: "DaemonDiagnostics" },
     { kind: "type", name: "DaemonDiagnosticValue" },
+    { kind: "type", name: "DaemonExecutionFailureCode" },
+    { kind: "type", name: "DaemonExecutionFailureContext" },
     { kind: "type", name: "DaemonExecutionMode" },
     { kind: "type", name: "DaemonExecutor" },
     { kind: "type", name: "DaemonExecutorExecutionResult" },
@@ -79,6 +85,7 @@ class DaemonContractExpectation {
     { kind: "type", name: "DaemonStatusEnvelope" },
     { kind: "type", name: "DaemonStopResult" },
     { kind: "type", name: "DaemonSystemMemory" },
+    { kind: "type", name: "DaemonWorkerFailureCode" },
     { kind: "type", name: "RunningDaemonStatus" },
   ];
 
@@ -92,6 +99,8 @@ class DaemonContractExpectation {
 
   public static readonly commandNameMembers = ["static:is", "static:parse"];
 
+  public static readonly executionFailureMembers = ["static:classify", "static:isCode"];
+
   public static readonly policyTestingExports: readonly ExportedSymbol[] = [
     { kind: "runtime", name: "DaemonPolicyTestFactory" },
   ];
@@ -99,6 +108,7 @@ class DaemonContractExpectation {
   public static readonly productionSources: readonly string[] = [
     "daemon-command-name.ts",
     "daemon-diagnostics.ts",
+    "daemon-execution-failure.ts",
     "daemon-executor.ts",
     "daemon-lifecycle-report.ts",
     "daemon-policy.ts",
@@ -314,6 +324,41 @@ describe("daemon host contract", () => {
   it("decodes source module URLs before filesystem access", () => {
     const sourcePath = join(tmpdir(), "symnav contract path", "host-contract.test.ts");
     expect(DaemonContractSourcePath.root(pathToFileURL(sourcePath).href)).toBe(dirname(sourcePath));
+  });
+
+  it("defines the exact execution failure contract", () => {
+    expectTypeOf<DaemonExecutionFailureCode>().toEqualTypeOf<
+      "worker-exit" | "controlled-resource" | "response-capacity" | "stopping" | "internal"
+    >();
+    expectTypeOf<DaemonWorkerFailureCode>().toEqualTypeOf<
+      "initialization" | "execution" | "protocol" | "resource"
+    >();
+    expectTypeOf<DaemonExecutionFailureContext>().toEqualTypeOf<{
+      readonly resourceInterrupted: boolean;
+      readonly responseCapacityExceeded: boolean;
+      readonly workerExited: boolean;
+      readonly shutdownFailureCode?: "stopping" | "controlled-resource";
+      readonly shutdownStarted: boolean;
+    }>();
+
+    const sourceRoot = dirname(new URL(import.meta.url).pathname);
+    const source = ts.sys.readFile(join(sourceRoot, "daemon-execution-failure.ts"));
+    expect(source).toBeDefined();
+    expect(TypeScriptClassMemberInventory.read(source ?? "", "DaemonExecutionFailures")).toEqual(
+      DaemonContractExpectation.executionFailureMembers,
+    );
+
+    const compilation = NodeFreeDeclarationCompiler.compile([
+      join(sourceRoot, "daemon-execution-failure.ts"),
+    ]);
+    expect(compilation.diagnostics).toEqual([]);
+    const declaration = [...compilation.outputs].find(([path]) =>
+      path.endsWith("/daemon-execution-failure.d.ts"),
+    );
+    expect(declaration).toBeDefined();
+    expect(
+      TypeScriptClassMemberInventory.read(declaration?.[1] ?? "", "DaemonExecutionFailures"),
+    ).toEqual(DaemonContractExpectation.executionFailureMembers);
   });
 
   it("defines the exact command vocabulary and readiness probe", () => {
@@ -587,7 +632,11 @@ describe("daemon host contract", () => {
     expect(TypeScriptExportInventory.read(indexSource ?? "")).toEqual(
       DaemonContractExpectation.exports,
     );
-    expect(Object.keys(daemonRuntime)).toEqual(["DAEMON_COMMAND_NAMES", "DaemonPolicy"]);
+    expect(Object.keys(daemonRuntime)).toEqual([
+      "DAEMON_COMMAND_NAMES",
+      "DaemonExecutionFailures",
+      "DaemonPolicy",
+    ]);
   });
 
   it("detects a public member added to DaemonPolicy", () => {

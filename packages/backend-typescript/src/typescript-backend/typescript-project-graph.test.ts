@@ -144,7 +144,7 @@ describe("TypeScriptProjectGraph", () => {
     const snapshot = await projectFixture.snapshot();
     await graph.refresh(snapshot);
     const state = new TypeScriptWorkspaceState(projectFixture.fileSystem, undefined, graph);
-    state.refresh(snapshot.files);
+    await state.refresh(snapshot.files);
 
     expect(
       state.locate(symbolIdentity("packages/domain/src/index.ts", "workspaceTarget")),

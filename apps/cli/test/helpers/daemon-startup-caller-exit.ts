@@ -1,8 +1,8 @@
 import { spawn } from "node:child_process";
 import { existsSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { canonicalStateDir } from "@symnav/telemetry";
 import { createDefaultDependencies } from "../../src/program.js";
+import { StateDirectoryResolver } from "../../src/state-directory-resolver.js";
 import type { CliExecutionRequest } from "../../src/command-execution-result.js";
 import type {
   DaemonNavigationWorker,
@@ -52,7 +52,10 @@ class DaemonStartupCallerExit {
     ) {
       process.exit(2);
     }
-    const identity = DaemonWorkspaceIdentity.from(workspaceRoot, canonicalStateDir(stateDirectory));
+    const identity = DaemonWorkspaceIdentity.from(
+      workspaceRoot,
+      StateDirectoryResolver.canonicalize(stateDirectory),
+    );
     const registry = new DaemonRegistry(identity.registryDirectory);
     if (
       registry.acquireStartup(identity, {
@@ -127,7 +130,10 @@ class DaemonStartupCallerExit {
     ) {
       process.exit(2);
     }
-    const identity = DaemonWorkspaceIdentity.from(workspaceRoot, canonicalStateDir(stateDirectory));
+    const identity = DaemonWorkspaceIdentity.from(
+      workspaceRoot,
+      StateDirectoryResolver.canonicalize(stateDirectory),
+    );
     const dependencies = createDefaultDependencies(identity.stateDirectory);
     const navigationWorker = new StartupBarrierNavigationWorker(
       new NodeDaemonNavigationWorker({

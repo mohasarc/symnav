@@ -20,7 +20,6 @@ import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
 import { afterEach, describe, expect, it } from "vitest";
 import { fixturePath, runSymnavBinary, type RunSymnavBinaryResult } from "@symnav/testing";
-import { canonicalStateDir } from "@symnav/telemetry";
 import type { ChildProcess } from "node:child_process";
 import type { CliExecutionRequest } from "../../../src/command-execution-result.js";
 import {
@@ -30,6 +29,7 @@ import {
 } from "../../../src/daemon/daemon-protocol.js";
 import { DaemonRegistry } from "../../../src/daemon/daemon-registry.js";
 import { DaemonWorkspaceIdentity } from "../../../src/daemon/daemon-workspace-identity.js";
+import { StateDirectoryResolver } from "../../../src/state-directory-resolver.js";
 import { LocalDaemonTransport } from "../../../src/daemon/local-daemon-transport.js";
 import { createDefaultDependencies } from "../../../src/program.js";
 import { canonicalWorkspaceRoot } from "../../helpers/canonical-workspace-root.js";
@@ -729,7 +729,7 @@ class DaemonParityHarness {
     const controlledWorkspaceRoot = canonicalWorkspaceRoot(realpathSync(this.workspaceRoot));
     const identity = DaemonWorkspaceIdentity.from(
       controlledWorkspaceRoot,
-      canonicalStateDir(this.stateDirectory),
+      StateDirectoryResolver.canonicalize(this.stateDirectory),
     );
     const registry = new DaemonRegistry(identity.registryDirectory);
     const instanceId = "controlled-crash";
@@ -814,7 +814,7 @@ class DaemonParityHarness {
   completionSpoolFileCount(): number {
     const identity = DaemonWorkspaceIdentity.from(
       canonicalWorkspaceRoot(realpathSync(this.workspaceRoot)),
-      canonicalStateDir(this.stateDirectory),
+      StateDirectoryResolver.canonicalize(this.stateDirectory),
     );
     if (!existsSync(identity.spoolDirectory)) return 0;
     return readdirSync(identity.spoolDirectory, { recursive: true }).filter((entry) =>

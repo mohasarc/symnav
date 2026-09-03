@@ -3,7 +3,6 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { canonicalStateDir } from "@symnav/telemetry";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   CommandOutputSnapshot,
@@ -11,6 +10,7 @@ import {
   type CommandExecutionResult,
 } from "../command-execution-result.js";
 import { createDefaultDependencies } from "../program.js";
+import { StateDirectoryResolver } from "../state-directory-resolver.js";
 import { DaemonController } from "./daemon-controller.js";
 import type {
   DaemonNavigationWorker,
@@ -184,7 +184,7 @@ describe("WorkspaceDaemon runtime lifecycle", () => {
   });
 
   it("force-stops a real matching daemon process with a stuck request", async () => {
-    const stateDirectory = canonicalStateDir(
+    const stateDirectory = StateDirectoryResolver.canonicalize(
       mkdtempSync(join(tmpdir(), "symnav-daemon-child-state-")),
     );
     const workspaceRoot = mkdtempSync(join(tmpdir(), "symnav-daemon-child-workspace-"));

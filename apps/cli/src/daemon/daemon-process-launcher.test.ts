@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { canonicalStateDir } from "@symnav/telemetry";
+import { StateDirectoryResolver } from "../state-directory-resolver.js";
 
 const { processListeners, spawnMock } = vi.hoisted(() => ({
   processListeners: new Map<string, (...args: unknown[]) => void>(),
@@ -64,7 +64,7 @@ describe("NodeDaemonProcessLauncher", () => {
       const stateDirectory = join(root, "state");
       const identity = DaemonWorkspaceIdentity.from(
         join(root, "workspace"),
-        canonicalStateDir(identityStateDirectory(stateDirectory)),
+        StateDirectoryResolver.canonicalize(identityStateDirectory(stateDirectory)),
       );
       mkdirSync(identity.identityDirectory, { recursive: true });
 
@@ -88,7 +88,7 @@ describe("NodeDaemonProcessLauncher", () => {
       expect(args).toHaveLength(2);
       expect(args).not.toEqual(expect.arrayContaining([expect.stringContaining("max-old-space")]));
       const configuration = DaemonProcessConfigurationParser.parse(args[1]);
-      const absoluteStateDirectory = canonicalStateDir(resolve(stateDirectory));
+      const absoluteStateDirectory = StateDirectoryResolver.canonicalize(resolve(stateDirectory));
       const absoluteWorkspaceRoot = resolve(root, "workspace");
       expect(configuration.stateDirectory).toBe(absoluteStateDirectory);
       expect(configuration.workspaceRoot).toBe(identity.workspaceRoot);

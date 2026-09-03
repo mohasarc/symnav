@@ -1,5 +1,5 @@
 import { existsSync, writeFileSync } from "node:fs";
-import { canonicalStateDir } from "@symnav/telemetry";
+import { StateDirectoryResolver } from "../../src/state-directory-resolver.js";
 import type {
   CliExecutionRequest,
   CommandExecutionResult,
@@ -48,7 +48,7 @@ const releasePath =
     ? undefined
     : releasePathArgument;
 const symnavVersion = configuredSymnavVersion ?? "test";
-const canonicalStateDirectory = canonicalStateDir(stateDirectory);
+const canonicalStateDirectory = StateDirectoryResolver.canonicalize(stateDirectory);
 const dependencies = createDefaultDependencies(canonicalStateDirectory);
 const retainedBackends = dependencies.backends();
 const executor = new CliProgramExecutor({ ...dependencies, backends: () => retainedBackends });

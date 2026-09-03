@@ -1,12 +1,12 @@
 import { mkdirSync, mkdtempSync, realpathSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { canonicalStateDir } from "@symnav/telemetry";
 import { runSymnavBinary } from "@symnav/testing";
 import { afterEach, describe, expect, it } from "vitest";
 import type { DaemonRecord } from "../../../src/daemon/daemon-protocol.js";
 import { DaemonRegistry } from "../../../src/daemon/daemon-registry.js";
 import { DaemonWorkspaceIdentity } from "../../../src/daemon/daemon-workspace-identity.js";
+import { StateDirectoryResolver } from "../../../src/state-directory-resolver.js";
 import { E2eProcessCleanup } from "../../helpers/e2e-process-cleanup.js";
 
 describe("symnav daemon state location isolation", () => {
@@ -139,6 +139,6 @@ function overview(workspace: string, stateDirectory: string) {
 }
 
 function registry(stateDirectory: string): DaemonRegistry {
-  const canonicalDirectory = canonicalStateDir(stateDirectory);
+  const canonicalDirectory = StateDirectoryResolver.canonicalize(stateDirectory);
   return new DaemonRegistry(DaemonWorkspaceIdentity.registryDirectory(canonicalDirectory));
 }

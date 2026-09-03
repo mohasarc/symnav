@@ -12,7 +12,6 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
 import { runSymnavBinary } from "@symnav/testing";
-import { canonicalStateDir } from "@symnav/telemetry";
 import {
   DAEMON_PROTOCOL_VERSION,
   DAEMON_RECORD_SCHEMA_VERSION,
@@ -21,6 +20,7 @@ import {
 import { DaemonRegistry } from "../../../src/daemon/daemon-registry.js";
 import { DaemonWorkspaceIdentity } from "../../../src/daemon/daemon-workspace-identity.js";
 import { LocalDaemonTransport } from "../../../src/daemon/local-daemon-transport.js";
+import { StateDirectoryResolver } from "../../../src/state-directory-resolver.js";
 import { canonicalWorkspaceRoot } from "../../helpers/canonical-workspace-root.js";
 import { E2eProcessCleanup } from "../../helpers/e2e-process-cleanup.js";
 import { DaemonStateFiles } from "../../helpers/daemon-state-files.js";
@@ -173,7 +173,10 @@ describe("symnav daemon status", () => {
     await waitUntil(() => existsSync(callerBarrierPath));
     const childPid = Number(readFileSync(bootPath, "utf8"));
     daemonPids.push(childPid);
-    const identity = DaemonWorkspaceIdentity.from(workspaceRoot, canonicalStateDir(stateDir));
+    const identity = DaemonWorkspaceIdentity.from(
+      workspaceRoot,
+      StateDirectoryResolver.canonicalize(stateDir),
+    );
     const registry = new DaemonRegistry(identity.registryDirectory);
 
     expect(registry.readStoredInstance(identity, instanceId)).toMatchObject({
@@ -298,7 +301,10 @@ describe("symnav daemon status", () => {
     const processToken = "stuck-status-process";
     const readyPath = join(stateDir, "stuck-ready");
     const requestStartedPath = join(stateDir, "stuck-request");
-    const identity = DaemonWorkspaceIdentity.from(workspaceRoot, canonicalStateDir(stateDir));
+    const identity = DaemonWorkspaceIdentity.from(
+      workspaceRoot,
+      StateDirectoryResolver.canonicalize(stateDir),
+    );
     const registry = new DaemonRegistry(identity.registryDirectory);
     const lease = registry.acquireStartup(identity, instanceId);
     expect(lease).toBeDefined();
@@ -385,7 +391,10 @@ describe("symnav daemon status", () => {
     const processToken = "live-silent-process";
     const startedAt = Date.now();
     const readyPath = join(stateDir, "live-silent-ready");
-    const identity = DaemonWorkspaceIdentity.from(workspaceRoot, canonicalStateDir(stateDir));
+    const identity = DaemonWorkspaceIdentity.from(
+      workspaceRoot,
+      StateDirectoryResolver.canonicalize(stateDir),
+    );
     const child = spawnLiveSilentDaemon(
       identity.endpoint(instanceId),
       instanceId,
@@ -439,7 +448,10 @@ describe("symnav daemon status", () => {
     const startedAt = Date.now();
     const readyPath = join(stateDir, "malformed-activity-ready");
     const secret = "/private/source/PaymentProcessor::charge?token=secret";
-    const identity = DaemonWorkspaceIdentity.from(workspaceRoot, canonicalStateDir(stateDir));
+    const identity = DaemonWorkspaceIdentity.from(
+      workspaceRoot,
+      StateDirectoryResolver.canonicalize(stateDir),
+    );
     const child = spawnMalformedActivityDaemon(
       identity.endpoint(instanceId),
       instanceId,

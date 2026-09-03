@@ -843,6 +843,56 @@ describe("LocalDaemonTransport execution delivery", () => {
     if (completion.status === "completed") await completion.result.output.dispose();
   });
 
+  it("gives the reattached execute attempt its own fetch resume", async () => {
+    const directory = mkdtempSync(join(tmpdir(), "symnav-reattach-resume-"));
+    directories.push(directory);
+    const store = new DaemonCompletionSpoolStore({
+      directory: join(directory, "daemon"),
+      workspaceKey: "workspace",
+      instanceId: request.instanceId,
+    });
+    const spool = await store.create(request.requestId);
+    const manifest = await spool.finish(0);
+    let executeCount = 0;
+    let fetchCount = 0;
+    const endpoint = await rawExecutionServer(servers, sockets, directories, (socket) => {
+      socket.once("data", (encoded) => {
+        const bytes = Buffer.isBuffer(encoded) ? encoded : Buffer.from(encoded);
+        const message = JSON.parse(bytes.subarray(4).toString()) as { kind: string };
+        if (message.kind === "result-ack") {
+          socket.end(
+            frame({
+              kind: "result-acknowledged",
+              instanceId: request.instanceId,
+              processToken: request.processToken,
+              requestId: request.requestId,
+              transferId: manifest.transferId,
+            }),
+          );
+          return;
+        }
+        if (message.kind === "result-fetch") {
+          fetchCount += 1;
+          socket.end(Buffer.concat([frame(resultManifest(manifest)), frame(resultEnd(manifest))]));
+          return;
+        }
+        executeCount += 1;
+        socket.end(
+          executeCount === 1
+            ? frame(accepted())
+            : Buffer.concat([frame(accepted()), frame(resultManifest(manifest))]),
+        );
+      });
+    });
+
+    const receipt = await new LocalDaemonTransport().execute(endpoint, request);
+    const completion = await receipt.completion;
+
+    expect(completion).toMatchObject({ status: "completed", result: { exitCode: 0 } });
+    expect({ executeCount, fetchCount }).toEqual({ executeCount: 2, fetchCount: 1 });
+    if (completion.status === "completed") await completion.result.output.dispose();
+  });
+
   it.each([
     ["instance", { ...accepted(), instanceId: "other" }],
     ["token", { ...accepted(), processToken: "other" }],

@@ -4,7 +4,8 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { DaemonPolicy } from "@symnav/daemon";
+import { DaemonPolicy, type DaemonPolicyValues } from "@symnav/daemon";
+import { DaemonPolicyTestFactory } from "@symnav/daemon/policy-testing";
 import { CommandOutputSnapshot } from "../command-execution-result.js";
 import { StateDirectoryResolver } from "../state-directory-resolver.js";
 import { TestDaemonController as DaemonController } from "../../test/helpers/daemon-controller.js";
@@ -516,6 +517,26 @@ describe("DaemonStartupCoordinator", () => {
     expect(harness.registry.startupOwner(harness.identity)).toBeUndefined();
   });
 
+  it("does not retry a child failure when policy permits zero retries", async () => {
+    const harness = new CoordinatorHarness(roots, { exitingLaunches: 1 });
+
+    await expect(
+      harness.coordinator({ policy: startupRetryPolicy(0) }).ensureRunning(harness.identity),
+    ).rejects.toThrow("Daemon child exited before readiness (code 1, signal null)");
+
+    expect(harness.launcher.launchCount).toBe(1);
+  });
+
+  it("allows each child-failure retry granted by policy", async () => {
+    const harness = new CoordinatorHarness(roots, { exitingLaunches: 2 });
+
+    await expect(
+      harness.coordinator({ policy: startupRetryPolicy(2) }).ensureRunning(harness.identity),
+    ).resolves.toMatchObject({ status: "ready" });
+
+    expect(harness.launcher.launchCount).toBe(3);
+  });
+
   it("does not reset the retry budget after waiting for startup ownership", async () => {
     const harness = new CoordinatorHarness(roots, { exitingLaunches: 2 });
     const earlierLease = harness.registry.acquireStartup(harness.identity, "earlier-owner");
@@ -886,6 +907,7 @@ class CoordinatorHarness {
     options: {
       readonly startupTimeoutMs?: number;
       readonly terminationTimeoutMs?: number;
+      readonly policy?: Pick<DaemonPolicyValues, "startup" | "shutdown">;
       readonly processTerminator?: DaemonProcessTerminator;
       readonly now?: () => number;
     } = {},
@@ -901,6 +923,7 @@ class CoordinatorHarness {
         ...(options.terminationTimeoutMs === undefined
           ? {}
           : { terminationTimeoutMs: options.terminationTimeoutMs }),
+        ...(options.policy === undefined ? {} : { policy: options.policy }),
         pollIntervalMs: 1,
         processTerminator: options.processTerminator ?? this.terminator,
         ...(options.now === undefined ? {} : { now: options.now }),
@@ -933,6 +956,14 @@ class CoordinatorHarness {
       memoryCapBytes: 256 * 1024 * 1024,
     };
   }
+}
+
+function startupRetryPolicy(
+  childFailureRetryLimit: number,
+): Pick<DaemonPolicyValues, "startup" | "shutdown"> {
+  return DaemonPolicyTestFactory.withOverrides(DaemonPolicy.currentSystem(), {
+    startup: { childFailureRetryLimit },
+  }).values;
 }
 
 class ReadyTestLauncher implements DaemonProcessLauncher {

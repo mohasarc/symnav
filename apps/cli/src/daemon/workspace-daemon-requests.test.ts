@@ -20,7 +20,7 @@ import type {
 } from "./daemon-protocol.js";
 import { DAEMON_PROTOCOL_VERSION, DAEMON_RECORD_SCHEMA_VERSION } from "./daemon-protocol.js";
 import { NodeCompletionSpoolStorage, type CompletionSpoolFile } from "./completion-spool.js";
-import { DaemonRegistry } from "./daemon-registry.js";
+import { TestDaemonRegistry as DaemonRegistry } from "../../test/helpers/daemon-registry.js";
 import { DaemonWorkspaceIdentity } from "./daemon-workspace-identity.js";
 import type { LocalDaemonTransport } from "./local-daemon-transport.js";
 import type {

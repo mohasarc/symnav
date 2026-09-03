@@ -5,7 +5,7 @@ import {
   DAEMON_PROTOCOL_VERSION,
   DAEMON_RECORD_SCHEMA_VERSION,
 } from "../../src/daemon/daemon-protocol.js";
-import { DaemonRegistry } from "../../src/daemon/daemon-registry.js";
+import { TestDaemonRegistry as DaemonRegistry } from "./daemon-registry.js";
 import { DaemonWorkspaceIdentity } from "../../src/daemon/daemon-workspace-identity.js";
 
 const [workspaceRoot, stateDirectory, startupDelayMsText] = process.argv.slice(2);

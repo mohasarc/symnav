@@ -1,6 +1,7 @@
 import { chmod, mkdir, open, rename, rm, stat, appendFile } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import { dirname } from "node:path";
+import type { DaemonPolicyValues } from "@symnav/daemon";
 import type { DaemonClock } from "./daemon-clock.js";
 import {
   DAEMON_DIAGNOSTIC_SCHEMA_VERSION,
@@ -179,9 +180,6 @@ const NUMERIC_DIAGNOSTIC_FIELDS = new Set([
   "droppedCount",
 ]);
 
-export const DAEMON_LOG_ROTATE_BYTES = 10 * 1024 * 1024;
-export const DAEMON_LOG_BACKUP_COUNT = 4;
-
 export interface DaemonLogStorage {
   prepare(directory: string, logPath: string): Promise<void>;
   size(path: string): Promise<number>;
@@ -192,8 +190,7 @@ export interface DaemonLogStorage {
 }
 
 interface DaemonLoggerOptions {
-  readonly rotateBytes?: number;
-  readonly maximumQueuedEvents?: number;
+  readonly policy: DaemonPolicyValues["diagnostics"];
   readonly storage?: DaemonLogStorage;
 }
 
@@ -252,6 +249,7 @@ class NodeDaemonLogStorage implements DaemonLogStorage {
 export class DaemonLogger {
   private readonly rotateBytes: number;
   private readonly maximumQueuedEvents: number;
+  private readonly backupCount: number;
   private readonly storage: DaemonLogStorage;
   private readonly pendingLines: string[] = [];
   private droppedCount = 0;
@@ -262,10 +260,12 @@ export class DaemonLogger {
     private readonly identity: DaemonWorkspaceIdentity,
     private readonly instanceId: string,
     private readonly clock: DaemonClock,
-    options: DaemonLoggerOptions = {},
+    options: DaemonLoggerOptions,
   ) {
-    this.rotateBytes = options.rotateBytes ?? DAEMON_LOG_ROTATE_BYTES;
-    this.maximumQueuedEvents = options.maximumQueuedEvents ?? 1_024;
+    const policy = options.policy;
+    this.rotateBytes = policy.logRotateBytes;
+    this.maximumQueuedEvents = policy.maximumQueuedEvents;
+    this.backupCount = policy.logBackupCount;
     this.storage = options.storage ?? new NodeDaemonLogStorage();
   }
 
@@ -413,8 +413,8 @@ export class DaemonLogger {
   }
 
   private async rotate(): Promise<void> {
-    await this.storage.remove(`${this.identity.logPath}.${DAEMON_LOG_BACKUP_COUNT}`);
-    for (let index = DAEMON_LOG_BACKUP_COUNT - 1; index >= 1; index -= 1) {
+    await this.storage.remove(`${this.identity.logPath}.${this.backupCount}`);
+    for (let index = this.backupCount - 1; index >= 1; index -= 1) {
       await this.storage.move(
         `${this.identity.logPath}.${index}`,
         `${this.identity.logPath}.${index + 1}`,

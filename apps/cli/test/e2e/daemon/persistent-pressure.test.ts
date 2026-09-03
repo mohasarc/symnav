@@ -19,7 +19,7 @@ import {
   DAEMON_RECORD_SCHEMA_VERSION,
   type DaemonRecord,
 } from "../../../src/daemon/daemon-protocol.js";
-import { DaemonRegistry } from "../../../src/daemon/daemon-registry.js";
+import { TestDaemonRegistry as DaemonRegistry } from "../../helpers/daemon-registry.js";
 import { DaemonWorkspaceIdentity } from "../../../src/daemon/daemon-workspace-identity.js";
 import { TestLocalDaemonTransport as LocalDaemonTransport } from "../../helpers/local-daemon-transport.js";
 import { StateDirectoryResolver } from "../../../src/state-directory-resolver.js";

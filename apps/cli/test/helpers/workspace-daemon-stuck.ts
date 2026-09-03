@@ -9,7 +9,7 @@ import type {
 import { OrderedCommandOutput } from "../../src/command-execution-result.js";
 import { createDefaultDependencies } from "../../src/program.js";
 import { CliProgramExecutor } from "../../src/cli-program-executor.js";
-import { DaemonRegistry } from "../../src/daemon/daemon-registry.js";
+import { TestDaemonRegistry as DaemonRegistry } from "./daemon-registry.js";
 import { DaemonWorkspaceIdentity } from "../../src/daemon/daemon-workspace-identity.js";
 import { TestLocalDaemonTransport as LocalDaemonTransport } from "./local-daemon-transport.js";
 import type {

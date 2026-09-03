@@ -2,7 +2,7 @@ import { mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { spawn } from "node:child_process";
-import { DaemonPolicy } from "@symnav/daemon";
+import { DaemonPolicy, type DaemonPolicyValues } from "@symnav/daemon";
 import type { DaemonWorkspaceIdentity } from "./daemon-workspace-identity.js";
 import type { DaemonIdentityCoordinates } from "./daemon-protocol.js";
 
@@ -56,10 +56,13 @@ class SpawnedDaemonProcess implements DaemonProcess {
 }
 
 export class NodeDaemonProcessTerminator implements DaemonProcessTerminator {
-  constructor(
-    private readonly gracefulTimeoutMs = 500,
-    private readonly pollIntervalMs = 20,
-  ) {}
+  private readonly gracefulTimeoutMs: number;
+  private readonly pollIntervalMs: number;
+
+  constructor(policy: DaemonPolicyValues["shutdown"]) {
+    this.gracefulTimeoutMs = policy.processSignalExitTimeoutMs;
+    this.pollIntervalMs = policy.processExitPollIntervalMs;
+  }
 
   isAlive(pid: number): boolean {
     if (!Number.isInteger(pid) || pid <= 0) return false;
@@ -110,7 +113,7 @@ export class NodeDaemonProcessLauncher implements DaemonProcessLauncher {
   constructor(
     readonly symnavVersion: string,
     readonly policy: DaemonPolicy,
-    terminator: DaemonProcessTerminator = new NodeDaemonProcessTerminator(),
+    terminator: DaemonProcessTerminator = new NodeDaemonProcessTerminator(policy.values.shutdown),
   ) {
     this.terminator = terminator;
   }

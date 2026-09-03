@@ -10,12 +10,16 @@ interface TestWorkspaceDaemonPolicyOptions {
   readonly policy?: DaemonPolicy;
   readonly memoryCapBytes?: number;
   readonly resourcePolicy?: DaemonResourcePolicy;
+  readonly idleTimeoutMs?: number;
   readonly resourceCheckIntervalMs?: number;
+  readonly startupHeartbeatIntervalMs?: number;
   readonly completionSpoolLimits?: {
     readonly inlineBytes?: number;
     readonly maximumResultBytes?: number;
     readonly maximumAggregateBytes?: number;
   };
+  readonly operationTraceRetentionMs?: number;
+  readonly maximumRetainedOperationTraces?: number;
 }
 
 export type TestWorkspaceDaemonOptions = Omit<WorkspaceDaemonOptions, "policy"> &
@@ -25,6 +29,9 @@ export class TestWorkspaceDaemon extends RuntimeWorkspaceDaemon {
   constructor(options: TestWorkspaceDaemonOptions) {
     const base = options.policy ?? options.dependencies.daemonPolicy;
     const resourceRecord = options.resourcePolicy?.record;
+    const hardProcessRssBytes = resourceRecord?.hardProcessRssBytes;
+    const softProcessRssBytes = resourceRecord?.softProcessRssBytes;
+    const resumeProcessRssBytes = resourceRecord?.resumeProcessRssBytes;
     const aggregateBytes = options.completionSpoolLimits?.maximumAggregateBytes;
     const resultBytes =
       options.completionSpoolLimits?.maximumResultBytes ??
@@ -42,6 +49,14 @@ export class TestWorkspaceDaemon extends RuntimeWorkspaceDaemon {
       resultBytes ?? base.values.output.maximumResultRawBytes,
     );
     const policy = DaemonPolicyTestFactory.withOverrides(base, {
+      startup: {
+        ...(options.startupHeartbeatIntervalMs === undefined
+          ? {}
+          : { heartbeatIntervalMs: options.startupHeartbeatIntervalMs }),
+      },
+      shutdown: {
+        ...(options.idleTimeoutMs === undefined ? {} : { idleTimeoutMs: options.idleTimeoutMs }),
+      },
       output: {
         maximumChunkRawBytes: chunkBytes,
         ...(inlineBytes === undefined ? {} : { inlineRawBytes: inlineBytes }),
@@ -60,11 +75,25 @@ export class TestWorkspaceDaemon extends RuntimeWorkspaceDaemon {
               replacementWindowMs: resourceRecord.replacementWindowMs,
               replacementLimit: resourceRecord.replacementLimit,
             }),
+        ...(hardProcessRssBytes === undefined ? {} : { hardProcessRssBytes }),
+        ...(softProcessRssBytes === undefined ? {} : { softProcessRssBytes }),
+        ...(resumeProcessRssBytes === undefined ? {} : { resumeProcessRssBytes }),
         ...(options.resourceCheckIntervalMs === undefined
           ? {}
           : { supervisionIntervalMs: options.resourceCheckIntervalMs }),
       },
+      diagnostics: {
+        ...(options.operationTraceRetentionMs === undefined
+          ? {}
+          : { disconnectedTraceRetentionMs: options.operationTraceRetentionMs }),
+        ...(options.maximumRetainedOperationTraces === undefined
+          ? {}
+          : { maximumDisconnectedTraces: options.maximumRetainedOperationTraces }),
+      },
     });
-    super({ ...options, policy });
+    super({
+      ...options,
+      policy,
+    });
   }
 }

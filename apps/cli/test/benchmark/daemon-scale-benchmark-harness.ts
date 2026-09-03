@@ -20,7 +20,7 @@ import { join } from "node:path";
 import { performance } from "node:perf_hooks";
 import { fileURLToPath } from "node:url";
 import { runSymnavBinary, type RunSymnavBinaryResult } from "@symnav/testing";
-import { DaemonRegistry } from "../../src/daemon/daemon-registry.js";
+import { TestDaemonRegistry as DaemonRegistry } from "../helpers/daemon-registry.js";
 import type { DaemonCommandName } from "../../src/daemon/daemon-protocol.js";
 import { TestDaemonResourcePolicy as DaemonResourcePolicy } from "../helpers/daemon-resource-policy.js";
 import { DaemonWorkspaceIdentity } from "../../src/daemon/daemon-workspace-identity.js";

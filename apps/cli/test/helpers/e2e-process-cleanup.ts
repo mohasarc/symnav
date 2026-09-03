@@ -1,9 +1,7 @@
 import type { ChildProcess } from "node:child_process";
 import { rmSync } from "node:fs";
-import {
-  type DaemonProcessTerminator,
-  NodeDaemonProcessTerminator,
-} from "../../src/daemon/daemon-process-launcher.js";
+import type { DaemonProcessTerminator } from "../../src/daemon/daemon-process-launcher.js";
+import { TestNodeDaemonProcessTerminator as NodeDaemonProcessTerminator } from "./daemon-process-terminator.js";
 import { TestLocalDaemonTransport as LocalDaemonTransport } from "./local-daemon-transport.js";
 
 export class E2eProcessCleanupError extends Error {

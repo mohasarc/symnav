@@ -4,11 +4,41 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { DaemonPolicy } from "@symnav/daemon";
 import { DaemonPolicyTestFactory } from "@symnav/daemon/policy-testing";
-import { NodeDaemonClock } from "./daemon-clock.js";
-import { DAEMON_LOG_BACKUP_COUNT, DaemonLogger, type DaemonLogStorage } from "./daemon-logger.js";
+import { NodeDaemonClock, type DaemonClock } from "./daemon-clock.js";
+import { DaemonLogger as RuntimeDaemonLogger, type DaemonLogStorage } from "./daemon-logger.js";
 import type { DaemonDiagnosticEvent } from "./daemon-protocol.js";
 import { DaemonWorkspaceIdentity } from "./daemon-workspace-identity.js";
 
+interface TestDaemonLoggerOptions {
+  readonly policy?: DaemonPolicy["values"]["diagnostics"];
+  readonly rotateBytes?: number;
+  readonly maximumQueuedEvents?: number;
+  readonly storage?: DaemonLogStorage;
+}
+
+class DaemonLogger extends RuntimeDaemonLogger {
+  constructor(
+    identity: DaemonWorkspaceIdentity,
+    instanceId: string,
+    clock: DaemonClock,
+    options: TestDaemonLoggerOptions = {},
+  ) {
+    const diagnostics =
+      options.policy ??
+      DaemonPolicyTestFactory.withOverrides(DaemonPolicy.currentSystem(), {
+        diagnostics: {
+          ...(options.rotateBytes === undefined ? {} : { logRotateBytes: options.rotateBytes }),
+          ...(options.maximumQueuedEvents === undefined
+            ? {}
+            : { maximumQueuedEvents: options.maximumQueuedEvents }),
+        },
+      }).values.diagnostics;
+    super(identity, instanceId, clock, {
+      policy: diagnostics,
+      ...(options.storage === undefined ? {} : { storage: options.storage }),
+    });
+  }
+}
 describe("DaemonLogger", () => {
   const roots: string[] = [];
 
@@ -248,7 +278,10 @@ describe("DaemonLogger", () => {
       .sort();
     expect(logFiles).toEqual([
       "daemon.log",
-      ...Array.from({ length: DAEMON_LOG_BACKUP_COUNT }, (_, index) => `daemon.log.${index + 1}`),
+      ...Array.from(
+        { length: DaemonPolicy.currentSystem().values.diagnostics.logBackupCount },
+        (_, index) => `daemon.log.${index + 1}`,
+      ),
     ]);
     const retained = [...logFiles]
       .reverse()

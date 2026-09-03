@@ -12,7 +12,7 @@ import {
 } from "../command-execution-result.js";
 import { createDefaultDependencies } from "../program.js";
 import { StateDirectoryResolver } from "../state-directory-resolver.js";
-import { DaemonController } from "./daemon-controller.js";
+import { TestDaemonController as DaemonController } from "../../test/helpers/daemon-controller.js";
 import type {
   DaemonNavigationWorker,
   DaemonNavigationWorkerExit,
@@ -29,7 +29,7 @@ import {
   type DaemonServerMessage,
   type DaemonServer,
 } from "./daemon-protocol.js";
-import { DaemonRegistry } from "./daemon-registry.js";
+import { TestDaemonRegistry as DaemonRegistry } from "../../test/helpers/daemon-registry.js";
 import { TestDaemonResourcePolicy as DaemonResourcePolicy } from "../../test/helpers/daemon-resource-policy.js";
 import { DaemonWorkspaceIdentity } from "./daemon-workspace-identity.js";
 import type { DaemonServerSend } from "./local-daemon-transport.js";

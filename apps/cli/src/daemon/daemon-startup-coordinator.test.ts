@@ -4,18 +4,19 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { DaemonPolicy } from "@symnav/daemon";
 import { CommandOutputSnapshot } from "../command-execution-result.js";
 import { StateDirectoryResolver } from "../state-directory-resolver.js";
-import { DaemonController } from "./daemon-controller.js";
-import { DaemonStartupCoordinator } from "./daemon-startup-coordinator.js";
+import { TestDaemonController as DaemonController } from "../../test/helpers/daemon-controller.js";
+import { TestDaemonStartupCoordinator as DaemonStartupCoordinator } from "../../test/helpers/daemon-startup-coordinator.js";
 import {
   DaemonProcessTerminationError,
-  NodeDaemonProcessTerminator,
   type DaemonProcess,
   type DaemonProcessExit,
   type DaemonProcessLauncher,
   type DaemonProcessTerminator,
 } from "./daemon-process-launcher.js";
+import { TestNodeDaemonProcessTerminator as NodeDaemonProcessTerminator } from "../../test/helpers/daemon-process-terminator.js";
 import {
   DAEMON_PROTOCOL_VERSION,
   DAEMON_RECORD_SCHEMA_VERSION,
@@ -25,10 +26,13 @@ import {
   type DaemonRequest,
   type DaemonResponse,
 } from "./daemon-protocol.js";
-import { DAEMON_STARTUP_TIMEOUT_MS, DaemonRegistry } from "./daemon-registry.js";
+import { TestDaemonRegistry as DaemonRegistry } from "../../test/helpers/daemon-registry.js";
 import { DaemonWorkspaceIdentity } from "./daemon-workspace-identity.js";
 import type { DaemonExecutionReceipt } from "./local-daemon-transport.js";
 import { TestLocalDaemonTransport as LocalDaemonTransport } from "../../test/helpers/local-daemon-transport.js";
+
+const STARTUP_COORDINATION_GRACE_MS =
+  DaemonPolicy.currentSystem().values.startup.coordinationGraceMs;
 
 describe("DaemonStartupCoordinator", () => {
   const roots: string[] = [];
@@ -180,14 +184,14 @@ describe("DaemonStartupCoordinator", () => {
       harness
         .coordinator({
           now: () => {
-            now += DAEMON_STARTUP_TIMEOUT_MS;
+            now += STARTUP_COORDINATION_GRACE_MS;
             return now;
           },
         })
         .waitUntilReady(harness.identity),
     ).rejects.toThrow("Daemon startup failed before readiness");
 
-    expect(now).toBeGreaterThan(DAEMON_STARTUP_TIMEOUT_MS);
+    expect(now).toBeGreaterThan(STARTUP_COORDINATION_GRACE_MS);
     expect(harness.launcher.launchCount).toBe(0);
   });
 
@@ -725,7 +729,7 @@ describe("DaemonStartupCoordinator", () => {
       registry,
       launcher,
       transport as unknown as LocalDaemonTransport,
-      { startupTimeoutMs: 1_000, pollIntervalMs: 2 },
+      { pollIntervalMs: 2 },
     );
 
     await expect(coordinator.ensureRunning(identity)).rejects.toThrow(/exited before readiness/i);
@@ -1217,7 +1221,6 @@ function socketBackedCoordinator(roots: string[]): SocketBackedCoordinator {
     terminator,
     launcher,
     coordinator: new DaemonStartupCoordinator(registry, launcher, transport, {
-      startupTimeoutMs: 5_000,
       pollIntervalMs: 2,
       processTerminator: terminator,
     }),

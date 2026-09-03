@@ -6,7 +6,7 @@ import type {
   CommandOutputRecord,
 } from "../../src/command-execution-result.js";
 import { createDefaultDependencies } from "../../src/program.js";
-import { DaemonRegistry } from "../../src/daemon/daemon-registry.js";
+import { TestDaemonRegistry as DaemonRegistry } from "./daemon-registry.js";
 import { TestDaemonResourcePolicy as DaemonResourcePolicy } from "./daemon-resource-policy.js";
 import { DaemonWorkspaceIdentity } from "../../src/daemon/daemon-workspace-identity.js";
 import { TestLocalDaemonTransport as LocalDaemonTransport } from "./local-daemon-transport.js";

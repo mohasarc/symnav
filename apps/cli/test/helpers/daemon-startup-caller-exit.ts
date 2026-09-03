@@ -15,7 +15,7 @@ import {
   type DaemonRecord,
 } from "../../src/daemon/daemon-protocol.js";
 import type { DaemonNavigationWorkerResponse } from "../../src/daemon/daemon-navigation-worker-protocol.js";
-import { DaemonRegistry } from "../../src/daemon/daemon-registry.js";
+import { TestDaemonRegistry as DaemonRegistry } from "./daemon-registry.js";
 import { DaemonWorkspaceIdentity } from "../../src/daemon/daemon-workspace-identity.js";
 import { TestLocalDaemonTransport as LocalDaemonTransport } from "./local-daemon-transport.js";
 import { NodeDaemonNavigationWorker } from "../../src/daemon/daemon-navigation-worker.js";

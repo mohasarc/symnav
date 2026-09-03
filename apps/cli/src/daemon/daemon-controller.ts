@@ -1,3 +1,4 @@
+import type { DaemonPolicyValues } from "@symnav/daemon";
 import type {
   DaemonRecord,
   DaemonStartResult,
@@ -17,9 +18,8 @@ import { DaemonWorkspaceIdentity } from "./daemon-workspace-identity.js";
 import type { LocalDaemonTransport } from "./local-daemon-transport.js";
 
 interface DaemonControllerOptions {
+  readonly policy: Pick<DaemonPolicyValues, "startup" | "shutdown">;
   readonly now?: () => number;
-  readonly stopTimeoutMs?: number;
-  readonly pollIntervalMs?: number;
   readonly processTerminator?: DaemonProcessTerminator;
   readonly launcher?: DaemonProcessLauncher;
 }
@@ -31,17 +31,20 @@ export class DaemonController {
   private readonly processTerminator: DaemonProcessTerminator;
   private readonly launcher: DaemonProcessLauncher | undefined;
   private readonly observer: DaemonRecordObserver;
+  private readonly policy: Pick<DaemonPolicyValues, "startup" | "shutdown">;
 
   constructor(
     private readonly registry: DaemonRegistry,
     private readonly transport: LocalDaemonTransport,
     private readonly stateDirectory: string,
-    options: DaemonControllerOptions = {},
+    options: DaemonControllerOptions,
   ) {
+    this.policy = options.policy;
     this.now = options.now ?? Date.now;
-    this.stopTimeoutMs = options.stopTimeoutMs ?? 5_000;
-    this.pollIntervalMs = options.pollIntervalMs ?? 20;
-    this.processTerminator = options.processTerminator ?? new NodeDaemonProcessTerminator();
+    this.stopTimeoutMs = this.policy.shutdown.stopTimeoutMs;
+    this.pollIntervalMs = this.policy.shutdown.controllerPollIntervalMs;
+    this.processTerminator =
+      options.processTerminator ?? new NodeDaemonProcessTerminator(this.policy.shutdown);
     this.launcher = options.launcher;
     this.observer = new DaemonRecordObserver(this.transport, this.processTerminator, this.now);
   }
@@ -49,7 +52,9 @@ export class DaemonController {
   async start(workspaceRoot: string): Promise<DaemonStartResult> {
     if (this.launcher === undefined) throw new Error("Daemon controller has no process launcher");
     const identity = DaemonWorkspaceIdentity.from(workspaceRoot, this.stateDirectory);
-    const coordinator = new DaemonStartupCoordinator(this.registry, this.launcher, this.transport);
+    const coordinator = new DaemonStartupCoordinator(this.registry, this.launcher, this.transport, {
+      policy: this.policy,
+    });
     return coordinator.ensureRunning(identity);
   }
 
@@ -65,7 +70,10 @@ export class DaemonController {
   async stop(workspaceRoot: string): Promise<DaemonStopResult> {
     const stopStartedAt = this.now();
     const deadline = stopStartedAt + this.stopTimeoutMs;
-    const forceWaitMs = Math.min(500, Math.floor(this.stopTimeoutMs / 2));
+    const forceWaitMs = Math.min(
+      this.policy.shutdown.forcedTerminationReserveMaximumMs,
+      Math.floor(this.stopTimeoutMs / 2),
+    );
     const gracefulDeadline = deadline - forceWaitMs;
     const identity = DaemonWorkspaceIdentity.from(workspaceRoot, this.stateDirectory);
     const record = this.registry.read(identity);

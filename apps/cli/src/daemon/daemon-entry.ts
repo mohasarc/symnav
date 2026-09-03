@@ -28,9 +28,11 @@ class DaemonEntry {
     if (dependencies.symnavVersion !== configuration.symnavVersion) {
       throw new Error("Daemon process version does not match launcher");
     }
-    const registry = new DaemonRegistry(identity.registryDirectory);
+    const registry = new DaemonRegistry(identity.registryDirectory, policy.values.startup);
     const clock = new NodeDaemonClock();
-    const logger = new DaemonLogger(identity, configuration.instanceId, clock);
+    const logger = new DaemonLogger(identity, configuration.instanceId, clock, {
+      policy: policy.values.diagnostics,
+    });
     new DaemonProcessTerminationObserver(logger, () => {
       registry.removeIfProcess(identity, configuration.instanceId, configuration.processToken);
     }).install();

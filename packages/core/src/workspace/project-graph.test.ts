@@ -34,6 +34,7 @@ class FakeProjectGraph extends ProjectGraph<FakeConfiguration, FakeProject> {
   preparedInputPaths: readonly string[] = [];
   preparedInputs: readonly ProjectInput[] = [];
   membershipFiles: readonly WorkspaceFile[] | undefined;
+  configuredProjectCountAdjustment = 0;
 
   constructor(fileSystem: FileSystem) {
     super(fileSystem);
@@ -97,8 +98,12 @@ class FakeProjectGraph extends ProjectGraph<FakeConfiguration, FakeProject> {
       const content = request.inputCollector.read(path);
       return content === undefined ? [] : [{ path, content }];
     });
+    const configuredProjects = request.configurations.map(({ path }) => new FakeProject(path));
+    for (let index = 0; index < this.configuredProjectCountAdjustment; index += 1) {
+      configuredProjects.push(new FakeProject(`extra-${index}`));
+    }
     return {
-      configuredProjects: request.configurations.map(({ path }) => new FakeProject(path)),
+      configuredProjects,
       inferredProject: new FakeProject("inferred"),
       inputs,
     };
@@ -444,6 +449,30 @@ describe("ProjectGraph", () => {
     );
 
     expect(graph.preparationRequests).toHaveLength(1);
+    expect(graph.primary("owned.ts")).toBe(publishedProject);
+    expect(graph.file("owned.ts")).toBe(publishedFile);
+  });
+
+  it("rejects mismatched configured projects without replacing the graph", async () => {
+    const graph = new FakeProjectGraph(
+      new InMemoryFileSystem({
+        "/repo/root.json": "root",
+      }),
+    );
+    graph.initialPaths = ["/repo/root.json"];
+    graph.configurations.set("/repo/root.json", {
+      referencedPaths: [],
+      filePaths: ["owned.ts"],
+    });
+    const publishedFile = workspaceFile("owned.ts", "published");
+    await graph.refresh(snapshot(publishedFile));
+    const publishedProject = graph.primary("owned.ts");
+    graph.configuredProjectCountAdjustment = 1;
+
+    await expect(
+      graph.refresh(snapshot(workspaceFile("owned.ts", "candidate"))),
+    ).rejects.toThrow("Project graph preparation returned 2 configured projects for 1 configurations");
+
     expect(graph.primary("owned.ts")).toBe(publishedProject);
     expect(graph.file("owned.ts")).toBe(publishedFile);
   });

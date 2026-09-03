@@ -141,6 +141,27 @@ describe("WorkspaceSession", () => {
     },
   );
 
+  it("copies backend order and creates a new first-accepting router for each turn", async () => {
+    const first = new RecordingBackend("first");
+    const second = new RecordingBackend("second");
+    const suppliedBackends: LanguageBackend[] = [first, second];
+    const session = new WorkspaceSession({
+      fileSystem: workspaceFileSystem(),
+      backends: suppliedBackends,
+      discoveryRetention: "request",
+    });
+    suppliedBackends.reverse();
+
+    const firstTurn = await session.prepare("/repo");
+    const secondTurn = await session.prepare("/repo");
+
+    expect(firstTurn.router).not.toBe(secondTurn.router);
+    expect(firstTurn.router.find("src/a.ts")).toBe(first);
+    expect(first.refreshCalls[0]?.snapshot.files).toHaveLength(1);
+    expect(second.refreshCalls[0]?.snapshot.files).toHaveLength(0);
+    expect(session).not.toHaveProperty("backends");
+  });
+
   it("does not refresh backends when selection fails", async () => {
     const backend = new RecordingBackend("backend");
     const session = new WorkspaceSession({

@@ -1,4 +1,5 @@
 import { Worker } from "node:worker_threads";
+import type { DaemonPolicy } from "@symnav/daemon";
 import type { CliExecutionRequest, CommandOutputRecord } from "../command-execution-result.js";
 import {
   DaemonNavigationWorkerProtocol,
@@ -38,6 +39,7 @@ export interface DaemonNavigationWorker {
 
 export interface DaemonNavigationWorkerConfiguration {
   readonly stateDirectory: string;
+  readonly policy: ReturnType<DaemonPolicy["toSerialized"]>;
 }
 
 export interface NodeDaemonNavigationWorkerOptions {
@@ -83,6 +85,7 @@ export class NodeDaemonNavigationWorker implements DaemonNavigationWorker {
         workerData: {
           stateDirectory: options.configuration.stateDirectory,
           generation: options.generation,
+          policy: options.configuration.policy,
           ...options.workerData,
         },
         resourceLimits: options.resourceLimits,

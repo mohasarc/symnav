@@ -1,6 +1,7 @@
 import { spawn } from "node:child_process";
 import { existsSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
+import { DaemonPolicy } from "@symnav/daemon";
 import { createDefaultDependencies } from "../../src/program.js";
 import { StateDirectoryResolver } from "../../src/state-directory-resolver.js";
 import type { CliExecutionRequest } from "../../src/command-execution-result.js";
@@ -69,7 +70,8 @@ class DaemonStartupCallerExit {
     ) {
       process.exit(3);
     }
-    const dependencies = createDefaultDependencies(identity.stateDirectory);
+    const daemonPolicy = DaemonPolicy.currentSystem();
+    const dependencies = createDefaultDependencies(identity.stateDirectory, daemonPolicy);
     const startingRecord: DaemonRecord = {
       schemaVersion: DAEMON_RECORD_SCHEMA_VERSION,
       protocolVersion: DAEMON_PROTOCOL_VERSION,
@@ -134,11 +136,15 @@ class DaemonStartupCallerExit {
       workspaceRoot,
       StateDirectoryResolver.canonicalize(stateDirectory),
     );
-    const dependencies = createDefaultDependencies(identity.stateDirectory);
+    const daemonPolicy = DaemonPolicy.currentSystem();
+    const dependencies = createDefaultDependencies(identity.stateDirectory, daemonPolicy);
     const navigationWorker = new StartupBarrierNavigationWorker(
       new NodeDaemonNavigationWorker({
         generation: 1,
-        configuration: { stateDirectory: identity.stateDirectory },
+        configuration: {
+          stateDirectory: identity.stateDirectory,
+          policy: dependencies.daemonPolicy.toSerialized(),
+        },
         resourceLimits: { maxOldGenerationSizeMb: 4096 },
         entryUrl: new URL("../../dist/daemon/daemon-navigation-worker-entry.js", import.meta.url),
       }),
@@ -151,6 +157,7 @@ class DaemonStartupCallerExit {
       processToken,
       symnavVersion: dependencies.symnavVersion,
       memoryCapBytes: Number.MAX_SAFE_INTEGER,
+      policy: daemonPolicy,
       dependencies,
       registry: new DaemonRegistry(identity.registryDirectory),
       transport: new LocalDaemonTransport(),

@@ -2,6 +2,7 @@ import { performance } from "node:perf_hooks";
 import { parentPort, workerData } from "node:worker_threads";
 import { getHeapStatistics } from "node:v8";
 import type { BackendRefreshSummary } from "@symnav/core";
+import { DaemonPolicy } from "@symnav/daemon";
 import type { CommandPhaseDurations } from "../program-dependencies.js";
 import { createDefaultDependencies } from "../program.js";
 import { RetainedWorkspaceProgram } from "./retained-workspace-program.js";
@@ -15,6 +16,7 @@ import {
 interface NavigationWorkerData {
   readonly stateDirectory: string;
   readonly generation: number;
+  readonly policy: ReturnType<DaemonPolicy["toSerialized"]>;
 }
 
 class DaemonNavigationWorkerEntry {
@@ -28,6 +30,7 @@ class DaemonNavigationWorkerEntry {
   private tail: Promise<void> = Promise.resolve();
   private readonly outputAcknowledgements = new Map<string, () => void>();
   private activeHeapMonitor: WorkerHeapHighWater | undefined;
+  private readonly policy: DaemonPolicy;
   private commandDurations: CommandPhaseDurations = {
     freshnessMs: 0,
     navigationMs: 0,
@@ -37,7 +40,9 @@ class DaemonNavigationWorkerEntry {
   constructor(
     private readonly port: NonNullable<typeof parentPort>,
     private readonly data: NavigationWorkerData,
-  ) {}
+  ) {
+    this.policy = DaemonPolicy.fromSerialized(data.policy);
+  }
 
   run(): void {
     this.port.on("message", (value: unknown) => {
@@ -88,7 +93,7 @@ class DaemonNavigationWorkerEntry {
   private async initialize(workspaceRoot: string): Promise<void> {
     const startedAt = performance.now();
     try {
-      const dependencies = createDefaultDependencies(this.data.stateDirectory);
+      const dependencies = createDefaultDependencies(this.data.stateDirectory, this.policy);
       dependencies.commandPhasesObserved = (durations) => {
         this.commandDurations = durations;
         this.activeHeapMonitor?.sample();

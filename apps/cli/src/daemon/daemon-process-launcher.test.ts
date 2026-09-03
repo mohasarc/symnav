@@ -17,7 +17,6 @@ import {
   DaemonProcessConfigurationParser,
   NodeDaemonProcessLauncher,
 } from "./daemon-process-launcher.js";
-import { DaemonResourcePolicy } from "./daemon-resource-monitor.js";
 import { DaemonWorkspaceIdentity } from "./daemon-workspace-identity.js";
 
 interface FakeChildProcess {
@@ -187,22 +186,20 @@ describe("NodeDaemonProcessLauncher", () => {
     const identity = launcherIdentity(roots);
 
     await expect(
-      new NodeDaemonProcessLauncher("1.2.3", 128 * 1024 * 1024).launch(
-        identity,
-        "instance",
-        "process-token",
-      ),
+      new NodeDaemonProcessLauncher(
+        "1.2.3",
+        DaemonPolicy.fromSystemMemory({ totalBytes: 256 * 1024 * 1024 }),
+      ).launch(identity, "instance", "process-token"),
     ).rejects.toThrow("spawn refused");
     expect(spawnMock.mock.results[0]?.value.unref).not.toHaveBeenCalled();
   });
 
   it("reports child exit through the launched process immediately", async () => {
     const identity = launcherIdentity(roots);
-    const daemonProcess = await new NodeDaemonProcessLauncher("1.2.3", 128 * 1024 * 1024).launch(
-      identity,
-      "instance",
-      "process-token",
-    );
+    const daemonProcess = await new NodeDaemonProcessLauncher(
+      "1.2.3",
+      DaemonPolicy.fromSystemMemory({ totalBytes: 256 * 1024 * 1024 }),
+    ).launch(identity, "instance", "process-token");
     const child = spawnMock.mock.results[0]?.value as FakeChildProcess;
 
     child.emit("exit", 7, "SIGTERM");
@@ -216,11 +213,10 @@ describe("NodeDaemonProcessLauncher", () => {
 
   it("reports a child spawn error after launch", async () => {
     const identity = launcherIdentity(roots);
-    const daemonProcess = await new NodeDaemonProcessLauncher("1.2.3", 128 * 1024 * 1024).launch(
-      identity,
-      "instance",
-      "process-token",
-    );
+    const daemonProcess = await new NodeDaemonProcessLauncher(
+      "1.2.3",
+      DaemonPolicy.fromSystemMemory({ totalBytes: 256 * 1024 * 1024 }),
+    ).launch(identity, "instance", "process-token");
     const child = spawnMock.mock.results[0]?.value as FakeChildProcess;
     const error = new Error("child failed");
     error.name = "ChildProcessError";

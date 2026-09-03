@@ -70,3 +70,133 @@ export interface ProjectGraphRefreshSummary {
   readonly inferredFileCount: number;
   readonly changedInputCount: number;
 }
+
+interface DiscoveredProjectConfiguration<ConfigurationUnit> {
+  readonly path: string;
+  readonly parsed: ParsedProjectConfiguration<ConfigurationUnit>;
+}
+
+interface ProjectGraphState<Project> {
+  readonly root: string;
+  readonly configuredProjects: readonly Project[];
+  readonly inferredProject: Project;
+  readonly inferredFileCount: number;
+  readonly inputsByPath: ReadonlyMap<string, string>;
+  readonly observations: readonly ProjectInputObservation[];
+}
+
+export abstract class ProjectGraph<
+  ConfigurationUnit,
+  Project extends ProjectWithTransientResources,
+> {
+  private state: ProjectGraphState<Project> | undefined;
+
+  protected constructor(private readonly fileSystem: FileSystem) {}
+
+  protected async refreshProjectGraph(
+    snapshot: WorkspaceSnapshot,
+  ): Promise<ProjectGraphRefreshSummary> {
+    const inputCollector = new ProjectInputCollector(this.fileSystem);
+    const discovered = await this.discoverConfigurations(snapshot, inputCollector);
+    const configurations = discovered.map(({ path, parsed }) => ({
+      path,
+      configuration: parsed.configuration,
+      files: this.filesForConfiguration(parsed.configuration, snapshot),
+    }));
+    const ownedRelativePaths = new Set(
+      configurations.flatMap((configuration) => configuration.files.map((file) => file.relative)),
+    );
+    const inferredFiles = snapshot.files.filter((file) => !ownedRelativePaths.has(file.relative));
+    const prepared = await this.prepareProjects({
+      snapshot,
+      configurations,
+      inferredFiles,
+      inputCollector,
+    });
+    const inputsByPath = ProjectGraph.collectInputs([
+      ...discovered.flatMap(({ parsed }) => parsed.inputs),
+      ...prepared.inputs,
+    ]);
+    const changedInputCount = ProjectGraph.changedInputCount(
+      this.state?.inputsByPath ?? new Map(),
+      inputsByPath,
+    );
+    this.state = {
+      root: snapshot.root,
+      configuredProjects: prepared.configuredProjects,
+      inferredProject: prepared.inferredProject,
+      inferredFileCount: inferredFiles.length,
+      inputsByPath,
+      observations: inputCollector.observations(),
+    };
+    return this.currentSummary(changedInputCount);
+  }
+
+  protected abstract initialConfigurationPaths(root: string): readonly string[];
+
+  protected abstract parseConfiguration(request: {
+    readonly path: string;
+    readonly content: string;
+    readonly snapshot: WorkspaceSnapshot;
+    readonly inputCollector: ProjectInputCollector;
+  }): Promise<ParsedProjectConfiguration<ConfigurationUnit> | undefined>;
+
+  protected abstract filesForConfiguration(
+    configuration: ConfigurationUnit,
+    snapshot: WorkspaceSnapshot,
+  ): readonly WorkspaceFile[];
+
+  protected abstract prepareProjects(
+    request: ProjectGraphPreparationRequest<ConfigurationUnit>,
+  ): Promise<PreparedProjectGraph<Project>>;
+
+  private async discoverConfigurations(
+    snapshot: WorkspaceSnapshot,
+    inputCollector: ProjectInputCollector,
+  ): Promise<readonly DiscoveredProjectConfiguration<ConfigurationUnit>[]> {
+    const pending = [...this.initialConfigurationPaths(snapshot.root)];
+    const seen = new Set<string>();
+    const configurations: DiscoveredProjectConfiguration<ConfigurationUnit>[] = [];
+    while (pending.length > 0) {
+      const path = pending.shift() as string;
+      if (seen.has(path)) continue;
+      seen.add(path);
+      const content = inputCollector.read(path);
+      if (content === undefined) continue;
+      const parsed = await this.parseConfiguration({
+        path,
+        content,
+        snapshot,
+        inputCollector,
+      });
+      if (!parsed) continue;
+      configurations.push({ path, parsed });
+      pending.push(...parsed.referencedConfigurationPaths);
+    }
+    return configurations;
+  }
+
+  private currentSummary(changedInputCount: number): ProjectGraphRefreshSummary {
+    const state = this.state as ProjectGraphState<Project>;
+    return {
+      root: state.root,
+      configuredProjectCount: state.configuredProjects.length,
+      inferredFileCount: state.inferredFileCount,
+      changedInputCount,
+    };
+  }
+
+  private static collectInputs(inputs: readonly ProjectInput[]): ReadonlyMap<string, string> {
+    const byPath = new Map<string, string>();
+    for (const input of inputs) byPath.set(input.path, input.content);
+    return byPath;
+  }
+
+  private static changedInputCount(
+    current: ReadonlyMap<string, string>,
+    next: ReadonlyMap<string, string>,
+  ): number {
+    const paths = new Set([...current.keys(), ...next.keys()]);
+    return [...paths].filter((path) => current.get(path) !== next.get(path)).length;
+  }
+}

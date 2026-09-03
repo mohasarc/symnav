@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { Project } from "ts-morph";
 
 import {
   InMemoryFileSystem,
@@ -560,5 +561,44 @@ describe("TypeScriptWorkspaceState.refresh", () => {
     ).rejects.toThrow("read failed: /repo/src/b.ts");
     expect(state.declarationsIn("src/a.ts")).toBeDefined();
     expect(state.declarationsIn("src/b.ts")).toBeUndefined();
+  });
+
+  it("rolls back added and replaced sources in LIFO order", async () => {
+    const fs = new MutableWorkspaceFileSystem({
+      "/repo/src/a.ts": "export const beforeA = 1;\n",
+      "/repo/src/b.ts": "export const addedB = 1;\n",
+      "/repo/src/c.ts": "export const addedC = 1;\n",
+    });
+    const extractor = new CountingTypeScriptFileExtractor();
+    const state = new TypeScriptWorkspaceState(fs, extractor);
+    await state.refresh(fs.workspaceFiles("src/a.ts"));
+    const beforeA = state.sourceFile("src/a.ts");
+    fs.setFile("/repo/src/a.ts", "export const afterA = 2;\n");
+    extractor.failFor("src/c.ts");
+    const originalRemove = Project.prototype.removeSourceFile;
+    const rollbackOrder: string[] = [];
+    const removeSpy = vi.spyOn(Project.prototype, "removeSourceFile").mockImplementation(function (
+      this: Project,
+      sourceFile,
+    ) {
+      rollbackOrder.push(
+        `${sourceFile.getFilePath()}:${state.sourceFile("src/a.ts")?.getFullText()}`,
+      );
+      return originalRemove.call(this, sourceFile);
+    });
+
+    await expect(
+      state.refresh(fs.workspaceFiles("src/a.ts", "src/b.ts", "src/c.ts")),
+    ).rejects.toThrow("extraction failed: src/c.ts");
+    expect(rollbackOrder).toEqual([
+      "/repo/src/c.ts:export const afterA = 2;\n",
+      "/repo/src/b.ts:export const afterA = 2;\n",
+    ]);
+    expect(state.sourceFile("src/a.ts")).toBe(beforeA);
+    expect(state.sourceFile("src/a.ts")?.getFullText()).toBe("export const beforeA = 1;\n");
+    expect(state.sourceFile("src/b.ts")).toBeUndefined();
+    expect(state.sourceFile("src/c.ts")).toBeUndefined();
+
+    removeSpy.mockRestore();
   });
 });

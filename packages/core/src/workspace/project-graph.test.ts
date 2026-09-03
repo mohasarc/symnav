@@ -38,6 +38,14 @@ class FakeProjectGraph extends ProjectGraph<FakeConfiguration, FakeProject> {
     return this.refreshProjectGraph(snapshot);
   }
 
+  primary(relativePath: string): FakeProject | undefined {
+    return this.primaryProjectFor(relativePath);
+  }
+
+  projects(relativePath: string): readonly FakeProject[] {
+    return this.projectsFor(relativePath);
+  }
+
   protected initialConfigurationPaths(): readonly string[] {
     return this.initialPaths;
   }
@@ -142,5 +150,33 @@ describe("ProjectGraph", () => {
       "/repo/b.json",
       "/repo/c.json",
     ]);
+  });
+
+  it("orders all owners and selects the last owner as primary", async () => {
+    const graph = new FakeProjectGraph(
+      new InMemoryFileSystem({
+        "/repo/a.json": "a",
+        "/repo/b.json": "b",
+        "/repo/c.json": "c",
+      }),
+    );
+    graph.initialPaths = ["/repo/a.json", "/repo/b.json"];
+    graph.configurations = new Map([
+      [
+        "/repo/a.json",
+        { referencedPaths: ["/repo/c.json"], filePaths: ["shared.ts"] },
+      ],
+      ["/repo/b.json", { referencedPaths: [], filePaths: ["shared.ts"] }],
+      ["/repo/c.json", { referencedPaths: [], filePaths: ["shared.ts"] }],
+    ]);
+
+    await graph.refresh(snapshot(workspaceFile("shared.ts")));
+
+    expect(graph.projects("shared.ts").map(({ name }) => name)).toEqual([
+      "/repo/a.json",
+      "/repo/b.json",
+      "/repo/c.json",
+    ]);
+    expect(graph.primary("shared.ts")?.name).toBe("/repo/c.json");
   });
 });

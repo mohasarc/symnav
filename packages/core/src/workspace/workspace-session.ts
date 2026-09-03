@@ -41,7 +41,7 @@ export class WorkspaceSession {
     readonly discoveryRetention: WorkspaceDiscoveryRetention;
   }) {
     this.#fileSystem = options.fileSystem;
-    this.#backends = options.backends;
+    this.#backends = Object.freeze([...options.backends]);
     this.#catalog =
       options.discoveryRetention === "session"
         ? new WorkspaceCatalog(options.fileSystem)

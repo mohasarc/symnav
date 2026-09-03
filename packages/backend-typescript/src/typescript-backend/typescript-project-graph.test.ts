@@ -231,6 +231,26 @@ describe("TypeScriptProjectGraph", () => {
     expect(after.changedConfigurationCount).toBe(1);
   });
 
+  it("discovers a previously missing workspace package without source changes", async () => {
+    const projectFixture = fixture();
+    const packagePath = join(projectFixture.root, "packages/domain/package.json");
+    const packageContent = readFileSync(packagePath, "utf8");
+    projectFixture.remove("packages/domain/package.json");
+    const graph = new TypeScriptProjectGraph(projectFixture.fileSystem);
+    const snapshot = await projectFixture.snapshot();
+    const before = await graph.refresh(snapshot);
+
+    projectFixture.write("packages/domain/package.json", packageContent);
+    const after = await graph.refresh(snapshot);
+    const paths = graph.programFor("packages/app/src/index.ts")?.getCompilerOptions().paths;
+
+    expect(before.changedConfigurationCount).toBe(5);
+    expect(after.changedConfigurationCount).toBe(1);
+    expect(paths?.["@configured/domain"]).toEqual([
+      `${projectFixture.root.replaceAll("\\", "/")}/packages/domain/src/index.ts`,
+    ]);
+  });
+
   it("invalidates equal-size configuration content after modification time is restored", async () => {
     const projectFixture = fixture();
     const configurationPath = join(projectFixture.root, "packages/app/tsconfig.base.json");

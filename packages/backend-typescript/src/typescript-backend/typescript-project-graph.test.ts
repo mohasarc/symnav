@@ -251,6 +251,29 @@ describe("TypeScriptProjectGraph", () => {
     ]);
   });
 
+  it("stops observing configuration inputs after they become unreachable", async () => {
+    const projectFixture = fixture();
+    const graph = new TypeScriptProjectGraph(projectFixture.fileSystem);
+    await graph.refresh(await projectFixture.snapshot());
+    projectFixture.write(
+      "tsconfig.json",
+      JSON.stringify({ files: [], references: [{ path: "packages/domain" }] }),
+    );
+    const narrowedSnapshot = await projectFixture.snapshot();
+    const narrowed = await graph.refresh(narrowedSnapshot);
+    const inferredService = graph.languageServiceFor("packages/app/src/index.ts");
+
+    projectFixture.write(
+      "packages/app/tsconfig.json",
+      JSON.stringify({ include: ["src/index.ts"], compilerOptions: { strict: true } }),
+    );
+    const unchanged = await graph.refresh(narrowedSnapshot);
+
+    expect(narrowed.changedConfigurationCount).toBe(3);
+    expect(unchanged.changedConfigurationCount).toBe(0);
+    expect(graph.languageServiceFor("packages/app/src/index.ts")).toBe(inferredService);
+  });
+
   it("invalidates equal-size configuration content after modification time is restored", async () => {
     const projectFixture = fixture();
     const configurationPath = join(projectFixture.root, "packages/app/tsconfig.base.json");

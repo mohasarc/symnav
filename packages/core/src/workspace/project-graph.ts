@@ -141,6 +141,16 @@ export abstract class ProjectGraph<
     return this.currentSummary(changedInputCount);
   }
 
+  async releaseTransientResources(): Promise<void> {
+    if (!this.state) return;
+    for (const project of this.state.configuredProjects) {
+      const release = project.releaseTransientResources();
+      if (release) await release;
+    }
+    const inferredRelease = this.state.inferredProject.releaseTransientResources();
+    if (inferredRelease) await inferredRelease;
+  }
+
   protected primaryProjectFor(relativePath: string): Project | undefined {
     const file = this.state?.filesByRelativePath.get(relativePath);
     if (!file) return undefined;

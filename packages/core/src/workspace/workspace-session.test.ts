@@ -10,7 +10,7 @@ import type {
   BackendRefreshSummary,
   LanguageBackend,
 } from "../backend/language-backend.js";
-import type { ResolvedPath } from "./workspace.js";
+import type { ResolvedPath, Workspace } from "./workspace.js";
 import { InMemoryFileSystem } from "./in-memory/in-memory-file-system.js";
 import { WorkspaceSession } from "./workspace-session.js";
 
@@ -77,6 +77,15 @@ class RecordingBackend implements LanguageBackend {
   }
 }
 
+class SelectiveFailureFileSystem extends InMemoryFileSystem {
+  failPath: string | undefined;
+
+  override async metadata(absPath: string) {
+    if (absPath === this.failPath) throw new Error(`metadata failed: ${absPath}`);
+    return super.metadata(absPath);
+  }
+}
+
 describe("WorkspaceSession", () => {
   it("returns fresh turns while only session discovery retains file identity", async () => {
     const fileSystem = workspaceFileSystem();
@@ -105,6 +114,32 @@ describe("WorkspaceSession", () => {
     expect(firstRetained.router).not.toBe(secondRetained.router);
     expect(firstRetained.snapshot.files[0]).toBe(secondRetained.snapshot.files[0]);
   });
+
+  it.each(["request", "session"] as const)(
+    "uses fresh lazy selection discovery for %s retention",
+    async (discoveryRetention) => {
+      const fileSystem = new SelectiveFailureFileSystem({
+        "/repo/.git/HEAD": "ref: refs/heads/main\n",
+        "/repo/src/target.ts": "export const target = true;\n",
+        "/repo/src/sibling.ts": "export const sibling = true;\n",
+      });
+      const backend = new RecordingBackend(discoveryRetention);
+      const session = new WorkspaceSession({ fileSystem, backends: [backend], discoveryRetention });
+      if (discoveryRetention === "session") await session.prepare("/repo");
+      fileSystem.failPath = "/repo/src/sibling.ts";
+
+      const selected = await session.prepare("/repo", {
+        coverage: "selection",
+        selectSnapshot: select("src/target.ts", "/repo"),
+      });
+
+      expect(selected.snapshot.files.map((file) => file.relative)).toEqual(["src/target.ts"]);
+      expect(backend.refreshCalls.at(-1)?.coverage).toBe("selection");
+      fileSystem.failPath = undefined;
+      await session.prepare("/repo");
+      expect(backend.refreshCalls.at(-1)?.coverage).toBe("workspace");
+    },
+  );
 });
 
 function workspaceFileSystem(): InMemoryFileSystem {
@@ -112,4 +147,11 @@ function workspaceFileSystem(): InMemoryFileSystem {
     "/repo/.git/HEAD": "ref: refs/heads/main\n",
     "/repo/src/a.ts": "export const a = true;\n",
   });
+}
+
+function select(relativePath: string, cwd: string) {
+  return async (workspace: Workspace) => {
+    const path = await workspace.resolveInputPath(relativePath, cwd);
+    return workspace.snapshot([path]);
+  };
 }

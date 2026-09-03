@@ -78,6 +78,7 @@ interface DiscoveredProjectConfiguration<ConfigurationUnit> {
 
 interface ProjectGraphState<Project> {
   readonly root: string;
+  readonly filesByRelativePath: ReadonlyMap<string, WorkspaceFile>;
   readonly configuredProjects: readonly Project[];
   readonly projectsByRelativePath: ReadonlyMap<string, readonly Project[]>;
   readonly primaryProjectByRelativePath: ReadonlyMap<string, Project>;
@@ -126,6 +127,7 @@ export abstract class ProjectGraph<
     const ownership = ProjectGraph.buildOwnership(configurations, prepared.configuredProjects);
     this.state = {
       root: snapshot.root,
+      filesByRelativePath: new Map(snapshot.files.map((file) => [file.relative, file])),
       configuredProjects: prepared.configuredProjects,
       ...ownership,
       inferredProject: prepared.inferredProject,
@@ -137,11 +139,21 @@ export abstract class ProjectGraph<
   }
 
   protected primaryProjectFor(relativePath: string): Project | undefined {
-    return this.state?.primaryProjectByRelativePath.get(relativePath);
+    const file = this.state?.filesByRelativePath.get(relativePath);
+    if (!file) return undefined;
+    return (
+      this.state?.primaryProjectByRelativePath.get(relativePath) ?? this.state?.inferredProject
+    );
   }
 
   protected projectsFor(relativePath: string): readonly Project[] {
-    return this.state?.projectsByRelativePath.get(relativePath) ?? [];
+    const file = this.state?.filesByRelativePath.get(relativePath);
+    if (!file) return [];
+    return this.state?.projectsByRelativePath.get(relativePath) ?? [this.state!.inferredProject];
+  }
+
+  protected workspaceFile(relativePath: string): WorkspaceFile | undefined {
+    return this.state?.filesByRelativePath.get(relativePath);
   }
 
   protected abstract initialConfigurationPaths(root: string): readonly string[];

@@ -92,3 +92,38 @@ export class DaemonAdmissionPolicy {
     return { kind: "accept" };
   }
 }
+
+export class DaemonAdmissionRejections {
+  private static readonly retrySafety: Readonly<Record<DaemonExecuteRejectionCode, boolean>> =
+    Object.freeze({
+      "not-ready": true,
+      draining: true,
+      "resource-pressure": true,
+      incompatible: false,
+    });
+
+  static retrySafe(code: DaemonExecuteRejectionCode): boolean {
+    return DaemonAdmissionRejections.retrySafety[code];
+  }
+
+  static frame(
+    code: DaemonExecuteRejectionCode,
+    coordinates: DaemonExecutionCoordinates,
+  ): DaemonRejectedExecutionFrame {
+    return {
+      kind: "rejected",
+      ...coordinates,
+      code,
+      retrySafe: DaemonAdmissionRejections.retrySafe(code),
+    };
+  }
+
+  static assertConsistent(frame: DaemonRejectedExecutionFrame): void {
+    if (
+      !Object.hasOwn(DaemonAdmissionRejections.retrySafety, frame.code) ||
+      frame.retrySafe !== DaemonAdmissionRejections.retrySafety[frame.code]
+    ) {
+      throw new Error("Inconsistent daemon execution rejection");
+    }
+  }
+}

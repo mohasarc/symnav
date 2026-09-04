@@ -1,4 +1,4 @@
-export { DaemonAdmissionPolicy } from "./daemon-admission.js";
+export { DaemonAdmissionPolicy, DaemonAdmissionRejections } from "./daemon-admission.js";
 export type {
   AcceptedRequestCompatibility,
   DaemonAdmissionContext,

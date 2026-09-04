@@ -34,6 +34,7 @@ const request: DaemonExecuteRequest = {
   instanceId: "instance",
   processToken: "token",
   requestId: "request",
+  commandName: "overview",
   request: { argv: ["overview", "src/a.ts"], cwd: "/repo", telemetryEnabled: false },
 };
 
@@ -55,7 +56,7 @@ describe("LocalDaemonTransport execution delivery", () => {
   });
 
   it("uses the accepted-request protocol generation", () => {
-    expect(DAEMON_PROTOCOL_VERSION).toBe(4);
+    expect(DAEMON_PROTOCOL_VERSION).toBe(5);
   });
 
   it("classifies connection refusal before any write as retry-safe", async () => {

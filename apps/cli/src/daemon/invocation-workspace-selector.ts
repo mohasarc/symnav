@@ -1,16 +1,20 @@
 import { Command as CommanderCommand } from "commander";
 import { resolve } from "node:path";
+import type { DaemonCommandName } from "@symnav/daemon";
 import type { InvocationRoute, SelectedInvocation } from "./invocation-route.js";
 
-const workspaceCommands = new Set([
-  "overview",
-  "resolve",
-  "def",
-  "refs",
-  "context",
-  "graph",
-  "stats",
-]);
+type WorkspaceCommandName = Exclude<DaemonCommandName, "help" | "version" | "unknown">;
+
+const workspaceCommandNames = {
+  overview: "overview",
+  resolve: "resolve",
+  def: "def",
+  refs: "refs",
+  context: "context",
+  graph: "graph",
+  stats: "stats",
+} as const satisfies Readonly<Record<WorkspaceCommandName, WorkspaceCommandName>>;
+
 export class InvocationWorkspaceSelector {
   classify(argv: readonly string[], cwd: string): InvocationRoute {
     return this.select(argv, cwd).route;
@@ -34,24 +38,36 @@ export class InvocationWorkspaceSelector {
       version?: boolean;
     }>();
 
-    if (options.help === true || options.version === true) {
-      return { route: { kind: "local" }, argv };
+    if (options.help === true) {
+      return { route: { kind: "local" }, commandName: "help", argv };
+    }
+    if (options.version === true) {
+      return { route: { kind: "local" }, commandName: "version", argv };
     }
     if (command === "daemon" && (action === "start" || action === "status" || action === "stop")) {
-      return { route: { kind: "daemon-control", action }, argv };
+      return { route: { kind: "daemon-control", action }, commandName: "unknown", argv };
     }
-    if (command === undefined || !workspaceCommands.has(command)) {
-      return { route: { kind: "local" }, argv };
+    const commandName = InvocationWorkspaceSelector.workspaceCommandName(command);
+    if (commandName === undefined) {
+      return { route: { kind: "local" }, commandName: "unknown", argv };
     }
     const cwdOverride = options.cwd;
     const startDir = cwdOverride === undefined ? cwd : resolve(cwd, cwdOverride);
     return {
       route: { kind: "workspace", startDir },
+      commandName,
       argv:
         cwdOverride === undefined
           ? argv
           : InvocationWorkspaceSelector.rewriteEffectiveCwd(argv, startDir),
     };
+  }
+
+  private static workspaceCommandName(
+    command: string | undefined,
+  ): WorkspaceCommandName | undefined {
+    if (command === undefined || !Object.hasOwn(workspaceCommandNames, command)) return undefined;
+    return workspaceCommandNames[command as WorkspaceCommandName];
   }
 
   private static rewriteEffectiveCwd(argv: readonly string[], startDir: string): readonly string[] {

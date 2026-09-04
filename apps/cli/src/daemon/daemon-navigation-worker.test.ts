@@ -56,7 +56,7 @@ describe("NodeDaemonNavigationWorker", () => {
 
     const executionTimer = timerTurn();
     const chunks: Uint8Array[] = [];
-    const response = await worker.execute("request-1", request, {
+    const response = await worker.execute("request-1", "version", request, {
       append: (record) => {
         chunks.push(record.bytes);
         return Promise.resolve();
@@ -77,7 +77,9 @@ describe("NodeDaemonNavigationWorker", () => {
     const worker = createWorker("duplicate");
     await worker.start("/repo");
 
-    await expect(worker.execute("request-1", request, outputSink())).resolves.toMatchObject({
+    await expect(
+      worker.execute("request-1", "version", request, outputSink()),
+    ).resolves.toMatchObject({
       kind: "result",
     });
     await expect(worker.exited).resolves.toMatchObject({ generation: 7, cause: "error" });
@@ -91,7 +93,7 @@ describe("NodeDaemonNavigationWorker", () => {
       releaseAppend = resolve;
     });
     let appended = false;
-    const execution = worker.execute("request-1", request, {
+    const execution = worker.execute("request-1", "version", request, {
       append: async () => {
         appended = true;
         await appendAllowed;
@@ -129,7 +131,7 @@ describe("NodeDaemonNavigationWorker", () => {
   it("reports controlled forced termination", async () => {
     const worker = createWorker("block-execution");
     await worker.start("/repo");
-    void worker.execute("request-1", request, outputSink()).catch(() => undefined);
+    void worker.execute("request-1", "version", request, outputSink()).catch(() => undefined);
 
     await worker.terminate();
 

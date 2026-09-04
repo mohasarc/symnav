@@ -26,13 +26,14 @@ import type {
   DaemonOutputRecord,
   DaemonOutputStream,
   DaemonPolicyValues,
+  DaemonReadinessProbe,
   DaemonSystemMemory,
   DaemonStartResult,
   DaemonStatusEnvelope,
   DaemonStopResult,
   RunningDaemonStatus,
 } from "./index.js";
-import { DaemonPolicy } from "./index.js";
+import { DAEMON_COMMAND_NAMES, DaemonPolicy } from "./index.js";
 
 type ExportKind = "runtime" | "type";
 
@@ -54,6 +55,7 @@ class DaemonContractSourcePath {
 
 class DaemonContractExpectation {
   public static readonly exports: readonly ExportedSymbol[] = [
+    { kind: "runtime", name: "DAEMON_COMMAND_NAMES" },
     { kind: "runtime", name: "DaemonPolicy" },
     { kind: "type", name: "DaemonActivitySnapshot" },
     { kind: "type", name: "DaemonCommandName" },
@@ -72,6 +74,7 @@ class DaemonContractExpectation {
     { kind: "type", name: "DaemonOutputRecord" },
     { kind: "type", name: "DaemonOutputStream" },
     { kind: "type", name: "DaemonPolicyValues" },
+    { kind: "type", name: "DaemonReadinessProbe" },
     { kind: "type", name: "DaemonStartResult" },
     { kind: "type", name: "DaemonStatusEnvelope" },
     { kind: "type", name: "DaemonStopResult" },
@@ -86,6 +89,8 @@ class DaemonContractExpectation {
     "static:fromSerialized",
     "static:fromSystemMemory",
   ];
+
+  public static readonly commandNameMembers = ["static:is", "static:parse"];
 
   public static readonly policyTestingExports: readonly ExportedSymbol[] = [
     { kind: "runtime", name: "DaemonPolicyTestFactory" },
@@ -309,6 +314,47 @@ describe("daemon host contract", () => {
   it("decodes source module URLs before filesystem access", () => {
     const sourcePath = join(tmpdir(), "symnav contract path", "host-contract.test.ts");
     expect(DaemonContractSourcePath.root(pathToFileURL(sourcePath).href)).toBe(dirname(sourcePath));
+  });
+
+  it("defines the exact command vocabulary and readiness probe", () => {
+    expectTypeOf<typeof DAEMON_COMMAND_NAMES>().toEqualTypeOf<
+      readonly [
+        "overview",
+        "resolve",
+        "def",
+        "refs",
+        "context",
+        "graph",
+        "stats",
+        "help",
+        "version",
+        "unknown",
+      ]
+    >();
+    expectTypeOf<DaemonCommandName>().toEqualTypeOf<(typeof DAEMON_COMMAND_NAMES)[number]>();
+    expectTypeOf<DaemonReadinessProbe>().toEqualTypeOf<{
+      readonly commandName: DaemonCommandName;
+      readonly argv: readonly string[];
+    }>();
+
+    const sourceRoot = DaemonContractSourcePath.root(import.meta.url);
+    const commandNameSource = ts.sys.readFile(join(sourceRoot, "daemon-command-name.ts"));
+    expect(commandNameSource).toBeDefined();
+    expect(
+      TypeScriptClassMemberInventory.read(commandNameSource ?? "", "DaemonCommandNames"),
+    ).toEqual(DaemonContractExpectation.commandNameMembers);
+
+    const compilation = NodeFreeDeclarationCompiler.compile([
+      join(sourceRoot, "daemon-command-name.ts"),
+    ]);
+    expect(compilation.diagnostics).toEqual([]);
+    const declaration = [...compilation.outputs].find(([path]) =>
+      path.endsWith("/daemon-command-name.d.ts"),
+    );
+    expect(declaration).toBeDefined();
+    expect(
+      TypeScriptClassMemberInventory.read(declaration?.[1] ?? "", "DaemonCommandNames"),
+    ).toEqual(DaemonContractExpectation.commandNameMembers);
   });
 
   it("defines the exact daemon policy static and instance API", () => {
@@ -541,7 +587,7 @@ describe("daemon host contract", () => {
     expect(TypeScriptExportInventory.read(indexSource ?? "")).toEqual(
       DaemonContractExpectation.exports,
     );
-    expect(Object.keys(daemonRuntime)).toEqual(["DaemonPolicy"]);
+    expect(Object.keys(daemonRuntime)).toEqual(["DAEMON_COMMAND_NAMES", "DaemonPolicy"]);
   });
 
   it("detects a public member added to DaemonPolicy", () => {

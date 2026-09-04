@@ -381,6 +381,7 @@ describe("symnav daemon status", () => {
         instanceId,
         processToken,
         requestId: "stuck-navigation",
+        commandName: "overview",
         request: {
           argv: ["overview", "input.ts"],
           cwd: workspaceRoot,
@@ -557,6 +558,7 @@ describe("symnav daemon status", () => {
         instanceId: record!.instanceId,
         processToken: record!.processToken,
         requestId: "deleted-workspace",
+        commandName: "version",
         request: {
           argv: ["overview", "input.ts"],
           cwd: workspaceRoot,

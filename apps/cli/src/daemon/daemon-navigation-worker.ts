@@ -1,5 +1,5 @@
 import { Worker } from "node:worker_threads";
-import { DaemonPolicy } from "@symnav/daemon";
+import { DaemonPolicy, type DaemonCommandName } from "@symnav/daemon";
 import type { CliExecutionRequest, CommandOutputRecord } from "../command-execution-result.js";
 import {
   DaemonNavigationWorkerProtocol,
@@ -29,6 +29,7 @@ export interface DaemonNavigationWorker {
   start(workspaceRoot: string): Promise<DaemonNavigationWorkerResponse>;
   execute(
     requestId: string,
+    commandName: DaemonCommandName,
     request: CliExecutionRequest,
     output: { append(record: CommandOutputRecord): Promise<void> },
   ): Promise<DaemonNavigationWorkerResponse>;
@@ -110,6 +111,7 @@ export class NodeDaemonNavigationWorker implements DaemonNavigationWorker {
 
   execute(
     requestId: string,
+    commandName: DaemonCommandName,
     request: CliExecutionRequest,
     output: { append(record: CommandOutputRecord): Promise<void> },
   ): Promise<DaemonNavigationWorkerResponse> {
@@ -119,6 +121,7 @@ export class NodeDaemonNavigationWorker implements DaemonNavigationWorker {
         kind: "execute",
         generation: this.generation,
         requestId,
+        commandName,
         request,
       },
       output.append.bind(output),

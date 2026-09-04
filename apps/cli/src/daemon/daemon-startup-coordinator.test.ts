@@ -49,6 +49,25 @@ describe("DaemonStartupCoordinator", () => {
     roots.length = 0;
   });
 
+  it("uses the explicit version readiness probe", async () => {
+    const harness = new CoordinatorHarness(roots);
+
+    await expect(harness.coordinator().ensureRunning(harness.identity)).resolves.toMatchObject({
+      status: "ready",
+    });
+
+    expect(harness.transport.executionRequests).toEqual([
+      expect.objectContaining({
+        commandName: "version",
+        request: {
+          argv: ["--version"],
+          cwd: harness.identity.workspaceRoot,
+          telemetryEnabled: false,
+        },
+      }),
+    ]);
+  });
+
   it("returns concurrent warm-up triggers after electing one detached child", async () => {
     const readinessGate = new ReadinessPublicationGate();
     const harness = new CoordinatorHarness(roots, { readinessPublicationGate: readinessGate });
@@ -292,7 +311,7 @@ describe("DaemonStartupCoordinator", () => {
     expect(runtime.registry.readStored(runtime.identity)?.instanceId).toBe("old");
   });
 
-  it.each(["schema", "protocol", "symnav"] as const)(
+  it.each(["schema", "prior-protocol", "future-protocol", "symnav"] as const)(
     "proves and replaces a real daemon for $mismatch mismatch",
     async (mismatch) => {
       const runtime = socketBackedCoordinator(roots);
@@ -309,7 +328,11 @@ describe("DaemonStartupCoordinator", () => {
         schemaVersion:
           mismatch === "schema" ? DAEMON_RECORD_SCHEMA_VERSION + 1 : oldRecord.schemaVersion,
         protocolVersion:
-          mismatch === "protocol" ? DAEMON_PROTOCOL_VERSION + 1 : oldRecord.protocolVersion,
+          mismatch === "prior-protocol"
+            ? 4
+            : mismatch === "future-protocol"
+              ? DAEMON_PROTOCOL_VERSION + 1
+              : oldRecord.protocolVersion,
         symnavVersion: mismatch === "symnav" ? "0.0.9" : "0.1.0",
       };
       runtime.registry.write(incompatibleRecord);
@@ -1023,6 +1046,7 @@ class ReadyTestLauncher implements DaemonProcessLauncher {
 
 class RegistryTransport {
   terminationCount = 0;
+  readonly executionRequests: Extract<DaemonRequest, { kind: "execute" }>[] = [];
   private readonly terminatedInstances = new Set<string>();
   private remainingReadyAuthenticationFailures: number;
 
@@ -1083,6 +1107,7 @@ class RegistryTransport {
     _endpoint: string,
     request: Extract<DaemonRequest, { kind: "execute" }>,
   ): Promise<DaemonExecutionReceipt> {
+    this.executionRequests.push(request);
     return {
       acceptance: {
         requestId: request.requestId,

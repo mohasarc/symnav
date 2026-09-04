@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import type { CliExecutionRequest } from "../command-execution-result.js";
+import type { DaemonCommandName } from "@symnav/daemon";
 import type { DaemonExecutionFailureCode, DaemonExecutionStatus } from "./daemon-protocol.js";
 
 export type AcceptedRequestState =
@@ -15,6 +16,7 @@ export type AcceptedRequestState =
 export interface AcceptedRequestEntry {
   readonly requestId: string;
   readonly requestFingerprint: string;
+  readonly commandName: DaemonCommandName;
   readonly request: CliExecutionRequest;
   readonly state: AcceptedRequestState;
   readonly deliveryTerminated: boolean;
@@ -47,8 +49,12 @@ export class AcceptedRequestLedger {
     return false;
   }
 
-  accept(requestId: string, request: CliExecutionRequest): AcceptedRequestEntry {
-    const requestFingerprint = AcceptedRequestLedger.fingerprint(request);
+  accept(
+    requestId: string,
+    commandName: DaemonCommandName,
+    request: CliExecutionRequest,
+  ): AcceptedRequestEntry {
+    const requestFingerprint = AcceptedRequestLedger.fingerprint(commandName, request);
     const existing = this.entries.get(requestId);
     if (existing !== undefined) {
       if (existing.requestFingerprint !== requestFingerprint) {
@@ -59,6 +65,7 @@ export class AcceptedRequestLedger {
     const entry: AcceptedRequestEntry = {
       requestId,
       requestFingerprint,
+      commandName,
       request,
       deliveryTerminated: false,
       state: {
@@ -199,8 +206,8 @@ export class AcceptedRequestLedger {
     return entry;
   }
 
-  private static fingerprint(request: CliExecutionRequest): string {
-    const canonical = AcceptedRequestLedger.canonicalValue(request);
+  private static fingerprint(commandName: DaemonCommandName, request: CliExecutionRequest): string {
+    const canonical = AcceptedRequestLedger.canonicalValue({ commandName, request });
     return createHash("sha256").update(JSON.stringify(canonical)).digest("hex");
   }
 

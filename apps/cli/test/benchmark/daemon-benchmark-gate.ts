@@ -1,4 +1,4 @@
-import type { DaemonCommandName } from "../../src/daemon/daemon-protocol.js";
+import type { DaemonCommandName } from "@symnav/daemon";
 import type { DaemonBenchmarkScale } from "./daemon-workspace-generator.js";
 
 export interface DaemonBenchmarkSample {

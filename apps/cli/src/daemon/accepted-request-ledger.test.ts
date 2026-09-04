@@ -17,12 +17,16 @@ describe("AcceptedRequestLedger", () => {
   it("atomically inserts one queued owner and attaches an identical duplicate", () => {
     const ledger = new AcceptedRequestLedger(() => 10);
 
-    const accepted = ledger.accept("request", request);
-    const duplicate = ledger.accept("request", { ...request, argv: [...request.argv] });
+    const accepted = ledger.accept("request", "overview", request);
+    const duplicate = ledger.accept("request", "overview", {
+      ...request,
+      argv: [...request.argv],
+    });
 
     expect(accepted).toBe(duplicate);
     expect(accepted).toMatchObject({
       requestId: "request",
+      commandName: "overview",
       request,
       state: { state: "queued", acceptedAt: 10, queuePosition: 0 },
     });
@@ -31,17 +35,18 @@ describe("AcceptedRequestLedger", () => {
 
   it("reports request identifier corruption for a different payload", () => {
     const ledger = new AcceptedRequestLedger(() => 10);
-    ledger.accept("request", request);
+    ledger.accept("request", "overview", request);
 
-    expect(() => ledger.accept("request", { ...request, argv: ["overview", "src/b.ts"] })).toThrow(
-      AcceptedRequestCorruptionError,
-    );
+    expect(() =>
+      ledger.accept("request", "overview", { ...request, argv: ["overview", "src/b.ts"] }),
+    ).toThrow(AcceptedRequestCorruptionError);
+    expect(() => ledger.accept("request", "refs", request)).toThrow(AcceptedRequestCorruptionError);
     expect(ledger.size).toBe(1);
   });
 
   it("transitions queued through running to completed", () => {
     const ledger = new AcceptedRequestLedger(() => 10);
-    ledger.accept("request", request);
+    ledger.accept("request", "overview", request);
 
     expect(ledger.markRunning("request", 20).state).toEqual({
       state: "running",
@@ -61,7 +66,7 @@ describe("AcceptedRequestLedger", () => {
 
   it("transitions queued or running requests to a typed failure", () => {
     const queued = new AcceptedRequestLedger(() => 10);
-    queued.accept("queued", request);
+    queued.accept("queued", "overview", request);
     expect(queued.fail("queued", "stopping", 20).state).toEqual({
       state: "failed",
       completedAt: 20,
@@ -69,7 +74,7 @@ describe("AcceptedRequestLedger", () => {
     });
 
     const running = new AcceptedRequestLedger(() => 10);
-    running.accept("running", request);
+    running.accept("running", "overview", request);
     running.markRunning("running", 15);
     expect(running.fail("running", "worker-exit", 20).state).toEqual({
       state: "failed",
@@ -80,7 +85,7 @@ describe("AcceptedRequestLedger", () => {
 
   it("publishes the current entry and each transition to subscribers", () => {
     const ledger = new AcceptedRequestLedger(() => 10);
-    ledger.accept("request", request);
+    ledger.accept("request", "overview", request);
     const subscriber = vi.fn<(entry: AcceptedRequestEntry) => void>();
 
     const unsubscribe = ledger.subscribe("request", subscriber);
@@ -98,7 +103,7 @@ describe("AcceptedRequestLedger", () => {
   it("reports every status and unknown identifiers", () => {
     const ledger = new AcceptedRequestLedger(() => 10);
     expect(ledger.status("missing")).toEqual({ state: "unknown" });
-    ledger.accept("request", request);
+    ledger.accept("request", "overview", request);
     expect(ledger.status("request")).toEqual({ state: "queued", queuePosition: 0 });
     ledger.markRunning("request", 20);
     expect(ledger.status("request")).toEqual({ state: "running", startedAt: 20 });
@@ -111,13 +116,13 @@ describe("AcceptedRequestLedger", () => {
 
   it("retains acknowledged terminal tombstones for the daemon lifetime", () => {
     const ledger = new AcceptedRequestLedger(() => 10);
-    ledger.accept("request", request);
+    ledger.accept("request", "overview", request);
     ledger.complete("request", "result", 20);
 
     ledger.acknowledge("request");
 
     expect(ledger.status("request")).toEqual({ state: "completed" });
-    expect(ledger.accept("request", request).state.state).toBe("completed");
+    expect(ledger.accept("request", "overview", request).state.state).toBe("completed");
     expect(ledger.isAcknowledged("request")).toBe(true);
     expect(ledger.size).toBe(1);
   });
@@ -125,7 +130,7 @@ describe("AcceptedRequestLedger", () => {
   it("rejects missing, repeated, and regressive transitions", () => {
     const ledger = new AcceptedRequestLedger(() => 10);
     expect(() => ledger.markRunning("missing", 20)).toThrow(/not accepted/);
-    ledger.accept("request", request);
+    ledger.accept("request", "overview", request);
     ledger.complete("request", "result", 20);
 
     expect(() => ledger.markRunning("request", 30)).toThrow(/completed/);

@@ -1,8 +1,8 @@
 import type { CompletionSpoolManifest } from "./completion-spool.js";
 import type { DaemonClock } from "./daemon-clock.js";
 import type { BackendRefreshSummary } from "@symnav/core";
+import type { DaemonCommandName } from "@symnav/daemon";
 import type {
-  DaemonCommandName,
   DaemonDiagnosticEvent,
   DaemonDeliveryOutcome,
   DaemonExecutionOutcome,

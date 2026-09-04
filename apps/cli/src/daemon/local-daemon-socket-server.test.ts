@@ -145,6 +145,31 @@ describe("LocalDaemonTransport socket serving", () => {
       harness.encode({ kind: "stopped", instanceId: "instance" }),
     );
   });
+
+  it("subscribes and unsubscribes close listeners exactly once", async () => {
+    const endpoint = harness.endpoint();
+    const connected = DaemonSocketServerHarness.deferred<void>();
+    const notified = vi.fn();
+    const removed = vi.fn();
+    const server = harness.server();
+    const listening = await server.listen(endpoint, async (daemonRequest, send) => {
+      send.onClose(notified);
+      const unsubscribe = send.onClose(removed);
+      unsubscribe();
+      connected.resolve();
+      return harness.pong(daemonRequest.instanceId);
+    });
+    const client = createConnection(endpoint);
+    client.once("connect", () => client.write(harness.encode(harness.ping("instance"))));
+
+    await connected.promise;
+    client.destroy();
+    await vi.waitFor(() => expect(notified).toHaveBeenCalledTimes(1));
+
+    expect(removed).not.toHaveBeenCalled();
+    await listening.close();
+    expect(notified).toHaveBeenCalledTimes(1);
+  });
 });
 
 interface SocketServerOptions {

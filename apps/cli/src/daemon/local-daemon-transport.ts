@@ -663,17 +663,14 @@ export class LocalDaemonTransport
     return true;
   }
 
-  private endpointIsReachable(endpoint: string): Promise<boolean> {
-    return new Promise((resolve) => {
-      const socket = createConnection(endpoint);
-      const finish = (reachable: boolean): void => {
-        socket.destroy();
-        resolve(reachable);
-      };
-      socket.setTimeout(this.requestTimeoutMs, () => finish(false));
-      socket.once("connect", () => finish(true));
-      socket.once("error", () => finish(false));
-    });
+  private async endpointIsReachable(endpoint: string): Promise<boolean> {
+    try {
+      const connection = await this.sockets.connect(endpoint, this.requestTimeoutMs);
+      connection.destroy();
+      return true;
+    } catch {
+      return false;
+    }
   }
 
   private serve(socket: Socket, handler: DaemonRequestHandler): void {

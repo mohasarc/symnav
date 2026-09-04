@@ -189,7 +189,15 @@ export class LocalDaemonTransport
             completionSettled = true;
             resolveCompletion(completionValue);
           })
-          .catch(fail);
+          .catch((error: unknown) => {
+            if (
+              LocalDaemonTransport.isAcceptedConnectionClose(error, request) &&
+              resume()
+            ) {
+              return;
+            }
+            fail(error);
+          });
         return true;
       };
       const publishAcceptance = (): void => {
@@ -436,9 +444,11 @@ export class LocalDaemonTransport
       } catch (error) {
         throw LocalDaemonTransport.transportError(error, "accepted");
       }
-      throw LocalDaemonTransport.transportError(
-        new Error("Daemon result resume ended before completion"),
+      throw new DaemonTransportError(
+        "closed",
         "accepted",
+        "Daemon result resume ended before completion",
+        request.instanceId,
       );
     } catch (error) {
       connection.destroy();

@@ -1,5 +1,5 @@
 import { existsSync, writeFileSync } from "node:fs";
-import { canonicalStateDir } from "@symnav/telemetry";
+import { StateDirectoryResolver } from "../../src/state-directory-resolver.js";
 import { DaemonRegistry } from "../../src/daemon/daemon-registry.js";
 import { DaemonWorkspaceIdentity } from "../../src/daemon/daemon-workspace-identity.js";
 import {
@@ -19,7 +19,10 @@ if (
   process.exit(2);
 }
 
-const identity = DaemonWorkspaceIdentity.from(workspaceRoot, canonicalStateDir(stateDirectory));
+const identity = DaemonWorkspaceIdentity.from(
+  workspaceRoot,
+  StateDirectoryResolver.canonicalize(stateDirectory),
+);
 const registry = new DaemonRegistry(identity.registryDirectory);
 const instanceId = "cross-process-startup";
 const lease = registry.acquireStartup(identity, instanceId);

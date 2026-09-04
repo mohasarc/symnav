@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { DaemonPolicy, type DaemonExecutionFailureCode } from "@symnav/daemon";
+import { DaemonPolicyTestFactory } from "@symnav/daemon/policy-testing";
 import {
   DAEMON_PROTOCOL_VERSION,
   type DaemonExecuteRequest,
@@ -181,6 +182,23 @@ describe("LocalDaemonTransport execution delivery", () => {
     await expect(receipt.completion).resolves.toEqual({ status: "failed", code: "internal" });
   });
 
+  it("applies the execution admission deadline until acceptance", async () => {
+    const endpoint = await rawExecutionServer(servers, sockets, directories, (socket) => {
+      socket.once("data", () => undefined);
+    });
+
+    await expect(
+      new LocalDaemonTransport(policyWith({ executionAdmissionTimeoutMs: 25 })).execute(
+        endpoint,
+        request,
+      ),
+    ).rejects.toMatchObject({
+      code: "timeout",
+      delivery: "submitted-unconfirmed",
+      retrySafe: false,
+    } satisfies Partial<DaemonTransportError>);
+  });
+
   it.each<DaemonExecutionFailureCode>([
     "worker-exit",
     "controlled-resource",
@@ -233,10 +251,9 @@ describe("LocalDaemonTransport execution delivery", () => {
       });
     });
 
-    const receipt = await new LocalDaemonTransport({ requestTimeoutMs: 10 }).execute(
-      endpoint,
-      request,
-    );
+    const receipt = await new LocalDaemonTransport(
+      policyWith({ executionAdmissionTimeoutMs: 10 }),
+    ).execute(endpoint, request);
 
     await expect(receipt.completion).resolves.toEqual({
       status: "failed",
@@ -1191,4 +1208,17 @@ async function settleWithin<T>(operation: Promise<T>, milliseconds: number): Pro
   } finally {
     if (timeout !== undefined) clearTimeout(timeout);
   }
+}
+
+function policyWith(
+  transport: { readonly executionAdmissionTimeoutMs?: number } = {},
+  delivery: {
+    readonly postAcceptanceExecutionReattachmentLimit?: number;
+    readonly resultTransferResumeLimitPerExecutionAttempt?: number;
+  } = {},
+) {
+  return DaemonPolicyTestFactory.withOverrides(DaemonPolicy.currentSystem(), {
+    transport,
+    delivery,
+  }).values;
 }

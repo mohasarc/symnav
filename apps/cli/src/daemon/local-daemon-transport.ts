@@ -33,7 +33,7 @@ import type {
   DaemonRequestServer,
   DaemonServerSend,
 } from "./daemon-transport.js";
-import { DaemonResultChunkCodec, DaemonTransferFrameDecoder } from "./daemon-result-chunk-codec.js";
+import { DaemonWireCodec } from "./daemon-wire-codec.js";
 import { DaemonRuntimeValues } from "./daemon-runtime-values.js";
 import type { CompletionSpoolManifest } from "./completion-spool.js";
 import { LocalDaemonOutput, type LocalDaemonExecutionResult } from "./local-daemon-output.js";
@@ -96,38 +96,6 @@ class DaemonResponseError extends Error {
     readonly authenticatedInstanceId?: string,
   ) {
     super(message);
-  }
-}
-
-class DaemonFrameDecoder {
-  private buffered = Buffer.alloc(0);
-
-  constructor(private readonly maximumFrameBytes: number) {}
-
-  append(bytes: Buffer): readonly unknown[] {
-    this.buffered = Buffer.concat([this.buffered, bytes]);
-    const values: unknown[] = [];
-    while (this.buffered.length >= 4) {
-      const payloadLength = this.buffered.readUInt32BE(0);
-      if (payloadLength > this.maximumFrameBytes) {
-        throw new Error(`Daemon frame exceeds ${this.maximumFrameBytes} bytes`);
-      }
-      if (this.buffered.length < payloadLength + 4) break;
-      const payload = this.buffered.subarray(4, payloadLength + 4);
-      this.buffered = this.buffered.subarray(payloadLength + 4);
-      try {
-        values.push(JSON.parse(payload.toString("utf8")));
-      } catch {
-        throw new Error("Daemon frame contains malformed JSON");
-      }
-    }
-    return values;
-  }
-
-  assertComplete(): void {
-    if (this.buffered.length !== 0) {
-      throw new Error("Daemon connection ended with a truncated frame");
-    }
   }
 }
 
@@ -279,25 +247,25 @@ class ListeningDaemonServer implements DaemonServer {
 export class LocalDaemonTransport
   implements DaemonLifecycleRequester, DaemonExecutionRequester, DaemonRequestServer
 {
-  private readonly maximumFrameBytes: number;
   private readonly requestTimeoutMs: number;
   private readonly executionRequestTimeoutMs: number;
   private readonly writeChunkSize: number | undefined;
   private readonly outputDirectory: string | undefined;
-  private readonly maximumControlFrameBytes: number;
-  private readonly maximumChunkRawBytes: number;
+  private readonly codec: DaemonWireCodec;
   private readonly outputPolicy: DaemonPolicyValues["output"];
   private readonly deliveryPolicy: DaemonPolicyValues["delivery"];
 
   constructor(policy: LocalDaemonTransportPolicy, options: LocalDaemonTransportOptions = {}) {
-    this.maximumFrameBytes = policy.transport.maximumJsonPayloadBytes;
     this.requestTimeoutMs =
       options.responseTimeoutPurpose === "status-observer"
         ? policy.transport.statusResponseTimeoutMs
         : policy.transport.singleResponseTimeoutMs;
     this.executionRequestTimeoutMs = policy.transport.executionAdmissionTimeoutMs;
-    this.maximumControlFrameBytes = policy.transport.maximumExecutionControlPayloadBytes;
-    this.maximumChunkRawBytes = policy.output.maximumChunkRawBytes;
+    this.codec = new DaemonWireCodec({
+      maximumJsonPayloadBytes: policy.transport.maximumJsonPayloadBytes,
+      maximumExecutionControlPayloadBytes: policy.transport.maximumExecutionControlPayloadBytes,
+      maximumChunkRawBytes: policy.output.maximumChunkRawBytes,
+    });
     this.outputPolicy = policy.output;
     this.deliveryPolicy = policy.delivery;
     this.writeChunkSize = options.writeChunkSize;
@@ -306,7 +274,7 @@ export class LocalDaemonTransport
 
   canFrame(value: unknown): boolean {
     try {
-      this.encodeFrame(value);
+      this.codec.encodeControl(value);
       return true;
     } catch {
       return false;
@@ -331,7 +299,7 @@ export class LocalDaemonTransport
   ): Promise<DaemonLifecycleResponse | DaemonExecutionStatusResponse> {
     LocalDaemonTransport.assertRequest(request);
     return new Promise((resolve, reject) => {
-      const decoder = new DaemonFrameDecoder(this.maximumFrameBytes);
+      const decoder = this.codec.controlDecoder();
       const socket = createConnection(endpoint);
       let settled = false;
       let delivery: DaemonDeliveryState = "not-submitted";
@@ -436,10 +404,7 @@ export class LocalDaemonTransport
   ): Promise<DaemonExecutionReceipt> {
     LocalDaemonTransport.assertRequest(request);
     return new Promise((resolve, reject) => {
-      const decoder = new DaemonTransferFrameDecoder(
-        this.maximumControlFrameBytes,
-        this.maximumChunkRawBytes,
-      );
+      const decoder = this.codec.transferDecoder();
       const output = new LocalDaemonOutput({
         policy: this.outputPolicy,
         ...(this.outputDirectory === undefined ? {} : { directory: this.outputDirectory }),
@@ -516,7 +481,7 @@ export class LocalDaemonTransport
       });
       socket.once("connect", () => {
         try {
-          const encoded = this.encodeFrame(request);
+          const encoded = this.codec.encodeControl(request);
           delivery = "submitted-unconfirmed";
           this.writeEncodedFrame(socket, encoded);
         } catch (error) {
@@ -653,10 +618,7 @@ export class LocalDaemonTransport
     transfer: DaemonResultTransferReceiver,
   ): DaemonExecutionReceipt["completion"] {
     return new Promise((resolve, reject) => {
-      const decoder = new DaemonTransferFrameDecoder(
-        this.maximumControlFrameBytes,
-        this.maximumChunkRawBytes,
-      );
+      const decoder = this.codec.transferDecoder();
       const socket = createConnection(endpoint);
       let ended = false;
       let settled = false;
@@ -761,7 +723,7 @@ export class LocalDaemonTransport
       transferId: manifest.transferId,
     };
     await new Promise<void>((resolve, reject) => {
-      const decoder = new DaemonFrameDecoder(this.maximumFrameBytes);
+      const decoder = this.codec.controlDecoder();
       const socket = createConnection(endpoint);
       let responseReceived = false;
       let settled = false;
@@ -883,7 +845,7 @@ export class LocalDaemonTransport
   }
 
   private serve(socket: Socket, handler: DaemonRequestHandler): void {
-    const decoder = new DaemonFrameDecoder(this.maximumFrameBytes);
+    const decoder = this.codec.controlDecoder();
     let responses = Promise.resolve();
     let writes = Promise.resolve();
     const closeListeners = new Set<() => void>();
@@ -936,21 +898,14 @@ export class LocalDaemonTransport
   }
 
   private writeFrame(socket: Socket, value: unknown): void {
-    this.writeEncodedFrame(socket, this.encodeFrame(value));
+    this.writeEncodedFrame(socket, this.codec.encodeControl(value));
   }
 
   private async writeServerMessage(socket: Socket, message: DaemonServerMessage): Promise<void> {
-    if ("kind" in message) {
-      await this.writeEncodedServerFrame(socket, this.encodeFrame(message));
-      return;
-    }
-    await this.writeEncodedServerFrame(
-      socket,
-      DaemonResultChunkCodec.encode(message, this.maximumChunkRawBytes),
-    );
+    await this.writeEncodedServerFrame(socket, this.codec.encodeServerMessage(message));
   }
 
-  private async writeEncodedServerFrame(socket: Socket, frame: Buffer): Promise<void> {
+  private async writeEncodedServerFrame(socket: Socket, frame: Uint8Array): Promise<void> {
     const chunkSize = this.writeChunkSize ?? frame.length;
     for (let offset = 0; offset < frame.length; offset += chunkSize) {
       if (socket.destroyed) throw new Error("Daemon socket closed during response delivery");
@@ -984,17 +939,7 @@ export class LocalDaemonTransport
     });
   }
 
-  private encodeFrame(value: unknown): Buffer {
-    const payload = Buffer.from(JSON.stringify(value), "utf8");
-    if (payload.length > this.maximumFrameBytes) {
-      throw new Error(`Daemon frame exceeds ${this.maximumFrameBytes} bytes`);
-    }
-    const prefix = Buffer.alloc(4);
-    prefix.writeUInt32BE(payload.length);
-    return Buffer.concat([prefix, payload]);
-  }
-
-  private writeEncodedFrame(socket: Pick<Socket, "write">, frame: Buffer): void {
+  private writeEncodedFrame(socket: Pick<Socket, "write">, frame: Uint8Array): void {
     if (this.writeChunkSize === undefined) {
       socket.write(frame);
       return;

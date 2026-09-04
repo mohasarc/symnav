@@ -1,8 +1,13 @@
 import { describe, expect, it } from "vitest";
 import type { DaemonResultChunk } from "./daemon-protocol.js";
-import { DaemonResultChunkCodec, DaemonTransferFrameDecoder } from "./daemon-result-chunk-codec.js";
+import { DaemonWireCodec } from "./daemon-wire-codec.js";
 
 describe("DaemonResultChunkCodec", () => {
+  const codec = new DaemonWireCodec({
+    maximumJsonPayloadBytes: 8 * 1024 * 1024,
+    maximumExecutionControlPayloadBytes: 256 * 1024,
+    maximumChunkRawBytes: 64 * 1024,
+  });
   const chunk: DaemonResultChunk = {
     transferId: "transfer-1",
     requestId: "request-1",
@@ -17,8 +22,8 @@ describe("DaemonResultChunkCodec", () => {
     const control = Buffer.alloc(4 + controlPayload.byteLength);
     control.writeUInt32BE(controlPayload.byteLength);
     controlPayload.copy(control, 4);
-    const encoded = Buffer.concat([control, DaemonResultChunkCodec.encode(chunk, 64 * 1024)]);
-    const decoder = new DaemonTransferFrameDecoder(256 * 1024, 64 * 1024);
+    const encoded = Buffer.concat([control, codec.encodeServerMessage(chunk)]);
+    const decoder = codec.transferDecoder();
     const decoded = [];
     for (let offset = 0; offset < encoded.byteLength; offset += 7) {
       decoded.push(...decoder.append(encoded.subarray(offset, offset + 7)));
@@ -42,8 +47,8 @@ describe("DaemonResultChunkCodec", () => {
       return corrupt;
     },
   ])("rejects truncated, wrong-length, or corrupt binary transfer %#", (corrupt) => {
-    const decoder = new DaemonTransferFrameDecoder(256 * 1024, 64 * 1024);
-    const encoded = corrupt(DaemonResultChunkCodec.encode(chunk, 64 * 1024));
+    const decoder = codec.transferDecoder();
+    const encoded = corrupt(Buffer.from(codec.encodeServerMessage(chunk)));
     expect(() => {
       decoder.append(encoded);
       decoder.assertComplete();

@@ -18,9 +18,14 @@ import {
   DaemonCompletionSpoolStore as RuntimeDaemonCompletionSpoolStore,
   type DaemonCompletionSpoolStoreOptions,
 } from "./completion-spool.js";
-import { DaemonResultChunkCodec } from "./daemon-result-chunk-codec.js";
+import { DaemonWireCodec } from "./daemon-wire-codec.js";
 
 const TEST_CHUNK_BYTES = 64 * 1024;
+const wireCodec = new DaemonWireCodec({
+  maximumJsonPayloadBytes: 8 * 1024 * 1024,
+  maximumExecutionControlPayloadBytes: 256 * 1024,
+  maximumChunkRawBytes: TEST_CHUNK_BYTES,
+});
 
 class DaemonCompletionSpoolStore extends RuntimeDaemonCompletionSpoolStore {
   constructor(options: Omit<DaemonCompletionSpoolStoreOptions, "policy">) {
@@ -628,17 +633,14 @@ describe("LocalDaemonTransport execution delivery", () => {
             socket.write(
               Buffer.concat([
                 encodedEnd,
-                DaemonResultChunkCodec.encode(
-                  {
-                    transferId: manifest.transferId,
-                    requestId: request.requestId,
-                    offset: manifest.recordCount,
-                    sequence: manifest.recordCount,
-                    stream: "stdout",
-                    bytes: Buffer.from("late"),
-                  },
-                  TEST_CHUNK_BYTES,
-                ),
+                wireCodec.encodeServerMessage({
+                  transferId: manifest.transferId,
+                  requestId: request.requestId,
+                  offset: manifest.recordCount,
+                  sequence: manifest.recordCount,
+                  stream: "stdout",
+                  bytes: Buffer.from("late"),
+                }),
               ]),
             );
           } else {
@@ -1072,17 +1074,14 @@ async function sendRecords(
   for await (const record of spool.read(offset)) {
     if (record.sequence >= stopBefore || socket.destroyed || !socket.writable) return;
     socket.write(
-      DaemonResultChunkCodec.encode(
-        {
-          transferId,
-          requestId: request.requestId,
-          offset: record.sequence,
-          sequence: record.sequence,
-          stream: record.stream,
-          bytes: record.bytes,
-        },
-        TEST_CHUNK_BYTES,
-      ),
+      wireCodec.encodeServerMessage({
+        transferId,
+        requestId: request.requestId,
+        offset: record.sequence,
+        sequence: record.sequence,
+        stream: record.stream,
+        bytes: record.bytes,
+      }),
     );
   }
 }
@@ -1094,16 +1093,15 @@ async function encodedResult(
   const chunks = [frame(accepted()), frame(resultManifest(manifest))];
   for await (const record of spool.read(0)) {
     chunks.push(
-      DaemonResultChunkCodec.encode(
-        {
+      Buffer.from(
+        wireCodec.encodeServerMessage({
           transferId: manifest.transferId,
           requestId: request.requestId,
           offset: record.sequence,
           sequence: record.sequence,
           stream: record.stream,
           bytes: record.bytes,
-        },
-        TEST_CHUNK_BYTES,
+        }),
       ),
     );
   }
@@ -1116,16 +1114,15 @@ async function firstEncodedRecord(
   manifest: import("./completion-spool.js").CompletionSpoolManifest,
 ): Promise<Buffer> {
   for await (const record of spool.read(0)) {
-    return DaemonResultChunkCodec.encode(
-      {
+    return Buffer.from(
+      wireCodec.encodeServerMessage({
         transferId: manifest.transferId,
         requestId: request.requestId,
         offset: record.sequence,
         sequence: record.sequence,
         stream: record.stream,
         bytes: record.bytes,
-      },
-      TEST_CHUNK_BYTES,
+      }),
     );
   }
   throw new Error("Expected one completion record");

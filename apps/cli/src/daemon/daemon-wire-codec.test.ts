@@ -3,8 +3,8 @@ import type { DaemonResultChunk } from "./daemon-protocol.js";
 import { DaemonWireCodec, type DaemonWireLimits } from "./daemon-wire-codec.js";
 
 const limits: DaemonWireLimits = {
-  maximumJsonPayloadBytes: 128,
-  maximumExecutionControlPayloadBytes: 96,
+  maximumJsonPayloadBytes: 512,
+  maximumExecutionControlPayloadBytes: 256,
   maximumChunkRawBytes: 8,
 };
 
@@ -45,9 +45,7 @@ describe("DaemonWireCodec", () => {
     );
 
     const oversized = Uint8Array.from([0, 0, 0, 5]);
-    expect(() => codec.controlDecoder().append(oversized)).toThrow(
-      "Daemon frame exceeds 4 bytes",
-    );
+    expect(() => codec.controlDecoder().append(oversized)).toThrow("Daemon frame exceeds 4 bytes");
     expect(() => codec.encodeControl({ value: "oversized" })).toThrow(
       "Daemon frame exceeds 4 bytes",
     );
@@ -77,21 +75,24 @@ describe("DaemonWireCodec", () => {
     expect(() => codec.transferDecoder().append(ordinary)).toThrow(
       "Daemon result frame exceeds capacity",
     );
-    expect(() => codec.encodeServerMessage({ ...resultChunk(), bytes: Uint8Array.from([1, 2, 3]) }))
-      .toThrow("Invalid daemon result chunk");
+    expect(() =>
+      codec.encodeServerMessage({ ...resultChunk(), bytes: Uint8Array.from([1, 2, 3]) }),
+    ).toThrow("Invalid daemon result chunk");
   });
 
   it("bounds a binary header by the execution-control envelope", () => {
-    const codec = new DaemonWireCodec({
+    const encoded = new DaemonWireCodec({
+      maximumJsonPayloadBytes: 256,
+      maximumExecutionControlPayloadBytes: 256,
+      maximumChunkRawBytes: 256,
+    }).encodeServerMessage(resultChunk());
+    const decoder = new DaemonWireCodec({
       maximumJsonPayloadBytes: 256,
       maximumExecutionControlPayloadBytes: 8,
       maximumChunkRawBytes: 256,
-    });
-    const encoded = codec.encodeServerMessage(resultChunk());
+    }).transferDecoder();
 
-    expect(() => codec.transferDecoder().append(encoded)).toThrow(
-      "Daemon result frame exceeds capacity",
-    );
+    expect(() => decoder.append(encoded)).toThrow("Daemon result frame exceeds capacity");
   });
 });
 

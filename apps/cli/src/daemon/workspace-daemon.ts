@@ -1,15 +1,16 @@
 import type { ProgramDependencies } from "../program-dependencies.js";
 import {
+  DaemonAdmissionPolicy,
+  DaemonAdmissionRejections,
   DaemonExecutionFailures,
+  type DaemonAdmissionDecision,
+  type DaemonExecuteRejectionCode,
   type DaemonExecutionFailureCode,
   type DaemonPolicy,
   type DaemonPolicyValues,
 } from "@symnav/daemon";
 import type { CommandExecutionResult, CommandOutputRecord } from "../command-execution-result.js";
-import {
-  AcceptedRequestCorruptionError,
-  AcceptedRequestLedger,
-} from "./accepted-request-ledger.js";
+import { AcceptedRequestLedger } from "./accepted-request-ledger.js";
 import type {
   DaemonActivitySnapshot,
   DaemonDeliveryOutcome,
@@ -89,6 +90,7 @@ export class WorkspaceDaemon {
   private readonly policy: DaemonPolicy;
   private readonly operationObserver: DaemonOperationObserver;
   private readonly acceptedRequests: AcceptedRequestLedger;
+  private readonly admissionPolicy = new DaemonAdmissionPolicy();
   private readonly completionSpools: DaemonCompletionSpoolStore;
   private readonly acceptances = new Map<
     string,
@@ -333,8 +335,8 @@ export class WorkspaceDaemon {
       throw new Error("Daemon request does not match protocol or instance");
     }
     if (request.kind === "ping") return this.pong();
+    if (request.kind === "execute") return this.acceptExecution(request, send);
     if (
-      request.kind === "execute" ||
       request.kind === "execution-status" ||
       request.kind === "result-fetch" ||
       request.kind === "result-ack"
@@ -343,7 +345,6 @@ export class WorkspaceDaemon {
         throw new Error("Daemon execution request does not match process instance");
       }
     }
-    if (request.kind === "execute") return this.acceptExecution(request, send);
     if (request.kind === "result-fetch") {
       let disconnectTraceConnection: (() => void) | undefined;
       if (this.acceptedRequests.entryFor(request.requestId)?.state.state === "completed") {
@@ -472,31 +473,17 @@ export class WorkspaceDaemon {
     request: Extract<DaemonRequest, { kind: "execute" }>,
     send: DaemonServerSend,
   ): Promise<DaemonResponse | void> {
-    void this.resourceSupervisor.sample("admission").catch((error) => {
-      this.logger.record({
-        kind: "failure",
-        operation: "resource-sample",
-        failureCode: "operation-failed",
-        errorName: DaemonLogger.errorName(error),
-      });
-    });
-    if (!this.workerReady) return this.rejection(request, "not-ready", true);
-    if (this.resourceSupervisor.snapshot.admissionPaused) {
-      return this.rejection(request, "resource-pressure", true);
+    const decision = this.decideAdmission(request);
+    if (decision.kind === "disconnect") {
+      throw new Error("Daemon execution request does not match process instance");
     }
-    if (this.requestQueue.state !== "accepting") {
-      return this.rejection(request, "draining", true);
-    }
+    if (decision.kind === "reject") return this.rejection(request, decision.code);
     const existing = this.acceptedRequests.entryFor(request.requestId);
-    let entry;
-    try {
-      entry = this.acceptedRequests.accept(request.requestId, request.commandName, request.request);
-    } catch (error) {
-      if (error instanceof AcceptedRequestCorruptionError) {
-        return this.rejection(request, "incompatible", false);
-      }
-      throw error;
-    }
+    const entry = this.acceptedRequests.accept(
+      request.requestId,
+      request.commandName,
+      request.request,
+    );
     if (entry.state.state === "queued") {
       this.acceptances.set(request.requestId, {
         acceptedAt: entry.state.acceptedAt,
@@ -563,6 +550,42 @@ export class WorkspaceDaemon {
           );
         unsubscribe?.();
       }
+    });
+  }
+
+  private decideAdmission(
+    request: Extract<DaemonRequest, { kind: "execute" }>,
+  ): DaemonAdmissionDecision {
+    const authenticated = request.processToken === this.options.processToken;
+    if (!authenticated) {
+      return this.admissionPolicy.decide({
+        request,
+        authenticated,
+        workerReady: true,
+        resourceAdmissionPaused: false,
+        queueState: "accepting",
+        compatibility: "unseen",
+      });
+    }
+    void this.resourceSupervisor.sample("admission").catch((error) => {
+      this.logger.record({
+        kind: "failure",
+        operation: "resource-sample",
+        failureCode: "operation-failed",
+        errorName: DaemonLogger.errorName(error),
+      });
+    });
+    return this.admissionPolicy.decide({
+      request,
+      authenticated,
+      workerReady: this.workerReady,
+      resourceAdmissionPaused: this.resourceSupervisor.snapshot.admissionPaused,
+      queueState: this.requestQueue.state,
+      compatibility: this.acceptedRequests.compatibilityFor(
+        request.requestId,
+        request.commandName,
+        request.request,
+      ),
     });
   }
 
@@ -684,17 +707,13 @@ export class WorkspaceDaemon {
 
   private rejection(
     request: Extract<DaemonRequest, { kind: "execute" }>,
-    code: "not-ready" | "draining" | "resource-pressure" | "incompatible",
-    retrySafe: boolean,
+    code: DaemonExecuteRejectionCode,
   ): DaemonExecutionServerFrame {
-    return {
-      kind: "rejected",
+    return DaemonAdmissionRejections.frame(code, {
       instanceId: this.options.instanceId,
       processToken: this.options.processToken,
       requestId: request.requestId,
-      code,
-      retrySafe,
-    };
+    });
   }
 
   private failedFrame(

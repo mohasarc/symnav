@@ -10,7 +10,14 @@ import * as daemonRuntime from "./index.js";
 import * as policyTestingRuntime from "./policy-testing.js";
 import type {
   DaemonActivitySnapshot,
+  AcceptedRequestCompatibility,
+  DaemonAdmissionContext,
+  DaemonAdmissionDecision,
+  DaemonAdmissionGuard,
+  DaemonAdmissionRejectionCode,
   DaemonCommandName,
+  DaemonExecuteRejectionCode,
+  DaemonExecutionCoordinates,
   DaemonDiagnostics,
   DaemonDiagnosticValue,
   DaemonExecutionFailureCode,
@@ -31,12 +38,20 @@ import type {
   DaemonReadinessProbe,
   DaemonSystemMemory,
   DaemonWorkerFailureCode,
+  DaemonRejectedExecutionFrame,
   DaemonStartResult,
   DaemonStatusEnvelope,
   DaemonStopResult,
   RunningDaemonStatus,
+  WorkspaceRequestQueueState,
 } from "./index.js";
-import { DAEMON_COMMAND_NAMES, DaemonExecutionFailures, DaemonPolicy } from "./index.js";
+import {
+  DAEMON_COMMAND_NAMES,
+  DaemonAdmissionPolicy,
+  DaemonAdmissionRejections,
+  DaemonExecutionFailures,
+  DaemonPolicy,
+} from "./index.js";
 
 type ExportKind = "runtime" | "type";
 
@@ -59,12 +74,21 @@ class DaemonContractSourcePath {
 class DaemonContractExpectation {
   public static readonly exports: readonly ExportedSymbol[] = [
     { kind: "runtime", name: "DAEMON_COMMAND_NAMES" },
+    { kind: "runtime", name: "DaemonAdmissionPolicy" },
+    { kind: "runtime", name: "DaemonAdmissionRejections" },
     { kind: "runtime", name: "DaemonExecutionFailures" },
     { kind: "runtime", name: "DaemonPolicy" },
+    { kind: "type", name: "AcceptedRequestCompatibility" },
     { kind: "type", name: "DaemonActivitySnapshot" },
+    { kind: "type", name: "DaemonAdmissionContext" },
+    { kind: "type", name: "DaemonAdmissionDecision" },
+    { kind: "type", name: "DaemonAdmissionGuard" },
+    { kind: "type", name: "DaemonAdmissionRejectionCode" },
     { kind: "type", name: "DaemonCommandName" },
     { kind: "type", name: "DaemonDiagnostics" },
     { kind: "type", name: "DaemonDiagnosticValue" },
+    { kind: "type", name: "DaemonExecuteRejectionCode" },
+    { kind: "type", name: "DaemonExecutionCoordinates" },
     { kind: "type", name: "DaemonExecutionFailureCode" },
     { kind: "type", name: "DaemonExecutionFailureContext" },
     { kind: "type", name: "DaemonExecutionMode" },
@@ -81,12 +105,14 @@ class DaemonContractExpectation {
     { kind: "type", name: "DaemonOutputStream" },
     { kind: "type", name: "DaemonPolicyValues" },
     { kind: "type", name: "DaemonReadinessProbe" },
+    { kind: "type", name: "DaemonRejectedExecutionFrame" },
     { kind: "type", name: "DaemonStartResult" },
     { kind: "type", name: "DaemonStatusEnvelope" },
     { kind: "type", name: "DaemonStopResult" },
     { kind: "type", name: "DaemonSystemMemory" },
     { kind: "type", name: "DaemonWorkerFailureCode" },
     { kind: "type", name: "RunningDaemonStatus" },
+    { kind: "type", name: "WorkspaceRequestQueueState" },
   ];
 
   public static readonly policyMembers = [
@@ -101,11 +127,20 @@ class DaemonContractExpectation {
 
   public static readonly executionFailureMembers = ["static:classify", "static:isCode"];
 
+  public static readonly admissionPolicyMembers = ["instance:decide"];
+
+  public static readonly admissionRejectionMembers = [
+    "static:assertConsistent",
+    "static:frame",
+    "static:retrySafe",
+  ];
+
   public static readonly policyTestingExports: readonly ExportedSymbol[] = [
     { kind: "runtime", name: "DaemonPolicyTestFactory" },
   ];
 
   public static readonly productionSources: readonly string[] = [
+    "daemon-admission.ts",
     "daemon-command-name.ts",
     "daemon-diagnostics.ts",
     "daemon-execution-failure.ts",
@@ -324,6 +359,43 @@ describe("daemon host contract", () => {
   it("decodes source module URLs before filesystem access", () => {
     const sourcePath = join(tmpdir(), "symnav contract path", "host-contract.test.ts");
     expect(DaemonContractSourcePath.root(pathToFileURL(sourcePath).href)).toBe(dirname(sourcePath));
+  });
+
+  it("defines the exact admission authority", () => {
+    expectTypeOf<DaemonExecuteRejectionCode>().toEqualTypeOf<
+      "not-ready" | "draining" | "resource-pressure" | "incompatible"
+    >();
+    expectTypeOf<DaemonExecutionCoordinates>().toEqualTypeOf<{
+      readonly instanceId: string;
+      readonly processToken: string;
+      readonly requestId: string;
+    }>();
+    expectTypeOf<DaemonRejectedExecutionFrame>().toEqualTypeOf<{
+      readonly kind: "rejected";
+      readonly instanceId: string;
+      readonly processToken: string;
+      readonly requestId: string;
+      readonly code: DaemonExecuteRejectionCode;
+      readonly retrySafe: boolean;
+    }>();
+    expectTypeOf<DaemonAdmissionContext>().toEqualTypeOf<{
+      readonly request: unknown;
+      readonly authenticated: boolean;
+      readonly workerReady: boolean;
+      readonly resourceAdmissionPaused: boolean;
+      readonly queueState: WorkspaceRequestQueueState;
+      readonly compatibility: AcceptedRequestCompatibility;
+    }>();
+
+    const sourceRoot = DaemonContractSourcePath.root(import.meta.url);
+    const source = ts.sys.readFile(join(sourceRoot, "daemon-admission.ts"));
+    expect(source).toBeDefined();
+    expect(TypeScriptClassMemberInventory.read(source ?? "", "DaemonAdmissionPolicy")).toEqual(
+      DaemonContractExpectation.admissionPolicyMembers,
+    );
+    expect(TypeScriptClassMemberInventory.read(source ?? "", "DaemonAdmissionRejections")).toEqual(
+      DaemonContractExpectation.admissionRejectionMembers,
+    );
   });
 
   it("defines the exact execution failure contract", () => {
@@ -633,6 +705,8 @@ describe("daemon host contract", () => {
       DaemonContractExpectation.exports,
     );
     expect(Object.keys(daemonRuntime)).toEqual([
+      "DaemonAdmissionPolicy",
+      "DaemonAdmissionRejections",
       "DAEMON_COMMAND_NAMES",
       "DaemonExecutionFailures",
       "DaemonPolicy",

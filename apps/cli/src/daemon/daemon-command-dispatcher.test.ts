@@ -117,7 +117,7 @@ describe("DaemonCommandDispatcher", () => {
       "submitted-unconfirmed",
       "non-retry rejection",
       "instance-1",
-      false,
+      "incompatible",
     ),
     new Error("malformed accepted completion"),
   ])(
@@ -154,7 +154,7 @@ describe("DaemonCommandDispatcher", () => {
         "submitted-unconfirmed",
         "not ready",
         "instance-1",
-        true,
+        "not-ready",
       ),
     );
 

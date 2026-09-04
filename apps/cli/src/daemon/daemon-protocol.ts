@@ -1,5 +1,9 @@
 import type { CliExecutionRequest } from "../command-execution-result.js";
-import type { DaemonCommandName, DaemonExecutionFailureCode } from "@symnav/daemon";
+import type {
+  DaemonCommandName,
+  DaemonExecutionFailureCode,
+  DaemonRejectedExecutionFrame,
+} from "@symnav/daemon";
 import type { CompletionSpoolManifest } from "./completion-spool.js";
 import type { CommandOutputStream } from "../command-execution-result.js";
 import type { BackendRefreshSummary } from "@symnav/core";
@@ -31,8 +35,6 @@ export interface DaemonRecord extends DaemonIdentityCoordinates {
   readonly memoryBytes?: number;
   readonly memoryCapBytes: number;
 }
-
-export type WorkspaceRequestQueueState = "accepting" | "draining" | "closed";
 
 export interface DaemonActivitySnapshot {
   readonly lifecycle: "starting" | "ready" | "busy" | "recovering" | "draining";
@@ -112,12 +114,6 @@ export type DaemonStopResult =
 
 export type DaemonStopReason = "graceful" | "idle" | "resource" | "workspace-deleted";
 
-export type DaemonExecuteRejectionCode =
-  | "not-ready"
-  | "draining"
-  | "resource-pressure"
-  | "incompatible";
-
 export interface DaemonExecuteRequest {
   readonly kind: "execute";
   readonly protocolVersion: number;
@@ -137,14 +133,7 @@ export type DaemonExecutionServerFrame =
       readonly acceptedAt: number;
       readonly queuePosition: number;
     }
-  | {
-      readonly kind: "rejected";
-      readonly instanceId: string;
-      readonly processToken: string;
-      readonly requestId: string;
-      readonly code: DaemonExecuteRejectionCode;
-      readonly retrySafe: boolean;
-    }
+  | DaemonRejectedExecutionFrame
   | {
       readonly kind: "result-manifest";
       readonly instanceId: string;

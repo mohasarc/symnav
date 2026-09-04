@@ -1,5 +1,4 @@
-import type { DaemonCommandName } from "@symnav/daemon";
-import type { WorkspaceRequestQueueState } from "./daemon-protocol.js";
+import type { DaemonCommandName, WorkspaceRequestQueueState } from "@symnav/daemon";
 
 export interface WorkspaceQueuedRequest {
   readonly requestId: string;

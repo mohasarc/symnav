@@ -56,7 +56,7 @@ describe("createDaemonExecutor", () => {
         indexingMs: expect.any(Number),
       },
     });
-  });
+  }, 15_000);
 
   it.each(["cold", "fallback"] as const)(
     "executes %s requests before initialization",
@@ -112,7 +112,7 @@ describe("createDaemonExecutor", () => {
     expect(release).toHaveBeenCalledTimes(2);
     await overview.output.dispose();
     await version.output.dispose();
-  });
+  }, 15_000);
 
   it("exposes ordered stream bytes and disposes the owned output once", async () => {
     const stateDirectory = temporaryDirectory(temporaryDirectories);

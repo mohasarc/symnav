@@ -10,7 +10,7 @@ import { spawn, type ChildProcess } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { runSymnavBinary } from "@symnav/testing";
 import {
   DAEMON_PROTOCOL_VERSION,
@@ -178,6 +178,10 @@ describe("symnav daemon status", () => {
       StateDirectoryResolver.canonicalize(stateDir),
     );
     const registry = new DaemonRegistry(identity.registryDirectory);
+    const readStartupOwner = registry.startupOwner.bind(registry);
+    vi.spyOn(registry, "startupOwner")
+      .mockReturnValueOnce(undefined)
+      .mockImplementation(readStartupOwner);
 
     expect(registry.readStoredInstance(identity, instanceId)).toMatchObject({
       instanceId,

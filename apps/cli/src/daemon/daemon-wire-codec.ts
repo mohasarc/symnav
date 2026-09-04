@@ -36,7 +36,10 @@ export class DaemonWireCodec {
 
   encodeServerMessage(message: DaemonServerMessage): Uint8Array {
     if ("kind" in message) {
-      return this.encodeJson(message, this.limits.maximumExecutionControlPayloadBytes);
+      const maximumPayloadBytes = DaemonWireCodec.isExecutionControl(message.kind)
+        ? this.limits.maximumExecutionControlPayloadBytes
+        : this.limits.maximumJsonPayloadBytes;
+      return this.encodeJson(message, maximumPayloadBytes);
     }
     return DaemonResultChunkCodec.encode(message, this.limits);
   }
@@ -57,6 +60,18 @@ export class DaemonWireCodec {
     const prefix = Buffer.alloc(FRAME_PREFIX_BYTES);
     prefix.writeUInt32BE(payload.byteLength);
     return Buffer.concat([prefix, payload]);
+  }
+
+  private static isExecutionControl(kind: string): boolean {
+    return (
+      kind === "accepted" ||
+      kind === "rejected" ||
+      kind === "result-manifest" ||
+      kind === "result-end" ||
+      kind === "execution-failed" ||
+      kind === "execution-status" ||
+      kind === "result-acknowledged"
+    );
   }
 }
 

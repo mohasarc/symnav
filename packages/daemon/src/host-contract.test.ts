@@ -387,7 +387,7 @@ describe("daemon host contract", () => {
       readonly compatibility: AcceptedRequestCompatibility;
     }>();
 
-    const sourceRoot = dirname(new URL(import.meta.url).pathname);
+    const sourceRoot = DaemonContractSourcePath.root(import.meta.url);
     const source = ts.sys.readFile(join(sourceRoot, "daemon-admission.ts"));
     expect(source).toBeDefined();
     expect(TypeScriptClassMemberInventory.read(source ?? "", "DaemonAdmissionPolicy")).toEqual(

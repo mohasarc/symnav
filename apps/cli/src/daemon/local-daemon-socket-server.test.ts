@@ -3,7 +3,7 @@ import { createConnection } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DaemonPolicy } from "@symnav/daemon";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { TestLocalDaemonTransport as LocalDaemonTransport } from "../../test/helpers/local-daemon-transport.js";
 import { DAEMON_PROTOCOL_VERSION, type DaemonRequest } from "./daemon-protocol.js";
 import { DaemonWireCodec } from "./daemon-wire-codec.js";
@@ -36,6 +36,38 @@ describe("LocalDaemonTransport socket serving", () => {
       kind: "pong",
       instanceId: "owner",
     });
+    await listening.close();
+  });
+
+  it("dispatches fragmented and coalesced request frames serially", async () => {
+    const endpoint = harness.endpoint();
+    const firstHandler = DaemonSocketServerHarness.deferred<void>();
+    const handled: string[] = [];
+    const server = harness.server();
+    const listening = await server.listen(endpoint, async (daemonRequest) => {
+      handled.push(daemonRequest.instanceId);
+      if (daemonRequest.instanceId === "first") await firstHandler.promise;
+      return harness.pong(daemonRequest.instanceId);
+    });
+    const encoded = Buffer.concat([
+      harness.encode(harness.ping("first")),
+      harness.encode(harness.ping("second")),
+    ]);
+    const responses = harness.receiveFrames(
+      endpoint,
+      encoded.subarray(0, 3),
+      encoded.subarray(3),
+      2,
+    );
+
+    await vi.waitFor(() => expect(handled).toEqual(["first"]));
+    firstHandler.resolve();
+
+    await expect(responses).resolves.toMatchObject([
+      { kind: "pong", instanceId: "first" },
+      { kind: "pong", instanceId: "second" },
+    ]);
+    expect(handled).toEqual(["first", "second"]);
     await listening.close();
   });
 });
@@ -113,6 +145,17 @@ class DaemonSocketServerHarness {
         resolve(values);
       });
     });
+  }
+
+  static deferred<T>(): {
+    readonly promise: Promise<T>;
+    readonly resolve: (value: T) => void;
+  } {
+    let resolve!: (value: T) => void;
+    const promise = new Promise<T>((settle) => {
+      resolve = settle;
+    });
+    return { promise, resolve };
   }
 
   private codec(): DaemonWireCodec {

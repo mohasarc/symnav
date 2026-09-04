@@ -111,6 +111,36 @@ describe("LocalDaemonTransport execution delivery", () => {
     } satisfies Partial<DaemonTransportError>);
   });
 
+  it.each([
+    ["not-ready", false],
+    ["resource-pressure", false],
+    ["draining", false],
+    ["incompatible", true],
+  ] as const)("rejects contradictory %s retry safety", async (code, retrySafe) => {
+    const endpoint = await rawExecutionServer(servers, sockets, directories, (socket) => {
+      socket.once("data", () =>
+        socket.end(
+          frame({
+            kind: "rejected",
+            instanceId: request.instanceId,
+            processToken: request.processToken,
+            requestId: request.requestId,
+            code,
+            retrySafe,
+          } satisfies DaemonExecutionServerFrame),
+        ),
+      );
+    });
+
+    await expect(
+      new LocalDaemonTransport({ requestTimeoutMs: 100 }).execute(endpoint, request),
+    ).rejects.toMatchObject({
+      code: "corrupt",
+      delivery: "submitted-unconfirmed",
+      retrySafe: false,
+    } satisfies Partial<DaemonTransportError>);
+  });
+
   it("allows execution admission beyond the lifecycle request timeout", async () => {
     const endpoint = await rawExecutionServer(servers, sockets, directories, (socket) => {
       socket.once("data", () => {

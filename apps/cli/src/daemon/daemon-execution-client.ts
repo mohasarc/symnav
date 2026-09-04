@@ -17,6 +17,12 @@ import type {
 import { DaemonTransportError, type DaemonDeliveryState } from "./daemon-transport-error.js";
 import type { DaemonWireCodec } from "./daemon-wire-codec.js";
 
+class DaemonResultFetchEndedError extends DaemonTransportError {
+  constructor(instanceId: string) {
+    super("closed", "accepted", "Daemon result resume ended before completion", instanceId);
+  }
+}
+
 interface DaemonExecutionClientOptions {
   readonly sockets: DaemonSocketClient;
   readonly lifecycle: Pick<DaemonLifecycleClient, "acknowledgeResult">;
@@ -127,7 +133,11 @@ export class DaemonExecutionClient implements DaemonExecutionRequester {
             if (DaemonExecutionClient.isAcceptedConnectionClose(error, request) && resume()) {
               return;
             }
-            fail(error);
+            fail(
+              error instanceof DaemonResultFetchEndedError
+                ? new DaemonTransportError("corrupt", "accepted", error.message)
+                : error,
+            );
           });
         return true;
       };
@@ -374,12 +384,7 @@ export class DaemonExecutionClient implements DaemonExecutionRequester {
       } catch (error) {
         throw DaemonExecutionClient.transportError(error, "accepted");
       }
-      throw new DaemonTransportError(
-        "closed",
-        "accepted",
-        "Daemon result resume ended before completion",
-        request.instanceId,
-      );
+      throw new DaemonResultFetchEndedError(request.instanceId);
     } catch (error) {
       connection.destroy();
       if (error instanceof DaemonTransportError || error instanceof DaemonProtocolError) {

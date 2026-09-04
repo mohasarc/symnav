@@ -1,10 +1,9 @@
 import { mkdirSync } from "node:fs";
 import { DaemonPolicy, type DaemonPolicyValues } from "@symnav/daemon";
 import { DaemonPolicyTestFactory } from "@symnav/daemon/policy-testing";
-import {
-  LocalDaemonTransport as RuntimeLocalDaemonTransport,
-  type LocalDaemonTransportPolicy,
-} from "../../src/daemon/local-daemon-transport.js";
+import { LocalDaemonTransport as RuntimeLocalDaemonTransport } from "../../src/daemon/local-daemon-transport.js";
+
+type LocalDaemonTransportPolicy = Pick<DaemonPolicyValues, "transport" | "delivery" | "output">;
 
 interface TestLocalDaemonTransportOptions {
   readonly maximumFrameBytes?: number;

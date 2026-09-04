@@ -1,4 +1,4 @@
-import type { DaemonPolicy, DaemonPolicyValues } from "@symnav/daemon";
+import type { DaemonPolicy } from "@symnav/daemon";
 import { DaemonClientResultCapture } from "./daemon-client-result-capture.js";
 import { DaemonExecutionClient } from "./daemon-execution-client.js";
 import { DaemonLifecycleClient } from "./daemon-lifecycle-client.js";
@@ -37,11 +37,6 @@ interface LocalDaemonTransportOptions {
 
 type DaemonLifecycleComponent = DaemonLifecycleRequester &
   Pick<DaemonLifecycleClient, "acknowledgeResult">;
-
-export type LocalDaemonTransportPolicy = Pick<
-  DaemonPolicyValues,
-  "transport" | "delivery" | "output"
->;
 
 export class LocalDaemonTransport
   implements DaemonLifecycleRequester, DaemonExecutionRequester, DaemonRequestServer
@@ -104,15 +99,6 @@ export class LocalDaemonTransport
         policy: policy.values.transport,
         ...(options.writeChunkSize === undefined ? {} : { writeChunkSize: options.writeChunkSize }),
       });
-  }
-
-  canFrame(value: unknown): boolean {
-    try {
-      this.codec.encodeControl(value);
-      return true;
-    } catch {
-      return false;
-    }
   }
 
   request(endpoint: string, request: DaemonLifecycleRequest): Promise<DaemonLifecycleResponse> {

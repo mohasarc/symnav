@@ -18,19 +18,6 @@ import { LocalDaemonTransport as RuntimeLocalDaemonTransport } from "./local-dae
 import { TestLocalDaemonTransport as LocalDaemonTransport } from "../../test/helpers/local-daemon-transport.js";
 
 describe("LocalDaemonTransport validation", () => {
-  it("uses the required transport-policy JSON capacity", () => {
-    const policy = DaemonPolicyTestFactory.withOverrides(
-      DaemonPolicy.fromSystemMemory({ totalBytes: 1024 ** 3 }),
-      { transport: { maximumJsonPayloadBytes: 32 } },
-    );
-    const transport = new LocalDaemonTransport({
-      transport: policy.values.transport,
-      delivery: policy.values.delivery,
-      output: policy.values.output,
-    });
-
-    expect(transport.canFrame({ payload: "x".repeat(64) })).toBe(false);
-  });
   const servers: Server[] = [];
   const sockets: Socket[] = [];
   const directories: string[] = [];

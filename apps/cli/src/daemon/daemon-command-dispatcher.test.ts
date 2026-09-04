@@ -19,7 +19,7 @@ import {
   type DaemonRecord,
 } from "./daemon-protocol.js";
 import type { DaemonObservation } from "./daemon-record-observer.js";
-import { DaemonTransportError } from "./local-daemon-transport.js";
+import { DaemonTransportError } from "./daemon-transport-error.js";
 
 const workspaceRoot = resolve("synthetic-workspace");
 const request: CliExecutionRequest = {

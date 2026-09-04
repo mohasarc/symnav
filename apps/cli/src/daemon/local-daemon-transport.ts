@@ -1,12 +1,7 @@
 import { existsSync, mkdirSync, rmSync } from "node:fs";
 import { createServer, type Server, type Socket } from "node:net";
 import { dirname } from "node:path";
-import {
-  DaemonAdmissionRejections,
-  type DaemonExecuteRejectionCode,
-  type DaemonExecutionFailureCode,
-  type DaemonPolicyValues,
-} from "@symnav/daemon";
+import { type DaemonExecutionFailureCode, type DaemonPolicyValues } from "@symnav/daemon";
 import type {
   DaemonExecuteRequest,
   DaemonExecutionServerFrame,
@@ -35,6 +30,7 @@ import { DaemonProtocolError, DaemonProtocolValidator } from "./daemon-protocol-
 import { DaemonClientResultCapture } from "./daemon-client-result-capture.js";
 import { DaemonResultTransferReceiver } from "./daemon-result-transfer-receiver.js";
 import { LocalDaemonSocketClient } from "./local-daemon-socket-client.js";
+import { DaemonTransportError, type DaemonDeliveryState } from "./daemon-transport-error.js";
 
 interface LocalDaemonTransportOptions {
   readonly responseTimeoutPurpose?: "ordinary" | "status-observer";
@@ -47,43 +43,6 @@ export type LocalDaemonTransportPolicy = Pick<
   DaemonPolicyValues,
   "transport" | "delivery" | "output"
 >;
-
-export type DaemonDeliveryState = "not-submitted" | "submitted-unconfirmed" | "accepted";
-
-export type DaemonTransportFailureCode =
-  | "unreachable"
-  | "timeout"
-  | "corrupt"
-  | "incompatible"
-  | "authentication"
-  | "closed"
-  | "rejected";
-
-export class DaemonTransportError extends Error {
-  readonly authenticatedInstanceId?: string;
-  readonly retrySafe: boolean;
-
-  constructor(
-    readonly code: DaemonTransportFailureCode,
-    readonly delivery: DaemonDeliveryState,
-    message: string,
-    authenticatedInstanceId?: string,
-    authenticatedRejectionCode?: DaemonExecuteRejectionCode,
-  ) {
-    super(message);
-    this.name = "DaemonTransportError";
-    if (authenticatedInstanceId !== undefined) {
-      this.authenticatedInstanceId = authenticatedInstanceId;
-    }
-    this.retrySafe =
-      delivery === "not-submitted" ||
-      (code === "rejected" &&
-        delivery === "submitted-unconfirmed" &&
-        authenticatedInstanceId !== undefined &&
-        authenticatedRejectionCode !== undefined &&
-        DaemonAdmissionRejections.retrySafe(authenticatedRejectionCode));
-  }
-}
 
 class ListeningDaemonServer implements DaemonServer {
   constructor(

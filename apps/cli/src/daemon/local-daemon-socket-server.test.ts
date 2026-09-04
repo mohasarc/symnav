@@ -1,5 +1,6 @@
+import { EventEmitter } from "node:events";
 import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
-import { createConnection } from "node:net";
+import { createConnection, type Socket } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DaemonPolicy } from "@symnav/daemon";
@@ -114,6 +115,35 @@ describe("LocalDaemonTransport socket serving", () => {
     ]);
     await backgroundFinished.promise;
     await listening.close();
+  });
+
+  it("waits for socket drain before writing the next fragment", async () => {
+    const writes: Buffer[] = [];
+    const socket = new EventEmitter() as EventEmitter & {
+      destroyed: boolean;
+      write: (bytes: Buffer) => boolean;
+    };
+    socket.destroyed = false;
+    socket.write = (bytes) => {
+      writes.push(bytes);
+      return writes.length !== 1;
+    };
+    const server = harness.server({ writeChunkSize: 1 }) as unknown as {
+      writeServerMessage(socket: Socket, value: unknown): Promise<void>;
+    };
+
+    const writing = server.writeServerMessage(socket as unknown as Socket, {
+      kind: "stopped",
+      instanceId: "instance",
+    });
+    await Promise.resolve();
+
+    expect(writes).toHaveLength(1);
+    socket.emit("drain");
+    await writing;
+    expect(Buffer.concat(writes)).toEqual(
+      harness.encode({ kind: "stopped", instanceId: "instance" }),
+    );
   });
 });
 

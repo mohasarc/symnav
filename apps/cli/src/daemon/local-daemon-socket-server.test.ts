@@ -170,6 +170,30 @@ describe("LocalDaemonTransport socket serving", () => {
     await listening.close();
     expect(notified).toHaveBeenCalledTimes(1);
   });
+
+  it("isolates malformed and rejected requests to their connections", async () => {
+    const endpoint = harness.endpoint();
+    const handled: string[] = [];
+    const server = harness.server();
+    const listening = await server.listen(endpoint, async (daemonRequest) => {
+      handled.push(daemonRequest.instanceId);
+      if (daemonRequest.instanceId === "unauthorized") throw new Error("Authentication failed");
+      return harness.pong(daemonRequest.instanceId);
+    });
+
+    await expect(
+      harness.connectionResult(endpoint, Buffer.from([0, 0, 0, 1, 123])),
+    ).resolves.toEqual(Buffer.alloc(0));
+    await expect(
+      harness.connectionResult(endpoint, harness.encode(harness.ping("unauthorized"))),
+    ).resolves.toEqual(Buffer.alloc(0));
+    await expect(harness.request(endpoint, harness.ping("healthy"))).resolves.toMatchObject({
+      kind: "pong",
+      instanceId: "healthy",
+    });
+    expect(handled).toEqual(["unauthorized", "healthy"]);
+    await listening.close();
+  });
 });
 
 interface SocketServerOptions {
@@ -280,6 +304,19 @@ class DaemonSocketServerHarness {
         socket.end();
         resolve(frames);
       });
+    });
+  }
+
+  connectionResult(endpoint: string, bytes: Uint8Array): Promise<Buffer> {
+    return new Promise((resolve, reject) => {
+      const socket = createConnection(endpoint);
+      let received = Buffer.alloc(0);
+      socket.once("error", reject);
+      socket.once("connect", () => socket.write(bytes));
+      socket.on("data", (chunk) => {
+        received = Buffer.concat([received, Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)]);
+      });
+      socket.once("close", () => resolve(received));
     });
   }
 

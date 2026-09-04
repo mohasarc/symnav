@@ -337,7 +337,7 @@ describe("daemon host contract", () => {
       readonly argv: readonly string[];
     }>();
 
-    const sourceRoot = dirname(new URL(import.meta.url).pathname);
+    const sourceRoot = DaemonContractSourcePath.root(import.meta.url);
     const commandNameSource = ts.sys.readFile(join(sourceRoot, "daemon-command-name.ts"));
     expect(commandNameSource).toBeDefined();
     expect(

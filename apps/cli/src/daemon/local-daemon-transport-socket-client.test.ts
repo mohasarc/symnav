@@ -207,6 +207,23 @@ describe("LocalDaemonTransport socket client boundary", () => {
     expect(acknowledgement.endCount).toBe(1);
     if (completion.status === "completed") await completion.result.output.dispose();
   });
+
+  it("probes endpoint reachability through the injected socket client", async () => {
+    const policy = DaemonPolicy.currentSystem();
+    const connection = new ScriptedDaemonSocketConnection([]);
+    const sockets = new RecordingDaemonSocketClient(connection);
+    const transport = new LocalDaemonTransport(policy.values, { sockets });
+
+    await expect(transport.removeUnavailableEndpoint("daemon-endpoint")).resolves.toBe(false);
+
+    expect(sockets.connections).toEqual([
+      {
+        endpoint: "daemon-endpoint",
+        timeoutMs: policy.values.transport.singleResponseTimeoutMs,
+      },
+    ]);
+    expect(connection.destroyCount).toBe(1);
+  });
 });
 
 class RecordingDaemonSocketClient implements DaemonSocketClient {

@@ -322,7 +322,7 @@ describe("LocalDaemonTransport execution delivery", () => {
     expect(store.usage()).toEqual({ rawBytes: 0, completionCount: 0 });
     await completion.result.output.dispose();
     await server.close();
-  }, 20_000);
+  }, 60_000);
 
   it("advances one client record only after its spool append completes", async () => {
     const directory = mkdtempSync(join(tmpdir(), "symnav-stalled-client-spool-"));

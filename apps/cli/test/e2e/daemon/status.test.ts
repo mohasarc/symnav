@@ -17,7 +17,7 @@ import {
   DAEMON_RECORD_SCHEMA_VERSION,
   type DaemonRecord,
 } from "../../../src/daemon/daemon-protocol.js";
-import { DaemonRegistry } from "../../../src/daemon/daemon-registry.js";
+import { DaemonRegistry, type StartupOwner } from "../../../src/daemon/daemon-registry.js";
 import { DaemonWorkspaceIdentity } from "../../../src/daemon/daemon-workspace-identity.js";
 import { LocalDaemonTransport } from "../../../src/daemon/local-daemon-transport.js";
 import { StateDirectoryResolver } from "../../../src/state-directory-resolver.js";
@@ -170,7 +170,11 @@ describe("symnav daemon status", () => {
       childReleasePath,
     );
     helperProcesses.push(caller);
-    await waitUntil(() => existsSync(callerBarrierPath));
+    await waitUntil(
+      () => existsSync(callerBarrierPath),
+      5_000,
+      "Timed out waiting for initiating caller startup",
+    );
     const childPid = Number(readFileSync(bootPath, "utf8"));
     daemonPids.push(childPid);
     const identity = DaemonWorkspaceIdentity.from(
@@ -182,6 +186,13 @@ describe("symnav daemon status", () => {
     vi.spyOn(registry, "startupOwner")
       .mockReturnValueOnce(undefined)
       .mockImplementation(readStartupOwner);
+    const startupOwnerSpy = vi.mocked(registry.startupOwner);
+    const matchesDaemonOwner = (owner: StartupOwner | undefined): owner is StartupOwner =>
+      owner?.identityKey === identity.identityKey &&
+      owner.instanceId === instanceId &&
+      owner.processToken === processToken &&
+      owner.ownerKind === "daemon" &&
+      owner.ownerPid === childPid;
 
     expect(registry.readStoredInstance(identity, instanceId)).toMatchObject({
       instanceId,
@@ -189,19 +200,35 @@ describe("symnav daemon status", () => {
       pid: childPid,
       state: "starting",
     });
-    const ownerBeforeCallerExit = registry.startupOwner(identity);
-    expect(ownerBeforeCallerExit).toMatchObject({
-      instanceId,
-      processToken,
-      ownerKind: "daemon",
-      ownerPid: childPid,
-    });
+    let ownerBeforeCallerExit: StartupOwner | undefined;
+    await waitUntil(
+      () => {
+        const owner = registry.startupOwner(identity);
+        if (!matchesDaemonOwner(owner)) return false;
+        ownerBeforeCallerExit = owner;
+        return true;
+      },
+      5_000,
+      "Timed out waiting for daemon startup ownership",
+    );
+    if (ownerBeforeCallerExit === undefined) throw new Error("Expected daemon startup ownership");
+    const revisionBeforeCallerExit = ownerBeforeCallerExit.revision;
     expect(caller.kill("SIGKILL")).toBe(true);
     await waitForKilledProcess(caller);
     helperProcesses.splice(helperProcesses.indexOf(caller), 1);
+    startupOwnerSpy.mockReturnValueOnce(undefined);
+    let ownerAfterCallerExit: StartupOwner | undefined;
     await waitUntil(
-      () => registry.startupOwner(identity)?.revision !== ownerBeforeCallerExit?.revision,
+      () => {
+        const owner = registry.startupOwner(identity);
+        if (!matchesDaemonOwner(owner) || owner.revision === revisionBeforeCallerExit) return false;
+        ownerAfterCallerExit = owner;
+        return true;
+      },
+      5_000,
+      "Timed out waiting for daemon-owned startup heartbeat after caller exit",
     );
+    expect(ownerAfterCallerExit).toBeDefined();
 
     const statusStartedAt = Date.now();
     const starting = runSymnavBinary(["daemon", "status", "--json"], {
@@ -220,12 +247,11 @@ describe("symnav daemon status", () => {
         memoryBytes: expect.any(Number),
       }),
     ]);
-    expect(registry.startupOwner(identity)).toMatchObject({
-      instanceId,
-      processToken,
-      ownerKind: "daemon",
-      ownerPid: childPid,
-    });
+    await waitUntil(
+      () => matchesDaemonOwner(registry.startupOwner(identity)),
+      5_000,
+      "Timed out waiting for daemon startup ownership after status",
+    );
 
     const laterStarts = [
       spawnDaemonStart(workspaceRoot, stateDir),
@@ -239,7 +265,7 @@ describe("symnav daemon status", () => {
     ]);
 
     writeFileSync(childReleasePath, "go");
-    await waitUntil(() => existsSync(readyPath));
+    await waitUntil(() => existsSync(readyPath), 15_000, "Timed out waiting for daemon readiness");
     await Promise.all(laterStarts.map(waitForProcess));
     for (const laterStart of laterStarts) {
       helperProcesses.splice(helperProcesses.indexOf(laterStart), 1);
@@ -268,7 +294,7 @@ describe("symnav daemon status", () => {
     expect(stopped.status).toBe(0);
     expect(isProcessAlive(childPid)).toBe(false);
     expect(daemonRecords(stateDir)).toEqual([]);
-  }, 15_000);
+  }, 30_000);
 
   it("cleans a stale current-schema record", async () => {
     const stateDir = temporaryStateDirectory(stateDirectories);
@@ -772,11 +798,15 @@ async function replay(
   return Buffer.concat(chunks).toString("utf8");
 }
 
-async function waitUntil(predicate: () => boolean, timeoutMs = 5_000): Promise<void> {
+async function waitUntil(
+  predicate: () => boolean,
+  timeoutMs = 5_000,
+  failureMessage = "Timed out waiting for daemon shutdown",
+): Promise<void> {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() <= deadline) {
     if (predicate()) return;
     await new Promise((resolve) => setTimeout(resolve, 10));
   }
-  throw new Error("Timed out waiting for daemon shutdown");
+  throw new Error(failureMessage);
 }

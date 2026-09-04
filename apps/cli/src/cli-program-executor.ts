@@ -1,4 +1,5 @@
 import type { CliExecutionRequest, CommandExecutionResult } from "./command-execution-result.js";
+import type { WorkspaceSession } from "@symnav/core";
 import {
   CommandOutputCapacityError,
   ControlledCommandResult,
@@ -9,7 +10,6 @@ export { CommandResultReplayer } from "./command-execution-result.js";
 import type { ProgramContext } from "./program-context.js";
 import type { ProgramDependencies } from "./program-dependencies.js";
 import { buildProgram } from "./program.js";
-import type { WorkspaceRequestScopeFactory } from "./workspace-request-scope.js";
 
 class CapturedProgramExit extends Error {
   constructor(readonly exitCode: number) {
@@ -20,7 +20,7 @@ class CapturedProgramExit extends Error {
 export class CliProgramExecutor {
   constructor(
     private readonly dependencies: ProgramDependencies,
-    private readonly scopeFactory?: WorkspaceRequestScopeFactory,
+    private readonly workspaceSession?: WorkspaceSession,
     private readonly outputOptions: OrderedCommandOutputOptions = {},
   ) {}
 
@@ -39,7 +39,7 @@ export class CliProgramExecutor {
       recorder: this.dependencies.recorder,
       telemetryEnabled: request.telemetryEnabled,
       executionMode: request.executionMode ?? "cold",
-      ...(this.scopeFactory === undefined ? {} : { scopeFactory: this.scopeFactory }),
+      ...(this.workspaceSession === undefined ? {} : { workspaceSession: this.workspaceSession }),
     };
 
     try {

@@ -1,8 +1,13 @@
-import type { BackendRefreshSummary, FileSystem, GitHistory, LanguageBackend } from "@symnav/core";
+import type {
+  BackendRefreshSummary,
+  FileSystem,
+  GitHistory,
+  LanguageBackend,
+  WorkspaceSession,
+} from "@symnav/core";
 import type { Clock, Recorder } from "@symnav/telemetry";
 import type { TelemetryIdentityProvider } from "./telemetry/telemetry-identity.js";
 import type { CommandExecutionMode } from "./command-execution-result.js";
-import type { WorkspaceRequestScopeFactory } from "./workspace-request-scope.js";
 
 export interface CommandPhaseDurations {
   readonly freshnessMs: number;
@@ -23,5 +28,5 @@ export interface ProgramDependencies {
   symnavVersion: string;
   backendRefreshed?: (summary: BackendRefreshSummary) => void;
   commandPhasesObserved?: (durations: CommandPhaseDurations) => void;
-  scopeFactory?: WorkspaceRequestScopeFactory;
+  readonly workspaceSession?: WorkspaceSession;
 }

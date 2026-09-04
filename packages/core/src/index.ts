@@ -130,6 +130,13 @@ export type {
 } from "./workspace/workspace.js";
 export { createWorkspace } from "./workspace/workspace.js";
 export { WorkspaceCatalog } from "./workspace/workspace-catalog.js";
+export {
+  WorkspaceSession,
+  type PreparedWorkspaceScope,
+  type WorkspaceDiscoveryRetention,
+  type WorkspacePreparation,
+  type WorkspaceSnapshotSelector,
+} from "./workspace/workspace-session.js";
 export { InMemoryFileSystem } from "./workspace/in-memory/in-memory-file-system.js";
 export type {
   BackendRefreshCoverage,

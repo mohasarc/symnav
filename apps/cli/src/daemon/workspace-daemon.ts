@@ -6,6 +6,7 @@ import {
   type DaemonAdmissionDecision,
   type DaemonExecuteRejectionCode,
   type DaemonExecutionFailureCode,
+  type DaemonExecutorModuleUrl,
   type DaemonPolicy,
   type DaemonPolicyValues,
 } from "@symnav/daemon";
@@ -53,6 +54,7 @@ export interface WorkspaceDaemonOptions {
   readonly instanceId: string;
   readonly processToken: string;
   readonly symnavVersion: string;
+  readonly executorModuleUrl?: DaemonExecutorModuleUrl;
   readonly policy: DaemonPolicy;
   readonly dependencies: ProgramDependencies;
   readonly registry: DaemonRegistry;
@@ -151,6 +153,9 @@ export class WorkspaceDaemon {
               generation,
               configuration: {
                 stateDirectory: options.identity.stateDirectory,
+                productVersion: options.symnavVersion,
+                executorModuleUrl:
+                  options.executorModuleUrl ?? "file:///missing/symnav-daemon-executor.js",
                 policy: policy.toSerialized(),
               },
               resourceLimits: {

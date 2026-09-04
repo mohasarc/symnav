@@ -1446,6 +1446,8 @@ describe("WorkspaceDaemon requests", () => {
           generation,
           configuration: {
             stateDirectory: "/state",
+            productVersion: "test",
+            executorModuleUrl: "file:///test/daemon-executor.js",
             policy: DaemonPolicy.currentSystem().toSerialized(),
           },
           entryUrl: new URL(
@@ -1501,6 +1503,8 @@ describe("WorkspaceDaemon requests", () => {
           generation,
           configuration: {
             stateDirectory: "/state",
+            productVersion: "test",
+            executorModuleUrl: "file:///test/daemon-executor.js",
             policy: DaemonPolicy.currentSystem().toSerialized(),
           },
           entryUrl: new URL(
@@ -1544,6 +1548,8 @@ describe("WorkspaceDaemon requests", () => {
           generation,
           configuration: {
             stateDirectory: "/state",
+            productVersion: "test",
+            executorModuleUrl: "file:///test/daemon-executor.js",
             policy: DaemonPolicy.currentSystem().toSerialized(),
           },
           entryUrl: new URL(

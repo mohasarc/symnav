@@ -2,13 +2,18 @@ import { mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { spawn } from "node:child_process";
-import { DaemonPolicy, type DaemonPolicyValues } from "@symnav/daemon";
+import {
+  DaemonPolicy,
+  type DaemonExecutorModuleUrl,
+  type DaemonPolicyValues,
+} from "@symnav/daemon";
 import type { DaemonWorkspaceIdentity } from "./daemon-workspace-identity.js";
 import type { DaemonIdentityCoordinates } from "./daemon-protocol.js";
 
 interface DaemonProcessConfiguration extends DaemonIdentityCoordinates {
   readonly stateDirectory: string;
   readonly symnavVersion: string;
+  readonly executorModuleUrl: DaemonExecutorModuleUrl;
   readonly policy: ReturnType<DaemonPolicy["toSerialized"]>;
   readonly startupOwnerKind: "daemon";
 }
@@ -112,6 +117,7 @@ export class NodeDaemonProcessLauncher implements DaemonProcessLauncher {
 
   constructor(
     readonly symnavVersion: string,
+    readonly executorModuleUrl: DaemonExecutorModuleUrl,
     readonly policy: DaemonPolicy,
     terminator: DaemonProcessTerminator = new NodeDaemonProcessTerminator(policy.values.shutdown),
   ) {
@@ -138,6 +144,7 @@ export class NodeDaemonProcessLauncher implements DaemonProcessLauncher {
       processToken,
       endpoint: identity.endpoint(instanceId),
       symnavVersion: this.symnavVersion,
+      executorModuleUrl: this.executorModuleUrl,
       policy: this.policy.toSerialized(),
       startupOwnerKind: "daemon",
     };
@@ -207,9 +214,19 @@ export class DaemonProcessConfigurationParser {
       typeof configuration.processToken === "string" &&
       typeof configuration.endpoint === "string" &&
       typeof configuration.symnavVersion === "string" &&
+      DaemonProcessConfigurationParser.isModuleUrl(configuration.executorModuleUrl) &&
       DaemonProcessConfigurationParser.isPolicy(configuration.policy) &&
       configuration.startupOwnerKind === "daemon"
     );
+  }
+
+  private static isModuleUrl(value: unknown): value is DaemonExecutorModuleUrl {
+    if (typeof value !== "string") return false;
+    try {
+      return new URL(value).href === value;
+    } catch {
+      return false;
+    }
   }
 
   private static isPolicy(value: unknown): value is ReturnType<DaemonPolicy["toSerialized"]> {

@@ -41,6 +41,7 @@ class DaemonEntry {
       instanceId: configuration.instanceId,
       processToken: configuration.processToken,
       symnavVersion: configuration.symnavVersion,
+      executorModuleUrl: configuration.executorModuleUrl,
       policy,
       dependencies,
       registry,

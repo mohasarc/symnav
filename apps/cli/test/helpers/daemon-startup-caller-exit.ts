@@ -142,6 +142,8 @@ class DaemonStartupCallerExit {
         generation: 1,
         configuration: {
           stateDirectory: identity.stateDirectory,
+          productVersion: dependencies.symnavVersion,
+          executorModuleUrl: new URL("../../dist/daemon-executor.js", import.meta.url).href,
           policy: dependencies.daemonPolicy.toSerialized(),
         },
         resourceLimits: { maxOldGenerationSizeMb: 4096 },

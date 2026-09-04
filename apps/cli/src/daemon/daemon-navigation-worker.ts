@@ -3,6 +3,7 @@ import {
   DaemonPolicy,
   type DaemonCommandName,
   type DaemonExecutorRequest,
+  type DaemonExecutorModuleUrl,
   type DaemonOutputSink,
   type DaemonSequencedOutputRecord,
 } from "@symnav/daemon";
@@ -45,6 +46,8 @@ export interface DaemonNavigationWorker {
 
 export interface DaemonNavigationWorkerConfiguration {
   readonly stateDirectory: string;
+  readonly productVersion: string;
+  readonly executorModuleUrl: DaemonExecutorModuleUrl;
   readonly policy: ReturnType<DaemonPolicy["toSerialized"]>;
 }
 
@@ -93,10 +96,12 @@ export class NodeDaemonNavigationWorker implements DaemonNavigationWorker {
       options.entryUrl ?? new URL("./daemon-navigation-worker-entry.js", import.meta.url),
       {
         workerData: {
+          ...options.workerData,
           stateDirectory: options.configuration.stateDirectory,
           generation: options.generation,
+          productVersion: options.configuration.productVersion,
+          executorModuleUrl: options.configuration.executorModuleUrl,
           policy: options.configuration.policy,
-          ...options.workerData,
         },
         resourceLimits: options.resourceLimits,
       },

@@ -9,6 +9,7 @@ import {
   type DaemonExecutorInitializationResult,
   type DaemonExecutorOutput,
   type DaemonExecutorRequest,
+  type DaemonExecutorModuleUrl,
   type DaemonOutputRecord,
 } from "@symnav/daemon";
 import { CliProgramExecutor } from "./cli-program-executor.js";
@@ -134,4 +135,8 @@ export function createDaemonExecutor(options: DaemonExecutorFactoryOptions): Dae
     throw new Error("Daemon executor version does not match host product");
   }
   return new CliDaemonExecutor(dependencies);
+}
+
+export function daemonExecutorModuleUrl(): DaemonExecutorModuleUrl {
+  return new URL("./daemon-executor.js", import.meta.url).href;
 }

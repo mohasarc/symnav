@@ -2,7 +2,11 @@ import { performance } from "node:perf_hooks";
 import { parentPort, workerData } from "node:worker_threads";
 import { getHeapStatistics } from "node:v8";
 import type { BackendRefreshSummary } from "@symnav/core";
-import { DaemonPolicy, type DaemonWorkerFailureCode } from "@symnav/daemon";
+import {
+  DaemonPolicy,
+  type DaemonExecutorModuleUrl,
+  type DaemonWorkerFailureCode,
+} from "@symnav/daemon";
 import type { CommandPhaseDurations } from "../program-dependencies.js";
 import { createDefaultDependencies } from "../program.js";
 import { RetainedWorkspaceProgram } from "./retained-workspace-program.js";
@@ -12,9 +16,11 @@ import {
   type DaemonNavigationWorkerResponse,
 } from "./daemon-navigation-worker-protocol.js";
 
-interface NavigationWorkerData {
+interface DaemonWorkerData {
   readonly stateDirectory: string;
   readonly generation: number;
+  readonly productVersion: string;
+  readonly executorModuleUrl: DaemonExecutorModuleUrl;
   readonly policy: ReturnType<DaemonPolicy["toSerialized"]>;
 }
 
@@ -38,7 +44,7 @@ class DaemonNavigationWorkerEntry {
 
   constructor(
     private readonly port: NonNullable<typeof parentPort>,
-    private readonly data: NavigationWorkerData,
+    private readonly data: DaemonWorkerData,
   ) {
     this.policy = DaemonPolicy.fromSerialized(data.policy);
   }
@@ -275,5 +281,5 @@ class WorkerHeapHighWater {
 }
 
 if (parentPort === null) throw new Error("Daemon navigation worker requires a parent port");
-const data = workerData as NavigationWorkerData;
+const data = workerData as DaemonWorkerData;
 new DaemonNavigationWorkerEntry(parentPort, data).run();

@@ -1,10 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { DaemonLifecycleRenderer } from "./daemon-lifecycle-renderer.js";
-import type {
-  DaemonStartResult,
-  DaemonStopResult,
-  RunningDaemonStatus,
-} from "@symnav/daemon";
+import type { DaemonStartResult, DaemonStopResult, RunningDaemonStatus } from "@symnav/daemon";
 
 describe("DaemonLifecycleRenderer start", () => {
   it.each([

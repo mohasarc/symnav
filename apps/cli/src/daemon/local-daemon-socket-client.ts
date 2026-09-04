@@ -101,9 +101,20 @@ export class LocalDaemonSocketClient implements DaemonSocketClient {
   constructor(private readonly options: LocalDaemonSocketClientOptions = {}) {}
 
   connect(endpoint: string): Promise<DaemonSocketConnection> {
-    return new Promise((resolve) => {
+    return new Promise((resolve, reject) => {
       const socket = createConnection(endpoint);
+      let settled = false;
+      const fail = (error: unknown): void => {
+        if (settled) return;
+        settled = true;
+        socket.destroy();
+        reject(error);
+      };
+      socket.once("error", fail);
       socket.once("connect", () => {
+        if (settled) return;
+        settled = true;
+        socket.off("error", fail);
         resolve(new LocalDaemonSocketConnection(socket, this.options.writeChunkSize));
       });
     });

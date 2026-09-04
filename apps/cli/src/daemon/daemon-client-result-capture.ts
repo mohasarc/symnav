@@ -1,5 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
-import { mkdir, open, readFile, unlink, type FileHandle } from "node:fs/promises";
+import { constants } from "node:fs";
+import { mkdir, open, unlink, type FileHandle } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type {
@@ -97,6 +98,7 @@ export class DaemonClientResultCapture implements DaemonOutputCapture {
         output: new DaemonStoredExecutorOutput(
           [...this.inlineRecords],
           this.filePath,
+          this.maximumChunkRawBytes,
         ),
       },
       summary,
@@ -141,31 +143,6 @@ export class DaemonClientResultCapture implements DaemonOutputCapture {
     return Buffer.concat([header, Buffer.from(record.bytes)]);
   }
 
-  static decodeRecords(encoded: Uint8Array): DaemonSequencedOutputRecord[] {
-    const records: DaemonSequencedOutputRecord[] = [];
-    const bytes = Buffer.from(encoded);
-    let offset = 0;
-    while (offset < bytes.byteLength) {
-      if (bytes.byteLength - offset < RECORD_HEADER_BYTES) {
-        throw new Error("Truncated command output");
-      }
-      const sequence = bytes.readUInt32BE(offset);
-      const streamByte = bytes.readUInt8(offset + 4);
-      const length = bytes.readUInt32BE(offset + 5);
-      const nextOffset = offset + RECORD_HEADER_BYTES + length;
-      if (streamByte > 1 || nextOffset > bytes.byteLength) {
-        throw new Error("Corrupt command output");
-      }
-      records.push({
-        sequence,
-        stream: streamByte === 0 ? "stdout" : "stderr",
-        bytes: bytes.subarray(offset + RECORD_HEADER_BYTES, nextOffset),
-      });
-      offset = nextOffset;
-    }
-    return records;
-  }
-
   private static async remove(filePath: string): Promise<void> {
     await unlink(filePath).catch((error: NodeJS.ErrnoException) => {
       if (error.code !== "ENOENT") throw error;
@@ -184,14 +161,15 @@ export class DaemonStoredExecutorOutput implements DaemonExecutorOutput {
   constructor(
     private readonly inlineRecords: readonly DaemonSequencedOutputRecord[],
     private readonly filePath?: string,
+    private readonly maximumRecordBytes?: number,
   ) {}
 
   async *records(): AsyncIterable<DaemonOutputRecord> {
     const records =
       this.filePath === undefined
         ? this.inlineRecords
-        : DaemonClientResultCapture.decodeRecords(await readFile(this.filePath));
-    for (const record of records) yield { stream: record.stream, bytes: record.bytes };
+        : DaemonStoredExecutorOutput.decodeFileRecords(this.filePath, this.maximumRecordBytes!);
+    for await (const record of records) yield { stream: record.stream, bytes: record.bytes };
   }
 
   async dispose(): Promise<void> {
@@ -199,5 +177,55 @@ export class DaemonStoredExecutorOutput implements DaemonExecutorOutput {
     await unlink(this.filePath).catch((error: NodeJS.ErrnoException) => {
       if (error.code !== "ENOENT") throw error;
     });
+  }
+
+  private static async *decodeFileRecords(
+    filePath: string,
+    maximumRecordBytes: number,
+  ): AsyncIterable<DaemonSequencedOutputRecord> {
+    const noFollow = "O_NOFOLLOW" in constants ? constants.O_NOFOLLOW : 0;
+    const handle = await open(filePath, constants.O_RDONLY | noFollow);
+    try {
+      const metadata = await handle.stat();
+      if (!metadata.isFile()) throw new Error("Command output spool is not a regular file");
+      let position = 0;
+      let expectedSequence = 0;
+      while (position < metadata.size) {
+        const header = Buffer.alloc(RECORD_HEADER_BYTES);
+        await DaemonStoredExecutorOutput.readExact(handle, header, position);
+        position += RECORD_HEADER_BYTES;
+        const sequence = header.readUInt32BE(0);
+        const streamByte = header.readUInt8(4);
+        const length = header.readUInt32BE(5);
+        if (sequence !== expectedSequence || streamByte > 1 || length > maximumRecordBytes) {
+          throw new Error("Corrupt command output");
+        }
+        const bytes = Buffer.alloc(length);
+        await DaemonStoredExecutorOutput.readExact(handle, bytes, position);
+        position += length;
+        expectedSequence += 1;
+        yield { sequence, stream: streamByte === 0 ? "stdout" : "stderr", bytes };
+      }
+    } finally {
+      await handle.close();
+    }
+  }
+
+  private static async readExact(
+    handle: FileHandle,
+    target: Buffer,
+    position: number,
+  ): Promise<void> {
+    let readBytes = 0;
+    while (readBytes < target.byteLength) {
+      const result = await handle.read(
+        target,
+        readBytes,
+        target.byteLength - readBytes,
+        position + readBytes,
+      );
+      if (result.bytesRead === 0) throw new Error("Truncated command output");
+      readBytes += result.bytesRead;
+    }
   }
 }

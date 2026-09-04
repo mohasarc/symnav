@@ -220,6 +220,47 @@ describe("LocalDaemonTransport socket serving", () => {
     await expect(response).resolves.toMatchObject({ kind: "pong", instanceId: "instance" });
     await expect(closing).resolves.toBeUndefined();
   });
+
+  it("shares concurrent graceful closes and escalates them to forced shutdown", async () => {
+    const endpoint = harness.endpoint();
+    const server = harness.server();
+    const listening = await server.listen(endpoint, async (daemonRequest) =>
+      harness.pong(daemonRequest.instanceId),
+    );
+    const connectionClosed = DaemonSocketServerHarness.deferred<void>();
+    const client = createConnection(endpoint);
+    client.once("close", () => connectionClosed.resolve());
+    await new Promise<void>((resolve, reject) => {
+      client.once("error", reject);
+      client.once("connect", resolve);
+    });
+
+    const gracefulClose = listening.close();
+    const repeatedGracefulClose = listening.close();
+    let shutdownFinished = false;
+    void gracefulClose.then(() => {
+      shutdownFinished = true;
+    });
+    await Promise.resolve();
+
+    const repeatedCloseSharedShutdown = repeatedGracefulClose === gracefulClose;
+    const gracefulCloseStayedPending = !shutdownFinished;
+
+    const forcedClose = listening.close(true);
+    const forcedCloseSharedShutdown = forcedClose === gracefulClose;
+    const forceClosedClient = await harness.settlesWithin(connectionClosed.promise);
+    if (!forceClosedClient) client.destroy();
+
+    await connectionClosed.promise;
+    await expect(Promise.all([gracefulClose, repeatedGracefulClose, forcedClose])).resolves.toEqual(
+      [undefined, undefined, undefined],
+    );
+    expect(repeatedCloseSharedShutdown).toBe(true);
+    expect(gracefulCloseStayedPending).toBe(true);
+    expect(forcedCloseSharedShutdown).toBe(true);
+    expect(forceClosedClient).toBe(true);
+    expect(shutdownFinished).toBe(true);
+  });
 });
 
 interface SocketServerOptions {
@@ -343,6 +384,16 @@ class DaemonSocketServerHarness {
         received = Buffer.concat([received, Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)]);
       });
       socket.once("close", () => resolve(received));
+    });
+  }
+
+  settlesWithin(promise: Promise<unknown>): Promise<boolean> {
+    return new Promise((resolve) => {
+      const timeout = setTimeout(() => resolve(false), 250);
+      void promise.then(() => {
+        clearTimeout(timeout);
+        resolve(true);
+      });
     });
   }
 

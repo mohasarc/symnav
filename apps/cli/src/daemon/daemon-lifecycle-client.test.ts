@@ -2,10 +2,12 @@ import { describe, expect, it } from "vitest";
 import { DaemonPolicy } from "@symnav/daemon";
 import { DaemonLifecycleClient } from "./daemon-lifecycle-client.js";
 import type {
+  DaemonExecuteRequest,
   DaemonExecutionStatusRequest,
   DaemonExecutionStatusResponse,
   DaemonLifecycleRequest,
   DaemonLifecycleResponse,
+  DaemonResponse,
 } from "./daemon-protocol.js";
 import { DAEMON_PROTOCOL_VERSION } from "./daemon-protocol.js";
 import { DaemonProtocolValidator } from "./daemon-protocol-validator.js";
@@ -186,6 +188,35 @@ describe("DaemonLifecycleClient", () => {
     expect(harness.connection.endCount).toBe(0);
     expect(harness.connection.destroyCount).toBe(1);
   });
+
+  it("acknowledges one correlated result and closes its connection", async () => {
+    const request = executionRequest();
+    const response = {
+      kind: "result-acknowledged" as const,
+      instanceId: request.instanceId,
+      processToken: request.processToken,
+      requestId: request.requestId,
+      transferId: "transfer",
+    } satisfies DaemonResponse;
+    const harness = LifecycleClientHarness.responding(response);
+
+    await expect(
+      harness.client.acknowledgeResult("daemon-endpoint", request, "transfer"),
+    ).resolves.toBeUndefined();
+
+    expect(harness.connection.writes).toEqual([
+      harness.codec.encodeControl({
+        kind: "result-ack",
+        protocolVersion: request.protocolVersion,
+        instanceId: request.instanceId,
+        processToken: request.processToken,
+        requestId: request.requestId,
+        transferId: "transfer",
+      }),
+    ]);
+    expect(harness.connection.endCount).toBe(1);
+    expect(harness.connection.destroyCount).toBe(1);
+  });
 });
 
 class LifecycleClientHarness {
@@ -289,4 +320,21 @@ function oversizedFramePrefix(): Uint8Array {
   const prefix = Buffer.alloc(4);
   prefix.writeUInt32BE(policy.values.transport.maximumJsonPayloadBytes + 1);
   return prefix;
+}
+
+function executionRequest(): DaemonExecuteRequest {
+  return {
+    kind: "execute",
+    protocolVersion: DAEMON_PROTOCOL_VERSION,
+    instanceId: "instance",
+    processToken: "token",
+    requestId: "request",
+    commandName: "version",
+    request: {
+      argv: ["--version"],
+      cwd: "/repo",
+      telemetryEnabled: false,
+      executionMode: "warm",
+    },
+  };
 }

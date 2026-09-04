@@ -120,6 +120,41 @@ describe("LocalDaemonSocketClient", () => {
     expect(socket.pauseCount).toBe(0);
     expect(socket.destroyCount).toBe(1);
   });
+
+  it("rejects a connection that times out before the socket connects", async () => {
+    const connecting = new LocalDaemonSocketClient().connect("endpoint", 25);
+
+    expect(socket.timeoutMilliseconds).toEqual([25]);
+    socket.timeout();
+
+    await expect(connecting).rejects.toMatchObject({
+      code: "ETIMEDOUT",
+      message: "Daemon socket timed out",
+    });
+    expect(socket.destroyCount).toBe(1);
+
+    socket.emit("connect");
+
+    expect(socket.pauseCount).toBe(0);
+    expect(socket.destroyCount).toBe(1);
+  });
+
+  it("reports a connected socket timeout through incoming bytes", async () => {
+    const connecting = new LocalDaemonSocketClient().connect("endpoint", 25);
+    socket.emit("connect");
+    const connection = await connecting;
+    const incoming = connection.incoming[Symbol.asyncIterator]();
+    const waiting = incoming.next();
+
+    socket.timeout();
+
+    await expect(waiting).rejects.toMatchObject({
+      code: "ETIMEDOUT",
+      message: "Daemon socket timed out",
+    });
+    expect(socket.timeoutMilliseconds).toEqual([25]);
+    expect(socket.destroyCount).toBe(1);
+  });
 });
 
 class FakeSocket extends EventEmitter {
@@ -129,9 +164,17 @@ class FakeSocket extends EventEmitter {
   pauseCount = 0;
   resumeCount = 0;
   destroyCount = 0;
+  readonly timeoutMilliseconds: number[] = [];
+  private timeoutListener: (() => void) | undefined;
 
-  setTimeout(): this {
+  setTimeout(milliseconds: number, listener?: () => void): this {
+    this.timeoutMilliseconds.push(milliseconds);
+    this.timeoutListener = listener;
     return this;
+  }
+
+  timeout(): void {
+    this.timeoutListener?.();
   }
 
   pause(): this {

@@ -166,6 +166,57 @@ describe("DaemonLifecycleClient", () => {
     expect(harness.connection.destroyCount).toBe(1);
   });
 
+  it("classifies a decoded semantically malformed lifecycle response as unconfirmed", async () => {
+    const harness = LifecycleClientHarness.responding({
+      kind: "pong",
+      protocolVersion: DAEMON_PROTOCOL_VERSION,
+      instanceId: "instance",
+    });
+
+    await expect(harness.client.request("daemon-endpoint", pingRequest())).rejects.toMatchObject({
+      code: "corrupt",
+      delivery: "submitted-unconfirmed",
+    });
+
+    expect(harness.connection.endCount).toBe(0);
+    expect(harness.connection.destroyCount).toBe(1);
+  });
+
+  it("classifies a decoded semantically malformed execution status as unconfirmed", async () => {
+    const request = executionStatusRequest();
+    const harness = LifecycleClientHarness.responding({
+      kind: "execution-status",
+      instanceId: request.instanceId,
+      processToken: request.processToken,
+      requestId: request.requestId,
+      status: { state: "running" },
+    });
+
+    await expect(harness.client.executionStatus("daemon-endpoint", request)).rejects.toMatchObject({
+      code: "corrupt",
+      delivery: "submitted-unconfirmed",
+    });
+
+    expect(harness.connection.endCount).toBe(0);
+    expect(harness.connection.destroyCount).toBe(1);
+  });
+
+  it("classifies a correlated lifecycle protocol mismatch as accepted", async () => {
+    const harness = LifecycleClientHarness.responding({
+      ...pongResponse(),
+      protocolVersion: DAEMON_PROTOCOL_VERSION + 1,
+    });
+
+    await expect(harness.client.request("daemon-endpoint", pingRequest())).rejects.toMatchObject({
+      code: "incompatible",
+      delivery: "accepted",
+      authenticatedInstanceId: "instance",
+    });
+
+    expect(harness.connection.endCount).toBe(0);
+    expect(harness.connection.destroyCount).toBe(1);
+  });
+
   it("rejects wrong execution-status request correlation and destroys its connection", async () => {
     const harness = LifecycleClientHarness.responding({
       kind: "execution-status",
@@ -183,7 +234,7 @@ describe("DaemonLifecycleClient", () => {
         processToken: "token",
         requestId: "request",
       }),
-    ).rejects.toBeInstanceOf(Error);
+    ).rejects.toMatchObject({ code: "corrupt", delivery: "accepted" });
 
     expect(harness.connection.endCount).toBe(0);
     expect(harness.connection.destroyCount).toBe(1);
@@ -303,6 +354,16 @@ function pingRequest(): DaemonLifecycleRequest {
     kind: "ping",
     protocolVersion: DAEMON_PROTOCOL_VERSION,
     instanceId: "instance",
+  };
+}
+
+function executionStatusRequest(): DaemonExecutionStatusRequest {
+  return {
+    kind: "execution-status",
+    protocolVersion: DAEMON_PROTOCOL_VERSION,
+    instanceId: "instance",
+    processToken: "token",
+    requestId: "request",
   };
 }
 

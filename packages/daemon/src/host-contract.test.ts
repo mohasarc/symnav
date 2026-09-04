@@ -52,6 +52,7 @@ import {
   DaemonAdmissionPolicy,
   DaemonAdmissionRejections,
   DaemonDiagnosticValues,
+  DaemonExecutorModuleLoader,
   DaemonExecutionFailures,
   DaemonPolicy,
 } from "./index.js";
@@ -80,6 +81,7 @@ class DaemonContractExpectation {
     { kind: "runtime", name: "DaemonAdmissionPolicy" },
     { kind: "runtime", name: "DaemonAdmissionRejections" },
     { kind: "runtime", name: "DaemonDiagnosticValues" },
+    { kind: "runtime", name: "DaemonExecutorModuleLoader" },
     { kind: "runtime", name: "DaemonExecutionFailures" },
     { kind: "runtime", name: "DaemonPolicy" },
     { kind: "type", name: "AcceptedRequestCompatibility" },
@@ -565,6 +567,9 @@ describe("daemon host contract", () => {
       readonly createDaemonExecutor: DaemonExecutorFactory;
     }>();
     expectTypeOf<DaemonExecutorModuleUrl>().toEqualTypeOf<string>();
+    expectTypeOf<typeof DaemonExecutorModuleLoader.load>().parameters.toEqualTypeOf<
+      [DaemonExecutorModuleUrl, DaemonExecutorFactoryOptions]
+    >();
     expectTypeOf<DaemonDiagnosticValue>().toEqualTypeOf<
       | null
       | boolean

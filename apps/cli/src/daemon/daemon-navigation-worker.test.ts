@@ -2,15 +2,15 @@ import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { DaemonPolicy } from "@symnav/daemon";
+import { DaemonPolicy, type DaemonExecutorRequest } from "@symnav/daemon";
 import { DaemonPolicyTestFactory } from "@symnav/daemon/policy-testing";
-import type { CliExecutionRequest } from "../command-execution-result.js";
 import { NodeDaemonNavigationWorker } from "./daemon-navigation-worker.js";
 
-const request: CliExecutionRequest = {
+const request: DaemonExecutorRequest = {
   argv: ["overview", "input.ts"],
   cwd: "/repo",
   telemetryEnabled: false,
+  executionMode: "warm",
 };
 
 describe("NodeDaemonNavigationWorker", () => {

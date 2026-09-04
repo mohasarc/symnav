@@ -1,13 +1,12 @@
 import { describe, expect, it, vi } from "vitest";
-import type { DaemonExecutionFailureCode } from "@symnav/daemon";
-import type { CliExecutionRequest } from "../command-execution-result.js";
+import type { DaemonExecutionFailureCode, DaemonExecutorRequest } from "@symnav/daemon";
 import {
   AcceptedRequestCorruptionError,
   AcceptedRequestLedger,
   type AcceptedRequestEntry,
 } from "./accepted-request-ledger.js";
 
-const request: CliExecutionRequest = {
+const request: DaemonExecutorRequest = {
   argv: ["overview", "src/a.ts"],
   cwd: "/repo",
   telemetryEnabled: true,

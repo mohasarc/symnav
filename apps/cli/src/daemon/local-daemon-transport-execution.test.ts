@@ -35,7 +35,12 @@ const request: DaemonExecuteRequest = {
   processToken: "token",
   requestId: "request",
   commandName: "overview",
-  request: { argv: ["overview", "src/a.ts"], cwd: "/repo", telemetryEnabled: false },
+  request: {
+    argv: ["overview", "src/a.ts"],
+    cwd: "/repo",
+    telemetryEnabled: false,
+    executionMode: "warm",
+  },
 };
 
 describe("LocalDaemonTransport execution delivery", () => {

@@ -1731,7 +1731,12 @@ class RequestHarness {
         processToken: this.processToken,
         requestId,
         commandName: "version",
-        request: { argv: ["--version"], cwd: this.workspaceRoot, telemetryEnabled: false },
+        request: {
+          argv: ["--version"],
+          cwd: this.workspaceRoot,
+          telemetryEnabled: false,
+          executionMode: "warm",
+        },
       })
       .then((connection) => connection.terminal);
   }
@@ -1748,7 +1753,7 @@ class RequestHarness {
       processToken: this.processToken,
       requestId,
       commandName,
-      request: { argv, cwd: this.workspaceRoot, telemetryEnabled: false },
+      request: { argv, cwd: this.workspaceRoot, telemetryEnabled: false, executionMode: "warm" },
     });
   }
 
@@ -1760,7 +1765,12 @@ class RequestHarness {
       processToken,
       requestId,
       commandName: "version",
-      request: { argv: ["--version"], cwd: this.workspaceRoot, telemetryEnabled: false },
+      request: {
+        argv: ["--version"],
+        cwd: this.workspaceRoot,
+        telemetryEnabled: false,
+        executionMode: "warm",
+      },
     });
   }
 

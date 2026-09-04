@@ -1474,16 +1474,18 @@ export class LocalDaemonTransport {
 
   private static isExecutionRequest(value: unknown): boolean {
     if (!LocalDaemonTransport.isRecord(value)) return false;
-    const expectedKeys = ["argv", "cwd", "telemetryEnabled"];
-    if (value.executionMode !== undefined) expectedKeys.push("executionMode");
     return (
-      LocalDaemonTransport.hasExactKeys(value, expectedKeys) &&
+      LocalDaemonTransport.hasExactKeys(value, [
+        "argv",
+        "cwd",
+        "telemetryEnabled",
+        "executionMode",
+      ]) &&
       Array.isArray(value.argv) &&
       value.argv.every((arg) => typeof arg === "string") &&
       typeof value.cwd === "string" &&
       typeof value.telemetryEnabled === "boolean" &&
-      (value.executionMode === undefined ||
-        value.executionMode === "cold" ||
+      (value.executionMode === "cold" ||
         value.executionMode === "warm" ||
         value.executionMode === "fallback")
     );

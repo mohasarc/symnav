@@ -162,7 +162,7 @@ describe("symnav daemon stop", () => {
       processToken: runtime.record.processToken,
       requestId: "built-drain",
       commandName: "version",
-      request: { argv: ["--version"], cwd, telemetryEnabled: false },
+      request: { argv: ["--version"], cwd, telemetryEnabled: false, executionMode: "warm" },
     });
     await waitUntil(() => existsSync(runtime.requestStartedPath));
     const stopping = runBuiltStop(cwd, stateDir);
@@ -198,7 +198,7 @@ describe("symnav daemon stop", () => {
       processToken: runtime.record.processToken,
       requestId: "built-force",
       commandName: "version",
-      request: { argv: ["--version"], cwd, telemetryEnabled: false },
+      request: { argv: ["--version"], cwd, telemetryEnabled: false, executionMode: "warm" },
     });
     await waitUntil(() => existsSync(runtime.requestStartedPath));
 

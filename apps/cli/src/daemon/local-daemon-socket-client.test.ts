@@ -183,6 +183,23 @@ describe("LocalDaemonSocketClient", () => {
 
     await expect(waiting).rejects.toBe(writeError);
   });
+
+  it("preserves a write error after socket drain through incoming bytes", async () => {
+    const drainWriteError = new Error("drain write failed");
+    socket.writeResults.push(false);
+    const connecting = new LocalDaemonSocketClient({ writeChunkSize: 1 }).connect("endpoint");
+    socket.emit("connect");
+    const connection = await connecting;
+    const incoming = connection.incoming[Symbol.asyncIterator]();
+    const waiting = incoming.next();
+    connection.write(Uint8Array.from([1, 2]));
+    socket.writeError = drainWriteError;
+
+    expect(() => socket.emit("drain")).not.toThrow();
+
+    await expect(waiting).rejects.toBe(drainWriteError);
+    expect(socket.destroyCount).toBe(1);
+  });
 });
 
 class FakeSocket extends EventEmitter {

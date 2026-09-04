@@ -1,5 +1,16 @@
 import { createHash } from "node:crypto";
-import { mkdtempSync, readdirSync, rmSync, statSync } from "node:fs";
+import {
+  constants,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  renameSync,
+  rmSync,
+  statSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -126,6 +137,64 @@ describe("DaemonClientResultCapture", () => {
     await capture.dispose();
     expect(readdirSync(directory)).toEqual([]);
   });
+
+  it.each([
+    ["truncated header", (encoded: Buffer) => encoded.subarray(0, 8), "Truncated command output"],
+    [
+      "wrong sequence",
+      (encoded: Buffer) => {
+        encoded.writeUInt32BE(1, 0);
+        return encoded;
+      },
+      "Corrupt command output",
+    ],
+    [
+      "invalid stream",
+      (encoded: Buffer) => {
+        encoded.writeUInt8(2, 4);
+        return encoded;
+      },
+      "Corrupt command output",
+    ],
+    [
+      "oversized record",
+      (encoded: Buffer) => {
+        encoded.writeUInt32BE(4, 5);
+        return Buffer.concat([encoded.subarray(0, 9), Buffer.alloc(4)]);
+      },
+      "Corrupt command output",
+    ],
+  ] as const)("rejects a %s in stored output", async (_name, corrupt, message) => {
+    const { directory, path, output } = await storedOutput(directories);
+    writeFileSync(path, corrupt(readFileSync(path)));
+
+    await expect(replay(output.records())).rejects.toThrow(message);
+    await output.dispose();
+    expect(readdirSync(directory)).toEqual([]);
+  });
+
+  it("requires a regular result file", async () => {
+    const { path, output } = await storedOutput(directories);
+    rmSync(path);
+    mkdirSync(path);
+
+    await expect(replay(output.records())).rejects.toThrow(
+      "Command output spool is not a regular file",
+    );
+  });
+
+  it.runIf("O_NOFOLLOW" in constants && constants.O_NOFOLLOW !== 0)(
+    "does not follow a replacement result-file link",
+    async () => {
+      const { path, output } = await storedOutput(directories);
+      const target = `${path}.target`;
+      renameSync(path, target);
+      symlinkSync(target, path);
+
+      await expect(replay(output.records())).rejects.toBeDefined();
+      await output.dispose();
+    },
+  );
 });
 
 function policy(overrides: Partial<CapturePolicy> = {}): CapturePolicy {
@@ -171,4 +240,23 @@ async function replay(
     replayed.push({ stream: record.stream, bytes: Buffer.from(record.bytes).toString("hex") });
   }
   return replayed;
+}
+
+async function storedOutput(directories: string[]) {
+  const directory = temporaryDirectory(directories);
+  const capture = new DaemonClientResultCapture({
+    directory,
+    policy: {
+      maximumChunkRawBytes: 3,
+      inlineRawBytes: 0,
+      maximumResultRawBytes: 10,
+    },
+  });
+  await capture.append({ sequence: 0, stream: "stdout", bytes: Buffer.from([1]) });
+  const captured = await capture.finish(0);
+  return {
+    directory,
+    path: join(directory, readdirSync(directory)[0]!),
+    output: captured.result.output,
+  };
 }

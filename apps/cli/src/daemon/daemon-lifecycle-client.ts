@@ -122,11 +122,11 @@ export class DaemonLifecycleClient implements DaemonLifecycleRequester {
           if (values.length > 1) throw new Error("Daemon returned multiple responses");
           const value = values[0];
           if (value === undefined) continue;
-          delivery = "accepted";
           const response =
             request.kind === "execution-status"
               ? this.options.validator.executionStatusResponse(request, value)
               : this.options.validator.lifecycleResponse(request, value);
+          delivery = "accepted";
           connection.end();
           return response;
         } catch (error) {
@@ -164,7 +164,7 @@ export class DaemonLifecycleClient implements DaemonLifecycleRequester {
     if (error instanceof DaemonProtocolError) {
       return new DaemonTransportError(
         error.code,
-        delivery,
+        "accepted",
         error.message,
         error.authenticatedInstanceId,
       );

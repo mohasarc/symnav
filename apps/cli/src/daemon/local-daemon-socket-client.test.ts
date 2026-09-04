@@ -105,6 +105,21 @@ describe("LocalDaemonSocketClient", () => {
       Uint8Array.from([4, 5]),
     ]);
   });
+
+  it("preserves connection refusal as the original socket error", async () => {
+    const refusal = new Error("connection refused");
+    const connecting = new LocalDaemonSocketClient().connect("endpoint");
+
+    expect(() => socket.emit("error", refusal)).not.toThrow();
+
+    await expect(connecting).rejects.toBe(refusal);
+    expect(socket.destroyCount).toBe(1);
+
+    socket.emit("connect");
+
+    expect(socket.pauseCount).toBe(0);
+    expect(socket.destroyCount).toBe(1);
+  });
 });
 
 class FakeSocket extends EventEmitter {
@@ -113,6 +128,7 @@ class FakeSocket extends EventEmitter {
   destroyed = false;
   pauseCount = 0;
   resumeCount = 0;
+  destroyCount = 0;
 
   setTimeout(): this {
     return this;
@@ -139,6 +155,7 @@ class FakeSocket extends EventEmitter {
 
   destroy(): this {
     this.destroyed = true;
+    this.destroyCount += 1;
     return this;
   }
 }

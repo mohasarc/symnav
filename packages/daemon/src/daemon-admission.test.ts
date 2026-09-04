@@ -2,6 +2,7 @@ import { describe, expect, expectTypeOf, it } from "vitest";
 
 import {
   DaemonAdmissionPolicy,
+  DaemonAdmissionRejections,
   type AcceptedRequestCompatibility,
   type DaemonAdmissionContext,
   type DaemonAdmissionDecision,
@@ -62,6 +63,47 @@ describe("DaemonAdmissionPolicy", () => {
   it.each(["unseen", "matching"] as const)("accepts %s compatible work", (compatibility) => {
     expect(new DaemonAdmissionPolicy().decide(AdmissionContexts.create({ compatibility }))).toEqual(
       { kind: "accept" },
+    );
+  });
+});
+
+describe("DaemonAdmissionRejections", () => {
+  const retrySafety = [
+    ["not-ready", true],
+    ["resource-pressure", true],
+    ["draining", true],
+    ["incompatible", false],
+  ] as const satisfies readonly (readonly [DaemonExecuteRejectionCode, boolean])[];
+
+  it.each(retrySafety)("derives %s retry safety", (code, retrySafe) => {
+    expect(DaemonAdmissionRejections.retrySafe(code)).toBe(retrySafe);
+  });
+
+  it.each(retrySafety)("constructs and validates %s frames", (code, retrySafe) => {
+    const coordinates: DaemonExecutionCoordinates = {
+      instanceId: "instance",
+      processToken: "token",
+      requestId: "request",
+    };
+
+    const frame = DaemonAdmissionRejections.frame(code, coordinates);
+
+    expect(frame).toEqual({ kind: "rejected", ...coordinates, code, retrySafe });
+    expect(() => DaemonAdmissionRejections.assertConsistent(frame)).not.toThrow();
+  });
+
+  it.each(retrySafety)("rejects contradictory %s wire retry safety", (code, retrySafe) => {
+    const frame: DaemonRejectedExecutionFrame = {
+      kind: "rejected",
+      instanceId: "instance",
+      processToken: "token",
+      requestId: "request",
+      code,
+      retrySafe: !retrySafe,
+    };
+
+    expect(() => DaemonAdmissionRejections.assertConsistent(frame)).toThrow(
+      "Inconsistent daemon execution rejection",
     );
   });
 });

@@ -48,6 +48,7 @@ import type {
 import {
   DAEMON_COMMAND_NAMES,
   DaemonAdmissionPolicy,
+  DaemonAdmissionRejections,
   DaemonExecutionFailures,
   DaemonPolicy,
 } from "./index.js";
@@ -74,6 +75,7 @@ class DaemonContractExpectation {
   public static readonly exports: readonly ExportedSymbol[] = [
     { kind: "runtime", name: "DAEMON_COMMAND_NAMES" },
     { kind: "runtime", name: "DaemonAdmissionPolicy" },
+    { kind: "runtime", name: "DaemonAdmissionRejections" },
     { kind: "runtime", name: "DaemonExecutionFailures" },
     { kind: "runtime", name: "DaemonPolicy" },
     { kind: "type", name: "AcceptedRequestCompatibility" },
@@ -126,6 +128,12 @@ class DaemonContractExpectation {
   public static readonly executionFailureMembers = ["static:classify", "static:isCode"];
 
   public static readonly admissionPolicyMembers = ["instance:decide"];
+
+  public static readonly admissionRejectionMembers = [
+    "static:assertConsistent",
+    "static:frame",
+    "static:retrySafe",
+  ];
 
   public static readonly policyTestingExports: readonly ExportedSymbol[] = [
     { kind: "runtime", name: "DaemonPolicyTestFactory" },
@@ -353,7 +361,7 @@ describe("daemon host contract", () => {
     expect(DaemonContractSourcePath.root(pathToFileURL(sourcePath).href)).toBe(dirname(sourcePath));
   });
 
-  it("defines the exact admission contracts", () => {
+  it("defines the exact admission authority", () => {
     expectTypeOf<DaemonExecuteRejectionCode>().toEqualTypeOf<
       "not-ready" | "draining" | "resource-pressure" | "incompatible"
     >();
@@ -385,7 +393,9 @@ describe("daemon host contract", () => {
     expect(TypeScriptClassMemberInventory.read(source ?? "", "DaemonAdmissionPolicy")).toEqual(
       DaemonContractExpectation.admissionPolicyMembers,
     );
-
+    expect(TypeScriptClassMemberInventory.read(source ?? "", "DaemonAdmissionRejections")).toEqual(
+      DaemonContractExpectation.admissionRejectionMembers,
+    );
   });
 
   it("defines the exact execution failure contract", () => {
@@ -696,6 +706,7 @@ describe("daemon host contract", () => {
     );
     expect(Object.keys(daemonRuntime)).toEqual([
       "DaemonAdmissionPolicy",
+      "DaemonAdmissionRejections",
       "DAEMON_COMMAND_NAMES",
       "DaemonExecutionFailures",
       "DaemonPolicy",

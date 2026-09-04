@@ -18,6 +18,7 @@ import type {
 import {
   DAEMON_COMMAND_NAMES,
   DaemonAdmissionPolicy,
+  DaemonAdmissionRejections,
   DaemonExecutionFailures,
   DaemonPolicy,
 } from "@symnav/daemon";
@@ -46,6 +47,7 @@ describe("@symnav/daemon public package import", () => {
         compatibility: "unseen",
       }),
     ).toEqual({ kind: "accept" });
+    expect(DaemonAdmissionRejections.retrySafe("not-ready")).toBe(true);
     expect(DaemonExecutionFailures.isCode("internal")).toBe(true);
     expect(DAEMON_COMMAND_NAMES).toHaveLength(10);
     expect(DaemonPolicy.fromSystemMemory({ totalBytes: 1024 * 1024 * 1024 })).toBeInstanceOf(
@@ -53,6 +55,7 @@ describe("@symnav/daemon public package import", () => {
     );
     expect(Object.keys(daemonRuntime)).toEqual([
       "DaemonAdmissionPolicy",
+      "DaemonAdmissionRejections",
       "DAEMON_COMMAND_NAMES",
       "DaemonExecutionFailures",
       "DaemonPolicy",

@@ -15,6 +15,7 @@ const pkg = (sub) => join(repoRoot, sub);
 /** @type {{ name: string; type: string; dir: string }[]} */
 const packages = [
   { name: "@symnav/core", type: "core", dir: "packages/core" },
+  { name: "@symnav/daemon", type: "daemon", dir: "packages/daemon" },
   { name: "@symnav/renderer", type: "renderer", dir: "packages/renderer" },
   { name: "@symnav/backend-typescript", type: "backend", dir: "packages/backend-typescript" },
   { name: "@symnav/telemetry", type: "telemetry", dir: "packages/telemetry" },
@@ -26,17 +27,18 @@ const elements = [
   { type: "cli", pattern: "apps/cli/**" },
 ];
 
-const aliasMap = packages.map(
-  (p) => /** @type {[string, string]} */ ([p.name, pkg(`${p.dir}/src/index.ts`)]),
-);
+const aliasMap = [
+  ...packages.map((p) => /** @type {[string, string]} */ ([p.name, pkg(`${p.dir}/src/index.ts`)])),
+  /** @type {[string, string]} */ (["symnav", pkg("apps/cli/src/index.ts")]),
+];
 
 function productionRules() {
   return [
-    { from: { type: "renderer" }, allow: { to: { type: ["core"] } } },
+    { from: { type: "renderer" }, allow: { to: { type: ["core", "daemon"] } } },
     { from: { type: "backend" }, allow: { to: { type: ["core"] } } },
     {
       from: { type: "cli" },
-      allow: { to: { type: ["core", "renderer", "backend", "telemetry"] } },
+      allow: { to: { type: ["core", "daemon", "renderer", "backend", "telemetry"] } },
     },
   ];
 }
@@ -44,11 +46,15 @@ function productionRules() {
 function testRules() {
   return [
     { from: { type: "core" }, allow: { to: { type: ["testing"] } } },
-    { from: { type: "renderer" }, allow: { to: { type: ["core", "testing"] } } },
+    { from: { type: "daemon" }, allow: { to: { type: ["testing"] } } },
+    { from: { type: "renderer" }, allow: { to: { type: ["core", "daemon", "testing"] } } },
     { from: { type: "backend" }, allow: { to: { type: ["core", "testing"] } } },
+    { from: { type: "telemetry" }, allow: { to: { type: ["testing"] } } },
     {
       from: { type: "cli" },
-      allow: { to: { type: ["core", "renderer", "backend", "telemetry", "testing"] } },
+      allow: {
+        to: { type: ["core", "daemon", "renderer", "backend", "telemetry", "testing"] },
+      },
     },
   ];
 }
@@ -85,6 +91,17 @@ export default [
     rules: {
       ...prettierConfig.rules,
       "prettier/prettier": "error",
+      "no-restricted-imports": [
+        "error",
+        {
+          paths: [
+            {
+              name: "@symnav/daemon/policy-testing",
+              message: "Daemon policy overrides are test-only.",
+            },
+          ],
+        },
+      ],
       "no-restricted-syntax": [
         "error",
         {
@@ -93,19 +110,14 @@ export default [
             "Annotate object-literal declarations with a type (`const x: T = {…}`) or use `satisfies`.",
         },
       ],
-      "boundaries/dependencies": [
-        "error",
-        { default: "disallow", rules: productionRules() },
-      ],
+      "boundaries/dependencies": ["error", { default: "disallow", rules: productionRules() }],
     },
   },
   {
     files: ["**/*.test.ts", "**/test/**/*.ts"],
     rules: {
-      "boundaries/dependencies": [
-        "error",
-        { default: "disallow", rules: testRules() },
-      ],
+      "no-restricted-imports": "off",
+      "boundaries/dependencies": ["error", { default: "disallow", rules: testRules() }],
     },
   },
 ];

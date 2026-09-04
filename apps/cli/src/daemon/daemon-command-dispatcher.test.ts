@@ -1,5 +1,6 @@
 import { join, resolve } from "node:path";
 import { describe, expect, it, vi } from "vitest";
+import { DaemonPolicy } from "@symnav/daemon";
 import {
   CommandOutputSnapshot,
   type CliExecutionRequest,
@@ -336,6 +337,7 @@ class DispatchHarness {
         }) as unknown as ProgramDependencies,
       daemonEnabled: () => this.options.daemonEnabled ?? true,
       stateDirectory: "/state",
+      policy: DaemonPolicy.currentSystem(),
       resolveWorkspaceRoot: async () => workspaceRoot,
       runtimeFactory: this.runtimeFactory,
       executorFactory: () => ({ execute: this.coldExecute }),

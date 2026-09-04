@@ -5,6 +5,7 @@
   "exclude": ["src/**/*.test.ts", "**/dist/**"],
   "references": [
     { "path": "../../packages/core" },
+    { "path": "../../packages/daemon" },
     { "path": "../../packages/renderer" },
     { "path": "../../packages/backend-typescript" },
     { "path": "../../packages/telemetry" }

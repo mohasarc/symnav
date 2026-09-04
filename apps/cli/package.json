@@ -35,6 +35,7 @@
   "dependencies": {
     "@symnav/backend-typescript": "workspace:*",
     "@symnav/core": "workspace:*",
+    "@symnav/daemon": "workspace:*",
     "@symnav/renderer": "workspace:*",
     "@symnav/telemetry": "workspace:*",
     "commander": "^14.0.3",

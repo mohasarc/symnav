@@ -50,6 +50,9 @@ importers:
       '@symnav/core':
         specifier: workspace:*
         version: link:../../packages/core
+      '@symnav/daemon':
+        specifier: workspace:*
+        version: link:../../packages/daemon
       '@symnav/renderer':
         specifier: workspace:*
         version: link:../../packages/renderer
@@ -98,11 +101,20 @@ importers:
         specifier: workspace:*
         version: link:../testing
 
+  packages/daemon:
+    devDependencies:
+      '@symnav/testing':
+        specifier: workspace:*
+        version: link:../testing
+
   packages/renderer:
     dependencies:
       '@symnav/core':
         specifier: workspace:*
         version: link:../core
+      '@symnav/daemon':
+        specifier: workspace:*
+        version: link:../daemon
 
   packages/telemetry:
     devDependencies:

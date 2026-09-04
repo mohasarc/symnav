@@ -47,6 +47,7 @@ import type {
 } from "./index.js";
 import {
   DAEMON_COMMAND_NAMES,
+  DaemonAdmissionPolicy,
   DaemonExecutionFailures,
   DaemonPolicy,
 } from "./index.js";
@@ -72,6 +73,7 @@ class DaemonContractSourcePath {
 class DaemonContractExpectation {
   public static readonly exports: readonly ExportedSymbol[] = [
     { kind: "runtime", name: "DAEMON_COMMAND_NAMES" },
+    { kind: "runtime", name: "DaemonAdmissionPolicy" },
     { kind: "runtime", name: "DaemonExecutionFailures" },
     { kind: "runtime", name: "DaemonPolicy" },
     { kind: "type", name: "AcceptedRequestCompatibility" },
@@ -122,6 +124,8 @@ class DaemonContractExpectation {
   public static readonly commandNameMembers = ["static:is", "static:parse"];
 
   public static readonly executionFailureMembers = ["static:classify", "static:isCode"];
+
+  public static readonly admissionPolicyMembers = ["instance:decide"];
 
   public static readonly policyTestingExports: readonly ExportedSymbol[] = [
     { kind: "runtime", name: "DaemonPolicyTestFactory" },
@@ -374,6 +378,13 @@ describe("daemon host contract", () => {
       readonly queueState: WorkspaceRequestQueueState;
       readonly compatibility: AcceptedRequestCompatibility;
     }>();
+
+    const sourceRoot = dirname(new URL(import.meta.url).pathname);
+    const source = ts.sys.readFile(join(sourceRoot, "daemon-admission.ts"));
+    expect(source).toBeDefined();
+    expect(TypeScriptClassMemberInventory.read(source ?? "", "DaemonAdmissionPolicy")).toEqual(
+      DaemonContractExpectation.admissionPolicyMembers,
+    );
 
   });
 
@@ -684,6 +695,7 @@ describe("daemon host contract", () => {
       DaemonContractExpectation.exports,
     );
     expect(Object.keys(daemonRuntime)).toEqual([
+      "DaemonAdmissionPolicy",
       "DAEMON_COMMAND_NAMES",
       "DaemonExecutionFailures",
       "DaemonPolicy",

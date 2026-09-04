@@ -17,6 +17,7 @@ import type {
 } from "@symnav/daemon";
 import {
   DAEMON_COMMAND_NAMES,
+  DaemonAdmissionPolicy,
   DaemonExecutionFailures,
   DaemonPolicy,
 } from "@symnav/daemon";
@@ -35,12 +36,23 @@ describe("@symnav/daemon public package import", () => {
     expectTypeOf<DaemonWorkerFailureCode>().not.toBeNever();
     expectTypeOf<DaemonAdmissionContext>().toBeObject();
     expectTypeOf<DaemonExecuteRejectionCode>().not.toBeNever();
+    expect(
+      new DaemonAdmissionPolicy().decide({
+        request: {},
+        authenticated: true,
+        workerReady: true,
+        resourceAdmissionPaused: false,
+        queueState: "accepting",
+        compatibility: "unseen",
+      }),
+    ).toEqual({ kind: "accept" });
     expect(DaemonExecutionFailures.isCode("internal")).toBe(true);
     expect(DAEMON_COMMAND_NAMES).toHaveLength(10);
     expect(DaemonPolicy.fromSystemMemory({ totalBytes: 1024 * 1024 * 1024 })).toBeInstanceOf(
       DaemonPolicy,
     );
     expect(Object.keys(daemonRuntime)).toEqual([
+      "DaemonAdmissionPolicy",
       "DAEMON_COMMAND_NAMES",
       "DaemonExecutionFailures",
       "DaemonPolicy",

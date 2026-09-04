@@ -9,6 +9,7 @@ const request = {
   argv: ["overview", "input.ts"],
   cwd: "/repo",
   telemetryEnabled: false,
+  executionMode: "warm",
 } as const;
 
 const refresh = { added: 1, changed: 0, removed: 0, unchanged: 2 } as const;
@@ -54,6 +55,7 @@ describe("DaemonNavigationWorkerProtocol", () => {
       fileCount: 3,
       refresh,
       startupDurations: { discoveryMs: 1, indexingMs: 2, totalMs: 3 },
+      diagnostics: { nested: { values: [null, true, 1, "opaque"] } },
     },
     {
       kind: "result",
@@ -62,6 +64,7 @@ describe("DaemonNavigationWorkerProtocol", () => {
       result: { exitCode: 0 },
       refresh,
       durations: { freshnessMs: 1, navigationMs: 2, renderMs: 3, outputMs: 4 },
+      diagnostics: { future: { metric: 17 } },
       resources: {
         workerHeapUsedBytes: 20,
         peakWorkerHeapUsedBytes: 40,
@@ -102,6 +105,13 @@ describe("DaemonNavigationWorkerProtocol", () => {
     },
     { kind: "output-ack", generation: 1, requestId: "one", sequence: -1 },
     { kind: "execute", generation: 1, requestId: "one", request: { argv: "overview" } },
+    {
+      kind: "execute",
+      generation: 1,
+      requestId: "one",
+      commandName: "overview",
+      request: { argv: [], cwd: "/repo", telemetryEnabled: false },
+    },
     { kind: "unknown", generation: 1 },
   ])("rejects malformed worker requests %#", (message) => {
     expect(() => DaemonNavigationWorkerProtocol.request(message)).toThrow(/worker request/i);
@@ -121,6 +131,14 @@ describe("DaemonNavigationWorkerProtocol", () => {
       bytes: new Uint8Array(64 * 1024 + 1),
     },
     { kind: "result", generation: 1, requestId: "one", result: {} },
+    {
+      kind: "ready",
+      generation: 1,
+      fileCount: 1,
+      refresh,
+      startupDurations: { discoveryMs: 1, indexingMs: 2, totalMs: 3 },
+      diagnostics: { invalid: undefined },
+    },
     { kind: "failed", generation: 1, failureCode: "unknown" },
     {
       kind: "heap",
@@ -169,6 +187,7 @@ function resultWith(result: unknown): unknown {
     result,
     refresh,
     durations: { freshnessMs: 1, navigationMs: 2, renderMs: 3, outputMs: 4 },
+    diagnostics: { opaque: ["retained"] },
     resources: {
       workerHeapUsedBytes: 20,
       peakWorkerHeapUsedBytes: 40,

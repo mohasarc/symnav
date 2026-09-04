@@ -1,8 +1,4 @@
-import type {
-  DaemonStartResult,
-  DaemonStopResult,
-  RunningDaemonStatus,
-} from "./daemon-protocol.js";
+import type { DaemonStartResult, DaemonStopResult, RunningDaemonStatus } from "@symnav/daemon";
 
 export class DaemonLifecycleRenderer {
   static renderStartText(result: DaemonStartResult): string {

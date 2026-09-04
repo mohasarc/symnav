@@ -24,7 +24,6 @@ import {
   type DaemonRequest,
   type DaemonResponse,
 } from "./daemon-protocol.js";
-import type { LocalDaemonTransport } from "./local-daemon-transport.js";
 
 interface StartupMutationLeaseTestAccess {
   beginStartupMutation(
@@ -559,12 +558,10 @@ describe("daemon registry", () => {
     const transport = new ControllerTransport(registry);
     transport.live.add("beta");
     const terminator = new ControllerTerminator([301, 302]);
-    const controller = new DaemonController(
-      registry,
-      transport as unknown as LocalDaemonTransport,
-      stateDirectory,
-      { now: () => 100, processTerminator: terminator },
-    );
+    const controller = new DaemonController(registry, transport, stateDirectory, {
+      now: () => 100,
+      processTerminator: terminator,
+    });
 
     await expect(controller.status()).resolves.toEqual([
       {
@@ -593,7 +590,7 @@ describe("daemon registry", () => {
     registry.write({ ...record(identity, "ready", "stale"), pid: 401 });
     const controller = new DaemonController(
       registry,
-      new ControllerTransport(registry) as unknown as LocalDaemonTransport,
+      new ControllerTransport(registry),
       stateDirectory,
       { processTerminator: new ControllerTerminator([401]) },
     );
@@ -622,12 +619,11 @@ describe("daemon registry", () => {
       registry.write({ ...record(identity, "ready", "replacement"), pid: 502 });
     };
     const terminator = new ControllerTerminator([501, 502]);
-    const controller = new DaemonController(
-      registry,
-      transport as unknown as LocalDaemonTransport,
-      stateDirectory,
-      { processTerminator: terminator, stopTimeoutMs: 5, pollIntervalMs: 1 },
-    );
+    const controller = new DaemonController(registry, transport, stateDirectory, {
+      processTerminator: terminator,
+      stopTimeoutMs: 5,
+      pollIntervalMs: 1,
+    });
 
     await expect(controller.stop("/repo")).resolves.toEqual({
       status: "stopped",
@@ -650,12 +646,11 @@ describe("daemon registry", () => {
       transport.live.delete("stuck");
       terminator.alive.delete(601);
     };
-    const controller = new DaemonController(
-      registry,
-      transport as unknown as LocalDaemonTransport,
-      stateDirectory,
-      { processTerminator: terminator, stopTimeoutMs: 20, pollIntervalMs: 1 },
-    );
+    const controller = new DaemonController(registry, transport, stateDirectory, {
+      processTerminator: terminator,
+      stopTimeoutMs: 20,
+      pollIntervalMs: 1,
+    });
 
     await expect(controller.stop("/repo")).resolves.toEqual({
       status: "killed",
@@ -680,12 +675,11 @@ describe("daemon registry", () => {
       throw new Error("identity changed");
     };
     const terminator = new ControllerTerminator([602]);
-    const controller = new DaemonController(
-      registry,
-      transport as unknown as LocalDaemonTransport,
-      stateDirectory,
-      { processTerminator: terminator, stopTimeoutMs: 0, pollIntervalMs: 1 },
-    );
+    const controller = new DaemonController(registry, transport, stateDirectory, {
+      processTerminator: terminator,
+      stopTimeoutMs: 0,
+      pollIntervalMs: 1,
+    });
 
     await expect(controller.stop("/repo")).rejects.toThrow("authenticated kill");
     expect(registry.readStoredInstance(identity, "replacement")).toBeDefined();
@@ -697,7 +691,7 @@ describe("daemon registry", () => {
     const registry = new DaemonRegistry(join(stateDirectory, "daemons"));
     const controller = new DaemonController(
       registry,
-      new ControllerTransport(registry) as unknown as LocalDaemonTransport,
+      new ControllerTransport(registry),
       stateDirectory,
     );
 
@@ -714,7 +708,7 @@ describe("daemon registry", () => {
     registry.write({ ...record(identity, "ready", "stale-stop"), pid: 999_999_999 });
     const controller = new DaemonController(
       registry,
-      new ControllerTransport(registry) as unknown as LocalDaemonTransport,
+      new ControllerTransport(registry),
       stateDirectory,
     );
 
@@ -732,12 +726,11 @@ describe("daemon registry", () => {
     registry.write({ ...record(identity, "ready", "silent-stop"), pid: 701 });
     const transport = new ControllerTransport(registry);
     const terminator = new ControllerTerminator([701]);
-    const controller = new DaemonController(
-      registry,
-      transport as unknown as LocalDaemonTransport,
-      stateDirectory,
-      { processTerminator: terminator, stopTimeoutMs: 5, pollIntervalMs: 1 },
-    );
+    const controller = new DaemonController(registry, transport, stateDirectory, {
+      processTerminator: terminator,
+      stopTimeoutMs: 5,
+      pollIntervalMs: 1,
+    });
 
     await expect(controller.stop("/repo")).rejects.toThrow(/unresponsive/i);
     expect(registry.readStoredInstance(identity, "silent-stop")).toBeDefined();
@@ -753,6 +746,10 @@ class ControllerTransport {
   onKill: (() => void) | undefined;
 
   constructor(private readonly registry: DaemonRegistry) {}
+
+  execute(): Promise<never> {
+    return Promise.reject(new Error("Registry observation must not execute"));
+  }
 
   async request(_endpoint: string, request: DaemonRequest): Promise<DaemonResponse> {
     const records = this.registry.list();

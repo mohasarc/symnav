@@ -45,7 +45,7 @@ import {
 import type { DaemonNavigationWorkerResponse } from "./daemon-navigation-worker-protocol.js";
 import type { DaemonRegistry, DaemonStartupLease } from "./daemon-registry.js";
 import type { DaemonWorkspaceIdentity } from "./daemon-workspace-identity.js";
-import type { DaemonServerSend, LocalDaemonTransport } from "./local-daemon-transport.js";
+import type { DaemonRequestServer, DaemonServerSend } from "./daemon-transport.js";
 import { WorkspaceRequestQueue } from "./workspace-request-queue.js";
 
 export interface WorkspaceDaemonOptions {
@@ -59,7 +59,7 @@ export interface WorkspaceDaemonOptions {
     readonly fs: { exists(path: string): Promise<boolean> };
   };
   readonly registry: DaemonRegistry;
-  readonly transport: LocalDaemonTransport;
+  readonly transport: DaemonRequestServer;
   readonly navigationWorker?: DaemonNavigationWorker;
   readonly navigationWorkerFactory?: (generation: number) => DaemonNavigationWorker;
   readonly now?: () => number;

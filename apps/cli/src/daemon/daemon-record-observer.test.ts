@@ -8,7 +8,7 @@ import {
   type DaemonResponse,
 } from "./daemon-protocol.js";
 import { DaemonRecordObserver } from "./daemon-record-observer.js";
-import { DaemonTransportError, type LocalDaemonTransport } from "./local-daemon-transport.js";
+import { DaemonTransportError } from "./local-daemon-transport.js";
 
 describe("DaemonRecordObserver", () => {
   it("reports an unpublished starting record without probing its endpoint", async () => {
@@ -241,10 +241,7 @@ class ObserverTerminator implements DaemonProcessTerminator {
 }
 
 function observer(transport: ObserverTransport, alive: readonly number[]): DaemonRecordObserver {
-  return new DaemonRecordObserver(
-    transport as unknown as LocalDaemonTransport,
-    new ObserverTerminator(alive),
-  );
+  return new DaemonRecordObserver(transport, new ObserverTerminator(alive));
 }
 
 function identityResponse(): DaemonResponse {

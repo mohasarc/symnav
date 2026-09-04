@@ -149,6 +149,7 @@ export {
   RevisionedBackendPreparation,
   RevisionedBackendState,
 } from "./backend/revisioned-backend-state.js";
+export { TurnScopedCacheScope, type TurnScopedCache } from "./backend/turn-scoped-cache-scope.js";
 export { BackendRouter } from "./backend/backend-router.js";
 export { UserFacingError } from "./errors.js";
 export {

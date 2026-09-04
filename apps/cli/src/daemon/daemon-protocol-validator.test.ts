@@ -5,6 +5,7 @@ import {
   type DaemonExecuteRequest,
   type DaemonExecutionServerFrame,
   type DaemonLifecycleRequest,
+  type DaemonLifecycleResponse,
 } from "./daemon-protocol.js";
 
 const validator = new DaemonProtocolValidator();
@@ -130,7 +131,7 @@ describe("DaemonProtocolValidator", () => {
       instanceId: "instance",
       symnavVersion: "0.1.0",
       startedAt: Number.POSITIVE_INFINITY,
-    };
+    } satisfies DaemonLifecycleResponse;
     expect(() => validator.lifecycleResponse(request, response)).toThrow("Malformed daemon pong");
 
     expect(() =>
@@ -170,6 +171,31 @@ describe("DaemonProtocolValidator", () => {
       requestId: "request",
       code: "internal",
     },
+    {
+      kind: "result-manifest",
+      instanceId: "instance",
+      processToken: "token",
+      requestId: "request",
+      manifest: {
+        transferId: "transfer",
+        instanceId: "instance",
+        requestId: "request",
+        exitCode: 0,
+        rawBytes: 0,
+        recordCount: 0,
+        sha256: "0".repeat(64),
+      },
+    },
+    {
+      kind: "result-end",
+      instanceId: "instance",
+      processToken: "token",
+      requestId: "request",
+      transferId: "transfer",
+      rawBytes: 0,
+      recordCount: 0,
+      sha256: "0".repeat(64),
+    },
   ] satisfies readonly DaemonExecutionServerFrame[])(
     "accepts and correlates an exact $kind execution frame",
     (frame) => {
@@ -198,15 +224,14 @@ describe("DaemonProtocolValidator", () => {
     ).toThrow("Malformed daemon execution rejection");
   });
 
-  it.each([
-    { instanceId: "other" },
-    { processToken: "other" },
-    { requestId: "other" },
-  ])("rejects mismatched execution coordinates %#", (mismatch) => {
-    expect(() =>
-      validator.executionFrame(executionRequest, { ...acceptedFrame(), ...mismatch }),
-    ).toThrow(/does not match/);
-  });
+  it.each([{ instanceId: "other" }, { processToken: "other" }, { requestId: "other" }])(
+    "rejects mismatched execution coordinates %#",
+    (mismatch) => {
+      expect(() =>
+        validator.executionFrame(executionRequest, { ...acceptedFrame(), ...mismatch }),
+      ).toThrow(/does not match/);
+    },
+  );
 
   it("rejects legacy embedded results and wrong-kind responses", () => {
     expect(() =>
@@ -249,6 +274,16 @@ describe("DaemonProtocolValidator", () => {
         instanceId: "instance",
         processToken: "token",
         requestId: "request",
+        status: { state: "completed" },
+        extra: true,
+      }),
+    ).toThrow("Malformed daemon execution status");
+    expect(() =>
+      validator.executionStatusResponse(statusRequest, {
+        kind: "execution-status",
+        instanceId: "instance",
+        processToken: "token",
+        requestId: "request",
         status: { state: "failed", code: "legacy" },
       }),
     ).toThrow("Malformed daemon execution status");
@@ -262,6 +297,16 @@ describe("DaemonProtocolValidator", () => {
         transferId: "other",
       }),
     ).toThrow("Invalid daemon result acknowledgement");
+    expect(() =>
+      validator.resultAcknowledgement(executionRequest, "transfer", {
+        kind: "result-acknowledged",
+        instanceId: "instance",
+        processToken: "token",
+        requestId: "request",
+        transferId: "transfer",
+        extra: true,
+      }),
+    ).toThrow("Malformed daemon result acknowledgement");
   });
 });
 

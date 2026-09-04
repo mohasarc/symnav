@@ -111,6 +111,17 @@ export { assignDisambiguators } from "./intermediate-representation/assign-disam
 export type { FileMetadata, FileSystem } from "./workspace/file-system.js";
 export { NodeFileSystem } from "./workspace/node-file-system.js";
 export { WorkspaceSourceCache } from "./workspace/workspace-source-cache.js";
+export { ProjectGraph, ProjectInputCollector } from "./workspace/project-graph.js";
+export type {
+  ParsedProjectConfiguration,
+  PreparedProjectGraph,
+  ProjectConfigurationMembership,
+  ProjectGraphPreparationRequest,
+  ProjectGraphRefreshSummary,
+  ProjectInput,
+  ProjectInputObservation,
+  ProjectWithTransientResources,
+} from "./workspace/project-graph.js";
 export type {
   ResolvedPath,
   Workspace,

@@ -231,6 +231,76 @@ describe("TypeScriptProjectGraph", () => {
     expect(after.changedConfigurationCount).toBe(1);
   });
 
+  it("discovers a previously missing workspace package without source changes", async () => {
+    const projectFixture = fixture();
+    const packagePath = join(projectFixture.root, "packages/domain/package.json");
+    const packageContent = readFileSync(packagePath, "utf8");
+    projectFixture.remove("packages/domain/package.json");
+    const graph = new TypeScriptProjectGraph(projectFixture.fileSystem);
+    const snapshot = await projectFixture.snapshot();
+    const before = await graph.refresh(snapshot);
+
+    projectFixture.write("packages/domain/package.json", packageContent);
+    const after = await graph.refresh(snapshot);
+    const paths = graph.programFor("packages/app/src/index.ts")?.getCompilerOptions().paths;
+
+    expect(before.changedConfigurationCount).toBe(5);
+    expect(after.changedConfigurationCount).toBe(1);
+    expect(paths?.["@configured/domain"]).toEqual([
+      `${projectFixture.root.replaceAll("\\", "/")}/packages/domain/src/index.ts`,
+    ]);
+  });
+
+  it("stops observing configuration inputs after they become unreachable", async () => {
+    const projectFixture = fixture();
+    const graph = new TypeScriptProjectGraph(projectFixture.fileSystem);
+    await graph.refresh(await projectFixture.snapshot());
+    projectFixture.write(
+      "tsconfig.json",
+      JSON.stringify({ files: [], references: [{ path: "packages/domain" }] }),
+    );
+    const narrowedSnapshot = await projectFixture.snapshot();
+    const narrowed = await graph.refresh(narrowedSnapshot);
+    const inferredService = graph.languageServiceFor("packages/app/src/index.ts");
+
+    projectFixture.write(
+      "packages/app/tsconfig.json",
+      JSON.stringify({ include: ["src/index.ts"], compilerOptions: { strict: true } }),
+    );
+    const unchanged = await graph.refresh(narrowedSnapshot);
+
+    expect(narrowed.changedConfigurationCount).toBe(3);
+    expect(unchanged.changedConfigurationCount).toBe(0);
+    expect(graph.languageServiceFor("packages/app/src/index.ts")).toBe(inferredService);
+  });
+
+  it("orders every owning project and uses the last owner as primary", async () => {
+    const projectFixture = fixture();
+    projectFixture.write(
+      "packages/app/tsconfig.json",
+      JSON.stringify({
+        extends: "./tsconfig.base.json",
+        compilerOptions: { composite: true },
+        references: [{ path: "../domain" }],
+        files: ["src/index.ts", "../domain/src/index.ts"],
+      }),
+    );
+    projectFixture.write("scratch/outside.ts", "export const outside = true;\n");
+    const graph = new TypeScriptProjectGraph(projectFixture.fileSystem);
+    await graph.refresh(await projectFixture.snapshot());
+
+    const sourceFiles = graph.sourceFilesFor("packages/domain/src/index.ts");
+    const primary = graph.sourceFileFor("packages/domain/src/index.ts");
+
+    expect(
+      sourceFiles.map((sourceFile) => sourceFile.getProject().getCompilerOptions().baseUrl),
+    ).toEqual([
+      projectFixture.root.replaceAll("\\", "/") + "/packages/domain",
+      projectFixture.root.replaceAll("\\", "/") + "/packages/app",
+    ]);
+    expect(primary).toBe(sourceFiles.at(-1));
+  });
+
   it("invalidates equal-size configuration content after modification time is restored", async () => {
     const projectFixture = fixture();
     const configurationPath = join(projectFixture.root, "packages/app/tsconfig.base.json");

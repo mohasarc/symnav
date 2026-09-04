@@ -1,6 +1,11 @@
 import { randomUUID } from "node:crypto";
 import { createWorkspace } from "@symnav/core";
-import type { DaemonCommandName, DaemonExecutionFailureCode, DaemonPolicy } from "@symnav/daemon";
+import type {
+  DaemonCommandName,
+  DaemonExecutionFailureCode,
+  DaemonExecutorExecutionResult,
+  DaemonPolicy,
+} from "@symnav/daemon";
 import { CliProgramExecutor } from "../cli-program-executor.js";
 import { daemonExecutorModuleUrl } from "../daemon-executor.js";
 import type {
@@ -293,7 +298,7 @@ export class DaemonCommandDispatcher {
     };
   }
 
-  private static isCompleteResult(result: CommandExecutionResult): boolean {
+  private static isCompleteResult(result: DaemonExecutorExecutionResult): boolean {
     return Number.isInteger(result.exitCode) && result.output !== undefined;
   }
 

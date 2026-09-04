@@ -793,7 +793,7 @@ function daemonRecords(stateDir: string): readonly DaemonRecord[] {
 }
 
 async function replay(
-  output: import("../../../src/command-execution-result.js").CommandOutput,
+  output: import("@symnav/daemon").DaemonExecutorOutput,
   stream: "stdout" | "stderr",
 ): Promise<string> {
   const chunks = [];

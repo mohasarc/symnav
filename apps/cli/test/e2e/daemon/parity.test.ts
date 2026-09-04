@@ -901,7 +901,7 @@ function waitForProcess(child: ChildProcess): Promise<void> {
 }
 
 async function decodeOutput(
-  output: import("../../../src/command-execution-result.js").CommandOutput,
+  output: import("@symnav/daemon").DaemonExecutorOutput,
 ): Promise<string> {
   const chunks = [];
   for await (const record of output.records()) chunks.push(Buffer.from(record.bytes));

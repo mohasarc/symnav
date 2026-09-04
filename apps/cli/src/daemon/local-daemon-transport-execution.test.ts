@@ -1129,6 +1129,61 @@ describe("LocalDaemonTransport execution delivery", () => {
     if (completion.status === "completed") await completion.result.output.dispose();
   });
 
+  it("reattaches the same request with fresh output and disposes the interrupted capture once", async () => {
+    const directory = mkdtempSync(join(tmpdir(), "symnav-isolated-reattach-"));
+    directories.push(directory);
+    const store = new DaemonCompletionSpoolStore({
+      directory: join(directory, "daemon"),
+      workspaceKey: "workspace",
+      instanceId: request.instanceId,
+    });
+    const spool = await store.create(request.requestId);
+    await spool.append({
+      sequence: 0,
+      stream: "stdout",
+      bytes: Buffer.from("partial"),
+    });
+    const manifest = await spool.finish(0);
+    const executeRequests: unknown[] = [];
+    const dispose = vi.spyOn(DaemonClientResultCapture.prototype, "dispose");
+    const endpoint = await rawExecutionServer(servers, sockets, directories, (socket) => {
+      socket.once("data", (encoded) => {
+        const bytes = Buffer.isBuffer(encoded) ? encoded : Buffer.from(encoded);
+        const message = JSON.parse(bytes.subarray(4).toString()) as { kind: string };
+        if (message.kind === "result-ack") {
+          socket.end(
+            frame({
+              kind: "result-acknowledged",
+              instanceId: request.instanceId,
+              processToken: request.processToken,
+              requestId: request.requestId,
+              transferId: manifest.transferId,
+            }),
+          );
+          return;
+        }
+        executeRequests.push(message);
+        if (executeRequests.length === 1) {
+          void firstEncodedRecord(spool, manifest).then((record) =>
+            socket.end(Buffer.concat([frame(accepted()), frame(resultManifest(manifest)), record])),
+          );
+          return;
+        }
+        void encodedResult(spool, manifest).then((result) => socket.end(result));
+      });
+    });
+
+    const receipt = await new LocalDaemonTransport(
+      policyWith({}, { resultTransferResumeLimitPerExecutionAttempt: 0 }),
+    ).execute(endpoint, request);
+    const completion = await receipt.completion;
+
+    expect(executeRequests).toEqual([request, request]);
+    expect(dispose).toHaveBeenCalledTimes(1);
+    expect(completion).toMatchObject({ status: "completed", result: { exitCode: 0 } });
+    if (completion.status === "completed") await completion.result.output.dispose();
+  });
+
   it("gives the reattached execute attempt its own fetch resume", async () => {
     const directory = mkdtempSync(join(tmpdir(), "symnav-reattach-resume-"));
     directories.push(directory);

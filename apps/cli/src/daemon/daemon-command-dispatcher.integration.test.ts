@@ -23,8 +23,8 @@ import type {
   DaemonProcessLauncher,
   DaemonProcessTerminator,
 } from "./daemon-process-launcher.js";
-import { DaemonRegistry } from "./daemon-registry.js";
-import { DaemonStartupCoordinator } from "./daemon-startup-coordinator.js";
+import { TestDaemonRegistry as DaemonRegistry } from "../../test/helpers/daemon-registry.js";
+import { TestDaemonStartupCoordinator as DaemonStartupCoordinator } from "../../test/helpers/daemon-startup-coordinator.js";
 import { DaemonWorkspaceIdentity } from "./daemon-workspace-identity.js";
 import type { DaemonExecutionReceipt, LocalDaemonTransport } from "./local-daemon-transport.js";
 

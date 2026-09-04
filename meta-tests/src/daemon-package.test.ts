@@ -189,12 +189,45 @@ describe("@symnav/daemon package boundary", () => {
     }
   });
 
-  it("requires the composed daemon policy instead of reconstructing it", () => {
+  it("retires scattered operational defaults and policy bypasses", () => {
     const sources = DaemonPackageMetadata.appProductionSources();
     for (const retiredSeam of [
       "daemonPolicy: DaemonPolicy =",
       "readonly policy?: DaemonPolicy",
       "readonly policy: DaemonPolicy =",
+      "COMMAND_OUTPUT_CHUNK_BYTES",
+      "COMMAND_OUTPUT_LIMIT_BYTES",
+      "COMPLETION_SPOOL_INLINE_BYTES",
+      "DAEMON_COMPLETION_SPOOL_LIMIT_BYTES",
+      "DAEMON_MAXIMUM_CONTROL_FRAME_BYTES",
+      "DAEMON_IDLE_TIMEOUT_MS",
+      "DAEMON_LOG_BACKUP_COUNT",
+      "DAEMON_LOG_ROTATE_BYTES",
+      "DAEMON_RESOURCE_RESTART_LIMIT",
+      "DAEMON_RESOURCE_RESTART_WINDOW_MS",
+      "DAEMON_RESOURCE_SAMPLE_INTERVAL_MS",
+      "DAEMON_STARTUP_TIMEOUT_MS",
+      "DAEMON_TERMINATION_TIMEOUT_MS",
+      "DEFAULT_EXECUTION_REQUEST_TIMEOUT_MS",
+      "DEFAULT_MAXIMUM_FRAME_BYTES",
+      "DEFAULT_REQUEST_TIMEOUT_MS",
+      "completionSpoolLimits",
+      "executionRequestTimeoutMs?:",
+      "maximumAggregateBytes?:",
+      "maximumFrameBytes?:",
+      "maximumResultBytes?:",
+      "maximumRetainedOperationTraces",
+      "operationTraceRetentionMs",
+      "outputInlineBytes",
+      "requestTimeoutMs?:",
+      "resourceCheckIntervalMs",
+      "resourcePolicy?:",
+      "startupHeartbeatIntervalMs",
+      "stopTimeoutMs?:",
+      "terminationTimeoutMs?:",
+      "startupTimeoutMs",
+      "DaemonPolicyCodec",
+      "DaemonResourcePolicy",
     ]) {
       expect(sources).not.toContain(retiredSeam);
     }

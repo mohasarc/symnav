@@ -276,9 +276,9 @@ export class DaemonCommandDispatcher {
     dependencies: ProgramDependencies,
     policy: DaemonPolicy,
   ): DaemonDispatchRuntime {
-    const registry = new DaemonRegistry(identity.registryDirectory);
-    const transport = new LocalDaemonTransport();
-    const processTerminator = new NodeDaemonProcessTerminator();
+    const registry = new DaemonRegistry(identity.registryDirectory, policy.values.startup);
+    const transport = new LocalDaemonTransport(policy.values);
+    const processTerminator = new NodeDaemonProcessTerminator(policy.values.shutdown);
     const launcher = new NodeDaemonProcessLauncher(
       dependencies.symnavVersion,
       policy,
@@ -289,6 +289,7 @@ export class DaemonCommandDispatcher {
       transport,
       observer: new DaemonRecordObserver(transport, processTerminator),
       coordinator: new DaemonStartupCoordinator(registry, launcher, transport, {
+        policy: policy.values,
         processTerminator,
       }),
     };

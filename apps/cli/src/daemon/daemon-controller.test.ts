@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { DaemonController } from "./daemon-controller.js";
+import { TestDaemonController as DaemonController } from "../../test/helpers/daemon-controller.js";
 import type { DaemonProcessLauncher, DaemonProcessTerminator } from "./daemon-process-launcher.js";
 import {
   DAEMON_PROTOCOL_VERSION,
@@ -12,7 +12,7 @@ import {
   type DaemonRequest,
   type DaemonResponse,
 } from "./daemon-protocol.js";
-import { DaemonRegistry } from "./daemon-registry.js";
+import { TestDaemonRegistry as DaemonRegistry } from "../../test/helpers/daemon-registry.js";
 import { DaemonStartupCoordinator } from "./daemon-startup-coordinator.js";
 import { DaemonWorkspaceIdentity } from "./daemon-workspace-identity.js";
 import type { LocalDaemonTransport } from "./local-daemon-transport.js";
@@ -454,7 +454,6 @@ function startingRecord(identity: DaemonWorkspaceIdentity, instanceId = "startin
     memoryCapBytes: 256 * 1024 * 1024,
   };
 }
-
 function readyRecord(identity: DaemonWorkspaceIdentity): DaemonRecord {
   return {
     ...startingRecord(identity, "ready"),

@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Writable } from "node:stream";
 import { finished as streamFinished } from "node:stream/promises";
+import type { DaemonPolicyValues } from "@symnav/daemon";
 import type { ProgramContext } from "./program-context.js";
 
 export type CommandOutputStream = "stdout" | "stderr";
@@ -47,14 +48,10 @@ export interface CliExecutionRequest {
 }
 
 export interface OrderedCommandOutputOptions {
-  readonly inlineBytes?: number;
+  readonly policy: DaemonPolicyValues["output"];
   readonly directory?: string;
-  readonly maximumBytes?: number;
 }
 
-const DEFAULT_INLINE_BYTES = 256 * 1024;
-const MAXIMUM_RECORD_BYTES = 64 * 1024;
-const DEFAULT_MAXIMUM_BYTES = 256 * 1024 * 1024;
 const RECORD_HEADER_BYTES = 9;
 
 class CommandOutputWritable extends Writable {
@@ -80,13 +77,14 @@ class StoredCommandOutput implements CommandOutput {
     readonly summary: CommandOutputSummary,
     private readonly inlineRecords: readonly CommandOutputRecord[],
     private readonly filePath?: string,
+    private readonly maximumRecordBytes?: number,
   ) {}
 
   async *records(offset = 0): AsyncIterable<CommandOutputRecord> {
     const records =
       this.filePath === undefined
         ? this.inlineRecords
-        : OrderedCommandOutput.decodeFileRecords(this.filePath);
+        : OrderedCommandOutput.decodeFileRecords(this.filePath, this.maximumRecordBytes!);
     for await (const record of records) {
       if (record.sequence >= offset) yield record;
     }
@@ -135,6 +133,7 @@ export class OrderedCommandOutput {
   private readonly inlineBytes: number;
   private readonly directory: string;
   private readonly maximumBytes: number;
+  private readonly maximumRecordBytes: number;
   private readonly hash = createHash("sha256");
   private readonly inlineRecords: CommandOutputRecord[] = [];
   private pending: { stream: CommandOutputStream; bytes: Buffer } | undefined;
@@ -147,10 +146,12 @@ export class OrderedCommandOutput {
   private capturedBytes = 0;
   private failure: Error | undefined;
 
-  constructor(options: OrderedCommandOutputOptions = {}) {
-    this.inlineBytes = options.inlineBytes ?? DEFAULT_INLINE_BYTES;
+  constructor(options: OrderedCommandOutputOptions) {
+    const policy = options.policy;
+    this.inlineBytes = policy.inlineRawBytes;
     this.directory = options.directory ?? tmpdir();
-    this.maximumBytes = options.maximumBytes ?? DEFAULT_MAXIMUM_BYTES;
+    this.maximumBytes = policy.maximumResultRawBytes;
+    this.maximumRecordBytes = policy.maximumChunkRawBytes;
     this.stdout = new CommandOutputWritable("stdout", (stream, bytes) =>
       this.enqueue(stream, bytes),
     );
@@ -165,7 +166,7 @@ export class OrderedCommandOutput {
       await this.flushPending();
       if (record.sequence !== this.recordCount)
         throw new Error("Unexpected command output sequence");
-      if (record.bytes.byteLength > MAXIMUM_RECORD_BYTES) {
+      if (record.bytes.byteLength > this.maximumRecordBytes) {
         throw new Error("Command output record exceeds chunk capacity");
       }
       if (this.capturedBytes + record.bytes.byteLength > this.maximumBytes) {
@@ -198,6 +199,7 @@ export class OrderedCommandOutput {
       },
       [...this.inlineRecords],
       this.filePath,
+      this.maximumRecordBytes,
     );
     return {
       output: storedOutput,
@@ -222,11 +224,11 @@ export class OrderedCommandOutput {
 
   private async append(stream: CommandOutputStream, bytes: Uint8Array): Promise<void> {
     if (this.finished) throw new Error("Command output is already finished");
-    for (let offset = 0; offset < bytes.byteLength; offset += MAXIMUM_RECORD_BYTES) {
+    for (let offset = 0; offset < bytes.byteLength; offset += this.maximumRecordBytes) {
       const chunk = Buffer.from(
         bytes.buffer,
         bytes.byteOffset + offset,
-        Math.min(MAXIMUM_RECORD_BYTES, bytes.byteLength - offset),
+        Math.min(this.maximumRecordBytes, bytes.byteLength - offset),
       );
       if (this.capturedBytes + chunk.byteLength > this.maximumBytes) {
         throw new CommandOutputCapacityError();
@@ -234,7 +236,7 @@ export class OrderedCommandOutput {
       this.capturedBytes += chunk.byteLength;
       if (
         this.pending?.stream === stream &&
-        this.pending.bytes.byteLength + chunk.byteLength <= MAXIMUM_RECORD_BYTES
+        this.pending.bytes.byteLength + chunk.byteLength <= this.maximumRecordBytes
       ) {
         this.pending = { stream, bytes: Buffer.concat([this.pending.bytes, chunk]) };
         continue;
@@ -318,7 +320,10 @@ export class OrderedCommandOutput {
     return records;
   }
 
-  static async *decodeFileRecords(filePath: string): AsyncIterable<CommandOutputRecord> {
+  static async *decodeFileRecords(
+    filePath: string,
+    maximumRecordBytes: number,
+  ): AsyncIterable<CommandOutputRecord> {
     const noFollow = "O_NOFOLLOW" in constants ? constants.O_NOFOLLOW : 0;
     const handle = await open(filePath, constants.O_RDONLY | noFollow);
     try {
@@ -333,7 +338,7 @@ export class OrderedCommandOutput {
         const sequence = header.readUInt32BE(0);
         const streamByte = header.readUInt8(4);
         const length = header.readUInt32BE(5);
-        if (sequence !== expectedSequence || streamByte > 1 || length > MAXIMUM_RECORD_BYTES) {
+        if (sequence !== expectedSequence || streamByte > 1 || length > maximumRecordBytes) {
           throw new Error("Corrupt command output");
         }
         const bytes = Buffer.alloc(length);

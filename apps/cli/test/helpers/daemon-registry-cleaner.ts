@@ -1,5 +1,5 @@
 import { existsSync, writeFileSync } from "node:fs";
-import { DaemonRegistry } from "../../src/daemon/daemon-registry.js";
+import { TestDaemonRegistry as DaemonRegistry } from "./daemon-registry.js";
 import { DaemonWorkspaceIdentity } from "../../src/daemon/daemon-workspace-identity.js";
 
 class DaemonRegistryCleaner {

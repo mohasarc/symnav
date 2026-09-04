@@ -1,5 +1,5 @@
 import type { ProgramDependencies } from "../program-dependencies.js";
-import type { DaemonPolicy } from "@symnav/daemon";
+import type { DaemonPolicy, DaemonPolicyValues } from "@symnav/daemon";
 import type { CommandExecutionResult, CommandOutputRecord } from "../command-execution-result.js";
 import {
   AcceptedRequestCorruptionError,
@@ -24,7 +24,7 @@ import {
   type CompletionSpoolStorage,
 } from "./completion-spool.js";
 import { DAEMON_PROTOCOL_VERSION, DAEMON_RECORD_SCHEMA_VERSION } from "./daemon-protocol.js";
-import { DAEMON_IDLE_TIMEOUT_MS, DaemonLifetime } from "./daemon-lifetime.js";
+import { DaemonLifetime } from "./daemon-lifetime.js";
 import { DaemonLogger } from "./daemon-logger.js";
 import { NodeDaemonClock, type DaemonClock } from "./daemon-clock.js";
 import { DaemonOperationObserver, type DaemonOperationTrace } from "./daemon-operation-observer.js";
@@ -34,16 +34,11 @@ import {
   NodeDaemonNavigationWorker,
 } from "./daemon-navigation-worker.js";
 import {
-  DaemonResourcePolicy,
   DaemonResourceSupervisor,
   type DaemonWorkerReplacementCause,
 } from "./daemon-resource-monitor.js";
 import type { DaemonNavigationWorkerResponse } from "./daemon-navigation-worker-protocol.js";
-import {
-  DAEMON_STARTUP_TIMEOUT_MS,
-  type DaemonRegistry,
-  type DaemonStartupLease,
-} from "./daemon-registry.js";
+import type { DaemonRegistry, DaemonStartupLease } from "./daemon-registry.js";
 import type { DaemonWorkspaceIdentity } from "./daemon-workspace-identity.js";
 import type { DaemonServerSend, LocalDaemonTransport } from "./local-daemon-transport.js";
 import { WorkspaceRequestQueue, type DaemonCommandName } from "./workspace-request-queue.js";
@@ -53,34 +48,19 @@ export interface WorkspaceDaemonOptions {
   readonly instanceId: string;
   readonly processToken: string;
   readonly symnavVersion: string;
-  readonly memoryCapBytes: number;
   readonly policy: DaemonPolicy;
   readonly dependencies: ProgramDependencies;
   readonly registry: DaemonRegistry;
   readonly transport: LocalDaemonTransport;
   readonly navigationWorker?: DaemonNavigationWorker;
   readonly navigationWorkerFactory?: (generation: number) => DaemonNavigationWorker;
-  readonly resourcePolicy?: DaemonResourcePolicy;
   readonly now?: () => number;
   readonly clock?: DaemonClock;
   readonly exit?: (code: number) => void;
-  readonly idleTimeoutMs?: number;
-  readonly resourceCheckIntervalMs?: number;
   readonly residentMemoryBytes?: () => number;
-  readonly startupHeartbeatIntervalMs?: number;
-  readonly completionSpoolLimits?: {
-    readonly inlineBytes?: number;
-    readonly maximumResultBytes?: number;
-    readonly maximumAggregateBytes?: number;
-  };
   readonly completionSpoolStorage?: CompletionSpoolStorage;
-  readonly operationTraceRetentionMs?: number;
-  readonly maximumRetainedOperationTraces?: number;
   readonly logger?: DaemonLogger;
 }
-
-const DEFAULT_OPERATION_TRACE_RETENTION_MS = 5 * 60 * 1000;
-const DEFAULT_MAXIMUM_RETAINED_OPERATION_TRACES = 1_024;
 
 export interface DaemonWorkerGeneration {
   readonly id: number;
@@ -101,7 +81,7 @@ export class WorkspaceDaemon {
   private readonly logger: DaemonLogger;
   private readonly lifetime: DaemonLifetime;
   private readonly resourceSupervisor: DaemonResourceSupervisor;
-  private readonly resourcePolicy: DaemonResourcePolicy;
+  private readonly resourcePolicy: DaemonPolicyValues["resources"];
   private readonly policy: DaemonPolicy;
   private readonly operationObserver: DaemonOperationObserver;
   private readonly acceptedRequests: AcceptedRequestLedger;
@@ -145,18 +125,17 @@ export class WorkspaceDaemon {
       directory: options.identity.spoolDirectory,
       workspaceKey: options.identity.workspaceKey,
       instanceId: options.instanceId,
-      ...options.completionSpoolLimits,
+      policy: policy.values.output,
       ...(options.completionSpoolStorage === undefined
         ? {}
         : { storage: options.completionSpoolStorage }),
     });
     this.logger =
-      options.logger ?? new DaemonLogger(options.identity, options.instanceId, this.clock);
-    const resourcePolicy =
-      options.resourcePolicy ??
-      DaemonResourcePolicy.fromSystemMemory(
-        Math.max(options.memoryCapBytes * 2, 512 * 1024 * 1024),
-      );
+      options.logger ??
+      new DaemonLogger(options.identity, options.instanceId, this.clock, {
+        policy: policy.values.diagnostics,
+      });
+    const resourcePolicy = policy.values.resources;
     this.resourcePolicy = resourcePolicy;
     this.navigationWorkerFactory =
       options.navigationWorkerFactory ??
@@ -169,23 +148,18 @@ export class WorkspaceDaemon {
                 policy: policy.toSerialized(),
               },
               resourceLimits: {
-                maxOldGenerationSizeMb: resourcePolicy.record.workerMaxOldGenerationSizeMb,
+                maxOldGenerationSizeMb: resourcePolicy.workerMaxOldGenerationSizeMiB,
               },
             })
         : undefined);
     this.initialNavigationWorker = options.navigationWorker ?? this.createNavigationWorker(1);
     this.exit = options.exit ?? ((code) => process.exit(code));
-    this.lifetime = new DaemonLifetime(
-      { now: this.now },
-      options.idleTimeoutMs ?? DAEMON_IDLE_TIMEOUT_MS,
-      () => this.drainAndShutdown("idle"),
+    this.lifetime = new DaemonLifetime({ now: this.now }, policy.values.shutdown, () =>
+      this.drainAndShutdown("idle"),
     );
     this.resourceSupervisor = new DaemonResourceSupervisor({
       policy: resourcePolicy,
       generation: this.initialNavigationWorker.generation,
-      ...(options.resourceCheckIntervalMs === undefined
-        ? {}
-        : { intervalMs: options.resourceCheckIntervalMs }),
       ...(options.residentMemoryBytes === undefined
         ? {}
         : { residentMemoryBytes: options.residentMemoryBytes }),
@@ -212,7 +186,7 @@ export class WorkspaceDaemon {
       const startingRecord = authorization.record;
       startupHeartbeat = setInterval(
         () => startupLease?.heartbeat(),
-        this.options.startupHeartbeatIntervalMs ?? 100,
+        this.policy.values.startup.heartbeatIntervalMs,
       );
       startupHeartbeat.unref();
       this.startedAt = startingRecord.startedAt;
@@ -249,7 +223,7 @@ export class WorkspaceDaemon {
         startedAt: startingRecord.startedAt,
         readyAt: this.now(),
         fileCount: response.fileCount,
-        memoryCapBytes: this.options.memoryCapBytes,
+        memoryCapBytes: this.resourcePolicy.hardProcessRssBytes,
       };
       if (!this.options.registry.writeIfStartupOwner(this.options.identity, readyRecord)) {
         throw new Error("Daemon startup ownership changed before readiness publication");
@@ -278,7 +252,7 @@ export class WorkspaceDaemon {
     readonly lease: DaemonStartupLease;
     readonly record: DaemonRecord;
   }> {
-    const deadline = this.now() + DAEMON_STARTUP_TIMEOUT_MS;
+    const deadline = this.now() + this.policy.values.startup.coordinationGraceMs;
     while (this.now() <= deadline) {
       const record = this.options.registry.readInstance(
         this.options.identity,
@@ -868,7 +842,7 @@ export class WorkspaceDaemon {
     trace.clientDisconnected();
     const expiration = setTimeout(
       () => this.expireOperationTrace(requestId),
-      this.options.operationTraceRetentionMs ?? DEFAULT_OPERATION_TRACE_RETENTION_MS,
+      this.policy.values.diagnostics.disconnectedTraceRetentionMs,
     );
     expiration.unref();
     this.operationTraceExpirations.set(requestId, expiration);
@@ -914,10 +888,7 @@ export class WorkspaceDaemon {
   }
 
   private enforceOperationTraceCapacity(): void {
-    const capacity = Math.max(
-      1,
-      this.options.maximumRetainedOperationTraces ?? DEFAULT_MAXIMUM_RETAINED_OPERATION_TRACES,
-    );
+    const capacity = Math.max(1, this.policy.values.diagnostics.maximumDisconnectedTraces);
     while (this.operationTraceExpirations.size > capacity) {
       const oldestRequestId = this.operationTraceExpirations.keys().next().value as
         | string
@@ -952,12 +923,15 @@ export class WorkspaceDaemon {
   }
 
   private async waitForCompletionAcknowledgements(): Promise<void> {
-    const acknowledgementDeadline = Date.now() + 250;
+    const acknowledgementDeadline =
+      Date.now() + this.policy.values.shutdown.resourceDrainAcknowledgementGraceMs;
     while (
       this.acceptedRequests.hasUnacknowledgedCompletions &&
       Date.now() < acknowledgementDeadline
     ) {
-      await new Promise((resolve) => setTimeout(resolve, 5));
+      await new Promise((resolve) =>
+        setTimeout(resolve, this.policy.values.shutdown.resourceDrainAcknowledgementPollIntervalMs),
+      );
     }
   }
 
@@ -1023,7 +997,9 @@ export class WorkspaceDaemon {
   }
 
   private pause(): Promise<void> {
-    return new Promise((resolve) => setTimeout(resolve, 10));
+    return new Promise((resolve) =>
+      setTimeout(resolve, this.policy.values.startup.authorizationPollIntervalMs),
+    );
   }
 
   private createNavigationWorker(generation: number): DaemonNavigationWorker {
@@ -1172,7 +1148,7 @@ export class WorkspaceDaemon {
       startupElapsedMs: Math.max(0, now - this.startedMonotonicAt),
       ...(this.workerReady ? { fileCount: this.fileCount } : {}),
       processRssBytes: process.memoryUsage().rss,
-      hardProcessRssBytes: this.resourcePolicy.record.hardProcessRssBytes,
+      hardProcessRssBytes: this.resourcePolicy.hardProcessRssBytes,
       ...(resources.workerHeapUsedBytes === undefined
         ? {}
         : { workerHeapUsedBytes: resources.workerHeapUsedBytes }),

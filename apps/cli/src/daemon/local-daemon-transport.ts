@@ -1,6 +1,7 @@
 import { existsSync, mkdirSync, rmSync } from "node:fs";
 import { createConnection, createServer, type Server, type Socket } from "node:net";
 import { dirname } from "node:path";
+import type { DaemonPolicyValues } from "@symnav/daemon";
 import { OrderedCommandOutput, type CommandExecutionResult } from "../command-execution-result.js";
 import type {
   DaemonExecuteRequest,
@@ -20,23 +21,18 @@ import type {
 } from "./daemon-protocol.js";
 import { DaemonResultChunkCodec, DaemonTransferFrameDecoder } from "./daemon-result-chunk-codec.js";
 import { DaemonRuntimeValues } from "./daemon-runtime-values.js";
-import {
-  DAEMON_MAXIMUM_CONTROL_FRAME_BYTES,
-  type CompletionSpoolManifest,
-} from "./completion-spool.js";
-
-const DEFAULT_MAXIMUM_FRAME_BYTES = 8 * 1024 * 1024;
-const DEFAULT_REQUEST_TIMEOUT_MS = 250;
-const DEFAULT_EXECUTION_REQUEST_TIMEOUT_MS = 5_000;
+import type { CompletionSpoolManifest } from "./completion-spool.js";
 
 interface LocalDaemonTransportOptions {
-  readonly maximumFrameBytes?: number;
-  readonly requestTimeoutMs?: number;
-  readonly executionRequestTimeoutMs?: number;
+  readonly responseTimeoutPurpose?: "ordinary" | "status-observer";
   readonly writeChunkSize?: number;
   readonly outputDirectory?: string;
-  readonly outputInlineBytes?: number;
 }
+
+export type LocalDaemonTransportPolicy = Pick<
+  DaemonPolicyValues,
+  "transport" | "delivery" | "output"
+>;
 
 export interface DaemonServerSend {
   (response: DaemonServerMessage): Promise<void>;
@@ -285,16 +281,24 @@ export class LocalDaemonTransport {
   private readonly executionRequestTimeoutMs: number;
   private readonly writeChunkSize: number | undefined;
   private readonly outputDirectory: string | undefined;
-  private readonly outputInlineBytes: number | undefined;
+  private readonly maximumControlFrameBytes: number;
+  private readonly maximumChunkRawBytes: number;
+  private readonly outputPolicy: DaemonPolicyValues["output"];
+  private readonly deliveryPolicy: DaemonPolicyValues["delivery"];
 
-  constructor(options: LocalDaemonTransportOptions = {}) {
-    this.maximumFrameBytes = options.maximumFrameBytes ?? DEFAULT_MAXIMUM_FRAME_BYTES;
-    this.requestTimeoutMs = options.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS;
-    this.executionRequestTimeoutMs =
-      options.executionRequestTimeoutMs ?? DEFAULT_EXECUTION_REQUEST_TIMEOUT_MS;
+  constructor(policy: LocalDaemonTransportPolicy, options: LocalDaemonTransportOptions = {}) {
+    this.maximumFrameBytes = policy.transport.maximumJsonPayloadBytes;
+    this.requestTimeoutMs =
+      options.responseTimeoutPurpose === "status-observer"
+        ? policy.transport.statusResponseTimeoutMs
+        : policy.transport.singleResponseTimeoutMs;
+    this.executionRequestTimeoutMs = policy.transport.executionAdmissionTimeoutMs;
+    this.maximumControlFrameBytes = policy.transport.maximumExecutionControlPayloadBytes;
+    this.maximumChunkRawBytes = policy.output.maximumChunkRawBytes;
+    this.outputPolicy = policy.output;
+    this.deliveryPolicy = policy.delivery;
     this.writeChunkSize = options.writeChunkSize;
     this.outputDirectory = options.outputDirectory;
-    this.outputInlineBytes = options.outputInlineBytes;
   }
 
   canFrame(value: unknown): boolean {
@@ -391,24 +395,34 @@ export class LocalDaemonTransport {
   execute(endpoint: string, request: DaemonExecuteRequest): Promise<DaemonExecutionReceipt> {
     return this.executeOnce(endpoint, request).then((receipt) => ({
       acceptance: receipt.acceptance,
-      completion: this.completeWithOneReattachment(endpoint, request, receipt.completion),
+      completion: this.completeWithReattachments(endpoint, request, receipt.completion),
     }));
   }
 
-  private async completeWithOneReattachment(
+  private async completeWithReattachments(
     endpoint: string,
     request: DaemonExecuteRequest,
     completion: DaemonExecutionReceipt["completion"],
   ): DaemonExecutionReceipt["completion"] {
-    try {
-      return await completion;
-    } catch (firstError) {
-      if (!LocalDaemonTransport.isAcceptedConnectionClose(firstError, request)) throw firstError;
+    let currentCompletion = completion;
+    let reattachmentCount = 0;
+    while (true) {
       try {
-        const reattached = await this.executeOnce(endpoint, request);
-        return await reattached.completion;
-      } catch {
-        throw firstError;
+        return await currentCompletion;
+      } catch (firstError) {
+        if (
+          !LocalDaemonTransport.isAcceptedConnectionClose(firstError, request) ||
+          reattachmentCount >= this.deliveryPolicy.postAcceptanceExecutionReattachmentLimit
+        ) {
+          throw firstError;
+        }
+        try {
+          const reattached = await this.executeOnce(endpoint, request);
+          currentCompletion = reattached.completion;
+          reattachmentCount += 1;
+        } catch {
+          throw firstError;
+        }
       }
     }
   }
@@ -419,10 +433,13 @@ export class LocalDaemonTransport {
   ): Promise<DaemonExecutionReceipt> {
     LocalDaemonTransport.assertRequest(request);
     return new Promise((resolve, reject) => {
-      const decoder = new DaemonTransferFrameDecoder(DAEMON_MAXIMUM_CONTROL_FRAME_BYTES);
+      const decoder = new DaemonTransferFrameDecoder(
+        this.maximumControlFrameBytes,
+        this.maximumChunkRawBytes,
+      );
       const output = new OrderedCommandOutput({
+        policy: this.outputPolicy,
         ...(this.outputDirectory === undefined ? {} : { directory: this.outputDirectory }),
-        ...(this.outputInlineBytes === undefined ? {} : { inlineBytes: this.outputInlineBytes }),
       });
       const transfer = new DaemonResultTransferReceiver(request, output);
       const socket = createConnection(endpoint);
@@ -431,7 +448,7 @@ export class LocalDaemonTransport {
       let terminal = false;
       let outerSettled = false;
       let completionSettled = false;
-      let resumeStarted = false;
+      let resumeCount = 0;
       let resolveCompletion!: (value: Awaited<DaemonExecutionReceipt["completion"]>) => void;
       let rejectCompletion!: (error: DaemonTransportError) => void;
       const completion = new Promise<Awaited<DaemonExecutionReceipt["completion"]>>(
@@ -456,7 +473,7 @@ export class LocalDaemonTransport {
       };
       const resume = (): boolean => {
         if (
-          resumeStarted ||
+          resumeCount >= this.deliveryPolicy.resultTransferResumeLimitPerExecutionAttempt ||
           completionSettled ||
           acceptance === undefined ||
           transfer.manifest === undefined ||
@@ -464,7 +481,7 @@ export class LocalDaemonTransport {
         ) {
           return false;
         }
-        resumeStarted = true;
+        resumeCount += 1;
         socket.destroy();
         transfer.beginConnection();
         void this.fetchCompletion(endpoint, request, output, transfer)
@@ -633,7 +650,10 @@ export class LocalDaemonTransport {
     transfer: DaemonResultTransferReceiver,
   ): DaemonExecutionReceipt["completion"] {
     return new Promise((resolve, reject) => {
-      const decoder = new DaemonTransferFrameDecoder(DAEMON_MAXIMUM_CONTROL_FRAME_BYTES);
+      const decoder = new DaemonTransferFrameDecoder(
+        this.maximumControlFrameBytes,
+        this.maximumChunkRawBytes,
+      );
       const socket = createConnection(endpoint);
       let ended = false;
       let settled = false;
@@ -927,7 +947,10 @@ export class LocalDaemonTransport {
       await this.writeEncodedServerFrame(socket, this.encodeFrame(message));
       return;
     }
-    await this.writeEncodedServerFrame(socket, DaemonResultChunkCodec.encode(message));
+    await this.writeEncodedServerFrame(
+      socket,
+      DaemonResultChunkCodec.encode(message, this.maximumChunkRawBytes),
+    );
   }
 
   private async writeEncodedServerFrame(socket: Socket, frame: Buffer): Promise<void> {

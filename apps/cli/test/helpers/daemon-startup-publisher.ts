@@ -1,6 +1,6 @@
 import { existsSync, writeFileSync } from "node:fs";
 import { StateDirectoryResolver } from "../../src/state-directory-resolver.js";
-import { DaemonRegistry } from "../../src/daemon/daemon-registry.js";
+import { TestDaemonRegistry as DaemonRegistry } from "./daemon-registry.js";
 import { DaemonWorkspaceIdentity } from "../../src/daemon/daemon-workspace-identity.js";
 import {
   DAEMON_PROTOCOL_VERSION,

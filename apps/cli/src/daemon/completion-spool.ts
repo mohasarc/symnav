@@ -1,17 +1,12 @@
 import { createHash, randomUUID } from "node:crypto";
 import { chmod, lstat, mkdir, open, rm, unlink } from "node:fs/promises";
 import { join } from "node:path";
+import type { DaemonPolicyValues } from "@symnav/daemon";
 import {
   OrderedCommandOutput,
   type CommandOutputRecord,
   type CommandOutputSummary,
 } from "../command-execution-result.js";
-
-export const COMMAND_OUTPUT_CHUNK_BYTES = 64 * 1024;
-export const DAEMON_MAXIMUM_CONTROL_FRAME_BYTES = 256 * 1024;
-export const COMMAND_OUTPUT_LIMIT_BYTES = 256 * 1024 * 1024;
-export const DAEMON_COMPLETION_SPOOL_LIMIT_BYTES = 512 * 1024 * 1024;
-export const COMPLETION_SPOOL_INLINE_BYTES = 256 * 1024;
 
 export interface CompletionSpoolIdentity {
   readonly workspaceKey: string;
@@ -35,9 +30,7 @@ export interface DaemonCompletionSpoolStoreOptions {
   readonly directory: string;
   readonly workspaceKey: string;
   readonly instanceId: string;
-  readonly inlineBytes?: number;
-  readonly maximumResultBytes?: number;
-  readonly maximumAggregateBytes?: number;
+  readonly policy: DaemonPolicyValues["output"];
   readonly storage?: CompletionSpoolStorage;
 }
 
@@ -50,7 +43,7 @@ export interface CompletionSpoolFile {
 export interface CompletionSpoolStorage {
   ensureDirectory(path: string): Promise<void>;
   createFile(path: string): Promise<CompletionSpoolFile>;
-  records(path: string): AsyncIterable<CommandOutputRecord>;
+  records(path: string, maximumChunkBytes: number): AsyncIterable<CommandOutputRecord>;
   unlink(path: string): Promise<void>;
   removeInstance(path: string): Promise<void>;
 }
@@ -69,8 +62,8 @@ export class NodeCompletionSpoolStorage implements CompletionSpoolStorage {
     return open(path, "wx", 0o600);
   }
 
-  records(path: string): AsyncIterable<CommandOutputRecord> {
-    return OrderedCommandOutput.decodeFileRecords(path);
+  records(path: string, maximumChunkBytes: number): AsyncIterable<CommandOutputRecord> {
+    return OrderedCommandOutput.decodeFileRecords(path, maximumChunkBytes);
   }
 
   async unlink(path: string): Promise<void> {
@@ -88,6 +81,7 @@ interface CompletionSpoolOptions {
   readonly requestId: string;
   readonly inlineBytes: number;
   readonly maximumResultBytes: number;
+  readonly maximumChunkBytes: number;
   readonly reserve: (bytes: number) => void;
   readonly release: (bytes: number) => void;
   readonly complete: () => void;
@@ -133,7 +127,7 @@ export class CompletionSpool {
   async append(record: CommandOutputRecord): Promise<void> {
     if (this.terminal) throw new Error("Completion spool is already terminal");
     if (record.sequence !== this.recordCount) throw new Error("Unexpected command output sequence");
-    if (record.bytes.byteLength > COMMAND_OUTPUT_CHUNK_BYTES) {
+    if (record.bytes.byteLength > this.options.maximumChunkBytes) {
       throw new Error("Command output record exceeds chunk capacity");
     }
     if (this.rawBytes + record.bytes.byteLength > this.options.maximumResultBytes) {
@@ -199,7 +193,7 @@ export class CompletionSpool {
       const records =
         this.filePath === undefined
           ? this.inlineRecords
-          : this.options.storage.records(this.filePath);
+          : this.options.storage.records(this.filePath, this.options.maximumChunkBytes);
       for await (const record of records) {
         if (record.sequence >= offset) yield record;
       }
@@ -299,6 +293,7 @@ export class DaemonCompletionSpoolStore {
   private readonly inlineBytes: number;
   private readonly maximumResultBytes: number;
   private readonly maximumAggregateBytes: number;
+  private readonly maximumChunkBytes: number;
   private readonly storage: CompletionSpoolStorage;
   private rawBytes = 0;
   private completionCount = 0;
@@ -306,10 +301,11 @@ export class DaemonCompletionSpoolStore {
 
   constructor(private readonly options: DaemonCompletionSpoolStoreOptions) {
     DaemonCompletionSpoolStore.validateIdentity(options.instanceId);
-    this.inlineBytes = options.inlineBytes ?? COMPLETION_SPOOL_INLINE_BYTES;
-    this.maximumResultBytes = options.maximumResultBytes ?? COMMAND_OUTPUT_LIMIT_BYTES;
-    this.maximumAggregateBytes =
-      options.maximumAggregateBytes ?? DAEMON_COMPLETION_SPOOL_LIMIT_BYTES;
+    const policy = options.policy;
+    this.maximumChunkBytes = policy.maximumChunkRawBytes;
+    this.inlineBytes = policy.inlineRawBytes;
+    this.maximumResultBytes = policy.maximumResultRawBytes;
+    this.maximumAggregateBytes = policy.maximumAggregateSpoolRawBytes;
     this.storage = options.storage ?? new NodeCompletionSpoolStorage();
   }
 
@@ -327,6 +323,7 @@ export class DaemonCompletionSpoolStore {
       requestId,
       inlineBytes: this.inlineBytes,
       maximumResultBytes: this.maximumResultBytes,
+      maximumChunkBytes: this.maximumChunkBytes,
       reserve: (bytes) => this.reserve(bytes),
       release: (bytes) => {
         this.rawBytes -= bytes;

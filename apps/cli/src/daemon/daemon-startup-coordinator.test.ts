@@ -4,18 +4,20 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { DaemonPolicy, type DaemonPolicyValues } from "@symnav/daemon";
+import { DaemonPolicyTestFactory } from "@symnav/daemon/policy-testing";
 import { CommandOutputSnapshot } from "../command-execution-result.js";
 import { StateDirectoryResolver } from "../state-directory-resolver.js";
-import { DaemonController } from "./daemon-controller.js";
-import { DaemonStartupCoordinator } from "./daemon-startup-coordinator.js";
+import { TestDaemonController as DaemonController } from "../../test/helpers/daemon-controller.js";
+import { TestDaemonStartupCoordinator as DaemonStartupCoordinator } from "../../test/helpers/daemon-startup-coordinator.js";
 import {
   DaemonProcessTerminationError,
-  NodeDaemonProcessTerminator,
   type DaemonProcess,
   type DaemonProcessExit,
   type DaemonProcessLauncher,
   type DaemonProcessTerminator,
 } from "./daemon-process-launcher.js";
+import { TestNodeDaemonProcessTerminator as NodeDaemonProcessTerminator } from "../../test/helpers/daemon-process-terminator.js";
 import {
   DAEMON_PROTOCOL_VERSION,
   DAEMON_RECORD_SCHEMA_VERSION,
@@ -25,9 +27,13 @@ import {
   type DaemonRequest,
   type DaemonResponse,
 } from "./daemon-protocol.js";
-import { DAEMON_STARTUP_TIMEOUT_MS, DaemonRegistry } from "./daemon-registry.js";
+import { TestDaemonRegistry as DaemonRegistry } from "../../test/helpers/daemon-registry.js";
 import { DaemonWorkspaceIdentity } from "./daemon-workspace-identity.js";
-import { type DaemonExecutionReceipt, LocalDaemonTransport } from "./local-daemon-transport.js";
+import type { DaemonExecutionReceipt } from "./local-daemon-transport.js";
+import { TestLocalDaemonTransport as LocalDaemonTransport } from "../../test/helpers/local-daemon-transport.js";
+
+const STARTUP_COORDINATION_GRACE_MS =
+  DaemonPolicy.currentSystem().values.startup.coordinationGraceMs;
 
 describe("DaemonStartupCoordinator", () => {
   const roots: string[] = [];
@@ -85,12 +91,10 @@ describe("DaemonStartupCoordinator", () => {
   it("shares one readiness record without a healthy startup deadline", async () => {
     const readinessGate = new ReadinessPublicationGate();
     const harness = new CoordinatorHarness(roots, { readinessPublicationGate: readinessGate });
-    const coordinator = harness.coordinator({ startupTimeoutMs: 5 });
+    const coordinator = harness.coordinator();
     const trigger = await coordinator.trigger(harness.identity);
     const firstWait = coordinator.waitUntilReady(harness.identity);
-    const secondWait = harness
-      .coordinator({ startupTimeoutMs: 5 })
-      .waitUntilReady(harness.identity);
+    const secondWait = harness.coordinator().waitUntilReady(harness.identity);
     let settled = false;
     void Promise.all([firstWait, secondWait]).then(() => {
       settled = true;
@@ -128,9 +132,10 @@ describe("DaemonStartupCoordinator", () => {
   it("keeps waiting for its live child after a transient ready-record probe failure", async () => {
     const harness = new CoordinatorHarness(roots, { readyAuthenticationFailures: 1 });
 
-    await expect(
-      harness.coordinator({ startupTimeoutMs: 1_000 }).ensureRunning(harness.identity),
-    ).resolves.toMatchObject({ status: "ready", workspaceRoot: "/repo" });
+    await expect(harness.coordinator().ensureRunning(harness.identity)).resolves.toMatchObject({
+      status: "ready",
+      workspaceRoot: "/repo",
+    });
 
     expect(harness.launcher.launchCount).toBe(1);
     expect(harness.registry.readStored(harness.identity)).toMatchObject({
@@ -179,14 +184,14 @@ describe("DaemonStartupCoordinator", () => {
       harness
         .coordinator({
           now: () => {
-            now += DAEMON_STARTUP_TIMEOUT_MS;
+            now += STARTUP_COORDINATION_GRACE_MS;
             return now;
           },
         })
         .waitUntilReady(harness.identity),
     ).rejects.toThrow("Daemon startup failed before readiness");
 
-    expect(now).toBeGreaterThan(DAEMON_STARTUP_TIMEOUT_MS);
+    expect(now).toBeGreaterThan(STARTUP_COORDINATION_GRACE_MS);
     expect(harness.launcher.launchCount).toBe(0);
   });
 
@@ -335,9 +340,7 @@ describe("DaemonStartupCoordinator", () => {
     const harness = new CoordinatorHarness(roots, { oldDaemonExitsAfterTerminate: false });
     harness.seedReady("existing", "0.0.9", 4003);
 
-    const starting = harness
-      .coordinator({ startupTimeoutMs: 1_000 })
-      .ensureRunning(harness.identity);
+    const starting = harness.coordinator().ensureRunning(harness.identity);
     await waitUntil(() => harness.transport.terminationCount === 1);
     await new Promise((resolve) => setTimeout(resolve, 10));
 
@@ -429,9 +432,7 @@ describe("DaemonStartupCoordinator", () => {
     expect(originalRecord?.pid).toBe(harness.launcher.lastPid);
     harness.terminator.currentProcessIsAlive = false;
 
-    const laterCaller = harness
-      .coordinator({ startupTimeoutMs: 1_000 })
-      .ensureRunning(harness.identity);
+    const laterCaller = harness.coordinator().ensureRunning(harness.identity);
     readinessPublicationGate.release();
 
     await expect(laterCaller).resolves.toMatchObject({
@@ -451,7 +452,7 @@ describe("DaemonStartupCoordinator", () => {
       childExit: { code: 17, signal: null, cause: "exit" },
       childExitDelayMs: 5,
     });
-    const coordinator = harness.coordinator({ startupTimeoutMs: 1_000 });
+    const coordinator = harness.coordinator();
     const startedAt = Date.now();
 
     await coordinator.trigger(harness.identity);
@@ -511,6 +512,26 @@ describe("DaemonStartupCoordinator", () => {
     expect(harness.registry.startupOwner(harness.identity)).toBeUndefined();
   });
 
+  it("does not retry a child failure when policy permits zero retries", async () => {
+    const harness = new CoordinatorHarness(roots, { exitingLaunches: 1 });
+
+    await expect(
+      harness.coordinator({ policy: startupRetryPolicy(0) }).ensureRunning(harness.identity),
+    ).rejects.toThrow("Daemon child exited before readiness (code 1, signal null)");
+
+    expect(harness.launcher.launchCount).toBe(1);
+  });
+
+  it("allows each child-failure retry granted by policy", async () => {
+    const harness = new CoordinatorHarness(roots, { exitingLaunches: 2 });
+
+    await expect(
+      harness.coordinator({ policy: startupRetryPolicy(2) }).ensureRunning(harness.identity),
+    ).resolves.toMatchObject({ status: "ready" });
+
+    expect(harness.launcher.launchCount).toBe(3);
+  });
+
   it("does not reset the retry budget after waiting for startup ownership", async () => {
     const harness = new CoordinatorHarness(roots, { exitingLaunches: 2 });
     const earlierLease = harness.registry.acquireStartup(harness.identity, "earlier-owner");
@@ -532,9 +553,10 @@ describe("DaemonStartupCoordinator", () => {
       state: "starting",
     });
 
-    await expect(
-      harness.coordinator({ startupTimeoutMs: 100 }).ensureRunning(harness.identity),
-    ).resolves.toMatchObject({ status: "ready", workspaceRoot: "/repo" });
+    await expect(harness.coordinator().ensureRunning(harness.identity)).resolves.toMatchObject({
+      status: "ready",
+      workspaceRoot: "/repo",
+    });
 
     expect(harness.launcher.launchCount).toBe(1);
     expect(harness.registry.readStored(harness.identity)?.instanceId).not.toBe("legacy-starting");
@@ -724,7 +746,7 @@ describe("DaemonStartupCoordinator", () => {
       registry,
       launcher,
       transport as unknown as LocalDaemonTransport,
-      { startupTimeoutMs: 1_000, pollIntervalMs: 2 },
+      { pollIntervalMs: 2 },
     );
 
     await expect(coordinator.ensureRunning(identity)).rejects.toThrow(/exited before readiness/i);
@@ -879,8 +901,8 @@ class CoordinatorHarness {
 
   coordinator(
     options: {
-      readonly startupTimeoutMs?: number;
       readonly terminationTimeoutMs?: number;
+      readonly policy?: Pick<DaemonPolicyValues, "startup" | "shutdown">;
       readonly processTerminator?: DaemonProcessTerminator;
       readonly now?: () => number;
     } = {},
@@ -890,12 +912,10 @@ class CoordinatorHarness {
       this.launcher,
       this.transport as unknown as LocalDaemonTransport,
       {
-        ...(options.startupTimeoutMs === undefined
-          ? {}
-          : { startupTimeoutMs: options.startupTimeoutMs }),
         ...(options.terminationTimeoutMs === undefined
           ? {}
           : { terminationTimeoutMs: options.terminationTimeoutMs }),
+        ...(options.policy === undefined ? {} : { policy: options.policy }),
         pollIntervalMs: 1,
         processTerminator: options.processTerminator ?? this.terminator,
         ...(options.now === undefined ? {} : { now: options.now }),
@@ -928,6 +948,14 @@ class CoordinatorHarness {
       memoryCapBytes: 256 * 1024 * 1024,
     };
   }
+}
+
+function startupRetryPolicy(
+  childFailureRetryLimit: number,
+): Pick<DaemonPolicyValues, "startup" | "shutdown"> {
+  return DaemonPolicyTestFactory.withOverrides(DaemonPolicy.currentSystem(), {
+    startup: { childFailureRetryLimit },
+  }).values;
 }
 
 class ReadyTestLauncher implements DaemonProcessLauncher {
@@ -1216,7 +1244,6 @@ function socketBackedCoordinator(roots: string[]): SocketBackedCoordinator {
     terminator,
     launcher,
     coordinator: new DaemonStartupCoordinator(registry, launcher, transport, {
-      startupTimeoutMs: 5_000,
       pollIntervalMs: 2,
       processTerminator: terminator,
     }),

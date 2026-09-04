@@ -1,6 +1,6 @@
 import { writeFileSync } from "node:fs";
 import { DAEMON_PROTOCOL_VERSION } from "../../src/daemon/daemon-protocol.js";
-import { LocalDaemonTransport } from "../../src/daemon/local-daemon-transport.js";
+import { TestLocalDaemonTransport as LocalDaemonTransport } from "./local-daemon-transport.js";
 
 const [endpoint, instanceId, processToken, workspaceRoot, acceptedPath] = process.argv.slice(2);
 if (

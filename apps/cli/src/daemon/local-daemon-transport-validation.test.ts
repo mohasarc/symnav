@@ -4,6 +4,8 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { DaemonPolicy } from "@symnav/daemon";
+import { DaemonPolicyTestFactory } from "@symnav/daemon/policy-testing";
 import type {
   DaemonActivitySnapshot,
   DaemonExecuteRequest,
@@ -11,9 +13,26 @@ import type {
   DaemonLifecycleRequest,
 } from "./daemon-protocol.js";
 import { DAEMON_PROTOCOL_VERSION } from "./daemon-protocol.js";
-import { DaemonTransportError, LocalDaemonTransport } from "./local-daemon-transport.js";
+import {
+  DaemonTransportError,
+  LocalDaemonTransport as RuntimeLocalDaemonTransport,
+} from "./local-daemon-transport.js";
+import { TestLocalDaemonTransport as LocalDaemonTransport } from "../../test/helpers/local-daemon-transport.js";
 
 describe("LocalDaemonTransport validation", () => {
+  it("uses the required transport-policy JSON capacity", () => {
+    const policy = DaemonPolicyTestFactory.withOverrides(
+      DaemonPolicy.fromSystemMemory({ totalBytes: 1024 ** 3 }),
+      { transport: { maximumJsonPayloadBytes: 32 } },
+    );
+    const transport = new LocalDaemonTransport({
+      transport: policy.values.transport,
+      delivery: policy.values.delivery,
+      output: policy.values.output,
+    });
+
+    expect(transport.canFrame({ payload: "x".repeat(64) })).toBe(false);
+  });
   const servers: Server[] = [];
   const sockets: Socket[] = [];
   const directories: string[] = [];
@@ -27,6 +46,101 @@ describe("LocalDaemonTransport validation", () => {
     servers.length = 0;
     for (const directory of directories) rmSync(directory, { recursive: true, force: true });
     directories.length = 0;
+  });
+
+  it.each([
+    {
+      kind: "identify",
+      instanceId: "instance",
+      processToken: "token",
+    },
+    pingRequest(),
+  ] satisfies readonly DaemonLifecycleRequest[])(
+    "uses the status-observer timeout for $kind lifecycle exchanges",
+    async (request) => {
+      const policy = DaemonPolicyTestFactory.withOverrides(
+        DaemonPolicy.fromSystemMemory({ totalBytes: 1024 ** 3 }),
+        {
+          transport: {
+            singleResponseTimeoutMs: 1_000,
+            statusResponseTimeoutMs: 10,
+          },
+        },
+      );
+      const endpoint = await rawServer(servers, sockets, directories, (socket) => {
+        socket.once("data", () => {
+          setTimeout(
+            () =>
+              socket.end(
+                frame(
+                  request.kind === "identify"
+                    ? {
+                        kind: "identity",
+                        instanceId: request.instanceId,
+                        processToken: request.processToken,
+                        pid: 123,
+                        startedAt: 10,
+                      }
+                    : {
+                        kind: "pong",
+                        protocolVersion: DAEMON_PROTOCOL_VERSION,
+                        instanceId: request.instanceId,
+                        symnavVersion: "test",
+                      },
+                ),
+              ),
+            50,
+          );
+        });
+      });
+      const transport = new RuntimeLocalDaemonTransport(policy.values, {
+        responseTimeoutPurpose: "status-observer",
+      });
+
+      await expect(transport.request(endpoint, request)).rejects.toMatchObject({
+        code: "timeout",
+      });
+    },
+  );
+
+  it("uses the ordinary timeout for execution-status exchanges", async () => {
+    const policy = DaemonPolicyTestFactory.withOverrides(
+      DaemonPolicy.fromSystemMemory({ totalBytes: 1024 ** 3 }),
+      {
+        transport: {
+          singleResponseTimeoutMs: 10,
+          statusResponseTimeoutMs: 1_000,
+        },
+      },
+    );
+    const endpoint = await rawServer(servers, sockets, directories, (socket) => {
+      socket.once("data", () => {
+        setTimeout(
+          () =>
+            socket.end(
+              frame({
+                kind: "execution-status",
+                instanceId: "instance",
+                processToken: "token",
+                requestId: "request",
+                status: { kind: "unknown" },
+              }),
+            ),
+          50,
+        );
+      });
+    });
+    const transport = new LocalDaemonTransport(policy.values);
+
+    await expect(
+      transport.executionStatus(endpoint, {
+        kind: "execution-status",
+        protocolVersion: DAEMON_PROTOCOL_VERSION,
+        instanceId: "instance",
+        processToken: "token",
+        requestId: "request",
+      }),
+    ).rejects.toMatchObject({ code: "timeout" });
   });
 
   it("classifies connection refusal before request submission", async () => {

@@ -6,16 +6,16 @@ import type {
   CommandOutputRecord,
 } from "../../src/command-execution-result.js";
 import { createDefaultDependencies } from "../../src/program.js";
-import { DaemonRegistry } from "../../src/daemon/daemon-registry.js";
-import { DaemonResourcePolicy } from "../../src/daemon/daemon-resource-monitor.js";
+import { TestDaemonRegistry as DaemonRegistry } from "./daemon-registry.js";
+import { TestDaemonResourcePolicy as DaemonResourcePolicy } from "./daemon-resource-policy.js";
 import { DaemonWorkspaceIdentity } from "../../src/daemon/daemon-workspace-identity.js";
-import { LocalDaemonTransport } from "../../src/daemon/local-daemon-transport.js";
+import { TestLocalDaemonTransport as LocalDaemonTransport } from "./local-daemon-transport.js";
 import type {
   DaemonNavigationWorker,
   DaemonNavigationWorkerExit,
 } from "../../src/daemon/daemon-navigation-worker.js";
 import type { DaemonNavigationWorkerResponse } from "../../src/daemon/daemon-navigation-worker-protocol.js";
-import { WorkspaceDaemon } from "../../src/daemon/workspace-daemon.js";
+import { TestWorkspaceDaemon as WorkspaceDaemon } from "./workspace-daemon.js";
 
 const [
   workspaceRoot,

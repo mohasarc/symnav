@@ -17,9 +17,10 @@ import {
   DAEMON_RECORD_SCHEMA_VERSION,
   type DaemonRecord,
 } from "../../../src/daemon/daemon-protocol.js";
-import { DaemonRegistry, type StartupOwner } from "../../../src/daemon/daemon-registry.js";
+import type { StartupOwner } from "../../../src/daemon/daemon-registry.js";
+import { TestDaemonRegistry as DaemonRegistry } from "../../helpers/daemon-registry.js";
 import { DaemonWorkspaceIdentity } from "../../../src/daemon/daemon-workspace-identity.js";
-import { LocalDaemonTransport } from "../../../src/daemon/local-daemon-transport.js";
+import { TestLocalDaemonTransport as LocalDaemonTransport } from "../../helpers/local-daemon-transport.js";
 import { StateDirectoryResolver } from "../../../src/state-directory-resolver.js";
 import { canonicalWorkspaceRoot } from "../../helpers/canonical-workspace-root.js";
 import { E2eProcessCleanup } from "../../helpers/e2e-process-cleanup.js";

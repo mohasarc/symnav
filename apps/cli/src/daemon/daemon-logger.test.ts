@@ -2,11 +2,43 @@ import { mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { NodeDaemonClock } from "./daemon-clock.js";
-import { DAEMON_LOG_BACKUP_COUNT, DaemonLogger, type DaemonLogStorage } from "./daemon-logger.js";
+import { DaemonPolicy } from "@symnav/daemon";
+import { DaemonPolicyTestFactory } from "@symnav/daemon/policy-testing";
+import { NodeDaemonClock, type DaemonClock } from "./daemon-clock.js";
+import { DaemonLogger as RuntimeDaemonLogger, type DaemonLogStorage } from "./daemon-logger.js";
 import type { DaemonDiagnosticEvent } from "./daemon-protocol.js";
 import { DaemonWorkspaceIdentity } from "./daemon-workspace-identity.js";
 
+interface TestDaemonLoggerOptions {
+  readonly policy?: DaemonPolicy["values"]["diagnostics"];
+  readonly rotateBytes?: number;
+  readonly maximumQueuedEvents?: number;
+  readonly storage?: DaemonLogStorage;
+}
+
+class DaemonLogger extends RuntimeDaemonLogger {
+  constructor(
+    identity: DaemonWorkspaceIdentity,
+    instanceId: string,
+    clock: DaemonClock,
+    options: TestDaemonLoggerOptions = {},
+  ) {
+    const diagnostics =
+      options.policy ??
+      DaemonPolicyTestFactory.withOverrides(DaemonPolicy.currentSystem(), {
+        diagnostics: {
+          ...(options.rotateBytes === undefined ? {} : { logRotateBytes: options.rotateBytes }),
+          ...(options.maximumQueuedEvents === undefined
+            ? {}
+            : { maximumQueuedEvents: options.maximumQueuedEvents }),
+        },
+      }).values.diagnostics;
+    super(identity, instanceId, clock, {
+      policy: diagnostics,
+      ...(options.storage === undefined ? {} : { storage: options.storage }),
+    });
+  }
+}
 describe("DaemonLogger", () => {
   const roots: string[] = [];
 
@@ -246,7 +278,10 @@ describe("DaemonLogger", () => {
       .sort();
     expect(logFiles).toEqual([
       "daemon.log",
-      ...Array.from({ length: DAEMON_LOG_BACKUP_COUNT }, (_, index) => `daemon.log.${index + 1}`),
+      ...Array.from(
+        { length: DaemonPolicy.currentSystem().values.diagnostics.logBackupCount },
+        (_, index) => `daemon.log.${index + 1}`,
+      ),
     ]);
     const retained = [...logFiles]
       .reverse()
@@ -313,6 +348,34 @@ describe("DaemonLogger", () => {
       "diagnostics-dropped",
     ]);
     expect(storage.events().at(-1)).toMatchObject({ droppedCount: 1 });
+  });
+
+  it("uses the required diagnostic-policy queue capacity", async () => {
+    const root = mkdtempSync(join(tmpdir(), "symnav-daemon-policy-overflow-"));
+    roots.push(root);
+    const identity = DaemonWorkspaceIdentity.from("/repo", root);
+    const storage = new BlockingLogStorage();
+    const policy = DaemonPolicyTestFactory.withOverrides(
+      DaemonPolicy.fromSystemMemory({ totalBytes: 1024 ** 3 }),
+      { diagnostics: { maximumQueuedEvents: 1 } },
+    );
+    const logger = new DaemonLogger(identity, "overflow", new NodeDaemonClock(), {
+      policy: policy.values.diagnostics,
+      storage,
+    } as unknown as ConstructorParameters<typeof DaemonLogger>[3]);
+
+    logger.record({ kind: "ready", fileCount: 1 });
+    await storage.appendStarted;
+    logger.record({ kind: "ready", fileCount: 2 });
+    logger.record({ kind: "ready", fileCount: 3 });
+    storage.release();
+    await logger.flush();
+
+    expect(storage.events().map((event) => event.kind)).toEqual([
+      "ready",
+      "ready",
+      "diagnostics-dropped",
+    ]);
   });
 
   it("isolates append and rotation failures from records and flush", async () => {

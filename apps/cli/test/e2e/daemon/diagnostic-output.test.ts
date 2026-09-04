@@ -11,16 +11,15 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
+import { DaemonPolicy } from "@symnav/daemon";
 import { runSymnavBinary } from "@symnav/testing";
-import {
-  DAEMON_LOG_BACKUP_COUNT,
-  DAEMON_LOG_ROTATE_BYTES,
-} from "../../../src/daemon/daemon-logger.js";
-import { DaemonRegistry } from "../../../src/daemon/daemon-registry.js";
+import { TestDaemonRegistry as DaemonRegistry } from "../../helpers/daemon-registry.js";
 import { DaemonWorkspaceIdentity } from "../../../src/daemon/daemon-workspace-identity.js";
 import { StateDirectoryResolver } from "../../../src/state-directory-resolver.js";
 import { canonicalWorkspaceRoot } from "../../helpers/canonical-workspace-root.js";
 import { E2eProcessCleanup } from "../../helpers/e2e-process-cleanup.js";
+
+const DIAGNOSTIC_POLICY = DaemonPolicy.currentSystem().values.diagnostics;
 
 describe("daemon diagnostic output isolation", () => {
   const directories: string[] = [];
@@ -70,12 +69,12 @@ describe("daemon diagnostic output isolation", () => {
       .filter((name) => /^daemon\.log(?:\.\d+)?$/.test(name))
       .sort();
     expect(logNames).toContain("daemon.log");
-    expect(logNames).not.toContain(`daemon.log.${DAEMON_LOG_BACKUP_COUNT + 1}`);
-    expect(logNames.length).toBeLessThanOrEqual(DAEMON_LOG_BACKUP_COUNT + 1);
+    expect(logNames).not.toContain(`daemon.log.${DIAGNOSTIC_POLICY.logBackupCount + 1}`);
+    expect(logNames.length).toBeLessThanOrEqual(DIAGNOSTIC_POLICY.logBackupCount + 1);
     const events: Record<string, unknown>[] = [];
     for (const name of logNames) {
       const path = join(identity.identityDirectory, name);
-      expect(statSync(path).size).toBeLessThanOrEqual(DAEMON_LOG_ROTATE_BYTES);
+      expect(statSync(path).size).toBeLessThanOrEqual(DIAGNOSTIC_POLICY.logRotateBytes);
       const contents = readFileSync(path, "utf8");
       expect(contents).not.toContain(secret);
       for (const line of contents.split("\n").filter((value) => value.length > 0)) {

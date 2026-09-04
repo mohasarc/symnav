@@ -194,6 +194,32 @@ describe("LocalDaemonTransport socket serving", () => {
     expect(handled).toEqual(["unauthorized", "healthy"]);
     await listening.close();
   });
+
+  it("drains queued sends before graceful shutdown", async () => {
+    const endpoint = harness.endpoint();
+    const sendStarted = DaemonSocketServerHarness.deferred<void>();
+    const releaseSend = DaemonSocketServerHarness.deferred<void>();
+    const server = harness.server();
+    const listening = await server.listen(endpoint, async (daemonRequest, send) => {
+      sendStarted.resolve();
+      await releaseSend.promise;
+      return send(harness.pong(daemonRequest.instanceId));
+    });
+    const response = harness.request(endpoint, harness.ping("instance"));
+
+    await sendStarted.promise;
+    const closing = listening.close();
+    let closed = false;
+    void closing.then(() => {
+      closed = true;
+    });
+    await Promise.resolve();
+    expect(closed).toBe(false);
+    releaseSend.resolve();
+
+    await expect(response).resolves.toMatchObject({ kind: "pong", instanceId: "instance" });
+    await expect(closing).resolves.toBeUndefined();
+  });
 });
 
 interface SocketServerOptions {

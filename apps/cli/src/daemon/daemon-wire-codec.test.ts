@@ -80,6 +80,24 @@ describe("DaemonWireCodec", () => {
     ).toThrow("Invalid daemon result chunk");
   });
 
+  it("encodes lifecycle responses against the ordinary JSON cap", () => {
+    const codec = new DaemonWireCodec({
+      maximumJsonPayloadBytes: 128,
+      maximumExecutionControlPayloadBytes: 32,
+      maximumChunkRawBytes: 8,
+    });
+    const response = {
+      kind: "pong",
+      protocolVersion: 5,
+      instanceId: "instance",
+      symnavVersion: "version-that-exceeds-the-control-cap",
+    } as const;
+
+    const encoded = codec.encodeServerMessage(response);
+
+    expect(codec.controlDecoder().append(encoded)).toEqual([response]);
+  });
+
   it("bounds a binary header by the execution-control envelope", () => {
     const encoded = new DaemonWireCodec({
       maximumJsonPayloadBytes: 256,

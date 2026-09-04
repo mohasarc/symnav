@@ -45,6 +45,61 @@ describe("LocalDaemonTransport socket client boundary", () => {
     expect(connection.endCount).toBe(1);
     expect(connection.destroyCount).toBe(0);
   });
+
+  it("receives execution frames through the injected byte connection", async () => {
+    const policy = DaemonPolicy.currentSystem();
+    const codec = new DaemonWireCodec({
+      maximumJsonPayloadBytes: policy.values.transport.maximumJsonPayloadBytes,
+      maximumExecutionControlPayloadBytes:
+        policy.values.transport.maximumExecutionControlPayloadBytes,
+      maximumChunkRawBytes: policy.values.output.maximumChunkRawBytes,
+    });
+    const accepted = codec.encodeServerMessage({
+      kind: "accepted",
+      instanceId: "instance",
+      processToken: "token",
+      requestId: "request",
+      acceptedAt: 1,
+      queuePosition: 0,
+    });
+    const failed = codec.encodeServerMessage({
+      kind: "execution-failed",
+      instanceId: "instance",
+      processToken: "token",
+      requestId: "request",
+      code: "internal",
+    });
+    const connection = new ScriptedDaemonSocketConnection([Buffer.concat([accepted, failed])]);
+    const sockets = new RecordingDaemonSocketClient(connection);
+    const transport = new LocalDaemonTransport(policy.values, { sockets });
+
+    const receipt = await transport.execute("daemon-endpoint", {
+      kind: "execute",
+      protocolVersion: DAEMON_PROTOCOL_VERSION,
+      instanceId: "instance",
+      processToken: "token",
+      requestId: "request",
+      commandName: "version",
+      request: {
+        argv: ["--version"],
+        cwd: "/repo",
+        telemetryEnabled: false,
+        executionMode: "warm",
+      },
+    });
+
+    expect(receipt.acceptance).toMatchObject({ requestId: "request", instanceId: "instance" });
+    await expect(receipt.completion).resolves.toEqual({ status: "failed", code: "internal" });
+    expect(sockets.connections).toEqual([
+      {
+        endpoint: "daemon-endpoint",
+        timeoutMs: policy.values.transport.executionAdmissionTimeoutMs,
+      },
+    ]);
+    expect(connection.writes).toHaveLength(1);
+    expect(connection.disableTimeoutCount).toBe(1);
+    expect(connection.endCount).toBe(1);
+  });
 });
 
 class RecordingDaemonSocketClient implements DaemonSocketClient {

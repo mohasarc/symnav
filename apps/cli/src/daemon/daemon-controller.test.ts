@@ -15,7 +15,6 @@ import {
 import { TestDaemonRegistry as DaemonRegistry } from "../../test/helpers/daemon-registry.js";
 import { DaemonStartupCoordinator } from "./daemon-startup-coordinator.js";
 import { DaemonWorkspaceIdentity } from "./daemon-workspace-identity.js";
-import type { LocalDaemonTransport } from "./local-daemon-transport.js";
 
 describe("DaemonController", () => {
   const roots: string[] = [];
@@ -46,12 +45,9 @@ describe("DaemonController", () => {
       memoryCapBytes: 1024,
       launch: vi.fn(),
     };
-    const controller = new DaemonController(
-      registry,
-      new ControllerTransport() as unknown as LocalDaemonTransport,
-      stateDirectory,
-      { launcher },
-    );
+    const controller = new DaemonController(registry, new ControllerTransport(), stateDirectory, {
+      launcher,
+    });
 
     await expect(controller.start("/repo")).resolves.toEqual(result);
 
@@ -68,12 +64,11 @@ describe("DaemonController", () => {
     expect(registry.writeStartingIfStartupOwner(identity, startingRecord(identity))).toBe(true);
     expect(registry.armStartingProcessLaunch(identity, startingRecord(identity))).toBe(true);
     const terminator = new BlockingControllerTerminator([process.pid, 7000]);
-    const controller = new DaemonController(
-      registry,
-      new ControllerTransport() as unknown as LocalDaemonTransport,
-      stateDirectory,
-      { processTerminator: terminator, stopTimeoutMs: 1_000, pollIntervalMs: 1 },
-    );
+    const controller = new DaemonController(registry, new ControllerTransport(), stateDirectory, {
+      processTerminator: terminator,
+      stopTimeoutMs: 1_000,
+      pollIntervalMs: 1,
+    });
 
     const stopping = controller.stop("/repo");
     const published = registry.writeStartingIfStartupOwner(identity, {
@@ -105,12 +100,9 @@ describe("DaemonController", () => {
     expect(registry.acquireStartup(identity, record.instanceId)).toBeDefined();
     expect(registry.writeStartingIfStartupOwner(identity, record)).toBe(true);
     const terminator = new BlockingControllerTerminator([process.pid, record.pid]);
-    const controller = new DaemonController(
-      registry,
-      new ControllerTransport() as unknown as LocalDaemonTransport,
-      stateDirectory,
-      { processTerminator: terminator },
-    );
+    const controller = new DaemonController(registry, new ControllerTransport(), stateDirectory, {
+      processTerminator: terminator,
+    });
 
     const stopping = controller.stop("/repo");
     try {
@@ -141,15 +133,10 @@ describe("DaemonController", () => {
     const registry = new DaemonRegistry(identity.registryDirectory);
     expect(registry.acquireStartup(identity, "starting")).toBeDefined();
     expect(registry.writeStartingIfStartupOwner(identity, startingRecord(identity))).toBe(true);
-    const controller = new DaemonController(
-      registry,
-      new ControllerTransport() as unknown as LocalDaemonTransport,
-      stateDirectory,
-      {
-        processTerminator: new ControllerTerminator([process.pid]),
-        now: () => 20,
-      },
-    );
+    const controller = new DaemonController(registry, new ControllerTransport(), stateDirectory, {
+      processTerminator: new ControllerTerminator([process.pid]),
+      now: () => 20,
+    });
 
     await expect(controller.status()).resolves.toEqual([
       {
@@ -170,7 +157,7 @@ describe("DaemonController", () => {
     expect(registry.writeStartingIfStartupOwner(identity, daemonRecord)).toBe(true);
     const controller = new DaemonController(
       registry,
-      new ActivityControllerTransport(daemonRecord) as unknown as LocalDaemonTransport,
+      new ActivityControllerTransport(daemonRecord),
       stateDirectory,
       { processTerminator: new ControllerTerminator([daemonRecord.pid]), now: () => 20 },
     );
@@ -220,7 +207,7 @@ describe("DaemonController", () => {
       registry.write(daemonRecord);
       const controller = new DaemonController(
         registry,
-        new ActivityControllerTransport(daemonRecord, snapshot) as unknown as LocalDaemonTransport,
+        new ActivityControllerTransport(daemonRecord, snapshot),
         stateDirectory,
         { processTerminator: new ControllerTerminator([daemonRecord.pid]), now: () => -10_000 },
       );
@@ -245,7 +232,7 @@ describe("DaemonController", () => {
     });
     const controller = new DaemonController(
       registry,
-      new ActivityControllerTransport(daemonRecord, snapshot) as unknown as LocalDaemonTransport,
+      new ActivityControllerTransport(daemonRecord, snapshot),
       stateDirectory,
       { processTerminator: new ControllerTerminator([daemonRecord.pid]), now: () => 20 },
     );
@@ -273,12 +260,9 @@ describe("DaemonController", () => {
       identity.startupOwnerPath(identity.lockPath),
       JSON.stringify({ ...owner, heartbeatAt: Date.now() - 60_000 }),
     );
-    const controller = new DaemonController(
-      registry,
-      new ControllerTransport() as unknown as LocalDaemonTransport,
-      stateDirectory,
-      { processTerminator: new ControllerTerminator([]) },
-    );
+    const controller = new DaemonController(registry, new ControllerTransport(), stateDirectory, {
+      processTerminator: new ControllerTerminator([]),
+    });
 
     await expect(controller.status()).resolves.toEqual([]);
     expect(registry.startupOwner(identity)).toBeUndefined();
@@ -301,12 +285,9 @@ describe("DaemonController", () => {
     const terminator = new ReplacingControllerTerminator(observed.pid, () => {
       expect(registry.writeStartingIfStartupOwner(identity, replacement)).toBe(true);
     });
-    const controller = new DaemonController(
-      registry,
-      new ControllerTransport() as unknown as LocalDaemonTransport,
-      stateDirectory,
-      { processTerminator: terminator },
-    );
+    const controller = new DaemonController(registry, new ControllerTransport(), stateDirectory, {
+      processTerminator: terminator,
+    });
 
     await expect(controller.status()).resolves.toEqual([]);
     expect(registry.startupOwner(identity)).toMatchObject({
@@ -319,6 +300,10 @@ describe("DaemonController", () => {
 });
 
 class ControllerTransport {
+  execute(): Promise<never> {
+    return Promise.reject(new Error("Starting-daemon cancellation must not execute"));
+  }
+
   request(_endpoint: string, _request: DaemonRequest): Promise<DaemonResponse> {
     throw new Error("Starting-daemon cancellation must not use transport");
   }
@@ -333,6 +318,10 @@ class ActivityControllerTransport {
     private readonly record: DaemonRecord,
     private readonly activity?: DaemonActivitySnapshot,
   ) {}
+
+  execute(): Promise<never> {
+    return Promise.reject(new Error("Activity observation must not execute"));
+  }
 
   request(_endpoint: string, request: DaemonRequest): Promise<DaemonResponse> {
     if (request.kind === "identify") {

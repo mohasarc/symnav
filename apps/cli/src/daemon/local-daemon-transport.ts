@@ -24,6 +24,15 @@ import type {
   DaemonServerMessage,
   DaemonServer,
 } from "./daemon-protocol.js";
+import type {
+  DaemonExecutionAcceptance,
+  DaemonExecutionReceipt,
+  DaemonExecutionRequester,
+  DaemonLifecycleRequester,
+  DaemonRequestHandler,
+  DaemonRequestServer,
+  DaemonServerSend,
+} from "./daemon-transport.js";
 import { DaemonResultChunkCodec, DaemonTransferFrameDecoder } from "./daemon-result-chunk-codec.js";
 import { DaemonRuntimeValues } from "./daemon-runtime-values.js";
 import type { CompletionSpoolManifest } from "./completion-spool.js";
@@ -40,11 +49,6 @@ export type LocalDaemonTransportPolicy = Pick<
   "transport" | "delivery" | "output"
 >;
 
-export interface DaemonServerSend {
-  (response: DaemonServerMessage): Promise<void>;
-  onClose(listener: () => void): () => void;
-}
-
 export type DaemonDeliveryState = "not-submitted" | "submitted-unconfirmed" | "accepted";
 
 export type DaemonTransportFailureCode =
@@ -55,21 +59,6 @@ export type DaemonTransportFailureCode =
   | "authentication"
   | "closed"
   | "rejected";
-
-export interface DaemonExecutionAcceptance {
-  readonly requestId: string;
-  readonly instanceId: string;
-  readonly acceptedAt: number;
-  readonly queuePosition: number;
-}
-
-export interface DaemonExecutionReceipt {
-  readonly acceptance: DaemonExecutionAcceptance;
-  readonly completion: Promise<
-    | { readonly status: "completed"; readonly result: LocalDaemonExecutionResult }
-    | { readonly status: "failed"; readonly code: DaemonExecutionFailureCode }
-  >;
-}
 
 export class DaemonTransportError extends Error {
   readonly authenticatedInstanceId?: string;
@@ -287,7 +276,9 @@ class ListeningDaemonServer implements DaemonServer {
   }
 }
 
-export class LocalDaemonTransport {
+export class LocalDaemonTransport
+  implements DaemonLifecycleRequester, DaemonExecutionRequester, DaemonRequestServer
+{
   private readonly maximumFrameBytes: number;
   private readonly requestTimeoutMs: number;
   private readonly executionRequestTimeoutMs: number;
@@ -850,10 +841,7 @@ export class LocalDaemonTransport {
     return response.status;
   }
 
-  async listen(
-    endpoint: string,
-    handler: (request: DaemonRequest, send: DaemonServerSend) => Promise<DaemonResponse | void>,
-  ): Promise<DaemonServer> {
+  async listen(endpoint: string, handler: DaemonRequestHandler): Promise<DaemonServer> {
     if (process.platform !== "win32") {
       mkdirSync(dirname(endpoint), { recursive: true, mode: 0o700 });
       if (existsSync(endpoint)) {
@@ -894,10 +882,7 @@ export class LocalDaemonTransport {
     });
   }
 
-  private serve(
-    socket: Socket,
-    handler: (request: DaemonRequest, send: DaemonServerSend) => Promise<DaemonResponse | void>,
-  ): void {
+  private serve(socket: Socket, handler: DaemonRequestHandler): void {
     const decoder = new DaemonFrameDecoder(this.maximumFrameBytes);
     let responses = Promise.resolve();
     let writes = Promise.resolve();

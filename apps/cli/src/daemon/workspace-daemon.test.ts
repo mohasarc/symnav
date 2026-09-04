@@ -32,7 +32,7 @@ import {
 import { TestDaemonRegistry as DaemonRegistry } from "../../test/helpers/daemon-registry.js";
 import { TestDaemonResourcePolicy as DaemonResourcePolicy } from "../../test/helpers/daemon-resource-policy.js";
 import { DaemonWorkspaceIdentity } from "./daemon-workspace-identity.js";
-import type { DaemonServerSend } from "./local-daemon-transport.js";
+import type { DaemonServerSend } from "./daemon-transport.js";
 import { TestLocalDaemonTransport as LocalDaemonTransport } from "../../test/helpers/local-daemon-transport.js";
 import { TestWorkspaceDaemon as WorkspaceDaemon } from "../../test/helpers/workspace-daemon.js";
 

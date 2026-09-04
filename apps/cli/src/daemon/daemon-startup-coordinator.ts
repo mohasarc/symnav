@@ -13,7 +13,7 @@ import { DAEMON_PROTOCOL_VERSION, DAEMON_RECORD_SCHEMA_VERSION } from "./daemon-
 import type { DaemonRegistry, StartupOwner } from "./daemon-registry.js";
 import { DaemonRecordObserver } from "./daemon-record-observer.js";
 import type { DaemonWorkspaceIdentity } from "./daemon-workspace-identity.js";
-import type { LocalDaemonTransport } from "./local-daemon-transport.js";
+import type { DaemonExecutionRequester, DaemonLifecycleRequestSender } from "./daemon-transport.js";
 
 export type DaemonWarmupTriggerResult =
   | { readonly status: "launched"; readonly instanceId: string; readonly pid: number }
@@ -58,7 +58,7 @@ export class DaemonStartupCoordinator {
   constructor(
     private readonly registry: DaemonRegistry,
     private readonly launcher: DaemonProcessLauncher,
-    private readonly transport: LocalDaemonTransport,
+    private readonly transport: DaemonLifecycleRequestSender & DaemonExecutionRequester,
     options: DaemonStartupCoordinatorOptions,
   ) {
     const policy = options.policy;

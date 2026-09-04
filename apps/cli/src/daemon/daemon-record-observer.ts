@@ -1,6 +1,7 @@
 import type { DaemonProcessTerminator } from "./daemon-process-launcher.js";
 import { DAEMON_PROTOCOL_VERSION, type DaemonPong, type DaemonRecord } from "./daemon-protocol.js";
-import { DaemonTransportError, type LocalDaemonTransport } from "./local-daemon-transport.js";
+import type { DaemonLifecycleRequestSender } from "./daemon-transport.js";
+import { DaemonTransportError } from "./local-daemon-transport.js";
 
 export interface DaemonIdentityEvidence {
   readonly instanceId: string;
@@ -41,7 +42,7 @@ export type DaemonIdentityObservation =
 
 export class DaemonRecordObserver {
   constructor(
-    private readonly transport: LocalDaemonTransport,
+    private readonly transport: DaemonLifecycleRequestSender,
     private readonly processTerminator: DaemonProcessTerminator,
     _now: () => number = Date.now,
   ) {}

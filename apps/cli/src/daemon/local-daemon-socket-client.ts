@@ -111,7 +111,12 @@ class LocalDaemonSocketConnection implements DaemonSocketConnection, AsyncIterab
       this.waitingForDrain = true;
       this.socket.once("drain", () => {
         this.waitingForDrain = false;
-        this.flushWrites();
+        try {
+          this.flushWrites();
+        } catch (error) {
+          this.fail(error);
+          this.socket.destroy();
+        }
       });
       return;
     }

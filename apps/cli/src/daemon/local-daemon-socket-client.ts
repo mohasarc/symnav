@@ -13,6 +13,7 @@ class LocalDaemonSocketConnection implements DaemonSocketConnection, AsyncIterab
   private ended = false;
 
   constructor(private readonly socket: Socket) {
+    socket.pause();
     socket.on("data", (bytes) => this.receive(Buffer.isBuffer(bytes) ? bytes : Buffer.from(bytes)));
     socket.once("end", () => this.finish());
     socket.once("close", () => this.finish());
@@ -28,6 +29,7 @@ class LocalDaemonSocketConnection implements DaemonSocketConnection, AsyncIterab
     if (this.ended) return Promise.resolve({ done: true, value: undefined });
     return new Promise((resolve, reject) => {
       this.pendingRead = { resolve, reject };
+      this.socket.resume();
     });
   }
 
@@ -48,6 +50,7 @@ class LocalDaemonSocketConnection implements DaemonSocketConnection, AsyncIterab
   }
 
   private receive(bytes: Uint8Array): void {
+    this.socket.pause();
     const pendingRead = this.pendingRead;
     if (pendingRead === undefined) {
       this.queuedBytes.push(bytes);

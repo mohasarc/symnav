@@ -559,6 +559,7 @@ describe("daemon host contract", () => {
     expectTypeOf<DaemonExecutorFactoryOptions>().toEqualTypeOf<{
       readonly stateDirectory: string;
       readonly productVersion: string;
+      readonly sampleResources: () => void;
     }>();
     expectTypeOf<DaemonExecutorFactory>().toEqualTypeOf<
       (options: DaemonExecutorFactoryOptions) => DaemonExecutor | Promise<DaemonExecutor>

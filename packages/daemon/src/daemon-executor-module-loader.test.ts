@@ -7,7 +7,11 @@ import { DaemonExecutorModuleLoader } from "./daemon-executor.js";
 
 describe("DaemonExecutorModuleLoader", () => {
   const directories: string[] = [];
-  const options = { stateDirectory: "/state", productVersion: "1.2.3" } as const;
+  const options = {
+    stateDirectory: "/state",
+    productVersion: "1.2.3",
+    sampleResources: () => undefined,
+  } as const;
 
   afterEach(() => {
     for (const directory of directories) rmSync(directory, { recursive: true, force: true });

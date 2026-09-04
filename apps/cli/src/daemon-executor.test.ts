@@ -29,7 +29,11 @@ describe("createDaemonExecutor", () => {
   it("constructs one retained session and full-prepares initialization once", async () => {
     const stateDirectory = temporaryDirectory(temporaryDirectories);
     const prepare = vi.spyOn(WorkspaceSession.prototype, "prepare");
-    const executor = await createDaemonExecutor({ stateDirectory, productVersion: "0.1.0" });
+    const executor = await createDaemonExecutor({
+      stateDirectory,
+      productVersion: "0.1.0",
+      sampleResources: () => undefined,
+    });
 
     const first = await executor.initialize(fixturePath("trivial-project"));
     const second = await executor.initialize(fixturePath("trivial-project"));
@@ -55,7 +59,11 @@ describe("createDaemonExecutor", () => {
     "executes %s requests before initialization",
     async (executionMode) => {
       const stateDirectory = temporaryDirectory(temporaryDirectories);
-      const executor = await createDaemonExecutor({ stateDirectory, productVersion: "0.1.0" });
+      const executor = await createDaemonExecutor({
+        stateDirectory,
+        productVersion: "0.1.0",
+        sampleResources: () => undefined,
+      });
 
       const result = await executor.execute({
         argv: ["--version"],
@@ -73,7 +81,11 @@ describe("createDaemonExecutor", () => {
   it("reparses warm argv and stays usable after repeated release", async () => {
     const stateDirectory = temporaryDirectory(temporaryDirectories);
     const release = vi.spyOn(WorkspaceSession.prototype, "releaseTransientResources");
-    const executor = await createDaemonExecutor({ stateDirectory, productVersion: "0.1.0" });
+    const executor = await createDaemonExecutor({
+      stateDirectory,
+      productVersion: "0.1.0",
+      sampleResources: () => undefined,
+    });
     const workspaceRoot = fixturePath("trivial-project");
     await executor.initialize(workspaceRoot);
 
@@ -101,7 +113,11 @@ describe("createDaemonExecutor", () => {
 
   it("exposes ordered stream bytes and disposes the owned output once", async () => {
     const stateDirectory = temporaryDirectory(temporaryDirectories);
-    const executor = await createDaemonExecutor({ stateDirectory, productVersion: "0.1.0" });
+    const executor = await createDaemonExecutor({
+      stateDirectory,
+      productVersion: "0.1.0",
+      sampleResources: () => undefined,
+    });
     const result = await executor.execute({
       argv: [],
       cwd: fixturePath("trivial-project"),
@@ -117,6 +133,26 @@ describe("createDaemonExecutor", () => {
       true,
     );
     await result.output.dispose();
+    await result.output.dispose();
+  });
+
+  it("requests an explicit resource sample after a synchronous command phase", async () => {
+    const stateDirectory = temporaryDirectory(temporaryDirectories);
+    const sampleResources = vi.fn();
+    const executor = await createDaemonExecutor({
+      stateDirectory,
+      productVersion: "0.1.0",
+      sampleResources,
+    });
+
+    const result = await executor.execute({
+      argv: ["overview", "src/index.ts"],
+      cwd: fixturePath("trivial-project"),
+      telemetryEnabled: false,
+      executionMode: "warm",
+    });
+
+    expect(sampleResources).toHaveBeenCalledOnce();
     await result.output.dispose();
   });
 });

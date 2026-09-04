@@ -1,9 +1,10 @@
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { DaemonPolicy, type DaemonExecutorRequest } from "@symnav/daemon";
 import { DaemonPolicyTestFactory } from "@symnav/daemon/policy-testing";
+import { fixturePath } from "@symnav/testing";
 import { NodeDaemonNavigationWorker } from "./daemon-navigation-worker.js";
 
 const request: DaemonExecutorRequest = {
@@ -187,7 +188,151 @@ describe("NodeDaemonNavigationWorker", () => {
     });
     await worker.drainAndClose();
   });
+
+  it("loads the injected executor, rechunks output, preserves diagnostics, and disposes", async () => {
+    const directory = mkdtempSync(join(tmpdir(), "symnav-injected-worker-"));
+    const worker = createInjectedWorker(
+      new URL("../../test/helpers/injected-daemon-executor-fixture.mjs", import.meta.url).href,
+      directory,
+    );
+    try {
+      await expect(worker.start(fixturePath("overview-cases"))).resolves.toMatchObject({
+        kind: "ready",
+        fileCount: 37,
+        refresh: { added: 2, changed: 3, removed: 5, unchanged: 7 },
+        startupDurations: { discoveryMs: 11, indexingMs: 22 },
+        diagnostics: { nested: { future: [null, true, "opaque"] } },
+      });
+      const records: Array<{ sequence: number; stream: string; bytes: Uint8Array }> = [];
+      await expect(
+        worker.execute("request-1", "version", request, {
+          append: async (record) => {
+            records.push(record);
+          },
+        }),
+      ).resolves.toMatchObject({
+        kind: "result",
+        refresh: { added: 0, changed: 1, removed: 0, unchanged: 36 },
+        durations: { freshnessMs: 3, navigationMs: 4, renderMs: 5 },
+        diagnostics: { nested: { future: [1, "opaque"] } },
+      });
+      expect(
+        records.map(({ sequence, stream, bytes }) => [sequence, stream, bytes.byteLength]),
+      ).toEqual([
+        [0, "stdout", 65_536],
+        [1, "stdout", 4_464],
+        [2, "stderr", 2],
+      ]);
+      expect(readFileSync(join(directory, "executor-events.txt"), "utf8")).toBe("dispose\n");
+      await worker.releaseTransientResources();
+      await worker.releaseTransientResources();
+      expect(readFileSync(join(directory, "executor-events.txt"), "utf8")).toBe(
+        "dispose\nrelease\nrelease\n",
+      );
+      await worker.drainAndClose();
+      expect(readFileSync(join(directory, "executor-events.txt"), "utf8")).toBe(
+        "dispose\nrelease\nrelease\nrelease\n",
+      );
+    } finally {
+      await worker.terminate();
+      rmSync(directory, { recursive: true, force: true });
+    }
+  });
+
+  it.each([
+    ["invalid scheme", "https://example.test/executor.js", "valid"],
+    [
+      "missing module",
+      new URL("../../test/helpers/missing-executor.mjs", import.meta.url).href,
+      "valid",
+    ],
+    [
+      "factory failure",
+      new URL("../../test/helpers/injected-daemon-executor-fixture.mjs", import.meta.url).href,
+      "factory-throw",
+    ],
+    [
+      "invalid initialization",
+      new URL("../../test/helpers/injected-daemon-executor-fixture.mjs", import.meta.url).href,
+      "invalid-initialization",
+    ],
+    [
+      "invalid diagnostics",
+      new URL("../../test/helpers/injected-daemon-executor-fixture.mjs", import.meta.url).href,
+      "invalid-diagnostics",
+    ],
+    [
+      "initialize failure",
+      new URL("../../test/helpers/injected-daemon-executor-fixture.mjs", import.meta.url).href,
+      "initialize-throw",
+    ],
+  ])("classifies injected %s as an initialization failure", async (_name, moduleUrl, version) => {
+    const directory = mkdtempSync(join(tmpdir(), "symnav-injected-worker-failure-"));
+    const worker = createInjectedWorker(moduleUrl, directory, version);
+    try {
+      await expect(worker.start(fixturePath("overview-cases"))).rejects.toThrow(
+        /initialization failure/i,
+      );
+    } finally {
+      await worker.terminate();
+      rmSync(directory, { recursive: true, force: true });
+    }
+  });
+
+  it.each([
+    ["missing named export", "export const different = true;"],
+    ["invalid factory", "export const createDaemonExecutor = 7;"],
+  ])("classifies %s as an initialization failure", async (_name, source) => {
+    const directory = mkdtempSync(join(tmpdir(), "symnav-injected-worker-module-"));
+    const modulePath = join(directory, "executor.mjs");
+    writeFileSync(modulePath, source);
+    const worker = createInjectedWorker(new URL(`file://${modulePath}`).href, directory);
+    try {
+      await expect(worker.start(fixturePath("overview-cases"))).rejects.toThrow(
+        /initialization failure/i,
+      );
+    } finally {
+      await worker.terminate();
+      rmSync(directory, { recursive: true, force: true });
+    }
+  });
+
+  it("classifies a CLI executor version mismatch as an initialization failure", async () => {
+    const directory = mkdtempSync(join(tmpdir(), "symnav-injected-worker-version-"));
+    const worker = createInjectedWorker(
+      new URL("../../dist/daemon-executor.js", import.meta.url).href,
+      directory,
+      "definitely-not-the-product-version",
+    );
+    try {
+      await expect(worker.start(fixturePath("overview-cases"))).rejects.toThrow(
+        /initialization failure/i,
+      );
+    } finally {
+      await worker.terminate();
+      rmSync(directory, { recursive: true, force: true });
+    }
+  });
 });
+
+function createInjectedWorker(
+  executorModuleUrl: string,
+  stateDirectory: string,
+  productVersion = "valid",
+): NodeDaemonNavigationWorker {
+  const policy = DaemonPolicy.fromSystemMemory({ totalBytes: 512 * 1024 * 1024 });
+  return new NodeDaemonNavigationWorker({
+    generation: 11,
+    configuration: {
+      stateDirectory,
+      productVersion,
+      executorModuleUrl,
+      policy: policy.toSerialized(),
+    },
+    resourceLimits: { maxOldGenerationSizeMb: 128 },
+    entryUrl: new URL("../../dist/daemon/daemon-navigation-worker-entry.js", import.meta.url),
+  });
+}
 
 function createWorker(mode: string, maxOldGenerationSizeMb = 128): NodeDaemonNavigationWorker {
   const policy = DaemonPolicy.fromSystemMemory({ totalBytes: 512 * 1024 * 1024 });

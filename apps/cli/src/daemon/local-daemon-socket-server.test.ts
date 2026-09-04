@@ -5,15 +5,44 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DaemonPolicy } from "@symnav/daemon";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { TestLocalDaemonTransport as LocalDaemonTransport } from "../../test/helpers/local-daemon-transport.js";
 import { DAEMON_PROTOCOL_VERSION, type DaemonRequest } from "./daemon-protocol.js";
+import { DaemonProtocolValidator } from "./daemon-protocol-validator.js";
+import type { DaemonSocketClient, DaemonSocketConnection } from "./daemon-transport.js";
 import { DaemonWireCodec } from "./daemon-wire-codec.js";
+import { LocalDaemonSocketClient } from "./local-daemon-socket-client.js";
+import { LocalDaemonSocketServer } from "./local-daemon-socket-server.js";
 
-describe("LocalDaemonTransport socket serving", () => {
+describe("LocalDaemonSocketServer", () => {
   const harness = new DaemonSocketServerHarness();
 
   afterEach(() => {
     harness.cleanUp();
+  });
+
+  it("probes endpoint reachability through the injected socket client", async () => {
+    const connection = new RecordingDaemonSocketConnection();
+    const sockets = new RecordingDaemonSocketClient(connection);
+    const policy = DaemonPolicy.currentSystem().values;
+    const server = new LocalDaemonSocketServer({
+      sockets,
+      codec: new DaemonWireCodec({
+        maximumJsonPayloadBytes: policy.transport.maximumJsonPayloadBytes,
+        maximumExecutionControlPayloadBytes: policy.transport.maximumExecutionControlPayloadBytes,
+        maximumChunkRawBytes: policy.output.maximumChunkRawBytes,
+      }),
+      validator: new DaemonProtocolValidator(),
+      policy: policy.transport,
+    });
+
+    await expect(server.removeUnavailableEndpoint("daemon-endpoint")).resolves.toBe(false);
+
+    expect(sockets.connections).toEqual([
+      {
+        endpoint: "daemon-endpoint",
+        timeoutMs: policy.transport.singleResponseTimeoutMs,
+      },
+    ]);
+    expect(connection.destroyCount).toBe(1);
   });
 
   it("binds, removes stale endpoints, and refuses live endpoint replacement", async () => {
@@ -264,6 +293,7 @@ describe("LocalDaemonTransport socket serving", () => {
 });
 
 interface SocketServerOptions {
+  readonly sockets?: DaemonSocketClient;
   readonly writeChunkSize?: number;
 }
 
@@ -283,8 +313,15 @@ class DaemonSocketServerHarness {
       : join(root, "d.sock");
   }
 
-  server(options: SocketServerOptions = {}): LocalDaemonTransport {
-    return new LocalDaemonTransport(options);
+  server(options: SocketServerOptions = {}): LocalDaemonSocketServer {
+    const policy = DaemonPolicy.currentSystem().values;
+    return new LocalDaemonSocketServer({
+      sockets: options.sockets ?? new LocalDaemonSocketClient(),
+      codec: this.codec(),
+      validator: new DaemonProtocolValidator(),
+      policy: policy.transport,
+      ...(options.writeChunkSize === undefined ? {} : { writeChunkSize: options.writeChunkSize }),
+    });
   }
 
   ping(instanceId: string): DaemonRequest {
@@ -416,4 +453,32 @@ class DaemonSocketServerHarness {
       maximumChunkRawBytes: policy.output.maximumChunkRawBytes,
     });
   }
+}
+
+class RecordingDaemonSocketClient implements DaemonSocketClient {
+  readonly connections: { readonly endpoint: string; readonly timeoutMs?: number }[] = [];
+
+  constructor(private readonly connection: DaemonSocketConnection) {}
+
+  connect(endpoint: string, timeoutMs?: number): Promise<DaemonSocketConnection> {
+    this.connections.push({ endpoint, ...(timeoutMs === undefined ? {} : { timeoutMs }) });
+    return Promise.resolve(this.connection);
+  }
+}
+
+class RecordingDaemonSocketConnection implements DaemonSocketConnection {
+  readonly incoming: AsyncIterable<Uint8Array> = RecordingDaemonSocketConnection.empty();
+  destroyCount = 0;
+
+  write(): void {}
+
+  disableTimeout(): void {}
+
+  end(): void {}
+
+  destroy(): void {
+    this.destroyCount += 1;
+  }
+
+  private static async *empty(): AsyncIterable<Uint8Array> {}
 }

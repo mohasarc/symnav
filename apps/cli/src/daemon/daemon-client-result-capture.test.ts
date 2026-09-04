@@ -82,6 +82,50 @@ describe("DaemonClientResultCapture", () => {
     expect(await replay(captured.result.output.records())).toEqual(expected);
     await captured.result.output.dispose();
   }, 20_000);
+
+  it("accepts the result limit and rejects the first byte beyond it", async () => {
+    const directory = temporaryDirectory(directories);
+    const capture = new DaemonClientResultCapture({
+      directory,
+      policy: {
+        maximumChunkRawBytes: 4,
+        inlineRawBytes: 0,
+        maximumResultRawBytes: 5,
+      },
+    });
+
+    await capture.append({ sequence: 0, stream: "stdout", bytes: Buffer.alloc(4) });
+    await capture.append({ sequence: 1, stream: "stderr", bytes: Buffer.alloc(1) });
+    await expect(
+      capture.append({ sequence: 2, stream: "stdout", bytes: Buffer.alloc(1) }),
+    ).rejects.toMatchObject({
+      name: "CommandOutputCapacityError",
+      message: "Command output exceeds response capacity",
+    });
+    await expect(capture.finish(0)).rejects.toMatchObject({
+      name: "CommandOutputCapacityError",
+    });
+    await capture.dispose();
+    expect(readdirSync(directory)).toEqual([]);
+  });
+
+  it("rejects a record beyond the chunk bound before storing it", async () => {
+    const directory = temporaryDirectory(directories);
+    const capture = new DaemonClientResultCapture({
+      directory,
+      policy: {
+        maximumChunkRawBytes: 3,
+        inlineRawBytes: 0,
+        maximumResultRawBytes: 10,
+      },
+    });
+
+    await expect(
+      capture.append({ sequence: 0, stream: "stdout", bytes: Buffer.alloc(4) }),
+    ).rejects.toThrow("Command output record exceeds chunk capacity");
+    await capture.dispose();
+    expect(readdirSync(directory)).toEqual([]);
+  });
 });
 
 function policy(overrides: Partial<CapturePolicy> = {}): CapturePolicy {

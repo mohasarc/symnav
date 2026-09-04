@@ -738,6 +738,55 @@ describe("LocalDaemonTransport execution delivery", () => {
     if (completion.status === "completed") await completion.result.output.dispose();
   });
 
+  it("surfaces an exhausted clean fetch as accepted corruption without execution replay", async () => {
+    const directory = mkdtempSync(join(tmpdir(), "symnav-exhausted-result-resume-"));
+    directories.push(directory);
+    const store = new DaemonCompletionSpoolStore({
+      directory,
+      workspaceKey: "workspace",
+      instanceId: request.instanceId,
+    });
+    const spool = await store.create(request.requestId);
+    const manifest = await spool.finish(0);
+    let executeCount = 0;
+    let fetchCount = 0;
+    const endpoint = await rawExecutionServer(servers, sockets, directories, (socket) => {
+      socket.once("data", (encoded) => {
+        const bytes = Buffer.isBuffer(encoded) ? encoded : Buffer.from(encoded);
+        const message = JSON.parse(bytes.subarray(4).toString()) as { kind: string };
+        if (message.kind === "result-fetch") {
+          fetchCount += 1;
+          socket.end(frame(resultManifest(manifest)));
+          return;
+        }
+        executeCount += 1;
+        socket.end(
+          executeCount === 1
+            ? Buffer.concat([frame(accepted()), frame(resultManifest(manifest))])
+            : Buffer.concat([
+                frame(accepted()),
+                frame({
+                  kind: "execution-failed",
+                  instanceId: request.instanceId,
+                  processToken: request.processToken,
+                  requestId: request.requestId,
+                  code: "internal",
+                } satisfies DaemonExecutionServerFrame),
+              ]),
+        );
+      });
+    });
+
+    const receipt = await new LocalDaemonTransport().execute(endpoint, request);
+
+    await expect(receipt.completion).rejects.toMatchObject({
+      code: "corrupt",
+      delivery: "accepted",
+      retrySafe: false,
+    } satisfies Partial<DaemonTransportError>);
+    expect({ executeCount, fetchCount }).toEqual({ executeCount: 1, fetchCount: 1 });
+  });
+
   it.each([
     "duplicate-manifest",
     "missing-manifest",

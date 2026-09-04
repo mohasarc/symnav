@@ -14,6 +14,8 @@ const request: DaemonExecutorRequest = {
 };
 
 describe("NodeDaemonNavigationWorker", () => {
+  const executorModuleUrl = "file:///absolute/symnav/daemon-executor.js";
+
   it("passes the exact complete policy to worker data", async () => {
     const directory = mkdtempSync(join(tmpdir(), "symnav-worker-policy-"));
     const policyPath = join(directory, "policy.json");
@@ -31,7 +33,12 @@ describe("NodeDaemonNavigationWorker", () => {
     try {
       const worker = new NodeDaemonNavigationWorker({
         generation: 7,
-        configuration: { stateDirectory: "/state", policy: policy.toSerialized() },
+        configuration: {
+          stateDirectory: "/state",
+          productVersion: "1.2.3",
+          executorModuleUrl,
+          policy: policy.toSerialized(),
+        },
         resourceLimits: { maxOldGenerationSizeMb: 128 },
         entryUrl: new URL(
           "../../test/helpers/daemon-navigation-worker-fixture.mjs",
@@ -40,7 +47,11 @@ describe("NodeDaemonNavigationWorker", () => {
         workerData: { mode: "block", policyPath },
       });
       await worker.start("/repo");
-      expect(JSON.parse(readFileSync(policyPath, "utf8"))).toEqual(policy.toSerialized());
+      expect(JSON.parse(readFileSync(policyPath, "utf8"))).toEqual({
+        policy: policy.toSerialized(),
+        productVersion: "1.2.3",
+        executorModuleUrl,
+      });
       await worker.drainAndClose();
     } finally {
       rmSync(directory, { recursive: true, force: true });
@@ -182,7 +193,12 @@ function createWorker(mode: string, maxOldGenerationSizeMb = 128): NodeDaemonNav
   const policy = DaemonPolicy.fromSystemMemory({ totalBytes: 512 * 1024 * 1024 });
   return new NodeDaemonNavigationWorker({
     generation: 7,
-    configuration: { stateDirectory: "/state", policy: policy.toSerialized() },
+    configuration: {
+      stateDirectory: "/state",
+      productVersion: "1.2.3",
+      executorModuleUrl: "file:///absolute/symnav/daemon-executor.js",
+      policy: policy.toSerialized(),
+    },
     resourceLimits: { maxOldGenerationSizeMb },
     entryUrl: new URL("../../test/helpers/daemon-navigation-worker-fixture.mjs", import.meta.url),
     workerData: { mode },

@@ -4,7 +4,9 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { WorkspaceSession } from "@symnav/core";
 import { fixturePath } from "@symnav/testing";
-import { createDaemonExecutor } from "./daemon-executor.js";
+import { fileURLToPath } from "node:url";
+import { isAbsolute } from "node:path";
+import { createDaemonExecutor, daemonExecutorModuleUrl } from "./daemon-executor.js";
 
 describe("createDaemonExecutor", () => {
   const temporaryDirectories: string[] = [];
@@ -15,6 +17,13 @@ describe("createDaemonExecutor", () => {
       rmSync(directory, { recursive: true, force: true });
     }
     temporaryDirectories.length = 0;
+  });
+
+  it("publishes its absolute file module URL", () => {
+    const moduleUrl = daemonExecutorModuleUrl();
+
+    expect(new URL(moduleUrl).protocol).toBe("file:");
+    expect(isAbsolute(fileURLToPath(moduleUrl))).toBe(true);
   });
 
   it("constructs one retained session and full-prepares initialization once", async () => {

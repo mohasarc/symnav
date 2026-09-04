@@ -38,7 +38,11 @@ import {
   NodeDaemonNavigationWorker,
 } from "./daemon-navigation-worker.js";
 import type { DaemonNavigationWorkerResponse } from "./daemon-navigation-worker-protocol.js";
-import type { DaemonResourceSupervisor } from "./daemon-resource-monitor.js";
+import type {
+  DaemonResourceSnapshot,
+  DaemonResourceSupervisor,
+} from "./daemon-resource-monitor.js";
+import type { WorkspaceRequestQueue } from "./workspace-request-queue.js";
 import { TestDaemonResourcePolicy as DaemonResourcePolicy } from "../../test/helpers/daemon-resource-policy.js";
 import {
   TestWorkspaceDaemon as WorkspaceDaemon,
@@ -278,6 +282,56 @@ describe("WorkspaceDaemon requests", () => {
     expect(harness.transport.sentFrames).toEqual([]);
     expect(harness.acceptedRequestCount()).toBe(0);
     expect(sample).not.toHaveBeenCalled();
+  });
+
+  it("checks worker readiness before resource admission", async () => {
+    const harness = await RequestHarness.start(new ImmediateExecutor());
+    harnesses.push(harness);
+    harness.setWorkerReady(false);
+    harness.setResourceAdmissionPaused(true);
+
+    const connection = await harness.admit("worker-before-resource");
+
+    await expect(connection.terminal).resolves.toMatchObject({
+      kind: "rejected",
+      code: "not-ready",
+    });
+    expect(harness.acceptedRequestCount()).toBe(0);
+  });
+
+  it("checks resource admission before queue draining", async () => {
+    const harness = await RequestHarness.start(new ImmediateExecutor());
+    harnesses.push(harness);
+    harness.setResourceAdmissionPaused(true);
+    await harness.closeAdmission();
+
+    const connection = await harness.admit("resource-before-draining");
+
+    await expect(connection.terminal).resolves.toMatchObject({
+      kind: "rejected",
+      code: "resource-pressure",
+    });
+    expect(harness.acceptedRequestCount()).toBe(0);
+  });
+
+  it("checks queue draining before conflicting duplicate payloads", async () => {
+    const executor = new SerializedExecutor();
+    const harness = await RequestHarness.start(executor);
+    harnesses.push(harness);
+    const accepted = await harness.admit("draining-before-conflict", ["overview", "input.ts"]);
+    await executor.started(1);
+    const drained = harness.closeAdmission();
+
+    const connection = await harness.admit("draining-before-conflict", ["overview", "other.ts"]);
+
+    await expect(connection.terminal).resolves.toMatchObject({
+      kind: "rejected",
+      code: "draining",
+    });
+    expect(harness.acceptedRequestCount()).toBe(1);
+    executor.complete(0);
+    await accepted.terminal;
+    await drained;
   });
 
   it("rejects the prior execute-envelope generation before command execution", async () => {
@@ -1692,6 +1746,23 @@ class RequestHarness {
     return this.daemonInternals.acceptedRequests.size;
   }
 
+  setWorkerReady(workerReady: boolean): void {
+    this.daemonInternals.workerReady = workerReady;
+  }
+
+  setResourceAdmissionPaused(admissionPaused: boolean): void {
+    const resourceSupervisor = this.daemonInternals.resourceSupervisor;
+    const snapshot = resourceSupervisor.snapshot;
+    vi.spyOn(resourceSupervisor, "snapshot", "get").mockReturnValue({
+      ...snapshot,
+      admissionPaused,
+    });
+  }
+
+  closeAdmission(): Promise<void> {
+    return this.daemonInternals.requestQueue.drain();
+  }
+
   observeAdmissionSamples(): ReturnType<typeof vi.fn> {
     const resourceSupervisor = this.daemonInternals.resourceSupervisor;
     const sample = vi.fn(resourceSupervisor.sample.bind(resourceSupervisor));
@@ -1700,13 +1771,21 @@ class RequestHarness {
   }
 
   private get daemonInternals(): {
+    workerReady: boolean;
     readonly acceptedRequests: AcceptedRequestLedger;
-    readonly resourceSupervisor: DaemonResourceSupervisor;
+    readonly requestQueue: WorkspaceRequestQueue;
+    readonly resourceSupervisor: DaemonResourceSupervisor & {
+      readonly snapshot: DaemonResourceSnapshot;
+    };
   } {
     if (this.daemon === undefined) throw new Error("Workspace daemon is unavailable");
     return this.daemon as unknown as {
+      workerReady: boolean;
       readonly acceptedRequests: AcceptedRequestLedger;
-      readonly resourceSupervisor: DaemonResourceSupervisor;
+      readonly requestQueue: WorkspaceRequestQueue;
+      readonly resourceSupervisor: DaemonResourceSupervisor & {
+        readonly snapshot: DaemonResourceSnapshot;
+      };
     };
   }
 

@@ -41,6 +41,15 @@ describe("DaemonExecutorModuleLoader", () => {
     await executor.releaseTransientResources();
   });
 
+  it("loads executor modules from percent-encoded paths", async () => {
+    await expect(
+      DaemonExecutorModuleLoader.load(
+        moduleUrl(directories, validModule(), "symnav-daemon-loader-~"),
+        options,
+      ),
+    ).resolves.toBeDefined();
+  });
+
   it.each(["https://example.test/executor.js", "data:text/javascript,export default 1"])(
     "rejects the executor module scheme for %s",
     async (moduleUrl) => {
@@ -98,8 +107,12 @@ describe("DaemonExecutorModuleLoader", () => {
   });
 });
 
-function moduleUrl(directories: string[], source: string): string {
-  const directory = mkdtempSync(join(tmpdir(), "symnav-daemon-loader-"));
+function moduleUrl(
+  directories: string[],
+  source: string,
+  directoryPrefix = "symnav-daemon-loader-",
+): string {
+  const directory = mkdtempSync(join(tmpdir(), directoryPrefix));
   directories.push(directory);
   const path = join(directory, "executor.mjs");
   writeFileSync(path, source);

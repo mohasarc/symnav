@@ -1052,6 +1052,29 @@ describe("LocalDaemonTransport execution delivery", () => {
     expect(executeCount).toBe(3);
   });
 
+  it("rethrows the first accepted close when reattachment fails before acceptance", async () => {
+    let executeCount = 0;
+    const endpoint = await rawExecutionServer(servers, sockets, directories, (socket) => {
+      socket.once("data", () => {
+        executeCount += 1;
+        if (executeCount === 1) socket.end(frame(accepted()));
+        else socket.end();
+      });
+    });
+
+    const receipt = await new LocalDaemonTransport(
+      policyWith({}, { postAcceptanceExecutionReattachmentLimit: 1 }),
+    ).execute(endpoint, request);
+
+    await expect(receipt.completion).rejects.toMatchObject({
+      code: "closed",
+      delivery: "accepted",
+      message: "Daemon connection ended after acceptance before completion",
+      authenticatedInstanceId: request.instanceId,
+    } satisfies Partial<DaemonTransportError>);
+    expect(executeCount).toBe(2);
+  });
+
   it("reattaches once with the same request after accepted delivery closes", async () => {
     const directory = mkdtempSync(join(tmpdir(), "symnav-accepted-reattach-"));
     directories.push(directory);

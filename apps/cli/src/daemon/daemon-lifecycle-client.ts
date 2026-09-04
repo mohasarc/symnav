@@ -1,9 +1,11 @@
 import type {
+  DaemonExecuteRequest,
   DaemonExecutionStatus,
   DaemonExecutionStatusRequest,
   DaemonExecutionStatusResponse,
   DaemonLifecycleRequest,
   DaemonLifecycleResponse,
+  DaemonResultAcknowledgement,
 } from "./daemon-protocol.js";
 import { DaemonProtocolError, type DaemonProtocolValidator } from "./daemon-protocol-validator.js";
 import { DaemonTransportError, type DaemonDeliveryState } from "./daemon-transport-error.js";
@@ -37,6 +39,48 @@ export class DaemonLifecycleClient implements DaemonLifecycleRequester {
       );
     }
     return response.status;
+  }
+
+  async acknowledgeResult(
+    endpoint: string,
+    request: Pick<
+      DaemonExecuteRequest,
+      "protocolVersion" | "instanceId" | "processToken" | "requestId"
+    >,
+    transferId: string,
+  ): Promise<void> {
+    const acknowledgement: DaemonResultAcknowledgement = {
+      kind: "result-ack",
+      protocolVersion: request.protocolVersion,
+      instanceId: request.instanceId,
+      processToken: request.processToken,
+      requestId: request.requestId,
+      transferId,
+    };
+    const decoder = this.options.codec.controlDecoder();
+    let connection: Awaited<ReturnType<DaemonSocketClient["connect"]>> | undefined;
+    try {
+      connection = await this.options.sockets.connect(endpoint, this.options.responseTimeoutMs);
+      connection.write(this.options.codec.encodeControl(acknowledgement));
+      let responseReceived = false;
+      for await (const bytes of connection.incoming) {
+        for (const response of decoder.append(bytes)) {
+          if (responseReceived) throw new Error("Duplicate daemon result acknowledgement");
+          this.options.validator.resultAcknowledgement(request, transferId, response);
+          responseReceived = true;
+        }
+        if (responseReceived) connection.end();
+      }
+      decoder.assertComplete();
+      if (!responseReceived) throw new Error("Daemon acknowledgement response is missing");
+      connection.destroy();
+    } catch (error) {
+      connection?.destroy();
+      if (DaemonLifecycleClient.isSocketTimeout(error)) {
+        throw new Error("Daemon result acknowledgement timed out");
+      }
+      throw error;
+    }
   }
 
   private singleResponse(

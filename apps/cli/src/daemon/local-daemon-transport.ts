@@ -5,7 +5,6 @@ import {
   DaemonAdmissionRejections,
   type DaemonExecuteRejectionCode,
   type DaemonExecutionFailureCode,
-  type DaemonExecutorExecutionResult,
   type DaemonPolicyValues,
 } from "@symnav/daemon";
 import type {
@@ -32,12 +31,8 @@ import type {
 } from "./daemon-transport.js";
 import { DaemonWireCodec } from "./daemon-wire-codec.js";
 import { DaemonProtocolError, DaemonProtocolValidator } from "./daemon-protocol-validator.js";
-import type { CompletionSpoolManifest } from "./completion-spool.js";
-import {
-  DaemonClientResultCapture,
-  type DaemonCapturedOutputSummary,
-  type DaemonOutputCapture,
-} from "./daemon-client-result-capture.js";
+import { DaemonClientResultCapture } from "./daemon-client-result-capture.js";
+import { DaemonResultTransferReceiver } from "./daemon-result-transfer-receiver.js";
 
 interface LocalDaemonTransportOptions {
   readonly responseTimeoutPurpose?: "ordinary" | "status-observer";
@@ -84,131 +79,6 @@ export class DaemonTransportError extends Error {
         authenticatedInstanceId !== undefined &&
         authenticatedRejectionCode !== undefined &&
         DaemonAdmissionRejections.retrySafe(authenticatedRejectionCode));
-  }
-}
-
-class DaemonResultTransferReceiver {
-  private expectedManifest: CompletionSpoolManifest | undefined;
-  private nextRecordOffset: number;
-  private manifestReceived = false;
-  private terminalReceived = false;
-
-  constructor(
-    private readonly request: DaemonExecuteRequest,
-    private readonly output: DaemonOutputCapture,
-    manifest?: CompletionSpoolManifest,
-    initialOffset = 0,
-  ) {
-    this.expectedManifest = manifest;
-    this.nextRecordOffset = initialOffset;
-  }
-
-  get manifest(): CompletionSpoolManifest | undefined {
-    return this.expectedManifest;
-  }
-
-  get nextOffset(): number {
-    return this.nextRecordOffset;
-  }
-
-  get terminal(): boolean {
-    return this.terminalReceived;
-  }
-
-  beginConnection(): void {
-    this.manifestReceived = false;
-    this.terminalReceived = false;
-  }
-
-  acceptManifest(
-    frame: Extract<DaemonExecutionServerFrame, { readonly kind: "result-manifest" }>,
-  ): void {
-    if (this.manifestReceived || this.terminalReceived) {
-      throw new Error("Duplicate result manifest");
-    }
-    if (
-      this.expectedManifest !== undefined &&
-      !DaemonResultTransferReceiver.manifestsMatch(this.expectedManifest, frame.manifest)
-    ) {
-      throw new Error("Daemon resumed with a different result manifest");
-    }
-    this.expectedManifest ??= frame.manifest;
-    this.manifestReceived = true;
-  }
-
-  async acceptChunk(chunk: DaemonResultChunk): Promise<void> {
-    const manifest = this.expectedManifest;
-    if (
-      !this.manifestReceived ||
-      this.terminalReceived ||
-      manifest === undefined ||
-      chunk.requestId !== this.request.requestId ||
-      chunk.transferId !== manifest.transferId ||
-      chunk.offset !== this.nextRecordOffset ||
-      chunk.sequence !== this.nextRecordOffset
-    ) {
-      throw new Error("Daemon returned an invalid result chunk");
-    }
-    await this.output.append({
-      sequence: chunk.sequence,
-      stream: chunk.stream,
-      bytes: chunk.bytes,
-    });
-    this.nextRecordOffset += 1;
-  }
-
-  acceptEnd(frame: Extract<DaemonExecutionServerFrame, { readonly kind: "result-end" }>): void {
-    const manifest = this.expectedManifest;
-    if (
-      !this.manifestReceived ||
-      this.terminalReceived ||
-      manifest === undefined ||
-      frame.transferId !== manifest.transferId ||
-      frame.rawBytes !== manifest.rawBytes ||
-      frame.recordCount !== manifest.recordCount ||
-      frame.sha256 !== manifest.sha256 ||
-      this.nextRecordOffset !== manifest.recordCount
-    ) {
-      throw new Error("Daemon result transfer did not match its manifest");
-    }
-    this.terminalReceived = true;
-  }
-
-  async finish(): Promise<DaemonExecutorExecutionResult> {
-    const manifest = this.expectedManifest;
-    if (!this.terminalReceived || manifest === undefined) {
-      throw new Error("Daemon result transfer is incomplete");
-    }
-    const captured = await this.output.finish(manifest.exitCode);
-    if (!DaemonResultTransferReceiver.summariesMatch(captured.summary, manifest)) {
-      await captured.result.output.dispose();
-      throw new Error("Daemon result transfer failed digest validation");
-    }
-    return captured.result;
-  }
-
-  private static manifestsMatch(
-    expected: CompletionSpoolManifest,
-    actual: CompletionSpoolManifest,
-  ): boolean {
-    return (
-      actual.transferId === expected.transferId &&
-      actual.requestId === expected.requestId &&
-      actual.instanceId === expected.instanceId &&
-      actual.exitCode === expected.exitCode &&
-      DaemonResultTransferReceiver.summariesMatch(actual, expected)
-    );
-  }
-
-  private static summariesMatch(
-    actual: CompletionSpoolManifest | DaemonCapturedOutputSummary,
-    expected: CompletionSpoolManifest,
-  ): boolean {
-    return (
-      actual.rawBytes === expected.rawBytes &&
-      actual.recordCount === expected.recordCount &&
-      actual.sha256 === expected.sha256
-    );
   }
 }
 
@@ -401,7 +271,7 @@ export class LocalDaemonTransport
         policy: this.outputPolicy,
         ...(this.outputDirectory === undefined ? {} : { directory: this.outputDirectory }),
       });
-      const transfer = new DaemonResultTransferReceiver(request, output);
+      const transfer = new DaemonResultTransferReceiver(request.requestId, output);
       const socket = createConnection(endpoint);
       let delivery: DaemonDeliveryState = "not-submitted";
       let acceptance: DaemonExecutionAcceptance | undefined;
@@ -423,12 +293,12 @@ export class LocalDaemonTransport
         socket.destroy();
         if (!outerSettled) {
           outerSettled = true;
-          void output.dispose().finally(() => reject(transportError));
+          void transfer.dispose().finally(() => reject(transportError));
           return;
         }
         if (!completionSettled) {
           completionSettled = true;
-          void output.dispose().finally(() => rejectCompletion(transportError));
+          void transfer.dispose().finally(() => rejectCompletion(transportError));
         }
       };
       const resume = (): boolean => {
@@ -444,7 +314,7 @@ export class LocalDaemonTransport
         resumeCount += 1;
         socket.destroy();
         transfer.beginConnection();
-        void this.fetchCompletion(endpoint, request, output, transfer)
+        void this.fetchCompletion(endpoint, request, transfer)
           .then((completionValue) => {
             if (completionSettled) return;
             completionSettled = true;
@@ -546,7 +416,12 @@ export class LocalDaemonTransport
           const result = await transfer.finish();
           const completedManifest = transfer.manifest;
           if (completedManifest === undefined) throw new Error("Completion manifest is missing");
-          await this.acknowledgeResult(endpoint, request, completedManifest);
+          try {
+            await this.acknowledgeResult(endpoint, request, completedManifest);
+          } catch (error) {
+            await result.output.dispose();
+            throw error;
+          }
           if (!completionSettled) {
             completionSettled = true;
             socket.end();
@@ -556,7 +431,7 @@ export class LocalDaemonTransport
         if (failedCode !== undefined && !completionSettled) {
           completionSettled = true;
           socket.end();
-          await output.dispose();
+          await transfer.dispose();
           resolveCompletion({ status: "failed", code: failedCode });
         }
       };
@@ -606,7 +481,6 @@ export class LocalDaemonTransport
   private fetchCompletion(
     endpoint: string,
     request: DaemonExecuteRequest,
-    output: DaemonOutputCapture,
     transfer: DaemonResultTransferReceiver,
   ): DaemonExecutionReceipt["completion"] {
     return new Promise((resolve, reject) => {
@@ -668,7 +542,12 @@ export class LocalDaemonTransport
           const result = await transfer.finish();
           const manifest = transfer.manifest;
           if (manifest === undefined) throw new Error("Completion manifest is missing");
-          await this.acknowledgeResult(endpoint, request, manifest);
+          try {
+            await this.acknowledgeResult(endpoint, request, manifest);
+          } catch (error) {
+            await result.output.dispose();
+            throw error;
+          }
           settled = true;
           socket.end();
           resolve({ status: "completed", result });
@@ -676,7 +555,7 @@ export class LocalDaemonTransport
         if (failedCode !== undefined) {
           settled = true;
           socket.end();
-          await output.dispose();
+          await transfer.dispose();
           resolve({ status: "failed", code: failedCode });
         }
       };

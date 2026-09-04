@@ -689,6 +689,11 @@ describe("LocalDaemonTransport execution delivery", () => {
         stream: "stdout",
         bytes: Buffer.alloc(TEST_CHUNK_BYTES, 7),
       });
+      await spool.append({
+        sequence: 1,
+        stream: "stderr",
+        bytes: Buffer.from("spill"),
+      });
       const manifest = await spool.finish(0);
       const acknowledgement = frame({
         kind: "result-acknowledged",

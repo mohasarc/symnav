@@ -35,7 +35,7 @@ describe("DaemonExecutionClient", () => {
         } satisfies DaemonExecutionServerFrame),
       ]),
     ]);
-    const sockets = new RecordingDaemonSocketClient(connection);
+    const sockets = new RecordingDaemonSocketClient([connection]);
     const output = new RecordingDaemonOutputCapture();
     const acknowledgements = new RecordingResultAcknowledger();
     const client = new DaemonExecutionClient({
@@ -57,7 +57,7 @@ describe("DaemonExecutionClient", () => {
       queuePosition: 0,
     });
     await expect(receipt.completion).resolves.toEqual({ status: "failed", code: "internal" });
-    expect(sockets.connections).toEqual([
+    expect(sockets.calls).toEqual([
       {
         endpoint: "daemon-endpoint",
         timeoutMs: policy.values.transport.executionAdmissionTimeoutMs,
@@ -69,16 +69,78 @@ describe("DaemonExecutionClient", () => {
     expect(output.disposeCount).toBe(1);
     expect(acknowledgements.count).toBe(0);
   });
+
+  it("reattaches an accepted close with the identical execute request", async () => {
+    const policy = DaemonPolicy.currentSystem();
+    const codec = executionCodec();
+    const request = executionRequest();
+    const first = new ScriptedDaemonSocketConnection([
+      codec.encodeControl({
+        kind: "accepted",
+        instanceId: request.instanceId,
+        processToken: request.processToken,
+        requestId: request.requestId,
+        acceptedAt: 10,
+        queuePosition: 0,
+      } satisfies DaemonExecutionServerFrame),
+    ]);
+    const second = new ScriptedDaemonSocketConnection([
+      Buffer.concat([
+        codec.encodeControl({
+          kind: "accepted",
+          instanceId: request.instanceId,
+          processToken: request.processToken,
+          requestId: request.requestId,
+          acceptedAt: 10,
+          queuePosition: 0,
+        } satisfies DaemonExecutionServerFrame),
+        codec.encodeControl({
+          kind: "execution-failed",
+          instanceId: request.instanceId,
+          processToken: request.processToken,
+          requestId: request.requestId,
+          code: "internal",
+        } satisfies DaemonExecutionServerFrame),
+      ]),
+    ]);
+    const sockets = new RecordingDaemonSocketClient([first, second]);
+    const outputs: RecordingDaemonOutputCapture[] = [];
+    const client = new DaemonExecutionClient({
+      sockets,
+      lifecycle: new RecordingResultAcknowledger(),
+      codec,
+      validator: new DaemonProtocolValidator(),
+      createOutput: () => {
+        const output = new RecordingDaemonOutputCapture();
+        outputs.push(output);
+        return output;
+      },
+      transportPolicy: policy.values.transport,
+      deliveryPolicy: policy.values.delivery,
+    });
+
+    const receipt = await client.execute("daemon-endpoint", request);
+
+    await expect(receipt.completion).resolves.toEqual({ status: "failed", code: "internal" });
+    expect(sockets.calls).toHaveLength(2);
+    expect(first.writes).toEqual([codec.encodeControl(request)]);
+    expect(second.writes).toEqual([codec.encodeControl(request)]);
+    expect(outputs.map((output) => output.disposeCount)).toEqual([1, 1]);
+  });
 });
 
 class RecordingDaemonSocketClient implements DaemonSocketClient {
-  readonly connections: { readonly endpoint: string; readonly timeoutMs?: number }[] = [];
+  readonly calls: { readonly endpoint: string; readonly timeoutMs?: number }[] = [];
+  private nextConnection = 0;
 
-  constructor(private readonly connection: DaemonSocketConnection) {}
+  constructor(private readonly connections: readonly DaemonSocketConnection[]) {}
 
   connect(endpoint: string, timeoutMs?: number): Promise<DaemonSocketConnection> {
-    this.connections.push({ endpoint, ...(timeoutMs === undefined ? {} : { timeoutMs }) });
-    return Promise.resolve(this.connection);
+    this.calls.push({ endpoint, ...(timeoutMs === undefined ? {} : { timeoutMs }) });
+    const connection = this.connections[this.nextConnection];
+    this.nextConnection += 1;
+    if (connection === undefined) return Promise.reject(new Error("Unexpected daemon connection"));
+    return Promise.resolve(connection);
   }
 }
 

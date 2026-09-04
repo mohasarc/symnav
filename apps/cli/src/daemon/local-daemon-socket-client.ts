@@ -50,7 +50,12 @@ class LocalDaemonSocketConnection implements DaemonSocketConnection, AsyncIterab
     for (let offset = 0; offset < frame.length; offset += chunkSize) {
       this.queuedWrites.push(frame.subarray(offset, offset + chunkSize));
     }
-    this.flushWrites();
+    try {
+      this.flushWrites();
+    } catch (error) {
+      this.fail(error);
+      throw error;
+    }
   }
 
   disableTimeout(): void {

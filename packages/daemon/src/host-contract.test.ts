@@ -33,7 +33,9 @@ import type {
   DaemonExecutorOutput,
   DaemonExecutorRequest,
   DaemonOutputRecord,
+  DaemonOutputSink,
   DaemonOutputStream,
+  DaemonSequencedOutputRecord,
   DaemonPolicyValues,
   DaemonReadinessProbe,
   DaemonSystemMemory,
@@ -49,6 +51,8 @@ import {
   DAEMON_COMMAND_NAMES,
   DaemonAdmissionPolicy,
   DaemonAdmissionRejections,
+  DaemonDiagnosticValues,
+  DaemonExecutorModuleLoader,
   DaemonExecutionFailures,
   DaemonPolicy,
 } from "./index.js";
@@ -76,7 +80,9 @@ class DaemonContractExpectation {
     { kind: "runtime", name: "DAEMON_COMMAND_NAMES" },
     { kind: "runtime", name: "DaemonAdmissionPolicy" },
     { kind: "runtime", name: "DaemonAdmissionRejections" },
+    { kind: "runtime", name: "DaemonDiagnosticValues" },
     { kind: "runtime", name: "DaemonExecutionFailures" },
+    { kind: "runtime", name: "DaemonExecutorModuleLoader" },
     { kind: "runtime", name: "DaemonPolicy" },
     { kind: "type", name: "AcceptedRequestCompatibility" },
     { kind: "type", name: "DaemonActivitySnapshot" },
@@ -102,10 +108,12 @@ class DaemonContractExpectation {
     { kind: "type", name: "DaemonExecutorOutput" },
     { kind: "type", name: "DaemonExecutorRequest" },
     { kind: "type", name: "DaemonOutputRecord" },
+    { kind: "type", name: "DaemonOutputSink" },
     { kind: "type", name: "DaemonOutputStream" },
     { kind: "type", name: "DaemonPolicyValues" },
     { kind: "type", name: "DaemonReadinessProbe" },
     { kind: "type", name: "DaemonRejectedExecutionFrame" },
+    { kind: "type", name: "DaemonSequencedOutputRecord" },
     { kind: "type", name: "DaemonStartResult" },
     { kind: "type", name: "DaemonStatusEnvelope" },
     { kind: "type", name: "DaemonStopResult" },
@@ -522,6 +530,14 @@ describe("daemon host contract", () => {
       readonly stream: DaemonOutputStream;
       readonly bytes: Uint8Array;
     }>();
+    expectTypeOf<DaemonSequencedOutputRecord>().toEqualTypeOf<{
+      readonly sequence: number;
+      readonly stream: DaemonOutputStream;
+      readonly bytes: Uint8Array;
+    }>();
+    expectTypeOf<DaemonOutputSink>().toEqualTypeOf<{
+      append(record: DaemonSequencedOutputRecord): Promise<void>;
+    }>();
     expectTypeOf<DaemonExecutorOutput>().toEqualTypeOf<{
       records(): AsyncIterable<DaemonOutputRecord>;
       dispose(): Promise<void>;
@@ -543,6 +559,7 @@ describe("daemon host contract", () => {
     expectTypeOf<DaemonExecutorFactoryOptions>().toEqualTypeOf<{
       readonly stateDirectory: string;
       readonly productVersion: string;
+      readonly sampleResources: () => void;
     }>();
     expectTypeOf<DaemonExecutorFactory>().toEqualTypeOf<
       (options: DaemonExecutorFactoryOptions) => DaemonExecutor | Promise<DaemonExecutor>
@@ -551,6 +568,9 @@ describe("daemon host contract", () => {
       readonly createDaemonExecutor: DaemonExecutorFactory;
     }>();
     expectTypeOf<DaemonExecutorModuleUrl>().toEqualTypeOf<string>();
+    expectTypeOf<typeof DaemonExecutorModuleLoader.load>().parameters.toEqualTypeOf<
+      [DaemonExecutorModuleUrl, DaemonExecutorFactoryOptions]
+    >();
     expectTypeOf<DaemonDiagnosticValue>().toEqualTypeOf<
       | null
       | boolean
@@ -562,6 +582,14 @@ describe("daemon host contract", () => {
     expectTypeOf<DaemonDiagnostics>().toEqualTypeOf<
       Readonly<Record<string, DaemonDiagnosticValue>>
     >();
+    expect(
+      DaemonDiagnosticValues.isDiagnostics({
+        text: "opaque",
+        nested: { list: [null, true, 1, "value"] },
+      }),
+    ).toBe(true);
+    expect(DaemonDiagnosticValues.isDiagnostics({ nested: { invalid: undefined } })).toBe(false);
+    expect(DaemonDiagnosticValues.isDiagnostics({ invalid: Number.POSITIVE_INFINITY })).toBe(false);
   });
 
   it("defines the exact lifecycle, activity, status, start, and stop shapes", () => {
@@ -708,7 +736,9 @@ describe("daemon host contract", () => {
       "DaemonAdmissionPolicy",
       "DaemonAdmissionRejections",
       "DAEMON_COMMAND_NAMES",
+      "DaemonDiagnosticValues",
       "DaemonExecutionFailures",
+      "DaemonExecutorModuleLoader",
       "DaemonPolicy",
     ]);
   });

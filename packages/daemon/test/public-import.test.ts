@@ -8,6 +8,7 @@ import type {
   DaemonExecutionFailureCode,
   DaemonExecutionFailureContext,
   DaemonExecutor,
+  DaemonOutputSink,
   DaemonPolicyValues,
   DaemonReadinessProbe,
   DaemonStartResult,
@@ -19,6 +20,8 @@ import {
   DAEMON_COMMAND_NAMES,
   DaemonAdmissionPolicy,
   DaemonAdmissionRejections,
+  DaemonDiagnosticValues,
+  DaemonExecutorModuleLoader,
   DaemonExecutionFailures,
   DaemonPolicy,
 } from "@symnav/daemon";
@@ -26,6 +29,7 @@ import {
 describe("@symnav/daemon public package import", () => {
   it("resolves the root contract", () => {
     expectTypeOf<DaemonExecutor>().toBeObject();
+    expectTypeOf<DaemonOutputSink>().toBeObject();
     expectTypeOf<DaemonActivitySnapshot>().toBeObject();
     expectTypeOf<DaemonStatusEnvelope>().toBeObject();
     expectTypeOf<DaemonStartResult>().not.toBeNever();
@@ -48,6 +52,8 @@ describe("@symnav/daemon public package import", () => {
       }),
     ).toEqual({ kind: "accept" });
     expect(DaemonAdmissionRejections.retrySafe("not-ready")).toBe(true);
+    expect(DaemonDiagnosticValues.isDiagnostics({ nested: ["opaque"] })).toBe(true);
+    expectTypeOf<typeof DaemonExecutorModuleLoader.load>().toBeFunction();
     expect(DaemonExecutionFailures.isCode("internal")).toBe(true);
     expect(DAEMON_COMMAND_NAMES).toHaveLength(10);
     expect(DaemonPolicy.fromSystemMemory({ totalBytes: 1024 * 1024 * 1024 })).toBeInstanceOf(
@@ -57,7 +63,9 @@ describe("@symnav/daemon public package import", () => {
       "DaemonAdmissionPolicy",
       "DaemonAdmissionRejections",
       "DAEMON_COMMAND_NAMES",
+      "DaemonDiagnosticValues",
       "DaemonExecutionFailures",
+      "DaemonExecutorModuleLoader",
       "DaemonPolicy",
     ]);
   });

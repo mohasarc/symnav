@@ -165,6 +165,8 @@ const navigationWorker = workerExit
       generation: 7,
       configuration: {
         stateDirectory: canonicalStateDirectory,
+        productVersion: symnavVersion,
+        executorModuleUrl: new URL("../../dist/daemon-executor.js", import.meta.url).href,
         policy: dependencies.daemonPolicy.toSerialized(),
       },
       resourceLimits: { maxOldGenerationSizeMb: 4096 },
@@ -181,6 +183,8 @@ const navigationWorker = workerExit
         generation: 7,
         configuration: {
           stateDirectory: canonicalStateDirectory,
+          productVersion: symnavVersion,
+          executorModuleUrl: new URL("../../dist/daemon-executor.js", import.meta.url).href,
           policy: dependencies.daemonPolicy.toSerialized(),
         },
         resourceLimits: { maxOldGenerationSizeMb: 4096 },

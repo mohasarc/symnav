@@ -156,7 +156,12 @@ describe("LocalDaemonTransport", () => {
         processToken: "token",
         requestId: "request",
         commandName: "resolve",
-        request: { argv: ["resolve", "\n✓"], cwd: "/repo", telemetryEnabled: false },
+        request: {
+          argv: ["resolve", "\n✓"],
+          cwd: "/repo",
+          telemetryEnabled: false,
+          executionMode: "warm",
+        },
       })
     ).completion;
 
@@ -286,7 +291,12 @@ describe("LocalDaemonTransport", () => {
         processToken: "token",
         requestId: "expected-request",
         commandName: "version",
-        request: { argv: ["--version"], cwd: "/repo", telemetryEnabled: false },
+        request: {
+          argv: ["--version"],
+          cwd: "/repo",
+          telemetryEnabled: false,
+          executionMode: "warm",
+        },
       }),
     ).rejects.toThrow(/request identifier/);
     await server.close();

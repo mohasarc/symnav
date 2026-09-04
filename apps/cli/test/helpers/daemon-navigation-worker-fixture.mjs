@@ -11,7 +11,14 @@ const pendingResults = new Map();
 parentPort.on("message", (message) => {
   if (message.kind === "initialize") {
     if (workerData.policyPath !== undefined) {
-      writeFileSync(workerData.policyPath, JSON.stringify(workerData.policy));
+      writeFileSync(
+        workerData.policyPath,
+        JSON.stringify({
+          policy: workerData.policy,
+          productVersion: workerData.productVersion,
+          executorModuleUrl: workerData.executorModuleUrl,
+        }),
+      );
     }
     if (workerData.mode === "initialize-heap-oom") exhaustOldGeneration();
     if (workerData.mode === "malformed") {

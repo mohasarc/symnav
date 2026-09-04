@@ -1,12 +1,11 @@
-import type { CliExecutionRequest } from "../command-execution-result.js";
 import type {
   DaemonCommandName,
+  DaemonExecutorRequest,
   DaemonExecutionFailureCode,
+  DaemonOutputStream,
   DaemonRejectedExecutionFrame,
 } from "@symnav/daemon";
 import type { CompletionSpoolManifest } from "./completion-spool.js";
-import type { CommandOutputStream } from "../command-execution-result.js";
-import type { BackendRefreshSummary } from "@symnav/core";
 
 export const DAEMON_PROTOCOL_VERSION = 5;
 export const DAEMON_RECORD_SCHEMA_VERSION = 2;
@@ -121,7 +120,7 @@ export interface DaemonExecuteRequest {
   readonly processToken: string;
   readonly requestId: string;
   readonly commandName: DaemonCommandName;
-  readonly request: CliExecutionRequest;
+  readonly request: DaemonExecutorRequest;
 }
 
 export type DaemonExecutionServerFrame =
@@ -187,7 +186,7 @@ export interface DaemonResultChunk {
   readonly requestId: string;
   readonly offset: number;
   readonly sequence: number;
-  readonly stream: CommandOutputStream;
+  readonly stream: DaemonOutputStream;
   readonly bytes: Uint8Array;
 }
 
@@ -214,6 +213,13 @@ export interface DaemonWorkerPhaseDurations {
   readonly navigationMs: number;
   readonly renderMs: number;
   readonly workerOutputMs: number;
+}
+
+export interface DaemonRefreshSummary {
+  readonly added: number;
+  readonly changed: number;
+  readonly removed: number;
+  readonly unchanged: number;
 }
 
 export type DaemonExecutionOutcome = "completed" | "failed";
@@ -275,7 +281,7 @@ export type DaemonOperationDiagnostic =
       readonly kind: "worker-completed";
       readonly requestId: string;
     } & DaemonWorkerPhaseDurations &
-      BackendRefreshSummary)
+      DaemonRefreshSummary)
   | {
       readonly kind: "response-spooled";
       readonly requestId: string;

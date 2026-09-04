@@ -12,8 +12,10 @@ export type {
 } from "./daemon-admission.js";
 export { DAEMON_COMMAND_NAMES } from "./daemon-command-name.js";
 export type { DaemonCommandName, DaemonReadinessProbe } from "./daemon-command-name.js";
+export { DaemonDiagnosticValues } from "./daemon-diagnostics.js";
 export type { DaemonDiagnosticValue, DaemonDiagnostics } from "./daemon-diagnostics.js";
 export { DaemonExecutionFailures } from "./daemon-execution-failure.js";
+export { DaemonExecutorModuleLoader } from "./daemon-executor.js";
 export type {
   DaemonExecutionFailureCode,
   DaemonExecutionFailureContext,
@@ -31,7 +33,9 @@ export type {
   DaemonExecutorOutput,
   DaemonExecutorRequest,
   DaemonOutputRecord,
+  DaemonOutputSink,
   DaemonOutputStream,
+  DaemonSequencedOutputRecord,
 } from "./daemon-executor.js";
 export type {
   DaemonActivitySnapshot,

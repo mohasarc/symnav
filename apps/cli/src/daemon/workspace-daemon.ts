@@ -1,4 +1,4 @@
-import type { ProgramDependencies } from "../program-dependencies.js";
+import { access } from "node:fs/promises";
 import {
   DaemonAdmissionPolicy,
   DaemonAdmissionRejections,
@@ -6,10 +6,10 @@ import {
   type DaemonAdmissionDecision,
   type DaemonExecuteRejectionCode,
   type DaemonExecutionFailureCode,
+  type DaemonExecutorModuleUrl,
   type DaemonPolicy,
   type DaemonPolicyValues,
 } from "@symnav/daemon";
-import type { CommandExecutionResult, CommandOutputRecord } from "../command-execution-result.js";
 import { AcceptedRequestLedger } from "./accepted-request-ledger.js";
 import type {
   DaemonActivitySnapshot,
@@ -53,8 +53,11 @@ export interface WorkspaceDaemonOptions {
   readonly instanceId: string;
   readonly processToken: string;
   readonly symnavVersion: string;
+  readonly executorModuleUrl?: DaemonExecutorModuleUrl;
   readonly policy: DaemonPolicy;
-  readonly dependencies: ProgramDependencies;
+  readonly dependencies?: {
+    readonly fs: { exists(path: string): Promise<boolean> };
+  };
   readonly registry: DaemonRegistry;
   readonly transport: LocalDaemonTransport;
   readonly navigationWorker?: DaemonNavigationWorker;
@@ -151,6 +154,9 @@ export class WorkspaceDaemon {
               generation,
               configuration: {
                 stateDirectory: options.identity.stateDirectory,
+                productVersion: options.symnavVersion,
+                executorModuleUrl:
+                  options.executorModuleUrl ?? "file:///missing/symnav-daemon-executor.js",
                 policy: policy.toSerialized(),
               },
               resourceLimits: {
@@ -702,7 +708,19 @@ export class WorkspaceDaemon {
 
   private async recordCompletion(): Promise<boolean> {
     this.lastCompletedMonotonicAt = this.clock.monotonicNowMs();
-    return !(await this.options.dependencies.fs.exists(this.options.identity.workspaceRoot));
+    const exists = this.options.dependencies
+      ? await this.options.dependencies.fs.exists(this.options.identity.workspaceRoot)
+      : await WorkspaceDaemon.pathExists(this.options.identity.workspaceRoot);
+    return !exists;
+  }
+
+  private static async pathExists(path: string): Promise<boolean> {
+    try {
+      await access(path);
+      return true;
+    } catch {
+      return false;
+    }
   }
 
   private rejection(

@@ -1,12 +1,12 @@
 import type { CompletionSpoolManifest } from "./completion-spool.js";
 import type { DaemonClock } from "./daemon-clock.js";
-import type { BackendRefreshSummary } from "@symnav/core";
 import type { DaemonCommandName } from "@symnav/daemon";
 import type {
   DaemonDiagnosticEvent,
   DaemonDeliveryOutcome,
   DaemonExecutionOutcome,
   DaemonOperationDiagnostic,
+  DaemonRefreshSummary,
   DaemonShutdownDiagnostic,
   DaemonStartupDiagnostic,
   DaemonWorkerDiagnostic,
@@ -27,7 +27,7 @@ export type {
 export interface DaemonOperationTrace {
   accepted(queueDepth: number, generation: number): void;
   turnStarted(generation: number): void;
-  workerCompleted(durations: DaemonWorkerPhaseDurations, refresh: BackendRefreshSummary): void;
+  workerCompleted(durations: DaemonWorkerPhaseDurations, refresh: DaemonRefreshSummary): void;
   spooled(manifest: CompletionSpoolManifest, durationMs: number): void;
   executionTerminated(outcome: DaemonExecutionOutcome): void;
   clientDisconnected(): void;

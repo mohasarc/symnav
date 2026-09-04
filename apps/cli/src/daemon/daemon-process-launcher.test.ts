@@ -28,6 +28,7 @@ interface FakeChildProcess {
 
 describe("NodeDaemonProcessLauncher", () => {
   const roots: string[] = [];
+  const executorModuleUrl = "file:///absolute/symnav/daemon-executor.js";
 
   beforeEach(() => {
     processListeners.clear();
@@ -127,7 +128,7 @@ describe("NodeDaemonProcessLauncher", () => {
           },
         },
       );
-      await new NodeDaemonProcessLauncher("1.2.3", policy).launch(
+      await new NodeDaemonProcessLauncher("1.2.3", executorModuleUrl, policy).launch(
         identity,
         "instance",
         "process-token",
@@ -156,6 +157,7 @@ describe("NodeDaemonProcessLauncher", () => {
       expect(configuration.instanceId).toBe("instance");
       expect(configuration.processToken).toBe("process-token");
       expect(configuration.startupOwnerKind).toBe("daemon");
+      expect(configuration.executorModuleUrl).toBe(executorModuleUrl);
       expect(configuration.policy).toEqual(policy.toSerialized());
       expect(configuration.endpoint).toBe(identity.endpoint("instance"));
       expect(options.env.SYMNAV_STATE_DIR).toBe(absoluteStateDirectory);
@@ -188,16 +190,56 @@ describe("NodeDaemonProcessLauncher", () => {
     await expect(
       new NodeDaemonProcessLauncher(
         "1.2.3",
+        executorModuleUrl,
         DaemonPolicy.fromSystemMemory({ totalBytes: 256 * 1024 * 1024 }),
       ).launch(identity, "instance", "process-token"),
     ).rejects.toThrow("spawn refused");
     expect(spawnMock.mock.results[0]?.value.unref).not.toHaveBeenCalled();
   });
 
+  it.each([
+    ["relative module URL", { executorModuleUrl: "./daemon-executor.js" }],
+    ["unknown field", { unexpected: true }],
+  ])("rejects process configuration with %s", async (_name, mutation) => {
+    const identity = launcherIdentity(roots);
+    await new NodeDaemonProcessLauncher(
+      "1.2.3",
+      executorModuleUrl,
+      DaemonPolicy.fromSystemMemory({ totalBytes: 256 * 1024 * 1024 }),
+    ).launch(identity, "instance", "process-token");
+    const [, args] = spawnMock.mock.calls[0] as [string, readonly string[]];
+    const configuration = JSON.parse(Buffer.from(args[1]!, "base64url").toString("utf8")) as Record<
+      string,
+      unknown
+    >;
+    const encoded = Buffer.from(JSON.stringify({ ...configuration, ...mutation })).toString(
+      "base64url",
+    );
+
+    expect(() => DaemonProcessConfigurationParser.parse(encoded)).toThrow(
+      "Invalid daemon process configuration",
+    );
+  });
+
+  it("retains an absolute non-file URL for loader classification", async () => {
+    const identity = launcherIdentity(roots);
+    await new NodeDaemonProcessLauncher(
+      "1.2.3",
+      "https://example.test/daemon-executor.js",
+      DaemonPolicy.fromSystemMemory({ totalBytes: 256 * 1024 * 1024 }),
+    ).launch(identity, "instance", "process-token");
+    const [, args] = spawnMock.mock.calls[0] as [string, readonly string[]];
+
+    expect(DaemonProcessConfigurationParser.parse(args[1]).executorModuleUrl).toBe(
+      "https://example.test/daemon-executor.js",
+    );
+  });
+
   it("reports child exit through the launched process immediately", async () => {
     const identity = launcherIdentity(roots);
     const daemonProcess = await new NodeDaemonProcessLauncher(
       "1.2.3",
+      executorModuleUrl,
       DaemonPolicy.fromSystemMemory({ totalBytes: 256 * 1024 * 1024 }),
     ).launch(identity, "instance", "process-token");
     const child = spawnMock.mock.results[0]?.value as FakeChildProcess;
@@ -215,6 +257,7 @@ describe("NodeDaemonProcessLauncher", () => {
     const identity = launcherIdentity(roots);
     const daemonProcess = await new NodeDaemonProcessLauncher(
       "1.2.3",
+      executorModuleUrl,
       DaemonPolicy.fromSystemMemory({ totalBytes: 256 * 1024 * 1024 }),
     ).launch(identity, "instance", "process-token");
     const child = spawnMock.mock.results[0]?.value as FakeChildProcess;

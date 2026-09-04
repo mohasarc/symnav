@@ -15,6 +15,7 @@ class LocalDaemonSocketConnection implements DaemonSocketConnection, AsyncIterab
       }
     | undefined;
   private ended = false;
+  private error: unknown;
   private readonly queuedWrites: Uint8Array[] = [];
   private waitingForDrain = false;
 
@@ -35,6 +36,7 @@ class LocalDaemonSocketConnection implements DaemonSocketConnection, AsyncIterab
   next(): Promise<IteratorResult<Uint8Array>> {
     const bytes = this.queuedBytes.shift();
     if (bytes !== undefined) return Promise.resolve({ done: false, value: bytes });
+    if (this.error !== undefined) return Promise.reject(this.error);
     if (this.ended) return Promise.resolve({ done: true, value: undefined });
     return new Promise((resolve, reject) => {
       this.pendingRead = { resolve, reject };
@@ -62,6 +64,11 @@ class LocalDaemonSocketConnection implements DaemonSocketConnection, AsyncIterab
     this.socket.destroy();
   }
 
+  timeout(error: Error): void {
+    this.fail(error);
+    this.socket.destroy();
+  }
+
   private receive(bytes: Uint8Array): void {
     this.socket.pause();
     const pendingRead = this.pendingRead;
@@ -74,11 +81,19 @@ class LocalDaemonSocketConnection implements DaemonSocketConnection, AsyncIterab
   }
 
   private finish(): void {
-    if (this.ended) return;
+    if (this.ended || this.error !== undefined) return;
     this.ended = true;
     const pendingRead = this.pendingRead;
     this.pendingRead = undefined;
     pendingRead?.resolve({ done: true, value: undefined });
+  }
+
+  private fail(error: unknown): void {
+    if (this.ended || this.error !== undefined) return;
+    this.error = error;
+    const pendingRead = this.pendingRead;
+    this.pendingRead = undefined;
+    pendingRead?.reject(error);
   }
 
   private flushWrites(): void {
@@ -100,22 +115,36 @@ class LocalDaemonSocketConnection implements DaemonSocketConnection, AsyncIterab
 export class LocalDaemonSocketClient implements DaemonSocketClient {
   constructor(private readonly options: LocalDaemonSocketClientOptions = {}) {}
 
-  connect(endpoint: string): Promise<DaemonSocketConnection> {
+  connect(endpoint: string, timeoutMs?: number): Promise<DaemonSocketConnection> {
     return new Promise((resolve, reject) => {
       const socket = createConnection(endpoint);
+      let connection: LocalDaemonSocketConnection | undefined;
       let settled = false;
-      const fail = (error: unknown): void => {
+      const fail = (error: Error): void => {
         if (settled) return;
         settled = true;
         socket.destroy();
         reject(error);
       };
+      if (timeoutMs !== undefined) {
+        socket.setTimeout(timeoutMs, () => {
+          const error = Object.assign(new Error("Daemon socket timed out"), {
+            code: "ETIMEDOUT" as const,
+          });
+          if (connection === undefined) {
+            fail(error);
+            return;
+          }
+          connection.timeout(error);
+        });
+      }
       socket.once("error", fail);
       socket.once("connect", () => {
         if (settled) return;
         settled = true;
         socket.off("error", fail);
-        resolve(new LocalDaemonSocketConnection(socket, this.options.writeChunkSize));
+        connection = new LocalDaemonSocketConnection(socket, this.options.writeChunkSize);
+        resolve(connection);
       });
     });
   }

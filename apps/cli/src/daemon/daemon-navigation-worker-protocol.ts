@@ -1,9 +1,7 @@
 import type { BackendRefreshSummary } from "@symnav/core";
-import type { DaemonCommandName } from "@symnav/daemon";
+import type { DaemonCommandName, DaemonWorkerFailureCode } from "@symnav/daemon";
 import type { CliExecutionRequest, CommandOutputStream } from "../command-execution-result.js";
 import { DaemonRuntimeValues } from "./daemon-runtime-values.js";
-
-export type DaemonExecutionFailureCode = "initialization" | "execution" | "protocol" | "resource";
 
 export interface WorkerStartupDurations {
   readonly discoveryMs: number;
@@ -73,7 +71,7 @@ export type DaemonNavigationWorkerResponse =
       readonly kind: "failed";
       readonly generation: number;
       readonly requestId?: string;
-      readonly failureCode: DaemonExecutionFailureCode;
+      readonly failureCode: DaemonWorkerFailureCode;
       readonly errorName?: string;
       readonly operationId?: string;
     }

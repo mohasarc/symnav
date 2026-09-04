@@ -1,6 +1,6 @@
 import { join, resolve } from "node:path";
 import { describe, expect, it, vi } from "vitest";
-import { DaemonPolicy } from "@symnav/daemon";
+import { DaemonPolicy, type DaemonExecutionFailureCode } from "@symnav/daemon";
 import {
   CommandOutputSnapshot,
   type CliExecutionRequest,
@@ -170,7 +170,7 @@ describe("DaemonCommandDispatcher", () => {
   it.each(["worker-exit", "controlled-resource", "response-capacity", "stopping", "internal"])(
     "returns one controlled result and never replays terminal daemon failure %s",
     async (code) => {
-      const harness = new DispatchHarness({ failed: code as DaemonFailureCode });
+      const harness = new DispatchHarness({ failed: code as DaemonExecutionFailureCode });
 
       await expect(harness.dispatcher().execute(request)).resolves.toMatchObject({
         mode: "warm",
@@ -260,7 +260,7 @@ class DispatchHarness {
     private readonly daemonAnswer:
       | CommandExecutionResult
       | Error
-      | { readonly failed: DaemonFailureCode },
+      | { readonly failed: DaemonExecutionFailureCode },
     private readonly options: DispatchHarnessOptions = {},
   ) {
     this.registered =
@@ -350,13 +350,6 @@ class DispatchHarness {
     return this.requests.filter((daemonRequest) => daemonRequest.kind === "execute");
   }
 }
-
-type DaemonFailureCode =
-  | "worker-exit"
-  | "controlled-resource"
-  | "response-capacity"
-  | "stopping"
-  | "internal";
 
 function daemonRecord(instanceId = "instance-1"): DaemonRecord {
   return {

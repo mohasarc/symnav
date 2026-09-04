@@ -40,6 +40,8 @@ export interface DaemonClientResultCaptureOptions {
 export class DaemonClientResultCapture implements DaemonOutputCapture {
   private readonly directory: string;
   private readonly inlineRawBytes: number;
+  private readonly maximumResultRawBytes: number;
+  private readonly maximumChunkRawBytes: number;
   private readonly hash = createHash("sha256");
   private readonly inlineRecords: DaemonSequencedOutputRecord[] = [];
   private file: FileHandle | undefined;
@@ -53,6 +55,8 @@ export class DaemonClientResultCapture implements DaemonOutputCapture {
   constructor(options: DaemonClientResultCaptureOptions) {
     this.directory = options.directory ?? tmpdir();
     this.inlineRawBytes = options.policy.inlineRawBytes;
+    this.maximumResultRawBytes = options.policy.maximumResultRawBytes;
+    this.maximumChunkRawBytes = options.policy.maximumChunkRawBytes;
   }
 
   append(record: DaemonSequencedOutputRecord): Promise<void> {
@@ -60,6 +64,12 @@ export class DaemonClientResultCapture implements DaemonOutputCapture {
       if (this.finished) throw new Error("Command output is already finished");
       if (record.sequence !== this.recordCount) {
         throw new Error("Unexpected command output sequence");
+      }
+      if (record.bytes.byteLength > this.maximumChunkRawBytes) {
+        throw new Error("Command output record exceeds chunk capacity");
+      }
+      if (this.rawBytes + record.bytes.byteLength > this.maximumResultRawBytes) {
+        throw new DaemonClientResultCapacityError();
       }
       await this.storeRecord({ ...record, bytes: Buffer.from(record.bytes) });
     });
@@ -160,6 +170,13 @@ export class DaemonClientResultCapture implements DaemonOutputCapture {
     await unlink(filePath).catch((error: NodeJS.ErrnoException) => {
       if (error.code !== "ENOENT") throw error;
     });
+  }
+}
+
+class DaemonClientResultCapacityError extends Error {
+  constructor() {
+    super("Command output exceeds response capacity");
+    this.name = "CommandOutputCapacityError";
   }
 }
 

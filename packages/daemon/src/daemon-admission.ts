@@ -42,3 +42,53 @@ export type DaemonAdmissionDecision =
   | { readonly kind: "accept" }
   | { readonly kind: "disconnect"; readonly code: "authentication" }
   | { readonly kind: "reject"; readonly code: DaemonExecuteRejectionCode };
+
+class AuthenticationAdmissionGuard implements DaemonAdmissionGuard {
+  rejectionFor(context: DaemonAdmissionContext): DaemonAdmissionRejectionCode | undefined {
+    return context.authenticated ? undefined : "authentication";
+  }
+}
+
+class WorkerReadinessAdmissionGuard implements DaemonAdmissionGuard {
+  rejectionFor(context: DaemonAdmissionContext): DaemonAdmissionRejectionCode | undefined {
+    return context.workerReady ? undefined : "not-ready";
+  }
+}
+
+class ResourceAdmissionGuard implements DaemonAdmissionGuard {
+  rejectionFor(context: DaemonAdmissionContext): DaemonAdmissionRejectionCode | undefined {
+    return context.resourceAdmissionPaused ? "resource-pressure" : undefined;
+  }
+}
+
+class QueueAdmissionGuard implements DaemonAdmissionGuard {
+  rejectionFor(context: DaemonAdmissionContext): DaemonAdmissionRejectionCode | undefined {
+    return context.queueState === "accepting" ? undefined : "draining";
+  }
+}
+
+class CompatibilityAdmissionGuard implements DaemonAdmissionGuard {
+  rejectionFor(context: DaemonAdmissionContext): DaemonAdmissionRejectionCode | undefined {
+    return context.compatibility === "conflicting" ? "incompatible" : undefined;
+  }
+}
+
+export class DaemonAdmissionPolicy {
+  private readonly guards: readonly DaemonAdmissionGuard[] = [
+    new AuthenticationAdmissionGuard(),
+    new WorkerReadinessAdmissionGuard(),
+    new ResourceAdmissionGuard(),
+    new QueueAdmissionGuard(),
+    new CompatibilityAdmissionGuard(),
+  ];
+
+  decide(context: DaemonAdmissionContext): DaemonAdmissionDecision {
+    for (const guard of this.guards) {
+      const rejection = guard.rejectionFor(context);
+      if (rejection === undefined) continue;
+      if (rejection === "authentication") return { kind: "disconnect", code: rejection };
+      return { kind: "reject", code: rejection };
+    }
+    return { kind: "accept" };
+  }
+}

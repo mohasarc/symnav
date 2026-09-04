@@ -1,3 +1,14 @@
+export type {
+  AcceptedRequestCompatibility,
+  DaemonAdmissionContext,
+  DaemonAdmissionDecision,
+  DaemonAdmissionGuard,
+  DaemonAdmissionRejectionCode,
+  DaemonExecuteRejectionCode,
+  DaemonExecutionCoordinates,
+  DaemonRejectedExecutionFrame,
+  WorkspaceRequestQueueState,
+} from "./daemon-admission.js";
 export { DAEMON_COMMAND_NAMES } from "./daemon-command-name.js";
 export type { DaemonCommandName, DaemonReadinessProbe } from "./daemon-command-name.js";
 export type { DaemonDiagnosticValue, DaemonDiagnostics } from "./daemon-diagnostics.js";

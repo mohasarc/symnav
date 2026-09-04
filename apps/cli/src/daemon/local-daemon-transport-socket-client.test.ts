@@ -100,16 +100,128 @@ describe("LocalDaemonTransport socket client boundary", () => {
     expect(connection.disableTimeoutCount).toBe(1);
     expect(connection.endCount).toBe(1);
   });
+
+  it("resumes and acknowledges results through fresh injected byte connections", async () => {
+    const policy = DaemonPolicy.currentSystem();
+    const codec = new DaemonWireCodec({
+      maximumJsonPayloadBytes: policy.values.transport.maximumJsonPayloadBytes,
+      maximumExecutionControlPayloadBytes:
+        policy.values.transport.maximumExecutionControlPayloadBytes,
+      maximumChunkRawBytes: policy.values.output.maximumChunkRawBytes,
+    });
+    const manifest = {
+      transferId: "transfer",
+      requestId: "request",
+      instanceId: "instance",
+      exitCode: 0,
+      rawBytes: 0,
+      recordCount: 0,
+      sha256: "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    } satisfies import("./completion-spool.js").CompletionSpoolManifest;
+    const acceptanceAndManifest = new ScriptedDaemonSocketConnection([
+      Buffer.concat([
+        codec.encodeServerMessage({
+          kind: "accepted",
+          instanceId: "instance",
+          processToken: "token",
+          requestId: "request",
+          acceptedAt: 1,
+          queuePosition: 0,
+        }),
+        codec.encodeServerMessage({
+          kind: "result-manifest",
+          instanceId: "instance",
+          processToken: "token",
+          requestId: "request",
+          manifest,
+        }),
+      ]),
+    ]);
+    const resumedResult = new ScriptedDaemonSocketConnection([
+      Buffer.concat([
+        codec.encodeServerMessage({
+          kind: "result-manifest",
+          instanceId: "instance",
+          processToken: "token",
+          requestId: "request",
+          manifest,
+        }),
+        codec.encodeServerMessage({
+          kind: "result-end",
+          instanceId: "instance",
+          processToken: "token",
+          requestId: "request",
+          transferId: "transfer",
+          rawBytes: 0,
+          recordCount: 0,
+          sha256: manifest.sha256,
+        }),
+      ]),
+    ]);
+    const acknowledgement = new ScriptedDaemonSocketConnection([
+      codec.encodeControl({
+        kind: "result-acknowledged",
+        instanceId: "instance",
+        processToken: "token",
+        requestId: "request",
+        transferId: "transfer",
+      }),
+    ]);
+    const sockets = new RecordingDaemonSocketClient(
+      acceptanceAndManifest,
+      resumedResult,
+      acknowledgement,
+    );
+    const transport = new LocalDaemonTransport(policy.values, { sockets });
+
+    const receipt = await transport.execute("daemon-endpoint", {
+      kind: "execute",
+      protocolVersion: DAEMON_PROTOCOL_VERSION,
+      instanceId: "instance",
+      processToken: "token",
+      requestId: "request",
+      commandName: "version",
+      request: {
+        argv: ["--version"],
+        cwd: "/repo",
+        telemetryEnabled: false,
+        executionMode: "warm",
+      },
+    });
+    const completion = await receipt.completion;
+
+    expect(completion).toMatchObject({ status: "completed", result: { exitCode: 0 } });
+    expect(sockets.connections).toEqual([
+      {
+        endpoint: "daemon-endpoint",
+        timeoutMs: policy.values.transport.executionAdmissionTimeoutMs,
+      },
+      { endpoint: "daemon-endpoint" },
+      {
+        endpoint: "daemon-endpoint",
+        timeoutMs: policy.values.transport.singleResponseTimeoutMs,
+      },
+    ]);
+    expect(acceptanceAndManifest.destroyCount).toBe(1);
+    expect(resumedResult.endCount).toBe(1);
+    expect(acknowledgement.endCount).toBe(1);
+    if (completion.status === "completed") await completion.result.output.dispose();
+  });
 });
 
 class RecordingDaemonSocketClient implements DaemonSocketClient {
   readonly connections: { readonly endpoint: string; readonly timeoutMs?: number }[] = [];
+  private readonly scriptedConnections: DaemonSocketConnection[];
 
-  constructor(private readonly connection: DaemonSocketConnection) {}
+  constructor(...connections: DaemonSocketConnection[]) {
+    this.scriptedConnections = [...connections];
+  }
 
   connect(endpoint: string, timeoutMs?: number): Promise<DaemonSocketConnection> {
     this.connections.push({ endpoint, ...(timeoutMs === undefined ? {} : { timeoutMs }) });
-    return Promise.resolve(this.connection);
+    const connection = this.scriptedConnections.shift();
+    if (connection === undefined) throw new Error("No scripted daemon socket connection");
+    return Promise.resolve(connection);
   }
 }
 

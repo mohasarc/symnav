@@ -102,6 +102,18 @@ class ValidatedDaemonExecutor implements DaemonExecutor {
   }
 }
 
+class DaemonExecutorModuleImporter {
+  private static readonly hostImporterModuleUrl = [
+    "data:text/javascript",
+    "export default moduleUrl => import(moduleUrl)",
+  ].join(",");
+
+  public static async load(moduleUrl: DaemonExecutorModuleUrl): Promise<unknown> {
+    const importer = await import(this.hostImporterModuleUrl);
+    return importer.default(moduleUrl) as Promise<unknown>;
+  }
+}
+
 export class DaemonExecutorModuleLoader {
   static async load(
     moduleUrl: DaemonExecutorModuleUrl,
@@ -110,7 +122,7 @@ export class DaemonExecutorModuleLoader {
     if (!DaemonExecutorValidation.isFileUrl(moduleUrl)) {
       throw new Error("Daemon executor module must use a file URL");
     }
-    const loaded: unknown = await import(moduleUrl);
+    const loaded = await DaemonExecutorModuleImporter.load(moduleUrl);
     if (
       !DaemonExecutorValidation.isRecord(loaded) ||
       typeof loaded.createDaemonExecutor !== "function"

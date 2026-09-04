@@ -29,6 +29,7 @@ import { DaemonResultTransferReceiver } from "./daemon-result-transfer-receiver.
 import { LocalDaemonSocketClient } from "./local-daemon-socket-client.js";
 import { DaemonLifecycleClient } from "./daemon-lifecycle-client.js";
 import { DaemonTransportError, type DaemonDeliveryState } from "./daemon-transport-error.js";
+import { LocalDaemonSocketServer } from "./local-daemon-socket-server.js";
 
 interface LocalDaemonTransportOptions {
   readonly lifecycleResponseTimeoutMs?: number;
@@ -79,6 +80,7 @@ export class LocalDaemonTransport
   private readonly deliveryPolicy: DaemonPolicyValues["delivery"];
   private readonly sockets: DaemonSocketClient;
   private readonly lifecycle: DaemonLifecycleClient;
+  private readonly server: DaemonRequestServer;
 
   constructor(policy: LocalDaemonTransportPolicy, options: LocalDaemonTransportOptions = {}) {
     this.endpointProbeTimeoutMs = policy.transport.singleResponseTimeoutMs;
@@ -103,6 +105,13 @@ export class LocalDaemonTransport
       validator: this.validator,
       responseTimeoutMs:
         options.lifecycleResponseTimeoutMs ?? policy.transport.singleResponseTimeoutMs,
+    });
+    this.server = new LocalDaemonSocketServer({
+      sockets: this.sockets,
+      codec: this.codec,
+      validator: this.validator,
+      policy: policy.transport,
+      ...(options.writeChunkSize === undefined ? {} : { writeChunkSize: options.writeChunkSize }),
     });
   }
 
@@ -512,9 +521,7 @@ export class LocalDaemonTransport
   }
 
   async removeUnavailableEndpoint(endpoint: string): Promise<boolean> {
-    if (await this.endpointIsReachable(endpoint)) return false;
-    if (process.platform !== "win32") rmSync(endpoint, { force: true });
-    return true;
+    return this.server.removeUnavailableEndpoint(endpoint);
   }
 
   private async endpointIsReachable(endpoint: string): Promise<boolean> {

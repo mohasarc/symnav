@@ -5,7 +5,6 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { DaemonPolicy, type DaemonExecutionFailureCode } from "@symnav/daemon";
-import { OrderedCommandOutput } from "../command-execution-result.js";
 import {
   DAEMON_PROTOCOL_VERSION,
   type DaemonExecuteRequest,
@@ -19,6 +18,7 @@ import {
   type DaemonCompletionSpoolStoreOptions,
 } from "./completion-spool.js";
 import { DaemonWireCodec } from "./daemon-wire-codec.js";
+import { DaemonClientResultCapture } from "./daemon-client-result-capture.js";
 
 const TEST_CHUNK_BYTES = 64 * 1024;
 const wireCodec = new DaemonWireCodec({
@@ -311,11 +311,14 @@ describe("LocalDaemonTransport execution delivery", () => {
 
     expect(completion.status).toBe("completed");
     if (completion.status !== "completed" || completion.result.output === undefined) return;
-    expect(completion.result.output.summary).toEqual({
-      rawBytes: manifest.rawBytes,
-      recordCount: manifest.recordCount,
-      sha256: manifest.sha256,
-    });
+    expect(completion.result.output).not.toHaveProperty("summary");
+    let receivedRecords = 0;
+    for await (const record of completion.result.output.records()) {
+      expect(record.stream).toBe(receivedRecords % 2 === 0 ? "stdout" : "stderr");
+      expect(Buffer.from(record.bytes)).toEqual(Buffer.alloc(TEST_CHUNK_BYTES, receivedRecords));
+      receivedRecords += 1;
+    }
+    expect(receivedRecords).toBe(chunkCount);
     expect(store.usage()).toEqual({ rawBytes: 0, completionCount: 0 });
     await completion.result.output.dispose();
     await server.close();
@@ -349,9 +352,9 @@ describe("LocalDaemonTransport execution delivery", () => {
     const appendGate = new Promise<void>((resolve) => {
       releaseAppend = resolve;
     });
-    const appendRecord = OrderedCommandOutput.prototype.appendRecord;
-    vi.spyOn(OrderedCommandOutput.prototype, "appendRecord").mockImplementation(async function (
-      this: OrderedCommandOutput,
+    const append = DaemonClientResultCapture.prototype.append;
+    vi.spyOn(DaemonClientResultCapture.prototype, "append").mockImplementation(async function (
+      this: DaemonClientResultCapture,
       record,
     ) {
       appendCalls += 1;
@@ -360,7 +363,7 @@ describe("LocalDaemonTransport execution delivery", () => {
       markAppendStarted();
       if (appendCalls === 1) await appendGate;
       try {
-        await appendRecord.call(this, record);
+        await append.call(this, record);
       } finally {
         activeAppends -= 1;
       }
@@ -431,16 +434,16 @@ describe("LocalDaemonTransport execution delivery", () => {
     const appendGate = new Promise<void>((resolve) => {
       releaseAppend = resolve;
     });
-    const appendRecord = OrderedCommandOutput.prototype.appendRecord;
+    const append = DaemonClientResultCapture.prototype.append;
     let appendCalls = 0;
-    vi.spyOn(OrderedCommandOutput.prototype, "appendRecord").mockImplementation(async function (
-      this: OrderedCommandOutput,
+    vi.spyOn(DaemonClientResultCapture.prototype, "append").mockImplementation(async function (
+      this: DaemonClientResultCapture,
       record,
     ) {
       appendCalls += 1;
       markAppendStarted();
       if (appendCalls === 1) await appendGate;
-      await appendRecord.call(this, record);
+      await append.call(this, record);
     });
     const fetchOffsets: number[] = [];
     const endpoint = await rawExecutionServer(servers, sockets, directories, (socket) => {
@@ -548,19 +551,20 @@ describe("LocalDaemonTransport execution delivery", () => {
     const completion = await receipt.completion;
 
     expect(fetchOffsets).toEqual([2]);
-    expect(completion).toMatchObject({
-      status: "completed",
-      result: {
-        exitCode: 0,
-        output: {
-          summary: {
-            rawBytes: manifest.rawBytes,
-            recordCount: manifest.recordCount,
-            sha256: manifest.sha256,
-          },
-        },
-      },
-    });
+    expect(completion).toMatchObject({ status: "completed", result: { exitCode: 0 } });
+    if (completion.status === "completed") {
+      expect(completion.result.output).not.toHaveProperty("summary");
+      const records = [];
+      for await (const record of completion.result.output.records()) {
+        records.push({ stream: record.stream, bytes: Buffer.from(record.bytes).toString() });
+      }
+      expect(records).toEqual(
+        Array.from({ length: 5 }, (_, sequence) => ({
+          stream: sequence % 2 === 0 ? "stdout" : "stderr",
+          bytes: `record-${sequence}\n`,
+        })),
+      );
+    }
     expect(store.usage()).toEqual({ rawBytes: 0, completionCount: 0 });
     if (completion.status === "completed") await completion.result.output?.dispose();
   });
@@ -587,7 +591,7 @@ describe("LocalDaemonTransport execution delivery", () => {
       await spool.append({
         sequence,
         stream: sequence % 2 === 0 ? "stdout" : "stderr",
-        bytes: Buffer.from(`record-${sequence}\n`),
+        bytes: Buffer.alloc(TEST_CHUNK_BYTES, sequence),
       });
     }
     const manifest = await spool.finish(0);
@@ -802,6 +806,11 @@ describe("LocalDaemonTransport execution delivery", () => {
       sequence: 0,
       stream: "stdout",
       bytes: Buffer.alloc(TEST_CHUNK_BYTES, 3),
+    });
+    await spool.append({
+      sequence: 1,
+      stream: "stderr",
+      bytes: Buffer.from("spill"),
     });
     const manifest = await spool.finish(0);
     let acknowledgementCount = 0;

@@ -5,6 +5,7 @@ import {
   DaemonAdmissionRejections,
   type DaemonExecuteRejectionCode,
   type DaemonExecutionFailureCode,
+  type DaemonExecutorExecutionResult,
   type DaemonPolicyValues,
 } from "@symnav/daemon";
 import type {
@@ -32,7 +33,11 @@ import type {
 import { DaemonWireCodec } from "./daemon-wire-codec.js";
 import { DaemonProtocolError, DaemonProtocolValidator } from "./daemon-protocol-validator.js";
 import type { CompletionSpoolManifest } from "./completion-spool.js";
-import { LocalDaemonOutput, type LocalDaemonExecutionResult } from "./local-daemon-output.js";
+import {
+  DaemonClientResultCapture,
+  type DaemonCapturedOutputSummary,
+  type DaemonOutputCapture,
+} from "./daemon-client-result-capture.js";
 
 interface LocalDaemonTransportOptions {
   readonly responseTimeoutPurpose?: "ordinary" | "status-observer";
@@ -90,7 +95,7 @@ class DaemonResultTransferReceiver {
 
   constructor(
     private readonly request: DaemonExecuteRequest,
-    private readonly output: LocalDaemonOutput,
+    private readonly output: DaemonOutputCapture,
     manifest?: CompletionSpoolManifest,
     initialOffset = 0,
   ) {
@@ -144,7 +149,7 @@ class DaemonResultTransferReceiver {
     ) {
       throw new Error("Daemon returned an invalid result chunk");
     }
-    await this.output.appendRecord({
+    await this.output.append({
       sequence: chunk.sequence,
       stream: chunk.stream,
       bytes: chunk.bytes,
@@ -169,17 +174,17 @@ class DaemonResultTransferReceiver {
     this.terminalReceived = true;
   }
 
-  async finish(): Promise<LocalDaemonExecutionResult> {
+  async finish(): Promise<DaemonExecutorExecutionResult> {
     const manifest = this.expectedManifest;
     if (!this.terminalReceived || manifest === undefined) {
       throw new Error("Daemon result transfer is incomplete");
     }
-    const result = await this.output.finish(manifest.exitCode);
-    if (!DaemonResultTransferReceiver.summariesMatch(result.output.summary, manifest)) {
-      await result.output.dispose();
+    const captured = await this.output.finish(manifest.exitCode);
+    if (!DaemonResultTransferReceiver.summariesMatch(captured.summary, manifest)) {
+      await captured.result.output.dispose();
       throw new Error("Daemon result transfer failed digest validation");
     }
-    return result;
+    return captured.result;
   }
 
   private static manifestsMatch(
@@ -196,7 +201,7 @@ class DaemonResultTransferReceiver {
   }
 
   private static summariesMatch(
-    actual: CompletionSpoolManifest | LocalDaemonExecutionResult["output"]["summary"],
+    actual: CompletionSpoolManifest | DaemonCapturedOutputSummary,
     expected: CompletionSpoolManifest,
   ): boolean {
     return (
@@ -392,7 +397,7 @@ export class LocalDaemonTransport
     this.validator.request(request);
     return new Promise((resolve, reject) => {
       const decoder = this.codec.transferDecoder();
-      const output = new LocalDaemonOutput({
+      const output = new DaemonClientResultCapture({
         policy: this.outputPolicy,
         ...(this.outputDirectory === undefined ? {} : { directory: this.outputDirectory }),
       });
@@ -601,7 +606,7 @@ export class LocalDaemonTransport
   private fetchCompletion(
     endpoint: string,
     request: DaemonExecuteRequest,
-    output: LocalDaemonOutput,
+    output: DaemonOutputCapture,
     transfer: DaemonResultTransferReceiver,
   ): DaemonExecutionReceipt["completion"] {
     return new Promise((resolve, reject) => {

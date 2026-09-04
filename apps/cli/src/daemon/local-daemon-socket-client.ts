@@ -18,6 +18,9 @@ class LocalDaemonSocketConnection implements DaemonSocketConnection, AsyncIterab
   private error: unknown;
   private readonly queuedWrites: Uint8Array[] = [];
   private waitingForDrain = false;
+  private timeoutDisabled = false;
+  private endRequested = false;
+  private destroyRequested = false;
 
   constructor(
     private readonly socket: Socket,
@@ -59,20 +62,26 @@ class LocalDaemonSocketConnection implements DaemonSocketConnection, AsyncIterab
   }
 
   disableTimeout(): void {
+    if (this.timeoutDisabled) return;
+    this.timeoutDisabled = true;
     this.socket.setTimeout(0);
   }
 
   end(): void {
+    if (this.endRequested) return;
+    this.endRequested = true;
     this.socket.end();
   }
 
   destroy(): void {
+    if (this.destroyRequested) return;
+    this.destroyRequested = true;
     this.socket.destroy();
   }
 
   timeout(error: Error): void {
     this.fail(error);
-    this.socket.destroy();
+    this.destroy();
   }
 
   private receive(bytes: Uint8Array): void {

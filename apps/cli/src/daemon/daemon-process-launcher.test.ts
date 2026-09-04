@@ -208,9 +208,10 @@ describe("NodeDaemonProcessLauncher", () => {
       DaemonPolicy.fromSystemMemory({ totalBytes: 256 * 1024 * 1024 }),
     ).launch(identity, "instance", "process-token");
     const [, args] = spawnMock.mock.calls[0] as [string, readonly string[]];
-    const configuration = JSON.parse(
-      Buffer.from(args[1]!, "base64url").toString("utf8"),
-    ) as Record<string, unknown>;
+    const configuration = JSON.parse(Buffer.from(args[1]!, "base64url").toString("utf8")) as Record<
+      string,
+      unknown
+    >;
     const encoded = Buffer.from(JSON.stringify({ ...configuration, ...mutation })).toString(
       "base64url",
     );

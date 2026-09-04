@@ -205,6 +205,20 @@ export class DaemonProcessConfigurationParser {
     if (typeof value !== "object" || value === null) return false;
     const configuration = value as Record<string, unknown>;
     return (
+      DaemonProcessConfigurationParser.hasExactKeys(configuration, [
+        "workspaceRoot",
+        "stateDirectory",
+        "workspaceKey",
+        "stateKey",
+        "identityKey",
+        "instanceId",
+        "processToken",
+        "endpoint",
+        "symnavVersion",
+        "executorModuleUrl",
+        "policy",
+        "startupOwnerKind",
+      ]) &&
       typeof configuration.workspaceRoot === "string" &&
       typeof configuration.stateDirectory === "string" &&
       typeof configuration.workspaceKey === "string" &&
@@ -217,6 +231,14 @@ export class DaemonProcessConfigurationParser {
       DaemonProcessConfigurationParser.isModuleUrl(configuration.executorModuleUrl) &&
       DaemonProcessConfigurationParser.isPolicy(configuration.policy) &&
       configuration.startupOwnerKind === "daemon"
+    );
+  }
+
+  private static hasExactKeys(value: Record<string, unknown>, keys: readonly string[]): boolean {
+    const actual = Object.keys(value).sort();
+    const expected = [...keys].sort();
+    return (
+      actual.length === expected.length && actual.every((key, index) => key === expected[index])
     );
   }
 

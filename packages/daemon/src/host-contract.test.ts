@@ -108,10 +108,10 @@ class DaemonContractExpectation {
     { kind: "type", name: "DaemonOutputRecord" },
     { kind: "type", name: "DaemonOutputSink" },
     { kind: "type", name: "DaemonOutputStream" },
-    { kind: "type", name: "DaemonSequencedOutputRecord" },
     { kind: "type", name: "DaemonPolicyValues" },
     { kind: "type", name: "DaemonReadinessProbe" },
     { kind: "type", name: "DaemonRejectedExecutionFrame" },
+    { kind: "type", name: "DaemonSequencedOutputRecord" },
     { kind: "type", name: "DaemonStartResult" },
     { kind: "type", name: "DaemonStatusEnvelope" },
     { kind: "type", name: "DaemonStopResult" },
@@ -528,9 +528,11 @@ describe("daemon host contract", () => {
       readonly stream: DaemonOutputStream;
       readonly bytes: Uint8Array;
     }>();
-    expectTypeOf<DaemonSequencedOutputRecord>().toEqualTypeOf<
-      DaemonOutputRecord & { readonly sequence: number }
-    >();
+    expectTypeOf<DaemonSequencedOutputRecord>().toEqualTypeOf<{
+      readonly sequence: number;
+      readonly stream: DaemonOutputStream;
+      readonly bytes: Uint8Array;
+    }>();
     expectTypeOf<DaemonOutputSink>().toEqualTypeOf<{
       append(record: DaemonSequencedOutputRecord): Promise<void>;
     }>();
@@ -574,10 +576,12 @@ describe("daemon host contract", () => {
     expectTypeOf<DaemonDiagnostics>().toEqualTypeOf<
       Readonly<Record<string, DaemonDiagnosticValue>>
     >();
-    expect(DaemonDiagnosticValues.isDiagnostics({
-      text: "opaque",
-      nested: { list: [null, true, 1, "value"] },
-    })).toBe(true);
+    expect(
+      DaemonDiagnosticValues.isDiagnostics({
+        text: "opaque",
+        nested: { list: [null, true, 1, "value"] },
+      }),
+    ).toBe(true);
     expect(DaemonDiagnosticValues.isDiagnostics({ nested: { invalid: undefined } })).toBe(false);
     expect(DaemonDiagnosticValues.isDiagnostics({ invalid: Number.POSITIVE_INFINITY })).toBe(false);
   });
@@ -726,6 +730,7 @@ describe("daemon host contract", () => {
       "DaemonAdmissionPolicy",
       "DaemonAdmissionRejections",
       "DAEMON_COMMAND_NAMES",
+      "DaemonDiagnosticValues",
       "DaemonExecutionFailures",
       "DaemonPolicy",
     ]);

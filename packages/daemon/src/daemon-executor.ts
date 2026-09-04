@@ -15,6 +15,14 @@ export interface DaemonOutputRecord {
   readonly bytes: Uint8Array;
 }
 
+export interface DaemonSequencedOutputRecord extends DaemonOutputRecord {
+  readonly sequence: number;
+}
+
+export interface DaemonOutputSink {
+  append(record: DaemonSequencedOutputRecord): Promise<void>;
+}
+
 export interface DaemonExecutorOutput {
   records(): AsyncIterable<DaemonOutputRecord>;
   dispose(): Promise<void>;

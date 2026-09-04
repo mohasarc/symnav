@@ -60,8 +60,8 @@ describe("@symnav/daemon public package import", () => {
     expect(Object.keys(daemonRuntime)).toEqual([
       "DaemonAdmissionPolicy",
       "DaemonAdmissionRejections",
-      "DaemonDiagnosticValues",
       "DAEMON_COMMAND_NAMES",
+      "DaemonDiagnosticValues",
       "DaemonExecutionFailures",
       "DaemonPolicy",
     ]);

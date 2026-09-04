@@ -9,7 +9,6 @@ import {
   type DaemonPolicyValues,
   type DaemonRejectedExecutionFrame,
 } from "@symnav/daemon";
-import { OrderedCommandOutput, type CommandExecutionResult } from "../command-execution-result.js";
 import type {
   DaemonExecuteRequest,
   DaemonExecutionServerFrame,
@@ -28,6 +27,7 @@ import type {
 import { DaemonResultChunkCodec, DaemonTransferFrameDecoder } from "./daemon-result-chunk-codec.js";
 import { DaemonRuntimeValues } from "./daemon-runtime-values.js";
 import type { CompletionSpoolManifest } from "./completion-spool.js";
+import { LocalDaemonOutput, type LocalDaemonExecutionResult } from "./local-daemon-output.js";
 
 interface LocalDaemonTransportOptions {
   readonly responseTimeoutPurpose?: "ordinary" | "status-observer";
@@ -66,7 +66,7 @@ export interface DaemonExecutionAcceptance {
 export interface DaemonExecutionReceipt {
   readonly acceptance: DaemonExecutionAcceptance;
   readonly completion: Promise<
-    | { readonly status: "completed"; readonly result: CommandExecutionResult }
+    | { readonly status: "completed"; readonly result: LocalDaemonExecutionResult }
     | { readonly status: "failed"; readonly code: DaemonExecutionFailureCode }
   >;
 }
@@ -150,7 +150,7 @@ class DaemonResultTransferReceiver {
 
   constructor(
     private readonly request: DaemonExecuteRequest,
-    private readonly output: OrderedCommandOutput,
+    private readonly output: LocalDaemonOutput,
     manifest?: CompletionSpoolManifest,
     initialOffset = 0,
   ) {
@@ -229,7 +229,7 @@ class DaemonResultTransferReceiver {
     this.terminalReceived = true;
   }
 
-  async finish(): Promise<CommandExecutionResult> {
+  async finish(): Promise<LocalDaemonExecutionResult> {
     const manifest = this.expectedManifest;
     if (!this.terminalReceived || manifest === undefined) {
       throw new Error("Daemon result transfer is incomplete");
@@ -256,7 +256,7 @@ class DaemonResultTransferReceiver {
   }
 
   private static summariesMatch(
-    actual: CompletionSpoolManifest | CommandExecutionResult["output"]["summary"],
+    actual: CompletionSpoolManifest | LocalDaemonExecutionResult["output"]["summary"],
     expected: CompletionSpoolManifest,
   ): boolean {
     return (
@@ -449,7 +449,7 @@ export class LocalDaemonTransport {
         this.maximumControlFrameBytes,
         this.maximumChunkRawBytes,
       );
-      const output = new OrderedCommandOutput({
+      const output = new LocalDaemonOutput({
         policy: this.outputPolicy,
         ...(this.outputDirectory === undefined ? {} : { directory: this.outputDirectory }),
       });
@@ -658,7 +658,7 @@ export class LocalDaemonTransport {
   private fetchCompletion(
     endpoint: string,
     request: DaemonExecuteRequest,
-    output: OrderedCommandOutput,
+    output: LocalDaemonOutput,
     transfer: DaemonResultTransferReceiver,
   ): DaemonExecutionReceipt["completion"] {
     return new Promise((resolve, reject) => {

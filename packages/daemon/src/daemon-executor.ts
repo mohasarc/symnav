@@ -48,6 +48,7 @@ export interface DaemonExecutor {
 export interface DaemonExecutorFactoryOptions {
   readonly stateDirectory: string;
   readonly productVersion: string;
+  readonly sampleResources: () => void;
 }
 
 export type DaemonExecutorFactory = (

@@ -1,4 +1,3 @@
-import { createDefaultDependencies } from "../program.js";
 import { DaemonPolicy } from "@symnav/daemon";
 import { NodeDaemonClock } from "./daemon-clock.js";
 import { DaemonLogger } from "./daemon-logger.js";
@@ -24,10 +23,6 @@ class DaemonEntry {
     )
       throw new Error("Daemon process identity does not match configuration");
     const policy = DaemonPolicy.fromSerialized(configuration.policy);
-    const dependencies = createDefaultDependencies(configuration.stateDirectory, policy);
-    if (dependencies.symnavVersion !== configuration.symnavVersion) {
-      throw new Error("Daemon process version does not match launcher");
-    }
     const registry = new DaemonRegistry(identity.registryDirectory, policy.values.startup);
     const clock = new NodeDaemonClock();
     const logger = new DaemonLogger(identity, configuration.instanceId, clock, {
@@ -43,7 +38,6 @@ class DaemonEntry {
       symnavVersion: configuration.symnavVersion,
       executorModuleUrl: configuration.executorModuleUrl,
       policy,
-      dependencies,
       registry,
       transport: new LocalDaemonTransport(policy.values),
       clock,

@@ -50,7 +50,7 @@ class CliDaemonExecutor implements DaemonExecutor {
     renderMs: 0,
   };
 
-  constructor(dependencies: ProgramDependencies) {
+  constructor(dependencies: ProgramDependencies, sampleResources: () => void) {
     const backends = dependencies.backends();
     this.workspaceSession = new WorkspaceSession({
       fileSystem: dependencies.fs,
@@ -66,6 +66,7 @@ class CliDaemonExecutor implements DaemonExecutor {
         },
         commandPhasesObserved: (durations) => {
           this.latestCommandDurations = durations;
+          sampleResources();
         },
       },
       this.workspaceSession,
@@ -134,7 +135,7 @@ export function createDaemonExecutor(options: DaemonExecutorFactoryOptions): Dae
   if (dependencies.symnavVersion !== options.productVersion) {
     throw new Error("Daemon executor version does not match host product");
   }
-  return new CliDaemonExecutor(dependencies);
+  return new CliDaemonExecutor(dependencies, options.sampleResources);
 }
 
 export function daemonExecutorModuleUrl(): DaemonExecutorModuleUrl {

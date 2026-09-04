@@ -231,6 +231,49 @@ describe("LocalDaemonTransport execution delivery", () => {
     await expect(receipt.completion).resolves.toEqual({ status: "failed", code });
   });
 
+  it.each([
+    ["socket close before acceptance", []],
+    ["protocol failure after acceptance", [accepted(), accepted()]],
+    [
+      "terminal daemon failure",
+      [
+        accepted(),
+        {
+          kind: "execution-failed",
+          instanceId: request.instanceId,
+          processToken: request.processToken,
+          requestId: request.requestId,
+          code: "internal",
+        } satisfies DaemonExecutionServerFrame,
+      ],
+    ],
+  ] as const)("disposes output exactly once after %s", async (scenario, responses) => {
+    const dispose = vi.spyOn(DaemonClientResultCapture.prototype, "dispose");
+    const endpoint = await rawExecutionServer(servers, sockets, directories, (socket) => {
+      socket.once("data", () => socket.end(Buffer.concat(responses.map(frame))));
+    });
+    const execution = new LocalDaemonTransport().execute(endpoint, request);
+
+    if (scenario === "socket close before acceptance") {
+      await expect(execution).rejects.toMatchObject({
+        code: "closed",
+        delivery: "submitted-unconfirmed",
+      });
+    } else {
+      const receipt = await execution;
+      if (scenario === "terminal daemon failure") {
+        await expect(receipt.completion).resolves.toEqual({ status: "failed", code: "internal" });
+      } else {
+        await expect(receipt.completion).rejects.toMatchObject({
+          code: "corrupt",
+          delivery: "accepted",
+        });
+      }
+    }
+
+    expect(dispose).toHaveBeenCalledTimes(1);
+  });
+
   it("has no completion deadline after acceptance", async () => {
     const endpoint = await rawExecutionServer(servers, sockets, directories, (socket) => {
       socket.once("data", () => {

@@ -1,6 +1,8 @@
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { runInNewContext } from "node:vm";
+import { setFlagsFromString } from "node:v8";
 import { describe, expect, it } from "vitest";
 import { DaemonPolicy, type DaemonExecutorRequest } from "@symnav/daemon";
 import { DaemonPolicyTestFactory } from "@symnav/daemon/policy-testing";
@@ -239,6 +241,73 @@ describe("NodeDaemonNavigationWorker", () => {
     }
   });
 
+  it("samples the active request heap when the injected executor requests it", async () => {
+    const directory = mkdtempSync(join(tmpdir(), "symnav-worker-resource-sampling-"));
+    const worker = createInjectedWorker(
+      new URL("../../test/helpers/resource-sampling-daemon-executor-fixture.mjs", import.meta.url)
+        .href,
+      directory,
+    );
+    try {
+      await worker.start("/repo");
+
+      const response = await worker.execute("request-1", "version", request, outputSink());
+
+      if (response.kind !== "result") throw new Error("Expected worker execution result");
+      expect(response.resources.peakWorkerHeapUsedBytes).toBeGreaterThan(
+        response.resources.workerHeapUsedBytes + 16 * 1024 * 1024,
+      );
+    } finally {
+      await worker.terminate();
+      rmSync(directory, { recursive: true, force: true });
+    }
+  });
+
+  it("preserves an already-exposed garbage collector after resource sampling", async () => {
+    const garbageCollectionWasExposed = garbageCollectionIsExposed();
+    setFlagsFromString("--expose-gc");
+    const directory = mkdtempSync(join(tmpdir(), "symnav-worker-resource-sampling-"));
+    const worker = createInjectedWorker(
+      new URL("../../test/helpers/resource-sampling-daemon-executor-fixture.mjs", import.meta.url)
+        .href,
+      directory,
+    );
+    try {
+      await worker.start("/repo");
+      await worker.execute("request-1", "version", request, outputSink());
+
+      expect(garbageCollectionIsExposed()).toBe(true);
+    } finally {
+      await worker.terminate();
+      restoreGarbageCollectionExposure(garbageCollectionWasExposed);
+      rmSync(directory, { recursive: true, force: true });
+    }
+  });
+
+  it("restores garbage collector exposure when forced collection fails", async () => {
+    const garbageCollectionWasExposed = garbageCollectionIsExposed();
+    setFlagsFromString("--no-expose-gc");
+    const directory = mkdtempSync(join(tmpdir(), "symnav-worker-resource-sampling-"));
+    const worker = createInjectedWorker(
+      new URL("../../test/helpers/resource-sampling-daemon-executor-fixture.mjs", import.meta.url)
+        .href,
+      directory,
+      "collection-failure",
+    );
+    try {
+      await worker.start("/repo");
+      await expect(worker.execute("request-1", "version", request, outputSink())).rejects.toThrow(
+        /execution failure/i,
+      );
+
+      expect(garbageCollectionIsExposed()).toBe(false);
+    } finally {
+      await worker.terminate();
+      restoreGarbageCollectionExposure(garbageCollectionWasExposed);
+      rmSync(directory, { recursive: true, force: true });
+    }
+  });
+
   it.each([
     ["invalid scheme", "https://example.test/executor.js", "valid"],
     [
@@ -410,4 +479,12 @@ function outputSink() {
 function timerTurn(): Promise<number> {
   const startedAt = Date.now();
   return new Promise((resolve) => setTimeout(() => resolve(Date.now() - startedAt), 0));
+}
+
+function garbageCollectionIsExposed(): boolean {
+  return runInNewContext("typeof gc") === "function";
+}
+
+function restoreGarbageCollectionExposure(exposed: boolean): void {
+  setFlagsFromString(exposed ? "--expose-gc" : "--no-expose-gc");
 }

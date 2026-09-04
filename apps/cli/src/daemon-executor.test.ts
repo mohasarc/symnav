@@ -6,7 +6,10 @@ import { WorkspaceSession } from "@symnav/core";
 import { fixturePath } from "@symnav/testing";
 import { fileURLToPath } from "node:url";
 import { isAbsolute } from "node:path";
+import { CommandOutputSnapshot } from "./command-execution-result.js";
 import { createDaemonExecutor, daemonExecutorModuleUrl } from "./daemon-executor.js";
+import { CliProgramExecutor } from "./cli-program-executor.js";
+import type { ProgramDependencies } from "./program-dependencies.js";
 
 describe("createDaemonExecutor", () => {
   const temporaryDirectories: string[] = [];
@@ -136,13 +139,25 @@ describe("createDaemonExecutor", () => {
     await result.output.dispose();
   });
 
-  it("requests an explicit resource sample after a synchronous command phase", async () => {
+  it("samples resources before the command phase observer returns", async () => {
     const stateDirectory = temporaryDirectory(temporaryDirectories);
-    const sampleResources = vi.fn();
+    const order: string[] = [];
+    vi.spyOn(CliProgramExecutor.prototype, "execute").mockImplementation(async function (
+      this: CliProgramExecutor,
+    ) {
+      const dependencies = Reflect.get(this, "dependencies") as ProgramDependencies;
+      order.push("phase-start");
+      dependencies.commandPhasesObserved?.({ freshnessMs: 1, navigationMs: 2, renderMs: 3 });
+      order.push("phase-return");
+      return {
+        exitCode: 0,
+        output: new CommandOutputSnapshot([]),
+      };
+    });
     const executor = await createDaemonExecutor({
       stateDirectory,
       productVersion: "0.1.0",
-      sampleResources,
+      sampleResources: () => order.push("sample"),
     });
 
     const result = await executor.execute({
@@ -152,7 +167,7 @@ describe("createDaemonExecutor", () => {
       executionMode: "warm",
     });
 
-    expect(sampleResources).toHaveBeenCalledOnce();
+    expect(order).toEqual(["phase-start", "sample", "phase-return"]);
     await result.output.dispose();
   });
 });

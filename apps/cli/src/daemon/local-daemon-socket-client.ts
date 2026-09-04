@@ -1,6 +1,10 @@
 import { createConnection, type Socket } from "node:net";
 import type { DaemonSocketClient, DaemonSocketConnection } from "./daemon-transport.js";
 
+interface LocalDaemonSocketClientOptions {
+  readonly writeChunkSize?: number;
+}
+
 class LocalDaemonSocketConnection implements DaemonSocketConnection, AsyncIterable<Uint8Array> {
   readonly incoming: AsyncIterable<Uint8Array> = this;
   private readonly queuedBytes: Uint8Array[] = [];
@@ -11,8 +15,13 @@ class LocalDaemonSocketConnection implements DaemonSocketConnection, AsyncIterab
       }
     | undefined;
   private ended = false;
+  private readonly queuedWrites: Uint8Array[] = [];
+  private waitingForDrain = false;
 
-  constructor(private readonly socket: Socket) {
+  constructor(
+    private readonly socket: Socket,
+    private readonly writeChunkSize: number | undefined,
+  ) {
     socket.pause();
     socket.on("data", (bytes) => this.receive(Buffer.isBuffer(bytes) ? bytes : Buffer.from(bytes)));
     socket.once("end", () => this.finish());
@@ -34,7 +43,11 @@ class LocalDaemonSocketConnection implements DaemonSocketConnection, AsyncIterab
   }
 
   write(frame: Uint8Array): void {
-    this.socket.write(frame);
+    const chunkSize = this.writeChunkSize ?? frame.length;
+    for (let offset = 0; offset < frame.length; offset += chunkSize) {
+      this.queuedWrites.push(frame.subarray(offset, offset + chunkSize));
+    }
+    this.flushWrites();
   }
 
   disableTimeout(): void {
@@ -68,14 +81,30 @@ class LocalDaemonSocketConnection implements DaemonSocketConnection, AsyncIterab
     pendingRead?.resolve({ done: true, value: undefined });
   }
 
+  private flushWrites(): void {
+    if (this.waitingForDrain || this.ended) return;
+    while (this.queuedWrites.length > 0) {
+      const frame = this.queuedWrites.shift();
+      if (frame === undefined) return;
+      if (this.socket.write(frame)) continue;
+      this.waitingForDrain = true;
+      this.socket.once("drain", () => {
+        this.waitingForDrain = false;
+        this.flushWrites();
+      });
+      return;
+    }
+  }
 }
 
 export class LocalDaemonSocketClient implements DaemonSocketClient {
+  constructor(private readonly options: LocalDaemonSocketClientOptions = {}) {}
+
   connect(endpoint: string): Promise<DaemonSocketConnection> {
     return new Promise((resolve) => {
       const socket = createConnection(endpoint);
       socket.once("connect", () => {
-        resolve(new LocalDaemonSocketConnection(socket));
+        resolve(new LocalDaemonSocketConnection(socket, this.options.writeChunkSize));
       });
     });
   }

@@ -200,6 +200,23 @@ describe("LocalDaemonSocketClient", () => {
     await expect(waiting).rejects.toBe(drainWriteError);
     expect(socket.destroyCount).toBe(1);
   });
+
+  it("makes timeout disabling and close operations idempotent", async () => {
+    const connecting = new LocalDaemonSocketClient().connect("endpoint", 25);
+    socket.emit("connect");
+    const connection = await connecting;
+
+    connection.disableTimeout();
+    connection.disableTimeout();
+    connection.end();
+    connection.end();
+    connection.destroy();
+    connection.destroy();
+
+    expect(socket.timeoutMilliseconds).toEqual([25, 0]);
+    expect(socket.endCount).toBe(1);
+    expect(socket.destroyCount).toBe(1);
+  });
 });
 
 class FakeSocket extends EventEmitter {
@@ -208,6 +225,7 @@ class FakeSocket extends EventEmitter {
   destroyed = false;
   pauseCount = 0;
   resumeCount = 0;
+  endCount = 0;
   destroyCount = 0;
   readonly timeoutMilliseconds: number[] = [];
   private timeoutListener: (() => void) | undefined;
@@ -240,6 +258,7 @@ class FakeSocket extends EventEmitter {
   }
 
   end(): this {
+    this.endCount += 1;
     return this;
   }
 

@@ -313,6 +313,59 @@ describe("NodeDaemonNavigationWorker", () => {
       rmSync(directory, { recursive: true, force: true });
     }
   });
+
+  it("proves readiness through the injected CLI version command with legacy cold input", async () => {
+    const directory = mkdtempSync(join(tmpdir(), "symnav-injected-worker-readiness-"));
+    const workspaceRoot = fixturePath("overview-cases");
+    const worker = createInjectedWorker(
+      new URL("../../dist/daemon-executor.js", import.meta.url).href,
+      directory,
+      "0.1.0",
+    );
+    try {
+      await expect(worker.start(workspaceRoot)).resolves.toMatchObject({
+        kind: "ready",
+        fileCount: 17,
+        startupDurations: {
+          discoveryMs: 0,
+          indexingMs: expect.any(Number),
+          totalMs: expect.any(Number),
+        },
+      });
+      const records: Uint8Array[] = [];
+      await expect(
+        worker.execute(
+          "readiness-probe",
+          "version",
+          {
+            argv: ["--version"],
+            cwd: workspaceRoot,
+            telemetryEnabled: false,
+            executionMode: "cold",
+          },
+          {
+            append: async (record) => {
+              records.push(record.bytes);
+            },
+          },
+        ),
+      ).resolves.toMatchObject({
+        kind: "result",
+        result: { exitCode: 0 },
+        durations: {
+          freshnessMs: 0,
+          navigationMs: 0,
+          renderMs: 0,
+          outputMs: expect.any(Number),
+        },
+      });
+      expect(Buffer.concat(records).toString("utf8")).toBe("0.1.0\n");
+      await worker.drainAndClose();
+    } finally {
+      await worker.terminate();
+      rmSync(directory, { recursive: true, force: true });
+    }
+  });
 });
 
 function createInjectedWorker(

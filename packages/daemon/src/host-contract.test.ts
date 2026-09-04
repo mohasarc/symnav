@@ -10,7 +10,14 @@ import * as daemonRuntime from "./index.js";
 import * as policyTestingRuntime from "./policy-testing.js";
 import type {
   DaemonActivitySnapshot,
+  AcceptedRequestCompatibility,
+  DaemonAdmissionContext,
+  DaemonAdmissionDecision,
+  DaemonAdmissionGuard,
+  DaemonAdmissionRejectionCode,
   DaemonCommandName,
+  DaemonExecuteRejectionCode,
+  DaemonExecutionCoordinates,
   DaemonDiagnostics,
   DaemonDiagnosticValue,
   DaemonExecutionFailureCode,
@@ -31,12 +38,18 @@ import type {
   DaemonReadinessProbe,
   DaemonSystemMemory,
   DaemonWorkerFailureCode,
+  DaemonRejectedExecutionFrame,
   DaemonStartResult,
   DaemonStatusEnvelope,
   DaemonStopResult,
   RunningDaemonStatus,
+  WorkspaceRequestQueueState,
 } from "./index.js";
-import { DAEMON_COMMAND_NAMES, DaemonExecutionFailures, DaemonPolicy } from "./index.js";
+import {
+  DAEMON_COMMAND_NAMES,
+  DaemonExecutionFailures,
+  DaemonPolicy,
+} from "./index.js";
 
 type ExportKind = "runtime" | "type";
 
@@ -62,11 +75,18 @@ class DaemonContractExpectation {
     { kind: "runtime", name: "DaemonExecutionFailures" },
     { kind: "runtime", name: "DaemonPolicy" },
     { kind: "type", name: "DaemonActivitySnapshot" },
+    { kind: "type", name: "AcceptedRequestCompatibility" },
+    { kind: "type", name: "DaemonAdmissionContext" },
+    { kind: "type", name: "DaemonAdmissionDecision" },
+    { kind: "type", name: "DaemonAdmissionGuard" },
+    { kind: "type", name: "DaemonAdmissionRejectionCode" },
     { kind: "type", name: "DaemonCommandName" },
     { kind: "type", name: "DaemonDiagnostics" },
     { kind: "type", name: "DaemonDiagnosticValue" },
     { kind: "type", name: "DaemonExecutionFailureCode" },
     { kind: "type", name: "DaemonExecutionFailureContext" },
+    { kind: "type", name: "DaemonExecuteRejectionCode" },
+    { kind: "type", name: "DaemonExecutionCoordinates" },
     { kind: "type", name: "DaemonExecutionMode" },
     { kind: "type", name: "DaemonExecutor" },
     { kind: "type", name: "DaemonExecutorExecutionResult" },
@@ -86,7 +106,9 @@ class DaemonContractExpectation {
     { kind: "type", name: "DaemonStopResult" },
     { kind: "type", name: "DaemonSystemMemory" },
     { kind: "type", name: "DaemonWorkerFailureCode" },
+    { kind: "type", name: "DaemonRejectedExecutionFrame" },
     { kind: "type", name: "RunningDaemonStatus" },
+    { kind: "type", name: "WorkspaceRequestQueueState" },
   ];
 
   public static readonly policyMembers = [
@@ -107,6 +129,7 @@ class DaemonContractExpectation {
 
   public static readonly productionSources: readonly string[] = [
     "daemon-command-name.ts",
+    "daemon-admission.ts",
     "daemon-diagnostics.ts",
     "daemon-execution-failure.ts",
     "daemon-executor.ts",
@@ -324,6 +347,34 @@ describe("daemon host contract", () => {
   it("decodes source module URLs before filesystem access", () => {
     const sourcePath = join(tmpdir(), "symnav contract path", "host-contract.test.ts");
     expect(DaemonContractSourcePath.root(pathToFileURL(sourcePath).href)).toBe(dirname(sourcePath));
+  });
+
+  it("defines the exact admission contracts", () => {
+    expectTypeOf<DaemonExecuteRejectionCode>().toEqualTypeOf<
+      "not-ready" | "draining" | "resource-pressure" | "incompatible"
+    >();
+    expectTypeOf<DaemonExecutionCoordinates>().toEqualTypeOf<{
+      readonly instanceId: string;
+      readonly processToken: string;
+      readonly requestId: string;
+    }>();
+    expectTypeOf<DaemonRejectedExecutionFrame>().toEqualTypeOf<{
+      readonly kind: "rejected";
+      readonly instanceId: string;
+      readonly processToken: string;
+      readonly requestId: string;
+      readonly code: DaemonExecuteRejectionCode;
+      readonly retrySafe: boolean;
+    }>();
+    expectTypeOf<DaemonAdmissionContext>().toEqualTypeOf<{
+      readonly request: unknown;
+      readonly authenticated: boolean;
+      readonly workerReady: boolean;
+      readonly resourceAdmissionPaused: boolean;
+      readonly queueState: WorkspaceRequestQueueState;
+      readonly compatibility: AcceptedRequestCompatibility;
+    }>();
+
   });
 
   it("defines the exact execution failure contract", () => {

@@ -31,7 +31,38 @@ export class DaemonExecutionClient implements DaemonExecutionRequester {
   constructor(private readonly options: DaemonExecutionClientOptions) {}
 
   execute(endpoint: string, request: DaemonExecuteRequest): Promise<DaemonExecutionReceipt> {
-    return this.executeOnce(endpoint, request);
+    return this.executeOnce(endpoint, request).then((receipt) => ({
+      acceptance: receipt.acceptance,
+      completion: this.completeWithReattachments(endpoint, request, receipt.completion),
+    }));
+  }
+
+  private async completeWithReattachments(
+    endpoint: string,
+    request: DaemonExecuteRequest,
+    completion: DaemonExecutionReceipt["completion"],
+  ): DaemonExecutionReceipt["completion"] {
+    let currentCompletion = completion;
+    let reattachmentCount = 0;
+    while (true) {
+      try {
+        return await currentCompletion;
+      } catch (firstError) {
+        if (
+          !DaemonExecutionClient.isAcceptedConnectionClose(firstError, request) ||
+          reattachmentCount >= this.options.deliveryPolicy.postAcceptanceExecutionReattachmentLimit
+        ) {
+          throw firstError;
+        }
+        try {
+          const reattached = await this.executeOnce(endpoint, request);
+          currentCompletion = reattached.completion;
+          reattachmentCount += 1;
+        } catch {
+          throw firstError;
+        }
+      }
+    }
   }
 
   private executeOnce(

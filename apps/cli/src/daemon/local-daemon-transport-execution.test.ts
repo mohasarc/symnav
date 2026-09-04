@@ -586,6 +586,115 @@ describe("LocalDaemonTransport execution delivery", () => {
     if (completion.status === "completed") await completion.result.output?.dispose();
   });
 
+  it("disables result fetch resume without disabling execution reattachment", async () => {
+    const directory = mkdtempSync(join(tmpdir(), "symnav-zero-result-resume-"));
+    directories.push(directory);
+    const store = new DaemonCompletionSpoolStore({
+      directory,
+      workspaceKey: "workspace",
+      instanceId: request.instanceId,
+    });
+    const spool = await store.create(request.requestId);
+    const manifest = await spool.finish(0);
+    let executeCount = 0;
+    let fetchCount = 0;
+    const endpoint = await rawExecutionServer(servers, sockets, directories, (socket) => {
+      socket.once("data", (encoded) => {
+        const bytes = Buffer.isBuffer(encoded) ? encoded : Buffer.from(encoded);
+        const message = JSON.parse(bytes.subarray(4).toString()) as { kind: string };
+        if (message.kind === "result-fetch") {
+          fetchCount += 1;
+          return;
+        }
+        executeCount += 1;
+        if (executeCount === 1) {
+          socket.end(Buffer.concat([frame(accepted()), frame(resultManifest(manifest))]));
+          return;
+        }
+        socket.end(
+          Buffer.concat([
+            frame(accepted()),
+            frame({
+              kind: "execution-failed",
+              instanceId: request.instanceId,
+              processToken: request.processToken,
+              requestId: request.requestId,
+              code: "internal",
+            } satisfies DaemonExecutionServerFrame),
+          ]),
+        );
+      });
+    });
+
+    const receipt = await new LocalDaemonTransport(
+      policyWith({}, { resultTransferResumeLimitPerExecutionAttempt: 0 }),
+    ).execute(endpoint, request);
+
+    await expect(receipt.completion).resolves.toEqual({ status: "failed", code: "internal" });
+    expect({ executeCount, fetchCount }).toEqual({ executeCount: 2, fetchCount: 0 });
+  });
+
+  it("honors result fetch resume limits greater than one within one execute attempt", async () => {
+    const directory = mkdtempSync(join(tmpdir(), "symnav-multiple-result-resumes-"));
+    directories.push(directory);
+    const store = new DaemonCompletionSpoolStore({
+      directory,
+      workspaceKey: "workspace",
+      instanceId: request.instanceId,
+    });
+    const spool = await store.create(request.requestId);
+    const manifest = await spool.finish(0);
+    let executeCount = 0;
+    const fetchOffsets: number[] = [];
+    const endpoint = await rawExecutionServer(servers, sockets, directories, (socket) => {
+      socket.once("data", (encoded) => {
+        const bytes = Buffer.isBuffer(encoded) ? encoded : Buffer.from(encoded);
+        const message = JSON.parse(bytes.subarray(4).toString()) as {
+          kind: string;
+          offset?: number;
+        };
+        if (message.kind === "result-ack") {
+          socket.end(
+            frame({
+              kind: "result-acknowledged",
+              instanceId: request.instanceId,
+              processToken: request.processToken,
+              requestId: request.requestId,
+              transferId: manifest.transferId,
+            }),
+          );
+          return;
+        }
+        if (message.kind === "result-fetch") {
+          fetchOffsets.push(message.offset ?? -1);
+          if (fetchOffsets.length === 1) {
+            socket.end(frame(resultManifest(manifest)));
+            return;
+          }
+          socket.end(Buffer.concat([frame(resultManifest(manifest)), frame(resultEnd(manifest))]));
+          return;
+        }
+        executeCount += 1;
+        socket.end(Buffer.concat([frame(accepted()), frame(resultManifest(manifest))]));
+      });
+    });
+
+    const receipt = await new LocalDaemonTransport(
+      policyWith(
+        {},
+        {
+          postAcceptanceExecutionReattachmentLimit: 0,
+          resultTransferResumeLimitPerExecutionAttempt: 2,
+        },
+      ),
+    ).execute(endpoint, request);
+    const completion = await receipt.completion;
+
+    expect({ executeCount, fetchOffsets }).toEqual({ executeCount: 1, fetchOffsets: [0, 0] });
+    expect(completion).toMatchObject({ status: "completed", result: { exitCode: 0 } });
+    if (completion.status === "completed") await completion.result.output.dispose();
+  });
+
   it.each([
     "duplicate-manifest",
     "missing-manifest",

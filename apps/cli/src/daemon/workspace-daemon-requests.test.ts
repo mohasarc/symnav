@@ -334,6 +334,28 @@ describe("WorkspaceDaemon requests", () => {
     await drained;
   });
 
+  it("starts admission resource sampling without awaiting it", async () => {
+    const harness = await RequestHarness.start(new ImmediateExecutor());
+    harnesses.push(harness);
+    const sample = harness.blockAdmissionSample();
+
+    const connection = await Promise.race([
+      harness.admit("nonawaited-sample"),
+      new Promise<never>((_resolve, reject) =>
+        setTimeout(() => reject(new Error("Admission waited for resource sampling")), 50),
+      ),
+    ]);
+
+    expect(sample).toHaveBeenCalledWith("admission");
+    expect(connection.frames[0]).toEqual(
+      expect.objectContaining({ kind: "accepted", requestId: "nonawaited-sample" }),
+    );
+    await expect(connection.terminal).resolves.toMatchObject({
+      kind: "result-end",
+      requestId: "nonawaited-sample",
+    });
+  });
+
   it("rejects the prior execute-envelope generation before command execution", async () => {
     const executor = new RecordingExecutor();
     const harness = await RequestHarness.start(executor);
@@ -1766,6 +1788,16 @@ class RequestHarness {
   observeAdmissionSamples(): ReturnType<typeof vi.fn> {
     const resourceSupervisor = this.daemonInternals.resourceSupervisor;
     const sample = vi.fn(resourceSupervisor.sample.bind(resourceSupervisor));
+    resourceSupervisor.sample = sample;
+    return sample;
+  }
+
+  blockAdmissionSample(): ReturnType<typeof vi.fn> {
+    const resourceSupervisor = this.daemonInternals.resourceSupervisor;
+    const originalSample = resourceSupervisor.sample.bind(resourceSupervisor);
+    const sample = vi.fn((reason: "warmup" | "interval" | "admission" | "turn-complete") =>
+      reason === "admission" ? new Promise<void>(() => {}) : originalSample(reason),
+    );
     resourceSupervisor.sample = sample;
     return sample;
   }

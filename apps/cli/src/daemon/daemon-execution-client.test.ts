@@ -9,6 +9,7 @@ import {
 } from "./daemon-protocol.js";
 import { DaemonProtocolValidator } from "./daemon-protocol-validator.js";
 import type { DaemonSocketClient, DaemonSocketConnection } from "./daemon-transport.js";
+import { DaemonTransportError } from "./daemon-transport-error.js";
 import { DaemonWireCodec } from "./daemon-wire-codec.js";
 
 describe("DaemonExecutionClient", () => {
@@ -127,6 +128,69 @@ describe("DaemonExecutionClient", () => {
     expect(second.writes).toEqual([codec.encodeControl(request)]);
     expect(outputs.map((output) => output.disposeCount)).toEqual([1, 1]);
   });
+
+  it("retains the first accepted close after exhausting accepted reattachments", async () => {
+    const policy = DaemonPolicy.currentSystem();
+    const codec = executionCodec();
+    const request = executionRequest();
+    const firstClose = new DaemonTransportError(
+      "closed",
+      "accepted",
+      "Initial accepted connection closed",
+      request.instanceId,
+    );
+    const finalClose = new DaemonTransportError(
+      "closed",
+      "accepted",
+      "Final accepted reattachment closed",
+      request.instanceId,
+    );
+    const acceptance = codec.encodeControl({
+      kind: "accepted",
+      instanceId: request.instanceId,
+      processToken: request.processToken,
+      requestId: request.requestId,
+      acceptedAt: 10,
+      queuePosition: 0,
+    } satisfies DaemonExecutionServerFrame);
+    const first = new ScriptedDaemonSocketConnection([acceptance], firstClose);
+    const final = new ScriptedDaemonSocketConnection([acceptance], finalClose);
+    const sockets = new RecordingDaemonSocketClient([first, final]);
+    const outputs: RecordingDaemonOutputCapture[] = [];
+    const client = new DaemonExecutionClient({
+      sockets,
+      lifecycle: new RecordingResultAcknowledger(),
+      codec,
+      validator: new DaemonProtocolValidator(),
+      createOutput: () => {
+        const output = new RecordingDaemonOutputCapture();
+        outputs.push(output);
+        return output;
+      },
+      transportPolicy: policy.values.transport,
+      deliveryPolicy: {
+        ...policy.values.delivery,
+        postAcceptanceExecutionReattachmentLimit: 1,
+      },
+    });
+
+    const receipt = await client.execute("daemon-endpoint", request);
+    const completionError = await receipt.completion.catch((error: unknown) => error);
+
+    expect(completionError).toBe(firstClose);
+    expect(completionError).toMatchObject({
+      code: "closed",
+      delivery: "accepted",
+      message: "Initial accepted connection closed",
+      authenticatedInstanceId: request.instanceId,
+      retrySafe: false,
+    } satisfies Partial<DaemonTransportError>);
+    expect(completionError).not.toBe(finalClose);
+    expect(sockets.calls).toHaveLength(2);
+    expect(first.writes).toEqual([codec.encodeControl(request)]);
+    expect(final.writes).toEqual([codec.encodeControl(request)]);
+    expect(outputs.map((output) => output.disposeCount)).toEqual([1, 1]);
+  });
 });
 
 class RecordingDaemonSocketClient implements DaemonSocketClient {
@@ -151,8 +215,8 @@ class ScriptedDaemonSocketConnection implements DaemonSocketConnection {
   destroyCount = 0;
   readonly incoming: AsyncIterable<Uint8Array>;
 
-  constructor(bytes: readonly Uint8Array[]) {
-    this.incoming = ScriptedDaemonSocketConnection.stream(bytes);
+  constructor(bytes: readonly Uint8Array[], terminalError?: Error) {
+    this.incoming = ScriptedDaemonSocketConnection.stream(bytes, terminalError);
   }
 
   write(frame: Uint8Array): void {
@@ -171,8 +235,12 @@ class ScriptedDaemonSocketConnection implements DaemonSocketConnection {
     this.destroyCount += 1;
   }
 
-  private static async *stream(bytes: readonly Uint8Array[]): AsyncIterable<Uint8Array> {
+  private static async *stream(
+    bytes: readonly Uint8Array[],
+    terminalError?: Error,
+  ): AsyncIterable<Uint8Array> {
     yield* bytes;
+    if (terminalError !== undefined) throw terminalError;
   }
 }
 

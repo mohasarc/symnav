@@ -155,6 +155,19 @@ describe("LocalDaemonSocketClient", () => {
     expect(socket.timeoutMilliseconds).toEqual([25]);
     expect(socket.destroyCount).toBe(1);
   });
+
+  it("preserves a socket reset through incoming bytes", async () => {
+    const reset = new Error("connection reset");
+    const connecting = new LocalDaemonSocketClient().connect("endpoint");
+    socket.emit("connect");
+    const connection = await connecting;
+    const incoming = connection.incoming[Symbol.asyncIterator]();
+    const waiting = incoming.next();
+
+    expect(() => socket.emit("error", reset)).not.toThrow();
+
+    await expect(waiting).rejects.toBe(reset);
+  });
 });
 
 class FakeSocket extends EventEmitter {

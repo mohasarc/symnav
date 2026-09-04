@@ -70,6 +70,51 @@ describe("LocalDaemonTransport socket serving", () => {
     expect(handled).toEqual(["first", "second"]);
     await listening.close();
   });
+
+  it("serializes JSON and binary sends from accepted background work", async () => {
+    const endpoint = harness.endpoint();
+    const releaseBackground = DaemonSocketServerHarness.deferred<void>();
+    const backgroundFinished = DaemonSocketServerHarness.deferred<void>();
+    const server = harness.server();
+    const listening = await server.listen(endpoint, async (daemonRequest, send) => {
+      if (daemonRequest.kind !== "execute") throw new Error("Expected execution request");
+      await send({
+        kind: "accepted",
+        instanceId: daemonRequest.instanceId,
+        processToken: daemonRequest.processToken,
+        requestId: daemonRequest.requestId,
+        acceptedAt: 1,
+        queuePosition: 0,
+      });
+      void releaseBackground.promise.then(async () => {
+        await send({
+          transferId: "transfer",
+          requestId: daemonRequest.requestId,
+          offset: 0,
+          sequence: 0,
+          stream: "stdout",
+          bytes: Buffer.from("background"),
+        });
+        backgroundFinished.resolve();
+      });
+    });
+    const received = harness.receiveTransferFrames(endpoint, harness.executeRequest());
+
+    releaseBackground.resolve();
+
+    await expect(received).resolves.toMatchObject([
+      { kind: "accepted", requestId: "request" },
+      {
+        transferId: "transfer",
+        requestId: "request",
+        sequence: 0,
+        stream: "stdout",
+        bytes: Uint8Array.from(Buffer.from("background")),
+      },
+    ]);
+    await backgroundFinished.promise;
+    await listening.close();
+  });
 });
 
 interface SocketServerOptions {
@@ -113,6 +158,23 @@ class DaemonSocketServerHarness {
     };
   }
 
+  executeRequest(): DaemonRequest {
+    return {
+      kind: "execute",
+      protocolVersion: DAEMON_PROTOCOL_VERSION,
+      instanceId: "instance",
+      processToken: "token",
+      requestId: "request",
+      commandName: "version",
+      request: {
+        argv: ["--version"],
+        cwd: "/repo",
+        telemetryEnabled: false,
+        executionMode: "warm",
+      },
+    };
+  }
+
   encode(value: unknown): Buffer {
     return Buffer.from(this.codec().encodeControl(value));
   }
@@ -143,6 +205,25 @@ class DaemonSocketServerHarness {
         if (values.length !== count) return;
         socket.end();
         resolve(values);
+      });
+    });
+  }
+
+  receiveTransferFrames(
+    endpoint: string,
+    daemonRequest: DaemonRequest,
+  ): Promise<readonly unknown[]> {
+    return new Promise((resolve, reject) => {
+      const decoder = this.codec().transferDecoder();
+      const frames: unknown[] = [];
+      const socket = createConnection(endpoint);
+      socket.once("error", reject);
+      socket.once("connect", () => socket.write(this.encode(daemonRequest)));
+      socket.on("data", (bytes) => {
+        frames.push(...decoder.append(Buffer.isBuffer(bytes) ? bytes : Buffer.from(bytes)));
+        if (frames.length !== 2) return;
+        socket.end();
+        resolve(frames);
       });
     });
   }

@@ -92,7 +92,7 @@ describe("LocalDaemonTransport validation", () => {
         });
       });
       const transport = new RuntimeLocalDaemonTransport(policy.values, {
-        responseTimeoutPurpose: "status-observer",
+        lifecycleResponseTimeoutMs: policy.values.transport.statusResponseTimeoutMs,
       });
 
       await expect(transport.request(endpoint, request)).rejects.toMatchObject({

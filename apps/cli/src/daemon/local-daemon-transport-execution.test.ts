@@ -999,6 +999,59 @@ describe("LocalDaemonTransport execution delivery", () => {
     } satisfies Partial<DaemonTransportError>);
   });
 
+  it("disables accepted execution reattachment without disabling fetch policy", async () => {
+    let executeCount = 0;
+    const endpoint = await rawExecutionServer(servers, sockets, directories, (socket) => {
+      socket.once("data", () => {
+        executeCount += 1;
+        socket.end(frame(accepted()));
+      });
+    });
+
+    const receipt = await new LocalDaemonTransport(
+      policyWith({}, { postAcceptanceExecutionReattachmentLimit: 0 }),
+    ).execute(endpoint, request);
+
+    await expect(receipt.completion).rejects.toMatchObject({
+      code: "closed",
+      delivery: "accepted",
+      authenticatedInstanceId: request.instanceId,
+    } satisfies Partial<DaemonTransportError>);
+    expect(executeCount).toBe(1);
+  });
+
+  it("honors accepted execution reattachment limits greater than one", async () => {
+    let executeCount = 0;
+    const endpoint = await rawExecutionServer(servers, sockets, directories, (socket) => {
+      socket.once("data", () => {
+        executeCount += 1;
+        if (executeCount < 3) {
+          socket.end(frame(accepted()));
+          return;
+        }
+        socket.end(
+          Buffer.concat([
+            frame(accepted()),
+            frame({
+              kind: "execution-failed",
+              instanceId: request.instanceId,
+              processToken: request.processToken,
+              requestId: request.requestId,
+              code: "internal",
+            } satisfies DaemonExecutionServerFrame),
+          ]),
+        );
+      });
+    });
+
+    const receipt = await new LocalDaemonTransport(
+      policyWith({}, { postAcceptanceExecutionReattachmentLimit: 2 }),
+    ).execute(endpoint, request);
+
+    await expect(receipt.completion).resolves.toEqual({ status: "failed", code: "internal" });
+    expect(executeCount).toBe(3);
+  });
+
   it("reattaches once with the same request after accepted delivery closes", async () => {
     const directory = mkdtempSync(join(tmpdir(), "symnav-accepted-reattach-"));
     directories.push(directory);

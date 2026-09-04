@@ -83,7 +83,7 @@ describe("createDaemonExecutor", () => {
       executionMode: "warm",
     });
 
-    expect(await outputText(overview.output)).toContain("Overview: src/index.ts");
+    expect(await outputText(overview.output)).toContain("trivial-project/src/index.ts");
     expect(await outputText(version.output)).toBe("0.1.0\n");
     expect(release).toHaveBeenCalledTimes(2);
     await overview.output.dispose();

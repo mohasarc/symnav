@@ -49,23 +49,24 @@ export class DaemonExecutionClient implements DaemonExecutionRequester {
     completion: DaemonExecutionReceipt["completion"],
   ): DaemonExecutionReceipt["completion"] {
     let currentCompletion = completion;
+    let originalAcceptedClose: DaemonTransportError | undefined;
     let reattachmentCount = 0;
     while (true) {
       try {
         return await currentCompletion;
-      } catch (firstError) {
+      } catch (error) {
+        if (!DaemonExecutionClient.isAcceptedConnectionClose(error, request)) throw error;
+        originalAcceptedClose ??= error;
         if (
-          !DaemonExecutionClient.isAcceptedConnectionClose(firstError, request) ||
           reattachmentCount >= this.options.deliveryPolicy.postAcceptanceExecutionReattachmentLimit
-        ) {
-          throw firstError;
-        }
+        )
+          throw originalAcceptedClose;
         try {
           const reattached = await this.executeOnce(endpoint, request);
           currentCompletion = reattached.completion;
           reattachmentCount += 1;
         } catch {
-          throw firstError;
+          throw originalAcceptedClose;
         }
       }
     }

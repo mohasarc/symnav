@@ -1,6 +1,7 @@
 import { mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, relative, sep } from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { describe, expect, expectTypeOf, it } from "vitest";
 import ts from "typescript";
@@ -43,6 +44,12 @@ interface ExportedSymbol {
 interface DeclarationCompilation {
   readonly diagnostics: readonly ts.Diagnostic[];
   readonly outputs: ReadonlyMap<string, string>;
+}
+
+class DaemonContractSourcePath {
+  public static root(moduleUrl: string): string {
+    return dirname(fileURLToPath(moduleUrl));
+  }
 }
 
 class DaemonContractExpectation {
@@ -299,6 +306,11 @@ class NodeFreeDeclarationCompiler {
 }
 
 describe("daemon host contract", () => {
+  it("decodes source module URLs before filesystem access", () => {
+    const sourcePath = join(tmpdir(), "symnav contract path", "host-contract.test.ts");
+    expect(DaemonContractSourcePath.root(pathToFileURL(sourcePath).href)).toBe(dirname(sourcePath));
+  });
+
   it("defines the exact daemon policy static and instance API", () => {
     expectTypeOf<keyof typeof DaemonPolicy>().toEqualTypeOf<
       "prototype" | "currentSystem" | "fromSystemMemory" | "fromSerialized"
@@ -316,7 +328,7 @@ describe("daemon host contract", () => {
     >();
     expectTypeOf<typeof DaemonPolicy.fromSerialized>().parameters.toEqualTypeOf<[unknown]>();
 
-    const sourceRoot = dirname(new URL(import.meta.url).pathname);
+    const sourceRoot = DaemonContractSourcePath.root(import.meta.url);
     const policySource = ts.sys.readFile(join(sourceRoot, "daemon-policy.ts"));
     expect(policySource).toBeDefined();
     expect(TypeScriptClassMemberInventory.read(policySource ?? "", "DaemonPolicy")).toEqual(
@@ -523,7 +535,7 @@ describe("daemon host contract", () => {
   });
 
   it("exports exactly the planned root types and runtime values", () => {
-    const sourceRoot = dirname(new URL(import.meta.url).pathname);
+    const sourceRoot = DaemonContractSourcePath.root(import.meta.url);
     const indexSource = ts.sys.readFile(join(sourceRoot, "index.ts"));
     expect(indexSource).toBeDefined();
     expect(TypeScriptExportInventory.read(indexSource ?? "")).toEqual(
@@ -533,7 +545,7 @@ describe("daemon host contract", () => {
   });
 
   it("detects a public member added to DaemonPolicy", () => {
-    const sourceRoot = dirname(new URL(import.meta.url).pathname);
+    const sourceRoot = DaemonContractSourcePath.root(import.meta.url);
     const policySource = ts.sys.readFile(join(sourceRoot, "daemon-policy.ts")) ?? "";
     const mutatedSource = policySource.replace(
       "export class DaemonPolicy {",
@@ -545,7 +557,7 @@ describe("daemon host contract", () => {
   });
 
   it("exports exactly one policy-testing source and runtime symbol", () => {
-    const sourceRoot = dirname(new URL(import.meta.url).pathname);
+    const sourceRoot = DaemonContractSourcePath.root(import.meta.url);
     const source = ts.sys.readFile(join(sourceRoot, "policy-testing.ts"));
     expect(source).toBeDefined();
     expect(TypeScriptExportInventory.read(source ?? "")).toEqual(
@@ -558,7 +570,7 @@ describe("daemon host contract", () => {
     ["type", "export interface ExtraPolicyTestingType {}"],
     ["runtime", "export const extraPolicyTestingRuntime = true;"],
   ])("detects an extra policy-testing %s export", (_, addition) => {
-    const sourceRoot = dirname(new URL(import.meta.url).pathname);
+    const sourceRoot = DaemonContractSourcePath.root(import.meta.url);
     const source = ts.sys.readFile(join(sourceRoot, "policy-testing.ts")) ?? "";
     expect(TypeScriptExportInventory.read(`${source}\n${addition}\n`)).not.toEqual(
       DaemonContractExpectation.policyTestingExports,
@@ -566,14 +578,14 @@ describe("daemon host contract", () => {
   });
 
   it("contains only the recursively allowlisted Phase 7 production sources", () => {
-    const sourceRoot = dirname(new URL(import.meta.url).pathname);
+    const sourceRoot = DaemonContractSourcePath.root(import.meta.url);
     expect(DaemonProductionSourceInventory.read(sourceRoot)).toEqual(
       DaemonContractExpectation.productionSources,
     );
   });
 
   it("emits the exact declaration surface without Node ambient types", () => {
-    const sourceRoot = dirname(new URL(import.meta.url).pathname);
+    const sourceRoot = DaemonContractSourcePath.root(import.meta.url);
     const compilation = NodeFreeDeclarationCompiler.compile([join(sourceRoot, "index.ts")]);
     expect(compilation.diagnostics).toEqual([]);
     const emittedIndex = [...compilation.outputs].find(([path]) => path.endsWith("/index.d.ts"));
@@ -584,7 +596,7 @@ describe("daemon host contract", () => {
   });
 
   it("emits only the policy test factory from the temporary subpath", () => {
-    const sourceRoot = dirname(new URL(import.meta.url).pathname);
+    const sourceRoot = DaemonContractSourcePath.root(import.meta.url);
     const compilation = NodeFreeDeclarationCompiler.compile([
       join(sourceRoot, "policy-testing.ts"),
     ]);

@@ -372,7 +372,12 @@ describe("symnav daemon parity", () => {
     harnesses.push(harness);
     const controlled = await harness.startControlledDaemon("--worker-exit");
     const execution = harness.warmAsync(["overview", "input.ts"], "1");
-    await waitUntil(() => existsSync(controlled.requestStartedPath));
+    await waitUntil(
+      () =>
+        existsSync(controlled.requestStartedPath) &&
+        existsSync(controlled.requestIdPath) &&
+        existsSync(controlled.requestPayloadPath),
+    );
     const requestId = readFileSync(controlled.requestIdPath, "utf8");
     const acceptedRequest = JSON.parse(
       readFileSync(controlled.requestPayloadPath, "utf8"),

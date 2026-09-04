@@ -1,5 +1,5 @@
 import { existsSync, mkdirSync, rmSync } from "node:fs";
-import { createConnection, createServer, type Server, type Socket } from "node:net";
+import { createServer, type Server, type Socket } from "node:net";
 import { dirname } from "node:path";
 import {
   DaemonAdmissionRejections,
@@ -726,10 +726,6 @@ export class LocalDaemonTransport
     socket.once("error", () => socket.destroy());
   }
 
-  private writeFrame(socket: Socket, value: unknown): void {
-    this.writeEncodedFrame(socket, this.codec.encodeControl(value));
-  }
-
   private async writeServerMessage(socket: Socket, message: DaemonServerMessage): Promise<void> {
     await this.writeEncodedServerFrame(socket, this.codec.encodeServerMessage(message));
   }
@@ -766,16 +762,6 @@ export class LocalDaemonTransport
       socket.once("error", failed);
       socket.once("close", closed);
     });
-  }
-
-  private writeEncodedFrame(socket: Pick<Socket, "write">, frame: Uint8Array): void {
-    if (this.writeChunkSize === undefined) {
-      socket.write(frame);
-      return;
-    }
-    for (let offset = 0; offset < frame.length; offset += this.writeChunkSize) {
-      socket.write(frame.subarray(offset, offset + this.writeChunkSize));
-    }
   }
 
   private static transportError(

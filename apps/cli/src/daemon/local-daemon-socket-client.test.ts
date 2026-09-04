@@ -84,10 +84,32 @@ describe("LocalDaemonSocketClient", () => {
 
     expect(socket.pauseCount).toBe(3);
   });
+
+  it("writes complete frames in call order across socket backpressure", async () => {
+    socket.writeResults.push(false, true, true);
+    const connecting = new LocalDaemonSocketClient({ writeChunkSize: 2 }).connect("endpoint");
+    socket.emit("connect");
+    const connection = await connecting;
+
+    connection.write(Uint8Array.from([1, 2, 3]));
+    connection.write(Uint8Array.from([4, 5]));
+
+    expect(socket.writes).toEqual([Uint8Array.from([1, 2])]);
+
+    socket.emit("drain");
+    await Promise.resolve();
+
+    expect(socket.writes).toEqual([
+      Uint8Array.from([1, 2]),
+      Uint8Array.from([3]),
+      Uint8Array.from([4, 5]),
+    ]);
+  });
 });
 
 class FakeSocket extends EventEmitter {
   readonly writes: Uint8Array[] = [];
+  readonly writeResults: boolean[] = [];
   destroyed = false;
   pauseCount = 0;
   resumeCount = 0;
@@ -107,8 +129,8 @@ class FakeSocket extends EventEmitter {
   }
 
   write(frame: Uint8Array): boolean {
-    this.writes.push(frame);
-    return true;
+    this.writes.push(Uint8Array.from(frame));
+    return this.writeResults.shift() ?? true;
   }
 
   end(): this {

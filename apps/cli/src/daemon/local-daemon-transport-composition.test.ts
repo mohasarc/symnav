@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { DaemonPolicy } from "@symnav/daemon";
 import {
@@ -20,7 +22,7 @@ import type {
   DaemonRequestHandler,
   DaemonSocketClient,
 } from "./daemon-transport.js";
-import { DaemonWireCodec } from "./daemon-wire-codec.js";
+import { DaemonWireCodec, type DaemonWireLimits } from "./daemon-wire-codec.js";
 import { LocalDaemonSocketClient } from "./local-daemon-socket-client.js";
 import { LocalDaemonSocketServer } from "./local-daemon-socket-server.js";
 import { LocalDaemonTransport } from "./local-daemon-transport.js";
@@ -32,6 +34,12 @@ describe("LocalDaemonTransport composition", () => {
     const composition = TransportCompositionInspection.read(transport);
 
     expect(composition.codec).toBeInstanceOf(DaemonWireCodec);
+    expect(TransportCompositionInspection.codecLimits(composition.codec)).toEqual({
+      maximumJsonPayloadBytes: policy.values.transport.maximumJsonPayloadBytes,
+      maximumExecutionControlPayloadBytes:
+        policy.values.transport.maximumExecutionControlPayloadBytes,
+      maximumChunkRawBytes: policy.values.output.maximumChunkRawBytes,
+    });
     expect(composition.validator).toBeInstanceOf(DaemonProtocolValidator);
     expect(composition.sockets).toBeInstanceOf(LocalDaemonSocketClient);
     expect(composition.lifecycle).toBeInstanceOf(DaemonLifecycleClient);
@@ -74,6 +82,26 @@ describe("LocalDaemonTransport composition", () => {
     expect(Object.isFrozen(policy.values)).toBe(true);
   });
 
+  it("keeps the compatibility facade free of transport coordination mechanics", () => {
+    const source = readFileSync(
+      fileURLToPath(new URL("./local-daemon-transport.ts", import.meta.url)),
+      "utf8",
+    );
+
+    for (const forbiddenMechanic of [
+      /from ["']node:(?:fs|net)["']/,
+      /\bcreateConnection\b/,
+      /\bcreateServer\b/,
+      /\bDaemonResultTransferReceiver\b/,
+      /\bDaemonTransportError\b/,
+      /\b(?:for|while|try|catch)\b/,
+      /\.(?:controlDecoder|transferDecoder|encodeControl|encodeServerMessage)\s*\(/,
+      /\.(?:connect|write|disableTimeout|end|destroy|on|once)\s*\(/,
+    ]) {
+      expect(source).not.toMatch(forbiddenMechanic);
+    }
+  });
+
   it("delegates every request family exactly once without replacing returned values", () => {
     const lifecycle = new RecordingLifecycleClient();
     const execution = new RecordingExecutionClient();
@@ -113,6 +141,10 @@ describe("LocalDaemonTransport composition", () => {
 });
 
 class TransportCompositionInspection {
+  static codecLimits(codec: DaemonWireCodec): DaemonWireLimits {
+    return (codec as unknown as { limits: DaemonWireLimits }).limits;
+  }
+
   static read(transport: LocalDaemonTransport): {
     codec: DaemonWireCodec;
     validator: DaemonProtocolValidator;

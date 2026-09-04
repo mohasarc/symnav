@@ -168,6 +168,21 @@ describe("LocalDaemonSocketClient", () => {
 
     await expect(waiting).rejects.toBe(reset);
   });
+
+  it("preserves a synchronous socket write error through incoming bytes", async () => {
+    const writeError = new Error("write failed");
+    const connecting = new LocalDaemonSocketClient().connect("endpoint");
+    socket.emit("connect");
+    const connection = await connecting;
+    const incoming = connection.incoming[Symbol.asyncIterator]();
+    const waiting = incoming.next();
+    socket.writeError = writeError;
+
+    expect(() => connection.write(Uint8Array.from([1]))).toThrow(writeError);
+    socket.emit("close");
+
+    await expect(waiting).rejects.toBe(writeError);
+  });
 });
 
 class FakeSocket extends EventEmitter {
@@ -179,6 +194,7 @@ class FakeSocket extends EventEmitter {
   destroyCount = 0;
   readonly timeoutMilliseconds: number[] = [];
   private timeoutListener: (() => void) | undefined;
+  writeError: Error | undefined;
 
   setTimeout(milliseconds: number, listener?: () => void): this {
     this.timeoutMilliseconds.push(milliseconds);
@@ -201,6 +217,7 @@ class FakeSocket extends EventEmitter {
   }
 
   write(frame: Uint8Array): boolean {
+    if (this.writeError !== undefined) throw this.writeError;
     this.writes.push(Uint8Array.from(frame));
     return this.writeResults.shift() ?? true;
   }

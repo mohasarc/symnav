@@ -27,6 +27,7 @@ class LocalDaemonSocketConnection implements DaemonSocketConnection, AsyncIterab
     socket.on("data", (bytes) => this.receive(Buffer.isBuffer(bytes) ? bytes : Buffer.from(bytes)));
     socket.once("end", () => this.finish());
     socket.once("close", () => this.finish());
+    socket.once("error", (error) => this.fail(error));
   }
 
   [Symbol.asyncIterator](): AsyncIterator<Uint8Array> {
@@ -97,7 +98,7 @@ class LocalDaemonSocketConnection implements DaemonSocketConnection, AsyncIterab
   }
 
   private flushWrites(): void {
-    if (this.waitingForDrain || this.ended) return;
+    if (this.waitingForDrain || this.ended || this.error !== undefined) return;
     while (this.queuedWrites.length > 0) {
       const frame = this.queuedWrites.shift();
       if (frame === undefined) return;

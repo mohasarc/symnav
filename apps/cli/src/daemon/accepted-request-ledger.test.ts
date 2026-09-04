@@ -15,6 +15,27 @@ const request: CliExecutionRequest = {
 };
 
 describe("AcceptedRequestLedger", () => {
+  it("classifies request compatibility without accepting work", () => {
+    const ledger = new AcceptedRequestLedger(() => 10);
+
+    expect(ledger.compatibilityFor("request", "overview", request)).toBe("unseen");
+    expect(ledger.size).toBe(0);
+
+    ledger.accept("request", "overview", request);
+
+    expect(
+      ledger.compatibilityFor("request", "overview", { ...request, argv: [...request.argv] }),
+    ).toBe("matching");
+    expect(
+      ledger.compatibilityFor("request", "overview", {
+        ...request,
+        argv: ["overview", "src/b.ts"],
+      }),
+    ).toBe("conflicting");
+    expect(ledger.compatibilityFor("request", "refs", request)).toBe("conflicting");
+    expect(ledger.size).toBe(1);
+  });
+
   it("atomically inserts one queued owner and attaches an identical duplicate", () => {
     const ledger = new AcceptedRequestLedger(() => 10);
 

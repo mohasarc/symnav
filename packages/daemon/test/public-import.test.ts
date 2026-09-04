@@ -64,8 +64,8 @@ describe("@symnav/daemon public package import", () => {
       "DaemonAdmissionRejections",
       "DAEMON_COMMAND_NAMES",
       "DaemonDiagnosticValues",
-      "DaemonExecutorModuleLoader",
       "DaemonExecutionFailures",
+      "DaemonExecutorModuleLoader",
       "DaemonPolicy",
     ]);
   });

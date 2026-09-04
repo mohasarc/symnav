@@ -15,6 +15,7 @@ export type { DaemonCommandName, DaemonReadinessProbe } from "./daemon-command-n
 export { DaemonDiagnosticValues } from "./daemon-diagnostics.js";
 export type { DaemonDiagnosticValue, DaemonDiagnostics } from "./daemon-diagnostics.js";
 export { DaemonExecutionFailures } from "./daemon-execution-failure.js";
+export { DaemonExecutorModuleLoader } from "./daemon-executor.js";
 export type {
   DaemonExecutionFailureCode,
   DaemonExecutionFailureContext,

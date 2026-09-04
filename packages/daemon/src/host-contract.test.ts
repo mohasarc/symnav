@@ -81,8 +81,8 @@ class DaemonContractExpectation {
     { kind: "runtime", name: "DaemonAdmissionPolicy" },
     { kind: "runtime", name: "DaemonAdmissionRejections" },
     { kind: "runtime", name: "DaemonDiagnosticValues" },
-    { kind: "runtime", name: "DaemonExecutorModuleLoader" },
     { kind: "runtime", name: "DaemonExecutionFailures" },
+    { kind: "runtime", name: "DaemonExecutorModuleLoader" },
     { kind: "runtime", name: "DaemonPolicy" },
     { kind: "type", name: "AcceptedRequestCompatibility" },
     { kind: "type", name: "DaemonActivitySnapshot" },
@@ -737,6 +737,7 @@ describe("daemon host contract", () => {
       "DAEMON_COMMAND_NAMES",
       "DaemonDiagnosticValues",
       "DaemonExecutionFailures",
+      "DaemonExecutorModuleLoader",
       "DaemonPolicy",
     ]);
   });

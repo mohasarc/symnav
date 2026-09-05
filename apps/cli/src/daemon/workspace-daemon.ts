@@ -137,7 +137,7 @@ export class WorkspaceDaemon {
     };
     const initialNavigationWorker = options.navigationWorker ?? createNavigationWorker(1);
     this.exit = options.exit ?? ((code) => process.exit(code));
-    this.lifetime = new DaemonLifetime({ now: this.now }, policy.values.shutdown, () =>
+    this.lifetime = new DaemonLifetime(this.clock, policy.values.shutdown, () =>
       this.drainAndShutdown("idle"),
     );
     this.workerManager = new DaemonWorkerGenerationManager({

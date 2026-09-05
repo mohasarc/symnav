@@ -429,6 +429,24 @@ describe("DaemonDeliverySession", () => {
     expect(settled).toBe(true);
     expect(harness.session.snapshot.hasUnacknowledgedCompletions).toBe(true);
   });
+
+  it("cleans instance spools and records cleanup failure without rejecting shutdown", async () => {
+    const harness = await DeliverySessionHarness.create(directories, {
+      completionSpoolStorage: new FailingInstanceCleanupStorage(),
+    });
+    const completion = await harness.session.createCompletion("request-1");
+    await completion.append({ sequence: 0, stream: "stdout", bytes: Buffer.from("result") });
+    await completion.finish(0);
+
+    await expect(harness.session.cleanupInstance()).resolves.toBeUndefined();
+
+    expect(harness.session.snapshot.spoolBytes).toBe(0);
+    expect(
+      harness.events.filter(
+        (event) => event.kind === "failure" && event.operation === "completion-cleanup",
+      ),
+    ).toHaveLength(1);
+  });
 });
 
 class DeliverySessionHarness {
@@ -612,5 +630,11 @@ class GatedUnlinkStorage extends NodeCompletionSpoolStorage {
 
   release(): void {
     this.gate.release();
+  }
+}
+
+class FailingInstanceCleanupStorage extends NodeCompletionSpoolStorage {
+  override removeInstance(): Promise<void> {
+    return Promise.reject(new Error("instance cleanup failed"));
   }
 }

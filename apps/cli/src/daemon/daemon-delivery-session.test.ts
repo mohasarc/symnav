@@ -7,7 +7,8 @@ import { AcceptedRequestLedger } from "./accepted-request-ledger.js";
 import { DaemonCompletionSpoolStore } from "./completion-spool.js";
 import { DaemonDeliverySession } from "./daemon-delivery-session.js";
 import { DaemonOperationObserver } from "./daemon-operation-observer.js";
-import type { DaemonDiagnosticEvent } from "./daemon-protocol.js";
+import type { DaemonDiagnosticEvent, DaemonServerMessage } from "./daemon-protocol.js";
+import type { DaemonServerSend } from "./daemon-transport.js";
 
 describe("DaemonDeliverySession", () => {
   const directories: string[] = [];
@@ -56,11 +57,64 @@ describe("DaemonDeliverySession", () => {
       },
     ]);
   });
+
+  it("streams one completion to each attachment and counts connection closes", async () => {
+    const harness = await DeliverySessionHarness.create(directories);
+    const entry = harness.journal.accept("request-1", "version", harness.executionRequest);
+    if (entry.state.state !== "queued") throw new Error("Expected queued request");
+    harness.session.beginAcceptedTrace("request-1", "version", entry.state.queuePosition, 1);
+    const first = DeliverySend.create();
+    const duplicate = DeliverySend.create();
+
+    await harness.session.attach(
+      {
+        requestId: "request-1",
+        acceptedAt: entry.state.acceptedAt,
+        queuePosition: entry.state.queuePosition,
+      },
+      first.send,
+    );
+    await harness.session.attach(
+      {
+        requestId: "request-1",
+        acceptedAt: entry.state.acceptedAt,
+        queuePosition: entry.state.queuePosition,
+      },
+      duplicate.send,
+    );
+    const completion = await harness.session.createCompletion("request-1");
+    await completion.append({ sequence: 0, stream: "stdout", bytes: Buffer.from("result\n") });
+    await completion.finish(0);
+    harness.journal.markRunning("request-1", 2);
+    harness.journal.complete("request-1", "request-1", 3);
+    await Promise.all([first.resultEndReceived, duplicate.resultEndReceived]);
+
+    expect(first.frames.map(DeliverySend.frameKind)).toEqual([
+      "accepted",
+      "result-manifest",
+      "chunk",
+      "result-end",
+    ]);
+    expect(duplicate.frames.map(DeliverySend.frameKind)).toEqual([
+      "accepted",
+      "result-manifest",
+      "chunk",
+      "result-end",
+    ]);
+    first.close();
+    expect(harness.events.filter((event) => event.kind === "client-disconnected")).toHaveLength(0);
+    duplicate.close();
+    duplicate.close();
+    expect(harness.events.filter((event) => event.kind === "client-disconnected")).toHaveLength(1);
+    expect(harness.events.filter((event) => event.kind === "client-reattached")).toHaveLength(0);
+    expect(harness.events.filter((event) => event.kind === "delivery-terminal")).toHaveLength(1);
+  });
 });
 
 class DeliverySessionHarness {
   private constructor(
     readonly session: DaemonDeliverySession,
+    readonly journal: AcceptedRequestLedger,
     readonly events: DaemonDiagnosticEvent[],
     private readonly time: { monotonicNow: number; remaining: number[] },
   ) {}
@@ -97,6 +151,7 @@ class DeliverySessionHarness {
         clock,
         policy,
       }),
+      journal,
       events,
       time,
     );
@@ -105,5 +160,54 @@ class DeliverySessionHarness {
 
   setMonotonicTimes(...monotonicTimes: number[]): void {
     this.time.remaining.push(...monotonicTimes);
+  }
+
+  get executionRequest() {
+    return {
+      argv: ["--version"],
+      cwd: "/workspace",
+      telemetryEnabled: false,
+      executionMode: "warm" as const,
+    };
+  }
+}
+
+class DeliverySend {
+  readonly frames: DaemonServerMessage[] = [];
+  readonly resultEndReceived: Promise<void>;
+  private readonly closeListeners = new Set<() => void>();
+  private resolveResultEndReceived!: () => void;
+  readonly send: DaemonServerSend;
+
+  private constructor() {
+    this.resultEndReceived = new Promise((resolve) => {
+      this.resolveResultEndReceived = resolve;
+    });
+    this.send = Object.assign(
+      async (message: DaemonServerMessage) => {
+        this.frames.push(message);
+        if ("kind" in message && message.kind === "result-end") {
+          this.resolveResultEndReceived();
+        }
+      },
+      {
+        onClose: (listener: () => void) => {
+          this.closeListeners.add(listener);
+          return () => this.closeListeners.delete(listener);
+        },
+      },
+    );
+  }
+
+  static create(): DeliverySend {
+    return new DeliverySend();
+  }
+
+  close(): void {
+    for (const listener of this.closeListeners) listener();
+  }
+
+  static frameKind(frame: DaemonServerMessage): string {
+    return "kind" in frame ? frame.kind : "chunk";
   }
 }

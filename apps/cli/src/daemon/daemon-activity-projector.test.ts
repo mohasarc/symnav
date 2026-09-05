@@ -174,6 +174,14 @@ describe("DaemonActivityProjector", () => {
       workerGeneration: 4,
     });
   });
+
+  it("projects spool bytes from the sampled resource snapshot", () => {
+    const projection = DaemonActivityProjector.project(
+      ActivityProjectionFixture.input({ sampledSpoolBytes: 83 }),
+    );
+
+    expect(projection.activity.spoolBytes).toBe(83);
+  });
 });
 
 interface ActivityProjectionOverrides {
@@ -188,6 +196,7 @@ interface ActivityProjectionOverrides {
   readonly lastCompletedMonotonicAt?: number;
   readonly resourceGeneration?: number;
   readonly workerGeneration?: number;
+  readonly sampledSpoolBytes?: number;
 }
 
 class ActivityProjectionFixture {
@@ -230,7 +239,7 @@ class ActivityProjectionFixture {
         ...(overrides.workerHeapUsedBytes === undefined
           ? {}
           : { workerHeapUsedBytes: overrides.workerHeapUsedBytes }),
-        spoolBytes: 70,
+        spoolBytes: overrides.sampledSpoolBytes ?? 70,
         admissionPaused: false,
         replacementCount: 0,
       },

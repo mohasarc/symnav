@@ -717,6 +717,30 @@ describe("WorkspaceDaemon requests", () => {
     );
   });
 
+  it("cleans instance spools only after graceful worker shutdown completes", async () => {
+    const transitions: string[] = [];
+    const worker = new ShutdownGatedNavigationWorker(new ImmediateExecutor(), transitions);
+    const storage = new ObservingInstanceCleanupStorage(transitions);
+    const harness = await RequestHarness.start(undefined, {
+      navigationWorker: worker,
+      completionSpoolStorage: storage,
+    });
+    harnesses.push(harness);
+
+    await harness.stop();
+    await worker.closeStarted;
+    const transitionsWhileWorkerWasBlocked = [...transitions];
+    worker.allowClose();
+    await harness.exited;
+
+    expect(transitionsWhileWorkerWasBlocked).toEqual(["worker-close-started"]);
+    expect(transitions).toEqual([
+      "worker-close-started",
+      "worker-close-completed",
+      "instance-spool-cleanup",
+    ]);
+  });
+
   it("reports draining from the main thread while admitted work completes", async () => {
     const executor = new SerializedExecutor();
     const harness = await RequestHarness.start(executor);
@@ -2403,6 +2427,17 @@ class RequestFailingCompletionStorage extends NodeCompletionSpoolStorage {
   }
 }
 
+class ObservingInstanceCleanupStorage extends NodeCompletionSpoolStorage {
+  constructor(private readonly transitions: string[]) {
+    super();
+  }
+
+  override async removeInstance(path: string): Promise<void> {
+    this.transitions.push("instance-spool-cleanup");
+    await super.removeInstance(path);
+  }
+}
+
 function emptyResult(): CommandExecutionResult {
   return { output: new CommandOutputSnapshot([]), exitCode: 0 };
 }
@@ -2486,6 +2521,38 @@ class ExecutorNavigationWorker implements DaemonNavigationWorker {
   fail(exit: DaemonNavigationWorkerExit): void {
     this.rejectTermination(new DaemonNavigationWorkerExitedError(exit));
     this.resolveExited(exit);
+  }
+}
+
+class ShutdownGatedNavigationWorker extends ExecutorNavigationWorker {
+  readonly closeStarted: Promise<void>;
+  private resolveCloseStarted!: () => void;
+  private allowCloseResolution!: () => void;
+  private readonly closeAllowed: Promise<void>;
+
+  constructor(
+    executor: DaemonCommandExecutor,
+    private readonly transitions: string[],
+  ) {
+    super(executor);
+    this.closeStarted = new Promise((resolve) => {
+      this.resolveCloseStarted = resolve;
+    });
+    this.closeAllowed = new Promise((resolve) => {
+      this.allowCloseResolution = resolve;
+    });
+  }
+
+  override async drainAndClose(): Promise<void> {
+    this.transitions.push("worker-close-started");
+    this.resolveCloseStarted();
+    await this.closeAllowed;
+    this.transitions.push("worker-close-completed");
+    await super.drainAndClose();
+  }
+
+  allowClose(): void {
+    this.allowCloseResolution();
   }
 }
 

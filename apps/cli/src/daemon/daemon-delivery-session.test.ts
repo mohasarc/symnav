@@ -4,7 +4,12 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { DaemonPolicy } from "@symnav/daemon";
 import { AcceptedRequestLedger } from "./accepted-request-ledger.js";
-import { CompletionSpoolReadError, DaemonCompletionSpoolStore } from "./completion-spool.js";
+import {
+  CompletionSpoolReadError,
+  DaemonCompletionSpoolStore,
+  NodeCompletionSpoolStorage,
+  type CompletionSpoolStorage,
+} from "./completion-spool.js";
 import { DaemonDeliverySession } from "./daemon-delivery-session.js";
 import { DaemonOperationObserver } from "./daemon-operation-observer.js";
 import type { DaemonDiagnosticEvent, DaemonServerMessage } from "./daemon-protocol.js";
@@ -243,6 +248,111 @@ describe("DaemonDeliverySession", () => {
     ).toHaveLength(1);
     expect(harness.session.snapshot.spoolBytes).toBe(0);
   });
+
+  it("validates transfer identity before acknowledging physical and journal state", async () => {
+    const harness = await DeliverySessionHarness.create(directories);
+    harness.accept("request-1");
+    harness.session.beginAcceptedTrace("request-1", "version", 0, 1);
+    const completion = await harness.session.createCompletion("request-1");
+    await completion.append({ sequence: 0, stream: "stdout", bytes: Buffer.from("result") });
+    const manifest = await completion.finish(0);
+    harness.complete("request-1");
+
+    await expect(
+      harness.session.acknowledge({
+        kind: "result-ack",
+        protocolVersion: 5,
+        instanceId: "instance-1",
+        processToken: "token-1",
+        requestId: "request-1",
+        transferId: "wrong-transfer",
+      }),
+    ).rejects.toThrow("does not match completion transfer");
+    expect(harness.journal.isAcknowledged("request-1")).toBe(false);
+    expect(harness.session.snapshot.spoolBytes).toBe(6);
+
+    await expect(
+      harness.session.acknowledge({
+        kind: "result-ack",
+        protocolVersion: 5,
+        instanceId: "instance-1",
+        processToken: "token-1",
+        requestId: "request-1",
+        transferId: manifest.transferId,
+      }),
+    ).resolves.toEqual({
+      kind: "result-acknowledged",
+      instanceId: "instance-1",
+      processToken: "token-1",
+      requestId: "request-1",
+      transferId: manifest.transferId,
+    });
+    expect(harness.journal.isAcknowledged("request-1")).toBe(true);
+    expect(harness.session.snapshot.spoolBytes).toBe(0);
+    expect(harness.events.filter((event) => event.kind === "delivery-terminal")).toHaveLength(1);
+
+    await expect(
+      harness.session.acknowledge({
+        kind: "result-ack",
+        protocolVersion: 5,
+        instanceId: "instance-1",
+        processToken: "token-1",
+        requestId: "request-1",
+        transferId: manifest.transferId,
+      }),
+    ).rejects.toThrow("completion is unavailable");
+  });
+
+  it.each([
+    { cleanup: "succeeds", cleanupFails: false },
+    { cleanup: "fails", cleanupFails: true },
+  ])(
+    "acknowledges logically only after physical completion cleanup $cleanup",
+    async ({ cleanupFails }) => {
+      let harness: DeliverySessionHarness | undefined;
+      const storage = new GatedUnlinkStorage(
+        () => harness?.journal.isAcknowledged("request-1") ?? false,
+        cleanupFails,
+      );
+      const createdHarness = await DeliverySessionHarness.create(directories, {
+        inlineRawBytes: 1,
+        completionSpoolStorage: storage,
+      });
+      harness = createdHarness;
+      createdHarness.accept("request-1");
+      createdHarness.session.beginAcceptedTrace("request-1", "version", 0, 1);
+      const completion = await createdHarness.session.createCompletion("request-1");
+      await completion.append({ sequence: 0, stream: "stdout", bytes: Buffer.from("result") });
+      const manifest = await completion.finish(0);
+      createdHarness.complete("request-1");
+
+      const acknowledgement = createdHarness.session.acknowledge({
+        kind: "result-ack",
+        protocolVersion: 5,
+        instanceId: "instance-1",
+        processToken: "token-1",
+        requestId: "request-1",
+        transferId: manifest.transferId,
+      });
+      await storage.started;
+
+      expect(storage.acknowledgedWhenCleanupStarted).toBe(false);
+      expect(createdHarness.journal.isAcknowledged("request-1")).toBe(false);
+
+      storage.release();
+      await expect(acknowledgement).resolves.toMatchObject({ kind: "result-acknowledged" });
+      expect(createdHarness.journal.isAcknowledged("request-1")).toBe(true);
+      await expect(createdHarness.spoolStore.open("request-1")).resolves.toBeUndefined();
+      expect(
+        createdHarness.events.filter(
+          (event) => event.kind === "failure" && event.operation === "completion-cleanup",
+        ),
+      ).toHaveLength(cleanupFails ? 1 : 0);
+      expect(
+        createdHarness.events.filter((event) => event.kind === "delivery-terminal"),
+      ).toHaveLength(1);
+    },
+  );
 });
 
 class DeliverySessionHarness {
@@ -254,7 +364,13 @@ class DeliverySessionHarness {
     private readonly time: { monotonicNow: number; remaining: number[] },
   ) {}
 
-  static async create(directories: string[]): Promise<DeliverySessionHarness> {
+  static async create(
+    directories: string[],
+    overrides: {
+      readonly completionSpoolStorage?: CompletionSpoolStorage;
+      readonly inlineRawBytes?: number;
+    } = {},
+  ): Promise<DeliverySessionHarness> {
     const directory = await mkdtemp(join(tmpdir(), "symnav-delivery-session-"));
     directories.push(directory);
     const policy = DaemonPolicy.currentSystem().values;
@@ -274,7 +390,15 @@ class DeliverySessionHarness {
       directory,
       workspaceKey: "workspace-1",
       instanceId: "instance-1",
-      policy: policy.output,
+      policy: {
+        ...policy.output,
+        ...(overrides.inlineRawBytes === undefined
+          ? {}
+          : { inlineRawBytes: overrides.inlineRawBytes }),
+      },
+      ...(overrides.completionSpoolStorage === undefined
+        ? {}
+        : { storage: overrides.completionSpoolStorage }),
     });
     const harness = new DeliverySessionHarness(
       new DaemonDeliverySession({
@@ -370,5 +494,34 @@ class DeferredSignal {
 
   release(): void {
     this.resolveWait();
+  }
+}
+
+class GatedUnlinkStorage extends NodeCompletionSpoolStorage {
+  readonly started: Promise<void>;
+  acknowledgedWhenCleanupStarted: boolean | undefined;
+  private readonly gate = new DeferredSignal();
+  private resolveStarted!: () => void;
+
+  constructor(
+    private readonly isAcknowledged: () => boolean,
+    private readonly cleanupFails: boolean,
+  ) {
+    super();
+    this.started = new Promise((resolve) => {
+      this.resolveStarted = resolve;
+    });
+  }
+
+  override async unlink(path: string): Promise<void> {
+    this.acknowledgedWhenCleanupStarted = this.isAcknowledged();
+    this.resolveStarted();
+    await this.gate.wait;
+    if (this.cleanupFails) throw new Error("unlink failed");
+    await super.unlink(path);
+  }
+
+  release(): void {
+    this.gate.release();
   }
 }

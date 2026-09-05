@@ -52,7 +52,7 @@ export class DaemonActivityProjector {
       ...(input.resources.workerHeapUsedBytes === undefined
         ? {}
         : { workerHeapUsedBytes: input.resources.workerHeapUsedBytes }),
-      workerGeneration: input.resources.generation,
+      workerGeneration: input.worker.generation,
       ...(current === undefined ? {} : { current }),
       queued: input.queue.queued,
       ...(input.lastCompletedMonotonicAt === undefined

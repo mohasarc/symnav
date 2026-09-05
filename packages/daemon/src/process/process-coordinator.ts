@@ -19,7 +19,10 @@ import type {
   DaemonResponse,
   DaemonServer,
 } from "../transport/protocol.js";
-import { DaemonCompletionSpoolStore, type CompletionSpoolStorage } from "../delivery/completion-spool.js";
+import {
+  DaemonCompletionSpoolStore,
+  type CompletionSpoolStorage,
+} from "../delivery/completion-spool.js";
 import { DAEMON_PROTOCOL_VERSION, DAEMON_RECORD_SCHEMA_VERSION } from "../transport/protocol.js";
 import { DaemonLifetime } from "../lifecycle/daemon-lifetime.js";
 import { DaemonLogger } from "../diagnostics/logger.js";

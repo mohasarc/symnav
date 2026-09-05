@@ -7,7 +7,6 @@ import { describe, expect, expectTypeOf, it } from "vitest";
 import ts from "typescript";
 
 import * as daemonRuntime from "./index.js";
-import * as policyTestingRuntime from "./policy-testing.js";
 import type {
   DaemonActivitySnapshot,
   AcceptedRequestCompatibility,
@@ -143,10 +142,6 @@ class DaemonContractExpectation {
     "static:retrySafe",
   ];
 
-  public static readonly policyTestingExports: readonly ExportedSymbol[] = [
-    { kind: "runtime", name: "DaemonPolicyTestFactory" },
-  ];
-
   public static readonly productionSources: readonly string[] = [
     "daemon-admission.ts",
     "daemon-command-name.ts",
@@ -155,8 +150,46 @@ class DaemonContractExpectation {
     "daemon-executor.ts",
     "daemon-lifecycle-report.ts",
     "daemon-policy.ts",
+    "delivery/completion-spool.ts",
+    "delivery/delivery-session.ts",
+    "diagnostics/logger.ts",
+    "diagnostics/operation-observer.ts",
+    "execution/accepted-execution-session-contracts.ts",
+    "execution/accepted-execution-session.ts",
+    "execution/accepted-request-ledger.ts",
+    "execution/request-queue.ts",
     "index.ts",
-    "policy-testing.ts",
+    "lifecycle/daemon-clock.ts",
+    "lifecycle/daemon-lifetime.ts",
+    "process-entry.ts",
+    "process/activity-projector.ts",
+    "process/controller.ts",
+    "process/process-coordinator.ts",
+    "process/process-launcher.ts",
+    "process/process-termination-observer.ts",
+    "process/runtime-values.ts",
+    "registry/record-observer.ts",
+    "registry/registry.ts",
+    "registry/startup-coordinator.ts",
+    "registry/workspace-identity.ts",
+    "resources/resource-supervisor.ts",
+    "transport/client-result-capture.ts",
+    "transport/contracts.ts",
+    "transport/execution-client.ts",
+    "transport/lifecycle-client.ts",
+    "transport/local-transport.ts",
+    "transport/protocol-validator.ts",
+    "transport/protocol.ts",
+    "transport/result-transfer-receiver.ts",
+    "transport/socket-client.ts",
+    "transport/socket-server.ts",
+    "transport/transport-error.ts",
+    "transport/wire-codec.ts",
+    "worker-entry.ts",
+    "worker/navigation-worker-entry.ts",
+    "worker/navigation-worker.ts",
+    "worker/worker-generation-manager.ts",
+    "worker/worker-protocol.ts",
   ];
 }
 
@@ -755,27 +788,6 @@ describe("daemon host contract", () => {
     );
   });
 
-  it("exports exactly one policy-testing source and runtime symbol", () => {
-    const sourceRoot = DaemonContractSourcePath.root(import.meta.url);
-    const source = ts.sys.readFile(join(sourceRoot, "policy-testing.ts"));
-    expect(source).toBeDefined();
-    expect(TypeScriptExportInventory.read(source ?? "")).toEqual(
-      DaemonContractExpectation.policyTestingExports,
-    );
-    expect(Object.keys(policyTestingRuntime)).toEqual(["DaemonPolicyTestFactory"]);
-  });
-
-  it.each([
-    ["type", "export interface ExtraPolicyTestingType {}"],
-    ["runtime", "export const extraPolicyTestingRuntime = true;"],
-  ])("detects an extra policy-testing %s export", (_, addition) => {
-    const sourceRoot = DaemonContractSourcePath.root(import.meta.url);
-    const source = ts.sys.readFile(join(sourceRoot, "policy-testing.ts")) ?? "";
-    expect(TypeScriptExportInventory.read(`${source}\n${addition}\n`)).not.toEqual(
-      DaemonContractExpectation.policyTestingExports,
-    );
-  });
-
   it("contains only the recursively allowlisted Phase 7 production sources", () => {
     const sourceRoot = DaemonContractSourcePath.root(import.meta.url);
     expect(DaemonProductionSourceInventory.read(sourceRoot)).toEqual(
@@ -791,21 +803,6 @@ describe("daemon host contract", () => {
     expect(emittedIndex).toBeDefined();
     expect(TypeScriptExportInventory.read(emittedIndex?.[1] ?? "")).toEqual(
       DaemonContractExpectation.exports,
-    );
-  });
-
-  it("emits only the policy test factory from the temporary subpath", () => {
-    const sourceRoot = DaemonContractSourcePath.root(import.meta.url);
-    const compilation = NodeFreeDeclarationCompiler.compile([
-      join(sourceRoot, "policy-testing.ts"),
-    ]);
-    expect(compilation.diagnostics).toEqual([]);
-    const declaration = [...compilation.outputs].find(([path]) =>
-      path.endsWith("/policy-testing.d.ts"),
-    );
-    expect(declaration).toBeDefined();
-    expect(TypeScriptExportInventory.read(declaration?.[1] ?? "")).toEqual(
-      DaemonContractExpectation.policyTestingExports,
     );
   });
 

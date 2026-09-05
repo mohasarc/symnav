@@ -1,4 +1,7 @@
-import type { DaemonDiagnosticEvent, DaemonProcessTerminationSignal } from "../transport/protocol.js";
+import type {
+  DaemonDiagnosticEvent,
+  DaemonProcessTerminationSignal,
+} from "../transport/protocol.js";
 import { DaemonLogger } from "../diagnostics/logger.js";
 
 interface DaemonTerminationRecorder {

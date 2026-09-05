@@ -8,10 +8,7 @@ import type { DaemonOperationTrace } from "../diagnostics/operation-observer.js"
 import type { DaemonExecuteRequest } from "../transport/protocol.js";
 import type { DaemonResourceSupervisor } from "../resources/resource-supervisor.js";
 import type { DaemonWorkerGenerationManager } from "../worker/worker-generation-manager.js";
-import type {
-  WorkspaceRequestQueue,
-  WorkspaceRequestQueueSnapshot,
-} from "./request-queue.js";
+import type { WorkspaceRequestQueue, WorkspaceRequestQueueSnapshot } from "./request-queue.js";
 
 export type AuthenticatedDaemonExecuteRequest = DaemonExecuteRequest;
 

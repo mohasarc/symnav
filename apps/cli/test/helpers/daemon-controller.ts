@@ -1,5 +1,5 @@
 import { DaemonPolicy, type DaemonPolicyValues } from "@symnav/daemon";
-import { DaemonPolicyTestFactory } from "@symnav/daemon/policy-testing";
+import { DaemonPolicyTestFactory } from "./daemon-policy.js";
 import { DaemonController as RuntimeDaemonController } from "../../src/daemon/daemon-controller.js";
 import type {
   DaemonProcessLauncher,

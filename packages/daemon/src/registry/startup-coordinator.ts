@@ -13,7 +13,10 @@ import { DAEMON_PROTOCOL_VERSION, DAEMON_RECORD_SCHEMA_VERSION } from "../transp
 import type { DaemonRegistry, StartupOwner } from "./registry.js";
 import { DaemonRecordObserver } from "./record-observer.js";
 import type { DaemonWorkspaceIdentity } from "./workspace-identity.js";
-import type { DaemonExecutionRequester, DaemonLifecycleRequestSender } from "../transport/contracts.js";
+import type {
+  DaemonExecutionRequester,
+  DaemonLifecycleRequestSender,
+} from "../transport/contracts.js";
 import { NodeDaemonClock, type DaemonClock } from "../lifecycle/daemon-clock.js";
 
 export type DaemonWarmupTriggerResult =

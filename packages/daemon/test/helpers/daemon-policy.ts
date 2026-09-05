@@ -1,4 +1,4 @@
-import { DaemonPolicy, type DaemonPolicyValues } from "./daemon-policy.js";
+import { DaemonPolicy, type DaemonPolicyValues } from "../../src/daemon-policy.js";
 
 type DaemonPolicyOverrides = {
   readonly [Section in keyof DaemonPolicyValues]?: Partial<DaemonPolicyValues[Section]>;

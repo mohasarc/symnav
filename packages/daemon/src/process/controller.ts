@@ -17,7 +17,10 @@ import { DaemonStartupCoordinator } from "../registry/startup-coordinator.js";
 import { DaemonWorkspaceIdentity } from "../registry/workspace-identity.js";
 import { DaemonRuntimeValues } from "./runtime-values.js";
 import { NodeDaemonClock, type DaemonClock } from "../lifecycle/daemon-clock.js";
-import type { DaemonExecutionRequester, DaemonLifecycleRequestSender } from "../transport/contracts.js";
+import type {
+  DaemonExecutionRequester,
+  DaemonLifecycleRequestSender,
+} from "../transport/contracts.js";
 
 interface DaemonControllerOptions {
   readonly policy: Pick<DaemonPolicyValues, "startup" | "shutdown">;

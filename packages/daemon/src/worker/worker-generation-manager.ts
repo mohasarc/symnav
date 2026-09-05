@@ -5,7 +5,10 @@ import {
   type DaemonNavigationWorkerExit,
 } from "./navigation-worker.js";
 import type { DaemonNavigationWorkerResponse } from "./worker-protocol.js";
-import type { DaemonWorkerDiagnostic, DaemonWorkerReplacementCause } from "../transport/protocol.js";
+import type {
+  DaemonWorkerDiagnostic,
+  DaemonWorkerReplacementCause,
+} from "../transport/protocol.js";
 
 export type DaemonWorkerReadyReport = Extract<
   DaemonNavigationWorkerResponse,

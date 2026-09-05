@@ -1,5 +1,5 @@
 import { DaemonPolicy } from "@symnav/daemon";
-import { DaemonPolicyTestFactory } from "@symnav/daemon/policy-testing";
+import { DaemonPolicyTestFactory } from "./daemon-policy.js";
 import { performance } from "node:perf_hooks";
 import { NodeDaemonClock, type DaemonClock } from "../../src/daemon/daemon-clock.js";
 import type { ProgramDependencies } from "../../src/program-dependencies.js";

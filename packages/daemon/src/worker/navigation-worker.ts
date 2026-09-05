@@ -92,20 +92,17 @@ export class NodeDaemonNavigationWorker implements DaemonNavigationWorker {
     this.exited = new Promise((resolve) => {
       this.resolveExited = resolve;
     });
-    this.worker = new Worker(
-      options.entryUrl ?? new URL("../worker-entry.js", import.meta.url),
-      {
-        workerData: {
-          ...options.workerData,
-          stateDirectory: options.configuration.stateDirectory,
-          generation: options.generation,
-          productVersion: options.configuration.productVersion,
-          executorModuleUrl: options.configuration.executorModuleUrl,
-          policy: options.configuration.policy,
-        },
-        resourceLimits: options.resourceLimits,
+    this.worker = new Worker(options.entryUrl ?? new URL("../worker-entry.js", import.meta.url), {
+      workerData: {
+        ...options.workerData,
+        stateDirectory: options.configuration.stateDirectory,
+        generation: options.generation,
+        productVersion: options.configuration.productVersion,
+        executorModuleUrl: options.configuration.executorModuleUrl,
+        policy: options.configuration.policy,
       },
-    );
+      resourceLimits: options.resourceLimits,
+    });
     this.worker.on("message", (value: unknown) => void this.receive(value));
     this.worker.once("error", (error) => this.failCommunication(error));
     this.worker.once("exit", () => this.finishExit());

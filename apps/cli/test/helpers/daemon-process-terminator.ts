@@ -1,5 +1,5 @@
 import { DaemonPolicy, type DaemonPolicyValues } from "@symnav/daemon";
-import { DaemonPolicyTestFactory } from "@symnav/daemon/policy-testing";
+import { DaemonPolicyTestFactory } from "./daemon-policy.js";
 import { NodeDaemonProcessTerminator as RuntimeNodeDaemonProcessTerminator } from "../../src/daemon/daemon-process-launcher.js";
 
 export class TestNodeDaemonProcessTerminator extends RuntimeNodeDaemonProcessTerminator {

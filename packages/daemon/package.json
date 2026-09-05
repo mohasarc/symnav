@@ -15,10 +15,6 @@
     },
     "./worker-entry": {
       "default": "./dist/worker-entry.js"
-    },
-    "./policy-testing": {
-      "types": "./dist/policy-testing.d.ts",
-      "default": "./dist/policy-testing.js"
     }
   },
   "files": ["dist"],
@@ -30,6 +26,7 @@
     "typecheck:test": "tsc -p tsconfig.test.json --noEmit"
   },
   "devDependencies": {
-    "@symnav/testing": "workspace:*"
+    "@symnav/testing": "workspace:*",
+    "tsx": "^4.21.0"
   }
 }

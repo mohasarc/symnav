@@ -1,10 +1,7 @@
 import type { DaemonExecutorExecutionResult } from "@symnav/daemon";
 import type { CompletionSpoolManifest } from "../delivery/completion-spool.js";
 import type { DaemonExecutionServerFrame, DaemonResultChunk } from "./protocol.js";
-import type {
-  DaemonCapturedOutputSummary,
-  DaemonOutputCapture,
-} from "./client-result-capture.js";
+import type { DaemonCapturedOutputSummary, DaemonOutputCapture } from "./client-result-capture.js";
 
 type ResultManifestFrame = Extract<
   DaemonExecutionServerFrame,

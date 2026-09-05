@@ -1,5 +1,9 @@
 import type { DaemonProcessTerminator } from "../process/process-launcher.js";
-import { DAEMON_PROTOCOL_VERSION, type DaemonPong, type DaemonRecord } from "../transport/protocol.js";
+import {
+  DAEMON_PROTOCOL_VERSION,
+  type DaemonPong,
+  type DaemonRecord,
+} from "../transport/protocol.js";
 import type { DaemonLifecycleRequestSender } from "../transport/contracts.js";
 import { DaemonTransportError } from "../transport/transport-error.js";
 

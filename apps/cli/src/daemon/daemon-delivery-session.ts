@@ -180,6 +180,27 @@ export class DaemonDeliverySession {
     }
   }
 
+  async acknowledge(
+    request: AuthenticatedDaemonResultAcknowledgement,
+  ): Promise<DaemonResultAcknowledged> {
+    const spool = await this.options.spoolStore.open(request.requestId);
+    if (spool === undefined) throw new Error("Accepted request completion is unavailable");
+    if (spool.completedManifest?.transferId !== request.transferId) {
+      throw new Error("Result acknowledgement does not match completion transfer");
+    }
+    await spool.acknowledge().catch((error) => {
+      this.recordFailure("completion-cleanup", error);
+    });
+    this.options.journal.acknowledge(request.requestId);
+    this.completeOperationTrace(request.requestId, "delivered");
+    return {
+      kind: "result-acknowledged",
+      ...this.options.coordinates,
+      requestId: request.requestId,
+      transferId: request.transferId,
+    };
+  }
+
   private deliver(send: DaemonServerSend, frame: DaemonServerMessage): Promise<void> {
     return send(frame);
   }

@@ -101,14 +101,6 @@ export class DaemonActivityProjector {
     return input.queue.active === undefined ? "ready" : "busy";
   }
 
-  private static legacyState(
-    lifecycle: DaemonActivitySnapshot["lifecycle"],
-  ): NonNullable<DaemonPong["state"]> {
-    if (lifecycle === "busy") return "busy";
-    if (lifecycle === "starting") return "starting";
-    return "ready";
-  }
-
   private static recoveryDetail(
     input: DaemonActivityProjectionInput,
   ): DaemonActivitySnapshot["recoveryDetail"] {
@@ -127,5 +119,13 @@ export class DaemonActivityProjector {
       command: input.queue.active.command,
       elapsedMs: Math.max(0, input.nowMonotonicMs - input.queue.active.startedAt),
     });
+  }
+
+  private static legacyState(
+    lifecycle: DaemonActivitySnapshot["lifecycle"],
+  ): NonNullable<DaemonPong["state"]> {
+    if (lifecycle === "busy") return "busy";
+    if (lifecycle === "starting") return "starting";
+    return "ready";
   }
 }

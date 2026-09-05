@@ -1,4 +1,5 @@
 import type {
+  DaemonCommandName,
   DaemonExecutionFailureCode,
   DaemonPolicyValues,
   DaemonSequencedOutputRecord,
@@ -8,7 +9,7 @@ import type {
   AcceptedRequestSubscriber,
 } from "./accepted-request-ledger.js";
 import type { DaemonClock } from "./daemon-clock.js";
-import type { DaemonOperationObserver } from "./daemon-operation-observer.js";
+import type { DaemonOperationObserver, DaemonOperationTrace } from "./daemon-operation-observer.js";
 import type {
   DaemonDiagnosticEvent,
   DaemonIdentityCoordinates,
@@ -17,6 +18,7 @@ import type {
   DaemonResultFetchRequest,
 } from "./daemon-protocol.js";
 import type {
+  CompletionSpool,
   CompletionSpoolManifest,
   DaemonCompletionSpoolStore,
 } from "./completion-spool.js";
@@ -68,4 +70,62 @@ export interface DaemonDeliverySessionOptions {
   readonly diagnostics: DaemonDiagnosticRecorder;
   readonly clock: DaemonClock;
   readonly policy: Pick<DaemonPolicyValues, "delivery" | "diagnostics" | "shutdown">;
+}
+
+export class DaemonDeliverySession {
+  private readonly operationTraces = new Map<string, DaemonOperationTrace>();
+
+  constructor(private readonly options: DaemonDeliverySessionOptions) {}
+
+  get snapshot(): DaemonDeliverySnapshot {
+    return {
+      spoolBytes: this.options.spoolStore.usage().rawBytes,
+      hasUnacknowledgedCompletions: this.options.journal.hasUnacknowledgedCompletions,
+    };
+  }
+
+  beginAcceptedTrace(
+    requestId: string,
+    command: DaemonCommandName,
+    queuePosition: number,
+    workerGeneration: number,
+  ): DaemonOperationTrace {
+    const trace = this.options.observer.start(requestId, command);
+    this.operationTraces.set(requestId, trace);
+    trace.accepted(queuePosition, workerGeneration);
+    return trace;
+  }
+
+  async createCompletion(requestId: string): Promise<DaemonCompletionWriter> {
+    const spool = await this.options.spoolStore.create(requestId);
+    return new ObservedDaemonCompletionWriter(
+      spool,
+      this.operationTraces.get(requestId),
+      this.options.clock,
+    );
+  }
+}
+
+class ObservedDaemonCompletionWriter implements DaemonCompletionWriter {
+  constructor(
+    private readonly spool: CompletionSpool,
+    private readonly trace: DaemonOperationTrace | undefined,
+    private readonly clock: Pick<DaemonClock, "monotonicNowMs">,
+  ) {}
+
+  append(record: DaemonSequencedOutputRecord): Promise<void> {
+    return this.spool.append(record);
+  }
+
+  async finish(exitCode: number): Promise<CompletionSpoolManifest> {
+    const startedAt = this.clock.monotonicNowMs();
+    const manifest = await this.spool.finish(exitCode);
+    const durationMs = Math.max(0, this.clock.monotonicNowMs() - startedAt);
+    this.trace?.spooled(manifest, durationMs);
+    return manifest;
+  }
+
+  dispose(): Promise<void> {
+    return this.spool.dispose();
+  }
 }

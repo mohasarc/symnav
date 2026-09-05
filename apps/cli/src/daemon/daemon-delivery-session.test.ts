@@ -24,7 +24,7 @@ describe("DaemonDeliverySession", () => {
 
     const completion = await harness.session.createCompletion("request-1");
     await completion.append({ sequence: 0, stream: "stdout", bytes: Buffer.from("result\n") });
-    harness.setMonotonicNow(17);
+    harness.setMonotonicTimes(11, 17);
     const manifest = await completion.finish(4);
 
     expect(trace).toBeDefined();
@@ -52,7 +52,7 @@ describe("DaemonDeliverySession", () => {
         requestId: "request-1",
         rawBytes: 7,
         recordCount: 1,
-        spoolMs: 17,
+        spoolMs: 6,
       },
     ]);
   });
@@ -62,7 +62,7 @@ class DeliverySessionHarness {
   private constructor(
     readonly session: DaemonDeliverySession,
     readonly events: DaemonDiagnosticEvent[],
-    private readonly time: { monotonicNow: number },
+    private readonly time: { monotonicNow: number; remaining: number[] },
   ) {}
 
   static async create(directories: string[]): Promise<DeliverySessionHarness> {
@@ -71,10 +71,13 @@ class DeliverySessionHarness {
     const policy = DaemonPolicy.currentSystem().values;
     const journal = new AcceptedRequestLedger(() => 1);
     const events: DaemonDiagnosticEvent[] = [];
-    const time = { monotonicNow: 0 };
+    const time = { monotonicNow: 0, remaining: [] as number[] };
     const clock = {
       wallNowMs: () => 1,
-      monotonicNowMs: () => time.monotonicNow,
+      monotonicNowMs: () => {
+        time.monotonicNow = time.remaining.shift() ?? time.monotonicNow;
+        return time.monotonicNow;
+      },
     };
     const diagnostics = { record: (event: DaemonDiagnosticEvent) => events.push(event) };
     const observer = new DaemonOperationObserver(diagnostics, clock);
@@ -100,7 +103,7 @@ class DeliverySessionHarness {
     return harness;
   }
 
-  setMonotonicNow(monotonicNow: number): void {
-    this.time.monotonicNow = monotonicNow;
+  setMonotonicTimes(...monotonicTimes: number[]): void {
+    this.time.remaining.push(...monotonicTimes);
   }
 }

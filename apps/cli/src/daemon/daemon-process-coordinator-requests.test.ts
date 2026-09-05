@@ -227,10 +227,79 @@ describe("DaemonProcessCoordinator requests", () => {
         processToken: "wrong-token",
       }),
     ).rejects.toThrow("termination");
+    await expect(
+      harness.transport.receive({
+        kind: "kill",
+        instanceId: harness.instanceId,
+        processToken: "wrong-token",
+      }),
+    ).rejects.toThrow("termination");
     await expect(harness.terminate()).resolves.toEqual({
       kind: "terminating",
       instanceId: harness.instanceId,
       processToken: harness.processToken,
+    });
+  });
+
+  it.each([
+    {
+      kind: "execute",
+      requestId: "auth-execute",
+      commandName: "version",
+      request: {
+        argv: ["--version"],
+        cwd: "/workspace",
+        telemetryEnabled: false,
+        executionMode: "warm",
+      },
+    },
+    { kind: "execution-status", requestId: "auth-status" },
+    { kind: "result-fetch", requestId: "auth-fetch", offset: 0 },
+    { kind: "result-ack", requestId: "auth-ack", transferId: "transfer" },
+  ] as const)("validates $kind protocol and instance before its token", async (request) => {
+    const harness = await RequestHarness.start(new ImmediateExecutor());
+    harnesses.push(harness);
+    const authenticatedRequest = {
+      ...request,
+      protocolVersion: DAEMON_PROTOCOL_VERSION,
+      instanceId: harness.instanceId,
+      processToken: harness.processToken,
+    } as DaemonRequest;
+    const withAuthentication = (authentication: {
+      readonly protocolVersion?: number;
+      readonly instanceId?: string;
+      readonly processToken?: string;
+    }): DaemonRequest => ({ ...authenticatedRequest, ...authentication }) as DaemonRequest;
+
+    await expect(
+      harness.transport.receive(
+        withAuthentication({
+          protocolVersion: DAEMON_PROTOCOL_VERSION + 1,
+          processToken: "wrong-token",
+        }),
+      ),
+    ).rejects.toThrow("protocol or instance");
+    await expect(
+      harness.transport.receive(
+        withAuthentication({
+          instanceId: "wrong-instance",
+          processToken: "wrong-token",
+        }),
+      ),
+    ).rejects.toThrow("protocol or instance");
+    await expect(
+      harness.transport.receive(withAuthentication({ processToken: "wrong-token" })),
+    ).rejects.toThrow("execution request");
+  });
+
+  it("keeps ping and stop authenticated only by protocol and instance", async () => {
+    const harness = await RequestHarness.start(new ImmediateExecutor());
+    harnesses.push(harness);
+
+    await expect(harness.ping()).resolves.toMatchObject({ kind: "pong" });
+    await expect(harness.stop()).resolves.toEqual({
+      kind: "stopped",
+      instanceId: harness.instanceId,
     });
   });
 

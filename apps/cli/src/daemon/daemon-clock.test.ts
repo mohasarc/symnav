@@ -1,3 +1,4 @@
+import { readFileSync, readdirSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { NodeDaemonClock } from "./daemon-clock.js";
 
@@ -29,5 +30,21 @@ describe("NodeDaemonClock", () => {
     monotonicNowMs = 4;
 
     expect(Math.max(0, clock.monotonicNowMs() - startedAt)).toBe(0);
+  });
+});
+
+describe("daemon production clock ownership", () => {
+  it("keeps raw time sources and telemetry clocks outside daemon mechanisms", () => {
+    const violations = readdirSync(new URL(".", import.meta.url))
+      .filter(
+        (file) =>
+          file.endsWith(".ts") && !file.endsWith(".test.ts") && file !== "daemon-clock.ts",
+      )
+      .flatMap((file) => {
+        const source = readFileSync(new URL(file, import.meta.url), "utf8");
+        return /Date\.now|performance\.now|@symnav\/telemetry/.test(source) ? [file] : [];
+      });
+
+    expect(violations).toEqual([]);
   });
 });

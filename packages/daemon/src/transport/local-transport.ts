@@ -1,5 +1,5 @@
 import type { DaemonPolicy } from "@symnav/daemon";
-import { DaemonClientResultCapture } from "./client-result-capture.js";
+import { DaemonClientResultCapture, type DaemonOutputCapture } from "./client-result-capture.js";
 import { DaemonExecutionClient } from "./execution-client.js";
 import { DaemonLifecycleClient } from "./lifecycle-client.js";
 import type {
@@ -33,6 +33,7 @@ interface LocalDaemonTransportOptions {
   readonly lifecycle?: DaemonLifecycleComponent;
   readonly execution?: DaemonExecutionRequester;
   readonly server?: DaemonRequestServer;
+  readonly createOutput?: () => DaemonOutputCapture;
 }
 
 type DaemonLifecycleComponent = DaemonLifecycleRequester &
@@ -80,13 +81,15 @@ export class LocalDaemonTransport
         lifecycle: this.lifecycle,
         codec: this.codec,
         validator: this.validator,
-        createOutput: () =>
-          new DaemonClientResultCapture({
-            policy: policy.values.output,
-            ...(options.captureDirectory === undefined
-              ? {}
-              : { directory: options.captureDirectory }),
-          }),
+        createOutput:
+          options.createOutput ??
+          (() =>
+            new DaemonClientResultCapture({
+              policy: policy.values.output,
+              ...(options.captureDirectory === undefined
+                ? {}
+                : { directory: options.captureDirectory }),
+            })),
         transportPolicy: policy.values.transport,
         deliveryPolicy: policy.values.delivery,
       });

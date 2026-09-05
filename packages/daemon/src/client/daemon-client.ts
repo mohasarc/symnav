@@ -21,6 +21,7 @@ import { DaemonRecordObserver } from "../registry/record-observer.js";
 import { DaemonRegistry } from "../registry/registry.js";
 import { DaemonStartupCoordinator } from "../registry/startup-coordinator.js";
 import { DaemonWorkspaceIdentity } from "../registry/workspace-identity.js";
+import { DaemonClientResultCapture } from "../transport/client-result-capture.js";
 import { LocalDaemonTransport } from "../transport/local-transport.js";
 import { DAEMON_PROTOCOL_VERSION, type DaemonRecord } from "../transport/protocol.js";
 import { DaemonTransportError } from "../transport/transport-error.js";
@@ -87,7 +88,10 @@ export class DaemonClient {
       DaemonWorkspaceIdentity.registryDirectory(options.stateDirectory),
       this.policy.values.startup,
     );
-    this.routingTransport = new LocalDaemonTransport({ policy: this.policy });
+    this.routingTransport = new LocalDaemonTransport({
+      policy: this.policy,
+      createOutput: () => new DaemonClientResultCapture({ policy: this.policy.values.output }),
+    });
     this.statusTransport = new LocalDaemonTransport({
       policy: this.policy,
       lifecycleResponseTimeoutMs: this.policy.values.transport.statusResponseTimeoutMs,

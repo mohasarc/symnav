@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { tmpdir } from "node:os";
 import type {
   DaemonExecutionFailureCode,
   DaemonExecutor,
@@ -11,6 +12,7 @@ import { DaemonStartupCoordinator } from "../registry/startup-coordinator.js";
 import { DaemonRecordObserver } from "../registry/record-observer.js";
 import { DaemonRegistry } from "../registry/registry.js";
 import { LocalDaemonTransport } from "../transport/local-transport.js";
+import type { DaemonOutputCapture } from "../transport/client-result-capture.js";
 import {
   DAEMON_PROTOCOL_VERSION,
   DAEMON_RECORD_SCHEMA_VERSION,
@@ -92,6 +94,23 @@ describe("DaemonClient execution", () => {
     expect(harness.executorFactory).toHaveBeenCalledTimes(2);
     expect(harness.executors).toHaveLength(2);
     expect(harness.executors[0]).not.toBe(harness.executors[1]);
+  });
+
+  it("composes fresh warm result captures from output policy in the OS temporary directory", () => {
+    const harness = new ClientHarness({});
+    const createOutput = ClientCaptureInspection.createOutput(harness.client);
+
+    const first = createOutput();
+    const second = createOutput();
+
+    expect(first).not.toBe(second);
+    expect(ClientCaptureInspection.capture(first)).toMatchObject({
+      directory: tmpdir(),
+      maximumChunkRawBytes: DaemonPolicy.currentSystem().values.output.maximumChunkRawBytes,
+      inlineRawBytes: DaemonPolicy.currentSystem().values.output.inlineRawBytes,
+      maximumResultRawBytes: DaemonPolicy.currentSystem().values.output.maximumResultRawBytes,
+    });
+    expect(harness.executorFactory).not.toHaveBeenCalled();
   });
 
   it("executes ready requests warm without creating a host executor", async () => {
@@ -280,6 +299,28 @@ class ClientHarness {
       cwd: "/workspace",
       telemetryEnabled: true,
     };
+  }
+}
+
+class ClientCaptureInspection {
+  static createOutput(client: DaemonClient): () => DaemonOutputCapture {
+    const composition = client as unknown as {
+      readonly routingTransport: {
+        readonly execution: {
+          readonly options: { readonly createOutput: () => DaemonOutputCapture };
+        };
+      };
+    };
+    return composition.routingTransport.execution.options.createOutput;
+  }
+
+  static capture(capture: DaemonOutputCapture): {
+    readonly directory: string;
+    readonly maximumChunkRawBytes: number;
+    readonly inlineRawBytes: number;
+    readonly maximumResultRawBytes: number;
+  } {
+    return capture as unknown as ReturnType<typeof ClientCaptureInspection.capture>;
   }
 }
 

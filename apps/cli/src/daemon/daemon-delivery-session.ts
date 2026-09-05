@@ -207,6 +207,23 @@ export class DaemonDeliverySession {
     }
   }
 
+  async waitForCompletionAcknowledgements(): Promise<void> {
+    const acknowledgementDeadline =
+      this.options.clock.wallNowMs() +
+      this.options.policy.shutdown.resourceDrainAcknowledgementGraceMs;
+    while (
+      this.options.journal.hasUnacknowledgedCompletions &&
+      this.options.clock.wallNowMs() < acknowledgementDeadline
+    ) {
+      await new Promise((resolve) =>
+        setTimeout(
+          resolve,
+          this.options.policy.shutdown.resourceDrainAcknowledgementPollIntervalMs,
+        ),
+      );
+    }
+  }
+
   private deliver(send: DaemonServerSend, frame: DaemonServerMessage): Promise<void> {
     return send(frame);
   }

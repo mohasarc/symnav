@@ -11,6 +11,7 @@ import type {
   DaemonWorkerGenerationManagerOptions,
   DaemonWorkerGenerationSnapshot,
   DaemonWorkerReadyReport,
+  DaemonWorkerResourceReport,
 } from "./daemon-worker-generation-manager-contract.js";
 
 interface DaemonWorkerGeneration {
@@ -82,6 +83,20 @@ export class DaemonWorkerGenerationManager {
       () => this.clearReplacement(operation),
     );
     return operation;
+  }
+
+  async releaseTransientResources(): Promise<DaemonWorkerResourceReport> {
+    const response = await this.currentGeneration.worker.releaseTransientResources();
+    if (response.kind !== "heap") {
+      throw new Error("Navigation worker did not report heap usage");
+    }
+    this.options.onDiagnostic({
+      kind: "resources-released",
+      workerGeneration: response.generation,
+      workerHeapUsedBytes: response.usedHeapBytes,
+      workerHeapLimitBytes: response.heapLimitBytes,
+    });
+    return response;
   }
 
   private async replaceGeneration(

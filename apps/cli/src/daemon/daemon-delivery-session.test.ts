@@ -1,10 +1,10 @@
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { DaemonPolicy } from "@symnav/daemon";
 import { AcceptedRequestLedger } from "./accepted-request-ledger.js";
-import { DaemonCompletionSpoolStore } from "./completion-spool.js";
+import { CompletionSpoolReadError, DaemonCompletionSpoolStore } from "./completion-spool.js";
 import { DaemonDeliverySession } from "./daemon-delivery-session.js";
 import { DaemonOperationObserver } from "./daemon-operation-observer.js";
 import type { DaemonDiagnosticEvent, DaemonServerMessage } from "./daemon-protocol.js";
@@ -166,12 +166,90 @@ describe("DaemonDeliverySession", () => {
     expect(settled).toBe(true);
     expect(harness.session.trackedCompletion("request-1")).toBeUndefined();
   });
+
+  it("fetches retained completion output from the requested offset", async () => {
+    const harness = await DeliverySessionHarness.create(directories);
+    harness.accept("request-1");
+    const completion = await harness.session.createCompletion("request-1");
+    await completion.append({ sequence: 0, stream: "stdout", bytes: Buffer.from("first") });
+    await completion.append({ sequence: 1, stream: "stderr", bytes: Buffer.from("second") });
+    const manifest = await completion.finish(0);
+    harness.complete("request-1");
+    const fetched = DeliverySend.create();
+
+    await harness.session.fetch(
+      {
+        kind: "result-fetch",
+        protocolVersion: 5,
+        instanceId: "instance-1",
+        processToken: "token-1",
+        requestId: "request-1",
+        offset: 1,
+      },
+      fetched.send,
+    );
+
+    expect(fetched.frames.map(DeliverySend.frameKind)).toEqual([
+      "result-manifest",
+      "chunk",
+      "result-end",
+    ]);
+    expect(fetched.frames[1]).toMatchObject({ sequence: 1, offset: 1, stream: "stderr" });
+    expect(harness.journal.status("request-1")).toEqual({ state: "completed" });
+    expect(harness.session.snapshot.spoolBytes).toBe(11);
+    expect(manifest.transferId).toEqual(expect.any(String));
+  });
+
+  it("invalidates completed journal state before reporting a spool read failure", async () => {
+    const harness = await DeliverySessionHarness.create(directories);
+    harness.accept("request-1");
+    const completion = await harness.session.createCompletion("request-1");
+    await completion.append({ sequence: 0, stream: "stdout", bytes: Buffer.from("result") });
+    await completion.finish(0);
+    harness.complete("request-1");
+    const spool = await harness.spoolStore.open("request-1");
+    if (spool === undefined) throw new Error("Expected completion spool");
+    vi.spyOn(spool, "read").mockImplementation(async function* () {
+      throw new CompletionSpoolReadError(new Error("read failed"));
+    });
+    let stateWhenFailureWasSent: unknown;
+    const fetched = DeliverySend.create((message) => {
+      if ("kind" in message && message.kind === "execution-failed") {
+        stateWhenFailureWasSent = harness.journal.status("request-1");
+      }
+    });
+
+    await harness.session.fetch(
+      {
+        kind: "result-fetch",
+        protocolVersion: 5,
+        instanceId: "instance-1",
+        processToken: "token-1",
+        requestId: "request-1",
+        offset: 0,
+      },
+      fetched.send,
+    );
+
+    expect(stateWhenFailureWasSent).toEqual({ state: "failed", code: "internal" });
+    expect(fetched.frames.map(DeliverySend.frameKind)).toEqual([
+      "result-manifest",
+      "execution-failed",
+    ]);
+    expect(
+      harness.events.filter(
+        (event) => event.kind === "failure" && event.operation === "completion-delivery",
+      ),
+    ).toHaveLength(1);
+    expect(harness.session.snapshot.spoolBytes).toBe(0);
+  });
 });
 
 class DeliverySessionHarness {
   private constructor(
     readonly session: DaemonDeliverySession,
     readonly journal: AcceptedRequestLedger,
+    readonly spoolStore: DaemonCompletionSpoolStore,
     readonly events: DaemonDiagnosticEvent[],
     private readonly time: { monotonicNow: number; remaining: number[] },
   ) {}
@@ -209,6 +287,7 @@ class DeliverySessionHarness {
         policy,
       }),
       journal,
+      spoolStore,
       events,
       time,
     );
@@ -217,6 +296,15 @@ class DeliverySessionHarness {
 
   setMonotonicTimes(...monotonicTimes: number[]): void {
     this.time.remaining.push(...monotonicTimes);
+  }
+
+  accept(requestId: string): void {
+    this.journal.accept(requestId, "version", this.executionRequest);
+  }
+
+  complete(requestId: string): void {
+    this.journal.markRunning(requestId, 2);
+    this.journal.complete(requestId, requestId, 3);
   }
 
   get executionRequest() {

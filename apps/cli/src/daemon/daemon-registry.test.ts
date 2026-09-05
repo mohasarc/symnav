@@ -47,10 +47,7 @@ interface CallerOwnershipRegistryTestAccess {
     processToken: string,
     pid: number,
   ): boolean;
-  startupOwnerForInstance(
-    identity: DaemonWorkspaceIdentity,
-    instanceId: string,
-  ): unknown;
+  startupOwnerForInstance(identity: DaemonWorkspaceIdentity, instanceId: string): unknown;
   startupOwnerForRecordCredentials(
     identity: DaemonWorkspaceIdentity,
     record: DaemonRecord,
@@ -401,9 +398,9 @@ describe("daemon registry", () => {
         ),
       ),
     ).toBeDefined();
-    expect(
-      expectDelegation(() => registry.writeStartingIfStartupOwner(identity, starting)),
-    ).toBe(true);
+    expect(expectDelegation(() => registry.writeStartingIfStartupOwner(identity, starting))).toBe(
+      true,
+    );
     expect(
       expectDelegation(() => processRegistry.startupOwnerMatchesProcess(identity, starting)),
     ).toBe(true);
@@ -460,11 +457,7 @@ describe("daemon registry", () => {
     vi.spyOn(processRegistry, "startupOwnershipMatches").mockReturnValue(undefined);
 
     expect(
-      callerRegistry.removeStartupLockIfLauncher(
-        identity,
-        owner.instanceId,
-        owner.processToken,
-      ),
+      callerRegistry.removeStartupLockIfLauncher(identity, owner.instanceId, owner.processToken),
     ).toBe(false);
     expect(registry.startupOwner(identity)).toBeDefined();
   });

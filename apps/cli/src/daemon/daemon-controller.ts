@@ -46,7 +46,8 @@ export class DaemonController {
     this.stopTimeoutMs = this.policy.shutdown.stopTimeoutMs;
     this.pollIntervalMs = this.policy.shutdown.controllerPollIntervalMs;
     this.processTerminator =
-      options.processTerminator ?? new NodeDaemonProcessTerminator(this.policy.shutdown, this.clock);
+      options.processTerminator ??
+      new NodeDaemonProcessTerminator(this.policy.shutdown, this.clock);
     this.launcher = options.launcher;
     this.observer = new DaemonRecordObserver(this.transport, this.processTerminator);
   }
@@ -132,24 +133,23 @@ export class DaemonController {
         }
         return this.statusForObservation(observation);
       }
-      const owner = this.registry.startupOwner(identity);
+      const ownerForRecord = this.registry.startupOwnerForRecordCredentials(identity, record);
+      const ownerForInstance = this.registry.startupOwnerForInstance(identity, record.instanceId);
       const armedLaunchIsWithinGrace =
-        owner?.instanceId === record.instanceId &&
-        owner.processToken === record.processToken &&
-        this.registry.startupOwnerIsWithinGrace(owner);
+        ownerForRecord !== undefined && this.registry.startupOwnerIsWithinGrace(ownerForRecord);
       if (
         armedLaunchIsWithinGrace ||
-        (owner?.instanceId === record.instanceId &&
-          this.processTerminator.isAlive(owner.ownerPid) &&
-          this.registry.startupOwnerIsWithinGrace(owner))
+        (ownerForInstance !== undefined &&
+          this.processTerminator.isAlive(ownerForInstance.ownerPid) &&
+          this.registry.startupOwnerIsWithinGrace(ownerForInstance))
       ) {
         return this.startingStatus(record);
       }
-      if (owner?.instanceId === record.instanceId) {
-        if (!this.registry.removeStartupLockIfOwner(identity, owner)) {
-          const renewedOwner = this.registry.startupOwner(identity);
+      if (ownerForInstance !== undefined) {
+        if (!this.registry.removeStartupLockIfOwner(identity, ownerForInstance)) {
+          const renewedOwner = this.registry.startupOwnerForInstance(identity, record.instanceId);
           if (
-            renewedOwner?.instanceId === record.instanceId &&
+            renewedOwner !== undefined &&
             this.processTerminator.isAlive(renewedOwner.ownerPid) &&
             this.registry.startupOwnerIsWithinGrace(renewedOwner)
           ) {
@@ -170,13 +170,11 @@ export class DaemonController {
     record: DaemonRecord,
     deadline: number,
   ): Promise<DaemonStopResult> {
-    const owner = this.registry.startupOwner(identity);
     if (record.pid <= 0) {
-      if (owner?.processToken === record.processToken) {
+      if (this.registry.startupOwnerForRecordCredentials(identity, record) !== undefined) {
         return this.waitForClaimedProcessAndStop(identity, record, deadline);
       }
-      if (owner?.instanceId === record.instanceId)
-        this.registry.removeStartupLockIfOwner(identity, owner);
+      this.registry.removeStartupLockIfInstance(identity, record.instanceId);
       this.registry.removeIfProcess(identity, record.instanceId, record.processToken);
       return { status: "not-running", workspaceRoot: record.workspaceRoot };
     }
@@ -208,11 +206,7 @@ export class DaemonController {
         return { status: "not-running", workspaceRoot: claimedRecord.workspaceRoot };
       }
       if (record.pid > 0) return this.stopStarting(identity, record, deadline);
-      const owner = this.registry.startupOwner(identity);
-      if (
-        owner?.instanceId !== claimedRecord.instanceId ||
-        owner.processToken !== claimedRecord.processToken
-      ) {
+      if (this.registry.startupOwnerForRecordCredentials(identity, claimedRecord) === undefined) {
         return { status: "not-running", workspaceRoot: claimedRecord.workspaceRoot };
       }
       await this.pause(this.pollIntervalMs);
@@ -244,11 +238,8 @@ export class DaemonController {
     ) {
       return;
     }
-    const owner = this.registry.startupOwner(identity);
     if (this.registry.startupOwnerMatchesProcess(identity, record)) {
       this.registry.removeStartupLockIfProcess(identity, record);
-    } else if (owner?.instanceId === record.instanceId && owner.processToken === undefined) {
-      this.registry.removeStartupLockIfOwner(identity, owner);
     }
     this.registry.removeIfProcess(identity, record.instanceId, record.processToken);
   }

@@ -249,15 +249,13 @@ export class DaemonStartupCoordinator {
     try {
       daemonProcess = await this.launcher.launch(identity, instanceId, processToken);
       const transferred = lease.transferToDaemon(daemonProcess.pid, processToken);
-      const daemonOwner = this.registry.startupOwner(identity);
       if (
         !transferred &&
-        !(
-          daemonOwner?.identityKey === identity.identityKey &&
-          daemonOwner.instanceId === instanceId &&
-          daemonOwner.processToken === processToken &&
-          daemonOwner.ownerKind === "daemon" &&
-          daemonOwner.ownerPid === daemonProcess.pid
+        !this.registry.daemonOwnsStartupProcess(
+          identity,
+          instanceId,
+          processToken,
+          daemonProcess.pid,
         )
       ) {
         throw new Error("Daemon startup ownership changed after process launch");
@@ -305,8 +303,9 @@ export class DaemonStartupCoordinator {
   ): void {
     void daemonProcess.exited.then((exit) => {
       this.launchedExits.set(instanceId, exit);
-      const record = this.registry.readStoredInstance(identity, instanceId);
-      if (record?.state === "starting" && record.processToken === processToken) {
+      if (
+        this.registry.startingRecordForProcess(identity, instanceId, processToken) !== undefined
+      ) {
         this.cleanupLaunchedProcess(identity, instanceId, processToken);
       }
     });
@@ -317,15 +316,12 @@ export class DaemonStartupCoordinator {
     instanceId: string,
     processToken: string,
   ): void {
-    const record = this.registry.readStoredInstance(identity, instanceId);
-    if (record?.processToken === processToken) {
+    const record = this.registry.recordForProcess(identity, instanceId, processToken);
+    if (record !== undefined) {
       if (record.pid > 0) {
         this.registry.removeStartupLockIfProcess(identity, record);
       } else {
-        const owner = this.registry.startupOwner(identity);
-        if (owner?.instanceId === instanceId && owner.processToken === processToken) {
-          this.registry.removeStartupLockIfOwner(identity, owner);
-        }
+        this.registry.removeStartupLockIfLauncher(identity, instanceId, processToken);
       }
     }
     this.registry.removeIfProcess(identity, instanceId, processToken);
@@ -361,19 +357,7 @@ export class DaemonStartupCoordinator {
   }
 
   private cleanupAbandonedStartup(identity: DaemonWorkspaceIdentity, owner: StartupOwner): boolean {
-    const record = this.registry.readStoredInstance(identity, owner.instanceId);
-    if (
-      record !== undefined &&
-      ((owner.processToken.length > 0 && record.processToken !== owner.processToken) ||
-        (owner.ownerKind === "daemon" && record.pid !== owner.ownerPid))
-    ) {
-      return false;
-    }
-    if (!this.registry.removeStartupLockIfOwner(identity, owner)) return false;
-    if (record !== undefined) {
-      this.registry.removeIfProcess(identity, record.instanceId, record.processToken);
-    }
-    return true;
+    return this.registry.removeAbandonedStartupOwner(identity, owner);
   }
 
   private startupOwnerIsAbandoned(identity: DaemonWorkspaceIdentity, owner: StartupOwner): boolean {

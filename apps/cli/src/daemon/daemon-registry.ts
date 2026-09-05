@@ -254,10 +254,7 @@ export class DaemonRegistry {
         encoding: "utf8",
         mode: 0o600,
       });
-      if (
-        !mutation.isOwned() ||
-        this.startupOwnershipMatches(identity, owner) === undefined
-      ) {
+      if (!mutation.isOwned() || this.startupOwnershipMatches(identity, owner) === undefined) {
         rmSync(temporaryPath, { force: true });
         return false;
       }
@@ -269,12 +266,7 @@ export class DaemonRegistry {
         if (DaemonRegistry.errorCode(error) === "ENOENT") return false;
         throw error;
       }
-      const currentOwner = this.startupOwner(identity);
-      return (
-        currentOwner?.instanceId === record.instanceId &&
-        currentOwner.ownerPid === adoptedOwner.ownerPid &&
-        currentOwner.processToken === record.processToken
-      );
+      return this.startupOwnershipMatches(identity, adoptedOwner) !== undefined;
     } finally {
       mutation.release();
     }
@@ -337,25 +329,31 @@ export class DaemonRegistry {
     pid: number,
   ): DaemonStartupLease | undefined {
     if (!Number.isInteger(pid) || pid <= 0) return undefined;
-    const owner = this.startupOwnershipMatches(identity, {
+    const daemonOwner = this.startupOwnershipMatches(identity, {
       identityKey: identity.identityKey,
       instanceId,
       processToken,
+      ownerKind: "daemon",
+      ownerPid: pid,
     });
-    if (owner === undefined) return undefined;
-    if (owner.ownerKind === "daemon") {
-      return owner.ownerPid === pid ? new RegistryStartupLease(this, identity, owner) : undefined;
-    }
-    const daemonOwner = this.replaceStartupOwnerIfOwner(identity, owner, {
-      ...owner,
+    if (daemonOwner !== undefined) return new RegistryStartupLease(this, identity, daemonOwner);
+    const launcherOwner = this.startupOwnershipMatches(identity, {
+      identityKey: identity.identityKey,
+      instanceId,
+      processToken,
+      ownerKind: "launcher",
+    });
+    if (launcherOwner === undefined) return undefined;
+    const transferredOwner = this.replaceStartupOwnerIfOwner(identity, launcherOwner, {
+      ...launcherOwner,
       ownerPid: pid,
       ownerKind: "daemon",
       heartbeatAt: this.clock.wallNowMs(),
       revision: randomUUID(),
     });
-    return daemonOwner === undefined
+    return transferredOwner === undefined
       ? undefined
-      : new RegistryStartupLease(this, identity, daemonOwner);
+      : new RegistryStartupLease(this, identity, transferredOwner);
   }
 
   transferStartupToDaemon(
@@ -364,17 +362,17 @@ export class DaemonRegistry {
     pid: number,
     processToken: string,
   ): boolean {
-    if (
-      launcherOwner.ownerKind !== "launcher" ||
-      launcherOwner.processToken !== processToken ||
-      !Number.isInteger(pid) ||
-      pid <= 0
-    ) {
-      return false;
-    }
+    if (!Number.isInteger(pid) || pid <= 0) return false;
+    const currentLauncher = this.startupOwnershipMatches(identity, {
+      ...launcherOwner,
+      identityKey: identity.identityKey,
+      processToken,
+      ownerKind: "launcher",
+    });
+    if (currentLauncher === undefined) return false;
     return (
-      this.replaceStartupOwnerIfOwner(identity, launcherOwner, {
-        ...launcherOwner,
+      this.replaceStartupOwnerIfOwner(identity, currentLauncher, {
+        ...currentLauncher,
         ownerPid: pid,
         ownerKind: "daemon",
         heartbeatAt: this.clock.wallNowMs(),
@@ -423,6 +421,96 @@ export class DaemonRegistry {
       }
       throw error;
     }
+  }
+
+  daemonOwnsStartupProcess(
+    identity: DaemonWorkspaceIdentity,
+    instanceId: string,
+    processToken: string,
+    pid: number,
+  ): boolean {
+    return (
+      this.startupOwnershipMatches(identity, {
+        identityKey: identity.identityKey,
+        instanceId,
+        processToken,
+        ownerKind: "daemon",
+        ownerPid: pid,
+      }) !== undefined
+    );
+  }
+
+  startupOwnerForInstance(
+    identity: DaemonWorkspaceIdentity,
+    instanceId: string,
+  ): StartupOwner | undefined {
+    return this.startupOwnershipMatches(identity, {
+      identityKey: identity.identityKey,
+      instanceId,
+    });
+  }
+
+  startupOwnerForRecordCredentials(
+    identity: DaemonWorkspaceIdentity,
+    record: DaemonRecord,
+  ): StartupOwner | undefined {
+    return this.startupOwnershipMatches(identity, {
+      identityKey: identity.identityKey,
+      instanceId: record.instanceId,
+      processToken: record.processToken,
+    });
+  }
+
+  recordForProcess(
+    identity: DaemonWorkspaceIdentity,
+    instanceId: string,
+    processToken: string,
+  ): DaemonRecord | undefined {
+    const record = this.readStoredInstance(identity, instanceId);
+    return record?.processToken === processToken ? record : undefined;
+  }
+
+  startingRecordForProcess(
+    identity: DaemonWorkspaceIdentity,
+    instanceId: string,
+    processToken: string,
+  ): DaemonRecord | undefined {
+    const record = this.recordForProcess(identity, instanceId, processToken);
+    return record?.state === "starting" ? record : undefined;
+  }
+
+  removeStartupLockIfLauncher(
+    identity: DaemonWorkspaceIdentity,
+    instanceId: string,
+    processToken: string,
+  ): boolean {
+    const owner = this.startupOwnershipMatches(identity, {
+      identityKey: identity.identityKey,
+      instanceId,
+      processToken,
+      ownerKind: "launcher",
+    });
+    return owner === undefined ? false : this.removeStartupLockIfOwner(identity, owner);
+  }
+
+  removeAbandonedStartupOwner(
+    identity: DaemonWorkspaceIdentity,
+    observedOwner: StartupOwner,
+  ): boolean {
+    const owner = this.startupOwnershipMatches(identity, observedOwner);
+    if (owner === undefined) return false;
+    const record = this.readStoredInstance(identity, owner.instanceId);
+    if (
+      record !== undefined &&
+      ((owner.processToken.length > 0 && record.processToken !== owner.processToken) ||
+        (owner.ownerKind === "daemon" && record.pid !== owner.ownerPid))
+    ) {
+      return false;
+    }
+    if (!this.removeStartupLockIfOwner(identity, owner)) return false;
+    if (record !== undefined)
+      this.removeIfProcess(identity, record.instanceId, record.processToken);
+    return true;
   }
 
   isStartupOwner(identity: DaemonWorkspaceIdentity, instanceId: string): boolean {
@@ -581,8 +669,7 @@ export class DaemonRegistry {
     if (
       observedOwner !== undefined &&
       DaemonRegistry.processIsAlive(observedOwner.ownerPid) &&
-      this.clock.wallNowMs() - observedOwner.acquiredAt <=
-        this.startupPolicy.coordinationGraceMs
+      this.clock.wallNowMs() - observedOwner.acquiredAt <= this.startupPolicy.coordinationGraceMs
     ) {
       return undefined;
     }
@@ -760,8 +847,7 @@ export class DaemonRegistry {
     if (
       owner?.identityKey !== expectation.identityKey ||
       owner.instanceId !== expectation.instanceId ||
-      (expectation.processToken !== undefined &&
-        owner.processToken !== expectation.processToken) ||
+      (expectation.processToken !== undefined && owner.processToken !== expectation.processToken) ||
       (expectation.ownerKind !== undefined && owner.ownerKind !== expectation.ownerKind) ||
       (expectation.ownerPid !== undefined && owner.ownerPid !== expectation.ownerPid) ||
       (expectation.acquiredAt !== undefined && owner.acquiredAt !== expectation.acquiredAt) ||

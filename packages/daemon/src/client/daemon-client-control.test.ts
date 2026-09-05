@@ -12,14 +12,12 @@ describe("DaemonClient control", () => {
     const policy = DaemonPolicy.currentSystem();
     const client = createClient(policy);
     const composition = ClientControlInspection.read(client);
-    const start = vi
-      .spyOn(DaemonController.prototype, "start")
-      .mockResolvedValue({
-        status: "ready",
-        workspaceRoot: "/workspace",
-        fileCount: 4,
-        loadDurationMs: 2,
-      });
+    const start = vi.spyOn(DaemonController.prototype, "start").mockResolvedValue({
+      status: "ready",
+      workspaceRoot: "/workspace",
+      fileCount: 4,
+      loadDurationMs: 2,
+    });
     const status = vi.spyOn(DaemonController.prototype, "status").mockResolvedValue([]);
     const stop = vi
       .spyOn(DaemonController.prototype, "stop")
@@ -58,9 +56,18 @@ describe("DaemonClient control", () => {
     async (action) => {
       vi.spyOn(DaemonController.prototype, action).mockRejectedValue(new Error(`${action} failed`));
       const client = createClient(DaemonPolicy.currentSystem());
-      const request = action === "status" ? { action } : { action, workspaceRoot: "/workspace" };
 
-      await expect(client.control(request)).rejects.toThrow(`${action} failed`);
+      if (action === "status") {
+        await expect(client.control({ action })).rejects.toThrow(`${action} failed`);
+      } else if (action === "start") {
+        await expect(client.control({ action, workspaceRoot: "/workspace" })).rejects.toThrow(
+          `${action} failed`,
+        );
+      } else {
+        await expect(client.control({ action, workspaceRoot: "/workspace" })).rejects.toThrow(
+          `${action} failed`,
+        );
+      }
     },
   );
 });

@@ -27,6 +27,7 @@ interface DaemonControllerOptions {
   readonly clock?: Pick<DaemonClock, "wallNowMs">;
   readonly processTerminator?: DaemonProcessTerminator;
   readonly launcher?: DaemonProcessLauncher;
+  readonly startupCoordinator?: Pick<DaemonStartupCoordinator, "ensureRunning">;
 }
 
 export class DaemonController {
@@ -35,6 +36,7 @@ export class DaemonController {
   private readonly pollIntervalMs: number;
   private readonly processTerminator: DaemonProcessTerminator;
   private readonly launcher: DaemonProcessLauncher | undefined;
+  private readonly startupCoordinator: Pick<DaemonStartupCoordinator, "ensureRunning"> | undefined;
   private readonly observer: DaemonRecordObserver;
   private readonly policy: Pick<DaemonPolicyValues, "startup" | "shutdown">;
 
@@ -53,15 +55,21 @@ export class DaemonController {
       new NodeDaemonProcessTerminator(this.policy.shutdown, this.clock);
     this.launcher = options.launcher;
     this.observer = new DaemonRecordObserver(this.transport, this.processTerminator);
+    this.startupCoordinator =
+      options.startupCoordinator ??
+      (this.launcher === undefined
+        ? undefined
+        : new DaemonStartupCoordinator(this.registry, this.launcher, this.transport, {
+            policy: this.policy,
+          }));
   }
 
   async start(workspaceRoot: string): Promise<DaemonStartResult> {
-    if (this.launcher === undefined) throw new Error("Daemon controller has no process launcher");
+    if (this.startupCoordinator === undefined) {
+      throw new Error("Daemon controller has no process launcher");
+    }
     const identity = DaemonWorkspaceIdentity.from(workspaceRoot, this.stateDirectory);
-    const coordinator = new DaemonStartupCoordinator(this.registry, this.launcher, this.transport, {
-      policy: this.policy,
-    });
-    return coordinator.ensureRunning(identity);
+    return this.startupCoordinator.ensureRunning(identity);
   }
 
   async status(): Promise<readonly RunningDaemonStatus[]> {

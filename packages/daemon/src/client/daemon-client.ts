@@ -7,6 +7,12 @@ import type {
   DaemonOutputRecord,
 } from "../daemon-executor.js";
 import { DaemonPolicy } from "../daemon-policy.js";
+import type {
+  DaemonStartResult,
+  DaemonStopResult,
+  RunningDaemonStatus,
+} from "../daemon-lifecycle-report.js";
+import { DaemonController } from "../process/controller.js";
 import {
   NodeDaemonProcessLauncher,
   NodeDaemonProcessTerminator,
@@ -22,6 +28,7 @@ import type {
   DaemonClientExecuteRequest,
   DaemonClientExecuteResult,
   DaemonClientOptions,
+  DaemonControlRequest,
 } from "./daemon-client-contracts.js";
 import {
   DaemonRoutingContextState,
@@ -66,9 +73,12 @@ class DaemonControlledResult {
 export class DaemonClient {
   private readonly policy: DaemonPolicy;
   private readonly registry: DaemonRegistry;
-  private readonly transport: LocalDaemonTransport;
+  private readonly routingTransport: LocalDaemonTransport;
+  private readonly statusTransport: LocalDaemonTransport;
   private readonly observer: DaemonRecordObserver;
   private readonly coordinator: DaemonStartupCoordinator;
+  private readonly controlController: DaemonController;
+  private readonly statusController: DaemonController;
   private readonly routing = new DaemonRoutingPolicy();
 
   constructor(private readonly options: DaemonClientOptions) {
@@ -77,7 +87,11 @@ export class DaemonClient {
       DaemonWorkspaceIdentity.registryDirectory(options.stateDirectory),
       this.policy.values.startup,
     );
-    this.transport = new LocalDaemonTransport({ policy: this.policy });
+    this.routingTransport = new LocalDaemonTransport({ policy: this.policy });
+    this.statusTransport = new LocalDaemonTransport({
+      policy: this.policy,
+      lifecycleResponseTimeoutMs: this.policy.values.transport.statusResponseTimeoutMs,
+    });
     const processTerminator = new NodeDaemonProcessTerminator(this.policy.values.shutdown);
     const launcher = new NodeDaemonProcessLauncher(
       options.productVersion,
@@ -85,11 +99,36 @@ export class DaemonClient {
       this.policy,
       processTerminator,
     );
-    this.observer = new DaemonRecordObserver(this.transport, processTerminator);
-    this.coordinator = new DaemonStartupCoordinator(this.registry, launcher, this.transport, {
-      policy: this.policy.values,
-      processTerminator,
-    });
+    this.observer = new DaemonRecordObserver(this.routingTransport, processTerminator);
+    this.coordinator = new DaemonStartupCoordinator(
+      this.registry,
+      launcher,
+      this.routingTransport,
+      {
+        policy: this.policy.values,
+        processTerminator,
+      },
+    );
+    this.controlController = new DaemonController(
+      this.registry,
+      this.routingTransport,
+      options.stateDirectory,
+      {
+        policy: this.policy.values,
+        processTerminator,
+        launcher,
+        startupCoordinator: this.coordinator,
+      },
+    );
+    this.statusController = new DaemonController(
+      this.registry,
+      this.statusTransport,
+      options.stateDirectory,
+      {
+        policy: this.policy.values,
+        processTerminator,
+      },
+    );
   }
 
   async execute(request: DaemonClientExecuteRequest): Promise<DaemonClientExecuteResult> {
@@ -114,13 +153,33 @@ export class DaemonClient {
     return this.executeLocally(request, route.kind === "fallback" ? "fallback" : "cold");
   }
 
+  control(
+    request: Extract<DaemonControlRequest, { readonly action: "start" }>,
+  ): Promise<DaemonStartResult>;
+  control(
+    request: Extract<DaemonControlRequest, { readonly action: "status" }>,
+  ): Promise<readonly RunningDaemonStatus[]>;
+  control(
+    request: Extract<DaemonControlRequest, { readonly action: "stop" }>,
+  ): Promise<DaemonStopResult>;
+  control(
+    request: DaemonControlRequest,
+  ): Promise<DaemonStartResult | readonly RunningDaemonStatus[] | DaemonStopResult> {
+    if (request.action === "start") {
+      if (!this.options.daemonEnabled) return Promise.resolve({ status: "disabled" });
+      return this.controlController.start(request.workspaceRoot);
+    }
+    if (request.action === "status") return this.statusController.status();
+    return this.controlController.stop(request.workspaceRoot);
+  }
+
   private async executeWarm(
     record: DaemonRecord,
     request: DaemonClientExecuteRequest,
   ): Promise<DaemonClientExecuteResult> {
     let receipt: Awaited<ReturnType<LocalDaemonTransport["execute"]>>;
     try {
-      receipt = await this.transport.execute(record.endpoint, {
+      receipt = await this.routingTransport.execute(record.endpoint, {
         kind: "execute",
         protocolVersion: DAEMON_PROTOCOL_VERSION,
         instanceId: record.instanceId,

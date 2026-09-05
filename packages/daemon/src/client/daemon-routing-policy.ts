@@ -3,6 +3,7 @@ import type { DaemonWorkspaceIdentity } from "../registry/workspace-identity.js"
 import type { DaemonRecord } from "../transport/protocol.js";
 
 export type DaemonRouteSnapshot =
+  | { readonly kind: "disabled" }
   | { readonly kind: "cold"; readonly reason: "absent" | "starting" | "recovering" }
   | { readonly kind: "warm"; readonly record: DaemonRecord }
   | { readonly kind: "fallback"; readonly reason: "dead" | "incompatible" };

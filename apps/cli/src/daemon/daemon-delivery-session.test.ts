@@ -109,6 +109,63 @@ describe("DaemonDeliverySession", () => {
     expect(harness.events.filter((event) => event.kind === "client-reattached")).toHaveLength(0);
     expect(harness.events.filter((event) => event.kind === "delivery-terminal")).toHaveLength(1);
   });
+
+  it("keeps the latest duplicate completion delivery as the request barrier", async () => {
+    const harness = await DeliverySessionHarness.create(directories);
+    const entry = harness.journal.accept("request-1", "version", harness.executionRequest);
+    if (entry.state.state !== "queued") throw new Error("Expected queued request");
+    harness.session.beginAcceptedTrace("request-1", "version", entry.state.queuePosition, 1);
+    const firstResultEnd = new DeferredSignal();
+    const secondResultEnd = new DeferredSignal();
+    const first = DeliverySend.create((message) =>
+      "kind" in message && message.kind === "result-end" ? firstResultEnd.wait : undefined,
+    );
+    const duplicate = DeliverySend.create((message) =>
+      "kind" in message && message.kind === "result-end" ? secondResultEnd.wait : undefined,
+    );
+    await harness.session.attach(
+      {
+        requestId: "request-1",
+        acceptedAt: entry.state.acceptedAt,
+        queuePosition: entry.state.queuePosition,
+      },
+      first.send,
+    );
+    await harness.session.attach(
+      {
+        requestId: "request-1",
+        acceptedAt: entry.state.acceptedAt,
+        queuePosition: entry.state.queuePosition,
+      },
+      duplicate.send,
+    );
+    const completion = await harness.session.createCompletion("request-1");
+    await completion.finish(0);
+    harness.journal.markRunning("request-1", 2);
+    harness.journal.complete("request-1", "request-1", 3);
+    const latestDelivery = harness.session.trackedCompletion("request-1");
+    if (latestDelivery === undefined) throw new Error("Expected tracked completion delivery");
+    let settled = false;
+    void latestDelivery.then(() => {
+      settled = true;
+    });
+
+    firstResultEnd.release();
+    await first.resultEndReceived;
+    await new Promise((resolve) => setImmediate(resolve));
+
+    expect(settled).toBe(false);
+    expect(harness.session.trackedCompletion("request-1")).toBe(latestDelivery);
+    expect(duplicate.frames.some((frame) => DeliverySend.frameKind(frame) === "result-end")).toBe(
+      false,
+    );
+
+    secondResultEnd.release();
+    await latestDelivery;
+
+    expect(settled).toBe(true);
+    expect(harness.session.trackedCompletion("request-1")).toBeUndefined();
+  });
 });
 
 class DeliverySessionHarness {
@@ -179,12 +236,13 @@ class DeliverySend {
   private resolveResultEndReceived!: () => void;
   readonly send: DaemonServerSend;
 
-  private constructor() {
+  private constructor(onMessage?: (message: DaemonServerMessage) => void | Promise<void>) {
     this.resultEndReceived = new Promise((resolve) => {
       this.resolveResultEndReceived = resolve;
     });
     this.send = Object.assign(
       async (message: DaemonServerMessage) => {
+        await onMessage?.(message);
         this.frames.push(message);
         if ("kind" in message && message.kind === "result-end") {
           this.resolveResultEndReceived();
@@ -199,8 +257,8 @@ class DeliverySend {
     );
   }
 
-  static create(): DeliverySend {
-    return new DeliverySend();
+  static create(onMessage?: (message: DaemonServerMessage) => void | Promise<void>): DeliverySend {
+    return new DeliverySend(onMessage);
   }
 
   close(): void {
@@ -209,5 +267,20 @@ class DeliverySend {
 
   static frameKind(frame: DaemonServerMessage): string {
     return "kind" in frame ? frame.kind : "chunk";
+  }
+}
+
+class DeferredSignal {
+  readonly wait: Promise<void>;
+  private resolveWait!: () => void;
+
+  constructor() {
+    this.wait = new Promise((resolve) => {
+      this.resolveWait = resolve;
+    });
+  }
+
+  release(): void {
+    this.resolveWait();
   }
 }

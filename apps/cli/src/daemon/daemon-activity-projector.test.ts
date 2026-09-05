@@ -211,6 +211,19 @@ describe("DaemonActivityProjector", () => {
       expect(projection.pong.state).toBe("ready");
     },
   );
+
+  it("freezes the projection, pong, activity, and current work", () => {
+    const projection = DaemonActivityProjector.project(
+      ActivityProjectionFixture.input({ active: true }),
+    );
+
+    expect(Object.isFrozen(projection)).toBe(true);
+    expect(Object.isFrozen(projection.pong)).toBe(true);
+    expect(Object.isFrozen(projection.activity)).toBe(true);
+    expect(Object.isFrozen(projection.activity.current)).toBe(true);
+    expect(() => Object.assign(projection.activity, { queued: 9 })).toThrow();
+    expect(() => Object.assign(projection.activity.current ?? {}, { elapsedMs: 9 })).toThrow();
+  });
 });
 
 interface ActivityProjectionOverrides {

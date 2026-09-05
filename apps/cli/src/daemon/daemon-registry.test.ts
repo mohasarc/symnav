@@ -12,7 +12,7 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { TestDaemonController as DaemonController } from "../../test/helpers/daemon-controller.js";
 import type { DaemonProcessTerminator } from "./daemon-process-launcher.js";
 import { TestDaemonRegistry as DaemonRegistry } from "../../test/helpers/daemon-registry.js";
@@ -32,6 +32,10 @@ interface StartupMutationLeaseTestAccess {
 }
 
 interface StartupProcessRegistryTestAccess {
+  startupOwnershipMatches(
+    identity: DaemonWorkspaceIdentity,
+    expectation: Record<string, unknown>,
+  ): unknown;
   startupOwnerMatchesProcess(identity: DaemonWorkspaceIdentity, record: DaemonRecord): boolean;
   removeStartupLockIfProcess(identity: DaemonWorkspaceIdentity, record: DaemonRecord): boolean;
 }
@@ -336,6 +340,63 @@ describe("daemon registry", () => {
     expect(registry.startupOwner(identity)).toBeDefined();
     expect(processRegistry.removeStartupLockIfProcess(identity, starting)).toBe(true);
     expect(registry.startupOwner(identity)).toBeUndefined();
+  });
+
+  it("routes process startup ownership decisions through one predicate", () => {
+    const identity = DaemonWorkspaceIdentity.from("/repo", temporaryDirectory(roots));
+    const registry = new DaemonRegistry(identity.registryDirectory);
+    const processRegistry = registry as unknown as StartupProcessRegistryTestAccess;
+    const ownership = vi.spyOn(processRegistry, "startupOwnershipMatches");
+    const starting = {
+      ...record(identity, "starting", "starting"),
+      pid: 777,
+    } satisfies DaemonRecord;
+    const expectDelegation = (operation: () => unknown): unknown => {
+      const callsBefore = ownership.mock.calls.length;
+      const result = operation();
+      expect(ownership.mock.calls.length).toBeGreaterThan(callsBefore);
+      return result;
+    };
+
+    expect(
+      registry.acquireStartup(identity, {
+        identityKey: identity.identityKey,
+        instanceId: starting.instanceId,
+        processToken: starting.processToken,
+        ownerPid: process.pid,
+        ownerKind: "launcher",
+        heartbeatAt: Date.now(),
+      }),
+    ).toBeDefined();
+    expect(
+      expectDelegation(() =>
+        registry.claimStartupForDaemon(
+          identity,
+          starting.instanceId,
+          starting.processToken,
+          starting.pid,
+        ),
+      ),
+    ).toBeDefined();
+    expect(
+      expectDelegation(() => registry.writeStartingIfStartupOwner(identity, starting)),
+    ).toBe(true);
+    expect(
+      expectDelegation(() => processRegistry.startupOwnerMatchesProcess(identity, starting)),
+    ).toBe(true);
+    expect(
+      expectDelegation(() =>
+        registry.writeIfStartupOwner(identity, {
+          ...starting,
+          state: "ready",
+          readyAt: 20,
+          fileCount: 2,
+        }),
+      ),
+    ).toBe(true);
+    expect(
+      expectDelegation(() => processRegistry.removeStartupLockIfProcess(identity, starting)),
+    ).toBe(true);
   });
 
   it("renews startup ownership with a new revision", () => {

@@ -201,6 +201,12 @@ export class DaemonDeliverySession {
     };
   }
 
+  completeRetainedTraces(): void {
+    for (const requestId of this.operationTraces.keys()) {
+      this.completeOperationTrace(requestId, "disconnected");
+    }
+  }
+
   private deliver(send: DaemonServerSend, frame: DaemonServerMessage): Promise<void> {
     return send(frame);
   }

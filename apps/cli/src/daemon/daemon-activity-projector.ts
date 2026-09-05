@@ -36,14 +36,22 @@ export interface DaemonActivityProjection {
 export class DaemonActivityProjector {
   static project(input: DaemonActivityProjectionInput): DaemonActivityProjection {
     const lifecycle = DaemonActivityProjector.lifecycle(input);
+    const current = DaemonActivityProjector.current(input, lifecycle);
     const activity: DaemonActivitySnapshot = {
       lifecycle,
       pid: input.pid,
       startedAt: input.startedAt,
       startupElapsedMs: Math.max(0, input.nowMonotonicMs - input.startedMonotonicAt),
+      ...(input.worker.ready && input.worker.fileCount !== undefined
+        ? { fileCount: input.worker.fileCount }
+        : {}),
       processRssBytes: input.processRssBytes,
       hardProcessRssBytes: input.hardProcessRssBytes,
+      ...(input.resources.workerHeapUsedBytes === undefined
+        ? {}
+        : { workerHeapUsedBytes: input.resources.workerHeapUsedBytes }),
       workerGeneration: input.resources.generation,
+      ...(current === undefined ? {} : { current }),
       queued: input.queue.queued,
       spoolBytes: 0,
     };
@@ -54,9 +62,17 @@ export class DaemonActivityProjector {
       symnavVersion: input.productVersion,
       state: DaemonActivityProjector.legacyState(lifecycle),
       startedAt: input.startedAt,
+      ...(input.worker.fileCount === undefined ? {} : { fileCount: input.worker.fileCount }),
       memoryBytes: input.processRssBytes,
       queued: input.queue.queued,
       activity,
+      ...(current === undefined
+        ? {}
+        : {
+            currentCommand: current.command,
+            currentCommandElapsedMs: current.elapsedMs,
+          }),
+      ...(input.lastNavigationAt === undefined ? {} : { lastNavigationAt: input.lastNavigationAt }),
     };
     return { activity, pong };
   }
@@ -84,5 +100,17 @@ export class DaemonActivityProjector {
     if (lifecycle === "busy") return "busy";
     if (lifecycle === "starting") return "starting";
     return "ready";
+  }
+
+  private static current(
+    input: DaemonActivityProjectionInput,
+    lifecycle: DaemonActivitySnapshot["lifecycle"],
+  ): DaemonActivitySnapshot["current"] {
+    if (lifecycle !== "busy" || input.queue.active === undefined) return undefined;
+    return {
+      requestId: input.queue.active.requestId,
+      command: input.queue.active.command,
+      elapsedMs: input.nowMonotonicMs - input.queue.active.startedAt,
+    };
   }
 }

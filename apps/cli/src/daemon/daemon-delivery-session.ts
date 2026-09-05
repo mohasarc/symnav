@@ -224,6 +224,14 @@ export class DaemonDeliverySession {
     }
   }
 
+  async cleanupInstance(): Promise<void> {
+    await this.options.spoolStore
+      .cleanupInstance(this.options.coordinates.instanceId)
+      .catch((error) => {
+        this.recordFailure("completion-cleanup", error);
+      });
+  }
+
   private deliver(send: DaemonServerSend, frame: DaemonServerMessage): Promise<void> {
     return send(frame);
   }

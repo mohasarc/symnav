@@ -2,7 +2,6 @@ import { access } from "node:fs/promises";
 import {
   DaemonAdmissionPolicy,
   DaemonAdmissionRejections,
-  DaemonExecutionFailures,
   type DaemonAdmissionDecision,
   type DaemonExecuteRejectionCode,
   type DaemonExecutorModuleUrl,
@@ -10,6 +9,7 @@ import {
   type DaemonPolicyValues,
 } from "@symnav/daemon";
 import { AcceptedRequestLedger } from "./accepted-request-ledger.js";
+import { AcceptedExecutionSession } from "./accepted-execution-session.js";
 import { DaemonActivityProjector } from "./daemon-activity-projector.js";
 import type {
   DaemonExecutionServerFrame,
@@ -18,27 +18,19 @@ import type {
   DaemonResponse,
   DaemonServer,
 } from "./daemon-protocol.js";
-import {
-  CompletionSpoolCapacityError,
-  DaemonCompletionSpoolStore,
-  type CompletionSpoolStorage,
-} from "./completion-spool.js";
+import { DaemonCompletionSpoolStore, type CompletionSpoolStorage } from "./completion-spool.js";
 import { DAEMON_PROTOCOL_VERSION, DAEMON_RECORD_SCHEMA_VERSION } from "./daemon-protocol.js";
 import { DaemonLifetime } from "./daemon-lifetime.js";
 import { DaemonLogger } from "./daemon-logger.js";
 import { NodeDaemonClock, type DaemonClock } from "./daemon-clock.js";
-import { DaemonOperationObserver, type DaemonOperationTrace } from "./daemon-operation-observer.js";
-import { DaemonDeliverySession, type DaemonCompletionWriter } from "./daemon-delivery-session.js";
+import { DaemonOperationObserver } from "./daemon-operation-observer.js";
+import { DaemonDeliverySession } from "./daemon-delivery-session.js";
 import {
-  DaemonNavigationWorkerExitedError,
   type DaemonNavigationWorker,
   NodeDaemonNavigationWorker,
 } from "./daemon-navigation-worker.js";
 import { DaemonWorkerGenerationManager } from "./daemon-worker-generation-manager.js";
-import {
-  DaemonResourceSupervisor,
-  type DaemonWorkerReplacementCause,
-} from "./daemon-resource-monitor.js";
+import { DaemonResourceSupervisor } from "./daemon-resource-monitor.js";
 import type { DaemonRegistry, DaemonStartupLease } from "./daemon-registry.js";
 import type { DaemonWorkspaceIdentity } from "./daemon-workspace-identity.js";
 import type { DaemonRequestServer, DaemonServerSend } from "./daemon-transport.js";
@@ -71,32 +63,24 @@ export class WorkspaceDaemon {
   private readonly clock: DaemonClock;
   private readonly exit: (code: number) => void;
   private readonly workerManager: DaemonWorkerGenerationManager;
-  private readonly requestQueue: WorkspaceRequestQueue;
+  private readonly acceptedExecutionSession: AcceptedExecutionSession;
   private readonly logger: DaemonLogger;
   private readonly lifetime: DaemonLifetime;
   private readonly resourceSupervisor: DaemonResourceSupervisor;
   private readonly resourcePolicy: DaemonPolicyValues["resources"];
   private readonly policy: DaemonPolicy;
   private readonly operationObserver: DaemonOperationObserver;
-  private readonly acceptedRequests: AcceptedRequestLedger;
   private readonly deliverySession: DaemonDeliverySession;
   private readonly admissionPolicy = new DaemonAdmissionPolicy();
-  private readonly acceptances = new Map<
-    string,
-    { readonly acceptedAt: number; readonly queuePosition: number }
-  >();
   private server: DaemonServer | undefined;
   private startedAt = 0;
   private readonly startedMonotonicAt: number;
-  private lastNavigationAt: number | undefined;
-  private lastCompletedMonotonicAt: number | undefined;
   private shutdownStarted = false;
   private shutdownFailureCode: "stopping" | "controlled-resource" | undefined;
   private shutdownOperation: Promise<void> | undefined;
   private forcedWorkerShutdown: Promise<void> | undefined;
   private readonly forceEscalated: Promise<void>;
   private resolveForceEscalated!: () => void;
-  private readonly resourceInterruptedRequests = new Set<string>();
 
   constructor(private readonly options: WorkspaceDaemonOptions) {
     const policy = options.policy;
@@ -107,8 +91,8 @@ export class WorkspaceDaemon {
     this.now = options.now ?? Date.now;
     this.clock = options.clock ?? new NodeDaemonClock();
     this.startedMonotonicAt = this.clock.monotonicNowMs();
-    this.requestQueue = new WorkspaceRequestQueue(() => this.clock.monotonicNowMs());
-    this.acceptedRequests = new AcceptedRequestLedger(this.now);
+    const requestQueue = new WorkspaceRequestQueue(() => this.clock.monotonicNowMs());
+    const acceptedRequests = new AcceptedRequestLedger(this.now);
     const completionSpools = new DaemonCompletionSpoolStore({
       directory: options.identity.spoolDirectory,
       workspaceKey: options.identity.workspaceKey,
@@ -161,7 +145,8 @@ export class WorkspaceDaemon {
       initialWorker: initialNavigationWorker,
       createWorker: createNavigationWorker,
       exitRecovery: { recover: (workerExit) => this.recoverWorkerExit(workerExit) },
-      onActiveResourceInterruption: (cause) => this.markActiveResourceInterruption(cause),
+      onActiveResourceInterruption: (cause) =>
+        this.acceptedExecutionSession.markActiveResourceInterrupted(cause),
       onDiagnostic: (diagnostic) => this.operationObserver.worker(diagnostic),
     });
     this.resourceSupervisor = new DaemonResourceSupervisor({
@@ -171,7 +156,8 @@ export class WorkspaceDaemon {
         ? {}
         : { residentMemoryBytes: options.residentMemoryBytes }),
       spoolBytes: () => this.deliverySession.snapshot.spoolBytes,
-      scheduleAtTurnBoundary: (operation) => this.requestQueue.scheduleAtTurnBoundary(operation),
+      scheduleAtTurnBoundary: (operation) =>
+        this.acceptedExecutionSession.scheduleAtTurnBoundary(operation),
       releaseTransientResources: async () => {
         const response = await this.workerManager.releaseTransientResources();
         this.resourceSupervisor.workerHeapReported(
@@ -197,12 +183,35 @@ export class WorkspaceDaemon {
         instanceId: options.instanceId,
         processToken: options.processToken,
       },
-      journal: this.acceptedRequests,
+      journal: acceptedRequests,
       spoolStore: completionSpools,
       observer: this.operationObserver,
       diagnostics: this.logger,
       clock: this.clock,
       policy: policy.values,
+    });
+    this.acceptedExecutionSession = new AcceptedExecutionSession({
+      ledger: acceptedRequests,
+      queue: requestQueue,
+      worker: this.workerManager,
+      delivery: this.deliverySession,
+      resourceSupervisor: this.resourceSupervisor,
+      processLifecycle: {
+        shutdownSnapshot: () => ({
+          started: this.shutdownStarted,
+          ...(this.shutdownFailureCode === undefined
+            ? {}
+            : { failureCode: this.shutdownFailureCode }),
+        }),
+        workspaceExists: () => this.workspaceExists(),
+        workspaceDeletedAfterDelivery: () => this.workspaceDeletedAfterDelivery(),
+      },
+      lifetime: this.lifetime,
+      diagnostics: this.logger,
+      clock: {
+        wallNowMs: this.now,
+        monotonicNowMs: () => this.clock.monotonicNowMs(),
+      },
     });
   }
 
@@ -379,11 +388,11 @@ export class WorkspaceDaemon {
         instanceId: this.options.instanceId,
         processToken: this.options.processToken,
         requestId: request.requestId,
-        status: this.acceptedRequests.status(request.requestId),
+        status: this.acceptedExecutionSession.status(request.requestId),
       };
     }
     this.beginGracefulShutdown();
-    await this.requestQueue.drain();
+    await this.acceptedExecutionSession.drain();
     await this.deliverySession.waitForCompletionAcknowledgements();
     setTimeout(() => void this.shutdown("graceful"), 0);
     return { kind: "stopped", instanceId: this.options.instanceId };
@@ -416,7 +425,7 @@ export class WorkspaceDaemon {
     }
     this.beginGracefulShutdown();
     if (request.kind === "terminate") {
-      await this.requestQueue.drain();
+      await this.acceptedExecutionSession.drain();
       await this.deliverySession.waitForCompletionAcknowledgements();
       setTimeout(() => void this.shutdown("graceful"), 0);
     } else {
@@ -430,7 +439,7 @@ export class WorkspaceDaemon {
   }
 
   private pong(): DaemonResponse {
-    const queue = this.requestQueue.snapshot;
+    const execution = this.acceptedExecutionSession.snapshot;
     const resources = this.resourceSupervisor.snapshot;
     const worker = this.workerManager.snapshot;
     return DaemonActivityProjector.project({
@@ -439,14 +448,16 @@ export class WorkspaceDaemon {
       processRssBytes: process.memoryUsage().rss,
       startedAt: this.startedAt,
       startedMonotonicAt: this.startedMonotonicAt,
-      ...(this.lastNavigationAt === undefined ? {} : { lastNavigationAt: this.lastNavigationAt }),
-      ...(this.lastCompletedMonotonicAt === undefined
+      ...(execution.lastNavigationAt === undefined
         ? {}
-        : { lastCompletedMonotonicAt: this.lastCompletedMonotonicAt }),
+        : { lastNavigationAt: execution.lastNavigationAt }),
+      ...(execution.lastCompletedMonotonicAt === undefined
+        ? {}
+        : { lastCompletedMonotonicAt: execution.lastCompletedMonotonicAt }),
       productVersion: this.options.symnavVersion,
       instanceId: this.options.instanceId,
       hardProcessRssBytes: this.resourcePolicy.hardProcessRssBytes,
-      queue,
+      queue: execution.queue,
       resources,
       worker: {
         generation: worker.generation,
@@ -465,35 +476,10 @@ export class WorkspaceDaemon {
       throw new Error("Daemon execution request does not match process instance");
     }
     if (decision.kind === "reject") return this.rejection(request, decision.code);
-    const existing = this.acceptedRequests.entryFor(request.requestId);
-    const entry = this.acceptedRequests.accept(
-      request.requestId,
-      request.commandName,
-      request.request,
-    );
-    if (entry.state.state === "queued") {
-      this.acceptances.set(request.requestId, {
-        acceptedAt: entry.acceptedAt,
-        queuePosition: entry.queuePosition,
-      });
-    }
-    const acceptance = this.acceptances.get(request.requestId);
-    if (acceptance === undefined) throw new Error("Accepted request is missing admission metadata");
-    if (existing === undefined) {
-      this.lastNavigationAt = this.now();
-      this.lifetime.navigationAccepted();
-      const trace = this.deliverySession.beginAcceptedTrace(
-        request.requestId,
-        request.commandName,
-        entry.queuePosition,
-        this.resourceSupervisor.snapshot.generation,
-      );
-      void this.executeAccepted(request, trace);
-    }
+    const admission = this.acceptedExecutionSession.accept(request);
     await this.deliverySession.attach(
       {
-        requestId: request.requestId,
-        ...acceptance,
+        ...admission.acceptance,
       },
       send,
     );
@@ -526,119 +512,20 @@ export class WorkspaceDaemon {
       authenticated,
       workerReady: this.workerManager.snapshot.ready,
       resourceAdmissionPaused: this.resourceSupervisor.snapshot.admissionPaused,
-      queueState: this.requestQueue.state,
-      compatibility: this.acceptedRequests.compatibilityFor(
-        request.requestId,
-        request.commandName,
-        request.request,
-      ),
+      queueState: this.acceptedExecutionSession.snapshot.queue.state,
+      compatibility: this.acceptedExecutionSession.compatibilityFor(request),
     });
   }
 
-  private async executeAccepted(
-    request: Extract<DaemonRequest, { kind: "execute" }>,
-    trace: DaemonOperationTrace,
-  ): Promise<void> {
-    let completion: DaemonCompletionWriter | undefined;
-    try {
-      await this.requestQueue.enqueue(
-        {
-          requestId: request.requestId,
-          command: request.commandName,
-          acceptedAt: this.clock.monotonicNowMs(),
-        },
-        async () => {
-          trace.turnStarted(this.resourceSupervisor.snapshot.generation);
-          try {
-            completion = await this.deliverySession.createCompletion(request.requestId);
-            this.acceptedRequests.markRunning(request.requestId, this.now());
-            const response = await this.workerManager.execute(
-              request.requestId,
-              { commandName: request.commandName, request: request.request },
-              completion,
-            );
-            this.resourceSupervisor.workerHeapReported(
-              response.generation,
-              response.resources.workerHeapUsedBytes,
-              response.resources.workerHeapLimitBytes,
-              response.resources.peakWorkerHeapUsedBytes,
-            );
-            trace.workerCompleted(
-              {
-                freshnessMs: response.durations.freshnessMs,
-                navigationMs: response.durations.navigationMs,
-                renderMs: response.durations.renderMs,
-                workerOutputMs: response.durations.outputMs,
-              },
-              response.refresh,
-            );
-            await completion.finish(response.result.exitCode);
-            const workspaceDeleted = await this.recordCompletion();
-            trace.executionTerminated("completed");
-            this.acceptedRequests.complete(request.requestId, request.requestId, this.now());
-            await this.deliverySession.trackedCompletion(request.requestId);
-            if (workspaceDeleted) {
-              await this.deliverySession.waitForCompletionAcknowledgements();
-              setTimeout(() => void this.shutdown("workspace-deleted", true), 0);
-            }
-          } finally {
-            this.scheduleTurnCompleteResourceSample();
-          }
-        },
-      );
-    } catch (error) {
-      trace.executionTerminated("failed");
-      this.logger.record({
-        kind: "failure",
-        operation: "request",
-        failureCode: "internal",
-        errorName: DaemonLogger.errorName(error),
-      });
-      const code = DaemonExecutionFailures.classify({
-        resourceInterrupted: this.resourceInterruptedRequests.delete(request.requestId),
-        responseCapacityExceeded: error instanceof CompletionSpoolCapacityError,
-        workerExited: error instanceof DaemonNavigationWorkerExitedError,
-        ...(this.shutdownFailureCode === undefined
-          ? {}
-          : { shutdownFailureCode: this.shutdownFailureCode }),
-        shutdownStarted: this.shutdownStarted,
-      });
-      await completion?.dispose().catch((cleanupError) => {
-        this.logger.record({
-          kind: "failure",
-          operation: "completion-cleanup",
-          failureCode: "internal",
-          errorName: DaemonLogger.errorName(cleanupError),
-        });
-      });
-      this.acceptedRequests.fail(request.requestId, code, this.now());
-    } finally {
-      if (this.requestQueue.isIdle) this.lifetime.queueBecameIdle();
-    }
+  private workspaceExists(): Promise<boolean> {
+    return this.options.dependencies
+      ? this.options.dependencies.fs.exists(this.options.identity.workspaceRoot)
+      : WorkspaceDaemon.pathExists(this.options.identity.workspaceRoot);
   }
 
-  private scheduleTurnCompleteResourceSample(): void {
-    void this.requestQueue
-      .scheduleAtTurnBoundary(() => this.resourceSupervisor.sampleAtTurnBoundary())
-      .catch((error) => {
-        this.logger.record({
-          kind: "failure",
-          operation: "resource-sample",
-          failureCode: "operation-failed",
-          errorName: DaemonLogger.errorName(error),
-        });
-      })
-      .finally(() => {
-        if (this.requestQueue.isIdle) this.lifetime.queueBecameIdle();
-      });
-  }
-
-  private async recordCompletion(): Promise<boolean> {
-    this.lastCompletedMonotonicAt = this.clock.monotonicNowMs();
-    const exists = this.options.dependencies
-      ? await this.options.dependencies.fs.exists(this.options.identity.workspaceRoot)
-      : await WorkspaceDaemon.pathExists(this.options.identity.workspaceRoot);
-    return !exists;
+  private async workspaceDeletedAfterDelivery(): Promise<void> {
+    await this.deliverySession.waitForCompletionAcknowledgements();
+    setTimeout(() => void this.shutdown("workspace-deleted", true), 0);
   }
 
   private static async pathExists(path: string): Promise<boolean> {
@@ -662,7 +549,7 @@ export class WorkspaceDaemon {
   }
 
   private async drainAndShutdown(reason: "idle"): Promise<void> {
-    await this.requestQueue.drain();
+    await this.acceptedExecutionSession.drain();
     await this.shutdown(reason);
   }
 
@@ -722,17 +609,17 @@ export class WorkspaceDaemon {
   }
 
   private async gracefullyShutdownWorker(): Promise<void> {
-    await this.requestQueue.drain();
+    await this.acceptedExecutionSession.drain();
     const gracefulClose = this.workerManager.close();
     await Promise.race([gracefulClose, this.forceEscalated.then(() => this.forceWorkerShutdown())]);
   }
 
   private forceWorkerShutdown(): Promise<void> {
     if (this.forcedWorkerShutdown !== undefined) return this.forcedWorkerShutdown;
-    this.requestQueue.close();
+    this.acceptedExecutionSession.close();
     this.forcedWorkerShutdown = this.workerManager
       .terminate()
-      .then(() => this.requestQueue.drain());
+      .then(() => this.acceptedExecutionSession.drain());
     this.resolveForceEscalated();
     return this.forcedWorkerShutdown;
   }
@@ -741,12 +628,6 @@ export class WorkspaceDaemon {
     return new Promise((resolve) =>
       setTimeout(resolve, this.policy.values.startup.authorizationPollIntervalMs),
     );
-  }
-
-  private markActiveResourceInterruption(cause: DaemonWorkerReplacementCause): void {
-    if (cause === "worker-exit") return;
-    const activeRequest = this.requestQueue.snapshot.active;
-    if (activeRequest !== undefined) this.resourceInterruptedRequests.add(activeRequest.requestId);
   }
 
   private async recoverWorkerExit(

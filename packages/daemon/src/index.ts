@@ -46,3 +46,9 @@ export type {
 } from "./daemon-lifecycle-report.js";
 export { DaemonPolicy } from "./daemon-policy.js";
 export type { DaemonPolicyValues, DaemonSystemMemory } from "./daemon-policy.js";
+export type {
+  DaemonClientExecuteRequest,
+  DaemonClientExecuteResult,
+  DaemonClientOptions,
+  DaemonControlRequest,
+} from "./client/daemon-client-contracts.js";

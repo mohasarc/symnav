@@ -53,6 +53,11 @@ export class DaemonActivityProjector {
       workerGeneration: input.resources.generation,
       ...(current === undefined ? {} : { current }),
       queued: input.queue.queued,
+      ...(input.lastCompletedMonotonicAt === undefined
+        ? {}
+        : {
+            lastCompletedAgoMs: Math.max(0, input.nowMonotonicMs - input.lastCompletedMonotonicAt),
+          }),
       spoolBytes: 0,
     };
     const pong: DaemonPong = {
@@ -110,7 +115,7 @@ export class DaemonActivityProjector {
     return {
       requestId: input.queue.active.requestId,
       command: input.queue.active.command,
-      elapsedMs: input.nowMonotonicMs - input.queue.active.startedAt,
+      elapsedMs: Math.max(0, input.nowMonotonicMs - input.queue.active.startedAt),
     };
   }
 }

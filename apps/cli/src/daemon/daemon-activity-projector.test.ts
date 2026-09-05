@@ -158,6 +158,22 @@ describe("DaemonActivityProjector", () => {
     expect(projection.activity.recoveryDetail).toBe(expected);
     expect(projection.activity.current).toBeUndefined();
   });
+
+  it("projects the in-progress worker generation during replacement", () => {
+    const projection = DaemonActivityProjector.project(
+      ActivityProjectionFixture.input({
+        resourceState: "replacing",
+        resourceGeneration: 3,
+        workerGeneration: 4,
+        workerReady: false,
+      }),
+    );
+
+    expect(projection.activity).toMatchObject({
+      lifecycle: "recovering",
+      workerGeneration: 4,
+    });
+  });
 });
 
 interface ActivityProjectionOverrides {
@@ -170,6 +186,8 @@ interface ActivityProjectionOverrides {
   readonly includeWorkerFileCount?: boolean;
   readonly nowMonotonicMs?: number;
   readonly lastCompletedMonotonicAt?: number;
+  readonly resourceGeneration?: number;
+  readonly workerGeneration?: number;
 }
 
 class ActivityProjectionFixture {
@@ -206,7 +224,7 @@ class ActivityProjectionFixture {
       },
       resources: {
         state: overrides.resourceState ?? "ready",
-        generation: 3,
+        generation: overrides.resourceGeneration ?? 3,
         processRssBytes: 400,
         peakProcessRssBytes: 600,
         ...(overrides.workerHeapUsedBytes === undefined
@@ -217,7 +235,7 @@ class ActivityProjectionFixture {
         replacementCount: 0,
       },
       worker: {
-        generation: 3,
+        generation: overrides.workerGeneration ?? 3,
         ready: overrides.workerReady ?? true,
         ...(overrides.includeWorkerFileCount === false ? {} : { fileCount: 12 }),
       },

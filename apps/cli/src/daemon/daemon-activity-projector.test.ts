@@ -130,6 +130,22 @@ describe("DaemonActivityProjector", () => {
     expect(projection.activity).not.toHaveProperty("fileCount");
     expect(projection.pong.fileCount).toBe(12);
   });
+
+  it("clamps activity durations to nonnegative values", () => {
+    const projection = DaemonActivityProjector.project(
+      ActivityProjectionFixture.input({
+        active: true,
+        nowMonotonicMs: 90,
+        lastCompletedMonotonicAt: 140,
+      }),
+    );
+
+    expect(projection.activity).toMatchObject({
+      startupElapsedMs: 0,
+      current: { elapsedMs: 0 },
+      lastCompletedAgoMs: 0,
+    });
+  });
 });
 
 interface ActivityProjectionOverrides {
@@ -140,13 +156,15 @@ interface ActivityProjectionOverrides {
   readonly lastNavigationAt?: number;
   readonly workerHeapUsedBytes?: number;
   readonly includeWorkerFileCount?: boolean;
+  readonly nowMonotonicMs?: number;
+  readonly lastCompletedMonotonicAt?: number;
 }
 
 class ActivityProjectionFixture {
   static input(overrides: ActivityProjectionOverrides = {}): DaemonActivityProjectionInput {
     const active = overrides.active ?? false;
     return {
-      nowMonotonicMs: 130,
+      nowMonotonicMs: overrides.nowMonotonicMs ?? 130,
       pid: 41,
       processRssBytes: 500,
       startedAt: 1_000,
@@ -154,6 +172,9 @@ class ActivityProjectionFixture {
       ...(overrides.lastNavigationAt === undefined
         ? {}
         : { lastNavigationAt: overrides.lastNavigationAt }),
+      ...(overrides.lastCompletedMonotonicAt === undefined
+        ? {}
+        : { lastCompletedMonotonicAt: overrides.lastCompletedMonotonicAt }),
       productVersion: "1.2.3",
       instanceId: "instance",
       hardProcessRssBytes: 1_000,

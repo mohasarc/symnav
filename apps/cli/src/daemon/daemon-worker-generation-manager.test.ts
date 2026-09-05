@@ -4,6 +4,7 @@ import type {
   DaemonNavigationWorker,
   DaemonNavigationWorkerExit,
 } from "./daemon-navigation-worker.js";
+import { DaemonNavigationWorkerExitedError } from "./daemon-navigation-worker.js";
 import type { DaemonNavigationWorkerResponse } from "./daemon-navigation-worker-protocol.js";
 import { DaemonWorkerGenerationManager } from "./daemon-worker-generation-manager.js";
 import type {
@@ -151,6 +152,68 @@ describe("DaemonWorkerGenerationManager", () => {
     await replacing;
 
     expect(activeResourceInterruption).not.toHaveBeenCalled();
+  });
+
+  it("recovers only exits from the current generation", async () => {
+    const initial = new ControlledNavigationWorker(1);
+    const replacement = new ControlledNavigationWorker(2);
+    const recover = vi.fn(async () => undefined);
+    const manager = createManager({
+      initialWorker: initial,
+      createWorker: () => replacement,
+      exitRecovery: { recover },
+    });
+    const starting = manager.start();
+    initial.completeReady(1);
+    await starting;
+    const replacing = manager.replace("hard-pressure");
+    replacement.completeReady(2);
+    await replacing;
+
+    initial.exit({ generation: 1, cause: "error", errorName: "LateExit" });
+    await Promise.resolve();
+    expect(recover).not.toHaveBeenCalled();
+
+    replacement.exit({ generation: 2, cause: "error", errorName: "CurrentExit" });
+    await vi.waitFor(() => expect(recover).toHaveBeenCalledOnce());
+    expect(recover).toHaveBeenCalledWith({
+      generation: 2,
+      cause: "error",
+      errorName: "CurrentExit",
+    });
+  });
+
+  it("returns replacement readiness when the initial worker exits during startup", async () => {
+    const initial = new ControlledNavigationWorker(1);
+    const replacement = new ControlledNavigationWorker(2);
+    let manager: DaemonWorkerGenerationManager;
+    const recover = vi.fn(async (exit: DaemonNavigationWorkerExit) => {
+      const cause = exit.cause === "out-of-memory" ? "out-of-memory" : "worker-exit";
+      await manager.replace(cause);
+    });
+    manager = createManager({
+      initialWorker: initial,
+      createWorker: () => replacement,
+      exitRecovery: { recover },
+    });
+    const starting = manager.start();
+    const exit: DaemonNavigationWorkerExit = {
+      generation: 1,
+      cause: "out-of-memory",
+      errorName: "WorkerOom",
+    };
+
+    initial.rejectStart(new DaemonNavigationWorkerExitedError(exit));
+    initial.exit(exit);
+    await vi.waitFor(() => expect(replacement.operations).toContain("start:2"));
+    replacement.completeReady(11);
+
+    await expect(starting).resolves.toMatchObject({
+      kind: "ready",
+      generation: 2,
+      fileCount: 11,
+    });
+    expect(manager.snapshot).toEqual({ generation: 2, ready: true, fileCount: 11 });
   });
 });
 

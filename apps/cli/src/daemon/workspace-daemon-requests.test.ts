@@ -1273,6 +1273,40 @@ describe("WorkspaceDaemon requests", () => {
     expect(workers).toHaveLength(2);
   });
 
+  it("classifies a literal active worker exit without replaying the request", async () => {
+    const activeExecutor = new SerializedExecutor();
+    const replacementExecutor = new RecordingExecutor();
+    const workers: ExecutorNavigationWorker[] = [];
+    const harness = await RequestHarness.start(undefined, {
+      navigationWorkerFactory: (generation) => {
+        const worker = new ExecutorNavigationWorker(
+          generation === 1 ? activeExecutor : replacementExecutor,
+          generation,
+        );
+        workers.push(worker);
+        return worker;
+      },
+    });
+    harnesses.push(harness);
+    const active = harness.execute("worker-exit-active", ["refs", "input"]);
+    await activeExecutor.started(1);
+    const queued = harness.execute("worker-exit-queued", ["overview", "input.ts"]);
+
+    workers[0]?.fail({ generation: 1, cause: "error", errorName: "WorkerCrash" });
+
+    await expect(active).resolves.toMatchObject({
+      kind: "execution-failed",
+      requestId: "worker-exit-active",
+      code: "worker-exit",
+    });
+    await expect(queued).resolves.toMatchObject({
+      kind: "result-end",
+      requestId: "worker-exit-queued",
+    });
+    expect(activeExecutor.requests).toHaveLength(1);
+    expect(replacementExecutor.requests).toHaveLength(1);
+  });
+
   it("reports worker replacement recovery from the main thread", async () => {
     const initial = new ExecutorNavigationWorker(new ImmediateExecutor(), 1);
     const replacement = new DeferredInitializationWorker(2);
@@ -2366,6 +2400,7 @@ class ExecutorNavigationWorker implements DaemonNavigationWorker {
   }
 
   fail(exit: DaemonNavigationWorkerExit): void {
+    this.rejectTermination(new DaemonNavigationWorkerExitedError(exit));
     this.resolveExited(exit);
   }
 }

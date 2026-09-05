@@ -30,6 +30,8 @@ describe("DaemonWorkerGenerationManager", () => {
       fileCount: 7,
     });
     expect(manager.snapshot).toEqual({ generation: 1, ready: false, fileCount: 7 });
+    manager.activateReadiness();
+    expect(manager.snapshot).toEqual({ generation: 1, ready: true, fileCount: 7 });
     expect(Object.isFrozen(manager.snapshot)).toBe(true);
   });
 
@@ -107,6 +109,7 @@ describe("DaemonWorkerGenerationManager", () => {
     const starting = manager.start();
     initial.completeReady(7);
     await starting;
+    manager.activateReadiness();
     operations.length = 0;
 
     const first = manager.replace("hard-pressure");

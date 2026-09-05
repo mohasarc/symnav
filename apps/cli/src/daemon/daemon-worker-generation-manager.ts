@@ -58,6 +58,8 @@ export class DaemonWorkerGenerationManager {
   private recoveryOperation: Promise<void> | undefined;
   private closeOperation: Promise<void> | undefined;
   private terminationOperation: Promise<void> | undefined;
+  private protocolReadyGeneration: DaemonWorkerGeneration | undefined;
+  private readinessActivated = false;
   private workerReady = false;
   private fileCount: number | undefined;
   private stopping = false;
@@ -80,10 +82,18 @@ export class DaemonWorkerGenerationManager {
     const generation = this.currentGeneration;
     generation.ready = this.startGeneration(generation);
     this.startOperation = this.waitForReadyGeneration(generation).then((report) => {
-      this.publishReady(generation, report);
+      this.publishProtocolReady(generation, report);
       return report;
     });
     return this.startOperation;
+  }
+
+  activateReadiness(): void {
+    if (this.protocolReadyGeneration !== this.currentGeneration) {
+      throw new Error("Navigation worker protocol readiness is unavailable");
+    }
+    this.readinessActivated = true;
+    this.workerReady = true;
   }
 
   execute(
@@ -156,6 +166,7 @@ export class DaemonWorkerGenerationManager {
     const previous = this.currentGeneration;
     if (cause !== "worker-exit") this.options.onActiveResourceInterruption(cause);
     this.workerReady = false;
+    this.protocolReadyGeneration = undefined;
     const nextWorker = this.options.createWorker(previous.worker.generation + 1);
     if (nextWorker.generation !== previous.worker.generation + 1) {
       throw new Error("Navigation worker factory returned the wrong generation");
@@ -165,7 +176,7 @@ export class DaemonWorkerGenerationManager {
     next.ready = this.startGeneration(next);
     await previous.worker.terminate().catch(() => undefined);
     const report = await next.ready;
-    this.publishReady(next, report);
+    this.publishProtocolReady(next, report);
     this.options.onDiagnostic({
       kind: "worker-replaced",
       cause,
@@ -219,10 +230,14 @@ export class DaemonWorkerGenerationManager {
     void recovery.catch(() => undefined);
   }
 
-  private publishReady(generation: DaemonWorkerGeneration, report: DaemonWorkerReadyReport): void {
+  private publishProtocolReady(
+    generation: DaemonWorkerGeneration,
+    report: DaemonWorkerReadyReport,
+  ): void {
     if (generation !== this.currentGeneration) return;
-    this.workerReady = true;
+    this.protocolReadyGeneration = generation;
     this.fileCount = report.fileCount;
+    if (this.readinessActivated) this.workerReady = true;
   }
 
   private clearReplacement(operation: Promise<DaemonWorkerReadyReport>): void {

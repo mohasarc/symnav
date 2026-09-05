@@ -251,6 +251,50 @@ describe("DaemonWorkerGenerationManager", () => {
 
     await expect(manager.releaseTransientResources()).rejects.toThrow("did not report heap usage");
   });
+
+  it("shares idempotent drain-close and terminate operations", async () => {
+    const worker = new ControlledNavigationWorker(1);
+    const manager = createManager({ initialWorker: worker });
+    const closeGate = deferredVoid();
+    const terminateGate = deferredVoid();
+    worker.closeOperation = closeGate.promise;
+    worker.terminateOperation = terminateGate.promise;
+
+    const firstClose = manager.close();
+    const secondClose = manager.close();
+    const firstTerminate = manager.terminate();
+    const secondTerminate = manager.terminate();
+
+    expect(firstClose).toBe(secondClose);
+    expect(firstTerminate).toBe(secondTerminate);
+    expect(worker.operations.filter((operation) => operation === "close:1")).toHaveLength(1);
+    expect(worker.operations.filter((operation) => operation === "terminate:1")).toHaveLength(1);
+    closeGate.resolve();
+    terminateGate.resolve();
+    await expect(Promise.all([firstClose, firstTerminate])).resolves.toEqual([
+      undefined,
+      undefined,
+    ]);
+  });
+
+  it("retains worker close and termination failures across repeated calls", async () => {
+    const worker = new ControlledNavigationWorker(1);
+    const manager = createManager({ initialWorker: worker });
+    const closeFailure = deferredFailure();
+    const terminateFailure = deferredFailure();
+    worker.closeOperation = closeFailure.promise;
+    worker.terminateOperation = terminateFailure.promise;
+
+    const close = manager.close();
+    const terminate = manager.terminate();
+    closeFailure.reject(new Error("close failed"));
+    terminateFailure.reject(new Error("terminate failed"));
+
+    await expect(close).rejects.toThrow("close failed");
+    await expect(terminate).rejects.toThrow("terminate failed");
+    expect(manager.close()).toBe(close);
+    expect(manager.terminate()).toBe(terminate);
+  });
 });
 
 function createManager(
@@ -282,6 +326,8 @@ class ControlledNavigationWorker implements DaemonNavigationWorker {
     | undefined;
   executionResponse: DaemonNavigationWorkerResponse | undefined;
   resourceResponse: DaemonNavigationWorkerResponse | undefined;
+  closeOperation: Promise<void> = Promise.resolve();
+  terminateOperation: Promise<void> = Promise.resolve();
   private resolveExited!: (exit: DaemonNavigationWorkerExit) => void;
   private resolveReady!: (response: DaemonNavigationWorkerResponse) => void;
   private rejectReady!: (error: Error) => void;
@@ -331,13 +377,13 @@ class ControlledNavigationWorker implements DaemonNavigationWorker {
   drainAndClose(): Promise<void> {
     this.operations.push(`close:${this.generation}`);
     this.sharedOperations.push(`close:${this.generation}`);
-    return Promise.resolve();
+    return this.closeOperation;
   }
 
   terminate(): Promise<void> {
     this.operations.push(`terminate:${this.generation}`);
     this.sharedOperations.push(`terminate:${this.generation}`);
-    return Promise.resolve();
+    return this.terminateOperation;
   }
 
   completeReady(fileCount: number): void {
@@ -377,4 +423,23 @@ function resultResponse(generation: number, requestId: string): DaemonNavigation
       workerHeapLimitBytes: 30,
     },
   };
+}
+
+function deferredVoid(): { readonly promise: Promise<void>; readonly resolve: () => void } {
+  let resolve!: () => void;
+  const promise = new Promise<void>((complete) => {
+    resolve = complete;
+  });
+  return { promise, resolve };
+}
+
+function deferredFailure(): {
+  readonly promise: Promise<void>;
+  readonly reject: (error: Error) => void;
+} {
+  let reject!: (error: Error) => void;
+  const promise = new Promise<void>((_resolve, fail) => {
+    reject = fail;
+  });
+  return { promise, reject };
 }

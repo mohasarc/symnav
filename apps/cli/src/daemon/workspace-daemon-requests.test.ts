@@ -1299,6 +1299,36 @@ describe("WorkspaceDaemon requests", () => {
     });
   });
 
+  it("starts the next generation before terminating the previous worker", async () => {
+    const transitions: string[] = [];
+    const initial = new OrderedInitializationWorker(1, transitions, true);
+    const replacement = new OrderedInitializationWorker(2, transitions, false);
+    const harness = await RequestHarness.start(undefined, {
+      navigationWorkerFactory: (generation) => (generation === 1 ? initial : replacement),
+    });
+    harnesses.push(harness);
+    transitions.length = 0;
+
+    initial.fail({ generation: 1, cause: "out-of-memory", errorName: "WorkerOom" });
+    await replacement.initializationStarted;
+
+    expect(transitions).toEqual(["start:2", "terminate:1"]);
+    await expect(harness.ping()).resolves.toMatchObject({
+      kind: "pong",
+      activity: {
+        lifecycle: "recovering",
+        recoveryDetail: "worker-replacement",
+        workerGeneration: 2,
+      },
+    });
+
+    replacement.completeInitialization();
+    await waitUntil(async () => {
+      const pong = await harness.ping();
+      return pong.kind === "pong" && pong.state === "ready";
+    });
+  });
+
   it("completes scheduled shedding before the next queued worker turn", async () => {
     const policy = DaemonResourcePolicy.fromSystemMemory(1024 * 1024 * 1024);
     let residentMemoryBytes = 0;
@@ -2427,6 +2457,69 @@ class DeferredInitializationWorker implements DaemonNavigationWorker {
 
   terminate(): Promise<void> {
     return Promise.resolve();
+  }
+
+  completeInitialization(): void {
+    this.resolveReady({
+      kind: "ready",
+      generation: this.generation,
+      fileCount: 1,
+      refresh: { added: 1, changed: 0, removed: 0, unchanged: 0 },
+      startupDurations: { discoveryMs: 0, indexingMs: 1, totalMs: 1 },
+    });
+  }
+}
+
+class OrderedInitializationWorker implements DaemonNavigationWorker {
+  readonly exited: Promise<DaemonNavigationWorkerExit>;
+  readonly initializationStarted: Promise<void>;
+  private resolveExited!: (exit: DaemonNavigationWorkerExit) => void;
+  private resolveInitializationStarted!: () => void;
+  private resolveReady!: (response: DaemonNavigationWorkerResponse) => void;
+  private readonly ready: Promise<DaemonNavigationWorkerResponse>;
+
+  constructor(
+    readonly generation: number,
+    private readonly transitions: string[],
+    readyImmediately: boolean,
+  ) {
+    this.exited = new Promise((resolve) => {
+      this.resolveExited = resolve;
+    });
+    this.initializationStarted = new Promise((resolve) => {
+      this.resolveInitializationStarted = resolve;
+    });
+    this.ready = new Promise((resolve) => {
+      this.resolveReady = resolve;
+    });
+    if (readyImmediately) this.completeInitialization();
+  }
+
+  start(): Promise<DaemonNavigationWorkerResponse> {
+    this.transitions.push(`start:${this.generation}`);
+    this.resolveInitializationStarted();
+    return this.ready;
+  }
+
+  execute(): Promise<DaemonNavigationWorkerResponse> {
+    throw new Error("Ordered initialization worker is not executable");
+  }
+
+  releaseTransientResources(): Promise<DaemonNavigationWorkerResponse> {
+    throw new Error("Ordered initialization worker has no transient resources");
+  }
+
+  drainAndClose(): Promise<void> {
+    return Promise.resolve();
+  }
+
+  terminate(): Promise<void> {
+    this.transitions.push(`terminate:${this.generation}`);
+    return Promise.resolve();
+  }
+
+  fail(exit: DaemonNavigationWorkerExit): void {
+    this.resolveExited(exit);
   }
 
   completeInitialization(): void {

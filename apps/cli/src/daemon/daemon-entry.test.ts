@@ -86,11 +86,13 @@ it("starts the detached daemon with only daemon-owned process configuration", as
         readonly executorModuleUrl: string;
         readonly policy: DaemonPolicy;
         readonly logger: unknown;
+        readonly coordinates: DaemonIdentityCoordinates;
       }) {
         daemonStateDirectory = options.identity.stateDirectory;
         daemonExecutorModuleUrl = options.executorModuleUrl;
         daemonWorkerLimit = options.policy.values.resources.workerMaxOldGenerationSizeMiB;
         daemonLogger = options.logger;
+        expect(options.coordinates).toEqual(expect.objectContaining(configuration));
       }
 
       async start(): Promise<void> {}

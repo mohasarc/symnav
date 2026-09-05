@@ -30,9 +30,9 @@ describe("daemon transport ports", () => {
   });
 
   it("limits daemon processes to request serving", () => {
-    expectTypeOf<DaemonProcessCoordinatorOptions["transport"]>().toEqualTypeOf<DaemonRequestServer>();
+    expectTypeOf<DaemonProcessCoordinatorOptions["server"]>().toEqualTypeOf<DaemonRequestServer>();
     expectTypeOf<
-      ConstructorParameters<typeof DaemonProcessCoordinator>[0]["transport"]
+      ConstructorParameters<typeof DaemonProcessCoordinator>[0]["server"]
     >().toEqualTypeOf<DaemonRequestServer>();
   });
 

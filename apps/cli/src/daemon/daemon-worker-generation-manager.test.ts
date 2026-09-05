@@ -215,6 +215,42 @@ describe("DaemonWorkerGenerationManager", () => {
     });
     expect(manager.snapshot).toEqual({ generation: 2, ready: true, fileCount: 11 });
   });
+
+  it("releases transient resources through the current generation", async () => {
+    const worker = new ControlledNavigationWorker(1);
+    const onDiagnostic = vi.fn();
+    const manager = createManager({ initialWorker: worker, onDiagnostic });
+    const starting = manager.start();
+    worker.completeReady(1);
+    await starting;
+    worker.resourceResponse = {
+      kind: "heap",
+      generation: 1,
+      operationId: "release-1",
+      usedHeapBytes: 12,
+      heapLimitBytes: 24,
+    };
+
+    await expect(manager.releaseTransientResources()).resolves.toEqual(worker.resourceResponse);
+    expect(worker.operations).toContain("release:1");
+    expect(onDiagnostic).toHaveBeenCalledWith({
+      kind: "resources-released",
+      workerGeneration: 1,
+      workerHeapUsedBytes: 12,
+      workerHeapLimitBytes: 24,
+    });
+  });
+
+  it("rejects an invalid transient resource report", async () => {
+    const worker = new ControlledNavigationWorker(1);
+    const manager = createManager({ initialWorker: worker });
+    const starting = manager.start();
+    worker.completeReady(1);
+    await starting;
+    worker.resourceResponse = { kind: "closed", generation: 1 };
+
+    await expect(manager.releaseTransientResources()).rejects.toThrow("did not report heap usage");
+  });
 });
 
 function createManager(
@@ -245,6 +281,7 @@ class ControlledNavigationWorker implements DaemonNavigationWorker {
       }
     | undefined;
   executionResponse: DaemonNavigationWorkerResponse | undefined;
+  resourceResponse: DaemonNavigationWorkerResponse | undefined;
   private resolveExited!: (exit: DaemonNavigationWorkerExit) => void;
   private resolveReady!: (response: DaemonNavigationWorkerResponse) => void;
   private rejectReady!: (error: Error) => void;
@@ -284,7 +321,11 @@ class ControlledNavigationWorker implements DaemonNavigationWorker {
   }
 
   releaseTransientResources(): Promise<DaemonNavigationWorkerResponse> {
-    return Promise.reject(new Error("Resource response is unavailable"));
+    this.operations.push(`release:${this.generation}`);
+    if (this.resourceResponse === undefined) {
+      return Promise.reject(new Error("Resource response is unavailable"));
+    }
+    return Promise.resolve(this.resourceResponse);
   }
 
   drainAndClose(): Promise<void> {

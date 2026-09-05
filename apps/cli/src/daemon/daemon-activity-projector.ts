@@ -36,9 +36,11 @@ export interface DaemonActivityProjection {
 export class DaemonActivityProjector {
   static project(input: DaemonActivityProjectionInput): DaemonActivityProjection {
     const lifecycle = DaemonActivityProjector.lifecycle(input);
+    const recoveryDetail = DaemonActivityProjector.recoveryDetail(input);
     const current = DaemonActivityProjector.current(input, lifecycle);
     const activity: DaemonActivitySnapshot = {
       lifecycle,
+      ...(recoveryDetail === undefined ? {} : { recoveryDetail }),
       pid: input.pid,
       startedAt: input.startedAt,
       startupElapsedMs: Math.max(0, input.nowMonotonicMs - input.startedMonotonicAt),
@@ -105,6 +107,14 @@ export class DaemonActivityProjector {
     if (lifecycle === "busy") return "busy";
     if (lifecycle === "starting") return "starting";
     return "ready";
+  }
+
+  private static recoveryDetail(
+    input: DaemonActivityProjectionInput,
+  ): DaemonActivitySnapshot["recoveryDetail"] {
+    if (input.resources.state === "replacing") return "worker-replacement";
+    if (input.resources.state === "shedding") return "resource-pressure";
+    return undefined;
   }
 
   private static current(

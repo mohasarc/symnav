@@ -478,7 +478,7 @@ export class WorkspaceDaemon {
       worker: {
         generation: worker.generation,
         ready: worker.ready,
-        ...(worker.fileCount === undefined ? {} : { fileCount: worker.fileCount }),
+        fileCount: worker.fileCount ?? 0,
       },
     }).pong;
   }

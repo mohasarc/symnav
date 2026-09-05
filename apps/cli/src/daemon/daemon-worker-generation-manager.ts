@@ -156,7 +156,6 @@ export class DaemonWorkerGenerationManager {
     const previous = this.currentGeneration;
     if (cause !== "worker-exit") this.options.onActiveResourceInterruption(cause);
     this.workerReady = false;
-    this.fileCount = undefined;
     const nextWorker = this.options.createWorker(previous.worker.generation + 1);
     if (nextWorker.generation !== previous.worker.generation + 1) {
       throw new Error("Navigation worker factory returned the wrong generation");

@@ -1,6 +1,7 @@
 import { DaemonPolicy } from "@symnav/daemon";
 import { DaemonPolicyTestFactory } from "@symnav/daemon/policy-testing";
 import type { ProgramDependencies } from "../../src/program-dependencies.js";
+import type { DaemonRequestServer } from "../../src/daemon/daemon-transport.js";
 import type { TestDaemonResourcePolicy as DaemonResourcePolicy } from "./daemon-resource-policy.js";
 import {
   DaemonProcessCoordinator as RuntimeDaemonProcessCoordinator,
@@ -23,8 +24,17 @@ interface TestDaemonProcessCoordinatorPolicyOptions {
   readonly maximumRetainedOperationTraces?: number;
 }
 
-export type TestDaemonProcessCoordinatorOptions = Omit<DaemonProcessCoordinatorOptions, "dependencies" | "policy"> &
-  TestDaemonProcessCoordinatorPolicyOptions & { readonly dependencies: ProgramDependencies };
+export type TestDaemonProcessCoordinatorOptions = Omit<
+  DaemonProcessCoordinatorOptions,
+  "coordinates" | "productVersion" | "server" | "workspaceExists" | "policy"
+> &
+  TestDaemonProcessCoordinatorPolicyOptions & {
+    readonly dependencies: ProgramDependencies;
+    readonly instanceId: string;
+    readonly processToken: string;
+    readonly symnavVersion: string;
+    readonly transport: DaemonRequestServer;
+  };
 
 export class TestDaemonProcessCoordinator extends RuntimeDaemonProcessCoordinator {
   constructor(options: TestDaemonProcessCoordinatorOptions) {
@@ -94,6 +104,18 @@ export class TestDaemonProcessCoordinator extends RuntimeDaemonProcessCoordinato
     });
     super({
       ...options,
+      coordinates: {
+        workspaceRoot: options.identity.workspaceRoot,
+        workspaceKey: options.identity.workspaceKey,
+        stateKey: options.identity.stateKey,
+        identityKey: options.identity.identityKey,
+        instanceId: options.instanceId,
+        processToken: options.processToken,
+        endpoint: options.identity.endpoint(options.instanceId),
+      },
+      productVersion: options.symnavVersion,
+      server: options.transport,
+      workspaceExists: (workspaceRoot) => options.dependencies.fs.exists(workspaceRoot),
       policy,
     });
   }

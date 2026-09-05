@@ -15,34 +15,27 @@ class DaemonEntry {
       configuration.workspaceRoot,
       configuration.stateDirectory,
     );
-    if (
-      identity.workspaceKey !== configuration.workspaceKey ||
-      identity.stateKey !== configuration.stateKey ||
-      identity.identityKey !== configuration.identityKey ||
-      identity.endpoint(configuration.instanceId) !== configuration.endpoint
-    )
-      throw new Error("Daemon process identity does not match configuration");
     const policy = DaemonPolicy.fromSerialized(configuration.policy);
     const registry = new DaemonRegistry(identity.registryDirectory, policy.values.startup);
     const clock = new NodeDaemonClock();
     const logger = new DaemonLogger(identity, configuration.instanceId, clock, {
       policy: policy.values.diagnostics,
     });
-    new DaemonProcessTerminationObserver(logger, () => {
-      registry.removeIfProcess(identity, configuration.instanceId, configuration.processToken);
-    }).install();
-    await new DaemonProcessCoordinator({
+    const coordinator = new DaemonProcessCoordinator({
       identity,
-      instanceId: configuration.instanceId,
-      processToken: configuration.processToken,
-      symnavVersion: configuration.symnavVersion,
+      coordinates: configuration,
+      productVersion: configuration.symnavVersion,
       executorModuleUrl: configuration.executorModuleUrl,
       policy,
       registry,
-      transport: new LocalDaemonTransport({ policy }),
+      server: new LocalDaemonTransport({ policy }),
       clock,
       logger,
-    }).start();
+    });
+    new DaemonProcessTerminationObserver(logger, () => {
+      registry.removeIfProcess(identity, configuration.instanceId, configuration.processToken);
+    }).install();
+    await coordinator.start();
   }
 }
 

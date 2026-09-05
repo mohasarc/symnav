@@ -13,6 +13,7 @@ import { AcceptedExecutionSession } from "./accepted-execution-session.js";
 import { DaemonActivityProjector } from "./daemon-activity-projector.js";
 import type {
   DaemonExecutionServerFrame,
+  DaemonIdentityCoordinates,
   DaemonRecord,
   DaemonRequest,
   DaemonResponse,
@@ -38,16 +39,13 @@ import { WorkspaceRequestQueue } from "./workspace-request-queue.js";
 
 export interface DaemonProcessCoordinatorOptions {
   readonly identity: DaemonWorkspaceIdentity;
-  readonly instanceId: string;
-  readonly processToken: string;
-  readonly symnavVersion: string;
+  readonly coordinates: DaemonIdentityCoordinates;
+  readonly productVersion: string;
   readonly executorModuleUrl?: DaemonExecutorModuleUrl;
   readonly policy: DaemonPolicy;
-  readonly dependencies?: {
-    readonly fs: { exists(path: string): Promise<boolean> };
-  };
+  readonly workspaceExists?: (workspaceRoot: string) => Promise<boolean>;
   readonly registry: DaemonRegistry;
-  readonly transport: DaemonRequestServer;
+  readonly server: DaemonRequestServer;
   readonly navigationWorker?: DaemonNavigationWorker;
   readonly navigationWorkerFactory?: (generation: number) => DaemonNavigationWorker;
   readonly now?: () => number;
@@ -83,6 +81,7 @@ export class DaemonProcessCoordinator {
   private resolveForceEscalated!: () => void;
 
   constructor(private readonly options: DaemonProcessCoordinatorOptions) {
+    DaemonProcessCoordinator.validateCoordinates(options.identity, options.coordinates);
     const policy = options.policy;
     this.policy = policy;
     this.forceEscalated = new Promise((resolve) => {
@@ -96,7 +95,7 @@ export class DaemonProcessCoordinator {
     const completionSpools = new DaemonCompletionSpoolStore({
       directory: options.identity.spoolDirectory,
       workspaceKey: options.identity.workspaceKey,
-      instanceId: options.instanceId,
+      instanceId: options.coordinates.instanceId,
       policy: policy.values.output,
       ...(options.completionSpoolStorage === undefined
         ? {}
@@ -104,7 +103,7 @@ export class DaemonProcessCoordinator {
     });
     this.logger =
       options.logger ??
-      new DaemonLogger(options.identity, options.instanceId, this.clock, {
+      new DaemonLogger(options.identity, options.coordinates.instanceId, this.clock, {
         policy: policy.values.diagnostics,
       });
     const resourcePolicy = policy.values.resources;
@@ -117,7 +116,7 @@ export class DaemonProcessCoordinator {
               generation,
               configuration: {
                 stateDirectory: options.identity.stateDirectory,
-                productVersion: options.symnavVersion,
+                productVersion: options.productVersion,
                 executorModuleUrl:
                   options.executorModuleUrl ?? "file:///missing/symnav-daemon-executor.js",
                 policy: policy.toSerialized(),
@@ -180,8 +179,8 @@ export class DaemonProcessCoordinator {
     );
     this.deliverySession = new DaemonDeliverySession({
       coordinates: {
-        instanceId: options.instanceId,
-        processToken: options.processToken,
+        instanceId: options.coordinates.instanceId,
+        processToken: options.coordinates.processToken,
       },
       journal: acceptedRequests,
       spoolStore: completionSpools,
@@ -229,8 +228,8 @@ export class DaemonProcessCoordinator {
       );
       startupHeartbeat.unref();
       this.startedAt = startingRecord.startedAt;
-      this.server = await this.options.transport.listen(
-        this.options.identity.endpoint(this.options.instanceId),
+      this.server = await this.options.server.listen(
+        this.options.coordinates.endpoint,
         (request, send) => this.handle(request, send),
       );
       const response = await this.workerManager.start();
@@ -246,14 +245,14 @@ export class DaemonProcessCoordinator {
       const readyRecord: DaemonRecord = {
         schemaVersion: DAEMON_RECORD_SCHEMA_VERSION,
         protocolVersion: DAEMON_PROTOCOL_VERSION,
-        symnavVersion: this.options.symnavVersion,
+        symnavVersion: this.options.productVersion,
         workspaceRoot: this.options.identity.workspaceRoot,
         workspaceKey: this.options.identity.workspaceKey,
         stateKey: this.options.identity.stateKey,
         identityKey: this.options.identity.identityKey,
-        instanceId: this.options.instanceId,
-        processToken: this.options.processToken,
-        endpoint: this.options.identity.endpoint(this.options.instanceId),
+        instanceId: this.options.coordinates.instanceId,
+        processToken: this.options.coordinates.processToken,
+        endpoint: this.options.coordinates.endpoint,
         pid: process.pid,
         state: "ready",
         startedAt: startingRecord.startedAt,
@@ -292,17 +291,17 @@ export class DaemonProcessCoordinator {
     while (this.now() <= deadline) {
       const record = this.options.registry.readInstance(
         this.options.identity,
-        this.options.instanceId,
+        this.options.coordinates.instanceId,
       );
       if (
         record?.state === "starting" &&
         (record.pid === 0 || record.pid === process.pid) &&
-        record.processToken === this.options.processToken
+        record.processToken === this.options.coordinates.processToken
       ) {
         const lease = this.options.registry.claimStartupForDaemon(
           this.options.identity,
-          this.options.instanceId,
-          this.options.processToken,
+          this.options.coordinates.instanceId,
+          this.options.coordinates.processToken,
           process.pid,
         );
         if (lease === undefined) {
@@ -315,7 +314,7 @@ export class DaemonProcessCoordinator {
         });
         const adoptedRecord = this.options.registry.readInstance(
           this.options.identity,
-          this.options.instanceId,
+          this.options.coordinates.instanceId,
         );
         if (adoptedRecord?.pid !== process.pid) {
           lease.release();
@@ -345,8 +344,8 @@ export class DaemonProcessCoordinator {
     startupLease?.release();
     this.options.registry.removeIfProcess(
       this.options.identity,
-      this.options.instanceId,
-      this.options.processToken,
+      this.options.coordinates.instanceId,
+      this.options.coordinates.processToken,
     );
   }
 
@@ -360,7 +359,7 @@ export class DaemonProcessCoordinator {
     }
     if (
       request.protocolVersion !== DAEMON_PROTOCOL_VERSION ||
-      request.instanceId !== this.options.instanceId
+      request.instanceId !== this.options.coordinates.instanceId
     ) {
       throw new Error("Daemon request does not match protocol or instance");
     }
@@ -371,7 +370,7 @@ export class DaemonProcessCoordinator {
       request.kind === "result-fetch" ||
       request.kind === "result-ack"
     ) {
-      if (request.processToken !== this.options.processToken) {
+      if (request.processToken !== this.options.coordinates.processToken) {
         throw new Error("Daemon execution request does not match process instance");
       }
     }
@@ -385,8 +384,8 @@ export class DaemonProcessCoordinator {
     if (request.kind === "execution-status") {
       return {
         kind: "execution-status",
-        instanceId: this.options.instanceId,
-        processToken: this.options.processToken,
+        instanceId: this.options.coordinates.instanceId,
+        processToken: this.options.coordinates.processToken,
         requestId: request.requestId,
         status: this.acceptedExecutionSession.status(request.requestId),
       };
@@ -395,20 +394,20 @@ export class DaemonProcessCoordinator {
     await this.acceptedExecutionSession.drain();
     await this.deliverySession.waitForCompletionAcknowledgements();
     setTimeout(() => void this.shutdown("graceful"), 0);
-    return { kind: "stopped", instanceId: this.options.instanceId };
+    return { kind: "stopped", instanceId: this.options.coordinates.instanceId };
   }
 
   private identify(request: Extract<DaemonRequest, { kind: "identify" }>): DaemonResponse {
     if (
-      request.instanceId !== this.options.instanceId ||
-      request.processToken !== this.options.processToken
+      request.instanceId !== this.options.coordinates.instanceId ||
+      request.processToken !== this.options.coordinates.processToken
     ) {
       throw new Error("Daemon identity request does not match process instance");
     }
     return {
       kind: "identity",
-      instanceId: this.options.instanceId,
-      processToken: this.options.processToken,
+      instanceId: this.options.coordinates.instanceId,
+      processToken: this.options.coordinates.processToken,
       pid: process.pid,
       startedAt: this.startedAt,
     };
@@ -418,8 +417,8 @@ export class DaemonProcessCoordinator {
     request: Extract<DaemonRequest, { kind: "terminate" | "kill" }>,
   ): Promise<DaemonResponse> {
     if (
-      request.instanceId !== this.options.instanceId ||
-      request.processToken !== this.options.processToken
+      request.instanceId !== this.options.coordinates.instanceId ||
+      request.processToken !== this.options.coordinates.processToken
     ) {
       throw new Error("Daemon termination does not match process instance");
     }
@@ -433,8 +432,8 @@ export class DaemonProcessCoordinator {
     }
     return {
       kind: request.kind === "terminate" ? "terminating" : "killing",
-      instanceId: this.options.instanceId,
-      processToken: this.options.processToken,
+      instanceId: this.options.coordinates.instanceId,
+      processToken: this.options.coordinates.processToken,
     };
   }
 
@@ -454,8 +453,8 @@ export class DaemonProcessCoordinator {
       ...(execution.lastCompletedMonotonicAt === undefined
         ? {}
         : { lastCompletedMonotonicAt: execution.lastCompletedMonotonicAt }),
-      productVersion: this.options.symnavVersion,
-      instanceId: this.options.instanceId,
+      productVersion: this.options.productVersion,
+      instanceId: this.options.coordinates.instanceId,
       hardProcessRssBytes: this.resourcePolicy.hardProcessRssBytes,
       queue: execution.queue,
       resources,
@@ -488,7 +487,7 @@ export class DaemonProcessCoordinator {
   private decideAdmission(
     request: Extract<DaemonRequest, { kind: "execute" }>,
   ): DaemonAdmissionDecision {
-    const authenticated = request.processToken === this.options.processToken;
+    const authenticated = request.processToken === this.options.coordinates.processToken;
     if (!authenticated) {
       return this.admissionPolicy.decide({
         request,
@@ -518,9 +517,10 @@ export class DaemonProcessCoordinator {
   }
 
   private workspaceExists(): Promise<boolean> {
-    return this.options.dependencies
-      ? this.options.dependencies.fs.exists(this.options.identity.workspaceRoot)
-      : DaemonProcessCoordinator.pathExists(this.options.identity.workspaceRoot);
+    return (
+      this.options.workspaceExists?.(this.options.identity.workspaceRoot) ??
+      DaemonProcessCoordinator.pathExists(this.options.identity.workspaceRoot)
+    );
   }
 
   private async workspaceDeletedAfterDelivery(): Promise<void> {
@@ -537,13 +537,28 @@ export class DaemonProcessCoordinator {
     }
   }
 
+  private static validateCoordinates(
+    identity: DaemonWorkspaceIdentity,
+    coordinates: DaemonIdentityCoordinates,
+  ): void {
+    if (
+      coordinates.workspaceRoot !== identity.workspaceRoot ||
+      coordinates.workspaceKey !== identity.workspaceKey ||
+      coordinates.stateKey !== identity.stateKey ||
+      coordinates.identityKey !== identity.identityKey ||
+      coordinates.endpoint !== identity.endpoint(coordinates.instanceId)
+    ) {
+      throw new Error("Daemon process identity does not match configuration");
+    }
+  }
+
   private rejection(
     request: Extract<DaemonRequest, { kind: "execute" }>,
     code: DaemonExecuteRejectionCode,
   ): DaemonExecutionServerFrame {
     return DaemonAdmissionRejections.frame(code, {
-      instanceId: this.options.instanceId,
-      processToken: this.options.processToken,
+      instanceId: this.options.coordinates.instanceId,
+      processToken: this.options.coordinates.processToken,
       requestId: request.requestId,
     });
   }

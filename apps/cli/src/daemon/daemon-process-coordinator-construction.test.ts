@@ -6,6 +6,7 @@ import {
   DaemonProcessCoordinator,
   type DaemonProcessCoordinatorOptions,
 } from "./daemon-process-coordinator.js";
+import type { DaemonIdentityCoordinates } from "./daemon-protocol.js";
 import { DaemonWorkspaceIdentity } from "./daemon-workspace-identity.js";
 
 describe("DaemonProcessCoordinator construction", () => {
@@ -27,7 +28,7 @@ describe("DaemonProcessCoordinator construction", () => {
     const stateDirectory = mkdtempSync(join(tmpdir(), "symnav-coordinator-construction-"));
     roots.push(stateDirectory);
     const identity = DaemonWorkspaceIdentity.from("/workspace", stateDirectory);
-    const coordinates = {
+    const coordinates: DaemonIdentityCoordinates = {
       workspaceRoot: identity.workspaceRoot,
       workspaceKey: identity.workspaceKey,
       stateKey: identity.stateKey,

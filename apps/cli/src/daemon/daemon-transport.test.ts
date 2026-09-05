@@ -11,7 +11,10 @@ import type {
   DaemonLifecycleRequestSender,
   DaemonRequestServer,
 } from "./daemon-transport.js";
-import type { DaemonProcessCoordinator, DaemonProcessCoordinatorOptions } from "./daemon-process-coordinator.js";
+import type {
+  DaemonProcessCoordinator,
+  DaemonProcessCoordinatorOptions,
+} from "./daemon-process-coordinator.js";
 
 describe("daemon transport ports", () => {
   it("limits observers to lifecycle requests", () => {

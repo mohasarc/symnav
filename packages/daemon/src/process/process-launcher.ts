@@ -153,7 +153,7 @@ export class NodeDaemonProcessLauncher implements DaemonProcessLauncher {
       startupOwnerKind: "daemon",
     };
     const encodedConfiguration = Buffer.from(JSON.stringify(configuration)).toString("base64url");
-    const daemonEntryPath = fileURLToPath(new URL("./daemon-entry.js", import.meta.url));
+    const daemonEntryPath = fileURLToPath(new URL("../process-entry.js", import.meta.url));
     mkdirSync(identity.identityDirectory, { recursive: true, mode: 0o700 });
 
     return new Promise((resolve, reject) => {

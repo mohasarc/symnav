@@ -10,6 +10,12 @@
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
     },
+    "./process-entry": {
+      "default": "./dist/process-entry.js"
+    },
+    "./worker-entry": {
+      "default": "./dist/worker-entry.js"
+    },
     "./policy-testing": {
       "types": "./dist/policy-testing.d.ts",
       "default": "./dist/policy-testing.js"

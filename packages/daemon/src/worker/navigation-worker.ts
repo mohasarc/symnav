@@ -93,7 +93,7 @@ export class NodeDaemonNavigationWorker implements DaemonNavigationWorker {
       this.resolveExited = resolve;
     });
     this.worker = new Worker(
-      options.entryUrl ?? new URL("./daemon-navigation-worker-entry.js", import.meta.url),
+      options.entryUrl ?? new URL("../worker-entry.js", import.meta.url),
       {
         workerData: {
           ...options.workerData,

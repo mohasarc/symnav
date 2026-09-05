@@ -1600,9 +1600,30 @@ describe("WorkspaceDaemon requests", () => {
     await worker.releaseStarted;
     expect(ready).toBe(false);
     expect(harness.registry.read(harness.identity)?.state).toBe("starting");
+    const warming = await harness.ping();
+    const admission = await harness.admit("before-warmup-completes");
+    const rejection = await admission.terminal;
     worker.allowRelease();
     await starting;
     lease.release();
+
+    expect(warming).toMatchObject({
+      kind: "pong",
+      fileCount: 1,
+      activity: {
+        lifecycle: "recovering",
+        recoveryDetail: "resource-pressure",
+        workerGeneration: 1,
+      },
+    });
+    expect
+      .soft(warming.kind === "pong" ? warming.activity : undefined)
+      .not.toHaveProperty("fileCount");
+    expect.soft(rejection).toMatchObject({
+      kind: "rejected",
+      code: "not-ready",
+    });
+    expect(harness.acceptedRequestCount()).toBe(0);
 
     await expect(harness.ping()).resolves.toMatchObject({ state: "ready" });
   });

@@ -13,7 +13,7 @@ import type {
 import { DaemonWorkerGenerationManager } from "./daemon-worker-generation-manager.js";
 
 describe("DaemonWorkerGenerationManager", () => {
-  it("creates generation one and publishes readiness only after its valid ready report", async () => {
+  it("keeps protocol initialization distinct from externally activated readiness", async () => {
     const worker = new ControlledNavigationWorker(1);
     const manager = createManager({ createWorker: () => worker });
 
@@ -29,7 +29,7 @@ describe("DaemonWorkerGenerationManager", () => {
       generation: 1,
       fileCount: 7,
     });
-    expect(manager.snapshot).toEqual({ generation: 1, ready: true, fileCount: 7 });
+    expect(manager.snapshot).toEqual({ generation: 1, ready: false, fileCount: 7 });
     expect(Object.isFrozen(manager.snapshot)).toBe(true);
   });
 
@@ -237,7 +237,7 @@ describe("DaemonWorkerGenerationManager", () => {
       generation: 2,
       fileCount: 11,
     });
-    expect(manager.snapshot).toEqual({ generation: 2, ready: true, fileCount: 11 });
+    expect(manager.snapshot).toEqual({ generation: 2, ready: false, fileCount: 11 });
   });
 
   it("releases transient resources through the current generation", async () => {

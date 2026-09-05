@@ -38,7 +38,7 @@ export class DaemonActivityProjector {
     const lifecycle = DaemonActivityProjector.lifecycle(input);
     const recoveryDetail = DaemonActivityProjector.recoveryDetail(input);
     const current = DaemonActivityProjector.current(input, lifecycle);
-    const activity: DaemonActivitySnapshot = {
+    const activity: DaemonActivitySnapshot = Object.freeze({
       lifecycle,
       ...(recoveryDetail === undefined ? {} : { recoveryDetail }),
       pid: input.pid,
@@ -61,8 +61,8 @@ export class DaemonActivityProjector {
             lastCompletedAgoMs: Math.max(0, input.nowMonotonicMs - input.lastCompletedMonotonicAt),
           }),
       spoolBytes: input.resources.spoolBytes,
-    };
-    const pong: DaemonPong = {
+    });
+    const pong: DaemonPong = Object.freeze({
       kind: "pong",
       protocolVersion: DAEMON_PROTOCOL_VERSION,
       instanceId: input.instanceId,
@@ -80,8 +80,8 @@ export class DaemonActivityProjector {
             currentCommandElapsedMs: current.elapsedMs,
           }),
       ...(input.lastNavigationAt === undefined ? {} : { lastNavigationAt: input.lastNavigationAt }),
-    };
-    return { activity, pong };
+    });
+    return Object.freeze({ activity, pong });
   }
 
   private static lifecycle(
@@ -122,10 +122,10 @@ export class DaemonActivityProjector {
     lifecycle: DaemonActivitySnapshot["lifecycle"],
   ): DaemonActivitySnapshot["current"] {
     if (lifecycle !== "busy" || input.queue.active === undefined) return undefined;
-    return {
+    return Object.freeze({
       requestId: input.queue.active.requestId,
       command: input.queue.active.command,
       elapsedMs: Math.max(0, input.nowMonotonicMs - input.queue.active.startedAt),
-    };
+    });
   }
 }

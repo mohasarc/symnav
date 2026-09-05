@@ -158,6 +158,10 @@ export class DaemonDeliverySession {
     });
   }
 
+  trackedCompletion(requestId: string): Promise<void> | undefined {
+    return this.completionDeliveries.get(requestId);
+  }
+
   private deliver(send: DaemonServerSend, frame: DaemonServerMessage): Promise<void> {
     return send(frame);
   }

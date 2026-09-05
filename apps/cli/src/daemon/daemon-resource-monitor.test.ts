@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { DaemonPolicy } from "@symnav/daemon";
 import { DaemonPolicyTestFactory } from "@symnav/daemon/policy-testing";
 import { DaemonResourceSupervisor } from "./daemon-resource-monitor.js";
-import type { DaemonWorkerExitRecovery } from "./daemon-worker-generation-manager-contract.js";
+import type { DaemonWorkerExitRecovery } from "./daemon-worker-generation-manager.js";
 
 const MEBIBYTE = 1024 * 1024;
 const GIBIBYTE = 1024 * MEBIBYTE;

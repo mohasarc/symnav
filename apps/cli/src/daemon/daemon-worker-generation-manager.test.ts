@@ -6,11 +6,11 @@ import type {
 } from "./daemon-navigation-worker.js";
 import { DaemonNavigationWorkerExitedError } from "./daemon-navigation-worker.js";
 import type { DaemonNavigationWorkerResponse } from "./daemon-navigation-worker-protocol.js";
-import { DaemonWorkerGenerationManager } from "./daemon-worker-generation-manager.js";
 import type {
   DaemonWorkerExitRecovery,
   DaemonWorkerGenerationManagerOptions,
-} from "./daemon-worker-generation-manager-contract.js";
+} from "./daemon-worker-generation-manager.js";
+import { DaemonWorkerGenerationManager } from "./daemon-worker-generation-manager.js";
 
 describe("DaemonWorkerGenerationManager", () => {
   it("creates generation one and publishes readiness only after its valid ready report", async () => {

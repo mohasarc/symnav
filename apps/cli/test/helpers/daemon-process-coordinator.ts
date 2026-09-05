@@ -1,5 +1,7 @@
 import { DaemonPolicy } from "@symnav/daemon";
 import { DaemonPolicyTestFactory } from "@symnav/daemon/policy-testing";
+import { performance } from "node:perf_hooks";
+import { NodeDaemonClock, type DaemonClock } from "../../src/daemon/daemon-clock.js";
 import type { ProgramDependencies } from "../../src/program-dependencies.js";
 import type { DaemonRequestServer } from "../../src/daemon/daemon-transport.js";
 import type { TestDaemonResourcePolicy as DaemonResourcePolicy } from "./daemon-resource-policy.js";
@@ -26,7 +28,7 @@ interface TestDaemonProcessCoordinatorPolicyOptions {
 
 export type TestDaemonProcessCoordinatorOptions = Omit<
   DaemonProcessCoordinatorOptions,
-  "coordinates" | "productVersion" | "server" | "workspaceExists" | "policy"
+  "clock" | "coordinates" | "productVersion" | "server" | "workspaceExists" | "policy"
 > &
   TestDaemonProcessCoordinatorPolicyOptions & {
     readonly dependencies: ProgramDependencies;
@@ -34,6 +36,8 @@ export type TestDaemonProcessCoordinatorOptions = Omit<
     readonly processToken: string;
     readonly symnavVersion: string;
     readonly transport: DaemonRequestServer;
+    readonly clock?: DaemonClock;
+    readonly now?: () => number;
   };
 
 export class TestDaemonProcessCoordinator extends RuntimeDaemonProcessCoordinator {
@@ -116,6 +120,12 @@ export class TestDaemonProcessCoordinator extends RuntimeDaemonProcessCoordinato
       productVersion: options.symnavVersion,
       server: options.transport,
       workspaceExists: (workspaceRoot) => options.dependencies.fs.exists(workspaceRoot),
+      clock:
+        options.clock ??
+        new NodeDaemonClock({
+          wallNowMs: options.now ?? Date.now,
+          monotonicNowMs: () => performance.now(),
+        }),
       policy,
     });
   }

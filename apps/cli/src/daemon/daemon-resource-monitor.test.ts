@@ -283,7 +283,7 @@ describe("DaemonResourceSupervisor", () => {
     const supervisor = new DaemonResourceSupervisor({
       policy,
       generation,
-      now: () => now,
+      clock: { wallNowMs: () => now },
       residentMemoryBytes: () => policy.hardProcessRssBytes + 1,
       spoolBytes: () => 0,
       scheduleAtTurnBoundary: runImmediately,
@@ -312,7 +312,7 @@ describe("DaemonResourceSupervisor", () => {
     const supervisor = new DaemonResourceSupervisor({
       policy,
       generation,
-      now: () => now,
+      clock: { wallNowMs: () => now },
       residentMemoryBytes: () => policy.hardProcessRssBytes + 1,
       spoolBytes: () => 0,
       scheduleAtTurnBoundary: runImmediately,

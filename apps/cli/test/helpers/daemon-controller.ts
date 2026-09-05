@@ -39,7 +39,7 @@ export class TestDaemonController extends RuntimeDaemonController {
       }).values;
     super(registry, transport, stateDirectory, {
       policy,
-      ...(options.now === undefined ? {} : { now: options.now }),
+      ...(options.now === undefined ? {} : { clock: { wallNowMs: options.now } }),
       ...(options.processTerminator === undefined
         ? {}
         : { processTerminator: options.processTerminator }),

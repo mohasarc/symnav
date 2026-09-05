@@ -201,9 +201,9 @@ class AcceptedExecutionHarness {
   private monotonicNow = 1_000;
 
   constructor(private readonly options: AcceptedExecutionHarnessOptions = {}) {
-    const ledger = new AcceptedRequestLedger(() => this.wallNowMs());
+    const ledger = new AcceptedRequestLedger({ wallNowMs: () => this.wallNowMs() });
     this.ledger = ledger;
-    const queue = new WorkspaceRequestQueue(() => this.monotonicNow++);
+    const queue = new WorkspaceRequestQueue({ monotonicNowMs: () => this.monotonicNow++ });
     const completion: DaemonCompletionWriter = {
       append: async (record) => {
         this.events.push(`output-appended:${record.sequence}`);

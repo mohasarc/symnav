@@ -10,6 +10,7 @@ import {
 import { randomUUID } from "node:crypto";
 import { dirname, join } from "node:path";
 import type { DaemonPolicyValues } from "@symnav/daemon";
+import { NodeDaemonClock, type DaemonClock } from "./daemon-clock.js";
 import {
   DAEMON_PROTOCOL_VERSION,
   DAEMON_RECORD_SCHEMA_VERSION,
@@ -127,6 +128,7 @@ export class DaemonRegistry {
   constructor(
     private readonly registryDirectory: string,
     startupPolicy: DaemonPolicyValues["startup"],
+    private readonly clock: Pick<DaemonClock, "wallNowMs"> = new NodeDaemonClock(),
     platform: NodeJS.Platform = process.platform,
     renamePath: typeof renameSync = renameSync,
   ) {
@@ -243,7 +245,7 @@ export class DaemonRegistry {
         ownerPid: record.pid > 0 ? record.pid : owner.ownerPid,
         processToken: record.processToken,
         ownerKind: record.pid > 0 ? "daemon" : "launcher",
-        heartbeatAt: Date.now(),
+        heartbeatAt: this.clock.wallNowMs(),
         revision: randomUUID(),
       };
       const ownerPath = identity.startupOwnerPath(identity.lockPath);
@@ -288,7 +290,7 @@ export class DaemonRegistry {
     candidate: Omit<DaemonStartupOwner, "acquiredAt" | "revision"> | string,
   ): StartupLease | undefined {
     mkdirSync(identity.identityDirectory, { recursive: true, mode: 0o700 });
-    const acquiredAt = Date.now();
+    const acquiredAt = this.clock.wallNowMs();
     const suppliedOwner =
       typeof candidate === "string"
         ? {
@@ -348,7 +350,7 @@ export class DaemonRegistry {
       ...owner,
       ownerPid: pid,
       ownerKind: "daemon",
-      heartbeatAt: Date.now(),
+      heartbeatAt: this.clock.wallNowMs(),
       revision: randomUUID(),
     });
     return daemonOwner === undefined
@@ -375,7 +377,7 @@ export class DaemonRegistry {
         ...launcherOwner,
         ownerPid: pid,
         ownerKind: "daemon",
-        heartbeatAt: Date.now(),
+        heartbeatAt: this.clock.wallNowMs(),
         revision: randomUUID(),
       }) !== undefined
     );
@@ -387,7 +389,7 @@ export class DaemonRegistry {
   ): StartupOwner | undefined {
     return this.replaceStartupOwnerIfOwner(identity, owner, {
       ...owner,
-      heartbeatAt: Date.now(),
+      heartbeatAt: this.clock.wallNowMs(),
       revision: randomUUID(),
     });
   }
@@ -404,7 +406,7 @@ export class DaemonRegistry {
   startupOwnerIsWithinGrace(
     owner: StartupOwner,
     graceMs = this.startupPolicy.coordinationGraceMs,
-    now = Date.now(),
+    now = this.clock.wallNowMs(),
   ): boolean {
     return now - owner.heartbeatAt <= graceMs;
   }
@@ -579,7 +581,8 @@ export class DaemonRegistry {
     if (
       observedOwner !== undefined &&
       DaemonRegistry.processIsAlive(observedOwner.ownerPid) &&
-      Date.now() - observedOwner.acquiredAt <= this.startupPolicy.coordinationGraceMs
+      this.clock.wallNowMs() - observedOwner.acquiredAt <=
+        this.startupPolicy.coordinationGraceMs
     ) {
       return undefined;
     }
@@ -594,7 +597,7 @@ export class DaemonRegistry {
     const token = randomUUID();
     const owner: StartupMutationOwner = {
       ownerPid: process.pid,
-      acquiredAt: Date.now(),
+      acquiredAt: this.clock.wallNowMs(),
       token,
     };
     const claimPath = identity.startupMutationClaimPath(token);

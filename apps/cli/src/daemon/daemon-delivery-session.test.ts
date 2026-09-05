@@ -482,7 +482,7 @@ class DeliverySessionHarness {
       diagnostics: { ...currentPolicy.diagnostics, ...overrides.diagnostics },
       shutdown: { ...currentPolicy.shutdown, ...overrides.shutdown },
     };
-    const journal = new AcceptedRequestLedger(() => 1);
+    const journal = new AcceptedRequestLedger({ wallNowMs: () => 1 });
     const events: DaemonDiagnosticEvent[] = [];
     const time: { monotonicNow: number; remaining: number[] } = {
       monotonicNow: 0,

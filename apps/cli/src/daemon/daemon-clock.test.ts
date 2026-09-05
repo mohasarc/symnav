@@ -37,8 +37,7 @@ describe("daemon production clock ownership", () => {
   it("keeps raw time sources and telemetry clocks outside daemon mechanisms", () => {
     const violations = readdirSync(new URL(".", import.meta.url))
       .filter(
-        (file) =>
-          file.endsWith(".ts") && !file.endsWith(".test.ts") && file !== "daemon-clock.ts",
+        (file) => file.endsWith(".ts") && !file.endsWith(".test.ts") && file !== "daemon-clock.ts",
       )
       .flatMap((file) => {
         const source = readFileSync(new URL(file, import.meta.url), "utf8");

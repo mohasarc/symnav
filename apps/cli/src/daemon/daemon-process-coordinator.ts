@@ -23,7 +23,7 @@ import { DaemonCompletionSpoolStore, type CompletionSpoolStorage } from "./compl
 import { DAEMON_PROTOCOL_VERSION, DAEMON_RECORD_SCHEMA_VERSION } from "./daemon-protocol.js";
 import { DaemonLifetime } from "./daemon-lifetime.js";
 import { DaemonLogger } from "./daemon-logger.js";
-import { NodeDaemonClock, type DaemonClock } from "./daemon-clock.js";
+import type { DaemonClock } from "./daemon-clock.js";
 import { DaemonOperationObserver } from "./daemon-operation-observer.js";
 import { DaemonDeliverySession } from "./daemon-delivery-session.js";
 import {
@@ -48,8 +48,7 @@ export interface DaemonProcessCoordinatorOptions {
   readonly server: DaemonRequestServer;
   readonly navigationWorker?: DaemonNavigationWorker;
   readonly navigationWorkerFactory?: (generation: number) => DaemonNavigationWorker;
-  readonly now?: () => number;
-  readonly clock?: DaemonClock;
+  readonly clock: DaemonClock;
   readonly exit?: (code: number) => void;
   readonly residentMemoryBytes?: () => number;
   readonly completionSpoolStorage?: CompletionSpoolStorage;
@@ -57,7 +56,6 @@ export interface DaemonProcessCoordinatorOptions {
 }
 
 export class DaemonProcessCoordinator {
-  private readonly now: () => number;
   private readonly clock: DaemonClock;
   private readonly exit: (code: number) => void;
   private readonly workerManager: DaemonWorkerGenerationManager;
@@ -87,11 +85,10 @@ export class DaemonProcessCoordinator {
     this.forceEscalated = new Promise((resolve) => {
       this.resolveForceEscalated = resolve;
     });
-    this.now = options.now ?? Date.now;
-    this.clock = options.clock ?? new NodeDaemonClock();
+    this.clock = options.clock;
     this.startedMonotonicAt = this.clock.monotonicNowMs();
-    const requestQueue = new WorkspaceRequestQueue(() => this.clock.monotonicNowMs());
-    const acceptedRequests = new AcceptedRequestLedger(this.now);
+    const requestQueue = new WorkspaceRequestQueue(this.clock);
+    const acceptedRequests = new AcceptedRequestLedger(this.clock);
     const completionSpools = new DaemonCompletionSpoolStore({
       directory: options.identity.spoolDirectory,
       workspaceKey: options.identity.workspaceKey,
@@ -151,6 +148,7 @@ export class DaemonProcessCoordinator {
     this.resourceSupervisor = new DaemonResourceSupervisor({
       policy: resourcePolicy,
       generation: this.workerManager.snapshot.generation,
+      clock: this.clock,
       ...(options.residentMemoryBytes === undefined
         ? {}
         : { residentMemoryBytes: options.residentMemoryBytes }),
@@ -208,7 +206,7 @@ export class DaemonProcessCoordinator {
       lifetime: this.lifetime,
       diagnostics: this.logger,
       clock: {
-        wallNowMs: this.now,
+        wallNowMs: () => this.clock.wallNowMs(),
         monotonicNowMs: () => this.clock.monotonicNowMs(),
       },
     });
@@ -256,7 +254,7 @@ export class DaemonProcessCoordinator {
         pid: process.pid,
         state: "ready",
         startedAt: startingRecord.startedAt,
-        readyAt: this.now(),
+        readyAt: this.clock.wallNowMs(),
         fileCount: response.fileCount,
         memoryCapBytes: this.resourcePolicy.hardProcessRssBytes,
       };
@@ -287,8 +285,8 @@ export class DaemonProcessCoordinator {
     readonly lease: DaemonStartupLease;
     readonly record: DaemonRecord;
   }> {
-    const deadline = this.now() + this.policy.values.startup.coordinationGraceMs;
-    while (this.now() <= deadline) {
+    const deadline = this.clock.wallNowMs() + this.policy.values.startup.coordinationGraceMs;
+    while (this.clock.wallNowMs() <= deadline) {
       const record = this.options.registry.readInstance(
         this.options.identity,
         this.options.coordinates.instanceId,

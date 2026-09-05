@@ -9,6 +9,7 @@ import {
 } from "@symnav/daemon";
 import type { DaemonWorkspaceIdentity } from "./daemon-workspace-identity.js";
 import type { DaemonIdentityCoordinates } from "./daemon-protocol.js";
+import { NodeDaemonClock, type DaemonClock } from "./daemon-clock.js";
 
 interface DaemonProcessConfiguration extends DaemonIdentityCoordinates {
   readonly stateDirectory: string;
@@ -64,7 +65,10 @@ export class NodeDaemonProcessTerminator implements DaemonProcessTerminator {
   private readonly gracefulTimeoutMs: number;
   private readonly pollIntervalMs: number;
 
-  constructor(policy: DaemonPolicyValues["shutdown"]) {
+  constructor(
+    policy: DaemonPolicyValues["shutdown"],
+    private readonly clock: Pick<DaemonClock, "wallNowMs"> = new NodeDaemonClock(),
+  ) {
     this.gracefulTimeoutMs = policy.processSignalExitTimeoutMs;
     this.pollIntervalMs = policy.processExitPollIntervalMs;
   }
@@ -98,8 +102,8 @@ export class NodeDaemonProcessTerminator implements DaemonProcessTerminator {
   }
 
   private async waitForExit(pid: number): Promise<boolean> {
-    const deadline = Date.now() + this.gracefulTimeoutMs;
-    while (Date.now() <= deadline) {
+    const deadline = this.clock.wallNowMs() + this.gracefulTimeoutMs;
+    while (this.clock.wallNowMs() <= deadline) {
       if (!this.isAlive(pid)) return true;
       await new Promise((resolve) => setTimeout(resolve, this.pollIntervalMs));
     }

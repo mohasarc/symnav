@@ -16,8 +16,8 @@ class DaemonEntry {
       configuration.stateDirectory,
     );
     const policy = DaemonPolicy.fromSerialized(configuration.policy);
-    const registry = new DaemonRegistry(identity.registryDirectory, policy.values.startup);
     const clock = new NodeDaemonClock();
+    const registry = new DaemonRegistry(identity.registryDirectory, policy.values.startup, clock);
     const logger = new DaemonLogger(identity, configuration.instanceId, clock, {
       policy: policy.values.diagnostics,
     });

@@ -15,7 +15,7 @@ const request: DaemonExecutorRequest = {
 
 describe("AcceptedRequestLedger", () => {
   it("classifies request compatibility without accepting work", () => {
-    const ledger = new AcceptedRequestLedger(() => 10);
+    const ledger = new AcceptedRequestLedger({ wallNowMs: () => 10 });
 
     expect(ledger.compatibilityFor("request", "overview", request)).toBe("unseen");
     expect(ledger.size).toBe(0);
@@ -36,7 +36,7 @@ describe("AcceptedRequestLedger", () => {
   });
 
   it("atomically inserts one queued owner and attaches an identical duplicate", () => {
-    const ledger = new AcceptedRequestLedger(() => 10);
+    const ledger = new AcceptedRequestLedger({ wallNowMs: () => 10 });
 
     const accepted = ledger.accept("request", "overview", request);
     const duplicate = ledger.accept("request", "overview", {
@@ -57,7 +57,7 @@ describe("AcceptedRequestLedger", () => {
   });
 
   it("reports request identifier corruption for a different payload", () => {
-    const ledger = new AcceptedRequestLedger(() => 10);
+    const ledger = new AcceptedRequestLedger({ wallNowMs: () => 10 });
     ledger.accept("request", "overview", request);
 
     expect(() =>
@@ -68,7 +68,7 @@ describe("AcceptedRequestLedger", () => {
   });
 
   it("transitions queued through running to completed", () => {
-    const ledger = new AcceptedRequestLedger(() => 10);
+    const ledger = new AcceptedRequestLedger({ wallNowMs: () => 10 });
     ledger.accept("request", "overview", request);
 
     expect(ledger.markRunning("request", 20).state).toEqual({
@@ -94,7 +94,7 @@ describe("AcceptedRequestLedger", () => {
     "stopping",
     "internal",
   ])("transitions a request to the closed failure %s", (code) => {
-    const queued = new AcceptedRequestLedger(() => 10);
+    const queued = new AcceptedRequestLedger({ wallNowMs: () => 10 });
     queued.accept("queued", "overview", request);
     expect(queued.fail("queued", code, 20).state).toEqual({
       state: "failed",
@@ -104,7 +104,7 @@ describe("AcceptedRequestLedger", () => {
   });
 
   it("rejects failures outside the closed vocabulary", () => {
-    const ledger = new AcceptedRequestLedger(() => 10);
+    const ledger = new AcceptedRequestLedger({ wallNowMs: () => 10 });
     ledger.accept("request", "overview", request);
 
     expect(() => ledger.fail("request", "unknown" as never, 20)).toThrow(
@@ -113,7 +113,7 @@ describe("AcceptedRequestLedger", () => {
   });
 
   it("publishes the current entry and each transition to subscribers", () => {
-    const ledger = new AcceptedRequestLedger(() => 10);
+    const ledger = new AcceptedRequestLedger({ wallNowMs: () => 10 });
     ledger.accept("request", "overview", request);
     const subscriber = vi.fn<(entry: AcceptedRequestEntry) => void>();
 
@@ -130,7 +130,7 @@ describe("AcceptedRequestLedger", () => {
   });
 
   it("reports every status and unknown identifiers", () => {
-    const ledger = new AcceptedRequestLedger(() => 10);
+    const ledger = new AcceptedRequestLedger({ wallNowMs: () => 10 });
     expect(ledger.status("missing")).toEqual({ state: "unknown" });
     ledger.accept("request", "overview", request);
     expect(ledger.status("request")).toEqual({ state: "queued", queuePosition: 0 });
@@ -144,7 +144,7 @@ describe("AcceptedRequestLedger", () => {
   });
 
   it("retains acknowledged terminal tombstones for the daemon lifetime", () => {
-    const ledger = new AcceptedRequestLedger(() => 10);
+    const ledger = new AcceptedRequestLedger({ wallNowMs: () => 10 });
     ledger.accept("request", "overview", request);
     ledger.complete("request", "result", 20);
 
@@ -157,7 +157,7 @@ describe("AcceptedRequestLedger", () => {
   });
 
   it("rejects missing, repeated, and regressive transitions", () => {
-    const ledger = new AcceptedRequestLedger(() => 10);
+    const ledger = new AcceptedRequestLedger({ wallNowMs: () => 10 });
     expect(() => ledger.markRunning("missing", 20)).toThrow(/not accepted/);
     ledger.accept("request", "overview", request);
     ledger.complete("request", "result", 20);

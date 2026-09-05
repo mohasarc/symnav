@@ -41,7 +41,7 @@ export class TestDaemonStartupCoordinator extends RuntimeDaemonStartupCoordinato
       }).values;
     super(registry, launcher, transport, {
       policy,
-      ...(options.now === undefined ? {} : { now: options.now }),
+      ...(options.now === undefined ? {} : { clock: { wallNowMs: options.now } }),
       ...(options.instanceId === undefined ? {} : { instanceId: options.instanceId }),
       ...(options.processTerminator === undefined
         ? {}

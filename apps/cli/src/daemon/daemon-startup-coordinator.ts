@@ -14,6 +14,7 @@ import type { DaemonRegistry, StartupOwner } from "./daemon-registry.js";
 import { DaemonRecordObserver } from "./daemon-record-observer.js";
 import type { DaemonWorkspaceIdentity } from "./daemon-workspace-identity.js";
 import type { DaemonExecutionRequester, DaemonLifecycleRequestSender } from "./daemon-transport.js";
+import { NodeDaemonClock, type DaemonClock } from "./daemon-clock.js";
 
 export type DaemonWarmupTriggerResult =
   | { readonly status: "launched"; readonly instanceId: string; readonly pid: number }
@@ -22,7 +23,7 @@ export type DaemonWarmupTriggerResult =
 
 interface DaemonStartupCoordinatorOptions {
   readonly policy: Pick<DaemonPolicyValues, "startup" | "shutdown">;
-  readonly now?: () => number;
+  readonly clock?: Pick<DaemonClock, "wallNowMs">;
   readonly instanceId?: () => string;
   readonly processTerminator?: DaemonProcessTerminator;
 }
@@ -46,7 +47,7 @@ export class DaemonStartupCoordinator {
   private readonly childFailureRetryLimit: number;
   private readonly terminationTimeoutMs: number;
   private readonly pollIntervalMs: number;
-  private readonly now: () => number;
+  private readonly clock: Pick<DaemonClock, "wallNowMs">;
   private readonly nextInstanceId: () => string;
   private readonly processTerminator: DaemonProcessTerminator;
   private readonly observer: DaemonRecordObserver;
@@ -66,11 +67,11 @@ export class DaemonStartupCoordinator {
     this.childFailureRetryLimit = policy.startup.childFailureRetryLimit;
     this.terminationTimeoutMs = policy.startup.previousInstanceTerminationTimeoutMs;
     this.pollIntervalMs = policy.startup.observationPollIntervalMs;
-    this.now = options.now ?? Date.now;
+    this.clock = options.clock ?? new NodeDaemonClock();
     this.nextInstanceId = options.instanceId ?? randomUUID;
     this.processTerminator =
-      options.processTerminator ?? new NodeDaemonProcessTerminator(policy.shutdown);
-    this.observer = new DaemonRecordObserver(this.transport, this.processTerminator, this.now);
+      options.processTerminator ?? new NodeDaemonProcessTerminator(policy.shutdown, this.clock);
+    this.observer = new DaemonRecordObserver(this.transport, this.processTerminator);
   }
 
   async ensureRunning(identity: DaemonWorkspaceIdentity): Promise<DaemonStartResult> {
@@ -113,7 +114,7 @@ export class DaemonStartupCoordinator {
       processToken,
       ownerPid: process.pid,
       ownerKind: "launcher",
-      heartbeatAt: this.now(),
+      heartbeatAt: this.clock.wallNowMs(),
     });
     if (lease === undefined) return this.observeElectedWarmup(identity);
     try {
@@ -151,7 +152,7 @@ export class DaemonStartupCoordinator {
                 status: "ready",
                 workspaceRoot: record.workspaceRoot,
                 fileCount: record.fileCount ?? 0,
-                loadDurationMs: (record.readyAt ?? this.now()) - record.startedAt,
+                loadDurationMs: (record.readyAt ?? this.clock.wallNowMs()) - record.startedAt,
               }
             : this.alreadyRunning(record);
         }
@@ -195,12 +196,12 @@ export class DaemonStartupCoordinator {
         if (missingOwner?.instanceId !== storedRecord.instanceId) {
           missingOwner = {
             instanceId: storedRecord.instanceId,
-            firstObservedAt: this.now(),
+            firstObservedAt: this.clock.wallNowMs(),
           };
           await this.pause();
           continue;
         }
-        if (this.now() - missingOwner.firstObservedAt <= this.coordinationGraceMs) {
+        if (this.clock.wallNowMs() - missingOwner.firstObservedAt <= this.coordinationGraceMs) {
           await this.pause();
           continue;
         }
@@ -224,7 +225,7 @@ export class DaemonStartupCoordinator {
     processToken: string,
     lease: NonNullable<ReturnType<DaemonRegistry["acquireStartup"]>>,
   ): Promise<DaemonWarmupTriggerResult> {
-    const startedAt = this.now();
+    const startedAt = this.clock.wallNowMs();
     const startingRecord: DaemonRecord = {
       schemaVersion: DAEMON_RECORD_SCHEMA_VERSION,
       protocolVersion: DAEMON_PROTOCOL_VERSION,
@@ -442,8 +443,8 @@ export class DaemonStartupCoordinator {
   }
 
   private async waitForProcessExitAndEndpointRelease(record: DaemonRecord): Promise<void> {
-    const waitStartedAt = this.now();
-    while (this.now() - waitStartedAt <= this.terminationTimeoutMs) {
+    const waitStartedAt = this.clock.wallNowMs();
+    while (this.clock.wallNowMs() - waitStartedAt <= this.terminationTimeoutMs) {
       const endpointReleased = !(await this.identifiesRecordedProcess(record));
       const processExited = !this.processTerminator.isAlive(record.pid);
       if (endpointReleased && processExited) return;
@@ -497,7 +498,7 @@ export class DaemonStartupCoordinator {
       status: "already-running",
       workspaceRoot: record.workspaceRoot,
       pid: record.pid,
-      uptimeMs: Math.max(0, this.now() - record.startedAt),
+      uptimeMs: Math.max(0, this.clock.wallNowMs() - record.startedAt),
     };
   }
 

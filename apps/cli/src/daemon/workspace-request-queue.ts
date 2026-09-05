@@ -1,4 +1,5 @@
 import type { DaemonCommandName, WorkspaceRequestQueueState } from "@symnav/daemon";
+import { NodeDaemonClock, type DaemonClock } from "./daemon-clock.js";
 
 export interface WorkspaceQueuedRequest {
   readonly requestId: string;
@@ -32,7 +33,9 @@ export class WorkspaceRequestQueue {
   private running = false;
   private currentState: WorkspaceRequestQueueState = "accepting";
 
-  constructor(private readonly now: () => number = Date.now) {}
+  constructor(
+    private readonly clock: Pick<DaemonClock, "monotonicNowMs"> = new NodeDaemonClock(),
+  ) {}
 
   get state(): WorkspaceRequestQueueState {
     return this.currentState;
@@ -68,7 +71,10 @@ export class WorkspaceRequestQueue {
           reject(new Error("Workspace request queue admission order changed"));
           return;
         }
-        this.activeRequest = Object.freeze({ ...admitted, startedAt: this.now() });
+        this.activeRequest = Object.freeze({
+          ...admitted,
+          startedAt: this.clock.monotonicNowMs(),
+        });
         try {
           resolve(await execute());
         } catch (error) {

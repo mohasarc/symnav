@@ -1,10 +1,34 @@
-import type {
-  DaemonExecutor,
-  DaemonExecutorFactoryOptions,
-  DaemonExecutorOutput,
-  DaemonExecutorRequest,
-  DaemonOutputRecord,
-} from "../../src/daemon-executor.js";
+interface DaemonExecutorFactoryOptions {
+  readonly stateDirectory: string;
+  readonly productVersion: string;
+  readonly sampleResources: () => void;
+}
+
+interface DaemonExecutorRequest {
+  readonly argv: readonly string[];
+  readonly cwd: string;
+  readonly telemetryEnabled: boolean;
+  readonly executionMode: "cold" | "warm" | "fallback";
+}
+
+interface DaemonOutputRecord {
+  readonly stream: "stdout" | "stderr";
+  readonly bytes: Uint8Array;
+}
+
+interface DaemonExecutorOutput {
+  records(): AsyncIterable<DaemonOutputRecord>;
+  dispose(): Promise<void>;
+}
+
+interface DaemonExecutor {
+  initialize(workspaceRoot: string): Promise<{ readonly fileCount: number }>;
+  execute(request: DaemonExecutorRequest): Promise<{
+    readonly exitCode: number;
+    readonly output: DaemonExecutorOutput;
+  }>;
+  releaseTransientResources(): Promise<void>;
+}
 
 class FixtureOutput implements DaemonExecutorOutput {
   constructor(private readonly outputRecords: readonly DaemonOutputRecord[]) {}

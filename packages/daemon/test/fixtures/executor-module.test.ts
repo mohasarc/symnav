@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import type { DaemonExecutorFactory } from "../../src/daemon-executor.js";
 import * as executorModule from "./executor-module.js";
@@ -6,6 +8,9 @@ describe("generic daemon executor fixture", () => {
   it("exports only the public executor factory", () => {
     expect(Object.keys(executorModule)).toEqual(["createDaemonExecutor"]);
     expect(executorModule.createDaemonExecutor satisfies DaemonExecutorFactory).toBeDefined();
+    expect(
+      readFileSync(fileURLToPath(new URL("./executor-module.ts", import.meta.url)), "utf8"),
+    ).not.toMatch(/\b(?:import|export)\s+(?:type\s+)?[^;]*\sfrom\s/);
   });
 
   it("initializes, executes ordered output, and releases deterministically", async () => {
@@ -40,28 +45,31 @@ describe("generic daemon executor fixture", () => {
     ["initialize", "fail:initialize", "test", "fixture initialize failure"],
     ["execute", "files:1", "test", "fixture execute failure"],
     ["release", "files:1", "fail:release", "fixture release failure"],
-  ] as const)("supports deterministic %s failure", async (operation, workspaceRoot, version, error) => {
-    const executor = executorModule.createDaemonExecutor({
-      stateDirectory: "/state",
-      productVersion: version,
-      sampleResources: () => undefined,
-    });
-    if (operation === "initialize") {
-      await expect(executor.initialize(workspaceRoot)).rejects.toThrow(error);
-      return;
-    }
-    await executor.initialize(workspaceRoot);
-    if (operation === "execute") {
-      await expect(
-        executor.execute({
-          argv: ["fail:execute"],
-          cwd: "/workspace",
-          telemetryEnabled: false,
-          executionMode: "warm",
-        }),
-      ).rejects.toThrow(error);
-      return;
-    }
-    await expect(executor.releaseTransientResources()).rejects.toThrow(error);
-  });
+  ] as const)(
+    "supports deterministic %s failure",
+    async (operation, workspaceRoot, version, error) => {
+      const executor = executorModule.createDaemonExecutor({
+        stateDirectory: "/state",
+        productVersion: version,
+        sampleResources: () => undefined,
+      });
+      if (operation === "initialize") {
+        await expect(executor.initialize(workspaceRoot)).rejects.toThrow(error);
+        return;
+      }
+      await executor.initialize(workspaceRoot);
+      if (operation === "execute") {
+        await expect(
+          executor.execute({
+            argv: ["fail:execute"],
+            cwd: "/workspace",
+            telemetryEnabled: false,
+            executionMode: "warm",
+          }),
+        ).rejects.toThrow(error);
+        return;
+      }
+      await expect(executor.releaseTransientResources()).rejects.toThrow(error);
+    },
+  );
 });

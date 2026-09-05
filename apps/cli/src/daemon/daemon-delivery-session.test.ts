@@ -19,6 +19,7 @@ describe("DaemonDeliverySession", () => {
   const directories: string[] = [];
 
   afterEach(async () => {
+    vi.useRealTimers();
     await Promise.all(
       directories.splice(0).map((directory) => rm(directory, { recursive: true, force: true })),
     );
@@ -353,6 +354,54 @@ describe("DaemonDeliverySession", () => {
       ).toHaveLength(1);
     },
   );
+
+  it("bounds only disconnected traces and completes retained traces during shutdown", async () => {
+    vi.useFakeTimers();
+    const harness = await DeliverySessionHarness.create(directories, {
+      diagnostics: {
+        disconnectedTraceRetentionMs: 10,
+        maximumDisconnectedTraces: 0,
+      },
+    });
+    const connectedSend = DeliverySend.create();
+    const firstDisconnectedSend = DeliverySend.create();
+    const secondDisconnectedSend = DeliverySend.create();
+
+    for (const [requestId, send] of [
+      ["connected", connectedSend],
+      ["first-disconnected", firstDisconnectedSend],
+      ["second-disconnected", secondDisconnectedSend],
+    ] as const) {
+      const entry = harness.journal.accept(requestId, "version", harness.executionRequest);
+      if (entry.state.state !== "queued") throw new Error("Expected queued request");
+      harness.session.beginAcceptedTrace(requestId, "version", entry.state.queuePosition, 1);
+      await harness.session.attach(
+        {
+          requestId,
+          acceptedAt: entry.state.acceptedAt,
+          queuePosition: entry.state.queuePosition,
+        },
+        send.send,
+      );
+    }
+    firstDisconnectedSend.close();
+    secondDisconnectedSend.close();
+
+    expect(harness.events.filter((event) => event.kind === "operation-trace-expired")).toEqual([
+      { kind: "operation-trace-expired", requestId: "first-disconnected" },
+    ]);
+    await vi.advanceTimersByTimeAsync(10);
+    expect(harness.events.filter((event) => event.kind === "operation-trace-expired")).toEqual([
+      { kind: "operation-trace-expired", requestId: "first-disconnected" },
+      { kind: "operation-trace-expired", requestId: "second-disconnected" },
+    ]);
+
+    harness.session.completeRetainedTraces();
+
+    expect(harness.events.filter((event) => event.kind === "delivery-terminal")).toEqual([
+      expect.objectContaining({ requestId: "connected", outcome: "disconnected" }),
+    ]);
+  });
 });
 
 class DeliverySessionHarness {
@@ -369,11 +418,19 @@ class DeliverySessionHarness {
     overrides: {
       readonly completionSpoolStorage?: CompletionSpoolStorage;
       readonly inlineRawBytes?: number;
+      readonly diagnostics?: {
+        readonly disconnectedTraceRetentionMs?: number;
+        readonly maximumDisconnectedTraces?: number;
+      };
     } = {},
   ): Promise<DeliverySessionHarness> {
     const directory = await mkdtemp(join(tmpdir(), "symnav-delivery-session-"));
     directories.push(directory);
-    const policy = DaemonPolicy.currentSystem().values;
+    const currentPolicy = DaemonPolicy.currentSystem().values;
+    const policy = {
+      ...currentPolicy,
+      diagnostics: { ...currentPolicy.diagnostics, ...overrides.diagnostics },
+    };
     const journal = new AcceptedRequestLedger(() => 1);
     const events: DaemonDiagnosticEvent[] = [];
     const time = { monotonicNow: 0, remaining: [] as number[] };

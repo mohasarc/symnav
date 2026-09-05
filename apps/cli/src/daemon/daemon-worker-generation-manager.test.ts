@@ -116,7 +116,7 @@ describe("DaemonWorkerGenerationManager", () => {
     expect(activeResourceInterruption).toHaveBeenCalledOnce();
     expect(activeResourceInterruption).toHaveBeenCalledWith("hard-pressure");
     expect(operations).toEqual(["start:2", "terminate:1"]);
-    expect(manager.snapshot).toEqual({ generation: 2, ready: false });
+    expect(manager.snapshot).toEqual({ generation: 2, ready: false, fileCount: 7 });
 
     replacement.completeReady(9);
 

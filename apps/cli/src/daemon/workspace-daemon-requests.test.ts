@@ -99,6 +99,7 @@ describe("WorkspaceDaemon requests", () => {
     expect(startingStatus).toMatchObject({
       kind: "pong",
       state: "starting",
+      fileCount: 0,
       activity: {
         lifecycle: "starting",
         pid: process.pid,
@@ -112,6 +113,7 @@ describe("WorkspaceDaemon requests", () => {
     if (startingActivity === undefined) {
       throw new Error("Expected daemon activity snapshot");
     }
+    expect(startingActivity).not.toHaveProperty("fileCount");
     expect(() => Object.assign(startingActivity, { queued: 9 })).toThrow();
     expect(harness.registry.read(harness.identity)?.state).toBe("starting");
 
@@ -1318,14 +1320,19 @@ describe("WorkspaceDaemon requests", () => {
     initial.fail({ generation: 1, cause: "out-of-memory", errorName: "WorkerOom" });
     await replacement.initializationStarted;
 
-    await expect(harness.ping()).resolves.toMatchObject({
+    const recovering = await harness.ping();
+    expect(recovering).toMatchObject({
       kind: "pong",
+      fileCount: 1,
       activity: {
         lifecycle: "recovering",
         recoveryDetail: "worker-replacement",
         workerGeneration: 2,
       },
     });
+    expect(recovering.kind === "pong" ? recovering.activity : undefined).not.toHaveProperty(
+      "fileCount",
+    );
 
     replacement.completeInitialization();
     await waitUntil(async () => {

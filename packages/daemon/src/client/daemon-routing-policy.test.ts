@@ -27,7 +27,7 @@ describe("DaemonRoutingPolicy", () => {
     ],
     [
       "starting record",
-      { record: record({ state: "starting", readyAt: undefined, fileCount: undefined }) },
+      { record: record({ state: "starting" }) },
       { kind: "cold", reason: "starting" },
       1,
       0,
@@ -136,7 +136,7 @@ describe("DaemonRoutingPolicy", () => {
 });
 
 interface RoutingHarnessOptions {
-  readonly record?: DaemonRecord;
+  readonly record?: DaemonRecord | undefined;
   readonly readFailure?: Error;
   readonly observationFailure?: Error;
   readonly observationKind?: DaemonObservation["kind"];

@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import {
   DaemonActivityProjector,
@@ -223,6 +225,24 @@ describe("DaemonActivityProjector", () => {
     expect(Object.isFrozen(projection.activity.current)).toBe(true);
     expect(() => Object.assign(projection.activity, { queued: 9 })).toThrow();
     expect(() => Object.assign(projection.activity.current ?? {}, { elapsedMs: 9 })).toThrow();
+  });
+
+  it("keeps daemon snapshot formatting outside WorkspaceDaemon", () => {
+    const source = readFileSync(
+      fileURLToPath(new URL("./workspace-daemon.ts", import.meta.url)),
+      "utf8",
+    );
+
+    expect(source).toContain("DaemonActivityProjector.project");
+    for (const processOwnedFormatting of [
+      /private activitySnapshot/,
+      /activity\.lifecycle ===/,
+      /recoveryDetail:/,
+      /startupElapsedMs:/,
+      /currentCommandElapsedMs:/,
+    ]) {
+      expect(source).not.toMatch(processOwnedFormatting);
+    }
   });
 });
 

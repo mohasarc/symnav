@@ -9,13 +9,14 @@ import type {
 import { DaemonPolicy } from "../daemon-policy.js";
 import { CommandOutputSnapshot } from "../../test/helpers/executor-output.js";
 import { DaemonStartupCoordinator } from "../registry/startup-coordinator.js";
-import { DaemonRecordObserver } from "../registry/record-observer.js";
+import { DaemonRecordObserver, type DaemonObservation } from "../registry/record-observer.js";
 import { DaemonRegistry } from "../registry/registry.js";
 import { LocalDaemonTransport } from "../transport/local-transport.js";
 import type { DaemonOutputCapture } from "../transport/client-result-capture.js";
 import {
   DAEMON_PROTOCOL_VERSION,
   DAEMON_RECORD_SCHEMA_VERSION,
+  type DaemonPong,
   type DaemonRecord,
 } from "../transport/protocol.js";
 import { DaemonTransportError } from "../transport/transport-error.js";
@@ -29,35 +30,77 @@ const success: DaemonExecutorExecutionResult = {
 describe("DaemonClient execution", () => {
   afterEach(() => vi.restoreAllMocks());
 
-  it("executes a disabled request cold without touching registry or startup", async () => {
-    const harness = new ClientHarness({ daemonEnabled: false });
-
-    await expect(harness.client.execute(harness.request())).resolves.toEqual({
-      mode: "cold",
-      result: success,
-    });
-
-    expect(harness.registryRead).not.toHaveBeenCalled();
-    expect(harness.trigger).not.toHaveBeenCalled();
-    expect(harness.executorFactory).toHaveBeenCalledOnce();
-    expect(harness.localRequests).toEqual([
-      expect.objectContaining({ executionMode: "cold", telemetryEnabled: true }),
-    ]);
-  });
-
   it.each([
-    ["absent", { record: undefined }, "cold", "cold", 1],
-    ["starting", { record: daemonRecord({ state: "starting" }) }, "cold", "cold", 0],
+    ["disabled", { daemonEnabled: false }, "cold", "cold", 1, 0, 0, 0, 0, 0],
+    ["absent", { record: undefined }, "cold", "cold", 1, 0, 1, 1, 0, 0],
     [
-      "incompatible",
+      "registry recovery",
+      { readFailure: new Error("registry unavailable") },
+      "cold",
+      "cold",
+      1,
+      0,
+      0,
+      1,
+      0,
+      0,
+    ],
+    [
+      "starting record",
+      { record: daemonRecord({ state: "starting" }) },
+      "cold",
+      "cold",
+      1,
+      0,
+      0,
+      1,
+      0,
+      0,
+    ],
+    ["ready idle", {}, "warm", undefined, 0, 1, 0, 1, 1, 0],
+    ["ready busy", { pongState: "busy" }, "warm", undefined, 0, 1, 0, 1, 1, 0],
+    ["responsive starting", { pongState: "starting" }, "cold", "cold", 1, 0, 0, 1, 1, 0],
+    ["unresponsive", { observationKind: "unresponsive" }, "cold", "cold", 1, 0, 0, 1, 1, 0],
+    ["exited", { observationKind: "exited" }, "fallback", "fallback", 1, 0, 1, 1, 1, 1],
+    [
+      "record version mismatch",
       { record: daemonRecord({ symnavVersion: "0.0.9" }) },
       "fallback",
       "fallback",
       1,
+      0,
+      1,
+      1,
+      0,
+      0,
+    ],
+    ["pong version mismatch", { pongVersion: "0.0.9" }, "fallback", "fallback", 1, 0, 1, 1, 1, 0],
+    [
+      "invalid observation",
+      { observationKind: "corrupt" },
+      "fallback",
+      "fallback",
+      1,
+      0,
+      1,
+      1,
+      1,
+      0,
     ],
   ] as const)(
-    "executes %s locally with one fresh executor and expected trigger",
-    async (_name, options, mode, executionMode, triggers) => {
+    "routes %s with exact execution and first-decision effects",
+    async (
+      _name,
+      options,
+      mode,
+      executionMode,
+      localExecutions,
+      warmExecutions,
+      triggers,
+      reads,
+      observations,
+      removals,
+    ) => {
       const harness = new ClientHarness(options);
 
       await expect(harness.client.execute(harness.request())).resolves.toEqual({
@@ -65,11 +108,18 @@ describe("DaemonClient execution", () => {
         result: success,
       });
 
-      expect(harness.executorFactory).toHaveBeenCalledOnce();
-      expect(harness.localRequests).toEqual([
-        expect.objectContaining({ executionMode, telemetryEnabled: true }),
-      ]);
+      expect(harness.executorFactory).toHaveBeenCalledTimes(localExecutions);
+      expect(harness.localRequests).toHaveLength(localExecutions);
+      if (executionMode !== undefined) {
+        expect(harness.localRequests).toEqual([
+          expect.objectContaining({ executionMode, telemetryEnabled: true }),
+        ]);
+      }
+      expect(harness.warmRequests).toHaveLength(warmExecutions);
       expect(harness.trigger).toHaveBeenCalledTimes(triggers);
+      expect(harness.registryRead).toHaveBeenCalledTimes(reads);
+      expect(harness.observe).toHaveBeenCalledTimes(observations);
+      expect(harness.removeIfProcess).toHaveBeenCalledTimes(removals);
     },
   );
 
@@ -213,7 +263,11 @@ describe("DaemonClient execution", () => {
 interface ClientHarnessOptions {
   readonly daemonEnabled?: boolean;
   readonly record?: DaemonRecord | undefined;
+  readonly readFailure?: Error;
   readonly neverResolveTrigger?: boolean;
+  readonly observationKind?: DaemonObservation["kind"];
+  readonly pongState?: DaemonPong["state"];
+  readonly pongVersion?: string;
   readonly warmFailure?: Error;
   readonly warmResult?: DaemonExecutorExecutionResult;
   readonly terminalFailure?: DaemonExecutionFailureCode;
@@ -224,32 +278,54 @@ class ClientHarness {
   readonly executors: DaemonExecutor[] = [];
   readonly localRequests: DaemonExecutorRequest[] = [];
   readonly warmRequests: unknown[] = [];
-  readonly registryRead: unknown;
-  readonly trigger: unknown;
+  readonly registryRead = vi.fn();
+  readonly observe = vi.fn();
+  readonly removeIfProcess = vi.fn(() => true);
+  readonly trigger = vi.fn();
   readonly client: DaemonClient;
 
   constructor(options: ClientHarnessOptions) {
-    this.registryRead = vi
-      .spyOn(DaemonRegistry.prototype, "read")
-      .mockReturnValue(Object.hasOwn(options, "record") ? options.record : daemonRecord());
-    vi.spyOn(DaemonRecordObserver.prototype, "observe").mockImplementation(async (observed) => ({
-      kind: "responsive",
-      record: observed,
-      pong: {
-        kind: "pong",
-        protocolVersion: observed.protocolVersion,
-        instanceId: observed.instanceId,
-        symnavVersion: observed.symnavVersion,
-        state: "ready",
-      },
-    }));
-    this.trigger = vi
-      .spyOn(DaemonStartupCoordinator.prototype, "trigger")
-      .mockImplementation(() =>
-        options.neverResolveTrigger
-          ? new Promise(() => {})
-          : Promise.resolve({ status: "launched", instanceId: "replacement", pid: 321 }),
-      );
+    this.registryRead.mockImplementation(() => {
+      if (options.readFailure !== undefined) throw options.readFailure;
+      return Object.hasOwn(options, "record") ? options.record : daemonRecord();
+    });
+    vi.spyOn(DaemonRegistry.prototype, "read").mockImplementation(this.registryRead);
+    this.observe.mockImplementation(async (observed: DaemonRecord): Promise<DaemonObservation> => {
+      const kind = options.observationKind ?? "responsive";
+      if (kind === "responsive") {
+        return {
+          kind,
+          record: observed,
+          pong: {
+            kind: "pong",
+            protocolVersion: observed.protocolVersion,
+            instanceId: observed.instanceId,
+            symnavVersion: options.pongVersion ?? observed.symnavVersion,
+            state: options.pongState ?? "ready",
+          },
+        };
+      }
+      if (kind === "starting" || kind === "exited") return { kind, record: observed };
+      if (kind === "unresponsive") return { kind, record: observed, failureCode: "timeout" };
+      return {
+        kind,
+        record: observed,
+        evidence: {
+          instanceId: observed.instanceId,
+          processToken: observed.processToken,
+          pid: observed.pid,
+          startedAt: observed.startedAt,
+        },
+      };
+    });
+    vi.spyOn(DaemonRecordObserver.prototype, "observe").mockImplementation(this.observe);
+    vi.spyOn(DaemonRegistry.prototype, "removeIfProcess").mockImplementation(this.removeIfProcess);
+    this.trigger.mockImplementation(() =>
+      options.neverResolveTrigger
+        ? new Promise(() => {})
+        : Promise.resolve({ status: "launched", instanceId: "replacement", pid: 321 }),
+    );
+    vi.spyOn(DaemonStartupCoordinator.prototype, "trigger").mockImplementation(this.trigger);
     vi.spyOn(LocalDaemonTransport.prototype, "execute").mockImplementation(
       async (_endpoint, request) => {
         this.warmRequests.push(request);

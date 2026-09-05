@@ -447,6 +447,95 @@ describe("daemon registry", () => {
     expect(registry.startupOwner(identity)).toBeDefined();
   });
 
+  it.each([
+    ["identity", "other-instance", "starting-process", 777],
+    ["instance", "other-instance", "starting-process", 777],
+    ["process token", "starting", "other-process", 777],
+    ["process identifier", "starting", "starting-process", 778],
+  ] as const)(
+    "requires the daemon startup owner %s coordinate",
+    (coordinate, instanceId, processToken, pid) => {
+      const stateDirectory = temporaryDirectory(roots);
+      const identity = DaemonWorkspaceIdentity.from("/repo", stateDirectory);
+      const registry = new DaemonRegistry(identity.registryDirectory);
+      expect(
+        registry.acquireStartup(identity, {
+          identityKey: identity.identityKey,
+          instanceId: "starting",
+          processToken: "starting-process",
+          ownerPid: process.pid,
+          ownerKind: "launcher",
+          heartbeatAt: 10,
+        }),
+      ).toBeDefined();
+      expect(
+        registry.claimStartupForDaemon(identity, "starting", "starting-process", 777),
+      ).toBeDefined();
+      const candidateIdentity =
+        coordinate === "identity"
+          ? DaemonWorkspaceIdentity.from("/other-repo", stateDirectory)
+          : identity;
+
+      expect(
+        registry.daemonOwnsStartupProcess(candidateIdentity, instanceId, processToken, pid),
+      ).toBe(false);
+    },
+  );
+
+  it("requires daemon ownership when authenticating a startup process", () => {
+    const identity = DaemonWorkspaceIdentity.from("/repo", temporaryDirectory(roots));
+    const registry = new DaemonRegistry(identity.registryDirectory);
+    expect(
+      registry.acquireStartup(identity, {
+        identityKey: identity.identityKey,
+        instanceId: "starting",
+        processToken: "starting-process",
+        ownerPid: 777,
+        ownerKind: "launcher",
+        heartbeatAt: 10,
+      }),
+    ).toBeDefined();
+
+    expect(
+      registry.daemonOwnsStartupProcess(identity, "starting", "starting-process", 777),
+    ).toBe(false);
+  });
+
+  it.each(["identity", "instance", "process token"] as const)(
+    "requires the stored record %s coordinate for startup ownership",
+    (coordinate) => {
+      const stateDirectory = temporaryDirectory(roots);
+      const identity = DaemonWorkspaceIdentity.from("/repo", stateDirectory);
+      const registry = new DaemonRegistry(identity.registryDirectory);
+      expect(
+        registry.acquireStartup(identity, {
+          identityKey: identity.identityKey,
+          instanceId: "starting",
+          processToken: "starting-process",
+          ownerPid: process.pid,
+          ownerKind: "launcher",
+          heartbeatAt: 10,
+        }),
+      ).toBeDefined();
+      const candidateIdentity = DaemonWorkspaceIdentity.from(
+        coordinate === "identity" ? "/other-repo" : "/repo",
+        stateDirectory,
+      );
+      const candidateRecord = {
+        ...record(
+          candidateIdentity,
+          "starting",
+          coordinate === "instance" ? "other-instance" : "starting",
+        ),
+        processToken: coordinate === "process token" ? "other-process" : "starting-process",
+      } satisfies DaemonRecord;
+
+      expect(
+        registry.startupOwnerForRecordCredentials(candidateIdentity, candidateRecord),
+      ).toBeUndefined();
+    },
+  );
+
   it("makes launcher removal delegate to the canonical predicate", () => {
     const identity = DaemonWorkspaceIdentity.from("/repo", temporaryDirectory(roots));
     const registry = new DaemonRegistry(identity.registryDirectory);

@@ -1,4 +1,4 @@
-import { DaemonPolicy, type DaemonPolicyValues } from "@symnav/daemon";
+import { DaemonPolicy, type DaemonPolicyValues, type DaemonReadinessProbe } from "@symnav/daemon";
 import { DaemonPolicyTestFactory } from "./daemon-policy.js";
 import type {
   DaemonProcessLauncher,
@@ -18,6 +18,7 @@ interface TestDaemonStartupCoordinatorOptions {
   readonly now?: () => number;
   readonly instanceId?: () => string;
   readonly processTerminator?: DaemonProcessTerminator;
+  readonly readinessProbe?: DaemonReadinessProbe;
 }
 
 export class TestDaemonStartupCoordinator extends RuntimeDaemonStartupCoordinator {
@@ -46,6 +47,7 @@ export class TestDaemonStartupCoordinator extends RuntimeDaemonStartupCoordinato
       ...(options.processTerminator === undefined
         ? {}
         : { processTerminator: options.processTerminator }),
+      ...(options.readinessProbe === undefined ? {} : { readinessProbe: options.readinessProbe }),
     });
   }
 }

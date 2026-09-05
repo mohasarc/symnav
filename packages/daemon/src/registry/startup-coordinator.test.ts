@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { DaemonPolicy, type DaemonPolicyValues } from "@symnav/daemon";
+import { DaemonPolicy, type DaemonPolicyValues, type DaemonReadinessProbe } from "@symnav/daemon";
 import { DaemonPolicyTestFactory } from "../../test/helpers/daemon-policy.js";
 import { CommandOutputSnapshot } from "../../test/helpers/executor-output.js";
 import { CanonicalTestPath } from "../../test/helpers/canonical-path.js";
@@ -56,16 +56,20 @@ describe("DaemonStartupCoordinator", () => {
 
   it("uses the explicit version readiness probe", async () => {
     const harness = new CoordinatorHarness(roots);
+    const readinessProbe: DaemonReadinessProbe = {
+      commandName: "version",
+      argv: ["--version", "from-host"],
+    };
 
-    await expect(harness.coordinator().ensureRunning(harness.identity)).resolves.toMatchObject({
-      status: "ready",
-    });
+    await expect(
+      harness.coordinator({ readinessProbe }).ensureRunning(harness.identity),
+    ).resolves.toMatchObject({ status: "ready" });
 
     expect(harness.transport.executionRequests).toEqual([
       expect.objectContaining({
         commandName: "version",
         request: {
-          argv: ["--version"],
+          argv: ["--version", "from-host"],
           cwd: harness.identity.workspaceRoot,
           telemetryEnabled: false,
           executionMode: "cold",
@@ -925,6 +929,7 @@ class CoordinatorHarness {
       readonly policy?: Pick<DaemonPolicyValues, "startup" | "shutdown">;
       readonly processTerminator?: DaemonProcessTerminator;
       readonly now?: () => number;
+      readonly readinessProbe?: DaemonReadinessProbe;
     } = {},
   ): DaemonStartupCoordinator {
     return new DaemonStartupCoordinator(this.registry, this.launcher, this.transport, {
@@ -935,6 +940,7 @@ class CoordinatorHarness {
       pollIntervalMs: 1,
       processTerminator: options.processTerminator ?? this.terminator,
       ...(options.now === undefined ? {} : { now: options.now }),
+      ...(options.readinessProbe === undefined ? {} : { readinessProbe: options.readinessProbe }),
     });
   }
 

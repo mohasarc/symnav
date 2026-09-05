@@ -107,6 +107,7 @@ export class DaemonClient {
       {
         policy: this.policy.values,
         processTerminator,
+        readinessProbe: options.readinessProbe,
       },
     );
     this.controlController = new DaemonController(

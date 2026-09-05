@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import type { DaemonPolicyValues } from "@symnav/daemon";
+import type { DaemonPolicyValues, DaemonReadinessProbe } from "@symnav/daemon";
 import {
   DaemonProcessTerminationError,
   NodeDaemonProcessTerminator,
@@ -29,6 +29,7 @@ interface DaemonStartupCoordinatorOptions {
   readonly clock?: Pick<DaemonClock, "wallNowMs">;
   readonly instanceId?: () => string;
   readonly processTerminator?: DaemonProcessTerminator;
+  readonly readinessProbe?: DaemonReadinessProbe;
 }
 
 class DaemonChildExitError extends Error {
@@ -53,6 +54,7 @@ export class DaemonStartupCoordinator {
   private readonly clock: Pick<DaemonClock, "wallNowMs">;
   private readonly nextInstanceId: () => string;
   private readonly processTerminator: DaemonProcessTerminator;
+  private readonly readinessProbe: DaemonReadinessProbe;
   private readonly observer: DaemonRecordObserver;
   private readonly launchedInstances = new Set<string>();
   private readonly launchedProcesses = new Map<string, DaemonProcess>();
@@ -74,6 +76,10 @@ export class DaemonStartupCoordinator {
     this.nextInstanceId = options.instanceId ?? randomUUID;
     this.processTerminator =
       options.processTerminator ?? new NodeDaemonProcessTerminator(policy.shutdown, this.clock);
+    this.readinessProbe = options.readinessProbe ?? {
+      commandName: "version",
+      argv: ["--version"],
+    };
     this.observer = new DaemonRecordObserver(this.transport, this.processTerminator);
   }
 
@@ -466,9 +472,9 @@ export class DaemonStartupCoordinator {
       instanceId: record.instanceId,
       processToken: record.processToken,
       requestId: randomUUID(),
-      commandName: "version",
+      commandName: this.readinessProbe.commandName,
       request: {
-        argv: ["--version"],
+        argv: this.readinessProbe.argv,
         cwd: record.workspaceRoot,
         telemetryEnabled: false,
         executionMode: "cold",

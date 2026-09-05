@@ -27,7 +27,13 @@ interface LocalDaemonTransportOptions {
   readonly writeChunkSize?: number;
   readonly outputDirectory?: string;
   readonly sockets?: DaemonSocketClient;
+  readonly lifecycle?: DaemonLifecycleComponent;
+  readonly execution?: DaemonExecutionRequester;
+  readonly server?: DaemonRequestServer;
 }
+
+type DaemonLifecycleComponent = DaemonLifecycleRequester &
+  Pick<DaemonLifecycleClient, "acknowledgeResult">;
 
 export type LocalDaemonTransportPolicy = Pick<
   DaemonPolicyValues,

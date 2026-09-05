@@ -55,7 +55,10 @@ describe("built daemon entry artifacts", () => {
   });
 
   it.each([
-    ["missing module", pathToFileURL(join(packageDirectory, "test", "fixtures", "missing.mjs")).href],
+    [
+      "missing module",
+      pathToFileURL(join(packageDirectory, "test", "fixtures", "missing.mjs")).href,
+    ],
     ["missing export", pathToFileURL(join(packageDirectory, "package.json")).href],
   ])("retains %s initialization failure", async (_scenario, moduleUrl) => {
     const worker = new NodeDaemonNavigationWorker({

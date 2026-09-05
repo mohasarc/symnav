@@ -5,7 +5,8 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
 class DaemonCompatibilityCopyInventory {
-  static readonly expectedDigest = "d0ff136f3be132ea004d3b13985192e055d1dfbad1abb773b607e89c54a1f41e";
+  static readonly expectedDigest =
+    "d0ff136f3be132ea004d3b13985192e055d1dfbad1abb773b607e89c54a1f41e";
 
   static files(repositoryRoot: string): readonly string[] {
     const daemonDirectory = join(repositoryRoot, "apps/cli/src/daemon");

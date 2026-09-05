@@ -28,7 +28,11 @@ describe("built daemon process launcher", () => {
     ["Windows", "file:///C:/symnav/executor-module.mjs"],
   ])("resolves process-entry.js and retains the %s executor file URL", async (_form, moduleUrl) => {
     spawnMock.mockImplementation(() => {
-      const child = {
+      const child: {
+        readonly pid: number;
+        readonly once: ReturnType<typeof vi.fn>;
+        readonly unref: ReturnType<typeof vi.fn>;
+      } = {
         pid: 4321,
         once: vi.fn((event: string, listener: () => void) => {
           if (event === "spawn") queueMicrotask(listener);

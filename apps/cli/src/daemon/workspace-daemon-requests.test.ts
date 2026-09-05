@@ -2034,9 +2034,11 @@ class RequestHarness {
 
   retainedOperationTraceCount(): number {
     const daemon = this.daemon as unknown as {
-      readonly operationTraces: ReadonlyMap<string, unknown>;
+      readonly deliverySession: {
+        readonly operationTraces: ReadonlyMap<string, unknown>;
+      };
     };
-    return daemon.operationTraces.size;
+    return daemon.deliverySession.operationTraces.size;
   }
 
   async dispose(): Promise<void> {

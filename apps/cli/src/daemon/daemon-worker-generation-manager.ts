@@ -24,8 +24,11 @@ export class DaemonWorkerGenerationManager {
   private startOperation: Promise<DaemonWorkerReadyReport> | undefined;
   private replacementOperation: Promise<DaemonWorkerReadyReport> | undefined;
   private recoveryOperation: Promise<void> | undefined;
+  private closeOperation: Promise<void> | undefined;
+  private terminationOperation: Promise<void> | undefined;
   private workerReady = false;
   private fileCount: number | undefined;
+  private stopping = false;
 
   constructor(private readonly options: DaemonWorkerGenerationManagerOptions) {
     const worker = options.initialWorker ?? options.createWorker(1);
@@ -99,6 +102,22 @@ export class DaemonWorkerGenerationManager {
     return response;
   }
 
+  close(): Promise<void> {
+    if (this.closeOperation !== undefined) return this.closeOperation;
+    this.stopping = true;
+    this.workerReady = false;
+    this.closeOperation = this.currentGeneration.worker.drainAndClose();
+    return this.closeOperation;
+  }
+
+  terminate(): Promise<void> {
+    if (this.terminationOperation !== undefined) return this.terminationOperation;
+    this.stopping = true;
+    this.workerReady = false;
+    this.terminationOperation = this.currentGeneration.worker.terminate();
+    return this.terminationOperation;
+  }
+
   private async replaceGeneration(
     cause: DaemonWorkerReplacementCause,
   ): Promise<DaemonWorkerReadyReport> {
@@ -163,7 +182,7 @@ export class DaemonWorkerGenerationManager {
   }
 
   private observeExit(generation: DaemonWorkerGeneration, exit: DaemonNavigationWorkerExit): void {
-    if (generation !== this.currentGeneration) return;
+    if (this.stopping || generation !== this.currentGeneration) return;
     const recovery = this.options.exitRecovery.recover(exit);
     this.recoveryOperation = recovery;
     void recovery.catch(() => undefined);

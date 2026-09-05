@@ -91,7 +91,8 @@ describe("LocalDaemonTransport validation", () => {
           );
         });
       });
-      const transport = new RuntimeLocalDaemonTransport(policy.values, {
+      const transport = new RuntimeLocalDaemonTransport({
+        policy,
         lifecycleResponseTimeoutMs: policy.values.transport.statusResponseTimeoutMs,
       });
 

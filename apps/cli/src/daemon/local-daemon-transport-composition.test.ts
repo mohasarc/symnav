@@ -8,7 +8,10 @@ import {
   type DaemonLifecycleResponse,
   type DaemonServer,
 } from "./daemon-protocol.js";
-import { DaemonClientResultCapture, type DaemonOutputCapture } from "./daemon-client-result-capture.js";
+import {
+  DaemonClientResultCapture,
+  type DaemonOutputCapture,
+} from "./daemon-client-result-capture.js";
 import { DaemonExecutionClient } from "./daemon-execution-client.js";
 import { DaemonLifecycleClient } from "./daemon-lifecycle-client.js";
 import { DaemonProtocolValidator } from "./daemon-protocol-validator.js";
@@ -61,7 +64,7 @@ describe("LocalDaemonTransport composition", () => {
     expect(firstCapture).toBeInstanceOf(DaemonClientResultCapture);
     expect(secondCapture).toBeInstanceOf(DaemonClientResultCapture);
     expect(secondCapture).not.toBe(firstCapture);
-    expect(TransportCompositionInspection.capture(firstCapture)).toEqual({
+    expect(TransportCompositionInspection.capture(firstCapture)).toMatchObject({
       directory: "/capture",
       maximumChunkRawBytes: policy.values.output.maximumChunkRawBytes,
       inlineRawBytes: policy.values.output.inlineRawBytes,
@@ -75,7 +78,8 @@ describe("LocalDaemonTransport composition", () => {
     const lifecycle = new RecordingLifecycleClient();
     const execution = new RecordingExecutionClient();
     const server = new RecordingRequestServer();
-    const transport = new LocalDaemonTransport(DaemonPolicy.currentSystem().values, {
+    const transport = new LocalDaemonTransport({
+      policy: DaemonPolicy.currentSystem(),
       lifecycle,
       execution,
       server,

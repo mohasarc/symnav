@@ -154,6 +154,30 @@ describe("DaemonWorkerGenerationManager", () => {
     expect(activeResourceInterruption).not.toHaveBeenCalled();
   });
 
+  it.each(["out-of-memory", "shed-failure"] as const)(
+    "marks active work as resource-interrupted for %s replacement",
+    async (cause) => {
+      const initial = new ControlledNavigationWorker(1);
+      const replacement = new ControlledNavigationWorker(2);
+      const activeResourceInterruption = vi.fn();
+      const manager = createManager({
+        initialWorker: initial,
+        createWorker: () => replacement,
+        onActiveResourceInterruption: activeResourceInterruption,
+      });
+      const starting = manager.start();
+      initial.completeReady(1);
+      await starting;
+
+      const replacing = manager.replace(cause);
+      replacement.completeReady(2);
+      await replacing;
+
+      expect(activeResourceInterruption).toHaveBeenCalledOnce();
+      expect(activeResourceInterruption).toHaveBeenCalledWith(cause);
+    },
+  );
+
   it("recovers only exits from the current generation", async () => {
     const initial = new ControlledNavigationWorker(1);
     const replacement = new ControlledNavigationWorker(2);

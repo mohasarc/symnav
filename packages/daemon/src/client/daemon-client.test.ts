@@ -19,7 +19,7 @@ import {
   type DaemonRecord,
 } from "../transport/protocol.js";
 import { DaemonTransportError } from "../transport/transport-error.js";
-import { DaemonClient } from "./daemon-client.js";
+import { DaemonClientRuntime as DaemonClient } from "./daemon-client-runtime.js";
 
 const success: DaemonExecutorExecutionResult = {
   exitCode: 0,

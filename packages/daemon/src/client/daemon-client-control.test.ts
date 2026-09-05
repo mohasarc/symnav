@@ -3,7 +3,7 @@ import type { DaemonExecutor } from "@symnav/daemon";
 import { DaemonPolicy } from "../daemon-policy.js";
 import { DaemonController } from "../process/controller.js";
 import { LocalDaemonTransport } from "../transport/local-transport.js";
-import { DaemonClient } from "./daemon-client.js";
+import { DaemonClientRuntime as DaemonClient } from "./daemon-client-runtime.js";
 
 describe("DaemonClient control", () => {
   afterEach(() => vi.restoreAllMocks());

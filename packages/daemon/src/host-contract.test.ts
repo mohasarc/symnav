@@ -15,6 +15,10 @@ import type {
   DaemonAdmissionGuard,
   DaemonAdmissionRejectionCode,
   DaemonCommandName,
+  DaemonClientExecuteRequest,
+  DaemonClientExecuteResult,
+  DaemonClientOptions,
+  DaemonControlRequest,
   DaemonExecuteRejectionCode,
   DaemonExecutionCoordinates,
   DaemonDiagnostics,
@@ -54,6 +58,7 @@ import {
   DaemonExecutorModuleLoader,
   DaemonExecutionFailures,
   DaemonPolicy,
+  DaemonClient,
 } from "./index.js";
 
 type ExportKind = "runtime" | "type";
@@ -79,6 +84,7 @@ class DaemonContractExpectation {
     { kind: "runtime", name: "DAEMON_COMMAND_NAMES" },
     { kind: "runtime", name: "DaemonAdmissionPolicy" },
     { kind: "runtime", name: "DaemonAdmissionRejections" },
+    { kind: "runtime", name: "DaemonClient" },
     { kind: "runtime", name: "DaemonDiagnosticValues" },
     { kind: "runtime", name: "DaemonExecutionFailures" },
     { kind: "runtime", name: "DaemonExecutorModuleLoader" },
@@ -89,7 +95,11 @@ class DaemonContractExpectation {
     { kind: "type", name: "DaemonAdmissionDecision" },
     { kind: "type", name: "DaemonAdmissionGuard" },
     { kind: "type", name: "DaemonAdmissionRejectionCode" },
+    { kind: "type", name: "DaemonClientExecuteRequest" },
+    { kind: "type", name: "DaemonClientExecuteResult" },
+    { kind: "type", name: "DaemonClientOptions" },
     { kind: "type", name: "DaemonCommandName" },
+    { kind: "type", name: "DaemonControlRequest" },
     { kind: "type", name: "DaemonDiagnostics" },
     { kind: "type", name: "DaemonDiagnosticValue" },
     { kind: "type", name: "DaemonExecuteRejectionCode" },
@@ -142,7 +152,19 @@ class DaemonContractExpectation {
     "static:retrySafe",
   ];
 
+  public static readonly clientMembers = [
+    "instance:control",
+    "instance:control",
+    "instance:control",
+    "instance:control",
+    "instance:execute",
+  ];
+
   public static readonly productionSources: readonly string[] = [
+    "client/daemon-client-contracts.ts",
+    "client/daemon-client-runtime.ts",
+    "client/daemon-client.ts",
+    "client/daemon-routing-policy.ts",
     "daemon-admission.ts",
     "daemon-command-name.ts",
     "daemon-diagnostics.ts",
@@ -515,6 +537,50 @@ describe("daemon host contract", () => {
     ).toEqual(DaemonContractExpectation.commandNameMembers);
   });
 
+  it("defines the exact daemon client host boundary", () => {
+    expectTypeOf<DaemonClientOptions>().toEqualTypeOf<{
+      readonly stateDirectory: string;
+      readonly productVersion: string;
+      readonly daemonEnabled: boolean;
+      readonly executorFactory: DaemonExecutorFactory;
+      readonly executorModuleUrl: DaemonExecutorModuleUrl;
+      readonly readinessProbe: DaemonReadinessProbe;
+      readonly policy?: DaemonPolicy;
+    }>();
+    expectTypeOf<DaemonClientExecuteRequest>().toEqualTypeOf<{
+      readonly workspaceRoot: string;
+      readonly commandName: DaemonCommandName;
+      readonly argv: readonly string[];
+      readonly cwd: string;
+      readonly telemetryEnabled: boolean;
+    }>();
+    expectTypeOf<DaemonClientExecuteResult>().toEqualTypeOf<{
+      readonly mode: DaemonExecutionMode;
+      readonly result: DaemonExecutorExecutionResult;
+    }>();
+    expectTypeOf<DaemonControlRequest>().toEqualTypeOf<
+      | { readonly action: "start"; readonly workspaceRoot: string }
+      | { readonly action: "status" }
+      | { readonly action: "stop"; readonly workspaceRoot: string }
+    >();
+    expectTypeOf<ConstructorParameters<typeof DaemonClient>>().toEqualTypeOf<
+      [DaemonClientOptions]
+    >();
+    expectTypeOf<DaemonClient["execute"]>().parameters.toEqualTypeOf<
+      [DaemonClientExecuteRequest]
+    >();
+    expectTypeOf<DaemonClient["execute"]>().returns.toEqualTypeOf<
+      Promise<DaemonClientExecuteResult>
+    >();
+
+    const sourceRoot = DaemonContractSourcePath.root(import.meta.url);
+    const source = ts.sys.readFile(join(sourceRoot, "client/daemon-client.ts"));
+    expect(source).toBeDefined();
+    expect(TypeScriptClassMemberInventory.read(source ?? "", "DaemonClient")).toEqual(
+      DaemonContractExpectation.clientMembers,
+    );
+  });
+
   it("defines the exact daemon policy static and instance API", () => {
     expectTypeOf<keyof typeof DaemonPolicy>().toEqualTypeOf<
       "prototype" | "currentSystem" | "fromSystemMemory" | "fromSerialized"
@@ -773,6 +839,7 @@ describe("daemon host contract", () => {
       "DaemonExecutionFailures",
       "DaemonExecutorModuleLoader",
       "DaemonPolicy",
+      "DaemonClient",
     ]);
   });
 

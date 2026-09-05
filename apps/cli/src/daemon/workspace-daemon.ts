@@ -43,7 +43,6 @@ import {
   DaemonResourceSupervisor,
   type DaemonWorkerReplacementCause,
 } from "./daemon-resource-monitor.js";
-import type { DaemonNavigationWorkerResponse } from "./daemon-navigation-worker-protocol.js";
 import type { DaemonRegistry, DaemonStartupLease } from "./daemon-registry.js";
 import type { DaemonWorkspaceIdentity } from "./daemon-workspace-identity.js";
 import type { DaemonRequestServer, DaemonServerSend } from "./daemon-transport.js";
@@ -71,21 +70,10 @@ export interface WorkspaceDaemonOptions {
   readonly logger?: DaemonLogger;
 }
 
-export interface DaemonWorkerGeneration {
-  readonly id: number;
-  readonly worker: DaemonNavigationWorker;
-  readonly ready: Promise<DaemonNavigationWorkerResponse>;
-}
-
 export class WorkspaceDaemon {
   private readonly now: () => number;
   private readonly clock: DaemonClock;
   private readonly exit: (code: number) => void;
-  private readonly initialNavigationWorker: DaemonNavigationWorker;
-  private readonly navigationWorkerFactory:
-    | ((generation: number) => DaemonNavigationWorker)
-    | undefined;
-  private workerGeneration: DaemonWorkerGeneration | undefined;
   private readonly workerManager: DaemonWorkerGenerationManager;
   private readonly requestQueue: WorkspaceRequestQueue;
   private readonly logger: DaemonLogger;
@@ -104,10 +92,8 @@ export class WorkspaceDaemon {
   private server: DaemonServer | undefined;
   private startedAt = 0;
   private readonly startedMonotonicAt: number;
-  private fileCount = 0;
   private lastNavigationAt: number | undefined;
   private lastCompletedMonotonicAt: number | undefined;
-  private workerReady = false;
   private shutdownStarted = false;
   private shutdownFailureCode: "stopping" | "controlled-resource" | undefined;
   private shutdownOperation: Promise<void> | undefined;
@@ -119,7 +105,6 @@ export class WorkspaceDaemon {
   private readonly operationTraces = new Map<string, DaemonOperationTrace>();
   private readonly operationTraceExpirations = new Map<string, NodeJS.Timeout>();
   private readonly operationTraceConnections = new Map<string, number>();
-  private workerRecoveryOperation: Promise<void> | undefined;
 
   constructor(private readonly options: WorkspaceDaemonOptions) {
     const policy = options.policy;
@@ -148,7 +133,7 @@ export class WorkspaceDaemon {
       });
     const resourcePolicy = policy.values.resources;
     this.resourcePolicy = resourcePolicy;
-    this.navigationWorkerFactory =
+    const navigationWorkerFactory =
       options.navigationWorkerFactory ??
       (options.navigationWorker === undefined
         ? (generation) =>
@@ -166,15 +151,23 @@ export class WorkspaceDaemon {
               },
             })
         : undefined);
-    this.initialNavigationWorker = options.navigationWorker ?? this.createNavigationWorker(1);
+    const createNavigationWorker = (generation: number): DaemonNavigationWorker => {
+      const worker = navigationWorkerFactory?.(generation);
+      if (worker === undefined) throw new Error("Navigation worker replacement is unavailable");
+      if (worker.generation !== generation) {
+        throw new Error("Navigation worker factory returned the wrong generation");
+      }
+      return worker;
+    };
+    const initialNavigationWorker = options.navigationWorker ?? createNavigationWorker(1);
     this.exit = options.exit ?? ((code) => process.exit(code));
     this.lifetime = new DaemonLifetime({ now: this.now }, policy.values.shutdown, () =>
       this.drainAndShutdown("idle"),
     );
     this.workerManager = new DaemonWorkerGenerationManager({
       workspaceRoot: options.identity.workspaceRoot,
-      initialWorker: this.initialNavigationWorker,
-      createWorker: (generation) => this.createNavigationWorker(generation),
+      initialWorker: initialNavigationWorker,
+      createWorker: createNavigationWorker,
       exitRecovery: { recover: (workerExit) => this.recoverWorkerExit(workerExit) },
       onActiveResourceInterruption: (cause) => this.markActiveResourceInterruption(cause),
       onDiagnostic: (diagnostic) => this.operationObserver.worker(diagnostic),
@@ -1046,15 +1039,6 @@ export class WorkspaceDaemon {
     );
   }
 
-  private createNavigationWorker(generation: number): DaemonNavigationWorker {
-    const worker = this.navigationWorkerFactory?.(generation);
-    if (worker === undefined) throw new Error("Navigation worker replacement is unavailable");
-    if (worker.generation !== generation) {
-      throw new Error("Navigation worker factory returned the wrong generation");
-    }
-    return worker;
-  }
-
   private markActiveResourceInterruption(cause: DaemonWorkerReplacementCause): void {
     if (cause === "worker-exit") return;
     const activeRequest = this.requestQueue.snapshot.active;
@@ -1084,106 +1068,5 @@ export class WorkspaceDaemon {
       });
       throw error;
     }
-  }
-
-  private startWorkerGeneration(worker: DaemonNavigationWorker): DaemonWorkerGeneration {
-    const generation: DaemonWorkerGeneration = {
-      id: worker.generation,
-      worker,
-      ready: worker.start(this.options.identity.workspaceRoot),
-    };
-    this.workerGeneration = generation;
-    void worker.exited.then((exit) => this.observeWorkerExit(exit));
-    return generation;
-  }
-
-  private observeWorkerExit(
-    exit: import("./daemon-navigation-worker.js").DaemonNavigationWorkerExit,
-  ): void {
-    if (this.shutdownStarted) return;
-    this.logger.record({
-      kind: "failure",
-      operation: "worker-exit",
-      failureCode: "worker-exit",
-      errorName: DaemonLogger.errorName(
-        exit.errorName === undefined ? undefined : { name: exit.errorName },
-      ),
-    });
-    const recovery = this.resourceSupervisor.recover(exit);
-    this.workerRecoveryOperation = recovery;
-    void recovery.catch((error) => {
-      this.logger.record({
-        kind: "failure",
-        operation: "worker-replacement",
-        failureCode: "controlled-resource",
-        errorName: DaemonLogger.errorName(error),
-      });
-    });
-  }
-
-  private async waitForReadyGeneration(
-    generation: DaemonWorkerGeneration,
-  ): Promise<DaemonNavigationWorkerResponse> {
-    try {
-      return await generation.ready;
-    } catch (error) {
-      if (!(error instanceof DaemonNavigationWorkerExitedError)) throw error;
-      await generation.worker.exited;
-      const recovery = this.workerRecoveryOperation;
-      if (recovery === undefined) throw error;
-      await recovery;
-      const replacement = this.workerGeneration;
-      if (replacement === undefined || replacement.id === generation.id) throw error;
-      return replacement.ready;
-    }
-  }
-
-  private async replaceNavigationWorker(cause: DaemonWorkerReplacementCause): Promise<number> {
-    const current = this.workerGeneration;
-    if (current === undefined) throw new Error("Navigation worker generation is unavailable");
-    const activeRequest = this.requestQueue.snapshot.active;
-    if (activeRequest !== undefined && cause !== "worker-exit") {
-      this.resourceInterruptedRequests.add(activeRequest.requestId);
-    }
-    const nextWorker = this.createNavigationWorker(current.id + 1);
-    this.workerReady = false;
-    const next = this.startWorkerGeneration(nextWorker);
-    await current.worker.terminate().catch(() => undefined);
-    const response = await next.ready;
-    if (response.kind !== "ready") throw new Error("Replacement navigation worker did not start");
-    this.fileCount = response.fileCount;
-    this.workerReady = true;
-    this.operationObserver.worker({
-      kind: "worker-replaced",
-      cause,
-      previousWorkerGeneration: current.id,
-      workerGeneration: next.id,
-      fileCount: response.fileCount,
-      ...response.startupDurations,
-    });
-    this.logger.record({ kind: "freshness", ...response.refresh });
-    return next.id;
-  }
-
-  private async releaseTransientResources(): Promise<void> {
-    const generation = this.workerGeneration;
-    if (generation === undefined) return;
-    const response = await generation.worker.releaseTransientResources();
-    if (response.kind !== "heap") throw new Error("Navigation worker did not report heap usage");
-    this.resourceSupervisor.workerHeapReported(
-      response.generation,
-      response.usedHeapBytes,
-      response.heapLimitBytes,
-    );
-    this.operationObserver.worker({
-      kind: "resources-released",
-      workerGeneration: response.generation,
-      workerHeapUsedBytes: response.usedHeapBytes,
-      workerHeapLimitBytes: response.heapLimitBytes,
-    });
-  }
-
-  private currentNavigationWorker(): DaemonNavigationWorker {
-    return this.workerGeneration?.worker ?? this.initialNavigationWorker;
   }
 }

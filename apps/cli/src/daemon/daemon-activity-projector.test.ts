@@ -182,6 +182,35 @@ describe("DaemonActivityProjector", () => {
 
     expect(projection.activity.spoolBytes).toBe(83);
   });
+
+  it.each([
+    {
+      queueState: "accepting" as const,
+      resourceState: "replacing" as const,
+      lifecycle: "recovering",
+    },
+    {
+      queueState: "draining" as const,
+      resourceState: "replacing" as const,
+      lifecycle: "draining",
+    },
+  ])(
+    "keeps legacy pong ready during $lifecycle activity",
+    ({ queueState, resourceState, lifecycle }) => {
+      const projection = DaemonActivityProjector.project(
+        ActivityProjectionFixture.input({
+          queueState,
+          resourceState,
+          workerReady: false,
+          active: true,
+        }),
+      );
+
+      expect(projection.activity.lifecycle).toBe(lifecycle);
+      expect(projection.activity.current).toBeUndefined();
+      expect(projection.pong.state).toBe("ready");
+    },
+  );
 });
 
 interface ActivityProjectionOverrides {

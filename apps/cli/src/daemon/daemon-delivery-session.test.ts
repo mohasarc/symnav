@@ -402,6 +402,33 @@ describe("DaemonDeliverySession", () => {
       expect.objectContaining({ requestId: "connected", outcome: "disconnected" }),
     ]);
   });
+
+  it("polls for acknowledgements only through the configured grace window", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(1_000);
+    const harness = await DeliverySessionHarness.create(directories, {
+      shutdown: {
+        resourceDrainAcknowledgementGraceMs: 10,
+        resourceDrainAcknowledgementPollIntervalMs: 4,
+      },
+    });
+    harness.accept("request-1");
+    harness.complete("request-1");
+    let settled = false;
+
+    const waiting = harness.session.waitForCompletionAcknowledgements().then(() => {
+      settled = true;
+    });
+    await Promise.resolve();
+    expect(settled).toBe(false);
+    await vi.advanceTimersByTimeAsync(8);
+    expect(settled).toBe(false);
+    await vi.advanceTimersByTimeAsync(4);
+    await waiting;
+
+    expect(settled).toBe(true);
+    expect(harness.session.snapshot.hasUnacknowledgedCompletions).toBe(true);
+  });
 });
 
 class DeliverySessionHarness {
@@ -422,6 +449,10 @@ class DeliverySessionHarness {
         readonly disconnectedTraceRetentionMs?: number;
         readonly maximumDisconnectedTraces?: number;
       };
+      readonly shutdown?: {
+        readonly resourceDrainAcknowledgementGraceMs?: number;
+        readonly resourceDrainAcknowledgementPollIntervalMs?: number;
+      };
     } = {},
   ): Promise<DeliverySessionHarness> {
     const directory = await mkdtemp(join(tmpdir(), "symnav-delivery-session-"));
@@ -430,12 +461,13 @@ class DeliverySessionHarness {
     const policy = {
       ...currentPolicy,
       diagnostics: { ...currentPolicy.diagnostics, ...overrides.diagnostics },
+      shutdown: { ...currentPolicy.shutdown, ...overrides.shutdown },
     };
     const journal = new AcceptedRequestLedger(() => 1);
     const events: DaemonDiagnosticEvent[] = [];
     const time = { monotonicNow: 0, remaining: [] as number[] };
     const clock = {
-      wallNowMs: () => 1,
+      wallNowMs: Date.now,
       monotonicNowMs: () => {
         time.monotonicNow = time.remaining.shift() ?? time.monotonicNow;
         return time.monotonicNow;

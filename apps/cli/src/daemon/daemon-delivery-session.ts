@@ -4,21 +4,21 @@ import type {
   DaemonPolicyValues,
   DaemonSequencedOutputRecord,
 } from "@symnav/daemon";
-import type {
-  AcceptedRequestEntry,
-  AcceptedRequestSubscriber,
-} from "./accepted-request-ledger.js";
+import type { AcceptedRequestEntry, AcceptedRequestSubscriber } from "./accepted-request-ledger.js";
 import type { DaemonClock } from "./daemon-clock.js";
 import type { DaemonOperationObserver, DaemonOperationTrace } from "./daemon-operation-observer.js";
 import type {
   DaemonDiagnosticEvent,
   DaemonDeliveryOutcome,
+  DaemonExecutionOutcome,
   DaemonExecutionServerFrame,
   DaemonIdentityCoordinates,
   DaemonResponse,
   DaemonResultAcknowledgement,
   DaemonResultFetchRequest,
+  DaemonRefreshSummary,
   DaemonServerMessage,
+  DaemonWorkerPhaseDurations,
 } from "./daemon-protocol.js";
 import {
   CompletionSpoolReadError,
@@ -66,7 +66,10 @@ export interface AcceptedExecutionJournal {
 
 export type AuthenticatedDaemonResultFetchRequest = DaemonResultFetchRequest;
 export type AuthenticatedDaemonResultAcknowledgement = DaemonResultAcknowledgement;
-export type DaemonResultAcknowledged = Extract<DaemonResponse, { readonly kind: "result-acknowledged" }>;
+export type DaemonResultAcknowledged = Extract<
+  DaemonResponse,
+  { readonly kind: "result-acknowledged" }
+>;
 
 export interface DaemonDeliverySessionOptions {
   readonly coordinates: Pick<DaemonIdentityCoordinates, "instanceId" | "processToken">;
@@ -102,14 +105,17 @@ export class DaemonDeliverySession {
     const trace = this.options.observer.start(requestId, command);
     this.operationTraces.set(requestId, trace);
     trace.accepted(queuePosition, workerGeneration);
-    return trace;
+    return new RetainedDaemonOperationTrace(
+      trace,
+      () => this.operationTraces.get(requestId) === trace,
+    );
   }
 
   async createCompletion(requestId: string): Promise<DaemonCompletionWriter> {
     const spool = await this.options.spoolStore.create(requestId);
     return new ObservedDaemonCompletionWriter(
       spool,
-      this.operationTraces.get(requestId),
+      this.retainedOperationTrace(requestId),
       this.options.clock,
     );
   }
@@ -234,6 +240,17 @@ export class DaemonDeliverySession {
 
   private deliver(send: DaemonServerSend, frame: DaemonServerMessage): Promise<void> {
     return send(frame);
+  }
+
+  private retainedOperationTrace(
+    requestId: string,
+    trace = this.operationTraces.get(requestId),
+  ): DaemonOperationTrace | undefined {
+    if (trace === undefined) return undefined;
+    return new RetainedDaemonOperationTrace(
+      trace,
+      () => this.operationTraces.get(requestId) === trace,
+    );
   }
 
   private async deliverStoredCompletion(
@@ -403,8 +420,7 @@ export class DaemonDeliverySession {
   private traceWasDisconnected(requestId: string): boolean {
     if (this.operationTraceExpirations.has(requestId)) return true;
     return (
-      !this.operationTraces.has(requestId) &&
-      !this.options.journal.isDeliveryTerminated(requestId)
+      !this.operationTraces.has(requestId) && !this.options.journal.isDeliveryTerminated(requestId)
     );
   }
 
@@ -433,6 +449,45 @@ export class DaemonDeliverySession {
       if (expiration !== undefined) clearTimeout(expiration);
       this.expireOperationTrace(oldestRequestId);
     }
+  }
+}
+
+class RetainedDaemonOperationTrace implements DaemonOperationTrace {
+  constructor(
+    private readonly trace: DaemonOperationTrace,
+    private readonly retained: () => boolean,
+  ) {}
+
+  accepted(queueDepth: number, generation: number): void {
+    if (this.retained()) this.trace.accepted(queueDepth, generation);
+  }
+
+  turnStarted(generation: number): void {
+    if (this.retained()) this.trace.turnStarted(generation);
+  }
+
+  workerCompleted(durations: DaemonWorkerPhaseDurations, refresh: DaemonRefreshSummary): void {
+    if (this.retained()) this.trace.workerCompleted(durations, refresh);
+  }
+
+  spooled(manifest: CompletionSpoolManifest, durationMs: number): void {
+    if (this.retained()) this.trace.spooled(manifest, durationMs);
+  }
+
+  executionTerminated(outcome: DaemonExecutionOutcome): void {
+    if (this.retained()) this.trace.executionTerminated(outcome);
+  }
+
+  clientDisconnected(): void {
+    if (this.retained()) this.trace.clientDisconnected();
+  }
+
+  reattached(): void {
+    if (this.retained()) this.trace.reattached();
+  }
+
+  deliveryTerminated(outcome: DaemonDeliveryOutcome): void {
+    if (this.retained()) this.trace.deliveryTerminated(outcome);
   }
 }
 

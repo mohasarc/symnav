@@ -2,15 +2,16 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { DaemonPolicy } from "@symnav/daemon";
+import { DaemonPolicy, type DaemonPolicyValues } from "@symnav/daemon";
 import { AcceptedRequestLedger } from "./accepted-request-ledger.js";
+import type { DaemonClock } from "./daemon-clock.js";
 import {
   CompletionSpoolReadError,
   DaemonCompletionSpoolStore,
   NodeCompletionSpoolStorage,
   type CompletionSpoolStorage,
 } from "./completion-spool.js";
-import { DaemonDeliverySession } from "./daemon-delivery-session.js";
+import { DaemonDeliverySession, type DaemonDiagnosticRecorder } from "./daemon-delivery-session.js";
 import { DaemonOperationObserver } from "./daemon-operation-observer.js";
 import type { DaemonDiagnosticEvent, DaemonServerMessage } from "./daemon-protocol.js";
 import type { DaemonServerSend } from "./daemon-transport.js";
@@ -476,22 +477,27 @@ class DeliverySessionHarness {
     const directory = await mkdtemp(join(tmpdir(), "symnav-delivery-session-"));
     directories.push(directory);
     const currentPolicy = DaemonPolicy.currentSystem().values;
-    const policy = {
+    const policy: DaemonPolicyValues = {
       ...currentPolicy,
       diagnostics: { ...currentPolicy.diagnostics, ...overrides.diagnostics },
       shutdown: { ...currentPolicy.shutdown, ...overrides.shutdown },
     };
     const journal = new AcceptedRequestLedger(() => 1);
     const events: DaemonDiagnosticEvent[] = [];
-    const time = { monotonicNow: 0, remaining: [] as number[] };
-    const clock = {
+    const time: { monotonicNow: number; remaining: number[] } = {
+      monotonicNow: 0,
+      remaining: [],
+    };
+    const clock: DaemonClock = {
       wallNowMs: Date.now,
       monotonicNowMs: () => {
         time.monotonicNow = time.remaining.shift() ?? time.monotonicNow;
         return time.monotonicNow;
       },
     };
-    const diagnostics = { record: (event: DaemonDiagnosticEvent) => events.push(event) };
+    const diagnostics: DaemonDiagnosticRecorder = {
+      record: (event) => events.push(event),
+    };
     const observer = new DaemonOperationObserver(diagnostics, clock);
     const spoolStore = new DaemonCompletionSpoolStore({
       directory,

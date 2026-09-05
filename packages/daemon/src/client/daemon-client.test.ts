@@ -258,6 +258,23 @@ describe("DaemonClient execution", () => {
     expect(result.result.exitCode).toBe(1);
     expect(dispose).toHaveBeenCalledOnce();
   });
+
+  it("replaces a completed warm result without output and does not replay or mutate", async () => {
+    const harness = new ClientHarness({
+      warmResult: { exitCode: 0, output: undefined } as unknown as DaemonExecutorExecutionResult,
+    });
+
+    const result = await harness.client.execute(harness.request());
+
+    expect(result.mode).toBe("warm");
+    expect(result.result.exitCode).toBe(1);
+    await expect(outputText(result.result)).resolves.toBe(
+      "Cannot answer: accepted daemon request did not complete.\n",
+    );
+    expect(harness.executorFactory).not.toHaveBeenCalled();
+    expect(harness.trigger).not.toHaveBeenCalled();
+    expect(harness.removeIfProcess).not.toHaveBeenCalled();
+  });
 });
 
 interface ClientHarnessOptions {

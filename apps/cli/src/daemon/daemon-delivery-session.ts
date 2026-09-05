@@ -162,6 +162,24 @@ export class DaemonDeliverySession {
     return this.completionDeliveries.get(requestId);
   }
 
+  async fetch(
+    request: AuthenticatedDaemonResultFetchRequest,
+    send: DaemonServerSend,
+  ): Promise<void> {
+    let disconnectTraceConnection: (() => void) | undefined;
+    if (this.options.journal.entryFor(request.requestId)?.state.state === "completed") {
+      const traceWasDisconnected = this.traceWasDisconnected(request.requestId);
+      disconnectTraceConnection = this.attachOperationTraceConnection(request.requestId, send);
+      if (traceWasDisconnected) this.reattachOperationTrace(request.requestId);
+    }
+    try {
+      await this.deliverStoredCompletion(request.requestId, send, request.offset);
+    } catch (error) {
+      disconnectTraceConnection?.();
+      throw error;
+    }
+  }
+
   private deliver(send: DaemonServerSend, frame: DaemonServerMessage): Promise<void> {
     return send(frame);
   }

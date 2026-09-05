@@ -473,8 +473,8 @@ export class WorkspaceDaemon {
     );
     if (entry.state.state === "queued") {
       this.acceptances.set(request.requestId, {
-        acceptedAt: entry.state.acceptedAt,
-        queuePosition: entry.state.queuePosition,
+        acceptedAt: entry.acceptedAt,
+        queuePosition: entry.queuePosition,
       });
     }
     const acceptance = this.acceptances.get(request.requestId);
@@ -485,7 +485,7 @@ export class WorkspaceDaemon {
       const trace = this.deliverySession.beginAcceptedTrace(
         request.requestId,
         request.commandName,
-        entry.state.state === "queued" ? entry.state.queuePosition : acceptance.queuePosition,
+        entry.queuePosition,
         this.resourceSupervisor.snapshot.generation,
       );
       void this.executeAccepted(request, trace);

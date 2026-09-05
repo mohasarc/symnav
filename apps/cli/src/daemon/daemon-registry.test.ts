@@ -40,6 +40,29 @@ interface StartupProcessRegistryTestAccess {
   removeStartupLockIfProcess(identity: DaemonWorkspaceIdentity, record: DaemonRecord): boolean;
 }
 
+interface CallerOwnershipRegistryTestAccess {
+  daemonOwnsStartupProcess(
+    identity: DaemonWorkspaceIdentity,
+    instanceId: string,
+    processToken: string,
+    pid: number,
+  ): boolean;
+  startupOwnerForInstance(
+    identity: DaemonWorkspaceIdentity,
+    instanceId: string,
+  ): unknown;
+  startupOwnerForRecordCredentials(
+    identity: DaemonWorkspaceIdentity,
+    record: DaemonRecord,
+  ): unknown;
+  removeStartupLockIfLauncher(
+    identity: DaemonWorkspaceIdentity,
+    instanceId: string,
+    processToken: string,
+  ): boolean;
+  removeAbandonedStartupOwner(identity: DaemonWorkspaceIdentity, owner: unknown): boolean;
+}
+
 interface DaemonRegistryClassTestAccess {
   startupMutationClaimWasContended(error: unknown): boolean;
 }
@@ -397,6 +420,101 @@ describe("daemon registry", () => {
     expect(
       expectDelegation(() => processRegistry.removeStartupLockIfProcess(identity, starting)),
     ).toBe(true);
+  });
+
+  it("makes the canonical predicate authoritative for every caller ownership operation", () => {
+    const identity = DaemonWorkspaceIdentity.from("/repo", temporaryDirectory(roots));
+    const registry = new DaemonRegistry(identity.registryDirectory);
+    const processRegistry = registry as unknown as StartupProcessRegistryTestAccess;
+    const callerRegistry = registry as unknown as CallerOwnershipRegistryTestAccess;
+    expect(registry.acquireStartup(identity, "starting")).toBeDefined();
+    const starting = {
+      ...record(identity, "starting", "starting"),
+      pid: 777,
+    } satisfies DaemonRecord;
+    expect(registry.writeStartingIfStartupOwner(identity, starting)).toBe(true);
+    const owner = registry.startupOwner(identity)!;
+    vi.spyOn(processRegistry, "startupOwnershipMatches").mockReturnValue(undefined);
+
+    expect(
+      callerRegistry.daemonOwnsStartupProcess(
+        identity,
+        starting.instanceId,
+        starting.processToken,
+        starting.pid,
+      ),
+    ).toBe(false);
+    expect(callerRegistry.startupOwnerForInstance(identity, starting.instanceId)).toBeUndefined();
+    expect(callerRegistry.startupOwnerForRecordCredentials(identity, starting)).toBeUndefined();
+    expect(callerRegistry.removeAbandonedStartupOwner(identity, owner)).toBe(false);
+    expect(registry.startupOwner(identity)).toBeDefined();
+  });
+
+  it("makes launcher removal delegate to the canonical predicate", () => {
+    const identity = DaemonWorkspaceIdentity.from("/repo", temporaryDirectory(roots));
+    const registry = new DaemonRegistry(identity.registryDirectory);
+    const processRegistry = registry as unknown as StartupProcessRegistryTestAccess;
+    const callerRegistry = registry as unknown as CallerOwnershipRegistryTestAccess;
+    expect(registry.acquireStartup(identity, "starting")).toBeDefined();
+    const owner = registry.startupOwner(identity)!;
+    vi.spyOn(processRegistry, "startupOwnershipMatches").mockReturnValue(undefined);
+
+    expect(
+      callerRegistry.removeStartupLockIfLauncher(
+        identity,
+        owner.instanceId,
+        owner.processToken,
+      ),
+    ).toBe(false);
+    expect(registry.startupOwner(identity)).toBeDefined();
+  });
+
+  it("checks the complete adopted owner through the canonical predicate after replacement", () => {
+    const identity = DaemonWorkspaceIdentity.from("/repo", temporaryDirectory(roots));
+    const registry = new DaemonRegistry(identity.registryDirectory);
+    const processRegistry = registry as unknown as StartupProcessRegistryTestAccess;
+    expect(registry.acquireStartup(identity, "starting")).toBeDefined();
+    const starting = {
+      ...record(identity, "starting", "starting"),
+      pid: 0,
+    } satisfies DaemonRecord;
+    expect(registry.writeStartingIfStartupOwner(identity, starting)).toBe(true);
+    const original = processRegistry.startupOwnershipMatches.bind(processRegistry);
+    let predicateCalls = 0;
+    vi.spyOn(processRegistry, "startupOwnershipMatches").mockImplementation(
+      (candidateIdentity, expectation) => {
+        predicateCalls += 1;
+        if (predicateCalls === 3) return undefined;
+        return original(candidateIdentity, expectation);
+      },
+    );
+
+    expect(registry.armStartingProcessLaunch(identity, starting)).toBe(false);
+    expect(predicateCalls).toBe(3);
+  });
+
+  it.each([
+    ["identityKey", "other-identity"],
+    ["instanceId", "other-instance"],
+    ["processToken", "other-token"],
+    ["ownerKind", "launcher"],
+    ["ownerPid", 778],
+    ["acquiredAt", -1],
+    ["heartbeatAt", -1],
+    ["revision", "other-revision"],
+  ] as const)("rejects a stale exact owner when %s differs", (field, value) => {
+    const identity = DaemonWorkspaceIdentity.from("/repo", temporaryDirectory(roots));
+    const registry = new DaemonRegistry(identity.registryDirectory);
+    expect(registry.acquireStartup(identity, "starting")).toBeDefined();
+    const starting = {
+      ...record(identity, "starting", "starting"),
+      pid: 777,
+    } satisfies DaemonRecord;
+    expect(registry.writeStartingIfStartupOwner(identity, starting)).toBe(true);
+    const owner = registry.startupOwner(identity)!;
+
+    expect(registry.removeStartupLockIfOwner(identity, { ...owner, [field]: value })).toBe(false);
+    expect(registry.startupOwner(identity)).toEqual(owner);
   });
 
   it("renews startup ownership with a new revision", () => {

@@ -61,6 +61,75 @@ describe("DaemonActivityProjector", () => {
 
     expect(projection.activity.lifecycle).toBe(expected);
   });
+
+  it("projects busy work and available status detail", () => {
+    const projection = DaemonActivityProjector.project(
+      ActivityProjectionFixture.input({
+        active: true,
+        lastNavigationAt: 950,
+        workerHeapUsedBytes: 320,
+      }),
+    );
+
+    expect(projection.activity).toEqual({
+      lifecycle: "busy",
+      pid: 41,
+      startedAt: 1_000,
+      startupElapsedMs: 30,
+      fileCount: 12,
+      processRssBytes: 500,
+      hardProcessRssBytes: 1_000,
+      workerHeapUsedBytes: 320,
+      workerGeneration: expect.any(Number),
+      current: {
+        requestId: "request",
+        command: "overview",
+        elapsedMs: 20,
+      },
+      queued: 2,
+      spoolBytes: expect.any(Number),
+    });
+    expect(projection.pong).toEqual({
+      kind: "pong",
+      protocolVersion: 5,
+      instanceId: "instance",
+      symnavVersion: "1.2.3",
+      state: "busy",
+      startedAt: 1_000,
+      fileCount: 12,
+      memoryBytes: 500,
+      queued: 2,
+      activity: projection.activity,
+      currentCommand: "overview",
+      currentCommandElapsedMs: 20,
+      lastNavigationAt: 950,
+    });
+  });
+
+  it("omits unavailable status detail", () => {
+    const projection = DaemonActivityProjector.project(
+      ActivityProjectionFixture.input({ includeWorkerFileCount: false }),
+    );
+
+    expect(projection.activity).not.toHaveProperty("current");
+    expect(projection.activity).not.toHaveProperty("recoveryDetail");
+    expect(projection.activity).not.toHaveProperty("fileCount");
+    expect(projection.activity).not.toHaveProperty("workerHeapUsedBytes");
+    expect(projection.activity).not.toHaveProperty("lastCompletedAgoMs");
+    expect(projection.pong).not.toHaveProperty("currentCommand");
+    expect(projection.pong).not.toHaveProperty("currentCommandElapsedMs");
+    expect(projection.pong).not.toHaveProperty("fileCount");
+    expect(projection.pong).not.toHaveProperty("lastNavigationAt");
+  });
+
+  it("keeps retained file count only in legacy pong while the worker is not ready", () => {
+    const projection = DaemonActivityProjector.project(
+      ActivityProjectionFixture.input({ workerReady: false }),
+    );
+
+    expect(projection.activity).not.toHaveProperty("fileCount");
+    expect(projection.pong.fileCount).toBe(12);
+  });
 });
 
 interface ActivityProjectionOverrides {
@@ -68,6 +137,9 @@ interface ActivityProjectionOverrides {
   readonly resourceState?: DaemonActivityProjectionInput["resources"]["state"];
   readonly workerReady?: boolean;
   readonly active?: boolean;
+  readonly lastNavigationAt?: number;
+  readonly workerHeapUsedBytes?: number;
+  readonly includeWorkerFileCount?: boolean;
 }
 
 class ActivityProjectionFixture {
@@ -79,6 +151,9 @@ class ActivityProjectionFixture {
       processRssBytes: 500,
       startedAt: 1_000,
       startedMonotonicAt: 100,
+      ...(overrides.lastNavigationAt === undefined
+        ? {}
+        : { lastNavigationAt: overrides.lastNavigationAt }),
       productVersion: "1.2.3",
       instanceId: "instance",
       hardProcessRssBytes: 1_000,
@@ -101,6 +176,9 @@ class ActivityProjectionFixture {
         generation: 3,
         processRssBytes: 400,
         peakProcessRssBytes: 600,
+        ...(overrides.workerHeapUsedBytes === undefined
+          ? {}
+          : { workerHeapUsedBytes: overrides.workerHeapUsedBytes }),
         spoolBytes: 70,
         admissionPaused: false,
         replacementCount: 0,
@@ -108,7 +186,7 @@ class ActivityProjectionFixture {
       worker: {
         generation: 3,
         ready: overrides.workerReady ?? true,
-        fileCount: 12,
+        ...(overrides.includeWorkerFileCount === false ? {} : { fileCount: 12 }),
       },
     };
   }

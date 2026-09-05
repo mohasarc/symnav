@@ -1,5 +1,8 @@
+import type { DaemonOutputSink } from "@symnav/daemon";
 import type { DaemonNavigationWorker } from "./daemon-navigation-worker.js";
 import type {
+  DaemonWorkerExecuteRequest,
+  DaemonWorkerExecutionReport,
   DaemonWorkerGenerationManagerOptions,
   DaemonWorkerGenerationSnapshot,
   DaemonWorkerReadyReport,
@@ -47,5 +50,27 @@ export class DaemonWorkerGenerationManager {
     this.generation.ready = ready;
     this.startOperation = ready;
     return ready;
+  }
+
+  execute(
+    requestId: string,
+    request: DaemonWorkerExecuteRequest,
+    output: DaemonOutputSink,
+  ): Promise<DaemonWorkerExecutionReport> {
+    const ready = this.generation.ready ?? this.start();
+    return ready
+      .then(() =>
+        this.generation.worker.execute(requestId, request.commandName, request.request, output),
+      )
+      .then((response): DaemonWorkerExecutionReport => {
+        if (
+          response.kind !== "result" ||
+          response.requestId !== requestId ||
+          response.generation !== this.generation.worker.generation
+        ) {
+          throw new Error("Navigation worker returned an uncorrelated result");
+        }
+        return response;
+      });
   }
 }

@@ -60,7 +60,7 @@ export class DaemonActivityProjector {
         : {
             lastCompletedAgoMs: Math.max(0, input.nowMonotonicMs - input.lastCompletedMonotonicAt),
           }),
-      spoolBytes: 0,
+      spoolBytes: input.resources.spoolBytes,
     };
     const pong: DaemonPong = {
       kind: "pong",

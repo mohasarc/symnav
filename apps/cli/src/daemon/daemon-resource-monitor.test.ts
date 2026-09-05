@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { DaemonPolicy } from "@symnav/daemon";
 import { DaemonPolicyTestFactory } from "@symnav/daemon/policy-testing";
 import { DaemonResourceSupervisor } from "./daemon-resource-monitor.js";
+import type { DaemonWorkerExitRecovery } from "./daemon-worker-generation-manager-contract.js";
 
 const MEBIBYTE = 1024 * 1024;
 const GIBIBYTE = 1024 * MEBIBYTE;
@@ -223,6 +224,29 @@ describe("DaemonResourceSupervisor", () => {
     expect(supervisor.snapshot.workerHeapUsedBytes).toBe(200);
     expect(supervisor.snapshot.peakWorkerHeapUsedBytes).toBe(400);
     expect(supervisor.snapshot.processRssBytes).toBe(policy.hardProcessRssBytes + 1);
+  });
+
+  it("recovers current worker exits through the worker recovery port", async () => {
+    const policy = resourcePolicy();
+    const replaceWorker = vi.fn(async () => 2);
+    const supervisor = new DaemonResourceSupervisor({
+      policy,
+      generation: 1,
+      residentMemoryBytes: () => 0,
+      spoolBytes: () => 0,
+      scheduleAtTurnBoundary: runImmediately,
+      releaseTransientResources: async () => undefined,
+      replaceWorker,
+      drain: async () => undefined,
+    });
+    const recovery: DaemonWorkerExitRecovery = supervisor;
+
+    await recovery.recover({ generation: 0, cause: "error" });
+    await recovery.recover({ generation: 1, cause: "out-of-memory" });
+
+    expect(replaceWorker).toHaveBeenCalledOnce();
+    expect(replaceWorker).toHaveBeenCalledWith("out-of-memory");
+    expect(supervisor.snapshot).toMatchObject({ generation: 2, replacementCount: 1 });
   });
 
   it("reports large disk spools without treating them as process RSS", async () => {

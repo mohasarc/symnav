@@ -87,6 +87,71 @@ describe("DaemonWorkerGenerationManager", () => {
 
     await expect(execution).rejects.toThrow("uncorrelated result");
   });
+
+  it("coalesces replacement while preserving transition order and diagnostics", async () => {
+    const operations: string[] = [];
+    const initial = new ControlledNavigationWorker(1, operations);
+    const replacement = new ControlledNavigationWorker(2, operations);
+    const activeResourceInterruption = vi.fn();
+    const onDiagnostic = vi.fn();
+    const manager = createManager({
+      initialWorker: initial,
+      createWorker: (generation) => {
+        expect(generation).toBe(2);
+        return replacement;
+      },
+      onActiveResourceInterruption: activeResourceInterruption,
+      onDiagnostic,
+    });
+    const starting = manager.start();
+    initial.completeReady(7);
+    await starting;
+    operations.length = 0;
+
+    const first = manager.replace("hard-pressure");
+    const second = manager.replace("hard-pressure");
+
+    expect(first).toBe(second);
+    expect(activeResourceInterruption).toHaveBeenCalledOnce();
+    expect(activeResourceInterruption).toHaveBeenCalledWith("hard-pressure");
+    expect(operations).toEqual(["start:2", "terminate:1"]);
+    expect(manager.snapshot).toEqual({ generation: 2, ready: false });
+
+    replacement.completeReady(9);
+
+    await expect(first).resolves.toMatchObject({ kind: "ready", generation: 2, fileCount: 9 });
+    expect(manager.snapshot).toEqual({ generation: 2, ready: true, fileCount: 9 });
+    expect(onDiagnostic).toHaveBeenCalledWith({
+      kind: "worker-replaced",
+      cause: "hard-pressure",
+      previousWorkerGeneration: 1,
+      workerGeneration: 2,
+      fileCount: 9,
+      discoveryMs: 1,
+      indexingMs: 2,
+      totalMs: 3,
+    });
+  });
+
+  it("does not mark active work as resource-interrupted for literal worker exits", async () => {
+    const initial = new ControlledNavigationWorker(1);
+    const replacement = new ControlledNavigationWorker(2);
+    const activeResourceInterruption = vi.fn();
+    const manager = createManager({
+      initialWorker: initial,
+      createWorker: () => replacement,
+      onActiveResourceInterruption: activeResourceInterruption,
+    });
+    const starting = manager.start();
+    initial.completeReady(1);
+    await starting;
+
+    const replacing = manager.replace("worker-exit");
+    replacement.completeReady(2);
+    await replacing;
+
+    expect(activeResourceInterruption).not.toHaveBeenCalled();
+  });
 });
 
 function createManager(
@@ -122,7 +187,10 @@ class ControlledNavigationWorker implements DaemonNavigationWorker {
   private rejectReady!: (error: Error) => void;
   private readonly ready: Promise<DaemonNavigationWorkerResponse>;
 
-  constructor(readonly generation: number) {
+  constructor(
+    readonly generation: number,
+    private readonly sharedOperations: string[] = [],
+  ) {
     this.exited = new Promise((resolve) => {
       this.resolveExited = resolve;
     });
@@ -134,6 +202,7 @@ class ControlledNavigationWorker implements DaemonNavigationWorker {
 
   start(workspaceRoot: string): Promise<DaemonNavigationWorkerResponse> {
     this.operations.push(`start:${this.generation}`);
+    this.sharedOperations.push(`start:${this.generation}`);
     expect(workspaceRoot).toBe("/workspace");
     return this.ready;
   }
@@ -157,11 +226,13 @@ class ControlledNavigationWorker implements DaemonNavigationWorker {
 
   drainAndClose(): Promise<void> {
     this.operations.push(`close:${this.generation}`);
+    this.sharedOperations.push(`close:${this.generation}`);
     return Promise.resolve();
   }
 
   terminate(): Promise<void> {
     this.operations.push(`terminate:${this.generation}`);
+    this.sharedOperations.push(`terminate:${this.generation}`);
     return Promise.resolve();
   }
 

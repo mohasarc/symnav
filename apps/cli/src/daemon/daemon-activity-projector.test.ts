@@ -146,6 +146,18 @@ describe("DaemonActivityProjector", () => {
       lastCompletedAgoMs: 0,
     });
   });
+
+  it.each([
+    ["replacing", "worker-replacement"],
+    ["shedding", "resource-pressure"],
+  ] as const)("projects %s recovery detail", (resourceState, expected) => {
+    const projection = DaemonActivityProjector.project(
+      ActivityProjectionFixture.input({ resourceState, active: true }),
+    );
+
+    expect(projection.activity.recoveryDetail).toBe(expected);
+    expect(projection.activity.current).toBeUndefined();
+  });
 });
 
 interface ActivityProjectionOverrides {

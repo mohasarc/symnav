@@ -52,3 +52,4 @@ export type {
   DaemonClientOptions,
   DaemonControlRequest,
 } from "./client/daemon-client-contracts.js";
+export { DaemonClient } from "./client/daemon-client.js";

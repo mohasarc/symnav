@@ -205,8 +205,8 @@ class ClientHarness {
   readonly executors: DaemonExecutor[] = [];
   readonly localRequests: DaemonExecutorRequest[] = [];
   readonly warmRequests: unknown[] = [];
-  readonly registryRead: ReturnType<typeof vi.fn>;
-  readonly trigger: ReturnType<typeof vi.fn>;
+  readonly registryRead: unknown;
+  readonly trigger: unknown;
   readonly client: DaemonClient;
 
   constructor(options: ClientHarnessOptions) {

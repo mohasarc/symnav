@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import type { DaemonOutputSink } from "@symnav/daemon";
+import type { DaemonExecutorRequest, DaemonOutputSink } from "@symnav/daemon";
 import type {
   DaemonNavigationWorker,
   DaemonNavigationWorkerExit,
@@ -42,6 +42,51 @@ describe("DaemonWorkerGenerationManager", () => {
     await expect(starting).rejects.toThrow("did not become ready");
     expect(manager.snapshot).toEqual({ generation: 1, ready: false });
   });
+
+  it("delegates execution to the ready generation", async () => {
+    const worker = new ControlledNavigationWorker(1);
+    const manager = createManager({ createWorker: () => worker });
+    const output: DaemonOutputSink = { append: vi.fn(async () => undefined) };
+    const request: DaemonExecutorRequest = {
+      argv: ["--version"],
+      cwd: "/workspace",
+      telemetryEnabled: false,
+      executionMode: "warm",
+    };
+    const execution = manager.execute("request-1", { commandName: "version", request }, output);
+    worker.completeReady(7);
+    worker.executionResponse = resultResponse(1, "request-1");
+
+    await expect(execution).resolves.toEqual(resultResponse(1, "request-1"));
+    expect(worker.execution).toEqual({
+      requestId: "request-1",
+      commandName: "version",
+      request,
+      output,
+    });
+  });
+
+  it("rejects an uncorrelated worker execution report", async () => {
+    const worker = new ControlledNavigationWorker(1);
+    const manager = createManager({ createWorker: () => worker });
+    const execution = manager.execute(
+      "request-1",
+      {
+        commandName: "version",
+        request: {
+          argv: ["--version"],
+          cwd: "/workspace",
+          telemetryEnabled: false,
+          executionMode: "warm",
+        },
+      },
+      { append: async () => undefined },
+    );
+    worker.completeReady(7);
+    worker.executionResponse = resultResponse(1, "another-request");
+
+    await expect(execution).rejects.toThrow("uncorrelated result");
+  });
 });
 
 function createManager(
@@ -63,6 +108,15 @@ function createManager(
 class ControlledNavigationWorker implements DaemonNavigationWorker {
   readonly exited: Promise<DaemonNavigationWorkerExit>;
   readonly operations: string[] = [];
+  execution:
+    | {
+        readonly requestId: string;
+        readonly commandName: Parameters<DaemonNavigationWorker["execute"]>[1];
+        readonly request: Parameters<DaemonNavigationWorker["execute"]>[2];
+        readonly output: DaemonOutputSink;
+      }
+    | undefined;
+  executionResponse: DaemonNavigationWorkerResponse | undefined;
   private resolveExited!: (exit: DaemonNavigationWorkerExit) => void;
   private resolveReady!: (response: DaemonNavigationWorkerResponse) => void;
   private rejectReady!: (error: Error) => void;
@@ -85,12 +139,16 @@ class ControlledNavigationWorker implements DaemonNavigationWorker {
   }
 
   execute(
-    _requestId: string,
-    _commandName: "version",
-    _request: Parameters<DaemonNavigationWorker["execute"]>[2],
-    _output: DaemonOutputSink,
+    requestId: string,
+    commandName: Parameters<DaemonNavigationWorker["execute"]>[1],
+    request: Parameters<DaemonNavigationWorker["execute"]>[2],
+    output: DaemonOutputSink,
   ): Promise<DaemonNavigationWorkerResponse> {
-    return Promise.reject(new Error("Execution response is unavailable"));
+    this.execution = { requestId, commandName, request, output };
+    if (this.executionResponse === undefined) {
+      return Promise.reject(new Error("Execution response is unavailable"));
+    }
+    return Promise.resolve(this.executionResponse);
   }
 
   releaseTransientResources(): Promise<DaemonNavigationWorkerResponse> {
@@ -128,4 +186,20 @@ class ControlledNavigationWorker implements DaemonNavigationWorker {
   exit(exit: DaemonNavigationWorkerExit): void {
     this.resolveExited(exit);
   }
+}
+
+function resultResponse(generation: number, requestId: string): DaemonNavigationWorkerResponse {
+  return {
+    kind: "result",
+    generation,
+    requestId,
+    result: { exitCode: 0 },
+    refresh: { added: 0, changed: 0, removed: 0, unchanged: 7 },
+    durations: { freshnessMs: 1, navigationMs: 2, renderMs: 3, outputMs: 4 },
+    resources: {
+      workerHeapUsedBytes: 10,
+      peakWorkerHeapUsedBytes: 20,
+      workerHeapLimitBytes: 30,
+    },
+  };
 }

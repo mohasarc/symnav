@@ -1068,7 +1068,7 @@ export class WorkspaceDaemon {
         exit.errorName === undefined ? undefined : { name: exit.errorName },
       ),
     });
-    const recovery = this.resourceSupervisor.workerExited(exit);
+    const recovery = this.resourceSupervisor.recover(exit);
     this.workerRecoveryOperation = recovery;
     void recovery.catch((error) => {
       this.logger.record({

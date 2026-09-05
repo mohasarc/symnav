@@ -43,6 +43,7 @@ import type {
   DaemonResourceSnapshot,
   DaemonResourceSupervisor,
 } from "./daemon-resource-monitor.js";
+import type { DaemonWorkerGenerationManager } from "./daemon-worker-generation-manager.js";
 import type { WorkspaceRequestQueue } from "./workspace-request-queue.js";
 import { TestDaemonResourcePolicy as DaemonResourcePolicy } from "../../test/helpers/daemon-resource-policy.js";
 import {
@@ -1855,7 +1856,9 @@ class RequestHarness {
   }
 
   setWorkerReady(workerReady: boolean): void {
-    this.daemonInternals.workerReady = workerReady;
+    const workerManager = this.daemonInternals.workerManager;
+    const snapshot = workerManager.snapshot;
+    vi.spyOn(workerManager, "snapshot", "get").mockReturnValue({ ...snapshot, ready: workerReady });
   }
 
   setResourceAdmissionPaused(admissionPaused: boolean): void {
@@ -1889,18 +1892,18 @@ class RequestHarness {
   }
 
   private get daemonInternals(): {
-    workerReady: boolean;
     readonly acceptedRequests: AcceptedRequestLedger;
     readonly requestQueue: WorkspaceRequestQueue;
+    readonly workerManager: DaemonWorkerGenerationManager;
     readonly resourceSupervisor: DaemonResourceSupervisor & {
       readonly snapshot: DaemonResourceSnapshot;
     };
   } {
     if (this.daemon === undefined) throw new Error("Workspace daemon is unavailable");
     return this.daemon as unknown as {
-      workerReady: boolean;
       readonly acceptedRequests: AcceptedRequestLedger;
       readonly requestQueue: WorkspaceRequestQueue;
+      readonly workerManager: DaemonWorkerGenerationManager;
       readonly resourceSupervisor: DaemonResourceSupervisor & {
         readonly snapshot: DaemonResourceSnapshot;
       };

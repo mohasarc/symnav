@@ -572,6 +572,21 @@ describe("daemon host contract", () => {
     expectTypeOf<DaemonClient["execute"]>().returns.toEqualTypeOf<
       Promise<DaemonClientExecuteResult>
     >();
+    const assertControlReturnTypes = (client: DaemonClient): void => {
+      const start: Promise<DaemonStartResult> = client.control({
+        action: "start",
+        workspaceRoot: "/workspace",
+      });
+      const status: Promise<readonly RunningDaemonStatus[]> = client.control({ action: "status" });
+      const stop: Promise<DaemonStopResult> = client.control({
+        action: "stop",
+        workspaceRoot: "/workspace",
+      });
+      expectTypeOf(start).toEqualTypeOf<Promise<DaemonStartResult>>();
+      expectTypeOf(status).toEqualTypeOf<Promise<readonly RunningDaemonStatus[]>>();
+      expectTypeOf(stop).toEqualTypeOf<Promise<DaemonStopResult>>();
+    };
+    expectTypeOf(assertControlReturnTypes).returns.toEqualTypeOf<void>();
 
     const sourceRoot = DaemonContractSourcePath.root(import.meta.url);
     const source = ts.sys.readFile(join(sourceRoot, "client/daemon-client.ts"));

@@ -1,4 +1,4 @@
-import type { DaemonPolicyValues } from "@symnav/daemon";
+import type { DaemonPolicy, DaemonPolicyValues } from "@symnav/daemon";
 import { DaemonClientResultCapture } from "./daemon-client-result-capture.js";
 import { DaemonExecutionClient } from "./daemon-execution-client.js";
 import { DaemonLifecycleClient } from "./daemon-lifecycle-client.js";
@@ -22,10 +22,23 @@ import { DaemonWireCodec } from "./daemon-wire-codec.js";
 import { LocalDaemonSocketClient } from "./local-daemon-socket-client.js";
 import { LocalDaemonSocketServer } from "./local-daemon-socket-server.js";
 
-interface LocalDaemonTransportOptions {
+interface LegacyLocalDaemonTransportOptions {
   readonly lifecycleResponseTimeoutMs?: number;
   readonly writeChunkSize?: number;
   readonly outputDirectory?: string;
+  readonly sockets?: DaemonSocketClient;
+  readonly lifecycle?: DaemonLifecycleComponent;
+  readonly execution?: DaemonExecutionRequester;
+  readonly server?: DaemonRequestServer;
+}
+
+interface LocalDaemonTransportOptions {
+  readonly policy: DaemonPolicy;
+  readonly lifecycleResponseTimeoutMs?: number;
+  readonly writeChunkSize?: number;
+  readonly captureDirectory?: string;
+  readonly codec?: DaemonWireCodec;
+  readonly validator?: DaemonProtocolValidator;
   readonly sockets?: DaemonSocketClient;
   readonly lifecycle?: DaemonLifecycleComponent;
   readonly execution?: DaemonExecutionRequester;
@@ -50,11 +63,18 @@ export class LocalDaemonTransport
   private readonly execution: DaemonExecutionRequester;
   private readonly server: DaemonRequestServer;
 
-  constructor(policy: LocalDaemonTransportPolicy, options: LocalDaemonTransportOptions = {}) {
+  constructor(options: LocalDaemonTransportOptions);
+  constructor(policy: LocalDaemonTransportPolicy, options?: LegacyLocalDaemonTransportOptions);
+  constructor(
+    policy: LocalDaemonTransportPolicy | LocalDaemonTransportOptions,
+    options: LegacyLocalDaemonTransportOptions = {},
+  ) {
     this.codec = new DaemonWireCodec({
-      maximumJsonPayloadBytes: policy.transport.maximumJsonPayloadBytes,
-      maximumExecutionControlPayloadBytes: policy.transport.maximumExecutionControlPayloadBytes,
-      maximumChunkRawBytes: policy.output.maximumChunkRawBytes,
+      maximumJsonPayloadBytes: (policy as LocalDaemonTransportPolicy).transport
+        .maximumJsonPayloadBytes,
+      maximumExecutionControlPayloadBytes: (policy as LocalDaemonTransportPolicy).transport
+        .maximumExecutionControlPayloadBytes,
+      maximumChunkRawBytes: (policy as LocalDaemonTransportPolicy).output.maximumChunkRawBytes,
     });
     this.sockets =
       options.sockets ??
@@ -68,7 +88,8 @@ export class LocalDaemonTransport
         codec: this.codec,
         validator: this.validator,
         responseTimeoutMs:
-          options.lifecycleResponseTimeoutMs ?? policy.transport.singleResponseTimeoutMs,
+          options.lifecycleResponseTimeoutMs ??
+          (policy as LocalDaemonTransportPolicy).transport.singleResponseTimeoutMs,
       });
     this.execution =
       options.execution ??
@@ -79,13 +100,13 @@ export class LocalDaemonTransport
         validator: this.validator,
         createOutput: () =>
           new DaemonClientResultCapture({
-            policy: policy.output,
+            policy: (policy as LocalDaemonTransportPolicy).output,
             ...(options.outputDirectory === undefined
               ? {}
               : { directory: options.outputDirectory }),
           }),
-        transportPolicy: policy.transport,
-        deliveryPolicy: policy.delivery,
+        transportPolicy: (policy as LocalDaemonTransportPolicy).transport,
+        deliveryPolicy: (policy as LocalDaemonTransportPolicy).delivery,
       });
     this.server =
       options.server ??
@@ -93,7 +114,7 @@ export class LocalDaemonTransport
         sockets: this.sockets,
         codec: this.codec,
         validator: this.validator,
-        policy: policy.transport,
+        policy: (policy as LocalDaemonTransportPolicy).transport,
         ...(options.writeChunkSize === undefined ? {} : { writeChunkSize: options.writeChunkSize }),
       });
   }

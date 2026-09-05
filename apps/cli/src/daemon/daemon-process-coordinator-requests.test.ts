@@ -47,11 +47,11 @@ import type {
 import type { DaemonWorkerGenerationManager } from "./daemon-worker-generation-manager.js";
 import { TestDaemonResourcePolicy as DaemonResourcePolicy } from "../../test/helpers/daemon-resource-policy.js";
 import {
-  TestWorkspaceDaemon as WorkspaceDaemon,
-  type TestWorkspaceDaemonOptions as WorkspaceDaemonOptions,
-} from "../../test/helpers/workspace-daemon.js";
+  TestDaemonProcessCoordinator as DaemonProcessCoordinator,
+  type TestDaemonProcessCoordinatorOptions as DaemonProcessCoordinatorOptions,
+} from "../../test/helpers/daemon-process-coordinator.js";
 
-describe("WorkspaceDaemon requests", () => {
+describe("DaemonProcessCoordinator requests", () => {
   const harnesses: RequestHarness[] = [];
 
   afterEach(async () => {
@@ -1776,7 +1776,7 @@ class RequestHarness {
   readonly instanceId = "request-instance";
   readonly processToken = "request-token";
   readonly exited: Promise<number>;
-  private daemon: WorkspaceDaemon | undefined;
+  private daemon: DaemonProcessCoordinator | undefined;
   private resolveExit!: (code: number) => void;
 
   private constructor() {
@@ -1803,7 +1803,7 @@ class RequestHarness {
     executor: DaemonCommandExecutor | undefined,
     options: RequestHarnessOptions = {},
   ): {
-    readonly daemon: WorkspaceDaemon;
+    readonly daemon: DaemonProcessCoordinator;
     readonly harness: RequestHarness;
     readonly lease: NonNullable<ReturnType<DaemonRegistry["acquireStartup"]>>;
   } {
@@ -1839,7 +1839,7 @@ class RequestHarness {
         ? new ExecutorNavigationWorker(executor ?? new ImmediateExecutor())
         : undefined);
     const daemonPolicy = DaemonPolicy.currentSystem();
-    const daemon = new WorkspaceDaemon({
+    const daemon = new DaemonProcessCoordinator({
       identity: harness.identity,
       instanceId: harness.instanceId,
       processToken: harness.processToken,
@@ -2128,8 +2128,8 @@ interface RequestHarnessOptions {
   readonly resourceCheckIntervalMs?: number;
   readonly residentMemoryBytes?: () => number;
   readonly startupHeartbeatIntervalMs?: number;
-  readonly completionSpoolLimits?: WorkspaceDaemonOptions["completionSpoolLimits"];
-  readonly completionSpoolStorage?: WorkspaceDaemonOptions["completionSpoolStorage"];
+  readonly completionSpoolLimits?: DaemonProcessCoordinatorOptions["completionSpoolLimits"];
+  readonly completionSpoolStorage?: DaemonProcessCoordinatorOptions["completionSpoolStorage"];
   readonly operationTraceRetentionMs?: number;
   readonly maximumRetainedOperationTraces?: number;
 }

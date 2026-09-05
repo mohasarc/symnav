@@ -15,7 +15,7 @@ import type {
   DaemonNavigationWorkerExit,
 } from "../../src/daemon/daemon-navigation-worker.js";
 import type { DaemonNavigationWorkerResponse } from "../../src/daemon/daemon-navigation-worker-protocol.js";
-import { TestWorkspaceDaemon as WorkspaceDaemon } from "./workspace-daemon.js";
+import { TestDaemonProcessCoordinator as DaemonProcessCoordinator } from "./daemon-process-coordinator.js";
 
 const [
   workspaceRoot,
@@ -137,7 +137,7 @@ const identity = DaemonWorkspaceIdentity.from(workspaceRoot, canonicalStateDirec
 const policy = DaemonResourcePolicy.fromSystemMemory(512 * 1024 * 1024);
 const daemonPolicy = DaemonPolicy.currentSystem();
 writeFileSync(`${readyPath}.boot`, String(process.pid));
-const daemon = new WorkspaceDaemon({
+const daemon = new DaemonProcessCoordinator({
   identity,
   instanceId,
   processToken,

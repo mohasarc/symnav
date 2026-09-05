@@ -227,9 +227,9 @@ describe("DaemonActivityProjector", () => {
     expect(() => Object.assign(projection.activity.current ?? {}, { elapsedMs: 9 })).toThrow();
   });
 
-  it("keeps daemon snapshot formatting outside WorkspaceDaemon", () => {
+  it("keeps daemon snapshot formatting outside DaemonProcessCoordinator", () => {
     const source = readFileSync(
-      fileURLToPath(new URL("./workspace-daemon.ts", import.meta.url)),
+      fileURLToPath(new URL("./daemon-process-coordinator.ts", import.meta.url)),
       "utf8",
     );
 

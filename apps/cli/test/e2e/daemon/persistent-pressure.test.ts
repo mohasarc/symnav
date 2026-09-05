@@ -63,7 +63,10 @@ describe("persistent daemon resource pressure", () => {
       [
         fileURLToPath(new URL("../../../node_modules/tsx/dist/cli.mjs", import.meta.url)),
         fileURLToPath(
-          new URL("../../helpers/workspace-daemon-persistent-pressure.ts", import.meta.url),
+          new URL(
+            "../../helpers/daemon-process-coordinator-persistent-pressure.ts",
+            import.meta.url,
+          ),
         ),
         identity.workspaceRoot,
         stateDirectory,

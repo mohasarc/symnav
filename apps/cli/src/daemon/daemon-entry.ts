@@ -6,7 +6,7 @@ import { DaemonProcessTerminationObserver } from "./daemon-process-termination-o
 import { DaemonRegistry } from "./daemon-registry.js";
 import { DaemonWorkspaceIdentity } from "./daemon-workspace-identity.js";
 import { LocalDaemonTransport } from "./local-daemon-transport.js";
-import { WorkspaceDaemon } from "./workspace-daemon.js";
+import { DaemonProcessCoordinator } from "./daemon-process-coordinator.js";
 
 class DaemonEntry {
   static async run(encodedConfiguration: string | undefined): Promise<void> {
@@ -31,7 +31,7 @@ class DaemonEntry {
     new DaemonProcessTerminationObserver(logger, () => {
       registry.removeIfProcess(identity, configuration.instanceId, configuration.processToken);
     }).install();
-    await new WorkspaceDaemon({
+    await new DaemonProcessCoordinator({
       identity,
       instanceId: configuration.instanceId,
       processToken: configuration.processToken,

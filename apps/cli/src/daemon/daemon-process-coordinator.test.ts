@@ -34,10 +34,10 @@ import { TestDaemonResourcePolicy as DaemonResourcePolicy } from "../../test/hel
 import { DaemonWorkspaceIdentity } from "./daemon-workspace-identity.js";
 import type { DaemonServerSend } from "./daemon-transport.js";
 import { TestLocalDaemonTransport as LocalDaemonTransport } from "../../test/helpers/local-daemon-transport.js";
-import { TestWorkspaceDaemon as WorkspaceDaemon } from "../../test/helpers/workspace-daemon.js";
+import { TestDaemonProcessCoordinator as DaemonProcessCoordinator } from "../../test/helpers/daemon-process-coordinator.js";
 
-describe("WorkspaceDaemon runtime lifecycle", () => {
-  const harnesses: WorkspaceDaemonHarness[] = [];
+describe("DaemonProcessCoordinator runtime lifecycle", () => {
+  const harnesses: DaemonProcessCoordinatorHarness[] = [];
   const childProcesses: ChildProcess[] = [];
 
   afterEach(async () => {
@@ -49,7 +49,7 @@ describe("WorkspaceDaemon runtime lifecycle", () => {
 
   it("returns an in-flight navigation result before a graceful stop exits", async () => {
     const executor = new DeferredExecutor();
-    const harness = await WorkspaceDaemonHarness.start(executor);
+    const harness = await DaemonProcessCoordinatorHarness.start(executor);
     harnesses.push(harness);
     const execution = harness.execute("navigation");
     await executor.started;
@@ -80,7 +80,7 @@ describe("WorkspaceDaemon runtime lifecycle", () => {
     let resourceExceeded = false;
     const resourcePolicy = DaemonResourcePolicy.fromSystemMemory(512 * 1024 * 1024);
     const executor = new DeferredExecutor();
-    const harness = await WorkspaceDaemonHarness.start(executor, {
+    const harness = await DaemonProcessCoordinatorHarness.start(executor, {
       resourcePolicy,
       resourceCheckIntervalMs: 5,
       residentMemoryBytes: () =>
@@ -112,7 +112,7 @@ describe("WorkspaceDaemon runtime lifecycle", () => {
 
   it("force-stops a matching daemon with a stuck request inside the bound", async () => {
     const executor = new DeferredExecutor();
-    const harness = await WorkspaceDaemonHarness.start(executor);
+    const harness = await DaemonProcessCoordinatorHarness.start(executor);
     harnesses.push(harness);
     void harness.execute("stuck").catch(() => undefined);
     await executor.started;
@@ -141,7 +141,7 @@ describe("WorkspaceDaemon runtime lifecycle", () => {
 
   it("escalates a stuck graceful worker close to one forced termination", async () => {
     const worker = new BlockingDrainNavigationWorker();
-    const harness = await WorkspaceDaemonHarness.start(new ImmediateExecutor(), {
+    const harness = await DaemonProcessCoordinatorHarness.start(new ImmediateExecutor(), {
       navigationWorker: worker,
     });
     harnesses.push(harness);
@@ -270,7 +270,7 @@ describe("WorkspaceDaemon runtime lifecycle", () => {
   }, 10_000);
 
   it("retains exact ownership after autonomous idle shutdown for an exit observer", async () => {
-    const harness = await WorkspaceDaemonHarness.start(new ImmediateExecutor(), {
+    const harness = await DaemonProcessCoordinatorHarness.start(new ImmediateExecutor(), {
       idleTimeoutMs: 10,
     });
     harnesses.push(harness);
@@ -290,7 +290,9 @@ describe("WorkspaceDaemon runtime lifecycle", () => {
 
   it("retains ready ownership while transport shutdown is blocked", async () => {
     const transport = new BlockingCloseTransport();
-    const harness = await WorkspaceDaemonHarness.start(new ImmediateExecutor(), { transport });
+    const harness = await DaemonProcessCoordinatorHarness.start(new ImmediateExecutor(), {
+      transport,
+    });
     harnesses.push(harness);
 
     const killing = transport.request(harness.identity.endpoint(harness.instanceId), {
@@ -312,7 +314,7 @@ describe("WorkspaceDaemon runtime lifecycle", () => {
   });
 
   it("releases daemon-owned startup authorization after publishing readiness", async () => {
-    const harness = await WorkspaceDaemonHarness.start(new ImmediateExecutor());
+    const harness = await DaemonProcessCoordinatorHarness.start(new ImmediateExecutor());
     harnesses.push(harness);
 
     expect(harness.registry.read(harness.identity)?.state).toBe("ready");
@@ -320,7 +322,7 @@ describe("WorkspaceDaemon runtime lifecycle", () => {
   });
 
   it("recovers from rejected work and exits after the recovered queue becomes idle", async () => {
-    const harness = await WorkspaceDaemonHarness.start(new RejectThenSucceedExecutor(), {
+    const harness = await DaemonProcessCoordinatorHarness.start(new RejectThenSucceedExecutor(), {
       idleTimeoutMs: 1_000,
     });
     harnesses.push(harness);
@@ -356,7 +358,7 @@ describe("WorkspaceDaemon runtime lifecycle", () => {
 
   it("force-closes a blocked worker after the workspace disappears", async () => {
     const navigationWorker = new BlockingDrainNavigationWorker();
-    const harness = await WorkspaceDaemonHarness.start(new ImmediateExecutor(), {
+    const harness = await DaemonProcessCoordinatorHarness.start(new ImmediateExecutor(), {
       navigationWorker,
     });
     harnesses.push(harness);
@@ -382,7 +384,7 @@ describe("WorkspaceDaemon runtime lifecycle", () => {
     const executor = new DeferredExecutor();
     const stdout = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
     const stderr = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
-    const harness = await WorkspaceDaemonHarness.start(executor, {
+    const harness = await DaemonProcessCoordinatorHarness.start(executor, {
       memoryCapBytes: 1,
       resourcePolicy,
       resourceCheckIntervalMs: 5,
@@ -429,7 +431,7 @@ interface RuntimeOptions {
   readonly navigationWorker?: DaemonNavigationWorker;
 }
 
-class WorkspaceDaemonHarness {
+class DaemonProcessCoordinatorHarness {
   readonly stateDirectory: string;
   readonly workspaceRoot: string;
   readonly identity: DaemonWorkspaceIdentity;
@@ -460,8 +462,8 @@ class WorkspaceDaemonHarness {
   static async start(
     executor: DaemonCommandExecutor,
     runtime: RuntimeOptions = {},
-  ): Promise<WorkspaceDaemonHarness> {
-    const harness = new WorkspaceDaemonHarness(runtime.transport);
+  ): Promise<DaemonProcessCoordinatorHarness> {
+    const harness = new DaemonProcessCoordinatorHarness(runtime.transport);
     const lease = harness.registry.acquireStartup(harness.identity, harness.instanceId);
     if (lease === undefined) throw new Error("Expected startup ownership");
     if (
@@ -485,7 +487,7 @@ class WorkspaceDaemonHarness {
       throw new Error("Expected daemon-owned startup publication");
     }
     const daemonPolicy = DaemonPolicy.currentSystem();
-    const daemon = new WorkspaceDaemon({
+    const daemon = new DaemonProcessCoordinator({
       identity: harness.identity,
       instanceId: harness.instanceId,
       processToken: "runtime-token",
@@ -794,7 +796,9 @@ function spawnStuckDaemon(
     process.execPath,
     [
       fileURLToPath(new URL("../../node_modules/tsx/dist/cli.mjs", import.meta.url)),
-      fileURLToPath(new URL("../../test/helpers/workspace-daemon-stuck.ts", import.meta.url)),
+      fileURLToPath(
+        new URL("../../test/helpers/daemon-process-coordinator-stuck.ts", import.meta.url),
+      ),
       workspaceRoot,
       stateDirectory,
       instanceId,

@@ -36,7 +36,7 @@ import type { DaemonWorkspaceIdentity } from "./daemon-workspace-identity.js";
 import type { DaemonRequestServer, DaemonServerSend } from "./daemon-transport.js";
 import { WorkspaceRequestQueue } from "./workspace-request-queue.js";
 
-export interface WorkspaceDaemonOptions {
+export interface DaemonProcessCoordinatorOptions {
   readonly identity: DaemonWorkspaceIdentity;
   readonly instanceId: string;
   readonly processToken: string;
@@ -58,7 +58,7 @@ export interface WorkspaceDaemonOptions {
   readonly logger?: DaemonLogger;
 }
 
-export class WorkspaceDaemon {
+export class DaemonProcessCoordinator {
   private readonly now: () => number;
   private readonly clock: DaemonClock;
   private readonly exit: (code: number) => void;
@@ -82,7 +82,7 @@ export class WorkspaceDaemon {
   private readonly forceEscalated: Promise<void>;
   private resolveForceEscalated!: () => void;
 
-  constructor(private readonly options: WorkspaceDaemonOptions) {
+  constructor(private readonly options: DaemonProcessCoordinatorOptions) {
     const policy = options.policy;
     this.policy = policy;
     this.forceEscalated = new Promise((resolve) => {
@@ -520,7 +520,7 @@ export class WorkspaceDaemon {
   private workspaceExists(): Promise<boolean> {
     return this.options.dependencies
       ? this.options.dependencies.fs.exists(this.options.identity.workspaceRoot)
-      : WorkspaceDaemon.pathExists(this.options.identity.workspaceRoot);
+      : DaemonProcessCoordinator.pathExists(this.options.identity.workspaceRoot);
   }
 
   private async workspaceDeletedAfterDelivery(): Promise<void> {

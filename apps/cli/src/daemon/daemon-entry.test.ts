@@ -19,7 +19,7 @@ afterEach(() => {
   vi.doUnmock("./daemon-process-launcher.js");
   vi.doUnmock("./daemon-registry.js");
   vi.doUnmock("./local-daemon-transport.js");
-  vi.doUnmock("./workspace-daemon.js");
+  vi.doUnmock("./daemon-process-coordinator.js");
   vi.doUnmock("./daemon-clock.js");
   vi.doUnmock("./daemon-logger.js");
   vi.doUnmock("./daemon-process-termination-observer.js");
@@ -79,8 +79,8 @@ it("starts the detached daemon with only daemon-owned process configuration", as
       }
     },
   }));
-  vi.doMock("./workspace-daemon.js", () => ({
-    WorkspaceDaemon: class {
+  vi.doMock("./daemon-process-coordinator.js", () => ({
+    DaemonProcessCoordinator: class {
       constructor(options: {
         readonly identity: { readonly stateDirectory: string };
         readonly executorModuleUrl: string;
@@ -112,7 +112,7 @@ it("keeps the process and worker entries independent from CLI and core modules",
     "daemon-navigation-worker-entry.ts",
     "daemon-navigation-worker-protocol.ts",
     "local-daemon-transport.ts",
-    "workspace-daemon.ts",
+    "daemon-process-coordinator.ts",
   ]) {
     const source = readFileSync(new URL(file, import.meta.url), "utf8");
     expect(source).not.toMatch(

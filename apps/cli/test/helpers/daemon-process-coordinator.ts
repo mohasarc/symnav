@@ -3,11 +3,11 @@ import { DaemonPolicyTestFactory } from "@symnav/daemon/policy-testing";
 import type { ProgramDependencies } from "../../src/program-dependencies.js";
 import type { TestDaemonResourcePolicy as DaemonResourcePolicy } from "./daemon-resource-policy.js";
 import {
-  WorkspaceDaemon as RuntimeWorkspaceDaemon,
-  type WorkspaceDaemonOptions,
-} from "../../src/daemon/workspace-daemon.js";
+  DaemonProcessCoordinator as RuntimeDaemonProcessCoordinator,
+  type DaemonProcessCoordinatorOptions,
+} from "../../src/daemon/daemon-process-coordinator.js";
 
-interface TestWorkspaceDaemonPolicyOptions {
+interface TestDaemonProcessCoordinatorPolicyOptions {
   readonly policy?: DaemonPolicy;
   readonly memoryCapBytes?: number;
   readonly resourcePolicy?: DaemonResourcePolicy;
@@ -23,11 +23,11 @@ interface TestWorkspaceDaemonPolicyOptions {
   readonly maximumRetainedOperationTraces?: number;
 }
 
-export type TestWorkspaceDaemonOptions = Omit<WorkspaceDaemonOptions, "dependencies" | "policy"> &
-  TestWorkspaceDaemonPolicyOptions & { readonly dependencies: ProgramDependencies };
+export type TestDaemonProcessCoordinatorOptions = Omit<DaemonProcessCoordinatorOptions, "dependencies" | "policy"> &
+  TestDaemonProcessCoordinatorPolicyOptions & { readonly dependencies: ProgramDependencies };
 
-export class TestWorkspaceDaemon extends RuntimeWorkspaceDaemon {
-  constructor(options: TestWorkspaceDaemonOptions) {
+export class TestDaemonProcessCoordinator extends RuntimeDaemonProcessCoordinator {
+  constructor(options: TestDaemonProcessCoordinatorOptions) {
     const base = options.policy ?? options.dependencies.daemonPolicy;
     const resourceRecord = options.resourcePolicy?.record;
     const hardProcessRssBytes = resourceRecord?.hardProcessRssBytes;

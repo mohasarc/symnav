@@ -18,7 +18,7 @@ import type {
 } from "../../src/daemon/daemon-navigation-worker.js";
 import { NodeDaemonNavigationWorker } from "../../src/daemon/daemon-navigation-worker.js";
 import type { DaemonNavigationWorkerResponse } from "../../src/daemon/daemon-navigation-worker-protocol.js";
-import { TestWorkspaceDaemon as WorkspaceDaemon } from "./workspace-daemon.js";
+import { TestDaemonProcessCoordinator as DaemonProcessCoordinator } from "./daemon-process-coordinator.js";
 
 const [
   workspaceRoot,
@@ -197,7 +197,7 @@ const navigationWorker = workerExit
       })
     : new ControlledNavigationWorker();
 writeFileSync(`${readyPath}.boot`, String(process.pid));
-const daemon = new WorkspaceDaemon({
+const daemon = new DaemonProcessCoordinator({
   identity,
   instanceId,
   processToken,

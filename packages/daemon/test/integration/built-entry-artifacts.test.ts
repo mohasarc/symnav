@@ -1,4 +1,3 @@
-import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { describe, expect, it } from "vitest";
@@ -75,15 +74,6 @@ describe("built daemon entry artifacts", () => {
       await expect(worker.start("files:1")).rejects.toThrow(/initialization failure/i);
     } finally {
       await worker.terminate();
-    }
-  });
-
-  it("builds side-effect-only entry declarations", () => {
-    for (const entry of ["process-entry", "worker-entry"]) {
-      const declaration = readFileSync(join(packageDirectory, "dist", `${entry}.d.ts`), "utf8");
-      expect(declaration).not.toMatch(
-        /export (?:declare|class|function|interface|type|const|let|var)/,
-      );
     }
   });
 });

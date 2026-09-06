@@ -17,6 +17,11 @@ interface FileSystemAliases {
 
 type MemberAccessExpression = ts.PropertyAccessExpression | ts.ElementAccessExpression;
 
+interface StaticStorageAlias {
+  readonly source: ts.Expression;
+  readonly members: readonly string[];
+}
+
 class ExternalDaemonStorageAccessInventory {
   private static readonly repositoryRoot = resolve(
     dirname(fileURLToPath(import.meta.url)),
@@ -217,7 +222,10 @@ class ExternalDaemonStorageAccessInventory {
       ts.isCallExpression(node) &&
       ExternalDaemonStorageAccessInventory.isPathBuilder(node.expression, pathBuilders, checker) &&
       node.arguments.some((argument) =>
-        ExternalDaemonStorageAccessInventory.hasDaemonSegment(argument),
+        ExternalDaemonStorageAccessInventory.hasDaemonSegment(argument, checker, new Set()),
+      ) &&
+      node.arguments.some((argument) =>
+        ExternalDaemonStorageAccessInventory.hasStorageRoot(argument, checker, new Set()),
       )
     ) {
       return true;
@@ -226,7 +234,12 @@ class ExternalDaemonStorageAccessInventory {
       ts.isCallExpression(node) &&
       ExternalDaemonStorageAccessInventory.isFileSystemCall(node.expression, fileSystem, checker) &&
       node.arguments.some((argument) =>
-        ExternalDaemonStorageAccessInventory.hasDaemonStoragePath(argument),
+        ExternalDaemonStorageAccessInventory.hasDaemonStoragePath(
+          argument,
+          pathBuilders,
+          checker,
+          new Set(),
+        ),
       )
     ) {
       return true;
@@ -243,38 +256,169 @@ class ExternalDaemonStorageAccessInventory {
       );
   }
 
-  private static hasDaemonSegment(node: ts.Node): boolean {
-    if (ExternalDaemonStorageAccessInventory.literalText(node) === "daemons") return true;
-    return node
-      .getChildren()
-      .some((child) => ExternalDaemonStorageAccessInventory.hasDaemonSegment(child));
-  }
-
-  private static hasDaemonStoragePath(node: ts.Node): boolean {
-    const literalText = ExternalDaemonStorageAccessInventory.literalText(node);
-    if (literalText !== undefined && /(?:^|[/\\])daemons(?:[/\\]|$)/.test(literalText)) {
+  private static hasDaemonSegment(
+    node: ts.Node,
+    checker: ts.TypeChecker,
+    visitedSymbols: ReadonlySet<ts.Symbol>,
+  ): boolean {
+    if (
+      ts.isExpression(node) &&
+      ExternalDaemonStorageAccessInventory.staticString(node, checker, visitedSymbols) === "daemons"
+    ) {
       return true;
     }
     return node
       .getChildren()
-      .some((child) => ExternalDaemonStorageAccessInventory.hasDaemonStoragePath(child));
+      .some((child) =>
+        ExternalDaemonStorageAccessInventory.hasDaemonSegment(child, checker, visitedSymbols),
+      );
+  }
+
+  private static hasStorageRoot(
+    node: ts.Node,
+    checker: ts.TypeChecker,
+    visitedSymbols: ReadonlySet<ts.Symbol>,
+  ): boolean {
+    if (ts.isExpression(node)) {
+      const unwrapped = ExternalDaemonStorageAccessInventory.unwrapExpression(node);
+      const literalText = ExternalDaemonStorageAccessInventory.staticString(
+        unwrapped,
+        checker,
+        visitedSymbols,
+      );
+      if (literalText !== undefined && /(?:^|[/\\])state(?:[/\\]|$)/.test(literalText)) {
+        return true;
+      }
+      if (ts.isIdentifier(unwrapped)) {
+        if (/^state(?:Directory|Dir)$/.test(unwrapped.text)) return true;
+        const symbol = checker.getSymbolAtLocation(unwrapped);
+        if (symbol !== undefined && !visitedSymbols.has(symbol)) {
+          const alias = ExternalDaemonStorageAccessInventory.staticStorageAlias(symbol, checker);
+          if (alias !== undefined && alias.members.length === 0) {
+            const nextVisitedSymbols = new Set(visitedSymbols);
+            nextVisitedSymbols.add(symbol);
+            if (
+              ExternalDaemonStorageAccessInventory.hasStorageRoot(
+                alias.source,
+                checker,
+                nextVisitedSymbols,
+              )
+            ) {
+              return true;
+            }
+          }
+        }
+      }
+    }
+    return node
+      .getChildren()
+      .some((child) =>
+        ExternalDaemonStorageAccessInventory.hasStorageRoot(child, checker, visitedSymbols),
+      );
+  }
+
+  private static hasDaemonStoragePath(
+    node: ts.Node,
+    pathBuilders: PathBuilderAliases,
+    checker: ts.TypeChecker,
+    visitedSymbols: ReadonlySet<ts.Symbol>,
+  ): boolean {
+    const literalText = ExternalDaemonStorageAccessInventory.literalText(node);
+    if (literalText !== undefined && /(?:^|[/\\])daemons(?:[/\\]|$)/.test(literalText)) {
+      return true;
+    }
+    if (
+      ts.isCallExpression(node) &&
+      ExternalDaemonStorageAccessInventory.isPathBuilder(node.expression, pathBuilders, checker) &&
+      node.arguments.some((argument) =>
+        ExternalDaemonStorageAccessInventory.hasDaemonSegment(argument, checker, visitedSymbols),
+      )
+    ) {
+      return true;
+    }
+    if (ts.isIdentifier(node)) {
+      const symbol = checker.getSymbolAtLocation(node);
+      if (symbol !== undefined && !visitedSymbols.has(symbol)) {
+        const alias = ExternalDaemonStorageAccessInventory.staticStorageAlias(symbol, checker);
+        if (alias !== undefined && alias.members.length === 0) {
+          const nextVisitedSymbols = new Set(visitedSymbols);
+          nextVisitedSymbols.add(symbol);
+          if (
+            ExternalDaemonStorageAccessInventory.hasDaemonStoragePath(
+              alias.source,
+              pathBuilders,
+              checker,
+              nextVisitedSymbols,
+            )
+          ) {
+            return true;
+          }
+        }
+      }
+    }
+    return node
+      .getChildren()
+      .some((child) =>
+        ExternalDaemonStorageAccessInventory.hasDaemonStoragePath(
+          child,
+          pathBuilders,
+          checker,
+          visitedSymbols,
+        ),
+      );
   }
 
   private static isPathBuilder(
     expression: ts.Expression,
     aliases: PathBuilderAliases,
     checker: ts.TypeChecker,
+    visitedSymbols: ReadonlySet<ts.Symbol> = new Set(),
   ): boolean {
-    if (ts.isIdentifier(expression)) {
-      const symbol = checker.getSymbolAtLocation(expression);
-      return symbol !== undefined && aliases.functions.has(symbol);
+    const unwrapped = ExternalDaemonStorageAccessInventory.unwrapExpression(expression);
+    if (ts.isIdentifier(unwrapped)) {
+      const symbol = checker.getSymbolAtLocation(unwrapped);
+      if (symbol !== undefined && aliases.functions.has(symbol)) return true;
     }
-    return (
-      ExternalDaemonStorageAccessInventory.isMemberAccess(expression) &&
+    if (
+      ExternalDaemonStorageAccessInventory.isMemberAccess(unwrapped) &&
       ["join", "resolve"].includes(
-        ExternalDaemonStorageAccessInventory.memberName(expression) ?? "",
+        ExternalDaemonStorageAccessInventory.memberName(unwrapped, checker) ?? "",
       ) &&
-      ExternalDaemonStorageAccessInventory.isPathNamespace(expression.expression, aliases, checker)
+      ExternalDaemonStorageAccessInventory.isPathNamespace(
+        unwrapped.expression,
+        aliases,
+        checker,
+        visitedSymbols,
+      )
+    ) {
+      return true;
+    }
+    if (!ts.isIdentifier(unwrapped)) return false;
+    const symbol = checker.getSymbolAtLocation(unwrapped);
+    if (symbol === undefined || visitedSymbols.has(symbol)) return false;
+    const alias = ExternalDaemonStorageAccessInventory.staticStorageAlias(symbol, checker);
+    if (alias === undefined) return false;
+    const nextVisitedSymbols = new Set(visitedSymbols);
+    nextVisitedSymbols.add(symbol);
+    if (alias.members.length === 0) {
+      return ExternalDaemonStorageAccessInventory.isPathBuilder(
+        alias.source,
+        aliases,
+        checker,
+        nextVisitedSymbols,
+      );
+    }
+    const builderName = alias.members.at(-1);
+    return (
+      builderName !== undefined &&
+      ["join", "resolve"].includes(builderName) &&
+      ExternalDaemonStorageAccessInventory.isPathNamespacePath(
+        alias.source,
+        alias.members.slice(0, -1),
+        aliases,
+        checker,
+        nextVisitedSymbols,
+      )
     );
   }
 
@@ -282,17 +426,66 @@ class ExternalDaemonStorageAccessInventory {
     expression: ts.Expression,
     aliases: PathBuilderAliases,
     checker: ts.TypeChecker,
+    visitedSymbols: ReadonlySet<ts.Symbol> = new Set(),
   ): boolean {
-    if (ts.isIdentifier(expression)) {
-      const symbol = checker.getSymbolAtLocation(expression);
-      return symbol !== undefined && aliases.namespaces.has(symbol);
+    const unwrapped = ExternalDaemonStorageAccessInventory.unwrapExpression(expression);
+    if (ts.isIdentifier(unwrapped)) {
+      const symbol = checker.getSymbolAtLocation(unwrapped);
+      if (symbol !== undefined && aliases.namespaces.has(symbol)) return true;
     }
-    return (
-      ExternalDaemonStorageAccessInventory.isMemberAccess(expression) &&
+    if (
+      ExternalDaemonStorageAccessInventory.isMemberAccess(unwrapped) &&
       ["posix", "win32"].includes(
-        ExternalDaemonStorageAccessInventory.memberName(expression) ?? "",
+        ExternalDaemonStorageAccessInventory.memberName(unwrapped, checker) ?? "",
       ) &&
-      ExternalDaemonStorageAccessInventory.isPathNamespace(expression.expression, aliases, checker)
+      ExternalDaemonStorageAccessInventory.isPathNamespace(
+        unwrapped.expression,
+        aliases,
+        checker,
+        visitedSymbols,
+      )
+    ) {
+      return true;
+    }
+    if (!ts.isIdentifier(unwrapped)) return false;
+    const symbol = checker.getSymbolAtLocation(unwrapped);
+    if (symbol === undefined || visitedSymbols.has(symbol)) return false;
+    const alias = ExternalDaemonStorageAccessInventory.staticStorageAlias(symbol, checker);
+    if (alias === undefined) return false;
+    const nextVisitedSymbols = new Set(visitedSymbols);
+    nextVisitedSymbols.add(symbol);
+    return ExternalDaemonStorageAccessInventory.isPathNamespacePath(
+      alias.source,
+      alias.members,
+      aliases,
+      checker,
+      nextVisitedSymbols,
+    );
+  }
+
+  private static isPathNamespacePath(
+    source: ts.Expression,
+    members: readonly string[],
+    aliases: PathBuilderAliases,
+    checker: ts.TypeChecker,
+    visitedSymbols: ReadonlySet<ts.Symbol>,
+  ): boolean {
+    if (members.length === 0) {
+      return ExternalDaemonStorageAccessInventory.isPathNamespace(
+        source,
+        aliases,
+        checker,
+        visitedSymbols,
+      );
+    }
+    const memberName = members.at(-1);
+    if (memberName === undefined || !["posix", "win32"].includes(memberName)) return false;
+    return ExternalDaemonStorageAccessInventory.isPathNamespacePath(
+      source,
+      members.slice(0, -1),
+      aliases,
+      checker,
+      visitedSymbols,
     );
   }
 
@@ -300,17 +493,49 @@ class ExternalDaemonStorageAccessInventory {
     expression: ts.Expression,
     aliases: FileSystemAliases,
     checker: ts.TypeChecker,
+    visitedSymbols: ReadonlySet<ts.Symbol> = new Set(),
   ): boolean {
-    if (ts.isIdentifier(expression)) {
-      const symbol = checker.getSymbolAtLocation(expression);
-      return symbol !== undefined && aliases.functions.has(symbol);
+    const unwrapped = ExternalDaemonStorageAccessInventory.unwrapExpression(expression);
+    if (ts.isIdentifier(unwrapped)) {
+      const symbol = checker.getSymbolAtLocation(unwrapped);
+      if (symbol !== undefined && aliases.functions.has(symbol)) return true;
     }
-    return (
-      ExternalDaemonStorageAccessInventory.isMemberAccess(expression) &&
+    if (
+      ExternalDaemonStorageAccessInventory.isMemberAccess(unwrapped) &&
       ExternalDaemonStorageAccessInventory.isFileSystemNamespace(
-        expression.expression,
+        unwrapped.expression,
         aliases,
         checker,
+        visitedSymbols,
+      )
+    ) {
+      return true;
+    }
+    if (!ts.isIdentifier(unwrapped)) return false;
+    const symbol = checker.getSymbolAtLocation(unwrapped);
+    if (symbol === undefined || visitedSymbols.has(symbol)) return false;
+    const alias = ExternalDaemonStorageAccessInventory.staticStorageAlias(symbol, checker);
+    if (alias === undefined) return false;
+    const nextVisitedSymbols = new Set(visitedSymbols);
+    nextVisitedSymbols.add(symbol);
+    if (alias.members.length === 0) {
+      return ExternalDaemonStorageAccessInventory.isFileSystemCall(
+        alias.source,
+        aliases,
+        checker,
+        nextVisitedSymbols,
+      );
+    }
+    const functionName = alias.members.at(-1);
+    return (
+      functionName !== undefined &&
+      functionName !== "promises" &&
+      ExternalDaemonStorageAccessInventory.isFileSystemNamespacePath(
+        alias.source,
+        alias.members.slice(0, -1),
+        aliases,
+        checker,
+        nextVisitedSymbols,
       )
     );
   }
@@ -319,30 +544,191 @@ class ExternalDaemonStorageAccessInventory {
     expression: ts.Expression,
     aliases: FileSystemAliases,
     checker: ts.TypeChecker,
+    visitedSymbols: ReadonlySet<ts.Symbol> = new Set(),
   ): boolean {
-    if (ts.isIdentifier(expression)) {
-      const symbol = checker.getSymbolAtLocation(expression);
-      return symbol !== undefined && aliases.namespaces.has(symbol);
+    const unwrapped = ExternalDaemonStorageAccessInventory.unwrapExpression(expression);
+    if (ts.isIdentifier(unwrapped)) {
+      const symbol = checker.getSymbolAtLocation(unwrapped);
+      if (symbol !== undefined && aliases.namespaces.has(symbol)) return true;
     }
-    return (
-      ExternalDaemonStorageAccessInventory.isMemberAccess(expression) &&
-      ExternalDaemonStorageAccessInventory.memberName(expression) === "promises" &&
+    if (
+      ExternalDaemonStorageAccessInventory.isMemberAccess(unwrapped) &&
+      ExternalDaemonStorageAccessInventory.memberName(unwrapped, checker) === "promises" &&
       ExternalDaemonStorageAccessInventory.isFileSystemNamespace(
-        expression.expression,
+        unwrapped.expression,
         aliases,
         checker,
+        visitedSymbols,
       )
+    ) {
+      return true;
+    }
+    if (!ts.isIdentifier(unwrapped)) return false;
+    const symbol = checker.getSymbolAtLocation(unwrapped);
+    if (symbol === undefined || visitedSymbols.has(symbol)) return false;
+    const alias = ExternalDaemonStorageAccessInventory.staticStorageAlias(symbol, checker);
+    if (alias === undefined) return false;
+    const nextVisitedSymbols = new Set(visitedSymbols);
+    nextVisitedSymbols.add(symbol);
+    return ExternalDaemonStorageAccessInventory.isFileSystemNamespacePath(
+      alias.source,
+      alias.members,
+      aliases,
+      checker,
+      nextVisitedSymbols,
     );
+  }
+
+  private static isFileSystemNamespacePath(
+    source: ts.Expression,
+    members: readonly string[],
+    aliases: FileSystemAliases,
+    checker: ts.TypeChecker,
+    visitedSymbols: ReadonlySet<ts.Symbol>,
+  ): boolean {
+    if (members.length === 0) {
+      return ExternalDaemonStorageAccessInventory.isFileSystemNamespace(
+        source,
+        aliases,
+        checker,
+        visitedSymbols,
+      );
+    }
+    if (members.at(-1) !== "promises") return false;
+    return ExternalDaemonStorageAccessInventory.isFileSystemNamespacePath(
+      source,
+      members.slice(0, -1),
+      aliases,
+      checker,
+      visitedSymbols,
+    );
+  }
+
+  private static staticStorageAlias(
+    symbol: ts.Symbol,
+    checker: ts.TypeChecker,
+  ): StaticStorageAlias | undefined {
+    for (const declaration of symbol.declarations ?? []) {
+      if (
+        ts.isVariableDeclaration(declaration) &&
+        ts.isIdentifier(declaration.name) &&
+        declaration.initializer !== undefined &&
+        ExternalDaemonStorageAccessInventory.isConstVariable(declaration)
+      ) {
+        return { source: declaration.initializer, members: [] };
+      }
+      if (ts.isBindingElement(declaration)) {
+        const alias = ExternalDaemonStorageAccessInventory.bindingAlias(declaration, checker);
+        if (alias !== undefined) return alias;
+      }
+    }
+    return undefined;
+  }
+
+  private static bindingAlias(
+    declaration: ts.BindingElement,
+    checker: ts.TypeChecker,
+  ): StaticStorageAlias | undefined {
+    const members: string[] = [];
+    let bindingElement = declaration;
+    while (true) {
+      if (bindingElement.dotDotDotToken !== undefined) return undefined;
+      const memberNode = bindingElement.propertyName ?? bindingElement.name;
+      const memberName = ExternalDaemonStorageAccessInventory.staticPropertyName(
+        memberNode,
+        checker,
+      );
+      if (memberName === undefined) return undefined;
+      members.unshift(memberName);
+      const bindingPattern = bindingElement.parent;
+      if (!ts.isObjectBindingPattern(bindingPattern)) return undefined;
+      const owner = bindingPattern.parent;
+      if (ts.isVariableDeclaration(owner)) {
+        if (
+          owner.initializer === undefined ||
+          !ExternalDaemonStorageAccessInventory.isConstVariable(owner)
+        ) {
+          return undefined;
+        }
+        return { source: owner.initializer, members };
+      }
+      if (!ts.isBindingElement(owner)) return undefined;
+      bindingElement = owner;
+    }
+  }
+
+  private static isConstVariable(declaration: ts.VariableDeclaration): boolean {
+    return (
+      ts.isVariableDeclarationList(declaration.parent) &&
+      (declaration.parent.flags & ts.NodeFlags.Const) !== 0
+    );
+  }
+
+  private static staticPropertyName(node: ts.Node, checker: ts.TypeChecker): string | undefined {
+    if (ts.isIdentifier(node) || ts.isStringLiteralLike(node)) return node.text;
+    if (ts.isComputedPropertyName(node)) {
+      return ExternalDaemonStorageAccessInventory.staticString(node.expression, checker, new Set());
+    }
+    return undefined;
   }
 
   private static isMemberAccess(node: ts.Node): node is MemberAccessExpression {
     return ts.isPropertyAccessExpression(node) || ts.isElementAccessExpression(node);
   }
 
-  private static memberName(expression: MemberAccessExpression): string | undefined {
+  private static memberName(
+    expression: MemberAccessExpression,
+    checker: ts.TypeChecker,
+  ): string | undefined {
     return ts.isPropertyAccessExpression(expression)
       ? expression.name.text
-      : ExternalDaemonStorageAccessInventory.literalText(expression.argumentExpression);
+      : ExternalDaemonStorageAccessInventory.staticString(
+          expression.argumentExpression,
+          checker,
+          new Set(),
+        );
+  }
+
+  private static staticString(
+    expression: ts.Expression | undefined,
+    checker: ts.TypeChecker,
+    visitedSymbols: ReadonlySet<ts.Symbol>,
+  ): string | undefined {
+    if (expression === undefined) return undefined;
+    const unwrapped = ExternalDaemonStorageAccessInventory.unwrapExpression(expression);
+    const literal = ExternalDaemonStorageAccessInventory.literalText(unwrapped);
+    if (literal !== undefined) return literal;
+    if (!ts.isIdentifier(unwrapped)) return undefined;
+    const symbol = checker.getSymbolAtLocation(unwrapped);
+    if (symbol === undefined || visitedSymbols.has(symbol)) return undefined;
+    const declaration = symbol.declarations?.find(
+      (candidate): candidate is ts.VariableDeclaration =>
+        ts.isVariableDeclaration(candidate) &&
+        ts.isIdentifier(candidate.name) &&
+        candidate.initializer !== undefined &&
+        ExternalDaemonStorageAccessInventory.isConstVariable(candidate),
+    );
+    if (declaration?.initializer === undefined) return undefined;
+    const nextVisitedSymbols = new Set(visitedSymbols);
+    nextVisitedSymbols.add(symbol);
+    return ExternalDaemonStorageAccessInventory.staticString(
+      declaration.initializer,
+      checker,
+      nextVisitedSymbols,
+    );
+  }
+
+  private static unwrapExpression(expression: ts.Expression): ts.Expression {
+    if (
+      ts.isParenthesizedExpression(expression) ||
+      ts.isNonNullExpression(expression) ||
+      ts.isAsExpression(expression) ||
+      ts.isTypeAssertionExpression(expression) ||
+      ts.isSatisfiesExpression(expression)
+    ) {
+      return ExternalDaemonStorageAccessInventory.unwrapExpression(expression.expression);
+    }
+    return expression;
   }
 
   private static literalText(node: ts.Node): string | undefined {

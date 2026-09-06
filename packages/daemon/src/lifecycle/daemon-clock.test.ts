@@ -146,40 +146,19 @@ describe("daemon production clock ownership", () => {
     ],
     ["parenthesized performance clock", "(performance).now();"],
     ["non-null performance clock", "performance!.now();"],
-    [
-      "as-cast performance clock",
-      "(performance as { now(): number }).now();",
-    ],
-    [
-      "satisfies performance clock",
-      "(performance satisfies { now(): number }).now();",
-    ],
-    [
-      "type-asserted performance clock",
-      "(<{ now(): number }>performance).now();",
-    ],
+    ["as-cast performance clock", "(performance as { now(): number }).now();"],
+    ["satisfies performance clock", "(performance satisfies { now(): number }).now();"],
+    ["type-asserted performance clock", "(<{ now(): number }>performance).now();"],
     ["wrapped optional performance clock", "(performance)?.now?.();"],
-    [
-      "const-computed performance clock",
-      'const member = "now" as const; performance[member]();',
-    ],
+    ["const-computed performance clock", 'const member = "now" as const; performance[member]();'],
     [
       "const-computed process clock chain",
       'const timer = "hrtime"; const precision = "bigint"; process[timer][precision]();',
     ],
     ["const performance alias", "const timer = performance; timer.now();"],
-    [
-      "const process clock alias",
-      "const timer = process.hrtime; timer.bigint();",
-    ],
-    [
-      "destructured global performance clock",
-      "const { now: timer } = performance; timer();",
-    ],
-    [
-      "destructured global process clock",
-      "const { hrtime: timer } = process; timer.bigint();",
-    ],
+    ["const process clock alias", "const timer = process.hrtime; timer.bigint();"],
+    ["destructured global performance clock", "const { now: timer } = performance; timer();"],
+    ["destructured global process clock", "const { hrtime: timer } = process; timer.bigint();"],
     [
       "nested destructured global process clock",
       "const { hrtime: { bigint: timer } } = process; timer();",
@@ -228,14 +207,8 @@ describe("daemon production clock ownership", () => {
       "computed local clock members",
       'const performance = { now: () => 1 }; const process = { hrtime: { bigint: () => 1 } }; performance["now"](); process["hrtime"]["bigint"]();',
     ],
-    [
-      "mutable computed global member",
-      'let member = "now"; performance[member]();',
-    ],
-    [
-      "mutable global performance alias",
-      "let timer = performance; timer.now();",
-    ],
+    ["mutable computed global member", 'let member = "now"; performance[member]();'],
+    ["mutable global performance alias", "let timer = performance; timer.now();"],
     [
       "local destructured clock",
       "const local = { now: () => 1 }; const { now: timer } = local; timer();",
@@ -285,6 +258,21 @@ interface RawClockAliases {
 }
 
 type MemberAccessExpression = ts.PropertyAccessExpression | ts.ElementAccessExpression;
+
+type ClockValue =
+  | "date"
+  | "global"
+  | "performance"
+  | "performanceNamespace"
+  | "process"
+  | "hrtime"
+  | "now"
+  | "bigint";
+
+interface StaticBindingAlias {
+  readonly source: ts.Expression;
+  readonly members: readonly string[];
+}
 
 class DaemonRawClockSourceInventory {
   static hasRawClock(sourceText: string): boolean {
@@ -414,20 +402,23 @@ class DaemonRawClockSourceInventory {
     }
     if (
       ts.isNewExpression(node) &&
-      DaemonRawClockSourceInventory.isGlobalMember(node.expression, "Date", checker)
+      DaemonRawClockSourceInventory.isClockValue(node.expression, "date", aliases, checker)
     ) {
       return true;
     }
     if (
       ts.isCallExpression(node) &&
-      (DaemonRawClockSourceInventory.isGlobalMember(node.expression, "Date", checker) ||
-        DaemonRawClockSourceInventory.hasSymbol(node.expression, aliases.hrtime, checker))
+      (["now", "hrtime", "bigint"] as const).some((clockValue) =>
+        DaemonRawClockSourceInventory.isClockValue(node.expression, clockValue, aliases, checker),
+      )
     ) {
       return true;
     }
     if (
       DaemonRawClockSourceInventory.isMemberAccess(node) &&
-      DaemonRawClockSourceInventory.isRawClockProperty(node, aliases, checker)
+      (["now", "hrtime", "bigint"] as const).some((clockValue) =>
+        DaemonRawClockSourceInventory.isClockValue(node, clockValue, aliases, checker),
+      )
     ) {
       return true;
     }
@@ -436,104 +427,196 @@ class DaemonRawClockSourceInventory {
       .some((child) => DaemonRawClockSourceInventory.containsRawClock(child, aliases, checker));
   }
 
-  private static isRawClockProperty(
-    expression: MemberAccessExpression,
+  private static isClockValue(
+    expression: ts.Expression,
+    expected: ClockValue,
     aliases: RawClockAliases,
     checker: ts.TypeChecker,
+    visitedSymbols: ReadonlySet<ts.Symbol> = new Set(),
   ): boolean {
-    const memberName = DaemonRawClockSourceInventory.memberName(expression);
+    const unwrapped = DaemonRawClockSourceInventory.unwrapExpression(expression);
     if (
-      memberName === "now" &&
-      (DaemonRawClockSourceInventory.isGlobalMember(expression.expression, "Date", checker) ||
-        DaemonRawClockSourceInventory.isPerformance(expression.expression, aliases, checker))
+      ts.isIdentifier(unwrapped) &&
+      DaemonRawClockSourceInventory.isDirectClockIdentifier(unwrapped, expected, aliases, checker)
     ) {
       return true;
     }
-    if (
-      memberName === "hrtime" &&
-      DaemonRawClockSourceInventory.isProcess(expression.expression, aliases, checker)
-    ) {
-      return true;
+    if (DaemonRawClockSourceInventory.isMemberAccess(unwrapped)) {
+      const memberName = DaemonRawClockSourceInventory.memberName(unwrapped, checker);
+      const ownerValues = DaemonRawClockSourceInventory.ownerValues(expected, memberName);
+      if (
+        ownerValues.some((ownerValue) =>
+          DaemonRawClockSourceInventory.isClockValue(
+            unwrapped.expression,
+            ownerValue,
+            aliases,
+            checker,
+            visitedSymbols,
+          ),
+        )
+      ) {
+        return true;
+      }
     }
-    return (
-      memberName === "bigint" &&
-      DaemonRawClockSourceInventory.isHrtime(expression.expression, aliases, checker)
+    if (!ts.isIdentifier(unwrapped)) return false;
+    const symbol = checker.getSymbolAtLocation(unwrapped);
+    if (symbol === undefined || visitedSymbols.has(symbol)) return false;
+    const alias = DaemonRawClockSourceInventory.staticBindingAlias(symbol, checker);
+    if (alias === undefined) return false;
+    const nextVisitedSymbols = new Set(visitedSymbols);
+    nextVisitedSymbols.add(symbol);
+    return DaemonRawClockSourceInventory.isClockMemberPath(
+      alias.source,
+      alias.members,
+      expected,
+      aliases,
+      checker,
+      nextVisitedSymbols,
     );
   }
 
-  private static isHrtime(
-    expression: ts.Expression,
+  private static isDirectClockIdentifier(
+    identifier: ts.Identifier,
+    expected: ClockValue,
     aliases: RawClockAliases,
     checker: ts.TypeChecker,
   ): boolean {
-    if (DaemonRawClockSourceInventory.hasSymbol(expression, aliases.hrtime, checker)) return true;
-    return (
-      DaemonRawClockSourceInventory.isMemberAccess(expression) &&
-      DaemonRawClockSourceInventory.memberName(expression) === "hrtime" &&
-      DaemonRawClockSourceInventory.isProcess(expression.expression, aliases, checker)
-    );
-  }
-
-  private static isPerformance(
-    expression: ts.Expression,
-    aliases: RawClockAliases,
-    checker: ts.TypeChecker,
-  ): boolean {
-    if (ts.isIdentifier(expression)) {
+    if (expected === "date") {
+      return DaemonRawClockSourceInventory.isGlobalIdentifier(identifier, "Date", checker);
+    }
+    if (expected === "global") {
+      return DaemonRawClockSourceInventory.isGlobalIdentifier(identifier, "globalThis", checker);
+    }
+    if (expected === "performance") {
       return (
-        DaemonRawClockSourceInventory.isGlobalIdentifier(expression, "performance", checker) ||
-        DaemonRawClockSourceInventory.hasSymbol(expression, aliases.performance, checker)
+        DaemonRawClockSourceInventory.isGlobalIdentifier(identifier, "performance", checker) ||
+        DaemonRawClockSourceInventory.hasSymbol(identifier, aliases.performance, checker)
+      );
+    }
+    if (expected === "performanceNamespace") {
+      return DaemonRawClockSourceInventory.hasSymbol(
+        identifier,
+        aliases.performanceNamespaces,
+        checker,
+      );
+    }
+    if (expected === "process") {
+      return (
+        DaemonRawClockSourceInventory.isGlobalIdentifier(identifier, "process", checker) ||
+        DaemonRawClockSourceInventory.hasSymbol(identifier, aliases.processNamespaces, checker)
       );
     }
     return (
-      DaemonRawClockSourceInventory.isMemberAccess(expression) &&
-      DaemonRawClockSourceInventory.memberName(expression) === "performance" &&
-      (DaemonRawClockSourceInventory.isGlobalObject(expression.expression, checker) ||
-        DaemonRawClockSourceInventory.hasSymbol(
-          expression.expression,
-          aliases.performanceNamespaces,
-          checker,
-        ))
+      expected === "hrtime" &&
+      DaemonRawClockSourceInventory.hasSymbol(identifier, aliases.hrtime, checker)
     );
   }
 
-  private static isProcess(
-    expression: ts.Expression,
+  private static ownerValues(expected: ClockValue, memberName: string | undefined): ClockValue[] {
+    if (expected === "date" && memberName === "Date") return ["global"];
+    if (expected === "performance" && memberName === "performance") {
+      return ["global", "performanceNamespace"];
+    }
+    if (expected === "process" && memberName === "process") return ["global"];
+    if (expected === "hrtime" && memberName === "hrtime") return ["process"];
+    if (expected === "now" && memberName === "now") return ["date", "performance"];
+    if (expected === "bigint" && memberName === "bigint") return ["hrtime"];
+    return [];
+  }
+
+  private static isClockMemberPath(
+    source: ts.Expression,
+    members: readonly string[],
+    expected: ClockValue,
     aliases: RawClockAliases,
     checker: ts.TypeChecker,
+    visitedSymbols: ReadonlySet<ts.Symbol>,
   ): boolean {
-    if (ts.isIdentifier(expression)) {
-      return (
-        DaemonRawClockSourceInventory.isGlobalIdentifier(expression, "process", checker) ||
-        DaemonRawClockSourceInventory.hasSymbol(expression, aliases.processNamespaces, checker)
+    if (members.length === 0) {
+      return DaemonRawClockSourceInventory.isClockValue(
+        source,
+        expected,
+        aliases,
+        checker,
+        visitedSymbols,
       );
     }
-    return (
-      DaemonRawClockSourceInventory.isMemberAccess(expression) &&
-      DaemonRawClockSourceInventory.memberName(expression) === "process" &&
-      DaemonRawClockSourceInventory.isGlobalObject(expression.expression, checker)
+    const memberName = members[members.length - 1];
+    return DaemonRawClockSourceInventory.ownerValues(expected, memberName).some((ownerValue) =>
+      DaemonRawClockSourceInventory.isClockMemberPath(
+        source,
+        members.slice(0, -1),
+        ownerValue,
+        aliases,
+        checker,
+        visitedSymbols,
+      ),
     );
   }
 
-  private static isGlobalMember(
-    expression: ts.Expression,
-    member: string,
+  private static staticBindingAlias(
+    symbol: ts.Symbol,
     checker: ts.TypeChecker,
-  ): boolean {
+  ): StaticBindingAlias | undefined {
+    for (const declaration of symbol.declarations ?? []) {
+      if (
+        ts.isVariableDeclaration(declaration) &&
+        ts.isIdentifier(declaration.name) &&
+        declaration.initializer !== undefined &&
+        DaemonRawClockSourceInventory.isConstVariable(declaration)
+      ) {
+        return { source: declaration.initializer, members: [] };
+      }
+      if (ts.isBindingElement(declaration)) {
+        const alias = DaemonRawClockSourceInventory.bindingAlias(declaration, checker);
+        if (alias !== undefined) return alias;
+      }
+    }
+    return undefined;
+  }
+
+  private static bindingAlias(
+    declaration: ts.BindingElement,
+    checker: ts.TypeChecker,
+  ): StaticBindingAlias | undefined {
+    const members: string[] = [];
+    let bindingElement = declaration;
+    while (true) {
+      if (bindingElement.dotDotDotToken !== undefined) return undefined;
+      const memberNode = bindingElement.propertyName ?? bindingElement.name;
+      const memberName = DaemonRawClockSourceInventory.staticPropertyName(memberNode, checker);
+      if (memberName === undefined) return undefined;
+      members.unshift(memberName);
+      const bindingPattern = bindingElement.parent;
+      if (!ts.isObjectBindingPattern(bindingPattern)) return undefined;
+      const owner = bindingPattern.parent;
+      if (ts.isVariableDeclaration(owner)) {
+        if (
+          owner.initializer === undefined ||
+          !DaemonRawClockSourceInventory.isConstVariable(owner)
+        ) {
+          return undefined;
+        }
+        return { source: owner.initializer, members };
+      }
+      if (!ts.isBindingElement(owner)) return undefined;
+      bindingElement = owner;
+    }
+  }
+
+  private static isConstVariable(declaration: ts.VariableDeclaration): boolean {
     return (
-      (ts.isIdentifier(expression) &&
-        DaemonRawClockSourceInventory.isGlobalIdentifier(expression, member, checker)) ||
-      (DaemonRawClockSourceInventory.isMemberAccess(expression) &&
-        DaemonRawClockSourceInventory.memberName(expression) === member &&
-        DaemonRawClockSourceInventory.isGlobalObject(expression.expression, checker))
+      ts.isVariableDeclarationList(declaration.parent) &&
+      (declaration.parent.flags & ts.NodeFlags.Const) !== 0
     );
   }
 
-  private static isGlobalObject(expression: ts.Expression, checker: ts.TypeChecker): boolean {
-    return (
-      ts.isIdentifier(expression) &&
-      DaemonRawClockSourceInventory.isGlobalIdentifier(expression, "globalThis", checker)
-    );
+  private static staticPropertyName(node: ts.Node, checker: ts.TypeChecker): string | undefined {
+    if (ts.isIdentifier(node) || ts.isStringLiteralLike(node)) return node.text;
+    if (ts.isComputedPropertyName(node)) {
+      return DaemonRawClockSourceInventory.staticString(node.expression, checker, new Set());
+    }
+    return undefined;
   }
 
   private static isGlobalIdentifier(
@@ -553,8 +636,9 @@ class DaemonRawClockSourceInventory {
     symbols: ReadonlySet<ts.Symbol>,
     checker: ts.TypeChecker,
   ): boolean {
-    if (!ts.isIdentifier(expression)) return false;
-    const symbol = checker.getSymbolAtLocation(expression);
+    const unwrapped = DaemonRawClockSourceInventory.unwrapExpression(expression);
+    if (!ts.isIdentifier(unwrapped)) return false;
+    const symbol = checker.getSymbolAtLocation(unwrapped);
     return symbol !== undefined && symbols.has(symbol);
   }
 
@@ -583,10 +667,59 @@ class DaemonRawClockSourceInventory {
     return ts.isPropertyAccessExpression(node) || ts.isElementAccessExpression(node);
   }
 
-  private static memberName(expression: MemberAccessExpression): string | undefined {
+  private static memberName(
+    expression: MemberAccessExpression,
+    checker: ts.TypeChecker,
+  ): string | undefined {
     return ts.isPropertyAccessExpression(expression)
       ? expression.name.text
-      : DaemonRawClockSourceInventory.literalText(expression.argumentExpression);
+      : DaemonRawClockSourceInventory.staticString(
+          expression.argumentExpression,
+          checker,
+          new Set(),
+        );
+  }
+
+  private static staticString(
+    expression: ts.Expression | undefined,
+    checker: ts.TypeChecker,
+    visitedSymbols: ReadonlySet<ts.Symbol>,
+  ): string | undefined {
+    if (expression === undefined) return undefined;
+    const unwrapped = DaemonRawClockSourceInventory.unwrapExpression(expression);
+    const literal = DaemonRawClockSourceInventory.literalText(unwrapped);
+    if (literal !== undefined) return literal;
+    if (!ts.isIdentifier(unwrapped)) return undefined;
+    const symbol = checker.getSymbolAtLocation(unwrapped);
+    if (symbol === undefined || visitedSymbols.has(symbol)) return undefined;
+    const declaration = symbol.declarations?.find(
+      (candidate): candidate is ts.VariableDeclaration =>
+        ts.isVariableDeclaration(candidate) &&
+        ts.isIdentifier(candidate.name) &&
+        candidate.initializer !== undefined &&
+        DaemonRawClockSourceInventory.isConstVariable(candidate),
+    );
+    if (declaration?.initializer === undefined) return undefined;
+    const nextVisitedSymbols = new Set(visitedSymbols);
+    nextVisitedSymbols.add(symbol);
+    return DaemonRawClockSourceInventory.staticString(
+      declaration.initializer,
+      checker,
+      nextVisitedSymbols,
+    );
+  }
+
+  private static unwrapExpression(expression: ts.Expression): ts.Expression {
+    if (
+      ts.isParenthesizedExpression(expression) ||
+      ts.isNonNullExpression(expression) ||
+      ts.isAsExpression(expression) ||
+      ts.isTypeAssertionExpression(expression) ||
+      ts.isSatisfiesExpression(expression)
+    ) {
+      return DaemonRawClockSourceInventory.unwrapExpression(expression.expression);
+    }
+    return expression;
   }
 
   private static literalText(node: ts.Node | undefined): string | undefined {

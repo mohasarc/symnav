@@ -36,6 +36,13 @@ const typeExports = [
   "DaemonSystemMemory",
   "RunningDaemonStatus",
 ];
+const testingRuntimeExports = ["DaemonTestingInspector"];
+const testingTypeExports = [
+  "DaemonTestingDiagnosticEvent",
+  "DaemonTestingDiagnosticPage",
+  "DaemonTestingInstance",
+  "DaemonTestingSpoolUsage",
+];
 
 describe("daemon host contract", () => {
   it("inventories every TypeScript export declaration form", () => {
@@ -74,17 +81,30 @@ describe("daemon host contract", () => {
     ]);
   });
 
-  it("exports the exact root runtime and type allowlists", () => {
+  it("exports the exact root runtime allowlist", () => {
+    expect(Object.keys(daemonRuntime).sort()).toEqual(runtimeExports);
+  });
+
+  it.each([
+    ["root source", "index.ts", runtimeExports, typeExports],
+    ["root declaration", "../dist/index.d.ts", runtimeExports, typeExports],
+    ["testing source", "testing/index.ts", testingRuntimeExports, testingTypeExports],
+    [
+      "testing declaration",
+      "../dist/testing/index.d.ts",
+      testingRuntimeExports,
+      testingTypeExports,
+    ],
+  ])("exports the exact %s allowlists", (_name, relativePath, runtime, types) => {
     const sourceRoot = dirname(fileURLToPath(import.meta.url));
-    const source = readFileSync(join(sourceRoot, "index.ts"), "utf8");
+    const source = readFileSync(join(sourceRoot, relativePath), "utf8");
     const exports = TypeScriptExportInventory.read(source);
 
-    expect(Object.keys(daemonRuntime).sort()).toEqual(runtimeExports);
     expect(exports.filter((entry) => entry.kind === "runtime").map((entry) => entry.name)).toEqual(
-      runtimeExports,
+      runtime,
     );
     expect(exports.filter((entry) => entry.kind === "type").map((entry) => entry.name)).toEqual(
-      typeExports,
+      types,
     );
   });
 

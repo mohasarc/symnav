@@ -25,7 +25,7 @@ import { TestDaemonRegistry as DaemonRegistry } from "../helpers/daemon-registry
 import { TestDaemonResourcePolicy as DaemonResourcePolicy } from "../helpers/daemon-resource-policy.js";
 import { DaemonWorkspaceIdentity } from "../../src/daemon/daemon-workspace-identity.js";
 import { DaemonRuntimeValues } from "../../src/daemon/daemon-runtime-values.js";
-import { InvocationWorkspaceSelector } from "../../src/daemon/invocation-workspace-selector.js";
+import { InvocationWorkspaceSelector } from "../../src/invocation-workspace-selector.js";
 import { StateDirectoryResolver } from "../../src/state-directory-resolver.js";
 import { canonicalWorkspaceRoot } from "../helpers/canonical-workspace-root.js";
 import type {
@@ -450,6 +450,8 @@ export class DaemonScaleBenchmarkHarness {
     const telemetryBefore = this.telemetryEvents(stateDirectory);
     const warm = this.runCommand(root, stateDirectory, argv, true);
     const telemetryAfter = this.telemetryEvents(stateDirectory);
+    const route = new InvocationWorkspaceSelector().select(argv, root).route;
+    if (route.kind !== "workspace") throw new Error("Benchmark command must select a workspace");
     return {
       cold,
       warm,
@@ -458,7 +460,7 @@ export class DaemonScaleBenchmarkHarness {
       telemetryMatched: BenchmarkInvocationTelemetry.matches({
         before: telemetryBefore,
         after: telemetryAfter,
-        command: new InvocationWorkspaceSelector().select(argv, root).commandName,
+        command: route.commandName,
       }),
     };
   }

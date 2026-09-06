@@ -1,6 +1,6 @@
 import { InMemoryFileSystem } from "@symnav/core";
 import type { GitHistory, HistoryEntry } from "@symnav/core";
-import { DaemonPolicy } from "@symnav/daemon";
+import { DaemonPolicy, type DaemonClient } from "@symnav/daemon";
 import type { Clock, Recorder, UsageEventInput } from "@symnav/telemetry";
 import type { ProgramDependencies } from "../../../../src/program-dependencies.js";
 import type {
@@ -19,6 +19,10 @@ export function fakeDependencies(
     stateDirectory: overrides.stateDirectory ?? "/state",
     daemonPolicy:
       overrides.daemonPolicy ?? DaemonPolicy.fromSystemMemory({ totalBytes: 8 * 1024 ** 3 }),
+    daemonClient:
+      overrides.daemonClient ??
+      ({ execute: async () => undefined, control: async () => undefined } as unknown as DaemonClient),
+    daemonEnabled: overrides.daemonEnabled ?? true,
     fs: overrides.fs ?? repoFs(),
     backends: overrides.backends ?? (() => [new FakeLanguageBackend()]),
     git: overrides.git ?? createFakeGitHistory(),

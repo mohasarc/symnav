@@ -1,8 +1,4 @@
 import { describe, expectTypeOf, it } from "vitest";
-import type {
-  DaemonCommandDispatcher,
-  DaemonDispatchRuntime,
-} from "./daemon-command-dispatcher.js";
 import type { DaemonController } from "./daemon-controller.js";
 import type { DaemonRecordObserver } from "./daemon-record-observer.js";
 import type { DaemonStartupCoordinator } from "./daemon-startup-coordinator.js";
@@ -37,12 +33,5 @@ describe("daemon transport ports", () => {
     expectTypeOf<
       ConstructorParameters<typeof DaemonProcessCoordinator>[0]["server"]
     >().toEqualTypeOf<DaemonRequestServer>();
-  });
-
-  it("limits client execution to execution requests", () => {
-    expectTypeOf<DaemonDispatchRuntime["transport"]>().toEqualTypeOf<DaemonExecutionRequester>();
-    expectTypeOf<
-      ConstructorParameters<typeof DaemonCommandDispatcher>[0]["createDependencies"]
-    >().toBeFunction();
   });
 });

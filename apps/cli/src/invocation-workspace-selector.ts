@@ -39,27 +39,26 @@ export class InvocationWorkspaceSelector {
     }>();
 
     if (options.help === true) {
-      return { route: { kind: "local" }, commandName: "help", argv };
+      return { route: { kind: "local", commandName: "help" }, argv };
     }
     if (options.version === true) {
-      return { route: { kind: "local" }, commandName: "version", argv };
+      return { route: { kind: "local", commandName: "version" }, argv };
     }
     if (command === "daemon" && (action === "start" || action === "status" || action === "stop")) {
-      return { route: { kind: "daemon-control", action }, commandName: "unknown", argv };
+      return { route: { kind: "control", action }, argv };
     }
     const commandName = InvocationWorkspaceSelector.workspaceCommandName(command);
     if (commandName === undefined) {
-      return { route: { kind: "local" }, commandName: "unknown", argv };
+      return { route: { kind: "local", commandName: "unknown" }, argv };
     }
     const cwdOverride = options.cwd;
-    const startDir = cwdOverride === undefined ? cwd : resolve(cwd, cwdOverride);
+    const startDirectory = cwdOverride === undefined ? cwd : resolve(cwd, cwdOverride);
     return {
-      route: { kind: "workspace", startDir },
-      commandName,
+      route: { kind: "workspace", commandName, startDirectory },
       argv:
         cwdOverride === undefined
           ? argv
-          : InvocationWorkspaceSelector.rewriteEffectiveCwd(argv, startDir),
+          : InvocationWorkspaceSelector.rewriteEffectiveCwd(argv, startDirectory),
     };
   }
 

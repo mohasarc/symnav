@@ -29,7 +29,7 @@ class DaemonCompatibilityCopyInventory {
     for (const file of files) {
       hash.update(file);
       hash.update("\0");
-      hash.update(readFileSync(join(repositoryRoot, file)));
+      hash.update(readFileSync(join(repositoryRoot, file), "utf8").replace(/\r\n/g, "\n"));
       hash.update("\0");
     }
     return hash.digest("hex");

@@ -144,6 +144,58 @@ describe("daemon production clock ownership", () => {
       "computed imported performance clock chain",
       'import * as hooks from "node:perf_hooks"; hooks["performance"]["now"]();',
     ],
+    ["parenthesized performance clock", "(performance).now();"],
+    ["non-null performance clock", "performance!.now();"],
+    [
+      "as-cast performance clock",
+      "(performance as { now(): number }).now();",
+    ],
+    [
+      "satisfies performance clock",
+      "(performance satisfies { now(): number }).now();",
+    ],
+    [
+      "type-asserted performance clock",
+      "(<{ now(): number }>performance).now();",
+    ],
+    ["wrapped optional performance clock", "(performance)?.now?.();"],
+    [
+      "const-computed performance clock",
+      'const member = "now" as const; performance[member]();',
+    ],
+    [
+      "const-computed process clock chain",
+      'const timer = "hrtime"; const precision = "bigint"; process[timer][precision]();',
+    ],
+    ["const performance alias", "const timer = performance; timer.now();"],
+    [
+      "const process clock alias",
+      "const timer = process.hrtime; timer.bigint();",
+    ],
+    [
+      "destructured global performance clock",
+      "const { now: timer } = performance; timer();",
+    ],
+    [
+      "destructured global process clock",
+      "const { hrtime: timer } = process; timer.bigint();",
+    ],
+    [
+      "nested destructured global process clock",
+      "const { hrtime: { bigint: timer } } = process; timer();",
+    ],
+    [
+      "destructured imported performance",
+      'import * as hooks from "node:perf_hooks"; const { performance: timer } = hooks; timer.now();',
+    ],
+    [
+      "destructured imported process clock",
+      'import processModule from "process"; const { hrtime: timer } = processModule; timer.bigint();',
+    ],
+    [
+      "aliased imported performance destructuring",
+      'import * as hooks from "perf_hooks"; const namespace = hooks; const { performance: timer } = namespace; timer.now();',
+    ],
   ])("recognizes %s as a raw clock source", (_name, source) => {
     expect(DaemonRawClockSourceInventory.hasRawClock(source)).toBe(true);
   });
@@ -176,7 +228,22 @@ describe("daemon production clock ownership", () => {
       "computed local clock members",
       'const performance = { now: () => 1 }; const process = { hrtime: { bigint: () => 1 } }; performance["now"](); process["hrtime"]["bigint"]();',
     ],
-    ["computed nonliteral global member", 'const member = "now"; performance[member]();'],
+    [
+      "mutable computed global member",
+      'let member = "now"; performance[member]();',
+    ],
+    [
+      "mutable global performance alias",
+      "let timer = performance; timer.now();",
+    ],
+    [
+      "local destructured clock",
+      "const local = { now: () => 1 }; const { now: timer } = local; timer();",
+    ],
+    [
+      "unrelated imported destructuring",
+      'import * as hooks from "./perf-hooks.js"; const { performance: timer } = hooks; timer.now();',
+    ],
   ])("ignores a locally shadowed %s lookalike", (_name, source) => {
     expect(DaemonRawClockSourceInventory.hasRawClock(source)).toBe(false);
   });

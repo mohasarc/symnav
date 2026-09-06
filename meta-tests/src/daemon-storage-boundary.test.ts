@@ -446,6 +446,17 @@ class ExternalDaemonStorageAccessInventory {
     ) {
       return true;
     }
+    if (
+      ExternalDaemonStorageAccessInventory.isMemberAccess(unwrapped) &&
+      ExternalDaemonStorageAccessInventory.memberName(unwrapped, checker) === "default" &&
+      ExternalDaemonStorageAccessInventory.isDynamicBuiltinNamespace(
+        unwrapped.expression,
+        ["node:path", "path"],
+        checker,
+      )
+    ) {
+      return true;
+    }
     if (!ts.isIdentifier(unwrapped)) return false;
     const symbol = checker.getSymbolAtLocation(unwrapped);
     if (symbol === undefined || visitedSymbols.has(symbol)) return false;
@@ -478,6 +489,14 @@ class ExternalDaemonStorageAccessInventory {
       );
     }
     const memberName = members.at(-1);
+    if (memberName === "default") {
+      return (
+        members.length === 1 &&
+        ["node:path", "path"].includes(
+          ExternalDaemonStorageAccessInventory.dynamicModuleName(source) ?? "",
+        )
+      );
+    }
     if (memberName === undefined || !["posix", "win32"].includes(memberName)) return false;
     return ExternalDaemonStorageAccessInventory.isPathNamespacePath(
       source,
@@ -570,6 +589,17 @@ class ExternalDaemonStorageAccessInventory {
     ) {
       return true;
     }
+    if (
+      ExternalDaemonStorageAccessInventory.isMemberAccess(unwrapped) &&
+      ExternalDaemonStorageAccessInventory.memberName(unwrapped, checker) === "default" &&
+      ExternalDaemonStorageAccessInventory.isDynamicBuiltinNamespace(
+        unwrapped.expression,
+        ["node:fs", "fs", "node:fs/promises", "fs/promises"],
+        checker,
+      )
+    ) {
+      return true;
+    }
     if (!ts.isIdentifier(unwrapped)) return false;
     const symbol = checker.getSymbolAtLocation(unwrapped);
     if (symbol === undefined || visitedSymbols.has(symbol)) return false;
@@ -601,7 +631,16 @@ class ExternalDaemonStorageAccessInventory {
         visitedSymbols,
       );
     }
-    if (members.at(-1) !== "promises") return false;
+    const memberName = members.at(-1);
+    if (memberName === "default") {
+      return (
+        members.length === 1 &&
+        ["node:fs", "fs", "node:fs/promises", "fs/promises"].includes(
+          ExternalDaemonStorageAccessInventory.dynamicModuleName(source) ?? "",
+        )
+      );
+    }
+    if (memberName !== "promises") return false;
     return ExternalDaemonStorageAccessInventory.isFileSystemNamespacePath(
       source,
       members.slice(0, -1),
@@ -707,6 +746,29 @@ class ExternalDaemonStorageAccessInventory {
     return ExternalDaemonStorageAccessInventory.dynamicModuleName(importExpression) === undefined
       ? undefined
       : importExpression;
+  }
+
+  private static isDynamicBuiltinNamespace(
+    expression: ts.Expression,
+    moduleNames: readonly string[],
+    checker: ts.TypeChecker,
+  ): boolean {
+    const unwrapped = ExternalDaemonStorageAccessInventory.unwrapExpression(expression);
+    if (
+      moduleNames.includes(ExternalDaemonStorageAccessInventory.dynamicModuleName(unwrapped) ?? "")
+    ) {
+      return true;
+    }
+    if (!ts.isIdentifier(unwrapped)) return false;
+    const symbol = checker.getSymbolAtLocation(unwrapped);
+    if (symbol === undefined) return false;
+    const alias = ExternalDaemonStorageAccessInventory.staticStorageAlias(symbol, checker);
+    return (
+      alias?.members.length === 0 &&
+      moduleNames.includes(
+        ExternalDaemonStorageAccessInventory.dynamicModuleName(alias.source) ?? "",
+      )
+    );
   }
 
   private static staticPropertyName(node: ts.Node, checker: ts.TypeChecker): string | undefined {

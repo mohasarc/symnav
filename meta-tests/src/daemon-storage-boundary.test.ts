@@ -222,6 +222,44 @@ class ExternalDaemonStorageAccessInventory {
 }
 
 describe("external daemon storage boundary", () => {
+  it.each([
+    [
+      "default node-prefixed POSIX join",
+      'import path from "node:path"; path.posix.join(stateDirectory, "daemons");',
+    ],
+    [
+      "default unprefixed Windows resolve",
+      'import path from "path"; path.win32.resolve(stateDirectory, "daemons");',
+    ],
+    [
+      "namespace node-prefixed Windows join",
+      'import * as path from "node:path"; path.win32.join(stateDirectory, "daemons");',
+    ],
+    [
+      "namespace unprefixed POSIX resolve",
+      'import * as path from "path"; path.posix.resolve(stateDirectory, "daemons");',
+    ],
+    [
+      "import-equals node-prefixed POSIX resolve",
+      'import path = require("node:path"); path.posix.resolve(stateDirectory, "daemons");',
+    ],
+    [
+      "import-equals unprefixed Windows join",
+      'import path = require("path"); path.win32.join(stateDirectory, "daemons");',
+    ],
+  ])("recognizes %s as direct daemon storage access", (_name, source) => {
+    expect(ExternalDaemonStorageAccessInventory.containsDirectStorageAccess(source)).toBe(true);
+  });
+
+  it("allows an internal nested path-builder lookalike", () => {
+    expect(
+      ExternalDaemonStorageAccessInventory.containsDirectStorageAccess(`
+        const path = { posix: { join: (...segments: string[]) => segments.join("/") } };
+        path.posix.join(stateDirectory, "daemons");
+      `),
+    ).toBe(false);
+  });
+
   it("recognizes direct daemon coordinates without matching public daemon data", () => {
     expect(
       ExternalDaemonStorageAccessInventory.containsDirectStorageAccess(`

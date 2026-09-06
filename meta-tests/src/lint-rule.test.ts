@@ -106,6 +106,25 @@ describe("ESLint workspace config", () => {
     expect(result!.errorCount).toBe(0);
   });
 
+  it.each([
+    "apps/cli/src/daemon-inspection.test.ts",
+    "apps/cli/test/e2e/daemon/inspection.ts",
+  ])("allows daemon testing inspection from %s", async (filePath) => {
+    const eslint = await makeESLint();
+    const code = `import { DaemonTestingInspector } from "@symnav/daemon/testing";\nexport const Inspector = DaemonTestingInspector;\n`;
+    const [result] = await eslint.lintText(code, { filePath: join(repoRoot, filePath) });
+    expect(result!.errorCount).toBe(0);
+  });
+
+  it("rejects daemon testing inspection from CLI production", async () => {
+    const eslint = await makeESLint();
+    const code = `import { DaemonTestingInspector } from "@symnav/daemon/testing";\nexport const Inspector = DaemonTestingInspector;\n`;
+    const [result] = await eslint.lintText(code, {
+      filePath: join(repoRoot, "apps/cli/src/daemon-inspection.ts"),
+    });
+    expect(result!.messages.map((message) => message.ruleId)).toContain("no-restricted-imports");
+  });
+
   it("allows daemon test files to import @symnav/testing", async () => {
     const eslint = await makeESLint();
     const code = `import { placeholder } from "@symnav/testing";\nexport const value = placeholder;\n`;

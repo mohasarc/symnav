@@ -125,7 +125,11 @@ describe("daemon production clock ownership", () => {
     ],
     [
       "process namespace",
-      "namespace processModule { export const hrtime = () => 1; } processModule.hrtime();",
+      "namespace InternalProcess { export const hrtime = () => 1; } import processModule = InternalProcess; processModule.hrtime();",
+    ],
+    [
+      "performance import-equals namespace",
+      "namespace InternalHooks { export const performance = { now: () => 1 }; } import hooks = InternalHooks; hooks.performance.now();",
     ],
   ])("ignores a locally shadowed %s lookalike", (_name, source) => {
     expect(DaemonRawClockSourceInventory.hasRawClock(source)).toBe(false);
@@ -139,6 +143,13 @@ describe("daemon production clock ownership", () => {
         domain.Date.now();
       `),
     ).toBe(false);
+  });
+
+  it.each([
+    'import telemetry = require("@symnav/telemetry");',
+    'import telemetry = require("@symnav/telemetry/testing");',
+  ])("recognizes an import-equals telemetry dependency", (source) => {
+    expect(DaemonRawClockSourceInventory.hasRawClock(source)).toBe(true);
   });
 
   it("keeps raw time sources and telemetry clocks outside daemon mechanisms", () => {
@@ -198,10 +209,18 @@ class DaemonRawClockSourceInventory {
     const hrtime = new Set<ts.Symbol>();
     const processNamespaces = new Set<ts.Symbol>();
     for (const statement of sourceFile.statements) {
-      if (!ts.isImportDeclaration(statement) || !ts.isStringLiteral(statement.moduleSpecifier)) {
+      const moduleName = DaemonRawClockSourceInventory.moduleSpecifier(statement);
+      if (moduleName === undefined) continue;
+      if (ts.isImportEqualsDeclaration(statement)) {
+        if (["node:perf_hooks", "perf_hooks"].includes(moduleName)) {
+          DaemonRawClockSourceInventory.addSymbol(statement.name, performanceNamespaces, checker);
+        }
+        if (["node:process", "process"].includes(moduleName)) {
+          DaemonRawClockSourceInventory.addSymbol(statement.name, processNamespaces, checker);
+        }
         continue;
       }
-      const moduleName = statement.moduleSpecifier.text;
+      if (!ts.isImportDeclaration(statement)) continue;
       if (["node:perf_hooks", "perf_hooks"].includes(moduleName)) {
         DaemonRawClockSourceInventory.collectImportAliases(
           statement.importClause,

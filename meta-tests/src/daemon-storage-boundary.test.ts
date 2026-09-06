@@ -10,6 +10,11 @@ interface PathBuilderAliases {
   readonly namespaces: ReadonlySet<ts.Symbol>;
 }
 
+interface FileSystemAliases {
+  readonly functions: ReadonlySet<ts.Symbol>;
+  readonly namespaces: ReadonlySet<ts.Symbol>;
+}
+
 type MemberAccessExpression = ts.PropertyAccessExpression | ts.ElementAccessExpression;
 
 class ExternalDaemonStorageAccessInventory {
@@ -34,9 +39,11 @@ class ExternalDaemonStorageAccessInventory {
     if (sourceFile === undefined) return false;
     const checker = program.getTypeChecker();
     const pathBuilders = ExternalDaemonStorageAccessInventory.pathBuilders(sourceFile, checker);
+    const fileSystem = ExternalDaemonStorageAccessInventory.fileSystemAliases(sourceFile, checker);
     return ExternalDaemonStorageAccessInventory.containsStorageCoordinate(
       sourceFile,
       pathBuilders,
+      fileSystem,
       checker,
     );
   }
@@ -149,25 +156,77 @@ class ExternalDaemonStorageAccessInventory {
     if (symbol !== undefined) symbols.add(symbol);
   }
 
+  private static fileSystemAliases(
+    sourceFile: ts.SourceFile,
+    checker: ts.TypeChecker,
+  ): FileSystemAliases {
+    const functions = new Set<ts.Symbol>();
+    const namespaces = new Set<ts.Symbol>();
+    for (const statement of sourceFile.statements) {
+      if (
+        ts.isImportEqualsDeclaration(statement) &&
+        ts.isExternalModuleReference(statement.moduleReference) &&
+        ts.isStringLiteral(statement.moduleReference.expression) &&
+        ["node:fs", "fs", "node:fs/promises", "fs/promises"].includes(
+          statement.moduleReference.expression.text,
+        )
+      ) {
+        ExternalDaemonStorageAccessInventory.addSymbol(statement.name, namespaces, checker);
+        continue;
+      }
+      if (!ts.isImportDeclaration(statement) || !ts.isStringLiteral(statement.moduleSpecifier)) {
+        continue;
+      }
+      if (
+        !["node:fs", "fs", "node:fs/promises", "fs/promises"].includes(
+          statement.moduleSpecifier.text,
+        )
+      ) {
+        continue;
+      }
+      ExternalDaemonStorageAccessInventory.addSymbol(
+        statement.importClause?.name,
+        namespaces,
+        checker,
+      );
+      const bindings = statement.importClause?.namedBindings;
+      if (bindings !== undefined && ts.isNamespaceImport(bindings)) {
+        ExternalDaemonStorageAccessInventory.addSymbol(bindings.name, namespaces, checker);
+        continue;
+      }
+      if (bindings === undefined || !ts.isNamedImports(bindings)) continue;
+      for (const element of bindings.elements) {
+        const importedName = (element.propertyName ?? element.name).text;
+        ExternalDaemonStorageAccessInventory.addSymbol(
+          element.name,
+          importedName === "promises" ? namespaces : functions,
+          checker,
+        );
+      }
+    }
+    return { functions, namespaces };
+  }
+
   private static containsStorageCoordinate(
     node: ts.Node,
     pathBuilders: PathBuilderAliases,
+    fileSystem: FileSystemAliases,
     checker: ts.TypeChecker,
   ): boolean {
-    if (
-      ExternalDaemonStorageAccessInventory.literalText(node) !== undefined &&
-      /(?:^|[/\\])daemons(?:[/\\]|$)/.test(
-        ExternalDaemonStorageAccessInventory.literalText(node) as string,
-      ) &&
-      ExternalDaemonStorageAccessInventory.literalText(node) !== "daemons"
-    ) {
-      return true;
-    }
     if (
       ts.isCallExpression(node) &&
       ExternalDaemonStorageAccessInventory.isPathBuilder(node.expression, pathBuilders, checker) &&
       node.arguments.some((argument) =>
         ExternalDaemonStorageAccessInventory.hasDaemonSegment(argument),
+      )
+    ) {
+      return true;
+    }
+    if (
+      ts.isCallExpression(node) &&
+      ExternalDaemonStorageAccessInventory.isFileSystemCall(node.expression, fileSystem, checker) &&
+      node.arguments.some((argument) =>
+        ExternalDaemonStorageAccessInventory.hasDaemonStoragePath(argument),
       )
     ) {
       return true;
@@ -178,6 +237,7 @@ class ExternalDaemonStorageAccessInventory {
         ExternalDaemonStorageAccessInventory.containsStorageCoordinate(
           child,
           pathBuilders,
+          fileSystem,
           checker,
         ),
       );
@@ -188,6 +248,16 @@ class ExternalDaemonStorageAccessInventory {
     return node
       .getChildren()
       .some((child) => ExternalDaemonStorageAccessInventory.hasDaemonSegment(child));
+  }
+
+  private static hasDaemonStoragePath(node: ts.Node): boolean {
+    const literalText = ExternalDaemonStorageAccessInventory.literalText(node);
+    if (literalText !== undefined && /(?:^|[/\\])daemons(?:[/\\]|$)/.test(literalText)) {
+      return true;
+    }
+    return node
+      .getChildren()
+      .some((child) => ExternalDaemonStorageAccessInventory.hasDaemonStoragePath(child));
   }
 
   private static isPathBuilder(
@@ -223,6 +293,45 @@ class ExternalDaemonStorageAccessInventory {
         ExternalDaemonStorageAccessInventory.memberName(expression) ?? "",
       ) &&
       ExternalDaemonStorageAccessInventory.isPathNamespace(expression.expression, aliases, checker)
+    );
+  }
+
+  private static isFileSystemCall(
+    expression: ts.Expression,
+    aliases: FileSystemAliases,
+    checker: ts.TypeChecker,
+  ): boolean {
+    if (ts.isIdentifier(expression)) {
+      const symbol = checker.getSymbolAtLocation(expression);
+      return symbol !== undefined && aliases.functions.has(symbol);
+    }
+    return (
+      ExternalDaemonStorageAccessInventory.isMemberAccess(expression) &&
+      ExternalDaemonStorageAccessInventory.isFileSystemNamespace(
+        expression.expression,
+        aliases,
+        checker,
+      )
+    );
+  }
+
+  private static isFileSystemNamespace(
+    expression: ts.Expression,
+    aliases: FileSystemAliases,
+    checker: ts.TypeChecker,
+  ): boolean {
+    if (ts.isIdentifier(expression)) {
+      const symbol = checker.getSymbolAtLocation(expression);
+      return symbol !== undefined && aliases.namespaces.has(symbol);
+    }
+    return (
+      ExternalDaemonStorageAccessInventory.isMemberAccess(expression) &&
+      ExternalDaemonStorageAccessInventory.memberName(expression) === "promises" &&
+      ExternalDaemonStorageAccessInventory.isFileSystemNamespace(
+        expression.expression,
+        aliases,
+        checker,
+      )
     );
   }
 

@@ -1,5 +1,5 @@
 import { existsSync, mkdirSync, rmSync } from "node:fs";
-import { createConnection, createServer, type Server, type Socket } from "node:net";
+import { createServer, type Server, type Socket } from "node:net";
 import { dirname } from "node:path";
 import {
   DaemonAdmissionRejections,
@@ -28,16 +28,19 @@ import type {
   DaemonRequestHandler,
   DaemonRequestServer,
   DaemonServerSend,
+  DaemonSocketClient,
 } from "./daemon-transport.js";
 import { DaemonWireCodec } from "./daemon-wire-codec.js";
 import { DaemonProtocolError, DaemonProtocolValidator } from "./daemon-protocol-validator.js";
 import { DaemonClientResultCapture } from "./daemon-client-result-capture.js";
 import { DaemonResultTransferReceiver } from "./daemon-result-transfer-receiver.js";
+import { LocalDaemonSocketClient } from "./local-daemon-socket-client.js";
 
 interface LocalDaemonTransportOptions {
   readonly responseTimeoutPurpose?: "ordinary" | "status-observer";
   readonly writeChunkSize?: number;
   readonly outputDirectory?: string;
+  readonly sockets?: DaemonSocketClient;
 }
 
 export type LocalDaemonTransportPolicy = Pick<
@@ -113,6 +116,7 @@ export class LocalDaemonTransport
   private readonly validator = new DaemonProtocolValidator();
   private readonly outputPolicy: DaemonPolicyValues["output"];
   private readonly deliveryPolicy: DaemonPolicyValues["delivery"];
+  private readonly sockets: DaemonSocketClient;
 
   constructor(policy: LocalDaemonTransportPolicy, options: LocalDaemonTransportOptions = {}) {
     this.requestTimeoutMs =
@@ -129,6 +133,11 @@ export class LocalDaemonTransport
     this.deliveryPolicy = policy.delivery;
     this.writeChunkSize = options.writeChunkSize;
     this.outputDirectory = options.outputDirectory;
+    this.sockets =
+      options.sockets ??
+      new LocalDaemonSocketClient(
+        options.writeChunkSize === undefined ? {} : { writeChunkSize: options.writeChunkSize },
+      );
   }
 
   canFrame(value: unknown): boolean {
@@ -152,77 +161,69 @@ export class LocalDaemonTransport
     endpoint: string,
     request: DaemonExecutionStatusRequest,
   ): Promise<DaemonExecutionStatusResponse>;
-  private singleResponse(
+  private async singleResponse(
     endpoint: string,
     request: DaemonLifecycleRequest | DaemonExecutionStatusRequest,
   ): Promise<DaemonLifecycleResponse | DaemonExecutionStatusResponse> {
     this.validator.request(request);
-    return new Promise((resolve, reject) => {
-      const decoder = this.codec.controlDecoder();
-      const socket = createConnection(endpoint);
-      let settled = false;
-      let delivery: DaemonDeliveryState = "not-submitted";
-      const fail = (error: unknown): void => {
-        if (settled) return;
-        settled = true;
-        socket.destroy();
-        reject(LocalDaemonTransport.transportError(error, delivery));
-      };
-      socket.setTimeout(this.requestTimeoutMs, () =>
-        fail(new DaemonTransportError("timeout", delivery, "Daemon request timed out")),
-      );
-      socket.once("error", (error) => {
-        if (delivery === "not-submitted") {
-          fail(new DaemonTransportError("unreachable", delivery, error.message));
-          return;
-        }
-        fail(new DaemonTransportError("closed", delivery, error.message));
-      });
-      socket.once("connect", () => {
+    const decoder = this.codec.controlDecoder();
+    let connection: Awaited<ReturnType<DaemonSocketClient["connect"]>>;
+    let delivery: DaemonDeliveryState = "not-submitted";
+    try {
+      connection = await this.sockets.connect(endpoint, this.requestTimeoutMs);
+    } catch (error) {
+      if (LocalDaemonTransport.isSocketTimeout(error)) {
+        throw new DaemonTransportError("timeout", delivery, "Daemon request timed out");
+      }
+      const message = error instanceof Error ? error.message : String(error);
+      throw new DaemonTransportError("unreachable", delivery, message);
+    }
+    try {
+      connection.write(this.codec.encodeControl(request));
+      delivery = "submitted-unconfirmed";
+    } catch (error) {
+      connection.destroy();
+      throw LocalDaemonTransport.transportError(error, delivery);
+    }
+    try {
+      for await (const bytes of connection.incoming) {
         try {
-          this.writeFrame(socket, request);
-          delivery = "submitted-unconfirmed";
-        } catch (error) {
-          fail(error);
-        }
-      });
-      socket.on("data", (bytes) => {
-        try {
-          const values = decoder.append(Buffer.isBuffer(bytes) ? bytes : Buffer.from(bytes));
-          if (values.length > 1 || (values.length === 1 && settled)) {
-            fail(new Error("Daemon returned multiple responses"));
-            return;
-          }
+          const values = decoder.append(bytes);
+          if (values.length > 1) throw new Error("Daemon returned multiple responses");
           const value = values[0];
-          if (value === undefined) return;
+          if (value === undefined) continue;
           const response =
             request.kind === "execution-status"
               ? this.validator.executionStatusResponse(request, value)
               : this.validator.lifecycleResponse(request, value);
           delivery = "accepted";
-          settled = true;
-          socket.end();
-          resolve(response);
+          connection.end();
+          return response;
         } catch (error) {
-          fail(error);
+          throw LocalDaemonTransport.transportError(error, delivery);
         }
-      });
-      socket.once("end", () => {
-        if (settled) return;
-        try {
-          decoder.assertComplete();
-          fail(
-            new DaemonTransportError(
-              "closed",
-              delivery,
-              "Daemon connection ended before a response",
-            ),
-          );
-        } catch (error) {
-          fail(error);
-        }
-      });
-    });
+      }
+      try {
+        decoder.assertComplete();
+      } catch (error) {
+        throw LocalDaemonTransport.transportError(error, delivery);
+      }
+      throw new DaemonTransportError(
+        "closed",
+        delivery,
+        "Daemon connection ended before a response",
+      );
+    } catch (error) {
+      connection.destroy();
+      if (LocalDaemonTransport.isSocketTimeout(error)) {
+        throw new DaemonTransportError("timeout", delivery, "Daemon request timed out");
+      }
+      if (!(error instanceof DaemonTransportError) && !(error instanceof DaemonProtocolError)) {
+        const message = error instanceof Error ? error.message : String(error);
+        throw new DaemonTransportError("closed", delivery, message);
+      }
+      throw LocalDaemonTransport.transportError(error, delivery);
+    }
   }
 
   execute(endpoint: string, request: DaemonExecuteRequest): Promise<DaemonExecutionReceipt> {
@@ -272,7 +273,7 @@ export class LocalDaemonTransport
         ...(this.outputDirectory === undefined ? {} : { directory: this.outputDirectory }),
       });
       const transfer = new DaemonResultTransferReceiver(request.requestId, output);
-      const socket = createConnection(endpoint);
+      let connection: Awaited<ReturnType<DaemonSocketClient["connect"]>> | undefined;
       let delivery: DaemonDeliveryState = "not-submitted";
       let acceptance: DaemonExecutionAcceptance | undefined;
       let terminal = false;
@@ -287,10 +288,9 @@ export class LocalDaemonTransport
           rejectCompletion = completionReject;
         },
       );
-      let consumption = Promise.resolve();
       const fail = (error: unknown): void => {
         const transportError = LocalDaemonTransport.transportError(error, delivery);
-        socket.destroy();
+        connection?.destroy();
         if (!outerSettled) {
           outerSettled = true;
           void transfer.dispose().finally(() => reject(transportError));
@@ -312,7 +312,7 @@ export class LocalDaemonTransport
           return false;
         }
         resumeCount += 1;
-        socket.destroy();
+        connection?.destroy();
         transfer.beginConnection();
         void this.fetchCompletion(endpoint, request, transfer)
           .then((completionValue) => {
@@ -323,40 +323,13 @@ export class LocalDaemonTransport
           .catch(fail);
         return true;
       };
-      socket.setTimeout(this.executionRequestTimeoutMs, () =>
-        fail(new DaemonTransportError("timeout", delivery, "Daemon request timed out")),
-      );
-      socket.once("error", (error) => {
-        void consumption
-          .then(() => {
-            if (resume()) return;
-            fail(
-              new DaemonTransportError(
-                delivery === "not-submitted" ? "unreachable" : "closed",
-                delivery,
-                error.message,
-                acceptance?.instanceId,
-              ),
-            );
-          })
-          .catch(fail);
-      });
-      socket.once("connect", () => {
-        try {
-          const encoded = this.codec.encodeControl(request);
-          delivery = "submitted-unconfirmed";
-          this.writeEncodedFrame(socket, encoded);
-        } catch (error) {
-          fail(error);
-        }
-      });
       const publishAcceptance = (): void => {
         if (acceptance === undefined || outerSettled) return;
         outerSettled = true;
-        socket.setTimeout(0);
+        connection?.disableTimeout();
         resolve({ acceptance, completion });
       };
-      const consume = async (bytes: Buffer): Promise<void> => {
+      const consume = async (bytes: Uint8Array): Promise<void> => {
         const values = decoder.append(bytes);
         let completedResult = false;
         let failedCode: DaemonExecutionFailureCode | undefined;
@@ -424,45 +397,77 @@ export class LocalDaemonTransport
           }
           if (!completionSettled) {
             completionSettled = true;
-            socket.end();
+            connection?.end();
             resolveCompletion({ status: "completed", result });
           }
         }
         if (failedCode !== undefined && !completionSettled) {
           completionSettled = true;
-          socket.end();
+          connection?.end();
           await transfer.dispose();
           resolveCompletion({ status: "failed", code: failedCode });
         }
       };
-      socket.on("data", (bytes) => {
-        socket.pause();
-        consumption = consumption
-          .then(() => consume(Buffer.isBuffer(bytes) ? bytes : Buffer.from(bytes)))
-          .then(() => {
-            if (!socket.destroyed && !terminal) socket.resume();
-          });
-        void consumption.catch(fail);
-      });
-      socket.once("end", () => {
-        void consumption
-          .then(() => {
-            if (terminal && completionSettled) return;
-            if (resume()) return;
+      const receive = async (): Promise<void> => {
+        try {
+          connection = await this.sockets.connect(endpoint, this.executionRequestTimeoutMs);
+        } catch (error) {
+          if (LocalDaemonTransport.isSocketTimeout(error)) {
+            fail(new DaemonTransportError("timeout", delivery, "Daemon request timed out"));
+            return;
+          }
+          const message = error instanceof Error ? error.message : String(error);
+          fail(new DaemonTransportError("unreachable", delivery, message));
+          return;
+        }
+        try {
+          connection.write(this.codec.encodeControl(request));
+          delivery = "submitted-unconfirmed";
+        } catch (error) {
+          fail(error);
+          return;
+        }
+        try {
+          for await (const bytes of connection.incoming) {
+            try {
+              await consume(bytes);
+            } catch (error) {
+              throw LocalDaemonTransport.transportError(error, delivery);
+            }
+          }
+          if (terminal && completionSettled) return;
+          if (resume()) return;
+          try {
             decoder.assertComplete();
-            fail(
-              new DaemonTransportError(
-                "closed",
-                delivery,
-                acceptance === undefined
-                  ? "Daemon connection ended before acceptance"
-                  : "Daemon connection ended after acceptance before completion",
-                acceptance?.instanceId,
-              ),
-            );
-          })
-          .catch(fail);
-      });
+          } catch (error) {
+            fail(error);
+            return;
+          }
+          fail(
+            new DaemonTransportError(
+              "closed",
+              delivery,
+              acceptance === undefined
+                ? "Daemon connection ended before acceptance"
+                : "Daemon connection ended after acceptance before completion",
+              acceptance?.instanceId,
+            ),
+          );
+        } catch (error) {
+          if (error instanceof DaemonTransportError || error instanceof DaemonProtocolError) {
+            fail(error);
+            return;
+          }
+          if (LocalDaemonTransport.isSocketTimeout(error)) {
+            fail(new DaemonTransportError("timeout", delivery, "Daemon request timed out"));
+            return;
+          }
+          if (resume()) return;
+          const message = error instanceof Error ? error.message : String(error);
+          fail(new DaemonTransportError("closed", delivery, message, acceptance?.instanceId));
+        }
+      };
+      void receive();
     });
   }
 
@@ -478,106 +483,102 @@ export class LocalDaemonTransport
     );
   }
 
-  private fetchCompletion(
+  private async fetchCompletion(
     endpoint: string,
     request: DaemonExecuteRequest,
     transfer: DaemonResultTransferReceiver,
   ): DaemonExecutionReceipt["completion"] {
-    return new Promise((resolve, reject) => {
-      const decoder = this.codec.transferDecoder();
-      const socket = createConnection(endpoint);
-      let ended = false;
-      let settled = false;
-      let consumption = Promise.resolve();
-      const fail = (error: unknown): void => {
-        if (settled) return;
-        settled = true;
-        socket.destroy();
-        reject(LocalDaemonTransport.transportError(error, "accepted"));
-      };
-      socket.once("error", (error) => {
-        void consumption
-          .then(() =>
-            fail(new DaemonTransportError("closed", "accepted", error.message, request.instanceId)),
-          )
-          .catch(fail);
-      });
-      socket.once("connect", () => {
-        this.writeFrame(socket, {
+    const decoder = this.codec.transferDecoder();
+    let connection: Awaited<ReturnType<DaemonSocketClient["connect"]>>;
+    try {
+      connection = await this.sockets.connect(endpoint);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      throw new DaemonTransportError("closed", "accepted", message, request.instanceId);
+    }
+    try {
+      connection.write(
+        this.codec.encodeControl({
           kind: "result-fetch",
           protocolVersion: request.protocolVersion,
           instanceId: request.instanceId,
           processToken: request.processToken,
           requestId: request.requestId,
           offset: transfer.nextOffset,
-        });
-      });
-      const consume = async (bytes: Buffer): Promise<void> => {
-        let completedResult = false;
-        let failedCode: DaemonExecutionFailureCode | undefined;
-        for (const value of decoder.append(bytes)) {
-          if (ended) throw new Error("Daemon resumed with a duplicate terminal frame");
-          if (LocalDaemonTransport.isResultChunk(value)) {
-            await transfer.acceptChunk(value);
-            continue;
-          }
-          const frame = this.validator.executionFrame(request, value);
-          if (frame.kind === "result-manifest") {
-            transfer.acceptManifest(frame);
-            continue;
-          }
-          if (frame.kind === "execution-failed") {
+        }),
+      );
+    } catch (error) {
+      connection.destroy();
+      throw LocalDaemonTransport.transportError(error, "accepted");
+    }
+    let ended = false;
+    try {
+      for await (const bytes of connection.incoming) {
+        try {
+          let completedResult = false;
+          let failedCode: DaemonExecutionFailureCode | undefined;
+          for (const value of decoder.append(bytes)) {
+            if (ended) throw new Error("Daemon resumed with a duplicate terminal frame");
+            if (LocalDaemonTransport.isResultChunk(value)) {
+              await transfer.acceptChunk(value);
+              continue;
+            }
+            const frame = this.validator.executionFrame(request, value);
+            if (frame.kind === "result-manifest") {
+              transfer.acceptManifest(frame);
+              continue;
+            }
+            if (frame.kind === "execution-failed") {
+              ended = true;
+              failedCode = frame.code;
+              continue;
+            }
+            if (frame.kind !== "result-end") {
+              throw new Error("Daemon resumed with an invalid terminal frame");
+            }
+            transfer.acceptEnd(frame);
             ended = true;
-            failedCode = frame.code;
-            continue;
+            completedResult = true;
           }
-          if (frame.kind !== "result-end") {
-            throw new Error("Daemon resumed with an invalid terminal frame");
+          if (completedResult) {
+            const result = await transfer.finish();
+            const manifest = transfer.manifest;
+            if (manifest === undefined) throw new Error("Completion manifest is missing");
+            try {
+              await this.acknowledgeResult(endpoint, request, manifest);
+            } catch (error) {
+              await result.output.dispose();
+              throw error;
+            }
+            connection.end();
+            return { status: "completed", result };
           }
-          transfer.acceptEnd(frame);
-          ended = true;
-          completedResult = true;
-        }
-        if (completedResult) {
-          const result = await transfer.finish();
-          const manifest = transfer.manifest;
-          if (manifest === undefined) throw new Error("Completion manifest is missing");
-          try {
-            await this.acknowledgeResult(endpoint, request, manifest);
-          } catch (error) {
-            await result.output.dispose();
-            throw error;
+          if (failedCode !== undefined) {
+            connection.end();
+            await transfer.dispose();
+            return { status: "failed", code: failedCode };
           }
-          settled = true;
-          socket.end();
-          resolve({ status: "completed", result });
+        } catch (error) {
+          throw LocalDaemonTransport.transportError(error, "accepted");
         }
-        if (failedCode !== undefined) {
-          settled = true;
-          socket.end();
-          await transfer.dispose();
-          resolve({ status: "failed", code: failedCode });
-        }
-      };
-      socket.on("data", (bytes) => {
-        socket.pause();
-        consumption = consumption
-          .then(() => consume(Buffer.isBuffer(bytes) ? bytes : Buffer.from(bytes)))
-          .then(() => {
-            if (!socket.destroyed && !ended) socket.resume();
-          });
-        void consumption.catch(fail);
-      });
-      socket.once("end", () => {
-        void consumption
-          .then(() => {
-            if (ended) return;
-            decoder.assertComplete();
-            fail(new Error("Daemon result resume ended before completion"));
-          })
-          .catch(fail);
-      });
-    });
+      }
+      try {
+        decoder.assertComplete();
+      } catch (error) {
+        throw LocalDaemonTransport.transportError(error, "accepted");
+      }
+      throw LocalDaemonTransport.transportError(
+        new Error("Daemon result resume ended before completion"),
+        "accepted",
+      );
+    } catch (error) {
+      connection.destroy();
+      if (error instanceof DaemonTransportError || error instanceof DaemonProtocolError) {
+        throw LocalDaemonTransport.transportError(error, "accepted");
+      }
+      const message = error instanceof Error ? error.message : String(error);
+      throw new DaemonTransportError("closed", "accepted", message, request.instanceId);
+    }
   }
 
   private async acknowledgeResult(
@@ -593,61 +594,30 @@ export class LocalDaemonTransport
       requestId: request.requestId,
       transferId: manifest.transferId,
     };
-    await new Promise<void>((resolve, reject) => {
-      const decoder = this.codec.controlDecoder();
-      const socket = createConnection(endpoint);
+    const decoder = this.codec.controlDecoder();
+    let connection: Awaited<ReturnType<DaemonSocketClient["connect"]>> | undefined;
+    try {
+      connection = await this.sockets.connect(endpoint, this.requestTimeoutMs);
+      connection.write(this.codec.encodeControl(acknowledgement));
       let responseReceived = false;
-      let settled = false;
-      const fail = (error: unknown): void => {
-        if (settled) return;
-        settled = true;
-        socket.destroy();
-        reject(error);
-      };
-      const succeed = (): void => {
-        if (settled) return;
-        settled = true;
-        socket.destroy();
-        resolve();
-      };
-      const complete = (): void => {
-        try {
-          decoder.assertComplete();
-          if (!responseReceived) throw new Error("Daemon acknowledgement response is missing");
-          succeed();
-        } catch (error) {
-          fail(error);
+      for await (const bytes of connection.incoming) {
+        for (const response of decoder.append(bytes)) {
+          if (responseReceived) throw new Error("Duplicate daemon result acknowledgement");
+          this.validator.resultAcknowledgement(request, manifest.transferId, response);
+          responseReceived = true;
         }
-      };
-      socket.setTimeout(this.requestTimeoutMs, () =>
-        fail(new Error("Daemon result acknowledgement timed out")),
-      );
-      socket.once("error", fail);
-      socket.once("connect", () => {
-        try {
-          this.writeFrame(socket, acknowledgement);
-        } catch (error) {
-          fail(error);
-        }
-      });
-      socket.on("data", (bytes) => {
-        try {
-          const values = decoder.append(Buffer.isBuffer(bytes) ? bytes : Buffer.from(bytes));
-          for (const response of values) {
-            if (responseReceived) throw new Error("Duplicate daemon result acknowledgement");
-            this.validator.resultAcknowledgement(request, manifest.transferId, response);
-            responseReceived = true;
-          }
-          if (responseReceived) socket.end();
-        } catch (error) {
-          fail(error);
-        }
-      });
-      socket.once("end", complete);
-      socket.once("close", () => {
-        if (!settled) complete();
-      });
-    });
+        if (responseReceived) connection.end();
+      }
+      decoder.assertComplete();
+      if (!responseReceived) throw new Error("Daemon acknowledgement response is missing");
+      connection.destroy();
+    } catch (error) {
+      connection?.destroy();
+      if (LocalDaemonTransport.isSocketTimeout(error)) {
+        throw new Error("Daemon result acknowledgement timed out");
+      }
+      throw error;
+    }
   }
 
   async executionStatus(
@@ -693,17 +663,14 @@ export class LocalDaemonTransport
     return true;
   }
 
-  private endpointIsReachable(endpoint: string): Promise<boolean> {
-    return new Promise((resolve) => {
-      const socket = createConnection(endpoint);
-      const finish = (reachable: boolean): void => {
-        socket.destroy();
-        resolve(reachable);
-      };
-      socket.setTimeout(this.requestTimeoutMs, () => finish(false));
-      socket.once("connect", () => finish(true));
-      socket.once("error", () => finish(false));
-    });
+  private async endpointIsReachable(endpoint: string): Promise<boolean> {
+    try {
+      const connection = await this.sockets.connect(endpoint, this.requestTimeoutMs);
+      connection.destroy();
+      return true;
+    } catch {
+      return false;
+    }
   }
 
   private serve(socket: Socket, handler: DaemonRequestHandler): void {
@@ -759,10 +726,6 @@ export class LocalDaemonTransport
     socket.once("error", () => socket.destroy());
   }
 
-  private writeFrame(socket: Socket, value: unknown): void {
-    this.writeEncodedFrame(socket, this.codec.encodeControl(value));
-  }
-
   private async writeServerMessage(socket: Socket, message: DaemonServerMessage): Promise<void> {
     await this.writeEncodedServerFrame(socket, this.codec.encodeServerMessage(message));
   }
@@ -801,16 +764,6 @@ export class LocalDaemonTransport
     });
   }
 
-  private writeEncodedFrame(socket: Pick<Socket, "write">, frame: Uint8Array): void {
-    if (this.writeChunkSize === undefined) {
-      socket.write(frame);
-      return;
-    }
-    for (let offset = 0; offset < frame.length; offset += this.writeChunkSize) {
-      socket.write(frame.subarray(offset, offset + this.writeChunkSize));
-    }
-  }
-
   private static transportError(
     error: unknown,
     delivery: DaemonDeliveryState,
@@ -826,6 +779,14 @@ export class LocalDaemonTransport
     }
     const message = error instanceof Error ? error.message : String(error);
     return new DaemonTransportError("corrupt", delivery, message);
+  }
+
+  private static isSocketTimeout(error: unknown): boolean {
+    return (
+      error instanceof Error &&
+      "code" in error &&
+      (error as Error & { readonly code?: unknown }).code === "ETIMEDOUT"
+    );
   }
 
   private static isResultChunk(value: unknown): value is DaemonResultChunk {

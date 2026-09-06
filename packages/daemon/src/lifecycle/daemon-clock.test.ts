@@ -184,6 +184,13 @@ describe("daemon production clock ownership", () => {
       "destructured callable wall clock through global alias",
       "const root = globalThis; const { Date: wall } = root; wall();",
     ],
+    ["callable wall clock through call", "Date.call(undefined);"],
+    ["callable wall clock through apply", "globalThis.Date.apply(undefined, []);"],
+    ["immediately bound callable wall clock", "(Date as typeof Date).bind(undefined)();"],
+    [
+      "const bound callable wall clock",
+      "const wall = globalThis.Date.bind(undefined); wall();",
+    ],
   ])("recognizes %s as a raw clock source", (_name, source) => {
     expect(DaemonRawClockSourceInventory.hasRawClock(source)).toBe(true);
   });
@@ -227,7 +234,10 @@ describe("daemon production clock ownership", () => {
       'import * as hooks from "./perf-hooks.js"; const { performance: timer } = hooks; timer.now();',
     ],
     ["local callable Date", "function Date() { return 'fixed'; } Date();"],
+    ["local callable Date through call", "function Date() { return 'fixed'; } Date.call(undefined);"],
+    ["local bound callable Date", "function Date() { return 'fixed'; } Date.bind(undefined)();"],
     ["mutable callable Date alias", "let wall = Date; wall();"],
+    ["mutable bound callable Date alias", "let wall = Date.bind(undefined); wall();"],
   ])("ignores a locally shadowed %s lookalike", (_name, source) => {
     expect(DaemonRawClockSourceInventory.hasRawClock(source)).toBe(false);
   });

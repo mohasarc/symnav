@@ -3,7 +3,6 @@ import {
   existsSync,
   mkdirSync,
   mkdtempSync,
-  readdirSync,
   readFileSync,
   realpathSync,
   renameSync,
@@ -34,7 +33,7 @@ import { TestLocalDaemonTransport as LocalDaemonTransport } from "../../helpers/
 import { createDefaultDependencies } from "../../../src/program.js";
 import { canonicalWorkspaceRoot } from "../../helpers/canonical-workspace-root.js";
 import { E2eProcessCleanup } from "../../helpers/e2e-process-cleanup.js";
-import { DaemonStateFiles } from "../../helpers/daemon-state-files.js";
+import { CliDaemonTesting } from "../../helpers/daemon-testing.js";
 
 describe("symnav daemon parity", () => {
   const harnesses: DaemonParityHarness[] = [];
@@ -811,27 +810,19 @@ class DaemonParityHarness {
   }
 
   onlyDaemonPid(): number {
-    const records = DaemonStateFiles.matchingPaths(this.stateDirectory, ".json");
-    expect(records).toHaveLength(1);
-    const record = JSON.parse(readFileSync(records[0]!, "utf8")) as {
-      pid: number;
-    };
-    return record.pid;
+    const instances = new CliDaemonTesting(this.stateDirectory).inspector.listInstances();
+    expect(instances).toHaveLength(1);
+    return instances[0]!.pid;
   }
 
   daemonRecordCount(): number {
-    return DaemonStateFiles.matchingPaths(this.stateDirectory, ".json").length;
+    return new CliDaemonTesting(this.stateDirectory).inspector.listInstances().length;
   }
 
   completionSpoolFileCount(): number {
-    const identity = DaemonWorkspaceIdentity.from(
+    return new CliDaemonTesting(this.stateDirectory).inspector.completionSpoolUsage(
       canonicalWorkspaceRoot(realpathSync(this.workspaceRoot)),
-      StateDirectoryResolver.canonicalize(this.stateDirectory),
-    );
-    if (!existsSync(identity.spoolDirectory)) return 0;
-    return readdirSync(identity.spoolDirectory, { recursive: true }).filter((entry) =>
-      String(entry).endsWith(".spool"),
-    ).length;
+    ).fileCount;
   }
 
   replaceStateDirectoryWithFile(): void {
@@ -857,10 +848,7 @@ class DaemonParityHarness {
   }
 
   private daemonProcessIds(): readonly number[] {
-    return DaemonStateFiles.matchingPaths(this.stateDirectory, ".json").map((path) => {
-      const record = JSON.parse(readFileSync(path, "utf8")) as { readonly pid: number };
-      return record.pid;
-    });
+    return new CliDaemonTesting(this.stateDirectory).processIds();
   }
 
   private run(

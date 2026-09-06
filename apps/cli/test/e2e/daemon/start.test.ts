@@ -1,11 +1,11 @@
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { runSymnavBinary } from "@symnav/testing";
 import { canonicalWorkspaceRoot } from "../../helpers/canonical-workspace-root.js";
 import { E2eProcessCleanup } from "../../helpers/e2e-process-cleanup.js";
-import { DaemonStateFiles } from "../../helpers/daemon-state-files.js";
+import { CliDaemonTesting } from "../../helpers/daemon-testing.js";
 
 describe("symnav daemon start", () => {
   const stateDirectories: string[] = [];
@@ -90,9 +90,5 @@ function temporaryWorkspace(directories: string[]): string {
 }
 
 function captureDaemonPid(stateDir: string, pids: number[]): void {
-  const recordPath = DaemonStateFiles.matchingPaths(stateDir, ".json")[0];
-  const record = recordPath
-    ? (JSON.parse(readFileSync(recordPath, "utf8")) as { pid: number })
-    : undefined;
-  if (record) pids.push(record.pid);
+  pids.push(...new CliDaemonTesting(stateDir).processIds());
 }

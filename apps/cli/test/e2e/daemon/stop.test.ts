@@ -23,7 +23,7 @@ import { TestLocalDaemonTransport as LocalDaemonTransport } from "../../helpers/
 import { StateDirectoryResolver } from "../../../src/state-directory-resolver.js";
 import { canonicalWorkspaceRoot } from "../../helpers/canonical-workspace-root.js";
 import { E2eProcessCleanup } from "../../helpers/e2e-process-cleanup.js";
-import { DaemonStateFiles } from "../../helpers/daemon-state-files.js";
+import { CliDaemonTesting } from "../../helpers/daemon-testing.js";
 
 describe("symnav daemon stop", () => {
   const stateDirectories: string[] = [];
@@ -60,7 +60,7 @@ describe("symnav daemon stop", () => {
     expect(stopped.status).toBe(0);
     expect(stopped.stderr).toBe("");
     expect(stopped.stdout).toMatch(/^Stopped daemon for .+ \(pid \d+\)\n$/);
-    const events = daemonLogEvents(stateDir);
+    const events = daemonLogEvents(stateDir, cwd);
     expect(events).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ kind: "start" }),
@@ -359,18 +359,14 @@ function temporaryWorkspace(directories: string[]): string {
 }
 
 function captureDaemonPids(stateDir: string, pids: number[]): void {
-  for (const recordPath of DaemonStateFiles.matchingPaths(stateDir, ".json")) {
-    const record = JSON.parse(readFileSync(recordPath, "utf8")) as { pid: number };
-    pids.push(record.pid);
-  }
+  pids.push(...new CliDaemonTesting(stateDir).processIds());
 }
 
-function daemonLogEvents(stateDir: string): readonly Record<string, unknown>[] {
-  const logPath = DaemonStateFiles.matchingPaths(stateDir, ".log")[0];
-  if (logPath === undefined) return [];
-  return readFileSync(logPath, "utf8")
-    .trim()
-    .split("\n")
-    .filter((line) => line.startsWith("{"))
-    .map((line) => JSON.parse(line) as Record<string, unknown>);
+function daemonLogEvents(
+  stateDir: string,
+  workspaceRoot: string,
+): readonly Record<string, unknown>[] {
+  return new CliDaemonTesting(stateDir).inspector.readDiagnostics(
+    canonicalWorkspaceRoot(realpathSync(workspaceRoot)),
+  ).events;
 }

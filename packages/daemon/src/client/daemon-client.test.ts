@@ -1,17 +1,17 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { tmpdir } from "node:os";
 import type {
-  DaemonExecutionFailureCode,
   DaemonExecutor,
   DaemonExecutorExecutionResult,
   DaemonExecutorRequest,
 } from "@symnav/daemon";
+import type { DaemonExecutionFailureCode } from "../daemon-execution-failure.js";
 import { DaemonPolicy } from "../daemon-policy.js";
 import { CommandOutputSnapshot } from "../../test/helpers/executor-output.js";
 import { DaemonStartupCoordinator } from "../registry/startup-coordinator.js";
 import { DaemonRecordObserver, type DaemonObservation } from "../registry/record-observer.js";
 import { DaemonRegistry } from "../registry/registry.js";
-import { LocalDaemonTransport } from "../transport/local-transport.js";
+import { DaemonExecutionClient } from "../transport/execution-client.js";
 import type { DaemonOutputCapture } from "../transport/client-result-capture.js";
 import {
   DAEMON_PROTOCOL_VERSION,
@@ -343,7 +343,7 @@ class ClientHarness {
         : Promise.resolve({ status: "launched", instanceId: "replacement", pid: 321 }),
     );
     vi.spyOn(DaemonStartupCoordinator.prototype, "trigger").mockImplementation(this.trigger);
-    vi.spyOn(LocalDaemonTransport.prototype, "execute").mockImplementation(
+    vi.spyOn(DaemonExecutionClient.prototype, "execute").mockImplementation(
       async (_endpoint, request) => {
         this.warmRequests.push(request);
         if (options.warmFailure !== undefined) throw options.warmFailure;

@@ -1,10 +1,7 @@
 import { createHash } from "node:crypto";
 import { describe, expect, it, vi } from "vitest";
-import type {
-  DaemonExecutorExecutionResult,
-  DaemonOutputRecord,
-  DaemonSequencedOutputRecord,
-} from "@symnav/daemon";
+import type { DaemonExecutorExecutionResult, DaemonOutputRecord } from "@symnav/daemon";
+import type { DaemonSequencedOutputRecord } from "../daemon-executor.js";
 import type { CompletionSpoolManifest } from "../delivery/completion-spool.js";
 import type { DaemonExecutionServerFrame, DaemonResultChunk } from "./protocol.js";
 import type {

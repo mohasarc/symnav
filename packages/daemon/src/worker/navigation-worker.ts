@@ -1,12 +1,11 @@
 import { Worker } from "node:worker_threads";
 import {
-  DaemonPolicy,
   type DaemonCommandName,
   type DaemonExecutorRequest,
   type DaemonExecutorModuleUrl,
-  type DaemonOutputSink,
-  type DaemonSequencedOutputRecord,
 } from "@symnav/daemon";
+import type { DaemonOutputSink, DaemonSequencedOutputRecord } from "../daemon-executor.js";
+import { DaemonPolicyCodec, type SerializedDaemonPolicy } from "../daemon-policy.js";
 import {
   DaemonNavigationWorkerProtocol,
   type DaemonNavigationWorkerRequest,
@@ -48,7 +47,7 @@ export interface DaemonNavigationWorkerConfiguration {
   readonly stateDirectory: string;
   readonly productVersion: string;
   readonly executorModuleUrl: DaemonExecutorModuleUrl;
-  readonly policy: ReturnType<DaemonPolicy["toSerialized"]>;
+  readonly policy: SerializedDaemonPolicy;
 }
 
 export interface NodeDaemonNavigationWorkerOptions {
@@ -86,7 +85,7 @@ export class NodeDaemonNavigationWorker implements DaemonNavigationWorker {
 
   constructor(options: NodeDaemonNavigationWorkerOptions) {
     this.generation = options.generation;
-    this.maximumChunkRawBytes = DaemonPolicy.fromSerialized(
+    this.maximumChunkRawBytes = DaemonPolicyCodec.deserialize(
       options.configuration.policy,
     ).values.output.maximumChunkRawBytes;
     this.exited = new Promise((resolve) => {

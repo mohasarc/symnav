@@ -1,11 +1,10 @@
 import { createHash } from "node:crypto";
+import { type DaemonCommandName, type DaemonExecutorRequest } from "@symnav/daemon";
+import type { AcceptedRequestCompatibility } from "../daemon-admission.js";
 import {
   DaemonExecutionFailures,
-  type AcceptedRequestCompatibility,
-  type DaemonCommandName,
-  type DaemonExecutorRequest,
   type DaemonExecutionFailureCode,
-} from "@symnav/daemon";
+} from "../daemon-execution-failure.js";
 import type { DaemonExecutionStatus } from "../transport/protocol.js";
 import { NodeDaemonClock, type DaemonClock } from "../lifecycle/daemon-clock.js";
 

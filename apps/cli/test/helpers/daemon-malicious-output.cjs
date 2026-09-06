@@ -7,7 +7,7 @@ const crashTrigger = process.env.SYMNAV_TEST_DAEMON_CRASH_TRIGGER;
 const rejectionTrigger = process.env.SYMNAV_TEST_DAEMON_REJECTION_TRIGGER;
 if (
   isMainThread &&
-  entryPath.endsWith("daemon-entry.js") &&
+  entryPath.endsWith("process-entry.js") &&
   secret &&
   (crashTrigger || rejectionTrigger)
 ) {

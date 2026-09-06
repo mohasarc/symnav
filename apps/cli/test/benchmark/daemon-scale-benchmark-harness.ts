@@ -7,7 +7,6 @@ import {
   mkdtempSync,
   readFileSync,
   realpathSync,
-  readdirSync,
   renameSync,
   statSync,
   unlinkSync,
@@ -20,12 +19,10 @@ import { join } from "node:path";
 import { performance } from "node:perf_hooks";
 import { fileURLToPath } from "node:url";
 import { runSymnavBinary, type RunSymnavBinaryResult } from "@symnav/testing";
-import type { DaemonCommandName } from "@symnav/daemon";
-import { TestDaemonRegistry as DaemonRegistry } from "../helpers/daemon-registry.js";
+import { DAEMON_COMMAND_NAMES, type DaemonCommandName } from "@symnav/daemon";
+import { DaemonTestingInspector } from "@symnav/daemon/testing";
 import { TestDaemonResourcePolicy as DaemonResourcePolicy } from "../helpers/daemon-resource-policy.js";
-import { DaemonWorkspaceIdentity } from "../../src/daemon/daemon-workspace-identity.js";
-import { DaemonRuntimeValues } from "../../src/daemon/daemon-runtime-values.js";
-import { InvocationWorkspaceSelector } from "../../src/daemon/invocation-workspace-selector.js";
+import { InvocationWorkspaceSelector } from "../../src/invocation-workspace-selector.js";
 import { StateDirectoryResolver } from "../../src/state-directory-resolver.js";
 import { canonicalWorkspaceRoot } from "../helpers/canonical-workspace-root.js";
 import type {
@@ -100,8 +97,8 @@ export class DaemonScaleBenchmarkHarness {
     try {
       const generated = await new DaemonWorkspaceGenerator(this.options).generate(workspaceRoot);
       const generatedProfile = await new DaemonWorkspaceProfiler().profile(workspaceRoot);
-      const identity = DaemonWorkspaceIdentity.from(
-        canonicalWorkspaceRoot(realpathSync(workspaceRoot)),
+      const canonicalRoot = canonicalWorkspaceRoot(realpathSync(workspaceRoot));
+      const inspector = new DaemonTestingInspector(
         StateDirectoryResolver.canonicalize(stateDirectory),
       );
       const startupStartedAt = performance.now();
@@ -110,15 +107,17 @@ export class DaemonScaleBenchmarkHarness {
       if (started.status !== 0)
         throw new Error(`Daemon benchmark startup failed: ${started.stderr}`);
       daemonStarted = true;
-      const registry = new DaemonRegistry(identity.registryDirectory);
-      const initialRecord = registry.read(identity);
-      if (initialRecord === undefined)
+      const initialInstance = inspector
+        .listInstances()
+        .find((instance) => instance.workspaceRoot === canonicalRoot);
+      if (initialInstance === undefined)
         throw new Error("Daemon benchmark startup record is missing");
 
-      const fixedDiagnosticCursor = await this.waitForStartupDiagnostics(identity.logPath);
+      const fixedDiagnosticCursor = await this.waitForStartupDiagnostics(inspector, canonicalRoot);
       const samples = await this.runFixedSuite(generated, stateDirectory);
       const fixedDiagnostics = await this.waitForFixedDiagnostics(
-        identity.logPath,
+        inspector,
+        canonicalRoot,
         fixedDiagnosticCursor,
         samples.length,
       );
@@ -126,13 +125,15 @@ export class DaemonScaleBenchmarkHarness {
       const fixedArtifactComplete = fixedDiagnostics.complete(enrichedSamples);
       const mutations = this.runMutations(generated, stateDirectory);
       const largeResponse = await this.runLargeResponseAndBusyStatus(generated, stateDirectory);
-      const finalRecord = registry.read(identity);
-      if (finalRecord === undefined) throw new Error("Daemon benchmark final record is missing");
+      const finalInstance = inspector
+        .listInstances()
+        .find((instance) => instance.workspaceRoot === canonicalRoot);
+      if (finalInstance === undefined) throw new Error("Daemon benchmark final record is missing");
       const stopped = this.runCommand(workspaceRoot, stateDirectory, ["daemon", "stop"], false);
       daemonStarted = false;
       if (stopped.status !== 0) throw new Error("Daemon benchmark shutdown failed");
 
-      const diagnostics = DaemonBenchmarkDiagnostics.read(identity.logPath);
+      const diagnostics = DaemonBenchmarkDiagnostics.from(inspector.readDiagnostics(canonicalRoot));
       const telemetryCommands = this.warmTelemetryCommands(stateDirectory);
       const resourcePolicy = DaemonResourcePolicy.fromSystemMemory(
         totalmem(),
@@ -150,10 +151,10 @@ export class DaemonScaleBenchmarkHarness {
         freshness: mutations.current,
         statusMaximumMs: largeResponse.statusMaximumMs,
         busyStatusObserved: largeResponse.busyStatusObserved,
-        initialPid: initialRecord.pid,
-        finalPid: finalRecord.pid,
-        initialInstanceId: initialRecord.instanceId,
-        finalInstanceId: finalRecord.instanceId,
+        initialPid: initialInstance.pid,
+        finalPid: finalInstance.pid,
+        initialInstanceId: initialInstance.instanceId,
+        finalInstanceId: finalInstance.instanceId,
         fallbackCount: this.fallbackTelemetryCount(stateDirectory),
         restartCount: diagnostics.restartCount,
         capacityResultCount: diagnostics.capacityResultCount,
@@ -179,7 +180,7 @@ export class DaemonScaleBenchmarkHarness {
           mutations.telemetryComplete &&
           largeResponse.telemetryMatched,
         artifactComplete: fixedArtifactComplete,
-        spoolBytesAfterCleanup: DaemonScaleBenchmarkHarness.directoryBytes(identity.spoolDirectory),
+        spoolBytesAfterCleanup: inspector.completionSpoolUsage(canonicalRoot).bytes,
         diagnosticPhasesComplete: diagnostics.phasesComplete,
         generatedVisibleFiles: generatedProfile.visibleTypeScriptFiles,
         expectedVisibleFiles: generated.expectedProfile.visibleTypeScriptFiles,
@@ -279,28 +280,40 @@ export class DaemonScaleBenchmarkHarness {
   }
 
   private async waitForFixedDiagnostics(
-    logPath: string,
+    inspector: DaemonTestingInspector,
+    canonicalWorkspaceRoot: string,
     cursor: number,
     expectedOperations: number,
   ): Promise<DaemonBenchmarkDiagnostics> {
     const deadline = performance.now() + 10_000;
-    let diagnostics = DaemonBenchmarkDiagnostics.read(logPath, cursor);
+    let diagnostics = DaemonBenchmarkDiagnostics.from(
+      inspector.readDiagnostics(canonicalWorkspaceRoot),
+      cursor,
+    );
     while (!diagnostics.ready(expectedOperations) && performance.now() < deadline) {
       await new Promise((resolve) => setTimeout(resolve, 10));
-      diagnostics = DaemonBenchmarkDiagnostics.read(logPath, cursor);
+      diagnostics = DaemonBenchmarkDiagnostics.from(
+        inspector.readDiagnostics(canonicalWorkspaceRoot),
+        cursor,
+      );
     }
     return diagnostics;
   }
 
-  private async waitForStartupDiagnostics(logPath: string): Promise<number> {
+  private async waitForStartupDiagnostics(
+    inspector: DaemonTestingInspector,
+    canonicalWorkspaceRoot: string,
+  ): Promise<number> {
     const deadline = performance.now() + 10_000;
+    let page = inspector.readDiagnostics(canonicalWorkspaceRoot);
     while (
-      !DaemonBenchmarkDiagnostics.startupProbeComplete(logPath) &&
+      !DaemonBenchmarkDiagnostics.startupProbeComplete(page.events) &&
       performance.now() < deadline
     ) {
       await new Promise((resolve) => setTimeout(resolve, 10));
+      page = inspector.readDiagnostics(canonicalWorkspaceRoot);
     }
-    return DaemonBenchmarkDiagnostics.eventCount(logPath);
+    return page.nextCursor;
   }
 
   private runMutations(
@@ -450,6 +463,8 @@ export class DaemonScaleBenchmarkHarness {
     const telemetryBefore = this.telemetryEvents(stateDirectory);
     const warm = this.runCommand(root, stateDirectory, argv, true);
     const telemetryAfter = this.telemetryEvents(stateDirectory);
+    const route = new InvocationWorkspaceSelector().select(argv, root).route;
+    if (route.kind !== "workspace") throw new Error("Benchmark command must select a workspace");
     return {
       cold,
       warm,
@@ -458,7 +473,7 @@ export class DaemonScaleBenchmarkHarness {
       telemetryMatched: BenchmarkInvocationTelemetry.matches({
         before: telemetryBefore,
         after: telemetryAfter,
-        command: new InvocationWorkspaceSelector().select(argv, root).commandName,
+        command: route.commandName,
       }),
     };
   }
@@ -599,7 +614,9 @@ export class DaemonScaleBenchmarkHarness {
     return this.telemetryEvents(stateDirectory)
       .filter((event) => event.executionMode === "warm")
       .map((event) => event.command)
-      .filter(DaemonRuntimeValues.isCommandName);
+      .filter((command): command is DaemonCommandName =>
+        DAEMON_COMMAND_NAMES.includes(command as DaemonCommandName),
+      );
   }
 
   private fallbackTelemetryCount(stateDirectory: string): number {
@@ -615,17 +632,6 @@ export class DaemonScaleBenchmarkHarness {
       .split("\n")
       .filter((line) => line.length > 0)
       .map((line) => JSON.parse(line) as Record<string, unknown>);
-  }
-
-  private static directoryBytes(path: string): number {
-    if (!existsSync(path)) return 0;
-    let bytes = 0;
-    for (const name of readdirSync(path)) {
-      const child = join(path, name);
-      const metadata = statSync(child);
-      bytes += metadata.isDirectory() ? this.directoryBytes(child) : metadata.size;
-    }
-    return bytes;
   }
 }
 
@@ -832,13 +838,11 @@ export class DaemonBenchmarkDiagnostics {
     private readonly uncorrelatedOperationEventCount: number,
   ) {}
 
-  static read(logPath: string, cursor = 0): DaemonBenchmarkDiagnostics {
-    const allEvents = existsSync(logPath)
-      ? readFileSync(logPath, "utf8")
-          .split("\n")
-          .filter((line) => line.length > 0)
-          .map((line) => JSON.parse(line) as Record<string, unknown>)
-      : [];
+  static from(
+    page: import("@symnav/daemon/testing").DaemonTestingDiagnosticPage,
+    cursor = 0,
+  ): DaemonBenchmarkDiagnostics {
+    const allEvents = page.events;
     const events = allEvents.slice(cursor);
     const accepted = events.filter((event) => event.kind === "request-accepted");
     const acceptedRequestIds = new Set(accepted.map((event) => String(event.requestId)));
@@ -925,12 +929,9 @@ export class DaemonBenchmarkDiagnostics {
     );
   }
 
-  static startupProbeComplete(logPath: string): boolean {
-    if (!existsSync(logPath)) return false;
-    const events = readFileSync(logPath, "utf8")
-      .split("\n")
-      .filter((line) => line.length > 0)
-      .map((line) => JSON.parse(line) as Record<string, unknown>);
+  static startupProbeComplete(
+    events: readonly import("@symnav/daemon/testing").DaemonTestingDiagnosticEvent[],
+  ): boolean {
     const versionRequests = new Set(
       events
         .filter((event) => event.kind === "request-accepted" && event.command === "version")
@@ -945,13 +946,6 @@ export class DaemonBenchmarkDiagnostics {
           versionRequests.has(String(event.requestId)),
       )
     );
-  }
-
-  static eventCount(logPath: string): number {
-    if (!existsSync(logPath)) return 0;
-    return readFileSync(logPath, "utf8")
-      .split("\n")
-      .filter((line) => line.length > 0).length;
   }
 
   enrich(samples: readonly BenchmarkSampleEvidence[]): BenchmarkSampleEvidence[] {

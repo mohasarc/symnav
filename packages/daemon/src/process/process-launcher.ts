@@ -2,11 +2,12 @@ import { mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { spawn } from "node:child_process";
+import { type DaemonExecutorModuleUrl, type DaemonPolicyValues } from "@symnav/daemon";
 import {
-  DaemonPolicy,
-  type DaemonExecutorModuleUrl,
-  type DaemonPolicyValues,
-} from "@symnav/daemon";
+  DaemonPolicyCodec,
+  type DaemonPolicy,
+  type SerializedDaemonPolicy,
+} from "../daemon-policy.js";
 import type { DaemonWorkspaceIdentity } from "../registry/workspace-identity.js";
 import type { DaemonIdentityCoordinates } from "../transport/protocol.js";
 import { NodeDaemonClock, type DaemonClock } from "../lifecycle/daemon-clock.js";
@@ -15,7 +16,7 @@ interface DaemonProcessConfiguration extends DaemonIdentityCoordinates {
   readonly stateDirectory: string;
   readonly symnavVersion: string;
   readonly executorModuleUrl: DaemonExecutorModuleUrl;
-  readonly policy: ReturnType<DaemonPolicy["toSerialized"]>;
+  readonly policy: SerializedDaemonPolicy;
   readonly startupOwnerKind: "daemon";
 }
 
@@ -149,7 +150,7 @@ export class NodeDaemonProcessLauncher implements DaemonProcessLauncher {
       endpoint: identity.endpoint(instanceId),
       symnavVersion: this.symnavVersion,
       executorModuleUrl: this.executorModuleUrl,
-      policy: this.policy.toSerialized(),
+      policy: DaemonPolicyCodec.serialize(this.policy),
       startupOwnerKind: "daemon",
     };
     const encodedConfiguration = Buffer.from(JSON.stringify(configuration)).toString("base64url");
@@ -255,9 +256,9 @@ export class DaemonProcessConfigurationParser {
     }
   }
 
-  private static isPolicy(value: unknown): value is ReturnType<DaemonPolicy["toSerialized"]> {
+  private static isPolicy(value: unknown): value is SerializedDaemonPolicy {
     try {
-      DaemonPolicy.fromSerialized(value);
+      DaemonPolicyCodec.parse(value);
       return true;
     } catch {
       return false;

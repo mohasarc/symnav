@@ -1,8 +1,60 @@
 import type { ChildProcess } from "node:child_process";
 import { rmSync } from "node:fs";
-import type { DaemonProcessTerminator } from "../../src/daemon/daemon-process-launcher.js";
-import { TestNodeDaemonProcessTerminator as NodeDaemonProcessTerminator } from "./daemon-process-terminator.js";
-import { TestLocalDaemonTransport as LocalDaemonTransport } from "./local-daemon-transport.js";
+
+export interface TestProcessTerminator {
+  isAlive(processId: number): boolean;
+  terminate(processId: number): Promise<void>;
+}
+
+class NodeTestProcessTerminator implements TestProcessTerminator {
+  constructor(
+    private readonly signalExitTimeoutMs = 1_000,
+    private readonly exitPollIntervalMs = 10,
+  ) {}
+
+  isAlive(processId: number): boolean {
+    if (!Number.isInteger(processId) || processId <= 0) return false;
+    try {
+      process.kill(processId, 0);
+      return true;
+    } catch (error) {
+      return NodeTestProcessTerminator.errorCode(error) === "EPERM";
+    }
+  }
+
+  async terminate(processId: number): Promise<void> {
+    if (!this.isAlive(processId)) return;
+    if (processId === process.pid) throw new Error("Refusing to terminate current process");
+    this.signal(processId, "SIGTERM");
+    if (await this.waitForExit(processId)) return;
+    this.signal(processId, "SIGKILL");
+    if (await this.waitForExit(processId)) return;
+    throw new Error(`Process ${processId} did not terminate`);
+  }
+
+  private signal(processId: number, signal: NodeJS.Signals): void {
+    try {
+      process.kill(processId, signal);
+    } catch (error) {
+      if (NodeTestProcessTerminator.errorCode(error) !== "ESRCH") throw error;
+    }
+  }
+
+  private async waitForExit(processId: number): Promise<boolean> {
+    const deadline = Date.now() + this.signalExitTimeoutMs;
+    while (Date.now() <= deadline) {
+      if (!this.isAlive(processId)) return true;
+      await new Promise((resolve) => setTimeout(resolve, this.exitPollIntervalMs));
+    }
+    return !this.isAlive(processId);
+  }
+
+  private static errorCode(error: unknown): string | undefined {
+    return typeof error === "object" && error !== null && "code" in error
+      ? String(error.code)
+      : undefined;
+  }
+}
 
 export class E2eProcessCleanupError extends Error {
   constructor(readonly failures: readonly string[]) {
@@ -12,7 +64,7 @@ export class E2eProcessCleanupError extends Error {
 
 interface TerminateAndRemoveDirectoriesOptions {
   readonly children?: readonly ChildProcess[];
-  readonly processTerminator?: DaemonProcessTerminator;
+  readonly processTerminator?: TestProcessTerminator;
   readonly removeDirectory?: typeof rmSync;
   readonly retryTimeoutMs?: number;
   readonly retryDelayMs?: number;
@@ -22,7 +74,7 @@ export class E2eProcessCleanup {
   static async terminate(
     daemonProcessIds: readonly number[],
     children: readonly ChildProcess[] = [],
-    processTerminator: DaemonProcessTerminator = new NodeDaemonProcessTerminator(1_000, 10),
+    processTerminator: TestProcessTerminator = new NodeTestProcessTerminator(),
   ): Promise<void> {
     const childExitFailures = children.map((child) => E2eProcessCleanup.childExitFailure(child));
     const processProvenance = new Map<number, "daemon" | "helper">();
@@ -52,7 +104,7 @@ export class E2eProcessCleanup {
   }
 
   static async waitForExit(processIds: readonly number[]): Promise<void> {
-    const terminator = new NodeDaemonProcessTerminator();
+    const terminator = new NodeTestProcessTerminator();
     const deadline = Date.now() + 1_000;
     while (Date.now() <= deadline) {
       if (processIds.every((processId) => !terminator.isAlive(processId))) return;
@@ -75,16 +127,6 @@ export class E2eProcessCleanup {
     await E2eProcessCleanup.waitForExit(processIds);
   }
 
-  static async waitForEndpointRelease(endpoint: string): Promise<void> {
-    const transport = new LocalDaemonTransport({ requestTimeoutMs: 100 });
-    const deadline = Date.now() + 1_000;
-    while (Date.now() <= deadline) {
-      if (await transport.removeUnavailableEndpoint(endpoint)) return;
-      await new Promise((resolve) => setTimeout(resolve, 10));
-    }
-    throw new Error(`Daemon endpoint did not release: ${endpoint}`);
-  }
-
   static removeDirectories(
     directories: readonly string[],
     removeDirectory: typeof rmSync = rmSync,
@@ -104,8 +146,7 @@ export class E2eProcessCleanup {
     daemonProcessIds: () => readonly number[],
     options: TerminateAndRemoveDirectoriesOptions = {},
   ): Promise<void> {
-    const processTerminator =
-      options.processTerminator ?? new NodeDaemonProcessTerminator(1_000, 10);
+    const processTerminator = options.processTerminator ?? new NodeTestProcessTerminator();
     const removeDirectory = options.removeDirectory ?? rmSync;
     const deadline = Date.now() + (options.retryTimeoutMs ?? 5_000);
     let children = options.children ?? [];

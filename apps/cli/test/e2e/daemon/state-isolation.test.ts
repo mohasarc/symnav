@@ -3,11 +3,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { runSymnavBinary } from "@symnav/testing";
 import { afterEach, describe, expect, it } from "vitest";
-import type { DaemonRecord } from "../../../src/daemon/daemon-protocol.js";
-import { TestDaemonRegistry as DaemonRegistry } from "../../helpers/daemon-registry.js";
-import { DaemonWorkspaceIdentity } from "../../../src/daemon/daemon-workspace-identity.js";
-import { StateDirectoryResolver } from "../../../src/state-directory-resolver.js";
+import type { DaemonTestingInstance } from "@symnav/daemon/testing";
 import { E2eProcessCleanup } from "../../helpers/e2e-process-cleanup.js";
+import { CliDaemonTesting } from "../../helpers/daemon-testing.js";
 
 describe("symnav daemon state location isolation", () => {
   const directories: string[] = [];
@@ -27,16 +25,14 @@ describe("symnav daemon state location isolation", () => {
 
     expect(startDaemon(workspace, firstState).status).toBe(0);
     expect(startDaemon(workspace, secondState).status).toBe(0);
-    const firstRecord = onlyRecord(firstState);
-    const secondRecord = onlyRecord(secondState);
-    daemonProcessIds.push(firstRecord.pid, secondRecord.pid);
+    const firstInstance = onlyInstance(firstState);
+    const secondInstance = onlyInstance(secondState);
+    daemonProcessIds.push(firstInstance.pid, secondInstance.pid);
 
-    expect(firstRecord.pid).not.toBe(secondRecord.pid);
-    expect(firstRecord.endpoint).not.toBe(secondRecord.endpoint);
-    expect(firstRecord.stateKey).not.toBe(secondRecord.stateKey);
-    expect(firstRecord.identityKey).not.toBe(secondRecord.identityKey);
-    expect(statusProcessIds(firstState)).toEqual([firstRecord.pid]);
-    expect(statusProcessIds(secondState)).toEqual([secondRecord.pid]);
+    expect(firstInstance.pid).not.toBe(secondInstance.pid);
+    expect(firstInstance.instanceId).not.toBe(secondInstance.instanceId);
+    expect(statusProcessIds(firstState)).toEqual([firstInstance.pid]);
+    expect(statusProcessIds(secondState)).toEqual([secondInstance.pid]);
     expect(overview(workspace, firstState)).toMatchObject({ status: 0, stderr: "" });
     expect(overview(workspace, secondState)).toMatchObject({ status: 0, stderr: "" });
 
@@ -48,10 +44,10 @@ describe("symnav daemon state location isolation", () => {
     expect(stopped.status).toBe(0);
     expect(JSON.parse(stopped.stdout)).toMatchObject({
       status: "stopped",
-      pid: firstRecord.pid,
+      pid: firstInstance.pid,
     });
     expect(statusProcessIds(firstState)).toEqual([]);
-    expect(statusProcessIds(secondState)).toEqual([secondRecord.pid]);
+    expect(statusProcessIds(secondState)).toEqual([secondInstance.pid]);
     expect(overview(workspace, secondState)).toMatchObject({ status: 0, stderr: "" });
   });
 
@@ -65,18 +61,16 @@ describe("symnav daemon state location isolation", () => {
     const canonicalStateDirectory = realpathSync(stateDirectory);
 
     expect(startDaemon(workspace, dottedLink).status).toBe(0);
-    const record = onlyRecord(canonicalStateDirectory);
-    daemonProcessIds.push(record.pid);
+    const instance = onlyInstance(canonicalStateDirectory);
+    daemonProcessIds.push(instance.pid);
 
     expect(startDaemon(workspace, canonicalStateDirectory).status).toBe(0);
-    expect(onlyRecord(stateLink)).toMatchObject({
-      pid: record.pid,
-      endpoint: record.endpoint,
-      stateKey: record.stateKey,
-      identityKey: record.identityKey,
+    expect(onlyInstance(stateLink)).toMatchObject({
+      pid: instance.pid,
+      instanceId: instance.instanceId,
     });
-    expect(statusProcessIds(dottedLink)).toEqual([record.pid]);
-    expect(statusProcessIds(canonicalStateDirectory)).toEqual([record.pid]);
+    expect(statusProcessIds(dottedLink)).toEqual([instance.pid]);
+    expect(statusProcessIds(canonicalStateDirectory)).toEqual([instance.pid]);
     expect(overview(workspace, stateLink)).toMatchObject({ status: 0, stderr: "" });
 
     const stopped = runSymnavBinary(["daemon", "stop", "--json"], {
@@ -84,7 +78,7 @@ describe("symnav daemon state location isolation", () => {
       env: { SYMNAV_STATE_DIR: canonicalStateDirectory },
     });
     expect(stopped.status).toBe(0);
-    expect(JSON.parse(stopped.stdout)).toMatchObject({ status: "stopped", pid: record.pid });
+    expect(JSON.parse(stopped.stdout)).toMatchObject({ status: "stopped", pid: instance.pid });
     expect(statusProcessIds(stateLink)).toEqual([]);
   });
 });
@@ -110,11 +104,11 @@ function startDaemon(workspace: string, stateDirectory: string) {
   });
 }
 
-function onlyRecord(stateDirectory: string): DaemonRecord {
-  const records = registry(stateDirectory).list();
-  if (records.length !== 1)
-    throw new Error(`Expected one daemon record, received ${records.length}`);
-  return records[0]!;
+function onlyInstance(stateDirectory: string): DaemonTestingInstance {
+  const instances = new CliDaemonTesting(stateDirectory).inspector.listInstances();
+  if (instances.length !== 1)
+    throw new Error(`Expected one daemon instance, received ${instances.length}`);
+  return instances[0]!;
 }
 
 function statusProcessIds(stateDirectory: string): readonly number[] {
@@ -136,9 +130,4 @@ function overview(workspace: string, stateDirectory: string) {
   expect(result.stdout).toContain("Overview: input.ts");
   expect(result.stdout).toContain("value");
   return result;
-}
-
-function registry(stateDirectory: string): DaemonRegistry {
-  const canonicalDirectory = StateDirectoryResolver.canonicalize(stateDirectory);
-  return new DaemonRegistry(DaemonWorkspaceIdentity.registryDirectory(canonicalDirectory));
 }

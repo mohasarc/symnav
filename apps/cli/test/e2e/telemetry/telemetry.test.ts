@@ -5,7 +5,7 @@ import { beforeAll, describe, expect, it } from "vitest";
 import { fixturePath, runSymnavBinary } from "@symnav/testing";
 
 import { ensureFixtureGitMarker } from "../ensure-fixture-git-marker.js";
-import { DaemonStateFiles } from "../../helpers/daemon-state-files.js";
+import { CliDaemonTesting } from "../../helpers/daemon-testing.js";
 
 const fixtureRoot = fixturePath("overview-cases");
 const overviewArgs = ["overview", "class-with-methods.ts"] as const;
@@ -137,8 +137,9 @@ describe("symnav telemetry e2e", () => {
 
     expect(result.status).toBe(0);
     expect(event.executionMode).toBe("cold");
-    expect(existsSync(join(stateDir, "daemons"))).toBe(false);
-    expect(DaemonStateFiles.matchingPaths(stateDir, ".json")).toEqual([]);
+    const daemonTesting = new CliDaemonTesting(stateDir);
+    expect(daemonTesting.inspector.hasStateArtifacts()).toBe(false);
+    expect(daemonTesting.processIds()).toEqual([]);
   });
 
   it("keeps daemon telemetry inert for an opted-out client", () => {

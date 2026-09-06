@@ -4,7 +4,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Command as CommanderCommand } from "commander";
 import { NodeFileSystem } from "@symnav/core";
-import { DaemonPolicy } from "@symnav/daemon";
+import { DaemonClient, DaemonPolicy, type DaemonExecutorFactory } from "@symnav/daemon";
 import { TypeScriptBackend } from "@symnav/backend-typescript";
 import { NodeTelemetryWritePort, NodeUsageRecorder, usageLogPath } from "@symnav/telemetry";
 import type { Clock } from "@symnav/telemetry";
@@ -45,12 +45,30 @@ export function createDefaultProgramContext(): ProgramContext {
 export function createDefaultDependencies(
   canonicalStateDirectory: string,
   daemonPolicy: DaemonPolicy,
+  daemonEnabled = true,
 ): ProgramDependencies {
   const fs = new NodeFileSystem();
   const clock: Clock = { now: () => Date.now() };
-  return {
+  const symnavVersion = readPackageVersion();
+  let dependencies: ProgramDependencies;
+  const executorFactory: DaemonExecutorFactory = async (options) => {
+    const { createDaemonExecutorFromDependencies } = await import("./daemon-executor.js");
+    return createDaemonExecutorFromDependencies(options, dependencies);
+  };
+  const daemonClient = new DaemonClient({
+    stateDirectory: canonicalStateDirectory,
+    productVersion: symnavVersion,
+    daemonEnabled,
+    executorFactory,
+    executorModuleUrl: new URL("./daemon-executor.js", import.meta.url).href,
+    readinessProbe: { commandName: "version", argv: ["--version"] },
+    policy: daemonPolicy,
+  });
+  dependencies = {
     stateDirectory: canonicalStateDirectory,
     daemonPolicy,
+    daemonClient,
+    daemonEnabled,
     fs,
     backends: () => [new TypeScriptBackend(fs)],
     git: new NodeGitHistory(),
@@ -61,8 +79,9 @@ export function createDefaultDependencies(
     clock,
     telemetryEnabled: isTelemetryEnabled(process.env),
     identity: new NodeTelemetryIdentityProvider(canonicalStateDirectory, new NodeGitRemoteReader()),
-    symnavVersion: readPackageVersion(),
+    symnavVersion,
   };
+  return dependencies;
 }
 
 export function buildProgram(

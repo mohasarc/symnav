@@ -1,11 +1,11 @@
 import {
-  DaemonDiagnosticValues,
   type DaemonCommandName,
   type DaemonDiagnostics,
   type DaemonExecutorRequest,
   type DaemonOutputStream,
-  type DaemonWorkerFailureCode,
 } from "@symnav/daemon";
+import { DaemonDiagnosticValues } from "../daemon-diagnostics.js";
+import type { DaemonWorkerFailureCode } from "../daemon-execution-failure.js";
 import { DaemonRuntimeValues } from "../process/runtime-values.js";
 import type { DaemonRefreshSummary } from "../transport/protocol.js";
 

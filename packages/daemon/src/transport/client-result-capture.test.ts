@@ -14,7 +14,7 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import type { DaemonSequencedOutputRecord } from "@symnav/daemon";
+import type { DaemonSequencedOutputRecord } from "../daemon-executor.js";
 import { DaemonClientResultCapture } from "./client-result-capture.js";
 
 describe("DaemonClientResultCapture", () => {

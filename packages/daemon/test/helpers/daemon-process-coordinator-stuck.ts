@@ -10,7 +10,7 @@ import { DaemonWorkspaceIdentity } from "../../src/registry/workspace-identity.j
 import { CanonicalTestPath } from "./canonical-path.js";
 import { TestDaemonProcessCoordinator as DaemonProcessCoordinator } from "./daemon-process-coordinator.js";
 import { TestDaemonRegistry as DaemonRegistry } from "./daemon-registry.js";
-import { TestLocalDaemonTransport as LocalDaemonTransport } from "./local-daemon-transport.js";
+import { TestDaemonTransport as DaemonTransport } from "./daemon-transport.js";
 
 class StuckNavigationWorker implements DaemonNavigationWorker {
   readonly generation = 1;
@@ -88,7 +88,7 @@ class StuckDaemonActor {
       symnavVersion: "test",
       memoryCapBytes: Number.MAX_SAFE_INTEGER,
       registry: new DaemonRegistry(identity.registryDirectory),
-      transport: new LocalDaemonTransport(),
+      transport: new DaemonTransport(),
       navigationWorker: new StuckNavigationWorker(requestStartedPath),
     });
     await daemon.start();

@@ -1,8 +1,7 @@
 import type { ChildProcess } from "node:child_process";
 import { EventEmitter } from "node:events";
 import { describe, expect, it } from "vitest";
-import type { DaemonProcessTerminator } from "../../src/daemon/daemon-process-launcher.js";
-import { E2eProcessCleanup } from "./e2e-process-cleanup.js";
+import { E2eProcessCleanup, type TestProcessTerminator } from "./e2e-process-cleanup.js";
 
 describe("E2eProcessCleanup", () => {
   it("gives terminated processes time to release Windows directory handles", () => {
@@ -28,7 +27,7 @@ describe("E2eProcessCleanup", () => {
     const attempted: number[] = [];
     let discoveryCount = 0;
     let removalCount = 0;
-    const processTerminator: DaemonProcessTerminator = {
+    const processTerminator: TestProcessTerminator = {
       isAlive: () => true,
       terminate: async (processId) => {
         attempted.push(processId);
@@ -56,7 +55,7 @@ describe("E2eProcessCleanup", () => {
 
   it("attempts every deduplicated pid and reports failures in input order", async () => {
     const attempted: number[] = [];
-    const processTerminator: DaemonProcessTerminator = {
+    const processTerminator: TestProcessTerminator = {
       isAlive: () => true,
       terminate: async (processId) => {
         attempted.push(processId);
@@ -82,7 +81,7 @@ describe("E2eProcessCleanup", () => {
       pid: 404,
     }) as ChildProcess;
     const attempted: number[] = [];
-    const processTerminator: DaemonProcessTerminator = {
+    const processTerminator: TestProcessTerminator = {
       isAlive: () => true,
       terminate: async (processId) => {
         attempted.push(processId);
@@ -104,7 +103,7 @@ describe("E2eProcessCleanup", () => {
       signalCode: null,
       pid: 404,
     } as ChildProcess;
-    const processTerminator: DaemonProcessTerminator = {
+    const processTerminator: TestProcessTerminator = {
       isAlive: () => true,
       terminate: async () => {
         throw new Error("helper stuck");
@@ -125,7 +124,7 @@ describe("E2eProcessCleanup", () => {
       pid: 101,
     } as ChildProcess;
     const attempted: number[] = [];
-    const processTerminator: DaemonProcessTerminator = {
+    const processTerminator: TestProcessTerminator = {
       isAlive: () => true,
       terminate: async (processId) => {
         attempted.push(processId);

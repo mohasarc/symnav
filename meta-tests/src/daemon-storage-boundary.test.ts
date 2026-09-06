@@ -492,8 +492,10 @@ class ExternalDaemonStorageAccessInventory {
     if (memberName === "default") {
       return (
         members.length === 1 &&
-        ["node:path", "path"].includes(
-          ExternalDaemonStorageAccessInventory.dynamicModuleName(source) ?? "",
+        ExternalDaemonStorageAccessInventory.isDynamicBuiltinNamespace(
+          source,
+          ["node:path", "path"],
+          checker,
         )
       );
     }
@@ -635,8 +637,10 @@ class ExternalDaemonStorageAccessInventory {
     if (memberName === "default") {
       return (
         members.length === 1 &&
-        ["node:fs", "fs", "node:fs/promises", "fs/promises"].includes(
-          ExternalDaemonStorageAccessInventory.dynamicModuleName(source) ?? "",
+        ExternalDaemonStorageAccessInventory.isDynamicBuiltinNamespace(
+          source,
+          ["node:fs", "fs", "node:fs/promises", "fs/promises"],
+          checker,
         )
       );
     }

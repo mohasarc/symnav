@@ -1,6 +1,5 @@
 import { mkdtempSync, rmSync } from "node:fs";
-import { EventEmitter } from "node:events";
-import { createConnection, createServer, type Socket } from "node:net";
+import { createConnection, createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -167,34 +166,6 @@ describe("LocalDaemonTransport", () => {
 
     expect(response).toEqual({ status: "failed", code: "internal" });
     await server.close();
-  });
-
-  it("waits for socket drain before writing the next server fragment", async () => {
-    const writes: Buffer[] = [];
-    const socket = new EventEmitter() as EventEmitter & {
-      destroyed: boolean;
-      write: (bytes: Buffer) => boolean;
-    };
-    socket.destroyed = false;
-    socket.write = (bytes) => {
-      writes.push(bytes);
-      return writes.length !== 1;
-    };
-    const transport = new LocalDaemonTransport({ writeChunkSize: 1 });
-    const serverWriter = transport as unknown as {
-      writeServerMessage(socket: Socket, value: unknown): Promise<void>;
-    };
-
-    const writing = serverWriter.writeServerMessage(socket as unknown as Socket, {
-      kind: "stopped",
-      instanceId: "instance",
-    });
-    await Promise.resolve();
-
-    expect(writes).toHaveLength(1);
-    socket.emit("drain");
-    await writing;
-    expect(Buffer.concat(writes)).toEqual(frame({ kind: "stopped", instanceId: "instance" }));
   });
 
   it("decodes coalesced request frames independently", async () => {

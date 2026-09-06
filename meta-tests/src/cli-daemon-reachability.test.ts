@@ -1,6 +1,6 @@
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join, relative, resolve } from "node:path";
+import { dirname, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import ts from "typescript";
 import { describe, expect, it } from "vitest";
@@ -91,9 +91,12 @@ describe("CLI daemon production reachability", () => {
       "apps/cli/src/cli.ts",
     );
 
-    expect(reachable.filter((file) => file.startsWith("apps/cli/src/daemon/"))).toEqual([]);
-    expect(reachable).toContain("apps/cli/src/cli-invocation-coordinator.ts");
-    expect(reachable).toContain("apps/cli/src/commands/daemon/register-daemon-command.ts");
+    const daemonDirectoryPrefix = join("apps", "cli", "src", "daemon") + sep;
+    expect(reachable.filter((file) => file.startsWith(daemonDirectoryPrefix))).toEqual([]);
+    expect(reachable).toContain(join("apps", "cli", "src", "cli-invocation-coordinator.ts"));
+    expect(reachable).toContain(
+      join("apps", "cli", "src", "commands", "daemon", "register-daemon-command.ts"),
+    );
   });
 
   it("uses only the daemon package root throughout the reachable CLI graph", () => {

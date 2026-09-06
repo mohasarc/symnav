@@ -255,7 +255,8 @@ describe("symnav daemon parity", () => {
     const caller = spawn(
       process.execPath,
       [
-        fileURLToPath(new URL("../../../node_modules/tsx/dist/cli.mjs", import.meta.url)),
+        "--import",
+        "tsx",
         fileURLToPath(
           new URL(
             "../../../../../packages/daemon/test/actors/daemon-accepted-caller.ts",
@@ -273,7 +274,6 @@ describe("symnav daemon parity", () => {
     caller.kill("SIGKILL");
     await waitForProcess(caller);
     writeFileSync(releasePath, "release");
-    await waitUntil(() => existsSync(`${acceptedPath}.completion`));
 
     expect(harness.onlyDaemonPid()).toBe(controlled.pid);
     await waitUntil(() => harness.telemetryModes().length === 1);

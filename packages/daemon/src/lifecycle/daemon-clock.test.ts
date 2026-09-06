@@ -135,6 +135,15 @@ describe("daemon production clock ownership", () => {
       "dynamic performance import with options",
       'const hooks = await import("node:perf_hooks", { with: {} }); hooks.performance.now();',
     ],
+    ["computed wall clock", 'Date["now"]();'],
+    ["computed monotonic clock", 'performance["now"]();'],
+    ["computed process clock", 'process["hrtime"]();'],
+    ["computed process bigint clock", 'process.hrtime["bigint"]();'],
+    ["computed process clock chain", 'process["hrtime"]["bigint"]();'],
+    [
+      "computed imported performance clock chain",
+      'import * as hooks from "node:perf_hooks"; hooks["performance"]["now"]();',
+    ],
   ])("recognizes %s as a raw clock source", (_name, source) => {
     expect(DaemonRawClockSourceInventory.hasRawClock(source)).toBe(true);
   });
@@ -162,6 +171,14 @@ describe("daemon production clock ownership", () => {
     [
       "unrelated dynamic module",
       'const hooks = await import("./perf-hooks.js"); hooks.performance.now();',
+    ],
+    [
+      "computed local clock members",
+      'const performance = { now: () => 1 }; const process = { hrtime: { bigint: () => 1 } }; performance["now"](); process["hrtime"]["bigint"]();',
+    ],
+    [
+      "computed nonliteral global member",
+      'const member = "now"; performance[member]();',
     ],
   ])("ignores a locally shadowed %s lookalike", (_name, source) => {
     expect(DaemonRawClockSourceInventory.hasRawClock(source)).toBe(false);

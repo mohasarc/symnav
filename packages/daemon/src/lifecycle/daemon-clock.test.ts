@@ -91,6 +91,22 @@ describe("daemon production clock ownership", () => {
       "unprefixed default process import",
       'import processModule from "process"; processModule.hrtime();',
     ],
+    [
+      "node-prefixed import-equals performance namespace",
+      'import hooks = require("node:perf_hooks"); hooks.performance.now();',
+    ],
+    [
+      "unprefixed import-equals performance namespace",
+      'import hooks = require("perf_hooks"); hooks.performance.now();',
+    ],
+    [
+      "node-prefixed import-equals process namespace",
+      'import processModule = require("node:process"); processModule.hrtime.bigint();',
+    ],
+    [
+      "unprefixed import-equals process namespace",
+      'import processModule = require("process"); processModule.hrtime();',
+    ],
   ])("recognizes %s as a raw clock source", (_name, source) => {
     expect(DaemonRawClockSourceInventory.hasRawClock(source)).toBe(true);
   });
@@ -102,6 +118,14 @@ describe("daemon production clock ownership", () => {
     [
       "import alias",
       'import { performance as timer } from "perf_hooks"; function read(timer: { now(): number }) { return timer.now(); }',
+    ],
+    [
+      "performance namespace",
+      "namespace hooks { export const performance = { now: () => 1 }; } hooks.performance.now();",
+    ],
+    [
+      "process namespace",
+      "namespace processModule { export const hrtime = () => 1; } processModule.hrtime();",
     ],
   ])("ignores a locally shadowed %s lookalike", (_name, source) => {
     expect(DaemonRawClockSourceInventory.hasRawClock(source)).toBe(false);

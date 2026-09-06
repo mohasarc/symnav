@@ -1009,6 +1009,38 @@ describe("external daemon storage boundary", () => {
       "promise unprefixed filesystem-promises callback-body default binding",
       'import("fs/promises").then((module) => { const { default: files } = module; return files.readFile("/tmp/state/daemons/registry.json"); });',
     ],
+    [
+      "promise node-prefixed path callback namespace alias",
+      'import("node:path").then((module) => { const loaded = module; const { default: path } = loaded; return path.join(stateDirectory, "daemons"); });',
+    ],
+    [
+      "promise unprefixed path callback namespace alias",
+      'import("path").then((module) => { const loaded = module; const { default: path } = loaded; return path.resolve(stateDirectory, "daemons"); });',
+    ],
+    [
+      "promise node-prefixed filesystem callback namespace alias",
+      'import("node:fs").then((module) => { const loaded = module; const { default: files } = loaded; return files.readFileSync("/tmp/state/daemons/registry.json"); });',
+    ],
+    [
+      "promise unprefixed filesystem callback namespace alias",
+      'import("fs").then((module) => { const loaded = module; const { default: files } = loaded; return files.promises.readFile("/tmp/state/daemons/registry.json"); });',
+    ],
+    [
+      "promise node-prefixed filesystem-promises callback namespace alias",
+      'import("node:fs/promises").then((module) => { const loaded = module; const { default: files } = loaded; return files.readFile("/tmp/state/daemons/registry.json"); });',
+    ],
+    [
+      "promise unprefixed filesystem-promises callback namespace alias",
+      'import("fs/promises").then((module) => { const loaded = module; const { default: files } = loaded; return files.readFile("/tmp/state/daemons/registry.json"); });',
+    ],
+    [
+      "promise callback default binding before namespace alias",
+      'import("node:fs").then((module) => { const { default: loaded } = module; const files = loaded; return files.readFileSync("/tmp/state/daemons/registry.json"); });',
+    ],
+    [
+      "promise transparent callback default binding",
+      'import("node:fs/promises").then((module) => { const { default: files } = (module as typeof module); return files.readFile("/tmp/state/daemons/registry.json"); });',
+    ],
   ])("recognizes %s as direct daemon storage access", (_name, source) => {
     expect(ExternalDaemonStorageAccessInventory.containsDirectStorageAccess(source)).toBe(true);
   });
@@ -1225,6 +1257,10 @@ describe("external daemon storage boundary", () => {
       'import("node:path").then((module) => { const { default: path } = module; return fetch(path.posix.join("/api", "state", "daemons", "status")); });',
     ],
     [
+      "promise callback namespace alias path-built state route data",
+      'import("node:path").then((module) => { const loaded = module; const { default: path } = loaded; return fetch(path.posix.join("/api", "state", "daemons", "status")); });',
+    ],
+    [
       "unrelated promise filesystem lookalike",
       'import("./files.js").then((files) => files.readFile("/tmp/state/daemons/registry.json"));',
     ],
@@ -1245,6 +1281,10 @@ describe("external daemon storage boundary", () => {
       'import("./files.js").then((module) => { const { default: files } = module; return files.readFile("/tmp/state/daemons/registry.json"); });',
     ],
     [
+      "unrelated promise callback namespace alias filesystem lookalike",
+      'import("./files.js").then((module) => { const loaded = module; const { default: files } = loaded; return files.readFile("/tmp/state/daemons/registry.json"); });',
+    ],
+    [
       "local promise default filesystem lookalike",
       'Promise.resolve({ default: { readFile: (path: string) => path } }).then((module) => module.default.readFile("/tmp/state/daemons/registry.json"));',
     ],
@@ -1255,6 +1295,14 @@ describe("external daemon storage boundary", () => {
     [
       "mutable promise callback-body default filesystem binding",
       'import("node:fs").then((module) => { let { default: files } = module; return files.readFileSync("/tmp/state/daemons/registry.json"); });',
+    ],
+    [
+      "mutable promise callback namespace alias",
+      'import("node:fs").then((module) => { let loaded = module; const { default: files } = loaded; return files.readFileSync("/tmp/state/daemons/registry.json"); });',
+    ],
+    [
+      "cyclic immutable promise namespace aliases",
+      'import("node:fs").then(() => { const first = second; const second = first; const { default: files } = first; return files.readFileSync("/tmp/state/daemons/registry.json"); });',
     ],
     [
       "second promise callback parameter",

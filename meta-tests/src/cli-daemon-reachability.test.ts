@@ -83,12 +83,22 @@ describe("CLI daemon production reachability", () => {
   });
 
   it.each([
-    ["static import from", 'import { DaemonClient } from "@symnav/daemon/client";'],
-    ["side-effect import", 'import "@symnav/daemon/client";'],
-    ["export from", 'export { DaemonClient } from "@symnav/daemon/client";'],
-    ["dynamic literal import", 'await import("@symnav/daemon/client");'],
-  ] as const)("rejects a deep daemon %s", (_form, source) => {
-    expect(DaemonPackageImportBoundary.deepImports(source)).toEqual(["@symnav/daemon/client"]);
+    ["static import from", 'import { DaemonClient } from "@symnav/daemon/client";', "@symnav/daemon/client"],
+    ["side-effect import", 'import "@symnav/daemon/client";', "@symnav/daemon/client"],
+    ["export from", 'export { DaemonClient } from "@symnav/daemon/client";', "@symnav/daemon/client"],
+    ["dynamic literal import", 'await import("@symnav/daemon/client");', "@symnav/daemon/client"],
+    [
+      "spaced dynamic literal import",
+      'await import /* load entry */ ("@symnav/daemon/process-entry");',
+      "@symnav/daemon/process-entry",
+    ],
+    [
+      "dynamic literal import with options",
+      'await import("@symnav/daemon/process-entry", { with: { type: "json" } });',
+      "@symnav/daemon/process-entry",
+    ],
+  ] as const)("rejects a deep daemon %s", (_form, source, expectedSpecifier) => {
+    expect(DaemonPackageImportBoundary.deepImports(source)).toEqual([expectedSpecifier]);
   });
 
   it.each([
@@ -96,6 +106,11 @@ describe("CLI daemon production reachability", () => {
     ["side-effect import", 'import "@symnav/daemon";'],
     ["export from", 'export { DaemonClient } from "@symnav/daemon";'],
     ["dynamic literal import", 'await import("@symnav/daemon");'],
+    ["spaced dynamic literal import", 'await import /* load root */ ("@symnav/daemon");'],
+    [
+      "dynamic literal import with options",
+      'await import("@symnav/daemon", { with: { type: "json" } });',
+    ],
   ] as const)("allows a daemon package-root %s", (_form, source) => {
     expect(DaemonPackageImportBoundary.deepImports(source)).toEqual([]);
   });

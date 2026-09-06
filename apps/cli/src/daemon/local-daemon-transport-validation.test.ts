@@ -13,10 +13,8 @@ import type {
   DaemonLifecycleRequest,
 } from "./daemon-protocol.js";
 import { DAEMON_PROTOCOL_VERSION } from "./daemon-protocol.js";
-import {
-  DaemonTransportError,
-  LocalDaemonTransport as RuntimeLocalDaemonTransport,
-} from "./local-daemon-transport.js";
+import { DaemonTransportError } from "./daemon-transport-error.js";
+import { LocalDaemonTransport as RuntimeLocalDaemonTransport } from "./local-daemon-transport.js";
 import { TestLocalDaemonTransport as LocalDaemonTransport } from "../../test/helpers/local-daemon-transport.js";
 
 describe("LocalDaemonTransport validation", () => {
@@ -94,7 +92,7 @@ describe("LocalDaemonTransport validation", () => {
         });
       });
       const transport = new RuntimeLocalDaemonTransport(policy.values, {
-        responseTimeoutPurpose: "status-observer",
+        lifecycleResponseTimeoutMs: policy.values.transport.statusResponseTimeoutMs,
       });
 
       await expect(transport.request(endpoint, request)).rejects.toMatchObject({

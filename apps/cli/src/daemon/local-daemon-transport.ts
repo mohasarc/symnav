@@ -1,21 +1,13 @@
 import { existsSync, mkdirSync, rmSync } from "node:fs";
 import { createServer, type Server, type Socket } from "node:net";
 import { dirname } from "node:path";
-import {
-  DaemonAdmissionRejections,
-  type DaemonExecuteRejectionCode,
-  type DaemonExecutionFailureCode,
-  type DaemonPolicyValues,
-} from "@symnav/daemon";
+import { type DaemonExecutionFailureCode, type DaemonPolicyValues } from "@symnav/daemon";
 import type {
   DaemonExecuteRequest,
   DaemonExecutionServerFrame,
-  DaemonExecutionStatus,
   DaemonExecutionStatusRequest,
-  DaemonExecutionStatusResponse,
   DaemonLifecycleRequest,
   DaemonLifecycleResponse,
-  DaemonResultAcknowledgement,
   DaemonResultChunk,
   DaemonServerMessage,
   DaemonServer,
@@ -35,9 +27,11 @@ import { DaemonProtocolError, DaemonProtocolValidator } from "./daemon-protocol-
 import { DaemonClientResultCapture } from "./daemon-client-result-capture.js";
 import { DaemonResultTransferReceiver } from "./daemon-result-transfer-receiver.js";
 import { LocalDaemonSocketClient } from "./local-daemon-socket-client.js";
+import { DaemonLifecycleClient } from "./daemon-lifecycle-client.js";
+import { DaemonTransportError, type DaemonDeliveryState } from "./daemon-transport-error.js";
 
 interface LocalDaemonTransportOptions {
-  readonly responseTimeoutPurpose?: "ordinary" | "status-observer";
+  readonly lifecycleResponseTimeoutMs?: number;
   readonly writeChunkSize?: number;
   readonly outputDirectory?: string;
   readonly sockets?: DaemonSocketClient;
@@ -47,43 +41,6 @@ export type LocalDaemonTransportPolicy = Pick<
   DaemonPolicyValues,
   "transport" | "delivery" | "output"
 >;
-
-export type DaemonDeliveryState = "not-submitted" | "submitted-unconfirmed" | "accepted";
-
-export type DaemonTransportFailureCode =
-  | "unreachable"
-  | "timeout"
-  | "corrupt"
-  | "incompatible"
-  | "authentication"
-  | "closed"
-  | "rejected";
-
-export class DaemonTransportError extends Error {
-  readonly authenticatedInstanceId?: string;
-  readonly retrySafe: boolean;
-
-  constructor(
-    readonly code: DaemonTransportFailureCode,
-    readonly delivery: DaemonDeliveryState,
-    message: string,
-    authenticatedInstanceId?: string,
-    authenticatedRejectionCode?: DaemonExecuteRejectionCode,
-  ) {
-    super(message);
-    this.name = "DaemonTransportError";
-    if (authenticatedInstanceId !== undefined) {
-      this.authenticatedInstanceId = authenticatedInstanceId;
-    }
-    this.retrySafe =
-      delivery === "not-submitted" ||
-      (code === "rejected" &&
-        delivery === "submitted-unconfirmed" &&
-        authenticatedInstanceId !== undefined &&
-        authenticatedRejectionCode !== undefined &&
-        DaemonAdmissionRejections.retrySafe(authenticatedRejectionCode));
-  }
-}
 
 class ListeningDaemonServer implements DaemonServer {
   constructor(
@@ -108,7 +65,7 @@ class ListeningDaemonServer implements DaemonServer {
 export class LocalDaemonTransport
   implements DaemonLifecycleRequester, DaemonExecutionRequester, DaemonRequestServer
 {
-  private readonly requestTimeoutMs: number;
+  private readonly endpointProbeTimeoutMs: number;
   private readonly executionRequestTimeoutMs: number;
   private readonly writeChunkSize: number | undefined;
   private readonly outputDirectory: string | undefined;
@@ -117,12 +74,10 @@ export class LocalDaemonTransport
   private readonly outputPolicy: DaemonPolicyValues["output"];
   private readonly deliveryPolicy: DaemonPolicyValues["delivery"];
   private readonly sockets: DaemonSocketClient;
+  private readonly lifecycle: DaemonLifecycleClient;
 
   constructor(policy: LocalDaemonTransportPolicy, options: LocalDaemonTransportOptions = {}) {
-    this.requestTimeoutMs =
-      options.responseTimeoutPurpose === "status-observer"
-        ? policy.transport.statusResponseTimeoutMs
-        : policy.transport.singleResponseTimeoutMs;
+    this.endpointProbeTimeoutMs = policy.transport.singleResponseTimeoutMs;
     this.executionRequestTimeoutMs = policy.transport.executionAdmissionTimeoutMs;
     this.codec = new DaemonWireCodec({
       maximumJsonPayloadBytes: policy.transport.maximumJsonPayloadBytes,
@@ -138,6 +93,13 @@ export class LocalDaemonTransport
       new LocalDaemonSocketClient(
         options.writeChunkSize === undefined ? {} : { writeChunkSize: options.writeChunkSize },
       );
+    this.lifecycle = new DaemonLifecycleClient({
+      sockets: this.sockets,
+      codec: this.codec,
+      validator: this.validator,
+      responseTimeoutMs:
+        options.lifecycleResponseTimeoutMs ?? policy.transport.singleResponseTimeoutMs,
+    });
   }
 
   canFrame(value: unknown): boolean {
@@ -150,80 +112,7 @@ export class LocalDaemonTransport
   }
 
   request(endpoint: string, request: DaemonLifecycleRequest): Promise<DaemonLifecycleResponse> {
-    return this.singleResponse(endpoint, request);
-  }
-
-  private singleResponse(
-    endpoint: string,
-    request: DaemonLifecycleRequest,
-  ): Promise<DaemonLifecycleResponse>;
-  private singleResponse(
-    endpoint: string,
-    request: DaemonExecutionStatusRequest,
-  ): Promise<DaemonExecutionStatusResponse>;
-  private async singleResponse(
-    endpoint: string,
-    request: DaemonLifecycleRequest | DaemonExecutionStatusRequest,
-  ): Promise<DaemonLifecycleResponse | DaemonExecutionStatusResponse> {
-    this.validator.request(request);
-    const decoder = this.codec.controlDecoder();
-    let connection: Awaited<ReturnType<DaemonSocketClient["connect"]>>;
-    let delivery: DaemonDeliveryState = "not-submitted";
-    try {
-      connection = await this.sockets.connect(endpoint, this.requestTimeoutMs);
-    } catch (error) {
-      if (LocalDaemonTransport.isSocketTimeout(error)) {
-        throw new DaemonTransportError("timeout", delivery, "Daemon request timed out");
-      }
-      const message = error instanceof Error ? error.message : String(error);
-      throw new DaemonTransportError("unreachable", delivery, message);
-    }
-    try {
-      connection.write(this.codec.encodeControl(request));
-      delivery = "submitted-unconfirmed";
-    } catch (error) {
-      connection.destroy();
-      throw LocalDaemonTransport.transportError(error, delivery);
-    }
-    try {
-      for await (const bytes of connection.incoming) {
-        try {
-          const values = decoder.append(bytes);
-          if (values.length > 1) throw new Error("Daemon returned multiple responses");
-          const value = values[0];
-          if (value === undefined) continue;
-          const response =
-            request.kind === "execution-status"
-              ? this.validator.executionStatusResponse(request, value)
-              : this.validator.lifecycleResponse(request, value);
-          delivery = "accepted";
-          connection.end();
-          return response;
-        } catch (error) {
-          throw LocalDaemonTransport.transportError(error, delivery);
-        }
-      }
-      try {
-        decoder.assertComplete();
-      } catch (error) {
-        throw LocalDaemonTransport.transportError(error, delivery);
-      }
-      throw new DaemonTransportError(
-        "closed",
-        delivery,
-        "Daemon connection ended before a response",
-      );
-    } catch (error) {
-      connection.destroy();
-      if (LocalDaemonTransport.isSocketTimeout(error)) {
-        throw new DaemonTransportError("timeout", delivery, "Daemon request timed out");
-      }
-      if (!(error instanceof DaemonTransportError) && !(error instanceof DaemonProtocolError)) {
-        const message = error instanceof Error ? error.message : String(error);
-        throw new DaemonTransportError("closed", delivery, message);
-      }
-      throw LocalDaemonTransport.transportError(error, delivery);
-    }
+    return this.lifecycle.request(endpoint, request);
   }
 
   execute(endpoint: string, request: DaemonExecuteRequest): Promise<DaemonExecutionReceipt> {
@@ -586,53 +475,14 @@ export class LocalDaemonTransport
     request: DaemonExecuteRequest,
     manifest: Extract<DaemonExecutionServerFrame, { kind: "result-manifest" }>["manifest"],
   ): Promise<void> {
-    const acknowledgement: DaemonResultAcknowledgement = {
-      kind: "result-ack",
-      protocolVersion: request.protocolVersion,
-      instanceId: request.instanceId,
-      processToken: request.processToken,
-      requestId: request.requestId,
-      transferId: manifest.transferId,
-    };
-    const decoder = this.codec.controlDecoder();
-    let connection: Awaited<ReturnType<DaemonSocketClient["connect"]>> | undefined;
-    try {
-      connection = await this.sockets.connect(endpoint, this.requestTimeoutMs);
-      connection.write(this.codec.encodeControl(acknowledgement));
-      let responseReceived = false;
-      for await (const bytes of connection.incoming) {
-        for (const response of decoder.append(bytes)) {
-          if (responseReceived) throw new Error("Duplicate daemon result acknowledgement");
-          this.validator.resultAcknowledgement(request, manifest.transferId, response);
-          responseReceived = true;
-        }
-        if (responseReceived) connection.end();
-      }
-      decoder.assertComplete();
-      if (!responseReceived) throw new Error("Daemon acknowledgement response is missing");
-      connection.destroy();
-    } catch (error) {
-      connection?.destroy();
-      if (LocalDaemonTransport.isSocketTimeout(error)) {
-        throw new Error("Daemon result acknowledgement timed out");
-      }
-      throw error;
-    }
+    return this.lifecycle.acknowledgeResult(endpoint, request, manifest.transferId);
   }
 
-  async executionStatus(
+  executionStatus(
     endpoint: string,
     request: DaemonExecutionStatusRequest,
-  ): Promise<DaemonExecutionStatus> {
-    const response = await this.singleResponse(endpoint, request);
-    if (response.kind !== "execution-status") {
-      throw new DaemonTransportError(
-        "corrupt",
-        "accepted",
-        "Daemon returned a non-status response",
-      );
-    }
-    return response.status;
+  ): ReturnType<DaemonLifecycleClient["executionStatus"]> {
+    return this.lifecycle.executionStatus(endpoint, request);
   }
 
   async listen(endpoint: string, handler: DaemonRequestHandler): Promise<DaemonServer> {
@@ -665,7 +515,7 @@ export class LocalDaemonTransport
 
   private async endpointIsReachable(endpoint: string): Promise<boolean> {
     try {
-      const connection = await this.sockets.connect(endpoint, this.requestTimeoutMs);
+      const connection = await this.sockets.connect(endpoint, this.endpointProbeTimeoutMs);
       connection.destroy();
       return true;
     } catch {

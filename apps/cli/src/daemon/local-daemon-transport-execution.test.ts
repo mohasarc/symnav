@@ -11,7 +11,7 @@ import {
   type DaemonExecutionServerFrame,
   type DaemonServerMessage,
 } from "./daemon-protocol.js";
-import { DaemonTransportError } from "./local-daemon-transport.js";
+import { DaemonTransportError } from "./daemon-transport-error.js";
 import { TestLocalDaemonTransport as LocalDaemonTransport } from "../../test/helpers/local-daemon-transport.js";
 import {
   DaemonCompletionSpoolStore as RuntimeDaemonCompletionSpoolStore,

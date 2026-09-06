@@ -27,7 +27,8 @@ import {
 } from "./daemon-startup-coordinator.js";
 import { DaemonWorkspaceIdentity } from "./daemon-workspace-identity.js";
 import { InvocationWorkspaceSelector } from "./invocation-workspace-selector.js";
-import { DaemonTransportError, LocalDaemonTransport } from "./local-daemon-transport.js";
+import { DaemonTransportError } from "./daemon-transport-error.js";
+import { LocalDaemonTransport } from "./local-daemon-transport.js";
 import type { DaemonExecutionReceipt, DaemonExecutionRequester } from "./daemon-transport.js";
 import { DaemonRecordObserver, type DaemonObservation } from "./daemon-record-observer.js";
 

@@ -85,7 +85,7 @@ export class DaemonTestingInspector {
     try {
       names = readdirSync(identity.identityDirectory);
     } catch (error) {
-      if (DaemonTestingInspector.errorCode(error) === "ENOENT") return [];
+      if (["ENOENT", "ENOTDIR"].includes(DaemonTestingInspector.errorCode(error) ?? "")) return [];
       throw error;
     }
     const backupPattern = /^daemon\.log\.(\d+)$/;
@@ -126,7 +126,9 @@ export class DaemonTestingInspector {
     try {
       entries = readdirSync(directory, { withFileTypes: true });
     } catch (error) {
-      if (DaemonTestingInspector.errorCode(error) === "ENOENT") return { fileCount: 0, bytes: 0 };
+      if (["ENOENT", "ENOTDIR"].includes(DaemonTestingInspector.errorCode(error) ?? "")) {
+        return { fileCount: 0, bytes: 0 };
+      }
       throw error;
     }
     return entries.reduce<DaemonTestingSpoolUsage>(

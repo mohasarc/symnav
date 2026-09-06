@@ -117,6 +117,43 @@ describe("daemon host contract", () => {
     expect(Object.getOwnPropertyNames(DaemonPolicy.prototype)).not.toContain("toSerialized");
   });
 
+  it("inventories public class members from emitted declarations", () => {
+    expect(
+      TypeScriptClassSurfaceInventory.read(
+        `
+          export declare class Example {
+            readonly value: string;
+            static create(): Example;
+            execute(): void;
+            get label(): string;
+            private static hidden(): void;
+            protected inherited(): void;
+            private constructor();
+          }
+        `,
+        "Example",
+      ),
+    ).toEqual([
+      "constructor:private",
+      "instance-getter:label",
+      "instance-method:execute",
+      "instance-property:value:readonly",
+      "static-method:create",
+    ]);
+  });
+
+  it("keeps the emitted DaemonPolicy class surface exact", () => {
+    const sourceRoot = dirname(fileURLToPath(import.meta.url));
+    const declaration = readFileSync(join(sourceRoot, "../dist/daemon-policy.d.ts"), "utf8");
+
+    expect(TypeScriptClassSurfaceInventory.read(declaration, "DaemonPolicy")).toEqual([
+      "constructor:private",
+      "instance-property:values:readonly",
+      "static-method:currentSystem",
+      "static-method:fromSystemMemory",
+    ]);
+  });
+
   it.each(["process-entry.ts", "worker-entry.ts"])("keeps %s export-free", (filename) => {
     const sourceRoot = dirname(fileURLToPath(import.meta.url));
     const source = readFileSync(join(sourceRoot, filename), "utf8");
@@ -209,6 +246,77 @@ class TypeScriptExportInventory {
     return name.elements.flatMap((element) =>
       ts.isOmittedExpression(element) ? [] : TypeScriptExportInventory.bindingNames(element.name),
     );
+  }
+
+  private static hasModifier(node: ts.Node, kind: ts.SyntaxKind): boolean {
+    return (
+      ts.canHaveModifiers(node) &&
+      (ts.getModifiers(node)?.some((item) => item.kind === kind) ?? false)
+    );
+  }
+}
+
+class TypeScriptClassSurfaceInventory {
+  static read(sourceText: string, className: string): readonly string[] {
+    const sourceFile = ts.createSourceFile(
+      "source.ts",
+      sourceText,
+      ts.ScriptTarget.Latest,
+      true,
+      ts.ScriptKind.TS,
+    );
+    const declaration = sourceFile.statements.find(
+      (statement): statement is ts.ClassDeclaration =>
+        ts.isClassDeclaration(statement) && statement.name?.text === className,
+    );
+    if (declaration === undefined) return [];
+    return declaration.members
+      .flatMap((member) => TypeScriptClassSurfaceInventory.memberSurface(member))
+      .sort((left, right) => left.localeCompare(right));
+  }
+
+  private static memberSurface(member: ts.ClassElement): readonly string[] {
+    if (ts.isConstructorDeclaration(member)) {
+      return [`constructor:${TypeScriptClassSurfaceInventory.visibility(member)}`];
+    }
+    if (TypeScriptClassSurfaceInventory.visibility(member) !== "public") return [];
+    const scope = TypeScriptClassSurfaceInventory.hasModifier(member, ts.SyntaxKind.StaticKeyword)
+      ? "static"
+      : "instance";
+    if (ts.isIndexSignatureDeclaration(member)) return [`${scope}-index`];
+    const name = TypeScriptClassSurfaceInventory.memberName(member.name);
+    if (name === undefined) return [];
+    if (ts.isPropertyDeclaration(member)) {
+      const readonly = TypeScriptClassSurfaceInventory.hasModifier(
+        member,
+        ts.SyntaxKind.ReadonlyKeyword,
+      )
+        ? ":readonly"
+        : "";
+      return [`${scope}-property:${name}${readonly}`];
+    }
+    if (ts.isMethodDeclaration(member)) return [`${scope}-method:${name}`];
+    if (ts.isGetAccessorDeclaration(member)) return [`${scope}-getter:${name}`];
+    if (ts.isSetAccessorDeclaration(member)) return [`${scope}-setter:${name}`];
+    return [];
+  }
+
+  private static memberName(name: ts.PropertyName | undefined): string | undefined {
+    if (name === undefined) return undefined;
+    if (ts.isIdentifier(name) || ts.isPrivateIdentifier(name) || ts.isStringLiteral(name)) {
+      return name.text;
+    }
+    if (ts.isNumericLiteral(name)) return name.text;
+    return name.getText();
+  }
+
+  private static visibility(node: ts.Node): "public" | "protected" | "private" {
+    if (TypeScriptClassSurfaceInventory.hasModifier(node, ts.SyntaxKind.PrivateKeyword)) {
+      return "private";
+    }
+    return TypeScriptClassSurfaceInventory.hasModifier(node, ts.SyntaxKind.ProtectedKeyword)
+      ? "protected"
+      : "public";
   }
 
   private static hasModifier(node: ts.Node, kind: ts.SyntaxKind): boolean {

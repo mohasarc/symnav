@@ -501,6 +501,7 @@ class ExternalDaemonStorageAccessInventory {
     }
     if (
       ExternalDaemonStorageAccessInventory.isMemberAccess(unwrapped) &&
+      ExternalDaemonStorageAccessInventory.memberName(unwrapped, checker) !== "then" &&
       ExternalDaemonStorageAccessInventory.isFileSystemNamespace(
         unwrapped.expression,
         aliases,
@@ -623,6 +624,13 @@ class ExternalDaemonStorageAccessInventory {
       ) {
         return { source: declaration.initializer, members: [] };
       }
+      if (ts.isParameter(declaration) && ts.isIdentifier(declaration.name)) {
+        const source = ExternalDaemonStorageAccessInventory.immediateDynamicImportCallbackSource(
+          declaration,
+          checker,
+        );
+        if (source !== undefined) return { source, members: [] };
+      }
       if (ts.isBindingElement(declaration)) {
         const alias = ExternalDaemonStorageAccessInventory.bindingAlias(declaration, checker);
         if (alias !== undefined) return alias;
@@ -658,6 +666,13 @@ class ExternalDaemonStorageAccessInventory {
         }
         return { source: owner.initializer, members };
       }
+      if (ts.isParameter(owner)) {
+        const source = ExternalDaemonStorageAccessInventory.immediateDynamicImportCallbackSource(
+          owner,
+          checker,
+        );
+        return source === undefined ? undefined : { source, members };
+      }
       if (!ts.isBindingElement(owner)) return undefined;
       bindingElement = owner;
     }
@@ -668,6 +683,30 @@ class ExternalDaemonStorageAccessInventory {
       ts.isVariableDeclarationList(declaration.parent) &&
       (declaration.parent.flags & ts.NodeFlags.Const) !== 0
     );
+  }
+
+  private static immediateDynamicImportCallbackSource(
+    parameter: ts.ParameterDeclaration,
+    checker: ts.TypeChecker,
+  ): ts.Expression | undefined {
+    const callback = parameter.parent;
+    if (!ts.isArrowFunction(callback) && !ts.isFunctionExpression(callback)) return undefined;
+    if (callback.parameters[0] !== parameter) return undefined;
+    const thenCall = callback.parent;
+    if (!ts.isCallExpression(thenCall) || thenCall.arguments[0] !== callback) return undefined;
+    const thenMember = ExternalDaemonStorageAccessInventory.unwrapExpression(thenCall.expression);
+    if (
+      !ExternalDaemonStorageAccessInventory.isMemberAccess(thenMember) ||
+      ExternalDaemonStorageAccessInventory.memberName(thenMember, checker) !== "then"
+    ) {
+      return undefined;
+    }
+    const importExpression = ExternalDaemonStorageAccessInventory.unwrapExpression(
+      thenMember.expression,
+    );
+    return ExternalDaemonStorageAccessInventory.dynamicModuleName(importExpression) === undefined
+      ? undefined
+      : importExpression;
   }
 
   private static staticPropertyName(node: ts.Node, checker: ts.TypeChecker): string | undefined {
@@ -739,10 +778,9 @@ class ExternalDaemonStorageAccessInventory {
 
   private static dynamicModuleName(expression: ts.Expression): string | undefined {
     const unwrapped = ExternalDaemonStorageAccessInventory.unwrapExpression(expression);
-    if (!ts.isAwaitExpression(unwrapped)) return undefined;
-    const importExpression = ExternalDaemonStorageAccessInventory.unwrapExpression(
-      unwrapped.expression,
-    );
+    const importExpression = ts.isAwaitExpression(unwrapped)
+      ? ExternalDaemonStorageAccessInventory.unwrapExpression(unwrapped.expression)
+      : unwrapped;
     if (
       !ts.isCallExpression(importExpression) ||
       importExpression.expression.kind !== ts.SyntaxKind.ImportKeyword

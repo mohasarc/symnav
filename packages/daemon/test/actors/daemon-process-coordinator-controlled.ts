@@ -18,6 +18,11 @@ import { NodeDaemonNavigationWorker } from "../../src/worker/navigation-worker.j
 import type { DaemonNavigationWorkerResponse } from "../../src/worker/worker-protocol.js";
 import { CanonicalTestPath } from "../helpers/canonical-path.js";
 import { TestDaemonProcessCoordinator as DaemonProcessCoordinator } from "../helpers/daemon-process-coordinator.js";
+import {
+  DAEMON_PROTOCOL_VERSION,
+  DAEMON_RECORD_SCHEMA_VERSION,
+  type DaemonRecord,
+} from "../../src/transport/protocol.js";
 
 const [
   workspaceRoot,
@@ -197,6 +202,28 @@ class ControlledNavigationWorker implements DaemonNavigationWorker {
 }
 
 const identity = DaemonWorkspaceIdentity.from(workspaceRoot, canonicalStateDirectory);
+const registry = new DaemonRegistry(identity.registryDirectory);
+const startupLease = registry.acquireStartup(identity, instanceId);
+if (startupLease === undefined) throw new Error("Expected controlled daemon startup ownership");
+const startingRecord: DaemonRecord = {
+  schemaVersion: DAEMON_RECORD_SCHEMA_VERSION,
+  protocolVersion: DAEMON_PROTOCOL_VERSION,
+  symnavVersion,
+  workspaceRoot,
+  workspaceKey: identity.workspaceKey,
+  stateKey: identity.stateKey,
+  identityKey: identity.identityKey,
+  instanceId,
+  processToken,
+  endpoint: identity.endpoint(instanceId),
+  pid: process.pid,
+  state: "starting",
+  startedAt: Date.now(),
+  memoryCapBytes: Number.MAX_SAFE_INTEGER,
+};
+if (!registry.writeStartingIfStartupOwner(identity, startingRecord)) {
+  throw new Error("Controlled daemon lost startup ownership");
+}
 const workerExitReleasePath = `${acceptedRequestStartedPath}.release-worker-exit`;
 const navigationWorker = workerExit
   ? new NodeDaemonNavigationWorker({
@@ -248,9 +275,10 @@ const daemon = new DaemonProcessCoordinator({
   symnavVersion,
   memoryCapBytes: Number.MAX_SAFE_INTEGER,
   policy: daemonPolicy,
-  registry: new DaemonRegistry(identity.registryDirectory),
+  registry,
   transport: new LocalDaemonTransport(),
   navigationWorker,
 });
 await daemon.start();
+startupLease.release();
 writeFileSync(readyPath, "ready");

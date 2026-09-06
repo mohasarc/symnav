@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
-import { readFileSync, readdirSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
@@ -44,5 +45,33 @@ describe("CLI daemon compatibility copies", () => {
     expect(DaemonCompatibilityCopyInventory.digest(repositoryRoot, files)).toBe(
       DaemonCompatibilityCopyInventory.expectedDigest,
     );
+  });
+
+  it("hashes semantic source content independently of checkout line endings", () => {
+    const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
+    const files = DaemonCompatibilityCopyInventory.files(repositoryRoot);
+    const crlfCheckoutRoot = mkdtempSync(join(tmpdir(), "symnav-daemon-compatibility-"));
+
+    try {
+      for (const file of files) {
+        const source = readFileSync(join(repositoryRoot, file), "utf8").replace(/\r?\n/g, "\r\n");
+        const crlfFile = join(crlfCheckoutRoot, file);
+        mkdirSync(dirname(crlfFile), { recursive: true });
+        writeFileSync(crlfFile, source);
+      }
+
+      expect(DaemonCompatibilityCopyInventory.digest(crlfCheckoutRoot, files)).toBe(
+        DaemonCompatibilityCopyInventory.expectedDigest,
+      );
+
+      const changedFile = join(crlfCheckoutRoot, files[0]!);
+      writeFileSync(changedFile, `${readFileSync(changedFile, "utf8")}export {};\r\n`);
+
+      expect(DaemonCompatibilityCopyInventory.digest(crlfCheckoutRoot, files)).not.toBe(
+        DaemonCompatibilityCopyInventory.expectedDigest,
+      );
+    } finally {
+      rmSync(crlfCheckoutRoot, { recursive: true, force: true });
+    }
   });
 });

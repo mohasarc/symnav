@@ -872,6 +872,59 @@ describe("external daemon storage boundary", () => {
 
   it.each([
     [
+      "promise node-prefixed path default member",
+      'import("node:path").then((module) => module.default.join(stateDirectory, "daemons"));',
+    ],
+    [
+      "promise unprefixed path default member",
+      'import("path").then((module) => module.default.resolve(stateDirectory, "daemons"));',
+    ],
+    [
+      "promise node-prefixed path default binding",
+      'import("node:path").then(({ default: path }) => path.posix.join(stateDirectory, "daemons"));',
+    ],
+    [
+      "promise unprefixed path default binding",
+      'import("path").then(({ default: path }) => path.win32.resolve(stateDirectory, "daemons"));',
+    ],
+    [
+      "promise node-prefixed filesystem default member",
+      'import("node:fs").then((module) => module.default.readFileSync("/tmp/state/daemons/registry.json"));',
+    ],
+    [
+      "promise unprefixed filesystem default member",
+      'import("fs").then((module) => module.default.promises.readFile("/tmp/state/daemons/registry.json"));',
+    ],
+    [
+      "promise node-prefixed filesystem default binding",
+      'import("node:fs").then(({ default: files }) => files.readFileSync("/tmp/state/daemons/registry.json"));',
+    ],
+    [
+      "promise unprefixed filesystem default binding",
+      'import("fs").then(({ default: files }) => files.promises.readFile("/tmp/state/daemons/registry.json"));',
+    ],
+    [
+      "promise node-prefixed filesystem-promises default member",
+      'import("node:fs/promises").then((module) => module.default.readFile("/tmp/state/daemons/registry.json"));',
+    ],
+    [
+      "promise unprefixed filesystem-promises default member",
+      'import("fs/promises").then((module) => module.default.readFile("/tmp/state/daemons/registry.json"));',
+    ],
+    [
+      "promise node-prefixed filesystem-promises default binding",
+      'import("node:fs/promises").then(({ default: files }) => files.readFile("/tmp/state/daemons/registry.json"));',
+    ],
+    [
+      "promise unprefixed filesystem-promises default binding",
+      'import("fs/promises").then(({ default: files }) => files.readFile("/tmp/state/daemons/registry.json"));',
+    ],
+  ])("recognizes %s as direct daemon storage access", (_name, source) => {
+    expect(ExternalDaemonStorageAccessInventory.containsDirectStorageAccess(source)).toBe(true);
+  });
+
+  it.each([
+    [
       "promise node-prefixed path namespace",
       'import("node:path").then((path) => path.join(stateDirectory, "daemons"));',
     ],
@@ -1058,12 +1111,24 @@ describe("external daemon storage boundary", () => {
     ["unused promise path import", 'import("node:path").then(() => undefined);'],
     ["unused promise filesystem import", 'import("fs").then((files) => files.constants);'],
     [
+      "unused promise default filesystem import",
+      'import("node:fs").then((module) => module.default.constants);',
+    ],
+    [
       "promise path-built state route data",
       'import("node:path").then((path) => fetch(path.posix.join("/api", "state", "daemons", "status")));',
     ],
     [
       "promise path-built state URL data",
       'import("path").then(({ posix }) => new URL(posix.join("/api", "state", "daemons"), origin));',
+    ],
+    [
+      "promise default path-built state route data",
+      'import("node:path").then((module) => fetch(module.default.posix.join("/api", "state", "daemons", "status")));',
+    ],
+    [
+      "promise default path-built state URL data",
+      'import("path").then(({ default: path }) => new URL(path.posix.join("/api", "state", "daemons"), origin));',
     ],
     [
       "unrelated promise filesystem lookalike",
@@ -1076,6 +1141,26 @@ describe("external daemon storage boundary", () => {
     [
       "mutable promise filesystem lookalike",
       'let files = { readFile: (path: string) => path }; Promise.resolve(files).then((current) => current.readFile("/tmp/state/daemons/registry.json"));',
+    ],
+    [
+      "unrelated promise default filesystem lookalike",
+      'import("./files.js").then((module) => module.default.readFile("/tmp/state/daemons/registry.json"));',
+    ],
+    [
+      "local promise default filesystem lookalike",
+      'Promise.resolve({ default: { readFile: (path: string) => path } }).then((module) => module.default.readFile("/tmp/state/daemons/registry.json"));',
+    ],
+    [
+      "mutable promise default filesystem alias",
+      'let files; import("node:fs").then(({ default: loaded }) => { files = loaded; }); files?.readFileSync("/tmp/state/daemons/registry.json");',
+    ],
+    [
+      "second promise callback parameter",
+      'import("node:fs").then((_module, files) => files.default.readFileSync("/tmp/state/daemons/registry.json"));',
+    ],
+    [
+      "non-immediate promise callback",
+      'const read = ({ default: files }: any) => files.readFileSync("/tmp/state/daemons/registry.json"); import("node:fs").then(read);',
     ],
     [
       "unrelated dynamic filesystem lookalike",

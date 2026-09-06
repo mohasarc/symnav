@@ -38,6 +38,42 @@ const typeExports = [
 ];
 
 describe("daemon host contract", () => {
+  it("inventories every TypeScript export declaration form", () => {
+    const exports = TypeScriptExportInventory.read(`
+      export interface LocalInterface {}
+      export type LocalType = string;
+      export class LocalClass {}
+      export function localFunction() {}
+      export const localValue = true, secondLocalValue = false;
+      export enum LocalEnum { Value }
+      export namespace LocalNamespace {}
+      type NamedType = string;
+      const namedValue = true;
+      export { namedValue as NamedValue, type NamedType };
+      export type { ExternalType } from "./external.js";
+      export * from "./runtime.js";
+      export type * from "./types.js";
+      export default localFunction;
+    `);
+
+    expect(exports).toEqual([
+      { kind: "runtime", name: "*" },
+      { kind: "type", name: "*" },
+      { kind: "type", name: "ExternalType" },
+      { kind: "runtime", name: "LocalClass" },
+      { kind: "runtime", name: "LocalEnum" },
+      { kind: "type", name: "LocalInterface" },
+      { kind: "runtime", name: "LocalNamespace" },
+      { kind: "type", name: "LocalType" },
+      { kind: "type", name: "NamedType" },
+      { kind: "runtime", name: "NamedValue" },
+      { kind: "runtime", name: "default" },
+      { kind: "runtime", name: "localFunction" },
+      { kind: "runtime", name: "localValue" },
+      { kind: "runtime", name: "secondLocalValue" },
+    ]);
+  });
+
   it("exports the exact root runtime and type allowlists", () => {
     const sourceRoot = dirname(fileURLToPath(import.meta.url));
     const source = readFileSync(join(sourceRoot, "index.ts"), "utf8");

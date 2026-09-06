@@ -48,12 +48,20 @@ describe("daemon production clock ownership", () => {
       'import { performance as timer } from "node:perf_hooks"; timer.now();',
     ],
     [
+      "node-prefixed namespace performance import",
+      'import * as hooks from "node:perf_hooks"; hooks.performance.now();',
+    ],
+    [
       "unprefixed named performance import",
       'import { performance as timer } from "perf_hooks"; timer.now();',
     ],
     [
       "unprefixed namespace performance import",
       'import * as hooks from "perf_hooks"; hooks.performance.now();',
+    ],
+    [
+      "unprefixed default performance import",
+      'import hooks from "perf_hooks"; hooks.performance.now();',
     ],
     [
       "node-prefixed default performance import",
@@ -64,12 +72,24 @@ describe("daemon production clock ownership", () => {
       'import { hrtime as timer } from "process"; timer.bigint();',
     ],
     [
+      "node-prefixed named process import",
+      'import { hrtime as timer } from "node:process"; timer();',
+    ],
+    [
+      "node-prefixed namespace process import",
+      'import * as processModule from "node:process"; processModule.hrtime();',
+    ],
+    [
       "unprefixed namespace process import",
       'import * as processModule from "process"; processModule.hrtime();',
     ],
     [
       "node-prefixed default process import",
       'import processModule from "node:process"; processModule.hrtime();',
+    ],
+    [
+      "unprefixed default process import",
+      'import processModule from "process"; processModule.hrtime();',
     ],
   ])("recognizes %s as a raw clock source", (_name, source) => {
     expect(DaemonRawClockSourceInventory.hasRawClock(source)).toBe(true);
@@ -79,6 +99,10 @@ describe("daemon production clock ownership", () => {
     ["Date", "const Date = { now: () => 1 }; Date.now();"],
     ["performance", "const performance = { now: () => 1 }; performance.now();"],
     ["process", "const process = { hrtime: () => 1 }; process.hrtime();"],
+    [
+      "import alias",
+      'import { performance as timer } from "perf_hooks"; function read(timer: { now(): number }) { return timer.now(); }',
+    ],
   ])("ignores a locally shadowed %s lookalike", (_name, source) => {
     expect(DaemonRawClockSourceInventory.hasRawClock(source)).toBe(false);
   });
@@ -106,14 +130,30 @@ describe("daemon production clock ownership", () => {
 });
 
 interface RawClockAliases {
-  readonly performance: ReadonlySet<string>;
-  readonly performanceNamespaces: ReadonlySet<string>;
-  readonly hrtime: ReadonlySet<string>;
-  readonly processNamespaces: ReadonlySet<string>;
+  readonly performance: ReadonlySet<ts.Symbol>;
+  readonly performanceNamespaces: ReadonlySet<ts.Symbol>;
+  readonly hrtime: ReadonlySet<ts.Symbol>;
+  readonly processNamespaces: ReadonlySet<ts.Symbol>;
 }
 
 class DaemonRawClockSourceInventory {
   static hasRawClock(sourceText: string): boolean {
+    const program = DaemonRawClockSourceInventory.sourceProgram(sourceText);
+    const sourceFile = program.getSourceFile("source.ts");
+    if (sourceFile === undefined) return false;
+    const checker = program.getTypeChecker();
+    const aliases = DaemonRawClockSourceInventory.clockAliases(sourceFile, checker);
+    return DaemonRawClockSourceInventory.containsRawClock(sourceFile, aliases, checker);
+  }
+
+  private static sourceProgram(sourceText: string): ts.Program {
+    const options: ts.CompilerOptions = {
+      module: ts.ModuleKind.NodeNext,
+      moduleResolution: ts.ModuleResolutionKind.NodeNext,
+      noLib: true,
+      noResolve: true,
+      target: ts.ScriptTarget.Latest,
+    };
     const sourceFile = ts.createSourceFile(
       "source.ts",
       sourceText,
@@ -121,34 +161,39 @@ class DaemonRawClockSourceInventory {
       true,
       ts.ScriptKind.TS,
     );
-    const aliases = DaemonRawClockSourceInventory.clockAliases(sourceFile);
-    return DaemonRawClockSourceInventory.containsRawClock(sourceFile, aliases);
+    const host = ts.createCompilerHost(options, true);
+    host.fileExists = (fileName) => fileName === "source.ts";
+    host.getSourceFile = (fileName) => (fileName === "source.ts" ? sourceFile : undefined);
+    host.readFile = (fileName) => (fileName === "source.ts" ? sourceText : undefined);
+    return ts.createProgram(["source.ts"], options, host);
   }
 
-  private static clockAliases(sourceFile: ts.SourceFile): RawClockAliases {
-    const performance = new Set<string>();
-    const performanceNamespaces = new Set<string>();
-    const hrtime = new Set<string>();
-    const processNamespaces = new Set<string>();
+  private static clockAliases(sourceFile: ts.SourceFile, checker: ts.TypeChecker): RawClockAliases {
+    const performance = new Set<ts.Symbol>();
+    const performanceNamespaces = new Set<ts.Symbol>();
+    const hrtime = new Set<ts.Symbol>();
+    const processNamespaces = new Set<ts.Symbol>();
     for (const statement of sourceFile.statements) {
       if (!ts.isImportDeclaration(statement) || !ts.isStringLiteral(statement.moduleSpecifier)) {
         continue;
       }
-      const bindings = statement.importClause?.namedBindings;
-      if (statement.moduleSpecifier.text === "node:perf_hooks") {
+      const moduleName = statement.moduleSpecifier.text;
+      if (["node:perf_hooks", "perf_hooks"].includes(moduleName)) {
         DaemonRawClockSourceInventory.collectImportAliases(
-          bindings,
+          statement.importClause,
           "performance",
           performance,
           performanceNamespaces,
+          checker,
         );
       }
-      if (statement.moduleSpecifier.text === "node:process") {
+      if (["node:process", "process"].includes(moduleName)) {
         DaemonRawClockSourceInventory.collectImportAliases(
-          bindings,
+          statement.importClause,
           "hrtime",
           hrtime,
           processNamespaces,
+          checker,
         );
       }
     }
@@ -156,121 +201,213 @@ class DaemonRawClockSourceInventory {
   }
 
   private static collectImportAliases(
-    bindings: ts.NamedImportBindings | undefined,
+    importClause: ts.ImportClause | undefined,
     importedName: string,
-    aliases: Set<string>,
-    namespaces: Set<string>,
+    aliases: Set<ts.Symbol>,
+    namespaces: Set<ts.Symbol>,
+    checker: ts.TypeChecker,
   ): void {
+    if (importClause === undefined) return;
+    DaemonRawClockSourceInventory.addSymbol(importClause.name, namespaces, checker);
+    const bindings = importClause.namedBindings;
     if (bindings === undefined) return;
     if (ts.isNamespaceImport(bindings)) {
-      namespaces.add(bindings.name.text);
+      DaemonRawClockSourceInventory.addSymbol(bindings.name, namespaces, checker);
       return;
     }
     for (const element of bindings.elements) {
-      if ((element.propertyName ?? element.name).text === importedName) {
-        aliases.add(element.name.text);
+      const sourceName = (element.propertyName ?? element.name).text;
+      if (sourceName === importedName) {
+        DaemonRawClockSourceInventory.addSymbol(element.name, aliases, checker);
+      }
+      if (sourceName === "default") {
+        DaemonRawClockSourceInventory.addSymbol(element.name, namespaces, checker);
       }
     }
   }
 
-  private static containsRawClock(node: ts.Node, aliases: RawClockAliases): boolean {
-    if (ts.isImportDeclaration(node) && ts.isStringLiteral(node.moduleSpecifier)) {
-      const moduleName = node.moduleSpecifier.text;
-      if (moduleName === "@symnav/telemetry" || moduleName.startsWith("@symnav/telemetry/")) {
-        return true;
-      }
+  private static addSymbol(
+    identifier: ts.Identifier | undefined,
+    symbols: Set<ts.Symbol>,
+    checker: ts.TypeChecker,
+  ): void {
+    if (identifier === undefined) return;
+    const symbol = checker.getSymbolAtLocation(identifier);
+    if (symbol !== undefined) symbols.add(symbol);
+  }
+
+  private static containsRawClock(
+    node: ts.Node,
+    aliases: RawClockAliases,
+    checker: ts.TypeChecker,
+  ): boolean {
+    const moduleName = DaemonRawClockSourceInventory.moduleSpecifier(node);
+    if (
+      moduleName === "@symnav/telemetry" ||
+      moduleName?.startsWith("@symnav/telemetry/") === true
+    ) {
+      return true;
     }
     if (
       ts.isNewExpression(node) &&
-      DaemonRawClockSourceInventory.isGlobalMember(node.expression, "Date")
+      DaemonRawClockSourceInventory.isGlobalMember(node.expression, "Date", checker)
     ) {
       return true;
     }
     if (
       ts.isCallExpression(node) &&
-      (DaemonRawClockSourceInventory.isGlobalMember(node.expression, "Date") ||
-        (ts.isIdentifier(node.expression) && aliases.hrtime.has(node.expression.text)))
+      (DaemonRawClockSourceInventory.isGlobalMember(node.expression, "Date", checker) ||
+        DaemonRawClockSourceInventory.hasSymbol(node.expression, aliases.hrtime, checker))
     ) {
       return true;
     }
     if (
       ts.isPropertyAccessExpression(node) &&
-      DaemonRawClockSourceInventory.isRawClockProperty(node, aliases)
+      DaemonRawClockSourceInventory.isRawClockProperty(node, aliases, checker)
     ) {
       return true;
     }
     return node
       .getChildren()
-      .some((child) => DaemonRawClockSourceInventory.containsRawClock(child, aliases));
+      .some((child) => DaemonRawClockSourceInventory.containsRawClock(child, aliases, checker));
   }
 
   private static isRawClockProperty(
     expression: ts.PropertyAccessExpression,
     aliases: RawClockAliases,
+    checker: ts.TypeChecker,
   ): boolean {
     if (
       expression.name.text === "now" &&
-      (DaemonRawClockSourceInventory.isGlobalMember(expression.expression, "Date") ||
-        DaemonRawClockSourceInventory.isPerformance(expression.expression, aliases))
+      (DaemonRawClockSourceInventory.isGlobalMember(expression.expression, "Date", checker) ||
+        DaemonRawClockSourceInventory.isPerformance(expression.expression, aliases, checker))
     ) {
       return true;
     }
     if (
       expression.name.text === "hrtime" &&
-      DaemonRawClockSourceInventory.isProcess(expression.expression, aliases)
+      DaemonRawClockSourceInventory.isProcess(expression.expression, aliases, checker)
     ) {
       return true;
     }
     return (
       expression.name.text === "bigint" &&
-      DaemonRawClockSourceInventory.isHrtime(expression.expression, aliases)
+      DaemonRawClockSourceInventory.isHrtime(expression.expression, aliases, checker)
     );
   }
 
-  private static isHrtime(expression: ts.Expression, aliases: RawClockAliases): boolean {
-    if (ts.isIdentifier(expression)) return aliases.hrtime.has(expression.text);
+  private static isHrtime(
+    expression: ts.Expression,
+    aliases: RawClockAliases,
+    checker: ts.TypeChecker,
+  ): boolean {
+    if (DaemonRawClockSourceInventory.hasSymbol(expression, aliases.hrtime, checker)) return true;
     return (
       ts.isPropertyAccessExpression(expression) &&
       expression.name.text === "hrtime" &&
-      DaemonRawClockSourceInventory.isProcess(expression.expression, aliases)
+      DaemonRawClockSourceInventory.isProcess(expression.expression, aliases, checker)
     );
   }
 
-  private static isPerformance(expression: ts.Expression, aliases: RawClockAliases): boolean {
+  private static isPerformance(
+    expression: ts.Expression,
+    aliases: RawClockAliases,
+    checker: ts.TypeChecker,
+  ): boolean {
     if (ts.isIdentifier(expression)) {
-      return expression.text === "performance" || aliases.performance.has(expression.text);
+      return (
+        DaemonRawClockSourceInventory.isGlobalIdentifier(expression, "performance", checker) ||
+        DaemonRawClockSourceInventory.hasSymbol(expression, aliases.performance, checker)
+      );
     }
     return (
       ts.isPropertyAccessExpression(expression) &&
       expression.name.text === "performance" &&
-      (DaemonRawClockSourceInventory.isGlobalObject(expression.expression) ||
-        (ts.isIdentifier(expression.expression) &&
-          aliases.performanceNamespaces.has(expression.expression.text)))
+      (DaemonRawClockSourceInventory.isGlobalObject(expression.expression, checker) ||
+        DaemonRawClockSourceInventory.hasSymbol(
+          expression.expression,
+          aliases.performanceNamespaces,
+          checker,
+        ))
     );
   }
 
-  private static isProcess(expression: ts.Expression, aliases: RawClockAliases): boolean {
+  private static isProcess(
+    expression: ts.Expression,
+    aliases: RawClockAliases,
+    checker: ts.TypeChecker,
+  ): boolean {
     if (ts.isIdentifier(expression)) {
-      return expression.text === "process" || aliases.processNamespaces.has(expression.text);
+      return (
+        DaemonRawClockSourceInventory.isGlobalIdentifier(expression, "process", checker) ||
+        DaemonRawClockSourceInventory.hasSymbol(expression, aliases.processNamespaces, checker)
+      );
     }
     return (
       ts.isPropertyAccessExpression(expression) &&
       expression.name.text === "process" &&
-      DaemonRawClockSourceInventory.isGlobalObject(expression.expression)
+      DaemonRawClockSourceInventory.isGlobalObject(expression.expression, checker)
     );
   }
 
-  private static isGlobalMember(expression: ts.Expression, member: string): boolean {
+  private static isGlobalMember(
+    expression: ts.Expression,
+    member: string,
+    checker: ts.TypeChecker,
+  ): boolean {
     return (
-      (ts.isIdentifier(expression) && expression.text === member) ||
+      (ts.isIdentifier(expression) &&
+        DaemonRawClockSourceInventory.isGlobalIdentifier(expression, member, checker)) ||
       (ts.isPropertyAccessExpression(expression) &&
         expression.name.text === member &&
-        DaemonRawClockSourceInventory.isGlobalObject(expression.expression))
+        DaemonRawClockSourceInventory.isGlobalObject(expression.expression, checker))
     );
   }
 
-  private static isGlobalObject(expression: ts.Expression): boolean {
-    return ts.isIdentifier(expression) && expression.text === "globalThis";
+  private static isGlobalObject(expression: ts.Expression, checker: ts.TypeChecker): boolean {
+    return (
+      ts.isIdentifier(expression) &&
+      DaemonRawClockSourceInventory.isGlobalIdentifier(expression, "globalThis", checker)
+    );
+  }
+
+  private static isGlobalIdentifier(
+    identifier: ts.Identifier,
+    name: string,
+    checker: ts.TypeChecker,
+  ): boolean {
+    if (identifier.text !== name) return false;
+    const symbol = checker.getSymbolAtLocation(identifier);
+    return (
+      symbol === undefined || symbol.declarations === undefined || symbol.declarations.length === 0
+    );
+  }
+
+  private static hasSymbol(
+    expression: ts.Expression,
+    symbols: ReadonlySet<ts.Symbol>,
+    checker: ts.TypeChecker,
+  ): boolean {
+    if (!ts.isIdentifier(expression)) return false;
+    const symbol = checker.getSymbolAtLocation(expression);
+    return symbol !== undefined && symbols.has(symbol);
+  }
+
+  private static moduleSpecifier(node: ts.Node): string | undefined {
+    if (ts.isImportDeclaration(node) || ts.isExportDeclaration(node)) {
+      return DaemonRawClockSourceInventory.literalText(node.moduleSpecifier);
+    }
+    if (ts.isImportEqualsDeclaration(node) && ts.isExternalModuleReference(node.moduleReference)) {
+      return DaemonRawClockSourceInventory.literalText(node.moduleReference.expression);
+    }
+    if (!ts.isCallExpression(node) || node.expression.kind !== ts.SyntaxKind.ImportKeyword) {
+      return undefined;
+    }
+    return DaemonRawClockSourceInventory.literalText(node.arguments[0]);
+  }
+
+  private static literalText(node: ts.Node | undefined): string | undefined {
+    return node !== undefined && ts.isStringLiteralLike(node) ? node.text : undefined;
   }
 }
 

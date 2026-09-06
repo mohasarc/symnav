@@ -794,6 +794,18 @@ describe("external daemon storage boundary", () => {
       "aliased path namespace destructuring",
       'import path from "node:path"; const platform = path.posix; const { join: build } = platform; build(stateDirectory, "daemons");',
     ],
+    [
+      "dynamic node-prefixed path namespace",
+      'const path = await import("node:path"); path.join(stateDirectory, "daemons");',
+    ],
+    [
+      "dynamic unprefixed path binding",
+      'const { resolve: build } = await import("path"); build(stateDirectory, "daemons");',
+    ],
+    [
+      "dynamic platform path binding chain",
+      'const { posix } = await import("node:path"); const { join: build } = posix; build(stateDirectory, "daemons");',
+    ],
   ])("recognizes %s as direct daemon storage access", (_name, source) => {
     expect(ExternalDaemonStorageAccessInventory.containsDirectStorageAccess(source)).toBe(true);
   });
@@ -876,6 +888,31 @@ describe("external daemon storage boundary", () => {
   });
 
   it.each([
+    [
+      "dynamic node-prefixed filesystem namespace",
+      'const files = await import("node:fs"); files.readFileSync("/tmp/state/daemons/registry.json");',
+    ],
+    [
+      "dynamic unprefixed filesystem binding",
+      'const { readFileSync: read } = await import("fs"); read("/tmp/state/daemons/registry.json");',
+    ],
+    [
+      "dynamic node-prefixed filesystem-promises namespace",
+      'const files = await import("node:fs/promises"); files.readFile("/tmp/state/daemons/registry.json");',
+    ],
+    [
+      "dynamic unprefixed filesystem-promises binding",
+      'const { readFile: read } = await import("fs/promises"); read("/tmp/state/daemons/registry.json");',
+    ],
+    [
+      "dynamic filesystem binding chain",
+      'const files = await import("node:fs"); const { promises } = files; const { readFile: read } = promises; read("/tmp/state/daemons/registry.json");',
+    ],
+  ])("recognizes %s as direct daemon storage access", (_name, source) => {
+    expect(ExternalDaemonStorageAccessInventory.containsDirectStorageAccess(source)).toBe(true);
+  });
+
+  it.each([
     ["HTTP route", 'fetch("/api/daemons/status");'],
     ["route data", 'const route = "/api/daemons/status";'],
     ["URL data", 'new URL("/api/daemons/status", origin);'],
@@ -890,6 +927,24 @@ describe("external daemon storage boundary", () => {
     [
       "path-built URL data",
       'import path from "node:path"; new URL(path.posix.join("/api", "daemons", "status"), origin);',
+    ],
+    [
+      "path-built state route data",
+      'import path from "node:path"; fetch(path.posix.join("/api", "state", "daemons", "status"));',
+    ],
+    [
+      "path-built state URL data",
+      'import path from "node:path"; new URL(path.posix.join("/api", "state", "daemons"), origin);',
+    ],
+    [
+      "dynamic path-built state route data",
+      'const path = await import("node:path"); fetch(path.posix.join("/api", "state", "daemons", "status"));',
+    ],
+    ["unused dynamic path import", 'await import("node:path");'],
+    ["unused dynamic filesystem import", 'const files = await import("node:fs");'],
+    [
+      "unrelated dynamic filesystem lookalike",
+      'const files = await import("./files.js"); files.readFile("/tmp/state/daemons/registry.json");',
     ],
     [
       "local filesystem lookalike",

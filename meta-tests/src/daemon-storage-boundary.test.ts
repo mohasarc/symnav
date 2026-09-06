@@ -281,16 +281,8 @@ class ExternalDaemonStorageAccessInventory {
   ): boolean {
     if (ts.isExpression(node)) {
       const unwrapped = ExternalDaemonStorageAccessInventory.unwrapExpression(node);
-      const literalText = ExternalDaemonStorageAccessInventory.staticString(
-        unwrapped,
-        checker,
-        visitedSymbols,
-      );
-      if (literalText !== undefined && /(?:^|[/\\])state(?:[/\\]|$)/.test(literalText)) {
-        return true;
-      }
       if (ts.isIdentifier(unwrapped)) {
-        if (/^state(?:Directory|Dir)$/.test(unwrapped.text)) return true;
+        if (/^(?:state|daemonState)(?:Directory|Dir|Root)$/.test(unwrapped.text)) return true;
         const symbol = checker.getSymbolAtLocation(unwrapped);
         if (symbol !== undefined && !visitedSymbols.has(symbol)) {
           const alias = ExternalDaemonStorageAccessInventory.staticStorageAlias(symbol, checker);
@@ -429,6 +421,13 @@ class ExternalDaemonStorageAccessInventory {
     visitedSymbols: ReadonlySet<ts.Symbol> = new Set(),
   ): boolean {
     const unwrapped = ExternalDaemonStorageAccessInventory.unwrapExpression(expression);
+    if (
+      ["node:path", "path"].includes(
+        ExternalDaemonStorageAccessInventory.dynamicModuleName(unwrapped) ?? "",
+      )
+    ) {
+      return true;
+    }
     if (ts.isIdentifier(unwrapped)) {
       const symbol = checker.getSymbolAtLocation(unwrapped);
       if (symbol !== undefined && aliases.namespaces.has(symbol)) return true;
@@ -547,6 +546,13 @@ class ExternalDaemonStorageAccessInventory {
     visitedSymbols: ReadonlySet<ts.Symbol> = new Set(),
   ): boolean {
     const unwrapped = ExternalDaemonStorageAccessInventory.unwrapExpression(expression);
+    if (
+      ["node:fs", "fs", "node:fs/promises", "fs/promises"].includes(
+        ExternalDaemonStorageAccessInventory.dynamicModuleName(unwrapped) ?? "",
+      )
+    ) {
+      return true;
+    }
     if (ts.isIdentifier(unwrapped)) {
       const symbol = checker.getSymbolAtLocation(unwrapped);
       if (symbol !== undefined && aliases.namespaces.has(symbol)) return true;
@@ -731,7 +737,23 @@ class ExternalDaemonStorageAccessInventory {
     return expression;
   }
 
-  private static literalText(node: ts.Node): string | undefined {
+  private static dynamicModuleName(expression: ts.Expression): string | undefined {
+    const unwrapped = ExternalDaemonStorageAccessInventory.unwrapExpression(expression);
+    if (!ts.isAwaitExpression(unwrapped)) return undefined;
+    const importExpression = ExternalDaemonStorageAccessInventory.unwrapExpression(
+      unwrapped.expression,
+    );
+    if (
+      !ts.isCallExpression(importExpression) ||
+      importExpression.expression.kind !== ts.SyntaxKind.ImportKeyword
+    ) {
+      return undefined;
+    }
+    return ExternalDaemonStorageAccessInventory.literalText(importExpression.arguments[0]);
+  }
+
+  private static literalText(node: ts.Node | undefined): string | undefined {
+    if (node === undefined) return undefined;
     if (ts.isStringLiteralLike(node)) return node.text;
     if (
       node.kind === ts.SyntaxKind.TemplateHead ||

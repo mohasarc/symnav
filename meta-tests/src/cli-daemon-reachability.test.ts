@@ -1,16 +1,40 @@
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import ts from "typescript";
 import { describe, expect, it } from "vitest";
 
 class TypeScriptImportSpecifierExtractor {
-  private static readonly importPattern =
-    /(?:import|export)\s+(?:type\s+)?(?:[^"']+?\s+from\s+)?["']([^"']+)["']|import\(\s*["']([^"']+)["']\s*\)/g;
-
   static extract(source: string): readonly string[] {
-    return [...source.matchAll(TypeScriptImportSpecifierExtractor.importPattern)].map(
-      (match) => (match[1] ?? match[2])!,
+    const sourceFile = ts.createSourceFile(
+      "production.ts",
+      source,
+      ts.ScriptTarget.Latest,
+      false,
+      ts.ScriptKind.TS,
     );
+    const specifiers: string[] = [];
+    const visit = (node: ts.Node): void => {
+      const specifier = TypeScriptImportSpecifierExtractor.specifierOf(node);
+      if (specifier !== undefined) specifiers.push(specifier);
+      ts.forEachChild(node, visit);
+    };
+    visit(sourceFile);
+    return specifiers;
+  }
+
+  private static specifierOf(node: ts.Node): string | undefined {
+    if (ts.isImportDeclaration(node) || ts.isExportDeclaration(node)) {
+      return TypeScriptImportSpecifierExtractor.literalText(node.moduleSpecifier);
+    }
+    if (!ts.isCallExpression(node) || node.expression.kind !== ts.SyntaxKind.ImportKeyword) {
+      return undefined;
+    }
+    return TypeScriptImportSpecifierExtractor.literalText(node.arguments[0]);
+  }
+
+  private static literalText(node: ts.Node | undefined): string | undefined {
+    return node !== undefined && ts.isStringLiteralLike(node) ? node.text : undefined;
   }
 }
 
@@ -83,9 +107,17 @@ describe("CLI daemon production reachability", () => {
   });
 
   it.each([
-    ["static import from", 'import { DaemonClient } from "@symnav/daemon/client";', "@symnav/daemon/client"],
+    [
+      "static import from",
+      'import { DaemonClient } from "@symnav/daemon/client";',
+      "@symnav/daemon/client",
+    ],
     ["side-effect import", 'import "@symnav/daemon/client";', "@symnav/daemon/client"],
-    ["export from", 'export { DaemonClient } from "@symnav/daemon/client";', "@symnav/daemon/client"],
+    [
+      "export from",
+      'export { DaemonClient } from "@symnav/daemon/client";',
+      "@symnav/daemon/client",
+    ],
     ["dynamic literal import", 'await import("@symnav/daemon/client");', "@symnav/daemon/client"],
     [
       "spaced dynamic literal import",

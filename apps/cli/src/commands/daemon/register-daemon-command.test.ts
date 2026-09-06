@@ -114,7 +114,10 @@ describe("registerDaemonCommand", () => {
 
     const output = await harness.run(["daemon", "start", ...(json ? ["--json"] : [])]);
 
-    expect(harness.control).toHaveBeenCalledWith({ action: "start", workspaceRoot: harness.workspaceRoot });
+    expect(harness.control).toHaveBeenCalledWith({
+      action: "start",
+      workspaceRoot: harness.workspaceRoot,
+    });
     expect(render).toHaveBeenCalledWith(result);
     expect(output).toEqual({ stdout: bytes, stderr: "" });
   });
@@ -122,20 +125,23 @@ describe("registerDaemonCommand", () => {
   it.each([
     [false, "renderStatusText", "status text bytes\u0000\n"],
     [true, "renderStatusJson", "status json bytes\u0000\n"],
-  ] as const)("writes unchanged status renderer bytes with json=%s", async (json, method, bytes) => {
-    const harness = createHarness(harnesses, false);
-    const results = [
-      { state: "starting", workspaceRoot: harness.workspaceRoot, pid: 11, startupElapsedMs: 12 },
-    ] as const;
-    harness.control.mockResolvedValue(results);
-    const render = vi.spyOn(DaemonLifecycleRenderer, method).mockReturnValue(bytes);
+  ] as const)(
+    "writes unchanged status renderer bytes with json=%s",
+    async (json, method, bytes) => {
+      const harness = createHarness(harnesses, false);
+      const results = [
+        { state: "starting", workspaceRoot: harness.workspaceRoot, pid: 11, startupElapsedMs: 12 },
+      ] as const;
+      harness.control.mockResolvedValue(results);
+      const render = vi.spyOn(DaemonLifecycleRenderer, method).mockReturnValue(bytes);
 
-    const output = await harness.run(["daemon", "status", ...(json ? ["--json"] : [])]);
+      const output = await harness.run(["daemon", "status", ...(json ? ["--json"] : [])]);
 
-    expect(harness.control).toHaveBeenCalledWith({ action: "status" });
-    expect(render).toHaveBeenCalledWith(results);
-    expect(output).toEqual({ stdout: bytes, stderr: "" });
-  });
+      expect(harness.control).toHaveBeenCalledWith({ action: "status" });
+      expect(render).toHaveBeenCalledWith(results);
+      expect(output).toEqual({ stdout: bytes, stderr: "" });
+    },
+  );
 
   it.each([
     [false, "renderStopText", "stop text bytes\u0000\n"],
@@ -148,7 +154,10 @@ describe("registerDaemonCommand", () => {
 
     const output = await harness.run(["daemon", "stop", ...(json ? ["--json"] : [])]);
 
-    expect(harness.control).toHaveBeenCalledWith({ action: "stop", workspaceRoot: harness.workspaceRoot });
+    expect(harness.control).toHaveBeenCalledWith({
+      action: "stop",
+      workspaceRoot: harness.workspaceRoot,
+    });
     expect(render).toHaveBeenCalledWith(result);
     expect(output).toEqual({ stdout: bytes, stderr: "" });
   });

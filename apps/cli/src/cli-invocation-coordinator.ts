@@ -5,7 +5,7 @@ import { InvocationWorkspaceSelector } from "./invocation-workspace-selector.js"
 
 export interface CliInvocationCoordinatorOptions {
   readonly daemonClient: DaemonClient;
-  readonly createLocalExecutor: () => Pick<CliProgramExecutor, "execute">;
+  readonly createLocalExecutor: () => CliProgramExecutor;
   readonly resolveWorkspaceRoot: (startDirectory: string) => Promise<string>;
 }
 
@@ -19,7 +19,7 @@ export class CliInvocationCoordinator {
     if (selected.route.kind !== "workspace") {
       return this.executeLocally(request);
     }
-    const workspaceRequest = { ...request, argv: selected.argv };
+    const workspaceRequest: CliExecutionRequest = { ...request, argv: selected.argv };
     let workspaceRoot: string;
     try {
       workspaceRoot = await this.options.resolveWorkspaceRoot(selected.route.startDirectory);

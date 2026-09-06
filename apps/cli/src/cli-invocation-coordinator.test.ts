@@ -1,12 +1,21 @@
 import { resolve } from "node:path";
 import { describe, expect, it, vi } from "vitest";
-import type { DaemonClient, DaemonClientExecuteRequest, DaemonCommandName } from "@symnav/daemon";
+import type {
+  DaemonClient,
+  DaemonClientExecuteRequest,
+  DaemonCommandName,
+  DaemonExecutorExecutionResult,
+} from "@symnav/daemon";
 import { CliInvocationCoordinator } from "./cli-invocation-coordinator.js";
+import type { CliProgramExecutor } from "./cli-program-executor.js";
 import { CommandOutputSnapshot, type CliExecutionRequest } from "./command-execution-result.js";
 
 const cwd = resolve("synthetic-workspace", "nested");
 const workspaceRoot = resolve("synthetic-workspace");
-const result = { output: new CommandOutputSnapshot([]), exitCode: 0 };
+const result: DaemonExecutorExecutionResult = {
+  output: new CommandOutputSnapshot([]),
+  exitCode: 0,
+};
 
 describe("CliInvocationCoordinator", () => {
   it.each([
@@ -15,19 +24,19 @@ describe("CliInvocationCoordinator", () => {
     { argv: ["unknown"], commandName: "unknown" },
     { argv: ["daemon", "unknown"], commandName: "unknown" },
     { argv: ["daemon", "status"], commandName: "unknown" },
-  ] satisfies readonly { readonly argv: readonly string[]; readonly commandName: DaemonCommandName }[])(
-    "executes local invocation $argv cold without discovering a workspace",
-    async ({ argv }) => {
-      const harness = new CoordinatorHarness();
-      const request = executionRequest(argv);
+  ] satisfies readonly {
+    readonly argv: readonly string[];
+    readonly commandName: DaemonCommandName;
+  }[])("executes local invocation $argv cold without discovering a workspace", async ({ argv }) => {
+    const harness = new CoordinatorHarness();
+    const request = executionRequest(argv);
 
-      await expect(harness.coordinator.execute(request)).resolves.toEqual({ mode: "cold", result });
+    await expect(harness.coordinator.execute(request)).resolves.toEqual({ mode: "cold", result });
 
-      expect(harness.localExecute).toHaveBeenCalledWith({ ...request, executionMode: "cold" });
-      expect(harness.resolveWorkspaceRoot).not.toHaveBeenCalled();
-      expect(harness.clientExecute).not.toHaveBeenCalled();
-    },
-  );
+    expect(harness.localExecute).toHaveBeenCalledWith({ ...request, executionMode: "cold" });
+    expect(harness.resolveWorkspaceRoot).not.toHaveBeenCalled();
+    expect(harness.clientExecute).not.toHaveBeenCalled();
+  });
 
   it.each([
     "overview",
@@ -61,7 +70,9 @@ describe("CliInvocationCoordinator", () => {
     const harness = new CoordinatorHarness();
     harness.resolveWorkspaceRoot.mockRejectedValueOnce(new Error("not a workspace"));
     harness.localExecute.mockResolvedValueOnce({
-      output: new CommandOutputSnapshot([{ stream: "stderr", bytes: Buffer.from("normal error\n") }]),
+      output: new CommandOutputSnapshot([
+        { stream: "stderr", bytes: Buffer.from("normal error\n") },
+      ]),
       exitCode: 1,
     });
     const request = executionRequest(["--cwd", "..", "overview", "missing.ts"], true);
@@ -79,12 +90,14 @@ describe("CliInvocationCoordinator", () => {
 });
 
 class CoordinatorHarness {
-  readonly clientExecute = vi.fn<(request: DaemonClientExecuteRequest) => Promise<{ mode: "warm"; result: typeof result }>>(async () => ({ mode: "warm", result }));
+  readonly clientExecute = vi.fn<
+    (request: DaemonClientExecuteRequest) => Promise<{ mode: "warm"; result: typeof result }>
+  >(async () => ({ mode: "warm", result }));
   readonly localExecute = vi.fn(async () => result);
   readonly resolveWorkspaceRoot = vi.fn(async () => workspaceRoot);
   readonly coordinator = new CliInvocationCoordinator({
     daemonClient: { execute: this.clientExecute } as unknown as DaemonClient,
-    createLocalExecutor: () => ({ execute: this.localExecute }),
+    createLocalExecutor: () => ({ execute: this.localExecute }) as unknown as CliProgramExecutor,
     resolveWorkspaceRoot: this.resolveWorkspaceRoot,
   });
 }

@@ -10,6 +10,8 @@ interface PathBuilderAliases {
   readonly namespaces: ReadonlySet<ts.Symbol>;
 }
 
+type MemberAccessExpression = ts.PropertyAccessExpression | ts.ElementAccessExpression;
+
 class ExternalDaemonStorageAccessInventory {
   private static readonly repositoryRoot = resolve(
     dirname(fileURLToPath(import.meta.url)),
@@ -197,15 +199,41 @@ class ExternalDaemonStorageAccessInventory {
       const symbol = checker.getSymbolAtLocation(expression);
       return symbol !== undefined && aliases.functions.has(symbol);
     }
-    if (
-      !ts.isPropertyAccessExpression(expression) ||
-      !["join", "resolve"].includes(expression.name.text) ||
-      !ts.isIdentifier(expression.expression)
-    ) {
-      return false;
+    return (
+      ExternalDaemonStorageAccessInventory.isMemberAccess(expression) &&
+      ["join", "resolve"].includes(
+        ExternalDaemonStorageAccessInventory.memberName(expression) ?? "",
+      ) &&
+      ExternalDaemonStorageAccessInventory.isPathNamespace(expression.expression, aliases, checker)
+    );
+  }
+
+  private static isPathNamespace(
+    expression: ts.Expression,
+    aliases: PathBuilderAliases,
+    checker: ts.TypeChecker,
+  ): boolean {
+    if (ts.isIdentifier(expression)) {
+      const symbol = checker.getSymbolAtLocation(expression);
+      return symbol !== undefined && aliases.namespaces.has(symbol);
     }
-    const symbol = checker.getSymbolAtLocation(expression.expression);
-    return symbol !== undefined && aliases.namespaces.has(symbol);
+    return (
+      ExternalDaemonStorageAccessInventory.isMemberAccess(expression) &&
+      ["posix", "win32"].includes(
+        ExternalDaemonStorageAccessInventory.memberName(expression) ?? "",
+      ) &&
+      ExternalDaemonStorageAccessInventory.isPathNamespace(expression.expression, aliases, checker)
+    );
+  }
+
+  private static isMemberAccess(node: ts.Node): node is MemberAccessExpression {
+    return ts.isPropertyAccessExpression(node) || ts.isElementAccessExpression(node);
+  }
+
+  private static memberName(expression: MemberAccessExpression): string | undefined {
+    return ts.isPropertyAccessExpression(expression)
+      ? expression.name.text
+      : ExternalDaemonStorageAccessInventory.literalText(expression.argumentExpression);
   }
 
   private static literalText(node: ts.Node): string | undefined {

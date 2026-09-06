@@ -34,6 +34,16 @@ describe("NodeDaemonClock", () => {
 });
 
 describe("daemon production clock ownership", () => {
+  it.each([
+    ["constructed wall clock", "const now = new Date().getTime();"],
+    [
+      "aliased monotonic import",
+      'import { performance as timer } from "node:perf_hooks"; timer.now();',
+    ],
+  ])("recognizes %s as a raw clock source", (_name, source) => {
+    expect(/Date\.now|performance\.now|process\.hrtime|@symnav\/telemetry/.test(source)).toBe(true);
+  });
+
   it("keeps raw time sources and telemetry clocks outside daemon mechanisms", () => {
     const sourceRoot = new URL("../", import.meta.url);
     const violations = productionSources(sourceRoot).flatMap((file) => {

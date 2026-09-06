@@ -1,4 +1,4 @@
-import { existsSync, lstatSync, readFileSync, readdirSync } from "node:fs";
+import { lstatSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 import type { DaemonDiagnosticValue } from "../daemon-diagnostics.js";
 import { DaemonDiagnosticValues } from "../daemon-diagnostics.js";
@@ -57,7 +57,15 @@ export class DaemonTestingInspector {
   }
 
   hasStateArtifacts(): boolean {
-    return existsSync(DaemonWorkspaceIdentity.registryDirectory(this.#stateDirectory));
+    try {
+      statSync(DaemonWorkspaceIdentity.registryDirectory(this.#stateDirectory));
+      return true;
+    } catch (error) {
+      if (["ENOENT", "ENOTDIR"].includes(DaemonTestingInspector.errorCode(error) ?? "")) {
+        return false;
+      }
+      throw error;
+    }
   }
 
   readDiagnostics(canonicalWorkspaceRoot: string, cursor = 0): DaemonTestingDiagnosticPage {

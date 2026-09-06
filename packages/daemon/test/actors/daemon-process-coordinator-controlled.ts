@@ -1,24 +1,23 @@
 import { existsSync, writeFileSync } from "node:fs";
-import { DaemonPolicy } from "@symnav/daemon";
-import { StateDirectoryResolver } from "../../src/state-directory-resolver.js";
 import type {
-  CliExecutionRequest,
-  CommandExecutionResult,
-  CommandOutputRecord,
-} from "../../src/command-execution-result.js";
-import { OrderedCommandOutput } from "../../src/command-execution-result.js";
-import { createDefaultDependencies } from "../../src/program.js";
-import { CliProgramExecutor } from "../../src/cli-program-executor.js";
-import { TestDaemonRegistry as DaemonRegistry } from "./daemon-registry.js";
-import { DaemonWorkspaceIdentity } from "../../src/daemon/daemon-workspace-identity.js";
-import { TestLocalDaemonTransport as LocalDaemonTransport } from "./local-daemon-transport.js";
+  DaemonExecutorExecutionResult,
+  DaemonExecutorRequest,
+  DaemonOutputRecord,
+  DaemonSequencedOutputRecord,
+} from "../../src/daemon-executor.js";
+import { DaemonExecutorModuleLoader } from "../../src/daemon-executor.js";
+import { DaemonPolicy, DaemonPolicyCodec } from "../../src/daemon-policy.js";
+import { DaemonWorkspaceIdentity } from "../../src/registry/workspace-identity.js";
+import { TestDaemonRegistry as DaemonRegistry } from "../helpers/daemon-registry.js";
+import { TestLocalDaemonTransport as LocalDaemonTransport } from "../helpers/local-daemon-transport.js";
 import type {
   DaemonNavigationWorker,
   DaemonNavigationWorkerExit,
-} from "../../src/daemon/daemon-navigation-worker.js";
-import { NodeDaemonNavigationWorker } from "../../src/daemon/daemon-navigation-worker.js";
-import type { DaemonNavigationWorkerResponse } from "../../src/daemon/daemon-navigation-worker-protocol.js";
-import { TestDaemonProcessCoordinator as DaemonProcessCoordinator } from "./daemon-process-coordinator.js";
+} from "../../src/worker/navigation-worker.js";
+import { NodeDaemonNavigationWorker } from "../../src/worker/navigation-worker.js";
+import type { DaemonNavigationWorkerResponse } from "../../src/worker/worker-protocol.js";
+import { CanonicalTestPath } from "../helpers/canonical-path.js";
+import { TestDaemonProcessCoordinator as DaemonProcessCoordinator } from "../helpers/daemon-process-coordinator.js";
 
 const [
   workspaceRoot,
@@ -49,45 +48,80 @@ const releasePath =
     ? undefined
     : releasePathArgument;
 const symnavVersion = configuredSymnavVersion ?? "test";
-const canonicalStateDirectory = StateDirectoryResolver.canonicalize(stateDirectory);
+const canonicalStateDirectory = CanonicalTestPath.resolve(stateDirectory);
 const daemonPolicy = DaemonPolicy.currentSystem();
-const dependencies = createDefaultDependencies(canonicalStateDirectory, daemonPolicy);
-const retainedBackends = dependencies.backends();
-const executor = new CliProgramExecutor({ ...dependencies, backends: () => retainedBackends });
+const executorModuleUrl = new URL("../../../../apps/cli/dist/daemon-executor.js", import.meta.url)
+  .href;
+const executor = await DaemonExecutorModuleLoader.load(executorModuleUrl, {
+  stateDirectory: canonicalStateDirectory,
+  productVersion: symnavVersion,
+  sampleResources: () => undefined,
+});
+await executor.initialize(workspaceRoot);
 let executionCount = 0;
 
 class ControlledExecutor {
-  async execute(request: CliExecutionRequest): Promise<CommandExecutionResult> {
+  async execute(request: DaemonExecutorRequest): Promise<DaemonExecutorExecutionResult> {
     executionCount += 1;
     writeFileSync(acceptedRequestStartedPath, "started");
     writeFileSync(`${acceptedRequestStartedPath}.${executionCount}`, "started");
     if (oversizedResponse || oversizedJsonResponse) {
       const result = await executor.execute(request);
-      const output = new OrderedCommandOutput({ policy: daemonPolicy.values.output });
+      const records: Omit<DaemonOutputRecord, "sequence">[] = [];
       if (oversizedJsonResponse) {
-        await writeRecord(output, {
-          sequence: 0,
+        records.push({
           stream: "stdout",
           bytes: Buffer.from(`${JSON.stringify({ data: "x".repeat(9 * 1024 * 1024) })}\n`),
         });
       } else {
         for await (const record of result.output?.records() ?? []) {
-          await writeRecord(output, record);
+          records.push({ stream: record.stream, bytes: record.bytes });
         }
-        await writeRecord(output, {
-          sequence: result.output?.summary.recordCount ?? 0,
+        records.push({
           stream: "stdout",
           bytes: Buffer.alloc(9 * 1024 * 1024, "x"),
         });
       }
       await result.output?.dispose();
-      return output.finish(result.exitCode);
+      return { exitCode: result.exitCode, output: new ActorExecutorOutput(records) };
     }
     if (releasePath === undefined) return new Promise(() => undefined);
     while (!existsSync(releasePath)) {
       await new Promise((resolve) => setTimeout(resolve, 5));
     }
     return executor.execute(request);
+  }
+}
+
+class ActorExecutorOutput {
+  private readonly recordsBySequence: readonly DaemonSequencedOutputRecord[];
+
+  constructor(records: readonly Omit<DaemonOutputRecord, "sequence">[]) {
+    this.recordsBySequence = records
+      .flatMap((record) => ActorExecutorOutput.chunks(record))
+      .map((record, sequence) => ({ ...record, sequence }));
+  }
+
+  async *records(): AsyncIterable<DaemonSequencedOutputRecord> {
+    yield* this.recordsBySequence;
+  }
+
+  dispose(): Promise<void> {
+    return Promise.resolve();
+  }
+
+  private static chunks(
+    record: Omit<DaemonOutputRecord, "sequence">,
+  ): readonly Omit<DaemonOutputRecord, "sequence">[] {
+    const chunkBytes = DaemonPolicy.currentSystem().values.output.maximumChunkRawBytes;
+    const chunks: Omit<DaemonOutputRecord, "sequence">[] = [];
+    for (let offset = 0; offset < record.bytes.byteLength; offset += chunkBytes) {
+      chunks.push({
+        stream: record.stream,
+        bytes: record.bytes.slice(offset, offset + chunkBytes),
+      });
+    }
+    return chunks;
   }
 }
 
@@ -117,11 +151,15 @@ class ControlledNavigationWorker implements DaemonNavigationWorker {
   async execute(
     requestId: string,
     _commandName: Parameters<DaemonNavigationWorker["execute"]>[1],
-    request: CliExecutionRequest,
-    output: { append(record: CommandOutputRecord): Promise<void> },
+    request: DaemonExecutorRequest,
+    output: { append(record: DaemonSequencedOutputRecord): Promise<void> },
   ): Promise<DaemonNavigationWorkerResponse> {
     const result = await Promise.race([this.controlledExecutor.execute(request), this.termination]);
-    for await (const record of result.output.records()) await output.append(record);
+    let sequence = 0;
+    for await (const record of result.output.records()) {
+      await output.append({ ...record, sequence });
+      sequence += 1;
+    }
     await result.output.dispose();
     return {
       kind: "result",
@@ -166,11 +204,14 @@ const navigationWorker = workerExit
       configuration: {
         stateDirectory: canonicalStateDirectory,
         productVersion: symnavVersion,
-        executorModuleUrl: new URL("../../dist/daemon-executor.js", import.meta.url).href,
-        policy: dependencies.daemonPolicy.toSerialized(),
+        executorModuleUrl,
+        policy: DaemonPolicyCodec.serialize(daemonPolicy),
       },
       resourceLimits: { maxOldGenerationSizeMb: 4096 },
-      entryUrl: new URL("./daemon-navigation-worker-fixture.mjs", import.meta.url),
+      entryUrl: new URL(
+        "../../../../apps/cli/test/helpers/daemon-navigation-worker-fixture.mjs",
+        import.meta.url,
+      ),
       workerData: {
         mode: "exit-on-release",
         requestPayloadPath: `${acceptedRequestStartedPath}.payload`,
@@ -184,11 +225,14 @@ const navigationWorker = workerExit
         configuration: {
           stateDirectory: canonicalStateDirectory,
           productVersion: symnavVersion,
-          executorModuleUrl: new URL("../../dist/daemon-executor.js", import.meta.url).href,
-          policy: dependencies.daemonPolicy.toSerialized(),
+          executorModuleUrl,
+          policy: DaemonPolicyCodec.serialize(daemonPolicy),
         },
         resourceLimits: { maxOldGenerationSizeMb: 4096 },
-        entryUrl: new URL("./daemon-navigation-worker-fixture.mjs", import.meta.url),
+        entryUrl: new URL(
+          "../../../../apps/cli/test/helpers/daemon-navigation-worker-fixture.mjs",
+          import.meta.url,
+        ),
         workerData: {
           mode: "block-execution",
           blockMs: 60_000,
@@ -204,16 +248,9 @@ const daemon = new DaemonProcessCoordinator({
   symnavVersion,
   memoryCapBytes: Number.MAX_SAFE_INTEGER,
   policy: daemonPolicy,
-  dependencies,
   registry: new DaemonRegistry(identity.registryDirectory),
   transport: new LocalDaemonTransport(),
   navigationWorker,
 });
 await daemon.start();
 writeFileSync(readyPath, "ready");
-
-function writeRecord(output: OrderedCommandOutput, record: CommandOutputRecord): Promise<void> {
-  return new Promise((resolve, reject) => {
-    output[record.stream].write(record.bytes, (error) => (error ? reject(error) : resolve()));
-  });
-}

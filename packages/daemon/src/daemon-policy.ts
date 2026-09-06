@@ -66,7 +66,7 @@ export interface DaemonPolicyValues {
   };
 }
 
-interface SerializedDaemonPolicy {
+export interface SerializedDaemonPolicy {
   readonly schemaVersion: 1;
   readonly values: DaemonPolicyValues;
 }
@@ -177,7 +177,7 @@ export class DaemonPolicy {
   }
 }
 
-class DaemonPolicyCodec {
+export class DaemonPolicyCodec {
   static serialize(policy: DaemonPolicy): SerializedDaemonPolicy {
     return Object.freeze({ schemaVersion: 1, values: policy.values });
   }

@@ -763,7 +763,10 @@ class DaemonParityHarness {
       [
         fileURLToPath(new URL("../../../node_modules/tsx/dist/cli.mjs", import.meta.url)),
         fileURLToPath(
-          new URL("../../helpers/daemon-process-coordinator-stuck.ts", import.meta.url),
+          new URL(
+            "../../../../../packages/daemon/test/actors/daemon-process-coordinator-controlled.ts",
+            import.meta.url,
+          ),
         ),
         controlledWorkspaceRoot,
         this.stateDirectory,

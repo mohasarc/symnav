@@ -12,6 +12,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
 import { runSymnavBinary } from "@symnav/testing";
+import { DaemonPolicy } from "@symnav/daemon";
 import {
   DAEMON_PROTOCOL_VERSION,
   DAEMON_RECORD_SCHEMA_VERSION,
@@ -24,6 +25,7 @@ import { StateDirectoryResolver } from "../../../src/state-directory-resolver.js
 import { canonicalWorkspaceRoot } from "../../helpers/canonical-workspace-root.js";
 import { E2eProcessCleanup } from "../../helpers/e2e-process-cleanup.js";
 import { CliDaemonTesting } from "../../helpers/daemon-testing.js";
+import { createDefaultDependencies } from "../../../src/program.js";
 
 describe("symnav daemon stop", () => {
   const stateDirectories: string[] = [];
@@ -239,20 +241,30 @@ async function startControlledDaemon(
   const processToken = `${instanceId}-token`;
   const readyPath = join(stateDirectory, `${instanceId}-ready`);
   const requestStartedPath = join(stateDirectory, `${instanceId}-request`);
+  const symnavVersion = createDefaultDependencies(
+    StateDirectoryResolver.canonicalize(stateDirectory),
+    DaemonPolicy.currentSystem(),
+  ).symnavVersion;
   const lease = registry.acquireStartup(identity, instanceId);
   if (lease === undefined) throw new Error("Expected controlled daemon startup ownership");
   const child = spawn(
     process.execPath,
     [
       fileURLToPath(new URL("../../../node_modules/tsx/dist/cli.mjs", import.meta.url)),
-      fileURLToPath(new URL("../../helpers/daemon-process-coordinator-stuck.ts", import.meta.url)),
+      fileURLToPath(
+        new URL(
+          "../../../../../packages/daemon/test/actors/daemon-process-coordinator-controlled.ts",
+          import.meta.url,
+        ),
+      ),
       workspaceRoot,
       stateDirectory,
       instanceId,
       processToken,
       readyPath,
       requestStartedPath,
-      ...(releasePath === undefined ? [] : [releasePath]),
+      releasePath ?? "--no-release",
+      symnavVersion,
     ],
     { stdio: "ignore" },
   );
@@ -261,7 +273,7 @@ async function startControlledDaemon(
   const record: DaemonRecord = {
     schemaVersion: DAEMON_RECORD_SCHEMA_VERSION,
     protocolVersion: DAEMON_PROTOCOL_VERSION,
-    symnavVersion: "test",
+    symnavVersion,
     workspaceRoot,
     workspaceKey: identity.workspaceKey,
     stateKey: identity.stateKey,

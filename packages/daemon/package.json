@@ -11,10 +11,16 @@
       "default": "./dist/index.js"
     },
     "./process-entry": {
+      "types": "./dist/process-entry.d.ts",
       "default": "./dist/process-entry.js"
     },
     "./worker-entry": {
+      "types": "./dist/worker-entry.d.ts",
       "default": "./dist/worker-entry.js"
+    },
+    "./testing": {
+      "types": "./dist/testing/index.d.ts",
+      "default": "./dist/testing/index.js"
     }
   },
   "files": ["dist"],

@@ -1,12 +1,6 @@
 import type { Command as CommanderCommand } from "commander";
 import { createWorkspace, UserFacingError } from "@symnav/core";
 import { DaemonLifecycleRenderer } from "@symnav/renderer";
-import { DaemonController } from "../../daemon/daemon-controller.js";
-import { daemonExecutorModuleUrl } from "../../daemon-executor.js";
-import { DaemonRegistry } from "../../daemon/daemon-registry.js";
-import { NodeDaemonProcessLauncher } from "../../daemon/daemon-process-launcher.js";
-import { DaemonWorkspaceIdentity } from "../../daemon/daemon-workspace-identity.js";
-import { LocalDaemonTransport } from "../../daemon/local-daemon-transport.js";
 import type { ProgramContext } from "../../program-context.js";
 import type { ProgramDependencies } from "../../program-dependencies.js";
 
@@ -52,33 +46,17 @@ class DaemonStartAction {
     dependencies: ProgramDependencies,
     options: DaemonStartOptions,
   ): Promise<void> {
-    if (process.env.SYMNAV_DAEMON === "0") {
+    if (!dependencies.daemonEnabled) {
       context.stderr.write("Daemon disabled by SYMNAV_DAEMON=0\n");
       context.exit(1);
     }
     const cwd = program.opts<{ cwd?: string }>().cwd ?? context.cwd;
     try {
       const workspace = await createWorkspace({ startDir: cwd, fs: dependencies.fs });
-      const stateDirectory = dependencies.stateDirectory;
-      const identity = DaemonWorkspaceIdentity.from(workspace.root, stateDirectory);
-      const registry = new DaemonRegistry(
-        identity.registryDirectory,
-        dependencies.daemonPolicy.values.startup,
-      );
-      const controller = new DaemonController(
-        registry,
-        new LocalDaemonTransport({ policy: dependencies.daemonPolicy }),
-        stateDirectory,
-        {
-          policy: dependencies.daemonPolicy.values,
-          launcher: new NodeDaemonProcessLauncher(
-            dependencies.symnavVersion,
-            daemonExecutorModuleUrl(),
-            dependencies.daemonPolicy,
-          ),
-        },
-      );
-      const result = await controller.start(workspace.root);
+      const result = await dependencies.daemonClient.control({
+        action: "start",
+        workspaceRoot: workspace.root,
+      });
       context.stdout.write(
         options.json
           ? DaemonLifecycleRenderer.renderStartJson(result)
@@ -102,22 +80,7 @@ class DaemonStatusAction {
     dependencies: ProgramDependencies,
     options: DaemonOutputOptions,
   ): Promise<void> {
-    const stateDirectory = dependencies.stateDirectory;
-    const registry = new DaemonRegistry(
-      DaemonWorkspaceIdentity.registryDirectory(stateDirectory),
-      dependencies.daemonPolicy.values.startup,
-    );
-    const controller = new DaemonController(
-      registry,
-      new LocalDaemonTransport({
-        policy: dependencies.daemonPolicy,
-        lifecycleResponseTimeoutMs:
-          dependencies.daemonPolicy.values.transport.statusResponseTimeoutMs,
-      }),
-      stateDirectory,
-      { policy: dependencies.daemonPolicy.values },
-    );
-    const results = await controller.status();
+    const results = await dependencies.daemonClient.control({ action: "status" });
     context.stdout.write(
       options.json
         ? DaemonLifecycleRenderer.renderStatusJson(results)
@@ -136,18 +99,10 @@ class DaemonStopAction {
     const cwd = program.opts<{ cwd?: string }>().cwd ?? context.cwd;
     try {
       const workspace = await createWorkspace({ startDir: cwd, fs: dependencies.fs });
-      const stateDirectory = dependencies.stateDirectory;
-      const registry = new DaemonRegistry(
-        DaemonWorkspaceIdentity.registryDirectory(stateDirectory),
-        dependencies.daemonPolicy.values.startup,
-      );
-      const controller = new DaemonController(
-        registry,
-        new LocalDaemonTransport({ policy: dependencies.daemonPolicy }),
-        stateDirectory,
-        { policy: dependencies.daemonPolicy.values },
-      );
-      const result = await controller.stop(workspace.root);
+      const result = await dependencies.daemonClient.control({
+        action: "stop",
+        workspaceRoot: workspace.root,
+      });
       context.stdout.write(
         options.json
           ? DaemonLifecycleRenderer.renderStopJson(result)

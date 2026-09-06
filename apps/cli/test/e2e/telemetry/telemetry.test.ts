@@ -137,8 +137,9 @@ describe("symnav telemetry e2e", () => {
 
     expect(result.status).toBe(0);
     expect(event.executionMode).toBe("cold");
-    expect(existsSync(join(stateDir, "daemons"))).toBe(false);
-    expect(new CliDaemonTesting(stateDir).processIds()).toEqual([]);
+    const daemonTesting = new CliDaemonTesting(stateDir);
+    expect(daemonTesting.inspector.hasStateArtifacts()).toBe(false);
+    expect(daemonTesting.processIds()).toEqual([]);
   });
 
   it("keeps daemon telemetry inert for an opted-out client", () => {

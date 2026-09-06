@@ -123,11 +123,11 @@ class ExternalDaemonStorageAccessInventory {
         checker,
       );
       const bindings = statement.importClause?.namedBindings;
-      if (ts.isNamespaceImport(bindings)) {
+      if (bindings !== undefined && ts.isNamespaceImport(bindings)) {
         ExternalDaemonStorageAccessInventory.addSymbol(bindings.name, namespaces, checker);
         continue;
       }
-      if (!ts.isNamedImports(bindings)) continue;
+      if (bindings === undefined || !ts.isNamedImports(bindings)) continue;
       for (const element of bindings.elements) {
         const importedName = (element.propertyName ?? element.name).text;
         if (!["join", "resolve"].includes(importedName)) continue;

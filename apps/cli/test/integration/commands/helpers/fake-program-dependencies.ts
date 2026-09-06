@@ -21,7 +21,10 @@ export function fakeDependencies(
       overrides.daemonPolicy ?? DaemonPolicy.fromSystemMemory({ totalBytes: 8 * 1024 ** 3 }),
     daemonClient:
       overrides.daemonClient ??
-      ({ execute: async () => undefined, control: async () => undefined } as unknown as DaemonClient),
+      ({
+        execute: async () => undefined,
+        control: async () => undefined,
+      } as unknown as DaemonClient),
     daemonEnabled: overrides.daemonEnabled ?? true,
     fs: overrides.fs ?? repoFs(),
     backends: overrides.backends ?? (() => [new FakeLanguageBackend()]),

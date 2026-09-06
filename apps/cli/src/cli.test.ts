@@ -1,5 +1,5 @@
 import { afterEach, expect, it, vi } from "vitest";
-import type { DaemonClient, DaemonPolicy } from "@symnav/daemon";
+import type { DaemonClient, DaemonExecutorExecutionResult, DaemonPolicy } from "@symnav/daemon";
 import { CommandOutputSnapshot } from "./command-execution-result.js";
 import type { ProgramDependencies } from "./program-dependencies.js";
 
@@ -19,7 +19,10 @@ it.each([
     const stateDirectory = "/canonical/state";
     const daemonPolicy = {} as DaemonPolicy;
     const daemonClient = {} as DaemonClient;
-    const executionResult = { output: new CommandOutputSnapshot([]), exitCode: 0 };
+    const executionResult: DaemonExecutorExecutionResult = {
+      output: new CommandOutputSnapshot([]),
+      exitCode: 0,
+    };
     const resolveStateDirectory = vi.fn(() => stateDirectory);
     const createDefaultDependencies = vi.fn(
       (receivedStateDirectory: string, receivedPolicy: DaemonPolicy, receivedEnabled: boolean) =>

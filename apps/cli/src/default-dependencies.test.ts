@@ -22,20 +22,23 @@ beforeEach(() => {
   captured.options.length = 0;
 });
 
-it.each([true, false])("passes daemonEnabled=%s to dependencies and DaemonClient", (daemonEnabled) => {
-  const policy = DaemonPolicy.fromSystemMemory({ totalBytes: 8 * 1024 ** 3 });
+it.each([true, false])(
+  "passes daemonEnabled=%s to dependencies and DaemonClient",
+  (daemonEnabled) => {
+    const policy = DaemonPolicy.fromSystemMemory({ totalBytes: 8 * 1024 ** 3 });
 
-  const dependencies = createDefaultDependencies("/canonical/state", policy, daemonEnabled);
+    const dependencies = createDefaultDependencies("/canonical/state", policy, daemonEnabled);
 
-  expect(dependencies.daemonEnabled).toBe(daemonEnabled);
-  expect(captured.options).toHaveLength(1);
-  expect(captured.options[0]).toMatchObject({
-    stateDirectory: "/canonical/state",
-    productVersion: "0.1.0",
-    daemonEnabled,
-    policy,
-    readinessProbe: { commandName: "version", argv: ["--version"] },
-  });
-  expect(new URL(captured.options[0]!.executorModuleUrl).protocol).toBe("file:");
-  expect(dependencies.daemonClient).toBeDefined();
-});
+    expect(dependencies.daemonEnabled).toBe(daemonEnabled);
+    expect(captured.options).toHaveLength(1);
+    expect(captured.options[0]).toMatchObject({
+      stateDirectory: "/canonical/state",
+      productVersion: "0.1.0",
+      daemonEnabled,
+      policy,
+      readinessProbe: { commandName: "version", argv: ["--version"] },
+    });
+    expect(new URL(captured.options[0]!.executorModuleUrl).protocol).toBe("file:");
+    expect(dependencies.daemonClient).toBeDefined();
+  },
+);

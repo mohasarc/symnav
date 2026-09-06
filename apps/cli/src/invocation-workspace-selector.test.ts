@@ -18,18 +18,23 @@ describe("InvocationWorkspaceSelector", () => {
     "context",
     "graph",
     "stats",
-  ] satisfies readonly DaemonCommandName[])("maps workspace command %s to its daemon name", (commandName) => {
-    expect(selector.select([commandName, "target"], workspaceRoot)).toEqual({
-      route: { kind: "workspace", commandName, startDirectory: workspaceRoot },
-      argv: [commandName, "target"],
-    });
-  });
+  ] satisfies readonly DaemonCommandName[])(
+    "maps workspace command %s to its daemon name",
+    (commandName) => {
+      expect(selector.select([commandName, "target"], workspaceRoot)).toEqual({
+        route: { kind: "workspace", commandName, startDirectory: workspaceRoot },
+        argv: [commandName, "target"],
+      });
+    },
+  );
 
   it("absolutizes cwd overrides through the selected workspace", () => {
-    expect(selector.select(["--cwd", otherWorkspaceRoot, "refs", "target"], workspaceRoot)).toEqual({
-      route: { kind: "workspace", commandName: "refs", startDirectory: otherWorkspaceRoot },
-      argv: ["--cwd", otherWorkspaceRoot, "refs", "target"],
-    });
+    expect(selector.select(["--cwd", otherWorkspaceRoot, "refs", "target"], workspaceRoot)).toEqual(
+      {
+        route: { kind: "workspace", commandName: "refs", startDirectory: otherWorkspaceRoot },
+        argv: ["--cwd", otherWorkspaceRoot, "refs", "target"],
+      },
+    );
     expect(selector.select(["--cwd", "..", "refs", "target"], nestedWorkspaceDirectory)).toEqual({
       route: { kind: "workspace", commandName: "refs", startDirectory: workspaceRoot },
       argv: ["--cwd", workspaceRoot, "refs", "target"],

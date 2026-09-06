@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { Writable } from "node:stream";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { InMemoryFileSystem, type OverviewFileEntries, WorkspaceSession } from "@symnav/core";
+import type { DaemonExecutorOutput } from "@symnav/daemon";
 import { DaemonPolicyTestFactory } from "../test/helpers/daemon-policy.js";
 import * as commandExecutionResult from "./command-execution-result.js";
 import { CliProgramExecutor, CommandResultReplayer } from "./cli-program-executor.js";
@@ -11,6 +12,7 @@ import { fakeDependencies } from "../test/integration/commands/helpers/fake-prog
 import { createCapturingRecorder } from "../test/integration/commands/helpers/fake-program-dependencies.js";
 import { createFakeProgramContext } from "../test/integration/commands/helpers/fake-program-context.js";
 import { FakeLanguageBackend } from "../test/integration/commands/helpers/fake-language-backend.js";
+import type { ProgramContext } from "./program-context.js";
 
 describe("CliProgramExecutor", () => {
   const temporaryRoots: string[] = [];
@@ -209,8 +211,8 @@ describe("CliProgramExecutor", () => {
     const context = {
       ...createFakeProgramContext({ cwd: "/repo" }),
       exit,
-    };
-    const output = {
+    } satisfies ProgramContext;
+    const output: DaemonExecutorOutput = {
       async *records() {
         yield { stream: "stderr" as const, bytes: Buffer.from("failed\n") };
       },

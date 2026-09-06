@@ -318,6 +318,12 @@ class DaemonRawClockSourceInventory {
   ): boolean {
     const moduleName = DaemonRawClockSourceInventory.moduleSpecifier(node);
     if (
+      DaemonRawClockSourceInventory.isDynamicImport(node) &&
+      DaemonRawClockSourceInventory.isClockBuiltin(moduleName)
+    ) {
+      return true;
+    }
+    if (
       moduleName === "@symnav/telemetry" ||
       moduleName?.startsWith("@symnav/telemetry/") === true
     ) {
@@ -479,6 +485,14 @@ class DaemonRawClockSourceInventory {
       return undefined;
     }
     return DaemonRawClockSourceInventory.literalText(node.arguments[0]);
+  }
+
+  private static isDynamicImport(node: ts.Node): node is ts.CallExpression {
+    return ts.isCallExpression(node) && node.expression.kind === ts.SyntaxKind.ImportKeyword;
+  }
+
+  private static isClockBuiltin(moduleName: string | undefined): boolean {
+    return ["node:perf_hooks", "perf_hooks", "node:process", "process"].includes(moduleName ?? "");
   }
 
   private static literalText(node: ts.Node | undefined): string | undefined {

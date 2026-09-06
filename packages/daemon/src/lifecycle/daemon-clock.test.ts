@@ -107,6 +107,34 @@ describe("daemon production clock ownership", () => {
       "unprefixed import-equals process namespace",
       'import processModule = require("process"); processModule.hrtime();',
     ],
+    [
+      "node-prefixed dynamic performance namespace",
+      'const hooks = await import("node:perf_hooks"); hooks.performance.now();',
+    ],
+    [
+      "unprefixed dynamic performance namespace",
+      'const hooks = await import("perf_hooks"); hooks.performance.now();',
+    ],
+    [
+      "node-prefixed dynamic process namespace",
+      'const processModule = await import("node:process"); processModule.hrtime.bigint();',
+    ],
+    [
+      "unprefixed dynamic process namespace",
+      'const processModule = await import("process"); processModule.hrtime();',
+    ],
+    [
+      "destructured dynamic performance import",
+      'const { performance: timer } = await import("node:perf_hooks"); timer.now();',
+    ],
+    [
+      "destructured dynamic process import",
+      'const { hrtime: timer } = await import("process"); timer.bigint();',
+    ],
+    [
+      "dynamic performance import with options",
+      'const hooks = await import("node:perf_hooks", { with: {} }); hooks.performance.now();',
+    ],
   ])("recognizes %s as a raw clock source", (_name, source) => {
     expect(DaemonRawClockSourceInventory.hasRawClock(source)).toBe(true);
   });
@@ -130,6 +158,10 @@ describe("daemon production clock ownership", () => {
     [
       "performance import-equals namespace",
       "namespace InternalHooks { export const performance = { now: () => 1 }; } import hooks = InternalHooks; hooks.performance.now();",
+    ],
+    [
+      "unrelated dynamic module",
+      'const hooks = await import("./perf-hooks.js"); hooks.performance.now();',
     ],
   ])("ignores a locally shadowed %s lookalike", (_name, source) => {
     expect(DaemonRawClockSourceInventory.hasRawClock(source)).toBe(false);

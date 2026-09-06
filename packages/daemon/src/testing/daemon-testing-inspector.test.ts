@@ -117,6 +117,8 @@ describe("daemon testing inspector", () => {
   });
 
   it.each([
+    ["instance list", (inspector: DaemonTestingInspector) => inspector.listInstances()],
+    ["artifact", (inspector: DaemonTestingInspector) => inspector.hasStateArtifacts()],
     [
       "diagnostic",
       (inspector: DaemonTestingInspector) => inspector.readDiagnostics("/canonical/workspace"),
@@ -127,9 +129,8 @@ describe("daemon testing inspector", () => {
     ],
   ])("preserves unrelated %s filesystem failures", (_name, inspect) => {
     const stateDirectory = temporaryDirectory(directories);
-    const identity = DaemonWorkspaceIdentity.from("/canonical/workspace", stateDirectory);
-    mkdirSync(join(stateDirectory, "daemons"), { recursive: true });
-    symlinkSync(identity.identityDirectory, identity.identityDirectory);
+    const registryDirectory = join(stateDirectory, "daemons");
+    symlinkSync(registryDirectory, registryDirectory);
 
     expect(() => inspect(new DaemonTestingInspector(stateDirectory))).toThrow(
       expect.objectContaining({ code: "ELOOP" }),

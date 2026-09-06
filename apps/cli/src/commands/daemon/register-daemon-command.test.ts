@@ -29,6 +29,7 @@ type ControlResult = DaemonStartResult | readonly RunningDaemonStatus[] | Daemon
 class DaemonCommandHarness {
   readonly stateDirectory = mkdtempSync(join(tmpdir(), "symnav-daemon-command-state-"));
   readonly workspaceRoot = mkdtempSync(join(tmpdir(), "symnav-daemon-command-workspace-"));
+  readonly clientDirectory = join(this.workspaceRoot, "nested");
   readonly control = vi.fn<(request: DaemonControlRequest) => Promise<ControlResult>>();
   readonly dependencies: ProgramDependencies;
   private readonly stdout = new PassThrough();
@@ -36,6 +37,7 @@ class DaemonCommandHarness {
 
   constructor(daemonEnabled = true) {
     mkdirSync(join(this.workspaceRoot, ".git"));
+    mkdirSync(this.clientDirectory);
     this.dependencies = {
       ...createDefaultDependencies(
         this.stateDirectory,
@@ -56,7 +58,7 @@ class DaemonCommandHarness {
     const context: ProgramContext = {
       stdout: this.stdout,
       stderr: this.stderr,
-      cwd: this.workspaceRoot,
+      cwd: this.clientDirectory,
       exit: (exitCode) => {
         throw new CommandExit(exitCode);
       },
@@ -150,6 +152,30 @@ describe("registerDaemonCommand", () => {
     expect(render).toHaveBeenCalledWith(result);
     expect(output).toEqual({ stdout: bytes, stderr: "" });
   });
+
+  it.each(["start", "stop"] as const)(
+    "resolves relative --cwd for daemon %s from the requesting client directory",
+    async (command) => {
+      const harness = createHarness(harnesses);
+      harness.control.mockResolvedValue(
+        command === "start"
+          ? {
+              status: "ready",
+              workspaceRoot: harness.workspaceRoot,
+              fileCount: 1,
+              loadDurationMs: 2,
+            }
+          : { status: "stopped", workspaceRoot: harness.workspaceRoot },
+      );
+
+      await harness.run(["--cwd", "..", "daemon", command]);
+
+      expect(harness.control).toHaveBeenCalledWith({
+        action: command,
+        workspaceRoot: harness.workspaceRoot,
+      });
+    },
+  );
 
   it("reports disabled start before workspace discovery", async () => {
     const harness = createHarness(harnesses, false);

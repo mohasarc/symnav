@@ -55,6 +55,8 @@ describe("daemon host contract", () => {
       export enum LocalEnum { Value }
       export namespace LocalNamespace {}
       declare namespace AliasNamespace { type Type = string }
+      namespace RuntimeAliasNamespace { export const value = true }
+      export import AliasRuntime = RuntimeAliasNamespace.value;
       export import AliasType = AliasNamespace.Type;
       export import ExternalAlias = require("./runtime.js");
       export as namespace GlobalAlias;
@@ -70,6 +72,7 @@ describe("daemon host contract", () => {
     expect(exports).toEqual([
       { kind: "runtime", name: "*" },
       { kind: "type", name: "*" },
+      { kind: "runtime", name: "AliasRuntime" },
       { kind: "type", name: "AliasType" },
       { kind: "runtime", name: "default" },
       { kind: "runtime", name: "ExternalAlias" },

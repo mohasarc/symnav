@@ -184,6 +184,10 @@ class TypeScriptExportInventory {
     );
     const exports: ExportedSymbol[] = [];
     for (const statement of sourceFile.statements) {
+      if (ts.isNamespaceExportDeclaration(statement)) {
+        exports.push({ kind: "type", name: statement.name.text });
+        continue;
+      }
       if (ts.isExportDeclaration(statement)) {
         exports.push(...TypeScriptExportInventory.exportDeclarationSymbols(statement));
         continue;
@@ -218,6 +222,13 @@ class TypeScriptExportInventory {
   }
 
   private static declarationSymbols(statement: ts.Statement): readonly ExportedSymbol[] {
+    if (ts.isImportEqualsDeclaration(statement)) {
+      const kind =
+        statement.isTypeOnly || !ts.isExternalModuleReference(statement.moduleReference)
+          ? "type"
+          : "runtime";
+      return [{ kind, name: statement.name.text }];
+    }
     if (ts.isVariableStatement(statement)) {
       return statement.declarationList.declarations.flatMap((declaration) =>
         TypeScriptExportInventory.bindingNames(declaration.name).map((name) => ({

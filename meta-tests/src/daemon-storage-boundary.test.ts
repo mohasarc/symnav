@@ -756,6 +756,7 @@ class ExternalDaemonStorageAccessInventory {
     expression: ts.Expression,
     moduleNames: readonly string[],
     checker: ts.TypeChecker,
+    visitedSymbols: ReadonlySet<ts.Symbol> = new Set(),
   ): boolean {
     const unwrapped = ExternalDaemonStorageAccessInventory.unwrapExpression(expression);
     if (
@@ -765,13 +766,16 @@ class ExternalDaemonStorageAccessInventory {
     }
     if (!ts.isIdentifier(unwrapped)) return false;
     const symbol = checker.getSymbolAtLocation(unwrapped);
-    if (symbol === undefined) return false;
+    if (symbol === undefined || visitedSymbols.has(symbol)) return false;
     const alias = ExternalDaemonStorageAccessInventory.staticStorageAlias(symbol, checker);
-    return (
-      alias?.members.length === 0 &&
-      moduleNames.includes(
-        ExternalDaemonStorageAccessInventory.dynamicModuleName(alias.source) ?? "",
-      )
+    if (alias === undefined || alias.members.length !== 0) return false;
+    const nextVisitedSymbols = new Set(visitedSymbols);
+    nextVisitedSymbols.add(symbol);
+    return ExternalDaemonStorageAccessInventory.isDynamicBuiltinNamespace(
+      alias.source,
+      moduleNames,
+      checker,
+      nextVisitedSymbols,
     );
   }
 

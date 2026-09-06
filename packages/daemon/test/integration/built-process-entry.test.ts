@@ -173,6 +173,10 @@ class BuiltProcessEntryHarness {
     };
   }
 
+  removeExitedProcess(record: DaemonRecord): boolean {
+    return this.registry.removeIfProcess(this.identity, record.instanceId, record.processToken);
+  }
+
   async terminate(): Promise<DaemonProcessExit | undefined> {
     if (this.daemonProcess === undefined) return undefined;
     await this.daemonProcess.terminate();
@@ -239,10 +243,18 @@ describe("built daemon process entry", () => {
       ]);
       expect(harness.diagnosticKinds().filter((kind) => kind === "ready")).toEqual(["ready"]);
       await expect(harness.terminate()).resolves.toMatchObject({ cause: "exit", code: 1 });
+      const processTerminationDiagnostics = harness
+        .diagnosticKinds()
+        .filter((kind) => kind === "process-termination");
+      if (process.platform === "win32") {
+        expect(harness.startupArtifacts()).toEqual({ record: ready, owner: undefined });
+        expect(processTerminationDiagnostics).toEqual([]);
+        expect(harness.removeExitedProcess(ready)).toBe(true);
+      } else {
+        expect(harness.startupArtifacts()).toEqual({ record: undefined, owner: undefined });
+        expect(processTerminationDiagnostics).toEqual(["process-termination"]);
+      }
       expect(harness.startupArtifacts()).toEqual({ record: undefined, owner: undefined });
-      expect(harness.diagnosticKinds().filter((kind) => kind === "process-termination")).toEqual([
-        "process-termination",
-      ]);
     } finally {
       await harness.dispose();
     }

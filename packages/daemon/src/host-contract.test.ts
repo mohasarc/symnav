@@ -178,13 +178,10 @@ interface ExportedSymbol {
 
 class TypeScriptExportInventory {
   static read(sourceText: string): readonly ExportedSymbol[] {
-    const sourceFile = ts.createSourceFile(
-      "source.ts",
-      sourceText,
-      ts.ScriptTarget.Latest,
-      true,
-      ts.ScriptKind.TS,
-    );
+    const program = TypeScriptExportInventory.sourceProgram(sourceText);
+    const sourceFile = program.getSourceFile("source.ts");
+    if (sourceFile === undefined) return [];
+    const checker = program.getTypeChecker();
     const exports: ExportedSymbol[] = [];
     for (const statement of sourceFile.statements) {
       if (ts.isNamespaceExportDeclaration(statement)) {
@@ -203,11 +200,33 @@ class TypeScriptExportInventory {
         continue;
       }
       if (!TypeScriptExportInventory.hasModifier(statement, ts.SyntaxKind.ExportKeyword)) continue;
-      exports.push(...TypeScriptExportInventory.declarationSymbols(statement));
+      exports.push(...TypeScriptExportInventory.declarationSymbols(statement, checker));
     }
     return exports.sort(
       (left, right) => left.name.localeCompare(right.name) || left.kind.localeCompare(right.kind),
     );
+  }
+
+  private static sourceProgram(sourceText: string): ts.Program {
+    const options: ts.CompilerOptions = {
+      module: ts.ModuleKind.NodeNext,
+      moduleResolution: ts.ModuleResolutionKind.NodeNext,
+      noLib: true,
+      noResolve: true,
+      target: ts.ScriptTarget.Latest,
+    };
+    const sourceFile = ts.createSourceFile(
+      "source.ts",
+      sourceText,
+      ts.ScriptTarget.Latest,
+      true,
+      ts.ScriptKind.TS,
+    );
+    const host = ts.createCompilerHost(options, true);
+    host.fileExists = (fileName) => fileName === "source.ts";
+    host.getSourceFile = (fileName) => (fileName === "source.ts" ? sourceFile : undefined);
+    host.readFile = (fileName) => (fileName === "source.ts" ? sourceText : undefined);
+    return ts.createProgram(["source.ts"], options, host);
   }
 
   private static exportDeclarationSymbols(
@@ -224,12 +243,12 @@ class TypeScriptExportInventory {
     }));
   }
 
-  private static declarationSymbols(statement: ts.Statement): readonly ExportedSymbol[] {
+  private static declarationSymbols(
+    statement: ts.Statement,
+    checker: ts.TypeChecker,
+  ): readonly ExportedSymbol[] {
     if (ts.isImportEqualsDeclaration(statement)) {
-      const kind =
-        statement.isTypeOnly || !ts.isExternalModuleReference(statement.moduleReference)
-          ? "type"
-          : "runtime";
+      const kind = TypeScriptExportInventory.importEqualsKind(statement, checker);
       return [{ kind, name: statement.name.text }];
     }
     if (ts.isVariableStatement(statement)) {
@@ -260,6 +279,18 @@ class TypeScriptExportInventory {
       return statement.name === undefined ? [] : [{ kind, name: statement.name.text }];
     }
     return [];
+  }
+
+  private static importEqualsKind(
+    statement: ts.ImportEqualsDeclaration,
+    checker: ts.TypeChecker,
+  ): ExportedSymbol["kind"] {
+    if (statement.isTypeOnly) return "type";
+    if (ts.isExternalModuleReference(statement.moduleReference)) return "runtime";
+    const alias = checker.getSymbolAtLocation(statement.name);
+    if (alias === undefined || (alias.flags & ts.SymbolFlags.Alias) === 0) return "type";
+    const target = checker.getAliasedSymbol(alias);
+    return (target.flags & ts.SymbolFlags.Value) === 0 ? "type" : "runtime";
   }
 
   private static bindingNames(name: ts.BindingName): readonly string[] {

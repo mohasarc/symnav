@@ -25,6 +25,9 @@ class TypeScriptImportSpecifierExtractor {
   }
 
   private static specifierOf(node: ts.Node): string | undefined {
+    if (ts.isImportEqualsDeclaration(node) && ts.isExternalModuleReference(node.moduleReference)) {
+      return TypeScriptImportSpecifierExtractor.literalText(node.moduleReference.expression);
+    }
     if (ts.isImportDeclaration(node) || ts.isExportDeclaration(node)) {
       return TypeScriptImportSpecifierExtractor.literalText(node.moduleSpecifier);
     }

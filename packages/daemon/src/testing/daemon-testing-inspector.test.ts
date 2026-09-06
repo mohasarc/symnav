@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -98,12 +98,43 @@ describe("daemon testing inspector", () => {
     expect(Object.keys(inspector)).toEqual([]);
   });
 
-  it("lists no instances when the configured state path is a file", () => {
+  it("returns empty observations when the configured state path is a file", () => {
     const root = temporaryDirectory(directories);
     const statePath = join(root, "state");
     writeFileSync(statePath, "occupied");
+    const inspector = new DaemonTestingInspector(statePath);
 
-    expect(new DaemonTestingInspector(statePath).listInstances()).toEqual([]);
+    expect(inspector.listInstances()).toEqual([]);
+    expect(inspector.hasStateArtifacts()).toBe(false);
+    expect(inspector.readDiagnostics("/canonical/workspace")).toEqual({
+      events: [],
+      nextCursor: 0,
+    });
+    expect(inspector.completionSpoolUsage("/canonical/workspace")).toEqual({
+      fileCount: 0,
+      bytes: 0,
+    });
+  });
+
+  it.each([
+    [
+      "diagnostic",
+      (inspector: DaemonTestingInspector) => inspector.readDiagnostics("/canonical/workspace"),
+    ],
+    [
+      "spool",
+      (inspector: DaemonTestingInspector) =>
+        inspector.completionSpoolUsage("/canonical/workspace"),
+    ],
+  ])("preserves unrelated %s filesystem failures", (_name, inspect) => {
+    const stateDirectory = temporaryDirectory(directories);
+    const identity = DaemonWorkspaceIdentity.from("/canonical/workspace", stateDirectory);
+    mkdirSync(join(stateDirectory, "daemons"), { recursive: true });
+    symlinkSync(identity.identityDirectory, identity.identityDirectory);
+
+    expect(() => inspect(new DaemonTestingInspector(stateDirectory))).toThrow(
+      expect.objectContaining({ code: "ELOOP" }),
+    );
   });
 });
 

@@ -165,7 +165,7 @@ describe("registerDaemonCommand", () => {
               fileCount: 1,
               loadDurationMs: 2,
             }
-          : { status: "stopped", workspaceRoot: harness.workspaceRoot },
+          : { status: "stopped", workspaceRoot: harness.workspaceRoot, pid: 11 },
       );
 
       await harness.run(["--cwd", "..", "daemon", command]);

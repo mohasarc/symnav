@@ -1,4 +1,5 @@
 import type { Command as CommanderCommand } from "commander";
+import { resolve } from "node:path";
 import { createWorkspace, UserFacingError } from "@symnav/core";
 import { DaemonLifecycleRenderer } from "@symnav/renderer";
 import type { ProgramContext } from "../../program-context.js";
@@ -9,6 +10,12 @@ interface DaemonStartOptions {
 }
 
 type DaemonOutputOptions = DaemonStartOptions;
+
+class DaemonWorkspaceDirectory {
+  static resolve(program: CommanderCommand, context: ProgramContext): string {
+    return resolve(context.cwd, program.opts<{ cwd?: string }>().cwd ?? context.cwd);
+  }
+}
 
 export function registerDaemonCommand(
   program: CommanderCommand,
@@ -50,7 +57,7 @@ class DaemonStartAction {
       context.stderr.write("Daemon disabled by SYMNAV_DAEMON=0\n");
       context.exit(1);
     }
-    const cwd = program.opts<{ cwd?: string }>().cwd ?? context.cwd;
+    const cwd = DaemonWorkspaceDirectory.resolve(program, context);
     try {
       const workspace = await createWorkspace({ startDir: cwd, fs: dependencies.fs });
       const result = await dependencies.daemonClient.control({
@@ -96,7 +103,7 @@ class DaemonStopAction {
     dependencies: ProgramDependencies,
     options: DaemonOutputOptions,
   ): Promise<void> {
-    const cwd = program.opts<{ cwd?: string }>().cwd ?? context.cwd;
+    const cwd = DaemonWorkspaceDirectory.resolve(program, context);
     try {
       const workspace = await createWorkspace({ startDir: cwd, fs: dependencies.fs });
       const result = await dependencies.daemonClient.control({

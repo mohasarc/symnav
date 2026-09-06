@@ -303,8 +303,14 @@ describe("external daemon storage boundary", () => {
     ).toBe(true);
     expect(
       ExternalDaemonStorageAccessInventory.containsDirectStorageAccess(
-        "readFileSync(`/tmp/state/daemons/${workspaceIdentity}/registry.json`);",
+        'import { readFileSync } from "node:fs"; readFileSync(`/tmp/state/daemons/${workspaceIdentity}/registry.json`);',
       ),
+    ).toBe(true);
+    expect(
+      ExternalDaemonStorageAccessInventory.containsDirectStorageAccess(`
+        import * as fileSystem from "node:fs";
+        fileSystem.readdirSync(stateDirectory + "/daemons");
+      `),
     ).toBe(true);
     expect(
       ExternalDaemonStorageAccessInventory.containsDirectStorageAccess(`
@@ -313,6 +319,18 @@ describe("external daemon storage boundary", () => {
         join(stateDirectory, "daemons");
       `),
     ).toBe(false);
+  });
+
+  it.each([
+    ["HTTP route", 'fetch("/api/daemons/status");'],
+    ["route data", 'const route = "/api/daemons/status";'],
+    ["URL data", 'new URL("/api/daemons/status", origin);'],
+    [
+      "local filesystem lookalike",
+      'function readFileSync(path: string) { return path; } readFileSync("/api/daemons/status");',
+    ],
+  ])("allows slash-delimited daemon %s outside filesystem access", (_name, source) => {
+    expect(ExternalDaemonStorageAccessInventory.containsDirectStorageAccess(source)).toBe(false);
   });
 
   it("keeps external tests and benchmarks outside private daemon storage", () => {

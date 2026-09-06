@@ -3,10 +3,18 @@ import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
-class TypeScriptProductionGraph {
+class TypeScriptImportSpecifierExtractor {
   private static readonly importPattern =
     /(?:import|export)\s+(?:type\s+)?(?:[^"']+?\s+from\s+)?["']([^"']+)["']|import\(\s*["']([^"']+)["']\s*\)/g;
 
+  static extract(source: string): readonly string[] {
+    return [...source.matchAll(TypeScriptImportSpecifierExtractor.importPattern)].map(
+      (match) => (match[1] ?? match[2])!,
+    );
+  }
+}
+
+class TypeScriptProductionGraph {
   constructor(private readonly repositoryRoot: string) {}
 
   reachableFrom(entry: string): readonly string[] {
@@ -25,9 +33,8 @@ class TypeScriptProductionGraph {
 
   private localDependencies(file: string): readonly string[] {
     const source = readFileSync(file, "utf8");
-    return [...source.matchAll(TypeScriptProductionGraph.importPattern)]
-      .map((match) => match[1] ?? match[2])
-      .filter((specifier): specifier is string => specifier?.startsWith(".") === true)
+    return TypeScriptImportSpecifierExtractor.extract(source)
+      .filter((specifier) => specifier.startsWith("."))
       .map((specifier) => this.resolveTypeScriptImport(file, specifier))
       .filter((dependency): dependency is string => dependency !== undefined);
   }
@@ -42,8 +49,8 @@ class TypeScriptProductionGraph {
 
 class DaemonPackageImportBoundary {
   static deepImports(source: string): readonly string[] {
-    return [...source.matchAll(/from\s+["'](@symnav\/daemon\/[^"']+)["']/g)].map(
-      (match) => match[1]!,
+    return TypeScriptImportSpecifierExtractor.extract(source).filter((specifier) =>
+      specifier.startsWith("@symnav/daemon/"),
     );
   }
 }

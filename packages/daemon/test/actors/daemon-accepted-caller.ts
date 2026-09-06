@@ -11,8 +11,9 @@ const [stateDirectory, workspaceRoot, acceptedPath, mode, requestPath, requestId
 if (stateDirectory === undefined || workspaceRoot === undefined || acceptedPath === undefined) {
   process.exit(2);
 }
+const canonicalWorkspaceRoot = CanonicalTestPath.resolve(workspaceRoot).replaceAll("\\", "/");
 const identity = DaemonWorkspaceIdentity.from(
-  CanonicalTestPath.resolve(workspaceRoot),
+  canonicalWorkspaceRoot,
   CanonicalTestPath.resolve(stateDirectory),
 );
 const record = new DaemonRegistry(identity.registryDirectory).read(identity);

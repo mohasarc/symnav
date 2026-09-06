@@ -13,6 +13,7 @@ import type {
 } from "@symnav/daemon";
 import { DaemonLifecycleRenderer } from "@symnav/renderer";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { canonicalWorkspaceRoot } from "../../../test/helpers/canonical-workspace-root.js";
 import { createDefaultDependencies } from "../../program.js";
 import type { ProgramContext } from "../../program-context.js";
 import type { ProgramDependencies } from "../../program-dependencies.js";
@@ -116,7 +117,7 @@ describe("registerDaemonCommand", () => {
 
     expect(harness.control).toHaveBeenCalledWith({
       action: "start",
-      workspaceRoot: harness.workspaceRoot,
+      workspaceRoot: canonicalWorkspaceRoot(harness.workspaceRoot),
     });
     expect(render).toHaveBeenCalledWith(result);
     expect(output).toEqual({ stdout: bytes, stderr: "" });
@@ -156,7 +157,7 @@ describe("registerDaemonCommand", () => {
 
     expect(harness.control).toHaveBeenCalledWith({
       action: "stop",
-      workspaceRoot: harness.workspaceRoot,
+      workspaceRoot: canonicalWorkspaceRoot(harness.workspaceRoot),
     });
     expect(render).toHaveBeenCalledWith(result);
     expect(output).toEqual({ stdout: bytes, stderr: "" });
@@ -181,7 +182,7 @@ describe("registerDaemonCommand", () => {
 
       expect(harness.control).toHaveBeenCalledWith({
         action: command,
-        workspaceRoot: harness.workspaceRoot,
+        workspaceRoot: canonicalWorkspaceRoot(harness.workspaceRoot),
       });
     },
   );

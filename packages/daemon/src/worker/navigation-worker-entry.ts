@@ -2,13 +2,13 @@ import { parentPort, workerData } from "node:worker_threads";
 import { getHeapStatistics } from "node:v8";
 import {
   DaemonExecutorModuleLoader,
-  DaemonPolicy,
   type DaemonDiagnostics,
   type DaemonExecutor,
   type DaemonExecutorModuleUrl,
   type DaemonOutputRecord,
   type DaemonWorkerFailureCode,
 } from "@symnav/daemon";
+import { DaemonPolicyCodec, type DaemonPolicy, type SerializedDaemonPolicy } from "../daemon-policy.js";
 import {
   DaemonNavigationWorkerProtocol,
   type WorkerCommandDurations,
@@ -23,7 +23,7 @@ interface DaemonWorkerData {
   readonly generation: number;
   readonly productVersion: string;
   readonly executorModuleUrl: DaemonExecutorModuleUrl;
-  readonly policy: ReturnType<DaemonPolicy["toSerialized"]>;
+  readonly policy: SerializedDaemonPolicy;
 }
 
 class DaemonNavigationWorkerEntry {
@@ -38,7 +38,7 @@ class DaemonNavigationWorkerEntry {
     private readonly port: NonNullable<typeof parentPort>,
     private readonly data: DaemonWorkerData,
   ) {
-    this.policy = DaemonPolicy.fromSerialized(data.policy);
+    this.policy = DaemonPolicyCodec.deserialize(data.policy);
   }
 
   run(): void {

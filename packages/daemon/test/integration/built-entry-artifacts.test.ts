@@ -1,7 +1,7 @@
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { describe, expect, it } from "vitest";
-import { DaemonPolicy } from "../../src/daemon-policy.js";
+import { DaemonPolicy, DaemonPolicyCodec } from "../../src/daemon-policy.js";
 import { NodeDaemonNavigationWorker } from "../../dist/worker/navigation-worker.js";
 
 describe("built daemon entry artifacts", () => {
@@ -18,7 +18,7 @@ describe("built daemon entry artifacts", () => {
         stateDirectory: join(packageDirectory, "test"),
         productVersion: "test",
         executorModuleUrl,
-        policy: policy.toSerialized(),
+        policy: DaemonPolicyCodec.serialize(policy),
       },
       resourceLimits: { maxOldGenerationSizeMb: 128 },
     });
@@ -66,7 +66,7 @@ describe("built daemon entry artifacts", () => {
         stateDirectory: join(packageDirectory, "test"),
         productVersion: "test",
         executorModuleUrl: moduleUrl,
-        policy: policy.toSerialized(),
+        policy: DaemonPolicyCodec.serialize(policy),
       },
       resourceLimits: { maxOldGenerationSizeMb: 128 },
     });

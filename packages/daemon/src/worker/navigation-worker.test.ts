@@ -6,6 +6,7 @@ import { setFlagsFromString } from "node:v8";
 import { describe, expect, it } from "vitest";
 import { DaemonPolicy, type DaemonExecutorRequest } from "@symnav/daemon";
 import { DaemonPolicyTestFactory } from "../../test/helpers/daemon-policy.js";
+import { DaemonPolicyCodec } from "../daemon-policy.js";
 import { fixturePath } from "@symnav/testing";
 import { NodeDaemonNavigationWorker } from "./navigation-worker.js";
 
@@ -40,7 +41,7 @@ describe("NodeDaemonNavigationWorker", () => {
           stateDirectory: "/state",
           productVersion: "1.2.3",
           executorModuleUrl,
-          policy: policy.toSerialized(),
+          policy: DaemonPolicyCodec.serialize(policy),
         },
         resourceLimits: { maxOldGenerationSizeMb: 128 },
         entryUrl: new URL(
@@ -51,7 +52,7 @@ describe("NodeDaemonNavigationWorker", () => {
       });
       await worker.start("/repo");
       expect(JSON.parse(readFileSync(policyPath, "utf8"))).toEqual({
-        policy: policy.toSerialized(),
+        policy: DaemonPolicyCodec.serialize(policy),
         productVersion: "1.2.3",
         executorModuleUrl,
       });
@@ -420,7 +421,7 @@ function createInjectedWorker(
       stateDirectory,
       productVersion,
       executorModuleUrl,
-      policy: policy.toSerialized(),
+      policy: DaemonPolicyCodec.serialize(policy),
     },
     resourceLimits: { maxOldGenerationSizeMb: 128 },
     entryUrl: new URL("../../dist/worker-entry.js", import.meta.url),
@@ -435,7 +436,7 @@ function createWorker(mode: string, maxOldGenerationSizeMb = 128): NodeDaemonNav
       stateDirectory: "/state",
       productVersion: "1.2.3",
       executorModuleUrl: "file:///absolute/symnav/daemon-executor.js",
-      policy: policy.toSerialized(),
+      policy: DaemonPolicyCodec.serialize(policy),
     },
     resourceLimits: { maxOldGenerationSizeMb },
     entryUrl: new URL("../../test/helpers/daemon-navigation-worker-fixture.mjs", import.meta.url),

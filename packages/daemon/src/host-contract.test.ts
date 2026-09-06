@@ -133,10 +133,8 @@ class DaemonContractExpectation {
   ];
 
   public static readonly policyMembers = [
-    "instance:toSerialized",
     "instance:values",
     "static:currentSystem",
-    "static:fromSerialized",
     "static:fromSystemMemory",
   ];
 
@@ -195,6 +193,8 @@ class DaemonContractExpectation {
     "registry/startup-coordinator.ts",
     "registry/workspace-identity.ts",
     "resources/resource-supervisor.ts",
+    "testing/daemon-testing-inspector.ts",
+    "testing/index.ts",
     "transport/client-result-capture.ts",
     "transport/contracts.ts",
     "transport/execution-client.ts",
@@ -598,20 +598,15 @@ describe("daemon host contract", () => {
 
   it("defines the exact daemon policy static and instance API", () => {
     expectTypeOf<keyof typeof DaemonPolicy>().toEqualTypeOf<
-      "prototype" | "currentSystem" | "fromSystemMemory" | "fromSerialized"
+      "prototype" | "currentSystem" | "fromSystemMemory"
     >();
     expectTypeOf<DaemonPolicy>().toEqualTypeOf<{
       readonly values: DaemonPolicyValues;
-      toSerialized(): Readonly<{
-        readonly schemaVersion: 1;
-        readonly values: DaemonPolicyValues;
-      }>;
     }>();
     expectTypeOf<typeof DaemonPolicy.currentSystem>().returns.toEqualTypeOf<DaemonPolicy>();
     expectTypeOf<typeof DaemonPolicy.fromSystemMemory>().parameters.toEqualTypeOf<
       [DaemonSystemMemory]
     >();
-    expectTypeOf<typeof DaemonPolicy.fromSerialized>().parameters.toEqualTypeOf<[unknown]>();
 
     const sourceRoot = DaemonContractSourcePath.root(import.meta.url);
     const policySource = ts.sys.readFile(join(sourceRoot, "daemon-policy.ts"));

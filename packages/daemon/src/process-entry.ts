@@ -1,4 +1,4 @@
-import { DaemonPolicy } from "./daemon-policy.js";
+import { DaemonPolicyCodec } from "./daemon-policy.js";
 import { NodeDaemonClock } from "./lifecycle/daemon-clock.js";
 import { DaemonLogger } from "./diagnostics/logger.js";
 import { DaemonProcessConfigurationParser } from "./process/process-launcher.js";
@@ -15,7 +15,7 @@ class DaemonProcessEntry {
       configuration.workspaceRoot,
       configuration.stateDirectory,
     );
-    const policy = DaemonPolicy.fromSerialized(configuration.policy);
+    const policy = DaemonPolicyCodec.deserialize(configuration.policy);
     const clock = new NodeDaemonClock();
     const registry = new DaemonRegistry(identity.registryDirectory, policy.values.startup, clock);
     const logger = new DaemonLogger(identity, configuration.instanceId, clock, {

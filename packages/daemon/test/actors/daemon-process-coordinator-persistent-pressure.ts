@@ -1,21 +1,24 @@
 import { appendFileSync, existsSync, writeFileSync } from "node:fs";
-import { DaemonPolicy } from "@symnav/daemon";
-import { StateDirectoryResolver } from "../../src/state-directory-resolver.js";
 import type {
-  CliExecutionRequest,
-  CommandOutputRecord,
-} from "../../src/command-execution-result.js";
-import { createDefaultDependencies } from "../../src/program.js";
-import { TestDaemonRegistry as DaemonRegistry } from "./daemon-registry.js";
-import { TestDaemonResourcePolicy as DaemonResourcePolicy } from "./daemon-resource-policy.js";
-import { DaemonWorkspaceIdentity } from "../../src/daemon/daemon-workspace-identity.js";
-import { TestLocalDaemonTransport as LocalDaemonTransport } from "./local-daemon-transport.js";
+  DaemonExecutorRequest,
+  DaemonSequencedOutputRecord,
+} from "../../src/daemon-executor.js";
+import { DaemonPolicy } from "../../src/daemon-policy.js";
+import { DaemonWorkspaceIdentity } from "../../src/registry/workspace-identity.js";
+import { TestDaemonRegistry as DaemonRegistry } from "../helpers/daemon-registry.js";
+import { TestDaemonResourcePolicy as DaemonResourcePolicy } from "../helpers/daemon-resource-policy.js";
+import { TestLocalDaemonTransport as LocalDaemonTransport } from "../helpers/local-daemon-transport.js";
 import type {
   DaemonNavigationWorker,
   DaemonNavigationWorkerExit,
-} from "../../src/daemon/daemon-navigation-worker.js";
-import type { DaemonNavigationWorkerResponse } from "../../src/daemon/daemon-navigation-worker-protocol.js";
-import { TestDaemonProcessCoordinator as DaemonProcessCoordinator } from "./daemon-process-coordinator.js";
+} from "../../src/worker/navigation-worker.js";
+import type { DaemonNavigationWorkerResponse } from "../../src/worker/worker-protocol.js";
+import { TestDaemonProcessCoordinator as DaemonProcessCoordinator } from "../helpers/daemon-process-coordinator.js";
+import { CanonicalTestPath } from "../helpers/canonical-path.js";
+import {
+  DAEMON_PROTOCOL_VERSION,
+  DAEMON_RECORD_SCHEMA_VERSION,
+} from "../../src/transport/protocol.js";
 
 const [
   workspaceRoot,
@@ -76,8 +79,8 @@ class PressureNavigationWorker implements DaemonNavigationWorker {
   async execute(
     requestId: string,
     _commandName: Parameters<DaemonNavigationWorker["execute"]>[1],
-    request: CliExecutionRequest,
-    output: { append(record: CommandOutputRecord): Promise<void> },
+    request: DaemonExecutorRequest,
+    output: { append(record: DaemonSequencedOutputRecord): Promise<void> },
   ): Promise<DaemonNavigationWorkerResponse> {
     appendFileSync(this.orderPath, `${request.argv.join(" ")}@${this.generation}\n`);
     if (this.generation === 1) {
@@ -132,11 +135,33 @@ class PressureNavigationWorker implements DaemonNavigationWorker {
   }
 }
 
-const canonicalStateDirectory = StateDirectoryResolver.canonicalize(stateDirectory);
+const canonicalStateDirectory = CanonicalTestPath.resolve(stateDirectory);
 const identity = DaemonWorkspaceIdentity.from(workspaceRoot, canonicalStateDirectory);
 const policy = DaemonResourcePolicy.fromSystemMemory(512 * 1024 * 1024);
 const daemonPolicy = DaemonPolicy.currentSystem();
-writeFileSync(`${readyPath}.boot`, String(process.pid));
+const registry = new DaemonRegistry(identity.registryDirectory);
+const startupLease = registry.acquireStartup(identity, instanceId);
+if (startupLease === undefined) throw new Error("Expected pressure daemon startup ownership");
+if (
+  !registry.writeStartingIfStartupOwner(identity, {
+    schemaVersion: DAEMON_RECORD_SCHEMA_VERSION,
+    protocolVersion: DAEMON_PROTOCOL_VERSION,
+    symnavVersion,
+    workspaceRoot,
+    workspaceKey: identity.workspaceKey,
+    stateKey: identity.stateKey,
+    identityKey: identity.identityKey,
+    instanceId,
+    processToken,
+    endpoint: identity.endpoint(instanceId),
+    pid: process.pid,
+    state: "starting",
+    startedAt: Date.now(),
+    memoryCapBytes: policy.record.hardProcessRssBytes,
+  })
+) {
+  throw new Error("Pressure daemon lost startup ownership");
+}
 const daemon = new DaemonProcessCoordinator({
   identity,
   instanceId,
@@ -144,8 +169,7 @@ const daemon = new DaemonProcessCoordinator({
   symnavVersion,
   memoryCapBytes: policy.record.hardProcessRssBytes,
   policy: daemonPolicy,
-  dependencies: createDefaultDependencies(canonicalStateDirectory, daemonPolicy),
-  registry: new DaemonRegistry(identity.registryDirectory),
+  registry,
   transport: new LocalDaemonTransport(),
   navigationWorkerFactory: (generation) =>
     new PressureNavigationWorker(generation, requestStartedPath, executionOrderPath),
@@ -154,4 +178,5 @@ const daemon = new DaemonProcessCoordinator({
   residentMemoryBytes: () => (existsSync(pressurePath) ? policy.record.hardProcessRssBytes + 1 : 0),
 });
 await daemon.start();
+startupLease.release();
 writeFileSync(readyPath, "ready");

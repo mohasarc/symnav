@@ -33,22 +33,27 @@ export class DaemonTestingInspector {
   }
 
   listInstances(): readonly DaemonTestingInstance[] {
-    return new DaemonRegistry(
-      DaemonWorkspaceIdentity.registryDirectory(this.#stateDirectory),
-      DaemonPolicy.currentSystem().values.startup,
-    )
-      .list()
-      .map(({ workspaceRoot, pid, instanceId, state }) => ({
-        workspaceRoot,
-        pid,
-        instanceId,
-        state,
-      }))
-      .sort(
-        (left, right) =>
-          left.workspaceRoot.localeCompare(right.workspaceRoot) ||
-          left.instanceId.localeCompare(right.instanceId),
-      );
+    try {
+      return new DaemonRegistry(
+        DaemonWorkspaceIdentity.registryDirectory(this.#stateDirectory),
+        DaemonPolicy.currentSystem().values.startup,
+      )
+        .list()
+        .map(({ workspaceRoot, pid, instanceId, state }) => ({
+          workspaceRoot,
+          pid,
+          instanceId,
+          state,
+        }))
+        .sort(
+          (left, right) =>
+            left.workspaceRoot.localeCompare(right.workspaceRoot) ||
+            left.instanceId.localeCompare(right.instanceId),
+        );
+    } catch (error) {
+      if (["ENOENT", "ENOTDIR"].includes(DaemonTestingInspector.errorCode(error) ?? "")) return [];
+      throw error;
+    }
   }
 
   hasStateArtifacts(): boolean {

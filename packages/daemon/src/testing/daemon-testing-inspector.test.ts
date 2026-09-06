@@ -97,6 +97,14 @@ describe("daemon testing inspector", () => {
     expect(inspector.hasStateArtifacts()).toBe(true);
     expect(Object.keys(inspector)).toEqual([]);
   });
+
+  it("lists no instances when the configured state path is a file", () => {
+    const root = temporaryDirectory(directories);
+    const statePath = join(root, "state");
+    writeFileSync(statePath, "occupied");
+
+    expect(new DaemonTestingInspector(statePath).listInstances()).toEqual([]);
+  });
 });
 
 function temporaryDirectory(directories: string[]): string {

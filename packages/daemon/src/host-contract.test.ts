@@ -59,17 +59,17 @@ describe("daemon host contract", () => {
     expect(exports).toEqual([
       { kind: "runtime", name: "*" },
       { kind: "type", name: "*" },
+      { kind: "runtime", name: "default" },
       { kind: "type", name: "ExternalType" },
       { kind: "runtime", name: "LocalClass" },
       { kind: "runtime", name: "LocalEnum" },
+      { kind: "runtime", name: "localFunction" },
       { kind: "type", name: "LocalInterface" },
       { kind: "runtime", name: "LocalNamespace" },
       { kind: "type", name: "LocalType" },
+      { kind: "runtime", name: "localValue" },
       { kind: "type", name: "NamedType" },
       { kind: "runtime", name: "NamedValue" },
-      { kind: "runtime", name: "default" },
-      { kind: "runtime", name: "localFunction" },
-      { kind: "runtime", name: "localValue" },
       { kind: "runtime", name: "secondLocalValue" },
     ]);
   });
@@ -120,18 +120,81 @@ class TypeScriptExportInventory {
     );
     const exports: ExportedSymbol[] = [];
     for (const statement of sourceFile.statements) {
-      if (!ts.isExportDeclaration(statement) || statement.exportClause === undefined) continue;
-      if (!ts.isNamedExports(statement.exportClause)) {
-        exports.push({ kind: "runtime", name: "*" });
+      if (ts.isExportDeclaration(statement)) {
+        exports.push(...TypeScriptExportInventory.exportDeclarationSymbols(statement));
         continue;
       }
-      for (const element of statement.exportClause.elements) {
+      if (ts.isExportAssignment(statement)) {
         exports.push({
-          kind: statement.isTypeOnly || element.isTypeOnly ? "type" : "runtime",
-          name: element.name.text,
+          kind: "runtime",
+          name: statement.isExportEquals ? "export=" : "default",
         });
+        continue;
       }
+      if (!TypeScriptExportInventory.hasModifier(statement, ts.SyntaxKind.ExportKeyword)) continue;
+      exports.push(...TypeScriptExportInventory.declarationSymbols(statement));
     }
-    return exports.sort((left, right) => left.name.localeCompare(right.name));
+    return exports.sort(
+      (left, right) => left.name.localeCompare(right.name) || left.kind.localeCompare(right.kind),
+    );
+  }
+
+  private static exportDeclarationSymbols(
+    statement: ts.ExportDeclaration,
+  ): readonly ExportedSymbol[] {
+    const declarationKind = statement.isTypeOnly ? "type" : "runtime";
+    if (statement.exportClause === undefined) return [{ kind: declarationKind, name: "*" }];
+    if (ts.isNamespaceExport(statement.exportClause)) {
+      return [{ kind: declarationKind, name: statement.exportClause.name.text }];
+    }
+    return statement.exportClause.elements.map((element) => ({
+      kind: statement.isTypeOnly || element.isTypeOnly ? "type" : "runtime",
+      name: element.name.text,
+    }));
+  }
+
+  private static declarationSymbols(statement: ts.Statement): readonly ExportedSymbol[] {
+    if (ts.isVariableStatement(statement)) {
+      return statement.declarationList.declarations.flatMap((declaration) =>
+        TypeScriptExportInventory.bindingNames(declaration.name).map((name) => ({
+          kind: "runtime" as const,
+          name,
+        })),
+      );
+    }
+    const kind =
+      ts.isInterfaceDeclaration(statement) || ts.isTypeAliasDeclaration(statement)
+        ? "type"
+        : "runtime";
+    const isDefault = TypeScriptExportInventory.hasModifier(
+      statement,
+      ts.SyntaxKind.DefaultKeyword,
+    );
+    if (isDefault) return [{ kind, name: "default" }];
+    if (
+      ts.isClassDeclaration(statement) ||
+      ts.isFunctionDeclaration(statement) ||
+      ts.isInterfaceDeclaration(statement) ||
+      ts.isTypeAliasDeclaration(statement) ||
+      ts.isEnumDeclaration(statement) ||
+      ts.isModuleDeclaration(statement)
+    ) {
+      return statement.name === undefined ? [] : [{ kind, name: statement.name.text }];
+    }
+    return [];
+  }
+
+  private static bindingNames(name: ts.BindingName): readonly string[] {
+    if (ts.isIdentifier(name)) return [name.text];
+    return name.elements.flatMap((element) =>
+      ts.isOmittedExpression(element) ? [] : TypeScriptExportInventory.bindingNames(element.name),
+    );
+  }
+
+  private static hasModifier(node: ts.Node, kind: ts.SyntaxKind): boolean {
+    return (
+      ts.canHaveModifiers(node) &&
+      (ts.getModifiers(node)?.some((item) => item.kind === kind) ?? false)
+    );
   }
 }

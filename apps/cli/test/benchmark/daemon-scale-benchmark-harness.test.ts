@@ -1,7 +1,6 @@
-import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
+import type { DaemonTestingDiagnosticPage } from "@symnav/daemon/testing";
 import { DAEMON_BENCHMARK_WARM_REPETITIONS } from "./daemon-benchmark-gate.js";
 import {
   BenchmarkInvocationTelemetry,
@@ -66,7 +65,7 @@ describe("DaemonScaleBenchmarkHarness", () => {
   }, 120_000);
 
   it("rejects a fixed invocation whose diagnostic is masked by later operation evidence", () => {
-    const logPath = TestDiagnostics.withMissingOverviewAndLaterResolve();
+    const page = TestDiagnostics.withMissingOverviewAndLaterResolve();
     const samples = Array.from({ length: 9 }, (_, repetition) =>
       BenchmarkSampleEvidence.from(
         "overview",
@@ -78,7 +77,7 @@ describe("DaemonScaleBenchmarkHarness", () => {
       ),
     );
 
-    const diagnostics = DaemonBenchmarkDiagnostics.read(logPath);
+    const diagnostics = DaemonBenchmarkDiagnostics.from(page);
     const enriched = diagnostics.enrich(samples);
 
     expect(enriched.filter((sample) => sample.serviceMsExcludingQueue === 10)).toHaveLength(1);
@@ -86,7 +85,7 @@ describe("DaemonScaleBenchmarkHarness", () => {
   });
 
   it("rejects a missing fixed invocation terminal masked by a same-command duplicate", () => {
-    const logPath = TestDiagnostics.withDuplicatedAndMissingOverviewTerminal();
+    const page = TestDiagnostics.withDuplicatedAndMissingOverviewTerminal();
     const samples = Array.from({ length: 9 }, (_, repetition) =>
       BenchmarkSampleEvidence.from(
         "overview",
@@ -98,7 +97,7 @@ describe("DaemonScaleBenchmarkHarness", () => {
       ),
     );
 
-    const diagnostics = DaemonBenchmarkDiagnostics.read(logPath);
+    const diagnostics = DaemonBenchmarkDiagnostics.from(page);
     const enriched = diagnostics.enrich(samples);
 
     expect(diagnostics.complete(enriched)).toBe(false);
@@ -235,9 +234,7 @@ describe("DaemonScaleBenchmarkHarness", () => {
 });
 
 class TestDiagnostics {
-  static withMissingOverviewAndLaterResolve(): string {
-    const directory = mkdtempSync(join(tmpdir(), "symnav-benchmark-diagnostics-"));
-    const logPath = join(directory, "daemon.jsonl");
+  static withMissingOverviewAndLaterResolve(): DaemonTestingDiagnosticPage {
     const events = Array.from({ length: 9 }, (_, index) => {
       const requestId = `request-${index}`;
       const command = index === 8 ? "resolve" : "overview";
@@ -263,13 +260,10 @@ class TestDiagnostics {
         { kind: "delivery-terminal", requestId, outcome: "delivered", deliveryMs: 1 },
       ];
     }).flat();
-    writeFileSync(logPath, `${events.map((event) => JSON.stringify(event)).join("\n")}\n`);
-    return logPath;
+    return { events, nextCursor: events.length };
   }
 
-  static withDuplicatedAndMissingOverviewTerminal(): string {
-    const directory = mkdtempSync(join(tmpdir(), "symnav-benchmark-diagnostics-"));
-    const logPath = join(directory, "daemon.jsonl");
+  static withDuplicatedAndMissingOverviewTerminal(): DaemonTestingDiagnosticPage {
     const events = Array.from({ length: 9 }, (_, index) => {
       const requestId = `request-${index}`;
       const executionTerminals = index === 0 ? 2 : index === 1 ? 0 : 1;
@@ -295,7 +289,6 @@ class TestDiagnostics {
         { kind: "delivery-terminal", requestId, outcome: "delivered", deliveryMs: 1 },
       ];
     }).flat();
-    writeFileSync(logPath, `${events.map((event) => JSON.stringify(event)).join("\n")}\n`);
-    return logPath;
+    return { events, nextCursor: events.length };
   }
 }

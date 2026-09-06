@@ -176,10 +176,7 @@ describe("daemon production clock ownership", () => {
       "computed local clock members",
       'const performance = { now: () => 1 }; const process = { hrtime: { bigint: () => 1 } }; performance["now"](); process["hrtime"]["bigint"]();',
     ],
-    [
-      "computed nonliteral global member",
-      'const member = "now"; performance[member]();',
-    ],
+    ["computed nonliteral global member", 'const member = "now"; performance[member]();'],
   ])("ignores a locally shadowed %s lookalike", (_name, source) => {
     expect(DaemonRawClockSourceInventory.hasRawClock(source)).toBe(false);
   });
@@ -219,6 +216,8 @@ interface RawClockAliases {
   readonly hrtime: ReadonlySet<ts.Symbol>;
   readonly processNamespaces: ReadonlySet<ts.Symbol>;
 }
+
+type MemberAccessExpression = ts.PropertyAccessExpression | ts.ElementAccessExpression;
 
 class DaemonRawClockSourceInventory {
   static hasRawClock(sourceText: string): boolean {
@@ -360,7 +359,7 @@ class DaemonRawClockSourceInventory {
       return true;
     }
     if (
-      ts.isPropertyAccessExpression(node) &&
+      DaemonRawClockSourceInventory.isMemberAccess(node) &&
       DaemonRawClockSourceInventory.isRawClockProperty(node, aliases, checker)
     ) {
       return true;
@@ -371,25 +370,26 @@ class DaemonRawClockSourceInventory {
   }
 
   private static isRawClockProperty(
-    expression: ts.PropertyAccessExpression,
+    expression: MemberAccessExpression,
     aliases: RawClockAliases,
     checker: ts.TypeChecker,
   ): boolean {
+    const memberName = DaemonRawClockSourceInventory.memberName(expression);
     if (
-      expression.name.text === "now" &&
+      memberName === "now" &&
       (DaemonRawClockSourceInventory.isGlobalMember(expression.expression, "Date", checker) ||
         DaemonRawClockSourceInventory.isPerformance(expression.expression, aliases, checker))
     ) {
       return true;
     }
     if (
-      expression.name.text === "hrtime" &&
+      memberName === "hrtime" &&
       DaemonRawClockSourceInventory.isProcess(expression.expression, aliases, checker)
     ) {
       return true;
     }
     return (
-      expression.name.text === "bigint" &&
+      memberName === "bigint" &&
       DaemonRawClockSourceInventory.isHrtime(expression.expression, aliases, checker)
     );
   }
@@ -401,8 +401,8 @@ class DaemonRawClockSourceInventory {
   ): boolean {
     if (DaemonRawClockSourceInventory.hasSymbol(expression, aliases.hrtime, checker)) return true;
     return (
-      ts.isPropertyAccessExpression(expression) &&
-      expression.name.text === "hrtime" &&
+      DaemonRawClockSourceInventory.isMemberAccess(expression) &&
+      DaemonRawClockSourceInventory.memberName(expression) === "hrtime" &&
       DaemonRawClockSourceInventory.isProcess(expression.expression, aliases, checker)
     );
   }
@@ -419,8 +419,8 @@ class DaemonRawClockSourceInventory {
       );
     }
     return (
-      ts.isPropertyAccessExpression(expression) &&
-      expression.name.text === "performance" &&
+      DaemonRawClockSourceInventory.isMemberAccess(expression) &&
+      DaemonRawClockSourceInventory.memberName(expression) === "performance" &&
       (DaemonRawClockSourceInventory.isGlobalObject(expression.expression, checker) ||
         DaemonRawClockSourceInventory.hasSymbol(
           expression.expression,
@@ -442,8 +442,8 @@ class DaemonRawClockSourceInventory {
       );
     }
     return (
-      ts.isPropertyAccessExpression(expression) &&
-      expression.name.text === "process" &&
+      DaemonRawClockSourceInventory.isMemberAccess(expression) &&
+      DaemonRawClockSourceInventory.memberName(expression) === "process" &&
       DaemonRawClockSourceInventory.isGlobalObject(expression.expression, checker)
     );
   }
@@ -456,8 +456,8 @@ class DaemonRawClockSourceInventory {
     return (
       (ts.isIdentifier(expression) &&
         DaemonRawClockSourceInventory.isGlobalIdentifier(expression, member, checker)) ||
-      (ts.isPropertyAccessExpression(expression) &&
-        expression.name.text === member &&
+      (DaemonRawClockSourceInventory.isMemberAccess(expression) &&
+        DaemonRawClockSourceInventory.memberName(expression) === member &&
         DaemonRawClockSourceInventory.isGlobalObject(expression.expression, checker))
     );
   }
@@ -510,6 +510,16 @@ class DaemonRawClockSourceInventory {
 
   private static isClockBuiltin(moduleName: string | undefined): boolean {
     return ["node:perf_hooks", "perf_hooks", "node:process", "process"].includes(moduleName ?? "");
+  }
+
+  private static isMemberAccess(node: ts.Node): node is MemberAccessExpression {
+    return ts.isPropertyAccessExpression(node) || ts.isElementAccessExpression(node);
+  }
+
+  private static memberName(expression: MemberAccessExpression): string | undefined {
+    return ts.isPropertyAccessExpression(expression)
+      ? expression.name.text
+      : DaemonRawClockSourceInventory.literalText(expression.argumentExpression);
   }
 
   private static literalText(node: ts.Node | undefined): string | undefined {

@@ -37,12 +37,50 @@ describe("NodeDaemonClock", () => {
 describe("daemon production clock ownership", () => {
   it.each([
     ["constructed wall clock", "const now = new Date().getTime();"],
+    ["global wall clock", "Date.now();"],
+    ["global monotonic clock", "performance.now();"],
+    ["global process clock", "process.hrtime.bigint();"],
+    ["globalThis wall clock", "globalThis.Date.now();"],
+    ["globalThis monotonic clock", "globalThis.performance.now();"],
+    ["globalThis process clock", "globalThis.process.hrtime();"],
     [
-      "aliased monotonic import",
+      "node-prefixed named performance import",
       'import { performance as timer } from "node:perf_hooks"; timer.now();',
+    ],
+    [
+      "unprefixed named performance import",
+      'import { performance as timer } from "perf_hooks"; timer.now();',
+    ],
+    [
+      "unprefixed namespace performance import",
+      'import * as hooks from "perf_hooks"; hooks.performance.now();',
+    ],
+    [
+      "node-prefixed default performance import",
+      'import hooks from "node:perf_hooks"; hooks.performance.now();',
+    ],
+    [
+      "unprefixed named process import",
+      'import { hrtime as timer } from "process"; timer.bigint();',
+    ],
+    [
+      "unprefixed namespace process import",
+      'import * as processModule from "process"; processModule.hrtime();',
+    ],
+    [
+      "node-prefixed default process import",
+      'import processModule from "node:process"; processModule.hrtime();',
     ],
   ])("recognizes %s as a raw clock source", (_name, source) => {
     expect(DaemonRawClockSourceInventory.hasRawClock(source)).toBe(true);
+  });
+
+  it.each([
+    ["Date", "const Date = { now: () => 1 }; Date.now();"],
+    ["performance", "const performance = { now: () => 1 }; performance.now();"],
+    ["process", "const process = { hrtime: () => 1 }; process.hrtime();"],
+  ])("ignores a locally shadowed %s lookalike", (_name, source) => {
+    expect(DaemonRawClockSourceInventory.hasRawClock(source)).toBe(false);
   });
 
   it("ignores clock spellings that do not acquire time", () => {

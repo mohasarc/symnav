@@ -123,8 +123,7 @@ describe("daemon testing inspector", () => {
     ],
     [
       "spool",
-      (inspector: DaemonTestingInspector) =>
-        inspector.completionSpoolUsage("/canonical/workspace"),
+      (inspector: DaemonTestingInspector) => inspector.completionSpoolUsage("/canonical/workspace"),
     ],
   ])("preserves unrelated %s filesystem failures", (_name, inspect) => {
     const stateDirectory = temporaryDirectory(directories);

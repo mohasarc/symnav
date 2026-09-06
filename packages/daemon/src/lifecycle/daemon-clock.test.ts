@@ -262,7 +262,7 @@ describe("daemon production clock ownership", () => {
   it("keeps raw time sources and telemetry clocks outside daemon mechanisms", () => {
     const sourceRoot = new URL("../", import.meta.url);
     const violations = DaemonProductionSourceInventory.read(sourceRoot).flatMap((file) => {
-      if (file.endsWith("/lifecycle/daemon-clock.ts")) return [];
+      if (file.pathname.endsWith("/lifecycle/daemon-clock.ts")) return [];
       const source = readFileSync(file, "utf8");
       return DaemonRawClockSourceInventory.hasRawClock(source) ? [file] : [];
     });
@@ -789,13 +789,13 @@ class DaemonRawClockSourceInventory {
 }
 
 class DaemonProductionSourceInventory {
-  static read(directory: URL): readonly string[] {
+  static read(directory: URL): readonly URL[] {
     return readdirSync(directory).flatMap((name) => {
       const entry = new URL(name, directory);
       if (statSync(entry).isDirectory()) {
         return DaemonProductionSourceInventory.read(new URL(`${name}/`, directory));
       }
-      return name.endsWith(".ts") && !name.endsWith(".test.ts") ? [entry.pathname] : [];
+      return name.endsWith(".ts") && !name.endsWith(".test.ts") ? [entry] : [];
     });
   }
 }

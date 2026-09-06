@@ -58,7 +58,7 @@ export class DaemonTestingInspector {
   readDiagnostics(canonicalWorkspaceRoot: string, cursor = 0): DaemonTestingDiagnosticPage {
     if (!Number.isSafeInteger(cursor) || cursor < 0) throw new Error("Invalid diagnostic cursor");
     const identity = DaemonWorkspaceIdentity.from(canonicalWorkspaceRoot, this.#stateDirectory);
-    const events = DaemonTestingInspector.diagnosticEvents(identity.logPath);
+    const events = DaemonTestingInspector.diagnosticEvents(identity);
     return { events: events.slice(cursor), nextCursor: events.length };
   }
 
@@ -67,7 +67,34 @@ export class DaemonTestingInspector {
     return DaemonTestingInspector.directoryUsage(identity.spoolDirectory);
   }
 
-  private static diagnosticEvents(path: string): readonly DaemonTestingDiagnosticEvent[] {
+  private static diagnosticEvents(
+    identity: DaemonWorkspaceIdentity,
+  ): readonly DaemonTestingDiagnosticEvent[] {
+    return DaemonTestingInspector.diagnosticPaths(identity).flatMap((path) =>
+      DaemonTestingInspector.diagnosticEventsFrom(path),
+    );
+  }
+
+  private static diagnosticPaths(identity: DaemonWorkspaceIdentity): readonly string[] {
+    let names: readonly string[];
+    try {
+      names = readdirSync(identity.identityDirectory);
+    } catch (error) {
+      if (DaemonTestingInspector.errorCode(error) === "ENOENT") return [];
+      throw error;
+    }
+    const backupPattern = /^daemon\.log\.(\d+)$/;
+    const backups = names
+      .flatMap((name) => {
+        const match = backupPattern.exec(name);
+        return match === null ? [] : [{ name, index: Number(match[1]) }];
+      })
+      .sort((left, right) => right.index - left.index)
+      .map(({ name }) => join(identity.identityDirectory, name));
+    return names.includes("daemon.log") ? [...backups, identity.logPath] : backups;
+  }
+
+  private static diagnosticEventsFrom(path: string): readonly DaemonTestingDiagnosticEvent[] {
     let contents: string;
     try {
       contents = readFileSync(path, "utf8");

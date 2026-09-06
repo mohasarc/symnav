@@ -1,4 +1,5 @@
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import ts from "typescript";
@@ -106,6 +107,24 @@ describe("CLI daemon production reachability", () => {
     expect(deepImports).toEqual([]);
   });
 
+  it("traverses relative import-equals declarations", () => {
+    const temporaryRoot = mkdtempSync(join(tmpdir(), "symnav-import-equals-"));
+    try {
+      writeFileSync(
+        join(temporaryRoot, "entry.ts"),
+        'import dependency = require("./dependency.js");',
+      );
+      writeFileSync(join(temporaryRoot, "dependency.ts"), "export const reachable = true;");
+
+      expect(new TypeScriptProductionGraph(temporaryRoot).reachableFrom("entry.ts")).toEqual([
+        "dependency.ts",
+        "entry.ts",
+      ]);
+    } finally {
+      rmSync(temporaryRoot, { force: true, recursive: true });
+    }
+  });
+
   it.each([
     [
       "static import from",
@@ -127,6 +146,16 @@ describe("CLI daemon production reachability", () => {
     [
       "dynamic literal import with options",
       'await import("@symnav/daemon/process-entry", { with: { type: "json" } });',
+      "@symnav/daemon/process-entry",
+    ],
+    [
+      "import-equals declaration",
+      'import entry = require("@symnav/daemon/process-entry");',
+      "@symnav/daemon/process-entry",
+    ],
+    [
+      "exported import-equals declaration",
+      'export import entry = require("@symnav/daemon/process-entry");',
       "@symnav/daemon/process-entry",
     ],
   ] as const)("rejects a deep daemon %s", (_form, source, expectedSpecifier) => {

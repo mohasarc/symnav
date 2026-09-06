@@ -8,7 +8,7 @@
 
 - `apps/cli` — the `symnav` binary. Wires Commander, owns the user-facing CLI surface, depends on the five production libraries below.
 - `packages/core` — language-agnostic primitives and the cross-language backend interface. Has no internal dependencies.
-- `packages/daemon` — portable host execution, output, diagnostic, command, and lifecycle report contracts. Has no internal dependencies. Daemon mechanisms move here only when their real implementations migrate.
+- `packages/daemon` — owns portable host contracts plus daemon client, launch/election, registry, transport, process and worker entries, execution/delivery, resources, diagnostics, lifecycle, policy, and the read-only testing surface. Has no internal dependencies.
 - `packages/renderer` — output formatters (text, JSON). May depend only on `@symnav/core` and `@symnav/daemon`.
 - `packages/backend-typescript` — the TypeScript language backend. Depends only on `@symnav/core`.
 - `packages/telemetry` — shape-only usage capture, storage, and aggregation. Has no internal dependencies.

@@ -981,6 +981,30 @@ describe("external daemon storage boundary", () => {
       "promise unprefixed filesystem-promises default binding",
       'import("fs/promises").then(({ default: files }) => files.readFile("/tmp/state/daemons/registry.json"));',
     ],
+    [
+      "promise node-prefixed path callback-body default binding",
+      'import("node:path").then((module) => { const { default: path } = module; return path.join(stateDirectory, "daemons"); });',
+    ],
+    [
+      "promise unprefixed path callback-body default binding",
+      'import("path").then((module) => { const { default: path } = module; return path.resolve(stateDirectory, "daemons"); });',
+    ],
+    [
+      "promise node-prefixed filesystem callback-body default binding",
+      'import("node:fs").then((module) => { const { default: files } = module; return files.readFileSync("/tmp/state/daemons/registry.json"); });',
+    ],
+    [
+      "promise unprefixed filesystem callback-body default binding",
+      'import("fs").then((module) => { const { default: files } = module; return files.promises.readFile("/tmp/state/daemons/registry.json"); });',
+    ],
+    [
+      "promise node-prefixed filesystem-promises callback-body default binding",
+      'import("node:fs/promises").then((module) => { const { default: files } = module; return files.readFile("/tmp/state/daemons/registry.json"); });',
+    ],
+    [
+      "promise unprefixed filesystem-promises callback-body default binding",
+      'import("fs/promises").then((module) => { const { default: files } = module; return files.readFile("/tmp/state/daemons/registry.json"); });',
+    ],
   ])("recognizes %s as direct daemon storage access", (_name, source) => {
     expect(ExternalDaemonStorageAccessInventory.containsDirectStorageAccess(source)).toBe(true);
   });
@@ -1193,6 +1217,10 @@ describe("external daemon storage boundary", () => {
       'import("path").then(({ default: path }) => new URL(path.posix.join("/api", "state", "daemons"), origin));',
     ],
     [
+      "promise callback-body default path-built state route data",
+      'import("node:path").then((module) => { const { default: path } = module; return fetch(path.posix.join("/api", "state", "daemons", "status")); });',
+    ],
+    [
       "unrelated promise filesystem lookalike",
       'import("./files.js").then((files) => files.readFile("/tmp/state/daemons/registry.json"));',
     ],
@@ -1209,12 +1237,20 @@ describe("external daemon storage boundary", () => {
       'import("./files.js").then((module) => module.default.readFile("/tmp/state/daemons/registry.json"));',
     ],
     [
+      "unrelated promise callback-body default filesystem lookalike",
+      'import("./files.js").then((module) => { const { default: files } = module; return files.readFile("/tmp/state/daemons/registry.json"); });',
+    ],
+    [
       "local promise default filesystem lookalike",
       'Promise.resolve({ default: { readFile: (path: string) => path } }).then((module) => module.default.readFile("/tmp/state/daemons/registry.json"));',
     ],
     [
       "mutable promise default filesystem alias",
       'let files; import("node:fs").then(({ default: loaded }) => { files = loaded; }); files?.readFileSync("/tmp/state/daemons/registry.json");',
+    ],
+    [
+      "mutable promise callback-body default filesystem binding",
+      'import("node:fs").then((module) => { let { default: files } = module; return files.readFileSync("/tmp/state/daemons/registry.json"); });',
     ],
     [
       "second promise callback parameter",

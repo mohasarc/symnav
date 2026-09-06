@@ -54,10 +54,11 @@ describe("daemon testing inspector", () => {
     const stateDirectory = temporaryDirectory(directories);
     const identity = DaemonWorkspaceIdentity.from("/canonical/workspace", stateDirectory);
     mkdirSync(identity.identityDirectory, { recursive: true });
+    writeFileSync(identity.logPath + ".1", '{"kind":"start"}\n');
     writeFileSync(
       identity.logPath,
-      '{"kind":"start","nested":[null,true,1,"value"]}\n' +
-        '{"kind":"ready","future":{"count":2}}\n',
+      '{"kind":"ready","nested":[null,true,1,"value"]}\n' +
+        '{"kind":"request","future":{"count":2}}\n',
     );
 
     const page = new DaemonTestingInspector(stateDirectory).readDiagnostics(
@@ -66,8 +67,11 @@ describe("daemon testing inspector", () => {
     );
 
     expect(page).toEqual({
-      events: [{ kind: "ready", future: { count: 2 } }],
-      nextCursor: 2,
+      events: [
+        { kind: "ready", nested: [null, true, 1, "value"] },
+        { kind: "request", future: { count: 2 } },
+      ],
+      nextCursor: 3,
     });
   });
 

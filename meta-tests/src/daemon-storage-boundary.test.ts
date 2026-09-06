@@ -384,6 +384,30 @@ describe("external daemon storage boundary", () => {
       "import-equals unprefixed Windows join",
       'import path = require("path"); path.win32.join(stateDirectory, "daemons");',
     ],
+    [
+      "parenthesized default path namespace",
+      'import path from "node:path"; (path).join(stateDirectory, "daemons");',
+    ],
+    [
+      "non-null path namespace",
+      'import * as path from "path"; path!.win32.resolve(stateDirectory, "daemons");',
+    ],
+    [
+      "as-cast import-equals path namespace",
+      'import path = require("node:path"); (path as typeof path).posix.join(stateDirectory, "daemons");',
+    ],
+    [
+      "destructured POSIX path builder",
+      'import * as path from "node:path"; const { join: build } = path.posix; build(stateDirectory, "daemons");',
+    ],
+    [
+      "nested destructured Windows path builder",
+      'import path from "path"; const { win32: { resolve: build } } = path; build(stateDirectory, "daemons");',
+    ],
+    [
+      "aliased path namespace destructuring",
+      'import path from "node:path"; const platform = path.posix; const { join: build } = platform; build(stateDirectory, "daemons");',
+    ],
   ])("recognizes %s as direct daemon storage access", (_name, source) => {
     expect(ExternalDaemonStorageAccessInventory.containsDirectStorageAccess(source)).toBe(true);
   });
@@ -423,6 +447,41 @@ describe("external daemon storage boundary", () => {
     ).toBe(true);
     expect(
       ExternalDaemonStorageAccessInventory.containsDirectStorageAccess(`
+        import * as fileSystem from "node:fs";
+        const { readFileSync: read } = fileSystem;
+        read("/tmp/state/daemons/registry.json");
+      `),
+    ).toBe(true);
+    expect(
+      ExternalDaemonStorageAccessInventory.containsDirectStorageAccess(`
+        import fileSystem from "fs";
+        (fileSystem!).readFileSync("/tmp/state/daemons/registry.json");
+      `),
+    ).toBe(true);
+    expect(
+      ExternalDaemonStorageAccessInventory.containsDirectStorageAccess(`
+        import * as fileSystem from "node:fs";
+        const { promises } = fileSystem;
+        const { readFile: read } = promises;
+        read("/tmp/state/daemons/registry.json");
+      `),
+    ).toBe(true);
+    expect(
+      ExternalDaemonStorageAccessInventory.containsDirectStorageAccess(`
+        import fileSystem = require("fs");
+        (fileSystem as typeof fileSystem).promises.readFile("/tmp/state/daemons/registry.json");
+      `),
+    ).toBe(true);
+    expect(
+      ExternalDaemonStorageAccessInventory.containsDirectStorageAccess(`
+        import * as fileSystem from "node:fs/promises";
+        const files = fileSystem;
+        const { readFile: read } = files;
+        read("/tmp/state/daemons/registry.json");
+      `),
+    ).toBe(true);
+    expect(
+      ExternalDaemonStorageAccessInventory.containsDirectStorageAccess(`
         const response = '{"daemons":[]}';
         function join(...segments: string[]) { return segments.join("/"); }
         join(stateDirectory, "daemons");
@@ -435,8 +494,32 @@ describe("external daemon storage boundary", () => {
     ["route data", 'const route = "/api/daemons/status";'],
     ["URL data", 'new URL("/api/daemons/status", origin);'],
     [
+      "path-built route data",
+      'import path from "node:path"; path.posix.join("/api", "daemons", "status");',
+    ],
+    [
+      "path-built HTTP route",
+      'import path from "node:path"; fetch(path.posix.join("/api", "daemons", "status"));',
+    ],
+    [
+      "path-built URL data",
+      'import path from "node:path"; new URL(path.posix.join("/api", "daemons", "status"), origin);',
+    ],
+    [
       "local filesystem lookalike",
       'function readFileSync(path: string) { return path; } readFileSync("/api/daemons/status");',
+    ],
+    [
+      "local destructured path lookalike",
+      'const path = { posix: { join: (...parts: string[]) => parts.join("/") } }; const { join: build } = path.posix; build(stateDirectory, "daemons");',
+    ],
+    [
+      "local destructured filesystem lookalike",
+      'const fileSystem = { readFileSync: (path: string) => path }; const { readFileSync: read } = fileSystem; read("/tmp/state/daemons/registry.json");',
+    ],
+    [
+      "mutable filesystem alias",
+      'import * as fileSystem from "node:fs"; let files = fileSystem; files.readFileSync("/tmp/state/daemons/registry.json");',
     ],
   ])("allows slash-delimited daemon %s outside filesystem access", (_name, source) => {
     expect(ExternalDaemonStorageAccessInventory.containsDirectStorageAccess(source)).toBe(false);

@@ -32,6 +32,7 @@ const [
   readyPath,
   requestStartedPath,
   releasePathArgument,
+  executorModuleUrl,
   configuredSymnavVersion,
 ] = process.argv.slice(2);
 if (
@@ -40,7 +41,8 @@ if (
   instanceId === undefined ||
   processToken === undefined ||
   readyPath === undefined ||
-  requestStartedPath === undefined
+  requestStartedPath === undefined ||
+  executorModuleUrl === undefined
 ) {
   process.exit(2);
 }
@@ -55,8 +57,6 @@ const releasePath =
 const symnavVersion = configuredSymnavVersion ?? "test";
 const canonicalStateDirectory = CanonicalTestPath.resolve(stateDirectory);
 const daemonPolicy = DaemonPolicy.currentSystem();
-const executorModuleUrl = new URL("../../../../apps/cli/dist/daemon-executor.js", import.meta.url)
-  .href;
 const executor = await DaemonExecutorModuleLoader.load(executorModuleUrl, {
   stateDirectory: canonicalStateDirectory,
   productVersion: symnavVersion,

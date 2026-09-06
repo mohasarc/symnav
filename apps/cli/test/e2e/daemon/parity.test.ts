@@ -738,6 +738,7 @@ class DaemonParityHarness {
         readyPath,
         requestStartedPath,
         releaseArgument,
+        new URL("../../../dist/daemon-executor.js", import.meta.url).href,
         symnavVersion,
       ],
       {

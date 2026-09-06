@@ -40,6 +40,14 @@ class TypeScriptProductionGraph {
   }
 }
 
+class DaemonPackageImportBoundary {
+  static deepImports(source: string): readonly string[] {
+    return [...source.matchAll(/from\s+["'](@symnav\/daemon\/[^"']+)["']/g)].map(
+      (match) => match[1]!,
+    );
+  }
+}
+
 describe("CLI daemon production reachability", () => {
   const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 
@@ -59,11 +67,29 @@ describe("CLI daemon production reachability", () => {
     );
     const deepImports = reachable.flatMap((file) => {
       const source = readFileSync(join(repositoryRoot, file), "utf8");
-      return [...source.matchAll(/from\s+["'](@symnav\/daemon\/[^"']+)["']/g)].map(
-        (match) => `${file}: ${match[1]}`,
+      return DaemonPackageImportBoundary.deepImports(source).map(
+        (specifier) => `${file}: ${specifier}`,
       );
     });
 
     expect(deepImports).toEqual([]);
+  });
+
+  it.each([
+    ["static import from", 'import { DaemonClient } from "@symnav/daemon/client";'],
+    ["side-effect import", 'import "@symnav/daemon/client";'],
+    ["export from", 'export { DaemonClient } from "@symnav/daemon/client";'],
+    ["dynamic literal import", 'await import("@symnav/daemon/client");'],
+  ] as const)("rejects a deep daemon %s", (_form, source) => {
+    expect(DaemonPackageImportBoundary.deepImports(source)).toEqual(["@symnav/daemon/client"]);
+  });
+
+  it.each([
+    ["static import from", 'import { DaemonClient } from "@symnav/daemon";'],
+    ["side-effect import", 'import "@symnav/daemon";'],
+    ["export from", 'export { DaemonClient } from "@symnav/daemon";'],
+    ["dynamic literal import", 'await import("@symnav/daemon");'],
+  ] as const)("allows a daemon package-root %s", (_form, source) => {
+    expect(DaemonPackageImportBoundary.deepImports(source)).toEqual([]);
   });
 });

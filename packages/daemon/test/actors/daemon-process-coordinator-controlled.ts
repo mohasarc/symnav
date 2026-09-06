@@ -9,7 +9,7 @@ import { DaemonExecutorModuleLoader } from "../../src/daemon-executor.js";
 import { DaemonPolicy, DaemonPolicyCodec } from "../../src/daemon-policy.js";
 import { DaemonWorkspaceIdentity } from "../../src/registry/workspace-identity.js";
 import { TestDaemonRegistry as DaemonRegistry } from "../helpers/daemon-registry.js";
-import { TestLocalDaemonTransport as LocalDaemonTransport } from "../helpers/local-daemon-transport.js";
+import { TestDaemonTransport as DaemonTransport } from "../helpers/daemon-transport.js";
 import type {
   DaemonNavigationWorker,
   DaemonNavigationWorkerExit,
@@ -235,10 +235,7 @@ const navigationWorker = workerExit
         policy: DaemonPolicyCodec.serialize(daemonPolicy),
       },
       resourceLimits: { maxOldGenerationSizeMb: 4096 },
-      entryUrl: new URL(
-        "../../../../apps/cli/test/helpers/daemon-navigation-worker-fixture.mjs",
-        import.meta.url,
-      ),
+      entryUrl: new URL("../helpers/daemon-navigation-worker-fixture.mjs", import.meta.url),
       workerData: {
         mode: "exit-on-release",
         requestPayloadPath: `${acceptedRequestStartedPath}.payload`,
@@ -256,10 +253,7 @@ const navigationWorker = workerExit
           policy: DaemonPolicyCodec.serialize(daemonPolicy),
         },
         resourceLimits: { maxOldGenerationSizeMb: 4096 },
-        entryUrl: new URL(
-          "../../../../apps/cli/test/helpers/daemon-navigation-worker-fixture.mjs",
-          import.meta.url,
-        ),
+        entryUrl: new URL("../helpers/daemon-navigation-worker-fixture.mjs", import.meta.url),
         workerData: {
           mode: "block-execution",
           blockMs: 60_000,
@@ -276,7 +270,7 @@ const daemon = new DaemonProcessCoordinator({
   memoryCapBytes: Number.MAX_SAFE_INTEGER,
   policy: daemonPolicy,
   registry,
-  transport: new LocalDaemonTransport(),
+  transport: new DaemonTransport(),
   navigationWorker,
 });
 await daemon.start();

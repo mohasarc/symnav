@@ -4,8 +4,7 @@ import { join } from "node:path";
 import { Writable } from "node:stream";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { InMemoryFileSystem, type OverviewFileEntries, WorkspaceSession } from "@symnav/core";
-import type { DaemonExecutorOutput } from "@symnav/daemon";
-import { DaemonPolicyTestFactory } from "../test/helpers/daemon-policy.js";
+import type { DaemonExecutorOutput, DaemonPolicy, DaemonPolicyValues } from "@symnav/daemon";
 import * as commandExecutionResult from "./command-execution-result.js";
 import { CliProgramExecutor, CommandResultReplayer } from "./cli-program-executor.js";
 import { fakeDependencies } from "../test/integration/commands/helpers/fake-program-dependencies.js";
@@ -84,7 +83,7 @@ describe("CliProgramExecutor", () => {
     }, []);
     const basePolicy = fakeDependencies().daemonPolicy;
     const capture = async (inlineBytes: number) => {
-      const policy = DaemonPolicyTestFactory.withOverrides(basePolicy, {
+      const policy = policyWithOverrides(basePolicy, {
         output: {
           maximumChunkRawBytes: Math.min(
             basePolicy.values.output.maximumChunkRawBytes,
@@ -135,7 +134,7 @@ describe("CliProgramExecutor", () => {
 
   it("advances nonempty output at the smallest valid chunk capacity", async () => {
     const dependencies = fakeDependencies();
-    const policy = DaemonPolicyTestFactory.withOverrides(dependencies.daemonPolicy, {
+    const policy = policyWithOverrides(dependencies.daemonPolicy, {
       output: { maximumChunkRawBytes: 1 },
     });
     const output = new commandExecutionResult.OrderedCommandOutput({
@@ -329,7 +328,7 @@ describe("CliProgramExecutor", () => {
 
   it("replaces local output over the result limit without partial bytes", async () => {
     const dependencies = fakeDependencies();
-    const daemonPolicy = DaemonPolicyTestFactory.withOverrides(dependencies.daemonPolicy, {
+    const daemonPolicy = policyWithOverrides(dependencies.daemonPolicy, {
       output: {
         maximumChunkRawBytes: 1,
         inlineRawBytes: 1,
@@ -467,4 +466,19 @@ async function decode(result: commandExecutionResult.CommandExecutionResult): Pr
   return Buffer.concat(
     (await records(result)).map((record) => Buffer.from(record.bytes)),
   ).toString();
+}
+
+function policyWithOverrides(
+  base: DaemonPolicy,
+  overrides: {
+    readonly [Section in keyof DaemonPolicyValues]?: Partial<DaemonPolicyValues[Section]>;
+  },
+): DaemonPolicy {
+  const values = Object.fromEntries(
+    Object.entries(base.values).map(([section, sectionValues]) => [
+      section,
+      { ...sectionValues, ...overrides[section as keyof DaemonPolicyValues] },
+    ]),
+  ) as unknown as DaemonPolicyValues;
+  return { values } as DaemonPolicy;
 }

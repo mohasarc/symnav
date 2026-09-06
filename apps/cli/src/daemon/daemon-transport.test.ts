@@ -11,7 +11,10 @@ import type {
   DaemonLifecycleRequestSender,
   DaemonRequestServer,
 } from "./daemon-transport.js";
-import type { WorkspaceDaemon, WorkspaceDaemonOptions } from "./workspace-daemon.js";
+import type {
+  DaemonProcessCoordinator,
+  DaemonProcessCoordinatorOptions,
+} from "./daemon-process-coordinator.js";
 
 describe("daemon transport ports", () => {
   it("limits observers to lifecycle requests", () => {
@@ -30,9 +33,9 @@ describe("daemon transport ports", () => {
   });
 
   it("limits daemon processes to request serving", () => {
-    expectTypeOf<WorkspaceDaemonOptions["transport"]>().toEqualTypeOf<DaemonRequestServer>();
+    expectTypeOf<DaemonProcessCoordinatorOptions["server"]>().toEqualTypeOf<DaemonRequestServer>();
     expectTypeOf<
-      ConstructorParameters<typeof WorkspaceDaemon>[0]["transport"]
+      ConstructorParameters<typeof DaemonProcessCoordinator>[0]["server"]
     >().toEqualTypeOf<DaemonRequestServer>();
   });
 

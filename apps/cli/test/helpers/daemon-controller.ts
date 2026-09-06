@@ -1,5 +1,5 @@
 import { DaemonPolicy, type DaemonPolicyValues } from "@symnav/daemon";
-import { DaemonPolicyTestFactory } from "@symnav/daemon/policy-testing";
+import { DaemonPolicyTestFactory } from "./daemon-policy.js";
 import { DaemonController as RuntimeDaemonController } from "../../src/daemon/daemon-controller.js";
 import type {
   DaemonProcessLauncher,
@@ -39,7 +39,7 @@ export class TestDaemonController extends RuntimeDaemonController {
       }).values;
     super(registry, transport, stateDirectory, {
       policy,
-      ...(options.now === undefined ? {} : { now: options.now }),
+      ...(options.now === undefined ? {} : { clock: { wallNowMs: options.now } }),
       ...(options.processTerminator === undefined
         ? {}
         : { processTerminator: options.processTerminator }),

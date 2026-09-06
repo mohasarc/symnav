@@ -6,7 +6,7 @@ import { DaemonProcessTerminationObserver } from "./daemon-process-termination-o
 import { DaemonRegistry } from "./daemon-registry.js";
 import { DaemonWorkspaceIdentity } from "./daemon-workspace-identity.js";
 import { LocalDaemonTransport } from "./local-daemon-transport.js";
-import { WorkspaceDaemon } from "./workspace-daemon.js";
+import { DaemonProcessCoordinator } from "./daemon-process-coordinator.js";
 
 class DaemonEntry {
   static async run(encodedConfiguration: string | undefined): Promise<void> {
@@ -15,34 +15,27 @@ class DaemonEntry {
       configuration.workspaceRoot,
       configuration.stateDirectory,
     );
-    if (
-      identity.workspaceKey !== configuration.workspaceKey ||
-      identity.stateKey !== configuration.stateKey ||
-      identity.identityKey !== configuration.identityKey ||
-      identity.endpoint(configuration.instanceId) !== configuration.endpoint
-    )
-      throw new Error("Daemon process identity does not match configuration");
     const policy = DaemonPolicy.fromSerialized(configuration.policy);
-    const registry = new DaemonRegistry(identity.registryDirectory, policy.values.startup);
     const clock = new NodeDaemonClock();
+    const registry = new DaemonRegistry(identity.registryDirectory, policy.values.startup, clock);
     const logger = new DaemonLogger(identity, configuration.instanceId, clock, {
       policy: policy.values.diagnostics,
+    });
+    const coordinator = new DaemonProcessCoordinator({
+      identity,
+      coordinates: configuration,
+      productVersion: configuration.symnavVersion,
+      executorModuleUrl: configuration.executorModuleUrl,
+      policy,
+      registry,
+      server: new LocalDaemonTransport({ policy }),
+      clock,
+      logger,
     });
     new DaemonProcessTerminationObserver(logger, () => {
       registry.removeIfProcess(identity, configuration.instanceId, configuration.processToken);
     }).install();
-    await new WorkspaceDaemon({
-      identity,
-      instanceId: configuration.instanceId,
-      processToken: configuration.processToken,
-      symnavVersion: configuration.symnavVersion,
-      executorModuleUrl: configuration.executorModuleUrl,
-      policy,
-      registry,
-      transport: new LocalDaemonTransport({ policy }),
-      clock,
-      logger,
-    }).start();
+    await coordinator.start();
   }
 }
 

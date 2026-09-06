@@ -1,12 +1,12 @@
 import { mkdirSync, renameSync, writeFileSync } from "node:fs";
 import { randomUUID } from "node:crypto";
-import { StateDirectoryResolver } from "../../src/state-directory-resolver.js";
+import { CanonicalTestPath } from "../helpers/canonical-path.js";
 import {
   DAEMON_PROTOCOL_VERSION,
   DAEMON_RECORD_SCHEMA_VERSION,
-} from "../../src/daemon/daemon-protocol.js";
-import { TestDaemonRegistry as DaemonRegistry } from "./daemon-registry.js";
-import { DaemonWorkspaceIdentity } from "../../src/daemon/daemon-workspace-identity.js";
+} from "../../src/transport/protocol.js";
+import { TestDaemonRegistry as DaemonRegistry } from "../helpers/daemon-registry.js";
+import { DaemonWorkspaceIdentity } from "../../src/registry/workspace-identity.js";
 
 const [workspaceRoot, stateDirectory, startupDelayMsText] = process.argv.slice(2);
 if (
@@ -21,7 +21,7 @@ await new Promise<void>((resolve) => setTimeout(resolve, Number(startupDelayMsTe
 
 const identity = DaemonWorkspaceIdentity.from(
   workspaceRoot,
-  StateDirectoryResolver.canonicalize(stateDirectory),
+  CanonicalTestPath.resolve(stateDirectory),
 );
 const registry = new DaemonRegistry(identity.registryDirectory);
 const instanceId = "orphaned-mutation";

@@ -282,7 +282,12 @@ describe("symnav daemon parity", () => {
       process.execPath,
       [
         fileURLToPath(new URL("../../../node_modules/tsx/dist/cli.mjs", import.meta.url)),
-        fileURLToPath(new URL("../../helpers/daemon-accepted-caller.ts", import.meta.url)),
+        fileURLToPath(
+          new URL(
+            "../../../../../packages/daemon/test/actors/daemon-accepted-caller.ts",
+            import.meta.url,
+          ),
+        ),
         controlled.record.endpoint,
         controlled.record.instanceId,
         controlled.record.processToken,
@@ -705,7 +710,12 @@ class DaemonParityHarness {
       process.execPath,
       [
         fileURLToPath(new URL("../../../node_modules/tsx/dist/cli.mjs", import.meta.url)),
-        fileURLToPath(new URL("../../helpers/daemon-startup-mutation-owner.ts", import.meta.url)),
+        fileURLToPath(
+          new URL(
+            "../../../../../packages/daemon/test/actors/daemon-startup-mutation-owner.ts",
+            import.meta.url,
+          ),
+        ),
         controlledWorkspaceRoot,
         this.stateDirectory,
         "0",

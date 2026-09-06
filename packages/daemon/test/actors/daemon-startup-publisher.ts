@@ -1,12 +1,12 @@
 import { existsSync, writeFileSync } from "node:fs";
-import { StateDirectoryResolver } from "../../src/state-directory-resolver.js";
-import { TestDaemonRegistry as DaemonRegistry } from "./daemon-registry.js";
-import { DaemonWorkspaceIdentity } from "../../src/daemon/daemon-workspace-identity.js";
+import { CanonicalTestPath } from "../helpers/canonical-path.js";
+import { TestDaemonRegistry as DaemonRegistry } from "../helpers/daemon-registry.js";
+import { DaemonWorkspaceIdentity } from "../../src/registry/workspace-identity.js";
 import {
   DAEMON_PROTOCOL_VERSION,
   DAEMON_RECORD_SCHEMA_VERSION,
   type DaemonRecord,
-} from "../../src/daemon/daemon-protocol.js";
+} from "../../src/transport/protocol.js";
 
 const [workspaceRoot, stateDirectory, readyPath, barrierPath, resultPath] = process.argv.slice(2);
 if (
@@ -21,7 +21,7 @@ if (
 
 const identity = DaemonWorkspaceIdentity.from(
   workspaceRoot,
-  StateDirectoryResolver.canonicalize(stateDirectory),
+  CanonicalTestPath.resolve(stateDirectory),
 );
 const registry = new DaemonRegistry(identity.registryDirectory);
 const instanceId = "cross-process-startup";

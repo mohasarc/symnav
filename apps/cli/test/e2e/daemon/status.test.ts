@@ -609,7 +609,12 @@ function spawnStartupPublisher(
     process.execPath,
     [
       fileURLToPath(new URL("../../../node_modules/tsx/dist/cli.mjs", import.meta.url)),
-      fileURLToPath(new URL("../../helpers/daemon-startup-publisher.ts", import.meta.url)),
+      fileURLToPath(
+        new URL(
+          "../../../../../packages/daemon/test/actors/daemon-startup-publisher.ts",
+          import.meta.url,
+        ),
+      ),
       workspaceRoot,
       stateDirectory,
       readyPath,
@@ -657,7 +662,12 @@ function spawnLiveSilentDaemon(
     process.execPath,
     [
       fileURLToPath(new URL("../../../node_modules/tsx/dist/cli.mjs", import.meta.url)),
-      fileURLToPath(new URL("../../helpers/daemon-live-silent.ts", import.meta.url)),
+      fileURLToPath(
+        new URL(
+          "../../../../../packages/daemon/test/actors/daemon-live-silent.ts",
+          import.meta.url,
+        ),
+      ),
       endpoint,
       instanceId,
       processToken,
@@ -680,7 +690,12 @@ function spawnMalformedActivityDaemon(
     process.execPath,
     [
       fileURLToPath(new URL("../../../node_modules/tsx/dist/cli.mjs", import.meta.url)),
-      fileURLToPath(new URL("../../helpers/daemon-malformed-activity.ts", import.meta.url)),
+      fileURLToPath(
+        new URL(
+          "../../../../../packages/daemon/test/actors/daemon-malformed-activity.ts",
+          import.meta.url,
+        ),
+      ),
       endpoint,
       instanceId,
       processToken,

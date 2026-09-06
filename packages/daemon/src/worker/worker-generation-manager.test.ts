@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
-import type { DaemonExecutorRequest, DaemonOutputSink } from "@symnav/daemon";
+import type { DaemonExecutorRequest } from "@symnav/daemon";
+import type { DaemonOutputSink } from "../daemon-executor.js";
 import type { DaemonNavigationWorker, DaemonNavigationWorkerExit } from "./navigation-worker.js";
 import { DaemonNavigationWorkerExitedError } from "./navigation-worker.js";
 import type { DaemonNavigationWorkerResponse } from "./worker-protocol.js";

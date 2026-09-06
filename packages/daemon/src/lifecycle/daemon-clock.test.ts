@@ -1,4 +1,4 @@
-import { readFileSync, readdirSync } from "node:fs";
+import { readFileSync, readdirSync, statSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { NodeDaemonClock } from "./daemon-clock.js";
 
@@ -35,15 +35,23 @@ describe("NodeDaemonClock", () => {
 
 describe("daemon production clock ownership", () => {
   it("keeps raw time sources and telemetry clocks outside daemon mechanisms", () => {
-    const violations = readdirSync(new URL(".", import.meta.url))
-      .filter(
-        (file) => file.endsWith(".ts") && !file.endsWith(".test.ts") && file !== "daemon-clock.ts",
-      )
-      .flatMap((file) => {
-        const source = readFileSync(new URL(file, import.meta.url), "utf8");
-        return /Date\.now|performance\.now|@symnav\/telemetry/.test(source) ? [file] : [];
-      });
+    const sourceRoot = new URL("../", import.meta.url);
+    const violations = productionSources(sourceRoot).flatMap((file) => {
+      if (file.endsWith("/lifecycle/daemon-clock.ts")) return [];
+      const source = readFileSync(file, "utf8");
+      return /Date\.now|performance\.now|process\.hrtime|@symnav\/telemetry/.test(source)
+        ? [file]
+        : [];
+    });
 
     expect(violations).toEqual([]);
   });
 });
+
+function productionSources(directory: URL): readonly string[] {
+  return readdirSync(directory).flatMap((name) => {
+    const entry = new URL(name, directory);
+    if (statSync(entry).isDirectory()) return productionSources(new URL(`${name}/`, directory));
+    return name.endsWith(".ts") && !name.endsWith(".test.ts") ? [entry.pathname] : [];
+  });
+}

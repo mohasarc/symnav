@@ -3,9 +3,8 @@ import {
   type DaemonCommandName,
   type DaemonExecutorRequest,
   type DaemonExecutorModuleUrl,
-  type DaemonOutputSink,
-  type DaemonSequencedOutputRecord,
 } from "@symnav/daemon";
+import type { DaemonOutputSink, DaemonSequencedOutputRecord } from "../daemon-executor.js";
 import { DaemonPolicyCodec, type SerializedDaemonPolicy } from "../daemon-policy.js";
 import {
   DaemonNavigationWorkerProtocol,

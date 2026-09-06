@@ -1,14 +1,18 @@
 import { parentPort, workerData } from "node:worker_threads";
 import { getHeapStatistics } from "node:v8";
 import {
-  DaemonExecutorModuleLoader,
   type DaemonDiagnostics,
   type DaemonExecutor,
   type DaemonExecutorModuleUrl,
   type DaemonOutputRecord,
-  type DaemonWorkerFailureCode,
 } from "@symnav/daemon";
-import { DaemonPolicyCodec, type DaemonPolicy, type SerializedDaemonPolicy } from "../daemon-policy.js";
+import { DaemonExecutorModuleLoader } from "../daemon-executor.js";
+import type { DaemonWorkerFailureCode } from "../daemon-execution-failure.js";
+import {
+  DaemonPolicyCodec,
+  type DaemonPolicy,
+  type SerializedDaemonPolicy,
+} from "../daemon-policy.js";
 import {
   DaemonNavigationWorkerProtocol,
   type WorkerCommandDurations,

@@ -18,28 +18,20 @@ describe("InvocationWorkspaceSelector", () => {
     "context",
     "graph",
     "stats",
-  ] satisfies readonly DaemonCommandName[])(
-    "maps workspace command %s to its daemon name",
-    (commandName) => {
-      expect(selector.select([commandName, "target"], workspaceRoot)).toEqual({
-        route: { kind: "workspace", startDir: workspaceRoot },
-        commandName,
-        argv: [commandName, "target"],
-      });
-    },
-  );
+  ] satisfies readonly DaemonCommandName[])("maps workspace command %s to its daemon name", (commandName) => {
+    expect(selector.select([commandName, "target"], workspaceRoot)).toEqual({
+      route: { kind: "workspace", commandName, startDirectory: workspaceRoot },
+      argv: [commandName, "target"],
+    });
+  });
 
-  it("routes cwd overrides through the selected workspace", () => {
-    expect(selector.select(["--cwd", otherWorkspaceRoot, "refs", "target"], workspaceRoot)).toEqual(
-      {
-        route: { kind: "workspace", startDir: otherWorkspaceRoot },
-        commandName: "refs",
-        argv: ["--cwd", otherWorkspaceRoot, "refs", "target"],
-      },
-    );
+  it("absolutizes cwd overrides through the selected workspace", () => {
+    expect(selector.select(["--cwd", otherWorkspaceRoot, "refs", "target"], workspaceRoot)).toEqual({
+      route: { kind: "workspace", commandName: "refs", startDirectory: otherWorkspaceRoot },
+      argv: ["--cwd", otherWorkspaceRoot, "refs", "target"],
+    });
     expect(selector.select(["--cwd", "..", "refs", "target"], nestedWorkspaceDirectory)).toEqual({
-      route: { kind: "workspace", startDir: workspaceRoot },
-      commandName: "refs",
+      route: { kind: "workspace", commandName: "refs", startDirectory: workspaceRoot },
       argv: ["--cwd", workspaceRoot, "refs", "target"],
     });
   });
@@ -52,8 +44,11 @@ describe("InvocationWorkspaceSelector", () => {
         clientWorkspaceDirectory,
       ),
     ).toEqual({
-      route: { kind: "workspace", startDir: effectiveWorkspaceDirectory },
-      commandName: "resolve",
+      route: {
+        kind: "workspace",
+        commandName: "resolve",
+        startDirectory: effectiveWorkspaceDirectory,
+      },
       argv: ["--cwd=first", "--cwd", effectiveWorkspaceDirectory, "resolve", "--", "--cwd=target"],
     });
   });
@@ -62,8 +57,7 @@ describe("InvocationWorkspaceSelector", () => {
     "keeps %s positional after the separator on the workspace route",
     (target) => {
       expect(selector.select(["resolve", "--", target], workspaceRoot)).toEqual({
-        route: { kind: "workspace", startDir: workspaceRoot },
-        commandName: "resolve",
+        route: { kind: "workspace", commandName: "resolve", startDirectory: workspaceRoot },
         argv: ["resolve", "--", target],
       });
     },
@@ -72,13 +66,8 @@ describe("InvocationWorkspaceSelector", () => {
   it.each(["start", "status", "stop"] as const)(
     "classifies daemon %s as a control invocation",
     (action) => {
-      expect(selector.classify(["daemon", action], workspaceRoot)).toEqual({
-        kind: "daemon-control",
-        action,
-      });
       expect(selector.select(["daemon", action], workspaceRoot)).toEqual({
-        route: { kind: "daemon-control", action },
-        commandName: "unknown",
+        route: { kind: "control", action },
         argv: ["daemon", action],
       });
     },
@@ -98,8 +87,7 @@ describe("InvocationWorkspaceSelector", () => {
     readonly commandName: DaemonCommandName;
   }[])("maps local invocation $argv to $commandName", ({ argv, commandName }) => {
     expect(selector.select(argv, workspaceRoot)).toEqual({
-      route: { kind: "local" },
-      commandName,
+      route: { kind: "local", commandName },
       argv,
     });
   });

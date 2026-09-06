@@ -201,6 +201,30 @@ describe("CliProgramExecutor", () => {
     expect(dispose).toHaveBeenCalledOnce();
   });
 
+  it("accepts minimal daemon output and disposes before a nonzero exit", async () => {
+    const dispose = vi.fn(async () => undefined);
+    const exit = vi.fn(() => {
+      return undefined as never;
+    });
+    const context = {
+      ...createFakeProgramContext({ cwd: "/repo" }),
+      exit,
+    };
+    const output = {
+      async *records() {
+        yield { stream: "stderr" as const, bytes: Buffer.from("failed\n") };
+      },
+      dispose,
+    };
+
+    await CommandResultReplayer.replay({ output, exitCode: 7 }, context);
+
+    expect(context.stderr.text()).toBe("failed\n");
+    expect(dispose).toHaveBeenCalledOnce();
+    expect(exit).toHaveBeenCalledWith(7);
+    expect(dispose.mock.invocationCallOrder[0]).toBeLessThan(exit.mock.invocationCallOrder[0]!);
+  });
+
   it.each([
     { argv: ["--version"], code: 0, stream: "stdout" },
     { argv: ["--help"], code: 0, stream: "stdout" },

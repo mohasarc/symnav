@@ -187,10 +187,7 @@ describe("daemon production clock ownership", () => {
     ["callable wall clock through call", "Date.call(undefined);"],
     ["callable wall clock through apply", "globalThis.Date.apply(undefined, []);"],
     ["immediately bound callable wall clock", "(Date as typeof Date).bind(undefined)();"],
-    [
-      "const bound callable wall clock",
-      "const wall = globalThis.Date.bind(undefined); wall();",
-    ],
+    ["const bound callable wall clock", "const wall = globalThis.Date.bind(undefined); wall();"],
   ])("recognizes %s as a raw clock source", (_name, source) => {
     expect(DaemonRawClockSourceInventory.hasRawClock(source)).toBe(true);
   });
@@ -234,7 +231,10 @@ describe("daemon production clock ownership", () => {
       'import * as hooks from "./perf-hooks.js"; const { performance: timer } = hooks; timer.now();',
     ],
     ["local callable Date", "function Date() { return 'fixed'; } Date();"],
-    ["local callable Date through call", "function Date() { return 'fixed'; } Date.call(undefined);"],
+    [
+      "local callable Date through call",
+      "function Date() { return 'fixed'; } Date.call(undefined);",
+    ],
     ["local bound callable Date", "function Date() { return 'fixed'; } Date.bind(undefined)();"],
     ["mutable callable Date alias", "let wall = Date; wall();"],
     ["mutable bound callable Date alias", "let wall = Date.bind(undefined); wall();"],
@@ -436,6 +436,12 @@ class DaemonRawClockSourceInventory {
       return true;
     }
     if (
+      ts.isCallExpression(node) &&
+      DaemonRawClockSourceInventory.isDateInvocationMethod(node.expression, aliases, checker)
+    ) {
+      return true;
+    }
+    if (
       DaemonRawClockSourceInventory.isMemberAccess(node) &&
       (["now", "hrtime", "bigint"] as const).some((clockValue) =>
         DaemonRawClockSourceInventory.isClockValue(node, clockValue, aliases, checker),
@@ -478,6 +484,13 @@ class DaemonRawClockSourceInventory {
       ) {
         return true;
       }
+    }
+    if (
+      expected === "date" &&
+      ts.isCallExpression(unwrapped) &&
+      DaemonRawClockSourceInventory.isDateBinding(unwrapped.expression, aliases, checker)
+    ) {
+      return true;
     }
     if (!ts.isIdentifier(unwrapped)) return false;
     const symbol = checker.getSymbolAtLocation(unwrapped);
@@ -543,6 +556,33 @@ class DaemonRawClockSourceInventory {
     if (expected === "now" && memberName === "now") return ["date", "performance"];
     if (expected === "bigint" && memberName === "bigint") return ["hrtime"];
     return [];
+  }
+
+  private static isDateInvocationMethod(
+    expression: ts.Expression,
+    aliases: RawClockAliases,
+    checker: ts.TypeChecker,
+  ): boolean {
+    const unwrapped = DaemonRawClockSourceInventory.unwrapExpression(expression);
+    if (!DaemonRawClockSourceInventory.isMemberAccess(unwrapped)) return false;
+    const memberName = DaemonRawClockSourceInventory.memberName(unwrapped, checker);
+    return (
+      (memberName === "call" || memberName === "apply") &&
+      DaemonRawClockSourceInventory.isClockValue(unwrapped.expression, "date", aliases, checker)
+    );
+  }
+
+  private static isDateBinding(
+    expression: ts.Expression,
+    aliases: RawClockAliases,
+    checker: ts.TypeChecker,
+  ): boolean {
+    const unwrapped = DaemonRawClockSourceInventory.unwrapExpression(expression);
+    return (
+      DaemonRawClockSourceInventory.isMemberAccess(unwrapped) &&
+      DaemonRawClockSourceInventory.memberName(unwrapped, checker) === "bind" &&
+      DaemonRawClockSourceInventory.isClockValue(unwrapped.expression, "date", aliases, checker)
+    );
   }
 
   private static isClockMemberPath(

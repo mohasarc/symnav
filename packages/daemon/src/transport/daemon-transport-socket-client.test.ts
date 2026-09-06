@@ -4,9 +4,9 @@ import { DaemonPolicyTestFactory } from "../../test/helpers/daemon-policy.js";
 import type { DaemonSocketClient, DaemonSocketConnection } from "./contracts.js";
 import { DAEMON_PROTOCOL_VERSION } from "./protocol.js";
 import { DaemonWireCodec } from "./wire-codec.js";
-import { LocalDaemonTransport } from "./local-transport.js";
+import { TestDaemonTransport as DaemonTransport } from "../../test/helpers/daemon-transport.js";
 
-describe("LocalDaemonTransport socket client boundary", () => {
+describe("DaemonTransport socket client boundary", () => {
   it("requests lifecycle responses through the injected byte connection", async () => {
     const policy = DaemonPolicy.currentSystem();
     const codec = new DaemonWireCodec({
@@ -26,7 +26,7 @@ describe("LocalDaemonTransport socket client boundary", () => {
       response.subarray(2),
     ]);
     const sockets = new RecordingDaemonSocketClient(connection);
-    const transport = new LocalDaemonTransport({ policy, sockets });
+    const transport = new DaemonTransport({ policy, sockets });
 
     await expect(
       transport.request("daemon-endpoint", {
@@ -70,7 +70,7 @@ describe("LocalDaemonTransport socket client boundary", () => {
       }),
     ]);
     const sockets = new RecordingDaemonSocketClient(connection);
-    const transport = new LocalDaemonTransport({
+    const transport = new DaemonTransport({
       policy,
       sockets,
       lifecycleResponseTimeoutMs: policy.values.transport.statusResponseTimeoutMs,
@@ -114,7 +114,7 @@ describe("LocalDaemonTransport socket client boundary", () => {
       }),
     ]);
     const sockets = new RecordingDaemonSocketClient(connection);
-    const transport = new LocalDaemonTransport({ policy, sockets });
+    const transport = new DaemonTransport({ policy, sockets });
 
     await transport.executionStatus("daemon-endpoint", {
       kind: "execution-status",
@@ -157,7 +157,7 @@ describe("LocalDaemonTransport socket client boundary", () => {
     });
     const connection = new ScriptedDaemonSocketConnection([Buffer.concat([accepted, failed])]);
     const sockets = new RecordingDaemonSocketClient(connection);
-    const transport = new LocalDaemonTransport({ policy, sockets });
+    const transport = new DaemonTransport({ policy, sockets });
 
     const receipt = await transport.execute("daemon-endpoint", {
       kind: "execute",
@@ -258,7 +258,7 @@ describe("LocalDaemonTransport socket client boundary", () => {
       resumedResult,
       acknowledgement,
     );
-    const transport = new LocalDaemonTransport({ policy, sockets });
+    const transport = new DaemonTransport({ policy, sockets });
 
     const receipt = await transport.execute("daemon-endpoint", {
       kind: "execute",
@@ -298,7 +298,7 @@ describe("LocalDaemonTransport socket client boundary", () => {
     const policy = DaemonPolicy.currentSystem();
     const connection = new ScriptedDaemonSocketConnection([]);
     const sockets = new RecordingDaemonSocketClient(connection);
-    const transport = new LocalDaemonTransport({ policy, sockets });
+    const transport = new DaemonTransport({ policy, sockets });
 
     await expect(transport.removeUnavailableEndpoint("daemon-endpoint")).resolves.toBe(false);
 

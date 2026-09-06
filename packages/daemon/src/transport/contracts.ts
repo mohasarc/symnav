@@ -1,4 +1,5 @@
-import type { DaemonExecutionFailureCode, DaemonExecutorExecutionResult } from "@symnav/daemon";
+import type { DaemonExecutorExecutionResult } from "@symnav/daemon";
+import type { DaemonExecutionFailureCode } from "../daemon-execution-failure.js";
 import type {
   DaemonExecuteRequest,
   DaemonExecutionStatus,

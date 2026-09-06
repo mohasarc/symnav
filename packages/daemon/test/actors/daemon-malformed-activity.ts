@@ -1,7 +1,7 @@
 import { writeFileSync } from "node:fs";
 import type { DaemonResponse } from "../../src/transport/protocol.js";
 import { DAEMON_PROTOCOL_VERSION } from "../../src/transport/protocol.js";
-import { TestLocalDaemonTransport as LocalDaemonTransport } from "../helpers/local-daemon-transport.js";
+import { TestDaemonTransport as DaemonTransport } from "../helpers/daemon-transport.js";
 
 const [endpoint, instanceId, processToken, startedAtValue, readyPath, secret] =
   process.argv.slice(2);
@@ -16,7 +16,7 @@ if (
   throw new Error("Missing malformed activity daemon arguments");
 }
 const startedAt = Number(startedAtValue);
-const transport = new LocalDaemonTransport();
+const transport = new DaemonTransport();
 await transport.listen(endpoint, async (request) => {
   if (request.kind === "identify") {
     return { kind: "identity", instanceId, processToken, pid: process.pid, startedAt };

@@ -7,7 +7,7 @@ import { DaemonPolicy } from "../../src/daemon-policy.js";
 import { DaemonWorkspaceIdentity } from "../../src/registry/workspace-identity.js";
 import { TestDaemonRegistry as DaemonRegistry } from "../helpers/daemon-registry.js";
 import { TestDaemonResourcePolicy as DaemonResourcePolicy } from "../helpers/daemon-resource-policy.js";
-import { TestLocalDaemonTransport as LocalDaemonTransport } from "../helpers/local-daemon-transport.js";
+import { TestDaemonTransport as DaemonTransport } from "../helpers/daemon-transport.js";
 import type {
   DaemonNavigationWorker,
   DaemonNavigationWorkerExit,
@@ -170,7 +170,7 @@ const daemon = new DaemonProcessCoordinator({
   memoryCapBytes: policy.record.hardProcessRssBytes,
   policy: daemonPolicy,
   registry,
-  transport: new LocalDaemonTransport(),
+  transport: new DaemonTransport(),
   navigationWorkerFactory: (generation) =>
     new PressureNavigationWorker(generation, requestStartedPath, executionOrderPath),
   resourcePolicy: policy,

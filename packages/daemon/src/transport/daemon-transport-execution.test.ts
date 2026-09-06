@@ -4,7 +4,8 @@ import { createServer, type Server, type Socket } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { DaemonPolicy, type DaemonExecutionFailureCode } from "@symnav/daemon";
+import { DaemonPolicy } from "@symnav/daemon";
+import type { DaemonExecutionFailureCode } from "../daemon-execution-failure.js";
 import { DaemonPolicyTestFactory } from "../../test/helpers/daemon-policy.js";
 import {
   DAEMON_PROTOCOL_VERSION,
@@ -13,7 +14,7 @@ import {
   type DaemonServerMessage,
 } from "./protocol.js";
 import { DaemonTransportError } from "./transport-error.js";
-import { TestLocalDaemonTransport as LocalDaemonTransport } from "../../test/helpers/local-daemon-transport.js";
+import { TestDaemonTransport as DaemonTransport } from "../../test/helpers/daemon-transport.js";
 import {
   DaemonCompletionSpoolStore as RuntimeDaemonCompletionSpoolStore,
   type DaemonCompletionSpoolStoreOptions,
@@ -49,7 +50,7 @@ const request: DaemonExecuteRequest = {
   },
 };
 
-describe("LocalDaemonTransport execution delivery", () => {
+describe("DaemonTransport execution delivery", () => {
   const servers: Server[] = [];
   const sockets: Socket[] = [];
   const directories: string[] = [];
@@ -74,7 +75,7 @@ describe("LocalDaemonTransport execution delivery", () => {
     const endpoint = executionEndpoint(directories);
 
     await expect(
-      new LocalDaemonTransport({ requestTimeoutMs: 25 }).execute(endpoint, request),
+      new DaemonTransport({ requestTimeoutMs: 25 }).execute(endpoint, request),
     ).rejects.toMatchObject({
       code: "unreachable",
       delivery: "not-submitted",
@@ -88,7 +89,7 @@ describe("LocalDaemonTransport execution delivery", () => {
     });
 
     await expect(
-      new LocalDaemonTransport({ requestTimeoutMs: 100 }).execute(endpoint, request),
+      new DaemonTransport({ requestTimeoutMs: 100 }).execute(endpoint, request),
     ).rejects.toMatchObject({
       code: "closed",
       delivery: "submitted-unconfirmed",
@@ -113,7 +114,7 @@ describe("LocalDaemonTransport execution delivery", () => {
     });
 
     await expect(
-      new LocalDaemonTransport({ requestTimeoutMs: 100 }).execute(endpoint, request),
+      new DaemonTransport({ requestTimeoutMs: 100 }).execute(endpoint, request),
     ).rejects.toMatchObject({
       code: "rejected",
       delivery: "submitted-unconfirmed",
@@ -144,7 +145,7 @@ describe("LocalDaemonTransport execution delivery", () => {
     });
 
     await expect(
-      new LocalDaemonTransport({ requestTimeoutMs: 100 }).execute(endpoint, request),
+      new DaemonTransport({ requestTimeoutMs: 100 }).execute(endpoint, request),
     ).rejects.toMatchObject({
       code: "corrupt",
       delivery: "submitted-unconfirmed",
@@ -174,10 +175,7 @@ describe("LocalDaemonTransport execution delivery", () => {
       });
     });
 
-    const receipt = await new LocalDaemonTransport({ requestTimeoutMs: 10 }).execute(
-      endpoint,
-      request,
-    );
+    const receipt = await new DaemonTransport({ requestTimeoutMs: 10 }).execute(endpoint, request);
 
     await expect(receipt.completion).resolves.toEqual({ status: "failed", code: "internal" });
   });
@@ -188,7 +186,7 @@ describe("LocalDaemonTransport execution delivery", () => {
     });
 
     await expect(
-      new LocalDaemonTransport(policyWith({ executionAdmissionTimeoutMs: 25 })).execute(
+      new DaemonTransport(policyWith({ executionAdmissionTimeoutMs: 25 })).execute(
         endpoint,
         request,
       ),
@@ -223,10 +221,7 @@ describe("LocalDaemonTransport execution delivery", () => {
       );
     });
 
-    const receipt = await new LocalDaemonTransport({ requestTimeoutMs: 100 }).execute(
-      endpoint,
-      request,
-    );
+    const receipt = await new DaemonTransport({ requestTimeoutMs: 100 }).execute(endpoint, request);
 
     await expect(receipt.completion).resolves.toEqual({ status: "failed", code });
   });
@@ -252,7 +247,7 @@ describe("LocalDaemonTransport execution delivery", () => {
     const endpoint = await rawExecutionServer(servers, sockets, directories, (socket) => {
       socket.once("data", () => socket.end(Buffer.concat(responses.map(frame))));
     });
-    const execution = new LocalDaemonTransport().execute(endpoint, request);
+    const execution = new DaemonTransport().execute(endpoint, request);
 
     if (scenario === "socket close before acceptance") {
       await expect(execution).rejects.toMatchObject({
@@ -294,7 +289,7 @@ describe("LocalDaemonTransport execution delivery", () => {
       });
     });
 
-    const receipt = await new LocalDaemonTransport(
+    const receipt = await new DaemonTransport(
       policyWith({ executionAdmissionTimeoutMs: 10 }),
     ).execute(endpoint, request);
 
@@ -323,7 +318,7 @@ describe("LocalDaemonTransport execution delivery", () => {
       });
     }
     const manifest = await spool.finish(0);
-    const serverTransport = new LocalDaemonTransport();
+    const serverTransport = new DaemonTransport();
     const server = await serverTransport.listen(endpoint, async (message, send) => {
       if (message.kind === "result-ack") {
         await spool.acknowledge();
@@ -366,7 +361,7 @@ describe("LocalDaemonTransport execution delivery", () => {
         sha256: manifest.sha256,
       });
     });
-    const receipt = await new LocalDaemonTransport().execute(endpoint, request);
+    const receipt = await new DaemonTransport().execute(endpoint, request);
     const completion = await receipt.completion;
 
     expect(completion.status).toBe("completed");
@@ -451,7 +446,7 @@ describe("LocalDaemonTransport execution delivery", () => {
         }
       });
     });
-    const receipt = await new LocalDaemonTransport({
+    const receipt = await new DaemonTransport({
       outputDirectory: join(directory, "client"),
       outputInlineBytes: 0,
     }).execute(endpoint, request);
@@ -540,7 +535,7 @@ describe("LocalDaemonTransport execution delivery", () => {
         }
       });
     });
-    const receipt = await new LocalDaemonTransport().execute(endpoint, request);
+    const receipt = await new DaemonTransport().execute(endpoint, request);
 
     await appendStarted;
     expect(fetchOffsets).toEqual([]);
@@ -607,7 +602,7 @@ describe("LocalDaemonTransport execution delivery", () => {
       });
     });
 
-    const receipt = await new LocalDaemonTransport().execute(endpoint, request);
+    const receipt = await new DaemonTransport().execute(endpoint, request);
     const completion = await receipt.completion;
 
     expect(fetchOffsets).toEqual([2]);
@@ -669,7 +664,7 @@ describe("LocalDaemonTransport execution delivery", () => {
       });
     });
 
-    const receipt = await new LocalDaemonTransport(
+    const receipt = await new DaemonTransport(
       policyWith({}, { resultTransferResumeLimitPerExecutionAttempt: 0 }),
     ).execute(endpoint, request);
 
@@ -722,7 +717,7 @@ describe("LocalDaemonTransport execution delivery", () => {
       });
     });
 
-    const receipt = await new LocalDaemonTransport(
+    const receipt = await new DaemonTransport(
       policyWith(
         {},
         {
@@ -777,7 +772,7 @@ describe("LocalDaemonTransport execution delivery", () => {
       });
     });
 
-    const receipt = await new LocalDaemonTransport().execute(endpoint, request);
+    const receipt = await new DaemonTransport().execute(endpoint, request);
 
     await expect(receipt.completion).rejects.toMatchObject({
       code: "corrupt",
@@ -872,7 +867,7 @@ describe("LocalDaemonTransport execution delivery", () => {
       });
     });
     const clientDirectory = join(directory, "client");
-    const receipt = await new LocalDaemonTransport({
+    const receipt = await new DaemonTransport({
       outputDirectory: clientDirectory,
       outputInlineBytes: 0,
     }).execute(endpoint, request);
@@ -948,7 +943,7 @@ describe("LocalDaemonTransport execution delivery", () => {
         });
       });
       const clientDirectory = join(directory, "client");
-      const receipt = await new LocalDaemonTransport({
+      const receipt = await new DaemonTransport({
         requestTimeoutMs: 100,
         outputDirectory: clientDirectory,
         outputInlineBytes: 0,
@@ -1000,7 +995,7 @@ describe("LocalDaemonTransport execution delivery", () => {
       server.listen(endpoint, resolve);
     });
     const clientDirectory = join(directory, "client");
-    const receipt = await new LocalDaemonTransport({
+    const receipt = await new DaemonTransport({
       requestTimeoutMs: 100,
       outputDirectory: clientDirectory,
       outputInlineBytes: 0,
@@ -1061,7 +1056,7 @@ describe("LocalDaemonTransport execution delivery", () => {
       });
     });
     const clientDirectory = join(directory, "client");
-    const receipt = await new LocalDaemonTransport({
+    const receipt = await new DaemonTransport({
       outputDirectory: clientDirectory,
       outputInlineBytes: 0,
     }).execute(endpoint, request);
@@ -1078,10 +1073,7 @@ describe("LocalDaemonTransport execution delivery", () => {
       socket.once("data", () => socket.end(frame(accepted())));
     });
 
-    const receipt = await new LocalDaemonTransport({ requestTimeoutMs: 100 }).execute(
-      endpoint,
-      request,
-    );
+    const receipt = await new DaemonTransport({ requestTimeoutMs: 100 }).execute(endpoint, request);
 
     await expect(receipt.completion).rejects.toMatchObject({
       code: "closed",
@@ -1100,7 +1092,7 @@ describe("LocalDaemonTransport execution delivery", () => {
       });
     });
 
-    const receipt = await new LocalDaemonTransport(
+    const receipt = await new DaemonTransport(
       policyWith({}, { postAcceptanceExecutionReattachmentLimit: 0 }),
     ).execute(endpoint, request);
 
@@ -1136,7 +1128,7 @@ describe("LocalDaemonTransport execution delivery", () => {
       });
     });
 
-    const receipt = await new LocalDaemonTransport(
+    const receipt = await new DaemonTransport(
       policyWith({}, { postAcceptanceExecutionReattachmentLimit: 2 }),
     ).execute(endpoint, request);
 
@@ -1154,7 +1146,7 @@ describe("LocalDaemonTransport execution delivery", () => {
       });
     });
 
-    const receipt = await new LocalDaemonTransport(
+    const receipt = await new DaemonTransport(
       policyWith({}, { postAcceptanceExecutionReattachmentLimit: 1 }),
     ).execute(endpoint, request);
 
@@ -1209,10 +1201,7 @@ describe("LocalDaemonTransport execution delivery", () => {
       });
     });
 
-    const receipt = await new LocalDaemonTransport({ requestTimeoutMs: 100 }).execute(
-      endpoint,
-      request,
-    );
+    const receipt = await new DaemonTransport({ requestTimeoutMs: 100 }).execute(endpoint, request);
 
     const completion = await receipt.completion;
 
@@ -1265,7 +1254,7 @@ describe("LocalDaemonTransport execution delivery", () => {
       });
     });
 
-    const receipt = await new LocalDaemonTransport(
+    const receipt = await new DaemonTransport(
       policyWith({}, { resultTransferResumeLimitPerExecutionAttempt: 0 }),
     ).execute(endpoint, request);
     const completion = await receipt.completion;
@@ -1318,7 +1307,7 @@ describe("LocalDaemonTransport execution delivery", () => {
       });
     });
 
-    const receipt = await new LocalDaemonTransport().execute(endpoint, request);
+    const receipt = await new DaemonTransport().execute(endpoint, request);
     const completion = await receipt.completion;
 
     expect(completion).toMatchObject({ status: "completed", result: { exitCode: 0 } });
@@ -1379,7 +1368,7 @@ describe("LocalDaemonTransport execution delivery", () => {
     const endpoint = await rawExecutionServer(servers, sockets, directories, (socket) => {
       socket.once("data", () => socket.end(Buffer.concat(frames.map(frame))));
     });
-    const transport = new LocalDaemonTransport({ requestTimeoutMs: 100 });
+    const transport = new DaemonTransport({ requestTimeoutMs: 100 });
 
     const execution = transport.execute(endpoint, request);
     await expect(execution.then((receipt) => receipt.completion)).rejects.toMatchObject({

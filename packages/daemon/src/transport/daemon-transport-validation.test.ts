@@ -14,10 +14,9 @@ import type {
 } from "./protocol.js";
 import { DAEMON_PROTOCOL_VERSION } from "./protocol.js";
 import { DaemonTransportError } from "./transport-error.js";
-import { LocalDaemonTransport as RuntimeLocalDaemonTransport } from "./local-transport.js";
-import { TestLocalDaemonTransport as LocalDaemonTransport } from "../../test/helpers/local-daemon-transport.js";
+import { TestDaemonTransport as DaemonTransport } from "../../test/helpers/daemon-transport.js";
 
-describe("LocalDaemonTransport validation", () => {
+describe("DaemonTransport validation", () => {
   const servers: Server[] = [];
   const sockets: Socket[] = [];
   const directories: string[] = [];
@@ -78,7 +77,7 @@ describe("LocalDaemonTransport validation", () => {
           );
         });
       });
-      const transport = new RuntimeLocalDaemonTransport({
+      const transport = new DaemonTransport({
         policy,
         lifecycleResponseTimeoutMs: policy.values.transport.statusResponseTimeoutMs,
       });
@@ -116,7 +115,7 @@ describe("LocalDaemonTransport validation", () => {
         );
       });
     });
-    const transport = new LocalDaemonTransport(policy.values);
+    const transport = new DaemonTransport(policy.values);
 
     await expect(
       transport.executionStatus(endpoint, {
@@ -133,7 +132,7 @@ describe("LocalDaemonTransport validation", () => {
     const endpoint = validationEndpoint(directories);
 
     await expect(
-      new LocalDaemonTransport({ requestTimeoutMs: 100 }).request(endpoint, pingRequest()),
+      new DaemonTransport({ requestTimeoutMs: 100 }).request(endpoint, pingRequest()),
     ).rejects.toMatchObject({
       name: "DaemonTransportError",
       code: "unreachable",
@@ -145,7 +144,7 @@ describe("LocalDaemonTransport validation", () => {
     const endpoint = await rawServer(servers, sockets, directories, () => undefined);
 
     await expect(
-      new LocalDaemonTransport({ requestTimeoutMs: 10 }).request(endpoint, pingRequest()),
+      new DaemonTransport({ requestTimeoutMs: 10 }).request(endpoint, pingRequest()),
     ).rejects.toMatchObject({
       code: "timeout",
       delivery: "submitted-unconfirmed",
@@ -156,10 +155,7 @@ describe("LocalDaemonTransport validation", () => {
     const endpoint = await rawServer(servers, sockets, directories, () => undefined);
 
     await expect(
-      new LocalDaemonTransport({ executionRequestTimeoutMs: 10 }).execute(
-        endpoint,
-        executionRequest(),
-      ),
+      new DaemonTransport({ executionRequestTimeoutMs: 10 }).execute(endpoint, executionRequest()),
     ).rejects.toMatchObject({
       code: "timeout",
       delivery: "submitted-unconfirmed",
@@ -175,7 +171,7 @@ describe("LocalDaemonTransport validation", () => {
     });
 
     await expect(
-      new LocalDaemonTransport({ requestTimeoutMs: 100 }).request(endpoint, pingRequest()),
+      new DaemonTransport({ requestTimeoutMs: 100 }).request(endpoint, pingRequest()),
     ).rejects.toMatchObject({
       code: "corrupt",
       delivery: "submitted-unconfirmed",
@@ -214,7 +210,7 @@ describe("LocalDaemonTransport validation", () => {
     });
 
     await expect(
-      new LocalDaemonTransport({ requestTimeoutMs: 100 }).request(endpoint, request),
+      new DaemonTransport({ requestTimeoutMs: 100 }).request(endpoint, request),
     ).rejects.toMatchObject({
       code: "authentication",
       delivery: "accepted",
@@ -234,7 +230,7 @@ describe("LocalDaemonTransport validation", () => {
     });
 
     await expect(
-      new LocalDaemonTransport({ requestTimeoutMs: 100 }).request(endpoint, pingRequest()),
+      new DaemonTransport({ requestTimeoutMs: 100 }).request(endpoint, pingRequest()),
     ).rejects.toMatchObject({
       code: "incompatible",
       delivery: "accepted",
@@ -246,7 +242,7 @@ describe("LocalDaemonTransport validation", () => {
     const endpoint = await rawServer(servers, sockets, directories, (socket) => socket.end());
 
     await expect(
-      new LocalDaemonTransport({ requestTimeoutMs: 100 }).request(endpoint, pingRequest()),
+      new DaemonTransport({ requestTimeoutMs: 100 }).request(endpoint, pingRequest()),
     ).rejects.toMatchObject({
       code: "closed",
       delivery: "submitted-unconfirmed",
@@ -257,7 +253,7 @@ describe("LocalDaemonTransport validation", () => {
     const endpoint = await rawServer(servers, sockets, directories, (socket) => {
       setTimeout(() => socket.destroy(), 50);
     });
-    const transport = new LocalDaemonTransport({ requestTimeoutMs: 10 });
+    const transport = new DaemonTransport({ requestTimeoutMs: 10 });
 
     await expect(transport.request(endpoint, pingRequest())).rejects.toThrow(
       "Daemon request timed out",
@@ -273,7 +269,7 @@ describe("LocalDaemonTransport validation", () => {
     });
 
     await expect(
-      new LocalDaemonTransport({ requestTimeoutMs: 100 }).request(endpoint, pingRequest()),
+      new DaemonTransport({ requestTimeoutMs: 100 }).request(endpoint, pingRequest()),
     ).rejects.toThrow("malformed JSON");
   });
 
@@ -286,7 +282,7 @@ describe("LocalDaemonTransport validation", () => {
     });
 
     await expect(
-      new LocalDaemonTransport({ maximumFrameBytes: 128, requestTimeoutMs: 100 }).request(
+      new DaemonTransport({ maximumFrameBytes: 128, requestTimeoutMs: 100 }).request(
         endpoint,
         pingRequest(),
       ),
@@ -302,7 +298,7 @@ describe("LocalDaemonTransport validation", () => {
     });
 
     await expect(
-      new LocalDaemonTransport({ requestTimeoutMs: 100 }).request(endpoint, pingRequest()),
+      new DaemonTransport({ requestTimeoutMs: 100 }).request(endpoint, pingRequest()),
     ).rejects.toThrow("truncated frame");
   });
 
@@ -313,7 +309,7 @@ describe("LocalDaemonTransport validation", () => {
     });
 
     await expect(
-      new LocalDaemonTransport({ requestTimeoutMs: 100 }).request(endpoint, pingRequest()),
+      new DaemonTransport({ requestTimeoutMs: 100 }).request(endpoint, pingRequest()),
     ).rejects.toThrow("Malformed daemon response");
   });
 
@@ -355,7 +351,7 @@ describe("LocalDaemonTransport validation", () => {
     });
 
     await expect(
-      new LocalDaemonTransport({ requestTimeoutMs: 100 })
+      new DaemonTransport({ requestTimeoutMs: 100 })
         .execute(endpoint, executionRequest())
         .then((receipt) => receipt.completion),
     ).rejects.toThrow("Malformed daemon result manifest");
@@ -373,7 +369,7 @@ describe("LocalDaemonTransport validation", () => {
     });
 
     await expect(
-      new LocalDaemonTransport({ requestTimeoutMs: 100 }).request(endpoint, pingRequest()),
+      new DaemonTransport({ requestTimeoutMs: 100 }).request(endpoint, pingRequest()),
     ).rejects.toThrow("Daemon pong does not match request protocol and instance");
   });
 
@@ -390,14 +386,14 @@ describe("LocalDaemonTransport validation", () => {
     });
 
     await expect(
-      new LocalDaemonTransport({ requestTimeoutMs: 100 }).request(endpoint, pingRequest()),
+      new DaemonTransport({ requestTimeoutMs: 100 }).request(endpoint, pingRequest()),
     ).rejects.toThrow("multiple responses");
   });
 
   it("rejects invalid server requests before invoking the handler", async () => {
     const endpoint = validationEndpoint(directories);
     let handled = false;
-    const transport = new LocalDaemonTransport({ requestTimeoutMs: 100 });
+    const transport = new DaemonTransport({ requestTimeoutMs: 100 });
     const listening = await transport.listen(endpoint, async () => {
       handled = true;
       return { kind: "pong", protocolVersion: 1, instanceId: "instance", symnavVersion: "test" };
@@ -450,7 +446,7 @@ describe("LocalDaemonTransport validation", () => {
     async (request) => {
       const endpoint = validationEndpoint(directories);
       let handled = false;
-      const transport = new LocalDaemonTransport({ requestTimeoutMs: 100 });
+      const transport = new DaemonTransport({ requestTimeoutMs: 100 });
       const listening = await transport.listen(endpoint, async () => {
         handled = true;
         return { kind: "stopped", instanceId: "instance" };
@@ -493,7 +489,7 @@ describe("LocalDaemonTransport validation", () => {
     });
 
     await expect(
-      new LocalDaemonTransport({ requestTimeoutMs: 100 }).request(endpoint, pingRequest()),
+      new DaemonTransport({ requestTimeoutMs: 100 }).request(endpoint, pingRequest()),
     ).rejects.toThrow("Malformed daemon pong");
   });
 
@@ -556,7 +552,7 @@ describe("LocalDaemonTransport validation", () => {
     });
 
     await expect(
-      new LocalDaemonTransport({ requestTimeoutMs: 100 }).request(endpoint, pingRequest()),
+      new DaemonTransport({ requestTimeoutMs: 100 }).request(endpoint, pingRequest()),
     ).rejects.toThrow("Malformed daemon pong");
   });
 
@@ -567,7 +563,7 @@ describe("LocalDaemonTransport validation", () => {
     });
 
     await expect(
-      new LocalDaemonTransport({ requestTimeoutMs: 100 }).request(endpoint, {
+      new DaemonTransport({ requestTimeoutMs: 100 }).request(endpoint, {
         kind: "stop",
         protocolVersion: DAEMON_PROTOCOL_VERSION,
         instanceId: "instance",
@@ -582,7 +578,7 @@ describe("LocalDaemonTransport validation", () => {
     });
 
     await expect(
-      new LocalDaemonTransport({ requestTimeoutMs: 100 }).request(endpoint, {
+      new DaemonTransport({ requestTimeoutMs: 100 }).request(endpoint, {
         kind: "identify",
         instanceId: "instance",
         processToken: "process",
@@ -597,7 +593,7 @@ describe("LocalDaemonTransport validation", () => {
     });
 
     await expect(
-      new LocalDaemonTransport({ requestTimeoutMs: 100 }).request(endpoint, {
+      new DaemonTransport({ requestTimeoutMs: 100 }).request(endpoint, {
         kind: "terminate",
         instanceId: "instance",
         processToken: "process",
@@ -619,7 +615,7 @@ describe("LocalDaemonTransport validation", () => {
           }),
         );
       });
-      const transport = new LocalDaemonTransport({ requestTimeoutMs: 100 });
+      const transport = new DaemonTransport({ requestTimeoutMs: 100 });
 
       await expect(transport.request(endpoint, pingRequest())).rejects.toThrow(
         "Malformed daemon pong",
@@ -628,7 +624,7 @@ describe("LocalDaemonTransport validation", () => {
   );
 
   it("rejects nonboolean deferred telemetry requests", async () => {
-    const transport = new LocalDaemonTransport({ requestTimeoutMs: 100 });
+    const transport = new DaemonTransport({ requestTimeoutMs: 100 });
     const request = {
       kind: "execute",
       protocolVersion: DAEMON_PROTOCOL_VERSION,
@@ -649,7 +645,7 @@ describe("LocalDaemonTransport validation", () => {
   });
 
   it("rejects an unknown caller-supplied daemon command name", async () => {
-    const transport = new LocalDaemonTransport({ requestTimeoutMs: 100 });
+    const transport = new DaemonTransport({ requestTimeoutMs: 100 });
     const request = {
       ...executionRequest(),
       commandName: "not-a-command",
@@ -675,7 +671,7 @@ describe("LocalDaemonTransport validation", () => {
         ]),
       );
     });
-    const transport = new LocalDaemonTransport({ requestTimeoutMs: 100 });
+    const transport = new DaemonTransport({ requestTimeoutMs: 100 });
 
     await expect(
       transport.execute(endpoint, executionRequest()).then((receipt) => receipt.completion),

@@ -1,6 +1,6 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import { DAEMON_PROTOCOL_VERSION } from "../../src/transport/protocol.js";
-import { TestLocalDaemonTransport as LocalDaemonTransport } from "../helpers/local-daemon-transport.js";
+import { TestDaemonTransport as DaemonTransport } from "../helpers/daemon-transport.js";
 import { DaemonWorkspaceIdentity } from "../../src/registry/workspace-identity.js";
 import { TestDaemonRegistry as DaemonRegistry } from "../helpers/daemon-registry.js";
 import type { DaemonExecutorRequest } from "../../src/daemon-executor.js";
@@ -28,18 +28,15 @@ const request = duplicate
       executionMode: "warm" as const,
     };
 
-const receipt = await new LocalDaemonTransport({ requestTimeoutMs: 5_000 }).execute(
-  record.endpoint,
-  {
-    kind: "execute",
-    protocolVersion: DAEMON_PROTOCOL_VERSION,
-    instanceId: record.instanceId,
-    processToken: record.processToken,
-    requestId: duplicate ? readFileSync(requestIdPath!, "utf8") : "accepted-disconnect",
-    commandName: duplicate ? "overview" : "version",
-    request,
-  },
-);
+const receipt = await new DaemonTransport({ requestTimeoutMs: 5_000 }).execute(record.endpoint, {
+  kind: "execute",
+  protocolVersion: DAEMON_PROTOCOL_VERSION,
+  instanceId: record.instanceId,
+  processToken: record.processToken,
+  requestId: duplicate ? readFileSync(requestIdPath!, "utf8") : "accepted-disconnect",
+  commandName: duplicate ? "overview" : "version",
+  request,
+});
 writeFileSync(acceptedPath, JSON.stringify(receipt.acceptance));
 const completion = await receipt.completion;
 writeFileSync(`${acceptedPath}.completion`, JSON.stringify(completion));

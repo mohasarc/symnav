@@ -4,9 +4,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { DAEMON_PROTOCOL_VERSION, type DaemonRequest } from "./protocol.js";
-import { TestLocalDaemonTransport as LocalDaemonTransport } from "../../test/helpers/local-daemon-transport.js";
+import { TestDaemonTransport as DaemonTransport } from "../../test/helpers/daemon-transport.js";
 
-describe("LocalDaemonTransport", () => {
+describe("DaemonTransport", () => {
   const roots: string[] = [];
 
   afterEach(() => {
@@ -16,7 +16,7 @@ describe("LocalDaemonTransport", () => {
 
   it("listens on a daemon endpoint until closed", async () => {
     const endpoint = endpointFor(roots);
-    const server = await new LocalDaemonTransport().listen(endpoint, async () => ({
+    const server = await new DaemonTransport().listen(endpoint, async () => ({
       kind: "stopped",
       instanceId: "instance",
     }));
@@ -26,7 +26,7 @@ describe("LocalDaemonTransport", () => {
 
   it("decodes one request frame and encodes one response frame", async () => {
     const endpoint = endpointFor(roots);
-    const transport = new LocalDaemonTransport();
+    const transport = new DaemonTransport();
     const server = await transport.listen(endpoint, async (request) => ({
       kind: "pong",
       protocolVersion: DAEMON_PROTOCOL_VERSION,
@@ -64,7 +64,7 @@ describe("LocalDaemonTransport", () => {
     const disconnected = new Promise<void>((resolve) => {
       notifyDisconnected = resolve;
     });
-    const server = await new LocalDaemonTransport().listen(endpoint, async (request, send) => {
+    const server = await new DaemonTransport().listen(endpoint, async (request, send) => {
       send.onClose(notifyDisconnected);
       return {
         kind: "pong",
@@ -113,7 +113,7 @@ describe("LocalDaemonTransport", () => {
     });
 
     await expect(
-      new LocalDaemonTransport().request(endpoint, {
+      new DaemonTransport().request(endpoint, {
         kind: "ping",
         protocolVersion: DAEMON_PROTOCOL_VERSION,
         instanceId: "instance",
@@ -126,7 +126,7 @@ describe("LocalDaemonTransport", () => {
 
   it("round trips Unicode and arbitrary newlines through fragmented framing", async () => {
     const endpoint = endpointFor(roots);
-    const transport = new LocalDaemonTransport({ writeChunkSize: 1 });
+    const transport = new DaemonTransport({ writeChunkSize: 1 });
     const server = await transport.listen(endpoint, async (request, send) => {
       if (request.kind !== "execute") throw new Error("Expected execution request");
       expect(request.request.argv).toEqual(["resolve", "\n✓"]);
@@ -170,7 +170,7 @@ describe("LocalDaemonTransport", () => {
 
   it("decodes coalesced request frames independently", async () => {
     const endpoint = endpointFor(roots);
-    const transport = new LocalDaemonTransport();
+    const transport = new DaemonTransport();
     const server = await transport.listen(endpoint, async (request) => ({
       kind: "pong",
       protocolVersion: DAEMON_PROTOCOL_VERSION,
@@ -206,7 +206,7 @@ describe("LocalDaemonTransport", () => {
   });
   it("rejects wrong pong protocol and instance identifiers", async () => {
     const endpoint = endpointFor(roots);
-    const transport = new LocalDaemonTransport();
+    const transport = new DaemonTransport();
     const server = await transport.listen(endpoint, async () => ({
       kind: "pong",
       protocolVersion: DAEMON_PROTOCOL_VERSION + 1,
@@ -226,7 +226,7 @@ describe("LocalDaemonTransport", () => {
 
   it("rejects an otherwise valid execute result with a different request identifier", async () => {
     const endpoint = endpointFor(roots);
-    const transport = new LocalDaemonTransport();
+    const transport = new DaemonTransport();
     const server = await transport.listen(endpoint, async (request, send) => {
       if (request.kind !== "execute") throw new Error("Expected execution request");
       send({
@@ -260,7 +260,7 @@ describe("LocalDaemonTransport", () => {
 
   it("rejects an otherwise valid stop result with a different instance identifier", async () => {
     const endpoint = endpointFor(roots);
-    const transport = new LocalDaemonTransport();
+    const transport = new DaemonTransport();
     const server = await transport.listen(endpoint, async () => ({
       kind: "stopped",
       instanceId: "different-instance",
@@ -278,7 +278,7 @@ describe("LocalDaemonTransport", () => {
 
   it("rejects an identity response for a different process start", async () => {
     const endpoint = endpointFor(roots);
-    const transport = new LocalDaemonTransport();
+    const transport = new DaemonTransport();
     const server = await transport.listen(endpoint, async () => ({
       kind: "identity",
       instanceId: "instance",
@@ -299,7 +299,7 @@ describe("LocalDaemonTransport", () => {
 
   it("correlates unversioned termination to the process start token", async () => {
     const endpoint = endpointFor(roots);
-    const transport = new LocalDaemonTransport();
+    const transport = new DaemonTransport();
     const server = await transport.listen(endpoint, async () => ({
       kind: "terminating",
       instanceId: "instance",
@@ -318,7 +318,7 @@ describe("LocalDaemonTransport", () => {
 
   it("closes the connection when request handling fails", async () => {
     const endpoint = endpointFor(roots);
-    const transport = new LocalDaemonTransport({ requestTimeoutMs: 100 });
+    const transport = new DaemonTransport({ requestTimeoutMs: 100 });
     const server = await transport.listen(endpoint, async () => {
       throw new Error("handler failed");
     });
@@ -335,7 +335,7 @@ describe("LocalDaemonTransport", () => {
 
   it("keeps lifecycle requests on the short timeout", async () => {
     const endpoint = endpointFor(roots);
-    const transport = new LocalDaemonTransport({ requestTimeoutMs: 10 });
+    const transport = new DaemonTransport({ requestTimeoutMs: 10 });
     const server = await transport.listen(endpoint, async (request) => {
       await pause(30);
       return {
@@ -358,7 +358,7 @@ describe("LocalDaemonTransport", () => {
 
   it("does not replace a live server that owns the endpoint", async () => {
     const endpoint = endpointFor(roots);
-    const first = new LocalDaemonTransport();
+    const first = new DaemonTransport();
     const server = await first.listen(endpoint, async (request) => ({
       kind: "pong",
       protocolVersion: DAEMON_PROTOCOL_VERSION,
@@ -367,7 +367,7 @@ describe("LocalDaemonTransport", () => {
     }));
 
     await expect(
-      new LocalDaemonTransport().listen(endpoint, async () => ({
+      new DaemonTransport().listen(endpoint, async () => ({
         kind: "stopped",
         instanceId: "replacement",
       })),

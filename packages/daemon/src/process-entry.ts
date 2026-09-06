@@ -6,7 +6,7 @@ import { DaemonProcessTerminationObserver } from "./process/process-termination-
 import { DaemonProcessCoordinator } from "./process/process-coordinator.js";
 import { DaemonRegistry } from "./registry/registry.js";
 import { DaemonWorkspaceIdentity } from "./registry/workspace-identity.js";
-import { LocalDaemonTransport } from "./transport/local-transport.js";
+import { DaemonTransportFactory } from "./transport/daemon-transport.js";
 
 class DaemonProcessEntry {
   static async run(encodedConfiguration: string | undefined): Promise<void> {
@@ -21,6 +21,7 @@ class DaemonProcessEntry {
     const logger = new DaemonLogger(identity, configuration.instanceId, clock, {
       policy: policy.values.diagnostics,
     });
+    const server = DaemonTransportFactory.create({ policy }).server;
     const coordinator = new DaemonProcessCoordinator({
       identity,
       coordinates: configuration,
@@ -28,7 +29,7 @@ class DaemonProcessEntry {
       executorModuleUrl: configuration.executorModuleUrl,
       policy,
       registry,
-      server: new LocalDaemonTransport({ policy }),
+      server,
       clock,
       logger,
     });

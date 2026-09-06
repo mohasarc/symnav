@@ -1,11 +1,21 @@
 import { mkdirSync } from "node:fs";
 import { DaemonPolicy, type DaemonPolicyValues } from "@symnav/daemon";
 import { DaemonPolicyTestFactory } from "./daemon-policy.js";
-import { LocalDaemonTransport as RuntimeLocalDaemonTransport } from "../../src/transport/local-transport.js";
+import {
+  DaemonTransportFactory,
+  type DaemonTransportComponents,
+  type DaemonTransportOptions,
+} from "../../src/transport/daemon-transport.js";
+import type {
+  DaemonExecuteRequest,
+  DaemonExecutionStatusRequest,
+  DaemonLifecycleRequest,
+} from "../../src/transport/protocol.js";
+import type { DaemonRequestHandler } from "../../src/transport/contracts.js";
 
-type LocalDaemonTransportPolicy = Pick<DaemonPolicyValues, "transport" | "delivery" | "output">;
+type DaemonTransportPolicy = Pick<DaemonPolicyValues, "transport" | "delivery" | "output">;
 
-interface TestLocalDaemonTransportOptions {
+interface TestDaemonTransportOptions {
   readonly maximumFrameBytes?: number;
   readonly requestTimeoutMs?: number;
   readonly executionRequestTimeoutMs?: number;
@@ -14,20 +24,27 @@ interface TestLocalDaemonTransportOptions {
   readonly outputInlineBytes?: number;
 }
 
-export class TestLocalDaemonTransport extends RuntimeLocalDaemonTransport {
+export class TestDaemonTransport {
+  private readonly components: DaemonTransportComponents;
+
   constructor(
     policyOrOptions:
       | DaemonPolicyValues
-      | LocalDaemonTransportPolicy
-      | TestLocalDaemonTransportOptions = {},
+      | DaemonTransportPolicy
+      | DaemonTransportOptions
+      | TestDaemonTransportOptions = {},
   ) {
+    if ("policy" in policyOrOptions) {
+      this.components = DaemonTransportFactory.create(policyOrOptions);
+      return;
+    }
     if ("transport" in policyOrOptions) {
       const policy = DaemonPolicyTestFactory.withOverrides(DaemonPolicy.currentSystem(), {
         transport: policyOrOptions.transport,
         delivery: policyOrOptions.delivery,
         output: policyOrOptions.output,
       });
-      super({ policy });
+      this.components = DaemonTransportFactory.create({ policy });
       return;
     }
     const options = policyOrOptions;
@@ -58,12 +75,32 @@ export class TestLocalDaemonTransport extends RuntimeLocalDaemonTransport {
     if (options.outputDirectory !== undefined) {
       mkdirSync(options.outputDirectory, { recursive: true });
     }
-    super({
+    this.components = DaemonTransportFactory.create({
       policy,
       ...(options.writeChunkSize === undefined ? {} : { writeChunkSize: options.writeChunkSize }),
       ...(options.outputDirectory === undefined
         ? {}
         : { captureDirectory: options.outputDirectory }),
     });
+  }
+
+  request(endpoint: string, request: DaemonLifecycleRequest) {
+    return this.components.lifecycle.request(endpoint, request);
+  }
+
+  executionStatus(endpoint: string, request: DaemonExecutionStatusRequest) {
+    return this.components.lifecycle.executionStatus(endpoint, request);
+  }
+
+  execute(endpoint: string, request: DaemonExecuteRequest) {
+    return this.components.execution.execute(endpoint, request);
+  }
+
+  listen(endpoint: string, handler: DaemonRequestHandler) {
+    return this.components.server.listen(endpoint, handler);
+  }
+
+  removeUnavailableEndpoint(endpoint: string) {
+    return this.components.server.removeUnavailableEndpoint(endpoint);
   }
 }

@@ -1,4 +1,4 @@
-import { DaemonAdmissionRejections, type DaemonExecuteRejectionCode } from "@symnav/daemon";
+import { DaemonAdmissionRejections, type DaemonExecuteRejectionCode } from "../daemon-admission.js";
 
 export type DaemonDeliveryState = "not-submitted" | "submitted-unconfirmed" | "accepted";
 

@@ -179,10 +179,7 @@ describe("daemon production clock ownership", () => {
     ["globalThis callable wall clock", "globalThis.Date();"],
     ["wrapped callable wall clock", "(Date as typeof Date)!();"],
     ["const callable wall clock alias", "const wall = Date; wall();"],
-    [
-      "destructured callable wall clock",
-      "const { Date: wall } = globalThis; wall();",
-    ],
+    ["destructured callable wall clock", "const { Date: wall } = globalThis; wall();"],
     [
       "destructured callable wall clock through global alias",
       "const root = globalThis; const { Date: wall } = root; wall();",
@@ -422,7 +419,7 @@ class DaemonRawClockSourceInventory {
     }
     if (
       ts.isCallExpression(node) &&
-      (["now", "hrtime", "bigint"] as const).some((clockValue) =>
+      (["date", "now", "hrtime", "bigint"] as const).some((clockValue) =>
         DaemonRawClockSourceInventory.isClockValue(node.expression, clockValue, aliases, checker),
       )
     ) {

@@ -1,6 +1,5 @@
-import type { DaemonProcessTerminator } from "../../src/daemon/daemon-process-launcher.js";
 import { describe, expect, it } from "vitest";
-import { E2eProcessCleanup } from "../helpers/e2e-process-cleanup.js";
+import { E2eProcessCleanup, type TestProcessTerminator } from "../helpers/e2e-process-cleanup.js";
 import {
   NavigationModeCleanup,
   type NavigationModeCleanupDependencies,
@@ -111,7 +110,7 @@ describe("NavigationModeCleanup", () => {
     async (nestedStatus, expectedStatus) => {
       const alive = new Set(daemons.map((daemon) => daemon.pid));
       const attempted: number[] = [];
-      const processTerminator: DaemonProcessTerminator = {
+      const processTerminator: TestProcessTerminator = {
         isAlive: (processId) => alive.has(processId),
         terminate: async (processId) => {
           attempted.push(processId);

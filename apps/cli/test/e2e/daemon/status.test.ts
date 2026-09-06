@@ -309,7 +309,6 @@ describe("symnav daemon status", () => {
     const originalRecord = daemonRecords(stateDir)[0];
     expect(originalRecord).toBeDefined();
     await E2eProcessCleanup.kill(daemonPids);
-    await E2eProcessCleanup.waitForEndpointRelease(originalRecord!.endpoint);
     daemonPids.length = 0;
     const recordPath = DaemonStateFiles.matchingPaths(stateDir, ".json")[0];
     expect(recordPath).toBeDefined();

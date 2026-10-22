@@ -1,15 +1,15 @@
 import { afterEach, expect, it, vi } from "vitest";
+import { DaemonPolicy } from "@symnav/daemon";
+import { DaemonPolicyTestFactory } from "@symnav/daemon/policy-testing";
 import type { ProgramDependencies } from "../program-dependencies.js";
 import { DAEMON_PROTOCOL_VERSION, type DaemonIdentityCoordinates } from "./daemon-protocol.js";
 import { DaemonWorkspaceIdentity } from "./daemon-workspace-identity.js";
-import type { DaemonResourcePolicyRecord } from "./daemon-resource-monitor.js";
 
 interface DaemonProcessConfiguration extends DaemonIdentityCoordinates {
   readonly protocolVersion: number;
   readonly stateDirectory: string;
   readonly symnavVersion: string;
-  readonly memoryCapBytes: number;
-  readonly resourcePolicy: DaemonResourcePolicyRecord;
+  readonly policy: ReturnType<DaemonPolicy["toSerialized"]>;
 }
 
 afterEach(() => {
@@ -29,6 +29,18 @@ it("keeps detached dependencies on the serialized canonical state directory", as
   const configuredStateDirectory = "/canonical/state-a";
   const retargetedStateDirectory = "/canonical/state-b";
   const identity = DaemonWorkspaceIdentity.from("/workspace", configuredStateDirectory);
+  const policy = DaemonPolicyTestFactory.withOverrides(
+    DaemonPolicy.fromSystemMemory({ totalBytes: 1024 * 1024 * 1024 }),
+    {
+      resources: {
+        hardProcessRssBytes: 512 * 1024 * 1024,
+        softProcessRssBytes: 409 * 1024 * 1024,
+        resumeProcessRssBytes: 358 * 1024 * 1024,
+        workerMaxOldGenerationSizeMiB: 257,
+        workerHeapSampleIntervalMs: 26,
+      },
+    },
+  );
   const configuration: DaemonProcessConfiguration = {
     protocolVersion: DAEMON_PROTOCOL_VERSION,
     symnavVersion: "0.1.0",
@@ -40,14 +52,7 @@ it("keeps detached dependencies on the serialized canonical state directory", as
     instanceId: "instance",
     processToken: "token",
     endpoint: identity.endpoint("instance"),
-    memoryCapBytes: 1,
-    resourcePolicy: {
-      effectiveMemoryBytes: 1024 * 1024 * 1024,
-      hardProcessRssBytes: 512 * 1024 * 1024,
-      softProcessRssBytes: 409 * 1024 * 1024,
-      resumeProcessRssBytes: 358 * 1024 * 1024,
-      workerMaxOldGenerationSizeMb: 256,
-    },
+    policy: policy.toSerialized(),
   };
   let dependencyStateDirectory = "";
   let daemonStateDirectory = "";
@@ -55,13 +60,15 @@ it("keeps detached dependencies on the serialized canonical state directory", as
   let daemonLogger: unknown;
   let terminationRecorder: unknown;
   let terminationObserverInstalled = false;
-  const createDefaultDependencies = vi.fn((stateDirectory?: string) => {
-    dependencyStateDirectory = stateDirectory ?? retargetedStateDirectory;
-    return {
-      stateDirectory: dependencyStateDirectory,
-      symnavVersion: configuration.symnavVersion,
-    } as unknown as ProgramDependencies;
-  });
+  const createDefaultDependencies = vi.fn(
+    (stateDirectory?: string, _daemonPolicy?: DaemonPolicy) => {
+      dependencyStateDirectory = stateDirectory ?? retargetedStateDirectory;
+      return {
+        stateDirectory: dependencyStateDirectory,
+        symnavVersion: configuration.symnavVersion,
+      } as unknown as ProgramDependencies;
+    },
+  );
 
   vi.doMock("../program.js", () => ({ createDefaultDependencies }));
   vi.doMock("./daemon-process-launcher.js", () => ({
@@ -86,14 +93,14 @@ it("keeps detached dependencies on the serialized canonical state directory", as
     WorkspaceDaemon: class {
       constructor(options: {
         readonly dependencies: ProgramDependencies;
-        readonly resourcePolicy: { readonly record: DaemonResourcePolicyRecord };
+        readonly policy: DaemonPolicy;
         readonly logger: unknown;
       }) {
         const stateOwnedDependencies = options.dependencies as ProgramDependencies & {
           readonly stateDirectory: string;
         };
         daemonStateDirectory = stateOwnedDependencies.stateDirectory;
-        daemonWorkerLimit = options.resourcePolicy.record.workerMaxOldGenerationSizeMb;
+        daemonWorkerLimit = options.policy.values.resources.workerMaxOldGenerationSizeMiB;
         daemonLogger = options.logger;
       }
 
@@ -104,10 +111,10 @@ it("keeps detached dependencies on the serialized canonical state directory", as
   await import("./daemon-entry.js");
 
   expect(createDefaultDependencies).toHaveBeenCalledOnce();
-  expect(createDefaultDependencies).toHaveBeenCalledWith(configuredStateDirectory);
+  expect(createDefaultDependencies).toHaveBeenCalledWith(configuredStateDirectory, policy);
   expect(dependencyStateDirectory).toBe(configuredStateDirectory);
   expect(daemonStateDirectory).toBe(configuredStateDirectory);
-  expect(daemonWorkerLimit).toBe(256);
+  expect(daemonWorkerLimit).toBe(257);
   expect(terminationObserverInstalled).toBe(true);
   expect(terminationRecorder).toBe(daemonLogger);
 });

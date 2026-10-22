@@ -19,6 +19,7 @@ import { fileURLToPath } from "node:url";
 import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
 import { afterEach, describe, expect, it } from "vitest";
+import { DaemonPolicy } from "@symnav/daemon";
 import { fixturePath, runSymnavBinary, type RunSymnavBinaryResult } from "@symnav/testing";
 import type { ChildProcess } from "node:child_process";
 import type { CliExecutionRequest } from "../../../src/command-execution-result.js";
@@ -741,7 +742,10 @@ class DaemonParityHarness {
     const processToken = `${instanceId}-token`;
     const readyPath = join(this.stateDirectory, `${instanceId}-ready`);
     const requestStartedPath = join(this.stateDirectory, `${instanceId}-request`);
-    const symnavVersion = createDefaultDependencies(identity.stateDirectory).symnavVersion;
+    const symnavVersion = createDefaultDependencies(
+      identity.stateDirectory,
+      DaemonPolicy.currentSystem(),
+    ).symnavVersion;
     const lease = registry.acquireStartup(identity, instanceId);
     if (lease === undefined) throw new Error("Expected controlled daemon startup ownership");
     const child = spawn(

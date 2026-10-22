@@ -10,6 +10,9 @@ const pendingResults = new Map();
 
 parentPort.on("message", (message) => {
   if (message.kind === "initialize") {
+    if (workerData.policyPath !== undefined) {
+      writeFileSync(workerData.policyPath, JSON.stringify(workerData.policy));
+    }
     if (workerData.mode === "initialize-heap-oom") exhaustOldGeneration();
     if (workerData.mode === "malformed") {
       parentPort.postMessage({ kind: "ready", generation, fileCount: "wrong" });

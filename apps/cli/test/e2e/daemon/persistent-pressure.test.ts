@@ -12,6 +12,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
+import { DaemonPolicy } from "@symnav/daemon";
 import { createDefaultDependencies } from "../../../src/program.js";
 import {
   DAEMON_PROTOCOL_VERSION,
@@ -72,7 +73,8 @@ describe("persistent daemon resource pressure", () => {
         requestStartedPath,
         pressurePath,
         executionOrderPath,
-        createDefaultDependencies(identity.stateDirectory).symnavVersion,
+        createDefaultDependencies(identity.stateDirectory, DaemonPolicy.currentSystem())
+          .symnavVersion,
       ],
       { stdio: ["ignore", "pipe", "pipe"] },
     );
@@ -88,7 +90,10 @@ describe("persistent daemon resource pressure", () => {
     const record: DaemonRecord = {
       schemaVersion: DAEMON_RECORD_SCHEMA_VERSION,
       protocolVersion: DAEMON_PROTOCOL_VERSION,
-      symnavVersion: createDefaultDependencies(identity.stateDirectory).symnavVersion,
+      symnavVersion: createDefaultDependencies(
+        identity.stateDirectory,
+        DaemonPolicy.currentSystem(),
+      ).symnavVersion,
       workspaceRoot: identity.workspaceRoot,
       workspaceKey: identity.workspaceKey,
       stateKey: identity.stateKey,

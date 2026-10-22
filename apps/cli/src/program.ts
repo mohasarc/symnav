@@ -4,6 +4,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Command as CommanderCommand } from "commander";
 import { NodeFileSystem } from "@symnav/core";
+import { DaemonPolicy } from "@symnav/daemon";
 import { TypeScriptBackend } from "@symnav/backend-typescript";
 import { NodeTelemetryWritePort, NodeUsageRecorder, usageLogPath } from "@symnav/telemetry";
 import type { Clock } from "@symnav/telemetry";
@@ -41,11 +42,15 @@ export function createDefaultProgramContext(): ProgramContext {
   };
 }
 
-export function createDefaultDependencies(canonicalStateDirectory: string): ProgramDependencies {
+export function createDefaultDependencies(
+  canonicalStateDirectory: string,
+  daemonPolicy: DaemonPolicy,
+): ProgramDependencies {
   const fs = new NodeFileSystem();
   const clock: Clock = { now: () => Date.now() };
   return {
     stateDirectory: canonicalStateDirectory,
+    daemonPolicy,
     fs,
     backends: () => [new TypeScriptBackend(fs)],
     git: new NodeGitHistory(),
@@ -66,7 +71,11 @@ export function buildProgram(
 ): CommanderCommand {
   const ctx = context ?? createDefaultProgramContext();
   const deps =
-    dependencies ?? createDefaultDependencies(new StateDirectoryResolver(process.env).resolve());
+    dependencies ??
+    createDefaultDependencies(
+      new StateDirectoryResolver(process.env).resolve(),
+      DaemonPolicy.currentSystem(),
+    );
   const program = new CommanderCommand();
   program
     .name("symnav")

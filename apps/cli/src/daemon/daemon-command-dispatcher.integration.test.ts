@@ -2,6 +2,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { describe, expect, it, vi } from "vitest";
+import { DaemonPolicy } from "@symnav/daemon";
 import {
   CommandOutputSnapshot,
   type CliExecutionRequest,
@@ -231,6 +232,7 @@ function createDispatcher(
         recorder: { record: () => {} },
       }) as unknown as ProgramDependencies,
     stateDirectory,
+    policy: DaemonPolicy.currentSystem(),
     resolveWorkspaceRoot: async () => workspaceRoot,
     runtimeFactory: () => runtime,
     executorFactory: () => ({ execute: coldExecute }),

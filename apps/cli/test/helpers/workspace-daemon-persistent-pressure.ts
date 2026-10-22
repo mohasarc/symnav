@@ -1,4 +1,5 @@
 import { appendFileSync, existsSync, writeFileSync } from "node:fs";
+import { DaemonPolicy } from "@symnav/daemon";
 import { StateDirectoryResolver } from "../../src/state-directory-resolver.js";
 import type {
   CliExecutionRequest,
@@ -133,6 +134,7 @@ class PressureNavigationWorker implements DaemonNavigationWorker {
 const canonicalStateDirectory = StateDirectoryResolver.canonicalize(stateDirectory);
 const identity = DaemonWorkspaceIdentity.from(workspaceRoot, canonicalStateDirectory);
 const policy = DaemonResourcePolicy.fromSystemMemory(512 * 1024 * 1024);
+const daemonPolicy = DaemonPolicy.currentSystem();
 writeFileSync(`${readyPath}.boot`, String(process.pid));
 const daemon = new WorkspaceDaemon({
   identity,
@@ -140,7 +142,8 @@ const daemon = new WorkspaceDaemon({
   processToken,
   symnavVersion,
   memoryCapBytes: policy.record.hardProcessRssBytes,
-  dependencies: createDefaultDependencies(canonicalStateDirectory),
+  policy: daemonPolicy,
+  dependencies: createDefaultDependencies(canonicalStateDirectory, daemonPolicy),
   registry: new DaemonRegistry(identity.registryDirectory),
   transport: new LocalDaemonTransport(),
   navigationWorkerFactory: (generation) =>

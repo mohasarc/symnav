@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { createWorkspace } from "@symnav/core";
+import type { DaemonPolicy } from "@symnav/daemon";
 import { CliProgramExecutor } from "../cli-program-executor.js";
 import type {
   CliExecutionRequest,
@@ -72,6 +73,7 @@ interface CommandExecutor {
 export interface DaemonCommandDispatcherOptions {
   readonly createDependencies: (stateDirectory: string) => ProgramDependencies;
   readonly stateDirectory: string;
+  readonly policy: DaemonPolicy;
   readonly daemonEnabled?: () => boolean;
   readonly selector?: InvocationWorkspaceSelector;
   readonly resolveWorkspaceRoot?: (
@@ -81,6 +83,7 @@ export interface DaemonCommandDispatcherOptions {
   readonly runtimeFactory?: (
     identity: DaemonWorkspaceIdentity,
     dependencies: ProgramDependencies,
+    policy: DaemonPolicy,
   ) => DaemonDispatchRuntime;
   readonly executorFactory?: (dependencies: ProgramDependencies) => CommandExecutor;
   readonly requestId?: () => string;
@@ -96,9 +99,11 @@ export class DaemonCommandDispatcher {
   private readonly runtimeFactory: (
     identity: DaemonWorkspaceIdentity,
     dependencies: ProgramDependencies,
+    policy: DaemonPolicy,
   ) => DaemonDispatchRuntime;
   private readonly executorFactory: (dependencies: ProgramDependencies) => CommandExecutor;
   private readonly requestId: () => string;
+  private readonly policy: DaemonPolicy;
 
   constructor(private readonly options: DaemonCommandDispatcherOptions) {
     this.selector = options.selector ?? new InvocationWorkspaceSelector();
@@ -111,6 +116,7 @@ export class DaemonCommandDispatcher {
     this.executorFactory =
       options.executorFactory ?? ((dependencies) => new CliProgramExecutor(dependencies));
     this.requestId = options.requestId ?? randomUUID;
+    this.policy = options.policy;
   }
 
   async execute(request: CliExecutionRequest): Promise<DispatchedCommandResult> {
@@ -136,7 +142,7 @@ export class DaemonCommandDispatcher {
     }
 
     const identity = DaemonWorkspaceIdentity.from(workspaceRoot, this.options.stateDirectory);
-    const runtime = this.runtimeFactory(identity, workspaceDependencies);
+    const runtime = this.runtimeFactory(identity, workspaceDependencies, this.policy);
     const routeSnapshot = await this.routeFor(
       identity,
       runtime,
@@ -268,13 +274,14 @@ export class DaemonCommandDispatcher {
   private static createRuntime(
     identity: DaemonWorkspaceIdentity,
     dependencies: ProgramDependencies,
+    policy: DaemonPolicy,
   ): DaemonDispatchRuntime {
     const registry = new DaemonRegistry(identity.registryDirectory);
     const transport = new LocalDaemonTransport();
     const processTerminator = new NodeDaemonProcessTerminator();
     const launcher = new NodeDaemonProcessLauncher(
       dependencies.symnavVersion,
-      undefined,
+      policy,
       processTerminator,
     );
     return {

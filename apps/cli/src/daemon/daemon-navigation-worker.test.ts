@@ -1,4 +1,9 @@
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
+import { DaemonPolicy } from "@symnav/daemon";
+import { DaemonPolicyTestFactory } from "@symnav/daemon/policy-testing";
 import type { CliExecutionRequest } from "../command-execution-result.js";
 import { NodeDaemonNavigationWorker } from "./daemon-navigation-worker.js";
 
@@ -9,6 +14,39 @@ const request: CliExecutionRequest = {
 };
 
 describe("NodeDaemonNavigationWorker", () => {
+  it("passes the exact complete policy to worker data", async () => {
+    const directory = mkdtempSync(join(tmpdir(), "symnav-worker-policy-"));
+    const policyPath = join(directory, "policy.json");
+    const policy = DaemonPolicyTestFactory.withOverrides(
+      DaemonPolicy.fromSystemMemory({ totalBytes: 1024 * 1024 * 1024 }),
+      {
+        resources: {
+          hardProcessRssBytes: 912,
+          softProcessRssBytes: 911,
+          resumeProcessRssBytes: 910,
+          workerHeapSampleIntervalMs: 913,
+        },
+      },
+    );
+    try {
+      const worker = new NodeDaemonNavigationWorker({
+        generation: 7,
+        configuration: { stateDirectory: "/state", policy: policy.toSerialized() },
+        resourceLimits: { maxOldGenerationSizeMb: 128 },
+        entryUrl: new URL(
+          "../../test/helpers/daemon-navigation-worker-fixture.mjs",
+          import.meta.url,
+        ),
+        workerData: { mode: "block", policyPath },
+      });
+      await worker.start("/repo");
+      expect(JSON.parse(readFileSync(policyPath, "utf8"))).toEqual(policy.toSerialized());
+      await worker.drainAndClose();
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
+  });
+
   it("keeps the main thread responsive during blocking initialization and execution", async () => {
     const worker = createWorker("block");
     const initializationTimer = timerTurn();
@@ -139,9 +177,10 @@ describe("NodeDaemonNavigationWorker", () => {
 });
 
 function createWorker(mode: string, maxOldGenerationSizeMb = 128): NodeDaemonNavigationWorker {
+  const policy = DaemonPolicy.fromSystemMemory({ totalBytes: 512 * 1024 * 1024 });
   return new NodeDaemonNavigationWorker({
     generation: 7,
-    configuration: { stateDirectory: "/state" },
+    configuration: { stateDirectory: "/state", policy: policy.toSerialized() },
     resourceLimits: { maxOldGenerationSizeMb },
     entryUrl: new URL("../../test/helpers/daemon-navigation-worker-fixture.mjs", import.meta.url),
     workerData: { mode },

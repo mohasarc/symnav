@@ -2,6 +2,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "nod
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { DaemonPolicy } from "@symnav/daemon";
 import {
   CommandOutputSnapshot,
   type CliExecutionRequest,
@@ -1301,7 +1302,10 @@ describe("WorkspaceDaemon requests", () => {
         generations.push(generation);
         return new NodeDaemonNavigationWorker({
           generation,
-          configuration: { stateDirectory: "/state" },
+          configuration: {
+            stateDirectory: "/state",
+            policy: DaemonPolicy.currentSystem().toSerialized(),
+          },
           entryUrl: new URL(
             "../../test/helpers/daemon-navigation-worker-fixture.mjs",
             import.meta.url,
@@ -1353,7 +1357,10 @@ describe("WorkspaceDaemon requests", () => {
       navigationWorkerFactory: (generation) =>
         new NodeDaemonNavigationWorker({
           generation,
-          configuration: { stateDirectory: "/state" },
+          configuration: {
+            stateDirectory: "/state",
+            policy: DaemonPolicy.currentSystem().toSerialized(),
+          },
           entryUrl: new URL(
             "../../test/helpers/daemon-navigation-worker-fixture.mjs",
             import.meta.url,
@@ -1393,7 +1400,10 @@ describe("WorkspaceDaemon requests", () => {
       navigationWorkerFactory: (generation) =>
         new NodeDaemonNavigationWorker({
           generation,
-          configuration: { stateDirectory: "/state" },
+          configuration: {
+            stateDirectory: "/state",
+            policy: DaemonPolicy.currentSystem().toSerialized(),
+          },
           entryUrl: new URL(
             "../../test/helpers/daemon-navigation-worker-fixture.mjs",
             import.meta.url,
@@ -1494,13 +1504,15 @@ class RequestHarness {
       (options.navigationWorkerFactory === undefined
         ? new ExecutorNavigationWorker(executor ?? new ImmediateExecutor())
         : undefined);
+    const daemonPolicy = DaemonPolicy.currentSystem();
     const daemon = new WorkspaceDaemon({
       identity: harness.identity,
       instanceId: harness.instanceId,
       processToken: harness.processToken,
       symnavVersion: "test",
       memoryCapBytes: 1024,
-      dependencies: createDefaultDependencies(harness.identity.stateDirectory),
+      policy: daemonPolicy,
+      dependencies: createDefaultDependencies(harness.identity.stateDirectory, daemonPolicy),
       registry: harness.registry,
       transport: harness.transport as unknown as LocalDaemonTransport,
       ...(navigationWorker === undefined ? {} : { navigationWorker }),

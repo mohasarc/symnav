@@ -3,6 +3,8 @@ import { tmpdir } from "node:os";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { StateDirectoryResolver } from "../state-directory-resolver.js";
+import { DaemonPolicy } from "@symnav/daemon";
+import { DaemonPolicyTestFactory } from "@symnav/daemon/policy-testing";
 
 const { processListeners, spawnMock } = vi.hoisted(() => ({
   processListeners: new Map<string, (...args: unknown[]) => void>(),
@@ -15,7 +17,6 @@ import {
   DaemonProcessConfigurationParser,
   NodeDaemonProcessLauncher,
 } from "./daemon-process-launcher.js";
-import { DaemonResourcePolicy } from "./daemon-resource-monitor.js";
 import { DaemonWorkspaceIdentity } from "./daemon-workspace-identity.js";
 
 interface FakeChildProcess {
@@ -68,7 +69,64 @@ describe("NodeDaemonProcessLauncher", () => {
       );
       mkdirSync(identity.identityDirectory, { recursive: true });
 
-      const policy = DaemonResourcePolicy.fromSystemMemory(1024 * 1024 * 1024);
+      const policy = DaemonPolicyTestFactory.withOverrides(
+        DaemonPolicy.fromSystemMemory({ totalBytes: 1024 * 1024 * 1024 }),
+        {
+          transport: {
+            singleResponseTimeoutMs: 101,
+            statusResponseTimeoutMs: 102,
+            executionAdmissionTimeoutMs: 103,
+            maximumJsonPayloadBytes: 104,
+            maximumExecutionControlPayloadBytes: 105,
+          },
+          startup: {
+            coordinationGraceMs: 201,
+            heartbeatIntervalMs: 202,
+            authorizationPollIntervalMs: 203,
+            observationPollIntervalMs: 204,
+            previousInstanceTerminationTimeoutMs: 205,
+            childFailureRetryLimit: 206,
+          },
+          shutdown: {
+            idleTimeoutMs: 301,
+            stopTimeoutMs: 302,
+            forcedTerminationReserveMaximumMs: 303,
+            controllerPollIntervalMs: 304,
+            processSignalExitTimeoutMs: 305,
+            processExitPollIntervalMs: 306,
+            resourceDrainAcknowledgementGraceMs: 307,
+            resourceDrainAcknowledgementPollIntervalMs: 308,
+          },
+          delivery: {
+            postAcceptanceExecutionReattachmentLimit: 401,
+            resultTransferResumeLimitPerExecutionAttempt: 402,
+          },
+          output: {
+            maximumChunkRawBytes: 501,
+            inlineRawBytes: 502,
+            maximumResultRawBytes: 503,
+            maximumAggregateSpoolRawBytes: 504,
+          },
+          resources: {
+            effectiveMemoryBytes: 601,
+            hardProcessRssBytes: 604,
+            softProcessRssBytes: 603,
+            resumeProcessRssBytes: 602,
+            workerMaxOldGenerationSizeMiB: 605,
+            supervisionIntervalMs: 606,
+            replacementWindowMs: 607,
+            replacementLimit: 608,
+            workerHeapSampleIntervalMs: 609,
+          },
+          diagnostics: {
+            logRotateBytes: 701,
+            logBackupCount: 702,
+            maximumQueuedEvents: 703,
+            disconnectedTraceRetentionMs: 704,
+            maximumDisconnectedTraces: 705,
+          },
+        },
+      );
       await new NodeDaemonProcessLauncher("1.2.3", policy).launch(
         identity,
         "instance",
@@ -98,7 +156,7 @@ describe("NodeDaemonProcessLauncher", () => {
       expect(configuration.instanceId).toBe("instance");
       expect(configuration.processToken).toBe("process-token");
       expect(configuration.startupOwnerKind).toBe("daemon");
-      expect(configuration.resourcePolicy).toEqual(policy.record);
+      expect(configuration.policy).toEqual(policy.toSerialized());
       expect(configuration.endpoint).toBe(identity.endpoint("instance"));
       expect(options.env.SYMNAV_STATE_DIR).toBe(absoluteStateDirectory);
       expect(options.cwd).toBe(tmpdir());
@@ -128,22 +186,20 @@ describe("NodeDaemonProcessLauncher", () => {
     const identity = launcherIdentity(roots);
 
     await expect(
-      new NodeDaemonProcessLauncher("1.2.3", 128 * 1024 * 1024).launch(
-        identity,
-        "instance",
-        "process-token",
-      ),
+      new NodeDaemonProcessLauncher(
+        "1.2.3",
+        DaemonPolicy.fromSystemMemory({ totalBytes: 256 * 1024 * 1024 }),
+      ).launch(identity, "instance", "process-token"),
     ).rejects.toThrow("spawn refused");
     expect(spawnMock.mock.results[0]?.value.unref).not.toHaveBeenCalled();
   });
 
   it("reports child exit through the launched process immediately", async () => {
     const identity = launcherIdentity(roots);
-    const daemonProcess = await new NodeDaemonProcessLauncher("1.2.3", 128 * 1024 * 1024).launch(
-      identity,
-      "instance",
-      "process-token",
-    );
+    const daemonProcess = await new NodeDaemonProcessLauncher(
+      "1.2.3",
+      DaemonPolicy.fromSystemMemory({ totalBytes: 256 * 1024 * 1024 }),
+    ).launch(identity, "instance", "process-token");
     const child = spawnMock.mock.results[0]?.value as FakeChildProcess;
 
     child.emit("exit", 7, "SIGTERM");
@@ -157,11 +213,10 @@ describe("NodeDaemonProcessLauncher", () => {
 
   it("reports a child spawn error after launch", async () => {
     const identity = launcherIdentity(roots);
-    const daemonProcess = await new NodeDaemonProcessLauncher("1.2.3", 128 * 1024 * 1024).launch(
-      identity,
-      "instance",
-      "process-token",
-    );
+    const daemonProcess = await new NodeDaemonProcessLauncher(
+      "1.2.3",
+      DaemonPolicy.fromSystemMemory({ totalBytes: 256 * 1024 * 1024 }),
+    ).launch(identity, "instance", "process-token");
     const child = spawnMock.mock.results[0]?.value as FakeChildProcess;
     const error = new Error("child failed");
     error.name = "ChildProcessError";

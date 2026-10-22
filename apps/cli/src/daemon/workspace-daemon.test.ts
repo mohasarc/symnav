@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { DaemonPolicy } from "@symnav/daemon";
 import {
   CommandOutputSnapshot,
   type CliExecutionRequest,
@@ -476,13 +477,15 @@ class WorkspaceDaemonHarness {
     ) {
       throw new Error("Expected daemon-owned startup publication");
     }
+    const daemonPolicy = DaemonPolicy.currentSystem();
     const daemon = new WorkspaceDaemon({
       identity: harness.identity,
       instanceId: harness.instanceId,
       processToken: "runtime-token",
       symnavVersion: "test",
       memoryCapBytes: runtime.memoryCapBytes ?? 1024,
-      dependencies: createDefaultDependencies(harness.identity.stateDirectory),
+      policy: daemonPolicy,
+      dependencies: createDefaultDependencies(harness.identity.stateDirectory, daemonPolicy),
       registry: harness.registry,
       transport: harness.transport,
       navigationWorker: runtime.navigationWorker ?? new ExecutorNavigationWorker(executor),

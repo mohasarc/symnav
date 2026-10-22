@@ -1,4 +1,5 @@
 import type { ProgramDependencies } from "../program-dependencies.js";
+import type { DaemonPolicy } from "@symnav/daemon";
 import type { CommandExecutionResult, CommandOutputRecord } from "../command-execution-result.js";
 import {
   AcceptedRequestCorruptionError,
@@ -53,6 +54,7 @@ export interface WorkspaceDaemonOptions {
   readonly processToken: string;
   readonly symnavVersion: string;
   readonly memoryCapBytes: number;
+  readonly policy: DaemonPolicy;
   readonly dependencies: ProgramDependencies;
   readonly registry: DaemonRegistry;
   readonly transport: LocalDaemonTransport;
@@ -100,6 +102,7 @@ export class WorkspaceDaemon {
   private readonly lifetime: DaemonLifetime;
   private readonly resourceSupervisor: DaemonResourceSupervisor;
   private readonly resourcePolicy: DaemonResourcePolicy;
+  private readonly policy: DaemonPolicy;
   private readonly operationObserver: DaemonOperationObserver;
   private readonly acceptedRequests: AcceptedRequestLedger;
   private readonly completionSpools: DaemonCompletionSpoolStore;
@@ -128,6 +131,8 @@ export class WorkspaceDaemon {
   private workerRecoveryOperation: Promise<void> | undefined;
 
   constructor(private readonly options: WorkspaceDaemonOptions) {
+    const policy = options.policy;
+    this.policy = policy;
     this.forceEscalated = new Promise((resolve) => {
       this.resolveForceEscalated = resolve;
     });
@@ -159,7 +164,10 @@ export class WorkspaceDaemon {
         ? (generation) =>
             new NodeDaemonNavigationWorker({
               generation,
-              configuration: { stateDirectory: options.identity.stateDirectory },
+              configuration: {
+                stateDirectory: options.identity.stateDirectory,
+                policy: policy.toSerialized(),
+              },
               resourceLimits: {
                 maxOldGenerationSizeMb: resourcePolicy.record.workerMaxOldGenerationSizeMb,
               },

@@ -65,7 +65,12 @@ class DaemonStartAction {
         registry,
         new LocalDaemonTransport(),
         stateDirectory,
-        { launcher: new NodeDaemonProcessLauncher(dependencies.symnavVersion) },
+        {
+          launcher: new NodeDaemonProcessLauncher(
+            dependencies.symnavVersion,
+            dependencies.daemonPolicy,
+          ),
+        },
       );
       const result = await controller.start(workspace.root);
       context.stdout.write(

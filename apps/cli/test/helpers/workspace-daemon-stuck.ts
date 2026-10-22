@@ -1,4 +1,5 @@
 import { existsSync, writeFileSync } from "node:fs";
+import { DaemonPolicy } from "@symnav/daemon";
 import { StateDirectoryResolver } from "../../src/state-directory-resolver.js";
 import type {
   CliExecutionRequest,
@@ -49,7 +50,8 @@ const releasePath =
     : releasePathArgument;
 const symnavVersion = configuredSymnavVersion ?? "test";
 const canonicalStateDirectory = StateDirectoryResolver.canonicalize(stateDirectory);
-const dependencies = createDefaultDependencies(canonicalStateDirectory);
+const daemonPolicy = DaemonPolicy.currentSystem();
+const dependencies = createDefaultDependencies(canonicalStateDirectory, daemonPolicy);
 const retainedBackends = dependencies.backends();
 const executor = new CliProgramExecutor({ ...dependencies, backends: () => retainedBackends });
 let executionCount = 0;
@@ -160,7 +162,10 @@ const workerExitReleasePath = `${acceptedRequestStartedPath}.release-worker-exit
 const navigationWorker = workerExit
   ? new NodeDaemonNavigationWorker({
       generation: 7,
-      configuration: { stateDirectory: canonicalStateDirectory },
+      configuration: {
+        stateDirectory: canonicalStateDirectory,
+        policy: dependencies.daemonPolicy.toSerialized(),
+      },
       resourceLimits: { maxOldGenerationSizeMb: 4096 },
       entryUrl: new URL("./daemon-navigation-worker-fixture.mjs", import.meta.url),
       workerData: {
@@ -173,7 +178,10 @@ const navigationWorker = workerExit
   : releasePath === undefined && !oversizedResponse && !oversizedJsonResponse
     ? new NodeDaemonNavigationWorker({
         generation: 7,
-        configuration: { stateDirectory: canonicalStateDirectory },
+        configuration: {
+          stateDirectory: canonicalStateDirectory,
+          policy: dependencies.daemonPolicy.toSerialized(),
+        },
         resourceLimits: { maxOldGenerationSizeMb: 4096 },
         entryUrl: new URL("./daemon-navigation-worker-fixture.mjs", import.meta.url),
         workerData: {
@@ -190,6 +198,7 @@ const daemon = new WorkspaceDaemon({
   processToken,
   symnavVersion,
   memoryCapBytes: Number.MAX_SAFE_INTEGER,
+  policy: daemonPolicy,
   dependencies,
   registry: new DaemonRegistry(identity.registryDirectory),
   transport: new LocalDaemonTransport(),

@@ -1,4 +1,6 @@
 import { existsSync, writeFileSync } from "node:fs";
+import { DaemonLogger, type DaemonLogStorage } from "../../src/diagnostics/logger.js";
+import { NodeDaemonClock } from "../../src/lifecycle/daemon-clock.js";
 import type {
   DaemonExecutorExecutionResult,
   DaemonExecutorRequest,
@@ -34,6 +36,7 @@ const [
   releasePathArgument,
   executorModuleUrl,
   configuredSymnavVersion,
+  configuredWallNow,
 ] = process.argv.slice(2);
 if (
   workspaceRoot === undefined ||
@@ -98,6 +101,21 @@ class ControlledExecutor {
   }
 }
 
+class ControlledDiagnosticStorage implements DaemonLogStorage {
+  public constructor(private readonly denialMarker: string) {}
+  async prepare(): Promise<void> {}
+  async size(): Promise<number> {
+    return 0;
+  }
+  async append(): Promise<void> {
+    if (existsSync(this.denialMarker))
+      throw Object.assign(new Error("Controlled diagnostic denial"), { code: "EACCES" });
+  }
+  async move(): Promise<void> {}
+  async remove(): Promise<void> {}
+  async sync(): Promise<void> {}
+}
+
 class ActorExecutorOutput {
   private readonly recordsBySequence: readonly DaemonSequencedOutputRecord[];
 
@@ -144,6 +162,9 @@ class ControlledNavigationWorker implements DaemonNavigationWorker {
   }
 
   async start(): Promise<DaemonNavigationWorkerResponse> {
+    if (releasePathArgument === "--startup-failure")
+      throw Object.assign(new Error("Controlled warm-up failure"), { code: "EACCES" });
+    if (releasePathArgument === "--starting") return new Promise(() => undefined);
     return {
       kind: "ready",
       generation: this.generation,
@@ -218,7 +239,7 @@ const startingRecord: DaemonRecord = {
   endpoint: identity.endpoint(instanceId),
   pid: process.pid,
   state: "starting",
-  startedAt: Date.now(),
+  startedAt: configuredWallNow === undefined ? Date.now() : Number(configuredWallNow),
   memoryCapBytes: Number.MAX_SAFE_INTEGER,
 };
 if (!registry.writeStartingIfStartupOwner(identity, startingRecord)) {
@@ -272,6 +293,15 @@ const daemon = new DaemonProcessCoordinator({
   registry,
   transport: new DaemonTransport(),
   navigationWorker,
+  ...(process.env.SYMNAV_TEST_DIAGNOSTIC_RECOVERY === "1"
+    ? {
+        logger: new DaemonLogger(identity, instanceId, new NodeDaemonClock(), {
+          policy: daemonPolicy.values.diagnostics,
+          storage: new ControlledDiagnosticStorage(`${readyPath}.diagnostics-denied`),
+        }),
+      }
+    : {}),
+  ...(configuredWallNow === undefined ? {} : { now: () => Number(configuredWallNow) }),
 });
 await daemon.start();
 startupLease.release();

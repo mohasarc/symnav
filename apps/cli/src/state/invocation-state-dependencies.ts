@@ -32,6 +32,7 @@ export class InvocationStateDependencies
     const invocation = new InvocationStateDependencies(dependencies, coordinator);
     return {
       ...dependencies,
+      stateWriteFailed: (failure) => invocation.writeFailed(failure),
       recorder: invocation,
       identity: invocation,
       telemetryEnabled: telemetryEnabled && coordinator.access.kind !== "disabled",

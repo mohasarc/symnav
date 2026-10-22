@@ -717,6 +717,12 @@ export class DaemonProcessCoordinator {
     this.logger.record({
       kind: "failure",
       operation: "worker-exit",
+      failure: DaemonFailureRecorder.failure(
+        this.clock.wallNowMs(),
+        "worker",
+        "worker-failed",
+        workerExit.osCode === undefined ? undefined : { code: workerExit.osCode },
+      ),
       failureCode: "worker-exit",
       errorName: DaemonLogger.errorName(
         workerExit.errorName === undefined ? undefined : { name: workerExit.errorName },
@@ -728,6 +734,12 @@ export class DaemonProcessCoordinator {
       this.logger.record({
         kind: "failure",
         operation: "worker-replacement",
+        failure: DaemonFailureRecorder.failure(
+          this.clock.wallNowMs(),
+          "worker",
+          "worker-failed",
+          error,
+        ),
         failureCode: "controlled-resource",
         errorName: DaemonLogger.errorName(error),
       });

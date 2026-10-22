@@ -2,7 +2,8 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync }
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, expect, it, vi } from "vitest";
-import { usageLogPath } from "@symnav/telemetry";
+import { usageLogPath, type UsageEventInput } from "@symnav/telemetry";
+import { DaemonPolicy } from "@symnav/daemon";
 import type { ProgramDependencies } from "./program-dependencies.js";
 import { buildProgram, createDefaultDependencies } from "./program.js";
 import { StateDirectoryResolver } from "./state-directory-resolver.js";
@@ -71,4 +72,30 @@ it("resolves a state directory when buildProgram constructs default dependencies
   buildProgram();
 
   expect(resolve).toHaveBeenCalledTimes(1);
+});
+
+it("keeps one telemetry session across isolated invocation writers", () => {
+  const directory = mkdtempSync(join(tmpdir(), "symnav-program-session-"));
+  temporaryDirectories.push(directory);
+  const dependencies = createDefaultDependencies(directory, DaemonPolicy.currentSystem(), false);
+  const input: UsageEventInput = {
+    symnavVersion: dependencies.symnavVersion,
+    command: "overview",
+    timestamp: 1,
+    durationMs: 1,
+    executionMode: "warm",
+    outcome: "success",
+    argShape: { kind: "path", lengthBucket: "short", flags: [] },
+    workspaceId: "workspace",
+    machineId: "machine",
+  };
+  dependencies.recorder.record(input);
+  dependencies.invocationTelemetry!({ writeFailed: () => undefined }).recorder.record(input);
+  dependencies.invocationTelemetry!({ writeFailed: () => undefined }).recorder.record(input);
+  const sessions = readFileSync(usageLogPath(directory), "utf8")
+    .trim()
+    .split("\n")
+    .map((line) => (JSON.parse(line) as { sessionId: string }).sessionId);
+  expect(sessions).toHaveLength(3);
+  expect(new Set(sessions).size).toBe(1);
 });

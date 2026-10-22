@@ -1,12 +1,13 @@
 import {
-  createWorkspace,
   type BackendRouter,
   type GitHistory,
   type NavigationDiagnosticSeverity,
   type ResultWithDiagnostics,
   UserFacingError,
   type Workspace,
+  type WorkspacePreparation,
   type WorkspaceSnapshot,
+  WorkspaceSession,
 } from "@symnav/core";
 import { performance } from "node:perf_hooks";
 
@@ -16,7 +17,6 @@ const severityPrefixes: Record<NavigationDiagnosticSeverity, string> = {
 import type { ArgShape, OutcomeReport } from "@symnav/telemetry";
 import type { ProgramContext } from "./program-context.js";
 import type { ProgramDependencies } from "./program-dependencies.js";
-import { WorkspaceRequestScopeFactory } from "./workspace-request-scope.js";
 
 export interface CommandContext<Args> {
   readonly workspace: Workspace;
@@ -58,24 +58,31 @@ export async function runCommand<Result extends ResultWithDiagnostics, Args>(
 
   try {
     const freshnessStartedAt = performance.now();
-    const scopeFactory =
-      dependencies.scopeFactory ?? new WorkspaceRequestScopeFactory(fs, dependencies.backends());
     const snapshotSelector = command.snapshotForBackendRefresh;
-    workspace = snapshotSelector
-      ? await createWorkspace({ startDir: cwd, fs })
-      : await scopeFactory.openWorkspace(cwd);
+    const workspaceSession =
+      dependencies.workspaceSession ??
+      new WorkspaceSession({
+        fileSystem: fs,
+        backends: dependencies.backends(),
+        discoveryRetention: "request",
+      });
+    const preparation: WorkspacePreparation =
+      snapshotSelector === undefined
+        ? { coverage: "workspace" }
+        : {
+            coverage: "selection",
+            selectSnapshot: (scopeWorkspace, scopeRouter) =>
+              snapshotSelector({
+                workspace: scopeWorkspace,
+                router: scopeRouter,
+                git: dependencies.git,
+                cwd,
+                args,
+              }),
+          };
+    workspace = await workspaceSession.openWorkspace(cwd, preparation.coverage);
     command.validate?.(args);
-    const preparedScope = snapshotSelector
-      ? await scopeFactory.prepareWorkspace(workspace, (scopeWorkspace, scopeRouter) =>
-          snapshotSelector({
-            workspace: scopeWorkspace,
-            router: scopeRouter,
-            git: dependencies.git,
-            cwd,
-            args,
-          }),
-        )
-      : await scopeFactory.prepareWorkspace(workspace);
+    const preparedScope = await workspaceSession.prepareWorkspace(workspace, preparation);
     workspace = preparedScope.workspace;
     const freshnessCompletedAt = performance.now();
     try {

@@ -7,6 +7,7 @@ import {
   type ResultWithDiagnostics,
   type SymbolIdentity,
   UserFacingError,
+  WorkspaceSession,
 } from "@symnav/core";
 import type { ArgShape } from "@symnav/telemetry";
 import { runCommand } from "../../../src/command.js";
@@ -73,6 +74,35 @@ class StubCommand implements Command<StubResult, StubArgs> {
 const stubArgs = (note: string): StubArgs => ({ note });
 
 describe("runCommand lifecycle", () => {
+  it("uses an injected workspace session without constructing request backends", async () => {
+    const context = createFakeProgramContext({ cwd: "/repo" });
+    const fileSystem = new InMemoryFileSystem({
+      "/repo/.git/HEAD": "ref: refs/heads/main\n",
+      "/repo/src/a.ts": "export const a = true;\n",
+    });
+    const backend = new FakeLanguageBackend();
+    const workspaceSession = new WorkspaceSession({
+      fileSystem,
+      backends: [backend],
+      discoveryRetention: "session",
+    });
+    const backends = vi.fn(() => {
+      throw new Error("request backends should not be constructed");
+    });
+
+    await runCommand(new StubCommand(), {
+      context,
+      dependencies: fakeDependencies({ fs: fileSystem, backends, workspaceSession }),
+      cwdOverride: undefined,
+      json: false,
+      args: stubArgs("session"),
+    });
+
+    expect(context.stdout.text()).toBe("text:computed");
+    expect(backends).not.toHaveBeenCalled();
+    expect(backend.refreshCalls).toHaveLength(1);
+  });
+
   it("snapshots and refreshes once before compute reuses workspace files", async () => {
     const context = createFakeProgramContext({ cwd: "/repo" });
     const fs = new CountingFileSystem(

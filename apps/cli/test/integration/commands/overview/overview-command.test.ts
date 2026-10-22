@@ -3,11 +3,10 @@ import {
   InMemoryFileSystem,
   type OverviewExpansionResult,
   type OverviewFileEntries,
-  WorkspaceCatalog,
+  WorkspaceSession,
 } from "@symnav/core";
 import { TypeScriptBackend } from "@symnav/backend-typescript";
 import { buildProgram } from "../../../../src/program.js";
-import { WorkspaceRequestScopeFactory } from "../../../../src/workspace-request-scope.js";
 import { FakeLanguageBackend } from "../helpers/fake-language-backend.js";
 import { fakeDependencies } from "../helpers/fake-program-dependencies.js";
 import { createFakeProgramContext } from "../helpers/fake-program-context.js";
@@ -191,14 +190,17 @@ describe("symnav overview happy path", () => {
       fakeDependencies({ fs, backends: () => [coldBackend] }),
     );
     const retainedBackend = new TypeScriptBackend(fs);
-    const catalog = new WorkspaceCatalog(fs);
-    await catalog.refresh("/repo");
+    const workspaceSession = new WorkspaceSession({
+      fileSystem: fs,
+      backends: [retainedBackend],
+      discoveryRetention: "session",
+    });
+    await workspaceSession.openWorkspace("/repo", "workspace");
     fs.failSiblingMetadata();
-    const scopeFactory = new WorkspaceRequestScopeFactory(fs, [retainedBackend], catalog);
 
     const warm = await parse(["overview", "src/a.ts"], {
       ...fakeDependencies({ fs, backends: () => [retainedBackend] }),
-      scopeFactory,
+      workspaceSession,
     });
 
     expect(warm).toEqual(cold);
@@ -237,15 +239,18 @@ describe("symnav overview happy path", () => {
         },
         "/repo/siblings/",
       );
-      const catalog = new WorkspaceCatalog(fs);
-      await catalog.refresh("/repo");
-      fs.failSiblingMetadata();
       const backend = new TypeScriptBackend(fs);
-      const scopeFactory = new WorkspaceRequestScopeFactory(fs, [backend], catalog);
+      const workspaceSession = new WorkspaceSession({
+        fileSystem: fs,
+        backends: [backend],
+        discoveryRetention: "session",
+      });
+      await workspaceSession.openWorkspace("/repo", "workspace");
+      fs.failSiblingMetadata();
 
       const result = await parse(["overview", target], {
         ...fakeDependencies({ fs, backends: () => [backend] }),
-        scopeFactory,
+        workspaceSession,
       });
 
       if (stdoutContains === undefined) {

@@ -96,7 +96,7 @@ class DaemonNavigationWorkerEntry {
       this.retainedProgram = new RetainedWorkspaceProgram(dependencies, (refresh) => {
         this.latestRefresh = refresh;
       });
-      const prepared = await this.retainedProgram.scopeFactory.prepare(workspaceRoot);
+      const prepared = await this.retainedProgram.workspaceSession.prepare(workspaceRoot);
       this.latestRefresh = prepared.refresh;
       const totalMs = performance.now() - startedAt;
       this.send({
@@ -149,9 +149,7 @@ class DaemonNavigationWorkerEntry {
 
   private async releaseTransientResources(operationId: string): Promise<void> {
     try {
-      await Promise.all(
-        this.retainedProgram?.backends.map((backend) => backend.releaseTransientResources()) ?? [],
-      );
+      await this.retainedProgram?.workspaceSession.releaseTransientResources();
       const heap = getHeapStatistics();
       this.send({
         kind: "heap",
@@ -166,9 +164,7 @@ class DaemonNavigationWorkerEntry {
   }
 
   private async close(): Promise<void> {
-    await Promise.all(
-      this.retainedProgram?.backends.map((backend) => backend.releaseTransientResources()) ?? [],
-    );
+    await this.retainedProgram?.workspaceSession.releaseTransientResources();
     this.send({ kind: "closed", generation: this.data.generation });
     this.port.close();
   }

@@ -16,8 +16,16 @@ import type {
 import type { DaemonResourceSupervisor } from "../resources/resource-supervisor.js";
 import type { DaemonWorkerGenerationManager } from "../worker/worker-generation-manager.js";
 import { WorkspaceRequestQueue } from "./request-queue.js";
+import type { DaemonStateWriteFailure } from "../state-write-failure.js";
 
 describe("AcceptedExecutionSession", () => {
+  it("returns a diagnostic write failure with the accepted result", async () => {
+    const failure: DaemonStateWriteFailure = { path: "/state/daemon.log", osCode: "EACCES" };
+    const harness = new AcceptedExecutionHarness({ diagnosticWriteFailure: failure });
+    harness.session.accept(harness.request("diagnostic-denied"));
+    await harness.session.drain();
+    expect(harness.finishedWriteFailure).toEqual(failure);
+  });
   it("observes navigation activity separately from immutable acceptance metadata", () => {
     let wallNow = 1_234;
     const wallNowMs = vi.fn(() => wallNow++);
@@ -163,6 +171,7 @@ describe("AcceptedExecutionSession", () => {
 });
 
 interface AcceptedExecutionHarnessOptions {
+  readonly diagnosticWriteFailure?: DaemonStateWriteFailure;
   readonly workspaceExists?: boolean;
   readonly workerFailure?: Error;
   readonly completionDisposeFailure?: Error;
@@ -171,6 +180,7 @@ interface AcceptedExecutionHarnessOptions {
 }
 
 class AcceptedExecutionHarness {
+  public finishedWriteFailure: DaemonStateWriteFailure | undefined;
   readonly events: string[] = [];
   readonly diagnostics: DaemonDiagnosticEvent[] = [];
   readonly navigationAccepted = vi.fn(() => this.events.push("navigation-accepted"));
@@ -211,7 +221,8 @@ class AcceptedExecutionHarness {
       append: async (record) => {
         this.events.push(`output-appended:${record.sequence}`);
       },
-      finish: async (exitCode) => {
+      finish: async (exitCode, stateWriteFailure) => {
+        this.finishedWriteFailure = stateWriteFailure;
         this.events.push(`completion-finished:${exitCode}`);
         return {
           transferId: "transfer",
@@ -293,7 +304,12 @@ class AcceptedExecutionHarness {
       resourceSupervisor,
       processLifecycle,
       lifetime,
-      diagnostics: { record: (event) => this.diagnostics.push(event) },
+      diagnostics: {
+        record: (event) => this.diagnostics.push(event),
+        ...(options.diagnosticWriteFailure === undefined
+          ? {}
+          : { stateWriteFailure: options.diagnosticWriteFailure, flush: async () => undefined }),
+      },
       clock: {
         wallNowMs: () => this.wallNowMs(),
         monotonicNowMs: () => this.monotonicNow++,

@@ -388,15 +388,20 @@ describe("symnav daemon parity", () => {
     expect(processIsAlive(controlled.pid)).toBe(false);
   }, 15_000);
 
-  it("keeps cold bytes and status when daemon state path is an existing file", () => {
+  it("keeps cold stdout and status with one warning when daemon state is an existing file", () => {
     const harness = new DaemonParityHarness();
     harnesses.push(harness);
     harness.replaceStateDirectoryWithFile();
 
     const fallback = harness.warm(["overview", "input.ts"]);
 
-    expect(fallback).toEqual(harness.cold(["overview", "input.ts"]));
-    expect(fallback).toMatchObject({ status: 0, stderr: "" });
+    const cold = harness.cold(["overview", "input.ts"]);
+    expect(fallback.status).toBe(cold.status);
+    expect(fallback.stdout).toBe(cold.stdout);
+    expect(fallback.stderr).toBe(
+      `symnav: warning: cannot write ${realpathSync(harness.stateDirectory)} (EEXIST); daemon and telemetry are off for this command. Grant access with 'symnav setup <agent>', or pass --no-warnings.\n`,
+    );
+    expect(fallback.status).toBe(0);
     expect(harness.daemonRecordCount()).toBe(0);
   });
 
@@ -791,6 +796,7 @@ class DaemonParityHarness {
     return readFileSync(usagePath, "utf8")
       .trimEnd()
       .split("\n")
+      .filter((line) => line.length > 0)
       .map((line) => (JSON.parse(line) as { executionMode: string }).executionMode);
   }
 

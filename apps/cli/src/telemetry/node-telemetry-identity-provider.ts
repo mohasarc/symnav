@@ -2,6 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import type { TelemetryFailureObserver } from "@symnav/telemetry";
 import {
   type GitRemoteReader,
   type IdentityAnomalySink,
@@ -30,6 +31,7 @@ export class NodeTelemetryIdentityProvider implements TelemetryIdentityProvider 
     private readonly stateDir: string,
     private readonly gitRemoteReader: GitRemoteReader,
     private readonly anomalySink: IdentityAnomalySink = noopAnomalySink,
+    private readonly failureObserver?: TelemetryFailureObserver,
   ) {}
 
   public resolve(input: TelemetryIdentityInput): TelemetryIdentity {
@@ -60,8 +62,17 @@ export class NodeTelemetryIdentityProvider implements TelemetryIdentityProvider 
     }
 
     const machineId = randomUUID();
-    mkdirSync(this.stateDir, { recursive: true });
-    writeFileSync(machineIdPath, machineId, "utf8");
+    try {
+      mkdirSync(this.stateDir, { recursive: true });
+      writeFileSync(machineIdPath, machineId, "utf8");
+    } catch (error) {
+      const osCode = (error as NodeJS.ErrnoException).code;
+      this.failureObserver?.writeFailed({
+        path: machineIdPath,
+        ...(osCode === undefined ? {} : { osCode }),
+      });
+      throw error;
+    }
     return machineId;
   }
 }

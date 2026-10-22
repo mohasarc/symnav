@@ -48,15 +48,16 @@ export class DaemonRecordObserver {
   constructor(
     private readonly transport: DaemonLifecycleRequestSender,
     private readonly processTerminator: DaemonProcessTerminator,
+    private readonly onExited?: (record: DaemonRecord) => Promise<void>,
   ) {}
 
   async observeIdentity(record: DaemonRecord): Promise<DaemonIdentityObservation> {
     if (record.state === "starting" && record.pid <= 0) return { kind: "starting", record };
     if (this.processTerminator.hasExited(record.pid, record.processLifetime))
-      return { kind: "exited", record };
+      return this.exited(record);
     const authenticated = await this.authenticate(record);
     if (this.processTerminator.hasExited(record.pid, record.processLifetime))
-      return { kind: "exited", record };
+      return this.exited(record);
     return authenticated
       ? { kind: "authenticated", record }
       : { kind: "unresponsive", record, failureCode: "authentication" };
@@ -65,7 +66,7 @@ export class DaemonRecordObserver {
   async observe(record: DaemonRecord): Promise<DaemonObservation> {
     if (record.state === "starting" && record.pid <= 0) return { kind: "starting", record };
     if (this.processTerminator.hasExited(record.pid, record.processLifetime))
-      return { kind: "exited", record };
+      return this.exited(record);
 
     const [authenticated, ping] = await Promise.all([
       this.authenticate(record),
@@ -81,7 +82,7 @@ export class DaemonRecordObserver {
         ),
     ]);
     if (this.processTerminator.hasExited(record.pid, record.processLifetime))
-      return { kind: "exited", record };
+      return this.exited(record);
     if (!authenticated) {
       if (record.state === "starting") return { kind: "starting", record };
       return { kind: "unresponsive", record, failureCode: "authentication" };
@@ -129,6 +130,13 @@ export class DaemonRecordObserver {
       record,
       failureCode: error instanceof DaemonTransportError ? error.code : "unknown",
     };
+  }
+
+  private async exited(
+    record: DaemonRecord,
+  ): Promise<{ readonly kind: "exited"; readonly record: DaemonRecord }> {
+    await this.onExited?.(record);
+    return { kind: "exited", record };
   }
 
   private async authenticate(record: DaemonRecord): Promise<boolean> {

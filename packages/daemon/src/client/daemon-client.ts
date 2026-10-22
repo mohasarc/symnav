@@ -37,14 +37,17 @@ class DaemonClientRuntimeLoader {
 }
 
 export class DaemonClient {
-  private readonly runtime: Promise<DaemonClientRuntimePort>;
+  private runtime: Promise<DaemonClientRuntimePort> | undefined;
 
-  constructor(options: DaemonClientOptions) {
-    this.runtime = DaemonClientRuntimeLoader.load(options);
+  constructor(private readonly options: DaemonClientOptions) {}
+
+  private loadRuntime(): Promise<DaemonClientRuntimePort> {
+    this.runtime ??= DaemonClientRuntimeLoader.load(this.options);
+    return this.runtime;
   }
 
   async execute(request: DaemonClientExecuteRequest): Promise<DaemonClientExecuteResult> {
-    return (await this.runtime).execute(request);
+    return (await this.loadRuntime()).execute(request);
   }
 
   control(
@@ -59,6 +62,6 @@ export class DaemonClient {
   async control(
     request: DaemonControlRequest,
   ): Promise<DaemonStartResult | readonly RunningDaemonStatus[] | DaemonStopResult> {
-    return (await this.runtime).control(request);
+    return (await this.loadRuntime()).control(request);
   }
 }

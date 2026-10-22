@@ -70,6 +70,7 @@ describe("DaemonWorkspaceIdentity", () => {
       identity.startupMutationPath,
       identity.logPath,
       identity.spoolDirectory,
+      ...(process.platform === "win32" ? [] : [identity.endpoint("instance")]),
     ];
 
     expect(lifecyclePaths.every((path) => dirname(path) === identity.identityDirectory)).toBe(true);

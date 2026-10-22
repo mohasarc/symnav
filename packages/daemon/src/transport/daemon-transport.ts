@@ -8,6 +8,9 @@ import { DaemonWireCodec } from "./wire-codec.js";
 import { LocalDaemonSocketClient } from "./socket-client.js";
 import { LocalDaemonSocketServer } from "./socket-server.js";
 
+import { FileDaemonConnectionClient } from "./file-connection-client.js";
+import { FileDaemonRequestServer } from "./file-server.js";
+
 export interface DaemonTransportOptions {
   readonly policy: DaemonPolicy;
   readonly lifecycleResponseTimeoutMs?: number;
@@ -42,9 +45,11 @@ export class DaemonTransportFactory {
     const validator = options.validator ?? new DaemonProtocolValidator();
     const sockets =
       options.sockets ??
-      new LocalDaemonSocketClient(
-        options.writeChunkSize === undefined ? {} : { writeChunkSize: options.writeChunkSize },
-      );
+      (process.platform !== "win32"
+        ? new FileDaemonConnectionClient({ policy: policy.values.transport })
+        : new LocalDaemonSocketClient(
+            options.writeChunkSize === undefined ? {} : { writeChunkSize: options.writeChunkSize },
+          ));
     const lifecycle =
       options.lifecycle ??
       new DaemonLifecycleClient({
@@ -75,13 +80,17 @@ export class DaemonTransportFactory {
       });
     const server =
       options.server ??
-      new LocalDaemonSocketServer({
-        sockets,
-        codec,
-        validator,
-        policy: policy.values.transport,
-        ...(options.writeChunkSize === undefined ? {} : { writeChunkSize: options.writeChunkSize }),
-      });
+      (process.platform !== "win32"
+        ? new FileDaemonRequestServer({ codec, validator, policy: policy.values.transport })
+        : new LocalDaemonSocketServer({
+            sockets,
+            codec,
+            validator,
+            policy: policy.values.transport,
+            ...(options.writeChunkSize === undefined
+              ? {}
+              : { writeChunkSize: options.writeChunkSize }),
+          }));
     return { lifecycle, execution, server };
   }
 }

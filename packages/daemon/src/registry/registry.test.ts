@@ -77,6 +77,23 @@ describe("daemon registry", () => {
     expect(DAEMON_PROTOCOL_VERSION).toBe(5);
   });
 
+  it.skipIf(process.platform === "win32")(
+    "retains old socket records for authenticated replacement",
+    () => {
+      const stateDir = temporaryDirectory(roots);
+      const identity = DaemonWorkspaceIdentity.from("/repo", stateDir);
+      const registry = new DaemonRegistry(identity.registryDirectory);
+      const previous: DaemonRecord = {
+        ...record(identity, "ready"),
+        endpoint: identity.legacySocketEndpoint("instance"),
+      };
+      registry.write(previous);
+      expect(registry.read(identity)).toBeUndefined();
+      expect(registry.readStored(identity)).toEqual(previous);
+      expect(registry.readStoredInstance(identity, "instance")).toEqual(previous);
+    },
+  );
+
   it("keys repositories, worktrees, and submodules by exact workspace root", () => {
     const stateDir = temporaryDirectory(roots);
     const identities = ["/repo", "/repo-worktree", "/repo/submodule"].map((root) =>

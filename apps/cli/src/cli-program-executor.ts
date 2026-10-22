@@ -11,6 +11,8 @@ export { CommandResultReplayer } from "./command-execution-result.js";
 import type { ProgramContext } from "./program-context.js";
 import type { ProgramDependencies } from "./program-dependencies.js";
 import { buildProgram } from "./program.js";
+import { InvocationStateWriteCoordinator } from "./state/state-write-coordinator.js";
+import { InvocationStateDependencies } from "./state/invocation-state-dependencies.js";
 
 class CapturedProgramExit extends Error {
   constructor(readonly exitCode: number) {
@@ -25,6 +27,7 @@ export class CliProgramExecutor {
   ) {}
 
   async execute(request: CliExecutionRequest): Promise<CommandExecutionResult> {
+    const state = new InvocationStateWriteCoordinator(this.dependencies.stateDirectory);
     const output = new OrderedCommandOutput({
       policy: this.dependencies.daemonPolicy.values.output,
       directory: join(this.dependencies.stateDirectory, "captures"),
@@ -38,24 +41,32 @@ export class CliProgramExecutor {
       },
     };
     const dependencies: ProgramDependencies = {
-      ...this.dependencies,
-      recorder: this.dependencies.recorder,
-      telemetryEnabled: request.telemetryEnabled,
+      ...InvocationStateDependencies.create(this.dependencies, state, request.telemetryEnabled),
       executionMode: request.executionMode ?? "cold",
       ...(this.workspaceSession === undefined ? {} : { workspaceSession: this.workspaceSession }),
     };
 
     try {
       await buildProgram(context, dependencies).parseAsync([...request.argv], { from: "user" });
-      return await this.finish(output, 0);
+      return this.withStateFailure(await this.finish(output, 0), state);
     } catch (error) {
-      if (error instanceof CapturedProgramExit) return await this.finish(output, error.exitCode);
+      if (error instanceof CapturedProgramExit)
+        return this.withStateFailure(await this.finish(output, error.exitCode), state);
       if (error instanceof CommandOutputCapacityError) {
         return output.replaceWith(ControlledCommandResult.responseCapacityExceeded());
       }
       await output.dispose();
       throw error;
     }
+  }
+
+  private withStateFailure(
+    result: CommandExecutionResult,
+    state: InvocationStateWriteCoordinator,
+  ): CommandExecutionResult {
+    if (state.access.kind !== "disabled") return result;
+    const { operationPath: path, osCode } = state.access.failure;
+    return { ...result, stateWriteFailure: { path, ...(osCode === undefined ? {} : { osCode }) } };
   }
 
   private async finish(

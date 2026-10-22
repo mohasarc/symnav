@@ -106,7 +106,7 @@ describe("CliProgramExecutor", () => {
     expect((await records(result)).map((record) => record.stream)).toEqual(["stderr", "stdout"]);
     const context = createFakeProgramContext({ cwd: "/repo" });
     await CommandResultReplayer.replay(result, context);
-    expect(context.stderr.text()).toBe("Warning: unicode ✓\nnext\n");
+    expect(context.stderr.text()).toBe("symnav: warning: unicode ✓\nnext\n");
     expect(context.stdout.text()).toBe("Overview: src/a.ts\n(no symbols)\n");
     expect(context.exitCodes).toEqual([]);
   });

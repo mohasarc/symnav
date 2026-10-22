@@ -129,13 +129,19 @@ export function buildProgram(
       program.outputHelp({ error: true });
       ctx.exit(1);
     });
-  registerOverviewCommand(program, ctx, deps);
-  registerResolveCommand(program, ctx, deps);
-  registerDefCommand(program, ctx, deps);
-  registerRefsCommand(program, ctx, deps);
-  registerContextCommand(program, ctx, deps);
-  registerGraphCommand(program, ctx, deps);
-  registerDaemonCommand(program, ctx, deps);
-  registerStatsCommand(program, ctx, deps);
+  const commandDependencies: ProgramDependencies = {
+    ...deps,
+    get warningOptions() {
+      return { warnings: program.opts<{ warnings: boolean }>().warnings };
+    },
+  };
+  registerOverviewCommand(program, ctx, commandDependencies);
+  registerResolveCommand(program, ctx, commandDependencies);
+  registerDefCommand(program, ctx, commandDependencies);
+  registerRefsCommand(program, ctx, commandDependencies);
+  registerContextCommand(program, ctx, commandDependencies);
+  registerGraphCommand(program, ctx, commandDependencies);
+  registerDaemonCommand(program, ctx, commandDependencies);
+  registerStatsCommand(program, ctx, commandDependencies);
   return program;
 }

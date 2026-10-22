@@ -805,7 +805,7 @@ describe("DaemonStartupCoordinator", () => {
         { processTerminator: harness.terminator },
       );
 
-      await expect(controller.status()).resolves.toEqual([
+      await expect(controller.status().then((report) => report.daemons)).resolves.toEqual([
         expect.objectContaining({ workspaceRoot: "/repo", state: "starting" }),
       ]);
       await expect(harness.coordinator().trigger(harness.identity)).resolves.toMatchObject({
@@ -845,7 +845,7 @@ describe("DaemonStartupCoordinator", () => {
       processTerminator: harness.terminator,
     });
 
-    await expect(controller.status()).resolves.toEqual([]);
+    await expect(controller.status().then((report) => report.daemons)).resolves.toEqual([]);
     expect(harness.registry.startupOwner(harness.identity)).toBeUndefined();
     expect(
       harness.registry.readStoredInstance(harness.identity, "orphaned-mutation"),
@@ -955,7 +955,7 @@ describe("DaemonStartupCoordinator", () => {
       processTerminator: harness.terminator,
     });
 
-    await expect(controller.status()).resolves.toEqual([]);
+    await expect(controller.status().then((report) => report.daemons)).resolves.toEqual([]);
     const [first, second] = await Promise.all([
       harness.coordinator().ensureRunning(harness.identity),
       harness.coordinator().ensureRunning(harness.identity),

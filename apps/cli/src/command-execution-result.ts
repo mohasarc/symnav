@@ -50,6 +50,7 @@ export interface CliExecutionRequest {
   readonly telemetryEnabled: boolean;
   readonly executionMode?: CommandExecutionMode;
   readonly stateWriteFailed?: import("@symnav/daemon").DaemonStateWriteFailureObserver;
+  readonly executeLocally?: (mode: "cold" | "fallback") => Promise<DaemonExecutorExecutionResult>;
 }
 
 export interface OrderedCommandOutputOptions {

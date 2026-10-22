@@ -1,6 +1,10 @@
 import { createHash } from "node:crypto";
 import { describe, expect, it, vi } from "vitest";
-import type { DaemonExecutorExecutionResult, DaemonOutputRecord } from "@symnav/daemon";
+import type {
+  DaemonExecutorExecutionResult,
+  DaemonOutputRecord,
+  DaemonStateWriteFailure,
+} from "@symnav/daemon";
 import type { DaemonSequencedOutputRecord } from "../daemon-executor.js";
 import type { CompletionSpoolManifest } from "../delivery/completion-spool.js";
 import type { DaemonExecutionServerFrame, DaemonResultChunk } from "./protocol.js";
@@ -12,6 +16,31 @@ import type {
 import { DaemonResultTransferReceiver } from "./result-transfer-receiver.js";
 
 describe("DaemonResultTransferReceiver", () => {
+  it("returns request-local state failure metadata after verifying the completion", async () => {
+    const output = new FakeCapture(summary([]));
+    const receiver = new DaemonResultTransferReceiver("request", output);
+    const stateWriteFailure: DaemonStateWriteFailure = {
+      path: "/state/usage.jsonl",
+      osCode: "EACCES",
+    };
+    const completed = manifest({ stateWriteFailure });
+    receiver.acceptManifest(resultManifest(completed));
+    receiver.acceptEnd(resultEnd(completed));
+    expect(await receiver.finish()).toEqual({ ...output.result, stateWriteFailure });
+  });
+
+  it("rejects resumed metadata that changes the first failure", () => {
+    const receiver = new DaemonResultTransferReceiver("request", new FakeCapture(summary([])));
+    receiver.acceptManifest(
+      resultManifest(manifest({ stateWriteFailure: { path: "/state/first" } })),
+    );
+    receiver.beginConnection();
+    expect(() =>
+      receiver.acceptManifest(
+        resultManifest(manifest({ stateWriteFailure: { path: "/state/later" } })),
+      ),
+    ).toThrow("Daemon resumed with a different result manifest");
+  });
   it("requires one matching manifest at the start of every connection", async () => {
     const output = new FakeCapture(summary([]));
     const receiver = new DaemonResultTransferReceiver("request", output);

@@ -139,7 +139,12 @@ class DaemonNavigationWorkerEntry {
         kind: "result",
         generation: this.data.generation,
         requestId: request.requestId,
-        result: { exitCode: result.exitCode },
+        result: {
+          exitCode: result.exitCode,
+          ...(result.stateWriteFailure === undefined
+            ? {}
+            : { stateWriteFailure: result.stateWriteFailure }),
+        },
         refresh: DaemonWorkerDiagnosticProjection.refresh(result.diagnostics),
         durations: {
           ...DaemonWorkerDiagnosticProjection.commandDurations(result.diagnostics),

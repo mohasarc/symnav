@@ -1,3 +1,4 @@
+import type { DaemonStateWriteFailure } from "../state-write-failure.js";
 import type { DaemonCommandName, DaemonPolicyValues } from "@symnav/daemon";
 import type { DaemonExecutionFailureCode } from "../daemon-execution-failure.js";
 import type { DaemonSequencedOutputRecord } from "../daemon-executor.js";
@@ -38,7 +39,10 @@ export interface DaemonDiagnosticRecorder {
 
 export interface DaemonCompletionWriter {
   append(record: DaemonSequencedOutputRecord): Promise<void>;
-  finish(exitCode: number): Promise<CompletionSpoolManifest>;
+  finish(
+    exitCode: number,
+    stateWriteFailure?: DaemonStateWriteFailure,
+  ): Promise<CompletionSpoolManifest>;
   dispose(): Promise<void>;
 }
 
@@ -337,8 +341,11 @@ export class DaemonDeliverySession {
     requestId: string,
     code: DaemonExecutionFailureCode,
   ): DaemonExecutionServerFrame {
+    const state = this.options.journal.entryFor(requestId)?.state;
+    const stateWriteFailure = state?.state === "failed" ? state.stateWriteFailure : undefined;
     return {
       kind: "execution-failed",
+      ...(stateWriteFailure === undefined ? {} : { stateWriteFailure }),
       ...this.options.coordinates,
       requestId,
       code,
@@ -505,9 +512,12 @@ class ObservedDaemonCompletionWriter implements DaemonCompletionWriter {
     return this.spool.append(record);
   }
 
-  async finish(exitCode: number): Promise<CompletionSpoolManifest> {
+  async finish(
+    exitCode: number,
+    stateWriteFailure?: DaemonStateWriteFailure,
+  ): Promise<CompletionSpoolManifest> {
     const startedAt = this.clock.monotonicNowMs();
-    const manifest = await this.spool.finish(exitCode);
+    const manifest = await this.spool.finish(exitCode, stateWriteFailure);
     const durationMs = Math.max(0, this.clock.monotonicNowMs() - startedAt);
     this.trace?.spooled(manifest, durationMs);
     return manifest;

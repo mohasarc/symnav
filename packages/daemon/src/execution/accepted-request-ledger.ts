@@ -1,4 +1,4 @@
-import type { DaemonStateWriteReport } from "../state-write-failure.js";
+import type { DaemonStateWriteReport, DaemonStateWriteFailure } from "../state-write-failure.js";
 import { createHash } from "node:crypto";
 import { type DaemonCommandName, type DaemonExecutorRequest } from "@symnav/daemon";
 import type { AcceptedRequestCompatibility } from "../daemon-admission.js";
@@ -118,12 +118,18 @@ export class AcceptedRequestLedger {
     requestId: string,
     code: DaemonExecutionFailureCode,
     completedAt: number,
+    stateWriteFailure?: DaemonStateWriteFailure,
   ): AcceptedRequestEntry {
     AcceptedRequestLedger.assertFailureCode(code);
     const entry = this.transitionable(requestId);
     return this.publish({
       ...entry,
-      state: { state: "failed", completedAt, code },
+      state: {
+        state: "failed",
+        completedAt,
+        code,
+        ...(stateWriteFailure === undefined ? {} : { stateWriteFailure }),
+      },
     });
   }
 

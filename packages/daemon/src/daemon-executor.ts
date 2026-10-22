@@ -1,3 +1,4 @@
+import { DaemonStateWriteErrors } from "./state-write-errors.js";
 import type { DaemonStateWriteReport } from "./state-write-failure.js";
 import { DaemonDiagnosticValues, type DaemonDiagnostics } from "./daemon-diagnostics.js";
 
@@ -151,9 +152,19 @@ class DaemonExecutorValidation {
   static isExecutionResult(value: unknown): value is DaemonExecutorExecutionResult {
     if (!this.isRecord(value)) return false;
     return (
-      this.hasExactKeys(value, this.keysWithDiagnostics(["exitCode", "output"], value)) &&
+      this.hasExactKeys(
+        value,
+        this.keysWithDiagnostics(
+          value.stateWriteFailure === undefined
+            ? ["exitCode", "output"]
+            : ["exitCode", "output", "stateWriteFailure"],
+          value,
+        ),
+      ) &&
       this.isCount(value.exitCode) &&
       this.isOutput(value.output) &&
+      (value.stateWriteFailure === undefined ||
+        DaemonStateWriteErrors.isFailure(value.stateWriteFailure)) &&
       this.isDiagnostics(value.diagnostics)
     );
   }

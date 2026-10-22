@@ -1,3 +1,4 @@
+import { DaemonStateWriteErrors } from "../state-write-errors.js";
 import {
   DaemonAdmissionRejections,
   type DaemonRejectedExecutionFrame,
@@ -400,7 +401,10 @@ export class DaemonProtocolValidator {
         "processToken",
         "requestId",
         "code",
+        ...(value.stateWriteFailure === undefined ? [] : ["stateWriteFailure"]),
       ]) ||
+      (value.stateWriteFailure !== undefined &&
+        !DaemonStateWriteErrors.isFailure(value.stateWriteFailure)) ||
       !DaemonExecutionFailures.isCode(value.code)
     ) {
       throw new Error("Malformed daemon execution failure");
@@ -537,7 +541,10 @@ export class DaemonProtocolValidator {
         "rawBytes",
         "recordCount",
         "sha256",
+        ...(value.stateWriteFailure === undefined ? [] : ["stateWriteFailure"]),
       ]) &&
+      (value.stateWriteFailure === undefined ||
+        DaemonStateWriteErrors.isFailure(value.stateWriteFailure)) &&
       DaemonProtocolValidator.isRuntimeString(value.transferId) &&
       DaemonRuntimeValues.isRequestId(value.requestId) &&
       DaemonProtocolValidator.isRuntimeString(value.instanceId) &&

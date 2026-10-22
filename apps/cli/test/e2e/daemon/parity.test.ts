@@ -19,10 +19,9 @@ import { fileURLToPath } from "node:url";
 import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
 import { afterEach, describe, expect, it } from "vitest";
-import { DaemonPolicy } from "@symnav/daemon";
+import { DaemonPolicy, type DaemonExecutorRequest } from "@symnav/daemon";
 import { fixturePath, runSymnavBinary, type RunSymnavBinaryResult } from "@symnav/testing";
 import type { ChildProcess } from "node:child_process";
-import type { CliExecutionRequest } from "../../../src/command-execution-result.js";
 import {
   DAEMON_PROTOCOL_VERSION,
   DAEMON_RECORD_SCHEMA_VERSION,
@@ -383,7 +382,7 @@ describe("symnav daemon parity", () => {
     const requestId = readFileSync(controlled.requestIdPath, "utf8");
     const acceptedRequest = JSON.parse(
       readFileSync(controlled.requestPayloadPath, "utf8"),
-    ) as CliExecutionRequest;
+    ) as DaemonExecutorRequest;
     const transport = new LocalDaemonTransport({ requestTimeoutMs: 5_000 });
     const duplicate = await transport.execute(controlled.record.endpoint, {
       kind: "execute",

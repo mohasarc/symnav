@@ -1,7 +1,13 @@
-import type { BackendRefreshSummary } from "@symnav/core";
-import type { DaemonCommandName, DaemonWorkerFailureCode } from "@symnav/daemon";
-import type { CliExecutionRequest, CommandOutputStream } from "../command-execution-result.js";
+import {
+  DaemonDiagnosticValues,
+  type DaemonCommandName,
+  type DaemonDiagnostics,
+  type DaemonExecutorRequest,
+  type DaemonOutputStream,
+  type DaemonWorkerFailureCode,
+} from "@symnav/daemon";
 import { DaemonRuntimeValues } from "./daemon-runtime-values.js";
+import type { DaemonRefreshSummary } from "./daemon-protocol.js";
 
 export interface WorkerStartupDurations {
   readonly discoveryMs: number;
@@ -23,7 +29,7 @@ export type DaemonNavigationWorkerRequest =
       readonly generation: number;
       readonly requestId: string;
       readonly commandName: DaemonCommandName;
-      readonly request: CliExecutionRequest;
+      readonly request: DaemonExecutorRequest;
     }
   | {
       readonly kind: "output-ack";
@@ -44,23 +50,25 @@ export type DaemonNavigationWorkerResponse =
       readonly generation: number;
       readonly requestId: string;
       readonly sequence: number;
-      readonly stream: CommandOutputStream;
+      readonly stream: DaemonOutputStream;
       readonly bytes: Uint8Array;
     }
   | {
       readonly kind: "ready";
       readonly generation: number;
       readonly fileCount: number;
-      readonly refresh: BackendRefreshSummary;
+      readonly refresh: DaemonRefreshSummary;
       readonly startupDurations: WorkerStartupDurations;
+      readonly diagnostics?: DaemonDiagnostics;
     }
   | {
       readonly kind: "result";
       readonly generation: number;
       readonly requestId: string;
       readonly result: { readonly exitCode: number };
-      readonly refresh: BackendRefreshSummary;
+      readonly refresh: DaemonRefreshSummary;
       readonly durations: WorkerCommandDurations;
+      readonly diagnostics?: DaemonDiagnostics;
       readonly resources: {
         readonly workerHeapUsedBytes: number;
         readonly peakWorkerHeapUsedBytes: number;
@@ -132,10 +140,17 @@ export class DaemonNavigationWorkerProtocol {
     }
     if (
       value.kind === "ready" &&
-      this.hasKeys(value, ["kind", "generation", "fileCount", "refresh", "startupDurations"]) &&
+      this.hasKeys(
+        value,
+        this.keysWithDiagnostics(
+          ["kind", "generation", "fileCount", "refresh", "startupDurations"],
+          value,
+        ),
+      ) &&
       this.isCount(value.fileCount) &&
       this.isRefresh(value.refresh) &&
-      this.isDurations(value.startupDurations, ["discoveryMs", "indexingMs", "totalMs"])
+      this.isDurations(value.startupDurations, ["discoveryMs", "indexingMs", "totalMs"]) &&
+      this.isDiagnostics(value.diagnostics)
     ) {
       return value as unknown as DaemonNavigationWorkerResponse;
     }
@@ -152,19 +167,18 @@ export class DaemonNavigationWorkerProtocol {
     }
     if (
       value.kind === "result" &&
-      this.hasKeys(value, [
-        "kind",
-        "generation",
-        "requestId",
-        "result",
-        "refresh",
-        "durations",
-        "resources",
-      ]) &&
+      this.hasKeys(
+        value,
+        this.keysWithDiagnostics(
+          ["kind", "generation", "requestId", "result", "refresh", "durations", "resources"],
+          value,
+        ),
+      ) &&
       this.isNonEmptyString(value.requestId) &&
       this.isExecutionResult(value.result) &&
       this.isRefresh(value.refresh) &&
       this.isDurations(value.durations, ["freshnessMs", "navigationMs", "renderMs", "outputMs"]) &&
+      this.isDiagnostics(value.diagnostics) &&
       this.isWorkerResources(value.resources)
     ) {
       return value as unknown as DaemonNavigationWorkerResponse;
@@ -208,21 +222,29 @@ export class DaemonNavigationWorkerProtocol {
     );
   }
 
-  private static isExecutionRequest(value: unknown): value is CliExecutionRequest {
+  private static isExecutionRequest(value: unknown): value is DaemonExecutorRequest {
     if (!this.isRecord(value)) return false;
-    const keys = ["argv", "cwd", "telemetryEnabled"];
-    if (value.executionMode !== undefined) keys.push("executionMode");
     return (
-      this.hasKeys(value, keys) &&
+      this.hasKeys(value, ["argv", "cwd", "telemetryEnabled", "executionMode"]) &&
       Array.isArray(value.argv) &&
       value.argv.every((argument) => typeof argument === "string") &&
       typeof value.cwd === "string" &&
       typeof value.telemetryEnabled === "boolean" &&
-      (value.executionMode === undefined ||
-        value.executionMode === "cold" ||
+      (value.executionMode === "cold" ||
         value.executionMode === "warm" ||
         value.executionMode === "fallback")
     );
+  }
+
+  private static isDiagnostics(value: unknown): value is DaemonDiagnostics | undefined {
+    return value === undefined || DaemonDiagnosticValues.isDiagnostics(value);
+  }
+
+  private static keysWithDiagnostics(
+    keys: readonly string[],
+    value: Record<string, unknown>,
+  ): readonly string[] {
+    return value.diagnostics === undefined ? keys : [...keys, "diagnostics"];
   }
 
   private static isExecutionResult(value: unknown): value is { readonly exitCode: number } {
@@ -231,7 +253,7 @@ export class DaemonNavigationWorkerProtocol {
     );
   }
 
-  private static isRefresh(value: unknown): value is BackendRefreshSummary {
+  private static isRefresh(value: unknown): value is DaemonRefreshSummary {
     return (
       this.isRecord(value) &&
       this.hasKeys(value, ["added", "changed", "removed", "unchanged"]) &&

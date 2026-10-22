@@ -1,5 +1,6 @@
 import { DaemonPolicy } from "@symnav/daemon";
 import { DaemonPolicyTestFactory } from "@symnav/daemon/policy-testing";
+import type { ProgramDependencies } from "../../src/program-dependencies.js";
 import type { TestDaemonResourcePolicy as DaemonResourcePolicy } from "./daemon-resource-policy.js";
 import {
   WorkspaceDaemon as RuntimeWorkspaceDaemon,
@@ -22,8 +23,8 @@ interface TestWorkspaceDaemonPolicyOptions {
   readonly maximumRetainedOperationTraces?: number;
 }
 
-export type TestWorkspaceDaemonOptions = Omit<WorkspaceDaemonOptions, "policy"> &
-  TestWorkspaceDaemonPolicyOptions;
+export type TestWorkspaceDaemonOptions = Omit<WorkspaceDaemonOptions, "dependencies" | "policy"> &
+  TestWorkspaceDaemonPolicyOptions & { readonly dependencies: ProgramDependencies };
 
 export class TestWorkspaceDaemon extends RuntimeWorkspaceDaemon {
   constructor(options: TestWorkspaceDaemonOptions) {

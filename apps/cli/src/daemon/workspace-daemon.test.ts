@@ -241,7 +241,12 @@ describe("WorkspaceDaemon runtime lifecycle", () => {
         processToken,
         requestId: "stuck-child-request",
         commandName: "version",
-        request: { argv: ["--version"], cwd: workspaceRoot, telemetryEnabled: false },
+        request: {
+          argv: ["--version"],
+          cwd: workspaceRoot,
+          telemetryEnabled: false,
+          executionMode: "warm",
+        },
       })
       .then((receipt) => receipt.completion.catch(() => undefined))
       .catch(() => undefined);
@@ -510,7 +515,12 @@ class WorkspaceDaemonHarness {
         processToken: "runtime-token",
         requestId,
         commandName: "version",
-        request: { argv: ["--version"], cwd: this.workspaceRoot, telemetryEnabled: false },
+        request: {
+          argv: ["--version"],
+          cwd: this.workspaceRoot,
+          telemetryEnabled: false,
+          executionMode: "warm",
+        },
       })
       .then((receipt) => receipt.completion);
   }

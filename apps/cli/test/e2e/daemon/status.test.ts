@@ -386,6 +386,7 @@ describe("symnav daemon status", () => {
           argv: ["overview", "input.ts"],
           cwd: workspaceRoot,
           telemetryEnabled: false,
+          executionMode: "warm",
         },
       })
       .then((receipt) => receipt.completion.catch(() => undefined))
@@ -563,6 +564,7 @@ describe("symnav daemon status", () => {
           argv: ["overview", "input.ts"],
           cwd: workspaceRoot,
           telemetryEnabled: false,
+          executionMode: "warm",
         },
       })
     ).completion;

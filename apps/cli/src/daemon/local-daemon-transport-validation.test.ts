@@ -726,7 +726,12 @@ function executionRequest(): DaemonExecuteRequest {
     processToken: "token",
     requestId: "request",
     commandName: "version",
-    request: { argv: ["--version"], cwd: "/repo", telemetryEnabled: false },
+    request: {
+      argv: ["--version"],
+      cwd: "/repo",
+      telemetryEnabled: false,
+      executionMode: "warm",
+    },
   };
 }
 

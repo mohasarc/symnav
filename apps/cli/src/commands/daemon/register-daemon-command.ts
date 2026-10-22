@@ -1,6 +1,7 @@
 import type { Command as CommanderCommand } from "commander";
 import { createWorkspace, UserFacingError } from "@symnav/core";
 import { DaemonController } from "../../daemon/daemon-controller.js";
+import { daemonExecutorModuleUrl } from "../../daemon-executor.js";
 import { DaemonLifecycleRenderer } from "../../daemon/daemon-lifecycle-renderer.js";
 import { DaemonRegistry } from "../../daemon/daemon-registry.js";
 import { NodeDaemonProcessLauncher } from "../../daemon/daemon-process-launcher.js";
@@ -72,6 +73,7 @@ class DaemonStartAction {
           policy: dependencies.daemonPolicy.values,
           launcher: new NodeDaemonProcessLauncher(
             dependencies.symnavVersion,
+            daemonExecutorModuleUrl(),
             dependencies.daemonPolicy,
           ),
         },

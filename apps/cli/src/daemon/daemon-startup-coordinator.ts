@@ -483,6 +483,7 @@ export class DaemonStartupCoordinator {
         argv: ["--version"],
         cwd: record.workspaceRoot,
         telemetryEnabled: false,
+        executionMode: "cold",
       },
     });
     const completion = await receipt.completion;

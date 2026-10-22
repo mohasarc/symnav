@@ -1,6 +1,12 @@
 import { Worker } from "node:worker_threads";
-import { DaemonPolicy, type DaemonCommandName } from "@symnav/daemon";
-import type { CliExecutionRequest, CommandOutputRecord } from "../command-execution-result.js";
+import {
+  DaemonPolicy,
+  type DaemonCommandName,
+  type DaemonExecutorRequest,
+  type DaemonExecutorModuleUrl,
+  type DaemonOutputSink,
+  type DaemonSequencedOutputRecord,
+} from "@symnav/daemon";
 import {
   DaemonNavigationWorkerProtocol,
   type DaemonNavigationWorkerRequest,
@@ -30,8 +36,8 @@ export interface DaemonNavigationWorker {
   execute(
     requestId: string,
     commandName: DaemonCommandName,
-    request: CliExecutionRequest,
-    output: { append(record: CommandOutputRecord): Promise<void> },
+    request: DaemonExecutorRequest,
+    output: DaemonOutputSink,
   ): Promise<DaemonNavigationWorkerResponse>;
   releaseTransientResources(): Promise<DaemonNavigationWorkerResponse>;
   drainAndClose(): Promise<void>;
@@ -40,6 +46,8 @@ export interface DaemonNavigationWorker {
 
 export interface DaemonNavigationWorkerConfiguration {
   readonly stateDirectory: string;
+  readonly productVersion: string;
+  readonly executorModuleUrl: DaemonExecutorModuleUrl;
   readonly policy: ReturnType<DaemonPolicy["toSerialized"]>;
 }
 
@@ -56,7 +64,7 @@ export interface NodeDaemonNavigationWorkerOptions {
 interface PendingWorkerResponse {
   readonly resolve: (response: DaemonNavigationWorkerResponse) => void;
   readonly reject: (error: Error) => void;
-  readonly appendOutput: (record: CommandOutputRecord) => Promise<void>;
+  readonly appendOutput: (record: DaemonSequencedOutputRecord) => Promise<void>;
   nextSequence: number;
   chunkInFlight: boolean;
 }
@@ -88,10 +96,12 @@ export class NodeDaemonNavigationWorker implements DaemonNavigationWorker {
       options.entryUrl ?? new URL("./daemon-navigation-worker-entry.js", import.meta.url),
       {
         workerData: {
+          ...options.workerData,
           stateDirectory: options.configuration.stateDirectory,
           generation: options.generation,
+          productVersion: options.configuration.productVersion,
+          executorModuleUrl: options.configuration.executorModuleUrl,
           policy: options.configuration.policy,
-          ...options.workerData,
         },
         resourceLimits: options.resourceLimits,
       },
@@ -112,8 +122,8 @@ export class NodeDaemonNavigationWorker implements DaemonNavigationWorker {
   execute(
     requestId: string,
     commandName: DaemonCommandName,
-    request: CliExecutionRequest,
-    output: { append(record: CommandOutputRecord): Promise<void> },
+    request: DaemonExecutorRequest,
+    output: DaemonOutputSink,
   ): Promise<DaemonNavigationWorkerResponse> {
     return this.send(
       `execute:${requestId}`,
@@ -154,7 +164,7 @@ export class NodeDaemonNavigationWorker implements DaemonNavigationWorker {
   private send(
     key: string,
     request: DaemonNavigationWorkerRequest,
-    appendOutput: ((record: CommandOutputRecord) => Promise<void>) | undefined = undefined,
+    appendOutput: ((record: DaemonSequencedOutputRecord) => Promise<void>) | undefined = undefined,
   ): Promise<DaemonNavigationWorkerResponse> {
     if (this.exit !== undefined)
       return Promise.reject(new Error("Daemon navigation worker exited"));
@@ -223,7 +233,7 @@ export class NodeDaemonNavigationWorker implements DaemonNavigationWorker {
     }
     pending.chunkInFlight = true;
     try {
-      const record: CommandOutputRecord = {
+      const record: DaemonSequencedOutputRecord = {
         sequence: response.sequence,
         stream: response.stream,
         bytes: response.bytes,

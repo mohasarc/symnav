@@ -4,7 +4,6 @@ import { fileURLToPath } from "node:url";
 import { DaemonPolicy } from "@symnav/daemon";
 import { createDefaultDependencies } from "../../src/program.js";
 import { StateDirectoryResolver } from "../../src/state-directory-resolver.js";
-import type { CliExecutionRequest } from "../../src/command-execution-result.js";
 import type {
   DaemonNavigationWorker,
   DaemonNavigationWorkerExit,
@@ -143,6 +142,8 @@ class DaemonStartupCallerExit {
         generation: 1,
         configuration: {
           stateDirectory: identity.stateDirectory,
+          productVersion: dependencies.symnavVersion,
+          executorModuleUrl: new URL("../../dist/daemon-executor.js", import.meta.url).href,
           policy: dependencies.daemonPolicy.toSerialized(),
         },
         resourceLimits: { maxOldGenerationSizeMb: 4096 },
@@ -207,7 +208,7 @@ class StartupBarrierNavigationWorker implements DaemonNavigationWorker {
   execute(
     requestId: string,
     commandName: Parameters<DaemonNavigationWorker["execute"]>[1],
-    request: CliExecutionRequest,
+    request: Parameters<DaemonNavigationWorker["execute"]>[2],
     output: Parameters<DaemonNavigationWorker["execute"]>[3],
   ): Promise<DaemonNavigationWorkerResponse> {
     return this.worker.execute(requestId, commandName, request, output);

@@ -1,7 +1,7 @@
+import { readFileSync } from "node:fs";
 import { afterEach, expect, it, vi } from "vitest";
 import { DaemonPolicy } from "@symnav/daemon";
 import { DaemonPolicyTestFactory } from "@symnav/daemon/policy-testing";
-import type { ProgramDependencies } from "../program-dependencies.js";
 import { DAEMON_PROTOCOL_VERSION, type DaemonIdentityCoordinates } from "./daemon-protocol.js";
 import { DaemonWorkspaceIdentity } from "./daemon-workspace-identity.js";
 
@@ -9,13 +9,13 @@ interface DaemonProcessConfiguration extends DaemonIdentityCoordinates {
   readonly protocolVersion: number;
   readonly stateDirectory: string;
   readonly symnavVersion: string;
+  readonly executorModuleUrl: string;
   readonly policy: ReturnType<DaemonPolicy["toSerialized"]>;
 }
 
 afterEach(() => {
   vi.resetModules();
   vi.restoreAllMocks();
-  vi.doUnmock("../program.js");
   vi.doUnmock("./daemon-process-launcher.js");
   vi.doUnmock("./daemon-registry.js");
   vi.doUnmock("./local-daemon-transport.js");
@@ -25,7 +25,7 @@ afterEach(() => {
   vi.doUnmock("./daemon-process-termination-observer.js");
 });
 
-it("keeps detached dependencies on the serialized canonical state directory", async () => {
+it("starts the detached daemon with only daemon-owned process configuration", async () => {
   const configuredStateDirectory = "/canonical/state-a";
   const retargetedStateDirectory = "/canonical/state-b";
   const identity = DaemonWorkspaceIdentity.from("/workspace", configuredStateDirectory);
@@ -44,6 +44,7 @@ it("keeps detached dependencies on the serialized canonical state directory", as
   const configuration: DaemonProcessConfiguration = {
     protocolVersion: DAEMON_PROTOCOL_VERSION,
     symnavVersion: "0.1.0",
+    executorModuleUrl: "file:///absolute/daemon-executor.js",
     workspaceRoot: identity.workspaceRoot,
     stateDirectory: identity.stateDirectory,
     workspaceKey: identity.workspaceKey,
@@ -54,23 +55,12 @@ it("keeps detached dependencies on the serialized canonical state directory", as
     endpoint: identity.endpoint("instance"),
     policy: policy.toSerialized(),
   };
-  let dependencyStateDirectory = "";
   let daemonStateDirectory = "";
+  let daemonExecutorModuleUrl = "";
   let daemonWorkerLimit = 0;
   let daemonLogger: unknown;
   let terminationRecorder: unknown;
   let terminationObserverInstalled = false;
-  const createDefaultDependencies = vi.fn(
-    (stateDirectory?: string, _daemonPolicy?: DaemonPolicy) => {
-      dependencyStateDirectory = stateDirectory ?? retargetedStateDirectory;
-      return {
-        stateDirectory: dependencyStateDirectory,
-        symnavVersion: configuration.symnavVersion,
-      } as unknown as ProgramDependencies;
-    },
-  );
-
-  vi.doMock("../program.js", () => ({ createDefaultDependencies }));
   vi.doMock("./daemon-process-launcher.js", () => ({
     DaemonProcessConfigurationParser: { parse: () => configuration },
   }));
@@ -92,14 +82,13 @@ it("keeps detached dependencies on the serialized canonical state directory", as
   vi.doMock("./workspace-daemon.js", () => ({
     WorkspaceDaemon: class {
       constructor(options: {
-        readonly dependencies: ProgramDependencies;
+        readonly identity: { readonly stateDirectory: string };
+        readonly executorModuleUrl: string;
         readonly policy: DaemonPolicy;
         readonly logger: unknown;
       }) {
-        const stateOwnedDependencies = options.dependencies as ProgramDependencies & {
-          readonly stateDirectory: string;
-        };
-        daemonStateDirectory = stateOwnedDependencies.stateDirectory;
+        daemonStateDirectory = options.identity.stateDirectory;
+        daemonExecutorModuleUrl = options.executorModuleUrl;
         daemonWorkerLimit = options.policy.values.resources.workerMaxOldGenerationSizeMiB;
         daemonLogger = options.logger;
       }
@@ -110,11 +99,24 @@ it("keeps detached dependencies on the serialized canonical state directory", as
 
   await import("./daemon-entry.js");
 
-  expect(createDefaultDependencies).toHaveBeenCalledOnce();
-  expect(createDefaultDependencies).toHaveBeenCalledWith(configuredStateDirectory, policy);
-  expect(dependencyStateDirectory).toBe(configuredStateDirectory);
   expect(daemonStateDirectory).toBe(configuredStateDirectory);
+  expect(daemonExecutorModuleUrl).toBe(configuration.executorModuleUrl);
   expect(daemonWorkerLimit).toBe(257);
   expect(terminationObserverInstalled).toBe(true);
   expect(terminationRecorder).toBe(daemonLogger);
+});
+
+it("keeps the process and worker entries independent from CLI and core modules", () => {
+  for (const file of [
+    "daemon-entry.ts",
+    "daemon-navigation-worker-entry.ts",
+    "daemon-navigation-worker-protocol.ts",
+    "local-daemon-transport.ts",
+    "workspace-daemon.ts",
+  ]) {
+    const source = readFileSync(new URL(file, import.meta.url), "utf8");
+    expect(source).not.toMatch(
+      /@symnav\/core|\.\.\/(program|program-dependencies|command-execution-result)/,
+    );
+  }
 });

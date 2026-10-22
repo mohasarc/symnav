@@ -63,6 +63,7 @@ describe("DaemonStartupCoordinator", () => {
           argv: ["--version"],
           cwd: harness.identity.workspaceRoot,
           telemetryEnabled: false,
+          executionMode: "cold",
         },
       }),
     ]);

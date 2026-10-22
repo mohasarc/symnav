@@ -54,6 +54,7 @@ export interface CliExecutionRequest {
 }
 
 export interface OrderedCommandOutputOptions {
+  readonly stateWriteFailed?: (path: string, error: unknown) => void;
   readonly policy: DaemonPolicyValues["output"];
   readonly directory?: string;
 }

@@ -11,6 +11,7 @@ import {
 } from "../transport/protocol.js";
 import { DaemonRuntimeValues } from "../process/runtime-values.js";
 import type { DaemonWorkspaceIdentity } from "../registry/workspace-identity.js";
+import { DaemonFailureValues } from "./failure-values.js";
 
 const DIAGNOSTIC_FIELDS = [
   "schemaVersion",
@@ -60,6 +61,9 @@ const DIAGNOSTIC_FIELDS = [
   "terminationReason",
   "signal",
   "droppedCount",
+  "failure",
+  "phase",
+  "osCode",
 ] as const;
 
 const DIAGNOSTIC_KINDS = new Set([
@@ -295,6 +299,7 @@ export class DaemonLogger {
     const diagnostic = event as unknown as Record<string, unknown>;
     if (!DIAGNOSTIC_KINDS.has(String(diagnostic.kind))) return undefined;
     const closed: Record<string, unknown> = { ...diagnostic };
+    if ("failure" in closed && !DaemonFailureValues.isFailure(closed.failure)) return undefined;
     if ("command" in closed && !DaemonRuntimeValues.isCommandName(closed.command)) {
       closed.command = "unknown";
     }

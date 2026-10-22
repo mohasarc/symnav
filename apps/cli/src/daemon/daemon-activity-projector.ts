@@ -4,13 +4,8 @@ import {
   type DaemonPong,
 } from "./daemon-protocol.js";
 import type { DaemonResourceSnapshot } from "./daemon-resource-monitor.js";
+import type { DaemonWorkerGenerationSnapshot } from "./daemon-worker-generation-manager.js";
 import type { WorkspaceRequestQueueSnapshot } from "./workspace-request-queue.js";
-
-export interface DaemonWorkerGenerationSnapshot {
-  readonly generation: number;
-  readonly ready: boolean;
-  readonly fileCount?: number;
-}
 
 export interface DaemonActivityProjectionInput {
   readonly nowMonotonicMs: number;

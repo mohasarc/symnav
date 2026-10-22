@@ -135,7 +135,7 @@ export class DaemonResourceSupervisor {
     this.peakWorkerHeapUsedBytes = Math.max(this.peakWorkerHeapUsedBytes ?? 0, peakUsedBytes);
   }
 
-  async workerExited(exit: import("./daemon-navigation-worker.js").DaemonNavigationWorkerExit) {
+  async recover(exit: import("./daemon-navigation-worker.js").DaemonNavigationWorkerExit) {
     if (exit.generation !== this.currentGeneration || this.currentState === "stopped") return;
     await this.replace(exit.cause === "out-of-memory" ? "out-of-memory" : "worker-exit");
   }

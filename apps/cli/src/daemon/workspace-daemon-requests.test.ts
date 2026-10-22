@@ -43,6 +43,7 @@ import type {
   DaemonResourceSnapshot,
   DaemonResourceSupervisor,
 } from "./daemon-resource-monitor.js";
+import type { DaemonWorkerGenerationManager } from "./daemon-worker-generation-manager.js";
 import type { WorkspaceRequestQueue } from "./workspace-request-queue.js";
 import { TestDaemonResourcePolicy as DaemonResourcePolicy } from "../../test/helpers/daemon-resource-policy.js";
 import {
@@ -98,6 +99,7 @@ describe("WorkspaceDaemon requests", () => {
     expect(startingStatus).toMatchObject({
       kind: "pong",
       state: "starting",
+      fileCount: 0,
       activity: {
         lifecycle: "starting",
         pid: process.pid,
@@ -111,6 +113,7 @@ describe("WorkspaceDaemon requests", () => {
     if (startingActivity === undefined) {
       throw new Error("Expected daemon activity snapshot");
     }
+    expect(startingActivity).not.toHaveProperty("fileCount");
     expect(() => Object.assign(startingActivity, { queued: 9 })).toThrow();
     expect(harness.registry.read(harness.identity)?.state).toBe("starting");
 
@@ -1272,6 +1275,40 @@ describe("WorkspaceDaemon requests", () => {
     expect(workers).toHaveLength(2);
   });
 
+  it("classifies a literal active worker exit without replaying the request", async () => {
+    const activeExecutor = new SerializedExecutor();
+    const replacementExecutor = new RecordingExecutor();
+    const workers: ExecutorNavigationWorker[] = [];
+    const harness = await RequestHarness.start(undefined, {
+      navigationWorkerFactory: (generation) => {
+        const worker = new ExecutorNavigationWorker(
+          generation === 1 ? activeExecutor : replacementExecutor,
+          generation,
+        );
+        workers.push(worker);
+        return worker;
+      },
+    });
+    harnesses.push(harness);
+    const active = harness.execute("worker-exit-active", ["refs", "input"]);
+    await activeExecutor.started(1);
+    const queued = harness.execute("worker-exit-queued", ["overview", "input.ts"]);
+
+    workers[0]?.fail({ generation: 1, cause: "error", errorName: "WorkerCrash" });
+
+    await expect(active).resolves.toMatchObject({
+      kind: "execution-failed",
+      requestId: "worker-exit-active",
+      code: "worker-exit",
+    });
+    await expect(queued).resolves.toMatchObject({
+      kind: "result-end",
+      requestId: "worker-exit-queued",
+    });
+    expect(activeExecutor.requests).toHaveLength(1);
+    expect(replacementExecutor.requests).toHaveLength(1);
+  });
+
   it("reports worker replacement recovery from the main thread", async () => {
     const initial = new ExecutorNavigationWorker(new ImmediateExecutor(), 1);
     const replacement = new DeferredInitializationWorker(2);
@@ -1283,6 +1320,41 @@ describe("WorkspaceDaemon requests", () => {
     initial.fail({ generation: 1, cause: "out-of-memory", errorName: "WorkerOom" });
     await replacement.initializationStarted;
 
+    const recovering = await harness.ping();
+    expect(recovering).toMatchObject({
+      kind: "pong",
+      fileCount: 1,
+      activity: {
+        lifecycle: "recovering",
+        recoveryDetail: "worker-replacement",
+        workerGeneration: 2,
+      },
+    });
+    expect(recovering.kind === "pong" ? recovering.activity : undefined).not.toHaveProperty(
+      "fileCount",
+    );
+
+    replacement.completeInitialization();
+    await waitUntil(async () => {
+      const pong = await harness.ping();
+      return pong.kind === "pong" && pong.state === "ready";
+    });
+  });
+
+  it("starts the next generation before terminating the previous worker", async () => {
+    const transitions: string[] = [];
+    const initial = new OrderedInitializationWorker(1, transitions, true);
+    const replacement = new OrderedInitializationWorker(2, transitions, false);
+    const harness = await RequestHarness.start(undefined, {
+      navigationWorkerFactory: (generation) => (generation === 1 ? initial : replacement),
+    });
+    harnesses.push(harness);
+    transitions.length = 0;
+
+    initial.fail({ generation: 1, cause: "out-of-memory", errorName: "WorkerOom" });
+    await replacement.initializationStarted;
+
+    expect(transitions).toEqual(["start:2", "terminate:1"]);
     await expect(harness.ping()).resolves.toMatchObject({
       kind: "pong",
       activity: {
@@ -1528,9 +1600,30 @@ describe("WorkspaceDaemon requests", () => {
     await worker.releaseStarted;
     expect(ready).toBe(false);
     expect(harness.registry.read(harness.identity)?.state).toBe("starting");
+    const warming = await harness.ping();
+    const admission = await harness.admit("before-warmup-completes");
+    const rejection = await admission.terminal;
     worker.allowRelease();
     await starting;
     lease.release();
+
+    expect(warming).toMatchObject({
+      kind: "pong",
+      fileCount: 1,
+      activity: {
+        lifecycle: "recovering",
+        recoveryDetail: "resource-pressure",
+        workerGeneration: 1,
+      },
+    });
+    expect
+      .soft(warming.kind === "pong" ? warming.activity : undefined)
+      .not.toHaveProperty("fileCount");
+    expect.soft(rejection).toMatchObject({
+      kind: "rejected",
+      code: "not-ready",
+    });
+    expect(harness.acceptedRequestCount()).toBe(0);
 
     await expect(harness.ping()).resolves.toMatchObject({ state: "ready" });
   });
@@ -1825,7 +1918,9 @@ class RequestHarness {
   }
 
   setWorkerReady(workerReady: boolean): void {
-    this.daemonInternals.workerReady = workerReady;
+    const workerManager = this.daemonInternals.workerManager;
+    const snapshot = workerManager.snapshot;
+    vi.spyOn(workerManager, "snapshot", "get").mockReturnValue({ ...snapshot, ready: workerReady });
   }
 
   setResourceAdmissionPaused(admissionPaused: boolean): void {
@@ -1859,18 +1954,18 @@ class RequestHarness {
   }
 
   private get daemonInternals(): {
-    workerReady: boolean;
     readonly acceptedRequests: AcceptedRequestLedger;
     readonly requestQueue: WorkspaceRequestQueue;
+    readonly workerManager: DaemonWorkerGenerationManager;
     readonly resourceSupervisor: DaemonResourceSupervisor & {
       readonly snapshot: DaemonResourceSnapshot;
     };
   } {
     if (this.daemon === undefined) throw new Error("Workspace daemon is unavailable");
     return this.daemon as unknown as {
-      workerReady: boolean;
       readonly acceptedRequests: AcceptedRequestLedger;
       readonly requestQueue: WorkspaceRequestQueue;
+      readonly workerManager: DaemonWorkerGenerationManager;
       readonly resourceSupervisor: DaemonResourceSupervisor & {
         readonly snapshot: DaemonResourceSnapshot;
       };
@@ -2333,6 +2428,7 @@ class ExecutorNavigationWorker implements DaemonNavigationWorker {
   }
 
   fail(exit: DaemonNavigationWorkerExit): void {
+    this.rejectTermination(new DaemonNavigationWorkerExitedError(exit));
     this.resolveExited(exit);
   }
 }
@@ -2427,6 +2523,69 @@ class DeferredInitializationWorker implements DaemonNavigationWorker {
 
   terminate(): Promise<void> {
     return Promise.resolve();
+  }
+
+  completeInitialization(): void {
+    this.resolveReady({
+      kind: "ready",
+      generation: this.generation,
+      fileCount: 1,
+      refresh: { added: 1, changed: 0, removed: 0, unchanged: 0 },
+      startupDurations: { discoveryMs: 0, indexingMs: 1, totalMs: 1 },
+    });
+  }
+}
+
+class OrderedInitializationWorker implements DaemonNavigationWorker {
+  readonly exited: Promise<DaemonNavigationWorkerExit>;
+  readonly initializationStarted: Promise<void>;
+  private resolveExited!: (exit: DaemonNavigationWorkerExit) => void;
+  private resolveInitializationStarted!: () => void;
+  private resolveReady!: (response: DaemonNavigationWorkerResponse) => void;
+  private readonly ready: Promise<DaemonNavigationWorkerResponse>;
+
+  constructor(
+    readonly generation: number,
+    private readonly transitions: string[],
+    readyImmediately: boolean,
+  ) {
+    this.exited = new Promise((resolve) => {
+      this.resolveExited = resolve;
+    });
+    this.initializationStarted = new Promise((resolve) => {
+      this.resolveInitializationStarted = resolve;
+    });
+    this.ready = new Promise((resolve) => {
+      this.resolveReady = resolve;
+    });
+    if (readyImmediately) this.completeInitialization();
+  }
+
+  start(): Promise<DaemonNavigationWorkerResponse> {
+    this.transitions.push(`start:${this.generation}`);
+    this.resolveInitializationStarted();
+    return this.ready;
+  }
+
+  execute(): Promise<DaemonNavigationWorkerResponse> {
+    throw new Error("Ordered initialization worker is not executable");
+  }
+
+  releaseTransientResources(): Promise<DaemonNavigationWorkerResponse> {
+    throw new Error("Ordered initialization worker has no transient resources");
+  }
+
+  drainAndClose(): Promise<void> {
+    return Promise.resolve();
+  }
+
+  terminate(): Promise<void> {
+    this.transitions.push(`terminate:${this.generation}`);
+    return Promise.resolve();
+  }
+
+  fail(exit: DaemonNavigationWorkerExit): void {
+    this.resolveExited(exit);
   }
 
   completeInitialization(): void {

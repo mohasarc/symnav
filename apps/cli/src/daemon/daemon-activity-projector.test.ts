@@ -244,6 +244,18 @@ describe("DaemonActivityProjector", () => {
       expect(source).not.toMatch(processOwnedFormatting);
     }
   });
+
+  it("imports the worker snapshot contract from its lifecycle owner", () => {
+    const source = readFileSync(
+      fileURLToPath(new URL("./daemon-activity-projector.ts", import.meta.url)),
+      "utf8",
+    );
+
+    expect(source).toContain(
+      'import type { DaemonWorkerGenerationSnapshot } from "./daemon-worker-generation-manager.js";',
+    );
+    expect(source).not.toMatch(/export interface DaemonWorkerGenerationSnapshot/);
+  });
 });
 
 interface ActivityProjectionOverrides {

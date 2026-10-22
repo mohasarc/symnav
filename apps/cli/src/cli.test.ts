@@ -6,10 +6,10 @@ import { DaemonWorkspaceIdentity } from "./daemon/daemon-workspace-identity.js";
 afterEach(() => {
   vi.resetModules();
   vi.restoreAllMocks();
-  vi.doUnmock("@symnav/telemetry");
   vi.doUnmock("./cli-program-executor.js");
   vi.doUnmock("./daemon/daemon-command-dispatcher.js");
   vi.doUnmock("./program.js");
+  vi.doUnmock("./state-directory-resolver.js");
 });
 
 it("owns one canonical state directory across one client invocation", async () => {
@@ -22,11 +22,10 @@ it("owns one canonical state directory across one client invocation", async () =
     return resolvedStateDirectory;
   });
   const dependencyStateDirectories: string[] = [];
-  const createDefaultDependencies = vi.fn((stateDirectory?: string) => {
-    const dependencyStateDirectory = stateDirectory ?? resolveStateDirectory();
-    dependencyStateDirectories.push(dependencyStateDirectory);
+  const createDefaultDependencies = vi.fn((stateDirectory: string) => {
+    dependencyStateDirectories.push(stateDirectory);
     return {
-      stateDirectory: dependencyStateDirectory,
+      stateDirectory,
       telemetryEnabled: true,
     } as unknown as ProgramDependencies;
   });
@@ -34,7 +33,11 @@ it("owns one canonical state directory across one client invocation", async () =
   let daemonRecordPath = "";
   let daemonEndpoint = "";
 
-  vi.doMock("@symnav/telemetry", () => ({ resolveStateDir: resolveStateDirectory }));
+  vi.doMock("./state-directory-resolver.js", () => ({
+    StateDirectoryResolver: class {
+      resolve = resolveStateDirectory;
+    },
+  }));
   vi.doMock("./program.js", () => ({
     createDefaultDependencies,
     createDefaultProgramContext: () => ({ stdout: {}, stderr: {}, cwd: "/client" }),

@@ -1,5 +1,5 @@
 import { appendFileSync, existsSync, writeFileSync } from "node:fs";
-import { canonicalStateDir } from "@symnav/telemetry";
+import { StateDirectoryResolver } from "../../src/state-directory-resolver.js";
 import type {
   CliExecutionRequest,
   CommandOutputRecord,
@@ -130,7 +130,7 @@ class PressureNavigationWorker implements DaemonNavigationWorker {
   }
 }
 
-const canonicalStateDirectory = canonicalStateDir(stateDirectory);
+const canonicalStateDirectory = StateDirectoryResolver.canonicalize(stateDirectory);
 const identity = DaemonWorkspaceIdentity.from(workspaceRoot, canonicalStateDirectory);
 const policy = DaemonResourcePolicy.fromSystemMemory(512 * 1024 * 1024);
 writeFileSync(`${readyPath}.boot`, String(process.pid));

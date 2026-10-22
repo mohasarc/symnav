@@ -20,11 +20,11 @@ import { join } from "node:path";
 import { performance } from "node:perf_hooks";
 import { fileURLToPath } from "node:url";
 import { runSymnavBinary, type RunSymnavBinaryResult } from "@symnav/testing";
-import { canonicalStateDir } from "@symnav/telemetry";
 import { DaemonRegistry } from "../../src/daemon/daemon-registry.js";
 import type { DaemonCommandName } from "../../src/daemon/daemon-protocol.js";
 import { DaemonResourcePolicy } from "../../src/daemon/daemon-resource-monitor.js";
 import { DaemonWorkspaceIdentity } from "../../src/daemon/daemon-workspace-identity.js";
+import { StateDirectoryResolver } from "../../src/state-directory-resolver.js";
 import { canonicalWorkspaceRoot } from "../helpers/canonical-workspace-root.js";
 import type {
   DaemonBenchmarkGateResult,
@@ -100,7 +100,7 @@ export class DaemonScaleBenchmarkHarness {
       const generatedProfile = await new DaemonWorkspaceProfiler().profile(workspaceRoot);
       const identity = DaemonWorkspaceIdentity.from(
         canonicalWorkspaceRoot(realpathSync(workspaceRoot)),
-        canonicalStateDir(stateDirectory),
+        StateDirectoryResolver.canonicalize(stateDirectory),
       );
       const startupStartedAt = performance.now();
       const started = this.runCommand(workspaceRoot, stateDirectory, ["daemon", "start"], false);

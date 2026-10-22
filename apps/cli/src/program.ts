@@ -5,12 +5,7 @@ import { fileURLToPath } from "node:url";
 import { Command as CommanderCommand } from "commander";
 import { NodeFileSystem } from "@symnav/core";
 import { TypeScriptBackend } from "@symnav/backend-typescript";
-import {
-  NodeTelemetryWritePort,
-  NodeUsageRecorder,
-  resolveStateDir,
-  usageLogPath,
-} from "@symnav/telemetry";
+import { NodeTelemetryWritePort, NodeUsageRecorder, usageLogPath } from "@symnav/telemetry";
 import type { Clock } from "@symnav/telemetry";
 import { registerContextCommand } from "./commands/context/register-context-command.js";
 import { registerDaemonCommand } from "./commands/daemon/register-daemon-command.js";
@@ -28,6 +23,7 @@ import {
   NodeGitRemoteReader,
   NodeTelemetryIdentityProvider,
 } from "./telemetry/node-telemetry-identity-provider.js";
+import { StateDirectoryResolver } from "./state-directory-resolver.js";
 
 function readPackageVersion(): string {
   const here = dirname(fileURLToPath(import.meta.url));
@@ -69,7 +65,8 @@ export function buildProgram(
   dependencies?: ProgramDependencies,
 ): CommanderCommand {
   const ctx = context ?? createDefaultProgramContext();
-  const deps = dependencies ?? createDefaultDependencies(resolveStateDir(process.env));
+  const deps =
+    dependencies ?? createDefaultDependencies(new StateDirectoryResolver(process.env).resolve());
   const program = new CommanderCommand();
   program
     .name("symnav")

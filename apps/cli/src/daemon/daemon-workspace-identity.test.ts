@@ -1,8 +1,8 @@
 import { mkdirSync, mkdtempSync, rmSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, relative } from "node:path";
-import { canonicalStateDir } from "@symnav/telemetry";
 import { afterEach, describe, expect, it } from "vitest";
+import { StateDirectoryResolver } from "../state-directory-resolver.js";
 import { DaemonWorkspaceIdentity } from "./daemon-workspace-identity.js";
 
 describe("DaemonWorkspaceIdentity", () => {
@@ -20,11 +20,17 @@ describe("DaemonWorkspaceIdentity", () => {
     mkdirSync(firstState);
     mkdirSync(secondState);
 
-    const first = DaemonWorkspaceIdentity.from("/workspace", canonicalStateDir(firstState));
-    const second = DaemonWorkspaceIdentity.from("/workspace", canonicalStateDir(secondState));
+    const first = DaemonWorkspaceIdentity.from(
+      "/workspace",
+      StateDirectoryResolver.canonicalize(firstState),
+    );
+    const second = DaemonWorkspaceIdentity.from(
+      "/workspace",
+      StateDirectoryResolver.canonicalize(secondState),
+    );
     const otherWorkspace = DaemonWorkspaceIdentity.from(
       "/other-workspace",
-      canonicalStateDir(firstState),
+      StateDirectoryResolver.canonicalize(firstState),
     );
 
     expect(first.workspaceKey).toBe(second.workspaceKey);
@@ -47,9 +53,12 @@ describe("DaemonWorkspaceIdentity", () => {
       stateDirectory,
       join(root, ".", "state"),
       stateSymlink,
-      canonicalStateDir(stateDirectory),
+      StateDirectoryResolver.canonicalize(stateDirectory),
     ].map((stateLocation) =>
-      DaemonWorkspaceIdentity.from("/workspace", canonicalStateDir(stateLocation)),
+      DaemonWorkspaceIdentity.from(
+        "/workspace",
+        StateDirectoryResolver.canonicalize(stateLocation),
+      ),
     );
 
     expect(new Set(identities.map((identity) => identity.stateDirectory)).size).toBe(1);
@@ -60,7 +69,10 @@ describe("DaemonWorkspaceIdentity", () => {
   it("places lifecycle files under one identity directory and keys endpoints by instance", () => {
     const root = mkdtempSync(join(tmpdir(), "symnav-daemon-identity-"));
     roots.push(root);
-    const identity = DaemonWorkspaceIdentity.from("/workspace", canonicalStateDir(root));
+    const identity = DaemonWorkspaceIdentity.from(
+      "/workspace",
+      StateDirectoryResolver.canonicalize(root),
+    );
     const lifecyclePaths = [
       identity.recordPath("instance"),
       identity.lockPath,

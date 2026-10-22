@@ -1,10 +1,10 @@
 #!/usr/bin/env node
-import { resolveStateDir } from "@symnav/telemetry";
 import { CommandResultReplayer } from "./cli-program-executor.js";
 import { DaemonCommandDispatcher } from "./daemon/daemon-command-dispatcher.js";
 import { createDefaultDependencies, createDefaultProgramContext } from "./program.js";
+import { StateDirectoryResolver } from "./state-directory-resolver.js";
 
-const stateDirectory = resolveStateDir(process.env);
+const stateDirectory = new StateDirectoryResolver(process.env).resolve();
 const dependencies = createDefaultDependencies(stateDirectory);
 const dispatched = await new DaemonCommandDispatcher({
   createDependencies: createDefaultDependencies,

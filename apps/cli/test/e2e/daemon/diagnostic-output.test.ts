@@ -12,13 +12,13 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
 import { runSymnavBinary } from "@symnav/testing";
-import { canonicalStateDir } from "@symnav/telemetry";
 import {
   DAEMON_LOG_BACKUP_COUNT,
   DAEMON_LOG_ROTATE_BYTES,
 } from "../../../src/daemon/daemon-logger.js";
 import { DaemonRegistry } from "../../../src/daemon/daemon-registry.js";
 import { DaemonWorkspaceIdentity } from "../../../src/daemon/daemon-workspace-identity.js";
+import { StateDirectoryResolver } from "../../../src/state-directory-resolver.js";
 import { canonicalWorkspaceRoot } from "../../helpers/canonical-workspace-root.js";
 import { E2eProcessCleanup } from "../../helpers/e2e-process-cleanup.js";
 
@@ -56,7 +56,7 @@ describe("daemon diagnostic output isolation", () => {
     });
     const identity = DaemonWorkspaceIdentity.from(
       canonicalWorkspaceRoot(realpathSync(workspaceRoot)),
-      canonicalStateDir(stateDirectory),
+      StateDirectoryResolver.canonicalize(stateDirectory),
     );
     const record = new DaemonRegistry(identity.registryDirectory).read(identity);
 
@@ -106,7 +106,7 @@ describe("daemon diagnostic output isolation", () => {
       });
       const identity = DaemonWorkspaceIdentity.from(
         canonicalWorkspaceRoot(realpathSync(workspaceRoot)),
-        canonicalStateDir(stateDirectory),
+        StateDirectoryResolver.canonicalize(stateDirectory),
       );
       const registry = new DaemonRegistry(identity.registryDirectory);
       const record = registry.read(identity);
@@ -156,7 +156,7 @@ describe("daemon diagnostic output isolation", () => {
     });
     const identity = DaemonWorkspaceIdentity.from(
       canonicalWorkspaceRoot(realpathSync(workspaceRoot)),
-      canonicalStateDir(stateDirectory),
+      StateDirectoryResolver.canonicalize(stateDirectory),
     );
     const registry = new DaemonRegistry(identity.registryDirectory);
     const record = registry.read(identity);

@@ -12,7 +12,6 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
 import { runSymnavBinary } from "@symnav/testing";
-import { canonicalStateDir } from "@symnav/telemetry";
 import {
   DAEMON_PROTOCOL_VERSION,
   DAEMON_RECORD_SCHEMA_VERSION,
@@ -21,6 +20,7 @@ import {
 import { DaemonRegistry } from "../../../src/daemon/daemon-registry.js";
 import { DaemonWorkspaceIdentity } from "../../../src/daemon/daemon-workspace-identity.js";
 import { LocalDaemonTransport } from "../../../src/daemon/local-daemon-transport.js";
+import { StateDirectoryResolver } from "../../../src/state-directory-resolver.js";
 import { canonicalWorkspaceRoot } from "../../helpers/canonical-workspace-root.js";
 import { E2eProcessCleanup } from "../../helpers/e2e-process-cleanup.js";
 import { DaemonStateFiles } from "../../helpers/daemon-state-files.js";
@@ -102,7 +102,7 @@ describe("symnav daemon stop", () => {
     const cwd = temporaryWorkspace(stateDirectories);
     const identity = DaemonWorkspaceIdentity.from(
       canonicalWorkspaceRoot(realpathSync(cwd)),
-      canonicalStateDir(stateDir),
+      StateDirectoryResolver.canonicalize(stateDir),
     );
     const registry = new DaemonRegistry(identity.registryDirectory);
     const instanceId = "starting-stop";
@@ -228,7 +228,10 @@ async function startControlledDaemon(
   workspaceRoot: string,
   releasePath?: string,
 ): Promise<ControlledDaemon> {
-  const identity = DaemonWorkspaceIdentity.from(workspaceRoot, canonicalStateDir(stateDirectory));
+  const identity = DaemonWorkspaceIdentity.from(
+    workspaceRoot,
+    StateDirectoryResolver.canonicalize(stateDirectory),
+  );
   const registry = new DaemonRegistry(identity.registryDirectory);
   const instanceId = `controlled-${releasePath === undefined ? "forced" : "draining"}`;
   const processToken = `${instanceId}-token`;

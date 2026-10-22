@@ -11,7 +11,6 @@ import {
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { canonicalStateDir } from "@symnav/telemetry";
 import { afterEach, describe, expect, it } from "vitest";
 import { createDefaultDependencies } from "../../../src/program.js";
 import {
@@ -22,6 +21,7 @@ import {
 import { DaemonRegistry } from "../../../src/daemon/daemon-registry.js";
 import { DaemonWorkspaceIdentity } from "../../../src/daemon/daemon-workspace-identity.js";
 import { LocalDaemonTransport } from "../../../src/daemon/local-daemon-transport.js";
+import { StateDirectoryResolver } from "../../../src/state-directory-resolver.js";
 import { canonicalWorkspaceRoot } from "../../helpers/canonical-workspace-root.js";
 
 describe("persistent daemon resource pressure", () => {
@@ -38,7 +38,7 @@ describe("persistent daemon resource pressure", () => {
   it("bounds replacement, preserves queued FIFO, and cleans exact ownership after exit", async () => {
     const root = mkdtempSync(join(tmpdir(), "symnav-persistent-pressure-"));
     roots.push(root);
-    const stateDirectory = canonicalStateDir(join(root, "state"));
+    const stateDirectory = StateDirectoryResolver.canonicalize(join(root, "state"));
     const workspaceRoot = join(root, "workspace");
     mkdirSync(join(workspaceRoot, ".git"), { recursive: true });
     for (const filename of ["active.ts", "queued-one.ts", "queued-two.ts"]) {

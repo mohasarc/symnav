@@ -28,6 +28,64 @@ const success: DaemonExecutorExecutionResult = {
 };
 
 describe("DaemonClient execution", () => {
+  it.each(["not-submitted", "submitted-unconfirmed", "accepted"] as const)(
+    "reports a %s write denial without replaying uncertain work",
+    async (delivery) => {
+      const cause = Object.assign(new Error("denied"), {
+        syscall: "mkdir",
+        path: "/state/channel",
+        code: "EACCES",
+      });
+      const harness = new ClientHarness({
+        warmFailure: new DaemonTransportError(
+          "unreachable",
+          delivery,
+          "denied",
+          undefined,
+          undefined,
+          cause,
+        ),
+      });
+      const stateWriteFailed = vi.fn();
+      const executeLocally = vi.fn(async () => success);
+      const result = await harness.client.execute({
+        ...harness.request(),
+        stateWriteFailed,
+        executeLocally,
+      });
+      expect(stateWriteFailed).toHaveBeenCalledWith({ path: "/state/channel", osCode: "EACCES" });
+      expect(executeLocally).toHaveBeenCalledTimes(delivery === "not-submitted" ? 1 : 0);
+      expect(harness.executorFactory).not.toHaveBeenCalled();
+      expect(result.mode).toBe(delivery === "not-submitted" ? "fallback" : "warm");
+    },
+  );
+
+  it("does not report generic connection failures as state failures", async () => {
+    const harness = new ClientHarness({
+      warmFailure: new DaemonTransportError("unreachable", "not-submitted", "refused"),
+    });
+    const stateWriteFailed = vi.fn();
+    await harness.client.execute({ ...harness.request(), stateWriteFailed });
+    expect(stateWriteFailed).not.toHaveBeenCalled();
+  });
+
+  it("observes actual background startup write failure without waiting for warmup", async () => {
+    const harness = new ClientHarness({ record: undefined });
+    harness.trigger.mockRejectedValueOnce(
+      Object.assign(new Error("denied"), {
+        syscall: "mkdir",
+        path: "/state/daemons/lease",
+        code: "EPERM",
+      }),
+    );
+    const stateWriteFailed = vi.fn();
+    await harness.client.execute({ ...harness.request(), stateWriteFailed });
+    expect(stateWriteFailed).toHaveBeenCalledWith({
+      path: "/state/daemons/lease",
+      osCode: "EPERM",
+    });
+  });
+
   afterEach(() => vi.restoreAllMocks());
 
   it.each([

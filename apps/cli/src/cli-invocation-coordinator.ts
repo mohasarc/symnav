@@ -32,10 +32,16 @@ export class CliInvocationCoordinator {
       argv: selected.argv,
       cwd: request.cwd,
       telemetryEnabled: request.telemetryEnabled,
+      ...(request.stateWriteFailed === undefined
+        ? {}
+        : { stateWriteFailed: request.stateWriteFailed }),
+      ...(request.executeLocally === undefined ? {} : { executeLocally: request.executeLocally }),
     });
   }
 
   private async executeLocally(request: CliExecutionRequest): Promise<DaemonClientExecuteResult> {
+    if (request.executeLocally !== undefined)
+      return { mode: "cold", result: await request.executeLocally("cold") };
     const result = await this.options
       .createLocalExecutor()
       .execute({ ...request, executionMode: "cold" });

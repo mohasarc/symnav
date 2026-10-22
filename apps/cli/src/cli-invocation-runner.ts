@@ -14,6 +14,8 @@ import type { ProgramContext } from "./program-context.js";
 import type { ProgramDependencies } from "./program-dependencies.js";
 import { InvocationWorkspaceSelector } from "./invocation-workspace-selector.js";
 import { buildProgram } from "./program.js";
+import { InvocationStateWriteCoordinator } from "./state/state-write-coordinator.js";
+import { InvocationStateDependencies } from "./state/invocation-state-dependencies.js";
 
 export interface CliInvocationRunnerOptions {
   readonly dependencies: ProgramDependencies;
@@ -72,18 +74,55 @@ export class CliInvocationRunner {
   public constructor(private readonly options: CliInvocationRunnerOptions) {}
 
   public async run(request: CliExecutionRequest, context: ProgramContext): Promise<number> {
-    if (!this.options.dependencies.daemonEnabled) return this.runLocally(request, context);
-    const execution = await this.options.coordinator.execute(request);
-    await CommandResultReplayer.replay(execution.result, {
+    const state = new InvocationStateWriteCoordinator(this.options.dependencies.stateDirectory);
+    const route = new InvocationWorkspaceSelector().classify(request.argv, request.cwd);
+    const daemonEligible =
+      route.kind === "workspace" && (route.commandName !== "stats" || request.telemetryEnabled);
+    await state.prepare({
+      daemon: daemonEligible && this.options.dependencies.daemonEnabled,
+      telemetry: route.kind === "workspace" && request.telemetryEnabled,
+    });
+    const dependencies = InvocationStateDependencies.create(
+      this.options.dependencies,
+      state,
+      request.telemetryEnabled,
+    );
+    const local = (mode: "cold" | "fallback") =>
+      this.executeLocally({ ...request, executionMode: mode }, dependencies);
+    const result =
+      state.access.kind === "disabled" || !dependencies.daemonEnabled || !daemonEligible
+        ? await local("cold")
+        : (
+            await this.options.coordinator.execute({
+              ...request,
+              stateWriteFailed: (failure) =>
+                state.failed(
+                  failure.path,
+                  failure.osCode === undefined ? undefined : { code: failure.osCode },
+                ),
+              executeLocally: local,
+            })
+          ).result;
+    if (result.stateWriteFailure !== undefined) {
+      const failure = result.stateWriteFailure;
+      state.failed(
+        failure.path,
+        failure.osCode === undefined ? undefined : { code: failure.osCode },
+      );
+    }
+    await CommandResultReplayer.replay(result, {
       ...context,
       exit: () => undefined as never,
     });
-    return execution.result.exitCode;
+    return result.exitCode;
   }
 
-  private async runLocally(request: CliExecutionRequest, context: ProgramContext): Promise<number> {
+  private async executeLocally(
+    request: CliExecutionRequest,
+    dependencies: ProgramDependencies,
+  ): Promise<CommandExecutionResult> {
     const output = new DirectCommandOutput(
-      this.options.dependencies.daemonPolicy.values.output.maximumResultRawBytes,
+      dependencies.daemonPolicy.values.output.maximumResultRawBytes,
     );
     const stdout = new DirectCommandWritable("stdout", output);
     const stderr = new DirectCommandWritable("stderr", output);
@@ -100,9 +139,8 @@ export class CliInvocationRunner {
           },
         },
         {
-          ...this.options.dependencies,
-          telemetryEnabled: request.telemetryEnabled,
-          executionMode: "cold",
+          ...dependencies,
+          executionMode: request.executionMode ?? "cold",
         },
       );
       const selected = new InvocationWorkspaceSelector().select(request.argv, request.cwd);
@@ -115,11 +153,6 @@ export class CliInvocationRunner {
       stderr.end();
       await completion;
     }
-    const result = output.finish(exitCode);
-    await CommandResultReplayer.replay(result, {
-      ...context,
-      exit: () => undefined as never,
-    });
-    return result.exitCode;
+    return output.finish(exitCode);
   }
 }

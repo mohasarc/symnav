@@ -3,7 +3,7 @@ import { DaemonClientResultCapture, type DaemonOutputCapture } from "./client-re
 import { DaemonExecutionClient } from "./execution-client.js";
 import { DaemonLifecycleClient } from "./lifecycle-client.js";
 import { DaemonProtocolValidator } from "./protocol-validator.js";
-import type { DaemonRequestServer, DaemonSocketClient } from "./contracts.js";
+import type { DaemonRequestServer, DaemonConnectionClient } from "./contracts.js";
 import { DaemonWireCodec } from "./wire-codec.js";
 import { LocalDaemonSocketClient } from "./socket-client.js";
 import { LocalDaemonSocketServer } from "./socket-server.js";
@@ -15,7 +15,7 @@ export interface DaemonTransportOptions {
   readonly captureDirectory?: string;
   readonly codec?: DaemonWireCodec;
   readonly validator?: DaemonProtocolValidator;
-  readonly sockets?: DaemonSocketClient;
+  readonly sockets?: DaemonConnectionClient;
   readonly lifecycle?: DaemonLifecycleClient;
   readonly execution?: DaemonExecutionClient;
   readonly server?: DaemonRequestServer;

@@ -7,13 +7,13 @@ import type {
   DaemonRequestHandler,
   DaemonRequestServer,
   DaemonServerSend,
-  DaemonSocketClient,
+  DaemonConnectionClient,
 } from "./contracts.js";
 import type { DaemonProtocolValidator } from "./protocol-validator.js";
 import type { DaemonWireCodec } from "./wire-codec.js";
 
 interface LocalDaemonSocketServerOptions {
-  readonly sockets: DaemonSocketClient;
+  readonly sockets: DaemonConnectionClient;
   readonly codec: DaemonWireCodec;
   readonly validator: DaemonProtocolValidator;
   readonly policy: DaemonPolicyValues["transport"];

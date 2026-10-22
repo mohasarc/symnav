@@ -8,7 +8,7 @@ import {
   type DaemonExecutionServerFrame,
 } from "./protocol.js";
 import { DaemonProtocolValidator } from "./protocol-validator.js";
-import type { DaemonSocketClient, DaemonSocketConnection } from "./contracts.js";
+import type { DaemonConnectionClient, DaemonConnection } from "./contracts.js";
 import { DaemonTransportError } from "./transport-error.js";
 import { DaemonWireCodec } from "./wire-codec.js";
 
@@ -17,7 +17,7 @@ describe("DaemonExecutionClient", () => {
     const policy = DaemonPolicy.currentSystem();
     const codec = executionCodec();
     const request = executionRequest();
-    const connection = new ScriptedDaemonSocketConnection([
+    const connection = new ScriptedDaemonConnection([
       Buffer.concat([
         codec.encodeControl({
           kind: "accepted",
@@ -36,7 +36,7 @@ describe("DaemonExecutionClient", () => {
         } satisfies DaemonExecutionServerFrame),
       ]),
     ]);
-    const sockets = new RecordingDaemonSocketClient([connection]);
+    const sockets = new RecordingDaemonConnectionClient([connection]);
     const output = new RecordingDaemonOutputCapture();
     const acknowledgements = new RecordingResultAcknowledger();
     const client = new DaemonExecutionClient({
@@ -75,7 +75,7 @@ describe("DaemonExecutionClient", () => {
     const policy = DaemonPolicy.currentSystem();
     const codec = executionCodec();
     const request = executionRequest();
-    const first = new ScriptedDaemonSocketConnection([
+    const first = new ScriptedDaemonConnection([
       codec.encodeControl({
         kind: "accepted",
         instanceId: request.instanceId,
@@ -85,7 +85,7 @@ describe("DaemonExecutionClient", () => {
         queuePosition: 0,
       } satisfies DaemonExecutionServerFrame),
     ]);
-    const second = new ScriptedDaemonSocketConnection([
+    const second = new ScriptedDaemonConnection([
       Buffer.concat([
         codec.encodeControl({
           kind: "accepted",
@@ -104,7 +104,7 @@ describe("DaemonExecutionClient", () => {
         } satisfies DaemonExecutionServerFrame),
       ]),
     ]);
-    const sockets = new RecordingDaemonSocketClient([first, second]);
+    const sockets = new RecordingDaemonConnectionClient([first, second]);
     const outputs: RecordingDaemonOutputCapture[] = [];
     const client = new DaemonExecutionClient({
       sockets,
@@ -153,9 +153,9 @@ describe("DaemonExecutionClient", () => {
       acceptedAt: 10,
       queuePosition: 0,
     } satisfies DaemonExecutionServerFrame);
-    const first = new ScriptedDaemonSocketConnection([acceptance], firstClose);
-    const final = new ScriptedDaemonSocketConnection([acceptance], finalClose);
-    const sockets = new RecordingDaemonSocketClient([first, final]);
+    const first = new ScriptedDaemonConnection([acceptance], firstClose);
+    const final = new ScriptedDaemonConnection([acceptance], finalClose);
+    const sockets = new RecordingDaemonConnectionClient([first, final]);
     const outputs: RecordingDaemonOutputCapture[] = [];
     const client = new DaemonExecutionClient({
       sockets,
@@ -193,13 +193,13 @@ describe("DaemonExecutionClient", () => {
   });
 });
 
-class RecordingDaemonSocketClient implements DaemonSocketClient {
+class RecordingDaemonConnectionClient implements DaemonConnectionClient {
   readonly calls: { readonly endpoint: string; readonly timeoutMs?: number }[] = [];
   private nextConnection = 0;
 
-  constructor(private readonly connections: readonly DaemonSocketConnection[]) {}
+  constructor(private readonly connections: readonly DaemonConnection[]) {}
 
-  connect(endpoint: string, timeoutMs?: number): Promise<DaemonSocketConnection> {
+  connect(endpoint: string, timeoutMs?: number): Promise<DaemonConnection> {
     this.calls.push({ endpoint, ...(timeoutMs === undefined ? {} : { timeoutMs }) });
     const connection = this.connections[this.nextConnection];
     this.nextConnection += 1;
@@ -208,7 +208,7 @@ class RecordingDaemonSocketClient implements DaemonSocketClient {
   }
 }
 
-class ScriptedDaemonSocketConnection implements DaemonSocketConnection {
+class ScriptedDaemonConnection implements DaemonConnection {
   readonly writes: Uint8Array[] = [];
   disableTimeoutCount = 0;
   endCount = 0;
@@ -216,7 +216,7 @@ class ScriptedDaemonSocketConnection implements DaemonSocketConnection {
   readonly incoming: AsyncIterable<Uint8Array>;
 
   constructor(bytes: readonly Uint8Array[], terminalError?: Error) {
-    this.incoming = ScriptedDaemonSocketConnection.stream(bytes, terminalError);
+    this.incoming = ScriptedDaemonConnection.stream(bytes, terminalError);
   }
 
   write(frame: Uint8Array): void {

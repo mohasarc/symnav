@@ -12,16 +12,16 @@ import type {
   DaemonServerMessage,
 } from "./protocol.js";
 
-export interface DaemonSocketConnection {
+export interface DaemonConnection {
   readonly incoming: AsyncIterable<Uint8Array>;
-  write(frame: Uint8Array): void;
+  write(frame: Uint8Array): void | Promise<void>;
   disableTimeout(): void;
   end(): void;
   destroy(): void;
 }
 
-export interface DaemonSocketClient {
-  connect(endpoint: string, timeoutMs?: number): Promise<DaemonSocketConnection>;
+export interface DaemonConnectionClient {
+  connect(endpoint: string, timeoutMs?: number): Promise<DaemonConnection>;
 }
 
 export interface DaemonLifecycleRequestSender {

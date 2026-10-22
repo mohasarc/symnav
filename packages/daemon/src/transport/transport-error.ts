@@ -21,8 +21,9 @@ export class DaemonTransportError extends Error {
     message: string,
     authenticatedInstanceId?: string,
     authenticatedRejectionCode?: DaemonExecuteRejectionCode,
+    cause?: unknown,
   ) {
-    super(message);
+    super(message, { cause });
     this.name = "DaemonTransportError";
     if (authenticatedInstanceId !== undefined) {
       this.authenticatedInstanceId = authenticatedInstanceId;

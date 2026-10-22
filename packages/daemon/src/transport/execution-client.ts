@@ -251,7 +251,9 @@ export class DaemonExecutionClient implements DaemonExecutionRequester {
             return;
           }
           const message = error instanceof Error ? error.message : String(error);
-          fail(new DaemonTransportError("unreachable", delivery, message));
+          fail(
+            new DaemonTransportError("unreachable", delivery, message, undefined, undefined, error),
+          );
           return;
         }
         try {
@@ -298,7 +300,16 @@ export class DaemonExecutionClient implements DaemonExecutionRequester {
           }
           if (resume()) return;
           const message = error instanceof Error ? error.message : String(error);
-          fail(new DaemonTransportError("closed", delivery, message, acceptance?.instanceId));
+          fail(
+            new DaemonTransportError(
+              "closed",
+              delivery,
+              message,
+              acceptance?.instanceId,
+              undefined,
+              error,
+            ),
+          );
         }
       };
       void receive();
@@ -316,7 +327,14 @@ export class DaemonExecutionClient implements DaemonExecutionRequester {
       connection = await this.options.sockets.connect(endpoint);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      throw new DaemonTransportError("closed", "accepted", message, request.instanceId);
+      throw new DaemonTransportError(
+        "closed",
+        "accepted",
+        message,
+        request.instanceId,
+        undefined,
+        error,
+      );
     }
     try {
       await connection.write(
@@ -406,7 +424,14 @@ export class DaemonExecutionClient implements DaemonExecutionRequester {
         throw DaemonExecutionClient.transportError(error, "accepted");
       }
       const message = error instanceof Error ? error.message : String(error);
-      throw new DaemonTransportError("closed", "accepted", message, request.instanceId);
+      throw new DaemonTransportError(
+        "closed",
+        "accepted",
+        message,
+        request.instanceId,
+        undefined,
+        error,
+      );
     }
   }
 
@@ -436,7 +461,7 @@ export class DaemonExecutionClient implements DaemonExecutionRequester {
       );
     }
     const message = error instanceof Error ? error.message : String(error);
-    return new DaemonTransportError("corrupt", delivery, message);
+    return new DaemonTransportError("corrupt", delivery, message, undefined, undefined, error);
   }
 
   private static isSocketTimeout(error: unknown): boolean {

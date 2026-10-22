@@ -17,8 +17,68 @@ import type { DaemonResourceSupervisor } from "../resources/resource-supervisor.
 import type { DaemonWorkerGenerationManager } from "../worker/worker-generation-manager.js";
 import { WorkspaceRequestQueue } from "./request-queue.js";
 import type { DaemonStateWriteFailure } from "../state-write-failure.js";
+import { DaemonLogger, type DaemonLogStorage } from "../diagnostics/logger.js";
+import { DaemonWorkspaceIdentity } from "../registry/workspace-identity.js";
+import { DaemonPolicy } from "../daemon-policy.js";
+import { NodeDaemonClock } from "../lifecycle/daemon-clock.js";
+import type { DaemonDiagnosticRecorder } from "../delivery/delivery-session.js";
 
 describe("AcceptedExecutionSession", () => {
+  it("retains the first current-request diagnostic failure after later successful writes", async () => {
+    const storage = new RecoverableDiagnosticStorage();
+    const logger = new DaemonLogger(
+      DaemonWorkspaceIdentity.from("/workspace", "/state"),
+      "instance",
+      new NodeDaemonClock(),
+      { storage, policy: DaemonPolicy.currentSystem().values.diagnostics },
+    );
+    const harness = new AcceptedExecutionHarness({ diagnosticRecorder: logger });
+    const execute = harness.workerExecute.getMockImplementation()!;
+    harness.workerExecute.mockImplementationOnce(async (...arguments_) => {
+      logger.record({ kind: "request", command: "overview", durationMs: 0, exitCode: 0 });
+      await logger.flush();
+      storage.denied = false;
+      logger.record({ kind: "ready", fileCount: 1 });
+      await logger.flush();
+      return execute(...arguments_);
+    });
+    harness.session.accept(harness.request("current"));
+    await harness.session.drain();
+    expect(storage.successfulWrites).toBeGreaterThan(0);
+    expect(harness.finishedWriteFailure).toMatchObject({ osCode: "EACCES" });
+    await logger.close();
+  });
+  it.each(["startup", "earlier-request"] as const)(
+    "does not attach a recovered %s diagnostic write failure to a later healthy request",
+    async (interval) => {
+      const storage = new RecoverableDiagnosticStorage();
+      const logger = new DaemonLogger(
+        DaemonWorkspaceIdentity.from("/workspace", "/state"),
+        "instance",
+        new NodeDaemonClock(),
+        { storage, policy: DaemonPolicy.currentSystem().values.diagnostics },
+      );
+      const harness = new AcceptedExecutionHarness({ diagnosticRecorder: logger });
+      if (interval === "startup") {
+        logger.record({ kind: "start" });
+        await logger.flush();
+      } else {
+        harness.session.accept(harness.request("failed-write"));
+        await vi.waitFor(() =>
+          expect(harness.session.status("failed-write")).toMatchObject({ state: "completed" }),
+        );
+        expect(harness.finishedWriteFailure).toMatchObject({ osCode: "EACCES" });
+      }
+      storage.denied = false;
+      logger.record({ kind: "ready", fileCount: 1 });
+      await logger.flush();
+      expect(storage.successfulWrites).toBeGreaterThan(0);
+      harness.session.accept(harness.request("healthy-later"));
+      await harness.session.drain();
+      expect(harness.finishedWriteFailure).toBeUndefined();
+      await logger.close();
+    },
+  );
   it("returns a diagnostic write failure with the accepted result", async () => {
     const failure: DaemonStateWriteFailure = { path: "/state/daemon.log", osCode: "EACCES" };
     const harness = new AcceptedExecutionHarness({ diagnosticWriteFailure: failure });
@@ -171,6 +231,7 @@ describe("AcceptedExecutionSession", () => {
 });
 
 interface AcceptedExecutionHarnessOptions {
+  readonly diagnosticRecorder?: DaemonDiagnosticRecorder;
   readonly diagnosticWriteFailure?: DaemonStateWriteFailure;
   readonly workspaceExists?: boolean;
   readonly workerFailure?: Error;
@@ -190,6 +251,12 @@ class AcceptedExecutionHarness {
       _request: unknown,
       output: { append(record: DaemonSequencedOutputRecord): Promise<void> },
     ) => {
+      this.options.diagnosticRecorder?.record({
+        kind: "request",
+        command: "overview",
+        durationMs: 0,
+        exitCode: 0,
+      });
       await output.append({ sequence: 0, stream: "stdout", bytes: new Uint8Array([1]) });
       this.events.push("worker-observed-append");
       if (this.options.workerFailure !== undefined) throw this.options.workerFailure;
@@ -304,11 +371,17 @@ class AcceptedExecutionHarness {
       resourceSupervisor,
       processLifecycle,
       lifetime,
-      diagnostics: {
+      diagnostics: options.diagnosticRecorder ?? {
         record: (event) => this.diagnostics.push(event),
         ...(options.diagnosticWriteFailure === undefined
           ? {}
-          : { stateWriteFailure: options.diagnosticWriteFailure, flush: async () => undefined }),
+          : {
+              observeStateWrites: (observer) => {
+                observer(options.diagnosticWriteFailure!);
+                return () => undefined;
+              },
+              flush: async () => undefined,
+            }),
       },
       clock: {
         wallNowMs: () => this.wallNowMs(),
@@ -343,4 +416,21 @@ class AcceptedExecutionHarness {
       if (entry.state.state === "completed") this.events.push("ledger-completed");
     });
   }
+}
+
+class RecoverableDiagnosticStorage implements DaemonLogStorage {
+  public denied = true;
+  public successfulWrites = 0;
+
+  async prepare(): Promise<void> {}
+  async size(): Promise<number> {
+    return 0;
+  }
+  async append(): Promise<void> {
+    if (this.denied) throw Object.assign(new Error("denied"), { code: "EACCES" });
+    this.successfulWrites += 1;
+  }
+  async move(): Promise<void> {}
+  async remove(): Promise<void> {}
+  async sync(): Promise<void> {}
 }

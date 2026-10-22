@@ -1,3 +1,5 @@
+import { InvocationWarningRenderer } from "../output/invocation-warning-renderer.js";
+import type { InvocationWarningOptions } from "../output/invocation-warning.js";
 import { randomUUID } from "node:crypto";
 import { mkdir, open, unlink } from "node:fs/promises";
 import { join } from "node:path";
@@ -51,11 +53,13 @@ export class InvocationStateWriteCoordinator {
     };
   }
 
-  public renderWarning(): string | undefined {
+  public renderWarning(options: InvocationWarningOptions = { warnings: true }): string | undefined {
     if (this.current.kind !== "disabled") return undefined;
     const { stateDirectory, osCode } = this.current.failure;
     const code = osCode === undefined ? "" : ` (${osCode})`;
-    return `symnav: warning: cannot write ${stateDirectory}${code}; daemon and telemetry are off for this command. Grant access with 'symnav setup <agent>', or pass --no-warnings.\n`;
+    return new InvocationWarningRenderer(options).render({
+      message: `cannot write ${stateDirectory}${code}; daemon and telemetry are off for this command. Grant access with 'symnav setup <agent>', or pass --no-warnings.`,
+    });
   }
 
   private osCode(error: unknown): string | undefined {

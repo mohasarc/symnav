@@ -175,11 +175,11 @@ export class DaemonController {
       })
       .then(() => true)
       .catch(() => false);
-    const acknowledged = await Promise.race([
+    await Promise.race([
       stopRequest,
       this.pause(Math.max(0, gracefulDeadline - this.clock.wallNowMs())).then(() => false),
     ]);
-    if (acknowledged && (await this.waitForExit(record, gracefulDeadline))) {
+    if (await this.waitForExit(record, gracefulDeadline)) {
       this.registry.removeIfProcess(identity, record.instanceId, record.processToken);
       return { status: "stopped", workspaceRoot, pid: record.pid };
     }

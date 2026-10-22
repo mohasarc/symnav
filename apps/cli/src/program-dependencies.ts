@@ -5,7 +5,7 @@ import type {
   LanguageBackend,
   WorkspaceSession,
 } from "@symnav/core";
-import type { Clock, Recorder } from "@symnav/telemetry";
+import type { Clock, Recorder, TelemetryFailureObserver } from "@symnav/telemetry";
 import type { DaemonClient, DaemonPolicy } from "@symnav/daemon";
 import type { TelemetryIdentityProvider } from "./telemetry/telemetry-identity.js";
 import type { CommandExecutionMode } from "./command-execution-result.js";
@@ -18,6 +18,9 @@ export interface CommandPhaseDurations {
 
 export interface ProgramDependencies {
   readonly stateDirectory: string;
+  readonly invocationTelemetry?: (
+    observer: TelemetryFailureObserver,
+  ) => Pick<ProgramDependencies, "recorder" | "identity">;
   readonly daemonPolicy: DaemonPolicy;
   readonly daemonClient: DaemonClient;
   readonly daemonEnabled: boolean;

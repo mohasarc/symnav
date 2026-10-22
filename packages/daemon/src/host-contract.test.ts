@@ -31,6 +31,8 @@ const typeExports = [
   "DaemonPolicyValues",
   "DaemonReadinessProbe",
   "DaemonStartResult",
+  "DaemonStateWriteFailure",
+  "DaemonStateWriteFailureObserver",
   "DaemonStatusEnvelope",
   "DaemonStopResult",
   "DaemonSystemMemory",

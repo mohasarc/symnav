@@ -31,6 +31,7 @@ export class CliProgramExecutor {
     const output = new OrderedCommandOutput({
       policy: this.dependencies.daemonPolicy.values.output,
       directory: join(this.dependencies.stateDirectory, "captures"),
+      stateWriteFailed: (path, error) => state.failed(path, error),
     });
     const context: ProgramContext = {
       stdout: output.stdout,
@@ -48,13 +49,14 @@ export class CliProgramExecutor {
 
     try {
       await buildProgram(context, dependencies).parseAsync([...request.argv], { from: "user" });
-      return this.withStateFailure(await this.finish(output, 0), state);
+      return this.withStateFailure(await this.finish(output, 0, state), state);
     } catch (error) {
       if (error instanceof CapturedProgramExit)
-        return this.withStateFailure(await this.finish(output, error.exitCode), state);
+        return this.withStateFailure(await this.finish(output, error.exitCode, state), state);
       if (error instanceof CommandOutputCapacityError) {
         return output.replaceWith(ControlledCommandResult.responseCapacityExceeded());
       }
+      if (state.access.kind === "disabled") return this.failedCapture(output, state);
       await output.dispose();
       throw error;
     }
@@ -72,6 +74,7 @@ export class CliProgramExecutor {
   private async finish(
     output: OrderedCommandOutput,
     exitCode: number,
+    state: InvocationStateWriteCoordinator,
   ): Promise<CommandExecutionResult> {
     try {
       return await output.finish(exitCode);
@@ -79,7 +82,16 @@ export class CliProgramExecutor {
       if (error instanceof CommandOutputCapacityError) {
         return output.replaceWith(ControlledCommandResult.responseCapacityExceeded());
       }
+      if (state.access.kind === "disabled") return this.failedCapture(output, state);
       throw error;
     }
+  }
+
+  private async failedCapture(
+    output: OrderedCommandOutput,
+    state: InvocationStateWriteCoordinator,
+  ): Promise<CommandExecutionResult> {
+    await output.dispose().catch(() => undefined);
+    return this.withStateFailure(ControlledCommandResult.acceptedRequestDidNotComplete(), state);
   }
 }

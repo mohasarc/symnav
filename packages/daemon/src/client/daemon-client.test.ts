@@ -1,5 +1,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { join } from "node:path";
+import { chmod, mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { FileDaemonEndpoint } from "../transport/file-endpoint.js";
 import type {
   DaemonExecutor,
   DaemonExecutorExecutionResult,
@@ -57,6 +60,86 @@ describe("DaemonClient execution", () => {
       expect(executeLocally).toHaveBeenCalledTimes(delivery === "not-submitted" ? 1 : 0);
       expect(harness.executorFactory).not.toHaveBeenCalled();
       expect(result.mode).toBe(delivery === "not-submitted" ? "fallback" : "warm");
+    },
+  );
+
+  it("keeps telemetry enabled when endpoint ownership vanishes after channel writes", async () => {
+    const endpoint = await mkdtemp(join(tmpdir(), "symnav-owner-read-"));
+    const owner = join(endpoint, "owner.json");
+    await writeFile(owner, JSON.stringify({ pid: process.pid }));
+    const harness = new ClientHarness({ record: daemonRecord({ endpoint, pid: process.pid }) });
+    vi.mocked(DaemonRecordObserver.prototype.observe).mockRestore();
+    const readOwner = FileDaemonEndpoint.ownerPid.bind(FileDaemonEndpoint);
+    const ownershipRead = vi.spyOn(FileDaemonEndpoint, "ownerPid");
+    ownershipRead.mockImplementationOnce(async (directory) => {
+      const pid = await readOwner(directory);
+      await rm(owner);
+      return pid;
+    });
+    const stateWriteFailed = vi.fn();
+    try {
+      const result = await harness.client.execute({ ...harness.request(), stateWriteFailed });
+      expect(ownershipRead.mock.calls.length).toBeGreaterThanOrEqual(2);
+      expect(stateWriteFailed).not.toHaveBeenCalled();
+      expect(result.mode).toBe("cold");
+      expect(harness.localRequests).toEqual([
+        expect.objectContaining({ telemetryEnabled: true, executionMode: "cold" }),
+      ]);
+      expect(await readdir(endpoint)).toEqual([]);
+    } finally {
+      await rm(endpoint, { recursive: true, force: true });
+    }
+  });
+
+  it.skipIf(process.platform === "win32" || process.getuid?.() === 0)(
+    "reports denied channel cleanup once and disables local telemetry after an ownership read fails",
+    async () => {
+      const endpoint = await mkdtemp(join(tmpdir(), "symnav-cleanup-write-"));
+      const owner = join(endpoint, "owner.json");
+      await writeFile(owner, JSON.stringify({ pid: process.pid }));
+      const harness = new ClientHarness({ record: daemonRecord({ endpoint, pid: process.pid }) });
+      vi.mocked(DaemonRecordObserver.prototype.observe).mockRestore();
+      const readOwner = FileDaemonEndpoint.ownerPid.bind(FileDaemonEndpoint);
+      let completeSetup!: () => void;
+      const setupReady = new Promise<void>((resolve) => {
+        completeSetup = resolve;
+      });
+      let ownershipReads = 0;
+      let validationReads = 0;
+      vi.spyOn(FileDaemonEndpoint, "ownerPid").mockImplementation(async (directory) => {
+        if (++ownershipReads <= 2) return readOwner(directory);
+        if (++validationReads === 2) {
+          for (const entry of await readdir(endpoint)) {
+            if (entry.endsWith(".tmp")) await chmod(join(endpoint, entry), 0o500);
+          }
+          await rm(owner);
+          completeSetup();
+        }
+        await setupReady;
+        return readOwner(directory);
+      });
+      const stateWriteFailed = vi.fn();
+      try {
+        const result = await harness.client.execute({ ...harness.request(), stateWriteFailed });
+        expect(ownershipReads).toBe(4);
+        expect(stateWriteFailed).toHaveBeenCalledOnce();
+        expect(stateWriteFailed).toHaveBeenCalledWith({
+          path: expect.stringContaining(endpoint),
+          osCode: "EACCES",
+        });
+        expect(result.mode).toBe("cold");
+        expect(harness.localRequests).toEqual([
+          expect.objectContaining({ telemetryEnabled: false, executionMode: "cold" }),
+        ]);
+        expect(harness.trigger).not.toHaveBeenCalled();
+        expect(harness.warmRequests).toEqual([]);
+        expect((await readdir(endpoint)).filter((entry) => entry.endsWith(".tmp"))).toHaveLength(2);
+      } finally {
+        for (const entry of await readdir(endpoint)) {
+          if (entry.endsWith(".tmp")) await chmod(join(endpoint, entry), 0o700);
+        }
+        await rm(endpoint, { recursive: true, force: true });
+      }
     },
   );
 

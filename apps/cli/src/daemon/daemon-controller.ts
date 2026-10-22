@@ -16,7 +16,7 @@ import { DaemonRecordObserver, type DaemonObservation } from "./daemon-record-ob
 import { DaemonStartupCoordinator } from "./daemon-startup-coordinator.js";
 import { DaemonWorkspaceIdentity } from "./daemon-workspace-identity.js";
 import { DaemonRuntimeValues } from "./daemon-runtime-values.js";
-import type { LocalDaemonTransport } from "./local-daemon-transport.js";
+import type { DaemonExecutionRequester, DaemonLifecycleRequestSender } from "./daemon-transport.js";
 
 interface DaemonControllerOptions {
   readonly policy: Pick<DaemonPolicyValues, "startup" | "shutdown">;
@@ -36,7 +36,7 @@ export class DaemonController {
 
   constructor(
     private readonly registry: DaemonRegistry,
-    private readonly transport: LocalDaemonTransport,
+    private readonly transport: DaemonLifecycleRequestSender & DaemonExecutionRequester,
     private readonly stateDirectory: string,
     options: DaemonControllerOptions,
   ) {

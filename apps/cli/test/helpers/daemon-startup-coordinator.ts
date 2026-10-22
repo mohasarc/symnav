@@ -6,7 +6,10 @@ import type {
 } from "../../src/daemon/daemon-process-launcher.js";
 import type { DaemonRegistry } from "../../src/daemon/daemon-registry.js";
 import { DaemonStartupCoordinator as RuntimeDaemonStartupCoordinator } from "../../src/daemon/daemon-startup-coordinator.js";
-import type { LocalDaemonTransport } from "../../src/daemon/local-daemon-transport.js";
+import type {
+  DaemonExecutionRequester,
+  DaemonLifecycleRequestSender,
+} from "../../src/daemon/daemon-transport.js";
 
 interface TestDaemonStartupCoordinatorOptions {
   readonly policy?: Pick<DaemonPolicyValues, "startup" | "shutdown">;
@@ -21,7 +24,7 @@ export class TestDaemonStartupCoordinator extends RuntimeDaemonStartupCoordinato
   constructor(
     registry: DaemonRegistry,
     launcher: DaemonProcessLauncher,
-    transport: LocalDaemonTransport,
+    transport: DaemonLifecycleRequestSender & DaemonExecutionRequester,
     options: TestDaemonStartupCoordinatorOptions = {},
   ) {
     const policy =

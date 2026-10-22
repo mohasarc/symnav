@@ -26,7 +26,7 @@ import type {
 import { TestDaemonRegistry as DaemonRegistry } from "../../test/helpers/daemon-registry.js";
 import { TestDaemonStartupCoordinator as DaemonStartupCoordinator } from "../../test/helpers/daemon-startup-coordinator.js";
 import { DaemonWorkspaceIdentity } from "./daemon-workspace-identity.js";
-import type { DaemonExecutionReceipt, LocalDaemonTransport } from "./local-daemon-transport.js";
+import type { DaemonExecutionReceipt } from "./daemon-transport.js";
 
 const workspaceRoot = resolve("reference-workspace");
 const REFERENCE_WORKSPACE_FILE_COUNT = 4_000;
@@ -43,7 +43,7 @@ describe("DaemonCommandDispatcher startup routing", () => {
       const coordinator = new DaemonStartupCoordinator(
         registry,
         launcher,
-        new RegistryDaemonTransport(registry, identity) as unknown as LocalDaemonTransport,
+        new RegistryDaemonTransport(registry, identity),
         { pollIntervalMs: 1, processTerminator },
       );
       const coldExecute = vi.fn(async (request: CliExecutionRequest) =>
@@ -189,6 +189,10 @@ class RegistryDaemonTransport {
     private readonly registry: DaemonRegistry,
     private readonly identity: DaemonWorkspaceIdentity,
   ) {}
+
+  execute(): Promise<never> {
+    return Promise.reject(new Error("Controller observation must not execute"));
+  }
 
   async request(
     _endpoint: string,

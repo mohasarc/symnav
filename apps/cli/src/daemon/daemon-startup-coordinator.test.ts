@@ -29,7 +29,12 @@ import {
 } from "./daemon-protocol.js";
 import { TestDaemonRegistry as DaemonRegistry } from "../../test/helpers/daemon-registry.js";
 import { DaemonWorkspaceIdentity } from "./daemon-workspace-identity.js";
-import type { DaemonExecutionReceipt } from "./local-daemon-transport.js";
+import type {
+  DaemonExecutionReceipt,
+  DaemonExecutionRequester,
+  DaemonLifecycleRequestSender,
+  DaemonRequestServer,
+} from "./daemon-transport.js";
 import { TestLocalDaemonTransport as LocalDaemonTransport } from "../../test/helpers/local-daemon-transport.js";
 
 const STARTUP_COORDINATION_GRACE_MS =
@@ -694,7 +699,7 @@ describe("DaemonStartupCoordinator", () => {
       const ownerBeforeStatus = harness.registry.startupOwner(harness.identity);
       const controller = new DaemonController(
         harness.registry,
-        harness.transport as unknown as LocalDaemonTransport,
+        harness.transport,
         dirname(harness.identity.registryDirectory),
         { processTerminator: harness.terminator },
       );
@@ -735,12 +740,9 @@ describe("DaemonStartupCoordinator", () => {
       instanceId: "orphaned-mutation",
     });
     expect(() => process.kill(mutationOwnerPid, 0)).toThrow();
-    const controller = new DaemonController(
-      harness.registry,
-      harness.transport as unknown as LocalDaemonTransport,
-      stateDirectory,
-      { processTerminator: harness.terminator },
-    );
+    const controller = new DaemonController(harness.registry, harness.transport, stateDirectory, {
+      processTerminator: harness.terminator,
+    });
 
     await expect(controller.status()).resolves.toEqual([]);
     expect(harness.registry.startupOwner(harness.identity)).toBeUndefined();
@@ -766,12 +768,9 @@ describe("DaemonStartupCoordinator", () => {
     const markerPath = join(root, "late-publication");
     const launcher = new DelayedMarkerLauncher(markerPath, realProcessIds);
     const transport = new RegistryTransport(registry, identity);
-    const coordinator = new DaemonStartupCoordinator(
-      registry,
-      launcher,
-      transport as unknown as LocalDaemonTransport,
-      { pollIntervalMs: 2 },
-    );
+    const coordinator = new DaemonStartupCoordinator(registry, launcher, transport, {
+      pollIntervalMs: 2,
+    });
 
     await expect(coordinator.ensureRunning(identity)).rejects.toThrow(/exited before readiness/i);
 
@@ -851,12 +850,9 @@ describe("DaemonStartupCoordinator", () => {
     const mutationOwnerPid = mutationOwner.ownerPid;
     await new NodeDaemonProcessTerminator(100, 5).terminate(mutationOwnerPid);
     mutationOwner.process.kill("SIGKILL");
-    const controller = new DaemonController(
-      harness.registry,
-      harness.transport as unknown as LocalDaemonTransport,
-      stateDirectory,
-      { processTerminator: harness.terminator },
-    );
+    const controller = new DaemonController(harness.registry, harness.transport, stateDirectory, {
+      processTerminator: harness.terminator,
+    });
 
     await expect(controller.status()).resolves.toEqual([]);
     const [first, second] = await Promise.all([
@@ -931,20 +927,15 @@ class CoordinatorHarness {
       readonly now?: () => number;
     } = {},
   ): DaemonStartupCoordinator {
-    return new DaemonStartupCoordinator(
-      this.registry,
-      this.launcher,
-      this.transport as unknown as LocalDaemonTransport,
-      {
-        ...(options.terminationTimeoutMs === undefined
-          ? {}
-          : { terminationTimeoutMs: options.terminationTimeoutMs }),
-        ...(options.policy === undefined ? {} : { policy: options.policy }),
-        pollIntervalMs: 1,
-        processTerminator: options.processTerminator ?? this.terminator,
-        ...(options.now === undefined ? {} : { now: options.now }),
-      },
-    );
+    return new DaemonStartupCoordinator(this.registry, this.launcher, this.transport, {
+      ...(options.terminationTimeoutMs === undefined
+        ? {}
+        : { terminationTimeoutMs: options.terminationTimeoutMs }),
+      ...(options.policy === undefined ? {} : { policy: options.policy }),
+      pollIntervalMs: 1,
+      processTerminator: options.processTerminator ?? this.terminator,
+      ...(options.now === undefined ? {} : { now: options.now }),
+    });
   }
 
   seedReady(instanceId: string, symnavVersion: string, pid: number): void {
@@ -1283,7 +1274,9 @@ class InProcessReadyLauncher implements DaemonProcessLauncher {
 
   constructor(
     private readonly registry: DaemonRegistry,
-    private readonly transport: LocalDaemonTransport,
+    private readonly transport: DaemonLifecycleRequestSender &
+      DaemonExecutionRequester &
+      DaemonRequestServer,
   ) {}
 
   async launch(

@@ -27,7 +27,7 @@ import {
 } from "./completion-spool.js";
 import { TestDaemonRegistry as DaemonRegistry } from "../../test/helpers/daemon-registry.js";
 import { DaemonWorkspaceIdentity } from "./daemon-workspace-identity.js";
-import type { LocalDaemonTransport } from "./local-daemon-transport.js";
+import type { DaemonRequestServer, DaemonServerSend } from "./daemon-transport.js";
 import type { AcceptedRequestLedger } from "./accepted-request-ledger.js";
 import type {
   DaemonNavigationWorker,
@@ -1662,7 +1662,7 @@ class RequestHarness {
       policy: daemonPolicy,
       dependencies: createDefaultDependencies(harness.identity.stateDirectory, daemonPolicy),
       registry: harness.registry,
-      transport: harness.transport as unknown as LocalDaemonTransport,
+      transport: harness.transport satisfies DaemonRequestServer,
       ...(navigationWorker === undefined ? {} : { navigationWorker }),
       ...(options.navigationWorkerFactory === undefined
         ? {}
@@ -1945,10 +1945,7 @@ interface RequestHarnessOptions {
 
 class RequestTransport {
   private handler:
-    | ((
-        request: DaemonRequest,
-        send: (response: DaemonServerMessage) => Promise<void>,
-      ) => Promise<DaemonResponse | void>)
+    | ((request: DaemonRequest, send: DaemonServerSend) => Promise<DaemonResponse | void>)
     | undefined;
   listenError: Error | undefined;
   closeError: Error | undefined;
@@ -1966,12 +1963,13 @@ class RequestTransport {
     return this.handler !== undefined;
   }
 
+  removeUnavailableEndpoint(): Promise<boolean> {
+    return Promise.resolve(false);
+  }
+
   async listen(
     _endpoint: string,
-    handler: (
-      request: DaemonRequest,
-      send: (response: DaemonServerMessage) => Promise<void>,
-    ) => Promise<DaemonResponse | void>,
+    handler: (request: DaemonRequest, send: DaemonServerSend) => Promise<DaemonResponse | void>,
   ): Promise<DaemonServer> {
     if (this.listenError !== undefined) throw this.listenError;
     this.handler = handler;
@@ -1985,7 +1983,10 @@ class RequestTransport {
 
   async receive(request: DaemonRequest): Promise<DaemonResponse> {
     if (this.handler === undefined) return Promise.reject(new Error("Transport is not listening"));
-    const response = await this.handler(request, async () => undefined);
+    const send: DaemonServerSend = Object.assign(async () => undefined, {
+      onClose: () => () => undefined,
+    });
+    const response = await this.handler(request, send);
     if (response === undefined) throw new Error("Transport handler returned no response");
     return response;
   }

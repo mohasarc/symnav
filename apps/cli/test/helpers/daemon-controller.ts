@@ -6,7 +6,10 @@ import type {
   DaemonProcessTerminator,
 } from "../../src/daemon/daemon-process-launcher.js";
 import type { DaemonRegistry } from "../../src/daemon/daemon-registry.js";
-import type { LocalDaemonTransport } from "../../src/daemon/local-daemon-transport.js";
+import type {
+  DaemonExecutionRequester,
+  DaemonLifecycleRequestSender,
+} from "../../src/daemon/daemon-transport.js";
 
 interface TestDaemonControllerOptions {
   readonly policy?: Pick<DaemonPolicyValues, "startup" | "shutdown">;
@@ -20,7 +23,7 @@ interface TestDaemonControllerOptions {
 export class TestDaemonController extends RuntimeDaemonController {
   constructor(
     registry: DaemonRegistry,
-    transport: LocalDaemonTransport,
+    transport: DaemonLifecycleRequestSender & DaemonExecutionRequester,
     stateDirectory: string,
     options: TestDaemonControllerOptions = {},
   ) {

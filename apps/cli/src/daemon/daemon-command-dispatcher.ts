@@ -22,11 +22,8 @@ import {
 } from "./daemon-startup-coordinator.js";
 import { DaemonWorkspaceIdentity } from "./daemon-workspace-identity.js";
 import { InvocationWorkspaceSelector } from "./invocation-workspace-selector.js";
-import {
-  DaemonTransportError,
-  type DaemonExecutionReceipt,
-  LocalDaemonTransport,
-} from "./local-daemon-transport.js";
+import { DaemonTransportError, LocalDaemonTransport } from "./local-daemon-transport.js";
+import type { DaemonExecutionReceipt, DaemonExecutionRequester } from "./daemon-transport.js";
 import { DaemonRecordObserver, type DaemonObservation } from "./daemon-record-observer.js";
 
 export type DaemonRouteSnapshot =
@@ -48,10 +45,6 @@ interface DaemonDispatchRegistry {
   ): boolean;
 }
 
-interface DaemonDispatchTransport {
-  execute(endpoint: string, request: DaemonExecuteRequest): Promise<DaemonExecutionReceipt>;
-}
-
 interface DaemonDispatchObserver {
   observe(record: DaemonRecord): Promise<DaemonObservation>;
 }
@@ -60,7 +53,7 @@ export interface DaemonDispatchRuntime {
   readonly coordinator: DaemonWarmupTrigger;
   readonly observer: DaemonDispatchObserver;
   readonly registry: DaemonDispatchRegistry;
-  readonly transport: DaemonDispatchTransport;
+  readonly transport: DaemonExecutionRequester;
 }
 
 interface CommandExecutor {

@@ -1,3 +1,4 @@
+import { DaemonFailureValues } from "../diagnostics/failure-values.js";
 import { DaemonStateWriteErrors } from "../state-write-errors.js";
 import type { DaemonStateWriteReport } from "../state-write-failure.js";
 import {
@@ -279,6 +280,7 @@ export class DaemonNavigationWorkerProtocol {
     if (value.requestId !== undefined) keys.push("requestId");
     if (value.operationId !== undefined) keys.push("operationId");
     if (value.errorName !== undefined) keys.push("errorName");
+    if (value.osCode !== undefined) keys.push("osCode");
     return (
       this.hasKeys(value, keys) &&
       (value.requestId === undefined || this.isNonEmptyString(value.requestId)) &&
@@ -288,7 +290,8 @@ export class DaemonNavigationWorkerProtocol {
         value.failureCode === "execution" ||
         value.failureCode === "protocol" ||
         value.failureCode === "resource") &&
-      (value.errorName === undefined || this.isNonEmptyString(value.errorName))
+      (value.errorName === undefined || this.isNonEmptyString(value.errorName)) &&
+      (value.osCode === undefined || DaemonFailureValues.isOsCode(value.osCode))
     );
   }
 

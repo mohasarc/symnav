@@ -1,7 +1,6 @@
 import {
   type BackendRouter,
   type GitHistory,
-  type NavigationDiagnosticSeverity,
   type ResultWithDiagnostics,
   UserFacingError,
   type Workspace,
@@ -11,12 +10,10 @@ import {
 } from "@symnav/core";
 import { performance } from "node:perf_hooks";
 
-const severityPrefixes: Record<NavigationDiagnosticSeverity, string> = {
-  warning: "Warning",
-};
 import type { ArgShape, OutcomeReport } from "@symnav/telemetry";
 import type { ProgramContext } from "./program-context.js";
 import type { ProgramDependencies } from "./program-dependencies.js";
+import { InvocationWarningRenderer } from "./output/invocation-warning-renderer.js";
 
 export interface CommandContext<Args> {
   readonly workspace: Workspace;
@@ -106,8 +103,12 @@ export async function runCommand<Result extends ResultWithDiagnostics, Args>(
       navigationMs: Math.max(0, navigationCompletedAt - navigationStartedAt),
       renderMs: Math.max(0, renderCompletedAt - renderStartedAt),
     });
+    const warnings = new InvocationWarningRenderer(
+      dependencies.warningOptions ?? { warnings: true },
+    );
     for (const diagnostic of result.diagnostics ?? []) {
-      context.stderr.write(`${severityPrefixes[diagnostic.severity]}: ${diagnostic.message}\n`);
+      const warning = warnings.render(diagnostic);
+      if (warning !== undefined) context.stderr.write(warning);
     }
     context.stdout.write(rendered);
 

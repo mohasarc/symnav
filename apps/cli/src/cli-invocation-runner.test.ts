@@ -200,7 +200,7 @@ describe("CliInvocationRunner", () => {
         context,
       ),
     ).resolves.toBe(0);
-    expect(context.stderr.text()).toBe(`Warning: ${"x".repeat(300_000)}\n`);
+    expect(context.stderr.text()).toBe(`symnav: warning: ${"x".repeat(300_000)}\n`);
     expect(context.stdout.text()).toBe("Overview: src/a.ts\n(no symbols)\n");
     expect(execute).not.toHaveBeenCalled();
     expect(context.exitCodes).toEqual([]);

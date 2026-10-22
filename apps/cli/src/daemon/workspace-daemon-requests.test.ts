@@ -28,6 +28,7 @@ import {
 import { TestDaemonRegistry as DaemonRegistry } from "../../test/helpers/daemon-registry.js";
 import { DaemonWorkspaceIdentity } from "./daemon-workspace-identity.js";
 import type { LocalDaemonTransport } from "./local-daemon-transport.js";
+import type { AcceptedRequestLedger } from "./accepted-request-ledger.js";
 import type {
   DaemonNavigationWorker,
   DaemonNavigationWorkerExit,
@@ -37,6 +38,11 @@ import {
   NodeDaemonNavigationWorker,
 } from "./daemon-navigation-worker.js";
 import type { DaemonNavigationWorkerResponse } from "./daemon-navigation-worker-protocol.js";
+import type {
+  DaemonResourceSnapshot,
+  DaemonResourceSupervisor,
+} from "./daemon-resource-monitor.js";
+import type { WorkspaceRequestQueue } from "./workspace-request-queue.js";
 import { TestDaemonResourcePolicy as DaemonResourcePolicy } from "../../test/helpers/daemon-resource-policy.js";
 import {
   TestWorkspaceDaemon as WorkspaceDaemon,
@@ -262,6 +268,92 @@ describe("WorkspaceDaemon requests", () => {
       sha256: expect.stringMatching(/^[a-f\d]{64}$/),
     });
     expect(executor.requests).toHaveLength(1);
+  });
+
+  it("disconnects unauthenticated execution before admission has an effect", async () => {
+    const harness = await RequestHarness.start(new ImmediateExecutor());
+    harnesses.push(harness);
+    const sample = harness.observeAdmissionSamples();
+
+    await expect(harness.admitWithToken("unauthenticated", "wrong-token")).rejects.toThrow(
+      "process instance",
+    );
+
+    expect(harness.transport.sentFrames).toEqual([]);
+    expect(harness.acceptedRequestCount()).toBe(0);
+    expect(sample).not.toHaveBeenCalled();
+  });
+
+  it("checks worker readiness before resource admission", async () => {
+    const harness = await RequestHarness.start(new ImmediateExecutor());
+    harnesses.push(harness);
+    harness.setWorkerReady(false);
+    harness.setResourceAdmissionPaused(true);
+
+    const connection = await harness.admit("worker-before-resource");
+
+    await expect(connection.terminal).resolves.toMatchObject({
+      kind: "rejected",
+      code: "not-ready",
+    });
+    expect(harness.acceptedRequestCount()).toBe(0);
+  });
+
+  it("checks resource admission before queue draining", async () => {
+    const harness = await RequestHarness.start(new ImmediateExecutor());
+    harnesses.push(harness);
+    harness.setResourceAdmissionPaused(true);
+    await harness.closeAdmission();
+
+    const connection = await harness.admit("resource-before-draining");
+
+    await expect(connection.terminal).resolves.toMatchObject({
+      kind: "rejected",
+      code: "resource-pressure",
+    });
+    expect(harness.acceptedRequestCount()).toBe(0);
+  });
+
+  it("checks queue draining before conflicting duplicate payloads", async () => {
+    const executor = new SerializedExecutor();
+    const harness = await RequestHarness.start(executor);
+    harnesses.push(harness);
+    const accepted = await harness.admit("draining-before-conflict", ["overview", "input.ts"]);
+    await executor.started(1);
+    const drained = harness.closeAdmission();
+
+    const connection = await harness.admit("draining-before-conflict", ["overview", "other.ts"]);
+
+    await expect(connection.terminal).resolves.toMatchObject({
+      kind: "rejected",
+      code: "draining",
+    });
+    expect(harness.acceptedRequestCount()).toBe(1);
+    executor.complete(0);
+    await accepted.terminal;
+    await drained;
+  });
+
+  it("starts admission resource sampling without awaiting it", async () => {
+    const harness = await RequestHarness.start(new ImmediateExecutor());
+    harnesses.push(harness);
+    const sample = harness.blockAdmissionSample();
+
+    const connection = await Promise.race([
+      harness.admit("nonawaited-sample"),
+      new Promise<never>((_resolve, reject) =>
+        setTimeout(() => reject(new Error("Admission waited for resource sampling")), 50),
+      ),
+    ]);
+
+    expect(sample).toHaveBeenCalledWith("admission");
+    expect(connection.frames[0]).toEqual(
+      expect.objectContaining({ kind: "accepted", requestId: "nonawaited-sample" }),
+    );
+    await expect(connection.terminal).resolves.toMatchObject({
+      kind: "result-end",
+      requestId: "nonawaited-sample",
+    });
   });
 
   it("rejects the prior execute-envelope generation before command execution", async () => {
@@ -1660,6 +1752,75 @@ class RequestHarness {
     });
   }
 
+  admitWithToken(requestId: string, processToken: string): Promise<RequestConnection> {
+    return this.transport.connect({
+      kind: "execute",
+      protocolVersion: DAEMON_PROTOCOL_VERSION,
+      instanceId: this.instanceId,
+      processToken,
+      requestId,
+      commandName: "version",
+      request: { argv: ["--version"], cwd: this.workspaceRoot, telemetryEnabled: false },
+    });
+  }
+
+  acceptedRequestCount(): number {
+    return this.daemonInternals.acceptedRequests.size;
+  }
+
+  setWorkerReady(workerReady: boolean): void {
+    this.daemonInternals.workerReady = workerReady;
+  }
+
+  setResourceAdmissionPaused(admissionPaused: boolean): void {
+    const resourceSupervisor = this.daemonInternals.resourceSupervisor;
+    const snapshot = resourceSupervisor.snapshot;
+    vi.spyOn(resourceSupervisor, "snapshot", "get").mockReturnValue({
+      ...snapshot,
+      admissionPaused,
+    });
+  }
+
+  closeAdmission(): Promise<void> {
+    return this.daemonInternals.requestQueue.drain();
+  }
+
+  observeAdmissionSamples(): ReturnType<typeof vi.fn> {
+    const resourceSupervisor = this.daemonInternals.resourceSupervisor;
+    const sample = vi.fn(resourceSupervisor.sample.bind(resourceSupervisor));
+    resourceSupervisor.sample = sample;
+    return sample;
+  }
+
+  blockAdmissionSample(): ReturnType<typeof vi.fn> {
+    const resourceSupervisor = this.daemonInternals.resourceSupervisor;
+    const originalSample = resourceSupervisor.sample.bind(resourceSupervisor);
+    const sample = vi.fn((reason: "warmup" | "interval" | "admission" | "turn-complete") =>
+      reason === "admission" ? new Promise<void>(() => {}) : originalSample(reason),
+    );
+    resourceSupervisor.sample = sample;
+    return sample;
+  }
+
+  private get daemonInternals(): {
+    workerReady: boolean;
+    readonly acceptedRequests: AcceptedRequestLedger;
+    readonly requestQueue: WorkspaceRequestQueue;
+    readonly resourceSupervisor: DaemonResourceSupervisor & {
+      readonly snapshot: DaemonResourceSnapshot;
+    };
+  } {
+    if (this.daemon === undefined) throw new Error("Workspace daemon is unavailable");
+    return this.daemon as unknown as {
+      workerReady: boolean;
+      readonly acceptedRequests: AcceptedRequestLedger;
+      readonly requestQueue: WorkspaceRequestQueue;
+      readonly resourceSupervisor: DaemonResourceSupervisor & {
+        readonly snapshot: DaemonResourceSnapshot;
+      };
+    };
+  }
+
   private commandName(argv: readonly string[]): DaemonCommandName {
     return new InvocationWorkspaceSelector().select(argv, this.workspaceRoot).commandName;
   }
@@ -1775,6 +1936,7 @@ class RequestTransport {
     | undefined;
   listenError: Error | undefined;
   closeError: Error | undefined;
+  readonly sentFrames: DaemonServerMessage[] = [];
   private resultChunkGate:
     | {
         readonly started: () => void;
@@ -1822,6 +1984,7 @@ class RequestTransport {
       resolveTerminal = resolve;
     });
     const receive = async (response: DaemonServerMessage): Promise<void> => {
+      this.sentFrames.push(response);
       if (!("kind" in response) && this.resultChunkGate !== undefined) {
         this.resultChunksInFlight += 1;
         this.maximumResultChunksInFlight = Math.max(

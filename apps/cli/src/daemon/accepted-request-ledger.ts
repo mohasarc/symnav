@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import type { CliExecutionRequest } from "../command-execution-result.js";
 import {
   DaemonExecutionFailures,
+  type AcceptedRequestCompatibility,
   type DaemonCommandName,
   type DaemonExecutionFailureCode,
 } from "@symnav/daemon";
@@ -51,6 +52,17 @@ export class AcceptedRequestLedger {
       if (entry.state.state === "completed" && !this.acknowledged.has(entry.requestId)) return true;
     }
     return false;
+  }
+
+  compatibilityFor(
+    requestId: string,
+    commandName: DaemonCommandName,
+    request: CliExecutionRequest,
+  ): AcceptedRequestCompatibility {
+    const existing = this.entries.get(requestId);
+    if (existing === undefined) return "unseen";
+    const requestFingerprint = AcceptedRequestLedger.fingerprint(commandName, request);
+    return existing.requestFingerprint === requestFingerprint ? "matching" : "conflicting";
   }
 
   accept(

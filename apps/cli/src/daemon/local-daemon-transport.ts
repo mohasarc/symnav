@@ -2,9 +2,12 @@ import { existsSync, mkdirSync, rmSync } from "node:fs";
 import { createConnection, createServer, type Server, type Socket } from "node:net";
 import { dirname } from "node:path";
 import {
+  DaemonAdmissionRejections,
   DaemonExecutionFailures,
+  type DaemonExecuteRejectionCode,
   type DaemonExecutionFailureCode,
   type DaemonPolicyValues,
+  type DaemonRejectedExecutionFrame,
 } from "@symnav/daemon";
 import { OrderedCommandOutput, type CommandExecutionResult } from "../command-execution-result.js";
 import type {
@@ -77,14 +80,20 @@ export class DaemonTransportError extends Error {
     readonly delivery: DaemonDeliveryState,
     message: string,
     authenticatedInstanceId?: string,
-    retrySafe = delivery === "not-submitted",
+    authenticatedRejectionCode?: DaemonExecuteRejectionCode,
   ) {
     super(message);
     this.name = "DaemonTransportError";
     if (authenticatedInstanceId !== undefined) {
       this.authenticatedInstanceId = authenticatedInstanceId;
     }
-    this.retrySafe = retrySafe;
+    this.retrySafe =
+      delivery === "not-submitted" ||
+      (code === "rejected" &&
+        delivery === "submitted-unconfirmed" &&
+        authenticatedInstanceId !== undefined &&
+        authenticatedRejectionCode !== undefined &&
+        DaemonAdmissionRejections.retrySafe(authenticatedRejectionCode));
   }
 }
 
@@ -550,7 +559,7 @@ export class LocalDaemonTransport {
               "submitted-unconfirmed",
               `Daemon rejected execution: ${frame.code}`,
               frame.instanceId,
-              frame.retrySafe,
+              frame.code,
             );
           }
           if (frame.kind === "accepted") {
@@ -1291,9 +1300,15 @@ export class LocalDaemonTransport {
           "code",
           "retrySafe",
         ]) ||
-        !LocalDaemonTransport.isExecuteRejectionCode(value.code) ||
         typeof value.retrySafe !== "boolean"
       ) {
+        throw new Error("Malformed daemon execution rejection");
+      }
+      try {
+        DaemonAdmissionRejections.assertConsistent(
+          value as unknown as DaemonRejectedExecutionFrame,
+        );
+      } catch {
         throw new Error("Malformed daemon execution rejection");
       }
       return;
@@ -1376,15 +1391,6 @@ export class LocalDaemonTransport {
 
   private static isDigest(value: unknown): value is string {
     return typeof value === "string" && /^[a-f\d]{64}$/.test(value);
-  }
-
-  private static isExecuteRejectionCode(value: unknown): boolean {
-    return (
-      value === "not-ready" ||
-      value === "draining" ||
-      value === "resource-pressure" ||
-      value === "incompatible"
-    );
   }
 
   private static isExecutionStatus(value: unknown): value is DaemonExecutionStatus {

@@ -54,6 +54,30 @@ describe("CliInvocationRunner", () => {
     },
   );
 
+  it.each([
+    ["--no-warnings", "overview", "src/a.ts"],
+    ["overview", "--no-warnings", "src/a.ts"],
+    ["overview", "src/a.ts", "--no-warnings"],
+  ])("suppresses the denied-state warning with original success for %j", async (...argv) => {
+    const directory = await mkdtemp(join(tmpdir(), "symnav-suppressed-state-"));
+    try {
+      const stateDirectory = join(directory, "state");
+      await writeFile(stateDirectory, "blocked");
+      const context = createFakeProgramContext({ cwd: "/repo" });
+      const coordinator = RunnerHarness.coordinator();
+      const runner = new CliInvocationRunner({
+        dependencies: fakeDependencies({ stateDirectory }),
+        coordinator,
+      });
+      expect(await runner.run({ argv, cwd: "/repo", telemetryEnabled: true }, context)).toBe(0);
+      expect(context.stdout.text()).toBe("Overview: src/a.ts\n(no symbols)\n");
+      expect(context.stderr.text()).toBe("");
+      expect(coordinator.execute).not.toHaveBeenCalled();
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
   it("warns once after an accepted failure without invoking local execution", async () => {
     const stateDirectory = await mkdtemp(join(tmpdir(), "symnav-accepted-warning-"));
     try {

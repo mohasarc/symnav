@@ -111,6 +111,35 @@ describe("CliProgramExecutor", () => {
     expect(context.exitCodes).toEqual([]);
   });
 
+  it("scopes parsed warning policy to each worker request", async () => {
+    const entries: OverviewFileEntries = {
+      file: "src/a.ts",
+      entries: [],
+      diagnostics: [{ severity: "warning", dedupeKey: "warning", message: "detail" }],
+    };
+    const recorder = createCapturingRecorder();
+    const executor = new CliProgramExecutor(
+      fakeDependencies({
+        recorder,
+        backends: () => [new FakeLanguageBackend({ entries: () => entries })],
+      }),
+    );
+    for (const warnings of [true, false, true]) {
+      const result = await executor.execute({
+        argv: ["overview", "src/a.ts", ...(warnings ? [] : ["--no-warnings"])],
+        cwd: "/repo",
+        telemetryEnabled: true,
+        executionMode: "warm",
+      });
+      const context = createFakeProgramContext({ cwd: "/repo" });
+      await CommandResultReplayer.replay(result, context);
+      expect(context.stderr.text()).toBe(warnings ? "symnav: warning: detail\n" : "");
+      expect(context.stdout.text()).toBe("Overview: src/a.ts\n(no symbols)\n");
+      expect(result.exitCode).toBe(0);
+    }
+    expect(recorder.events.map((event) => event.executionMode)).toEqual(["warm", "warm", "warm"]);
+  });
+
   it("keeps spilled worker output inside state and removes it after replay", async () => {
     const stateDirectory = mkdtempSync(join(tmpdir(), "symnav-output-state-"));
     temporaryRoots.push(stateDirectory);

@@ -21,7 +21,10 @@ class DaemonProcessEntry {
     const logger = new DaemonLogger(identity, configuration.instanceId, clock, {
       policy: policy.values.diagnostics,
     });
-    const server = DaemonTransportFactory.create({ policy }).server;
+    const server = DaemonTransportFactory.create({
+      policy,
+      captureDirectory: identity.spoolDirectory,
+    }).server;
     const coordinator = new DaemonProcessCoordinator({
       identity,
       coordinates: configuration,

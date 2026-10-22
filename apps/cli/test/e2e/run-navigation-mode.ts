@@ -75,7 +75,7 @@ class NavigationModeRunner {
 
   private navigationTestSources(): readonly string[] {
     const e2eRoot = join(this.cliRoot, "test", "e2e");
-    const excludedDirectories = new Set(["daemon", "telemetry"]);
+    const excludedDirectories = new Set(["daemon", "telemetry", "sandbox"]);
     const pending = [e2eRoot];
     const sources: string[] = [];
     while (pending.length > 0) {

@@ -405,6 +405,32 @@ describe("DaemonStartupCoordinator", () => {
     ]);
   });
 
+  it("retains execution readiness failure evidence without removing a live ready daemon", async () => {
+    const harness = new CoordinatorHarness(roots);
+    vi.spyOn(harness.transport, "execute").mockRejectedValue(
+      Object.assign(new Error("readiness failed"), { code: "EIO" }),
+    );
+    await expect(harness.coordinator().ensureRunning(harness.identity)).rejects.toThrow(
+      "readiness failed",
+    );
+    expect(harness.registry.read(harness.identity)?.state).toBe("ready");
+    const journal = new DaemonFailureJournal(
+      harness.identity.stateDirectory,
+      DaemonPolicy.currentSystem().values.diagnostics,
+      new NodeDaemonClock(),
+    );
+    expect(await journal.recent(Date.now())).toEqual([
+      expect.objectContaining({
+        kind: "startup-failure",
+        failure: expect.objectContaining({
+          phase: "warm-up",
+          reason: "startup-failed",
+          osCode: "EIO",
+        }),
+      }),
+    ]);
+  });
+
   it("records child death before readiness once before releasing startup evidence", async () => {
     const harness = new CoordinatorHarness(roots, { exitingLaunches: 1 });
     const coordinator = harness.coordinator();

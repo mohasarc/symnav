@@ -2,13 +2,13 @@ import { existsSync, mkdirSync, rmSync } from "node:fs";
 import { createServer, type Server, type Socket } from "node:net";
 import { dirname } from "node:path";
 import type { DaemonPolicyValues } from "@symnav/daemon";
-import type { DaemonServer, DaemonServerMessage } from "./protocol.js";
+import type { DaemonServer } from "./protocol.js";
 import type {
   DaemonRequestHandler,
   DaemonRequestServer,
-  DaemonServerSend,
   DaemonConnectionClient,
 } from "./contracts.js";
+import { DaemonRequestDispatcher } from "./request-dispatcher.js";
 import type { DaemonProtocolValidator } from "./protocol-validator.js";
 import type { DaemonWireCodec } from "./wire-codec.js";
 
@@ -89,60 +89,19 @@ export class LocalDaemonSocketServer implements DaemonRequestServer {
   }
 
   private serve(socket: Socket, handler: DaemonRequestHandler): void {
-    const decoder = this.options.codec.controlDecoder();
-    let responses = Promise.resolve();
-    let writes = Promise.resolve();
-    const closeListeners = new Set<() => void>();
-    const send: DaemonServerSend = Object.assign(
-      (message: DaemonServerMessage) => {
-        const write = writes.then(() => this.writeServerMessage(socket, message));
-        writes = write;
-        return write;
-      },
-      {
-        onClose: (listener: () => void): (() => void) => {
-          closeListeners.add(listener);
-          return () => closeListeners.delete(listener);
-        },
-      },
+    const dispatcher = new DaemonRequestDispatcher({
+      codec: this.options.codec,
+      validator: this.options.validator,
+      handler,
+      write: (frame) => this.writeEncodedServerFrame(socket, frame),
+      destroy: () => socket.destroy(),
+    });
+    socket.on("data", (bytes) =>
+      dispatcher.receive(Buffer.isBuffer(bytes) ? bytes : Buffer.from(bytes)),
     );
-    socket.on("data", (bytes) => {
-      try {
-        for (const value of decoder.append(Buffer.isBuffer(bytes) ? bytes : Buffer.from(bytes))) {
-          const request = this.options.validator.request(value);
-          responses = responses
-            .then(async () => {
-              const response = await handler(request, send);
-              if (response !== undefined) await send(response);
-            })
-            .catch(() => {
-              socket.destroy();
-            });
-        }
-      } catch {
-        socket.destroy();
-      }
-    });
-    socket.once("end", () => {
-      try {
-        decoder.assertComplete();
-      } catch {
-        socket.destroy();
-      }
-    });
-    socket.once("close", () => {
-      for (const listener of closeListeners) {
-        try {
-          listener();
-        } catch {}
-      }
-      closeListeners.clear();
-    });
+    socket.once("end", () => dispatcher.end());
+    socket.once("close", () => dispatcher.close());
     socket.once("error", () => socket.destroy());
-  }
-
-  private async writeServerMessage(socket: Socket, message: DaemonServerMessage): Promise<void> {
-    await this.writeEncodedServerFrame(socket, this.options.codec.encodeServerMessage(message));
   }
 
   private async writeEncodedServerFrame(socket: Socket, frame: Uint8Array): Promise<void> {

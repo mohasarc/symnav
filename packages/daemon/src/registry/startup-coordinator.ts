@@ -122,19 +122,26 @@ export class DaemonStartupCoordinator {
     try {
       return await this.triggerOnce(identity, stateWriteFailed);
     } catch (error) {
-      if (typeof error !== "object" || error === null || !this.recordedFailures.has(error)) {
-        const stateFailure = DaemonStateWriteErrors.from(error);
-        await this.recordFailure(
-          identity,
-          stateFailure === undefined ? "warm-up" : "state location",
-          stateFailure === undefined ? "startup-failed" : "state-write-failed",
-          error,
-          undefined,
-          stateWriteFailed,
-        );
-      }
+      await this.recordTriggerFailure(identity, error, stateWriteFailed);
       throw error;
     }
+  }
+
+  public async recordTriggerFailure(
+    identity: DaemonWorkspaceIdentity,
+    error: unknown,
+    stateWriteFailed?: DaemonStateWriteFailureObserver,
+  ): Promise<void> {
+    if (typeof error === "object" && error !== null && this.recordedFailures.has(error)) return;
+    const stateFailure = DaemonStateWriteErrors.from(error);
+    await this.recordFailure(
+      identity,
+      stateFailure === undefined ? "process spawn" : "state location",
+      stateFailure === undefined ? "process-spawn-failed" : "state-write-failed",
+      error,
+      undefined,
+      stateWriteFailed,
+    );
   }
 
   private async triggerOnce(

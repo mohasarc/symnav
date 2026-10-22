@@ -59,6 +59,42 @@ describe("DaemonClient execution", () => {
     expect(harness.observe).not.toHaveBeenCalled();
   });
 
+  it.each(["journal", "cleanup", "replacement"] as const)(
+    "keeps dead-starting recovery cold when %s prevents safe cleanup",
+    async (failurePoint) => {
+      const harness = new ClientHarness({ record: daemonRecord({ state: "starting" }) });
+      vi.spyOn(NodeDaemonProcessTerminator.prototype, "isAlive").mockReturnValue(false);
+      const stateWriteFailed = vi.fn();
+      const failure = Object.assign(new Error("denied"), {
+        code: "EACCES",
+        syscall: "write",
+        path: "/state/history",
+      });
+      if (failurePoint === "journal")
+        vi.mocked(DaemonFailureJournal.prototype.record).mockRejectedValue(failure);
+      else if (failurePoint === "cleanup")
+        harness.removeIfProcess.mockImplementation(() => {
+          throw failure;
+        });
+      else harness.removeIfProcess.mockReturnValue(false);
+
+      expect((await harness.client.execute({ ...harness.request(), stateWriteFailed })).mode).toBe(
+        "cold",
+      );
+      expect(harness.trigger).not.toHaveBeenCalled();
+      expect(harness.warmRequests).toEqual([]);
+      if (failurePoint === "replacement") expect(stateWriteFailed).not.toHaveBeenCalled();
+      else {
+        expect(stateWriteFailed).toHaveBeenCalledOnce();
+        expect(harness.localRequests[0]).toMatchObject({ telemetryEnabled: false });
+      }
+      if (failurePoint === "journal") {
+        expect(harness.removeIfProcess).not.toHaveBeenCalled();
+        expect(DaemonFailureJournal.prototype.record).toHaveBeenCalledOnce();
+      }
+    },
+  );
+
   it("counts one actual local fallback with its original connection OS cause", async () => {
     const cause = Object.assign(new Error("secret"), { code: "ECONNRESET" });
     const harness = new ClientHarness({
@@ -715,6 +751,7 @@ class ClientHarness {
   readonly client: DaemonClient;
 
   constructor(options: ClientHarnessOptions) {
+    vi.spyOn(NodeDaemonProcessTerminator.prototype, "isAlive").mockReturnValue(true);
     vi.spyOn(DaemonFailureJournal.prototype, "record").mockImplementation(async (event) => {
       this.failureEvents.push(event);
     });

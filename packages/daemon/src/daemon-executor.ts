@@ -1,3 +1,4 @@
+import type { DaemonStateWriteFailure } from "./state-write-failure.js";
 import { DaemonDiagnosticValues, type DaemonDiagnostics } from "./daemon-diagnostics.js";
 
 export type DaemonExecutionMode = "cold" | "warm" | "fallback";
@@ -34,6 +35,7 @@ export interface DaemonExecutorInitializationResult {
 }
 
 export interface DaemonExecutorExecutionResult {
+  readonly stateWriteFailure?: DaemonStateWriteFailure;
   readonly exitCode: number;
   readonly output: DaemonExecutorOutput;
   readonly diagnostics?: DaemonDiagnostics;

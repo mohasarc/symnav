@@ -31,3 +31,8 @@ export type {
   DaemonControlRequest,
 } from "./client/daemon-client-contracts.js";
 export { DaemonClient } from "./client/daemon-client.js";
+
+export type {
+  DaemonStateWriteFailure,
+  DaemonStateWriteFailureObserver,
+} from "./state-write-failure.js";

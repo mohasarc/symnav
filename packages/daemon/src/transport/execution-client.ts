@@ -248,8 +248,8 @@ export class DaemonExecutionClient implements DaemonExecutionRequester {
           return;
         }
         try {
-          connection.write(this.options.codec.encodeControl(request));
           delivery = "submitted-unconfirmed";
+          await connection.write(this.options.codec.encodeControl(request));
         } catch (error) {
           fail(error);
           return;
@@ -312,7 +312,7 @@ export class DaemonExecutionClient implements DaemonExecutionRequester {
       throw new DaemonTransportError("closed", "accepted", message, request.instanceId);
     }
     try {
-      connection.write(
+      await connection.write(
         this.options.codec.encodeControl({
           kind: "result-fetch",
           protocolVersion: request.protocolVersion,

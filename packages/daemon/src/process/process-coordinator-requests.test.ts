@@ -1329,7 +1329,12 @@ describe("DaemonProcessCoordinator requests", () => {
     const harness = await RequestHarness.start(undefined, { navigationWorker: worker });
     harnesses.push(harness);
 
-    worker.fail({ generation: worker.generation, cause: "error", errorName: "WorkerError" });
+    worker.fail({
+      generation: worker.generation,
+      cause: "error",
+      errorName: "WorkerError",
+      osCode: "EIO",
+    });
 
     await expect(harness.exited).resolves.toBe(0);
     expect(harness.transport.isListening).toBe(false);
@@ -1341,6 +1346,11 @@ describe("DaemonProcessCoordinator requests", () => {
         expect.objectContaining({
           kind: "failure",
           operation: "worker-exit",
+          failure: expect.objectContaining({
+            phase: "worker",
+            reason: "worker-failed",
+            osCode: "EIO",
+          }),
           failureCode: "worker-exit",
           errorName: "UnknownError",
         }),

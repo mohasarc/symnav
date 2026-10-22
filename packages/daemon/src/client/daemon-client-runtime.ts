@@ -46,11 +46,7 @@ import type {
   DaemonClientOptions,
   DaemonControlRequest,
 } from "./daemon-client-contracts.js";
-import {
-  DaemonRoutingContextState,
-  DaemonRoutingPolicy,
-  type DaemonRouteSnapshot,
-} from "./daemon-routing-policy.js";
+import { DaemonRoutingContextState, DaemonRoutingPolicy } from "./daemon-routing-policy.js";
 
 class DaemonControlledOutput implements DaemonExecutorOutput {
   private readonly bytes: Uint8Array;
@@ -238,26 +234,34 @@ export class DaemonClientRuntime {
       new NodeDaemonProcessTerminator(this.policy.values.shutdown),
     );
     const observedRequest: DaemonClientExecuteRequest = { ...request, stateWriteFailed };
-    const route = await this.routing.decide(
-      new DaemonRoutingContextState(
-        identity,
-        this.options.productVersion,
-        () => this.registry.read(identity),
-        async (record) => {
-          const observation = await observer.observe(record);
-          if (observation.kind === "exited")
-            await this.failureRecorder(record.workspaceRoot, stateWriteFailed).record(
-              record.state === "starting" ? "startup-failure" : "termination",
-              "process spawn",
-              "process-terminated",
-              undefined,
-              record.instanceId,
-            );
-          return observation;
-        },
-        (record) => this.registry.removeIfProcess(identity, record.instanceId, record.processToken),
-      ),
+    const routingContext = new DaemonRoutingContextState(
+      identity,
+      this.options.productVersion,
+      () => this.registry.read(identity),
+      async (record) => {
+        const observation = await observer.observe(record);
+        if (observation.kind === "exited")
+          await this.failureRecorder(record.workspaceRoot, stateWriteFailed).record(
+            record.state === "starting" ? "startup-failure" : "termination",
+            "process spawn",
+            "process-terminated",
+            undefined,
+            record.instanceId,
+          );
+        return observation;
+      },
+      (record) => this.registry.removeIfProcess(identity, record.instanceId, record.processToken),
     );
+    const route = await this.routing.decide(routingContext);
+    const restartStarting =
+      route.kind === "cold" &&
+      route.reason === "starting" &&
+      (await this.recoverExitedStarting(
+        identity,
+        routingContext.readRecord()!,
+        observer,
+        stateWriteFailed,
+      ));
     if (stateWriteFailure !== undefined)
       return this.executeLocally({ ...observedRequest, telemetryEnabled: false }, "cold");
     if (route.kind === "warm") return this.executeWarm(route.record, observedRequest);
@@ -273,7 +277,9 @@ export class DaemonClientRuntime {
     }
     if (
       stateWriteFailure === undefined &&
-      ((route.kind === "cold" && route.reason === "absent") || route.kind === "fallback")
+      ((route.kind === "cold" && route.reason === "absent") ||
+        route.kind === "fallback" ||
+        restartStarting)
     ) {
       DaemonClientRuntime.triggerIndependently(this.coordinator, identity, observedRequest);
     }
@@ -283,6 +289,34 @@ export class DaemonClientRuntime {
         : { ...observedRequest, telemetryEnabled: false },
       route.kind === "fallback" ? "fallback" : "cold",
     );
+  }
+
+  private async recoverExitedStarting(
+    identity: DaemonWorkspaceIdentity,
+    record: DaemonRecord,
+    observer: DaemonRecordObserver,
+    stateWriteFailed: DaemonStateWriteFailureObserver,
+  ): Promise<boolean> {
+    if ((await observer.observeIdentity(record)).kind !== "exited") return false;
+    let journalWriteFailed = false;
+    await this.failureRecorder(record.workspaceRoot, (failure) => {
+      journalWriteFailed = true;
+      stateWriteFailed(failure);
+    }).record(
+      "startup-failure",
+      "process spawn",
+      "process-terminated",
+      undefined,
+      record.instanceId,
+    );
+    if (journalWriteFailed) return false;
+    try {
+      return this.registry.removeIfProcess(identity, record.instanceId, record.processToken);
+    } catch (error) {
+      const failure = DaemonStateWriteErrors.from(error, this.options.stateDirectory);
+      if (failure !== undefined) stateWriteFailed(failure);
+      return false;
+    }
   }
 
   control(

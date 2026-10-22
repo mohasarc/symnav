@@ -107,6 +107,7 @@ describe("DaemonClient execution", () => {
     expect(stateWriteFailed).toHaveBeenCalledTimes(1);
     expect(harness.localRequests[0]).toMatchObject({ telemetryEnabled: false });
     expect(DaemonFailureJournal.prototype.record).toHaveBeenCalledTimes(1);
+    expect(harness.trigger).not.toHaveBeenCalled();
   });
   it.each(["not-submitted", "submitted-unconfirmed", "accepted"] as const)(
     "reports a %s write denial without replaying uncertain work",

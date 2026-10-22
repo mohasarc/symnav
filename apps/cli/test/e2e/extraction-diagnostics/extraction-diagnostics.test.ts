@@ -9,7 +9,7 @@ const cleanRunner = new FixtureRunner("definition-cases");
 const snapshotsDir = fileURLToPath(new URL("./__snapshots__/", import.meta.url));
 const warningMessage =
   "skipped unrecognised statement syntax at src/unsupported-statement.ts:5 (MissingDeclaration)";
-const warning = `Warning: ${warningMessage}\n`;
+const warning = `symnav: warning: ${warningMessage}\n`;
 
 function snapshot(name: string): string {
   return join(snapshotsDir, name);

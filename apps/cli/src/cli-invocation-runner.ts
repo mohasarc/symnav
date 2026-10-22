@@ -1,4 +1,5 @@
 import { Writable } from "node:stream";
+import { inspect } from "node:util";
 import { finished } from "node:stream/promises";
 import type { CliInvocationCoordinator } from "./cli-invocation-coordinator.js";
 import type { CliExecutionRequest } from "./command-execution-result.js";
@@ -14,12 +15,39 @@ import type { ProgramContext } from "./program-context.js";
 import type { ProgramDependencies } from "./program-dependencies.js";
 import { InvocationWorkspaceSelector } from "./invocation-workspace-selector.js";
 import { buildProgram } from "./program.js";
+import type { DaemonExecutorOutput } from "@symnav/daemon";
 import { InvocationStateWriteCoordinator } from "./state/state-write-coordinator.js";
 import { InvocationStateDependencies } from "./state/invocation-state-dependencies.js";
 
 export interface CliInvocationRunnerOptions {
   readonly dependencies: ProgramDependencies;
   readonly coordinator: CliInvocationCoordinator;
+}
+
+class StateObservedCommandOutput implements DaemonExecutorOutput {
+  public constructor(
+    private readonly output: DaemonExecutorOutput,
+    private readonly state: InvocationStateWriteCoordinator,
+  ) {}
+
+  public records() {
+    return this.output.records();
+  }
+
+  public async dispose(): Promise<void> {
+    try {
+      await this.output.dispose();
+    } catch (error) {
+      if (typeof error !== "object" || error === null) throw error;
+      const failure = error as NodeJS.ErrnoException;
+      if (
+        typeof failure.path !== "string" ||
+        !/^(unlink|rmdir|rename)/u.test(failure.syscall ?? "")
+      )
+        throw error;
+      this.state.failed(failure.path, failure);
+    }
+  }
 }
 
 class DirectProgramExit extends Error {
@@ -88,7 +116,7 @@ export class CliInvocationRunner {
       request.telemetryEnabled,
     );
     const local = (mode: "cold" | "fallback") =>
-      this.executeLocally({ ...request, executionMode: mode }, dependencies);
+      this.executeLocally({ ...request, executionMode: mode }, dependencies, state);
     const result =
       state.access.kind === "disabled" || !dependencies.daemonEnabled || !daemonEligible
         ? await local("cold")
@@ -110,16 +138,28 @@ export class CliInvocationRunner {
         failure.osCode === undefined ? undefined : { code: failure.osCode },
       );
     }
-    await CommandResultReplayer.replay(result, {
-      ...context,
-      exit: () => undefined as never,
-    });
+    const replayContext: ProgramContext = { ...context, exit: () => undefined as never };
+    await CommandResultReplayer.replay(
+      { ...result, output: new StateObservedCommandOutput(result.output, state) },
+      replayContext,
+    );
+    const warning = state.renderWarning();
+    if (warning !== undefined) {
+      await CommandResultReplayer.replay(
+        {
+          exitCode: 0,
+          output: new CommandOutputSnapshot([{ stream: "stderr", bytes: Buffer.from(warning) }]),
+        },
+        replayContext,
+      );
+    }
     return result.exitCode;
   }
 
   private async executeLocally(
     request: CliExecutionRequest,
     dependencies: ProgramDependencies,
+    state: InvocationStateWriteCoordinator,
   ): Promise<CommandExecutionResult> {
     const output = new DirectCommandOutput(
       dependencies.daemonPolicy.values.output.maximumResultRawBytes,
@@ -147,7 +187,10 @@ export class CliInvocationRunner {
       await program.parseAsync([...selected.argv], { from: "user" });
     } catch (error) {
       if (error instanceof DirectProgramExit) exitCode = error.exitCode;
-      else throw error;
+      else if (state.access.kind === "disabled") {
+        stderr.write(`${inspect(error)}\n`);
+        exitCode = 1;
+      } else throw error;
     } finally {
       stdout.end();
       stderr.end();

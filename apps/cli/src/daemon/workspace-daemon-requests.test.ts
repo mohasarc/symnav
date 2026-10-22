@@ -486,6 +486,35 @@ describe("WorkspaceDaemon requests", () => {
     ]);
   });
 
+  it("keeps the latest duplicate result delivery as the process queue barrier", async () => {
+    const executor = new SerializedExecutor();
+    const harness = await RequestHarness.start(executor);
+    harnesses.push(harness);
+    const firstResultEnd = harness.transport.stallNextResultEnd();
+    const first = await harness.admit("duplicate-barrier");
+    await executor.started(1);
+    const secondResultEnd = harness.transport.stallNextResultEnd();
+    const duplicate = await harness.admit("duplicate-barrier");
+    const following = harness.execute("after-duplicate-barrier");
+
+    executor.complete(0);
+    await Promise.all([firstResultEnd.started, secondResultEnd.started]);
+    firstResultEnd.release();
+    await first.terminal;
+    await new Promise((resolve) => setImmediate(resolve));
+
+    expect(executor.startedCount).toBe(1);
+    expect(duplicate.frames.some((frame) => "kind" in frame && frame.kind === "result-end")).toBe(
+      false,
+    );
+
+    secondResultEnd.release();
+    await duplicate.terminal;
+    await executor.started(2);
+    executor.complete(1);
+    await following;
+  });
+
   it("reports unknown, queued, running, completed, and failed execution status", async () => {
     const executor = new SerializedExecutor();
     const harness = await RequestHarness.start(executor);
@@ -686,6 +715,30 @@ describe("WorkspaceDaemon requests", () => {
         expect.objectContaining({ kind: "shutdown", reason: "graceful", force: false }),
       ]),
     );
+  });
+
+  it("cleans instance spools only after graceful worker shutdown completes", async () => {
+    const transitions: string[] = [];
+    const worker = new ShutdownGatedNavigationWorker(new ImmediateExecutor(), transitions);
+    const storage = new ObservingInstanceCleanupStorage(transitions);
+    const harness = await RequestHarness.start(undefined, {
+      navigationWorker: worker,
+      completionSpoolStorage: storage,
+    });
+    harnesses.push(harness);
+
+    await harness.stop();
+    await worker.closeStarted;
+    const transitionsWhileWorkerWasBlocked = [...transitions];
+    worker.allowClose();
+    await harness.exited;
+
+    expect(transitionsWhileWorkerWasBlocked).toEqual(["worker-close-started"]);
+    expect(transitions).toEqual([
+      "worker-close-started",
+      "worker-close-completed",
+      "instance-spool-cleanup",
+    ]);
   });
 
   it("reports draining from the main thread while admitted work completes", async () => {
@@ -2034,9 +2087,11 @@ class RequestHarness {
 
   retainedOperationTraceCount(): number {
     const daemon = this.daemon as unknown as {
-      readonly operationTraces: ReadonlyMap<string, unknown>;
+      readonly deliverySession: {
+        readonly operationTraces: ReadonlyMap<string, unknown>;
+      };
     };
-    return daemon.operationTraces.size;
+    return daemon.deliverySession.operationTraces.size;
   }
 
   async dispose(): Promise<void> {
@@ -2093,6 +2148,10 @@ class RequestTransport {
     | undefined;
   private resultChunksInFlight = 0;
   private maximumResultChunksInFlight = 0;
+  private readonly resultEndGates: {
+    readonly started: () => void;
+    readonly wait: Promise<void>;
+  }[] = [];
 
   get isListening(): boolean {
     return this.handler !== undefined;
@@ -2128,6 +2187,7 @@ class RequestTransport {
 
   async connect(request: DaemonRequest): Promise<RequestConnection> {
     if (this.handler === undefined) throw new Error("Transport is not listening");
+    const resultEndGate = this.resultEndGates.shift();
     const frames: DaemonServerMessage[] = [];
     let connected = true;
     const closeListeners = new Set<() => void>();
@@ -2146,6 +2206,10 @@ class RequestTransport {
         this.resultChunkGate.started();
         await this.resultChunkGate.wait;
         this.resultChunksInFlight -= 1;
+      }
+      if ("kind" in response && response.kind === "result-end" && resultEndGate !== undefined) {
+        resultEndGate.started();
+        await resultEndGate.wait;
       }
       if (!connected) throw new Error("Request connection is closed");
       frames.push(response);
@@ -2196,6 +2260,22 @@ class RequestTransport {
       release,
       maximumInFlight: () => this.maximumResultChunksInFlight,
     };
+  }
+
+  stallNextResultEnd(): {
+    readonly started: Promise<void>;
+    readonly release: () => void;
+  } {
+    let markStarted!: () => void;
+    let release!: () => void;
+    const started = new Promise<void>((resolve) => {
+      markStarted = resolve;
+    });
+    const wait = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    this.resultEndGates.push({ started: markStarted, wait });
+    return { started, release };
   }
 
   private static isExecutionFrame(
@@ -2347,6 +2427,17 @@ class RequestFailingCompletionStorage extends NodeCompletionSpoolStorage {
   }
 }
 
+class ObservingInstanceCleanupStorage extends NodeCompletionSpoolStorage {
+  constructor(private readonly transitions: string[]) {
+    super();
+  }
+
+  override async removeInstance(path: string): Promise<void> {
+    this.transitions.push("instance-spool-cleanup");
+    await super.removeInstance(path);
+  }
+}
+
 function emptyResult(): CommandExecutionResult {
   return { output: new CommandOutputSnapshot([]), exitCode: 0 };
 }
@@ -2430,6 +2521,38 @@ class ExecutorNavigationWorker implements DaemonNavigationWorker {
   fail(exit: DaemonNavigationWorkerExit): void {
     this.rejectTermination(new DaemonNavigationWorkerExitedError(exit));
     this.resolveExited(exit);
+  }
+}
+
+class ShutdownGatedNavigationWorker extends ExecutorNavigationWorker {
+  readonly closeStarted: Promise<void>;
+  private resolveCloseStarted!: () => void;
+  private allowCloseResolution!: () => void;
+  private readonly closeAllowed: Promise<void>;
+
+  constructor(
+    executor: DaemonCommandExecutor,
+    private readonly transitions: string[],
+  ) {
+    super(executor);
+    this.closeStarted = new Promise((resolve) => {
+      this.resolveCloseStarted = resolve;
+    });
+    this.closeAllowed = new Promise((resolve) => {
+      this.allowCloseResolution = resolve;
+    });
+  }
+
+  override async drainAndClose(): Promise<void> {
+    this.transitions.push("worker-close-started");
+    this.resolveCloseStarted();
+    await this.closeAllowed;
+    this.transitions.push("worker-close-completed");
+    await super.drainAndClose();
+  }
+
+  allowClose(): void {
+    this.allowCloseResolution();
   }
 }
 

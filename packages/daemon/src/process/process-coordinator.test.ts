@@ -113,6 +113,13 @@ describe("DaemonProcessCoordinator runtime lifecycle", () => {
       instanceId: harness.instanceId,
     });
     await harness.exited;
+    expect(
+      await new DaemonFailureJournal(
+        harness.stateDirectory,
+        DaemonPolicy.currentSystem().values.diagnostics,
+        new NodeDaemonClock(),
+      ).recent(Date.now()),
+    ).toEqual([expect.objectContaining({ kind: "termination", instanceId: harness.instanceId })]);
     expect(harness.registry.read(harness.identity)).toMatchObject({
       instanceId: harness.instanceId,
       processToken: "runtime-token",

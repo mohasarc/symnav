@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { tmpdir } from "node:os";
+import { join } from "node:path";
 import type {
   DaemonExecutor,
   DaemonExecutorExecutionResult,
@@ -146,7 +146,7 @@ describe("DaemonClient execution", () => {
     expect(harness.executors[0]).not.toBe(harness.executors[1]);
   });
 
-  it("composes fresh warm result captures from output policy in the OS temporary directory", () => {
+  it("composes fresh warm result captures from output policy under the state directory", () => {
     const harness = new ClientHarness({});
     const createOutput = ClientCaptureInspection.createOutput(harness.client);
 
@@ -155,7 +155,7 @@ describe("DaemonClient execution", () => {
 
     expect(first).not.toBe(second);
     expect(ClientCaptureInspection.capture(first)).toMatchObject({
-      directory: tmpdir(),
+      directory: join("/state", "captures"),
       maximumChunkRawBytes: DaemonPolicy.currentSystem().values.output.maximumChunkRawBytes,
       inlineRawBytes: DaemonPolicy.currentSystem().values.output.inlineRawBytes,
       maximumResultRawBytes: DaemonPolicy.currentSystem().values.output.maximumResultRawBytes,

@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { Command as CommanderCommand } from "commander";
+import { InvocationProgram } from "./invocation-program.js";
 import { NodeFileSystem } from "@symnav/core";
 import { DaemonClient, DaemonPolicy, type DaemonExecutorFactory } from "@symnav/daemon";
 import { TypeScriptBackend } from "@symnav/backend-typescript";
@@ -97,7 +97,7 @@ export function createDefaultDependencies(
 export function buildProgram(
   context?: ProgramContext,
   dependencies?: ProgramDependencies,
-): CommanderCommand {
+): InvocationProgram {
   const ctx = context ?? createDefaultProgramContext();
   const deps =
     dependencies ??
@@ -108,11 +108,12 @@ export function buildProgram(
       DaemonPolicy.currentSystem(),
       process.env.SYMNAV_DAEMON !== "0",
     );
-  const program = new CommanderCommand();
+  const program = new InvocationProgram();
   program
     .name("symnav")
     .version(readPackageVersion(), "-v, --version")
     .option("--cwd <dir>", "run as if symnav was started in <dir>")
+    .option("--no-warnings", "suppress warning messages")
     .configureOutput({
       writeOut: (s) => {
         ctx.stdout.write(s);

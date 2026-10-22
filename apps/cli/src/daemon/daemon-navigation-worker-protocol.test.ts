@@ -69,7 +69,7 @@ describe("DaemonNavigationWorkerProtocol", () => {
     },
     { kind: "closed", generation: 4 },
   ])("accepts validated $kind responses", (message) => {
-    expect(DaemonNavigationWorkerProtocol.response(message)).toEqual(message);
+    expect(DaemonNavigationWorkerProtocol.response(message, 64 * 1024)).toEqual(message);
   });
 
   it.each([
@@ -109,7 +109,9 @@ describe("DaemonNavigationWorkerProtocol", () => {
     },
     { kind: "closed", generation: 1, extra: true },
   ])("rejects malformed worker responses %#", (message) => {
-    expect(() => DaemonNavigationWorkerProtocol.response(message)).toThrow(/worker response/i);
+    expect(() => DaemonNavigationWorkerProtocol.response(message, 64 * 1024)).toThrow(
+      /worker response/i,
+    );
   });
 
   it.each([
@@ -131,7 +133,9 @@ describe("DaemonNavigationWorkerProtocol", () => {
       durations: { freshnessMs: 1, navigationMs: 2, renderMs: 3, outputMs: 4 },
     },
   ])("rejects structurally invalid nested worker results %#", (message) => {
-    expect(() => DaemonNavigationWorkerProtocol.response(message)).toThrow(/worker response/i);
+    expect(() => DaemonNavigationWorkerProtocol.response(message, 64 * 1024)).toThrow(
+      /worker response/i,
+    );
   });
 });
 

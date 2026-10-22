@@ -13,9 +13,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
-import { DaemonController } from "./daemon-controller.js";
+import { TestDaemonController as DaemonController } from "../../test/helpers/daemon-controller.js";
 import type { DaemonProcessTerminator } from "./daemon-process-launcher.js";
-import { DaemonRegistry } from "./daemon-registry.js";
+import { TestDaemonRegistry as DaemonRegistry } from "../../test/helpers/daemon-registry.js";
 import { DaemonWorkspaceIdentity } from "./daemon-workspace-identity.js";
 import {
   DAEMON_PROTOCOL_VERSION,

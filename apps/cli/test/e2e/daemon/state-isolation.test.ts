@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { runSymnavBinary } from "@symnav/testing";
 import { afterEach, describe, expect, it } from "vitest";
 import type { DaemonRecord } from "../../../src/daemon/daemon-protocol.js";
-import { DaemonRegistry } from "../../../src/daemon/daemon-registry.js";
+import { TestDaemonRegistry as DaemonRegistry } from "../../helpers/daemon-registry.js";
 import { DaemonWorkspaceIdentity } from "../../../src/daemon/daemon-workspace-identity.js";
 import { StateDirectoryResolver } from "../../../src/state-directory-resolver.js";
 import { E2eProcessCleanup } from "../../helpers/e2e-process-cleanup.js";

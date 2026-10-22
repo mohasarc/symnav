@@ -117,7 +117,9 @@ class DaemonNavigationWorkerEntry {
   }
 
   private async execute(request: Extract<DaemonNavigationWorkerRequest, { kind: "execute" }>) {
-    const heapMonitor = new WorkerHeapHighWater();
+    const heapMonitor = new WorkerHeapHighWater(
+      this.policy.values.resources.workerHeapSampleIntervalMs,
+    );
     this.activeHeapMonitor = heapMonitor;
     this.commandDurations = { freshnessMs: 0, navigationMs: 0, renderMs: 0 };
     try {
@@ -192,7 +194,10 @@ class DaemonNavigationWorkerEntry {
   }
 
   private send(response: DaemonNavigationWorkerResponse): void {
-    const validated = DaemonNavigationWorkerProtocol.response(response);
+    const validated = DaemonNavigationWorkerProtocol.response(
+      response,
+      this.policy.values.output.maximumChunkRawBytes,
+    );
     if (validated.kind === "output-chunk") {
       this.port.postMessage(validated, [validated.bytes.buffer as ArrayBuffer]);
       return;
@@ -238,9 +243,9 @@ class WorkerHeapHighWater {
   private heapLimitBytes = 0;
   private readonly timer: ReturnType<typeof setInterval>;
 
-  constructor() {
+  constructor(sampleIntervalMs: number) {
     this.sample();
-    this.timer = setInterval(() => this.sample(), 25);
+    this.timer = setInterval(() => this.sample(), sampleIntervalMs);
     this.timer.unref?.();
   }
 

@@ -1,4 +1,4 @@
-import type { DaemonResourcePolicyRecord } from "../../src/daemon/daemon-resource-monitor.js";
+import type { TestDaemonResourcePolicyRecord as DaemonResourcePolicyRecord } from "../helpers/daemon-resource-policy.js";
 import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
 import {
@@ -20,9 +20,9 @@ import { join } from "node:path";
 import { performance } from "node:perf_hooks";
 import { fileURLToPath } from "node:url";
 import { runSymnavBinary, type RunSymnavBinaryResult } from "@symnav/testing";
-import { DaemonRegistry } from "../../src/daemon/daemon-registry.js";
+import { TestDaemonRegistry as DaemonRegistry } from "../helpers/daemon-registry.js";
 import type { DaemonCommandName } from "../../src/daemon/daemon-protocol.js";
-import { DaemonResourcePolicy } from "../../src/daemon/daemon-resource-monitor.js";
+import { TestDaemonResourcePolicy as DaemonResourcePolicy } from "../helpers/daemon-resource-policy.js";
 import { DaemonWorkspaceIdentity } from "../../src/daemon/daemon-workspace-identity.js";
 import { StateDirectoryResolver } from "../../src/state-directory-resolver.js";
 import { canonicalWorkspaceRoot } from "../helpers/canonical-workspace-root.js";

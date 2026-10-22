@@ -1,5 +1,4 @@
 import { createHash } from "node:crypto";
-import { COMMAND_OUTPUT_CHUNK_BYTES } from "./completion-spool.js";
 import type { DaemonResultChunk } from "./daemon-protocol.js";
 
 const BINARY_FRAME_FLAG = 0x80000000;
@@ -17,8 +16,8 @@ interface DaemonResultChunkHeader {
 }
 
 export class DaemonResultChunkCodec {
-  static encode(chunk: DaemonResultChunk): Buffer {
-    DaemonResultChunkCodec.assertChunk(chunk);
+  static encode(chunk: DaemonResultChunk, maximumChunkRawBytes: number): Buffer {
+    DaemonResultChunkCodec.assertChunk(chunk, maximumChunkRawBytes);
     const header: DaemonResultChunkHeader = {
       transferId: chunk.transferId,
       requestId: chunk.requestId,
@@ -39,7 +38,7 @@ export class DaemonResultChunkCodec {
     return encoded;
   }
 
-  static decode(payload: Buffer): DaemonResultChunk {
+  static decode(payload: Buffer, maximumChunkRawBytes: number): DaemonResultChunk {
     if (payload.byteLength < BINARY_HEADER_LENGTH_BYTES) {
       throw new Error("Truncated daemon result chunk header");
     }
@@ -54,7 +53,10 @@ export class DaemonResultChunkCodec {
       throw new Error("Malformed daemon result chunk header");
     }
     const bytes = payload.subarray(4 + headerLength);
-    if (!DaemonResultChunkCodec.isHeader(parsed) || parsed.payloadLength !== bytes.byteLength) {
+    if (
+      !DaemonResultChunkCodec.isHeader(parsed, maximumChunkRawBytes) ||
+      parsed.payloadLength !== bytes.byteLength
+    ) {
       throw new Error("Invalid daemon result chunk header");
     }
     if (createHash("sha256").update(bytes).digest("hex") !== parsed.sha256) {
@@ -68,11 +70,11 @@ export class DaemonResultChunkCodec {
       stream: parsed.stream,
       bytes: Uint8Array.from(bytes),
     };
-    DaemonResultChunkCodec.assertChunk(chunk);
+    DaemonResultChunkCodec.assertChunk(chunk, maximumChunkRawBytes);
     return chunk;
   }
 
-  private static assertChunk(chunk: DaemonResultChunk): void {
+  private static assertChunk(chunk: DaemonResultChunk, maximumChunkRawBytes: number): void {
     if (
       chunk.transferId.length === 0 ||
       chunk.requestId.length === 0 ||
@@ -82,13 +84,16 @@ export class DaemonResultChunkCodec {
       chunk.sequence < 0 ||
       (chunk.stream !== "stdout" && chunk.stream !== "stderr") ||
       !(chunk.bytes instanceof Uint8Array) ||
-      chunk.bytes.byteLength > COMMAND_OUTPUT_CHUNK_BYTES
+      chunk.bytes.byteLength > maximumChunkRawBytes
     ) {
       throw new Error("Invalid daemon result chunk");
     }
   }
 
-  private static isHeader(value: unknown): value is DaemonResultChunkHeader {
+  private static isHeader(
+    value: unknown,
+    maximumChunkRawBytes: number,
+  ): value is DaemonResultChunkHeader {
     if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
     const header = value as Record<string, unknown>;
     const keys = Object.keys(header).sort();
@@ -115,7 +120,7 @@ export class DaemonResultChunkCodec {
       (header.stream === "stdout" || header.stream === "stderr") &&
       Number.isSafeInteger(header.payloadLength) &&
       Number(header.payloadLength) >= 0 &&
-      Number(header.payloadLength) <= COMMAND_OUTPUT_CHUNK_BYTES &&
+      Number(header.payloadLength) <= maximumChunkRawBytes &&
       typeof header.sha256 === "string" &&
       /^[a-f\d]{64}$/.test(header.sha256)
     );
@@ -125,7 +130,10 @@ export class DaemonResultChunkCodec {
 export class DaemonTransferFrameDecoder {
   private buffered = Buffer.alloc(0);
 
-  constructor(private readonly maximumControlFrameBytes: number) {}
+  constructor(
+    private readonly maximumControlFrameBytes: number,
+    private readonly maximumChunkRawBytes: number,
+  ) {}
 
   append(bytes: Buffer): readonly (unknown | DaemonResultChunk)[] {
     this.buffered = Buffer.concat([this.buffered, bytes]);
@@ -135,14 +143,14 @@ export class DaemonTransferFrameDecoder {
       const binary = (encodedLength & BINARY_FRAME_FLAG) !== 0;
       const payloadLength = encodedLength & FRAME_LENGTH_MASK;
       const maximum = binary
-        ? this.maximumControlFrameBytes + COMMAND_OUTPUT_CHUNK_BYTES
+        ? this.maximumControlFrameBytes + this.maximumChunkRawBytes
         : this.maximumControlFrameBytes;
       if (payloadLength > maximum) throw new Error("Daemon result frame exceeds capacity");
       if (this.buffered.byteLength < payloadLength + 4) break;
       const payload = this.buffered.subarray(4, payloadLength + 4);
       this.buffered = this.buffered.subarray(payloadLength + 4);
       if (binary) {
-        values.push(DaemonResultChunkCodec.decode(payload));
+        values.push(DaemonResultChunkCodec.decode(payload, this.maximumChunkRawBytes));
         continue;
       }
       try {

@@ -17,8 +17,8 @@ describe("DaemonResultChunkCodec", () => {
     const control = Buffer.alloc(4 + controlPayload.byteLength);
     control.writeUInt32BE(controlPayload.byteLength);
     controlPayload.copy(control, 4);
-    const encoded = Buffer.concat([control, DaemonResultChunkCodec.encode(chunk)]);
-    const decoder = new DaemonTransferFrameDecoder(256 * 1024);
+    const encoded = Buffer.concat([control, DaemonResultChunkCodec.encode(chunk, 64 * 1024)]);
+    const decoder = new DaemonTransferFrameDecoder(256 * 1024, 64 * 1024);
     const decoded = [];
     for (let offset = 0; offset < encoded.byteLength; offset += 7) {
       decoded.push(...decoder.append(encoded.subarray(offset, offset + 7)));
@@ -42,8 +42,8 @@ describe("DaemonResultChunkCodec", () => {
       return corrupt;
     },
   ])("rejects truncated, wrong-length, or corrupt binary transfer %#", (corrupt) => {
-    const decoder = new DaemonTransferFrameDecoder(256 * 1024);
-    const encoded = corrupt(DaemonResultChunkCodec.encode(chunk));
+    const decoder = new DaemonTransferFrameDecoder(256 * 1024, 64 * 1024);
+    const encoded = corrupt(DaemonResultChunkCodec.encode(chunk, 64 * 1024));
     expect(() => {
       decoder.append(encoded);
       decoder.assertComplete();

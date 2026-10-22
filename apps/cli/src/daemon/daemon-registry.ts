@@ -9,6 +9,7 @@ import {
 } from "node:fs";
 import { randomUUID } from "node:crypto";
 import { dirname, join } from "node:path";
+import type { DaemonPolicyValues } from "@symnav/daemon";
 import {
   DAEMON_PROTOCOL_VERSION,
   DAEMON_RECORD_SCHEMA_VERSION,
@@ -28,8 +29,6 @@ export interface DaemonStartupOwner {
 }
 
 export type StartupOwner = DaemonStartupOwner;
-
-export const DAEMON_STARTUP_TIMEOUT_MS = 15_000;
 
 export interface DaemonStartupLease {
   readonly owner: DaemonStartupOwner;
@@ -110,11 +109,20 @@ class RegistryStartupLease implements StartupLease {
 }
 
 export class DaemonRegistry {
+  private readonly platform: NodeJS.Platform;
+  private readonly renamePath: typeof renameSync;
+  private readonly startupPolicy: DaemonPolicyValues["startup"];
+
   constructor(
     private readonly registryDirectory: string,
-    private readonly platform = process.platform,
-    private readonly renamePath: typeof renameSync = renameSync,
-  ) {}
+    startupPolicy: DaemonPolicyValues["startup"],
+    platform: NodeJS.Platform = process.platform,
+    renamePath: typeof renameSync = renameSync,
+  ) {
+    this.platform = platform;
+    this.renamePath = renamePath;
+    this.startupPolicy = startupPolicy;
+  }
 
   read(identity: DaemonWorkspaceIdentity): DaemonRecord | undefined {
     return this.records(identity).find((record) => DaemonRegistry.isCurrentRecord(record));
@@ -376,7 +384,7 @@ export class DaemonRegistry {
 
   startupOwnerIsWithinGrace(
     owner: StartupOwner,
-    graceMs = DAEMON_STARTUP_TIMEOUT_MS,
+    graceMs = this.startupPolicy.coordinationGraceMs,
     now = Date.now(),
   ): boolean {
     return now - owner.heartbeatAt <= graceMs;
@@ -536,7 +544,7 @@ export class DaemonRegistry {
     if (
       observedOwner !== undefined &&
       DaemonRegistry.processIsAlive(observedOwner.ownerPid) &&
-      Date.now() - observedOwner.acquiredAt <= DAEMON_STARTUP_TIMEOUT_MS
+      Date.now() - observedOwner.acquiredAt <= this.startupPolicy.coordinationGraceMs
     ) {
       return undefined;
     }

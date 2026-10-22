@@ -60,12 +60,16 @@ class DaemonStartAction {
       const workspace = await createWorkspace({ startDir: cwd, fs: dependencies.fs });
       const stateDirectory = dependencies.stateDirectory;
       const identity = DaemonWorkspaceIdentity.from(workspace.root, stateDirectory);
-      const registry = new DaemonRegistry(identity.registryDirectory);
+      const registry = new DaemonRegistry(
+        identity.registryDirectory,
+        dependencies.daemonPolicy.values.startup,
+      );
       const controller = new DaemonController(
         registry,
-        new LocalDaemonTransport(),
+        new LocalDaemonTransport(dependencies.daemonPolicy.values),
         stateDirectory,
         {
+          policy: dependencies.daemonPolicy.values,
           launcher: new NodeDaemonProcessLauncher(
             dependencies.symnavVersion,
             dependencies.daemonPolicy,
@@ -97,11 +101,17 @@ class DaemonStatusAction {
     options: DaemonOutputOptions,
   ): Promise<void> {
     const stateDirectory = dependencies.stateDirectory;
-    const registry = new DaemonRegistry(DaemonWorkspaceIdentity.registryDirectory(stateDirectory));
+    const registry = new DaemonRegistry(
+      DaemonWorkspaceIdentity.registryDirectory(stateDirectory),
+      dependencies.daemonPolicy.values.startup,
+    );
     const controller = new DaemonController(
       registry,
-      new LocalDaemonTransport({ requestTimeoutMs: 100 }),
+      new LocalDaemonTransport(dependencies.daemonPolicy.values, {
+        responseTimeoutPurpose: "status-observer",
+      }),
       stateDirectory,
+      { policy: dependencies.daemonPolicy.values },
     );
     const results = await controller.status();
     context.stdout.write(
@@ -125,8 +135,14 @@ class DaemonStopAction {
       const stateDirectory = dependencies.stateDirectory;
       const registry = new DaemonRegistry(
         DaemonWorkspaceIdentity.registryDirectory(stateDirectory),
+        dependencies.daemonPolicy.values.startup,
       );
-      const controller = new DaemonController(registry, new LocalDaemonTransport(), stateDirectory);
+      const controller = new DaemonController(
+        registry,
+        new LocalDaemonTransport(dependencies.daemonPolicy.values),
+        stateDirectory,
+        { policy: dependencies.daemonPolicy.values },
+      );
       const result = await controller.stop(workspace.root);
       context.stdout.write(
         options.json

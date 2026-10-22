@@ -7,7 +7,6 @@ import { DaemonProcessTerminationObserver } from "./daemon-process-termination-o
 import { DaemonRegistry } from "./daemon-registry.js";
 import { DaemonWorkspaceIdentity } from "./daemon-workspace-identity.js";
 import { LocalDaemonTransport } from "./local-daemon-transport.js";
-import { DaemonResourcePolicy } from "./daemon-resource-monitor.js";
 import { WorkspaceDaemon } from "./workspace-daemon.js";
 
 class DaemonEntry {
@@ -29,9 +28,11 @@ class DaemonEntry {
     if (dependencies.symnavVersion !== configuration.symnavVersion) {
       throw new Error("Daemon process version does not match launcher");
     }
-    const registry = new DaemonRegistry(identity.registryDirectory);
+    const registry = new DaemonRegistry(identity.registryDirectory, policy.values.startup);
     const clock = new NodeDaemonClock();
-    const logger = new DaemonLogger(identity, configuration.instanceId, clock);
+    const logger = new DaemonLogger(identity, configuration.instanceId, clock, {
+      policy: policy.values.diagnostics,
+    });
     new DaemonProcessTerminationObserver(logger, () => {
       registry.removeIfProcess(identity, configuration.instanceId, configuration.processToken);
     }).install();
@@ -40,14 +41,10 @@ class DaemonEntry {
       instanceId: configuration.instanceId,
       processToken: configuration.processToken,
       symnavVersion: configuration.symnavVersion,
-      memoryCapBytes: policy.values.resources.hardProcessRssBytes,
-      resourcePolicy: DaemonResourcePolicy.fromSystemMemory(
-        policy.values.resources.effectiveMemoryBytes,
-      ),
       policy,
       dependencies,
       registry,
-      transport: new LocalDaemonTransport(),
+      transport: new LocalDaemonTransport(policy.values),
       clock,
       logger,
     }).start();

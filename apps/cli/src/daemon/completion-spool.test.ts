@@ -2,6 +2,8 @@ import { access, chmod, mkdir, mkdtemp, readdir, stat, symlink, writeFile } from
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
+import { DaemonPolicy } from "@symnav/daemon";
+import { DaemonPolicyTestFactory } from "@symnav/daemon/policy-testing";
 import * as completionSpoolModule from "./completion-spool.js";
 
 describe("DaemonCompletionSpoolStore", () => {
@@ -12,6 +14,35 @@ describe("DaemonCompletionSpoolStore", () => {
     await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
   });
 
+  it("uses the required output-policy capacities", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "symnav-completion-policy-"));
+    roots.push(directory);
+    const policy = DaemonPolicyTestFactory.withOverrides(
+      DaemonPolicy.fromSystemMemory({ totalBytes: 1024 ** 3 }),
+      {
+        output: {
+          maximumChunkRawBytes: 2,
+          inlineRawBytes: 3,
+          maximumResultRawBytes: 6,
+          maximumAggregateSpoolRawBytes: 9,
+        },
+      },
+    );
+    const store = new completionSpoolModule.DaemonCompletionSpoolStore({
+      directory,
+      workspaceKey: "workspace-a",
+      instanceId: "instance-a",
+      policy: policy.values.output,
+    } as unknown as ConstructorParameters<
+      typeof completionSpoolModule.DaemonCompletionSpoolStore
+    >[0]);
+    const spool = await store.create("request-a");
+
+    await expect(
+      spool.append({ sequence: 0, stream: "stdout", bytes: Buffer.from("123") }),
+    ).rejects.toThrow(/chunk capacity/i);
+  });
+
   it("spills threshold-plus-one output securely and acknowledges exact completion cleanup", async () => {
     const directory = await mkdtemp(join(tmpdir(), "symnav-completion-spool-"));
     roots.push(directory);
@@ -19,9 +50,12 @@ describe("DaemonCompletionSpoolStore", () => {
       directory,
       workspaceKey: "workspace-a",
       instanceId: "instance-a",
-      inlineBytes: 8,
-      maximumResultBytes: 64,
-      maximumAggregateBytes: 128,
+      policy: outputPolicy({
+        maximumChunkRawBytes: 8,
+        inlineRawBytes: 8,
+        maximumResultRawBytes: 64,
+        maximumAggregateSpoolRawBytes: 128,
+      }),
     });
     const spool = await store.create("request-a");
     await spool.append({ sequence: 0, stream: "stdout", bytes: Buffer.from("12345678") });
@@ -63,9 +97,12 @@ describe("DaemonCompletionSpoolStore", () => {
       directory,
       workspaceKey: "workspace-a",
       instanceId: "instance-a",
-      inlineBytes: 1,
-      maximumResultBytes: 8,
-      maximumAggregateBytes: 8,
+      policy: outputPolicy({
+        maximumChunkRawBytes: 6,
+        inlineRawBytes: 6,
+        maximumResultRawBytes: 8,
+        maximumAggregateSpoolRawBytes: 8,
+      }),
     });
     const first = await store.create("first");
     await first.append({ sequence: 0, stream: "stdout", bytes: Buffer.from("123456") });
@@ -87,18 +124,17 @@ describe("DaemonCompletionSpoolStore", () => {
       directory,
       workspaceKey: "workspace-a",
       instanceId: "instance-a",
-      inlineBytes: 0,
+      policy: outputPolicy(),
     });
     const spool = await store.create("request-a");
-    const fullChunk = Buffer.alloc(completionSpoolModule.COMMAND_OUTPUT_CHUNK_BYTES);
+    const fullChunk = Buffer.alloc(outputPolicy().maximumChunkRawBytes);
     const fullChunkCount =
-      completionSpoolModule.COMMAND_OUTPUT_LIMIT_BYTES /
-      completionSpoolModule.COMMAND_OUTPUT_CHUNK_BYTES;
+      outputPolicy().maximumResultRawBytes / outputPolicy().maximumChunkRawBytes;
     for (let sequence = 0; sequence < fullChunkCount; sequence += 1) {
       await spool.append({ sequence, stream: "stdout", bytes: fullChunk });
     }
 
-    expect(store.usage().rawBytes).toBe(completionSpoolModule.COMMAND_OUTPUT_LIMIT_BYTES);
+    expect(store.usage().rawBytes).toBe(outputPolicy().maximumResultRawBytes);
     await expect(
       spool.append({ sequence: fullChunkCount, stream: "stdout", bytes: Buffer.from("x") }),
     ).rejects.toMatchObject({ name: "CompletionSpoolCapacityError" });
@@ -114,11 +150,13 @@ describe("DaemonCompletionSpoolStore", () => {
       directory,
       workspaceKey: "workspace-a",
       instanceId: "instance-a",
+      policy: outputPolicy(),
     });
     const secondStore = new completionSpoolModule.DaemonCompletionSpoolStore({
       directory,
       workspaceKey: "workspace-a",
       instanceId: "instance-b",
+      policy: outputPolicy(),
     });
     const first = await firstStore.create("first");
     await first.append({ sequence: 0, stream: "stdout", bytes: Buffer.from("a") });
@@ -138,11 +176,12 @@ describe("DaemonCompletionSpoolStore", () => {
       directory: blocked,
       workspaceKey: "workspace-a",
       instanceId: "instance-c",
-      inlineBytes: 0,
+      policy: outputPolicy({ maximumChunkRawBytes: 1, inlineRawBytes: 1 }),
     });
     const blockedSpool = await blockedStore.create("blocked-request");
+    await blockedSpool.append({ sequence: 0, stream: "stdout", bytes: Buffer.from("x") });
     await expect(
-      blockedSpool.append({ sequence: 0, stream: "stdout", bytes: Buffer.from("x") }),
+      blockedSpool.append({ sequence: 1, stream: "stdout", bytes: Buffer.from("x") }),
     ).rejects.toBeInstanceOf(Error);
     expect(blockedStore.usage()).toEqual({ rawBytes: 0, completionCount: 0 });
 
@@ -154,11 +193,12 @@ describe("DaemonCompletionSpoolStore", () => {
         directory,
         workspaceKey: "workspace-a",
         instanceId: "instance-link",
-        inlineBytes: 0,
+        policy: outputPolicy({ maximumChunkRawBytes: 1, inlineRawBytes: 1 }),
       });
       const linkedSpool = await linkedStore.create("linked-request");
+      await linkedSpool.append({ sequence: 0, stream: "stdout", bytes: Buffer.from("x") });
       await expect(
-        linkedSpool.append({ sequence: 0, stream: "stdout", bytes: Buffer.from("x") }),
+        linkedSpool.append({ sequence: 1, stream: "stdout", bytes: Buffer.from("x") }),
       ).rejects.toThrow("Completion spool directory is unsafe");
       expect(await readdir(external)).toEqual([]);
       expect(linkedStore.usage()).toEqual({ rawBytes: 0, completionCount: 0 });
@@ -175,11 +215,12 @@ describe("DaemonCompletionSpoolStore", () => {
         directory,
         workspaceKey: "workspace-a",
         instanceId: "instance-a",
-        inlineBytes: 0,
+        policy: outputPolicy({ maximumChunkRawBytes: 6, inlineRawBytes: 6 }),
         storage,
       });
       const spool = await store.create("request-a");
       await spool.append({ sequence: 0, stream: "stdout", bytes: Buffer.from("stored") });
+      await spool.append({ sequence: 1, stream: "stdout", bytes: Buffer.from("x") });
 
       await expect(spool.finish(0)).rejects.toThrow(`${operation} failed`);
       expect(store.usage()).toEqual({ rawBytes: 0, completionCount: 0 });
@@ -198,11 +239,12 @@ describe("DaemonCompletionSpoolStore", () => {
       directory,
       workspaceKey: "workspace-a",
       instanceId: "instance-a",
-      inlineBytes: 0,
+      policy: outputPolicy({ maximumChunkRawBytes: 6, inlineRawBytes: 6 }),
       storage: new FailingCompletionSpoolStorage("unlink"),
     });
     const spool = await store.create("request-a");
     await spool.append({ sequence: 0, stream: "stdout", bytes: Buffer.from("stored") });
+    await spool.append({ sequence: 1, stream: "stdout", bytes: Buffer.from("x") });
     await spool.finish(0);
 
     await expect(spool.acknowledge()).rejects.toThrow("unlink failed");
@@ -215,6 +257,19 @@ describe("DaemonCompletionSpoolStore", () => {
     expect(store.usage()).toEqual({ rawBytes: 0, completionCount: 0 });
   });
 });
+
+function outputPolicy(
+  overrides: Partial<ReturnType<typeof defaultOutputPolicy>> = {},
+): ReturnType<typeof defaultOutputPolicy> {
+  return DaemonPolicyTestFactory.withOverrides(
+    DaemonPolicy.fromSystemMemory({ totalBytes: 1024 ** 3 }),
+    { output: overrides },
+  ).values.output;
+}
+
+function defaultOutputPolicy() {
+  return DaemonPolicy.fromSystemMemory({ totalBytes: 1024 ** 3 }).values.output;
+}
 
 class FailingCompletionSpoolStorage extends completionSpoolModule.NodeCompletionSpoolStorage {
   private failed = false;

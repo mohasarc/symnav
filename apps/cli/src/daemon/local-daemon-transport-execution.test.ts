@@ -4,6 +4,7 @@ import { createServer, type Server, type Socket } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { DaemonPolicy } from "@symnav/daemon";
 import { OrderedCommandOutput } from "../command-execution-result.js";
 import {
   DAEMON_PROTOCOL_VERSION,
@@ -11,9 +12,21 @@ import {
   type DaemonExecutionServerFrame,
   type DaemonServerMessage,
 } from "./daemon-protocol.js";
-import { DaemonTransportError, LocalDaemonTransport } from "./local-daemon-transport.js";
-import { COMMAND_OUTPUT_CHUNK_BYTES, DaemonCompletionSpoolStore } from "./completion-spool.js";
+import { DaemonTransportError } from "./local-daemon-transport.js";
+import { TestLocalDaemonTransport as LocalDaemonTransport } from "../../test/helpers/local-daemon-transport.js";
+import {
+  DaemonCompletionSpoolStore as RuntimeDaemonCompletionSpoolStore,
+  type DaemonCompletionSpoolStoreOptions,
+} from "./completion-spool.js";
 import { DaemonResultChunkCodec } from "./daemon-result-chunk-codec.js";
+
+const TEST_CHUNK_BYTES = 64 * 1024;
+
+class DaemonCompletionSpoolStore extends RuntimeDaemonCompletionSpoolStore {
+  constructor(options: Omit<DaemonCompletionSpoolStoreOptions, "policy">) {
+    super({ ...options, policy: DaemonPolicy.currentSystem().values.output });
+  }
+}
 
 const request: DaemonExecuteRequest = {
   kind: "execute",
@@ -168,12 +181,12 @@ describe("LocalDaemonTransport execution delivery", () => {
       instanceId: request.instanceId,
     });
     const spool = await store.create(request.requestId);
-    const chunkCount = (12 * 1024 * 1024) / COMMAND_OUTPUT_CHUNK_BYTES;
+    const chunkCount = (12 * 1024 * 1024) / TEST_CHUNK_BYTES;
     for (let sequence = 0; sequence < chunkCount; sequence += 1) {
       await spool.append({
         sequence,
         stream: sequence % 2 === 0 ? "stdout" : "stderr",
-        bytes: Buffer.alloc(COMMAND_OUTPUT_CHUNK_BYTES, sequence),
+        bytes: Buffer.alloc(TEST_CHUNK_BYTES, sequence),
       });
     }
     const manifest = await spool.finish(0);
@@ -248,7 +261,7 @@ describe("LocalDaemonTransport execution delivery", () => {
       await spool.append({
         sequence,
         stream: sequence % 2 === 0 ? "stdout" : "stderr",
-        bytes: Buffer.alloc(COMMAND_OUTPUT_CHUNK_BYTES, sequence),
+        bytes: Buffer.alloc(TEST_CHUNK_BYTES, sequence),
       });
     }
     const manifest = await spool.finish(0);
@@ -547,14 +560,17 @@ describe("LocalDaemonTransport execution delivery", () => {
             socket.write(
               Buffer.concat([
                 encodedEnd,
-                DaemonResultChunkCodec.encode({
-                  transferId: manifest.transferId,
-                  requestId: request.requestId,
-                  offset: manifest.recordCount,
-                  sequence: manifest.recordCount,
-                  stream: "stdout",
-                  bytes: Buffer.from("late"),
-                }),
+                DaemonResultChunkCodec.encode(
+                  {
+                    transferId: manifest.transferId,
+                    requestId: request.requestId,
+                    offset: manifest.recordCount,
+                    sequence: manifest.recordCount,
+                    stream: "stdout",
+                    bytes: Buffer.from("late"),
+                  },
+                  TEST_CHUNK_BYTES,
+                ),
               ]),
             );
           } else {
@@ -597,7 +613,7 @@ describe("LocalDaemonTransport execution delivery", () => {
       await spool.append({
         sequence: 0,
         stream: "stdout",
-        bytes: Buffer.alloc(COMMAND_OUTPUT_CHUNK_BYTES, 7),
+        bytes: Buffer.alloc(TEST_CHUNK_BYTES, 7),
       });
       const manifest = await spool.finish(0);
       const acknowledgement = frame({
@@ -665,7 +681,7 @@ describe("LocalDaemonTransport execution delivery", () => {
       await spool.append({
         sequence,
         stream: sequence % 2 === 0 ? "stdout" : "stderr",
-        bytes: Buffer.alloc(COMMAND_OUTPUT_CHUNK_BYTES, sequence),
+        bytes: Buffer.alloc(TEST_CHUNK_BYTES, sequence),
       });
     }
     const manifest = await spool.finish(0);
@@ -715,7 +731,7 @@ describe("LocalDaemonTransport execution delivery", () => {
     await spool.append({
       sequence: 0,
       stream: "stdout",
-      bytes: Buffer.alloc(COMMAND_OUTPUT_CHUNK_BYTES, 3),
+      bytes: Buffer.alloc(TEST_CHUNK_BYTES, 3),
     });
     const manifest = await spool.finish(0);
     let acknowledgementCount = 0;
@@ -824,6 +840,56 @@ describe("LocalDaemonTransport execution delivery", () => {
 
     expect(completion).toMatchObject({ status: "completed", result: { exitCode: 0 } });
     expect(executeCount).toBe(2);
+    if (completion.status === "completed") await completion.result.output.dispose();
+  });
+
+  it("gives the reattached execute attempt its own fetch resume", async () => {
+    const directory = mkdtempSync(join(tmpdir(), "symnav-reattach-resume-"));
+    directories.push(directory);
+    const store = new DaemonCompletionSpoolStore({
+      directory: join(directory, "daemon"),
+      workspaceKey: "workspace",
+      instanceId: request.instanceId,
+    });
+    const spool = await store.create(request.requestId);
+    const manifest = await spool.finish(0);
+    let executeCount = 0;
+    let fetchCount = 0;
+    const endpoint = await rawExecutionServer(servers, sockets, directories, (socket) => {
+      socket.once("data", (encoded) => {
+        const bytes = Buffer.isBuffer(encoded) ? encoded : Buffer.from(encoded);
+        const message = JSON.parse(bytes.subarray(4).toString()) as { kind: string };
+        if (message.kind === "result-ack") {
+          socket.end(
+            frame({
+              kind: "result-acknowledged",
+              instanceId: request.instanceId,
+              processToken: request.processToken,
+              requestId: request.requestId,
+              transferId: manifest.transferId,
+            }),
+          );
+          return;
+        }
+        if (message.kind === "result-fetch") {
+          fetchCount += 1;
+          socket.end(Buffer.concat([frame(resultManifest(manifest)), frame(resultEnd(manifest))]));
+          return;
+        }
+        executeCount += 1;
+        socket.end(
+          executeCount === 1
+            ? frame(accepted())
+            : Buffer.concat([frame(accepted()), frame(resultManifest(manifest))]),
+        );
+      });
+    });
+
+    const receipt = await new LocalDaemonTransport().execute(endpoint, request);
+    const completion = await receipt.completion;
+
+    expect(completion).toMatchObject({ status: "completed", result: { exitCode: 0 } });
+    expect({ executeCount, fetchCount }).toEqual({ executeCount: 2, fetchCount: 1 });
     if (completion.status === "completed") await completion.result.output.dispose();
   });
 
@@ -938,14 +1004,17 @@ async function sendRecords(
   for await (const record of spool.read(offset)) {
     if (record.sequence >= stopBefore || socket.destroyed || !socket.writable) return;
     socket.write(
-      DaemonResultChunkCodec.encode({
-        transferId,
-        requestId: request.requestId,
-        offset: record.sequence,
-        sequence: record.sequence,
-        stream: record.stream,
-        bytes: record.bytes,
-      }),
+      DaemonResultChunkCodec.encode(
+        {
+          transferId,
+          requestId: request.requestId,
+          offset: record.sequence,
+          sequence: record.sequence,
+          stream: record.stream,
+          bytes: record.bytes,
+        },
+        TEST_CHUNK_BYTES,
+      ),
     );
   }
 }
@@ -957,14 +1026,17 @@ async function encodedResult(
   const chunks = [frame(accepted()), frame(resultManifest(manifest))];
   for await (const record of spool.read(0)) {
     chunks.push(
-      DaemonResultChunkCodec.encode({
-        transferId: manifest.transferId,
-        requestId: request.requestId,
-        offset: record.sequence,
-        sequence: record.sequence,
-        stream: record.stream,
-        bytes: record.bytes,
-      }),
+      DaemonResultChunkCodec.encode(
+        {
+          transferId: manifest.transferId,
+          requestId: request.requestId,
+          offset: record.sequence,
+          sequence: record.sequence,
+          stream: record.stream,
+          bytes: record.bytes,
+        },
+        TEST_CHUNK_BYTES,
+      ),
     );
   }
   chunks.push(frame(resultEnd(manifest)));
@@ -976,14 +1048,17 @@ async function firstEncodedRecord(
   manifest: import("./completion-spool.js").CompletionSpoolManifest,
 ): Promise<Buffer> {
   for await (const record of spool.read(0)) {
-    return DaemonResultChunkCodec.encode({
-      transferId: manifest.transferId,
-      requestId: request.requestId,
-      offset: record.sequence,
-      sequence: record.sequence,
-      stream: record.stream,
-      bytes: record.bytes,
-    });
+    return DaemonResultChunkCodec.encode(
+      {
+        transferId: manifest.transferId,
+        requestId: request.requestId,
+        offset: record.sequence,
+        sequence: record.sequence,
+        stream: record.stream,
+        bytes: record.bytes,
+      },
+      TEST_CHUNK_BYTES,
+    );
   }
   throw new Error("Expected one completion record");
 }

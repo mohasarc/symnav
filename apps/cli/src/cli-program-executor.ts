@@ -21,11 +21,12 @@ export class CliProgramExecutor {
   constructor(
     private readonly dependencies: ProgramDependencies,
     private readonly workspaceSession?: WorkspaceSession,
-    private readonly outputOptions: OrderedCommandOutputOptions = {},
   ) {}
 
   async execute(request: CliExecutionRequest): Promise<CommandExecutionResult> {
-    const output = new OrderedCommandOutput(this.outputOptions);
+    const output = new OrderedCommandOutput({
+      policy: this.dependencies.daemonPolicy.values.output,
+    });
     const context: ProgramContext = {
       stdout: output.stdout,
       stderr: output.stderr,

@@ -9,16 +9,16 @@ import type {
 import { OrderedCommandOutput } from "../../src/command-execution-result.js";
 import { createDefaultDependencies } from "../../src/program.js";
 import { CliProgramExecutor } from "../../src/cli-program-executor.js";
-import { DaemonRegistry } from "../../src/daemon/daemon-registry.js";
+import { TestDaemonRegistry as DaemonRegistry } from "./daemon-registry.js";
 import { DaemonWorkspaceIdentity } from "../../src/daemon/daemon-workspace-identity.js";
-import { LocalDaemonTransport } from "../../src/daemon/local-daemon-transport.js";
+import { TestLocalDaemonTransport as LocalDaemonTransport } from "./local-daemon-transport.js";
 import type {
   DaemonNavigationWorker,
   DaemonNavigationWorkerExit,
 } from "../../src/daemon/daemon-navigation-worker.js";
 import { NodeDaemonNavigationWorker } from "../../src/daemon/daemon-navigation-worker.js";
 import type { DaemonNavigationWorkerResponse } from "../../src/daemon/daemon-navigation-worker-protocol.js";
-import { WorkspaceDaemon } from "../../src/daemon/workspace-daemon.js";
+import { TestWorkspaceDaemon as WorkspaceDaemon } from "./workspace-daemon.js";
 
 const [
   workspaceRoot,
@@ -63,7 +63,7 @@ class ControlledExecutor {
     writeFileSync(`${acceptedRequestStartedPath}.${executionCount}`, "started");
     if (oversizedResponse || oversizedJsonResponse) {
       const result = await executor.execute(request);
-      const output = new OrderedCommandOutput();
+      const output = new OrderedCommandOutput({ policy: daemonPolicy.values.output });
       if (oversizedJsonResponse) {
         await writeRecord(output, {
           sequence: 0,

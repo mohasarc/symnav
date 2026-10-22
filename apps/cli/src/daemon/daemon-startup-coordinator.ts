@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import type { DaemonPolicyValues } from "@symnav/daemon";
 import {
   DaemonProcessTerminationError,
   NodeDaemonProcessTerminator,
@@ -9,11 +10,7 @@ import {
 } from "./daemon-process-launcher.js";
 import type { DaemonRecord, DaemonStartResult } from "./daemon-protocol.js";
 import { DAEMON_PROTOCOL_VERSION, DAEMON_RECORD_SCHEMA_VERSION } from "./daemon-protocol.js";
-import {
-  DAEMON_STARTUP_TIMEOUT_MS,
-  type DaemonRegistry,
-  type StartupOwner,
-} from "./daemon-registry.js";
+import type { DaemonRegistry, StartupOwner } from "./daemon-registry.js";
 import { DaemonRecordObserver } from "./daemon-record-observer.js";
 import type { DaemonWorkspaceIdentity } from "./daemon-workspace-identity.js";
 import type { LocalDaemonTransport } from "./local-daemon-transport.js";
@@ -24,15 +21,12 @@ export type DaemonWarmupTriggerResult =
   | { readonly status: "ready"; readonly instanceId: string; readonly pid: number };
 
 interface DaemonStartupCoordinatorOptions {
-  readonly startupTimeoutMs?: number;
-  readonly terminationTimeoutMs?: number;
-  readonly pollIntervalMs?: number;
+  readonly policy: Pick<DaemonPolicyValues, "startup" | "shutdown">;
   readonly now?: () => number;
   readonly instanceId?: () => string;
   readonly processTerminator?: DaemonProcessTerminator;
 }
 
-const DAEMON_TERMINATION_TIMEOUT_MS = 5 * 60_000;
 class DaemonChildExitError extends Error {
   constructor(readonly exit: DaemonProcessExit) {
     super(
@@ -48,7 +42,8 @@ class DaemonWarmupLostError extends Error {}
 class DaemonOwnedButUnresponsiveError extends Error {}
 
 export class DaemonStartupCoordinator {
-  private readonly startupTimeoutMs: number;
+  private readonly coordinationGraceMs: number;
+  private readonly childFailureRetryLimit: number;
   private readonly terminationTimeoutMs: number;
   private readonly pollIntervalMs: number;
   private readonly now: () => number;
@@ -64,25 +59,34 @@ export class DaemonStartupCoordinator {
     private readonly registry: DaemonRegistry,
     private readonly launcher: DaemonProcessLauncher,
     private readonly transport: LocalDaemonTransport,
-    options: DaemonStartupCoordinatorOptions = {},
+    options: DaemonStartupCoordinatorOptions,
   ) {
-    this.startupTimeoutMs = options.startupTimeoutMs ?? Number.POSITIVE_INFINITY;
-    this.terminationTimeoutMs = options.terminationTimeoutMs ?? DAEMON_TERMINATION_TIMEOUT_MS;
-    this.pollIntervalMs = options.pollIntervalMs ?? 20;
+    const policy = options.policy;
+    this.coordinationGraceMs = policy.startup.coordinationGraceMs;
+    this.childFailureRetryLimit = policy.startup.childFailureRetryLimit;
+    this.terminationTimeoutMs = policy.startup.previousInstanceTerminationTimeoutMs;
+    this.pollIntervalMs = policy.startup.observationPollIntervalMs;
     this.now = options.now ?? Date.now;
     this.nextInstanceId = options.instanceId ?? randomUUID;
-    this.processTerminator = options.processTerminator ?? new NodeDaemonProcessTerminator();
+    this.processTerminator =
+      options.processTerminator ?? new NodeDaemonProcessTerminator(policy.shutdown);
     this.observer = new DaemonRecordObserver(this.transport, this.processTerminator, this.now);
   }
 
   async ensureRunning(identity: DaemonWorkspaceIdentity): Promise<DaemonStartResult> {
-    try {
-      return await this.triggerAndWait(identity);
-    } catch (error) {
-      if (!(error instanceof DaemonChildExitError || error instanceof DaemonWarmupLostError)) {
-        throw error;
+    let failureCount = 0;
+    while (true) {
+      try {
+        return await this.triggerAndWait(identity);
+      } catch (error) {
+        if (
+          !(error instanceof DaemonChildExitError || error instanceof DaemonWarmupLostError) ||
+          failureCount >= this.childFailureRetryLimit
+        ) {
+          throw error;
+        }
+        failureCount += 1;
       }
-      return this.triggerAndWait(identity);
     }
   }
 
@@ -196,7 +200,7 @@ export class DaemonStartupCoordinator {
           await this.pause();
           continue;
         }
-        if (this.now() - missingOwner.firstObservedAt <= DAEMON_STARTUP_TIMEOUT_MS) {
+        if (this.now() - missingOwner.firstObservedAt <= this.coordinationGraceMs) {
           await this.pause();
           continue;
         }

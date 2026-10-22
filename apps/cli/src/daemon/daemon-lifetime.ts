@@ -1,6 +1,5 @@
 import type { Clock } from "@symnav/telemetry";
-
-export const DAEMON_IDLE_TIMEOUT_MS = 30 * 60 * 1_000;
+import type { DaemonPolicyValues } from "@symnav/daemon";
 
 export class DaemonLifetime {
   private timer: ReturnType<typeof setTimeout> | undefined;
@@ -11,12 +10,15 @@ export class DaemonLifetime {
 
   constructor(
     private readonly clock: Clock,
-    private readonly idleTimeoutMs: number,
+    policy: Pick<DaemonPolicyValues["shutdown"], "idleTimeoutMs">,
     private readonly onIdle: () => Promise<void>,
   ) {
+    this.idleTimeoutMs = policy.idleTimeoutMs;
     this.deadline = this.clock.now() + this.idleTimeoutMs;
     this.schedule();
   }
+
+  private readonly idleTimeoutMs: number;
 
   navigationAccepted(): void {
     if (this.stopped) return;

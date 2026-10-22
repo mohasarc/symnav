@@ -9,6 +9,8 @@ describe("InvocationWarningRenderer", () => {
   });
 
   it("suppresses a typed warning when warnings are disabled", () => {
-    expect(new InvocationWarningRenderer({ warnings: false }).render({ message: "detail" })).toBeUndefined();
+    expect(
+      new InvocationWarningRenderer({ warnings: false }).render({ message: "detail" }),
+    ).toBeUndefined();
   });
 });

@@ -1,4 +1,5 @@
 import { PosixDaemonProcessLifetime } from "../process/posix-process-lifetime.js";
+import { DaemonStateWriteErrors } from "../state-write-errors.js";
 import { NodeDaemonClock } from "../lifecycle/daemon-clock.js";
 import { randomUUID } from "node:crypto";
 import { mkdir, rename, rm, writeFile } from "node:fs/promises";
@@ -48,7 +49,9 @@ export class FileDaemonConnectionClient implements DaemonConnectionClient {
         ...(timeoutMs === undefined ? {} : { timeoutMs }),
       });
     } catch (error) {
-      await rm(temporaryDirectory, { recursive: true, force: true });
+      await rm(temporaryDirectory, { recursive: true, force: true }).catch(() => undefined);
+      if (typeof error === "object" && error !== null && "code" in error)
+        throw DaemonStateWriteErrors.failedWrite(directory, error);
       throw error;
     }
   }

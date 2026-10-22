@@ -1,5 +1,6 @@
 import { PosixDaemonProcessLifetime } from "../process/posix-process-lifetime.js";
 import type { DaemonProcessLifetimeIdentity } from "../process/process-lifetime-identity.js";
+import { DaemonStateWriteErrors } from "../state-write-errors.js";
 import { constants, existsSync, writeFileSync } from "node:fs";
 import { open, rename, unlink } from "node:fs/promises";
 import { NodeDaemonClock } from "../lifecycle/daemon-clock.js";
@@ -81,11 +82,15 @@ export class FileDaemonConnection implements DaemonConnection {
       header.writeUInt32BE(this.writeSequence, 0);
       header.writeUInt32BE(chunk.byteLength, 4);
       const temporaryPath = join(this.outgoingDirectory, `${this.writeSequence}.tmp`);
-      const file = await open(temporaryPath, "wx", 0o600);
       try {
-        await file.writeFile(Buffer.concat([header, chunk]));
-      } finally {
-        await file.close();
+        const file = await open(temporaryPath, "wx", 0o600);
+        try {
+          await file.writeFile(Buffer.concat([header, chunk]));
+        } finally {
+          await file.close();
+        }
+      } catch (error) {
+        throw DaemonStateWriteErrors.failedWrite(temporaryPath, error);
       }
       this.assertOpen();
       await rename(temporaryPath, framePath);

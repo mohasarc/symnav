@@ -366,12 +366,14 @@ export type DaemonDiagnosticEvent =
       readonly terminationReason: DaemonProcessTerminationReason;
       readonly signal?: DaemonProcessTerminationSignal;
       readonly errorName?: DaemonDiagnosticErrorName;
+      readonly failure?: import("../daemon-failure.js").DaemonFailure;
     }
   | {
       readonly kind: "failure";
       readonly operation: DaemonFailureOperation;
       readonly failureCode: DaemonDiagnosticFailureCode;
       readonly errorName: DaemonDiagnosticErrorName;
+      readonly failure?: import("../daemon-failure.js").DaemonFailure;
     }
   | DaemonStartupDiagnostic
   | DaemonWorkerDiagnostic

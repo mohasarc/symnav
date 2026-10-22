@@ -1,12 +1,15 @@
 import { Writable } from "node:stream";
 import { describe, expect, it, vi } from "vitest";
 import type { OverviewFileEntries } from "@symnav/core";
+import type { ProgramContext } from "./program-context.js";
+import type { DaemonExecutorExecutionResult } from "@symnav/daemon";
 import type { CliInvocationCoordinator } from "./cli-invocation-coordinator.js";
+import { CliProgramExecutor, CommandResultReplayer } from "./cli-program-executor.js";
 import { CliInvocationRunner } from "./cli-invocation-runner.js";
 import { fakeDependencies } from "../test/integration/commands/helpers/fake-program-dependencies.js";
 import { FakeLanguageBackend } from "../test/integration/commands/helpers/fake-language-backend.js";
 import { createFakeProgramContext } from "../test/integration/commands/helpers/fake-program-context.js";
-import { CommandOutputSnapshot } from "./command-execution-result.js";
+import { CommandOutputSnapshot, type CliExecutionRequest } from "./command-execution-result.js";
 
 class RunnerHarness {
   public static coordinator(execute = vi.fn()): CliInvocationCoordinator {
@@ -15,7 +18,7 @@ class RunnerHarness {
 }
 
 describe("CliInvocationRunner", () => {
-  it("streams above inline capacity directly without calling the daemon coordinator", async () => {
+  it("returns above inline capacity without disk capture or calling the daemon coordinator", async () => {
     const entries: OverviewFileEntries = {
       file: "src/a.ts",
       entries: [],
@@ -93,7 +96,7 @@ describe("CliInvocationRunner", () => {
       },
     });
     const dependencies = fakeDependencies({ daemonEnabled: false });
-    const context = { ...createFakeProgramContext({ cwd: "/repo" }), stdout };
+    const context: ProgramContext = { ...createFakeProgramContext({ cwd: "/repo" }), stdout };
     const runner = new CliInvocationRunner({
       dependencies,
       coordinator: RunnerHarness.coordinator(),
@@ -103,8 +106,67 @@ describe("CliInvocationRunner", () => {
     expect(stdout.writableEnded).toBe(false);
   });
 
+  it("retains the response-capacity policy without spilling direct output", async () => {
+    const dependencies = fakeDependencies({ daemonEnabled: false });
+    const values = dependencies.daemonPolicy.values;
+    const policy = {
+      values: { ...values, output: { ...values.output, maximumResultRawBytes: 1 } },
+    } as typeof dependencies.daemonPolicy;
+    const context = createFakeProgramContext({ cwd: "/repo" });
+    const runner = new CliInvocationRunner({
+      dependencies: { ...dependencies, daemonPolicy: policy },
+      coordinator: RunnerHarness.coordinator(),
+    });
+    await expect(
+      runner.run({ argv: ["--version"], cwd: "/repo", telemetryEnabled: false }, context),
+    ).resolves.toBe(1);
+    expect(context.stdout.text()).toBe("");
+    expect(context.stderr.text()).toBe("Cannot answer: daemon response capacity exceeded.\n");
+  });
+
+  it("replaces earlier output when a later write crosses capacity, matching captured execution", async () => {
+    const dependencies = fakeDependencies({
+      daemonEnabled: false,
+      backends: () => [
+        new FakeLanguageBackend({
+          entries: () => ({
+            file: "src/a.ts",
+            entries: [],
+            diagnostics: [{ severity: "warning", dedupeKey: "probe", message: "probe" }],
+          }),
+        }),
+      ],
+    });
+    const values = dependencies.daemonPolicy.values;
+    const boundedDependencies: typeof dependencies = {
+      ...dependencies,
+      daemonPolicy: {
+        values: { ...values, output: { ...values.output, maximumResultRawBytes: 30 } },
+      } as typeof dependencies.daemonPolicy,
+    };
+    const request: CliExecutionRequest = {
+      argv: ["overview", "src/a.ts"],
+      cwd: "/repo",
+      telemetryEnabled: false,
+    };
+    const directContext = createFakeProgramContext({ cwd: "/repo" });
+    const capturedContext = createFakeProgramContext({ cwd: "/repo" });
+    const runner = new CliInvocationRunner({
+      dependencies: boundedDependencies,
+      coordinator: RunnerHarness.coordinator(),
+    });
+    const directExitCode = await runner.run(request, directContext);
+    const captured = await new CliProgramExecutor(boundedDependencies).execute(request);
+    await CommandResultReplayer.replay(captured, capturedContext);
+    expect(directExitCode).toBe(captured.exitCode);
+    expect(directContext.stdout.text()).toBe(capturedContext.stdout.text());
+    expect(directContext.stderr.text()).toBe(capturedContext.stderr.text());
+    expect(directContext.stdout.text()).toBe("");
+    expect(directContext.stderr.text()).toBe("Cannot answer: daemon response capacity exceeded.\n");
+  });
+
   it("replays routed output and returns its failure without exiting", async () => {
-    const result = {
+    const result: DaemonExecutorExecutionResult = {
       exitCode: 7,
       output: new CommandOutputSnapshot([
         { stream: "stderr" as const, bytes: Buffer.from("failure\n") },

@@ -1,5 +1,6 @@
 import type { DaemonPolicyValues } from "@symnav/daemon";
 import type { DaemonWorkerReplacementCause } from "./daemon-protocol.js";
+import { NodeDaemonClock, type DaemonClock } from "./daemon-clock.js";
 
 export type DaemonResourceState =
   | "warming"
@@ -26,7 +27,7 @@ export interface DaemonResourceSnapshot {
 export interface DaemonResourceSupervisorOptions {
   readonly policy: DaemonPolicyValues["resources"];
   readonly generation: number;
-  readonly now?: () => number;
+  readonly clock?: Pick<DaemonClock, "wallNowMs">;
   readonly residentMemoryBytes?: () => number;
   readonly spoolBytes: () => number;
   readonly scheduleAtTurnBoundary: (operation: () => Promise<void>) => Promise<void>;
@@ -39,7 +40,7 @@ export type { DaemonWorkerReplacementCause } from "./daemon-protocol.js";
 
 export class DaemonResourceSupervisor {
   private readonly residentMemoryBytes: () => number;
-  private readonly now: () => number;
+  private readonly clock: Pick<DaemonClock, "wallNowMs">;
   private timer: ReturnType<typeof setInterval> | undefined;
   private currentState: DaemonResourceState = "ready";
   private currentGeneration: number;
@@ -58,7 +59,7 @@ export class DaemonResourceSupervisor {
 
   constructor(private readonly options: DaemonResourceSupervisorOptions) {
     this.currentGeneration = options.generation;
-    this.now = options.now ?? Date.now;
+    this.clock = options.clock ?? new NodeDaemonClock();
     this.residentMemoryBytes = options.residentMemoryBytes ?? (() => process.memoryUsage().rss);
   }
 
@@ -154,7 +155,7 @@ export class DaemonResourceSupervisor {
 
   private replace(cause: DaemonWorkerReplacementCause): Promise<void> {
     if (this.replacementOperation !== undefined) return this.replacementOperation;
-    const cutoff = this.now() - this.options.policy.replacementWindowMs;
+    const cutoff = this.clock.wallNowMs() - this.options.policy.replacementWindowMs;
     this.replacementTimes = this.replacementTimes.filter((replacedAt) => replacedAt > cutoff);
     if (this.replacementTimes.length >= this.options.policy.replacementLimit) {
       this.currentState = "draining";
@@ -173,7 +174,7 @@ export class DaemonResourceSupervisor {
         this.workerHeapUsedBytes = undefined;
         this.workerHeapLimitBytes = undefined;
         this.replacementCount += 1;
-        this.replacementTimes.push(this.now());
+        this.replacementTimes.push(this.clock.wallNowMs());
         this.shedCompleted = false;
         this.admissionPaused = false;
         this.currentState = "ready";

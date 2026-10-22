@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { DaemonPolicy, type DaemonPolicyValues } from "./index.js";
-import { DaemonPolicyTestFactory } from "./policy-testing.js";
+import { DaemonPolicyTestFactory } from "../test/helpers/daemon-policy.js";
 
 const MEBIBYTE = 1024 * 1024;
 const GIBIBYTE = 1024 * MEBIBYTE;

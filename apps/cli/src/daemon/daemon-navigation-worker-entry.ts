@@ -1,4 +1,3 @@
-import { performance } from "node:perf_hooks";
 import { parentPort, workerData } from "node:worker_threads";
 import { getHeapStatistics } from "node:v8";
 import {
@@ -17,6 +16,7 @@ import {
   type DaemonNavigationWorkerResponse,
 } from "./daemon-navigation-worker-protocol.js";
 import type { DaemonRefreshSummary } from "./daemon-protocol.js";
+import { NodeDaemonClock } from "./daemon-clock.js";
 
 interface DaemonWorkerData {
   readonly stateDirectory: string;
@@ -32,6 +32,7 @@ class DaemonNavigationWorkerEntry {
   private tail: Promise<void> = Promise.resolve();
   private readonly outputAcknowledgements = new Map<string, () => void>();
   private readonly policy: DaemonPolicy;
+  private readonly clock = new NodeDaemonClock();
 
   constructor(
     private readonly port: NonNullable<typeof parentPort>,
@@ -87,7 +88,7 @@ class DaemonNavigationWorkerEntry {
   }
 
   private async initialize(workspaceRoot: string): Promise<void> {
-    const startedAt = performance.now();
+    const startedAt = this.clock.monotonicNowMs();
     try {
       this.executor = await DaemonExecutorModuleLoader.load(this.data.executorModuleUrl, {
         stateDirectory: this.data.stateDirectory,
@@ -95,7 +96,7 @@ class DaemonNavigationWorkerEntry {
         sampleResources: () => this.activeHeapMonitor?.sample(),
       });
       const initialized = await this.executor.initialize(workspaceRoot);
-      const totalMs = performance.now() - startedAt;
+      const totalMs = this.clock.monotonicNowMs() - startedAt;
       this.send({
         kind: "ready",
         generation: this.data.generation,
@@ -121,14 +122,14 @@ class DaemonNavigationWorkerEntry {
       if (this.executor === undefined) throw new Error("Navigation worker is not ready");
       const result = await this.executor.execute(request.request);
       heapMonitor.sample();
-      const outputStartedAt = performance.now();
+      const outputStartedAt = this.clock.monotonicNowMs();
       let sequence = 0;
       for await (const record of result.output.records()) {
         sequence = await this.sendOutput(request.requestId, sequence, record);
         heapMonitor.sample();
       }
       await result.output.dispose();
-      const outputMs = performance.now() - outputStartedAt;
+      const outputMs = this.clock.monotonicNowMs() - outputStartedAt;
       const resources = heapMonitor.finish();
       this.send({
         kind: "result",

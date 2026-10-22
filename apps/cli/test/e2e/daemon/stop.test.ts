@@ -245,7 +245,7 @@ async function startControlledDaemon(
     process.execPath,
     [
       fileURLToPath(new URL("../../../node_modules/tsx/dist/cli.mjs", import.meta.url)),
-      fileURLToPath(new URL("../../helpers/workspace-daemon-stuck.ts", import.meta.url)),
+      fileURLToPath(new URL("../../helpers/daemon-process-coordinator-stuck.ts", import.meta.url)),
       workspaceRoot,
       stateDirectory,
       instanceId,

@@ -1,0 +1,24 @@
+import { renameSync } from "node:fs";
+import { DaemonPolicy, type DaemonPolicyValues } from "@symnav/daemon";
+import { DaemonRegistry as RuntimeDaemonRegistry } from "../../src/registry/registry.js";
+import { NodeDaemonClock } from "../../src/lifecycle/daemon-clock.js";
+
+export class TestDaemonRegistry extends RuntimeDaemonRegistry {
+  constructor(
+    registryDirectory: string,
+    platformOrPolicy: NodeJS.Platform | DaemonPolicyValues["startup"] = process.platform,
+    renamePath: typeof renameSync = renameSync,
+  ) {
+    if (typeof platformOrPolicy === "string") {
+      super(
+        registryDirectory,
+        DaemonPolicy.currentSystem().values.startup,
+        new NodeDaemonClock(),
+        platformOrPolicy,
+        renamePath,
+      );
+      return;
+    }
+    super(registryDirectory, platformOrPolicy, new NodeDaemonClock(), process.platform, renamePath);
+  }
+}

@@ -18,7 +18,7 @@ import { TestDaemonRegistry as DaemonRegistry } from "./daemon-registry.js";
 import { DaemonWorkspaceIdentity } from "../../src/daemon/daemon-workspace-identity.js";
 import { TestLocalDaemonTransport as LocalDaemonTransport } from "./local-daemon-transport.js";
 import { NodeDaemonNavigationWorker } from "../../src/daemon/daemon-navigation-worker.js";
-import { TestWorkspaceDaemon as WorkspaceDaemon } from "./workspace-daemon.js";
+import { TestDaemonProcessCoordinator as DaemonProcessCoordinator } from "./daemon-process-coordinator.js";
 
 class DaemonStartupCallerExit {
   static async run(argumentsAfterEntry: readonly string[]): Promise<void> {
@@ -152,7 +152,7 @@ class DaemonStartupCallerExit {
       bootPath,
       releasePath,
     );
-    await new WorkspaceDaemon({
+    await new DaemonProcessCoordinator({
       identity,
       instanceId,
       processToken,

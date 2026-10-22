@@ -106,6 +106,9 @@ importers:
       '@symnav/testing':
         specifier: workspace:*
         version: link:../testing
+      tsx:
+        specifier: ^4.21.0
+        version: 4.21.0
 
   packages/renderer:
     dependencies:

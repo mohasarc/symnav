@@ -29,6 +29,16 @@ describe("createDaemonExecutor", () => {
     expect(isAbsolute(fileURLToPath(moduleUrl))).toBe(true);
   });
 
+  it("rejects a product version that does not match the CLI", () => {
+    expect(() =>
+      createDaemonExecutor({
+        stateDirectory: temporaryDirectory(temporaryDirectories),
+        productVersion: "0.0.9",
+        sampleResources: () => undefined,
+      }),
+    ).toThrow("Daemon executor version does not match host product");
+  });
+
   it("constructs one retained session and full-prepares initialization once", async () => {
     const stateDirectory = temporaryDirectory(temporaryDirectories);
     const prepare = vi.spyOn(WorkspaceSession.prototype, "prepare");

@@ -7,6 +7,7 @@ import {
   type DaemonExecutionFailureCode,
 } from "@symnav/daemon";
 import type { DaemonExecutionStatus } from "./daemon-protocol.js";
+import { NodeDaemonClock, type DaemonClock } from "./daemon-clock.js";
 
 export type AcceptedRequestState =
   | { readonly state: "queued" }
@@ -43,7 +44,7 @@ export class AcceptedRequestLedger {
   private readonly subscribers = new Map<string, Set<AcceptedRequestSubscriber>>();
   private readonly acknowledged = new Set<string>();
 
-  constructor(private readonly now: () => number = Date.now) {}
+  constructor(private readonly clock: Pick<DaemonClock, "wallNowMs"> = new NodeDaemonClock()) {}
 
   get size(): number {
     return this.entries.size;
@@ -85,7 +86,7 @@ export class AcceptedRequestLedger {
       requestFingerprint,
       commandName,
       request,
-      acceptedAt: this.now(),
+      acceptedAt: this.clock.wallNowMs(),
       queuePosition: this.nonterminalCount,
       deliveryTerminated: false,
       state: { state: "queued" },

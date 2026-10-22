@@ -7,7 +7,6 @@ import { describe, expect, expectTypeOf, it } from "vitest";
 import ts from "typescript";
 
 import * as daemonRuntime from "./index.js";
-import * as policyTestingRuntime from "./policy-testing.js";
 import type {
   DaemonActivitySnapshot,
   AcceptedRequestCompatibility,
@@ -16,6 +15,10 @@ import type {
   DaemonAdmissionGuard,
   DaemonAdmissionRejectionCode,
   DaemonCommandName,
+  DaemonClientExecuteRequest,
+  DaemonClientExecuteResult,
+  DaemonClientOptions,
+  DaemonControlRequest,
   DaemonExecuteRejectionCode,
   DaemonExecutionCoordinates,
   DaemonDiagnostics,
@@ -55,6 +58,7 @@ import {
   DaemonExecutorModuleLoader,
   DaemonExecutionFailures,
   DaemonPolicy,
+  DaemonClient,
 } from "./index.js";
 
 type ExportKind = "runtime" | "type";
@@ -80,6 +84,7 @@ class DaemonContractExpectation {
     { kind: "runtime", name: "DAEMON_COMMAND_NAMES" },
     { kind: "runtime", name: "DaemonAdmissionPolicy" },
     { kind: "runtime", name: "DaemonAdmissionRejections" },
+    { kind: "runtime", name: "DaemonClient" },
     { kind: "runtime", name: "DaemonDiagnosticValues" },
     { kind: "runtime", name: "DaemonExecutionFailures" },
     { kind: "runtime", name: "DaemonExecutorModuleLoader" },
@@ -90,7 +95,11 @@ class DaemonContractExpectation {
     { kind: "type", name: "DaemonAdmissionDecision" },
     { kind: "type", name: "DaemonAdmissionGuard" },
     { kind: "type", name: "DaemonAdmissionRejectionCode" },
+    { kind: "type", name: "DaemonClientExecuteRequest" },
+    { kind: "type", name: "DaemonClientExecuteResult" },
+    { kind: "type", name: "DaemonClientOptions" },
     { kind: "type", name: "DaemonCommandName" },
+    { kind: "type", name: "DaemonControlRequest" },
     { kind: "type", name: "DaemonDiagnostics" },
     { kind: "type", name: "DaemonDiagnosticValue" },
     { kind: "type", name: "DaemonExecuteRejectionCode" },
@@ -143,11 +152,19 @@ class DaemonContractExpectation {
     "static:retrySafe",
   ];
 
-  public static readonly policyTestingExports: readonly ExportedSymbol[] = [
-    { kind: "runtime", name: "DaemonPolicyTestFactory" },
+  public static readonly clientMembers = [
+    "instance:control",
+    "instance:control",
+    "instance:control",
+    "instance:control",
+    "instance:execute",
   ];
 
   public static readonly productionSources: readonly string[] = [
+    "client/daemon-client-contracts.ts",
+    "client/daemon-client-runtime.ts",
+    "client/daemon-client.ts",
+    "client/daemon-routing-policy.ts",
     "daemon-admission.ts",
     "daemon-command-name.ts",
     "daemon-diagnostics.ts",
@@ -155,8 +172,46 @@ class DaemonContractExpectation {
     "daemon-executor.ts",
     "daemon-lifecycle-report.ts",
     "daemon-policy.ts",
+    "delivery/completion-spool.ts",
+    "delivery/delivery-session.ts",
+    "diagnostics/logger.ts",
+    "diagnostics/operation-observer.ts",
+    "execution/accepted-execution-session-contracts.ts",
+    "execution/accepted-execution-session.ts",
+    "execution/accepted-request-ledger.ts",
+    "execution/request-queue.ts",
     "index.ts",
-    "policy-testing.ts",
+    "lifecycle/daemon-clock.ts",
+    "lifecycle/daemon-lifetime.ts",
+    "process-entry.ts",
+    "process/activity-projector.ts",
+    "process/controller.ts",
+    "process/process-coordinator.ts",
+    "process/process-launcher.ts",
+    "process/process-termination-observer.ts",
+    "process/runtime-values.ts",
+    "registry/record-observer.ts",
+    "registry/registry.ts",
+    "registry/startup-coordinator.ts",
+    "registry/workspace-identity.ts",
+    "resources/resource-supervisor.ts",
+    "transport/client-result-capture.ts",
+    "transport/contracts.ts",
+    "transport/execution-client.ts",
+    "transport/lifecycle-client.ts",
+    "transport/local-transport.ts",
+    "transport/protocol-validator.ts",
+    "transport/protocol.ts",
+    "transport/result-transfer-receiver.ts",
+    "transport/socket-client.ts",
+    "transport/socket-server.ts",
+    "transport/transport-error.ts",
+    "transport/wire-codec.ts",
+    "worker-entry.ts",
+    "worker/navigation-worker-entry.ts",
+    "worker/navigation-worker.ts",
+    "worker/worker-generation-manager.ts",
+    "worker/worker-protocol.ts",
   ];
 }
 
@@ -482,6 +537,65 @@ describe("daemon host contract", () => {
     ).toEqual(DaemonContractExpectation.commandNameMembers);
   });
 
+  it("defines the exact daemon client host boundary", () => {
+    expectTypeOf<DaemonClientOptions>().toEqualTypeOf<{
+      readonly stateDirectory: string;
+      readonly productVersion: string;
+      readonly daemonEnabled: boolean;
+      readonly executorFactory: DaemonExecutorFactory;
+      readonly executorModuleUrl: DaemonExecutorModuleUrl;
+      readonly readinessProbe: DaemonReadinessProbe;
+      readonly policy?: DaemonPolicy;
+    }>();
+    expectTypeOf<DaemonClientExecuteRequest>().toEqualTypeOf<{
+      readonly workspaceRoot: string;
+      readonly commandName: DaemonCommandName;
+      readonly argv: readonly string[];
+      readonly cwd: string;
+      readonly telemetryEnabled: boolean;
+    }>();
+    expectTypeOf<DaemonClientExecuteResult>().toEqualTypeOf<{
+      readonly mode: DaemonExecutionMode;
+      readonly result: DaemonExecutorExecutionResult;
+    }>();
+    expectTypeOf<DaemonControlRequest>().toEqualTypeOf<
+      | { readonly action: "start"; readonly workspaceRoot: string }
+      | { readonly action: "status" }
+      | { readonly action: "stop"; readonly workspaceRoot: string }
+    >();
+    expectTypeOf<ConstructorParameters<typeof DaemonClient>>().toEqualTypeOf<
+      [DaemonClientOptions]
+    >();
+    expectTypeOf<DaemonClient["execute"]>().parameters.toEqualTypeOf<
+      [DaemonClientExecuteRequest]
+    >();
+    expectTypeOf<DaemonClient["execute"]>().returns.toEqualTypeOf<
+      Promise<DaemonClientExecuteResult>
+    >();
+    const assertControlReturnTypes = (client: DaemonClient): void => {
+      const start: Promise<DaemonStartResult> = client.control({
+        action: "start",
+        workspaceRoot: "/workspace",
+      });
+      const status: Promise<readonly RunningDaemonStatus[]> = client.control({ action: "status" });
+      const stop: Promise<DaemonStopResult> = client.control({
+        action: "stop",
+        workspaceRoot: "/workspace",
+      });
+      expectTypeOf(start).toEqualTypeOf<Promise<DaemonStartResult>>();
+      expectTypeOf(status).toEqualTypeOf<Promise<readonly RunningDaemonStatus[]>>();
+      expectTypeOf(stop).toEqualTypeOf<Promise<DaemonStopResult>>();
+    };
+    expectTypeOf(assertControlReturnTypes).returns.toEqualTypeOf<void>();
+
+    const sourceRoot = DaemonContractSourcePath.root(import.meta.url);
+    const source = ts.sys.readFile(join(sourceRoot, "client/daemon-client.ts"));
+    expect(source).toBeDefined();
+    expect(TypeScriptClassMemberInventory.read(source ?? "", "DaemonClient")).toEqual(
+      DaemonContractExpectation.clientMembers,
+    );
+  });
+
   it("defines the exact daemon policy static and instance API", () => {
     expectTypeOf<keyof typeof DaemonPolicy>().toEqualTypeOf<
       "prototype" | "currentSystem" | "fromSystemMemory" | "fromSerialized"
@@ -740,6 +854,7 @@ describe("daemon host contract", () => {
       "DaemonExecutionFailures",
       "DaemonExecutorModuleLoader",
       "DaemonPolicy",
+      "DaemonClient",
     ]);
   });
 
@@ -752,27 +867,6 @@ describe("daemon host contract", () => {
     );
     expect(TypeScriptClassMemberInventory.read(mutatedSource, "DaemonPolicy")).not.toEqual(
       DaemonContractExpectation.policyMembers,
-    );
-  });
-
-  it("exports exactly one policy-testing source and runtime symbol", () => {
-    const sourceRoot = DaemonContractSourcePath.root(import.meta.url);
-    const source = ts.sys.readFile(join(sourceRoot, "policy-testing.ts"));
-    expect(source).toBeDefined();
-    expect(TypeScriptExportInventory.read(source ?? "")).toEqual(
-      DaemonContractExpectation.policyTestingExports,
-    );
-    expect(Object.keys(policyTestingRuntime)).toEqual(["DaemonPolicyTestFactory"]);
-  });
-
-  it.each([
-    ["type", "export interface ExtraPolicyTestingType {}"],
-    ["runtime", "export const extraPolicyTestingRuntime = true;"],
-  ])("detects an extra policy-testing %s export", (_, addition) => {
-    const sourceRoot = DaemonContractSourcePath.root(import.meta.url);
-    const source = ts.sys.readFile(join(sourceRoot, "policy-testing.ts")) ?? "";
-    expect(TypeScriptExportInventory.read(`${source}\n${addition}\n`)).not.toEqual(
-      DaemonContractExpectation.policyTestingExports,
     );
   });
 
@@ -791,21 +885,6 @@ describe("daemon host contract", () => {
     expect(emittedIndex).toBeDefined();
     expect(TypeScriptExportInventory.read(emittedIndex?.[1] ?? "")).toEqual(
       DaemonContractExpectation.exports,
-    );
-  });
-
-  it("emits only the policy test factory from the temporary subpath", () => {
-    const sourceRoot = DaemonContractSourcePath.root(import.meta.url);
-    const compilation = NodeFreeDeclarationCompiler.compile([
-      join(sourceRoot, "policy-testing.ts"),
-    ]);
-    expect(compilation.diagnostics).toEqual([]);
-    const declaration = [...compilation.outputs].find(([path]) =>
-      path.endsWith("/policy-testing.d.ts"),
-    );
-    expect(declaration).toBeDefined();
-    expect(TypeScriptExportInventory.read(declaration?.[1] ?? "")).toEqual(
-      DaemonContractExpectation.policyTestingExports,
     );
   });
 

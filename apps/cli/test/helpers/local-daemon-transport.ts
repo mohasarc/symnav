@@ -1,6 +1,6 @@
 import { mkdirSync } from "node:fs";
 import { DaemonPolicy, type DaemonPolicyValues } from "@symnav/daemon";
-import { DaemonPolicyTestFactory } from "@symnav/daemon/policy-testing";
+import { DaemonPolicyTestFactory } from "./daemon-policy.js";
 import { LocalDaemonTransport as RuntimeLocalDaemonTransport } from "../../src/daemon/local-daemon-transport.js";
 
 type LocalDaemonTransportPolicy = Pick<DaemonPolicyValues, "transport" | "delivery" | "output">;

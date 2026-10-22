@@ -1,6 +1,6 @@
 import { afterEach, expect, it, vi } from "vitest";
 import { DaemonPolicy } from "@symnav/daemon";
-import { DaemonPolicyTestFactory } from "@symnav/daemon/policy-testing";
+import { DaemonPolicyTestFactory } from "../test/helpers/daemon-policy.js";
 import { CommandOutputSnapshot, type DispatchedCommandResult } from "./command-execution-result.js";
 import type { ProgramDependencies } from "./program-dependencies.js";
 import { DaemonWorkspaceIdentity } from "./daemon/daemon-workspace-identity.js";

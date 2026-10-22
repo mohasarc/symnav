@@ -44,7 +44,6 @@ export class DaemonRecordObserver {
   constructor(
     private readonly transport: DaemonLifecycleRequestSender,
     private readonly processTerminator: DaemonProcessTerminator,
-    _now: () => number = Date.now,
   ) {}
 
   async observeIdentity(record: DaemonRecord): Promise<DaemonIdentityObservation> {

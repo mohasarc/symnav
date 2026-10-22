@@ -4,6 +4,7 @@ import * as daemonRuntime from "@symnav/daemon";
 import type {
   DaemonActivitySnapshot,
   DaemonAdmissionContext,
+  DaemonClientOptions,
   DaemonExecuteRejectionCode,
   DaemonExecutionFailureCode,
   DaemonExecutionFailureContext,
@@ -24,6 +25,7 @@ import {
   DaemonExecutorModuleLoader,
   DaemonExecutionFailures,
   DaemonPolicy,
+  DaemonClient,
 } from "@symnav/daemon";
 
 describe("@symnav/daemon public package import", () => {
@@ -36,6 +38,8 @@ describe("@symnav/daemon public package import", () => {
     expectTypeOf<DaemonStopResult>().not.toBeNever();
     expectTypeOf<DaemonPolicyValues>().toBeObject();
     expectTypeOf<DaemonReadinessProbe>().toBeObject();
+    expectTypeOf<DaemonClientOptions>().toBeObject();
+    expect(DaemonClient).toBeTypeOf("function");
     expectTypeOf<DaemonExecutionFailureCode>().not.toBeNever();
     expectTypeOf<DaemonExecutionFailureContext>().toBeObject();
     expectTypeOf<DaemonWorkerFailureCode>().not.toBeNever();
@@ -67,6 +71,7 @@ describe("@symnav/daemon public package import", () => {
       "DaemonExecutionFailures",
       "DaemonExecutorModuleLoader",
       "DaemonPolicy",
+      "DaemonClient",
     ]);
   });
 });

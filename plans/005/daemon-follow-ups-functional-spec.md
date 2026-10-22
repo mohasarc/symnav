@@ -2,11 +2,11 @@
 
 ## Goal
 
-Six behavior changes surfaced by the architecture reviews and deferred until after the daemon restructuring in `daemon-architecture-functional-spec.md`. Each amends `daemon-functional-spec.md`; that document stays the source of truth for everything not named here. This is not a rewrite of routing, admission, or delivery, and not a change to any navigation command's output. This spec defines product behavior only; implementation choices live in the phased plans.
+Eight behavior changes surfaced by the architecture reviews and deferred until after the daemon restructuring in `daemon-architecture-functional-spec.md`. Each amends `daemon-functional-spec.md`; that document stays the source of truth for everything not named here. This is not a rewrite of routing, admission, or delivery, and not a change to any navigation command's output. This spec defines product behavior only; implementation choices live in the phased plans.
 
 ## Primary User
 
-Same as `daemon-functional-spec.md`: an AI coding agent issuing `symnav` commands, plus the human running `daemon start|status|stop`. Default experience is unchanged; the changes below remove five ways a daemon can degrade silently and evaluate one simpler election mechanism.
+Same as `daemon-functional-spec.md`: an AI coding agent issuing `symnav` commands, plus the human running `daemon start|status|stop`. Default experience is unchanged; seven items change daemon behavior and one evaluates a simpler election mechanism.
 
 ## Core Guarantees
 
@@ -42,6 +42,8 @@ There is no unbounded-retention override.
 - `daemon start` readiness proved on the control plane.
 - Endpoints under the state directory.
 - Selection-aware source-cache retention.
+- Readiness-armed idle lifetime.
+- Completion-based idle lifetime.
 - Election by socket bind (evaluation; adopted only if it passes the existing daemon suites).
 
 ### Excluded
@@ -57,17 +59,17 @@ Unchanged. `symnav <command>`, `symnav daemon start|status|stop`, `--cwd`, `SYMN
 
 ## Output Format
 
-Unchanged. `daemon start`, `daemon status`, and `daemon stop` print the same lines. The only observable differences are *when* `daemon start` returns and *which* state `daemon status` reports for an abandoned startup.
+Unchanged. `daemon start`, `daemon status`, and `daemon stop` print the same lines. The only observable differences are _when_ `daemon start` returns and _which_ state `daemon status` reports for an abandoned startup.
 
 ## Cross-cutting Concerns
 
 ### Policy values
 
-| Value                      | Default     | Reason                                                         |
-| -------------------------- | ----------- | -------------------------------------------------------------- |
+| Value                      | Default     | Reason                                                                                                      |
+| -------------------------- | ----------- | ----------------------------------------------------------------------------------------------------------- |
 | Startup silence bound      | `6 hours`   | Longer than any observed healthy warm-up gap; short enough that a hung daemon recovers within a working day |
-| Acknowledged-entry removal | immediate   | Nothing references an acknowledged result                       |
-| Unacknowledged retention   | `5 minutes` | Matches operation-trace retention so reconnect evidence and ledger expire together |
+| Acknowledged-entry removal | immediate   | Nothing references an acknowledged result                                                                   |
+| Unacknowledged retention   | `5 minutes` | Matches operation-trace retention so reconnect evidence and ledger expire together                          |
 
 Values live in the daemon policy record; tests override them, users cannot.
 
@@ -170,13 +172,35 @@ Endpoint relocation and the election evaluation change how a daemon is found and
 
 **Edge cases.** A selection with a changed absolute path or change token invalidates the prior bytes for that supplied file. Omitted entries remain bounded by the most recent authoritative workspace snapshot.
 
+## Readiness-Armed Idle Lifetime
+
+**Purpose.** Give every ready daemon the full idle interval before automatic shutdown.
+
+**Produces.** Idle accounting starts when worker initialization, warm resource sampling, and ready-record publication finish. Startup time does not consume the ready daemon's idle interval.
+
+**Does not produce.** A change to the idle interval or any earlier readiness publication.
+
+**Example.** A daemon that spends longer than the idle interval warming remains available for the full idle interval after it publishes ready instead of shutting down immediately.
+
+## Completion-Based Idle Lifetime
+
+**Purpose.** Measure idle time from the end of the latest navigation turn.
+
+**Produces.** Completing a navigation turn starts a fresh idle interval. A request that runs longer than the idle interval does not trigger immediate idle shutdown when its queue becomes idle.
+
+**Does not produce.** A reset for control-plane requests or non-navigation activity.
+
+**Example.** A navigation accepted just before its deadline and running for ten minutes remains ready for the full idle interval after completion.
+
 ## Summary
 
-| Change                        | One line                                                                    |
-| ----------------------------- | --------------------------------------------------------------------------- |
-| Ledger eviction               | Acknowledged entries removed at once; unacknowledged expire with their trace |
-| Startup silence bound         | A starting daemon silent for `6 hours` is abandoned and replaced             |
-| Control-plane readiness       | `daemon start` returns when admission opens, not after queued navigation     |
-| Endpoints under state dir     | Removing a state directory removes its endpoints                             |
-| Selection-aware source cache  | Selection refreshes retain unchanged omitted bytes without eager sibling reads |
-| Election by socket bind       | Evaluate OS-enforced single owner in place of file lease; adopt only if suites pass |
+| Change                         | One line                                                                            |
+| ------------------------------ | ----------------------------------------------------------------------------------- |
+| Ledger eviction                | Acknowledged entries removed at once; unacknowledged expire with their trace        |
+| Startup silence bound          | A starting daemon silent for `6 hours` is abandoned and replaced                    |
+| Control-plane readiness        | `daemon start` returns when admission opens, not after queued navigation            |
+| Endpoints under state dir      | Removing a state directory removes its endpoints                                    |
+| Selection-aware source cache   | Selection refreshes retain unchanged omitted bytes without eager sibling reads      |
+| Readiness-armed idle lifetime  | Idle accounting starts only after readiness publication                             |
+| Completion-based idle lifetime | Navigation completion starts a fresh idle interval                                  |
+| Election by socket bind        | Evaluate OS-enforced single owner in place of file lease; adopt only if suites pass |

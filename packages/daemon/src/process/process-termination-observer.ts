@@ -1,8 +1,11 @@
+import type { DaemonFailure } from "../daemon-failure.js";
+import { DaemonFailureRecorder } from "../diagnostics/failure-recorder.js";
 import type {
   DaemonDiagnosticEvent,
   DaemonProcessTerminationSignal,
 } from "../transport/protocol.js";
 import { DaemonLogger } from "../diagnostics/logger.js";
+import { NodeDaemonClock, type DaemonClock } from "../lifecycle/daemon-clock.js";
 
 interface DaemonTerminationRecorder {
   record(event: DaemonDiagnosticEvent): void;
@@ -16,6 +19,8 @@ export class DaemonProcessTerminationObserver {
     private readonly recorder: DaemonTerminationRecorder,
     private readonly cleanup: () => void,
     private readonly exit: (code: number) => never = (code) => process.exit(code),
+    private readonly recordFailure?: (failure: DaemonFailure) => Promise<void>,
+    private readonly clock: Pick<DaemonClock, "wallNowMs"> = new NodeDaemonClock(),
   ) {}
 
   install(): void {
@@ -36,6 +41,12 @@ export class DaemonProcessTerminationObserver {
       terminationReason:
         origin === "unhandledRejection" ? "unhandled-rejection" : "uncaught-exception",
       errorName: DaemonLogger.errorName(error),
+      failure: DaemonFailureRecorder.failure(
+        this.clock.wallNowMs(),
+        "process spawn",
+        "process-terminated",
+        error,
+      ),
     });
   }
 
@@ -44,11 +55,26 @@ export class DaemonProcessTerminationObserver {
       kind: "process-termination",
       terminationReason: "unhandled-rejection",
       errorName: DaemonLogger.errorName(reason),
+      failure: DaemonFailureRecorder.failure(
+        this.clock.wallNowMs(),
+        "process spawn",
+        "process-terminated",
+        reason,
+      ),
     });
   }
 
   signal(signal: DaemonProcessTerminationSignal): Promise<void> {
-    return this.terminate({ kind: "process-termination", terminationReason: "signal", signal });
+    return this.terminate({
+      kind: "process-termination",
+      terminationReason: "signal",
+      signal,
+      failure: DaemonFailureRecorder.failure(
+        this.clock.wallNowMs(),
+        "process spawn",
+        "process-terminated",
+      ),
+    });
   }
 
   private terminate(event: DaemonDiagnosticEvent): Promise<void> {
@@ -60,6 +86,8 @@ export class DaemonProcessTerminationObserver {
   private async recordAndExit(event: DaemonDiagnosticEvent): Promise<void> {
     try {
       this.recorder.record(event);
+      if (event.kind === "process-termination" && event.failure !== undefined)
+        await this.recordFailure?.(event.failure);
       await this.recorder.flush();
     } finally {
       try {

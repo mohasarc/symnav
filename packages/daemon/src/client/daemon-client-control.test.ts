@@ -17,7 +17,9 @@ describe("DaemonClient control", () => {
       fileCount: 4,
       loadDurationMs: 2,
     });
-    const status = vi.spyOn(DaemonController.prototype, "status").mockResolvedValue([]);
+    const status = vi
+      .spyOn(DaemonController.prototype, "status")
+      .mockResolvedValue({ daemons: [] });
     const stop = vi
       .spyOn(DaemonController.prototype, "stop")
       .mockResolvedValue({ status: "not-running", workspaceRoot: "/workspace" });

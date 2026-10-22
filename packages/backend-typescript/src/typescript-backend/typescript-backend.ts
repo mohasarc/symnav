@@ -80,12 +80,12 @@ export class TypeScriptBackend implements LanguageBackend {
     this.sourceCache?.refresh(request.snapshot);
     if (request.coverage === "workspace") await this.projectGraph?.refresh(request.snapshot);
     const summary = await this.state.refresh(request.snapshot.files, request.coverage);
-    this.semanticQueries.beginTurn(request.snapshot);
+    this.semanticQueries.beginTurn(request.snapshot.files);
     return summary;
   }
 
   async releaseTransientResources(): Promise<void> {
-    this.semanticQueries.releaseTransientResources();
+    await this.semanticQueries.releaseTransientResources();
   }
 
   async fileEntries(file: ResolvedPath): Promise<OverviewFileEntries> {

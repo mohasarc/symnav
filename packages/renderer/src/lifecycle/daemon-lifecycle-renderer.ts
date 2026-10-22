@@ -1,4 +1,9 @@
-import type { DaemonStartResult, DaemonStopResult, RunningDaemonStatus } from "@symnav/daemon";
+import type {
+  DaemonStartResult,
+  DaemonStopResult,
+  RunningDaemonStatus,
+  DaemonStatusReport,
+} from "@symnav/daemon";
 
 export class DaemonLifecycleRenderer {
   static renderStartText(result: DaemonStartResult): string {
@@ -15,13 +20,14 @@ export class DaemonLifecycleRenderer {
     return `${JSON.stringify(result)}\n`;
   }
 
-  static renderStatusText(results: readonly RunningDaemonStatus[]): string {
+  static renderStatusText(report: DaemonStatusReport): string {
+    const results = report.daemons;
     if (results.length === 0) return "No daemons running.\n";
     return `${results.map((result) => DaemonLifecycleRenderer.statusLine(result)).join("\n")}\n`;
   }
 
-  static renderStatusJson(results: readonly RunningDaemonStatus[]): string {
-    return `${JSON.stringify({ schemaVersion: 1, daemons: results })}\n`;
+  static renderStatusJson(report: DaemonStatusReport): string {
+    return `${JSON.stringify({ schemaVersion: 1, ...report })}\n`;
   }
 
   static renderStopText(result: DaemonStopResult): string {

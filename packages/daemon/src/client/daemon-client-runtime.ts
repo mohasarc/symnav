@@ -20,7 +20,7 @@ import { DaemonPolicy } from "../daemon-policy.js";
 import type {
   DaemonStartResult,
   DaemonStopResult,
-  RunningDaemonStatus,
+  DaemonStatusReport,
 } from "../daemon-lifecycle-report.js";
 import { DaemonController } from "../process/controller.js";
 import {
@@ -279,13 +279,13 @@ export class DaemonClientRuntime {
   ): Promise<DaemonStartResult>;
   control(
     request: Extract<DaemonControlRequest, { readonly action: "status" }>,
-  ): Promise<readonly RunningDaemonStatus[]>;
+  ): Promise<DaemonStatusReport>;
   control(
     request: Extract<DaemonControlRequest, { readonly action: "stop" }>,
   ): Promise<DaemonStopResult>;
   async control(
     request: DaemonControlRequest,
-  ): Promise<DaemonStartResult | readonly RunningDaemonStatus[] | DaemonStopResult> {
+  ): Promise<DaemonStartResult | DaemonStatusReport | DaemonStopResult> {
     let stateWriteFailure: DaemonStateWriteFailure | undefined;
     const stateWriteFailed: DaemonStateWriteFailureObserver = (failure) => {
       if (stateWriteFailure !== undefined) return;
@@ -335,6 +335,9 @@ export class DaemonClientRuntime {
               readinessProbe: this.options.readinessProbe,
             })
           : this.coordinator,
+      ...(request.stateWriteFailed === undefined
+        ? {}
+        : { stateWriteFailed: request.stateWriteFailed }),
     });
   }
 

@@ -90,7 +90,7 @@ class DaemonStatusAction {
     dependencies: ProgramDependencies,
     options: DaemonOutputOptions,
   ): Promise<void> {
-    const results = await dependencies.daemonClient.control({
+    const report = await dependencies.daemonClient.control({
       action: "status",
       ...(dependencies.stateWriteFailed === undefined
         ? {}
@@ -98,8 +98,8 @@ class DaemonStatusAction {
     });
     context.stdout.write(
       options.json
-        ? DaemonLifecycleRenderer.renderStatusJson(results)
-        : DaemonLifecycleRenderer.renderStatusText(results),
+        ? DaemonLifecycleRenderer.renderStatusJson(report)
+        : DaemonLifecycleRenderer.renderStatusText(report),
     );
   }
 }

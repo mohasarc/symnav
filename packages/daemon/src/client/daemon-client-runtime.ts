@@ -243,7 +243,18 @@ export class DaemonClientRuntime {
         identity,
         this.options.productVersion,
         () => this.registry.read(identity),
-        (record) => observer.observe(record),
+        async (record) => {
+          const observation = await observer.observe(record);
+          if (observation.kind === "exited")
+            await this.failureRecorder(record.workspaceRoot, stateWriteFailed).record(
+              record.state === "starting" ? "startup-failure" : "termination",
+              "process spawn",
+              "process-terminated",
+              undefined,
+              record.instanceId,
+            );
+          return observation;
+        },
         (record) => this.registry.removeIfProcess(identity, record.instanceId, record.processToken),
       ),
     );

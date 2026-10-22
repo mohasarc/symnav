@@ -78,41 +78,54 @@ describe("CliInvocationRunner", () => {
     }
   });
 
-  it("warns once after an accepted failure without invoking local execution", async () => {
-    const stateDirectory = await mkdtemp(join(tmpdir(), "symnav-accepted-warning-"));
-    try {
-      const result: DaemonExecutorExecutionResult = {
-        exitCode: 7,
-        output: new CommandOutputSnapshot([
-          { stream: "stderr" as const, bytes: Buffer.from("ordinary failure\n") },
-        ]),
-        stateWriteFailure: { path: join(stateDirectory, "usage.jsonl"), osCode: "EPERM" },
-      };
-      const execute = vi.fn(async (request: CliExecutionRequest) => {
-        request.stateWriteFailed?.(result.stateWriteFailure!);
-        request.stateWriteFailed?.({ path: "later", osCode: "EIO" });
-        return { mode: "warm", result };
-      });
-      const context = createFakeProgramContext({ cwd: "/repo" });
-      const runner = new CliInvocationRunner({
-        dependencies: fakeDependencies({ stateDirectory }),
-        coordinator: RunnerHarness.coordinator(execute),
-      });
-      expect(
-        await runner.run(
-          { argv: ["overview", "src/a.ts"], cwd: "/repo", telemetryEnabled: false },
-          context,
-        ),
-      ).toBe(7);
-      expect(context.stderr.text()).toBe(
-        `ordinary failure\nsymnav: warning: cannot write ${stateDirectory} (EPERM); daemon and telemetry are off for this command. Grant access with 'symnav setup <agent>', or pass --no-warnings.\n`,
-      );
-      expect(execute).toHaveBeenCalledTimes(1);
-      expect(context.stdout.text()).toBe("");
-    } finally {
-      await rm(stateDirectory, { recursive: true, force: true });
-    }
-  });
+  it.each([true, false])(
+    "retains accepted errors and applies warning policy (%s)",
+    async (warnings) => {
+      const stateDirectory = await mkdtemp(join(tmpdir(), "symnav-accepted-warning-"));
+      try {
+        const result: DaemonExecutorExecutionResult = {
+          exitCode: 7,
+          output: new CommandOutputSnapshot([
+            {
+              stream: "stderr" as const,
+              bytes: Buffer.from("symnav: warning: ordinary failure\n"),
+            },
+          ]),
+          stateWriteFailure: { path: join(stateDirectory, "usage.jsonl"), osCode: "EPERM" },
+        };
+        const execute = vi.fn(async (request: CliExecutionRequest) => {
+          request.stateWriteFailed?.(result.stateWriteFailure!);
+          request.stateWriteFailed?.({ path: "later", osCode: "EIO" });
+          return { mode: "warm", result };
+        });
+        const context = createFakeProgramContext({ cwd: "/repo" });
+        const runner = new CliInvocationRunner({
+          dependencies: fakeDependencies({ stateDirectory }),
+          coordinator: RunnerHarness.coordinator(execute),
+        });
+        expect(
+          await runner.run(
+            {
+              argv: ["overview", "src/a.ts", ...(warnings ? [] : ["--no-warnings"])],
+              cwd: "/repo",
+              telemetryEnabled: false,
+            },
+            context,
+          ),
+        ).toBe(7);
+        expect(context.stderr.text()).toBe(
+          "symnav: warning: ordinary failure\n" +
+            (warnings
+              ? `symnav: warning: cannot write ${stateDirectory} (EPERM); daemon and telemetry are off for this command. Grant access with 'symnav setup <agent>', or pass --no-warnings.\n`
+              : ""),
+        );
+        expect(execute).toHaveBeenCalledTimes(1);
+        expect(context.stdout.text()).toBe("");
+      } finally {
+        await rm(stateDirectory, { recursive: true, force: true });
+      }
+    },
+  );
 
   it.each([true, false])(
     "preserves lifecycle rejection semantics and finalizes only observed state failures (%s)",

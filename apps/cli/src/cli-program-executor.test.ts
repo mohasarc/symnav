@@ -49,6 +49,35 @@ describe("CliProgramExecutor", () => {
     await second.output.dispose();
   });
 
+  it("reports an actual capture denial as a controlled result without a second computation", async () => {
+    const stateDirectory = mkdtempSync(join(tmpdir(), "symnav-worker-capture-"));
+    temporaryRoots.push(stateDirectory);
+    const entries = vi.fn(() => ({
+      file: "src/a.ts",
+      entries: [],
+      diagnostics: [
+        { severity: "warning" as const, dedupeKey: "large", message: "x".repeat(300_000) },
+      ],
+    }));
+    const dependencies = fakeDependencies({
+      stateDirectory,
+      backends: () => [new FakeLanguageBackend({ entries })],
+    });
+    const captureDirectory = join(stateDirectory, "captures");
+    const { writeFileSync } = await import("node:fs");
+    writeFileSync(captureDirectory, "blocked");
+    const executor = new CliProgramExecutor(dependencies);
+    const result = await executor.execute({
+      argv: ["overview", "src/a.ts"],
+      cwd: "/repo",
+      telemetryEnabled: false,
+    });
+    expect(result.exitCode).toBe(1);
+    expect(result.stateWriteFailure).toMatchObject({ path: captureDirectory, osCode: "EEXIST" });
+    expect(entries).toHaveBeenCalledTimes(1);
+    await result.output.dispose();
+  });
+
   const temporaryRoots: string[] = [];
 
   afterEach(() => {

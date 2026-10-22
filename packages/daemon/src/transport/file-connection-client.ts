@@ -34,11 +34,14 @@ export class FileDaemonConnectionClient implements DaemonConnectionClient {
     try {
       await mkdir(join(temporaryDirectory, "request"), { mode: 0o700 });
       await mkdir(join(temporaryDirectory, "response"), { mode: 0o700 });
+      const ownershipPath = join(temporaryDirectory, "owner.json");
       await writeFile(
-        join(temporaryDirectory, "owner.json"),
+        ownershipPath,
         JSON.stringify({ pid: process.pid, token: randomUUID(), processLifetime: lifetime }),
         { flag: "wx", mode: 0o600 },
-      );
+      ).catch((error: unknown) => {
+        throw DaemonStateWriteErrors.failedWrite(ownershipPath, error);
+      });
       if (!FileDaemonEndpoint.sameOwner(await FileDaemonEndpoint.owner(endpoint), peer))
         throw new Error("Daemon file endpoint owner changed");
       await rename(temporaryDirectory, directory);
@@ -49,9 +52,12 @@ export class FileDaemonConnectionClient implements DaemonConnectionClient {
         ...(timeoutMs === undefined ? {} : { timeoutMs }),
       });
     } catch (error) {
-      await rm(temporaryDirectory, { recursive: true, force: true }).catch(() => undefined);
-      if (typeof error === "object" && error !== null && "code" in error)
-        throw DaemonStateWriteErrors.failedWrite(directory, error);
+      try {
+        await rm(temporaryDirectory, { recursive: true, force: true });
+      } catch (cleanupError) {
+        if (DaemonStateWriteErrors.from(error) === undefined)
+          throw DaemonStateWriteErrors.failedWrite(temporaryDirectory, cleanupError);
+      }
       throw error;
     }
   }

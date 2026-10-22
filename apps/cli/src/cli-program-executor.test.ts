@@ -1,4 +1,6 @@
-import { mkdtempSync, rmSync, readdirSync } from "node:fs";
+import { createDefaultDependencies } from "./program.js";
+import { DaemonPolicy as ProductionDaemonPolicy } from "@symnav/daemon";
+import { mkdtempSync, rmSync, readdirSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Writable } from "node:stream";
@@ -14,6 +16,39 @@ import { FakeLanguageBackend } from "../test/integration/commands/helpers/fake-l
 import type { ProgramContext } from "./program-context.js";
 
 describe("CliProgramExecutor", () => {
+  it("retains computed output and scopes a real telemetry denial to one request", async () => {
+    const stateDirectory = mkdtempSync(join(tmpdir(), "symnav-worker-write-"));
+    temporaryRoots.push(stateDirectory);
+    const usage = join(stateDirectory, "usage.jsonl");
+    mkdirSync(usage);
+    const defaults = createDefaultDependencies(
+      stateDirectory,
+      ProductionDaemonPolicy.currentSystem(),
+      false,
+    );
+    const executor = new CliProgramExecutor({
+      ...fakeDependencies({ stateDirectory }),
+      invocationTelemetry: defaults.invocationTelemetry!,
+    });
+    const request: commandExecutionResult.CliExecutionRequest = {
+      argv: ["overview", "src/a.ts"],
+      cwd: "/repo",
+      telemetryEnabled: true,
+      executionMode: "warm" as const,
+    };
+    const first = await executor.execute(request);
+    expect(first.exitCode).toBe(0);
+    expect(first.stateWriteFailure).toEqual({ path: usage, osCode: "EISDIR" });
+    const firstContext = createFakeProgramContext({ cwd: "/repo" });
+    await CommandResultReplayer.replay(first, firstContext);
+    expect(firstContext.stdout.text()).toBe("Overview: src/a.ts\n(no symbols)\n");
+    expect(firstContext.stderr.text()).toBe("");
+    rmSync(usage, { recursive: true });
+    const second = await executor.execute(request);
+    expect(second.stateWriteFailure).toBeUndefined();
+    await second.output.dispose();
+  });
+
   const temporaryRoots: string[] = [];
 
   afterEach(() => {

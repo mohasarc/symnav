@@ -677,6 +677,13 @@ export class DaemonProcessCoordinator {
     }
     await this.deliverySession.cleanupInstance();
     this.deliverySession.completeRetainedTraces();
+    await this.failureRecorder.record(
+      "termination",
+      "process spawn",
+      "process-terminated",
+      undefined,
+      this.options.coordinates.instanceId,
+    );
     await this.logger.close();
     this.exit(0);
   }

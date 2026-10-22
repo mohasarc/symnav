@@ -29,6 +29,7 @@ import { DaemonClientRuntime as DaemonClient } from "./daemon-client-runtime.js"
 import { DaemonFailureJournal } from "../diagnostics/failure-journal.js";
 import { DaemonLogger } from "../diagnostics/logger.js";
 import type { DaemonFailureEvent } from "../daemon-failure.js";
+import { NodeDaemonProcessTerminator } from "../process/process-launcher.js";
 
 const success: DaemonExecutorExecutionResult = {
   exitCode: 0,
@@ -36,6 +37,28 @@ const success: DaemonExecutorExecutionResult = {
 };
 
 describe("DaemonClient execution", () => {
+  it("journals proven starting-process death before cleanup and retriggers cold execution without fallback", async () => {
+    const record = daemonRecord({ state: "starting" });
+    const harness = new ClientHarness({ record });
+    vi.spyOn(NodeDaemonProcessTerminator.prototype, "isAlive").mockReturnValue(false);
+    harness.removeIfProcess.mockImplementation(() => {
+      expect(harness.failureEvents.map((event) => event.kind)).toEqual(["startup-failure"]);
+      return true;
+    });
+    expect((await harness.client.execute(harness.request())).mode).toBe("cold");
+    expect(harness.localRequests[0]).toMatchObject({ executionMode: "cold" });
+    expect(harness.failureEvents).toEqual([
+      expect.objectContaining({
+        kind: "startup-failure",
+        instanceId: record.instanceId,
+        failure: expect.objectContaining({ reason: "process-terminated" }),
+      }),
+    ]);
+    expect(harness.removeIfProcess).toHaveBeenCalledOnce();
+    expect(harness.trigger).toHaveBeenCalledOnce();
+    expect(harness.observe).not.toHaveBeenCalled();
+  });
+
   it("counts one actual local fallback with its original connection OS cause", async () => {
     const cause = Object.assign(new Error("secret"), { code: "ECONNRESET" });
     const harness = new ClientHarness({

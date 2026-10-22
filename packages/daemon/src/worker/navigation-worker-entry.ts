@@ -1,3 +1,4 @@
+import { DaemonFailureRecorder } from "../diagnostics/failure-recorder.js";
 import { parentPort, workerData } from "node:worker_threads";
 import { getHeapStatistics } from "node:v8";
 import {
@@ -197,6 +198,9 @@ class DaemonNavigationWorkerEntry {
       ...correlation,
       failureCode,
       ...(error instanceof Error ? { errorName: error.name } : {}),
+      ...(DaemonFailureRecorder.osCode(error) === undefined
+        ? {}
+        : { osCode: DaemonFailureRecorder.osCode(error)! }),
     });
   }
 

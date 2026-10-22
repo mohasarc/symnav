@@ -8,8 +8,8 @@ import type {
   DaemonExecutorOutput,
   DaemonOutputRecord,
   DaemonPolicyValues,
-  DaemonSequencedOutputRecord,
 } from "@symnav/daemon";
+import type { DaemonSequencedOutputRecord } from "../daemon-executor.js";
 
 const RECORD_HEADER_BYTES = 9;
 

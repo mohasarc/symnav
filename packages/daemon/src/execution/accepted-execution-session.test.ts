@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import type { DaemonSequencedOutputRecord } from "@symnav/daemon";
+import type { DaemonSequencedOutputRecord } from "../daemon-executor.js";
 import { AcceptedRequestLedger } from "./accepted-request-ledger.js";
 import type {
   AcceptedExecutionDelivery,

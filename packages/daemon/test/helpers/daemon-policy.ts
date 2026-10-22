@@ -1,4 +1,8 @@
-import { DaemonPolicy, type DaemonPolicyValues } from "../../src/daemon-policy.js";
+import {
+  DaemonPolicy,
+  DaemonPolicyCodec,
+  type DaemonPolicyValues,
+} from "../../src/daemon-policy.js";
 
 type DaemonPolicyOverrides = {
   readonly [Section in keyof DaemonPolicyValues]?: Partial<DaemonPolicyValues[Section]>;
@@ -12,6 +16,6 @@ export class DaemonPolicyTestFactory {
         { ...sectionValues, ...overrides[section as keyof DaemonPolicyValues] },
       ]),
     ) as unknown as DaemonPolicyValues;
-    return DaemonPolicy.fromSerialized({ schemaVersion: 1, values });
+    return DaemonPolicyCodec.deserialize({ schemaVersion: 1, values });
   }
 }

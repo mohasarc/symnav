@@ -1,4 +1,5 @@
-import { type DaemonExecutionFailureCode, type DaemonPolicyValues } from "@symnav/daemon";
+import type { DaemonPolicyValues } from "@symnav/daemon";
+import type { DaemonExecutionFailureCode } from "../daemon-execution-failure.js";
 import type { DaemonOutputCapture } from "./client-result-capture.js";
 import type { DaemonLifecycleClient } from "./lifecycle-client.js";
 import type {

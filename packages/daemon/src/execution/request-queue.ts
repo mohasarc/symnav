@@ -1,4 +1,5 @@
-import type { DaemonCommandName, WorkspaceRequestQueueState } from "@symnav/daemon";
+import type { DaemonCommandName } from "@symnav/daemon";
+import type { WorkspaceRequestQueueState } from "../daemon-admission.js";
 import { NodeDaemonClock, type DaemonClock } from "../lifecycle/daemon-clock.js";
 
 export interface WorkspaceQueuedRequest {

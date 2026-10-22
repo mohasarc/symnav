@@ -132,6 +132,13 @@ export function createDaemonExecutor(options: DaemonExecutorFactoryOptions): Dae
     options.stateDirectory,
     DaemonPolicy.currentSystem(),
   );
+  return createDaemonExecutorFromDependencies(options, dependencies);
+}
+
+export function createDaemonExecutorFromDependencies(
+  options: DaemonExecutorFactoryOptions,
+  dependencies: ProgramDependencies,
+): DaemonExecutor {
   if (dependencies.symnavVersion !== options.productVersion) {
     throw new Error("Daemon executor version does not match host product");
   }

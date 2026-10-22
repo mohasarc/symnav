@@ -1,25 +1,12 @@
-import {
-  mkdirSync,
-  mkdtempSync,
-  readFileSync,
-  readdirSync,
-  realpathSync,
-  statSync,
-  writeFileSync,
-} from "node:fs";
+import { mkdirSync, mkdtempSync, realpathSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
-import { DaemonPolicy } from "@symnav/daemon";
 import { runSymnavBinary } from "@symnav/testing";
-import { TestDaemonRegistry as DaemonRegistry } from "../../helpers/daemon-registry.js";
-import { DaemonWorkspaceIdentity } from "../../../src/daemon/daemon-workspace-identity.js";
-import { StateDirectoryResolver } from "../../../src/state-directory-resolver.js";
 import { canonicalWorkspaceRoot } from "../../helpers/canonical-workspace-root.js";
 import { E2eProcessCleanup } from "../../helpers/e2e-process-cleanup.js";
-
-const DIAGNOSTIC_POLICY = DaemonPolicy.currentSystem().values.diagnostics;
+import { CliDaemonTesting } from "../../helpers/daemon-testing.js";
 
 describe("daemon diagnostic output isolation", () => {
   const directories: string[] = [];
@@ -53,35 +40,18 @@ describe("daemon diagnostic output isolation", () => {
         SYMNAV_TEST_DAEMON_CRASH_TRIGGER: crashTrigger,
       },
     });
-    const identity = DaemonWorkspaceIdentity.from(
-      canonicalWorkspaceRoot(realpathSync(workspaceRoot)),
-      StateDirectoryResolver.canonicalize(stateDirectory),
-    );
-    const record = new DaemonRegistry(identity.registryDirectory).read(identity);
+    const canonicalRoot = canonicalWorkspaceRoot(realpathSync(workspaceRoot));
+    const testing = new CliDaemonTesting(stateDirectory);
+    const instance = testing.inspector.listInstances()[0];
 
     expect(started.status).toBe(0);
-    expect(record).toBeDefined();
-    daemonPids.push(record!.pid);
+    expect(instance).toBeDefined();
+    daemonPids.push(instance!.pid);
     writeFileSync(crashTrigger, "crash");
-    await waitUntil(() => !isProcessAlive(record!.pid));
+    await waitUntil(() => !isProcessAlive(instance!.pid));
 
-    const logNames = readdirSync(identity.identityDirectory)
-      .filter((name) => /^daemon\.log(?:\.\d+)?$/.test(name))
-      .sort();
-    expect(logNames).toContain("daemon.log");
-    expect(logNames).not.toContain(`daemon.log.${DIAGNOSTIC_POLICY.logBackupCount + 1}`);
-    expect(logNames.length).toBeLessThanOrEqual(DIAGNOSTIC_POLICY.logBackupCount + 1);
-    const events: Record<string, unknown>[] = [];
-    for (const name of logNames) {
-      const path = join(identity.identityDirectory, name);
-      expect(statSync(path).size).toBeLessThanOrEqual(DIAGNOSTIC_POLICY.logRotateBytes);
-      const contents = readFileSync(path, "utf8");
-      expect(contents).not.toContain(secret);
-      for (const line of contents.split("\n").filter((value) => value.length > 0)) {
-        const event = JSON.parse(line) as Record<string, unknown>;
-        events.push(event);
-      }
-    }
+    const events = testing.inspector.readDiagnostics(canonicalRoot).events;
+    expect(JSON.stringify(events)).not.toContain(secret);
     expect(events.filter((event) => event.kind === "process-termination")).toEqual([
       expect.objectContaining({
         terminationReason: "uncaught-exception",
@@ -103,28 +73,18 @@ describe("daemon diagnostic output isolation", () => {
         cwd: workspaceRoot,
         env: { SYMNAV_STATE_DIR: stateDirectory },
       });
-      const identity = DaemonWorkspaceIdentity.from(
-        canonicalWorkspaceRoot(realpathSync(workspaceRoot)),
-        StateDirectoryResolver.canonicalize(stateDirectory),
-      );
-      const registry = new DaemonRegistry(identity.registryDirectory);
-      const record = registry.read(identity);
+      const canonicalRoot = canonicalWorkspaceRoot(realpathSync(workspaceRoot));
+      const testing = new CliDaemonTesting(stateDirectory);
+      const instance = testing.inspector.listInstances()[0];
       expect(started.status).toBe(0);
-      expect(record).toBeDefined();
-      daemonPids.push(record!.pid);
+      expect(instance).toBeDefined();
+      daemonPids.push(instance!.pid);
 
-      process.kill(record!.pid, "SIGTERM");
-      await waitUntil(() => !isProcessAlive(record!.pid));
-      await waitUntil(() => registry.read(identity) === undefined);
+      process.kill(instance!.pid, "SIGTERM");
+      await waitUntil(() => !isProcessAlive(instance!.pid));
+      await waitUntil(() => testing.inspector.listInstances().length === 0);
 
-      const events = readdirSync(identity.identityDirectory)
-        .filter((name) => /^daemon\.log(?:\.\d+)?$/.test(name))
-        .flatMap((name) =>
-          readFileSync(join(identity.identityDirectory, name), "utf8")
-            .split("\n")
-            .filter((line) => line.length > 0)
-            .map((line) => JSON.parse(line) as Record<string, unknown>),
-        );
+      const events = testing.inspector.readDiagnostics(canonicalRoot).events;
       expect(events.filter((event) => event.kind === "process-termination")).toEqual([
         expect.objectContaining({ terminationReason: "signal", signal: "SIGTERM" }),
       ]);
@@ -153,27 +113,17 @@ describe("daemon diagnostic output isolation", () => {
         SYMNAV_TEST_DAEMON_REJECTION_TRIGGER: rejectionTrigger,
       },
     });
-    const identity = DaemonWorkspaceIdentity.from(
-      canonicalWorkspaceRoot(realpathSync(workspaceRoot)),
-      StateDirectoryResolver.canonicalize(stateDirectory),
-    );
-    const registry = new DaemonRegistry(identity.registryDirectory);
-    const record = registry.read(identity);
+    const canonicalRoot = canonicalWorkspaceRoot(realpathSync(workspaceRoot));
+    const testing = new CliDaemonTesting(stateDirectory);
+    const instance = testing.inspector.listInstances()[0];
     expect(started.status).toBe(0);
-    expect(record).toBeDefined();
-    daemonPids.push(record!.pid);
+    expect(instance).toBeDefined();
+    daemonPids.push(instance!.pid);
     writeFileSync(rejectionTrigger, "reject");
-    await waitUntil(() => !isProcessAlive(record!.pid));
+    await waitUntil(() => !isProcessAlive(instance!.pid));
 
-    const contents = readdirSync(identity.identityDirectory)
-      .filter((name) => /^daemon\.log(?:\.\d+)?$/.test(name))
-      .map((name) => readFileSync(join(identity.identityDirectory, name), "utf8"))
-      .join("");
-    expect(contents).not.toContain(secret);
-    const events = contents
-      .split("\n")
-      .filter((line) => line.length > 0)
-      .map((line) => JSON.parse(line) as Record<string, unknown>);
+    const events = testing.inspector.readDiagnostics(canonicalRoot).events;
+    expect(JSON.stringify(events)).not.toContain(secret);
     expect(events.filter((event) => event.kind === "process-termination")).toEqual([
       expect.objectContaining({
         terminationReason: "unhandled-rejection",

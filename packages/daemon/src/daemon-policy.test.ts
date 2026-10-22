@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { DaemonPolicy, type DaemonPolicyValues } from "./index.js";
+import { DaemonPolicyCodec } from "./daemon-policy.js";
 import { DaemonPolicyTestFactory } from "../test/helpers/daemon-policy.js";
 
 const MEBIBYTE = 1024 * 1024;
@@ -123,8 +124,8 @@ describe("DaemonPolicy", () => {
       DaemonPolicy.fromSystemMemory({ totalBytes: GIBIBYTE }),
       { transport: { singleResponseTimeoutMs: 991 } },
     );
-    const serialized = policy.toSerialized();
-    expect(DaemonPolicy.fromSerialized(serialized).values).toEqual(policy.values);
+    const serialized = DaemonPolicyCodec.serialize(policy);
+    expect(DaemonPolicyCodec.deserialize(serialized).values).toEqual(policy.values);
     expect(Object.isFrozen(serialized)).toBe(true);
     expect(Object.isFrozen(serialized.values)).toBe(true);
   });
@@ -154,9 +155,9 @@ describe("DaemonPolicy", () => {
     ],
   ])("rejects %s", (_, mutate) => {
     const value = structuredClone(
-      DaemonPolicy.fromSystemMemory({ totalBytes: GIBIBYTE }).toSerialized(),
+      DaemonPolicyCodec.serialize(DaemonPolicy.fromSystemMemory({ totalBytes: GIBIBYTE })),
     );
     mutate(value);
-    expect(() => DaemonPolicy.fromSerialized(value)).toThrow("Invalid daemon policy");
+    expect(() => DaemonPolicyCodec.deserialize(value)).toThrow("Invalid daemon policy");
   });
 });

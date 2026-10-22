@@ -1,4 +1,5 @@
-import type { DaemonCommandName, DaemonExecutorRequest, DaemonOutputSink } from "@symnav/daemon";
+import type { DaemonCommandName, DaemonExecutorRequest } from "@symnav/daemon";
+import type { DaemonOutputSink } from "../daemon-executor.js";
 import {
   DaemonNavigationWorkerExitedError,
   type DaemonNavigationWorker,

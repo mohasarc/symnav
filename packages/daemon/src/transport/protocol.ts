@@ -1,10 +1,6 @@
-import type {
-  DaemonCommandName,
-  DaemonExecutorRequest,
-  DaemonExecutionFailureCode,
-  DaemonOutputStream,
-  DaemonRejectedExecutionFrame,
-} from "@symnav/daemon";
+import type { DaemonCommandName, DaemonExecutorRequest, DaemonOutputStream } from "@symnav/daemon";
+import type { DaemonRejectedExecutionFrame } from "../daemon-admission.js";
+import type { DaemonExecutionFailureCode } from "../daemon-execution-failure.js";
 import type { CompletionSpoolManifest } from "../delivery/completion-spool.js";
 
 export const DAEMON_PROTOCOL_VERSION = 5;

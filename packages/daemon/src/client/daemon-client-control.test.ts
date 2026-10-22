@@ -2,7 +2,6 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { DaemonExecutor } from "@symnav/daemon";
 import { DaemonPolicy } from "../daemon-policy.js";
 import { DaemonController } from "../process/controller.js";
-import { LocalDaemonTransport } from "../transport/local-transport.js";
 import { DaemonClientRuntime as DaemonClient } from "./daemon-client-runtime.js";
 
 describe("DaemonClient control", () => {
@@ -74,15 +73,15 @@ describe("DaemonClient control", () => {
 
 class ClientControlInspection {
   static read(client: DaemonClient): {
-    readonly routingTransport: LocalDaemonTransport;
-    readonly statusTransport: LocalDaemonTransport;
+    readonly routingTransport: object;
+    readonly statusTransport: object;
     readonly controlController: DaemonController;
     readonly statusController: DaemonController;
   } {
     return client as unknown as ReturnType<typeof ClientControlInspection.read>;
   }
 
-  static responseTimeout(transport: LocalDaemonTransport): number {
+  static responseTimeout(transport: object): number {
     const composition = transport as unknown as {
       readonly lifecycle: { readonly options: { readonly responseTimeoutMs: number } };
     };

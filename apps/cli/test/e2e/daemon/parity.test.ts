@@ -3,7 +3,6 @@ import {
   existsSync,
   mkdirSync,
   mkdtempSync,
-  readdirSync,
   readFileSync,
   realpathSync,
   renameSync,
@@ -19,22 +18,11 @@ import { fileURLToPath } from "node:url";
 import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
 import { afterEach, describe, expect, it } from "vitest";
-import { DaemonPolicy, type DaemonExecutorRequest } from "@symnav/daemon";
 import { fixturePath, runSymnavBinary, type RunSymnavBinaryResult } from "@symnav/testing";
 import type { ChildProcess } from "node:child_process";
-import {
-  DAEMON_PROTOCOL_VERSION,
-  DAEMON_RECORD_SCHEMA_VERSION,
-  type DaemonRecord,
-} from "../../../src/daemon/daemon-protocol.js";
-import { TestDaemonRegistry as DaemonRegistry } from "../../helpers/daemon-registry.js";
-import { DaemonWorkspaceIdentity } from "../../../src/daemon/daemon-workspace-identity.js";
-import { StateDirectoryResolver } from "../../../src/state-directory-resolver.js";
-import { TestLocalDaemonTransport as LocalDaemonTransport } from "../../helpers/local-daemon-transport.js";
-import { createDefaultDependencies } from "../../../src/program.js";
 import { canonicalWorkspaceRoot } from "../../helpers/canonical-workspace-root.js";
 import { E2eProcessCleanup } from "../../helpers/e2e-process-cleanup.js";
-import { DaemonStateFiles } from "../../helpers/daemon-state-files.js";
+import { CliDaemonTesting } from "../../helpers/daemon-testing.js";
 
 describe("symnav daemon parity", () => {
   const harnesses: DaemonParityHarness[] = [];
@@ -126,13 +114,13 @@ describe("symnav daemon parity", () => {
     expect(existsSync(`${controlled.requestStartedPath}.1`)).toBe(true);
     expect(harness.telemetryModes()).toEqual(["warm"]);
     expect(harness.daemonRecordCount()).toBe(1);
-    expect(harness.onlyDaemonPid()).toBe(controlled.record.pid);
+    expect(harness.onlyDaemonPid()).toBe(controlled.pid);
     expect(harness.completionSpoolFileCount()).toBe(0);
     const next = await harness.warmAsync(["overview", "input.ts"]);
     expect(next).toMatchObject({ status: 0, stderr: cold.stderr });
     expect(next.stdout.startsWith(cold.stdout)).toBe(true);
     expect(existsSync(`${controlled.requestStartedPath}.2`)).toBe(true);
-    expect(harness.onlyDaemonPid()).toBe(controlled.record.pid);
+    expect(harness.onlyDaemonPid()).toBe(controlled.pid);
   }, 15_000);
 
   it("streams a valid JSON response larger than the former frame limit", async () => {
@@ -148,7 +136,7 @@ describe("symnav daemon parity", () => {
     expect(existsSync(`${controlled.requestStartedPath}.1`)).toBe(true);
     expect(harness.telemetryModes()).toEqual(["warm"]);
     expect(harness.daemonRecordCount()).toBe(1);
-    expect(harness.onlyDaemonPid()).toBe(controlled.record.pid);
+    expect(harness.onlyDaemonPid()).toBe(controlled.pid);
     expect(harness.completionSpoolFileCount()).toBe(0);
   }, 15_000);
 
@@ -240,21 +228,7 @@ describe("symnav daemon parity", () => {
     harnesses.push(harness);
     const releasePath = join(harness.root, "release-first-request");
     const controlled = await harness.startControlledDaemon(releasePath);
-    const transport = new LocalDaemonTransport({ requestTimeoutMs: 10_000 });
-    const first = transport.execute(controlled.record.endpoint, {
-      kind: "execute",
-      protocolVersion: DAEMON_PROTOCOL_VERSION,
-      instanceId: controlled.record.instanceId,
-      processToken: controlled.record.processToken,
-      requestId: "fifo-first",
-      commandName: "overview",
-      request: {
-        argv: ["--version"],
-        cwd: controlled.record.workspaceRoot,
-        telemetryEnabled: false,
-        executionMode: "warm",
-      },
-    });
+    const first = harness.warmAsync(["overview", "warning.ts"]);
     await waitUntil(() => existsSync(`${controlled.requestStartedPath}.1`));
     const second = harness.warmAsync(["overview", "input.ts"]);
     await new Promise((resolve) => setTimeout(resolve, 100));
@@ -262,14 +236,13 @@ describe("symnav daemon parity", () => {
     writeFileSync(join(harness.workspaceRoot, "input.ts"), "export const queuedEdit = 3;\n");
     writeFileSync(releasePath, "release");
 
-    const firstResponse = await (await first).completion;
+    const firstResponse = await first;
     const secondResult = await second;
 
-    expect(firstResponse).toMatchObject({ status: "completed", result: { exitCode: 0 } });
+    expect(firstResponse).toMatchObject({ status: 0 });
     await waitUntil(() => existsSync(`${controlled.requestStartedPath}.2`));
     expect(secondResult).toEqual(harness.cold(["overview", "input.ts"]));
-    if (firstResponse.status !== "completed") throw new Error("Expected first FIFO result");
-    expect(await decodeOutput(firstResponse.result.output)).toMatch(/^\d+\.\d+\.\d+/);
+    expect(firstResponse.stdout).toContain("stillVisible");
     expect(secondResult.stdout).toContain("queuedEdit");
   }, 15_000);
 
@@ -282,11 +255,15 @@ describe("symnav daemon parity", () => {
     const caller = spawn(
       process.execPath,
       [
-        fileURLToPath(new URL("../../../node_modules/tsx/dist/cli.mjs", import.meta.url)),
-        fileURLToPath(new URL("../../helpers/daemon-accepted-caller.ts", import.meta.url)),
-        controlled.record.endpoint,
-        controlled.record.instanceId,
-        controlled.record.processToken,
+        "--import",
+        "tsx",
+        fileURLToPath(
+          new URL(
+            "../../../../../packages/daemon/test/actors/daemon-accepted-caller.ts",
+            import.meta.url,
+          ),
+        ),
+        harness.stateDirectory,
         harness.workspaceRoot,
         acceptedPath,
       ],
@@ -297,23 +274,12 @@ describe("symnav daemon parity", () => {
     caller.kill("SIGKILL");
     await waitForProcess(caller);
     writeFileSync(releasePath, "release");
-    const transport = new LocalDaemonTransport({ requestTimeoutMs: 5_000 });
-    await waitUntil(async () => {
-      const status = await transport.executionStatus(controlled.record.endpoint, {
-        kind: "execution-status",
-        protocolVersion: DAEMON_PROTOCOL_VERSION,
-        instanceId: controlled.record.instanceId,
-        processToken: controlled.record.processToken,
-        requestId: "accepted-disconnect",
-      });
-      return status.state === "completed";
-    });
 
-    expect(harness.onlyDaemonPid()).toBe(controlled.record.pid);
+    expect(harness.onlyDaemonPid()).toBe(controlled.pid);
     await waitUntil(() => harness.telemetryModes().length === 1);
     expect(harness.telemetryModes()).toEqual(["warm"]);
     expect(harness.warm(["overview", "input.ts"])).toEqual(harness.cold(["overview", "input.ts"]));
-    expect(harness.onlyDaemonPid()).toBe(controlled.record.pid);
+    expect(harness.onlyDaemonPid()).toBe(controlled.pid);
     expect(harness.telemetryModes()).toEqual(["warm"]);
   }, 15_000);
 
@@ -379,23 +345,34 @@ describe("symnav daemon parity", () => {
         existsSync(controlled.requestIdPath) &&
         existsSync(controlled.requestPayloadPath),
     );
-    const requestId = readFileSync(controlled.requestIdPath, "utf8");
-    const acceptedRequest = JSON.parse(
-      readFileSync(controlled.requestPayloadPath, "utf8"),
-    ) as DaemonExecutorRequest;
-    const transport = new LocalDaemonTransport({ requestTimeoutMs: 5_000 });
-    const duplicate = await transport.execute(controlled.record.endpoint, {
-      kind: "execute",
-      protocolVersion: DAEMON_PROTOCOL_VERSION,
-      instanceId: controlled.record.instanceId,
-      processToken: controlled.record.processToken,
-      requestId,
-      commandName: "overview",
-      request: acceptedRequest,
-    });
+    const duplicatePath = join(harness.root, "duplicate-request");
+    const duplicate = spawn(
+      process.execPath,
+      [
+        fileURLToPath(new URL("../../../node_modules/tsx/dist/cli.mjs", import.meta.url)),
+        fileURLToPath(
+          new URL(
+            "../../../../../packages/daemon/test/actors/daemon-accepted-caller.ts",
+            import.meta.url,
+          ),
+        ),
+        harness.stateDirectory,
+        harness.workspaceRoot,
+        duplicatePath,
+        "duplicate",
+        controlled.requestPayloadPath,
+        controlled.requestIdPath,
+      ],
+      { stdio: "ignore" },
+    );
+    await waitUntil(() => existsSync(duplicatePath));
     writeFileSync(controlled.workerExitReleasePath, "release");
 
-    await expect(duplicate.completion).resolves.toEqual({ status: "failed", code: "worker-exit" });
+    await waitForProcess(duplicate);
+    expect(JSON.parse(readFileSync(`${duplicatePath}.completion`, "utf8"))).toEqual({
+      status: "failed",
+      code: "worker-exit",
+    });
     const controlledResult = await execution;
 
     expect(controlledResult).toEqual({
@@ -408,7 +385,7 @@ describe("symnav daemon parity", () => {
     expect(harness.telemetryModes()).toEqual([]);
     expect(harness.daemonRecordCount()).toBe(1);
     await waitForProcess(controlled.child);
-    expect(processIsAlive(controlled.record.pid)).toBe(false);
+    expect(processIsAlive(controlled.pid)).toBe(false);
   }, 15_000);
 
   it("keeps cold bytes and status when daemon state path is an existing file", () => {
@@ -599,7 +576,7 @@ describe("symnav daemon parity", () => {
 class DaemonParityHarness {
   readonly root = mkdtempSync(join(tmpdir(), "symnav-daemon-parity-"));
   readonly workspaceRoot = join(this.root, "workspace");
-  private readonly stateDirectory = join(this.root, "state");
+  readonly stateDirectory = join(this.root, "state");
   private readonly helperProcesses: ChildProcess[] = [];
 
   constructor(fixtureName?: string) {
@@ -706,7 +683,12 @@ class DaemonParityHarness {
       process.execPath,
       [
         fileURLToPath(new URL("../../../node_modules/tsx/dist/cli.mjs", import.meta.url)),
-        fileURLToPath(new URL("../../helpers/daemon-startup-mutation-owner.ts", import.meta.url)),
+        fileURLToPath(
+          new URL(
+            "../../../../../packages/daemon/test/actors/daemon-startup-mutation-owner.ts",
+            import.meta.url,
+          ),
+        ),
         controlledWorkspaceRoot,
         this.stateDirectory,
         "0",
@@ -734,27 +716,20 @@ class DaemonParityHarness {
 
   async startControlledDaemon(releaseArgument = "--no-release"): Promise<ControlledDaemon> {
     const controlledWorkspaceRoot = canonicalWorkspaceRoot(realpathSync(this.workspaceRoot));
-    const identity = DaemonWorkspaceIdentity.from(
-      controlledWorkspaceRoot,
-      StateDirectoryResolver.canonicalize(this.stateDirectory),
-    );
-    const registry = new DaemonRegistry(identity.registryDirectory);
     const instanceId = "controlled-crash";
     const processToken = `${instanceId}-token`;
     const readyPath = join(this.stateDirectory, `${instanceId}-ready`);
     const requestStartedPath = join(this.stateDirectory, `${instanceId}-request`);
-    const symnavVersion = createDefaultDependencies(
-      identity.stateDirectory,
-      DaemonPolicy.currentSystem(),
-    ).symnavVersion;
-    const lease = registry.acquireStartup(identity, instanceId);
-    if (lease === undefined) throw new Error("Expected controlled daemon startup ownership");
+    const symnavVersion = this.cold(["--version"]).stdout.trim();
     const child = spawn(
       process.execPath,
       [
         fileURLToPath(new URL("../../../node_modules/tsx/dist/cli.mjs", import.meta.url)),
         fileURLToPath(
-          new URL("../../helpers/daemon-process-coordinator-stuck.ts", import.meta.url),
+          new URL(
+            "../../../../../packages/daemon/test/actors/daemon-process-coordinator-controlled.ts",
+            import.meta.url,
+          ),
         ),
         controlledWorkspaceRoot,
         this.stateDirectory,
@@ -763,6 +738,7 @@ class DaemonParityHarness {
         readyPath,
         requestStartedPath,
         releaseArgument,
+        new URL("../../../dist/daemon-executor.js", import.meta.url).href,
         symnavVersion,
       ],
       {
@@ -775,34 +751,13 @@ class DaemonParityHarness {
       },
     );
     this.helperProcesses.push(child);
-    await waitUntil(() => existsSync(`${readyPath}.boot`));
-    const daemonPid = Number(readFileSync(`${readyPath}.boot`, "utf8"));
-    const record: DaemonRecord = {
-      schemaVersion: DAEMON_RECORD_SCHEMA_VERSION,
-      protocolVersion: DAEMON_PROTOCOL_VERSION,
-      symnavVersion,
-      workspaceRoot: controlledWorkspaceRoot,
-      workspaceKey: identity.workspaceKey,
-      stateKey: identity.stateKey,
-      identityKey: identity.identityKey,
-      instanceId,
-      processToken,
-      endpoint: identity.endpoint(instanceId),
-      pid: daemonPid,
-      state: "starting",
-      startedAt: Date.now(),
-      memoryCapBytes: Number.MAX_SAFE_INTEGER,
-    };
-    if (!registry.writeStartingIfStartupOwner(identity, record)) {
-      throw new Error("Controlled daemon lost startup ownership");
-    }
     await waitUntil(() => existsSync(readyPath));
-    lease.release();
-    const readyRecord = registry.read(identity);
-    if (readyRecord?.state !== "ready") throw new Error("Controlled daemon did not become ready");
+    const instances = new CliDaemonTesting(this.stateDirectory).inspector.listInstances();
+    const readyInstance = instances.find((instance) => instance.instanceId === instanceId);
+    if (readyInstance?.state !== "ready") throw new Error("Controlled daemon did not become ready");
     return {
       child,
-      record: readyRecord,
+      pid: readyInstance.pid,
       requestPayloadPath: `${requestStartedPath}.payload`,
       requestStartedPath,
       requestIdPath: `${requestStartedPath}.request-id`,
@@ -811,27 +766,19 @@ class DaemonParityHarness {
   }
 
   onlyDaemonPid(): number {
-    const records = DaemonStateFiles.matchingPaths(this.stateDirectory, ".json");
-    expect(records).toHaveLength(1);
-    const record = JSON.parse(readFileSync(records[0]!, "utf8")) as {
-      pid: number;
-    };
-    return record.pid;
+    const instances = new CliDaemonTesting(this.stateDirectory).inspector.listInstances();
+    expect(instances).toHaveLength(1);
+    return instances[0]!.pid;
   }
 
   daemonRecordCount(): number {
-    return DaemonStateFiles.matchingPaths(this.stateDirectory, ".json").length;
+    return new CliDaemonTesting(this.stateDirectory).inspector.listInstances().length;
   }
 
   completionSpoolFileCount(): number {
-    const identity = DaemonWorkspaceIdentity.from(
+    return new CliDaemonTesting(this.stateDirectory).inspector.completionSpoolUsage(
       canonicalWorkspaceRoot(realpathSync(this.workspaceRoot)),
-      StateDirectoryResolver.canonicalize(this.stateDirectory),
-    );
-    if (!existsSync(identity.spoolDirectory)) return 0;
-    return readdirSync(identity.spoolDirectory, { recursive: true }).filter((entry) =>
-      String(entry).endsWith(".spool"),
-    ).length;
+    ).fileCount;
   }
 
   replaceStateDirectoryWithFile(): void {
@@ -857,10 +804,7 @@ class DaemonParityHarness {
   }
 
   private daemonProcessIds(): readonly number[] {
-    return DaemonStateFiles.matchingPaths(this.stateDirectory, ".json").map((path) => {
-      const record = JSON.parse(readFileSync(path, "utf8")) as { readonly pid: number };
-      return record.pid;
-    });
+    return new CliDaemonTesting(this.stateDirectory).processIds();
   }
 
   private run(
@@ -902,22 +846,13 @@ function waitForProcess(child: ChildProcess): Promise<void> {
   });
 }
 
-async function decodeOutput(
-  output: import("@symnav/daemon").DaemonExecutorOutput,
-): Promise<string> {
-  const chunks = [];
-  for await (const record of output.records()) chunks.push(Buffer.from(record.bytes));
-  await output.dispose();
-  return Buffer.concat(chunks).toString();
-}
-
 function digest(value: string): string {
   return createHash("sha256").update(value).digest("hex");
 }
 
 interface ControlledDaemon {
   readonly child: ChildProcess;
-  readonly record: DaemonRecord;
+  readonly pid: number;
   readonly requestPayloadPath: string;
   readonly requestStartedPath: string;
   readonly requestIdPath: string;

@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
-import type { DaemonExecutionFailureCode, DaemonExecutorRequest } from "@symnav/daemon";
+import type { DaemonExecutorRequest } from "@symnav/daemon";
+import type { DaemonExecutionFailureCode } from "../daemon-execution-failure.js";
 import {
   AcceptedRequestCorruptionError,
   AcceptedRequestLedger,

@@ -1,77 +1,77 @@
 import { describe, expect, expectTypeOf, it } from "vitest";
-
 import * as daemonRuntime from "@symnav/daemon";
-import type {
-  DaemonActivitySnapshot,
-  DaemonAdmissionContext,
-  DaemonClientOptions,
-  DaemonExecuteRejectionCode,
-  DaemonExecutionFailureCode,
-  DaemonExecutionFailureContext,
-  DaemonExecutor,
-  DaemonOutputSink,
-  DaemonPolicyValues,
-  DaemonReadinessProbe,
-  DaemonStartResult,
-  DaemonStatusEnvelope,
-  DaemonStopResult,
-  DaemonWorkerFailureCode,
-} from "@symnav/daemon";
 import {
   DAEMON_COMMAND_NAMES,
-  DaemonAdmissionPolicy,
-  DaemonAdmissionRejections,
-  DaemonDiagnosticValues,
-  DaemonExecutorModuleLoader,
-  DaemonExecutionFailures,
-  DaemonPolicy,
   DaemonClient,
+  DaemonPolicy,
+  type DaemonActivitySnapshot,
+  type DaemonClientExecuteRequest,
+  type DaemonClientExecuteResult,
+  type DaemonClientOptions,
+  type DaemonCommandName,
+  type DaemonControlRequest,
+  type DaemonDiagnosticValue,
+  type DaemonDiagnostics,
+  type DaemonExecutionMode,
+  type DaemonExecutor,
+  type DaemonExecutorExecutionResult,
+  type DaemonExecutorFactory,
+  type DaemonExecutorFactoryOptions,
+  type DaemonExecutorInitializationResult,
+  type DaemonExecutorModule,
+  type DaemonExecutorModuleUrl,
+  type DaemonExecutorOutput,
+  type DaemonExecutorRequest,
+  type DaemonOutputRecord,
+  type DaemonOutputStream,
+  type DaemonPolicyValues,
+  type DaemonReadinessProbe,
+  type DaemonStartResult,
+  type DaemonStatusEnvelope,
+  type DaemonStopResult,
+  type DaemonSystemMemory,
+  type RunningDaemonStatus,
 } from "@symnav/daemon";
 
-describe("@symnav/daemon public package import", () => {
-  it("resolves the root contract", () => {
-    expectTypeOf<DaemonExecutor>().toBeObject();
-    expectTypeOf<DaemonOutputSink>().toBeObject();
-    expectTypeOf<DaemonActivitySnapshot>().toBeObject();
-    expectTypeOf<DaemonStatusEnvelope>().toBeObject();
-    expectTypeOf<DaemonStartResult>().not.toBeNever();
-    expectTypeOf<DaemonStopResult>().not.toBeNever();
-    expectTypeOf<DaemonPolicyValues>().toBeObject();
-    expectTypeOf<DaemonReadinessProbe>().toBeObject();
-    expectTypeOf<DaemonClientOptions>().toBeObject();
-    expect(DaemonClient).toBeTypeOf("function");
-    expectTypeOf<DaemonExecutionFailureCode>().not.toBeNever();
-    expectTypeOf<DaemonExecutionFailureContext>().toBeObject();
-    expectTypeOf<DaemonWorkerFailureCode>().not.toBeNever();
-    expectTypeOf<DaemonAdmissionContext>().toBeObject();
-    expectTypeOf<DaemonExecuteRejectionCode>().not.toBeNever();
-    expect(
-      new DaemonAdmissionPolicy().decide({
-        request: {},
-        authenticated: true,
-        workerReady: true,
-        resourceAdmissionPaused: false,
-        queueState: "accepting",
-        compatibility: "unseen",
-      }),
-    ).toEqual({ kind: "accept" });
-    expect(DaemonAdmissionRejections.retrySafe("not-ready")).toBe(true);
-    expect(DaemonDiagnosticValues.isDiagnostics({ nested: ["opaque"] })).toBe(true);
-    expectTypeOf<typeof DaemonExecutorModuleLoader.load>().toBeFunction();
-    expect(DaemonExecutionFailures.isCode("internal")).toBe(true);
-    expect(DAEMON_COMMAND_NAMES).toHaveLength(10);
-    expect(DaemonPolicy.fromSystemMemory({ totalBytes: 1024 * 1024 * 1024 })).toBeInstanceOf(
-      DaemonPolicy,
-    );
-    expect(Object.keys(daemonRuntime)).toEqual([
-      "DaemonAdmissionPolicy",
-      "DaemonAdmissionRejections",
+describe("@symnav/daemon public import", () => {
+  it("exports the exact runtime surface", () => {
+    expect(Object.keys(daemonRuntime).sort()).toEqual([
       "DAEMON_COMMAND_NAMES",
-      "DaemonDiagnosticValues",
-      "DaemonExecutionFailures",
-      "DaemonExecutorModuleLoader",
-      "DaemonPolicy",
       "DaemonClient",
+      "DaemonPolicy",
     ]);
+    expect(DAEMON_COMMAND_NAMES.length).toBeGreaterThan(0);
+    expect(DaemonClient).toBeTypeOf("function");
+    expect(DaemonPolicy).toBeTypeOf("function");
+  });
+
+  it("exposes the complete host type allowlist", () => {
+    expectTypeOf<DaemonExecutionMode>().toBeString();
+    expectTypeOf<DaemonOutputStream>().toBeString();
+    expectTypeOf<DaemonExecutorRequest>().toBeObject();
+    expectTypeOf<DaemonOutputRecord>().toBeObject();
+    expectTypeOf<DaemonExecutorOutput>().toBeObject();
+    expectTypeOf<DaemonDiagnosticValue>();
+    expectTypeOf<DaemonDiagnostics>().toBeObject();
+    expectTypeOf<DaemonExecutorInitializationResult>().toBeObject();
+    expectTypeOf<DaemonExecutorExecutionResult>().toBeObject();
+    expectTypeOf<DaemonExecutor>().toBeObject();
+    expectTypeOf<DaemonExecutorFactoryOptions>().toBeObject();
+    expectTypeOf<DaemonExecutorFactory>().toBeFunction();
+    expectTypeOf<DaemonExecutorModule>().toBeObject();
+    expectTypeOf<DaemonExecutorModuleUrl>().toBeString();
+    expectTypeOf<DaemonCommandName>().toBeString();
+    expectTypeOf<DaemonActivitySnapshot>().toBeObject();
+    expectTypeOf<RunningDaemonStatus>().toBeObject();
+    expectTypeOf<DaemonStatusEnvelope>().toBeObject();
+    expectTypeOf<DaemonStartResult>().toBeObject();
+    expectTypeOf<DaemonStopResult>().toBeObject();
+    expectTypeOf<DaemonSystemMemory>().toBeObject();
+    expectTypeOf<DaemonPolicyValues>().toBeObject();
+    expectTypeOf<DaemonReadinessProbe>();
+    expectTypeOf<DaemonClientOptions>().toBeObject();
+    expectTypeOf<DaemonClientExecuteRequest>().toBeObject();
+    expectTypeOf<DaemonClientExecuteResult>().toBeObject();
+    expectTypeOf<DaemonControlRequest>().toBeObject();
   });
 });

@@ -1,12 +1,8 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import {
-  DaemonPolicy,
-  type DaemonCommandName,
-  type DaemonExecutorRequest,
-  type DaemonOutputSink,
-} from "@symnav/daemon";
+import { DaemonPolicy, type DaemonCommandName, type DaemonExecutorRequest } from "@symnav/daemon";
+import type { DaemonOutputSink } from "../daemon-executor.js";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { AcceptedExecutionSession } from "../execution/accepted-execution-session.js";
 import { NodeDaemonClock } from "../lifecycle/daemon-clock.js";

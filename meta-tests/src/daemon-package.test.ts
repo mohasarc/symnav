@@ -1,5 +1,5 @@
 import { readFileSync, readdirSync, statSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
+import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { describe, expect, it } from "vitest";
@@ -52,6 +52,19 @@ class DaemonPackageMetadata {
       .join("\n");
   }
 
+  public static packageTestAppFileDependencies(): readonly string[] {
+    const appPathPattern = /apps(?:[/\\]|["'`]\s*,\s*["'`])cli(?:[/\\]|["'`])/;
+    return ["src", "test"].flatMap((directory) =>
+      DaemonPackageMetadata.files(join(DaemonPackageMetadata.packageRoot, directory))
+        .filter((path) => /\.[cm]?[jt]sx?$/.test(path))
+        .flatMap((path) =>
+          appPathPattern.test(readFileSync(path, "utf8"))
+            ? [relative(DaemonPackageMetadata.repoRoot, path)]
+            : [],
+        ),
+    );
+  }
+
   private static files(directory: string): readonly string[] {
     return readdirSync(directory).flatMap((name) => {
       const path = join(directory, name);
@@ -82,19 +95,34 @@ describe("@symnav/daemon package boundary", () => {
           default: "./dist/index.js",
         },
         "./process-entry": {
+          types: "./dist/process-entry.d.ts",
           default: "./dist/process-entry.js",
         },
         "./worker-entry": {
+          types: "./dist/worker-entry.d.ts",
           default: "./dist/worker-entry.js",
+        },
+        "./testing": {
+          types: "./dist/testing/index.d.ts",
+          default: "./dist/testing/index.js",
         },
       },
     });
-    expect(Object.keys(manifest.exports)).toEqual([".", "./process-entry", "./worker-entry"]);
+    expect(Object.keys(manifest.exports)).toEqual([
+      ".",
+      "./process-entry",
+      "./worker-entry",
+      "./testing",
+    ]);
   });
 
   it("has zero internal packages in every production dependency field", () => {
     const names = DaemonPackageMetadata.productionDependencyNames(DaemonPackageMetadata.manifest());
     expect(names.filter((name) => name.startsWith("@symnav/"))).toEqual([]);
+  });
+
+  it("keeps package test executors independent from app file layouts", () => {
+    expect(DaemonPackageMetadata.packageTestAppFileDependencies()).toEqual([]);
   });
 
   it("proves every supported production dependency field is inspected", () => {
@@ -175,7 +203,7 @@ describe("@symnav/daemon package boundary", () => {
     expect(document).toContain(
       "| Policy path or recipe | Default or derivation | Applies to | Reason | Behavior oracle |",
     );
-    expect(document).toContain("Phase 26 removes `@symnav/daemon/policy-testing`");
+    expect(document).toContain("Policy test factories remain package-local test helpers");
   });
 
   it("documents intentional deadline absences", () => {

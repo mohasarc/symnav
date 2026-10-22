@@ -19,6 +19,7 @@ import type {
   DaemonServer,
 } from "../transport/protocol.js";
 import { DAEMON_PROTOCOL_VERSION, DAEMON_RECORD_SCHEMA_VERSION } from "../transport/protocol.js";
+import { DaemonPolicyCodec } from "../daemon-policy.js";
 import {
   CompletionSpoolCapacityError,
   NodeCompletionSpoolStorage,
@@ -1680,7 +1681,7 @@ describe("DaemonProcessCoordinator requests", () => {
             stateDirectory: "/state",
             productVersion: "test",
             executorModuleUrl: "file:///test/daemon-executor.js",
-            policy: DaemonPolicy.currentSystem().toSerialized(),
+            policy: DaemonPolicyCodec.serialize(DaemonPolicy.currentSystem()),
           },
           entryUrl: new URL(
             "../../test/helpers/daemon-navigation-worker-fixture.mjs",
@@ -1758,7 +1759,7 @@ describe("DaemonProcessCoordinator requests", () => {
             stateDirectory: "/state",
             productVersion: "test",
             executorModuleUrl: "file:///test/daemon-executor.js",
-            policy: DaemonPolicy.currentSystem().toSerialized(),
+            policy: DaemonPolicyCodec.serialize(DaemonPolicy.currentSystem()),
           },
           entryUrl: new URL(
             "../../test/helpers/daemon-navigation-worker-fixture.mjs",
@@ -1803,7 +1804,7 @@ describe("DaemonProcessCoordinator requests", () => {
             stateDirectory: "/state",
             productVersion: "test",
             executorModuleUrl: "file:///test/daemon-executor.js",
-            policy: DaemonPolicy.currentSystem().toSerialized(),
+            policy: DaemonPolicyCodec.serialize(DaemonPolicy.currentSystem()),
           },
           entryUrl: new URL(
             "../../test/helpers/daemon-navigation-worker-fixture.mjs",

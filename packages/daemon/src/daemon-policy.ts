@@ -66,7 +66,7 @@ export interface DaemonPolicyValues {
   };
 }
 
-interface SerializedDaemonPolicy {
+export interface SerializedDaemonPolicy {
   readonly schemaVersion: 1;
   readonly values: DaemonPolicyValues;
 }
@@ -159,14 +159,6 @@ export class DaemonPolicy {
     });
   }
 
-  static fromSerialized(value: unknown): DaemonPolicy {
-    return new DaemonPolicy(DaemonPolicyCodec.parse(value));
-  }
-
-  toSerialized(): Readonly<SerializedDaemonPolicy> {
-    return DaemonPolicyCodec.serialize(this);
-  }
-
   private static clamp(value: number, minimum: number, maximum: number): number {
     return Math.max(minimum, Math.min(maximum, value));
   }
@@ -177,7 +169,7 @@ export class DaemonPolicy {
   }
 }
 
-class DaemonPolicyCodec {
+export class DaemonPolicyCodec {
   static serialize(policy: DaemonPolicy): SerializedDaemonPolicy {
     return Object.freeze({ schemaVersion: 1, values: policy.values });
   }
@@ -191,6 +183,13 @@ class DaemonPolicyCodec {
     const values = value.values;
     DaemonPolicyCodec.validateValues(values);
     return JSON.parse(JSON.stringify(values)) as DaemonPolicyValues;
+  }
+
+  static deserialize(value: unknown): DaemonPolicy {
+    const PolicyConstructor = DaemonPolicy as unknown as new (
+      values: DaemonPolicyValues,
+    ) => DaemonPolicy;
+    return new PolicyConstructor(DaemonPolicyCodec.parse(value));
   }
 
   private static validateValues(values: Record<string, unknown>): void {

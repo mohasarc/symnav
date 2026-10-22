@@ -1,8 +1,8 @@
 import {
   DaemonAdmissionRejections,
-  DaemonExecutionFailures,
   type DaemonRejectedExecutionFrame,
-} from "@symnav/daemon";
+} from "../daemon-admission.js";
+import { DaemonExecutionFailures } from "../daemon-execution-failure.js";
 import type { CompletionSpoolManifest } from "../delivery/completion-spool.js";
 import type {
   DaemonExecuteRequest,

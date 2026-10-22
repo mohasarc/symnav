@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { CanonicalTestPath } from "../../test/helpers/canonical-path.js";
 import { DaemonPolicy } from "@symnav/daemon";
 import { DaemonPolicyTestFactory } from "../../test/helpers/daemon-policy.js";
+import { DaemonPolicyCodec } from "../daemon-policy.js";
 
 const { processListeners, spawnMock } = vi.hoisted(() => ({
   processListeners: new Map<string, (...args: unknown[]) => void>(),
@@ -155,7 +156,7 @@ describe("NodeDaemonProcessLauncher", () => {
       expect(configuration.processToken).toBe("process-token");
       expect(configuration.startupOwnerKind).toBe("daemon");
       expect(configuration.executorModuleUrl).toBe(executorModuleUrl);
-      expect(configuration.policy).toEqual(policy.toSerialized());
+      expect(configuration.policy).toEqual(DaemonPolicyCodec.serialize(policy));
       expect(configuration.endpoint).toBe(identity.endpoint("instance"));
       expect(options.env.SYMNAV_STATE_DIR).toBe(absoluteStateDirectory);
       expect(options.cwd).toBe(tmpdir());

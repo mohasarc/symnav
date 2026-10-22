@@ -61,6 +61,6 @@
 
 ## Migration access
 
-`DaemonPolicy.fromSerialized` and `DaemonPolicy.toSerialized` are temporary public root methods while app-owned process and worker entries require a complete-snapshot bridge. Phase 29 removes them after those entries move into the daemon package.
+Policy serialization is package-internal. Process and worker entries exchange complete snapshots through the internal codec without widening the host-facing `DaemonPolicy` surface.
 
-Phase 26 removes `@symnav/daemon/policy-testing` after app-owned mechanism tests move package-local. The subpath exports only `DaemonPolicyTestFactory` and production imports are rejected by lint and meta-tests.
+Policy test factories remain package-local test helpers and are not exported.

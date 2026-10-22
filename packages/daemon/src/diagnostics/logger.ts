@@ -1,7 +1,8 @@
 import { chmod, mkdir, open, rename, rm, stat, appendFile } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import { dirname } from "node:path";
-import { DaemonExecutionFailures, type DaemonPolicyValues } from "@symnav/daemon";
+import type { DaemonPolicyValues } from "@symnav/daemon";
+import { DaemonExecutionFailures } from "../daemon-execution-failure.js";
 import type { DaemonClock } from "../lifecycle/daemon-clock.js";
 import {
   DAEMON_DIAGNOSTIC_SCHEMA_VERSION,

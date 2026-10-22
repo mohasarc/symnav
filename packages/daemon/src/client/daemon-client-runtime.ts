@@ -22,7 +22,12 @@ import { DaemonRegistry } from "../registry/registry.js";
 import { DaemonStartupCoordinator } from "../registry/startup-coordinator.js";
 import { DaemonWorkspaceIdentity } from "../registry/workspace-identity.js";
 import { DaemonClientResultCapture } from "../transport/client-result-capture.js";
-import { LocalDaemonTransport } from "../transport/local-transport.js";
+import { DaemonTransportFactory } from "../transport/daemon-transport.js";
+import type {
+  DaemonExecutionRequester,
+  DaemonLifecycleRequestSender,
+} from "../transport/contracts.js";
+import type { DaemonExecuteRequest, DaemonLifecycleRequest } from "../transport/protocol.js";
 import { DAEMON_PROTOCOL_VERSION, type DaemonRecord } from "../transport/protocol.js";
 import { DaemonTransportError } from "../transport/transport-error.js";
 import type {
@@ -53,6 +58,21 @@ class DaemonControlledOutput implements DaemonExecutorOutput {
   }
 }
 
+class DaemonClientTransport implements DaemonLifecycleRequestSender, DaemonExecutionRequester {
+  constructor(
+    private readonly lifecycle: ReturnType<typeof DaemonTransportFactory.create>["lifecycle"],
+    private readonly execution: ReturnType<typeof DaemonTransportFactory.create>["execution"],
+  ) {}
+
+  request(endpoint: string, request: DaemonLifecycleRequest) {
+    return this.lifecycle.request(endpoint, request);
+  }
+
+  execute(endpoint: string, request: DaemonExecuteRequest) {
+    return this.execution.execute(endpoint, request);
+  }
+}
+
 class DaemonControlledResult {
   static acceptedRequestDidNotComplete(): DaemonExecutorExecutionResult {
     return this.failure("Cannot answer: accepted daemon request did not complete.\n");
@@ -74,8 +94,8 @@ class DaemonControlledResult {
 export class DaemonClientRuntime {
   private readonly policy: DaemonPolicy;
   private readonly registry: DaemonRegistry;
-  private readonly routingTransport: LocalDaemonTransport;
-  private readonly statusTransport: LocalDaemonTransport;
+  private readonly routingTransport: DaemonClientTransport;
+  private readonly statusTransport: DaemonClientTransport;
   private readonly observer: DaemonRecordObserver;
   private readonly coordinator: DaemonStartupCoordinator;
   private readonly controlController: DaemonController;
@@ -88,14 +108,22 @@ export class DaemonClientRuntime {
       DaemonWorkspaceIdentity.registryDirectory(options.stateDirectory),
       this.policy.values.startup,
     );
-    this.routingTransport = new LocalDaemonTransport({
+    const routingComponents = DaemonTransportFactory.create({
       policy: this.policy,
       createOutput: () => new DaemonClientResultCapture({ policy: this.policy.values.output }),
     });
-    this.statusTransport = new LocalDaemonTransport({
+    const statusComponents = DaemonTransportFactory.create({
       policy: this.policy,
       lifecycleResponseTimeoutMs: this.policy.values.transport.statusResponseTimeoutMs,
     });
+    this.routingTransport = new DaemonClientTransport(
+      routingComponents.lifecycle,
+      routingComponents.execution,
+    );
+    this.statusTransport = new DaemonClientTransport(
+      statusComponents.lifecycle,
+      routingComponents.execution,
+    );
     const processTerminator = new NodeDaemonProcessTerminator(this.policy.values.shutdown);
     const launcher = new NodeDaemonProcessLauncher(
       options.productVersion,
@@ -182,7 +210,7 @@ export class DaemonClientRuntime {
     record: DaemonRecord,
     request: DaemonClientExecuteRequest,
   ): Promise<DaemonClientExecuteResult> {
-    let receipt: Awaited<ReturnType<LocalDaemonTransport["execute"]>>;
+    let receipt: Awaited<ReturnType<DaemonClientTransport["execute"]>>;
     try {
       receipt = await this.routingTransport.execute(record.endpoint, {
         kind: "execute",

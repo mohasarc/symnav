@@ -32,7 +32,7 @@ import { TestDaemonRegistry as DaemonRegistry } from "../../test/helpers/daemon-
 import { TestDaemonResourcePolicy as DaemonResourcePolicy } from "../../test/helpers/daemon-resource-policy.js";
 import { DaemonWorkspaceIdentity } from "../registry/workspace-identity.js";
 import type { DaemonServerSend } from "../transport/contracts.js";
-import { TestLocalDaemonTransport as LocalDaemonTransport } from "../../test/helpers/local-daemon-transport.js";
+import { TestDaemonTransport as DaemonTransport } from "../../test/helpers/daemon-transport.js";
 import { TestDaemonProcessCoordinator as DaemonProcessCoordinator } from "../../test/helpers/daemon-process-coordinator.js";
 
 describe("DaemonProcessCoordinator runtime lifecycle", () => {
@@ -231,7 +231,7 @@ describe("DaemonProcessCoordinator runtime lifecycle", () => {
     ).toBe(true);
     await waitUntil(() => existsSync(readyPath));
     lease?.release();
-    const transport = new LocalDaemonTransport({ requestTimeoutMs: 200 });
+    const transport = new DaemonTransport({ requestTimeoutMs: 200 });
     void transport
       .execute(identity.endpoint(instanceId), {
         kind: "execute",
@@ -426,7 +426,7 @@ interface RuntimeOptions {
   readonly resourcePolicy?: DaemonResourcePolicy;
   readonly resourceCheckIntervalMs?: number;
   readonly residentMemoryBytes?: () => number;
-  readonly transport?: LocalDaemonTransport;
+  readonly transport?: DaemonTransport;
   readonly navigationWorker?: DaemonNavigationWorker;
 }
 
@@ -435,7 +435,7 @@ class DaemonProcessCoordinatorHarness {
   readonly workspaceRoot: string;
   readonly identity: DaemonWorkspaceIdentity;
   readonly registry: DaemonRegistry;
-  readonly transport: LocalDaemonTransport;
+  readonly transport: DaemonTransport;
   readonly instanceId = "runtime-instance";
   readonly exited: Promise<number>;
   private resolveExit!: (code: number) => void;
@@ -445,7 +445,7 @@ class DaemonProcessCoordinatorHarness {
     return this.exitCode !== undefined;
   }
 
-  private constructor(transport = new LocalDaemonTransport({ requestTimeoutMs: 200 })) {
+  private constructor(transport = new DaemonTransport({ requestTimeoutMs: 200 })) {
     this.transport = transport;
     this.stateDirectory = mkdtempSync(join(tmpdir(), "symnav-daemon-runtime-state-"));
     this.workspaceRoot = mkdtempSync(join(tmpdir(), "symnav-daemon-runtime-workspace-"));
@@ -564,7 +564,7 @@ class DaemonProcessCoordinatorHarness {
   }
 }
 
-class BlockingCloseTransport extends LocalDaemonTransport {
+class BlockingCloseTransport extends DaemonTransport {
   private handler:
     | ((request: DaemonRequest, send: DaemonServerSend) => Promise<DaemonResponse | void>)
     | undefined;

@@ -35,7 +35,7 @@ import type {
   DaemonLifecycleRequestSender,
   DaemonRequestServer,
 } from "../transport/contracts.js";
-import { TestLocalDaemonTransport as LocalDaemonTransport } from "../../test/helpers/local-daemon-transport.js";
+import { TestDaemonTransport as DaemonTransport } from "../../test/helpers/daemon-transport.js";
 
 const STARTUP_COORDINATION_GRACE_MS =
   DaemonPolicy.currentSystem().values.startup.coordinationGraceMs;
@@ -1258,7 +1258,7 @@ function socketBackedCoordinator(roots: string[]): SocketBackedCoordinator {
   const stateDirectory = temporaryDirectory(roots);
   const identity = DaemonWorkspaceIdentity.from(join(stateDirectory, "workspace"), stateDirectory);
   const registry = new DaemonRegistry(identity.registryDirectory);
-  const transport = new LocalDaemonTransport({ requestTimeoutMs: 1_000 });
+  const transport = new DaemonTransport({ requestTimeoutMs: 1_000 });
   const terminator = new NodeDaemonProcessTerminator(100, 5);
   const launcher = new InProcessReadyLauncher(registry, transport);
   return {
@@ -1276,7 +1276,7 @@ function socketBackedCoordinator(roots: string[]): SocketBackedCoordinator {
 class InProcessReadyLauncher implements DaemonProcessLauncher {
   readonly symnavVersion = "0.1.0";
   readonly memoryCapBytes = 256 * 1024 * 1024;
-  private server: Awaited<ReturnType<LocalDaemonTransport["listen"]>> | undefined;
+  private server: Awaited<ReturnType<DaemonTransport["listen"]>> | undefined;
 
   constructor(
     private readonly registry: DaemonRegistry,

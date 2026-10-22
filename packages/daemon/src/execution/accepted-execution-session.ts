@@ -1,4 +1,5 @@
-import { DaemonExecutionFailures, type AcceptedRequestCompatibility } from "@symnav/daemon";
+import { DaemonExecutionFailures } from "../daemon-execution-failure.js";
+import type { AcceptedRequestCompatibility } from "../daemon-admission.js";
 import type {
   AcceptedExecutionAdmission,
   AcceptedExecutionSessionOptions,

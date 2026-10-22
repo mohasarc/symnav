@@ -27,7 +27,7 @@ The architecture is locked. Stages are framed against it.
 - **Deployable unit:** `apps/cli` — the `symnav` binary, published to npm. It composes the production packages and owns command-line syntax, environment resolution, and printing.
 - **Library packages:**
   - `packages/core` — command logic, the in-memory result model (IR), workspace services, the language-backend interface. Owns the contracts other packages depend on. Depends on nothing internal.
-  - `packages/daemon` — owns the portable host executor/output, diagnostic, command, and lifecycle report contracts. It has no internal dependencies. Process and transport mechanisms migrate behind this boundary only when their real implementations move.
+  - `packages/daemon` — owns portable host contracts plus daemon client, launch/election, registry, transport, process and worker entries, execution/delivery, resources, diagnostics, lifecycle, policy, and the read-only testing surface. It has no internal dependencies.
   - `packages/renderer` — turns core IR and daemon lifecycle reports into human-readable output (Unicode tree) and structured output (JSON). Depends only on `core` and `daemon`.
   - `packages/backend-typescript` — the TypeScript implementation of the language-backend interface. The only package that knows about ts-morph, tsserver, or anything TypeScript-toolchain-specific.
   - `packages/telemetry` — captures and aggregates shape-only usage data. Depends on nothing internal.
@@ -35,7 +35,7 @@ The architecture is locked. Stages are framed against it.
 - **Process model:** navigation can run cold per invocation or through a persistent daemon. The daemon wraps the same command logic through a portable host contract rather than reimplementing navigation.
 - **Configuration:** none. Conventions and CLI flags only. `.gitignore` is honored as the workspace-ignore source of truth.
 
-The current daemon-architecture milestone establishes only the `@symnav/daemon` root contract and its dependency boundary. Process entries, worker entries, testing access, policy, and daemon mechanisms appear only when their owning implementations migrate in later milestones.
+The completed daemon-architecture milestone places daemon mechanisms, process and worker entries, policy, and read-only testing access behind the zero-internal-dependency `@symnav/daemon` boundary. The CLI retains command-line syntax, environment resolution, composition, and printing.
 
 ---
 
@@ -262,7 +262,7 @@ Doing `context` before `graph` is intentional. `context` only needs *direct* (on
 
 These items are explicitly **not** part of the v1 plan. They are catalogued here so we don't quietly absorb them into earlier stages.
 
-- **Daemon / persistent process.** Persistent execution now wraps the existing command logic. The architecture refactor moves daemon policy and mechanisms behind the zero-internal-dependency `@symnav/daemon` boundary without changing command behavior.
+- **Daemon / persistent process.** Persistent execution wraps the existing command logic. The completed architecture refactor places daemon policy, mechanisms, process and worker entries, and read-only testing access behind the zero-internal-dependency `@symnav/daemon` boundary without changing command behavior.
 - **Additional language backends.** Python (pyright), Go (gopls), Rust (rust-analyzer), etc. The `core` package's language-backend interface is the integration point. Adding a backend should not require touching `core`, `renderer`, or `apps/cli`.
 - **Excluded commands.** `impact`, `history`, `diff`, `impls`, `search-text` are explicitly out of v1 per the functional spec.
 - **Alternative renderers.** The `renderer` package's separation makes a future non-terminal consumer (IDE extension, web UI, alternative output format) a peer of the current renderer rather than a rewrite. We are not building one in v1.

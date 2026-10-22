@@ -1,9 +1,6 @@
-import type {
-  DaemonCommandName,
-  DaemonExecutionFailureCode,
-  DaemonPolicyValues,
-  DaemonSequencedOutputRecord,
-} from "@symnav/daemon";
+import type { DaemonCommandName, DaemonPolicyValues } from "@symnav/daemon";
+import type { DaemonExecutionFailureCode } from "../daemon-execution-failure.js";
+import type { DaemonSequencedOutputRecord } from "../daemon-executor.js";
 import type {
   AcceptedRequestEntry,
   AcceptedRequestSubscriber,

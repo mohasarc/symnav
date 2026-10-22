@@ -62,6 +62,33 @@ describe("DaemonClient execution", () => {
     ]);
   });
 
+  it("records accepted transfer failure diagnostics without counting a fallback or replaying work", async () => {
+    const cause = Object.assign(new Error("secret transfer"), { code: "ECONNRESET" });
+    const harness = new ClientHarness({
+      warmFailure: new DaemonTransportError(
+        "closed",
+        "accepted",
+        "secret",
+        undefined,
+        undefined,
+        cause,
+      ),
+    });
+    expect((await harness.client.execute(harness.request())).mode).toBe("warm");
+    expect(harness.localRequests).toEqual([]);
+    expect(harness.failureEvents).toEqual([]);
+    expect(DaemonLogger.prototype.record).toHaveBeenCalledWith(
+      expect.objectContaining({
+        kind: "failure",
+        failure: expect.objectContaining({
+          phase: "transfer",
+          reason: "transfer-failed",
+          osCode: "ECONNRESET",
+        }),
+      }),
+    );
+  });
+
   it.each(["absent", "starting"] as const)(
     "does not count cold %s execution as fallback",
     async (state) => {

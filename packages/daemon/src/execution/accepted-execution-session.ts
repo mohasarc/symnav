@@ -1,3 +1,4 @@
+import { DaemonFailureRecorder } from "../diagnostics/failure-recorder.js";
 import { DaemonStateWriteErrors } from "../state-write-errors.js";
 import type { DaemonStateWriteFailure } from "../state-write-failure.js";
 import { DaemonExecutionFailures } from "../daemon-execution-failure.js";
@@ -211,6 +212,12 @@ export class AcceptedExecutionSession {
     this.options.diagnostics.record({
       kind: "failure",
       operation,
+      failure: DaemonFailureRecorder.failure(
+        this.options.clock.wallNowMs(),
+        operation === "completion-cleanup" ? "transfer" : "worker",
+        operation === "completion-cleanup" ? "transfer-failed" : "worker-failed",
+        error,
+      ),
       failureCode,
       errorName: DaemonLogger.errorName(error),
     });

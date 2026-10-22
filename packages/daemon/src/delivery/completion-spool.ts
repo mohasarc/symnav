@@ -1,3 +1,4 @@
+import { DaemonStateWriteErrors } from "../state-write-errors.js";
 import { createHash, randomUUID } from "node:crypto";
 import { constants } from "node:fs";
 import { chmod, lstat, mkdir, open, rm, unlink } from "node:fs/promises";
@@ -125,7 +126,9 @@ export class NodeCompletionSpoolStorage implements CompletionSpoolStorage {
   }
 
   createFile(path: string): Promise<CompletionSpoolFile> {
-    return open(path, "wx", 0o600);
+    return open(path, "wx", 0o600).catch((error: unknown) => {
+      throw DaemonStateWriteErrors.failedWrite(path, error);
+    });
   }
 
   records(path: string, maximumChunkBytes: number): AsyncIterable<CommandOutputRecord> {
@@ -212,7 +215,10 @@ export class CompletionSpool {
       }
       const encoded = CompletionSpoolRecordCodec.encode(stored);
       if (this.file === undefined) this.inlineRecords.push(stored);
-      else await this.file.write(encoded);
+      else
+        await this.file.write(encoded).catch((error: unknown) => {
+          throw this.writeFailure(error);
+        });
       this.hash.update(encoded.subarray(4));
       this.rawBytes += stored.bytes.byteLength;
       this.recordCount += 1;
@@ -228,7 +234,9 @@ export class CompletionSpool {
     if (!Number.isSafeInteger(exitCode) || exitCode < 0)
       throw new Error("Invalid command exit code");
     try {
-      await this.file?.sync();
+      await this.file?.sync().catch((error: unknown) => {
+        throw this.writeFailure(error);
+      });
       await this.closeFile();
       this.terminal = true;
       this.manifest = {
@@ -284,6 +292,11 @@ export class CompletionSpool {
     }
   }
 
+  private writeFailure(error: unknown): unknown {
+    if (error instanceof CompletionSpoolCapacityError) return error;
+    return DaemonStateWriteErrors.failedWrite(this.filePath ?? this.options.directory, error);
+  }
+
   private async failCapacity(): Promise<never> {
     await this.dispose();
     throw new CompletionSpoolCapacityError();
@@ -296,7 +309,9 @@ export class CompletionSpool {
     this.filePath = join(instanceDirectory, `${this.options.identity.transferId}.spool`);
     this.file = await this.options.storage.createFile(this.filePath);
     for (const record of this.inlineRecords) {
-      await this.file.write(CompletionSpoolRecordCodec.encode(record));
+      await this.file.write(CompletionSpoolRecordCodec.encode(record)).catch((error: unknown) => {
+        throw this.writeFailure(error);
+      });
     }
     this.inlineRecords.length = 0;
   }

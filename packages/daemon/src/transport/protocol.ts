@@ -1,4 +1,5 @@
 import type { DaemonProcessLifetimeIdentity } from "../process/process-lifetime-identity.js";
+import type { DaemonActivitySnapshot } from "../daemon-lifecycle-report.js";
 import type { DaemonStateWriteReport } from "../state-write-failure.js";
 import type { DaemonCommandName, DaemonExecutorRequest, DaemonOutputStream } from "@symnav/daemon";
 import type { DaemonRejectedExecutionFrame } from "../daemon-admission.js";
@@ -34,81 +35,13 @@ export interface DaemonRecord extends DaemonIdentityCoordinates {
   readonly memoryCapBytes: number;
 }
 
-export interface DaemonActivitySnapshot {
-  readonly lifecycle: "starting" | "ready" | "busy" | "recovering" | "draining";
-  readonly recoveryDetail?: "resource-pressure" | "worker-replacement";
-  readonly pid: number;
-  readonly startedAt: number;
-  readonly startupElapsedMs: number;
-  readonly fileCount?: number;
-  readonly processRssBytes: number;
-  readonly hardProcessRssBytes: number;
-  readonly workerHeapUsedBytes?: number;
-  readonly workerGeneration: number;
-  readonly current?: {
-    readonly requestId: string;
-    readonly command: DaemonCommandName;
-    readonly elapsedMs: number;
-  };
-  readonly queued: number;
-  readonly lastCompletedAgoMs?: number;
-  readonly spoolBytes: number;
-}
-
-export type RunningDaemonStatus =
-  | {
-      readonly state: "starting";
-      readonly workspaceRoot: string;
-      readonly pid: number;
-      readonly startupElapsedMs: number;
-      readonly memoryBytes?: number;
-    }
-  | {
-      readonly state: "ready";
-      readonly workspaceRoot: string;
-      readonly pid: number;
-      readonly uptimeMs: number;
-      readonly fileCount: number;
-      readonly memoryBytes: number;
-      readonly lastRequestAgoMs?: number;
-    }
-  | {
-      readonly state: "busy";
-      readonly workspaceRoot: string;
-      readonly pid: number;
-      readonly uptimeMs: number;
-      readonly command: DaemonCommandName;
-      readonly elapsedMs: number;
-      readonly queued: number;
-      readonly memoryBytes: number;
-    }
-  | {
-      readonly state: "recovering";
-      readonly workspaceRoot: string;
-      readonly pid: number;
-      readonly uptimeMs: number;
-      readonly detail: "resource-pressure" | "worker-replacement" | "draining";
-      readonly queued: number;
-      readonly memoryBytes: number;
-    }
-  | {
-      readonly state: "unresponsive";
-      readonly workspaceRoot: string;
-      readonly pid: number;
-      readonly uptimeMs: number;
-      readonly lastResponseAgoMs?: number;
-      readonly lastKnown?: DaemonActivitySnapshot;
-    };
-
-export interface DaemonStatusEnvelope {
-  readonly schemaVersion: 1;
-  readonly daemons: readonly RunningDaemonStatus[];
-}
-
-export type DaemonStopResult =
-  | { readonly status: "stopped"; readonly workspaceRoot: string; readonly pid: number }
-  | { readonly status: "killed"; readonly workspaceRoot: string; readonly pid: number }
-  | { readonly status: "not-running"; readonly workspaceRoot: string };
+export type {
+  DaemonActivitySnapshot,
+  DaemonStartResult,
+  DaemonStatusEnvelope,
+  DaemonStopResult,
+  RunningDaemonStatus,
+} from "../daemon-lifecycle-report.js";
 
 export type DaemonStopReason = "graceful" | "idle" | "resource" | "workspace-deleted";
 
@@ -467,18 +400,3 @@ export type DaemonPong = Extract<DaemonResponse, { readonly kind: "pong" }>;
 export interface DaemonServer {
   close(force?: boolean): Promise<void>;
 }
-
-export type DaemonStartResult =
-  | {
-      readonly status: "ready";
-      readonly workspaceRoot: string;
-      readonly fileCount: number;
-      readonly loadDurationMs: number;
-    }
-  | {
-      readonly status: "already-running";
-      readonly workspaceRoot: string;
-      readonly pid: number;
-      readonly uptimeMs: number;
-    }
-  | { readonly status: "disabled" };

@@ -2407,6 +2407,7 @@ class RecordingExecutor implements DaemonCommandExecutor {
 }
 
 class SerializedExecutor implements DaemonCommandExecutor {
+  private readonly startWaiters = new Map<number, (() => void)[]>();
   private readonly results: (() => void)[] = [];
   readonly requests: CliExecutionRequest[] = [];
 
@@ -2416,12 +2417,19 @@ class SerializedExecutor implements DaemonCommandExecutor {
 
   async execute(request: CliExecutionRequest): Promise<CommandExecutionResult> {
     this.requests.push(request);
-    await new Promise<void>((resolve) => this.results.push(resolve));
+    await new Promise<void>((resolve) => {
+      this.results.push(resolve);
+      for (const started of this.startWaiters.get(this.results.length) ?? []) started();
+      this.startWaiters.delete(this.results.length);
+    });
     return emptyResult();
   }
 
-  async started(count: number): Promise<void> {
-    while (this.results.length < count) await Promise.resolve();
+  started(count: number): Promise<void> {
+    if (this.results.length >= count) return Promise.resolve();
+    return new Promise((resolve) =>
+      this.startWaiters.set(count, [...(this.startWaiters.get(count) ?? []), resolve]),
+    );
   }
 
   complete(index: number): void {

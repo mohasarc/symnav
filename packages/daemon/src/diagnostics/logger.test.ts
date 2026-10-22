@@ -7,6 +7,7 @@ import { DaemonPolicyTestFactory } from "../../test/helpers/daemon-policy.js";
 import { NodeDaemonClock, type DaemonClock } from "../lifecycle/daemon-clock.js";
 import { DaemonLogger as RuntimeDaemonLogger, type DaemonLogStorage } from "./logger.js";
 import type { DaemonDiagnosticEvent } from "../transport/protocol.js";
+import type { DaemonStateWriteFailureObserver } from "../state-write-failure.js";
 import { DaemonWorkspaceIdentity } from "../registry/workspace-identity.js";
 
 interface TestDaemonLoggerOptions {
@@ -14,6 +15,7 @@ interface TestDaemonLoggerOptions {
   readonly rotateBytes?: number;
   readonly maximumQueuedEvents?: number;
   readonly storage?: DaemonLogStorage;
+  readonly stateWriteFailed?: DaemonStateWriteFailureObserver;
 }
 
 class DaemonLogger extends RuntimeDaemonLogger {
@@ -36,6 +38,9 @@ class DaemonLogger extends RuntimeDaemonLogger {
     super(identity, instanceId, clock, {
       policy: diagnostics,
       ...(options.storage === undefined ? {} : { storage: options.storage }),
+      ...(options.stateWriteFailed === undefined
+        ? {}
+        : { stateWriteFailed: options.stateWriteFailed }),
     });
   }
 }
@@ -45,6 +50,23 @@ describe("DaemonLogger", () => {
   afterEach(() => {
     for (const root of roots) rmSync(root, { recursive: true, force: true });
     roots.length = 0;
+  });
+
+  it("observes failed diagnostic writes once without recursive records", async () => {
+    const root = mkdtempSync(join(tmpdir(), "symnav-log-denied-"));
+    roots.push(root);
+    const stateWriteFailures: unknown[] = [];
+    const identity = DaemonWorkspaceIdentity.from("/repo", root);
+    writeFileSync(identity.registryDirectory, "blocked");
+    const logger = new DaemonLogger(identity, "one", new NodeDaemonClock(), {
+      stateWriteFailed: (failure) => stateWriteFailures.push(failure),
+    });
+    logger.record({ kind: "start" });
+    await logger.flush();
+    logger.record({ kind: "ready", fileCount: 1 });
+    await logger.flush();
+    expect(stateWriteFailures).toEqual([expect.objectContaining({ osCode: "ENOTDIR" })]);
+    expect(logger.stateWriteFailure).toEqual(stateWriteFailures[0]);
   });
 
   it("retains exact structured failure fields and rejects open-ended failure objects", async () => {

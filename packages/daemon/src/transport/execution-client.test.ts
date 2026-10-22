@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { DaemonPolicy } from "@symnav/daemon";
 import { DaemonExecutionClient } from "./execution-client.js";
 import type { DaemonOutputCapture } from "./client-result-capture.js";
@@ -13,6 +13,25 @@ import { DaemonTransportError } from "./transport-error.js";
 import { DaemonWireCodec } from "./wire-codec.js";
 
 describe("DaemonExecutionClient", () => {
+  it("preserves original admission timeout OS evidence", async () => {
+    const policy = DaemonPolicy.currentSystem();
+    const sockets = new RecordingDaemonConnectionClient([]);
+    const error = Object.assign(new Error("secret timeout"), { code: "ETIMEDOUT" });
+    vi.spyOn(sockets, "connect").mockRejectedValue(error);
+    const client = new DaemonExecutionClient({
+      sockets,
+      lifecycle: new RecordingResultAcknowledger(),
+      codec: executionCodec(),
+      validator: new DaemonProtocolValidator(),
+      createOutput: () => new RecordingDaemonOutputCapture(),
+      transportPolicy: policy.values.transport,
+      deliveryPolicy: policy.values.delivery,
+    });
+    await expect(client.execute("daemon-endpoint", executionRequest())).rejects.toMatchObject({
+      code: "timeout",
+      cause: error,
+    });
+  });
   it("owns one accepted execution attempt through terminal failure", async () => {
     const policy = DaemonPolicy.currentSystem();
     const codec = executionCodec();

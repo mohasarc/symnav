@@ -4,7 +4,7 @@ import { createServer, type Server, type Socket } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { DaemonPolicy } from "@symnav/daemon";
+import { DaemonPolicy, type DaemonExecutionFailureCode } from "@symnav/daemon";
 import { OrderedCommandOutput } from "../command-execution-result.js";
 import {
   DAEMON_PROTOCOL_VERSION,
@@ -139,6 +139,38 @@ describe("LocalDaemonTransport execution delivery", () => {
     );
 
     await expect(receipt.completion).resolves.toEqual({ status: "failed", code: "internal" });
+  });
+
+  it.each<DaemonExecutionFailureCode>([
+    "worker-exit",
+    "controlled-resource",
+    "response-capacity",
+    "stopping",
+    "internal",
+  ])("preserves accepted terminal failure %s without replay", async (code) => {
+    const endpoint = await rawExecutionServer(servers, sockets, directories, (socket) => {
+      socket.once("data", () =>
+        socket.end(
+          Buffer.concat([
+            frame(accepted()),
+            frame({
+              kind: "execution-failed",
+              instanceId: request.instanceId,
+              processToken: request.processToken,
+              requestId: request.requestId,
+              code,
+            } satisfies DaemonExecutionServerFrame),
+          ]),
+        ),
+      );
+    });
+
+    const receipt = await new LocalDaemonTransport({ requestTimeoutMs: 100 }).execute(
+      endpoint,
+      request,
+    );
+
+    await expect(receipt.completion).resolves.toEqual({ status: "failed", code });
   });
 
   it("has no completion deadline after acceptance", async () => {

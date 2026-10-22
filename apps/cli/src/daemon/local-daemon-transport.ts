@@ -1,11 +1,14 @@
 import { existsSync, mkdirSync, rmSync } from "node:fs";
 import { createConnection, createServer, type Server, type Socket } from "node:net";
 import { dirname } from "node:path";
-import type { DaemonPolicyValues } from "@symnav/daemon";
+import {
+  DaemonExecutionFailures,
+  type DaemonExecutionFailureCode,
+  type DaemonPolicyValues,
+} from "@symnav/daemon";
 import { OrderedCommandOutput, type CommandExecutionResult } from "../command-execution-result.js";
 import type {
   DaemonExecuteRequest,
-  DaemonExecutionFailureCode,
   DaemonExecutionServerFrame,
   DaemonExecutionStatus,
   DaemonExecutionStatusRequest,
@@ -1341,7 +1344,7 @@ export class LocalDaemonTransport {
         "requestId",
         "code",
       ]) ||
-      !LocalDaemonTransport.isExecutionFailureCode(value.code)
+      !DaemonExecutionFailures.isCode(value.code)
     ) {
       throw new Error("Malformed daemon execution failure");
     }
@@ -1384,22 +1387,12 @@ export class LocalDaemonTransport {
     );
   }
 
-  private static isExecutionFailureCode(value: unknown): value is DaemonExecutionFailureCode {
-    return (
-      value === "worker-exit" ||
-      value === "controlled-resource" ||
-      value === "response-capacity" ||
-      value === "stopping" ||
-      value === "internal"
-    );
-  }
-
   private static isExecutionStatus(value: unknown): value is DaemonExecutionStatus {
     if (!LocalDaemonTransport.isRecord(value)) return false;
     if (value.state === "unknown" || value.state === "completed") return true;
     if (value.state === "queued") return LocalDaemonTransport.isCount(value.queuePosition);
     if (value.state === "running") return LocalDaemonTransport.isMetric(value.startedAt);
-    return value.state === "failed" && LocalDaemonTransport.isExecutionFailureCode(value.code);
+    return value.state === "failed" && DaemonExecutionFailures.isCode(value.code);
   }
 
   private static isActivitySnapshot(value: unknown): boolean {

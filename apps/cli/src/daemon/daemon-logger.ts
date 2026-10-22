@@ -1,7 +1,7 @@
 import { chmod, mkdir, open, rename, rm, stat, appendFile } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import { dirname } from "node:path";
-import type { DaemonPolicyValues } from "@symnav/daemon";
+import { DaemonExecutionFailures, type DaemonPolicyValues } from "@symnav/daemon";
 import type { DaemonClock } from "./daemon-clock.js";
 import {
   DAEMON_DIAGNOSTIC_SCHEMA_VERSION,
@@ -113,17 +113,6 @@ const CLOSED_DIAGNOSTIC_VALUES = new Map<string, ReadonlySet<string>>([
       "transport-close",
       "diagnostics-write",
       "diagnostics-rotation",
-    ]),
-  ],
-  [
-    "failureCode",
-    new Set([
-      "worker-exit",
-      "controlled-resource",
-      "response-capacity",
-      "stopping",
-      "internal",
-      "operation-failed",
     ]),
   ],
   ["outcome", new Set(["completed", "failed", "delivered", "disconnected"])],
@@ -310,6 +299,13 @@ export class DaemonLogger {
     }
     if ("errorName" in closed && !ERROR_NAMES.has(closed.errorName as DaemonDiagnosticErrorName)) {
       closed.errorName = "UnknownError";
+    }
+    if (
+      "failureCode" in closed &&
+      closed.failureCode !== "operation-failed" &&
+      !DaemonExecutionFailures.isCode(closed.failureCode)
+    ) {
+      return undefined;
     }
     for (const [field, values] of CLOSED_DIAGNOSTIC_VALUES) {
       if (field in closed && !values.has(String(closed[field]))) return undefined;

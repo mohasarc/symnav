@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import type { DaemonExecutionFailureCode } from "@symnav/daemon";
 import type { CliExecutionRequest } from "../command-execution-result.js";
 import {
   AcceptedRequestCorruptionError,
@@ -64,23 +65,29 @@ describe("AcceptedRequestLedger", () => {
     expect(ledger.status("request")).toEqual({ state: "completed" });
   });
 
-  it("transitions queued or running requests to a typed failure", () => {
+  it.each<DaemonExecutionFailureCode>([
+    "worker-exit",
+    "controlled-resource",
+    "response-capacity",
+    "stopping",
+    "internal",
+  ])("transitions a request to the closed failure %s", (code) => {
     const queued = new AcceptedRequestLedger(() => 10);
     queued.accept("queued", "overview", request);
-    expect(queued.fail("queued", "stopping", 20).state).toEqual({
+    expect(queued.fail("queued", code, 20).state).toEqual({
       state: "failed",
       completedAt: 20,
-      code: "stopping",
+      code,
     });
+  });
 
-    const running = new AcceptedRequestLedger(() => 10);
-    running.accept("running", "overview", request);
-    running.markRunning("running", 15);
-    expect(running.fail("running", "worker-exit", 20).state).toEqual({
-      state: "failed",
-      completedAt: 20,
-      code: "worker-exit",
-    });
+  it("rejects failures outside the closed vocabulary", () => {
+    const ledger = new AcceptedRequestLedger(() => 10);
+    ledger.accept("request", "overview", request);
+
+    expect(() => ledger.fail("request", "unknown" as never, 20)).toThrow(
+      "Invalid daemon execution failure code",
+    );
   });
 
   it("publishes the current entry and each transition to subscribers", () => {

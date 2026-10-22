@@ -20,7 +20,11 @@ import type {
   DaemonServer,
 } from "./daemon-protocol.js";
 import { DAEMON_PROTOCOL_VERSION, DAEMON_RECORD_SCHEMA_VERSION } from "./daemon-protocol.js";
-import { NodeCompletionSpoolStorage, type CompletionSpoolFile } from "./completion-spool.js";
+import {
+  CompletionSpoolCapacityError,
+  NodeCompletionSpoolStorage,
+  type CompletionSpoolFile,
+} from "./completion-spool.js";
 import { TestDaemonRegistry as DaemonRegistry } from "../../test/helpers/daemon-registry.js";
 import { DaemonWorkspaceIdentity } from "./daemon-workspace-identity.js";
 import type { LocalDaemonTransport } from "./local-daemon-transport.js";
@@ -28,7 +32,10 @@ import type {
   DaemonNavigationWorker,
   DaemonNavigationWorkerExit,
 } from "./daemon-navigation-worker.js";
-import { NodeDaemonNavigationWorker } from "./daemon-navigation-worker.js";
+import {
+  DaemonNavigationWorkerExitedError,
+  NodeDaemonNavigationWorker,
+} from "./daemon-navigation-worker.js";
 import type { DaemonNavigationWorkerResponse } from "./daemon-navigation-worker-protocol.js";
 import { TestDaemonResourcePolicy as DaemonResourcePolicy } from "../../test/helpers/daemon-resource-policy.js";
 import {
@@ -386,6 +393,35 @@ describe("WorkspaceDaemon requests", () => {
     });
     await expect(harness.ping()).resolves.toMatchObject({ kind: "pong", state: "ready" });
     await expect(harness.execute("small")).resolves.toMatchObject({ kind: "result-end" });
+  });
+
+  it("preserves capacity classification for a derived capacity error", async () => {
+    const harness = await RequestHarness.start(new MultipleRecordExecutor(), {
+      completionSpoolLimits: { inlineBytes: 5, maximumResultBytes: 100 },
+      completionSpoolStorage: new DerivedCapacityCompletionStorage(),
+    });
+    harnesses.push(harness);
+
+    await expect(harness.execute("derived-capacity")).resolves.toMatchObject({
+      kind: "execution-failed",
+      code: "response-capacity",
+    });
+  });
+
+  it("preserves worker-exit classification for a derived worker error", async () => {
+    const error = new DerivedNavigationWorkerExitedError({
+      generation: 1,
+      cause: "error",
+    });
+    const harness = await RequestHarness.start(undefined, {
+      navigationWorker: new ExecutionFailingNavigationWorker(error),
+    });
+    harnesses.push(harness);
+
+    await expect(harness.execute("derived-worker-exit")).resolves.toMatchObject({
+      kind: "execution-failed",
+      code: "worker-exit",
+    });
   });
 
   it("keeps one result chunk in flight while the attachment sink is stalled", async () => {
@@ -1944,6 +1980,19 @@ class MultipleRecordExecutor implements DaemonCommandExecutor {
   }
 }
 
+class DerivedCompletionSpoolCapacityError extends CompletionSpoolCapacityError {}
+
+class DerivedCapacityCompletionStorage extends NodeCompletionSpoolStorage {
+  override async createFile(path: string): Promise<CompletionSpoolFile> {
+    const file = await super.createFile(path);
+    return {
+      write: (bytes) => file.write(bytes),
+      sync: () => Promise.reject(new DerivedCompletionSpoolCapacityError()),
+      close: () => file.close(),
+    };
+  }
+}
+
 class RequestFailingCompletionStorage extends NodeCompletionSpoolStorage {
   private failed = false;
 
@@ -2065,6 +2114,18 @@ class ExecutorNavigationWorker implements DaemonNavigationWorker {
 
   fail(exit: DaemonNavigationWorkerExit): void {
     this.resolveExited(exit);
+  }
+}
+
+class DerivedNavigationWorkerExitedError extends DaemonNavigationWorkerExitedError {}
+
+class ExecutionFailingNavigationWorker extends ExecutorNavigationWorker {
+  constructor(private readonly error: Error) {
+    super(new ImmediateExecutor());
+  }
+
+  override execute(): Promise<DaemonNavigationWorkerResponse> {
+    return Promise.reject(this.error);
   }
 }
 

@@ -14,6 +14,15 @@ const request = {
 const refresh = { added: 1, changed: 0, removed: 0, unchanged: 2 } as const;
 
 describe("DaemonNavigationWorkerProtocol", () => {
+  it.each(["initialization", "execution", "protocol", "resource"] as const)(
+    "accepts the closed worker failure %s without changing its value",
+    (failureCode) => {
+      const response = { kind: "failed", generation: 4, failureCode } as const;
+
+      expect(DaemonNavigationWorkerProtocol.response(response, 64 * 1024)).toEqual(response);
+    },
+  );
+
   it.each<DaemonNavigationWorkerRequest>([
     { kind: "initialize", generation: 4, workspaceRoot: "/repo" },
     {

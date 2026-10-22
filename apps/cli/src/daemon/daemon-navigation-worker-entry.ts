@@ -2,13 +2,12 @@ import { performance } from "node:perf_hooks";
 import { parentPort, workerData } from "node:worker_threads";
 import { getHeapStatistics } from "node:v8";
 import type { BackendRefreshSummary } from "@symnav/core";
-import { DaemonPolicy } from "@symnav/daemon";
+import { DaemonPolicy, type DaemonWorkerFailureCode } from "@symnav/daemon";
 import type { CommandPhaseDurations } from "../program-dependencies.js";
 import { createDefaultDependencies } from "../program.js";
 import { RetainedWorkspaceProgram } from "./retained-workspace-program.js";
 import {
   DaemonNavigationWorkerProtocol,
-  type DaemonExecutionFailureCode,
   type DaemonNavigationWorkerRequest,
   type DaemonNavigationWorkerResponse,
 } from "./daemon-navigation-worker-protocol.js";
@@ -177,7 +176,7 @@ class DaemonNavigationWorkerEntry {
   }
 
   private fail(
-    failureCode: DaemonExecutionFailureCode,
+    failureCode: DaemonWorkerFailureCode,
     error: unknown,
     correlation:
       | { readonly requestId: string }

@@ -1,5 +1,5 @@
 import type { CliExecutionRequest } from "../command-execution-result.js";
-import type { DaemonCommandName } from "@symnav/daemon";
+import type { DaemonCommandName, DaemonExecutionFailureCode } from "@symnav/daemon";
 import type { CompletionSpoolManifest } from "./completion-spool.js";
 import type { CommandOutputStream } from "../command-execution-result.js";
 import type { BackendRefreshSummary } from "@symnav/core";
@@ -111,13 +111,6 @@ export type DaemonStopResult =
   | { readonly status: "not-running"; readonly workspaceRoot: string };
 
 export type DaemonStopReason = "graceful" | "idle" | "resource" | "workspace-deleted";
-
-export type DaemonExecutionFailureCode =
-  | "worker-exit"
-  | "controlled-resource"
-  | "response-capacity"
-  | "stopping"
-  | "internal";
 
 export type DaemonExecuteRejectionCode =
   | "not-ready"

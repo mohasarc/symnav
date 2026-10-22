@@ -1,7 +1,11 @@
 import { createHash } from "node:crypto";
 import type { CliExecutionRequest } from "../command-execution-result.js";
-import type { DaemonCommandName } from "@symnav/daemon";
-import type { DaemonExecutionFailureCode, DaemonExecutionStatus } from "./daemon-protocol.js";
+import {
+  DaemonExecutionFailures,
+  type DaemonCommandName,
+  type DaemonExecutionFailureCode,
+} from "@symnav/daemon";
+import type { DaemonExecutionStatus } from "./daemon-protocol.js";
 
 export type AcceptedRequestState =
   | { readonly state: "queued"; readonly acceptedAt: number; readonly queuePosition: number }
@@ -102,6 +106,7 @@ export class AcceptedRequestLedger {
     code: DaemonExecutionFailureCode,
     completedAt: number,
   ): AcceptedRequestEntry {
+    AcceptedRequestLedger.assertFailureCode(code);
     const entry = this.transitionable(requestId);
     return this.publish({
       ...entry,
@@ -114,6 +119,7 @@ export class AcceptedRequestLedger {
     code: DaemonExecutionFailureCode,
     completedAt: number,
   ): AcceptedRequestEntry {
+    AcceptedRequestLedger.assertFailureCode(code);
     const entry = this.entry(requestId);
     if (entry.state.state === "failed" && entry.state.code === code) return entry;
     if (entry.state.state !== "completed") {
@@ -123,6 +129,12 @@ export class AcceptedRequestLedger {
       ...entry,
       state: { state: "failed", completedAt, code },
     });
+  }
+
+  private static assertFailureCode(code: unknown): asserts code is DaemonExecutionFailureCode {
+    if (!DaemonExecutionFailures.isCode(code)) {
+      throw new Error("Invalid daemon execution failure code");
+    }
   }
 
   status(requestId: string): DaemonExecutionStatus {

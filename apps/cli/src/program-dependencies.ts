@@ -8,6 +8,7 @@ import type {
 import type { Clock, Recorder, TelemetryFailureObserver } from "@symnav/telemetry";
 import type { DaemonClient, DaemonPolicy, DaemonStateWriteFailureObserver } from "@symnav/daemon";
 import type { TelemetryIdentityProvider } from "./telemetry/telemetry-identity.js";
+import type { InvocationWarningOptions } from "./output/invocation-warning.js";
 import type { CommandExecutionMode } from "./command-execution-result.js";
 
 export interface CommandPhaseDurations {
@@ -17,6 +18,7 @@ export interface CommandPhaseDurations {
 }
 
 export interface ProgramDependencies {
+  readonly warningOptions?: InvocationWarningOptions;
   readonly stateDirectory: string;
   readonly stateWriteFailed?: DaemonStateWriteFailureObserver;
   readonly invocationTelemetry?: (

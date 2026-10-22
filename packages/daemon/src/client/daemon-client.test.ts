@@ -62,6 +62,16 @@ describe("DaemonClient execution", () => {
     ]);
   });
 
+  it("records proven daemon death independently of the one local fallback", async () => {
+    const harness = new ClientHarness({ observationKind: "exited" });
+    expect((await harness.client.execute(harness.request())).mode).toBe("fallback");
+    expect(harness.failureEvents.map((event) => event.kind)).toEqual(["termination", "fallback"]);
+    expect(harness.failureEvents[0]).toMatchObject({
+      instanceId: daemonRecord().instanceId,
+      failure: expect.objectContaining({ reason: "process-terminated" }),
+    });
+  });
+
   it("records accepted transfer failure diagnostics without counting a fallback or replaying work", async () => {
     const cause = Object.assign(new Error("secret transfer"), { code: "ECONNRESET" });
     const harness = new ClientHarness({

@@ -321,7 +321,13 @@ describe("DaemonStartupCoordinator", () => {
     expect(runtime.registry.readStored(runtime.identity)?.instanceId).toBe("old");
   });
 
-  it.each(["schema", "prior-protocol", "future-protocol", "symnav"] as const)(
+  it.each([
+    "schema",
+    "prior-protocol",
+    "future-protocol",
+    "symnav",
+    ...(process.platform === "win32" ? [] : ["legacy-endpoint"]),
+  ] as const)(
     "proves and replaces a real daemon for $mismatch mismatch",
     async (mismatch) => {
       const runtime = socketBackedCoordinator(roots);
@@ -335,6 +341,7 @@ describe("DaemonStartupCoordinator", () => {
       const oldRecord = readyRecord(runtime.identity, "old", "old-process", oldPid);
       const incompatibleRecord: DaemonRecord = {
         ...oldRecord,
+        endpoint: runtime.identity.legacySocketEndpoint("old"),
         schemaVersion:
           mismatch === "schema" ? DAEMON_RECORD_SCHEMA_VERSION + 1 : oldRecord.schemaVersion,
         protocolVersion:
@@ -1424,7 +1431,7 @@ function spawnIdentifiableDaemon(
   processIds: number[],
 ): Promise<number> {
   if (process.platform !== "win32") {
-    mkdirSync(dirname(identity.endpoint(instanceId)), { recursive: true, mode: 0o700 });
+    mkdirSync(dirname(identity.legacySocketEndpoint(instanceId)), { recursive: true, mode: 0o700 });
   }
   return new Promise((resolve, reject) => {
     const child = spawn(
@@ -1432,7 +1439,7 @@ function spawnIdentifiableDaemon(
       [
         "-e",
         identifiableDaemonSource,
-        identity.endpoint(instanceId),
+        identity.legacySocketEndpoint(instanceId),
         instanceId,
         processToken,
         String(startedAt),

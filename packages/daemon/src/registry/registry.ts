@@ -138,13 +138,18 @@ export class DaemonRegistry {
   }
 
   read(identity: DaemonWorkspaceIdentity): DaemonRecord | undefined {
-    return this.records(identity).find((record) => DaemonRegistry.isCurrentRecord(record));
+    return this.records(identity).find(
+      (record) =>
+        DaemonRegistry.isCurrentRecord(record) &&
+        record.endpoint === identity.endpoint(record.instanceId),
+    );
   }
 
   readInstance(identity: DaemonWorkspaceIdentity, instanceId: string): DaemonRecord | undefined {
     const record = this.readStoredPath(identity.recordPath(instanceId));
     return record !== undefined &&
       DaemonRegistry.isCurrentRecord(record) &&
+      record.endpoint === identity.endpoint(record.instanceId) &&
       DaemonRegistry.matchesIdentity(record, identity)
       ? record
       : undefined;
@@ -783,7 +788,8 @@ export class DaemonRegistry {
       record.workspaceKey === identity.workspaceKey &&
       record.stateKey === identity.stateKey &&
       record.identityKey === identity.identityKey &&
-      record.endpoint === identity.endpoint(record.instanceId)
+      (record.endpoint === identity.endpoint(record.instanceId) ||
+        record.endpoint === identity.legacySocketEndpoint(record.instanceId))
     );
   }
 

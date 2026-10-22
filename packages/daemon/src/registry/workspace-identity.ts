@@ -39,6 +39,14 @@ export class DaemonWorkspaceIdentity {
   }
 
   endpoint(instanceId: string): string {
+    if (process.platform === "win32") return this.legacySocketEndpoint(instanceId);
+    return join(
+      this.identityDirectory,
+      `${DaemonWorkspaceIdentity.hash(instanceId).slice(0, 12)}.mailbox`,
+    );
+  }
+
+  legacySocketEndpoint(instanceId: string): string {
     const instanceKey = DaemonWorkspaceIdentity.hash(instanceId).slice(0, 12);
     const endpointName = `${this.identityKey.slice(0, 20)}-${instanceKey}`;
     if (process.platform === "win32") {

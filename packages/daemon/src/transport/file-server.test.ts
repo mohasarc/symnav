@@ -152,6 +152,74 @@ describe.skipIf(process.platform === "win32")("filesystem daemon server", () => 
     },
   );
 
+  it("cleans acknowledgement channels while peers finish closing", async () => {
+    const endpoint = await harness.endpoint();
+    const transport = DaemonTransportFactory.create({ policy: harness.policy });
+    const listening = await transport.server.listen(endpoint, async (request) => {
+      if (request.kind !== "result-ack") throw new Error("Expected acknowledgement");
+      return {
+        kind: "result-acknowledged",
+        instanceId: request.instanceId,
+        processToken: request.processToken,
+        requestId: request.requestId,
+        transferId: request.transferId,
+      };
+    });
+    for (let index = 0; index < 200; index += 1) {
+      await transport.lifecycle.acknowledgeResult(
+        endpoint,
+        {
+          protocolVersion: DAEMON_PROTOCOL_VERSION,
+          instanceId: "instance",
+          processToken: "token",
+          requestId: `request-${index}`,
+        },
+        "transfer",
+      );
+    }
+    await listening.close();
+    expect(await readdir(join(endpoint, ".."))).toEqual([]);
+  }, 10_000);
+
+  it("isolates malformed and abandoned channels while preserving the listener", async () => {
+    const endpoint = await harness.endpoint();
+    const transport = DaemonTransportFactory.create({ policy: harness.policy });
+    const listening = await transport.server.listen(endpoint, async (request) =>
+      harness.pong(request.instanceId),
+    );
+    for (const [name, owner] of [
+      ["1.channel", "broken"],
+      ["2.channel", JSON.stringify({ pid: 2147483647 })],
+    ] as const) {
+      await mkdir(join(endpoint, name));
+      await writeFile(join(endpoint, name, "owner.json"), owner);
+    }
+    await vi.waitFor(async () =>
+      expect((await readdir(endpoint)).filter((name) => name.endsWith(".channel"))).toEqual([]),
+    );
+    await expect(
+      transport.lifecycle.request(endpoint, harness.ping("healthy")),
+    ).resolves.toMatchObject({ kind: "pong" });
+    await listening.close(true);
+  });
+
+  it("shares graceful close and forcefully interrupts an idle accepted channel", async () => {
+    const endpoint = await harness.endpoint();
+    const transport = DaemonTransportFactory.create({ policy: harness.policy });
+    const listening = await transport.server.listen(endpoint, async () => {});
+    const client = await new FileDaemonConnectionClient({
+      policy: harness.policy.values.transport,
+    }).connect(endpoint);
+    await client.write(harness.codec.encodeControl(harness.ping("idle")));
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    const closing = listening.close();
+    expect(listening.close()).toBe(closing);
+    expect(listening.close(true)).toBe(closing);
+    await closing;
+    await expect(client.incoming[Symbol.asyncIterator]().next()).rejects.toThrow(/closed/);
+    client.destroy();
+  });
+
   it("removes only endpoints with a proven dead owner", async () => {
     const endpoint = await harness.endpoint();
     await mkdir(endpoint);

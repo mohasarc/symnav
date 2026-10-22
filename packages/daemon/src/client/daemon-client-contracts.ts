@@ -33,7 +33,10 @@ export interface DaemonClientExecuteResult {
   readonly result: DaemonExecutorExecutionResult;
 }
 
-export type DaemonControlRequest =
+export type DaemonControlRequest = {
+  readonly stateWriteFailed?: DaemonStateWriteFailureObserver;
+} & (
   | { readonly action: "start"; readonly workspaceRoot: string }
   | { readonly action: "status" }
-  | { readonly action: "stop"; readonly workspaceRoot: string };
+  | { readonly action: "stop"; readonly workspaceRoot: string }
+);

@@ -83,6 +83,9 @@ class CliDaemonExecutor implements DaemonExecutor {
     const result = await this.programExecutor.execute(request);
     return {
       exitCode: result.exitCode,
+      ...(result.stateWriteFailure === undefined
+        ? {}
+        : { stateWriteFailure: result.stateWriteFailure }),
       output: new CliDaemonExecutorOutput(result.output),
       diagnostics: this.executionDiagnostics(),
     };

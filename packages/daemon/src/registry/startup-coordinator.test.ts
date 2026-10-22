@@ -975,7 +975,7 @@ class CoordinatorHarness {
   coordinator(
     options: {
       readonly terminationTimeoutMs?: number;
-      readonly policy?: Pick<DaemonPolicyValues, "startup" | "shutdown">;
+      readonly policy?: Pick<DaemonPolicyValues, "startup" | "shutdown" | "diagnostics">;
       readonly processTerminator?: DaemonProcessTerminator;
       readonly now?: () => number;
       readonly readinessProbe?: DaemonReadinessProbe;
@@ -1022,7 +1022,7 @@ class CoordinatorHarness {
 
 function startupRetryPolicy(
   childFailureRetryLimit: number,
-): Pick<DaemonPolicyValues, "startup" | "shutdown"> {
+): Pick<DaemonPolicyValues, "startup" | "shutdown" | "diagnostics"> {
   return DaemonPolicyTestFactory.withOverrides(DaemonPolicy.currentSystem(), {
     startup: { childFailureRetryLimit },
   }).values;

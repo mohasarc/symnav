@@ -1254,6 +1254,24 @@ describe("DaemonProcessCoordinator requests", () => {
     );
   });
 
+  it("does not label failed startup authorization as an attempted state write", async () => {
+    const { daemon, harness } = RequestHarness.create(new ImmediateExecutor());
+    harnesses.push(harness);
+    vi.spyOn(harness.registry, "claimStartupForDaemon").mockImplementation(() => {
+      throw new Error("Authorization failed");
+    });
+    await expect(daemon.start()).rejects.toThrow("Authorization failed");
+    expect(harness.logEvents()).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          kind: "failure",
+          operation: "start",
+          failure: expect.objectContaining({ phase: "warm-up", reason: "startup-failed" }),
+        }),
+      ]),
+    );
+  });
+
   it("logs startup failures before rethrowing them", async () => {
     const { daemon, harness, lease } = RequestHarness.create(new ImmediateExecutor());
     harnesses.push(harness);

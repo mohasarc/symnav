@@ -49,13 +49,13 @@ describe("DaemonProcessCoordinator runtime lifecycle", () => {
     vi.restoreAllMocks();
   });
 
-  it.each(["endpoint create", "warm-up"] as const)(
+  it.each([process.platform === "win32" ? "endpoint bind" : "endpoint create", "warm-up"] as const)(
     "records %s failure before startup cleanup",
     async (phase) => {
       const transport = new DaemonTransport({ requestTimeoutMs: 200 });
       const worker = new ExecutorNavigationWorker(new ImmediateExecutor());
       const error = Object.assign(new Error("secret startup error"), { code: "EACCES" });
-      if (phase === "endpoint create") vi.spyOn(transport, "listen").mockRejectedValue(error);
+      if (phase !== "warm-up") vi.spyOn(transport, "listen").mockRejectedValue(error);
       else vi.spyOn(worker, "start").mockRejectedValue(error);
       await expect(
         DaemonProcessCoordinatorHarness.start(new ImmediateExecutor(), {
@@ -76,7 +76,12 @@ describe("DaemonProcessCoordinator runtime lifecycle", () => {
           instanceId: harness.instanceId,
           failure: {
             phase,
-            reason: phase === "endpoint create" ? "endpoint-create-failed" : "startup-failed",
+            reason:
+              phase === "endpoint bind"
+                ? "endpoint-bind-denied"
+                : phase === "endpoint create"
+                  ? "endpoint-create-failed"
+                  : "startup-failed",
             timestamp: expect.any(Number),
             osCode: "EACCES",
           },

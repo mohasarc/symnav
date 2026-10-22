@@ -1,4 +1,5 @@
 import { DaemonStateWriteErrors } from "../state-write-errors.js";
+import type { DaemonStateWriteReport } from "../state-write-failure.js";
 import { createHash, randomUUID } from "node:crypto";
 import { constants } from "node:fs";
 import { chmod, lstat, mkdir, open, rm, unlink } from "node:fs/promises";
@@ -81,7 +82,7 @@ export interface CompletionSpoolIdentity {
   readonly transferId: string;
 }
 
-export interface CompletionSpoolManifest extends CommandOutputSummary {
+export interface CompletionSpoolManifest extends CommandOutputSummary, DaemonStateWriteReport {
   readonly transferId: string;
   readonly requestId: string;
   readonly instanceId: string;

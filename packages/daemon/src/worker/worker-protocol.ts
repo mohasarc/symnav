@@ -1,3 +1,4 @@
+import type { DaemonStateWriteReport } from "../state-write-failure.js";
 import {
   type DaemonCommandName,
   type DaemonDiagnostics,
@@ -65,7 +66,7 @@ export type DaemonNavigationWorkerResponse =
       readonly kind: "result";
       readonly generation: number;
       readonly requestId: string;
-      readonly result: { readonly exitCode: number };
+      readonly result: { readonly exitCode: number } & DaemonStateWriteReport;
       readonly refresh: DaemonRefreshSummary;
       readonly durations: WorkerCommandDurations;
       readonly diagnostics?: DaemonDiagnostics;

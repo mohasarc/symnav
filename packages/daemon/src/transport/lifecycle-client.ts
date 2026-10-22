@@ -9,11 +9,11 @@ import type {
 } from "./protocol.js";
 import { DaemonProtocolError, type DaemonProtocolValidator } from "./protocol-validator.js";
 import { DaemonTransportError, type DaemonDeliveryState } from "./transport-error.js";
-import type { DaemonLifecycleRequester, DaemonSocketClient } from "./contracts.js";
+import type { DaemonLifecycleRequester, DaemonConnectionClient } from "./contracts.js";
 import type { DaemonWireCodec } from "./wire-codec.js";
 
 interface DaemonLifecycleClientOptions {
-  readonly sockets: DaemonSocketClient;
+  readonly sockets: DaemonConnectionClient;
   readonly codec: DaemonWireCodec;
   readonly validator: DaemonProtocolValidator;
   readonly responseTimeoutMs: number;
@@ -58,7 +58,7 @@ export class DaemonLifecycleClient implements DaemonLifecycleRequester {
       transferId,
     };
     const decoder = this.options.codec.controlDecoder();
-    let connection: Awaited<ReturnType<DaemonSocketClient["connect"]>> | undefined;
+    let connection: Awaited<ReturnType<DaemonConnectionClient["connect"]>> | undefined;
     try {
       connection = await this.options.sockets.connect(endpoint, this.options.responseTimeoutMs);
       connection.write(this.options.codec.encodeControl(acknowledgement));
@@ -97,7 +97,7 @@ export class DaemonLifecycleClient implements DaemonLifecycleRequester {
   ): Promise<DaemonLifecycleResponse | DaemonExecutionStatusResponse> {
     this.options.validator.request(request);
     const decoder = this.options.codec.controlDecoder();
-    let connection: Awaited<ReturnType<DaemonSocketClient["connect"]>>;
+    let connection: Awaited<ReturnType<DaemonConnectionClient["connect"]>>;
     let delivery: DaemonDeliveryState = "not-submitted";
     try {
       connection = await this.options.sockets.connect(endpoint, this.options.responseTimeoutMs);

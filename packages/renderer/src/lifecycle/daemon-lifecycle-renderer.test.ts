@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { DaemonLifecycleRenderer } from "./daemon-lifecycle-renderer.js";
-import type { DaemonStartResult, DaemonStopResult, RunningDaemonStatus } from "@symnav/daemon";
+import type {
+  DaemonStartResult,
+  DaemonStopResult,
+  RunningDaemonStatus,
+  DaemonStatusReport,
+} from "@symnav/daemon";
 
 describe("DaemonLifecycleRenderer start", () => {
   it.each([
@@ -63,6 +68,66 @@ describe("DaemonLifecycleRenderer start", () => {
 });
 
 describe("DaemonLifecycleRenderer status", () => {
+  it("adds the prescribed fallback line below the unchanged running line", () => {
+    const report: DaemonStatusReport = {
+      daemons: [
+        {
+          state: "ready",
+          workspaceRoot: "/repo",
+          pid: 11,
+          uptimeMs: 60_000,
+          fileCount: 42,
+          memoryBytes: 1_024,
+          recentFallbacks: {
+            count: 3,
+            latest: {
+              phase: "endpoint connect",
+              reason: "daemon-connection-reset",
+              timestamp: 10,
+              osCode: "ECONNRESET",
+            },
+          },
+        },
+      ],
+    };
+    expect(DaemonLifecycleRenderer.renderStatusText(report)).toBe(
+      "/repo  pid 11  up 1m  ready  42 files  1 KB  no requests\n  3 fallbacks in last hour: daemon connection reset (ECONNRESET)\n",
+    );
+    expect(JSON.parse(DaemonLifecycleRenderer.renderStatusJson(report))).toEqual({
+      schemaVersion: 1,
+      ...report,
+    });
+  });
+
+  it("adds an absent startup failure after the unchanged no-daemon line", () => {
+    const report: DaemonStatusReport = {
+      daemons: [],
+      startupFailures: [
+        {
+          workspaceRoot: "/repo",
+          failure: {
+            phase: "endpoint bind",
+            reason: "endpoint-bind-denied",
+            timestamp: 10,
+            osCode: "EPERM",
+          },
+        },
+      ],
+    };
+    expect(DaemonLifecycleRenderer.renderStatusText(report, 120_010)).toBe(
+      "No daemons running.\n/repo  last startup failed 2m ago: endpoint bind denied (EPERM)\n",
+    );
+    expect(JSON.parse(DaemonLifecycleRenderer.renderStatusJson(report))).toEqual({
+      schemaVersion: 1,
+      ...report,
+    });
+  });
+
+  it("omits empty optional diagnostic arrays from schema version one JSON", () => {
+    expect(DaemonLifecycleRenderer.renderStatusJson({ daemons: [], startupFailures: [] })).toBe(
+      '{"schemaVersion":1,"daemons":[]}\n',
+    );
+  });
   it("renders explicit lifecycle fields without inventing unavailable metrics", () => {
     const statuses: readonly RunningDaemonStatus[] = [
       { state: "starting", workspaceRoot: "/starting", pid: 11, startupElapsedMs: 2_400 },

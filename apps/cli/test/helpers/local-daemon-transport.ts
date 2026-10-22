@@ -1,10 +1,9 @@
 import { mkdirSync } from "node:fs";
 import { DaemonPolicy, type DaemonPolicyValues } from "@symnav/daemon";
 import { DaemonPolicyTestFactory } from "@symnav/daemon/policy-testing";
-import {
-  LocalDaemonTransport as RuntimeLocalDaemonTransport,
-  type LocalDaemonTransportPolicy,
-} from "../../src/daemon/local-daemon-transport.js";
+import { LocalDaemonTransport as RuntimeLocalDaemonTransport } from "../../src/daemon/local-daemon-transport.js";
+
+type LocalDaemonTransportPolicy = Pick<DaemonPolicyValues, "transport" | "delivery" | "output">;
 
 interface TestLocalDaemonTransportOptions {
   readonly maximumFrameBytes?: number;
@@ -23,7 +22,12 @@ export class TestLocalDaemonTransport extends RuntimeLocalDaemonTransport {
       | TestLocalDaemonTransportOptions = {},
   ) {
     if ("transport" in policyOrOptions) {
-      super(policyOrOptions);
+      const policy = DaemonPolicyTestFactory.withOverrides(DaemonPolicy.currentSystem(), {
+        transport: policyOrOptions.transport,
+        delivery: policyOrOptions.delivery,
+        output: policyOrOptions.output,
+      });
+      super({ policy });
       return;
     }
     const options = policyOrOptions;
@@ -54,11 +58,12 @@ export class TestLocalDaemonTransport extends RuntimeLocalDaemonTransport {
     if (options.outputDirectory !== undefined) {
       mkdirSync(options.outputDirectory, { recursive: true });
     }
-    super(policy.values, {
+    super({
+      policy,
       ...(options.writeChunkSize === undefined ? {} : { writeChunkSize: options.writeChunkSize }),
       ...(options.outputDirectory === undefined
         ? {}
-        : { outputDirectory: options.outputDirectory }),
+        : { captureDirectory: options.outputDirectory }),
     });
   }
 }

@@ -67,7 +67,7 @@ class DaemonStartAction {
       );
       const controller = new DaemonController(
         registry,
-        new LocalDaemonTransport(dependencies.daemonPolicy.values),
+        new LocalDaemonTransport({ policy: dependencies.daemonPolicy }),
         stateDirectory,
         {
           policy: dependencies.daemonPolicy.values,
@@ -109,7 +109,8 @@ class DaemonStatusAction {
     );
     const controller = new DaemonController(
       registry,
-      new LocalDaemonTransport(dependencies.daemonPolicy.values, {
+      new LocalDaemonTransport({
+        policy: dependencies.daemonPolicy,
         lifecycleResponseTimeoutMs:
           dependencies.daemonPolicy.values.transport.statusResponseTimeoutMs,
       }),
@@ -142,7 +143,7 @@ class DaemonStopAction {
       );
       const controller = new DaemonController(
         registry,
-        new LocalDaemonTransport(dependencies.daemonPolicy.values),
+        new LocalDaemonTransport({ policy: dependencies.daemonPolicy }),
         stateDirectory,
         { policy: dependencies.daemonPolicy.values },
       );

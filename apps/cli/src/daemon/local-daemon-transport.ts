@@ -1,4 +1,4 @@
-import type { DaemonPolicyValues } from "@symnav/daemon";
+import type { DaemonPolicy } from "@symnav/daemon";
 import { DaemonClientResultCapture } from "./daemon-client-result-capture.js";
 import { DaemonExecutionClient } from "./daemon-execution-client.js";
 import { DaemonLifecycleClient } from "./daemon-lifecycle-client.js";
@@ -23,74 +23,82 @@ import { LocalDaemonSocketClient } from "./local-daemon-socket-client.js";
 import { LocalDaemonSocketServer } from "./local-daemon-socket-server.js";
 
 interface LocalDaemonTransportOptions {
+  readonly policy: DaemonPolicy;
   readonly lifecycleResponseTimeoutMs?: number;
   readonly writeChunkSize?: number;
-  readonly outputDirectory?: string;
+  readonly captureDirectory?: string;
+  readonly codec?: DaemonWireCodec;
+  readonly validator?: DaemonProtocolValidator;
   readonly sockets?: DaemonSocketClient;
+  readonly lifecycle?: DaemonLifecycleComponent;
+  readonly execution?: DaemonExecutionRequester;
+  readonly server?: DaemonRequestServer;
 }
 
-export type LocalDaemonTransportPolicy = Pick<
-  DaemonPolicyValues,
-  "transport" | "delivery" | "output"
->;
+type DaemonLifecycleComponent = DaemonLifecycleRequester &
+  Pick<DaemonLifecycleClient, "acknowledgeResult">;
 
 export class LocalDaemonTransport
   implements DaemonLifecycleRequester, DaemonExecutionRequester, DaemonRequestServer
 {
   private readonly codec: DaemonWireCodec;
-  private readonly validator = new DaemonProtocolValidator();
+  private readonly validator: DaemonProtocolValidator;
   private readonly sockets: DaemonSocketClient;
-  private readonly lifecycle: DaemonLifecycleClient;
+  private readonly lifecycle: DaemonLifecycleComponent;
   private readonly execution: DaemonExecutionRequester;
   private readonly server: DaemonRequestServer;
 
-  constructor(policy: LocalDaemonTransportPolicy, options: LocalDaemonTransportOptions = {}) {
-    this.codec = new DaemonWireCodec({
-      maximumJsonPayloadBytes: policy.transport.maximumJsonPayloadBytes,
-      maximumExecutionControlPayloadBytes: policy.transport.maximumExecutionControlPayloadBytes,
-      maximumChunkRawBytes: policy.output.maximumChunkRawBytes,
-    });
+  constructor(options: LocalDaemonTransportOptions) {
+    const policy = options.policy;
+    this.codec =
+      options.codec ??
+      new DaemonWireCodec({
+        maximumJsonPayloadBytes: policy.values.transport.maximumJsonPayloadBytes,
+        maximumExecutionControlPayloadBytes:
+          policy.values.transport.maximumExecutionControlPayloadBytes,
+        maximumChunkRawBytes: policy.values.output.maximumChunkRawBytes,
+      });
+    this.validator = options.validator ?? new DaemonProtocolValidator();
     this.sockets =
       options.sockets ??
       new LocalDaemonSocketClient(
         options.writeChunkSize === undefined ? {} : { writeChunkSize: options.writeChunkSize },
       );
-    this.lifecycle = new DaemonLifecycleClient({
-      sockets: this.sockets,
-      codec: this.codec,
-      validator: this.validator,
-      responseTimeoutMs:
-        options.lifecycleResponseTimeoutMs ?? policy.transport.singleResponseTimeoutMs,
-    });
-    this.execution = new DaemonExecutionClient({
-      sockets: this.sockets,
-      lifecycle: this.lifecycle,
-      codec: this.codec,
-      validator: this.validator,
-      createOutput: () =>
-        new DaemonClientResultCapture({
-          policy: policy.output,
-          ...(options.outputDirectory === undefined ? {} : { directory: options.outputDirectory }),
-        }),
-      transportPolicy: policy.transport,
-      deliveryPolicy: policy.delivery,
-    });
-    this.server = new LocalDaemonSocketServer({
-      sockets: this.sockets,
-      codec: this.codec,
-      validator: this.validator,
-      policy: policy.transport,
-      ...(options.writeChunkSize === undefined ? {} : { writeChunkSize: options.writeChunkSize }),
-    });
-  }
-
-  canFrame(value: unknown): boolean {
-    try {
-      this.codec.encodeControl(value);
-      return true;
-    } catch {
-      return false;
-    }
+    this.lifecycle =
+      options.lifecycle ??
+      new DaemonLifecycleClient({
+        sockets: this.sockets,
+        codec: this.codec,
+        validator: this.validator,
+        responseTimeoutMs:
+          options.lifecycleResponseTimeoutMs ?? policy.values.transport.singleResponseTimeoutMs,
+      });
+    this.execution =
+      options.execution ??
+      new DaemonExecutionClient({
+        sockets: this.sockets,
+        lifecycle: this.lifecycle,
+        codec: this.codec,
+        validator: this.validator,
+        createOutput: () =>
+          new DaemonClientResultCapture({
+            policy: policy.values.output,
+            ...(options.captureDirectory === undefined
+              ? {}
+              : { directory: options.captureDirectory }),
+          }),
+        transportPolicy: policy.values.transport,
+        deliveryPolicy: policy.values.delivery,
+      });
+    this.server =
+      options.server ??
+      new LocalDaemonSocketServer({
+        sockets: this.sockets,
+        codec: this.codec,
+        validator: this.validator,
+        policy: policy.values.transport,
+        ...(options.writeChunkSize === undefined ? {} : { writeChunkSize: options.writeChunkSize }),
+      });
   }
 
   request(endpoint: string, request: DaemonLifecycleRequest): Promise<DaemonLifecycleResponse> {
@@ -108,11 +116,11 @@ export class LocalDaemonTransport
     return this.lifecycle.executionStatus(endpoint, request);
   }
 
-  async listen(endpoint: string, handler: DaemonRequestHandler): Promise<DaemonServer> {
+  listen(endpoint: string, handler: DaemonRequestHandler): Promise<DaemonServer> {
     return this.server.listen(endpoint, handler);
   }
 
-  async removeUnavailableEndpoint(endpoint: string): Promise<boolean> {
+  removeUnavailableEndpoint(endpoint: string): Promise<boolean> {
     return this.server.removeUnavailableEndpoint(endpoint);
   }
 }

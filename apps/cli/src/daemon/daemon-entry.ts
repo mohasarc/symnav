@@ -39,7 +39,7 @@ class DaemonEntry {
       executorModuleUrl: configuration.executorModuleUrl,
       policy,
       registry,
-      transport: new LocalDaemonTransport(policy.values),
+      transport: new LocalDaemonTransport({ policy }),
       clock,
       logger,
     }).start();

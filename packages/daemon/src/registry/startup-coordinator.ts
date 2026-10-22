@@ -1,3 +1,8 @@
+import { DaemonFailureJournal } from "../diagnostics/failure-journal.js";
+import { DaemonFailureRecorder } from "../diagnostics/failure-recorder.js";
+import type { DaemonFailurePhase, DaemonFailureReason } from "../daemon-failure.js";
+import { DaemonStateWriteErrors } from "../state-write-errors.js";
+import type { DaemonStateWriteFailureObserver } from "../state-write-failure.js";
 import { randomUUID } from "node:crypto";
 import type { DaemonPolicyValues, DaemonReadinessProbe } from "@symnav/daemon";
 import {
@@ -55,9 +60,11 @@ export class DaemonStartupCoordinator {
   private readonly nextInstanceId: () => string;
   private readonly processTerminator: DaemonProcessTerminator;
   private readonly readinessProbe: DaemonReadinessProbe;
-  private readonly observer: DaemonRecordObserver;
+  private readonly diagnosticsPolicy: DaemonPolicyValues["diagnostics"];
+  private readonly recordedFailures = new WeakSet<object>();
   private readonly launchedInstances = new Set<string>();
   private readonly launchedProcesses = new Map<string, DaemonProcess>();
+  private readonly launchedExitObservations = new Map<string, Promise<void>>();
   private readonly launchedExits = new Map<string, DaemonProcessExit>();
   private readonly launchedInstanceIdsByIdentity = new Map<string, string>();
 
@@ -68,6 +75,7 @@ export class DaemonStartupCoordinator {
     options: DaemonStartupCoordinatorOptions,
   ) {
     const policy = options.policy;
+    this.diagnosticsPolicy = policy.diagnostics;
     this.coordinationGraceMs = policy.startup.coordinationGraceMs;
     this.childFailureRetryLimit = policy.startup.childFailureRetryLimit;
     this.terminationTimeoutMs = policy.startup.previousInstanceTerminationTimeoutMs;
@@ -80,7 +88,6 @@ export class DaemonStartupCoordinator {
       commandName: "version",
       argv: ["--version"],
     };
-    this.observer = new DaemonRecordObserver(this.transport, this.processTerminator);
   }
 
   async ensureRunning(identity: DaemonWorkspaceIdentity): Promise<DaemonStartResult> {
@@ -100,13 +107,41 @@ export class DaemonStartupCoordinator {
     }
   }
 
-  private async triggerAndWait(identity: DaemonWorkspaceIdentity): Promise<DaemonStartResult> {
-    const trigger = await this.trigger(identity);
-    return this.waitUntilReady(identity, trigger.instanceId);
+  private async triggerAndWait(
+    identity: DaemonWorkspaceIdentity,
+    stateWriteFailed?: DaemonStateWriteFailureObserver,
+  ): Promise<DaemonStartResult> {
+    const trigger = await this.trigger(identity, stateWriteFailed);
+    return this.waitUntilReady(identity, trigger.instanceId, stateWriteFailed);
   }
 
-  async trigger(identity: DaemonWorkspaceIdentity): Promise<DaemonWarmupTriggerResult> {
-    const readyRecord = await this.validatedReadyRecord(identity);
+  async trigger(
+    identity: DaemonWorkspaceIdentity,
+    stateWriteFailed?: DaemonStateWriteFailureObserver,
+  ): Promise<DaemonWarmupTriggerResult> {
+    try {
+      return await this.triggerOnce(identity, stateWriteFailed);
+    } catch (error) {
+      if (typeof error !== "object" || error === null || !this.recordedFailures.has(error)) {
+        const stateFailure = DaemonStateWriteErrors.from(error);
+        await this.recordFailure(
+          identity,
+          stateFailure === undefined ? "warm-up" : "state location",
+          stateFailure === undefined ? "startup-failed" : "state-write-failed",
+          error,
+          undefined,
+          stateWriteFailed,
+        );
+      }
+      throw error;
+    }
+  }
+
+  private async triggerOnce(
+    identity: DaemonWorkspaceIdentity,
+    stateWriteFailed?: DaemonStateWriteFailureObserver,
+  ): Promise<DaemonWarmupTriggerResult> {
+    const readyRecord = await this.validatedReadyRecord(identity, stateWriteFailed);
     if (readyRecord?.symnavVersion === this.launcher.symnavVersion) {
       return {
         status: "ready",
@@ -125,9 +160,9 @@ export class DaemonStartupCoordinator {
       ownerKind: "launcher",
       heartbeatAt: this.clock.wallNowMs(),
     });
-    if (lease === undefined) return this.observeElectedWarmup(identity);
+    if (lease === undefined) return this.observeElectedWarmup(identity, stateWriteFailed);
     try {
-      const currentRecord = await this.validatedReadyRecord(identity);
+      const currentRecord = await this.validatedReadyRecord(identity, stateWriteFailed);
       if (currentRecord?.symnavVersion === this.launcher.symnavVersion) {
         lease.release();
         return {
@@ -137,8 +172,9 @@ export class DaemonStartupCoordinator {
         };
       }
       const storedRecord = this.registry.readStored(identity);
-      if (storedRecord !== undefined) await this.replaceStoredRecord(identity, storedRecord);
-      return await this.launch(identity, instanceId, processToken, lease);
+      if (storedRecord !== undefined)
+        await this.replaceStoredRecord(identity, storedRecord, stateWriteFailed);
+      return await this.launch(identity, instanceId, processToken, lease, stateWriteFailed);
     } catch (error) {
       lease.release();
       throw error;
@@ -148,12 +184,13 @@ export class DaemonStartupCoordinator {
   async waitUntilReady(
     identity: DaemonWorkspaceIdentity,
     expectedInstanceId?: string,
+    stateWriteFailed?: DaemonStateWriteFailureObserver,
   ): Promise<DaemonStartResult> {
     let missingOwner: { readonly instanceId: string; readonly firstObservedAt: number } | undefined;
     while (true) {
       const record = this.registry.read(identity);
       if (record?.state === "ready" && record.symnavVersion === this.launcher.symnavVersion) {
-        const validated = await this.validatedChildRecord(identity);
+        const validated = await this.validatedChildRecord(identity, stateWriteFailed);
         if (validated?.instanceId === record.instanceId) {
           await this.probeExecution(validated);
           return this.launchedInstances.has(record.instanceId)
@@ -190,7 +227,7 @@ export class DaemonStartupCoordinator {
           continue;
         }
         if (owner !== undefined && this.startupOwnerIsAbandoned(identity, owner)) {
-          if (this.cleanupAbandonedStartup(identity, owner)) {
+          if (await this.cleanupAbandonedStartup(identity, owner, stateWriteFailed)) {
             throw new DaemonWarmupLostError("Daemon child exited before readiness");
           }
           await this.pause();
@@ -202,7 +239,10 @@ export class DaemonStartupCoordinator {
             this.pause().then(() => undefined),
             daemonProcess.exited,
           ]);
-          if (childExit !== undefined) throw new DaemonChildExitError(childExit);
+          if (childExit !== undefined) {
+            await this.launchedExitObservations.get(storedRecord.instanceId);
+            throw new DaemonChildExitError(childExit);
+          }
           continue;
         }
         if (owner !== undefined) {
@@ -240,6 +280,7 @@ export class DaemonStartupCoordinator {
     instanceId: string,
     processToken: string,
     lease: NonNullable<ReturnType<DaemonRegistry["acquireStartup"]>>,
+    stateWriteFailed?: DaemonStateWriteFailureObserver,
   ): Promise<DaemonWarmupTriggerResult> {
     const lifetime = this.launcher.prepareLifetime?.(identity);
     let daemonProcess: DaemonProcess | undefined;
@@ -296,7 +337,13 @@ export class DaemonStartupCoordinator {
       this.launchedInstances.add(instanceId);
       this.launchedProcesses.set(instanceId, daemonProcess);
       this.launchedInstanceIdsByIdentity.set(identity.identityKey, instanceId);
-      this.observeLaunchedProcess(identity, instanceId, processToken, daemonProcess);
+      this.observeLaunchedProcess(
+        identity,
+        instanceId,
+        processToken,
+        daemonProcess,
+        stateWriteFailed,
+      );
       return {
         status: "launched",
         instanceId,
@@ -304,6 +351,15 @@ export class DaemonStartupCoordinator {
       };
     } catch (error) {
       lifetime?.closeParentCopy();
+      const stateFailure = DaemonStateWriteErrors.from(error);
+      await this.recordFailure(
+        identity,
+        stateFailure !== undefined ? "state location" : "process spawn",
+        stateFailure !== undefined ? "state-write-failed" : "process-spawn-failed",
+        error,
+        instanceId,
+        stateWriteFailed,
+      );
       if (error instanceof DaemonChildExitError) {
         this.cleanupLaunchedProcess(identity, instanceId, processToken);
         throw error;
@@ -326,15 +382,48 @@ export class DaemonStartupCoordinator {
     instanceId: string,
     processToken: string,
     daemonProcess: DaemonProcess,
+    stateWriteFailed?: DaemonStateWriteFailureObserver,
   ): void {
-    void daemonProcess.exited.then((exit) => {
-      this.launchedExits.set(instanceId, exit);
-      if (
-        this.registry.startingRecordForProcess(identity, instanceId, processToken) !== undefined
-      ) {
-        this.cleanupLaunchedProcess(identity, instanceId, processToken);
-      }
-    });
+    const observation = daemonProcess.exited
+      .then(async (exit) => {
+        const starting =
+          this.registry.startingRecordForProcess(identity, instanceId, processToken) !== undefined;
+        await new DaemonFailureRecorder(
+          new DaemonFailureJournal(identity.stateDirectory, this.diagnosticsPolicy, this.clock),
+          identity.workspaceRoot,
+          this.clock,
+          stateWriteFailed,
+        ).record(
+          starting ? "startup-failure" : "termination",
+          "process spawn",
+          "process-terminated",
+          exit.osCode === undefined ? undefined : { code: exit.osCode },
+          instanceId,
+        );
+        if (starting) {
+          this.cleanupLaunchedProcess(identity, instanceId, processToken);
+        }
+        this.launchedExits.set(instanceId, exit);
+      })
+      .catch(() => undefined);
+    this.launchedExitObservations.set(instanceId, observation);
+  }
+
+  private async recordFailure(
+    identity: DaemonWorkspaceIdentity,
+    phase: DaemonFailurePhase,
+    reason: DaemonFailureReason,
+    error: unknown,
+    instanceId?: string,
+    stateWriteFailed?: DaemonStateWriteFailureObserver,
+  ): Promise<void> {
+    await new DaemonFailureRecorder(
+      new DaemonFailureJournal(identity.stateDirectory, this.diagnosticsPolicy, this.clock),
+      identity.workspaceRoot,
+      this.clock,
+      stateWriteFailed,
+    ).record("startup-failure", phase, reason, error, instanceId);
+    if (typeof error === "object" && error !== null) this.recordedFailures.add(error);
   }
 
   private cleanupLaunchedProcess(
@@ -355,14 +444,15 @@ export class DaemonStartupCoordinator {
 
   private async observeElectedWarmup(
     identity: DaemonWorkspaceIdentity,
+    stateWriteFailed?: DaemonStateWriteFailureObserver,
   ): Promise<DaemonWarmupTriggerResult> {
     while (true) {
-      const record = await this.validatedReadyRecord(identity);
+      const record = await this.validatedReadyRecord(identity, stateWriteFailed);
       if (record?.symnavVersion === this.launcher.symnavVersion) {
         return { status: "ready", instanceId: record.instanceId, pid: record.pid };
       }
       const owner = this.registry.startupOwner(identity);
-      if (owner === undefined) return this.trigger(identity);
+      if (owner === undefined) return this.trigger(identity, stateWriteFailed);
       const startingRecord = this.registry.readStoredInstance(identity, owner.instanceId);
       const retainedLegacyStartup =
         startingRecord !== undefined &&
@@ -377,7 +467,8 @@ export class DaemonStartupCoordinator {
         continue;
       }
       if (!retainedLegacyStartup && this.startupOwnerIsAbandoned(identity, owner)) {
-        if (this.cleanupAbandonedStartup(identity, owner)) return this.trigger(identity);
+        if (await this.cleanupAbandonedStartup(identity, owner, stateWriteFailed))
+          return this.trigger(identity, stateWriteFailed);
       }
       if (
         startingRecord?.state === "starting" &&
@@ -437,7 +528,18 @@ export class DaemonStartupCoordinator {
     );
   }
 
-  private cleanupAbandonedStartup(identity: DaemonWorkspaceIdentity, owner: StartupOwner): boolean {
+  private async cleanupAbandonedStartup(
+    identity: DaemonWorkspaceIdentity,
+    owner: StartupOwner,
+    stateWriteFailed?: DaemonStateWriteFailureObserver,
+  ): Promise<boolean> {
+    const record = this.registry.readStoredInstance(identity, owner.instanceId);
+    if (record !== undefined && record.pid > 0) {
+      if ((await this.observeRecord(identity, record, stateWriteFailed)).kind !== "exited")
+        return false;
+    } else if (owner.ownerKind === "daemon" && !this.processTerminator.isAlive(owner.ownerPid)) {
+      await this.recordObservedExit(identity, owner.instanceId, "starting", stateWriteFailed);
+    }
     return this.registry.removeAbandonedStartupOwner(identity, owner);
   }
 
@@ -449,9 +551,10 @@ export class DaemonStartupCoordinator {
 
   private async validatedChildRecord(
     identity: DaemonWorkspaceIdentity,
+    stateWriteFailed?: DaemonStateWriteFailureObserver,
   ): Promise<DaemonRecord | undefined> {
     try {
-      return await this.validatedReadyRecord(identity);
+      return await this.validatedReadyRecord(identity, stateWriteFailed);
     } catch (error) {
       if (error instanceof DaemonOwnedButUnresponsiveError) return undefined;
       throw error;
@@ -460,10 +563,11 @@ export class DaemonStartupCoordinator {
 
   private async validatedReadyRecord(
     identity: DaemonWorkspaceIdentity,
+    stateWriteFailed?: DaemonStateWriteFailureObserver,
   ): Promise<DaemonRecord | undefined> {
     const record = this.registry.read(identity);
     if (record?.state !== "ready") return undefined;
-    const observation = await this.observer.observe(record);
+    const observation = await this.observeRecord(identity, record, stateWriteFailed);
     if (observation.kind === "responsive") {
       this.registry.removeStartupLockIfProcess(identity, record);
       return record;
@@ -481,8 +585,9 @@ export class DaemonStartupCoordinator {
   private async replaceStoredRecord(
     identity: DaemonWorkspaceIdentity,
     record: DaemonRecord,
+    stateWriteFailed?: DaemonStateWriteFailureObserver,
   ): Promise<void> {
-    const observation = await this.observer.observe(record);
+    const observation = await this.observeRecord(identity, record, stateWriteFailed);
     if (observation.kind === "exited") {
       this.registry.removeIfProcess(identity, record.instanceId, record.processToken);
       return;
@@ -499,6 +604,41 @@ export class DaemonStartupCoordinator {
     });
     await this.waitForProcessExitAndEndpointRelease(record);
     this.registry.removeIfProcess(identity, record.instanceId, record.processToken);
+  }
+
+  private observeRecord(
+    identity: DaemonWorkspaceIdentity,
+    record: DaemonRecord,
+    stateWriteFailed?: DaemonStateWriteFailureObserver,
+  ) {
+    return new DaemonRecordObserver(this.transport, this.processTerminator, (exited) =>
+      this.recordObservedExit(identity, exited.instanceId, exited.state, stateWriteFailed),
+    ).observe(record);
+  }
+
+  private async recordObservedExit(
+    identity: DaemonWorkspaceIdentity,
+    instanceId: string,
+    state: DaemonRecord["state"],
+    stateWriteFailed?: DaemonStateWriteFailureObserver,
+  ): Promise<void> {
+    await new DaemonFailureRecorder(
+      new DaemonFailureJournal(identity.stateDirectory, this.diagnosticsPolicy, this.clock),
+      identity.workspaceRoot,
+      this.clock,
+      (failure) => {
+        const error = DaemonStateWriteErrors.failedWrite(failure.path, { code: failure.osCode });
+        this.recordedFailures.add(error);
+        stateWriteFailed?.(failure);
+        throw error;
+      },
+    ).record(
+      state === "starting" ? "startup-failure" : "termination",
+      "process spawn",
+      "process-terminated",
+      undefined,
+      instanceId,
+    );
   }
 
   private async waitForProcessExitAndEndpointRelease(record: DaemonRecord): Promise<void> {

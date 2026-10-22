@@ -1,4 +1,4 @@
-import type { DaemonExecutionFailureCode } from "@symnav/daemon";
+import type { DaemonExecutionFailureCode, DaemonExecutorExecutionResult } from "@symnav/daemon";
 import type {
   DaemonExecuteRequest,
   DaemonExecutionStatus,
@@ -10,7 +10,6 @@ import type {
   DaemonServer,
   DaemonServerMessage,
 } from "./daemon-protocol.js";
-import type { LocalDaemonExecutionResult } from "./local-daemon-output.js";
 
 export interface DaemonSocketConnection {
   readonly incoming: AsyncIterable<Uint8Array>;
@@ -46,7 +45,7 @@ export interface DaemonExecutionAcceptance {
 export interface DaemonExecutionReceipt {
   readonly acceptance: DaemonExecutionAcceptance;
   readonly completion: Promise<
-    | { readonly status: "completed"; readonly result: LocalDaemonExecutionResult }
+    | { readonly status: "completed"; readonly result: DaemonExecutorExecutionResult }
     | { readonly status: "failed"; readonly code: DaemonExecutionFailureCode }
   >;
 }

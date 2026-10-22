@@ -5,7 +5,11 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Writable } from "node:stream";
 import { finished as streamFinished } from "node:stream/promises";
-import type { DaemonPolicyValues } from "@symnav/daemon";
+import type {
+  DaemonExecutorExecutionResult,
+  DaemonExecutorOutput,
+  DaemonPolicyValues,
+} from "@symnav/daemon";
 import type { ProgramContext } from "./program-context.js";
 
 export type CommandOutputStream = "stdout" | "stderr";
@@ -22,13 +26,13 @@ export interface CommandOutputSummary {
   readonly sha256: string;
 }
 
-export interface CommandOutput {
+export interface CommandOutput extends DaemonExecutorOutput {
   readonly summary: CommandOutputSummary;
   records(offset?: number): AsyncIterable<CommandOutputRecord>;
   dispose(): Promise<void>;
 }
 
-export interface CommandExecutionResult {
+export interface CommandExecutionResult extends DaemonExecutorExecutionResult {
   readonly output: CommandOutput;
   readonly exitCode: number;
 }
@@ -37,7 +41,7 @@ export type CommandExecutionMode = "cold" | "warm" | "fallback";
 
 export interface DispatchedCommandResult {
   readonly mode: CommandExecutionMode;
-  readonly result: CommandExecutionResult;
+  readonly result: DaemonExecutorExecutionResult;
 }
 
 export interface CliExecutionRequest {
@@ -380,7 +384,7 @@ export class CommandOutputCapacityError extends Error {
 
 export class CommandResultReplayer {
   static async replay(
-    result: CommandExecutionResult,
+    result: DaemonExecutorExecutionResult,
     context: ProgramContext,
   ): Promise<never | void> {
     try {

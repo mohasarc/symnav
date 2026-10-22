@@ -158,13 +158,16 @@ describe("LocalDaemonSocketServer", () => {
       return writes.length !== 1;
     };
     const server = harness.server({ writeChunkSize: 1 }) as unknown as {
-      writeServerMessage(socket: Socket, value: unknown): Promise<void>;
+      writeEncodedServerFrame(socket: Socket, value: Uint8Array): Promise<void>;
     };
 
-    const writing = server.writeServerMessage(socket as unknown as Socket, {
-      kind: "stopped",
-      instanceId: "instance",
-    });
+    const writing = server.writeEncodedServerFrame(
+      socket as unknown as Socket,
+      harness.encode({
+        kind: "stopped",
+        instanceId: "instance",
+      }),
+    );
     await Promise.resolve();
 
     expect(writes).toHaveLength(1);

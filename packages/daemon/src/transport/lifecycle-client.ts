@@ -61,7 +61,7 @@ export class DaemonLifecycleClient implements DaemonLifecycleRequester {
     let connection: Awaited<ReturnType<DaemonConnectionClient["connect"]>> | undefined;
     try {
       connection = await this.options.sockets.connect(endpoint, this.options.responseTimeoutMs);
-      connection.write(this.options.codec.encodeControl(acknowledgement));
+      await connection.write(this.options.codec.encodeControl(acknowledgement));
       let responseReceived = false;
       for await (const bytes of connection.incoming) {
         for (const response of decoder.append(bytes)) {
@@ -109,8 +109,8 @@ export class DaemonLifecycleClient implements DaemonLifecycleRequester {
       throw new DaemonTransportError("unreachable", delivery, message);
     }
     try {
-      connection.write(this.options.codec.encodeControl(request));
       delivery = "submitted-unconfirmed";
+      await connection.write(this.options.codec.encodeControl(request));
     } catch (error) {
       connection.destroy();
       throw DaemonLifecycleClient.transportError(error, delivery);

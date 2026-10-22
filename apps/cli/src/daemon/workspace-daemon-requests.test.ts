@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "nod
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { DaemonPolicy } from "@symnav/daemon";
+import { DaemonPolicy, type DaemonCommandName } from "@symnav/daemon";
 import {
   CommandOutputSnapshot,
   type CliExecutionRequest,
@@ -10,6 +10,7 @@ import {
   type CommandOutputRecord,
 } from "../command-execution-result.js";
 import { createDefaultDependencies } from "../program.js";
+import { InvocationWorkspaceSelector } from "./invocation-workspace-selector.js";
 import type {
   DaemonExecutionServerFrame,
   DaemonExecutionStatusResponse,
@@ -256,6 +257,15 @@ describe("WorkspaceDaemon requests", () => {
     expect(executor.requests).toHaveLength(1);
   });
 
+  it("rejects the prior execute-envelope generation before command execution", async () => {
+    const executor = new RecordingExecutor();
+    const harness = await RequestHarness.start(executor);
+    harnesses.push(harness);
+
+    await expect(harness.executeAtProtocol("prior-generation", 4)).rejects.toThrow("protocol");
+    expect(executor.requests).toEqual([]);
+  });
+
   it("timestamps daemon requests when they are accepted", async () => {
     const harness = await RequestHarness.start(new ImmediateExecutor(), { now: () => 1_234 });
     harnesses.push(harness);
@@ -461,7 +471,7 @@ describe("WorkspaceDaemon requests", () => {
     const executor = new SerializedExecutor();
     const harness = await RequestHarness.start(executor);
     harnesses.push(harness);
-    const first = harness.execute("first", ["refs", "input"]);
+    const first = harness.execute("first", ["--cwd", "/repo", "overview", "input"], "refs");
     await executor.started(1);
     const second = harness.execute("second", ["overview", "input.ts"]);
 
@@ -481,6 +491,7 @@ describe("WorkspaceDaemon requests", () => {
         queued: 1,
       },
     });
+    expect(executor.requests[0]?.argv).toEqual(["--cwd", "/repo", "overview", "input"]);
     expect(Date.now() - pingStartedAt).toBeLessThan(1_000);
 
     executor.complete(0);
@@ -1575,19 +1586,46 @@ class RequestHarness {
     });
   }
 
-  execute(requestId: string, argv: readonly string[] = ["--version"]): Promise<DaemonResponse> {
-    return this.admit(requestId, argv).then((connection) => connection.terminal);
+  execute(
+    requestId: string,
+    argv: readonly string[] = ["--version"],
+    commandName: DaemonCommandName = this.commandName(argv),
+  ): Promise<DaemonResponse> {
+    return this.admit(requestId, argv, commandName).then((connection) => connection.terminal);
   }
 
-  admit(requestId: string, argv: readonly string[] = ["--version"]): Promise<RequestConnection> {
+  executeAtProtocol(requestId: string, protocolVersion: number): Promise<DaemonResponse> {
+    return this.transport
+      .connect({
+        kind: "execute",
+        protocolVersion,
+        instanceId: this.instanceId,
+        processToken: this.processToken,
+        requestId,
+        commandName: "version",
+        request: { argv: ["--version"], cwd: this.workspaceRoot, telemetryEnabled: false },
+      })
+      .then((connection) => connection.terminal);
+  }
+
+  admit(
+    requestId: string,
+    argv: readonly string[] = ["--version"],
+    commandName: DaemonCommandName = this.commandName(argv),
+  ): Promise<RequestConnection> {
     return this.transport.connect({
       kind: "execute",
       protocolVersion: DAEMON_PROTOCOL_VERSION,
       instanceId: this.instanceId,
       processToken: this.processToken,
       requestId,
+      commandName,
       request: { argv, cwd: this.workspaceRoot, telemetryEnabled: false },
     });
+  }
+
+  private commandName(argv: readonly string[]): DaemonCommandName {
+    return new InvocationWorkspaceSelector().select(argv, this.workspaceRoot).commandName;
   }
 
   status(requestId: string): Promise<DaemonExecutionStatusResponse> {
@@ -1982,8 +2020,9 @@ class ExecutorNavigationWorker implements DaemonNavigationWorker {
 
   async execute(
     requestId: string,
+    _commandName: DaemonCommandName,
     request: CliExecutionRequest,
-    output: Parameters<DaemonNavigationWorker["execute"]>[2],
+    output: Parameters<DaemonNavigationWorker["execute"]>[3],
   ): Promise<DaemonNavigationWorkerResponse> {
     const result = await Promise.race([this.executor.execute(request), this.termination]);
     for await (const record of result.output.records()) await output.append(record);

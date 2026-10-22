@@ -51,7 +51,7 @@ describe("daemon registry", () => {
 
   it("uses current records with chunked-result transport coordinates", () => {
     expect(DAEMON_RECORD_SCHEMA_VERSION).toBe(2);
-    expect(DAEMON_PROTOCOL_VERSION).toBe(4);
+    expect(DAEMON_PROTOCOL_VERSION).toBe(5);
   });
 
   it("keys repositories, worktrees, and submodules by exact workspace root", () => {

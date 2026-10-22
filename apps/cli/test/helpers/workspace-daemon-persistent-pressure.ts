@@ -75,6 +75,7 @@ class PressureNavigationWorker implements DaemonNavigationWorker {
 
   async execute(
     requestId: string,
+    _commandName: Parameters<DaemonNavigationWorker["execute"]>[1],
     request: CliExecutionRequest,
     output: { append(record: CommandOutputRecord): Promise<void> },
   ): Promise<DaemonNavigationWorkerResponse> {

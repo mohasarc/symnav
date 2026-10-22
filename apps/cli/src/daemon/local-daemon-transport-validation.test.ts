@@ -675,6 +675,18 @@ describe("LocalDaemonTransport validation", () => {
     );
   });
 
+  it("rejects an unknown caller-supplied daemon command name", async () => {
+    const transport = new LocalDaemonTransport({ requestTimeoutMs: 100 });
+    const request = {
+      ...executionRequest(),
+      commandName: "not-a-command",
+    } as unknown as DaemonExecuteRequest;
+
+    await expect(
+      Promise.resolve().then(() => transport.execute("/missing-daemon-endpoint", request)),
+    ).rejects.toThrow("Malformed daemon execution request");
+  });
+
   it("rejects legacy embedded completion results", async () => {
     const endpoint = await rawServer(servers, sockets, directories, (socket) => {
       socket.end(
@@ -713,6 +725,7 @@ function executionRequest(): DaemonExecuteRequest {
     instanceId: "instance",
     processToken: "token",
     requestId: "request",
+    commandName: "version",
     request: { argv: ["--version"], cwd: "/repo", telemetryEnabled: false },
   };
 }

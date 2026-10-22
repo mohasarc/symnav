@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { DaemonPolicy } from "@symnav/daemon";
+import { DaemonPolicy, type DaemonCommandName } from "@symnav/daemon";
 import {
   CommandOutputSnapshot,
   type CliExecutionRequest,
@@ -240,6 +240,7 @@ describe("WorkspaceDaemon runtime lifecycle", () => {
         instanceId,
         processToken,
         requestId: "stuck-child-request",
+        commandName: "version",
         request: { argv: ["--version"], cwd: workspaceRoot, telemetryEnabled: false },
       })
       .then((receipt) => receipt.completion.catch(() => undefined))
@@ -508,6 +509,7 @@ class WorkspaceDaemonHarness {
         instanceId: this.instanceId,
         processToken: "runtime-token",
         requestId,
+        commandName: "version",
         request: { argv: ["--version"], cwd: this.workspaceRoot, telemetryEnabled: false },
       })
       .then((receipt) => receipt.completion);
@@ -640,8 +642,9 @@ class ExecutorNavigationWorker implements DaemonNavigationWorker {
 
   async execute(
     requestId: string,
+    _commandName: DaemonCommandName,
     request: CliExecutionRequest,
-    output: Parameters<DaemonNavigationWorker["execute"]>[2],
+    output: Parameters<DaemonNavigationWorker["execute"]>[3],
   ): Promise<DaemonNavigationWorkerResponse> {
     const result = await Promise.race([this.executor.execute(request), this.termination]);
     for await (const record of result.output.records()) await output.append(record);

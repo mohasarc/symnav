@@ -19,6 +19,7 @@ const receipt = await new LocalDaemonTransport({ requestTimeoutMs: 5_000 }).exec
   instanceId,
   processToken,
   requestId: "accepted-disconnect",
+  commandName: "version",
   request: {
     argv: ["overview", "input.ts"],
     cwd: workspaceRoot,

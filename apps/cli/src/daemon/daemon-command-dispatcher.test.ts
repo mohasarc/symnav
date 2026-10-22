@@ -206,6 +206,7 @@ describe("DaemonCommandDispatcher", () => {
 
     expect(harness.executeRequests()).toEqual([
       expect.objectContaining({
+        commandName: "overview",
         request: expect.objectContaining({ argv: ["--cwd", workspaceRoot, ...request.argv] }),
       }),
     ]);

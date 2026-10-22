@@ -16,7 +16,13 @@ const refresh = { added: 1, changed: 0, removed: 0, unchanged: 2 } as const;
 describe("DaemonNavigationWorkerProtocol", () => {
   it.each<DaemonNavigationWorkerRequest>([
     { kind: "initialize", generation: 4, workspaceRoot: "/repo" },
-    { kind: "execute", generation: 4, requestId: "request-1", request },
+    {
+      kind: "execute",
+      generation: 4,
+      requestId: "request-1",
+      commandName: "overview",
+      request,
+    },
     { kind: "output-ack", generation: 4, requestId: "request-1", sequence: 7 },
     { kind: "release-transient", generation: 4, operationId: "release-1" },
     { kind: "close", generation: 4 },
@@ -78,6 +84,13 @@ describe("DaemonNavigationWorkerProtocol", () => {
     {},
     { kind: "initialize", generation: -1, workspaceRoot: "/repo" },
     { kind: "execute", generation: 1, requestId: "", request },
+    {
+      kind: "execute",
+      generation: 1,
+      requestId: "one",
+      commandName: "not-a-command",
+      request,
+    },
     { kind: "output-ack", generation: 1, requestId: "one", sequence: -1 },
     { kind: "execute", generation: 1, requestId: "one", request: { argv: "overview" } },
     { kind: "unknown", generation: 1 },

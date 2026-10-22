@@ -1101,6 +1101,7 @@ export class LocalDaemonTransport {
         value.kind !== "result-ack") ||
       typeof value.processToken !== "string" ||
       !DaemonRuntimeValues.isRequestId(value.requestId) ||
+      (value.kind === "execute" && !DaemonRuntimeValues.isCommandName(value.commandName)) ||
       (value.kind === "execute" && !LocalDaemonTransport.isExecutionRequest(value.request)) ||
       (value.kind === "result-fetch" && !LocalDaemonTransport.isCount(value.offset)) ||
       (value.kind === "result-ack" && typeof value.transferId !== "string")

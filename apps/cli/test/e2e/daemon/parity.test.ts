@@ -248,6 +248,7 @@ describe("symnav daemon parity", () => {
       instanceId: controlled.record.instanceId,
       processToken: controlled.record.processToken,
       requestId: "fifo-first",
+      commandName: "overview",
       request: {
         argv: ["--version"],
         cwd: controlled.record.workspaceRoot,
@@ -390,6 +391,7 @@ describe("symnav daemon parity", () => {
       instanceId: controlled.record.instanceId,
       processToken: controlled.record.processToken,
       requestId,
+      commandName: "overview",
       request: acceptedRequest,
     });
     writeFileSync(controlled.workerExitReleasePath, "release");

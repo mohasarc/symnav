@@ -15,6 +15,7 @@ import type { DaemonRegistry } from "./daemon-registry.js";
 import { DaemonRecordObserver, type DaemonObservation } from "./daemon-record-observer.js";
 import { DaemonStartupCoordinator } from "./daemon-startup-coordinator.js";
 import { DaemonWorkspaceIdentity } from "./daemon-workspace-identity.js";
+import { DaemonRuntimeValues } from "./daemon-runtime-values.js";
 import type { LocalDaemonTransport } from "./local-daemon-transport.js";
 
 interface DaemonControllerOptions {
@@ -289,7 +290,9 @@ export class DaemonController {
         state: "busy",
         pid: record.pid,
         uptimeMs: Math.max(0, this.now() - record.startedAt),
-        command: DaemonController.commandName(observation.pong.currentCommand),
+        command: DaemonRuntimeValues.isCommandName(observation.pong.currentCommand)
+          ? observation.pong.currentCommand
+          : "unknown",
         elapsedMs: observation.pong.currentCommandElapsedMs,
         queued: observation.pong.queued,
         memoryBytes,
@@ -371,24 +374,6 @@ export class DaemonController {
         ? {}
         : { lastRequestAgoMs: activity.lastCompletedAgoMs }),
     };
-  }
-
-  private static commandName(command: string): import("./daemon-protocol.js").DaemonCommandName {
-    const names: readonly import("./daemon-protocol.js").DaemonCommandName[] = [
-      "overview",
-      "resolve",
-      "def",
-      "refs",
-      "context",
-      "graph",
-      "stats",
-      "help",
-      "version",
-      "unknown",
-    ];
-    return names.includes(command as import("./daemon-protocol.js").DaemonCommandName)
-      ? (command as import("./daemon-protocol.js").DaemonCommandName)
-      : "unknown";
   }
 
   private async killIdentified(record: DaemonRecord, deadline: number): Promise<boolean> {

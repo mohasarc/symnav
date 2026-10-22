@@ -206,10 +206,11 @@ class StartupBarrierNavigationWorker implements DaemonNavigationWorker {
 
   execute(
     requestId: string,
+    commandName: Parameters<DaemonNavigationWorker["execute"]>[1],
     request: CliExecutionRequest,
-    output: Parameters<DaemonNavigationWorker["execute"]>[2],
+    output: Parameters<DaemonNavigationWorker["execute"]>[3],
   ): Promise<DaemonNavigationWorkerResponse> {
-    return this.worker.execute(requestId, request, output);
+    return this.worker.execute(requestId, commandName, request, output);
   }
 
   releaseTransientResources(): Promise<DaemonNavigationWorkerResponse> {

@@ -161,6 +161,7 @@ describe("symnav daemon stop", () => {
       instanceId: runtime.record.instanceId,
       processToken: runtime.record.processToken,
       requestId: "built-drain",
+      commandName: "version",
       request: { argv: ["--version"], cwd, telemetryEnabled: false },
     });
     await waitUntil(() => existsSync(runtime.requestStartedPath));
@@ -196,6 +197,7 @@ describe("symnav daemon stop", () => {
       instanceId: runtime.record.instanceId,
       processToken: runtime.record.processToken,
       requestId: "built-force",
+      commandName: "version",
       request: { argv: ["--version"], cwd, telemetryEnabled: false },
     });
     await waitUntil(() => existsSync(runtime.requestStartedPath));

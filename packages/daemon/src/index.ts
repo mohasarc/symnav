@@ -1,4 +1,5 @@
-export type { DaemonCommandName } from "./daemon-command-name.js";
+export { DAEMON_COMMAND_NAMES } from "./daemon-command-name.js";
+export type { DaemonCommandName, DaemonReadinessProbe } from "./daemon-command-name.js";
 export type { DaemonDiagnosticValue, DaemonDiagnostics } from "./daemon-diagnostics.js";
 export type {
   DaemonExecutionMode,

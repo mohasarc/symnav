@@ -1,23 +1,12 @@
 import type { CliExecutionRequest } from "../command-execution-result.js";
+import type { DaemonCommandName } from "@symnav/daemon";
 import type { CompletionSpoolManifest } from "./completion-spool.js";
 import type { CommandOutputStream } from "../command-execution-result.js";
 import type { BackendRefreshSummary } from "@symnav/core";
 
-export const DAEMON_PROTOCOL_VERSION = 4;
+export const DAEMON_PROTOCOL_VERSION = 5;
 export const DAEMON_RECORD_SCHEMA_VERSION = 2;
 export const DAEMON_DIAGNOSTIC_SCHEMA_VERSION = 1;
-
-export type DaemonCommandName =
-  | "overview"
-  | "resolve"
-  | "def"
-  | "refs"
-  | "context"
-  | "graph"
-  | "stats"
-  | "help"
-  | "version"
-  | "unknown";
 
 export interface DaemonIdentityCoordinates {
   readonly workspaceRoot: string;
@@ -142,6 +131,7 @@ export interface DaemonExecuteRequest {
   readonly instanceId: string;
   readonly processToken: string;
   readonly requestId: string;
+  readonly commandName: DaemonCommandName;
   readonly request: CliExecutionRequest;
 }
 

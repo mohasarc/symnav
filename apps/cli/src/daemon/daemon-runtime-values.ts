@@ -1,21 +1,8 @@
-import type { DaemonCommandName } from "./daemon-protocol.js";
+import { DAEMON_COMMAND_NAMES, type DaemonCommandName } from "@symnav/daemon";
 
 export class DaemonRuntimeValues {
-  private static readonly commandNames = new Set<DaemonCommandName>([
-    "overview",
-    "resolve",
-    "def",
-    "refs",
-    "context",
-    "graph",
-    "stats",
-    "help",
-    "version",
-    "unknown",
-  ]);
-
   static isCommandName(value: unknown): value is DaemonCommandName {
-    return this.commandNames.has(value as DaemonCommandName);
+    return DAEMON_COMMAND_NAMES.includes(value as DaemonCommandName);
   }
 
   static isRequestId(value: unknown): value is string {

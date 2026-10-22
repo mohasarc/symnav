@@ -478,6 +478,7 @@ export class DaemonStartupCoordinator {
       instanceId: record.instanceId,
       processToken: record.processToken,
       requestId: randomUUID(),
+      commandName: "version",
       request: {
         argv: ["--version"],
         cwd: record.workspaceRoot,

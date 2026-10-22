@@ -20,10 +20,12 @@ import { join } from "node:path";
 import { performance } from "node:perf_hooks";
 import { fileURLToPath } from "node:url";
 import { runSymnavBinary, type RunSymnavBinaryResult } from "@symnav/testing";
+import type { DaemonCommandName } from "@symnav/daemon";
 import { TestDaemonRegistry as DaemonRegistry } from "../helpers/daemon-registry.js";
-import type { DaemonCommandName } from "../../src/daemon/daemon-protocol.js";
 import { TestDaemonResourcePolicy as DaemonResourcePolicy } from "../helpers/daemon-resource-policy.js";
 import { DaemonWorkspaceIdentity } from "../../src/daemon/daemon-workspace-identity.js";
+import { DaemonRuntimeValues } from "../../src/daemon/daemon-runtime-values.js";
+import { InvocationWorkspaceSelector } from "../../src/daemon/invocation-workspace-selector.js";
 import { StateDirectoryResolver } from "../../src/state-directory-resolver.js";
 import { canonicalWorkspaceRoot } from "../helpers/canonical-workspace-root.js";
 import type {
@@ -456,7 +458,7 @@ export class DaemonScaleBenchmarkHarness {
       telemetryMatched: BenchmarkInvocationTelemetry.matches({
         before: telemetryBefore,
         after: telemetryAfter,
-        command: argv[0] as DaemonCommandName,
+        command: new InvocationWorkspaceSelector().select(argv, root).commandName,
       }),
     };
   }
@@ -596,7 +598,8 @@ export class DaemonScaleBenchmarkHarness {
   private warmTelemetryCommands(stateDirectory: string): DaemonCommandName[] {
     return this.telemetryEvents(stateDirectory)
       .filter((event) => event.executionMode === "warm")
-      .map((event) => event.command as DaemonCommandName);
+      .map((event) => event.command)
+      .filter(DaemonRuntimeValues.isCommandName);
   }
 
   private fallbackTelemetryCount(stateDirectory: string): number {

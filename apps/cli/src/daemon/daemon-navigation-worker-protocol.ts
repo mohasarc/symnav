@@ -1,5 +1,7 @@
 import type { BackendRefreshSummary } from "@symnav/core";
+import type { DaemonCommandName } from "@symnav/daemon";
 import type { CliExecutionRequest, CommandOutputStream } from "../command-execution-result.js";
+import { DaemonRuntimeValues } from "./daemon-runtime-values.js";
 
 export type DaemonExecutionFailureCode = "initialization" | "execution" | "protocol" | "resource";
 
@@ -22,6 +24,7 @@ export type DaemonNavigationWorkerRequest =
       readonly kind: "execute";
       readonly generation: number;
       readonly requestId: string;
+      readonly commandName: DaemonCommandName;
       readonly request: CliExecutionRequest;
     }
   | {
@@ -97,8 +100,9 @@ export class DaemonNavigationWorkerProtocol {
     }
     if (
       value.kind === "execute" &&
-      this.hasKeys(value, ["kind", "generation", "requestId", "request"]) &&
+      this.hasKeys(value, ["kind", "generation", "requestId", "commandName", "request"]) &&
       this.isNonEmptyString(value.requestId) &&
+      DaemonRuntimeValues.isCommandName(value.commandName) &&
       this.isExecutionRequest(value.request)
     ) {
       return value as unknown as DaemonNavigationWorkerRequest;

@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { createWorkspace } from "@symnav/core";
-import type { DaemonPolicy } from "@symnav/daemon";
+import type { DaemonCommandName, DaemonPolicy } from "@symnav/daemon";
 import { CliProgramExecutor } from "../cli-program-executor.js";
 import type {
   CliExecutionRequest,
@@ -149,7 +149,12 @@ export class DaemonCommandDispatcher {
       workspaceDependencies.symnavVersion,
     );
     if (routeSnapshot.kind === "warm") {
-      return this.executeWarm(runtime, routeSnapshot.record, workspaceRequest);
+      return this.executeWarm(
+        runtime,
+        routeSnapshot.record,
+        selected.commandName,
+        workspaceRequest,
+      );
     }
     if (
       (routeSnapshot.kind === "cold" && routeSnapshot.reason === "absent") ||
@@ -205,6 +210,7 @@ export class DaemonCommandDispatcher {
   private async executeWarm(
     runtime: DaemonDispatchRuntime,
     record: DaemonRecord,
+    commandName: DaemonCommandName,
     request: CliExecutionRequest,
   ): Promise<DispatchedCommandResult> {
     let receipt: DaemonExecutionReceipt;
@@ -215,6 +221,7 @@ export class DaemonCommandDispatcher {
         instanceId: record.instanceId,
         processToken: record.processToken,
         requestId: this.requestId(),
+        commandName,
         request: { ...request, executionMode: "warm" },
       });
     } catch (error) {

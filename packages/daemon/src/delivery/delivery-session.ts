@@ -1,3 +1,4 @@
+import { DaemonFailureRecorder } from "../diagnostics/failure-recorder.js";
 import type {
   DaemonStateWriteFailure,
   DaemonStateWriteFailureObserver,
@@ -373,6 +374,12 @@ export class DaemonDeliverySession {
     this.options.diagnostics.record({
       kind: "failure",
       operation,
+      failure: DaemonFailureRecorder.failure(
+        this.options.clock.wallNowMs(),
+        "transfer",
+        "transfer-failed",
+        error,
+      ),
       failureCode: "internal",
       errorName: DaemonLogger.errorName(error),
     });

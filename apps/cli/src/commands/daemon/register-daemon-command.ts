@@ -110,7 +110,8 @@ class DaemonStatusAction {
     const controller = new DaemonController(
       registry,
       new LocalDaemonTransport(dependencies.daemonPolicy.values, {
-        responseTimeoutPurpose: "status-observer",
+        lifecycleResponseTimeoutMs:
+          dependencies.daemonPolicy.values.transport.statusResponseTimeoutMs,
       }),
       stateDirectory,
       { policy: dependencies.daemonPolicy.values },

@@ -8,7 +8,7 @@ import {
   type DaemonResponse,
 } from "./daemon-protocol.js";
 import { DaemonRecordObserver } from "./daemon-record-observer.js";
-import { DaemonTransportError } from "./local-daemon-transport.js";
+import { DaemonTransportError } from "./daemon-transport-error.js";
 
 describe("DaemonRecordObserver", () => {
   it("reports an unpublished starting record without probing its endpoint", async () => {

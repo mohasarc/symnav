@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { DaemonPolicy } from "@symnav/daemon";
+import { DaemonPolicyTestFactory } from "@symnav/daemon/policy-testing";
 import type { DaemonSocketClient, DaemonSocketConnection } from "./daemon-transport.js";
 import { DAEMON_PROTOCOL_VERSION } from "./daemon-protocol.js";
 import { DaemonWireCodec } from "./daemon-wire-codec.js";
@@ -44,6 +45,90 @@ describe("LocalDaemonTransport socket client boundary", () => {
     expect(connection.writes).toHaveLength(1);
     expect(connection.endCount).toBe(1);
     expect(connection.destroyCount).toBe(0);
+  });
+
+  it("composes daemon-status lifecycle requests with the observer timeout", async () => {
+    const policy = DaemonPolicyTestFactory.withOverrides(DaemonPolicy.currentSystem(), {
+      transport: {
+        singleResponseTimeoutMs: 503,
+        statusResponseTimeoutMs: 97,
+        executionAdmissionTimeoutMs: 97,
+      },
+    });
+    const codec = new DaemonWireCodec({
+      maximumJsonPayloadBytes: policy.values.transport.maximumJsonPayloadBytes,
+      maximumExecutionControlPayloadBytes:
+        policy.values.transport.maximumExecutionControlPayloadBytes,
+      maximumChunkRawBytes: policy.values.output.maximumChunkRawBytes,
+    });
+    const connection = new ScriptedDaemonSocketConnection([
+      codec.encodeControl({
+        kind: "pong",
+        protocolVersion: DAEMON_PROTOCOL_VERSION,
+        instanceId: "instance",
+        symnavVersion: "test",
+      }),
+    ]);
+    const sockets = new RecordingDaemonSocketClient(connection);
+    const transport = new LocalDaemonTransport(policy.values, {
+      sockets,
+      lifecycleResponseTimeoutMs: policy.values.transport.statusResponseTimeoutMs,
+    });
+
+    await transport.request("daemon-endpoint", {
+      kind: "ping",
+      protocolVersion: DAEMON_PROTOCOL_VERSION,
+      instanceId: "instance",
+    });
+
+    expect(sockets.connections).toEqual([
+      {
+        endpoint: "daemon-endpoint",
+        timeoutMs: policy.values.transport.statusResponseTimeoutMs,
+      },
+    ]);
+  });
+
+  it("composes execution-status requests with the ordinary response timeout", async () => {
+    const policy = DaemonPolicyTestFactory.withOverrides(DaemonPolicy.currentSystem(), {
+      transport: {
+        singleResponseTimeoutMs: 503,
+        statusResponseTimeoutMs: 97,
+        executionAdmissionTimeoutMs: 97,
+      },
+    });
+    const codec = new DaemonWireCodec({
+      maximumJsonPayloadBytes: policy.values.transport.maximumJsonPayloadBytes,
+      maximumExecutionControlPayloadBytes:
+        policy.values.transport.maximumExecutionControlPayloadBytes,
+      maximumChunkRawBytes: policy.values.output.maximumChunkRawBytes,
+    });
+    const connection = new ScriptedDaemonSocketConnection([
+      codec.encodeControl({
+        kind: "execution-status",
+        instanceId: "instance",
+        processToken: "token",
+        requestId: "request",
+        status: { state: "unknown" },
+      }),
+    ]);
+    const sockets = new RecordingDaemonSocketClient(connection);
+    const transport = new LocalDaemonTransport(policy.values, { sockets });
+
+    await transport.executionStatus("daemon-endpoint", {
+      kind: "execution-status",
+      protocolVersion: DAEMON_PROTOCOL_VERSION,
+      instanceId: "instance",
+      processToken: "token",
+      requestId: "request",
+    });
+
+    expect(sockets.connections).toEqual([
+      {
+        endpoint: "daemon-endpoint",
+        timeoutMs: policy.values.transport.singleResponseTimeoutMs,
+      },
+    ]);
   });
 
   it("receives execution frames through the injected byte connection", async () => {

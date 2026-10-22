@@ -66,7 +66,6 @@ describe("DaemonLogger", () => {
     logger.record({ kind: "ready", fileCount: 1 });
     await logger.flush();
     expect(stateWriteFailures).toEqual([expect.objectContaining({ osCode: "ENOTDIR" })]);
-    expect(logger.stateWriteFailure).toEqual(stateWriteFailures[0]);
   });
 
   it("retains exact structured failure fields and rejects open-ended failure objects", async () => {

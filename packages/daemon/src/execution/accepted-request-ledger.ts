@@ -1,3 +1,4 @@
+import type { DaemonStateWriteReport } from "../state-write-failure.js";
 import { createHash } from "node:crypto";
 import { type DaemonCommandName, type DaemonExecutorRequest } from "@symnav/daemon";
 import type { AcceptedRequestCompatibility } from "../daemon-admission.js";
@@ -12,11 +13,11 @@ export type AcceptedRequestState =
   | { readonly state: "queued" }
   | { readonly state: "running"; readonly startedAt: number }
   | { readonly state: "completed"; readonly completedAt: number; readonly resultId: string }
-  | {
+  | (DaemonStateWriteReport & {
       readonly state: "failed";
       readonly completedAt: number;
       readonly code: DaemonExecutionFailureCode;
-    };
+    });
 
 export interface AcceptedRequestEntry {
   readonly requestId: string;

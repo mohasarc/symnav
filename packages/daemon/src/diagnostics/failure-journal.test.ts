@@ -10,6 +10,7 @@ import type { DaemonFailureEvent } from "../daemon-failure.js";
 import { NodeDaemonClock } from "../lifecycle/daemon-clock.js";
 import { DaemonWorkspaceIdentity } from "../registry/workspace-identity.js";
 import { DaemonFailureJournal } from "./failure-journal.js";
+import { DaemonFailureValues } from "./failure-values.js";
 
 class FailureJournalFixture {
   public static readonly policy = DaemonPolicy.currentSystem().values.diagnostics;
@@ -41,6 +42,41 @@ describe("DaemonFailureJournal", () => {
   afterEach(async () => {
     await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
   });
+
+  it.each(["phase", "reason", "kind"] as const)(
+    "rejects wrong-typed %s values before publication and retained projection",
+    async (field) => {
+      const root = await mkdtemp(join(tmpdir(), "symnav-failures-types-"));
+      roots.push(root);
+      const journal = new DaemonFailureJournal(
+        root,
+        FailureJournalFixture.policy,
+        new NodeDaemonClock(),
+      );
+      const event = FailureJournalFixture.event("valid");
+      await journal.record(event);
+      const directory = join(
+        DaemonWorkspaceIdentity.from("/workspace", root).identityDirectory,
+        "failures",
+      );
+      const [name] = await readdir(directory);
+      const validValue = field === "kind" ? event.kind : event.failure[field];
+      for (const value of [[validValue], null, 1, { toString: () => validValue }]) {
+        const malformed =
+          field === "kind"
+            ? { ...event, kind: value }
+            : { ...event, failure: { ...event.failure, [field]: value } };
+        expect(DaemonFailureValues.isEvent(malformed)).toBe(false);
+        await expect(journal.record(malformed as unknown as DaemonFailureEvent)).rejects.toThrow(
+          "Invalid daemon failure event",
+        );
+        await writeFile(join(directory, name!), JSON.stringify(malformed));
+        expect(await journal.recent(20)).toEqual([]);
+      }
+      await writeFile(join(directory, name!), JSON.stringify(event));
+      expect(await journal.recent(20)).toEqual([event]);
+    },
+  );
 
   it("publishes immutable evidence independently of registry records and state locations", async () => {
     const root = await mkdtemp(join(tmpdir(), "symnav-failures-"));

@@ -30,6 +30,7 @@ import { TestDaemonRegistry as DaemonRegistry } from "../../test/helpers/daemon-
 import { DaemonWorkspaceIdentity } from "./daemon-workspace-identity.js";
 import type { DaemonRequestServer, DaemonServerSend } from "./daemon-transport.js";
 import type { AcceptedRequestLedger } from "./accepted-request-ledger.js";
+import type { AcceptedExecutionSession } from "./accepted-execution-session.js";
 import type {
   DaemonNavigationWorker,
   DaemonNavigationWorkerExit,
@@ -44,7 +45,6 @@ import type {
   DaemonResourceSupervisor,
 } from "./daemon-resource-monitor.js";
 import type { DaemonWorkerGenerationManager } from "./daemon-worker-generation-manager.js";
-import type { WorkspaceRequestQueue } from "./workspace-request-queue.js";
 import { TestDaemonResourcePolicy as DaemonResourcePolicy } from "../../test/helpers/daemon-resource-policy.js";
 import {
   TestWorkspaceDaemon as WorkspaceDaemon,
@@ -1967,7 +1967,10 @@ class RequestHarness {
   }
 
   acceptedRequestCount(): number {
-    return this.daemonInternals.acceptedRequests.size;
+    const session = this.daemonInternals.acceptedExecutionSession as unknown as {
+      readonly options: { readonly ledger: AcceptedRequestLedger };
+    };
+    return session.options.ledger.size;
   }
 
   setWorkerReady(workerReady: boolean): void {
@@ -1986,7 +1989,7 @@ class RequestHarness {
   }
 
   closeAdmission(): Promise<void> {
-    return this.daemonInternals.requestQueue.drain();
+    return this.daemonInternals.acceptedExecutionSession.drain();
   }
 
   observeAdmissionSamples(): ReturnType<typeof vi.fn> {
@@ -2007,8 +2010,7 @@ class RequestHarness {
   }
 
   private get daemonInternals(): {
-    readonly acceptedRequests: AcceptedRequestLedger;
-    readonly requestQueue: WorkspaceRequestQueue;
+    readonly acceptedExecutionSession: AcceptedExecutionSession;
     readonly workerManager: DaemonWorkerGenerationManager;
     readonly resourceSupervisor: DaemonResourceSupervisor & {
       readonly snapshot: DaemonResourceSnapshot;
@@ -2016,8 +2018,7 @@ class RequestHarness {
   } {
     if (this.daemon === undefined) throw new Error("Workspace daemon is unavailable");
     return this.daemon as unknown as {
-      readonly acceptedRequests: AcceptedRequestLedger;
-      readonly requestQueue: WorkspaceRequestQueue;
+      readonly acceptedExecutionSession: AcceptedExecutionSession;
       readonly workerManager: DaemonWorkerGenerationManager;
       readonly resourceSupervisor: DaemonResourceSupervisor & {
         readonly snapshot: DaemonResourceSnapshot;

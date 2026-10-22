@@ -9,8 +9,8 @@ import {
 import type { DaemonExecutionStatus } from "./daemon-protocol.js";
 
 export type AcceptedRequestState =
-  | { readonly state: "queued"; readonly acceptedAt: number; readonly queuePosition: number }
-  | { readonly state: "running"; readonly acceptedAt: number; readonly startedAt: number }
+  | { readonly state: "queued" }
+  | { readonly state: "running"; readonly startedAt: number }
   | { readonly state: "completed"; readonly completedAt: number; readonly resultId: string }
   | {
       readonly state: "failed";
@@ -23,6 +23,8 @@ export interface AcceptedRequestEntry {
   readonly requestFingerprint: string;
   readonly commandName: DaemonCommandName;
   readonly request: DaemonExecutorRequest;
+  readonly acceptedAt: number;
+  readonly queuePosition: number;
   readonly state: AcceptedRequestState;
   readonly deliveryTerminated: boolean;
 }
@@ -83,12 +85,10 @@ export class AcceptedRequestLedger {
       requestFingerprint,
       commandName,
       request,
+      acceptedAt: this.now(),
+      queuePosition: this.nonterminalCount,
       deliveryTerminated: false,
-      state: {
-        state: "queued",
-        acceptedAt: this.now(),
-        queuePosition: this.nonterminalCount,
-      },
+      state: { state: "queued" },
     };
     this.entries.set(requestId, entry);
     return entry;
@@ -101,7 +101,7 @@ export class AcceptedRequestLedger {
     }
     return this.publish({
       ...entry,
-      state: { state: "running", acceptedAt: entry.state.acceptedAt, startedAt },
+      state: { state: "running", startedAt },
     });
   }
 
@@ -150,10 +150,11 @@ export class AcceptedRequestLedger {
   }
 
   status(requestId: string): DaemonExecutionStatus {
-    const state = this.entries.get(requestId)?.state;
-    if (state === undefined) return { state: "unknown" };
+    const entry = this.entries.get(requestId);
+    if (entry === undefined) return { state: "unknown" };
+    const state = entry.state;
     if (state.state === "queued") {
-      return { state: "queued", queuePosition: state.queuePosition };
+      return { state: "queued", queuePosition: entry.queuePosition };
     }
     if (state.state === "running") return { state: "running", startedAt: state.startedAt };
     if (state.state === "completed") return { state: "completed" };

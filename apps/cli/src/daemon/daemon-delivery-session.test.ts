@@ -69,23 +69,23 @@ describe("DaemonDeliverySession", () => {
     const harness = await DeliverySessionHarness.create(directories);
     const entry = harness.journal.accept("request-1", "version", harness.executionRequest);
     if (entry.state.state !== "queued") throw new Error("Expected queued request");
-    harness.session.beginAcceptedTrace("request-1", "version", entry.state.queuePosition, 1);
+    harness.session.beginAcceptedTrace("request-1", "version", entry.queuePosition, 1);
     const first = DeliverySend.create();
     const duplicate = DeliverySend.create();
 
     await harness.session.attach(
       {
         requestId: "request-1",
-        acceptedAt: entry.state.acceptedAt,
-        queuePosition: entry.state.queuePosition,
+        acceptedAt: entry.acceptedAt,
+        queuePosition: entry.queuePosition,
       },
       first.send,
     );
     await harness.session.attach(
       {
         requestId: "request-1",
-        acceptedAt: entry.state.acceptedAt,
-        queuePosition: entry.state.queuePosition,
+        acceptedAt: entry.acceptedAt,
+        queuePosition: entry.queuePosition,
       },
       duplicate.send,
     );
@@ -121,7 +121,7 @@ describe("DaemonDeliverySession", () => {
     const harness = await DeliverySessionHarness.create(directories);
     const entry = harness.journal.accept("request-1", "version", harness.executionRequest);
     if (entry.state.state !== "queued") throw new Error("Expected queued request");
-    harness.session.beginAcceptedTrace("request-1", "version", entry.state.queuePosition, 1);
+    harness.session.beginAcceptedTrace("request-1", "version", entry.queuePosition, 1);
     const firstResultEnd = new DeferredSignal();
     const secondResultEnd = new DeferredSignal();
     const first = DeliverySend.create((message) =>
@@ -133,16 +133,16 @@ describe("DaemonDeliverySession", () => {
     await harness.session.attach(
       {
         requestId: "request-1",
-        acceptedAt: entry.state.acceptedAt,
-        queuePosition: entry.state.queuePosition,
+        acceptedAt: entry.acceptedAt,
+        queuePosition: entry.queuePosition,
       },
       first.send,
     );
     await harness.session.attach(
       {
         requestId: "request-1",
-        acceptedAt: entry.state.acceptedAt,
-        queuePosition: entry.state.queuePosition,
+        acceptedAt: entry.acceptedAt,
+        queuePosition: entry.queuePosition,
       },
       duplicate.send,
     );
@@ -375,12 +375,12 @@ describe("DaemonDeliverySession", () => {
     ] as const) {
       const entry = harness.journal.accept(requestId, "version", harness.executionRequest);
       if (entry.state.state !== "queued") throw new Error("Expected queued request");
-      harness.session.beginAcceptedTrace(requestId, "version", entry.state.queuePosition, 1);
+      harness.session.beginAcceptedTrace(requestId, "version", entry.queuePosition, 1);
       await harness.session.attach(
         {
           requestId,
-          acceptedAt: entry.state.acceptedAt,
-          queuePosition: entry.state.queuePosition,
+          acceptedAt: entry.acceptedAt,
+          queuePosition: entry.queuePosition,
         },
         send.send,
       );

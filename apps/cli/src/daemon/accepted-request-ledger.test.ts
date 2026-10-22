@@ -49,7 +49,9 @@ describe("AcceptedRequestLedger", () => {
       requestId: "request",
       commandName: "overview",
       request,
-      state: { state: "queued", acceptedAt: 10, queuePosition: 0 },
+      acceptedAt: 10,
+      queuePosition: 0,
+      state: { state: "queued" },
     });
     expect(ledger.size).toBe(1);
   });
@@ -71,7 +73,6 @@ describe("AcceptedRequestLedger", () => {
 
     expect(ledger.markRunning("request", 20).state).toEqual({
       state: "running",
-      acceptedAt: 10,
       startedAt: 20,
     });
     expect(ledger.complete("request", "result", 30).state).toEqual({
@@ -83,6 +84,7 @@ describe("AcceptedRequestLedger", () => {
     ledger.acknowledge("request");
     expect(ledger.hasUnacknowledgedCompletions).toBe(false);
     expect(ledger.status("request")).toEqual({ state: "completed" });
+    expect(ledger.entryFor("request")).toMatchObject({ acceptedAt: 10, queuePosition: 0 });
   });
 
   it.each<DaemonExecutionFailureCode>([

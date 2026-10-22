@@ -23,7 +23,7 @@ import type {
 } from "../transport/contracts.js";
 
 interface DaemonControllerOptions {
-  readonly policy: Pick<DaemonPolicyValues, "startup" | "shutdown">;
+  readonly policy: Pick<DaemonPolicyValues, "startup" | "shutdown" | "diagnostics">;
   readonly clock?: Pick<DaemonClock, "wallNowMs">;
   readonly processTerminator?: DaemonProcessTerminator;
   readonly launcher?: DaemonProcessLauncher;
@@ -38,7 +38,7 @@ export class DaemonController {
   private readonly launcher: DaemonProcessLauncher | undefined;
   private readonly startupCoordinator: Pick<DaemonStartupCoordinator, "ensureRunning"> | undefined;
   private readonly observer: DaemonRecordObserver;
-  private readonly policy: Pick<DaemonPolicyValues, "startup" | "shutdown">;
+  private readonly policy: Pick<DaemonPolicyValues, "startup" | "shutdown" | "diagnostics">;
 
   constructor(
     private readonly registry: DaemonRegistry,

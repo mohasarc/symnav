@@ -1,5 +1,6 @@
 import { join } from "node:path";
 import { randomUUID } from "node:crypto";
+import { DaemonStateWriteErrors } from "../state-write-errors.js";
 import type { DaemonExecutionFailureCode } from "../daemon-execution-failure.js";
 import type {
   DaemonExecutorExecutionResult,
@@ -186,7 +187,7 @@ export class DaemonClientRuntime {
     );
     if (route.kind === "warm") return this.executeWarm(route.record, request);
     if ((route.kind === "cold" && route.reason === "absent") || route.kind === "fallback") {
-      DaemonClientRuntime.triggerIndependently(this.coordinator, identity);
+      DaemonClientRuntime.triggerIndependently(this.coordinator, identity, request);
     }
     return this.executeLocally(request, route.kind === "fallback" ? "fallback" : "cold");
   }
@@ -227,6 +228,7 @@ export class DaemonClientRuntime {
         request: DaemonClientRuntime.executorRequest(request, "warm"),
       });
     } catch (error) {
+      DaemonClientRuntime.observeWriteFailure(request, error, this.options.stateDirectory);
       if (error instanceof DaemonTransportError && error.retrySafe) {
         return this.executeLocally(request, "fallback");
       }
@@ -235,14 +237,25 @@ export class DaemonClientRuntime {
     try {
       const completion = await receipt.completion;
       if (completion.status === "failed") {
-        return { mode: "warm", result: DaemonClientRuntime.controlledFailure(completion.code) };
+        if (completion.stateWriteFailure !== undefined)
+          request.stateWriteFailed?.(completion.stateWriteFailure);
+        return {
+          mode: "warm",
+          result: {
+            ...DaemonClientRuntime.controlledFailure(completion.code),
+            ...(completion.stateWriteFailure === undefined
+              ? {}
+              : { stateWriteFailure: completion.stateWriteFailure }),
+          },
+        };
       }
       if (!DaemonClientRuntime.isCompleteResult(completion.result)) {
         await DaemonClientRuntime.disposeMalformedOutput(completion.result);
         return { mode: "warm", result: DaemonControlledResult.acceptedRequestDidNotComplete() };
       }
       return { mode: "warm", result: completion.result };
-    } catch {
+    } catch (error) {
+      DaemonClientRuntime.observeWriteFailure(request, error, this.options.stateDirectory);
       return { mode: "warm", result: DaemonControlledResult.acceptedRequestDidNotComplete() };
     }
   }
@@ -251,6 +264,8 @@ export class DaemonClientRuntime {
     request: DaemonClientExecuteRequest,
     mode: "cold" | "fallback",
   ): Promise<DaemonClientExecuteResult> {
+    if (request.executeLocally !== undefined)
+      return { mode, result: await request.executeLocally(mode) };
     const executor = await this.options.executorFactory({
       stateDirectory: this.options.stateDirectory,
       productVersion: this.options.productVersion,
@@ -275,10 +290,24 @@ export class DaemonClientRuntime {
   private static triggerIndependently(
     coordinator: DaemonStartupCoordinator,
     identity: DaemonWorkspaceIdentity,
+    request: DaemonClientExecuteRequest,
   ): void {
     try {
-      void coordinator.trigger(identity).catch(() => undefined);
-    } catch {}
+      void coordinator.trigger(identity).catch((error: unknown) => {
+        DaemonClientRuntime.observeWriteFailure(request, error, identity.identityDirectory);
+      });
+    } catch (error) {
+      DaemonClientRuntime.observeWriteFailure(request, error, identity.identityDirectory);
+    }
+  }
+
+  private static observeWriteFailure(
+    request: DaemonClientExecuteRequest,
+    error: unknown,
+    path: string,
+  ): void {
+    const failure = DaemonStateWriteErrors.from(error, path);
+    if (failure !== undefined) request.stateWriteFailed?.(failure);
   }
 
   private static isCompleteResult(result: DaemonExecutorExecutionResult): boolean {

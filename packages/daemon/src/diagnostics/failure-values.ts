@@ -61,7 +61,7 @@ export class DaemonFailureValues {
     );
   }
 
-  private static isOsCode(value: unknown): value is string {
+  public static isOsCode(value: unknown): value is string {
     return typeof value === "string" && /^(?:E[A-Z0-9_]{1,63}|ERR_[A-Z0-9_]{1,60})$/u.test(value);
   }
 

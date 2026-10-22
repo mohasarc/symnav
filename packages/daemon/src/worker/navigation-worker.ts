@@ -24,7 +24,7 @@ export class DaemonNavigationWorkerExitedError extends Error {
     readonly exit: DaemonNavigationWorkerExit,
     message = `Daemon navigation worker exited (${exit.cause})`,
   ) {
-    super(message);
+    super(message, { cause: exit.osCode === undefined ? undefined : { code: exit.osCode } });
     this.name = "DaemonNavigationWorkerExitedError";
   }
 }
@@ -208,7 +208,11 @@ export class NodeDaemonNavigationWorker implements DaemonNavigationWorker {
     this.pending.delete(key);
     this.completed.add(key);
     if (response.kind === "failed") {
-      pending.reject(new Error(`Daemon navigation worker ${response.failureCode} failure`));
+      pending.reject(
+        new Error(`Daemon navigation worker ${response.failureCode} failure`, {
+          cause: response.osCode === undefined ? undefined : { code: response.osCode },
+        }),
+      );
       return;
     }
     if (response.kind === "closed") this.closeAcknowledged = true;
@@ -280,6 +284,9 @@ export class NodeDaemonNavigationWorker implements DaemonNavigationWorker {
     this.exit = {
       generation: this.generation,
       cause,
+      ...(this.communicationFailureCode === undefined
+        ? {}
+        : { osCode: this.communicationFailureCode }),
       ...(communicationFailureIdentity === undefined
         ? {}
         : { errorName: communicationFailureIdentity }),

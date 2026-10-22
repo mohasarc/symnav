@@ -83,6 +83,7 @@ export type DaemonNavigationWorkerResponse =
       readonly requestId?: string;
       readonly failureCode: DaemonWorkerFailureCode;
       readonly errorName?: string;
+      readonly osCode?: string;
       readonly operationId?: string;
     }
   | {

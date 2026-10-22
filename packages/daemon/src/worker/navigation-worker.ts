@@ -16,6 +16,7 @@ export interface DaemonNavigationWorkerExit {
   readonly generation: number;
   readonly cause: "closed" | "terminated" | "out-of-memory" | "error";
   readonly errorName?: string;
+  readonly osCode?: string;
 }
 
 export class DaemonNavigationWorkerExitedError extends Error {

@@ -11,8 +11,8 @@ import {
   type DaemonPolicyValues,
 } from "@symnav/daemon";
 import { AcceptedRequestLedger } from "./accepted-request-ledger.js";
+import { DaemonActivityProjector } from "./daemon-activity-projector.js";
 import type {
-  DaemonActivitySnapshot,
   DaemonDeliveryOutcome,
   DaemonExecutionServerFrame,
   DaemonRecord,
@@ -447,32 +447,29 @@ export class WorkspaceDaemon {
   }
 
   private pong(): DaemonResponse {
-    const activity = this.activitySnapshot();
-    const active = activity.current;
-    return {
-      kind: "pong",
-      protocolVersion: DAEMON_PROTOCOL_VERSION,
-      instanceId: this.options.instanceId,
-      symnavVersion: this.options.symnavVersion,
-      state:
-        activity.lifecycle === "busy"
-          ? "busy"
-          : activity.lifecycle === "starting"
-            ? "starting"
-            : "ready",
+    const queue = this.requestQueue.snapshot;
+    const resources = this.resourceSupervisor.snapshot;
+    return DaemonActivityProjector.project({
+      nowMonotonicMs: this.clock.monotonicNowMs(),
+      pid: process.pid,
+      processRssBytes: process.memoryUsage().rss,
       startedAt: this.startedAt,
-      fileCount: this.fileCount,
-      memoryBytes: activity.processRssBytes,
-      queued: activity.queued,
-      activity,
-      ...(active === undefined
-        ? {}
-        : {
-            currentCommand: active.command,
-            currentCommandElapsedMs: active.elapsedMs,
-          }),
+      startedMonotonicAt: this.startedMonotonicAt,
       ...(this.lastNavigationAt === undefined ? {} : { lastNavigationAt: this.lastNavigationAt }),
-    };
+      ...(this.lastCompletedMonotonicAt === undefined
+        ? {}
+        : { lastCompletedMonotonicAt: this.lastCompletedMonotonicAt }),
+      productVersion: this.options.symnavVersion,
+      instanceId: this.options.instanceId,
+      hardProcessRssBytes: this.resourcePolicy.hardProcessRssBytes,
+      queue,
+      resources,
+      worker: {
+        generation: this.workerGeneration?.id ?? resources.generation,
+        ready: this.workerReady,
+        fileCount: this.fileCount,
+      },
+    }).pong;
   }
 
   private async acceptExecution(
@@ -1147,55 +1144,5 @@ export class WorkspaceDaemon {
 
   private currentNavigationWorker(): DaemonNavigationWorker {
     return this.workerGeneration?.worker ?? this.initialNavigationWorker;
-  }
-
-  private activitySnapshot(): DaemonActivitySnapshot {
-    const queue = this.requestQueue.snapshot;
-    const resources = this.resourceSupervisor.snapshot;
-    const now = this.clock.monotonicNowMs();
-    const lifecycle: DaemonActivitySnapshot["lifecycle"] =
-      queue.state !== "accepting" || resources.state === "draining" || resources.state === "stopped"
-        ? "draining"
-        : resources.state === "replacing" || resources.state === "shedding"
-          ? "recovering"
-          : !this.workerReady
-            ? "starting"
-            : queue.active === undefined
-              ? "ready"
-              : "busy";
-    const current =
-      lifecycle !== "busy" || queue.active === undefined
-        ? undefined
-        : Object.freeze({
-            requestId: queue.active.requestId,
-            command: queue.active.command,
-            elapsedMs: Math.max(0, now - queue.active.startedAt),
-          });
-    const recoveryDetail: DaemonActivitySnapshot["recoveryDetail"] =
-      resources.state === "replacing"
-        ? "worker-replacement"
-        : resources.state === "shedding"
-          ? "resource-pressure"
-          : undefined;
-    return Object.freeze({
-      lifecycle,
-      ...(recoveryDetail === undefined ? {} : { recoveryDetail }),
-      pid: process.pid,
-      startedAt: this.startedAt,
-      startupElapsedMs: Math.max(0, now - this.startedMonotonicAt),
-      ...(this.workerReady ? { fileCount: this.fileCount } : {}),
-      processRssBytes: process.memoryUsage().rss,
-      hardProcessRssBytes: this.resourcePolicy.hardProcessRssBytes,
-      ...(resources.workerHeapUsedBytes === undefined
-        ? {}
-        : { workerHeapUsedBytes: resources.workerHeapUsedBytes }),
-      workerGeneration: this.workerGeneration?.id ?? resources.generation,
-      ...(current === undefined ? {} : { current }),
-      queued: queue.queued,
-      ...(this.lastCompletedMonotonicAt === undefined
-        ? {}
-        : { lastCompletedAgoMs: Math.max(0, now - this.lastCompletedMonotonicAt) }),
-      spoolBytes: resources.spoolBytes,
-    });
   }
 }

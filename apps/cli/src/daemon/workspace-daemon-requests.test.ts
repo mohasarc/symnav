@@ -10,6 +10,7 @@ import {
   type CommandOutputRecord,
 } from "../command-execution-result.js";
 import { createDefaultDependencies } from "../program.js";
+import { DaemonActivityProjector } from "./daemon-activity-projector.js";
 import { InvocationWorkspaceSelector } from "./invocation-workspace-selector.js";
 import type {
   DaemonExecutionServerFrame,
@@ -251,6 +252,45 @@ describe("WorkspaceDaemon requests", () => {
       fileCount: 1,
       memoryBytes: expect.any(Number),
     });
+  });
+
+  it("projects workspace status from explicit daemon snapshots", async () => {
+    const project = vi.spyOn(DaemonActivityProjector, "project");
+    const harness = await RequestHarness.start(new ImmediateExecutor(), {
+      residentMemoryBytes: () => 444,
+    });
+    harnesses.push(harness);
+
+    const pong = await harness.ping();
+    const projectionInput = project.mock.calls[0]?.[0];
+    const projected = project.mock.results[0]?.value;
+
+    expect(project).toHaveBeenCalledTimes(1);
+    expect(projectionInput).toEqual({
+      nowMonotonicMs: expect.any(Number),
+      pid: process.pid,
+      processRssBytes: expect.any(Number),
+      startedAt: expect.any(Number),
+      startedMonotonicAt: expect.any(Number),
+      productVersion: "test",
+      instanceId: harness.instanceId,
+      hardProcessRssBytes: expect.any(Number),
+      queue: { state: "accepting", queued: 0 },
+      resources: {
+        state: "ready",
+        generation: 1,
+        processRssBytes: 444,
+        peakProcessRssBytes: 444,
+        spoolBytes: 0,
+        admissionPaused: false,
+        replacementCount: 0,
+      },
+      worker: { generation: 1, ready: true, fileCount: 1 },
+    });
+    expect(Object.values(projectionInput ?? {})).not.toContainEqual(expect.any(Function));
+    expect(pong).toBe(projected?.pong);
+    expect(JSON.stringify(pong)).toBe(JSON.stringify(projected?.pong));
+    project.mockRestore();
   });
 
   it("executes matching workspace requests", async () => {

@@ -153,7 +153,7 @@ export class OrderedCommandOutput {
   private capturedBytes = 0;
   private failure: Error | undefined;
 
-  constructor(options: OrderedCommandOutputOptions) {
+  constructor(private readonly options: OrderedCommandOutputOptions) {
     const policy = options.policy;
     this.inlineBytes = policy.inlineRawBytes;
     this.directory = options.directory ?? tmpdir();
@@ -276,11 +276,19 @@ export class OrderedCommandOutput {
 
   private async storeRecord(record: CommandOutputRecord): Promise<void> {
     const encoded = OrderedCommandOutput.encodeRecord(record);
-    if (this.file === undefined && this.rawBytes + record.bytes.byteLength > this.inlineBytes) {
-      await this.spillInlineRecords();
+    try {
+      if (this.file === undefined && this.rawBytes + record.bytes.byteLength > this.inlineBytes) {
+        await this.spillInlineRecords();
+      }
+      if (this.file === undefined) this.inlineRecords.push(record);
+      else await this.file.write(encoded);
+    } catch (error) {
+      this.options.stateWriteFailed?.(
+        (error as NodeJS.ErrnoException).path ?? this.filePath ?? this.directory,
+        error,
+      );
+      throw error;
     }
-    if (this.file === undefined) this.inlineRecords.push(record);
-    else await this.file.write(encoded);
     this.hash.update(encoded.subarray(4));
     this.rawBytes += record.bytes.byteLength;
     this.recordCount += 1;

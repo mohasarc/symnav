@@ -60,6 +60,27 @@ describe("CliInvocationRunner", () => {
     expect(context.exitCodes).toEqual([]);
   });
 
+  it("normalizes the final relative cwd before direct execution", async () => {
+    const dependencies = fakeDependencies({ daemonEnabled: false });
+    const context = createFakeProgramContext({ cwd: "/repo/nested" });
+    const runner = new CliInvocationRunner({
+      dependencies,
+      coordinator: RunnerHarness.coordinator(),
+    });
+    await expect(
+      runner.run(
+        {
+          argv: ["--cwd=../ignored", "--cwd", "..", "overview", "src/a.ts"],
+          cwd: "/repo/nested",
+          telemetryEnabled: false,
+        },
+        context,
+      ),
+    ).resolves.toBe(0);
+    expect(context.stdout.text()).toBe("Overview: src/a.ts\n(no symbols)\n");
+    expect(context.stderr.text()).toBe("");
+  });
+
   it("waits for direct output callbacks before returning", async () => {
     let written = false;
     const stdout = new Writable({

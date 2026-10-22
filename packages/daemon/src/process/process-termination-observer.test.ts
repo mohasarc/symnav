@@ -26,9 +26,11 @@ describe("DaemonProcessTerminationObserver", () => {
           phase: "process spawn",
           reason: "process-terminated",
           osCode: "EIO",
+          timestamp: 23,
         });
         order.push("history");
       },
+      { wallNowMs: () => 23 },
     );
     await expect(
       observer.uncaughtException(

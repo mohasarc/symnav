@@ -89,6 +89,16 @@ describe("InvocationStateWriteCoordinator", () => {
     );
   });
 
+  it("suppresses only warning rendering after retaining the write failure", () => {
+    const coordinator = new InvocationStateWriteCoordinator("/state");
+    coordinator.failed("/state/usage.jsonl", { code: "EPERM" });
+    expect(coordinator.renderWarning({ warnings: false })).toBeUndefined();
+    expect(coordinator.access.kind).toBe("disabled");
+    expect(coordinator.renderWarning({ warnings: true })).toContain(
+      "symnav: warning: cannot write /state (EPERM)",
+    );
+  });
+
   it.each(["EPERM", "EACCES", "ENOSPC", undefined])(
     "retains the first actual failure (%s) and never retries",
     async (code) => {

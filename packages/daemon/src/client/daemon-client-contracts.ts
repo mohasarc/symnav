@@ -19,6 +19,7 @@ export interface DaemonClientOptions {
 }
 
 export interface DaemonClientExecuteRequest {
+  readonly executeLocally?: (mode: "cold" | "fallback") => Promise<DaemonExecutorExecutionResult>;
   readonly stateWriteFailed?: DaemonStateWriteFailureObserver;
   readonly workspaceRoot: string;
   readonly commandName: DaemonCommandName;

@@ -90,16 +90,32 @@ export class DaemonStartupCoordinator {
     };
   }
 
-  async ensureRunning(identity: DaemonWorkspaceIdentity): Promise<DaemonStartResult> {
+  async ensureRunning(
+    identity: DaemonWorkspaceIdentity,
+    stateWriteFailed?: DaemonStateWriteFailureObserver,
+  ): Promise<DaemonStartResult> {
     let failureCount = 0;
     while (true) {
       try {
-        return await this.triggerAndWait(identity);
+        return await this.triggerAndWait(identity, stateWriteFailed);
       } catch (error) {
         if (
           !(error instanceof DaemonChildExitError || error instanceof DaemonWarmupLostError) ||
           failureCount >= this.childFailureRetryLimit
         ) {
+          if (typeof error !== "object" || error === null || !this.recordedFailures.has(error)) {
+            const instanceId =
+              this.registry.readStored(identity)?.instanceId ??
+              this.launchedInstanceIdsByIdentity.get(identity.identityKey);
+            await this.recordFailure(
+              identity,
+              "warm-up",
+              "startup-failed",
+              error,
+              instanceId,
+              stateWriteFailed,
+            );
+          }
           throw error;
         }
         failureCount += 1;

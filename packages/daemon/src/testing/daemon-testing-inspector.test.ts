@@ -6,6 +6,9 @@ import { afterEach, describe, expect, it } from "vitest";
 import { DaemonWorkspaceIdentity } from "../registry/workspace-identity.js";
 import { DAEMON_PROTOCOL_VERSION, DAEMON_RECORD_SCHEMA_VERSION } from "../transport/protocol.js";
 import { DaemonTestingInspector } from "./daemon-testing-inspector.js";
+import { DaemonPolicy } from "../daemon-policy.js";
+import { DaemonFailureJournal } from "../diagnostics/failure-journal.js";
+import { NodeDaemonClock } from "../lifecycle/daemon-clock.js";
 
 describe("daemon testing inspector", () => {
   const directories: string[] = [];
@@ -13,6 +16,28 @@ describe("daemon testing inspector", () => {
   afterEach(() => {
     for (const directory of directories) rmSync(directory, { recursive: true, force: true });
     directories.length = 0;
+  });
+
+  it("reads retained workspace failure evidence without exposing storage coordinates", async () => {
+    const stateDirectory = temporaryDirectory(directories);
+    const journal = new DaemonFailureJournal(
+      stateDirectory,
+      DaemonPolicy.currentSystem().values.diagnostics,
+      new NodeDaemonClock(),
+    );
+    await journal.record({
+      schemaVersion: 1,
+      eventId: "old",
+      workspaceRoot: "/canonical/workspace",
+      kind: "startup-failure",
+      failure: { phase: "warm-up", reason: "startup-failed", timestamp: 1 },
+    });
+    const inspector = new DaemonTestingInspector(stateDirectory);
+    expect(await inspector.readFailures("/canonical/workspace")).toEqual([
+      expect.objectContaining({ eventId: "old" }),
+    ]);
+    expect(await inspector.readFailures("/other")).toEqual([]);
+    expect(Object.keys(inspector)).toEqual([]);
   });
 
   it("lists only read-only public instance identity and state", () => {

@@ -30,7 +30,9 @@ describe("FileDaemonConnection publication", () => {
     const { root, client, server } = await harness.pair();
     await writeFile(join(root, "request", "unfinished.tmp"), "incomplete");
     const received: string[] = [];
-    const reading = (async () => { for await (const bytes of server.incoming) received.push(Buffer.from(bytes).toString()); })();
+    const reading = (async () => {
+      for await (const bytes of server.incoming) received.push(Buffer.from(bytes).toString());
+    })();
     await client.write(Buffer.from("first"));
     await client.write(Buffer.from("second"));
     client.end();
@@ -46,19 +48,45 @@ describe("FileDaemonConnection publication", () => {
     const iterator = server.incoming[Symbol.asyncIterator]();
     const bytes = Buffer.alloc(3 * 64 * 1024, 93);
     let finished = false;
-    const writing = client.write(bytes).then(() => { finished = true; });
+    const writing = client.write(bytes).then(() => {
+      finished = true;
+    });
     const first = await iterator.next();
     await new Promise((resolve) => setTimeout(resolve, 25));
     expect(finished).toBe(false);
-    expect((await readdir(join(root, "request"))).filter((name) => name.endsWith(".frame"))).toHaveLength(1);
+    expect(
+      (await readdir(join(root, "request"))).filter((name) => name.endsWith(".frame")),
+    ).toHaveLength(1);
     const second = await iterator.next();
     const third = await iterator.next();
     await writing;
-    expect(Buffer.concat([Buffer.from(first.value!), Buffer.from(second.value!), Buffer.from(third.value!)])).toEqual(bytes);
+    expect(
+      Buffer.concat([
+        Buffer.from(first.value!),
+        Buffer.from(second.value!),
+        Buffer.from(third.value!),
+      ]),
+    ).toEqual(bytes);
     client.destroy();
     server.destroy();
     await iterator.return?.();
   });
+
+  it.each(["truncated", "duplicate", "length"])(
+    "rejects a %s published frame",
+    async (corruption) => {
+      const { root, client, server } = await harness.pair();
+      const frame = Buffer.alloc(corruption === "truncated" ? 4 : 9);
+      if (corruption !== "truncated") {
+        frame.writeUInt32BE(corruption === "duplicate" ? 3 : 0, 0);
+        frame.writeUInt32BE(corruption === "length" ? 100 : 1, 4);
+      }
+      await writeFile(join(root, "request", "slot.frame"), frame);
+      await expect(server.incoming[Symbol.asyncIterator]().next()).rejects.toThrow(/Corrupt/);
+      client.destroy();
+      server.destroy();
+    },
+  );
 
   it("interrupts blocked readers and writers on forced close", async () => {
     const { client, server } = await harness.pair();

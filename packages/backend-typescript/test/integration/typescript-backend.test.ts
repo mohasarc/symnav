@@ -399,6 +399,43 @@ class MutableBackendFileSystem implements FileSystem {
 }
 
 describe("TypeScriptBackend retained workspace refresh", () => {
+  it("evicts omitted source bytes while retaining selection state", async () => {
+    const inner = new InMemoryFileSystem({
+      "/repo/.git/HEAD": "ref: refs/heads/main\n",
+      "/repo/src/app.ts": [
+        'import { helper } from "./lib.js";',
+        "export const result = helper();",
+        "",
+      ].join("\n"),
+      "/repo/src/lib.ts": "export function helper(): number { return 1; }\n",
+    });
+    const counting = new CountingFileSystem(inner);
+    const backend = new TypeScriptBackend(counting);
+    const files = [workspaceFile("src/app.ts", inner), workspaceFile("src/lib.ts", inner)];
+    const helper: SymbolIdentity = { file: "src/lib.ts", segments: [{ name: "helper" }] };
+
+    await backend.refresh(refreshRequest(files));
+    const siblingEntries = await backend.fileEntries(files[1]!);
+    const initialDefinitions = await backend.findDefinitions(files, helper);
+    await backend.releaseTransientResources();
+    counting.readFileCalls.length = 0;
+
+    await backend.refresh({
+      snapshot: { root: "/repo", files: [files[0]!] },
+      coverage: "selection",
+    });
+
+    expect(await backend.fileEntries(files[1]!)).toBe(siblingEntries);
+    expect(counting.readFileCalls).toEqual([]);
+
+    const retainedDefinitions = await backend.findDefinitions([files[0]!], helper);
+
+    expect(retainedDefinitions).toEqual(initialDefinitions);
+    expect(counting.readFileCalls.filter((path) => path === "/repo/src/lib.ts")).toEqual([
+      "/repo/src/lib.ts",
+    ]);
+  });
+
   it("answers every navigation primitive from current state after edit, add, delete, and rename", async () => {
     const fs = new MutableBackendFileSystem({
       "/repo/.git/HEAD": "ref: refs/heads/main\n",

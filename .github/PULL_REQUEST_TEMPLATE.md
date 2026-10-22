@@ -49,7 +49,7 @@ section, you may leave the guidance comment in place (it renders
 invisibly on GitHub) or remove it.
 -->
 
-## Why
+## Context
 
 <!--
 1-2 sentences. The motivation, constraint, or anchoring decision the
@@ -116,60 +116,22 @@ move files, or introduce a new ownership boundary.
 Skip for single-file fixes, obvious small renames, docs-only edits,
 or when paths add no review signal.
 
-Form: embedded Change Tree SVG first, then the bare Change Tree in
-a collapsed details fallback. Do not leave the bare tree as the
-primary content.
-
-Author the Change Tree as a Unicode filesystem tree anchored at repo
-root. Use `.` as the root. Include unchanged parent directories as
-context; annotate only nodes that matter for ownership or review.
+Form: a Change Tree — a Unicode filesystem tree in a ```text block,
+anchored at repo root. Use `.` as the root. Include unchanged parent
+directories as context; annotate only nodes that matter for
+ownership or review.
 
 Legend: `++` added, `**` changed, `~~` moved, `--` removed.
 
-Generate the embed with the CLI only:
-
-  npx change-tree-svg embed -f tree.txt
-
-Copy/paste the command's generated `<pre>...</pre>` output exactly as
-the first content in this section. Do not write, edit, upload, or
-assemble SVG/image/embed markup by hand.
-
-Then add the same tree as a fallback:
-
-  <details>
-  <summary>Text fallback</summary>
-
-  ```text
-  .
-  ├── apps/
-  │   └── cli/
-  │       └── src/
-  │           └── ** register-context-command.ts # wires history flag
-  └── packages/
-      └── backend-typescript/
-          └── src/
-              ├── ++ reference-search/
-              │   └── ++ ... 12 files           # owns TS ref lookup
-              └── ~~ git/
-                  └── ~~ ... 3 files            # moved from apps/cli/src/history/
-  ```
-
-  </details>
-
-Raw Change Tree example:
+Example (illustrative paths):
 
   .
-  ├── apps/
-  │   └── cli/
-  │       └── src/
-  │           └── ** register-context-command.ts # wires history flag
-  └── packages/
-      └── backend-typescript/
-          └── src/
-              ├── ++ reference-search/
-              │   └── ++ ... 12 files           # owns TS ref lookup
-              └── ~~ git/
-                  └── ~~ ... 3 files            # moved from apps/cli/src/history/
+  └── src/
+      ├── ** payment-form.ts             # wires retry flag
+      ├── ++ invoice-retry/
+      │   └── ++ ... 12 files            # owns retry scheduling
+      └── ~~ receipts/
+          └── ~~ ... 3 files             # moved from src/billing/
 
 Rules:
   - Show important changed areas, not every touched file.
@@ -184,7 +146,6 @@ Rules:
     the same ownership.
   - Inline `# ...` comments should name purpose or ownership. Do not
     restate marker status except the required moved-from note.
-  - The fallback tree must match the rendered Change Tree.
 -->
 
 ## Public surface
@@ -196,8 +157,9 @@ wrong interface in seconds.
 
 Skip the section if the PR adds or changes no public surface.
 
-Form: TypeScript signatures, no bodies. Group by added / changed /
-removed if more than one category is present.
+Form: signatures in the project's language, no bodies. Group by
+added / changed / removed if more than one category is present.
+Example (illustrative TypeScript):
 
   Added:
     class WorkspaceIgnore {
@@ -256,21 +218,17 @@ At least one pointer is usually honest; agents are bad at admitting
 uncertainty, so err toward listing one when in doubt.
 -->
 
-## Reading order
+## Visuals
+
+| Before (if any) | After     |
+| :-------------- | :-------- |
+| <img url>       | <img url> |
 
 <!--
-Commit list with one line each, placing each commit in the arc of
-the PR. Lets the reviewer hold the global thread while walking
-commits.
-
-Skip the section if the PR is a single commit.
-
-Form:
-  1. <commit title> — role of this commit in the arc.
-  2. <commit title> — role of this commit in the arc.
-
-Each caption is the commit's role in the bigger story, not a
-restatement of the commit message. "Adds the class itself" is fine;
-"Implements WorkspaceIgnore class with caching, matching, and path
-normalization" is not — that's the commit message's job.
+If changes produce visual changes, place before/after screenshots
+here. Never commit image files. Reference each by its local path
+under the artifact folder's visuals/. Publish passes each path to
+`gh pr create --attach` / `gh pr edit --attach`, which uploads the
+file and rewrites the local-path reference to the hosted URL. Skip
+the section if nothing is visual.
 -->

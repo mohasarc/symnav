@@ -14,7 +14,7 @@ import type {
   SymbolOverviewNode,
   SymbolIdentity,
 } from "@symnav/core";
-import { FileNotFoundError } from "@symnav/core";
+import { FileNotFoundError, WorkspaceSourceCache } from "@symnav/core";
 
 import { SymbolResolver } from "../resolve/resolve-symbols.js";
 import { TypeScriptProjectGraph } from "./typescript-project-graph.js";
@@ -25,7 +25,6 @@ import {
   TypeScriptWorkspaceState,
   type TypeScriptFileExtractor,
 } from "./typescript-workspace-state.js";
-import { WorkspaceSourceCache } from "./workspace-source-cache.js";
 
 export class TypeScriptBackend implements LanguageBackend {
   static readonly extensions: readonly string[] = [".d.ts", ".ts", ".tsx", ".mts", ".cts"];

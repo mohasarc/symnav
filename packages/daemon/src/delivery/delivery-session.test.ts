@@ -217,7 +217,7 @@ describe("DaemonDeliverySession", () => {
     const spool = await harness.spoolStore.open("request-1");
     if (spool === undefined) throw new Error("Expected completion spool");
     vi.spyOn(spool, "read").mockImplementation(async function* () {
-      throw new CompletionSpoolReadError(new Error("read failed"));
+      throw new CompletionSpoolReadError(Object.assign(new Error("read failed"), { code: "EIO" }));
     });
     let stateWhenFailureWasSent: unknown;
     const fetched = DeliverySend.create((message) => {
@@ -248,6 +248,18 @@ describe("DaemonDeliverySession", () => {
         (event) => event.kind === "failure" && event.operation === "completion-delivery",
       ),
     ).toHaveLength(1);
+    expect(harness.events).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          operation: "completion-delivery",
+          failure: expect.objectContaining({
+            phase: "transfer",
+            reason: "transfer-failed",
+            osCode: "EIO",
+          }),
+        }),
+      ]),
+    );
     expect(harness.session.snapshot.spoolBytes).toBe(0);
   });
 

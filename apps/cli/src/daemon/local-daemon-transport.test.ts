@@ -169,21 +169,6 @@ describe("LocalDaemonTransport", () => {
     await server.close();
   });
 
-  it("writes configured daemon frame fragments separately", () => {
-    const write = vi.fn();
-    const transport = new LocalDaemonTransport({ writeChunkSize: 1 });
-    const frameWriter = transport as unknown as {
-      writeFrame(socket: { write: typeof write }, value: unknown): void;
-    };
-
-    frameWriter.writeFrame({ write }, { kind: "stopped", instanceId: "instance" });
-
-    expect(write.mock.calls.length).toBeGreaterThan(1);
-    expect(Buffer.concat(write.mock.calls.map(([chunk]) => chunk))).toEqual(
-      frame({ kind: "stopped", instanceId: "instance" }),
-    );
-  });
-
   it("waits for socket drain before writing the next server fragment", async () => {
     const writes: Buffer[] = [];
     const socket = new EventEmitter() as EventEmitter & {

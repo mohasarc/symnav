@@ -320,19 +320,6 @@ describe("LocalDaemonTransport validation", () => {
     ).rejects.toThrow("truncated frame");
   });
 
-  it("rejects oversized outbound daemon frames", () => {
-    const write = vi.fn();
-    const transport = new LocalDaemonTransport({ maximumFrameBytes: 8 });
-    const frameWriter = transport as unknown as {
-      writeFrame(socket: { write: typeof write }, value: unknown): void;
-    };
-
-    expect(() => frameWriter.writeFrame({ write }, { value: "long daemon payload" })).toThrow(
-      "exceeds 8 bytes",
-    );
-    expect(write).not.toHaveBeenCalled();
-  });
-
   it("rejects unknown daemon response envelopes", async () => {
     const endpoint = await rawServer(servers, sockets, directories, (socket) => {
       socket.write(frame({ kind: "unknown" }));

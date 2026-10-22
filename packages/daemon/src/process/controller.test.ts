@@ -15,6 +15,8 @@ import {
 import { TestDaemonRegistry as DaemonRegistry } from "../../test/helpers/daemon-registry.js";
 import { DaemonStartupCoordinator } from "../registry/startup-coordinator.js";
 import { DaemonWorkspaceIdentity } from "../registry/workspace-identity.js";
+import { DaemonFailureJournal } from "../diagnostics/failure-journal.js";
+import { DaemonPolicy } from "../daemon-policy.js";
 
 describe("DaemonController", () => {
   const roots: string[] = [];
@@ -23,6 +25,136 @@ describe("DaemonController", () => {
     vi.restoreAllMocks();
     for (const root of roots) rmSync(root, { recursive: true, force: true });
     roots.length = 0;
+  });
+
+  it("adds recent fallback evidence to a live busy daemon and reports only absent startup failures", async () => {
+    const stateDirectory = temporaryDirectory(roots);
+    const identity = DaemonWorkspaceIdentity.from("/repo", stateDirectory);
+    const registry = new DaemonRegistry(identity.registryDirectory);
+    const record = readyRecord(identity);
+    registry.write(record);
+    const journal = new DaemonFailureJournal(
+      stateDirectory,
+      DaemonPolicy.currentSystem().values.diagnostics,
+      { wallNowMs: () => 3_600_100 },
+    );
+    for (const [eventId, workspaceRoot, kind, timestamp] of [
+      ["fallback", "/repo", "fallback", 100],
+      ["old", "/repo", "fallback", 99],
+      ["running-start", "/repo", "startup-failure", 110],
+      ["absent", "/absent", "startup-failure", 120],
+    ] as const) {
+      await journal.record({
+        schemaVersion: 1,
+        eventId,
+        workspaceRoot,
+        kind,
+        failure: {
+          phase: "endpoint connect",
+          reason: "daemon-connection-reset",
+          timestamp,
+          osCode: "ECONNRESET",
+        },
+      });
+    }
+    const controller = new DaemonController(
+      registry,
+      new ActivityControllerTransport(
+        record,
+        activity({
+          lifecycle: "busy",
+          current: { requestId: "long", command: "refs", elapsedMs: 600_000 },
+          queued: 2,
+        }),
+      ),
+      stateDirectory,
+      { now: () => 3_600_100, processTerminator: new ControllerTerminator([record.pid]) },
+    );
+    await expect(controller.status()).resolves.toEqual({
+      daemons: [
+        expect.objectContaining({
+          state: "busy",
+          elapsedMs: 600_000,
+          queued: 2,
+          recentFallbacks: {
+            count: 1,
+            latest: {
+              phase: "endpoint connect",
+              reason: "daemon-connection-reset",
+              timestamp: 100,
+              osCode: "ECONNRESET",
+            },
+          },
+        }),
+      ],
+      startupFailures: [
+        {
+          workspaceRoot: "/absent",
+          failure: {
+            phase: "endpoint connect",
+            reason: "daemon-connection-reset",
+            timestamp: 120,
+            osCode: "ECONNRESET",
+          },
+        },
+      ],
+    });
+  });
+
+  it("records starting process death once before status removes the live registry record", async () => {
+    const stateDirectory = temporaryDirectory(roots);
+    const identity = DaemonWorkspaceIdentity.from("/repo", stateDirectory);
+    const registry = new DaemonRegistry(identity.registryDirectory);
+    registry.acquireStartup(identity, "starting");
+    registry.writeStartingIfStartupOwner(identity, { ...startingRecord(identity), pid: 101 });
+    const controller = new DaemonController(registry, new ControllerTransport(), stateDirectory, {
+      now: () => 20,
+      processTerminator: new ControllerTerminator([]),
+    });
+    await expect(controller.status()).resolves.toMatchObject({
+      daemons: [],
+      startupFailures: [
+        {
+          workspaceRoot: "/repo",
+          failure: { phase: "process spawn", reason: "process-terminated", timestamp: 20 },
+        },
+      ],
+    });
+    await controller.status();
+    const journal = new DaemonFailureJournal(
+      stateDirectory,
+      DaemonPolicy.currentSystem().values.diagnostics,
+      { wallNowMs: () => 20 },
+    );
+    expect(await journal.recent(20)).toHaveLength(1);
+    expect(registry.list()).toEqual([]);
+  });
+
+  it("keeps live busy status when diagnostic history cannot be read", async () => {
+    const stateDirectory = temporaryDirectory(roots);
+    const identity = DaemonWorkspaceIdentity.from("/repo", stateDirectory);
+    const registry = new DaemonRegistry(identity.registryDirectory);
+    const record = readyRecord(identity);
+    registry.write(record);
+    vi.spyOn(DaemonFailureJournal.prototype, "recent").mockRejectedValue(
+      Object.assign(new Error("denied"), { code: "EACCES", syscall: "scandir" }),
+    );
+    const controller = new DaemonController(
+      registry,
+      new ActivityControllerTransport(
+        record,
+        activity({
+          lifecycle: "busy",
+          current: { requestId: "long", command: "refs", elapsedMs: 900_000 },
+        }),
+      ),
+      stateDirectory,
+      { processTerminator: new ControllerTerminator([record.pid]) },
+    );
+    await expect(controller.status()).resolves.toEqual({
+      daemons: [expect.objectContaining({ state: "busy", elapsedMs: 900_000 })],
+    });
+    expect(registry.read(identity)).toEqual(record);
   });
 
   it("uses coordinator startup recovery for explicit starts", async () => {

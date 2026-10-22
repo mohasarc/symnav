@@ -1,3 +1,5 @@
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { Writable } from "node:stream";
 import { describe, expect, it, vi } from "vitest";
@@ -19,6 +21,41 @@ class RunnerHarness {
 }
 
 describe("CliInvocationRunner", () => {
+  it("executes locally exactly once without telemetry after required state preparation fails", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "symnav-runner-denied-"));
+    try {
+      const stateDirectory = join(directory, "state");
+      await writeFile(stateDirectory, "blocked");
+      const execute = vi.fn();
+      const record = vi.fn();
+      const resolve = vi.fn();
+      const compute = vi.fn(() => ({ file: "src/a.ts", entries: [] }));
+      const runner = new CliInvocationRunner({
+        dependencies: fakeDependencies({
+          stateDirectory,
+          recorder: { record },
+          identity: { resolve },
+          backends: () => [new FakeLanguageBackend({ entries: compute })],
+        }),
+        coordinator: RunnerHarness.coordinator(execute),
+      });
+      const context = createFakeProgramContext({ cwd: "/repo" });
+      expect(
+        await runner.run(
+          { argv: ["overview", "src/a.ts"], cwd: "/repo", telemetryEnabled: true },
+          context,
+        ),
+      ).toBe(0);
+      expect(context.stdout.text()).toBe("Overview: src/a.ts\n(no symbols)\n");
+      expect(compute).toHaveBeenCalledTimes(1);
+      expect(execute).not.toHaveBeenCalled();
+      expect(record).not.toHaveBeenCalled();
+      expect(resolve).not.toHaveBeenCalled();
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
   it("returns above inline capacity without disk capture or calling the daemon coordinator", async () => {
     const entries: OverviewFileEntries = {
       file: "src/a.ts",
@@ -175,26 +212,35 @@ describe("CliInvocationRunner", () => {
     expect(directContext.stderr.text()).toBe("Cannot answer: daemon response capacity exceeded.\n");
   });
 
-  it("replays routed output and returns its failure without exiting", async () => {
-    const result: DaemonExecutorExecutionResult = {
-      exitCode: 7,
-      output: new CommandOutputSnapshot([
-        { stream: "stderr" as const, bytes: Buffer.from("failure\n") },
-      ]),
-    };
-    const execute = vi.fn(async () => ({ mode: "warm", result }));
-    const context = createFakeProgramContext({ cwd: "/repo" });
-    const runner = new CliInvocationRunner({
-      dependencies: fakeDependencies(),
-      coordinator: RunnerHarness.coordinator(execute),
-    });
-    await expect(
-      runner.run(
-        { argv: ["overview", "src/a.ts"], cwd: "/repo", telemetryEnabled: false },
-        context,
-      ),
-    ).resolves.toBe(7);
-    expect(context.stderr.text()).toBe("failure\n");
-    expect(context.exitCodes).toEqual([]);
-  });
+  it.each(["overview", "stats"])(
+    "replays routed %s output and returns its failure without exiting",
+    async (commandName) => {
+      const stateDirectory = await mkdtemp(join(tmpdir(), "symnav-runner-state-"));
+      const result: DaemonExecutorExecutionResult = {
+        exitCode: 7,
+        output: new CommandOutputSnapshot([
+          { stream: "stderr" as const, bytes: Buffer.from("failure\n") },
+        ]),
+      };
+      const execute = vi.fn(async () => ({ mode: "warm", result }));
+      const context = createFakeProgramContext({ cwd: "/repo" });
+      const runner = new CliInvocationRunner({
+        dependencies: fakeDependencies({ stateDirectory }),
+        coordinator: RunnerHarness.coordinator(execute),
+      });
+      await expect(
+        runner.run(
+          {
+            argv: [commandName, ...(commandName === "stats" ? [] : ["src/a.ts"])],
+            cwd: "/repo",
+            telemetryEnabled: commandName === "stats",
+          },
+          context,
+        ),
+      ).resolves.toBe(7);
+      expect(context.stderr.text()).toBe("failure\n");
+      await rm(stateDirectory, { recursive: true, force: true });
+      expect(context.exitCodes).toEqual([]);
+    },
+  );
 });

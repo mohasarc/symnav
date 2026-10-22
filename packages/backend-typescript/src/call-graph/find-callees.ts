@@ -33,7 +33,7 @@ export interface PositionDefinitionResolver {
 }
 
 export async function findCallees(args: FindCalleesArgs): Promise<readonly CallEdge[]> {
-  args.workspaceState.ensureFiles(args.files);
+  await args.workspaceState.ensureFiles(args.files);
   return new CalleeFinder(args).find();
 }
 

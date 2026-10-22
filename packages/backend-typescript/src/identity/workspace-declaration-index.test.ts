@@ -46,9 +46,11 @@ const DEFAULT_EXPORT: ResolvedPath = {
   absolute: "/repo/src/default-export.ts",
 };
 
-function index(files: readonly ResolvedPath[] = [SERVICE]): WorkspaceDeclarationIndex {
+async function index(
+  files: readonly ResolvedPath[] = [SERVICE],
+): Promise<WorkspaceDeclarationIndex> {
   const indexed = new WorkspaceDeclarationIndex(new InMemoryFileSystem(FIXTURE));
-  indexed.ensureFiles(files);
+  await indexed.ensureFiles(files);
   return indexed;
 }
 
@@ -61,8 +63,8 @@ function leafNames(
 }
 
 describe("WorkspaceDeclarationIndex", () => {
-  it("locates nested declarations by symbol identity", () => {
-    const declarations = index().locate({
+  it("locates nested declarations by symbol identity", async () => {
+    const declarations = (await index()).locate({
       file: "src/service.ts",
       segments: [{ name: "Service" }, { name: "run" }],
     });
@@ -71,8 +73,8 @@ describe("WorkspaceDeclarationIndex", () => {
     ]);
   });
 
-  it("finds workspace symbols by declaration node location", () => {
-    const indexed = index();
+  it("finds workspace symbols by declaration node location", async () => {
+    const indexed = await index();
     const sourceFile = indexed.sourceFile("src/service.ts");
     const helperNode = sourceFile?.getFunctions().find((node) => node.getName() === "helper");
     expect(helperNode).toBeDefined();
@@ -83,15 +85,15 @@ describe("WorkspaceDeclarationIndex", () => {
     });
   });
 
-  it("returns the workspace-relative path for indexed source files", () => {
+  it("returns the workspace-relative path for indexed source files", async () => {
     const fs = new InMemoryFileSystem(FIXTURE);
     const project = new Project({ fileSystem: new WorkspaceFileSystemHost(fs) });
     const sourceFile = project.addSourceFileAtPath("/repo/src/service.ts");
 
-    expect(index().relativePathOf(sourceFile)).toBe("src/service.ts");
+    expect((await index()).relativePathOf(sourceFile)).toBe("src/service.ts");
   });
 
-  it("ignores declaration nodes from files outside the workspace index", () => {
+  it("ignores declaration nodes from files outside the workspace index", async () => {
     const fs = new InMemoryFileSystem({
       ...FIXTURE,
       "/repo/src/outside.ts": "export function outside(): void {}\n",
@@ -101,26 +103,26 @@ describe("WorkspaceDeclarationIndex", () => {
       .addSourceFileAtPath("/repo/src/outside.ts")
       .getFunctionOrThrow("outside");
 
-    expect(index().declarationAt(outside)).toBeUndefined();
+    expect((await index()).declarationAt(outside)).toBeUndefined();
   });
 
-  it("returns the flattened declaration list for an ensured file", () => {
-    expect(leafNames(index().declarationsIn("src/service.ts")!)).toEqual([
+  it("returns the flattened declaration list for an ensured file", async () => {
+    expect(leafNames((await index()).declarationsIn("src/service.ts")!)).toEqual([
       "Service",
       "run",
       "helper",
     ]);
   });
 
-  it("returns undefined for a never-ensured file", () => {
-    expect(index().declarationsIn("src/extra.ts")).toBeUndefined();
+  it("returns undefined for a never-ensured file", async () => {
+    expect((await index()).declarationsIn("src/extra.ts")).toBeUndefined();
   });
 
-  it("adds only new files on a second ensureFiles call and preserves existing lookups", () => {
-    const indexed = index([SERVICE]);
+  it("adds only new files on a second ensureFiles call and preserves existing lookups", async () => {
+    const indexed = await index([SERVICE]);
     const serviceDeclarations = indexed.declarationsIn("src/service.ts");
 
-    indexed.ensureFiles([SERVICE, EXTRA]);
+    await indexed.ensureFiles([SERVICE, EXTRA]);
 
     expect(indexed.declarationsIn("src/service.ts")).toBe(serviceDeclarations);
     expect(leafNames(indexed.declarationsIn("src/extra.ts")!)).toEqual(["extra"]);
@@ -130,23 +132,23 @@ describe("WorkspaceDeclarationIndex", () => {
     expect(indexed.locate({ file: "src/extra.ts", segments: [{ name: "extra" }] })).toHaveLength(1);
   });
 
-  it("keeps both declarations that start on the same line", () => {
-    expect(leafNames(index([SAME_LINE]).declarationsIn("src/same-line.ts")!)).toEqual([
+  it("keeps both declarations that start on the same line", async () => {
+    expect(leafNames((await index([SAME_LINE])).declarationsIn("src/same-line.ts")!)).toEqual([
       "first",
       "second",
     ]);
   });
 
-  it("finds each declaration node when two declarations start on the same line", () => {
-    const indexed = index([SAME_LINE]);
+  it("finds each declaration node when two declarations start on the same line", async () => {
+    const indexed = await index([SAME_LINE]);
     const functions = indexed.sourceFile("src/same-line.ts")!.getFunctions();
 
     expect(indexed.declarationAt(functions[0]!)?.identity.segments).toEqual([{ name: "first" }]);
     expect(indexed.declarationAt(functions[1]!)?.identity.segments).toEqual([{ name: "second" }]);
   });
 
-  it("finds getter and setter symbols by their exact declaration nodes", () => {
-    const indexed = index([ACCESSORS]);
+  it("finds getter and setter symbols by their exact declaration nodes", async () => {
+    const indexed = await index([ACCESSORS]);
     const host = indexed.sourceFile("src/accessors.ts")!.getClassOrThrow("Host");
 
     expect(indexed.declarationAt(host.getGetAccessorOrThrow("value"))?.kind.nativeLabel).toBe(
@@ -157,8 +159,8 @@ describe("WorkspaceDeclarationIndex", () => {
     );
   });
 
-  it("finds a default export assignment by its declaration node", () => {
-    const indexed = index([DEFAULT_EXPORT]);
+  it("finds a default export assignment by its declaration node", async () => {
+    const indexed = await index([DEFAULT_EXPORT]);
     const exportAssignment = indexed
       .sourceFile("src/default-export.ts")!
       .getExportAssignmentOrThrow(() => true);

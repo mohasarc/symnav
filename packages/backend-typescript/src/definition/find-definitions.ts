@@ -21,7 +21,7 @@ export interface FindDefinitionsArgs {
 export async function findDefinitions(
   args: FindDefinitionsArgs,
 ): Promise<readonly SymbolOverviewNode[]> {
-  args.workspaceState.ensureFiles(args.files);
+  await args.workspaceState.ensureFiles(args.files);
   return new DefinitionFinder(args).find();
 }
 

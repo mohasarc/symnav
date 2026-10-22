@@ -128,6 +128,16 @@ export type {
   ResolveSymbolsMode,
   ResolveSymbolsOptions,
 } from "./backend/language-backend.js";
+export type {
+  IndexedBackendDeclaration,
+  RevisionedBackendFileChange,
+  RevisionedBackendPreparationRequest,
+  RevisionedBackendPreparedFile,
+} from "./backend/revisioned-backend-state.js";
+export {
+  RevisionedBackendPreparation,
+  RevisionedBackendState,
+} from "./backend/revisioned-backend-state.js";
 export { BackendRouter } from "./backend/backend-router.js";
 export { UserFacingError } from "./errors.js";
 export {

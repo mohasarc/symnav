@@ -1,3 +1,4 @@
+import type { DaemonStateWriteFailure } from "../state-write-failure.js";
 import type { DaemonPolicyValues } from "@symnav/daemon";
 import type { DaemonExecutionFailureCode } from "../daemon-execution-failure.js";
 import type { DaemonOutputCapture } from "./client-result-capture.js";
@@ -152,6 +153,7 @@ export class DaemonExecutionClient implements DaemonExecutionRequester {
       const consume = async (bytes: Uint8Array): Promise<void> => {
         const values = decoder.append(bytes);
         let completedResult = false;
+        let failedStateWrite: DaemonStateWriteFailure | undefined;
         let failedCode: DaemonExecutionFailureCode | undefined;
         for (const value of values) {
           if (DaemonExecutionClient.isResultChunk(value)) {
@@ -204,6 +206,7 @@ export class DaemonExecutionClient implements DaemonExecutionRequester {
           if (terminal) throw new Error("Daemon returned duplicate terminal frame");
           terminal = true;
           failedCode = frame.code;
+          failedStateWrite = frame.stateWriteFailure;
         }
         if (completedResult) {
           const result = await transfer.finish();
@@ -229,7 +232,11 @@ export class DaemonExecutionClient implements DaemonExecutionRequester {
           completionSettled = true;
           connection?.end();
           await transfer.dispose();
-          resolveCompletion({ status: "failed", code: failedCode });
+          resolveCompletion({
+            status: "failed",
+            code: failedCode,
+            ...(failedStateWrite === undefined ? {} : { stateWriteFailure: failedStateWrite }),
+          });
         }
       };
       const receive = async (): Promise<void> => {
@@ -331,6 +338,7 @@ export class DaemonExecutionClient implements DaemonExecutionRequester {
       for await (const bytes of connection.incoming) {
         try {
           let completedResult = false;
+          let failedStateWrite: DaemonStateWriteFailure | undefined;
           let failedCode: DaemonExecutionFailureCode | undefined;
           for (const value of decoder.append(bytes)) {
             if (ended) throw new Error("Daemon resumed with a duplicate terminal frame");
@@ -346,6 +354,7 @@ export class DaemonExecutionClient implements DaemonExecutionRequester {
             if (frame.kind === "execution-failed") {
               ended = true;
               failedCode = frame.code;
+              failedStateWrite = frame.stateWriteFailure;
               continue;
             }
             if (frame.kind !== "result-end") {
@@ -375,7 +384,11 @@ export class DaemonExecutionClient implements DaemonExecutionRequester {
           if (failedCode !== undefined) {
             connection.end();
             await transfer.dispose();
-            return { status: "failed", code: failedCode };
+            return {
+              status: "failed",
+              code: failedCode,
+              ...(failedStateWrite === undefined ? {} : { stateWriteFailure: failedStateWrite }),
+            };
           }
         } catch (error) {
           throw DaemonExecutionClient.transportError(error, "accepted");

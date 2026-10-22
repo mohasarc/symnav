@@ -1,5 +1,5 @@
 import { DaemonStateWriteErrors } from "../state-write-errors.js";
-import type { DaemonStateWriteReport } from "../state-write-failure.js";
+import type { DaemonStateWriteReport, DaemonStateWriteFailure } from "../state-write-failure.js";
 import { createHash, randomUUID } from "node:crypto";
 import { constants } from "node:fs";
 import { chmod, lstat, mkdir, open, rm, unlink } from "node:fs/promises";
@@ -230,7 +230,10 @@ export class CompletionSpool {
     }
   }
 
-  async finish(exitCode: number): Promise<CompletionSpoolManifest> {
+  async finish(
+    exitCode: number,
+    stateWriteFailure?: DaemonStateWriteFailure,
+  ): Promise<CompletionSpoolManifest> {
     if (this.terminal) throw new Error("Completion spool is already terminal");
     if (!Number.isSafeInteger(exitCode) || exitCode < 0)
       throw new Error("Invalid command exit code");
@@ -245,6 +248,7 @@ export class CompletionSpool {
         requestId: this.options.requestId,
         instanceId: this.options.identity.instanceId,
         exitCode,
+        ...(stateWriteFailure === undefined ? {} : { stateWriteFailure }),
         rawBytes: this.rawBytes,
         recordCount: this.recordCount,
         sha256: this.hash.digest("hex"),

@@ -1,3 +1,4 @@
+import { DaemonLogger } from "../diagnostics/logger.js";
 import { DaemonFailureJournal } from "../diagnostics/failure-journal.js";
 import { DaemonFailureRecorder } from "../diagnostics/failure-recorder.js";
 import { NodeDaemonClock } from "../lifecycle/daemon-clock.js";
@@ -375,6 +376,7 @@ export class DaemonClientRuntime {
           "fallback",
         );
       }
+      await this.recordTransportFailure(record, request, error);
       return { mode: "warm", result: DaemonControlledResult.acceptedRequestDidNotComplete() };
     }
     try {
@@ -399,6 +401,7 @@ export class DaemonClientRuntime {
       return { mode: "warm", result: completion.result };
     } catch (error) {
       DaemonClientRuntime.observeWriteFailure(request, error, this.options.stateDirectory);
+      await this.recordTransportFailure(record, request, error);
       return { mode: "warm", result: DaemonControlledResult.acceptedRequestDidNotComplete() };
     }
   }
@@ -417,6 +420,38 @@ export class DaemonClientRuntime {
       this.clock,
       stateWriteFailed,
     );
+  }
+
+  private async recordTransportFailure(
+    record: DaemonRecord,
+    request: DaemonClientExecuteRequest,
+    error: unknown,
+  ): Promise<void> {
+    if (DaemonStateWriteErrors.from(error) !== undefined) return;
+    const logger = new DaemonLogger(
+      DaemonWorkspaceIdentity.from(record.workspaceRoot, this.options.stateDirectory),
+      record.instanceId,
+      this.clock,
+      {
+        policy: this.policy.values.diagnostics,
+        ...(request.stateWriteFailed === undefined
+          ? {}
+          : { stateWriteFailed: request.stateWriteFailed }),
+      },
+    );
+    logger.record({
+      kind: "failure",
+      operation: "completion-delivery",
+      failureCode: "internal",
+      errorName: DaemonLogger.errorName(error),
+      failure: DaemonFailureRecorder.failure(
+        this.clock.wallNowMs(),
+        "transfer",
+        "transfer-failed",
+        error,
+      ),
+    });
+    await logger.close();
   }
 
   private async executeLocally(

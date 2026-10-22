@@ -4,3 +4,7 @@ export interface DaemonStateWriteFailure {
 }
 
 export type DaemonStateWriteFailureObserver = (failure: DaemonStateWriteFailure) => void;
+
+export interface DaemonStateWriteReport {
+  readonly stateWriteFailure?: DaemonStateWriteFailure;
+}

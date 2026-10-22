@@ -1,3 +1,4 @@
+import type { DaemonStateWriteReport } from "../state-write-failure.js";
 import type { DaemonExecutorExecutionResult } from "@symnav/daemon";
 import type { DaemonExecutionFailureCode } from "../daemon-execution-failure.js";
 import type {
@@ -47,7 +48,10 @@ export interface DaemonExecutionReceipt {
   readonly acceptance: DaemonExecutionAcceptance;
   readonly completion: Promise<
     | { readonly status: "completed"; readonly result: DaemonExecutorExecutionResult }
-    | { readonly status: "failed"; readonly code: DaemonExecutionFailureCode }
+    | (DaemonStateWriteReport & {
+        readonly status: "failed";
+        readonly code: DaemonExecutionFailureCode;
+      })
   >;
 }
 

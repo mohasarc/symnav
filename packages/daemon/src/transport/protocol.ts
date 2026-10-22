@@ -1,4 +1,5 @@
 import type { DaemonProcessLifetimeIdentity } from "../process/process-lifetime-identity.js";
+import type { DaemonStateWriteReport } from "../state-write-failure.js";
 import type { DaemonCommandName, DaemonExecutorRequest, DaemonOutputStream } from "@symnav/daemon";
 import type { DaemonRejectedExecutionFrame } from "../daemon-admission.js";
 import type { DaemonExecutionFailureCode } from "../daemon-execution-failure.js";
@@ -148,13 +149,13 @@ export type DaemonExecutionServerFrame =
       readonly recordCount: number;
       readonly sha256: string;
     }
-  | {
+  | (DaemonStateWriteReport & {
       readonly kind: "execution-failed";
       readonly instanceId: string;
       readonly processToken: string;
       readonly requestId: string;
       readonly code: DaemonExecutionFailureCode;
-    };
+    });
 
 export type DaemonExecutionStatus =
   | { readonly state: "unknown" }

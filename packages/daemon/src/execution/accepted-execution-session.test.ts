@@ -79,6 +79,21 @@ describe("AcceptedExecutionSession", () => {
       await logger.close();
     },
   );
+  it("records named worker failure evidence with its original OS cause", async () => {
+    const harness = new AcceptedExecutionHarness({
+      workerFailure: Object.assign(new Error("secret worker"), { code: "EIO" }),
+    });
+    harness.session.accept(harness.request("worker-failed"));
+    await harness.session.drain();
+    expect(harness.diagnostics[0]).toMatchObject({
+      failure: {
+        phase: "worker",
+        reason: "worker-failed",
+        timestamp: expect.any(Number),
+        osCode: "EIO",
+      },
+    });
+  });
   it("returns a diagnostic write failure with the accepted result", async () => {
     const failure: DaemonStateWriteFailure = { path: "/state/daemon.log", osCode: "EACCES" };
     const harness = new AcceptedExecutionHarness({ diagnosticWriteFailure: failure });

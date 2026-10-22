@@ -39,6 +39,8 @@ import type {
   DaemonRequestServer,
 } from "../transport/contracts.js";
 import { TestDaemonTransport as DaemonTransport } from "../../test/helpers/daemon-transport.js";
+import { DaemonFailureJournal } from "../diagnostics/failure-journal.js";
+import { NodeDaemonClock } from "../lifecycle/daemon-clock.js";
 
 const STARTUP_COORDINATION_GRACE_MS =
   DaemonPolicy.currentSystem().values.startup.coordinationGraceMs;
@@ -377,6 +379,52 @@ describe("DaemonStartupCoordinator", () => {
 
     expect(harness.registry.readStored(harness.identity)).toBeUndefined();
     expect(harness.registry.startupOwner(harness.identity)).toBeUndefined();
+  });
+
+  it("retains the process spawn OS cause after failed startup records are removed", async () => {
+    const error = Object.assign(new Error("secret spawn details"), { code: "EACCES" });
+    const harness = new CoordinatorHarness(roots, { launchFailure: error });
+    await expect(harness.coordinator().trigger(harness.identity)).rejects.toThrow(error.message);
+    expect(harness.registry.readStored(harness.identity)).toBeUndefined();
+    const journal = new DaemonFailureJournal(
+      harness.identity.stateDirectory,
+      DaemonPolicy.currentSystem().values.diagnostics,
+      new NodeDaemonClock(),
+    );
+    expect(await journal.recent(Date.now())).toEqual([
+      expect.objectContaining({
+        kind: "startup-failure",
+        workspaceRoot: "/repo",
+        failure: {
+          phase: "process spawn",
+          reason: "process-spawn-failed",
+          osCode: "EACCES",
+          timestamp: expect.any(Number),
+        },
+      }),
+    ]);
+  });
+
+  it("records child death before readiness once before releasing startup evidence", async () => {
+    const harness = new CoordinatorHarness(roots, { exitingLaunches: 1 });
+    const coordinator = harness.coordinator();
+    const launched = await coordinator.trigger(harness.identity);
+    await expect(
+      coordinator.waitUntilReady(harness.identity, launched.instanceId),
+    ).rejects.toThrow();
+    const journal = new DaemonFailureJournal(
+      harness.identity.stateDirectory,
+      DaemonPolicy.currentSystem().values.diagnostics,
+      new NodeDaemonClock(),
+    );
+    await waitUntil(() => harness.registry.readStored(harness.identity) === undefined);
+    expect(await journal.recent(Date.now())).toEqual([
+      expect.objectContaining({
+        kind: "startup-failure",
+        instanceId: launched.instanceId,
+        failure: expect.objectContaining({ phase: "process spawn", reason: "process-terminated" }),
+      }),
+    ]);
   });
 
   it("does not launch a replacement until the authenticated daemon process exits", async () => {

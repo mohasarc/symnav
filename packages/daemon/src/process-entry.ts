@@ -1,4 +1,6 @@
 import { PosixDaemonProcessLifetime } from "./process/posix-process-lifetime.js";
+import { DaemonFailureRecorder } from "./diagnostics/failure-recorder.js";
+import { DaemonFailureJournal } from "./diagnostics/failure-journal.js";
 import { DaemonPolicyCodec } from "./daemon-policy.js";
 import { NodeDaemonClock } from "./lifecycle/daemon-clock.js";
 import { DaemonLogger } from "./diagnostics/logger.js";
@@ -43,9 +45,33 @@ class DaemonProcessEntry {
       clock,
       logger,
     });
-    new DaemonProcessTerminationObserver(logger, () => {
-      registry.removeIfProcess(identity, configuration.instanceId, configuration.processToken);
-    }).install();
+    const failureJournal = new DaemonFailureJournal(
+      identity.stateDirectory,
+      policy.values.diagnostics,
+      clock,
+    );
+    new DaemonProcessTerminationObserver(
+      logger,
+      () => {
+        registry.removeIfProcess(identity, configuration.instanceId, configuration.processToken);
+      },
+      undefined,
+      async (failure) => {
+        const record = registry.recordForProcess(
+          identity,
+          configuration.instanceId,
+          configuration.processToken,
+        );
+        await new DaemonFailureRecorder(failureJournal, identity.workspaceRoot, clock).record(
+          record?.state === "starting" ? "startup-failure" : "termination",
+          failure.phase,
+          failure.reason,
+          failure.osCode === undefined ? undefined : { code: failure.osCode },
+          configuration.instanceId,
+        );
+      },
+      clock,
+    ).install();
     await coordinator.start();
   }
 }

@@ -25,7 +25,7 @@ export type DaemonWarmupTriggerResult =
   | { readonly status: "ready"; readonly instanceId: string; readonly pid: number };
 
 interface DaemonStartupCoordinatorOptions {
-  readonly policy: Pick<DaemonPolicyValues, "startup" | "shutdown">;
+  readonly policy: Pick<DaemonPolicyValues, "startup" | "shutdown" | "diagnostics">;
   readonly clock?: Pick<DaemonClock, "wallNowMs">;
   readonly instanceId?: () => string;
   readonly processTerminator?: DaemonProcessTerminator;

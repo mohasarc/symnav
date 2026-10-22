@@ -31,6 +31,7 @@ export interface DaemonProcessExit {
   readonly signal: NodeJS.Signals | null;
   readonly cause: "exit" | "spawn-error";
   readonly errorName?: string;
+  readonly osCode?: string;
 }
 
 export interface DaemonProcess {

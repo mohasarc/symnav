@@ -102,8 +102,11 @@ export function buildProgram(
   const deps =
     dependencies ??
     createDefaultDependencies(
-      new StateDirectoryResolver(process.env).resolve(),
+      process.env.SYMNAV_DAEMON === "0" && !isTelemetryEnabled(process.env)
+        ? ""
+        : new StateDirectoryResolver(process.env).resolve(),
       DaemonPolicy.currentSystem(),
+      process.env.SYMNAV_DAEMON !== "0",
     );
   const program = new CommanderCommand();
   program

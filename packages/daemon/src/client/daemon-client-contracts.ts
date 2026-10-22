@@ -1,3 +1,4 @@
+import type { DaemonStateWriteFailureObserver } from "../state-write-failure.js";
 import type { DaemonCommandName, DaemonReadinessProbe } from "../daemon-command-name.js";
 import type {
   DaemonExecutionMode,
@@ -18,6 +19,7 @@ export interface DaemonClientOptions {
 }
 
 export interface DaemonClientExecuteRequest {
+  readonly stateWriteFailed?: DaemonStateWriteFailureObserver;
   readonly workspaceRoot: string;
   readonly commandName: DaemonCommandName;
   readonly argv: readonly string[];

@@ -280,7 +280,7 @@ describe("DaemonController", () => {
       now: () => 20,
     });
 
-    await expect(controller.status()).resolves.toEqual([
+    await expect(controller.status().then((report) => report.daemons)).resolves.toEqual([
       {
         workspaceRoot: "/repo",
         state: "starting",
@@ -304,7 +304,7 @@ describe("DaemonController", () => {
       { processTerminator: new ControllerTerminator([daemonRecord.pid]), now: () => 20 },
     );
 
-    await expect(controller.status()).resolves.toEqual([
+    await expect(controller.status().then((report) => report.daemons)).resolves.toEqual([
       {
         workspaceRoot: "/repo",
         state: "starting",
@@ -354,7 +354,7 @@ describe("DaemonController", () => {
         { processTerminator: new ControllerTerminator([daemonRecord.pid]), now: () => -10_000 },
       );
 
-      await expect(controller.status()).resolves.toEqual([
+      await expect(controller.status().then((report) => report.daemons)).resolves.toEqual([
         expect.objectContaining({ workspaceRoot: "/repo", pid: daemonRecord.pid, ...expected }),
       ]);
     },
@@ -379,7 +379,7 @@ describe("DaemonController", () => {
       { processTerminator: new ControllerTerminator([daemonRecord.pid]), now: () => 20 },
     );
 
-    await expect(controller.status()).resolves.toEqual([
+    await expect(controller.status().then((report) => report.daemons)).resolves.toEqual([
       expect.objectContaining({
         workspaceRoot: "/repo",
         state: "recovering",
@@ -406,7 +406,7 @@ describe("DaemonController", () => {
       processTerminator: new ControllerTerminator([]),
     });
 
-    await expect(controller.status()).resolves.toEqual([]);
+    await expect(controller.status().then((report) => report.daemons)).resolves.toEqual([]);
     expect(registry.startupOwner(identity)).toBeUndefined();
     expect(registry.readStoredInstance(identity, "starting")).toBeUndefined();
   });
@@ -431,7 +431,7 @@ describe("DaemonController", () => {
       processTerminator: terminator,
     });
 
-    await expect(controller.status()).resolves.toEqual([]);
+    await expect(controller.status().then((report) => report.daemons)).resolves.toEqual([]);
     expect(registry.startupOwner(identity)).toMatchObject({
       instanceId: replacement.instanceId,
       ownerPid: replacement.pid,

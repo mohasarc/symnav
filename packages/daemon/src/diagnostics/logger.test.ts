@@ -47,6 +47,51 @@ describe("DaemonLogger", () => {
     roots.length = 0;
   });
 
+  it("retains exact structured failure fields and rejects open-ended failure objects", async () => {
+    const root = mkdtempSync(join(tmpdir(), "symnav-daemon-failure-log-"));
+    roots.push(root);
+    const identity = DaemonWorkspaceIdentity.from("/repo", root);
+    const logger = new DaemonLogger(identity, "one", new NodeDaemonClock());
+    logger.record({
+      kind: "failure",
+      operation: "start",
+      failureCode: "operation-failed",
+      errorName: "Error",
+      failure: {
+        phase: "endpoint bind",
+        reason: "endpoint-bind-denied",
+        timestamp: 4,
+        osCode: "EPERM",
+      },
+    });
+    logger.record({
+      kind: "failure",
+      operation: "start",
+      failureCode: "operation-failed",
+      errorName: "Error",
+      failure: {
+        phase: "endpoint bind",
+        reason: "endpoint-bind-denied",
+        timestamp: 4,
+        message: "secret",
+      },
+    } as unknown as DaemonDiagnosticEvent);
+    await logger.flush();
+    const events = readFileSync(identity.logPath, "utf8")
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line) as unknown);
+    expect(events).toHaveLength(1);
+    expect(events[0]).toMatchObject({
+      failure: {
+        phase: "endpoint bind",
+        reason: "endpoint-bind-denied",
+        timestamp: 4,
+        osCode: "EPERM",
+      },
+    });
+  });
+
   it("writes ordered JSON lifecycle, request, freshness, and failure events", async () => {
     const root = mkdtempSync(join(tmpdir(), "symnav-daemon-log-"));
     roots.push(root);

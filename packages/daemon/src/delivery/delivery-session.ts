@@ -1,4 +1,7 @@
-import type { DaemonStateWriteFailure } from "../state-write-failure.js";
+import type {
+  DaemonStateWriteFailure,
+  DaemonStateWriteFailureObserver,
+} from "../state-write-failure.js";
 import type { DaemonCommandName, DaemonPolicyValues } from "@symnav/daemon";
 import type { DaemonExecutionFailureCode } from "../daemon-execution-failure.js";
 import type { DaemonSequencedOutputRecord } from "../daemon-executor.js";
@@ -34,6 +37,8 @@ import { DaemonLogger } from "../diagnostics/logger.js";
 import type { DaemonServerSend } from "../transport/contracts.js";
 
 export interface DaemonDiagnosticRecorder {
+  observeStateWrites?(observer: DaemonStateWriteFailureObserver): () => void;
+  flush?(): Promise<void>;
   record(event: DaemonDiagnosticEvent): void;
 }
 

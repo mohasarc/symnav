@@ -157,6 +157,35 @@ describe("DaemonController", () => {
     expect(registry.read(identity)).toEqual(record);
   });
 
+  it("retains graceful stop time after the stop response times out during accepted work", async () => {
+    const stateDirectory = temporaryDirectory(roots);
+    const identity = DaemonWorkspaceIdentity.from("/repo", stateDirectory);
+    const registry = new DaemonRegistry(identity.registryDirectory);
+    const record = readyRecord(identity);
+    registry.write(record);
+    const terminator = new ControllerTerminator([record.pid]);
+    const transport = new ActivityControllerTransport(record);
+    const originalRequest = transport.request.bind(transport);
+    const requests: string[] = [];
+    vi.spyOn(transport, "request").mockImplementation((endpoint, request) => {
+      requests.push(request.kind);
+      if (request.kind !== "stop") return originalRequest(endpoint, request);
+      setTimeout(() => terminator.alive.delete(record.pid), 20);
+      return Promise.reject(new Error("Stop response timed out while work was still running"));
+    });
+    const controller = new DaemonController(registry, transport, stateDirectory, {
+      stopTimeoutMs: 100,
+      pollIntervalMs: 1,
+      processTerminator: terminator,
+    });
+    await expect(controller.stop("/repo")).resolves.toEqual({
+      status: "stopped",
+      workspaceRoot: "/repo",
+      pid: record.pid,
+    });
+    expect(requests).not.toContain("kill");
+  });
+
   it("uses coordinator startup recovery for explicit starts", async () => {
     const stateDirectory = temporaryDirectory(roots);
     const registry = new DaemonRegistry(stateDirectory);

@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -32,5 +32,32 @@ describe("ClaudeCodeSandboxConfiguration", () => {
     });
     expect(await configuration.grant(stateDirectory)).toMatchObject({ changed: false });
     expect(await readFile(configuration.configurationPath, "utf8")).toBe(original);
+  });
+  it.each([
+    "{}",
+    '{"sandbox": {"enabled": false}}',
+    '{"sandbox": {"filesystem": {"denyWrite": ["/secret"]}}}',
+    '{"theme":"dark","sandbox":{"enabled":true,"network":{"allowedDomains":[]},"filesystem":{"allowWrite":["/other"],"denyRead":["/private"],"denyWrite":["/secret"]}},"permissions":{"deny":["Edit(/secret)"]}}',
+    '{\r\n\t"sandbox": {"filesystem": {"allowWrite": [\r\n\t\t"/other"\r\n\t]}},\r\n\t"theme": "雪"\r\n}\r\n',
+  ])("adds only a source-range state grant to existing settings %s", async (original) => {
+    const homeDirectory = await mkdtemp(join(tmpdir(), "symnav-claude-preserve-"));
+    directories.push(homeDirectory);
+    const configuration = new ClaudeCodeSandboxConfiguration({ homeDirectory });
+    const stateDirectory = join(homeDirectory, 'state 雪 "escaped"');
+    await mkdir(join(homeDirectory, ".claude"));
+    await writeFile(configuration.configurationPath, original);
+    expect(await configuration.grant(stateDirectory)).toMatchObject({ changed: true });
+    const updated = await readFile(configuration.configurationPath, "utf8");
+    const expected = JSON.parse(original);
+    expected.sandbox ??= {};
+    expected.sandbox.filesystem ??= {};
+    expected.sandbox.filesystem.allowWrite ??= [];
+    expected.sandbox.filesystem.allowWrite.push(stateDirectory);
+    expect(JSON.parse(updated)).toEqual(expected);
+    if (original.includes('"/other"')) {
+      expect(updated.replace(`,${JSON.stringify(stateDirectory)}`, "")).toBe(original);
+    }
+    expect(await configuration.grant(stateDirectory)).toMatchObject({ changed: false });
+    expect(await readFile(configuration.configurationPath, "utf8")).toBe(updated);
   });
 });

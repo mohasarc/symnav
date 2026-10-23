@@ -184,6 +184,23 @@ describe("DaemonProcessCoordinator runtime lifecycle", () => {
     expect(harness.registry.read(harness.identity)).toBeUndefined();
   });
 
+  it("retains successful real-child completion when consumed after exit", async () => {
+    const fixture = new RealChildProcess(
+      spawn(process.execPath, ["-e", "process.stdin.once('data', () => process.exit(0))"], {
+        stdio: ["pipe", "ignore", "ignore"],
+      }),
+    );
+    childProcesses.push(fixture.child);
+    const observedExit = new Promise((resolve) => fixture.child.once("exit", resolve));
+
+    fixture.child.stdin?.end("exit\n");
+    await expect(observedExit).resolves.toBe(0);
+    expect(fixture.child.exitCode).toBe(0);
+    expect(fixture.child.signalCode).toBeNull();
+
+    await expect(fixture.exited).resolves.toBeUndefined();
+  });
+
   it("force-stops a real matching daemon process with a stuck request", async () => {
     const stateDirectory = CanonicalTestPath.resolve(
       mkdtempSync(join(tmpdir(), "symnav-daemon-child-state-")),

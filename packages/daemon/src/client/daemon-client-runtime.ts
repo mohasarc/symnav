@@ -263,7 +263,15 @@ export class DaemonClientRuntime {
   async control(
     request: DaemonControlRequest,
   ): Promise<DaemonStartResult | readonly RunningDaemonStatus[] | DaemonStopResult> {
-    const controller = this.controllerFor(request);
+    let stateWriteFailure: DaemonStateWriteFailure | undefined;
+    const stateWriteFailed: DaemonStateWriteFailureObserver = (failure) => {
+      if (stateWriteFailure !== undefined) return;
+      stateWriteFailure = failure;
+      request.stateWriteFailed?.(failure);
+    };
+    const observedRequest =
+      request.stateWriteFailed === undefined ? request : { ...request, stateWriteFailed };
+    const controller = this.controllerFor(observedRequest);
     try {
       if (request.action === "start") {
         if (!this.options.daemonEnabled) return { status: "disabled" };
@@ -273,7 +281,7 @@ export class DaemonClientRuntime {
       return await controller.stop(request.workspaceRoot);
     } catch (error) {
       const failure = DaemonStateWriteErrors.from(error, this.options.stateDirectory);
-      if (failure !== undefined) request.stateWriteFailed?.(failure);
+      if (failure !== undefined) stateWriteFailed(failure);
       throw error;
     }
   }
@@ -282,25 +290,29 @@ export class DaemonClientRuntime {
     if (request.stateWriteFailed === undefined)
       return request.action === "status" ? this.statusController : this.controlController;
     const processTerminator = new NodeDaemonProcessTerminator(this.policy.values.shutdown);
-    return new DaemonController(
-      this.registry,
-      new DaemonWriteObservedLifecycle(
-        request.action === "status" ? this.statusTransport : this.routingTransport,
-        this.options.stateDirectory,
-        request.stateWriteFailed,
-      ),
+    const transport = new DaemonWriteObservedLifecycle(
+      request.action === "status" ? this.statusTransport : this.routingTransport,
       this.options.stateDirectory,
-      {
-        policy: this.policy.values,
-        processTerminator,
-        launcher: new NodeDaemonProcessLauncher(
-          this.options.productVersion,
-          this.options.executorModuleUrl,
-          this.policy,
-        ),
-        startupCoordinator: this.coordinator,
-      },
+      request.stateWriteFailed,
     );
+    const launcher = new NodeDaemonProcessLauncher(
+      this.options.productVersion,
+      this.options.executorModuleUrl,
+      this.policy,
+    );
+    return new DaemonController(this.registry, transport, this.options.stateDirectory, {
+      policy: this.policy.values,
+      processTerminator,
+      launcher,
+      startupCoordinator:
+        request.action === "start"
+          ? new DaemonStartupCoordinator(this.registry, launcher, transport, {
+              policy: this.policy.values,
+              processTerminator,
+              readinessProbe: this.options.readinessProbe,
+            })
+          : this.coordinator,
+    });
   }
 
   private async executeWarm(

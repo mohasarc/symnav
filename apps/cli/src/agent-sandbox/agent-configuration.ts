@@ -1,3 +1,5 @@
+import type { AgentProbePolicy } from "./agent-probe-policy.js";
+
 export type SupportedAgent = "codex" | "claude-code";
 
 export interface AgentSetupResult {
@@ -17,5 +19,6 @@ export interface AgentConfigurationLocations {
 export abstract class AgentSandboxConfiguration {
   public abstract readonly agent: SupportedAgent;
   public abstract readonly configurationPath: string;
+  public abstract inspect(stateDirectory: string, workspace: string): Promise<AgentProbePolicy>;
   public abstract grant(stateDirectory: string): Promise<AgentSetupResult>;
 }

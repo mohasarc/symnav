@@ -11,6 +11,38 @@ import type {
 import { DaemonWorkerGenerationManager } from "./worker-generation-manager.js";
 
 describe("DaemonWorkerGenerationManager", () => {
+  it("activates only the current generation across multiple replacements after initial readiness", async () => {
+    const workers = [1, 2, 3].map((generation) => new ControlledNavigationWorker(generation));
+    const manager = createManager({ createWorker: (generation) => workers[generation - 1]! });
+    const starting = manager.start();
+    workers[0]!.completeReady(3);
+    await starting;
+    const firstReplacement = manager.replace("hard-pressure");
+    workers[1]!.completeReady(7);
+    await firstReplacement;
+    const secondReplacement = manager.replace("hard-pressure");
+    const activating = manager.activateReadiness();
+    workers[2]!.completeReady(11);
+    await secondReplacement;
+    await expect(activating).resolves.toMatchObject({ generation: 3, fileCount: 11 });
+    expect(manager.snapshot).toEqual({ generation: 3, fileCount: 11, ready: true });
+  });
+
+  it("propagates the current replacement startup failure to activation", async () => {
+    const initial = new ControlledNavigationWorker(1);
+    const replacement = new ControlledNavigationWorker(2);
+    const manager = createManager({ initialWorker: initial, createWorker: () => replacement });
+    const starting = manager.start();
+    initial.completeReady(3);
+    await starting;
+    const replacing = manager.replace("hard-pressure");
+    const activating = Promise.resolve().then(() => manager.activateReadiness());
+    replacement.rejectStart(new Error("current startup failed"));
+    await expect(replacing).rejects.toThrow("current startup failed");
+    await expect(activating).rejects.toThrow("current startup failed");
+    expect(manager.snapshot.ready).toBe(false);
+  });
+
   it.each(["old-first", "replacement-first", "obsolete-rejection"] as const)(
     "follows current startup readiness through %s completion",
     async (order) => {

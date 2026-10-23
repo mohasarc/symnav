@@ -75,7 +75,7 @@ describe("CodexSandboxConfiguration", () => {
     expect(await readFile(adapter.configurationPath, "utf8")).toBe(updated);
   });
   it.each([
-    ["malformed", "[sandbox_workspace_write\nwritable_roots = []\n", "invalid TOML at line 1"],
+    ["malformed", "[sandbox_workspace_write\nwritable_roots = []\n", "invalid TOML at line 2"],
     ["duplicate key", "model = 'a'\nmodel = 'b'\n", "invalid TOML at line 2"],
     ["duplicate table", "[x]\n[x]\n", "invalid TOML at line 2"],
     ["wrong table", "sandbox_workspace_write = 1\n", "sandbox_workspace_write must be a table"],

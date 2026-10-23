@@ -1,3 +1,5 @@
+import { PosixDaemonProcessLifetime } from "../process/posix-process-lifetime.js";
+import type { DaemonProcessLifetimeIdentity } from "../process/process-lifetime-identity.js";
 import { constants, existsSync, writeFileSync } from "node:fs";
 import { open, rename, unlink } from "node:fs/promises";
 import { NodeDaemonClock } from "../lifecycle/daemon-clock.js";
@@ -7,7 +9,7 @@ import type { DaemonConnection } from "./contracts.js";
 interface FileDaemonConnectionOptions {
   readonly directory: string;
   readonly side: "request" | "response";
-  readonly peerPid: number;
+  readonly peerLifetime: DaemonProcessLifetimeIdentity;
   readonly timeoutMs?: number;
 }
 
@@ -150,12 +152,8 @@ export class FileDaemonConnection implements DaemonConnection {
       !existsSync(this.options.directory)
     )
       throw new Error("Daemon file connection closed");
-    try {
-      process.kill(this.options.peerPid, 0);
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== "EPERM")
-        throw new Error("Daemon file peer closed", { cause: error });
-    }
+    if (PosixDaemonProcessLifetime.observe(this.options.peerLifetime) === "exited")
+      throw new Error("Daemon file peer closed");
     if (
       !this.timeoutDisabled &&
       this.options.timeoutMs !== undefined &&

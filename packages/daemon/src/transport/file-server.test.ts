@@ -1,3 +1,5 @@
+import { randomUUID } from "node:crypto";
+import { PosixDaemonProcessLifetime } from "../process/posix-process-lifetime.js";
 import { FileDaemonEndpoint } from "./file-endpoint.js";
 import { spawn } from "node:child_process";
 import { once } from "node:events";
@@ -59,7 +61,7 @@ describe.skipIf(process.platform === "win32")("filesystem daemon server", () => 
     await expect(second).resolves.toMatchObject(harness.pong("second"));
     expect(handled.sort()).toEqual(["first", "second"]);
     await listening.close();
-    expect(await readdir(join(endpoint, ".."))).toEqual([]);
+    expect(await readdir(join(endpoint, ".."))).toEqual(["process-lifetimes"]);
   });
 
   it("connects to a live endpoint whose PID is absent in the caller namespace", async () => {
@@ -130,44 +132,53 @@ describe.skipIf(process.platform === "win32")("filesystem daemon server", () => 
       const listening = await transport.server.listen(endpoint, async (request) =>
         harness.pong(request.instanceId),
       );
-      const publisher = spawn(process.execPath, [
-        "--input-type=module",
-        "-e",
-        `
+      const ownerDirectory = (await FileDaemonEndpoint.owner(endpoint)).directory;
+      const lifetime = PosixDaemonProcessLifetime.prepareChild(join(endpoint, ".."));
+      const publisher = spawn(
+        process.execPath,
+        [
+          "--input-type=module",
+          "-e",
+          `
           import { mkdir, writeFile } from "node:fs/promises";
           import { join } from "node:path";
           import { randomUUID } from "node:crypto";
           const name = String(Date.now()).padStart(16, "0") + "-" +
-            String(process.pid).padStart(10, "0") + "-0000000000-" + randomUUID() + ".tmp";
+            String(process.pid).padStart(10, "0") + "-0000000000-" + JSON.parse(process.argv[3]).token + ".tmp";
           const directory = join(process.argv[1], name);
           await mkdir(directory);
           if (process.argv[2] === "after-owner") {
             await mkdir(join(directory, "request"));
             await mkdir(join(directory, "response"));
-            await writeFile(join(directory, "owner.json"), JSON.stringify({ pid: process.pid }));
+            await writeFile(join(directory, "owner.json"), JSON.stringify({ pid: process.pid, token: randomUUID(), processLifetime: JSON.parse(process.argv[3]) }));
           }
           console.log(name);
           setInterval(() => {}, 1000);
         `,
-        endpoint,
-        publicationWindow,
-      ]);
+          ownerDirectory,
+          publicationWindow,
+          JSON.stringify(lifetime.identity),
+        ],
+        { stdio: ["ignore", "pipe", "ignore", lifetime.descriptor] },
+      );
       try {
-        const [bytes] = await once(publisher.stdout, "data");
+        const [bytes] = await once(publisher.stdout!, "data");
+        lifetime.closeParentCopy();
         const name = String(bytes).trim();
         await new Promise((resolve) => setTimeout(resolve, 30));
-        expect(await readdir(endpoint)).toContain(name);
+        expect(await readdir(ownerDirectory)).toContain(name);
         await expect(
           transport.lifecycle.request(endpoint, harness.ping("while-publishing")),
         ).resolves.toMatchObject({ kind: "pong" });
         const exited = once(publisher, "exit");
         publisher.kill("SIGKILL");
         await exited;
-        await vi.waitFor(async () => expect(await readdir(endpoint)).not.toContain(name));
+        await vi.waitFor(async () => expect(await readdir(ownerDirectory)).not.toContain(name));
         await expect(
           transport.lifecycle.request(endpoint, harness.ping("after-interruption")),
         ).resolves.toMatchObject({ kind: "pong" });
       } finally {
+        lifetime.closeParentCopy();
         publisher.kill("SIGKILL");
         await listening.close(true);
       }
@@ -200,7 +211,7 @@ describe.skipIf(process.platform === "win32")("filesystem daemon server", () => 
       );
     }
     await listening.close();
-    expect(await readdir(join(endpoint, ".."))).toEqual([]);
+    expect(await readdir(join(endpoint, ".."))).toEqual(["process-lifetimes"]);
   }, 10_000);
 
   it("isolates malformed and abandoned channels while preserving the listener", async () => {
@@ -209,15 +220,18 @@ describe.skipIf(process.platform === "win32")("filesystem daemon server", () => 
     const listening = await transport.server.listen(endpoint, async (request) =>
       harness.pong(request.instanceId),
     );
+    const ownerDirectory = (await FileDaemonEndpoint.owner(endpoint)).directory;
     for (const [name, owner] of [
       ["1.channel", "broken"],
       ["2.channel", JSON.stringify({ pid: 2147483647 })],
     ] as const) {
-      await mkdir(join(endpoint, name));
-      await writeFile(join(endpoint, name, "owner.json"), owner);
+      await mkdir(join(ownerDirectory, name));
+      await writeFile(join(ownerDirectory, name, "owner.json"), owner);
     }
     await vi.waitFor(async () =>
-      expect((await readdir(endpoint)).filter((name) => name.endsWith(".channel"))).toEqual([]),
+      expect((await readdir(ownerDirectory)).filter((name) => name.endsWith(".channel"))).toEqual(
+        [],
+      ),
     );
     await expect(
       transport.lifecycle.request(endpoint, harness.ping("healthy")),
@@ -244,8 +258,14 @@ describe.skipIf(process.platform === "win32")("filesystem daemon server", () => 
 
   it("removes only endpoints with a proven dead owner", async () => {
     const endpoint = await harness.endpoint();
-    await mkdir(endpoint);
-    await writeFile(join(endpoint, "owner.json"), JSON.stringify({ pid: 2147483647 }));
+    const lifetime = PosixDaemonProcessLifetime.prepareChild(join(endpoint, ".."));
+    lifetime.closeParentCopy();
+    const token = randomUUID();
+    await mkdir(join(endpoint, token), { recursive: true });
+    await writeFile(
+      join(endpoint, token, "owner.json"),
+      JSON.stringify({ pid: process.pid, token, processLifetime: lifetime.identity }),
+    );
     const transport = DaemonTransportFactory.create({ policy: harness.policy });
     await expect(transport.server.removeUnavailableEndpoint(endpoint)).resolves.toBe(true);
   });

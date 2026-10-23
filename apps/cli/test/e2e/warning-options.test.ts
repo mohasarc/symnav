@@ -13,6 +13,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { fixturePath, runSymnavBinary } from "@symnav/testing";
+import { canonicalWorkspaceRoot } from "../helpers/canonical-workspace-root.js";
 import { CliDaemonTesting } from "../helpers/daemon-testing.js";
 import { E2eProcessCleanup } from "../helpers/e2e-process-cleanup.js";
 
@@ -163,7 +164,7 @@ describe("global warning options through the built CLI", () => {
       const status = harness.run(args, "1");
       expect(status.status).toBe(0);
       expect(status.stderr).toBe("");
-      expect(status.stdout).toContain(`${harness.workspace}  pid ${pid}`);
+      expect(status.stdout).toContain(`${canonicalWorkspaceRoot(harness.workspace)}  pid ${pid}`);
       expect(status.stdout).toContain("ready");
     }
     process.kill(pid!, "SIGKILL");

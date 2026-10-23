@@ -92,6 +92,11 @@ describe("CodexSandboxConfiguration", () => {
     ],
     ["wrong mode", "sandbox_mode = 42\n", "sandbox_mode must be a supported sandbox mode"],
     [
+      "wrong legacy network",
+      '[sandbox_workspace_write]\nnetwork_access = "false"\n',
+      "network_access must be a boolean at line 2",
+    ],
+    [
       "conflicting policies",
       "default_permissions = ':workspace'\nsandbox_mode = 'workspace-write'\n",
       "legacy sandbox settings conflict with permission profiles",

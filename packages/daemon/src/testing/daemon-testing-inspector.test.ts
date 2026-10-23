@@ -1,3 +1,4 @@
+import { PosixDaemonProcessLifetime } from "../process/posix-process-lifetime.js";
 import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -49,6 +50,20 @@ describe("daemon testing inspector", () => {
       },
     ]);
   });
+
+  it.skipIf(process.platform === "win32")(
+    "observes process lifetimes without exposing or mutating sentinel paths",
+    () => {
+      const stateDirectory = temporaryDirectory(directories);
+      const inspector = new DaemonTestingInspector(stateDirectory);
+      expect(inspector.processLifetimeObservations()).toEqual([]);
+      const lifetime = PosixDaemonProcessLifetime.prepareChild(stateDirectory);
+      expect(inspector.processLifetimeObservations()).toEqual(["live"]);
+      lifetime.closeParentCopy();
+      expect(inspector.processLifetimeObservations()).toEqual(["exited"]);
+      expect(inspector.processLifetimeObservations()).toEqual(["exited"]);
+    },
+  );
 
   it("paginates parsed diagnostics by event index", () => {
     const stateDirectory = temporaryDirectory(directories);

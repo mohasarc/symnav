@@ -442,6 +442,70 @@ describe("DaemonStartupCoordinator", () => {
     },
   );
 
+  it.each(["ensureRunning", "trigger"] as const)(
+    "retains the first lifetime failure when startup cleanup is denied through %s",
+    async (entrypoint) => {
+      for (const originalWriteDenied of [false, true]) {
+        const harness = new CoordinatorHarness(roots);
+        const original = Object.assign(new Error("utility missing"), {
+          code: "ENOENT",
+          path: "mkfifo",
+        });
+        const originPath = join(
+          harness.identity.stateDirectory,
+          "process-lifetimes",
+          "origin.fifo",
+        );
+        const cause = originalWriteDenied
+          ? DaemonStateWriteErrors.failedWrite(
+              originPath,
+              Object.assign(new Error("creation denied"), { code: "EPERM" }),
+            )
+          : original;
+        const error = new DaemonProcessLifetimeCreationError(cause);
+        Object.assign(harness.launcher, {
+          prepareLifetime: () => {
+            throw error;
+          },
+        });
+        const cleanupPath = harness.identity.lockPath;
+        const cleanupError = DaemonStateWriteErrors.failedWrite(
+          cleanupPath,
+          Object.assign(new Error("cleanup denied"), { code: "EACCES" }),
+        );
+        vi.spyOn(harness.registry, "removeStartupLockIfOwner").mockImplementation(() => {
+          throw cleanupError;
+        });
+        const record = vi.spyOn(DaemonFailureJournal.prototype, "record");
+        const stateWriteFailed = vi.fn();
+        const coordinator = harness.coordinator();
+        await expect(coordinator[entrypoint](harness.identity, stateWriteFailed)).rejects.toBe(
+          error,
+        );
+        await coordinator.recordTriggerFailure(harness.identity, error, stateWriteFailed);
+        expect(error.cause).toBe(cause);
+        expect(record).toHaveBeenCalledTimes(1);
+        expect(record).toHaveBeenCalledWith(
+          expect.objectContaining({
+            failure: {
+              phase: "endpoint create",
+              reason: "endpoint-create-failed",
+              osCode: originalWriteDenied ? "EPERM" : "ENOENT",
+              timestamp: expect.any(Number),
+            },
+          }),
+        );
+        expect(stateWriteFailed.mock.calls).toEqual([
+          ...(originalWriteDenied ? [[{ path: originPath, osCode: "EPERM" }]] : []),
+          [{ path: cleanupPath, osCode: "EACCES" }],
+        ]);
+        expect(harness.registry.startupOwner(harness.identity)).toBeDefined();
+        expect(harness.launcher.launchCount).toBe(0);
+        vi.restoreAllMocks();
+      }
+    },
+  );
+
   it("reports diagnostic denial once without replacing the initial endpoint failure", async () => {
     const harness = new CoordinatorHarness(roots);
     const cause = Object.assign(new Error("missing utility"), { code: "ENOENT", path: "mkfifo" });

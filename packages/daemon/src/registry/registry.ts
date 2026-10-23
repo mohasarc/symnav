@@ -105,13 +105,18 @@ class RegistryStartupLease implements StartupLease {
     return this.currentOwner.instanceId;
   }
 
-  transferToDaemon(pid: number, processToken: string): boolean {
+  transferToDaemon(
+    pid: number,
+    processToken: string,
+    processLifetime?: DaemonProcessLifetimeIdentity,
+  ): boolean {
     if (this.released) return false;
     return this.registry.transferStartupToDaemon(
       this.identity,
       this.currentOwner,
       pid,
       processToken,
+      processLifetime,
     );
   }
 
@@ -256,6 +261,7 @@ export class DaemonRegistry {
       if (owner === undefined) return false;
       const adoptedOwner: StartupOwner = {
         ...owner,
+        ...(record.processLifetime === undefined ? {} : { ownerLifetime: record.processLifetime }),
         identityKey: identity.identityKey,
         ownerPid: record.pid > 0 ? record.pid : owner.ownerPid,
         processToken: record.processToken,
@@ -356,6 +362,7 @@ export class DaemonRegistry {
     instanceId: string,
     processToken: string,
     pid: number,
+    processLifetime?: DaemonProcessLifetimeIdentity,
   ): DaemonStartupLease | undefined {
     if (!Number.isInteger(pid) || pid <= 0) return undefined;
     const daemonOwner = this.startupOwnershipMatches(identity, {
@@ -375,6 +382,7 @@ export class DaemonRegistry {
     if (launcherOwner === undefined) return undefined;
     const transferredOwner = this.replaceStartupOwnerIfOwner(identity, launcherOwner, {
       ...launcherOwner,
+      ...(processLifetime === undefined ? {} : { ownerLifetime: processLifetime }),
       ownerPid: pid,
       ownerKind: "daemon",
       heartbeatAt: this.clock.wallNowMs(),
@@ -390,6 +398,7 @@ export class DaemonRegistry {
     launcherOwner: StartupOwner,
     pid: number,
     processToken: string,
+    processLifetime?: DaemonProcessLifetimeIdentity,
   ): boolean {
     if (!Number.isInteger(pid) || pid <= 0) return false;
     const currentLauncher = this.startupOwnershipMatches(identity, {
@@ -402,6 +411,7 @@ export class DaemonRegistry {
     return (
       this.replaceStartupOwnerIfOwner(identity, currentLauncher, {
         ...currentLauncher,
+        ...(processLifetime === undefined ? {} : { ownerLifetime: processLifetime }),
         ownerPid: pid,
         ownerKind: "daemon",
         heartbeatAt: this.clock.wallNowMs(),
@@ -528,13 +538,13 @@ export class DaemonRegistry {
   ): boolean {
     const owner = this.startupOwnershipMatches(identity, observedOwner);
     if (owner === undefined) return false;
+    const record = this.readStoredInstance(identity, owner.instanceId);
+    const lifetime = record?.processLifetime ?? owner.ownerLifetime;
     if (
       this.platform !== "win32" &&
-      (owner.ownerLifetime === undefined ||
-        PosixDaemonProcessLifetime.observe(owner.ownerLifetime) !== "exited")
+      (lifetime === undefined || PosixDaemonProcessLifetime.observe(lifetime) !== "exited")
     )
       return false;
-    const record = this.readStoredInstance(identity, owner.instanceId);
     if (
       record !== undefined &&
       ((owner.processToken.length > 0 && record.processToken !== owner.processToken) ||

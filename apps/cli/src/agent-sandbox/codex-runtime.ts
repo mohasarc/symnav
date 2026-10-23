@@ -8,10 +8,9 @@ import type { SandboxLaunchCommand } from "./sandbox-launch-command.js";
 
 export class CodexSandboxRuntime extends CommandAgentSandboxRuntime {
   public readonly agent = "codex";
-  public async availability(): Promise<"available" | "not-exposable"> {
-    return process.platform === "darwin" || process.platform === "linux"
-      ? "available"
-      : "not-exposable";
+  public async availability(): Promise<"available" | "not-found" | "not-exposable"> {
+    if (process.platform !== "darwin" && process.platform !== "linux") return "not-exposable";
+    return (await AgentExecutable.find("codex")) === undefined ? "not-found" : "available";
   }
   protected async command(request: SandboxProbeRequest): Promise<SandboxLaunchCommand> {
     const executable = await AgentExecutable.find("codex");

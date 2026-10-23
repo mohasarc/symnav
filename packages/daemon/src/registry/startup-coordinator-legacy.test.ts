@@ -406,14 +406,10 @@ describe.skipIf(process.platform === "win32")("unverifiable POSIX legacy startup
           return response;
         });
       }
-      const outcome = await fixture.observe(fixture.coordinator.ensureRunning(fixture.identity));
-      expect(outcome).toMatchObject({
-        kind: "rejected",
-        error: expect.objectContaining({
-          message: expect.stringContaining("ownership was retained"),
-        }),
+      await expect(fixture.coordinator.ensureRunning(fixture.identity)).rejects.toMatchObject({
+        message: expect.stringContaining("ownership was retained"),
       });
-      expect(fixture.observedSnapshot).toEqual(before);
+      expect(fixture.snapshot()).toEqual(before);
       expect(cleanup).not.toHaveBeenCalled();
       expect(terminate).not.toHaveBeenCalled();
       expect(fixture.launcher.launch).not.toHaveBeenCalled();

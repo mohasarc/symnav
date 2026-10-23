@@ -1,3 +1,4 @@
+import { DaemonProcessLifetimeCreationError } from "./process-lifetime-creation-error.js";
 import { spawnSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { closeSync, constants, fstatSync, lstatSync, mkdirSync, openSync } from "node:fs";
@@ -36,6 +37,14 @@ export class PosixDaemonProcessLifetime {
   }
 
   public static prepareChild(stateDirectory: string): PosixDaemonChildLifetime {
+    try {
+      return this.createChild(stateDirectory);
+    } catch (error) {
+      throw new DaemonProcessLifetimeCreationError(error);
+    }
+  }
+
+  private static createChild(stateDirectory: string): PosixDaemonChildLifetime {
     if (process.platform === "win32")
       throw new Error("POSIX process lifetime is unavailable on Windows");
     const directory = join(resolve(stateDirectory), "process-lifetimes");

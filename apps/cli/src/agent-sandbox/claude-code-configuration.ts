@@ -1,3 +1,4 @@
+import { StateDirectoryResolver } from "../state-directory-resolver.js";
 import {
   applyEdits,
   findNodeAtLocation,
@@ -61,14 +62,14 @@ export class ClaudeCodeSandboxConfiguration extends AgentSandboxConfiguration {
         this.deniesState(path, stateDirectory) &&
         !filesystem.allowRead!.some(
           (allowed) =>
-            this.covers(allowed, stateDirectory) &&
-            this.covers(path.replace(/\/\*\*$/u, ""), allowed),
+            this.probeCovers(allowed, stateDirectory) &&
+            this.probeCovers(path.replace(/\/\*\*$/u, ""), allowed),
         ),
     );
     const grantsState =
       !deniedWrite &&
       !deniedRead &&
-      filesystem.allowWrite!.some((path) => this.covers(path, stateDirectory));
+      filesystem.allowWrite!.some((path) => this.probeCovers(path, stateDirectory));
     filesystem.allowRead!.push(workspace);
     return {
       grantsState,
@@ -87,11 +88,22 @@ export class ClaudeCodeSandboxConfiguration extends AgentSandboxConfiguration {
     return expanded;
   }
 
+  private probeCovers(grant: string, stateDirectory: string): boolean {
+    return this.covers(
+      StateDirectoryResolver.canonicalize(grant),
+      StateDirectoryResolver.canonicalize(stateDirectory),
+    );
+  }
+
   private deniesState(path: string, stateDirectory: string): boolean {
     const subtree = path.replace(/\/\*\*$/u, "");
-    if (!/[*?\[\]{}]/u.test(subtree)) return this.covers(subtree, stateDirectory);
+    if (!/[*?\[\]{}]/u.test(subtree)) return this.probeCovers(subtree, stateDirectory);
     const prefix = subtree.slice(0, subtree.search(/[*?\[\]{}]/u));
-    if (stateDirectory.startsWith(prefix))
+    if (
+      StateDirectoryResolver.canonicalize(stateDirectory).startsWith(
+        StateDirectoryResolver.canonicalize(prefix),
+      )
+    )
       throw new Error("cannot verify a patterned state denial; use an absolute state policy");
     return false;
   }

@@ -1,3 +1,8 @@
+import { DaemonProcessLifetimeCreationError } from "../process/process-lifetime-creation-error.js";
+import { DaemonLogger } from "../diagnostics/logger.js";
+import { DaemonFailureJournal } from "../diagnostics/failure-journal.js";
+import { DaemonFailureRecorder } from "../diagnostics/failure-recorder.js";
+import { NodeDaemonClock } from "../lifecycle/daemon-clock.js";
 import type {
   DaemonStateWriteFailure,
   DaemonStateWriteFailureObserver,
@@ -16,7 +21,7 @@ import { DaemonPolicy } from "../daemon-policy.js";
 import type {
   DaemonStartResult,
   DaemonStopResult,
-  RunningDaemonStatus,
+  DaemonStatusReport,
 } from "../daemon-lifecycle-report.js";
 import { DaemonController } from "../process/controller.js";
 import {
@@ -42,11 +47,7 @@ import type {
   DaemonClientOptions,
   DaemonControlRequest,
 } from "./daemon-client-contracts.js";
-import {
-  DaemonRoutingContextState,
-  DaemonRoutingPolicy,
-  type DaemonRouteSnapshot,
-} from "./daemon-routing-policy.js";
+import { DaemonRoutingContextState, DaemonRoutingPolicy } from "./daemon-routing-policy.js";
 
 class DaemonControlledOutput implements DaemonExecutorOutput {
   private readonly bytes: Uint8Array;
@@ -146,6 +147,7 @@ export class DaemonClientRuntime {
   private readonly controlController: DaemonController;
   private readonly statusController: DaemonController;
   private readonly routing = new DaemonRoutingPolicy();
+  private readonly clock = new NodeDaemonClock();
 
   constructor(private readonly options: DaemonClientOptions) {
     this.policy = options.policy ?? DaemonPolicy.currentSystem();
@@ -233,22 +235,89 @@ export class DaemonClientRuntime {
       new NodeDaemonProcessTerminator(this.policy.values.shutdown),
     );
     const observedRequest: DaemonClientExecuteRequest = { ...request, stateWriteFailed };
-    const route = await this.routing.decide(
-      new DaemonRoutingContextState(
-        identity,
-        this.options.productVersion,
-        () => this.registry.read(identity),
-        (record) => observer.observe(record),
-        (record) => this.registry.removeIfProcess(identity, record.instanceId, record.processToken),
-      ),
+    const routingContext = new DaemonRoutingContextState(
+      identity,
+      this.options.productVersion,
+      () => this.registry.read(identity),
+      async (record) => {
+        const observation = await observer.observe(record);
+        if (observation.kind === "exited")
+          await this.failureRecorder(record.workspaceRoot, stateWriteFailed).record(
+            record.state === "starting" ? "startup-failure" : "termination",
+            "process spawn",
+            "process-terminated",
+            undefined,
+            record.instanceId,
+          );
+        return observation;
+      },
+      (record) => this.registry.removeIfProcess(identity, record.instanceId, record.processToken),
     );
+    const route = await this.routing.decide(routingContext);
+    const restartStarting =
+      route.kind === "cold" &&
+      route.reason === "starting" &&
+      (await this.recoverExitedStarting(
+        identity,
+        routingContext.readRecord()!,
+        observer,
+        stateWriteFailed,
+      ));
     if (stateWriteFailure !== undefined)
       return this.executeLocally({ ...observedRequest, telemetryEnabled: false }, "cold");
     if (route.kind === "warm") return this.executeWarm(route.record, observedRequest);
-    if ((route.kind === "cold" && route.reason === "absent") || route.kind === "fallback") {
+    if (route.kind === "fallback") {
+      await this.failureRecorder(request.workspaceRoot, stateWriteFailed).record(
+        "fallback",
+        route.reason === "dead" ? "process spawn" : "endpoint connect",
+        route.reason === "dead" ? "process-terminated" : "daemon-incompatible",
+        undefined,
+        undefined,
+        randomUUID(),
+      );
+    }
+    if (
+      stateWriteFailure === undefined &&
+      ((route.kind === "cold" && route.reason === "absent") ||
+        route.kind === "fallback" ||
+        restartStarting)
+    ) {
       DaemonClientRuntime.triggerIndependently(this.coordinator, identity, observedRequest);
     }
-    return this.executeLocally(observedRequest, route.kind === "fallback" ? "fallback" : "cold");
+    return this.executeLocally(
+      stateWriteFailure === undefined
+        ? observedRequest
+        : { ...observedRequest, telemetryEnabled: false },
+      route.kind === "fallback" ? "fallback" : "cold",
+    );
+  }
+
+  private async recoverExitedStarting(
+    identity: DaemonWorkspaceIdentity,
+    record: DaemonRecord,
+    observer: DaemonRecordObserver,
+    stateWriteFailed: DaemonStateWriteFailureObserver,
+  ): Promise<boolean> {
+    if ((await observer.observeIdentity(record)).kind !== "exited") return false;
+    let journalWriteFailed = false;
+    await this.failureRecorder(record.workspaceRoot, (failure) => {
+      journalWriteFailed = true;
+      stateWriteFailed(failure);
+    }).record(
+      "startup-failure",
+      "process spawn",
+      "process-terminated",
+      undefined,
+      record.instanceId,
+    );
+    if (journalWriteFailed) return false;
+    try {
+      return this.registry.removeIfProcess(identity, record.instanceId, record.processToken);
+    } catch (error) {
+      const failure = DaemonStateWriteErrors.from(error, this.options.stateDirectory);
+      if (failure !== undefined) stateWriteFailed(failure);
+      return false;
+    }
   }
 
   control(
@@ -256,13 +325,13 @@ export class DaemonClientRuntime {
   ): Promise<DaemonStartResult>;
   control(
     request: Extract<DaemonControlRequest, { readonly action: "status" }>,
-  ): Promise<readonly RunningDaemonStatus[]>;
+  ): Promise<DaemonStatusReport>;
   control(
     request: Extract<DaemonControlRequest, { readonly action: "stop" }>,
   ): Promise<DaemonStopResult>;
   async control(
     request: DaemonControlRequest,
-  ): Promise<DaemonStartResult | readonly RunningDaemonStatus[] | DaemonStopResult> {
+  ): Promise<DaemonStartResult | DaemonStatusReport | DaemonStopResult> {
     let stateWriteFailure: DaemonStateWriteFailure | undefined;
     const stateWriteFailed: DaemonStateWriteFailureObserver = (failure) => {
       if (stateWriteFailure !== undefined) return;
@@ -312,6 +381,9 @@ export class DaemonClientRuntime {
               readinessProbe: this.options.readinessProbe,
             })
           : this.coordinator,
+      ...(request.stateWriteFailed === undefined
+        ? {}
+        : { stateWriteFailed: request.stateWriteFailed }),
     });
   }
 
@@ -319,6 +391,7 @@ export class DaemonClientRuntime {
     record: DaemonRecord,
     request: DaemonClientExecuteRequest,
   ): Promise<DaemonClientExecuteResult> {
+    const requestId = randomUUID();
     let receipt: Awaited<ReturnType<DaemonClientTransport["execute"]>>;
     try {
       receipt = await this.routingTransport.execute(record.endpoint, {
@@ -326,15 +399,34 @@ export class DaemonClientRuntime {
         protocolVersion: DAEMON_PROTOCOL_VERSION,
         instanceId: record.instanceId,
         processToken: record.processToken,
-        requestId: randomUUID(),
+        requestId,
         commandName: request.commandName,
         request: DaemonClientRuntime.executorRequest(request, "warm"),
       });
     } catch (error) {
       DaemonClientRuntime.observeWriteFailure(request, error, this.options.stateDirectory);
       if (error instanceof DaemonTransportError && error.retrySafe) {
-        return this.executeLocally(request, "fallback");
+        let journalWriteFailed = false;
+        if (DaemonStateWriteErrors.from(error) === undefined) {
+          const lifetimeFailure = DaemonProcessLifetimeCreationError.from(error);
+          const phase = lifetimeFailure === undefined ? "endpoint connect" : "endpoint create";
+          const reason =
+            lifetimeFailure === undefined
+              ? error.code === "incompatible"
+                ? "daemon-incompatible"
+                : "endpoint-connect-failed"
+              : "endpoint-create-failed";
+          await this.failureRecorder(record.workspaceRoot, (failure) => {
+            journalWriteFailed = true;
+            request.stateWriteFailed?.(failure);
+          }).record("fallback", phase, reason, error, record.instanceId, requestId);
+        }
+        return this.executeLocally(
+          journalWriteFailed ? { ...request, telemetryEnabled: false } : request,
+          "fallback",
+        );
       }
+      await this.recordTransportFailure(record, request, error);
       return { mode: "warm", result: DaemonControlledResult.acceptedRequestDidNotComplete() };
     }
     try {
@@ -359,8 +451,57 @@ export class DaemonClientRuntime {
       return { mode: "warm", result: completion.result };
     } catch (error) {
       DaemonClientRuntime.observeWriteFailure(request, error, this.options.stateDirectory);
+      await this.recordTransportFailure(record, request, error);
       return { mode: "warm", result: DaemonControlledResult.acceptedRequestDidNotComplete() };
     }
+  }
+
+  private failureRecorder(
+    workspaceRoot: string,
+    stateWriteFailed?: DaemonStateWriteFailureObserver,
+  ): DaemonFailureRecorder {
+    return new DaemonFailureRecorder(
+      new DaemonFailureJournal(
+        this.options.stateDirectory,
+        this.policy.values.diagnostics,
+        this.clock,
+      ),
+      workspaceRoot,
+      this.clock,
+      stateWriteFailed,
+    );
+  }
+
+  private async recordTransportFailure(
+    record: DaemonRecord,
+    request: DaemonClientExecuteRequest,
+    error: unknown,
+  ): Promise<void> {
+    if (DaemonStateWriteErrors.from(error) !== undefined) return;
+    const logger = new DaemonLogger(
+      DaemonWorkspaceIdentity.from(record.workspaceRoot, this.options.stateDirectory),
+      record.instanceId,
+      this.clock,
+      {
+        policy: this.policy.values.diagnostics,
+        ...(request.stateWriteFailed === undefined
+          ? {}
+          : { stateWriteFailed: request.stateWriteFailed }),
+      },
+    );
+    logger.record({
+      kind: "failure",
+      operation: "completion-delivery",
+      failureCode: "internal",
+      errorName: DaemonLogger.errorName(error),
+      failure: DaemonFailureRecorder.failure(
+        this.clock.wallNowMs(),
+        "transfer",
+        "transfer-failed",
+        error,
+      ),
+    });
+    await logger.close();
   }
 
   private async executeLocally(
@@ -396,8 +537,9 @@ export class DaemonClientRuntime {
     request: DaemonClientExecuteRequest,
   ): void {
     try {
-      void coordinator.trigger(identity).catch((error: unknown) => {
+      void coordinator.trigger(identity, request.stateWriteFailed).catch(async (error: unknown) => {
         DaemonClientRuntime.observeWriteFailure(request, error, identity.identityDirectory);
+        await coordinator.recordTriggerFailure(identity, error, request.stateWriteFailed);
       });
     } catch (error) {
       DaemonClientRuntime.observeWriteFailure(request, error, identity.identityDirectory);

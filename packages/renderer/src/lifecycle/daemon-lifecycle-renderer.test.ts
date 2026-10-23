@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { DaemonLifecycleRenderer } from "./daemon-lifecycle-renderer.js";
-import type { DaemonStartResult, DaemonStopResult, RunningDaemonStatus } from "@symnav/daemon";
+import type {
+  DaemonStartResult,
+  DaemonStopResult,
+  RunningDaemonStatus,
+  DaemonStatusReport,
+} from "@symnav/daemon";
 
 describe("DaemonLifecycleRenderer start", () => {
   it.each([
@@ -63,6 +68,66 @@ describe("DaemonLifecycleRenderer start", () => {
 });
 
 describe("DaemonLifecycleRenderer status", () => {
+  it("adds the prescribed fallback line below the unchanged running line", () => {
+    const report: DaemonStatusReport = {
+      daemons: [
+        {
+          state: "ready",
+          workspaceRoot: "/repo",
+          pid: 11,
+          uptimeMs: 60_000,
+          fileCount: 42,
+          memoryBytes: 1_024,
+          recentFallbacks: {
+            count: 3,
+            latest: {
+              phase: "endpoint connect",
+              reason: "daemon-connection-reset",
+              timestamp: 10,
+              osCode: "ECONNRESET",
+            },
+          },
+        },
+      ],
+    };
+    expect(DaemonLifecycleRenderer.renderStatusText(report)).toBe(
+      "/repo  pid 11  up 1m  ready  42 files  1 KB  no requests\n  3 fallbacks in last hour: daemon connection reset (ECONNRESET)\n",
+    );
+    expect(JSON.parse(DaemonLifecycleRenderer.renderStatusJson(report))).toEqual({
+      schemaVersion: 1,
+      ...report,
+    });
+  });
+
+  it("adds an absent startup failure after the unchanged no-daemon line", () => {
+    const report: DaemonStatusReport = {
+      daemons: [],
+      startupFailures: [
+        {
+          workspaceRoot: "/repo",
+          failure: {
+            phase: "endpoint bind",
+            reason: "endpoint-bind-denied",
+            timestamp: 10,
+            osCode: "EPERM",
+          },
+        },
+      ],
+    };
+    expect(DaemonLifecycleRenderer.renderStatusText(report, 120_010)).toBe(
+      "No daemons running.\n/repo  last startup failed 2m ago: endpoint bind denied (EPERM)\n",
+    );
+    expect(JSON.parse(DaemonLifecycleRenderer.renderStatusJson(report))).toEqual({
+      schemaVersion: 1,
+      ...report,
+    });
+  });
+
+  it("omits empty optional diagnostic arrays from schema version one JSON", () => {
+    expect(DaemonLifecycleRenderer.renderStatusJson({ daemons: [], startupFailures: [] })).toBe(
+      '{"schemaVersion":1,"daemons":[]}\n',
+    );
+  });
   it("renders explicit lifecycle fields without inventing unavailable metrics", () => {
     const statuses: readonly RunningDaemonStatus[] = [
       { state: "starting", workspaceRoot: "/starting", pid: 11, startupElapsedMs: 2_400 },
@@ -96,15 +161,17 @@ describe("DaemonLifecycleRenderer status", () => {
       { state: "unresponsive", workspaceRoot: "/silent", pid: 15, uptimeMs: 9_000 },
     ];
 
-    expect(DaemonLifecycleRenderer.renderStatusText(statuses)).toBe(
+    expect(DaemonLifecycleRenderer.renderStatusText({ daemons: statuses })).toBe(
       "/starting  pid 11  starting 2s\n" +
         "/busy  pid 12  up 5s  busy refs  1s  queued 2  4 MB\n" +
         "/ready  pid 13  up 1m  ready  42 files  8 MB  no requests\n" +
         "/recovering  pid 14  up 8s  recovering worker-replacement  queued 1  16 MB\n" +
         "/silent  pid 15  up 9s  unresponsive\n",
     );
-    expect(DaemonLifecycleRenderer.renderStatusText(statuses)).not.toContain("0 files");
-    expect(DaemonLifecycleRenderer.renderStatusText(statuses)).not.toContain("0 B");
+    expect(DaemonLifecycleRenderer.renderStatusText({ daemons: statuses })).not.toContain(
+      "0 files",
+    );
+    expect(DaemonLifecycleRenderer.renderStatusText({ daemons: statuses })).not.toContain("0 B");
   });
 
   it("preserves input ordering", () => {
@@ -120,7 +187,7 @@ describe("DaemonLifecycleRenderer status", () => {
       { state: "starting", workspaceRoot: "/alpha", pid: 11, startupElapsedMs: 1_000 },
     ];
 
-    expect(DaemonLifecycleRenderer.renderStatusText(statuses)).toBe(
+    expect(DaemonLifecycleRenderer.renderStatusText({ daemons: statuses })).toBe(
       "/zeta  pid 12  up 1s  ready  1 files  1 B  no requests\n" + "/alpha  pid 11  starting 1s\n",
     );
   });
@@ -145,7 +212,7 @@ describe("DaemonLifecycleRenderer status", () => {
       },
     ];
 
-    expect(DaemonLifecycleRenderer.renderStatusText(statuses)).toBe(
+    expect(DaemonLifecycleRenderer.renderStatusText({ daemons: statuses })).toBe(
       "/starting  pid 11  starting 2s  1.5 KB\n" +
         "/ready  pid 12  up 2s  ready  1 files  10 KB  last request 59s ago\n",
     );
@@ -160,21 +227,23 @@ describe("DaemonLifecycleRenderer status", () => {
     [1_073_741_824, "1 GB"],
   ] as const)("renders byte boundary %d as %s", (memoryBytes, renderedBytes) => {
     expect(
-      DaemonLifecycleRenderer.renderStatusText([
-        {
-          state: "ready",
-          workspaceRoot: "/repo",
-          pid: 12,
-          uptimeMs: 0,
-          fileCount: 1,
-          memoryBytes,
-        },
-      ]),
+      DaemonLifecycleRenderer.renderStatusText({
+        daemons: [
+          {
+            state: "ready",
+            workspaceRoot: "/repo",
+            pid: 12,
+            uptimeMs: 0,
+            fileCount: 1,
+            memoryBytes,
+          },
+        ],
+      }),
     ).toContain(`  ${renderedBytes}  `);
   });
 
   it("renders an empty status collection exactly", () => {
-    expect(DaemonLifecycleRenderer.renderStatusText([])).toBe("No daemons running.\n");
+    expect(DaemonLifecycleRenderer.renderStatusText({ daemons: [] })).toBe("No daemons running.\n");
   });
 
   it("wraps status JSON bytes in a versioned envelope", () => {
@@ -182,7 +251,7 @@ describe("DaemonLifecycleRenderer status", () => {
       { state: "starting", workspaceRoot: "/repo", pid: 11, startupElapsedMs: 10 },
     ];
 
-    expect(DaemonLifecycleRenderer.renderStatusJson(statuses)).toBe(
+    expect(DaemonLifecycleRenderer.renderStatusJson({ daemons: statuses })).toBe(
       `${JSON.stringify({ schemaVersion: 1, daemons: statuses })}\n`,
     );
   });

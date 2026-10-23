@@ -1,8 +1,46 @@
 import { describe, expect, it, vi } from "vitest";
 import type { DaemonDiagnosticEvent } from "../transport/protocol.js";
 import { DaemonProcessTerminationObserver } from "./process-termination-observer.js";
+import type { DaemonFailure } from "../daemon-failure.js";
 
 describe("DaemonProcessTerminationObserver", () => {
+  it("flushes fatal OS evidence before cleanup and process exit", async () => {
+    const events: DaemonDiagnosticEvent[] = [];
+    const order: string[] = [];
+    const observer = new DaemonProcessTerminationObserver(
+      {
+        record: (event) => events.push(event),
+        flush: async () => {
+          order.push("flush");
+        },
+      },
+      () => {
+        order.push("cleanup");
+      },
+      (): never => {
+        order.push("exit");
+        throw new Error("exited");
+      },
+      async (failure: DaemonFailure) => {
+        expect(failure).toMatchObject({
+          phase: "process spawn",
+          reason: "process-terminated",
+          osCode: "EIO",
+          timestamp: 23,
+        });
+        order.push("history");
+      },
+      { wallNowMs: () => 23 },
+    );
+    await expect(
+      observer.uncaughtException(
+        Object.assign(new Error("secret"), { code: "EIO" }),
+        "uncaughtException",
+      ),
+    ).rejects.toThrow("exited");
+    expect(order).toEqual(["history", "flush", "cleanup", "exit"]);
+    expect(events[0]).toMatchObject({ failure: expect.objectContaining({ osCode: "EIO" }) });
+  });
   it.each([
     [
       "uncaught exception",

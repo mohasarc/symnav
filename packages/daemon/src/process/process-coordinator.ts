@@ -1,4 +1,8 @@
 import { PosixDaemonProcessLifetime } from "./posix-process-lifetime.js";
+import { DaemonStateWriteErrors } from "../state-write-errors.js";
+import { DaemonFailureJournal } from "../diagnostics/failure-journal.js";
+import { DaemonFailureRecorder } from "../diagnostics/failure-recorder.js";
+import type { DaemonFailurePhase, DaemonFailureReason } from "../daemon-failure.js";
 import { access } from "node:fs/promises";
 import {
   type DaemonExecutorModuleUrl,
@@ -68,6 +72,7 @@ export class DaemonProcessCoordinator {
   private readonly workerManager: DaemonWorkerGenerationManager;
   private readonly acceptedExecutionSession: AcceptedExecutionSession;
   private readonly logger: DaemonLogger;
+  private readonly failureRecorder: DaemonFailureRecorder;
   private readonly lifetime: DaemonLifetime;
   private readonly resourceSupervisor: DaemonResourceSupervisor;
   private readonly resourcePolicy: DaemonPolicyValues["resources"];
@@ -110,6 +115,15 @@ export class DaemonProcessCoordinator {
       new DaemonLogger(options.identity, options.coordinates.instanceId, this.clock, {
         policy: policy.values.diagnostics,
       });
+    this.failureRecorder = new DaemonFailureRecorder(
+      new DaemonFailureJournal(
+        options.identity.stateDirectory,
+        policy.values.diagnostics,
+        this.clock,
+      ),
+      options.identity.workspaceRoot,
+      this.clock,
+    );
     const resourcePolicy = policy.values.resources;
     this.resourcePolicy = resourcePolicy;
     const navigationWorkerFactory =
@@ -221,6 +235,8 @@ export class DaemonProcessCoordinator {
 
   async start(): Promise<void> {
     this.logger.record({ kind: "start" });
+    let failurePhase: DaemonFailurePhase = "warm-up";
+    let failureReason: DaemonFailureReason = "startup-failed";
     let startupLease: DaemonStartupLease | undefined;
     let startupHeartbeat: NodeJS.Timeout | undefined;
     try {
@@ -233,10 +249,15 @@ export class DaemonProcessCoordinator {
       );
       startupHeartbeat.unref();
       this.startedAt = startingRecord.startedAt;
+      failurePhase = process.platform === "win32" ? "endpoint bind" : "endpoint create";
+      failureReason =
+        process.platform === "win32" ? "endpoint-bind-denied" : "endpoint-create-failed";
       this.server = await this.options.server.listen(
         this.options.coordinates.endpoint,
         (request, send) => this.handle(request, send),
       );
+      failurePhase = "warm-up";
+      failureReason = "startup-failed";
       const response = await this.workerManager.start();
       this.operationObserver.startup({
         kind: "startup-completed",
@@ -268,6 +289,8 @@ export class DaemonProcessCoordinator {
         fileCount: response.fileCount,
         memoryCapBytes: this.resourcePolicy.hardProcessRssBytes,
       };
+      failurePhase = "state location";
+      failureReason = "state-write-failed";
       if (!this.options.registry.writeIfStartupOwner(this.options.identity, readyRecord)) {
         throw new Error("Daemon startup ownership changed before readiness publication");
       }
@@ -278,11 +301,28 @@ export class DaemonProcessCoordinator {
       this.resourceSupervisor.start();
       await this.logger.flush();
     } catch (error) {
+      if (failurePhase === "warm-up" && DaemonStateWriteErrors.from(error) !== undefined) {
+        failurePhase = "state location";
+        failureReason = "state-write-failed";
+      }
       if (startupHeartbeat !== undefined) clearInterval(startupHeartbeat);
+      await this.failureRecorder.record(
+        "startup-failure",
+        failurePhase,
+        failureReason,
+        error,
+        this.options.coordinates.instanceId,
+      );
       await this.cleanupFailedStartup(startupLease);
       this.logger.record({
         kind: "failure",
         operation: "start",
+        failure: DaemonFailureRecorder.failure(
+          this.clock.wallNowMs(),
+          failurePhase,
+          failureReason,
+          error,
+        ),
         failureCode: "operation-failed",
         errorName: DaemonLogger.errorName(error),
       });
@@ -637,6 +677,13 @@ export class DaemonProcessCoordinator {
     }
     await this.deliverySession.cleanupInstance();
     this.deliverySession.completeRetainedTraces();
+    await this.failureRecorder.record(
+      "termination",
+      "process spawn",
+      "process-terminated",
+      undefined,
+      this.options.coordinates.instanceId,
+    );
     await this.logger.close();
     this.exit(0);
   }
@@ -670,6 +717,12 @@ export class DaemonProcessCoordinator {
     this.logger.record({
       kind: "failure",
       operation: "worker-exit",
+      failure: DaemonFailureRecorder.failure(
+        this.clock.wallNowMs(),
+        "worker",
+        "worker-failed",
+        workerExit.osCode === undefined ? undefined : { code: workerExit.osCode },
+      ),
       failureCode: "worker-exit",
       errorName: DaemonLogger.errorName(
         workerExit.errorName === undefined ? undefined : { name: workerExit.errorName },
@@ -681,6 +734,12 @@ export class DaemonProcessCoordinator {
       this.logger.record({
         kind: "failure",
         operation: "worker-replacement",
+        failure: DaemonFailureRecorder.failure(
+          this.clock.wallNowMs(),
+          "worker",
+          "worker-failed",
+          error,
+        ),
         failureCode: "controlled-resource",
         errorName: DaemonLogger.errorName(error),
       });

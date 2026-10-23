@@ -6,6 +6,7 @@ import {
   type DaemonNavigationWorkerExit,
 } from "./navigation-worker.js";
 import type { DaemonNavigationWorkerResponse } from "./worker-protocol.js";
+import { DaemonWorkerStoppingError } from "./worker-stopping-error.js";
 import type {
   DaemonWorkerDiagnostic,
   DaemonWorkerReplacementCause,
@@ -94,7 +95,7 @@ export class DaemonWorkerGenerationManager {
   async activateReadiness(): Promise<DaemonWorkerReadyReport> {
     for (;;) {
       const report = await this.waitForReadyGeneration();
-      if (this.stopping) throw new Error("Navigation worker is stopping");
+      if (this.stopping) throw new DaemonWorkerStoppingError();
       if (
         this.protocolReadyGeneration !== this.currentGeneration ||
         report.generation !== this.currentGeneration.worker.generation
@@ -216,12 +217,12 @@ export class DaemonWorkerGenerationManager {
 
   private async waitForReadyGeneration(): Promise<DaemonWorkerReadyReport> {
     for (;;) {
-      if (this.stopping) throw new Error("Navigation worker is stopping");
+      if (this.stopping) throw new DaemonWorkerStoppingError();
       const generation = this.currentGeneration;
       if (generation.ready === undefined) throw new Error("Navigation worker is not starting");
       try {
         const report = await Promise.race([generation.ready, generation.changed]);
-        if (this.stopping) throw new Error("Navigation worker is stopping");
+        if (this.stopping) throw new DaemonWorkerStoppingError();
         if (generation !== this.currentGeneration) continue;
         if (report === undefined) throw new Error("Navigation worker readiness is unavailable");
         this.publishProtocolReady(generation, report);

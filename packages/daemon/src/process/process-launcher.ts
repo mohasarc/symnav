@@ -166,6 +166,13 @@ export class NodeDaemonProcessTerminator implements DaemonProcessTerminator {
 }
 
 export class NodeDaemonProcessLauncher implements DaemonProcessLauncher {
+  private readonly children = new Set<DaemonProcess>();
+
+  public async closeOwnedProcesses(): Promise<void> {
+    const results = await Promise.allSettled([...this.children].map((child) => child.terminate()));
+    const failure = results.find((result) => result.status === "rejected");
+    if (failure?.status === "rejected") throw failure.reason;
+  }
   constructor(
     readonly symnavVersion: string,
     readonly executorModuleUrl: DaemonExecutorModuleUrl,
@@ -248,14 +255,15 @@ export class NodeDaemonProcessLauncher implements DaemonProcessLauncher {
           lifetime?.closeParentCopy();
           processSpawned = true;
           child.unref();
-          resolve(
-            new SpawnedDaemonProcess(
-              child,
-              exited,
-              this.policy.values.shutdown.processSignalExitTimeoutMs,
-              lifetime?.identity,
-            ),
+          const process = new SpawnedDaemonProcess(
+            child,
+            exited,
+            this.policy.values.shutdown.processSignalExitTimeoutMs,
+            lifetime?.identity,
           );
+          this.children.add(process);
+          void process.exited.then(() => this.children.delete(process));
+          resolve(process);
         });
         child.once("exit", (code, signal) => {
           settleExit({ code, signal, cause: "exit" });

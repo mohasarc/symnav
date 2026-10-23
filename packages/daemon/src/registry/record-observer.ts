@@ -140,6 +140,8 @@ export class DaemonRecordObserver {
       });
       return (
         response.kind === "identity" &&
+        response.instanceId === record.instanceId &&
+        response.processToken === record.processToken &&
         response.pid === record.pid &&
         response.startedAt === record.startedAt
       );

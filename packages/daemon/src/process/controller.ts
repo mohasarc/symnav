@@ -94,7 +94,8 @@ export class DaemonController {
     if (record === undefined) {
       return { status: "not-running", workspaceRoot };
     }
-    if (record.state === "starting") return this.stopStarting(identity, record, deadline);
+    if (record.state === "starting")
+      return this.stopStarting(identity, record, gracefulDeadline, deadline);
     const observation = await this.observer.observeIdentity(record);
     if (observation.kind === "exited") {
       this.registry.removeIfProcess(identity, record.instanceId, record.processToken);
@@ -160,11 +161,12 @@ export class DaemonController {
   private async stopStarting(
     identity: DaemonWorkspaceIdentity,
     record: DaemonRecord,
+    gracefulDeadline: number,
     deadline: number,
   ): Promise<DaemonStopResult> {
     if (record.pid <= 0) {
       if (this.registry.startupOwnerForRecordCredentials(identity, record) !== undefined) {
-        return this.waitForClaimedProcessAndStop(identity, record, deadline);
+        return this.waitForClaimedProcessAndStop(identity, record, gracefulDeadline, deadline);
       }
       this.registry.removeStartupLockIfInstance(identity, record.instanceId);
       this.registry.removeIfProcess(identity, record.instanceId, record.processToken);
@@ -178,18 +180,30 @@ export class DaemonController {
     if (!this.registry.startupOwnerMatchesProcess(identity, record)) {
       throw new Error(`Daemon process ${record.pid} has no authenticated startup ownership`);
     }
-    const terminated = await this.terminateStartingProcess(record.pid, deadline);
-    if (!terminated || this.processTerminator.isAlive(record.pid)) {
-      throw new Error(`Daemon process ${record.pid} did not exit after authenticated stop`);
+    if (!(await this.waitForStartingIdentity(record, deadline))) {
+      if (this.processTerminator.hasExited(record.pid, record.processLifetime)) {
+        this.removeStartingOwnership(identity, record);
+        return { status: "not-running", workspaceRoot: record.workspaceRoot };
+      }
+      throw new Error(`Daemon process ${record.pid} is live but unresponsive`);
     }
-    this.registry.removeStartupLockIfProcess(identity, record);
-    this.registry.removeIfProcess(identity, record.instanceId, record.processToken);
-    return { status: "stopped", workspaceRoot: record.workspaceRoot, pid: record.pid };
+    const terminated = await this.terminateStartingProcess(record, gracefulDeadline);
+    if (terminated && (await this.waitForExit(record, gracefulDeadline))) {
+      this.removeStartingOwnership(identity, record);
+      return { status: "stopped", workspaceRoot: record.workspaceRoot, pid: record.pid };
+    }
+    const killed = await this.killIdentified(record, deadline);
+    if (!killed || !(await this.waitForExit(record, deadline))) {
+      throw new Error(`Daemon process ${record.pid} did not exit after authenticated kill`);
+    }
+    this.removeStartingOwnership(identity, record);
+    return { status: "killed", workspaceRoot: record.workspaceRoot, pid: record.pid };
   }
 
   private async waitForClaimedProcessAndStop(
     identity: DaemonWorkspaceIdentity,
     claimedRecord: DaemonRecord,
+    gracefulDeadline: number,
     deadline: number,
   ): Promise<DaemonStopResult> {
     while (this.clock.wallNowMs() <= deadline) {
@@ -197,7 +211,7 @@ export class DaemonController {
       if (record === undefined || record.processToken !== claimedRecord.processToken) {
         return { status: "not-running", workspaceRoot: claimedRecord.workspaceRoot };
       }
-      if (record.pid > 0) return this.stopStarting(identity, record, deadline);
+      if (record.pid > 0) return this.stopStarting(identity, record, gracefulDeadline, deadline);
       if (this.registry.startupOwnerForRecordCredentials(identity, claimedRecord) === undefined) {
         return { status: "not-running", workspaceRoot: claimedRecord.workspaceRoot };
       }
@@ -206,15 +220,49 @@ export class DaemonController {
     throw new Error("Daemon launch did not publish its process before authenticated stop");
   }
 
-  private async terminateStartingProcess(pid: number, deadline: number): Promise<boolean> {
+  private async waitForStartingIdentity(record: DaemonRecord, deadline: number): Promise<boolean> {
+    while (this.clock.wallNowMs() <= deadline) {
+      const observation = await this.beforeDeadline(
+        this.observer.observeIdentity(record),
+        deadline,
+      );
+      if (observation?.kind === "authenticated") return true;
+      if (observation === undefined || observation.kind === "exited") return false;
+      await this.pause(this.pollIntervalMs);
+    }
+    return false;
+  }
+
+  private async terminateStartingProcess(record: DaemonRecord, deadline: number): Promise<boolean> {
+    try {
+      const response = await this.beforeDeadline(
+        this.transport.request(record.endpoint, {
+          kind: "terminate",
+          instanceId: record.instanceId,
+          processToken: record.processToken,
+        }),
+        deadline,
+      );
+      return response?.kind === "terminating";
+    } catch {
+      return false;
+    }
+  }
+
+  private async beforeDeadline<Response>(
+    operation: Promise<Response>,
+    deadline: number,
+  ): Promise<Response | undefined> {
     let timeout: NodeJS.Timeout | undefined;
-    const deadlineReached = new Promise<false>((resolve) => {
-      timeout = setTimeout(() => resolve(false), Math.max(0, deadline - this.clock.wallNowMs()));
-    });
     try {
       return await Promise.race([
-        this.processTerminator.terminate(pid).then(() => true),
-        deadlineReached,
+        operation,
+        new Promise<undefined>((resolve) => {
+          timeout = setTimeout(
+            () => resolve(undefined),
+            Math.max(0, deadline - this.clock.wallNowMs()),
+          );
+        }),
       ]);
     } finally {
       if (timeout !== undefined) clearTimeout(timeout);

@@ -1,5 +1,4 @@
 import { StateDirectoryResolver } from "../state-directory-resolver.js";
-import { tmpdir } from "node:os";
 import { ParseError } from "toml-eslint-parser";
 import { isAbsolute, join, relative, resolve, sep } from "node:path";
 import type { AgentProbePolicy } from "./agent-probe-policy.js";
@@ -115,10 +114,13 @@ export class CodexSandboxConfiguration extends AgentSandboxConfiguration {
   ): Record<string, unknown> {
     const expanded: Record<string, unknown> = {};
     for (const [path, access] of Object.entries(filesystem)) {
+      const temporaryRoot = process.env.TMPDIR;
+      if (path === ":tmpdir" && (temporaryRoot === undefined || !isAbsolute(temporaryRoot)))
+        continue;
       const paths =
         path === ":workspace_roots"
           ? workspaceRoots
-          : [path === ":tmpdir" ? tmpdir() : path === ":slash_tmp" ? resolve("/tmp") : path];
+          : [path === ":tmpdir" ? temporaryRoot! : path === ":slash_tmp" ? resolve("/tmp") : path];
       for (const root of paths) {
         if (root === "glob_scan_max_depth") {
           expanded[root] = access;

@@ -1,3 +1,4 @@
+import { PosixDaemonProcessLifetime } from "./posix-process-lifetime.js";
 import type { DaemonProcessLifetimeIdentity } from "./process-lifetime-identity.js";
 import { mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -36,6 +37,7 @@ export interface DaemonProcess {
 }
 
 export interface DaemonProcessTerminator {
+  hasExited(pid: number, lifetime?: DaemonProcessLifetimeIdentity): boolean;
   isAlive(pid: number): boolean;
   terminate(pid: number): Promise<void>;
 }
@@ -74,6 +76,11 @@ export class NodeDaemonProcessTerminator implements DaemonProcessTerminator {
   ) {
     this.gracefulTimeoutMs = policy.processSignalExitTimeoutMs;
     this.pollIntervalMs = policy.processExitPollIntervalMs;
+  }
+
+  hasExited(pid: number, lifetime?: DaemonProcessLifetimeIdentity): boolean {
+    if (process.platform === "win32") return !this.isAlive(pid);
+    return lifetime !== undefined && PosixDaemonProcessLifetime.observe(lifetime) === "exited";
   }
 
   isAlive(pid: number): boolean {

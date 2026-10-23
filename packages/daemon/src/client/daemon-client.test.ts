@@ -1,6 +1,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { randomUUID } from "node:crypto";
+import { PosixDaemonProcessLifetime } from "../process/posix-process-lifetime.js";
 import { join } from "node:path";
-import { chmod, mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { FileDaemonEndpoint } from "../transport/file-endpoint.js";
 import type {
@@ -63,68 +65,57 @@ describe("DaemonClient execution", () => {
     },
   );
 
-  it("keeps telemetry enabled when endpoint ownership vanishes after channel writes", async () => {
-    const endpoint = await mkdtemp(join(tmpdir(), "symnav-owner-read-"));
-    const owner = join(endpoint, "owner.json");
-    await writeFile(owner, JSON.stringify({ pid: process.pid }));
-    const harness = new ClientHarness({ record: daemonRecord({ endpoint, pid: process.pid }) });
-    vi.mocked(DaemonRecordObserver.prototype.observe).mockRestore();
-    const readOwner = FileDaemonEndpoint.ownerPid.bind(FileDaemonEndpoint);
-    const ownershipRead = vi.spyOn(FileDaemonEndpoint, "ownerPid");
-    ownershipRead.mockImplementationOnce(async (directory) => {
-      const pid = await readOwner(directory);
-      await rm(owner);
-      return pid;
-    });
-    const stateWriteFailed = vi.fn();
-    try {
-      const result = await harness.client.execute({ ...harness.request(), stateWriteFailed });
-      expect(ownershipRead.mock.calls.length).toBeGreaterThanOrEqual(2);
-      expect(stateWriteFailed).not.toHaveBeenCalled();
-      expect(result.mode).toBe("cold");
-      expect(harness.localRequests).toEqual([
-        expect.objectContaining({ telemetryEnabled: true, executionMode: "cold" }),
-      ]);
-      expect(await readdir(endpoint)).toEqual([]);
-    } finally {
-      await rm(endpoint, { recursive: true, force: true });
-    }
-  });
+  it.skipIf(process.platform === "win32")(
+    "keeps telemetry enabled when endpoint ownership vanishes after channel writes",
+    async () => {
+      const fixture = await ClientOwnershipFixture.create();
+      const harness = new ClientHarness({
+        record: daemonRecord({
+          endpoint: fixture.endpoint,
+          pid: process.pid,
+          processLifetime: fixture.lifetime,
+        }),
+      });
+      vi.mocked(DaemonRecordObserver.prototype.observe).mockRestore();
+      fixture.vanishAfterChannelWrites(false);
+      const stateWriteFailed = vi.fn();
+      try {
+        const result = await harness.client.execute({ ...harness.request(), stateWriteFailed });
+        expect(fixture.completedChannels.size).toBe(2);
+        expect(stateWriteFailed).not.toHaveBeenCalled();
+        expect(result.mode).toBe("cold");
+        expect(harness.localRequests).toEqual([
+          expect.objectContaining({ telemetryEnabled: true, executionMode: "cold" }),
+        ]);
+        expect(harness.warmRequests).toEqual([]);
+        expect(harness.trigger).not.toHaveBeenCalled();
+        expect(await readdir(fixture.directory)).toEqual([]);
+      } finally {
+        await fixture.dispose();
+      }
+    },
+  );
 
   it.skipIf(process.platform === "win32" || process.getuid?.() === 0)(
     "reports denied channel cleanup once and disables local telemetry after an ownership read fails",
     async () => {
-      const endpoint = await mkdtemp(join(tmpdir(), "symnav-cleanup-write-"));
-      const owner = join(endpoint, "owner.json");
-      await writeFile(owner, JSON.stringify({ pid: process.pid }));
-      const harness = new ClientHarness({ record: daemonRecord({ endpoint, pid: process.pid }) });
+      const fixture = await ClientOwnershipFixture.create();
+      const harness = new ClientHarness({
+        record: daemonRecord({
+          endpoint: fixture.endpoint,
+          pid: process.pid,
+          processLifetime: fixture.lifetime,
+        }),
+      });
       vi.mocked(DaemonRecordObserver.prototype.observe).mockRestore();
-      const readOwner = FileDaemonEndpoint.ownerPid.bind(FileDaemonEndpoint);
-      let completeSetup!: () => void;
-      const setupReady = new Promise<void>((resolve) => {
-        completeSetup = resolve;
-      });
-      let ownershipReads = 0;
-      let validationReads = 0;
-      vi.spyOn(FileDaemonEndpoint, "ownerPid").mockImplementation(async (directory) => {
-        if (++ownershipReads <= 2) return readOwner(directory);
-        if (++validationReads === 2) {
-          for (const entry of await readdir(endpoint)) {
-            if (entry.endsWith(".tmp")) await chmod(join(endpoint, entry), 0o500);
-          }
-          await rm(owner);
-          completeSetup();
-        }
-        await setupReady;
-        return readOwner(directory);
-      });
+      fixture.vanishAfterChannelWrites(true);
       const stateWriteFailed = vi.fn();
       try {
         const result = await harness.client.execute({ ...harness.request(), stateWriteFailed });
-        expect(ownershipReads).toBe(4);
+        expect(fixture.completedChannels.size).toBe(2);
         expect(stateWriteFailed).toHaveBeenCalledOnce();
         expect(stateWriteFailed).toHaveBeenCalledWith({
-          path: expect.stringContaining(endpoint),
+          path: expect.stringContaining(fixture.directory),
           osCode: "EACCES",
         });
         expect(result.mode).toBe("cold");
@@ -133,12 +124,11 @@ describe("DaemonClient execution", () => {
         ]);
         expect(harness.trigger).not.toHaveBeenCalled();
         expect(harness.warmRequests).toEqual([]);
-        expect((await readdir(endpoint)).filter((entry) => entry.endsWith(".tmp"))).toHaveLength(2);
+        expect(
+          (await readdir(fixture.directory)).filter((entry) => entry.endsWith(".tmp")),
+        ).toHaveLength(2);
       } finally {
-        for (const entry of await readdir(endpoint)) {
-          if (entry.endsWith(".tmp")) await chmod(join(endpoint, entry), 0o700);
-        }
-        await rm(endpoint, { recursive: true, force: true });
+        await fixture.dispose();
       }
     },
   );
@@ -585,4 +575,55 @@ async function outputText(result: DaemonExecutorExecutionResult): Promise<string
   for await (const outputRecord of result.output.records()) chunks.push(outputRecord.bytes);
   await result.output.dispose();
   return Buffer.concat(chunks).toString();
+}
+
+class ClientOwnershipFixture {
+  public readonly completedChannels = new Set<string>();
+  private constructor(
+    public readonly state: string,
+    public readonly endpoint: string,
+    public readonly directory: string,
+    public readonly lifetime: ReturnType<typeof PosixDaemonProcessLifetime.current>,
+  ) {}
+  public static async create(): Promise<ClientOwnershipFixture> {
+    const state = await mkdtemp(join(tmpdir(), "symnav-owner-read-"));
+    const endpoint = join(state, "endpoint");
+    const token = randomUUID();
+    const directory = join(endpoint, token);
+    const lifetime = PosixDaemonProcessLifetime.current(state);
+    await mkdir(directory, { recursive: true, mode: 0o700 });
+    await writeFile(
+      join(directory, "owner.json"),
+      JSON.stringify({ pid: process.pid, token, processLifetime: lifetime }),
+    );
+    return new ClientOwnershipFixture(state, endpoint, directory, lifetime);
+  }
+  public vanishAfterChannelWrites(denyCleanup: boolean): void {
+    const readOwner = FileDaemonEndpoint.owner.bind(FileDaemonEndpoint);
+    let finish!: () => void;
+    const removed = new Promise<void>((resolve) => {
+      finish = resolve;
+    });
+    vi.spyOn(FileDaemonEndpoint, "owner").mockImplementation(async (endpoint) => {
+      const temporary = (await readdir(this.directory)).filter((entry) => entry.endsWith(".tmp"));
+      for (const entry of temporary) {
+        const directory = join(this.directory, entry);
+        if ((await readdir(directory)).includes("owner.json"))
+          this.completedChannels.add(directory);
+      }
+      if (this.completedChannels.size === 0) return readOwner(endpoint);
+      if (this.completedChannels.size === 2) {
+        if (denyCleanup) for (const channel of this.completedChannels) await chmod(channel, 0o500);
+        await rm(join(this.directory, "owner.json"), { force: true });
+        finish();
+      }
+      await removed;
+      return readOwner(endpoint);
+    });
+  }
+  public async dispose(): Promise<void> {
+    for (const channel of this.completedChannels)
+      await chmod(channel, 0o700).catch(() => undefined);
+    await rm(this.state, { recursive: true, force: true });
+  }
 }

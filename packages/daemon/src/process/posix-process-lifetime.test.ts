@@ -12,6 +12,7 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
+import { DaemonStateWriteErrors } from "../state-write-errors.js";
 import { PosixDaemonProcessLifetime } from "./posix-process-lifetime.js";
 
 class LifetimeFixture {
@@ -101,6 +102,31 @@ describe.skipIf(process.platform === "win32")("POSIX daemon process lifetime", (
     symlinkSync(outside, join(state, "process-lifetimes"));
     expect(() => PosixDaemonProcessLifetime.prepareChild(state)).toThrow();
     expect(readdirSync(outside)).toEqual([]);
+  });
+
+  it("reports executed unsuccessful FIFO creation as a required write without invented errno", () => {
+    const state = fixture().state;
+    const utilities = fixture().state;
+    writeFileSync(join(utilities, "mkfifo"), "#!/bin/sh\nexit 3\n", { mode: 0o700 });
+    const original = process.env.PATH;
+    process.env.PATH = utilities;
+    let failure: unknown;
+    try {
+      PosixDaemonProcessLifetime.prepareChild(state);
+    } catch (error) {
+      failure = error;
+    } finally {
+      process.env.PATH = original;
+    }
+    expect(DaemonStateWriteErrors.from(failure)).toEqual({
+      path: expect.stringMatching(/process-lifetimes[/\\][a-f0-9-]+\.fifo$/u),
+    });
+    expect(failure).toMatchObject({
+      name: "DaemonProcessLifetimeCreationError",
+      path: DaemonStateWriteErrors.from(failure)!.path,
+      code: undefined,
+      cause: { cause: { message: "Daemon process lifetime creation failed (3)" } },
+    });
   });
 
   it("reports a missing utility without inventing an OS code for utility exit", () => {

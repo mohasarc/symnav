@@ -1138,6 +1138,10 @@ class TestProcessTerminator implements DaemonProcessTerminator {
 
   constructor(public currentProcessIsAlive = true) {}
 
+  hasExited(pid: number): boolean {
+    return !this.isAlive(pid);
+  }
+
   isAlive(pid: number): boolean {
     return (this.currentProcessIsAlive && pid === process.pid) || this.alive.has(pid);
   }

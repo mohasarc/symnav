@@ -4,10 +4,14 @@ import { join } from "node:path";
 import { afterEach, expect, it } from "vitest";
 import { ClaudeCodeSandboxConfiguration } from "./claude-code-configuration.js";
 
-const directories: string[] = [];
+class ProbePolicyScratch {
+  public static readonly directories: string[] = [];
+}
 afterEach(async () => {
   await Promise.all(
-    directories.splice(0).map((path) => rm(path, { recursive: true, force: true })),
+    ProbePolicyScratch.directories
+      .splice(0)
+      .map((path) => rm(path, { recursive: true, force: true })),
   );
 });
 it.each([
@@ -19,7 +23,7 @@ it.each([
   "inspects Claude effective grants and isolates runtime policy: enabled %s denies %s %s",
   async (enabled, denyWrite, denyRead, granted) => {
     const home = await mkdtemp(join(tmpdir(), "claude-probe-"));
-    directories.push(home);
+    ProbePolicyScratch.directories.push(home);
     const adapter = new ClaudeCodeSandboxConfiguration({ homeDirectory: home });
     await mkdir(join(home, ".claude"));
     const original = JSON.stringify({
@@ -47,7 +51,7 @@ it.each([
 );
 it("rejects invalid deny nodes instead of dropping restrictions", async () => {
   const home = await mkdtemp(join(tmpdir(), "claude-probe-"));
-  directories.push(home);
+  ProbePolicyScratch.directories.push(home);
   const adapter = new ClaudeCodeSandboxConfiguration({ homeDirectory: home });
   await mkdir(join(home, ".claude"));
   await writeFile(adapter.configurationPath, '{"sandbox":{"filesystem":{"denyWrite":"/state"}}}');
@@ -57,7 +61,7 @@ it("rejects invalid deny nodes instead of dropping restrictions", async () => {
 });
 it("preserves original read carve-outs and adds only scratch workspace read access", async () => {
   const home = await mkdtemp(join(tmpdir(), "claude-read-"));
-  directories.push(home);
+  ProbePolicyScratch.directories.push(home);
   const adapter = new ClaudeCodeSandboxConfiguration({ homeDirectory: home });
   await mkdir(join(home, ".claude"));
   const state = join(home, "state");
@@ -79,7 +83,7 @@ it("preserves original read carve-outs and adds only scratch workspace read acce
 });
 it("retains native Edit/Read denial paths instead of dropping permission restrictions", async () => {
   const home = await mkdtemp(join(tmpdir(), "claude-permission-"));
-  directories.push(home);
+  ProbePolicyScratch.directories.push(home);
   const adapter = new ClaudeCodeSandboxConfiguration({
     homeDirectory: home,
     workspaceDirectory: join(home, "project"),

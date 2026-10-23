@@ -74,4 +74,36 @@ describe("CodexSandboxConfiguration", () => {
     expect(await adapter.grant(stateDirectory)).toMatchObject({ changed: false });
     expect(await readFile(adapter.configurationPath, "utf8")).toBe(updated);
   });
+  it.each([
+    ["malformed", "[sandbox_workspace_write\nwritable_roots = []\n", "invalid TOML at line 1"],
+    ["duplicate key", "model = 'a'\nmodel = 'b'\n", "invalid TOML at line 2"],
+    ["duplicate table", "[x]\n[x]\n", "invalid TOML at line 2"],
+    ["wrong table", "sandbox_workspace_write = 1\n", "sandbox_workspace_write must be a table"],
+    [
+      "wrong roots",
+      "[sandbox_workspace_write]\nwritable_roots = 'all'\n",
+      "writable_roots must be an array of strings",
+    ],
+    [
+      "wrong element",
+      "[sandbox_workspace_write]\nwritable_roots = [42]\n",
+      "writable_roots must be an array of strings",
+    ],
+    ["wrong mode", "sandbox_mode = 42\n", "sandbox_mode must be a supported sandbox mode"],
+    [
+      "conflicting policies",
+      "default_permissions = ':workspace'\nsandbox_mode = 'workspace-write'\n",
+      "legacy sandbox settings conflict with permission profiles",
+    ],
+  ])("rejects %s without changing the file", async (_name, original, reason) => {
+    const homeDirectory = await mkdtemp(join(tmpdir(), "symnav-codex-invalid-"));
+    scratchDirectories.push(homeDirectory);
+    const adapter = new CodexSandboxConfiguration({ homeDirectory });
+    await mkdir(join(homeDirectory, ".codex"));
+    await writeFile(adapter.configurationPath, original);
+    await expect(adapter.grant(join(homeDirectory, "state"))).rejects.toThrow(
+      `cannot update ${adapter.configurationPath}: ${reason}`,
+    );
+    expect(await readFile(adapter.configurationPath, "utf8")).toBe(original);
+  });
 });

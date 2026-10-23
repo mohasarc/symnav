@@ -1,3 +1,5 @@
+import { PosixDaemonProcessLifetime } from "../process/posix-process-lifetime.js";
+import type { DaemonProcessLifetimeIdentity } from "../process/process-lifetime-identity.js";
 import { spawn, type ChildProcess } from "node:child_process";
 import { existsSync, fstatSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -450,7 +452,9 @@ describe("DaemonStartupCoordinator", () => {
     expect(originalRecord?.pid).toBe(harness.launcher.lastPid);
     expect(originalOwner).toBeDefined();
     writeFileSync(
-      harness.identity.startupOwnerPath(harness.identity.lockPath),
+      harness.identity.startupOwnerPath(
+        join(harness.identity.lockPath, originalOwner!.claimToken!),
+      ),
       JSON.stringify({ ...originalOwner, heartbeatAt: Date.now() - 60_000 }),
     );
     harness.terminator.currentProcessIsAlive = false;
@@ -833,7 +837,7 @@ describe("DaemonStartupCoordinator", () => {
     expect(harness.registry.acquireStartup(harness.identity, "orphan")).toBeDefined();
     const owner = harness.registry.startupOwner(harness.identity)!;
     writeFileSync(
-      harness.identity.startupOwnerPath(harness.identity.lockPath),
+      harness.identity.startupOwnerPath(join(harness.identity.lockPath, owner.claimToken!)),
       JSON.stringify({ ...owner, heartbeatAt: Date.now() - 20_000 }),
     );
 
@@ -956,7 +960,7 @@ class CoordinatorHarness {
   constructor(roots: string[], options: CoordinatorHarnessOptions = {}) {
     const stateDir = temporaryDirectory(roots);
     this.identity = DaemonWorkspaceIdentity.from("/repo", stateDir);
-    this.registry = new DaemonRegistry(this.identity.registryDirectory);
+    this.registry = new DaemonRegistry(this.identity.registryDirectory, "win32");
     this.launcher = new ReadyTestLauncher(this.registry, this.identity, this.terminator, options);
     this.transport = new RegistryTransport(
       this.registry,
@@ -1426,6 +1430,9 @@ class InProcessReadyLauncher implements DaemonProcessLauncher {
       });
     }, 0);
     return {
+      ...(process.platform === "win32"
+        ? {}
+        : { processLifetime: PosixDaemonProcessLifetime.current(identity.stateDirectory) }),
       pid: process.pid,
       exited: new Promise(() => undefined),
       terminate: () => this.close(),
@@ -1456,6 +1463,9 @@ function readyRecord(
     instanceId,
     processToken,
     endpoint: identity.endpoint(instanceId),
+    ...(IdentifiableDaemonLifetimes.identities.has(pid)
+      ? { processLifetime: IdentifiableDaemonLifetimes.identities.get(pid)! }
+      : {}),
     pid,
     state: "ready",
     startedAt: 10,
@@ -1463,6 +1473,10 @@ function readyRecord(
     fileCount: 2,
     memoryCapBytes: 256 * 1024 * 1024,
   };
+}
+
+class IdentifiableDaemonLifetimes {
+  public static readonly identities = new Map<number, DaemonProcessLifetimeIdentity>();
 }
 
 function spawnIdentifiableDaemon(
@@ -1475,6 +1489,10 @@ function spawnIdentifiableDaemon(
   if (process.platform !== "win32") {
     mkdirSync(dirname(identity.legacySocketEndpoint(instanceId)), { recursive: true, mode: 0o700 });
   }
+  const lifetime =
+    process.platform === "win32"
+      ? undefined
+      : PosixDaemonProcessLifetime.prepareChild(identity.stateDirectory);
   return new Promise((resolve, reject) => {
     const child = spawn(
       process.execPath,
@@ -1486,10 +1504,21 @@ function spawnIdentifiableDaemon(
         processToken,
         String(startedAt),
       ],
-      { stdio: ["ignore", "pipe", "ignore"] },
+      {
+        stdio:
+          lifetime === undefined
+            ? ["ignore", "pipe", "ignore"]
+            : ["ignore", "pipe", "ignore", lifetime.descriptor],
+      },
     );
-    child.once("error", reject);
+    child.once("error", (error) => {
+      lifetime?.closeParentCopy();
+      reject(error);
+    });
     child.stdout?.once("data", () => {
+      lifetime?.closeParentCopy();
+      if (lifetime !== undefined)
+        IdentifiableDaemonLifetimes.identities.set(child.pid!, lifetime.identity);
       processIds.push(child.pid!);
       resolve(child.pid!);
     });

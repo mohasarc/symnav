@@ -1,3 +1,5 @@
+import { randomUUID } from "node:crypto";
+import { PosixDaemonProcessLifetime } from "../process/posix-process-lifetime.js";
 import { spawn, type ChildProcess } from "node:child_process";
 import {
   existsSync,
@@ -634,7 +636,7 @@ describe("daemon registry", () => {
 
   it("keeps the startup lock claimed while replacing its owner on Windows", () => {
     const identity = DaemonWorkspaceIdentity.from("/repo", temporaryDirectory(roots));
-    const ownerPath = identity.startupOwnerPath(identity.lockPath);
+    let ownerPath = "";
     let replacementObserved = false;
     let contenderClaimed = false;
     let registry!: DaemonRegistry;
@@ -646,6 +648,7 @@ describe("daemon registry", () => {
     });
     expect(registry.acquireStartup(identity, "owner")).toBeDefined();
     const before = registry.startupOwner(identity)!;
+    ownerPath = identity.startupOwnerPath(join(identity.lockPath, before.claimToken!));
 
     expect(registry.refreshStartupOwner(identity, "owner")).toBe(true);
 
@@ -653,7 +656,7 @@ describe("daemon registry", () => {
     expect(contenderClaimed).toBe(false);
     expect(registry.startupOwner(identity)?.instanceId).toBe("owner");
     expect(registry.startupOwner(identity)?.revision).not.toBe(before.revision);
-    expect(readdirSync(identity.lockPath)).toEqual(["owner.json"]);
+    expect(readdirSync(identity.lockPath)).toEqual([before.claimToken]);
   });
 
   it("does not remove startup ownership renewed after stale observation", () => {
@@ -712,10 +715,21 @@ describe("daemon registry", () => {
   it("recovers a startup mutation abandoned by a dead process", () => {
     const identity = DaemonWorkspaceIdentity.from("/repo", temporaryDirectory(roots));
     const registry = new DaemonRegistry(identity.registryDirectory);
-    mkdirSync(identity.startupMutationPath, { recursive: true });
+    const token = randomUUID();
+    const ownerLifetime =
+      process.platform === "win32"
+        ? undefined
+        : PosixDaemonProcessLifetime.prepareChild(identity.stateDirectory);
+    ownerLifetime?.closeParentCopy();
+    mkdirSync(join(identity.startupMutationPath, token), { recursive: true });
     writeFileSync(
-      identity.startupOwnerPath(identity.startupMutationPath),
-      JSON.stringify({ ownerPid: 999_999_999, acquiredAt: 0, token: "abandoned" }),
+      identity.startupOwnerPath(join(identity.startupMutationPath, token)),
+      JSON.stringify({
+        ownerPid: 999_999_999,
+        acquiredAt: 0,
+        token,
+        ...(ownerLifetime === undefined ? {} : { ownerLifetime: ownerLifetime.identity }),
+      }),
     );
 
     const mutation = (registry as unknown as StartupMutationLeaseTestAccess).beginStartupMutation(

@@ -78,3 +78,9 @@ it("fails an installed but rejecting runtime without classifying it unavailable"
     }),
   ).rejects.toThrow("inspection failed");
 });
+it("reports a genuinely absent Codex executable as unavailable", async () => {
+  vi.spyOn(AgentExecutable, "find").mockResolvedValue(undefined);
+  expect(await new Runtime().availability()).toBe(
+    process.platform === "win32" ? "not-exposable" : "not-found",
+  );
+});

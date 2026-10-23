@@ -1,3 +1,4 @@
+import { DaemonProcessLifetimeCreationError } from "../process/process-lifetime-creation-error.js";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { randomUUID } from "node:crypto";
 import { PosixDaemonProcessLifetime } from "../process/posix-process-lifetime.js";
@@ -186,6 +187,46 @@ describe("DaemonClient execution", () => {
       ]),
     );
   });
+
+  it.each(["EACCES", undefined])(
+    "retains nested connection lifetime creation failure with optional errno %s",
+    async (osCode) => {
+      const original = Object.assign(new Error("reader unavailable"), {
+        path: "/state/process-lifetimes/reader.fifo",
+        ...(osCode === undefined ? {} : { code: osCode }),
+      });
+      const lifetimeFailure = new DaemonProcessLifetimeCreationError(original);
+      const nested = new Error("connection setup failed", { cause: lifetimeFailure });
+      const failure = new DaemonTransportError(
+        "unreachable",
+        "not-submitted",
+        "connection failed",
+        undefined,
+        undefined,
+        nested,
+      );
+      const harness = new ClientHarness({ warmFailure: failure });
+      const stateWriteFailed = vi.fn();
+      await expect(
+        harness.client.execute({ ...harness.request(), stateWriteFailed }),
+      ).resolves.toEqual({ mode: "fallback", result: success });
+      expect(harness.failureEvents).toEqual([
+        expect.objectContaining({
+          kind: "fallback",
+          failure: {
+            phase: "endpoint create",
+            reason: "endpoint-create-failed",
+            timestamp: expect.any(Number),
+            ...(osCode === undefined ? {} : { osCode }),
+          },
+        }),
+      ]);
+      expect(lifetimeFailure).toMatchObject({ cause: original, path: original.path, code: osCode });
+      expect(stateWriteFailed).not.toHaveBeenCalled();
+      expect(harness.localRequests[0]).toMatchObject({ telemetryEnabled: true });
+      expect(harness.localRequests).toHaveLength(1);
+    },
+  );
 
   it("observes journal write failure and disables fallback telemetry without recursive journal writes", async () => {
     const harness = new ClientHarness({ observationKind: "incompatible" });

@@ -7,7 +7,7 @@ export class TomlDocument {
   public readonly configuration: Record<string, unknown>;
   public readonly newline: string;
 
-  public constructor(private readonly source: string) {
+  public constructor(public readonly source: string) {
     this.ast = parseTOML(source);
     this.configuration = getStaticTOMLValue(this.ast) as Record<string, unknown>;
     this.newline = source.includes("\r\n") ? "\r\n" : "\n";

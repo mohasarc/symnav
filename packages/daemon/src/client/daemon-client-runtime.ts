@@ -1,3 +1,4 @@
+import { DaemonProcessLifetimeCreationError } from "../process/process-lifetime-creation-error.js";
 import { DaemonLogger } from "../diagnostics/logger.js";
 import { DaemonFailureJournal } from "../diagnostics/failure-journal.js";
 import { DaemonFailureRecorder } from "../diagnostics/failure-recorder.js";
@@ -407,17 +408,18 @@ export class DaemonClientRuntime {
       if (error instanceof DaemonTransportError && error.retrySafe) {
         let journalWriteFailed = false;
         if (DaemonStateWriteErrors.from(error) === undefined) {
+          const lifetimeFailure = DaemonProcessLifetimeCreationError.from(error);
+          const phase = lifetimeFailure === undefined ? "endpoint connect" : "endpoint create";
+          const reason =
+            lifetimeFailure === undefined
+              ? error.code === "incompatible"
+                ? "daemon-incompatible"
+                : "endpoint-connect-failed"
+              : "endpoint-create-failed";
           await this.failureRecorder(record.workspaceRoot, (failure) => {
             journalWriteFailed = true;
             request.stateWriteFailed?.(failure);
-          }).record(
-            "fallback",
-            "endpoint connect",
-            error.code === "incompatible" ? "daemon-incompatible" : "endpoint-connect-failed",
-            error,
-            record.instanceId,
-            requestId,
-          );
+          }).record("fallback", phase, reason, error, record.instanceId, requestId);
         }
         return this.executeLocally(
           journalWriteFailed ? { ...request, telemetryEnabled: false } : request,

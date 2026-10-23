@@ -20,7 +20,7 @@ export class ClaudeCodeSandboxRuntime extends CommandAgentSandboxRuntime {
       executable,
       argv: ["--settings", settings, "--", process.execPath, this.entry()],
       cwd: request.workspace,
-      environment: this.environment(request),
+      environment: { ...this.environment(request), CLAUDE_CODE_TMPDIR: request.workspace },
     };
   }
 }

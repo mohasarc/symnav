@@ -46,6 +46,7 @@ it("launches standalone SRT with translated policy and no tested-state grant inj
   ]);
   expect(await readFile(join(root, "srt-settings.json"), "utf8")).toBe(policy.configuration);
   expect(command.environment.SYMNAV_STATE_DIR).toBe(join(root, "probe-state"));
+  expect(command.environment.CLAUDE_CODE_TMPDIR).toBe(command.cwd);
 });
 it("reports genuine missing SRT availability", async () => {
   vi.spyOn(AgentExecutable, "find").mockResolvedValue(undefined);

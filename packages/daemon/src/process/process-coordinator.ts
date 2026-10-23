@@ -258,16 +258,9 @@ export class DaemonProcessCoordinator {
       );
       failurePhase = "warm-up";
       failureReason = "startup-failed";
-      const response = await this.workerManager.start();
-      this.operationObserver.startup({
-        kind: "startup-completed",
-        workerGeneration: response.generation,
-        fileCount: response.fileCount,
-        ...response.startupDurations,
-      });
-      this.logger.record({ kind: "freshness", ...response.refresh });
+      await this.workerManager.start();
       await this.resourceSupervisor.sample("warmup");
-      await this.workerManager.activateReadiness();
+      const response = await this.workerManager.activateReadiness();
       const readyRecord: DaemonRecord = {
         schemaVersion: DAEMON_RECORD_SCHEMA_VERSION,
         protocolVersion: DAEMON_PROTOCOL_VERSION,
@@ -297,6 +290,13 @@ export class DaemonProcessCoordinator {
       if (startupHeartbeat !== undefined) clearInterval(startupHeartbeat);
       startupHeartbeat = undefined;
       startupLease.release();
+      this.operationObserver.startup({
+        kind: "startup-completed",
+        workerGeneration: response.generation,
+        fileCount: response.fileCount,
+        ...response.startupDurations,
+      });
+      this.logger.record({ kind: "freshness", ...response.refresh });
       this.logger.record({ kind: "ready", fileCount: response.fileCount });
       this.resourceSupervisor.start();
       await this.logger.flush();

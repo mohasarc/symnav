@@ -1,3 +1,4 @@
+import { PosixDaemonProcessLifetime } from "../process/posix-process-lifetime.js";
 import { mkdtemp, mkdir, readdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
@@ -13,8 +14,28 @@ class FileConnectionHarness {
     await mkdir(join(root, "response"));
     return {
       root,
-      client: new FileDaemonConnection({ directory: root, side: "request", peerPid: process.pid }),
-      server: new FileDaemonConnection({ directory: root, side: "response", peerPid: process.pid }),
+      client: new FileDaemonConnection({
+        directory: root,
+        side: "request",
+        peerLifetime:
+          process.platform === "win32"
+            ? {
+                token: "00000000-0000-0000-0000-000000000000",
+                path: join(root, "process-lifetimes", "00000000-0000-0000-0000-000000000000.fifo"),
+              }
+            : PosixDaemonProcessLifetime.current(root),
+      }),
+      server: new FileDaemonConnection({
+        directory: root,
+        side: "response",
+        peerLifetime:
+          process.platform === "win32"
+            ? {
+                token: "00000000-0000-0000-0000-000000000000",
+                path: join(root, "process-lifetimes", "00000000-0000-0000-0000-000000000000.fifo"),
+              }
+            : PosixDaemonProcessLifetime.current(root),
+      }),
     };
   }
   public async cleanUp(): Promise<void> {

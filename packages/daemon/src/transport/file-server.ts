@@ -1,5 +1,9 @@
-import { mkdir, readdir, rm, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import type { DaemonProcessLifetimeIdentity } from "../process/process-lifetime-identity.js";
+import { randomUUID } from "node:crypto";
+import { PosixDaemonProcessLifetime } from "../process/posix-process-lifetime.js";
+import type { FileDaemonOwner } from "./file-owner.js";
+import { mkdir, readdir, rename, rm, rmdir, writeFile } from "node:fs/promises";
+import { dirname, join } from "node:path";
 import type { DaemonPolicyValues } from "../daemon-policy.js";
 import type { DaemonRequestHandler, DaemonRequestServer } from "./contracts.js";
 import type { DaemonServer } from "./protocol.js";
@@ -28,6 +32,7 @@ class ListeningFileDaemonServer implements DaemonServer {
 
   public constructor(
     private readonly endpoint: string,
+    private readonly directory: string,
     private readonly handler: DaemonRequestHandler,
     private readonly options: FileDaemonServerOptions,
   ) {
@@ -50,7 +55,10 @@ class ListeningFileDaemonServer implements DaemonServer {
     if (this.forceRequested)
       for (const channel of this.channels.values()) channel.connection.destroy();
     await Promise.all([...this.channels.values()].map((channel) => channel.finished));
-    await rm(this.endpoint, { recursive: true, force: true, maxRetries: 20, retryDelay: 5 });
+    await rm(this.directory, { recursive: true, force: true, maxRetries: 20, retryDelay: 5 });
+    await rmdir(this.endpoint).catch((error: NodeJS.ErrnoException) => {
+      if (error.code !== "ENOENT" && error.code !== "ENOTEMPTY") throw error;
+    });
   }
 
   private schedule(): void {
@@ -65,7 +73,7 @@ class ListeningFileDaemonServer implements DaemonServer {
   }
 
   private async scan(): Promise<void> {
-    const entries = await readdir(this.endpoint, { withFileTypes: true });
+    const entries = await readdir(this.directory, { withFileTypes: true });
     for (const entry of entries.sort((left, right) => left.name.localeCompare(right.name))) {
       if (!entry.isDirectory()) continue;
       if (entry.name.endsWith(".tmp")) {
@@ -79,12 +87,15 @@ class ListeningFileDaemonServer implements DaemonServer {
   }
 
   private async reapUnpublishedChannel(name: string): Promise<void> {
-    const publisher = /^[0-9]{16}-([0-9]{10})-[0-9]{10}-[a-f0-9-]{36}\.tmp$/.exec(name);
+    const publisher = /^[0-9]{16}-[0-9]{10}-[0-9]{10}-([a-f0-9-]{36})\.tmp$/.exec(name);
     if (publisher === null) return;
-    const publisherPid = Number(publisher[1]);
-    if (!Number.isSafeInteger(publisherPid) || publisherPid <= 0) return;
-    if (FileDaemonEndpoint.isAlive(publisherPid)) return;
-    await rm(join(this.endpoint, name), {
+    const token = publisher[1]!;
+    const lifetime: DaemonProcessLifetimeIdentity = {
+      token,
+      path: join(dirname(this.endpoint), "process-lifetimes", `${token}.fifo`),
+    };
+    if (PosixDaemonProcessLifetime.observe(lifetime) !== "exited") return;
+    await rm(join(this.directory, name), {
       recursive: true,
       force: true,
       maxRetries: 20,
@@ -94,21 +105,25 @@ class ListeningFileDaemonServer implements DaemonServer {
 
   private async accept(name: string): Promise<void> {
     this.acceptedChannels.add(name);
-    const directory = join(this.endpoint, name);
-    let peerPid: number;
+    const directory = join(this.directory, name);
+    let peer: FileDaemonOwner;
     try {
-      peerPid = await FileDaemonEndpoint.ownerPid(directory);
+      peer = await FileDaemonEndpoint.readOwner(directory);
     } catch {
       await rm(directory, { recursive: true, force: true, maxRetries: 20, retryDelay: 5 });
       this.acceptedChannels.delete(name);
       return;
     }
-    if (!FileDaemonEndpoint.isAlive(peerPid)) {
+    if (PosixDaemonProcessLifetime.observe(peer.processLifetime) === "exited") {
       await rm(directory, { recursive: true, force: true, maxRetries: 20, retryDelay: 5 });
       this.acceptedChannels.delete(name);
       return;
     }
-    const connection = new FileDaemonConnection({ directory, side: "response", peerPid });
+    const connection = new FileDaemonConnection({
+      directory,
+      side: "response",
+      peerLifetime: peer.processLifetime,
+    });
     const finished = this.serve(connection).finally(async () => {
       connection.destroy();
       await rm(directory, { recursive: true, force: true, maxRetries: 20, retryDelay: 5 });
@@ -141,35 +156,53 @@ export class FileDaemonRequestServer implements DaemonRequestServer {
   public constructor(private readonly options: FileDaemonServerOptions) {}
 
   public async listen(endpoint: string, handler: DaemonRequestHandler): Promise<DaemonServer> {
-    await mkdir(join(endpoint, ".."), { recursive: true, mode: 0o700 });
+    const stateDirectory = dirname(endpoint);
+    await mkdir(stateDirectory, { recursive: true, mode: 0o700 });
+    const processLifetime = PosixDaemonProcessLifetime.current(stateDirectory);
+    const token = randomUUID();
+    const prepared = `${endpoint}.${token}.claim`;
+    const preparedDirectory = join(prepared, token);
+    await mkdir(preparedDirectory, { recursive: true, mode: 0o700 });
     try {
-      await mkdir(endpoint, { mode: 0o700 });
+      await writeFile(
+        join(preparedDirectory, "owner.json"),
+        JSON.stringify({ token, pid: process.pid, processLifetime }),
+        { flag: "wx", mode: 0o600 },
+      );
+      try {
+        await rename(prepared, endpoint);
+      } catch (error) {
+        const code = (error as NodeJS.ErrnoException).code;
+        if (code !== "EEXIST" && code !== "ENOTEMPTY") throw error;
+        if (!(await this.removeUnavailableEndpoint(endpoint)))
+          throw new Error(`Daemon endpoint is already in use: ${endpoint}`);
+        await rename(prepared, endpoint);
+      }
     } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
-      if (!(await this.removeUnavailableEndpoint(endpoint)))
-        throw new Error(`Daemon endpoint is already in use: ${endpoint}`);
-      await mkdir(endpoint, { mode: 0o700 });
-    }
-    try {
-      await writeFile(join(endpoint, "owner.json"), JSON.stringify({ pid: process.pid }), {
-        flag: "wx",
-        mode: 0o600,
-      });
-    } catch (error) {
-      await rm(endpoint, { recursive: true, force: true });
+      await rm(prepared, { recursive: true, force: true });
       throw error;
     }
-    return new ListeningFileDaemonServer(endpoint, handler, this.options);
+    return new ListeningFileDaemonServer(endpoint, join(endpoint, token), handler, this.options);
   }
 
   public async removeUnavailableEndpoint(endpoint: string): Promise<boolean> {
+    let owner;
     try {
-      if (FileDaemonEndpoint.isAlive(await FileDaemonEndpoint.ownerPid(endpoint))) return false;
+      owner = await FileDaemonEndpoint.owner(endpoint);
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === "ENOENT") return true;
       return false;
     }
-    await rm(endpoint, { recursive: true, force: true });
-    return true;
+    if (PosixDaemonProcessLifetime.observe(owner.processLifetime) !== "exited") return false;
+    await rm(owner.directory, { recursive: true, force: true });
+    try {
+      await rmdir(endpoint);
+      return true;
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code;
+      if (code === "ENOENT") return true;
+      if (code === "ENOTEMPTY" || code === "EEXIST") return false;
+      throw error;
+    }
   }
 }

@@ -1,3 +1,4 @@
+import { getStaticTOMLValue, parseTOML } from "toml-eslint-parser";
 import { mkdtemp, readFile, rm, mkdir, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -106,4 +107,48 @@ describe("CodexSandboxConfiguration", () => {
     );
     expect(await readFile(adapter.configurationPath, "utf8")).toBe(original);
   });
+  it.each(["table", "inline", "dotted", "inherited", "built-in"])(
+    "grants only state in a selected %s permission profile",
+    async (style) => {
+      const homeDirectory = await mkdtemp(join(tmpdir(), "symnav-codex-profile-"));
+      scratchDirectories.push(homeDirectory);
+      const stateDirectory = join(homeDirectory, "state");
+      const selected = style === "built-in" ? ":workspace" : "custom profile";
+      const headers = `default_permissions = ${JSON.stringify(selected)} # selection\nmodel = "keep"\n`;
+      const policies: Record<string, string> = {
+        table:
+          '[permissions."custom profile"]\nextends = ":workspace"\n[permissions."custom profile".filesystem]\n"/unrelated" = "write" # grant\n"/secret" = "deny" # deny\n[permissions."custom profile".network]\nenabled = false # network\n',
+        inline:
+          'permissions = { "custom profile" = { extends = ":workspace", filesystem = { "/unrelated" = "write", "/secret" = "deny" }, network = { enabled = false } } } # keep\n',
+        dotted:
+          'permissions."custom profile".extends = ":workspace"\npermissions."custom profile".filesystem."/unrelated" = "write"\npermissions."custom profile".network.enabled = false\n',
+        inherited:
+          '[permissions.base]\nextends = ":workspace"\nfilesystem = { "/unrelated" = "write", "/secret" = "deny" }\nnetwork = { enabled = false }\n[permissions."custom profile"]\nextends = "base"\n',
+        "built-in": "[features]\nnetwork_proxy = false # keep\n",
+      };
+      const original = headers + policies[style];
+      const adapter = new CodexSandboxConfiguration({ homeDirectory });
+      await mkdir(join(homeDirectory, ".codex"));
+      await writeFile(adapter.configurationPath, original);
+      expect(await adapter.grant(stateDirectory)).toMatchObject({ changed: true });
+      const updated = await readFile(adapter.configurationPath, "utf8");
+      const result = getStaticTOMLValue(parseTOML(updated)) as {
+        default_permissions: string;
+        permissions: Record<string, { extends?: string; filesystem: Record<string, string> }>;
+      };
+      expect(result.permissions[result.default_permissions]!.filesystem[stateDirectory]).toBe(
+        "write",
+      );
+      expect(updated).not.toContain("sandbox_workspace_write");
+      if (style !== "built-in") {
+        expect(result.default_permissions).toBe(selected);
+        expect(updated).toContain(
+          policies[style]!.includes("enabled = false") ? "enabled = false" : "enabled = false",
+        );
+        expect(updated).toContain(headers);
+      } else expect(result.permissions[result.default_permissions]!.extends).toBe(":workspace");
+      expect(await adapter.grant(stateDirectory)).toMatchObject({ changed: false });
+      expect(await readFile(adapter.configurationPath, "utf8")).toBe(updated);
+    },
+  );
 });

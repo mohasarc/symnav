@@ -9,6 +9,7 @@ import type { DaemonConnection, DaemonConnectionClient } from "./contracts.js";
 import { FileDaemonConnection } from "./file-connection.js";
 import { LocalDaemonSocketClient } from "./socket-client.js";
 import { FileDaemonEndpoint } from "./file-endpoint.js";
+import type { FileDaemonEndpointOwner } from "./file-owner.js";
 
 interface FileDaemonConnectionClientOptions {
   readonly policy: DaemonPolicyValues["transport"];
@@ -30,7 +31,13 @@ export class FileDaemonConnectionClient implements DaemonConnectionClient {
       throw Object.assign(new Error("Daemon file endpoint unavailable"), { code: "ECONNREFUSED" });
     const temporaryDirectory = join(peer.directory, `${identifier}.tmp`);
     const directory = join(peer.directory, `${identifier}.channel`);
-    await mkdir(temporaryDirectory, { mode: 0o700 });
+    await mkdir(temporaryDirectory, { mode: 0o700 }).catch(async (error: NodeJS.ErrnoException) => {
+      if (error.code === "ENOENT" && (await this.endpointClosed(endpoint, peer)))
+        throw Object.assign(new Error("Daemon file endpoint unavailable"), {
+          code: "ECONNREFUSED",
+        });
+      throw error;
+    });
     try {
       await mkdir(join(temporaryDirectory, "request"), { mode: 0o700 });
       await mkdir(join(temporaryDirectory, "response"), { mode: 0o700 });
@@ -59,6 +66,16 @@ export class FileDaemonConnectionClient implements DaemonConnectionClient {
           throw DaemonStateWriteErrors.failedWrite(temporaryDirectory, cleanupError);
       }
       throw error;
+    }
+  }
+
+  private async endpointClosed(endpoint: string, peer: FileDaemonEndpointOwner): Promise<boolean> {
+    if (PosixDaemonProcessLifetime.observe(peer.processLifetime) === "exited") return true;
+    try {
+      await FileDaemonEndpoint.readOwner(peer.directory);
+      return !FileDaemonEndpoint.sameOwner(await FileDaemonEndpoint.owner(endpoint), peer);
+    } catch (error) {
+      return (error as NodeJS.ErrnoException).code === "ENOENT";
     }
   }
 }

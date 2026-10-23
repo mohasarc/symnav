@@ -33,7 +33,7 @@ class SetupHarness {
     chmodSync(executable, 0o700);
   }
 
-  public run(argv: readonly string[]) {
+  public run(argv: readonly string[], environment: NodeJS.ProcessEnv = {}) {
     return runSymnavBinary(argv, {
       cwd: this.root,
       env: {
@@ -42,6 +42,7 @@ class SetupHarness {
         PATH: this.bin,
         SYMNAV_DAEMON: "0",
         SYMNAV_TELEMETRY: "0",
+        ...environment,
       },
     });
   }
@@ -122,5 +123,19 @@ describe("symnav setup codex", () => {
     );
     expect(readFileSync(harness.configurationPath, "utf8")).toBe(original);
     expect(existsSync(harness.state)).toBe(false);
+  });
+  it("grants blocked state without telemetry or project config edits", () => {
+    const harness = new SetupHarness();
+    harness.installed();
+    writeFileSync(harness.state, "blocked state");
+    const projectConfig = join(harness.root, ".codex", "config.toml");
+    mkdirSync(join(harness.root, ".codex"));
+    writeFileSync(projectConfig, "project config stays unchanged");
+    const result = harness.run(["setup", "codex"], { SYMNAV_DAEMON: "1", SYMNAV_TELEMETRY: "1" });
+    expect(result.status, result.stderr).toBe(0);
+    expect(result.stderr).toBe("");
+    expect(readFileSync(harness.state, "utf8")).toBe("blocked state");
+    expect(readFileSync(projectConfig, "utf8")).toBe("project config stays unchanged");
+    expect(readFileSync(harness.configurationPath, "utf8")).toContain(harness.state);
   });
 });

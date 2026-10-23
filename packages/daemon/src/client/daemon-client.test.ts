@@ -198,6 +198,46 @@ describe("DaemonClient execution", () => {
     expect(stateWriteFailed).not.toHaveBeenCalled();
   });
 
+  it
+    .skipIf(process.platform === "win32" || process.getuid?.() === 0)
+    .each(["missing", "denied", "unsuccessful"] as const)(
+    "observes only executed %s FIFO creation during explicit start",
+    async (operation) => {
+      const state = await mkdtemp(join(tmpdir(), "symnav-start-write-"));
+      const utilities = join(state, "utilities");
+      await mkdir(utilities);
+      if (operation !== "missing")
+        await writeFile(join(utilities, "mkfifo"), "#!/bin/sh\nexit 3\n", {
+          mode: operation === "denied" ? 0o600 : 0o700,
+        });
+      const harness = new ClientHarness({ stateDirectory: state, record: undefined });
+      vi.mocked(DaemonRegistry.prototype.read).mockRestore();
+      vi.mocked(DaemonStartupCoordinator.prototype.trigger).mockRestore();
+      const stateWriteFailed = vi.fn();
+      const originalPath = process.env.PATH;
+      process.env.PATH = utilities;
+      try {
+        await expect(
+          harness.client.control({
+            action: "start",
+            workspaceRoot: join(state, "workspace"),
+            stateWriteFailed,
+          }),
+        ).rejects.toThrow();
+        expect(stateWriteFailed).toHaveBeenCalledTimes(operation === "unsuccessful" ? 1 : 0);
+        if (operation === "unsuccessful")
+          expect(stateWriteFailed).toHaveBeenCalledWith({
+            path: expect.stringMatching(/process-lifetimes[/\\][a-f0-9-]+\.fifo$/u),
+          });
+        expect(harness.localRequests).toEqual([]);
+        expect(harness.warmRequests).toEqual([]);
+      } finally {
+        process.env.PATH = originalPath;
+        await rm(state, { recursive: true, force: true });
+      }
+    },
+  );
+
   it("observes actual background startup write failure without waiting for warmup", async () => {
     const harness = new ClientHarness({ record: undefined });
     harness.trigger.mockRejectedValueOnce(
@@ -465,6 +505,7 @@ describe("DaemonClient execution", () => {
 });
 
 interface ClientHarnessOptions {
+  readonly stateDirectory?: string;
   readonly daemonEnabled?: boolean;
   readonly record?: DaemonRecord | undefined;
   readonly readFailure?: Error;
@@ -561,7 +602,7 @@ class ClientHarness {
       return executor;
     });
     this.client = new DaemonClient({
-      stateDirectory: "/state",
+      stateDirectory: options.stateDirectory ?? "/state",
       productVersion: "0.1.0",
       daemonEnabled: options.daemonEnabled ?? true,
       executorFactory: this.executorFactory,

@@ -618,6 +618,60 @@ describe("daemon registry", () => {
     expect(registry.startupOwner(identity)).toEqual(owner);
   });
 
+  it.each(["EEXIST", "ENOTEMPTY"])(
+    "loses a startup claim after %s even when the winning owner releases before observation",
+    (code) => {
+      const identity = DaemonWorkspaceIdentity.from("/repo", temporaryDirectory(roots));
+      const winnerRegistry = new DaemonRegistry(identity.registryDirectory);
+      let collisionObserved = false;
+      const registry = new DaemonRegistry(
+        identity.registryDirectory,
+        process.platform,
+        (source, destination) => {
+          if (
+            destination !== identity.lockPath ||
+            String(source) !== identity.startupClaimPath("contender")
+          ) {
+            renameSync(source, destination);
+            return;
+          }
+          const winner = winnerRegistry.acquireStartup(identity, "winner")!;
+          expect(winner).toBeDefined();
+          try {
+            renameSync(source, destination);
+            throw new Error("Startup claim unexpectedly replaced a populated winning lock");
+          } catch (error) {
+            if (!(error instanceof Error) || !("code" in error)) throw error;
+            collisionObserved = true;
+            expect(winner.release()).toBe(true);
+            expect(existsSync(identity.lockPath)).toBe(false);
+            throw Object.assign(error, { code });
+          }
+        },
+      );
+
+      expect(registry.acquireStartup(identity, "contender")).toBeUndefined();
+      expect(collisionObserved).toBe(true);
+      expect(existsSync(identity.startupClaimPath("contender"))).toBe(false);
+      expect(registry.startupOwner(identity)).toBeUndefined();
+      const next = registry.acquireStartup(identity, "next");
+      expect(next).toBeDefined();
+      expect(registry.startupOwner(identity)?.instanceId).toBe("next");
+      expect(next?.release()).toBe(true);
+    },
+  );
+
+  it("preserves real startup claim write failures when no winner exists", () => {
+    const identity = DaemonWorkspaceIdentity.from("/repo", temporaryDirectory(roots));
+    const denied = Object.assign(new Error("claim publication denied"), { code: "EACCES" });
+    const registry = new DaemonRegistry(identity.registryDirectory, process.platform, () => {
+      throw denied;
+    });
+    expect(() => registry.acquireStartup(identity, "denied")).toThrow(denied);
+    expect(existsSync(identity.startupClaimPath("denied"))).toBe(false);
+    expect(registry.startupOwner(identity)).toBeUndefined();
+  });
+
   it("renews startup ownership with a new revision", () => {
     const identity = DaemonWorkspaceIdentity.from("/repo", temporaryDirectory(roots));
     const registry = new DaemonRegistry(identity.registryDirectory);

@@ -100,7 +100,9 @@ export class SandboxProbeProof {
     try {
       const reply = await this.options.session.request({ action: "cleanup" });
       if (reply.kind === "cleaned") reportedFailure = reply.failure;
-    } catch {
+      else reportedFailure = "sandbox runtime did not acknowledge scratch cleanup";
+    } catch (error) {
+      reportedFailure = `sandbox runtime cleanup failed: ${error instanceof Error ? error.message : String(error)}`;
     } finally {
       try {
         await this.options.session.close();

@@ -12,6 +12,7 @@ import type {
   DaemonExecutorRequest,
 } from "@symnav/daemon";
 import type { DaemonExecutionFailureCode } from "../daemon-execution-failure.js";
+import type { DaemonStateWriteFailure } from "../state-write-failure.js";
 import { DaemonPolicy } from "../daemon-policy.js";
 import { CommandOutputSnapshot } from "../../test/helpers/executor-output.js";
 import { DaemonStartupCoordinator } from "../registry/startup-coordinator.js";
@@ -741,6 +742,25 @@ describe("DaemonClient execution", () => {
     expect(harness.executorFactory).not.toHaveBeenCalled();
   });
 
+  it("observes accepted error write metadata once without replaying failed work", async () => {
+    const failure: DaemonStateWriteFailure = { path: "/state/daemon.log", osCode: "EACCES" };
+    const harness = new ClientHarness({
+      terminalFailure: "internal",
+      terminalWriteFailure: failure,
+    });
+    const stateWriteFailed = vi.fn();
+    const result = await harness.client.execute({ ...harness.request(), stateWriteFailed });
+    expect(result.mode).toBe("warm");
+    expect(result.result).toMatchObject({ exitCode: 1, stateWriteFailure: failure });
+    expect(stateWriteFailed).toHaveBeenCalledOnce();
+    expect(stateWriteFailed).toHaveBeenCalledWith(failure);
+    await expect(outputText(result.result)).resolves.toBe(
+      "Cannot answer: accepted daemon request did not complete.\n",
+    );
+    expect(harness.executorFactory).not.toHaveBeenCalled();
+    expect(harness.trigger).not.toHaveBeenCalled();
+  });
+
   it("disposes malformed warm output before returning its controlled result", async () => {
     const output = new CommandOutputSnapshot([]);
     const dispose = vi.spyOn(output, "dispose");
@@ -783,6 +803,7 @@ interface ClientHarnessOptions {
   readonly warmFailure?: Error;
   readonly warmResult?: DaemonExecutorExecutionResult;
   readonly terminalFailure?: DaemonExecutionFailureCode;
+  readonly terminalWriteFailure?: DaemonStateWriteFailure;
 }
 
 class ClientHarness {
@@ -862,7 +883,13 @@ class ClientHarness {
           completion:
             options.terminalFailure === undefined
               ? Promise.resolve({ status: "completed", result: options.warmResult ?? success })
-              : Promise.resolve({ status: "failed", code: options.terminalFailure }),
+              : Promise.resolve({
+                  status: "failed",
+                  code: options.terminalFailure,
+                  ...(options.terminalWriteFailure === undefined
+                    ? {}
+                    : { stateWriteFailure: options.terminalWriteFailure }),
+                }),
         };
       },
     );

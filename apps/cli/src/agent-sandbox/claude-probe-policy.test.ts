@@ -35,7 +35,12 @@ it.each([
     expect(result.grantsState).toBe(granted);
     expect(JSON.parse(result.configuration)).toEqual({
       network: { allowedDomains: [], deniedDomains: ["*"] },
-      filesystem: { allowWrite: ["/state"], denyWrite, denyRead },
+      filesystem: {
+        allowWrite: ["/state"],
+        denyWrite,
+        denyRead,
+        allowRead: ["/state/doctor/random/workspace"],
+      },
     });
     expect(await readFile(adapter.configurationPath, "utf8")).toBe(original);
   },

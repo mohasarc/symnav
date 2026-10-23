@@ -1,7 +1,7 @@
 import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, expect, it } from "vitest";
+import { afterEach, expect, it, vi } from "vitest";
 import { CodexSandboxConfiguration } from "./codex-configuration.js";
 import { TomlDocument } from "./toml-document.js";
 
@@ -9,6 +9,7 @@ class ProbePolicyScratch {
   public static readonly directories: string[] = [];
 }
 afterEach(async () => {
+  vi.unstubAllEnvs();
   await Promise.all(
     ProbePolicyScratch.directories
       .splice(0)
@@ -156,3 +157,100 @@ it("checks an existing grant through its canonical filesystem path", async () =>
       .grantsState,
   ).toBe(true);
 });
+
+it.each(["legacy", "named"])(
+  "does not replace missing TMPDIR with OS, TMP or TEMP fallback for %s policy",
+  async (style) => {
+    const home = await mkdtemp(join(tmpdir(), "codex-tmpdir-absence-"));
+    ProbePolicyScratch.directories.push(home);
+    await mkdir(join(home, ".codex"));
+    vi.stubEnv("TMPDIR", undefined);
+    vi.stubEnv("TMP", undefined);
+    vi.stubEnv("TEMP", undefined);
+    const fallback = tmpdir();
+    const state = join(fallback, "outside-original-workspace", "state");
+    vi.stubEnv("TMP", fallback);
+    vi.stubEnv("TEMP", fallback);
+    const adapter = new CodexSandboxConfiguration({
+      homeDirectory: home,
+      workspaceDirectory: join(home, "project"),
+    });
+    const original =
+      style === "legacy"
+        ? 'sandbox_mode="workspace-write"\n[sandbox_workspace_write]\nexclude_slash_tmp=true\nwritable_roots=[]\n'
+        : 'default_permissions="selected"\n[permissions.selected]\nextends=":read-only"\nfilesystem.":tmpdir"="write"\n';
+    await writeFile(adapter.configurationPath, original);
+    const result = await adapter.inspect(state, join(home, "doctor", "workspace"));
+    expect(result.grantsState).toBe(false);
+    expect(
+      new TomlDocument(result.configuration).value([
+        "permissions",
+        "symnav-doctor",
+        "filesystem",
+        fallback,
+      ]),
+    ).toBeUndefined();
+    expect(await readFile(adapter.configurationPath, "utf8")).toBe(original);
+  },
+);
+it.each(["", "relative/tmp"])("does not turn invalid TMPDIR %s into a grant", async (temporary) => {
+  const home = await mkdtemp(join(tmpdir(), "codex-tmpdir-invalid-"));
+  ProbePolicyScratch.directories.push(home);
+  await mkdir(join(home, ".codex"));
+  vi.stubEnv("TMPDIR", temporary);
+  const adapter = new CodexSandboxConfiguration({
+    homeDirectory: home,
+    workspaceDirectory: join(home, "project"),
+  });
+  await writeFile(
+    adapter.configurationPath,
+    'default_permissions="selected"\n[permissions.selected]\nextends=":read-only"\nfilesystem.":tmpdir"="write"\n',
+  );
+  const result = await adapter.inspect(
+    join(home, "outside", "state"),
+    join(home, "doctor", "workspace"),
+  );
+  expect(result.grantsState).toBe(false);
+  expect(
+    Object.values(
+      new TomlDocument(result.configuration).value([
+        "permissions",
+        "symnav-doctor",
+        "filesystem",
+      ]) as Record<string, unknown>,
+    ),
+  ).not.toContain("write");
+});
+it.each(["legacy", "named"])(
+  "materializes only the original explicit TMPDIR for %s policy",
+  async (style) => {
+    const home = await mkdtemp(join(tmpdir(), "codex-tmpdir-present-"));
+    ProbePolicyScratch.directories.push(home);
+    await mkdir(join(home, ".codex"));
+    const temporary = join(home, "original-temp");
+    await mkdir(temporary);
+    vi.stubEnv("TMPDIR", temporary);
+    vi.stubEnv("TMP", join(home, "wrong-tmp"));
+    vi.stubEnv("TEMP", join(home, "wrong-temp"));
+    const adapter = new CodexSandboxConfiguration({
+      homeDirectory: home,
+      workspaceDirectory: join(home, "project"),
+    });
+    await writeFile(
+      adapter.configurationPath,
+      style === "legacy"
+        ? 'sandbox_mode="workspace-write"\n[sandbox_workspace_write]\nexclude_slash_tmp=true\nwritable_roots=[]\n'
+        : 'default_permissions="selected"\n[permissions.selected]\nextends=":read-only"\nfilesystem.":tmpdir"="write"\n',
+    );
+    const state = join(temporary, "state");
+    const result = await adapter.inspect(state, join(home, "doctor", "workspace"));
+    expect(result.grantsState).toBe(true);
+    const filesystem = new TomlDocument(result.configuration).value([
+      "permissions",
+      "symnav-doctor",
+      "filesystem",
+    ]) as Record<string, unknown>;
+    expect(filesystem[temporary]).toBe("write");
+    expect(filesystem[state]).toBeUndefined();
+  },
+);

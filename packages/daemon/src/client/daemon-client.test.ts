@@ -41,7 +41,10 @@ describe("DaemonClient execution", () => {
   it("journals proven starting-process death before cleanup and retriggers cold execution without fallback", async () => {
     const record = daemonRecord({ state: "starting" });
     const harness = new ClientHarness({ record });
-    vi.spyOn(NodeDaemonProcessTerminator.prototype, "isAlive").mockReturnValue(false);
+    vi.spyOn(NodeDaemonProcessTerminator.prototype, "hasExited").mockReturnValue(true);
+    vi.mocked(DaemonRecordObserver.prototype.observeIdentity).mockImplementation(
+      async (record) => ({ kind: "exited", record }),
+    );
     harness.removeIfProcess.mockImplementation(() => {
       expect(harness.failureEvents.map((event) => event.kind)).toEqual(["startup-failure"]);
       return true;
@@ -64,7 +67,10 @@ describe("DaemonClient execution", () => {
     "keeps dead-starting recovery cold when %s prevents safe cleanup",
     async (failurePoint) => {
       const harness = new ClientHarness({ record: daemonRecord({ state: "starting" }) });
-      vi.spyOn(NodeDaemonProcessTerminator.prototype, "isAlive").mockReturnValue(false);
+      vi.spyOn(NodeDaemonProcessTerminator.prototype, "hasExited").mockReturnValue(true);
+      vi.mocked(DaemonRecordObserver.prototype.observeIdentity).mockImplementation(
+        async (record) => ({ kind: "exited", record }),
+      );
       const stateWriteFailed = vi.fn();
       const failure = Object.assign(new Error("denied"), {
         code: "EACCES",
@@ -792,7 +798,10 @@ class ClientHarness {
   readonly client: DaemonClient;
 
   constructor(options: ClientHarnessOptions) {
-    vi.spyOn(NodeDaemonProcessTerminator.prototype, "isAlive").mockReturnValue(true);
+    vi.spyOn(NodeDaemonProcessTerminator.prototype, "hasExited").mockReturnValue(false);
+    vi.spyOn(DaemonRecordObserver.prototype, "observeIdentity").mockImplementation(
+      async (record) => ({ kind: "authenticated", record }),
+    );
     vi.spyOn(DaemonFailureJournal.prototype, "record").mockImplementation(async (event) => {
       this.failureEvents.push(event);
     });

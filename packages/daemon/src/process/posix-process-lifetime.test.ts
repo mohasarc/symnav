@@ -108,7 +108,7 @@ describe.skipIf(process.platform === "win32")("POSIX daemon process lifetime", (
     process.env.PATH = "";
     try {
       expect(() => PosixDaemonProcessLifetime.prepareChild(fixture().state)).toThrow(
-        expect.objectContaining({ code: "ENOENT" }),
+        expect.objectContaining({ name: "DaemonProcessLifetimeCreationError", code: "ENOENT" }),
       );
     } finally {
       process.env.PATH = original;

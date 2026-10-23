@@ -1,3 +1,5 @@
+import { PosixDaemonProcessLifetime } from "../../src/process/posix-process-lifetime.js";
+import { join } from "node:path";
 import { mkdirSync, renameSync, writeFileSync } from "node:fs";
 import { randomUUID } from "node:crypto";
 import { CanonicalTestPath } from "../helpers/canonical-path.js";
@@ -50,10 +52,17 @@ if (
 
 const token = randomUUID();
 const claimPath = identity.startupMutationClaimPath(token);
-mkdirSync(claimPath, { mode: 0o700 });
+mkdirSync(join(claimPath, token), { recursive: true, mode: 0o700 });
 writeFileSync(
-  identity.startupOwnerPath(claimPath),
-  JSON.stringify({ ownerPid: process.pid, acquiredAt: Date.now(), token }),
+  identity.startupOwnerPath(join(claimPath, token)),
+  JSON.stringify({
+    ownerPid: process.pid,
+    acquiredAt: Date.now(),
+    token,
+    ...(process.platform === "win32"
+      ? {}
+      : { ownerLifetime: PosixDaemonProcessLifetime.current(identity.stateDirectory) }),
+  }),
   { encoding: "utf8", flag: "wx", mode: 0o600 },
 );
 renameSync(claimPath, identity.startupMutationPath);

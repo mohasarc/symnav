@@ -4,6 +4,8 @@ import { join } from "node:path";
 import type { AgentSandboxConfiguration, SupportedAgent } from "./agent-configuration.js";
 import type { AgentDoctorResult } from "./agent-doctor-result.js";
 import { AgentExecutable } from "./agent-executable.js";
+import type { AgentProbePolicy } from "./agent-probe-policy.js";
+import { SandboxProbeCleanupError } from "./sandbox-probe-cleanup-error.js";
 import type { AgentSandboxRuntime } from "./agent-sandbox-runtime.js";
 
 interface AgentSandboxDoctorOptions {
@@ -12,6 +14,16 @@ interface AgentSandboxDoctorOptions {
   readonly runtimes: readonly AgentSandboxRuntime[];
 }
 
+type PreparedDoctorCheck =
+  | { readonly result: AgentDoctorResult }
+  | {
+      readonly agent: SupportedAgent;
+      readonly scratch: string;
+      readonly workspace: string;
+      readonly policy: AgentProbePolicy;
+      readonly runtime: AgentSandboxRuntime;
+    };
+
 export class AgentSandboxDoctor {
   public constructor(private readonly options: AgentSandboxDoctorOptions) {}
 
@@ -19,12 +31,45 @@ export class AgentSandboxDoctor {
     agent?: SupportedAgent,
     signal?: AbortSignal,
   ): Promise<readonly AgentDoctorResult[]> {
-    await this.verifyState();
     const agents: readonly SupportedAgent[] =
       agent === undefined ? ["codex", "claude-code"] : [agent];
+    const prepared: PreparedDoctorCheck[] = [];
+    for (const selected of agents) prepared.push(await this.prepare(selected));
+    await this.verifyState();
     const results: AgentDoctorResult[] = [];
-    for (const selected of agents) results.push(await this.checkAgent(selected, signal));
+    for (const check of prepared)
+      results.push("result" in check ? check.result : await this.checkAgent(check, signal));
     return results;
+  }
+
+  private async prepare(agent: SupportedAgent): Promise<PreparedDoctorCheck> {
+    if (!(await AgentExecutable.installed(agent === "codex" ? "codex" : "claude")))
+      return { result: { agent, status: "skip", reason: "not installed" } };
+    const configuration = this.options.configurations.find(
+      (configuration) => configuration.agent === agent,
+    )!;
+    const scratch = join(this.options.stateDirectory, "doctor", randomUUID());
+    const workspace = join(scratch, "workspace");
+    try {
+      const policy = await configuration.inspect(this.options.stateDirectory, workspace);
+      if (!policy.grantsState)
+        return {
+          result: {
+            agent,
+            status: "fail",
+            reason: `sandbox denies write to ${this.options.stateDirectory}; run 'symnav setup ${agent}'`,
+          },
+        };
+      return {
+        agent,
+        scratch,
+        workspace,
+        policy,
+        runtime: this.options.runtimes.find((runtime) => runtime.agent === agent)!,
+      };
+    } catch (error) {
+      return { result: this.failure(agent, error) };
+    }
   }
 
   private async verifyState(): Promise<void> {
@@ -45,29 +90,13 @@ export class AgentSandboxDoctor {
   }
 
   private async checkAgent(
-    agent: SupportedAgent,
+    check: Exclude<PreparedDoctorCheck, { readonly result: AgentDoctorResult }>,
     signal?: AbortSignal,
   ): Promise<AgentDoctorResult> {
-    if (!(await AgentExecutable.installed(agent === "codex" ? "codex" : "claude")))
-      return { agent, status: "skip", reason: "not installed" };
-    const configuration = this.options.configurations.find(
-      (configuration) => configuration.agent === agent,
-    )!;
-    const runtime = this.options.runtimes.find((runtime) => runtime.agent === agent)!;
-    const scratch = join(this.options.stateDirectory, "doctor", randomUUID());
-    const workspace = join(scratch, "workspace");
+    const { agent, scratch, workspace, policy, runtime } = check;
     let created = false;
     try {
       signal?.throwIfAborted();
-      const policy = await configuration.inspect(this.options.stateDirectory, workspace);
-      if (!policy.grantsState)
-        return {
-          agent,
-          status: "fail",
-          reason: `sandbox denies write to ${this.options.stateDirectory}; run 'symnav setup ${agent}'`,
-        };
-      if (policy.disabledReason !== undefined)
-        return { agent, status: "fail", reason: policy.disabledReason };
       const availability = await runtime.availability();
       if (availability !== "available")
         return {
@@ -96,14 +125,23 @@ export class AgentSandboxDoctor {
       });
       return { agent, status: "ok", check: "live" };
     } catch (error) {
-      return {
-        agent,
-        status: "fail",
-        reason: `${error instanceof Error ? error.message : String(error)}; check sandbox policy and restart the agent session`,
-      };
+      if (error instanceof SandboxProbeCleanupError) created = false;
+      return this.failure(agent, error);
     } finally {
       if (created) await this.removeScratch(scratch);
     }
+  }
+
+  private failure(agent: SupportedAgent, error: unknown): AgentDoctorResult {
+    const reason = (error instanceof Error ? error.message : String(error))
+      .replace(/\s+/gu, " ")
+      .trim()
+      .slice(0, 360);
+    return {
+      agent,
+      status: "fail",
+      reason: `${reason}; check sandbox policy and restart the agent session`,
+    };
   }
 
   private async removeScratch(scratch: string): Promise<void> {

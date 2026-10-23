@@ -133,6 +133,62 @@ describe("DaemonClient execution", () => {
     },
   );
 
+  it
+    .skipIf(process.platform === "win32" || process.getuid?.() === 0)
+    .each(["missing", "denied", "unsuccessful", "directory"] as const)(
+    "preserves invocation telemetry semantics for %s lifetime creation",
+    async (operation) => {
+      const fixture = await ClientOwnershipFixture.create();
+      const clientState = join(fixture.state, "client-state");
+      const endpoint = join(clientState, "endpoint");
+      const token = randomUUID();
+      const directory = join(endpoint, token);
+      const utilities = join(fixture.state, "utilities");
+      await mkdir(directory, { recursive: true });
+      await mkdir(utilities);
+      await writeFile(
+        join(directory, "owner.json"),
+        JSON.stringify({ pid: process.pid, token, processLifetime: fixture.lifetime }),
+      );
+      if (operation !== "missing")
+        await writeFile(join(utilities, "mkfifo"), "#!/bin/sh\nexit 3\n", {
+          mode: operation === "denied" ? 0o600 : 0o700,
+        });
+      const harness = new ClientHarness({
+        record: daemonRecord({ endpoint, pid: process.pid, processLifetime: fixture.lifetime }),
+      });
+      vi.mocked(DaemonRecordObserver.prototype.observe).mockRestore();
+      const stateWriteFailed = vi.fn();
+      const originalPath = process.env.PATH;
+      if (operation === "directory") await chmod(clientState, 0o500);
+      else process.env.PATH = utilities;
+      try {
+        const result = await harness.client.execute({ ...harness.request(), stateWriteFailed });
+        const failedWrite = operation === "directory" || operation === "unsuccessful";
+        expect(result.mode).toBe("cold");
+        expect(harness.localRequests).toEqual([
+          expect.objectContaining({ telemetryEnabled: !failedWrite, executionMode: "cold" }),
+        ]);
+        expect(harness.warmRequests).toEqual([]);
+        expect(harness.trigger).not.toHaveBeenCalled();
+        expect(stateWriteFailed).toHaveBeenCalledTimes(failedWrite ? 1 : 0);
+        if (operation === "directory")
+          expect(stateWriteFailed).toHaveBeenCalledWith({
+            path: join(clientState, "process-lifetimes"),
+            osCode: "EACCES",
+          });
+        if (operation === "unsuccessful")
+          expect(stateWriteFailed).toHaveBeenCalledWith({
+            path: expect.stringMatching(/process-lifetimes[/\\][a-f0-9-]+\.fifo$/u),
+          });
+      } finally {
+        process.env.PATH = originalPath;
+        await chmod(clientState, 0o700);
+        await fixture.dispose();
+      }
+    },
+  );
+
   it("does not report generic connection failures as state failures", async () => {
     const harness = new ClientHarness({
       warmFailure: new DaemonTransportError("unreachable", "not-submitted", "refused"),

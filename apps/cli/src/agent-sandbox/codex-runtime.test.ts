@@ -16,17 +16,21 @@ class Runtime extends CodexSandboxRuntime {
     return this.command(request);
   }
 }
-const roots: string[] = [];
+class RuntimeScratch {
+  public static readonly roots: string[] = [];
+}
 afterEach(async () => {
   vi.restoreAllMocks();
   vi.unstubAllEnvs();
-  await Promise.all(roots.splice(0).map((path) => rm(path, { recursive: true, force: true })));
+  await Promise.all(
+    RuntimeScratch.roots.splice(0).map((path) => rm(path, { recursive: true, force: true })),
+  );
 });
 it.each(["--permission-profile", "--permissions-profile"])(
   "uses recognized Codex %s help and minimal scratch policy",
   async (flag) => {
     const root = await mkdtemp(join(tmpdir(), "codex-launch-"));
-    roots.push(root);
+    RuntimeScratch.roots.push(root);
     vi.spyOn(AgentExecutable, "find").mockResolvedValue("/runtime/codex");
     execute.mockImplementation((_executable, _args, _options, callback) =>
       callback(null, `Usage: codex sandbox [OPTIONS] [COMMAND]...\n${flag} <NAME>`),
@@ -60,7 +64,7 @@ it.each(["--permission-profile", "--permissions-profile"])(
 );
 it("fails an installed but rejecting runtime without classifying it unavailable", async () => {
   const root = await mkdtemp(join(tmpdir(), "codex-reject-"));
-  roots.push(root);
+  RuntimeScratch.roots.push(root);
   vi.spyOn(AgentExecutable, "find").mockResolvedValue("/runtime/codex");
   execute.mockImplementation((_exe, _args, _options, callback) =>
     callback(new Error("rejected"), ""),

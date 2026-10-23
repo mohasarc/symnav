@@ -5,10 +5,14 @@ import { afterEach, expect, it } from "vitest";
 import { CodexSandboxConfiguration } from "./codex-configuration.js";
 import { TomlDocument } from "./toml-document.js";
 
-const directories: string[] = [];
+class ProbePolicyScratch {
+  public static readonly directories: string[] = [];
+}
 afterEach(async () => {
   await Promise.all(
-    directories.splice(0).map((path) => rm(path, { recursive: true, force: true })),
+    ProbePolicyScratch.directories
+      .splice(0)
+      .map((path) => rm(path, { recursive: true, force: true })),
   );
 });
 it.each([
@@ -31,7 +35,7 @@ it.each([
   "inspects effective state grants without copying unrelated configuration: %s",
   async (policy, granted) => {
     const home = await mkdtemp(join(tmpdir(), "codex-probe-"));
-    directories.push(home);
+    ProbePolicyScratch.directories.push(home);
     const adapter = new CodexSandboxConfiguration({ homeDirectory: home });
     await mkdir(join(home, ".codex"));
     const original = `${policy}\nmodel = "private"\n`;
@@ -48,7 +52,7 @@ it.each([
 
 it("keeps scoped special roots at their original absolute locations and never grants scratch state", async () => {
   const home = await mkdtemp(join(tmpdir(), "codex-special-"));
-  directories.push(home);
+  ProbePolicyScratch.directories.push(home);
   const workspace = join(home, "original");
   const scratch = join(home, "state", "doctor", "id", "workspace");
   const adapter = new CodexSandboxConfiguration({
@@ -77,7 +81,7 @@ it("keeps scoped special roots at their original absolute locations and never gr
 });
 it("does not add a root-read baseline to a custom profile with no parent", async () => {
   const home = await mkdtemp(join(tmpdir(), "codex-restricted-"));
-  directories.push(home);
+  ProbePolicyScratch.directories.push(home);
   const adapter = new CodexSandboxConfiguration({ homeDirectory: home });
   await mkdir(join(home, ".codex"));
   await writeFile(
@@ -92,7 +96,7 @@ it("does not add a root-read baseline to a custom profile with no parent", async
 });
 it("preserves builtin workspace grants and equal-path permission precedence", async () => {
   const home = await mkdtemp(join(tmpdir(), "codex-builtin-"));
-  directories.push(home);
+  ProbePolicyScratch.directories.push(home);
   const adapter = new CodexSandboxConfiguration({ homeDirectory: home, workspaceDirectory: home });
   await mkdir(join(home, ".codex"));
   await writeFile(

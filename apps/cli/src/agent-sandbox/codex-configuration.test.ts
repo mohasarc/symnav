@@ -185,4 +185,135 @@ describe("CodexSandboxConfiguration", () => {
     expect(await adapter.grant(join(homeDirectory, "state"))).toMatchObject({ changed: false });
     expect(await readFile(adapter.configurationPath, "utf8")).toBe(original);
   });
+  it.each([
+    [
+      "missing selection",
+      "permissions = {}\n",
+      "default_permissions must select a permission profile",
+    ],
+    [
+      "wrong selection",
+      "default_permissions = 42\n",
+      "default_permissions must select a permission profile",
+    ],
+    ["missing profile", 'default_permissions = "absent"\n', "unknown permission profile: absent"],
+    [
+      "wrong profiles",
+      'default_permissions = "p"\npermissions = []\n',
+      "permissions must be a table",
+    ],
+    [
+      "wrong profile",
+      'default_permissions = "p"\npermissions.p = true\n',
+      "permission profile p must be a table",
+    ],
+    [
+      "wrong filesystem",
+      'default_permissions = "p"\n[permissions.p]\nfilesystem = []\n',
+      "filesystem must be a table",
+    ],
+    [
+      "wrong access",
+      'default_permissions = "p"\n[permissions.p.filesystem]\n"/other" = true\n',
+      "filesystem access must be read, write or deny",
+    ],
+    [
+      "wrong scoped access",
+      'default_permissions = "p"\n[permissions.p.filesystem."/other"]\n"." = 42\n',
+      "filesystem access must be read, write or deny",
+    ],
+    [
+      "wrong parent",
+      'default_permissions = "p"\n[permissions.p]\nextends = 42\n',
+      "extends must name a permission profile",
+    ],
+    [
+      "unknown parent",
+      'default_permissions = "p"\n[permissions.p]\nextends = "absent"\n',
+      "unknown permission profile: absent",
+    ],
+    [
+      "cycle",
+      'default_permissions = "p"\n[permissions.p]\nextends = "p"\n',
+      "permission profile inheritance cycle",
+    ],
+    [
+      "unrestricted parent",
+      'default_permissions = "p"\n[permissions.p]\nextends = ":danger-full-access"\n',
+      "cannot extend :danger-full-access",
+    ],
+    [
+      "wrong network",
+      'default_permissions = "p"\n[permissions.p]\nnetwork = false\n',
+      "network must be a table",
+    ],
+    [
+      "wrong enabled",
+      'default_permissions = "p"\n[permissions.p.network]\nenabled = "false"\n',
+      "network.enabled must be a boolean",
+    ],
+  ])("rejects %s named policy unchanged", async (_name, original, reason) => {
+    const homeDirectory = await mkdtemp(join(tmpdir(), "symnav-codex-policy-error-"));
+    scratchDirectories.push(homeDirectory);
+    const adapter = new CodexSandboxConfiguration({ homeDirectory });
+    await mkdir(join(homeDirectory, ".codex"));
+    await writeFile(adapter.configurationPath, original);
+    await expect(adapter.grant(join(homeDirectory, "state"))).rejects.toThrow(reason);
+    expect(await readFile(adapter.configurationPath, "utf8")).toBe(original);
+  });
+
+  it.each([false, true])("preserves %s inherited denial on the state path", async (inherited) => {
+    const homeDirectory = await mkdtemp(join(tmpdir(), "symnav-codex-deny-"));
+    scratchDirectories.push(homeDirectory);
+    const stateDirectory = join(homeDirectory, "state");
+    const original =
+      `default_permissions = "p"\n[permissions.${inherited ? "base" : "p"}.filesystem]\n${JSON.stringify(stateDirectory)} = "deny" # keep\n` +
+      (inherited ? '[permissions.p]\nextends = "base"\n' : "");
+    const adapter = new CodexSandboxConfiguration({ homeDirectory });
+    await mkdir(join(homeDirectory, ".codex"));
+    await writeFile(adapter.configurationPath, original);
+    await expect(adapter.grant(stateDirectory)).rejects.toThrow(
+      "state directory has an explicit deny rule",
+    );
+    expect(await readFile(adapter.configurationPath, "utf8")).toBe(original);
+  });
+  it.each(["inherited scoped", "child scoped", "nearest scoped", "nearest scalar"])(
+    "resolves %s filesystem entries before granting state across inheritance",
+    async (style) => {
+      const homeDirectory = await mkdtemp(join(tmpdir(), "symnav-codex-inheritance-"));
+      scratchDirectories.push(homeDirectory);
+      const adapter = new CodexSandboxConfiguration({ homeDirectory });
+      const stateDirectory = join(homeDirectory, "state");
+      const key = JSON.stringify(stateDirectory);
+      const scoped = `{ "." = "read", secret = "deny", nested = "read" }`;
+      const base =
+        style === "child scoped"
+          ? '"write"'
+          : style.startsWith("nearest")
+            ? `{ "." = "write", stale = "deny" }`
+            : scoped;
+      const middle = style === "nearest scoped" ? scoped : '"read"';
+      const original = `default_permissions = "child" # selection\n[permissions.base]\nextends = ":read-only"\nfilesystem.${key} = ${base} # ancestor\nnetwork.enabled = false # network\n[permissions.middle]\nextends = "base"\n${style.startsWith("nearest") ? `filesystem.${key} = ${middle} # replacement\n` : ""}[permissions.child]\nextends = "middle"\n${style === "child scoped" ? `filesystem.${key} = ${scoped} # child\n` : ""}`;
+      await mkdir(join(homeDirectory, ".codex"));
+      await writeFile(adapter.configurationPath, original);
+      expect(await adapter.grant(stateDirectory)).toMatchObject({ changed: true });
+      const updated = await readFile(adapter.configurationPath, "utf8");
+      const configuration = getStaticTOMLValue(parseTOML(updated)) as {
+        permissions: Record<string, { filesystem?: Record<string, unknown> }>;
+      };
+      expect(configuration.permissions.child!.filesystem![stateDirectory]).toEqual(
+        style === "nearest scalar"
+          ? "write"
+          : style === "child scoped"
+            ? { ".": "write", secret: "deny", nested: "read" }
+            : { ".": "write" },
+      );
+      if (style === "child scoped")
+        expect(updated).toBe(original.replace('"read", secret', '"write", secret'));
+      else expect(updated.startsWith(original)).toBe(true);
+      expect(await adapter.grant(stateDirectory)).toMatchObject({ changed: false });
+      expect(await readFile(adapter.configurationPath, "utf8")).toBe(updated);
+    },
+  );
+
 });

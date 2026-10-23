@@ -94,7 +94,12 @@ export class DaemonWorkerGenerationManager {
   async activateReadiness(): Promise<DaemonWorkerReadyReport> {
     for (;;) {
       const report = await this.waitForReadyGeneration();
-      if (this.protocolReadyGeneration !== this.currentGeneration) continue;
+      if (this.stopping) throw new Error("Navigation worker is stopping");
+      if (
+        this.protocolReadyGeneration !== this.currentGeneration ||
+        report.generation !== this.currentGeneration.worker.generation
+      )
+        continue;
       this.readinessActivated = true;
       this.workerReady = true;
       return report;
@@ -153,6 +158,7 @@ export class DaemonWorkerGenerationManager {
     if (this.closeOperation !== undefined) return this.closeOperation;
     this.stopping = true;
     this.workerReady = false;
+    this.currentGeneration.notifyChanged();
     this.closeOperation = this.currentGeneration.worker.drainAndClose();
     return this.closeOperation;
   }
@@ -161,6 +167,7 @@ export class DaemonWorkerGenerationManager {
     if (this.terminationOperation !== undefined) return this.terminationOperation;
     this.stopping = true;
     this.workerReady = false;
+    this.currentGeneration.notifyChanged();
     this.terminationOperation = this.currentGeneration.worker.terminate();
     return this.terminationOperation;
   }
@@ -209,15 +216,18 @@ export class DaemonWorkerGenerationManager {
 
   private async waitForReadyGeneration(): Promise<DaemonWorkerReadyReport> {
     for (;;) {
+      if (this.stopping) throw new Error("Navigation worker is stopping");
       const generation = this.currentGeneration;
       if (generation.ready === undefined) throw new Error("Navigation worker is not starting");
       try {
         const report = await Promise.race([generation.ready, generation.changed]);
+        if (this.stopping) throw new Error("Navigation worker is stopping");
         if (generation !== this.currentGeneration) continue;
         if (report === undefined) throw new Error("Navigation worker readiness is unavailable");
         this.publishProtocolReady(generation, report);
         return report;
       } catch (error) {
+        if (this.stopping) throw error;
         if (generation !== this.currentGeneration) continue;
         if (!(error instanceof DaemonNavigationWorkerExitedError)) throw error;
         await generation.worker.exited;
@@ -250,7 +260,7 @@ export class DaemonWorkerGenerationManager {
     generation: DaemonWorkerGeneration,
     report: DaemonWorkerReadyReport,
   ): void {
-    if (generation !== this.currentGeneration) return;
+    if (this.stopping || generation !== this.currentGeneration) return;
     this.protocolReadyGeneration = generation;
     this.fileCount = report.fileCount;
     if (this.readinessActivated) this.workerReady = true;

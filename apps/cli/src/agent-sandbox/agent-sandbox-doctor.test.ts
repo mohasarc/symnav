@@ -142,3 +142,14 @@ it("inspects original configuration before the host creates any scratch director
   });
   expect(await doctor.check("codex")).toMatchObject([{ status: "ok", check: "configuration" }]);
 });
+it("retains only its own scratch when owned process exit cannot be confirmed", async () => {
+  const { SandboxProbeCleanupError } = await import("./sandbox-probe-cleanup-error.js");
+  const h = await Harness.create();
+  vi.spyOn(AgentExecutable, "installed").mockResolvedValue(true);
+  h.runtimes[0]!.available = "available";
+  h.runtimes[0]!.failure = new SandboxProbeCleanupError("owned wrapper did not exit");
+  const { doctor } = h.doctor();
+  expect(await doctor.check("codex")).toMatchObject([{ status: "fail" }]);
+  const scratch = h.runtimes[0]!.calls[0]!.scratchDirectory;
+  expect(await readdir(scratch)).toContain("workspace");
+});

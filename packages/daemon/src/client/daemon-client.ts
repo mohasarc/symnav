@@ -11,6 +11,7 @@ import type {
 } from "./daemon-client-contracts.js";
 
 interface DaemonClientRuntimePort {
+  closeOwnedProcesses(): Promise<void>;
   execute(request: DaemonClientExecuteRequest): Promise<DaemonClientExecuteResult>;
   control(
     request: DaemonControlRequest,
@@ -44,6 +45,11 @@ export class DaemonClient {
   private loadRuntime(): Promise<DaemonClientRuntimePort> {
     this.runtime ??= DaemonClientRuntimeLoader.load(this.options);
     return this.runtime;
+  }
+
+  public async closeOwnedProcesses(): Promise<void> {
+    if (this.runtime === undefined) return;
+    await (await this.runtime).closeOwnedProcesses();
   }
 
   async execute(request: DaemonClientExecuteRequest): Promise<DaemonClientExecuteResult> {

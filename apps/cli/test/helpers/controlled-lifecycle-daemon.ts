@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import { existsSync, realpathSync, writeFileSync, rmSync } from "node:fs";
 import { createRequire } from "node:module";
 import { join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import type { DaemonStatusEnvelope } from "@symnav/daemon";
 import { runSymnavBinary, type RunSymnavBinaryResult } from "@symnav/testing";
 import { canonicalWorkspaceRoot } from "./canonical-workspace-root.js";
@@ -11,6 +11,7 @@ import { E2eProcessCleanup } from "./e2e-process-cleanup.js";
 
 export class ControlledLifecycleDaemon {
   private readonly children: ChildProcess[] = [];
+  private actorStderr = "";
   private readonly readyPath: string;
   private readonly requestStartedPath: string;
   private readonly releasePath: string;
@@ -35,7 +36,7 @@ export class ControlledLifecycleDaemon {
       process.execPath,
       [
         "--import",
-        createRequire(import.meta.url).resolve("tsx"),
+        pathToFileURL(createRequire(import.meta.url).resolve("tsx")).href,
         fileURLToPath(
           new URL(
             "../../../../packages/daemon/test/actors/daemon-process-coordinator-controlled.ts",
@@ -59,7 +60,7 @@ export class ControlledLifecycleDaemon {
         ...(timestamp === undefined ? [] : [String(timestamp)]),
       ],
       {
-        stdio: "ignore",
+        stdio: ["ignore", "ignore", "pipe"],
         env: {
           ...process.env,
           SYMNAV_STATE_DIR: stateDirectory,
@@ -68,10 +69,13 @@ export class ControlledLifecycleDaemon {
         },
       },
     );
+    this.actor.stderr?.setEncoding("utf8").on("data", (chunk: string) => {
+      this.actorStderr = (this.actorStderr + chunk).slice(-16_384);
+    });
     this.children.push(this.actor);
     this.exited = new Promise((resolve, reject) => {
       this.actor.once("error", reject);
-      this.actor.once("exit", resolve);
+      this.actor.once("close", resolve);
     });
   }
 
@@ -91,7 +95,9 @@ export class ControlledLifecycleDaemon {
     );
     if (mode === "startup-failure") {
       if ((await daemon.exited) !== 1)
-        throw new Error("Controlled startup failure did not exit with failure");
+        throw daemon.actorFailure("Controlled startup failure did not exit with failure");
+      if (!existsSync(`${daemon.readyPath}.boot`))
+        throw daemon.actorFailure("Controlled lifecycle actor exited before startup");
       return daemon;
     }
     await daemon.waitUntil(() =>
@@ -162,11 +168,21 @@ export class ControlledLifecycleDaemon {
     await E2eProcessCleanup.terminate([], this.children);
   }
 
+  private actorFailure(message: string): Error {
+    return new Error(
+      `${message} (exit code ${String(this.actor.exitCode)}, signal ${String(this.actor.signalCode)}): ${this.actorStderr}`,
+    );
+  }
+
   private async waitUntil(predicate: () => boolean): Promise<void> {
     const deadline = Date.now() + 10_000;
     while (!predicate()) {
-      if (Date.now() > deadline || this.actor.exitCode !== null)
-        throw new Error("Controlled lifecycle actor did not reach its barrier");
+      if (this.actor.exitCode !== null || this.actor.signalCode !== null) {
+        await this.exited;
+        throw this.actorFailure("Controlled lifecycle actor did not reach its barrier");
+      }
+      if (Date.now() > deadline)
+        throw this.actorFailure("Controlled lifecycle actor did not reach its barrier");
       await new Promise((resolve) => setTimeout(resolve, 5));
     }
   }

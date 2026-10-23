@@ -60,4 +60,41 @@ describe("ClaudeCodeSandboxConfiguration", () => {
     expect(await configuration.grant(stateDirectory)).toMatchObject({ changed: false });
     expect(await readFile(configuration.configurationPath, "utf8")).toBe(updated);
   });
+  it.each(["exact", "parent", "tilde", "normalized", "literal brackets", "sibling"])(
+    "recognizes %s existing write grants under a custom config root",
+    async (style) => {
+      const homeDirectory = await mkdtemp(join(tmpdir(), "symnav-claude-existing-"));
+      directories.push(homeDirectory);
+      const claudeConfigurationDirectory = join(homeDirectory, "custom claude 雪");
+      const configuration = new ClaudeCodeSandboxConfiguration({
+        homeDirectory,
+        claudeConfigurationDirectory,
+      });
+      expect(configuration.configurationPath).toBe(
+        join(claudeConfigurationDirectory, "settings.json"),
+      );
+      await mkdir(claudeConfigurationDirectory);
+      const stateDirectory = join(
+        homeDirectory,
+        style === "literal brackets" ? "state [draft]" : "state",
+      );
+      const grant =
+        style === "parent"
+          ? homeDirectory
+          : style === "tilde"
+            ? "~/state/"
+            : style === "normalized"
+              ? `${stateDirectory}/../state/`
+              : style === "sibling"
+                ? `${stateDirectory}-other`
+                : stateDirectory;
+      const original = JSON.stringify({ sandbox: { filesystem: { allowWrite: [grant] } } });
+      await writeFile(configuration.configurationPath, original);
+      expect(await configuration.grant(stateDirectory)).toMatchObject({
+        changed: style === "sibling",
+      });
+      if (style !== "sibling")
+        expect(await readFile(configuration.configurationPath, "utf8")).toBe(original);
+    },
+  );
 });

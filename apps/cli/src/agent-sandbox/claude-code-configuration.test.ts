@@ -2,12 +2,14 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { AgentConfigurationFile } from "./agent-configuration-file.js";
 import { ClaudeCodeSandboxConfiguration } from "./claude-code-configuration.js";
 
 describe("ClaudeCodeSandboxConfiguration", () => {
   const directories: string[] = [];
   afterEach(async () => {
     vi.unstubAllEnvs();
+    vi.restoreAllMocks();
     await Promise.all(
       directories.splice(0).map((path) => rm(path, { recursive: true, force: true })),
     );
@@ -142,6 +144,21 @@ describe("ClaudeCodeSandboxConfiguration", () => {
     await writeFile(configuration.configurationPath, original);
     await expect(configuration.grant(join(homeDirectory, "state"))).rejects.toThrow(
       `cannot update ${configuration.configurationPath}: ${reason}`,
+    );
+    expect(await readFile(configuration.configurationPath, "utf8")).toBe(original);
+  });
+  it("leaves original settings untouched and names the config after publication fails", async () => {
+    const homeDirectory = await mkdtemp(join(tmpdir(), "symnav-claude-publication-"));
+    directories.push(homeDirectory);
+    const configuration = new ClaudeCodeSandboxConfiguration({ homeDirectory });
+    await mkdir(join(homeDirectory, ".claude"));
+    const original = '{ "theme": "unchanged" }\n';
+    await writeFile(configuration.configurationPath, original);
+    vi.spyOn(AgentConfigurationFile.prototype, "publish").mockRejectedValueOnce(
+      new Error("publication denied"),
+    );
+    await expect(configuration.grant(join(homeDirectory, "state"))).rejects.toThrow(
+      `cannot update ${configuration.configurationPath}: publication denied`,
     );
     expect(await readFile(configuration.configurationPath, "utf8")).toBe(original);
   });

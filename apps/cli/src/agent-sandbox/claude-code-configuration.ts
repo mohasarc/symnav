@@ -1,4 +1,12 @@
-import { applyEdits, findNodeAtLocation, modify, parseTree, type ParseError } from "jsonc-parser";
+import {
+  applyEdits,
+  findNodeAtLocation,
+  modify,
+  parseTree,
+  type Node,
+  type ParseError,
+} from "jsonc-parser";
+import { lstat } from "node:fs/promises";
 import { isAbsolute, join, relative, resolve, sep } from "node:path";
 import {
   AgentSandboxConfiguration,
@@ -27,9 +35,15 @@ export class ClaudeCodeSandboxConfiguration extends AgentSandboxConfiguration {
     try {
       const file = new AgentConfigurationFile(this.configurationPath);
       const original = await file.read();
-      const updated = this.addGrant(original, stateDirectory);
+      const updated =
+        original.length === 0 && !(await this.settingsExist())
+          ? `${JSON.stringify({ sandbox: { filesystem: { allowWrite: [stateDirectory] } } }, null, 2)}\n`
+          : this.addGrant(original, stateDirectory);
       const changed = updated !== original;
-      if (changed) await file.publish(original, updated);
+      if (changed) {
+        this.validateSettings(updated);
+        await file.publish(original, updated);
+      }
       return {
         agent: this.agent,
         stateDirectory,
@@ -45,11 +59,7 @@ export class ClaudeCodeSandboxConfiguration extends AgentSandboxConfiguration {
     }
   }
   private addGrant(original: string, stateDirectory: string): string {
-    if (original.length === 0)
-      return `${JSON.stringify({ sandbox: { filesystem: { allowWrite: [stateDirectory] } } }, null, 2)}\n`;
-    const errors: ParseError[] = [];
-    const root = parseTree(original, errors, { disallowComments: true, allowTrailingComma: false });
-    if (root === undefined || errors.length > 0) throw new Error("invalid JSON");
+    const root = this.validateSettings(original);
     const path = ["sandbox", "filesystem", "allowWrite"];
     const grants = findNodeAtLocation(root, path)?.children ?? [];
     if (
@@ -75,5 +85,53 @@ export class ClaudeCodeSandboxConfiguration extends AgentSandboxConfiguration {
       remainder === "" ||
       (!isAbsolute(remainder) && remainder !== ".." && !remainder.startsWith(`..${sep}`))
     );
+  }
+  private async settingsExist(): Promise<boolean> {
+    try {
+      await lstat(this.configurationPath);
+      return true;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") return false;
+      throw error;
+    }
+  }
+
+  private validateSettings(source: string): Node {
+    const errors: ParseError[] = [];
+    const root = parseTree(source, errors, { disallowComments: true, allowTrailingComma: false });
+    if (root === undefined || errors.length > 0)
+      throw new Error(`invalid JSON at line ${this.line(source, errors[0]?.offset ?? 0)}`);
+    this.validateUniqueKeys(root, source);
+    if (root.type !== "object") throw new Error("settings must be an object");
+    for (const path of [["sandbox"], ["sandbox", "filesystem"]]) {
+      const node = findNodeAtLocation(root, path);
+      if (node !== undefined && node.type !== "object")
+        throw new Error(`${path.join(".")} must be an object`);
+    }
+    const grants = findNodeAtLocation(root, ["sandbox", "filesystem", "allowWrite"]);
+    if (
+      grants !== undefined &&
+      (grants.type !== "array" || grants.children?.some((node) => node.type !== "string"))
+    )
+      throw new Error("sandbox.filesystem.allowWrite must be an array of strings");
+    return root;
+  }
+
+  private validateUniqueKeys(node: Node, source: string): void {
+    const names = new Set<string>();
+    for (const child of node.children ?? []) {
+      if (node.type === "object") {
+        const key = child.children![0]!;
+        const name = key.value as string;
+        if (names.has(name))
+          throw new Error(`duplicate JSON key at line ${this.line(source, key.offset)}`);
+        names.add(name);
+      }
+      this.validateUniqueKeys(child, source);
+    }
+  }
+
+  private line(source: string, offset: number): number {
+    return source.slice(0, offset).split(/\r\n|\r|\n/u).length;
   }
 }

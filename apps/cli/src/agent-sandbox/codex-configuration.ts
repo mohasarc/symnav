@@ -203,7 +203,8 @@ export class CodexSandboxConfiguration extends AgentSandboxConfiguration {
       this.validateProfile(document, profile.extends, ancestors);
     }
     if (profile.filesystem !== undefined) {
-      if (!this.isTable(profile.filesystem)) throw new Error("filesystem must be a table");
+      if (!this.isTable(profile.filesystem))
+        this.invalid(document, ["permissions", name, "filesystem"], "filesystem must be a table");
       for (const [path, access] of Object.entries(profile.filesystem)) {
         if (path === "glob_scan_max_depth") {
           if (!Number.isInteger(access) || (access as number) < 1)
@@ -217,15 +218,29 @@ export class CodexSandboxConfiguration extends AgentSandboxConfiguration {
               permission === "read" || permission === "write" || permission === "deny",
           )
         ) {
-          throw new Error("filesystem access must be read, write or deny");
+          this.invalid(
+            document,
+            ["permissions", name, "filesystem", path],
+            "filesystem access must be read, write or deny",
+          );
         }
       }
     }
     if (profile.network !== undefined) {
-      if (!this.isTable(profile.network)) throw new Error("network must be a table");
+      if (!this.isTable(profile.network))
+        this.invalid(document, ["permissions", name, "network"], "network must be a table");
       if (profile.network.enabled !== undefined && typeof profile.network.enabled !== "boolean")
-        throw new Error("network.enabled must be a boolean");
+        this.invalid(
+          document,
+          ["permissions", name, "network", "enabled"],
+          "network.enabled must be a boolean",
+        );
     }
+  }
+
+  private invalid(document: TomlDocument, path: readonly string[], reason: string): never {
+    const line = document.line(path);
+    throw new Error(`${reason}${line === undefined ? "" : ` at line ${line}`}`);
   }
 
   private isTable(value: unknown): value is Record<string, unknown> {
@@ -270,21 +285,36 @@ export class CodexSandboxConfiguration extends AgentSandboxConfiguration {
         String(configuration.sandbox_mode),
       )
     ) {
-      throw new Error("sandbox_mode must be a supported sandbox mode");
+      this.invalid(document, ["sandbox_mode"], "sandbox_mode must be a supported sandbox mode");
     }
     const sandbox = configuration.sandbox_workspace_write;
     if (
       sandbox !== undefined &&
       (typeof sandbox !== "object" || sandbox === null || Array.isArray(sandbox))
     ) {
-      throw new Error("sandbox_workspace_write must be a table");
+      this.invalid(
+        document,
+        ["sandbox_workspace_write"],
+        "sandbox_workspace_write must be a table",
+      );
     }
+    const network = document.value(["sandbox_workspace_write", "network_access"]);
+    if (network !== undefined && typeof network !== "boolean")
+      this.invalid(
+        document,
+        ["sandbox_workspace_write", "network_access"],
+        "network_access must be a boolean",
+      );
     const roots = document.value(["sandbox_workspace_write", "writable_roots"]);
     if (
       roots !== undefined &&
       (!Array.isArray(roots) || !roots.every((root) => typeof root === "string"))
     ) {
-      throw new Error("writable_roots must be an array of strings");
+      this.invalid(
+        document,
+        ["sandbox_workspace_write", "writable_roots"],
+        "writable_roots must be an array of strings",
+      );
     }
   }
 }

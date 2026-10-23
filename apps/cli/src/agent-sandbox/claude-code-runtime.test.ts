@@ -11,14 +11,18 @@ class Runtime extends ClaudeCodeSandboxRuntime {
     return this.command(request);
   }
 }
-const roots: string[] = [];
+class RuntimeScratch {
+  public static readonly roots: string[] = [];
+}
 afterEach(async () => {
   vi.restoreAllMocks();
-  await Promise.all(roots.splice(0).map((path) => rm(path, { recursive: true, force: true })));
+  await Promise.all(
+    RuntimeScratch.roots.splice(0).map((path) => rm(path, { recursive: true, force: true })),
+  );
 });
 it("launches standalone SRT with translated policy and no tested-state grant injection", async () => {
   const root = await mkdtemp(join(tmpdir(), "claude-launch-"));
-  roots.push(root);
+  RuntimeScratch.roots.push(root);
   vi.spyOn(AgentExecutable, "find").mockResolvedValue("/runtime/srt");
   const policy: AgentProbePolicy = {
     grantsState: true,

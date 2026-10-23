@@ -424,6 +424,12 @@ export class DaemonStartupCoordinator {
     ) {
       return true;
     }
+    if (
+      owner.ownerLifetime !== undefined &&
+      !this.processTerminator.hasExited(owner.ownerPid, owner.ownerLifetime)
+    ) {
+      return true;
+    }
     if (observation.kind === "authenticated") return true;
     if (observation.kind === "exited") return false;
     throw new DaemonOwnedButUnresponsiveError(

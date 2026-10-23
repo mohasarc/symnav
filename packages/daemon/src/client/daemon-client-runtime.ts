@@ -144,10 +144,15 @@ export class DaemonClientRuntime {
   private readonly routingTransport: DaemonClientTransport;
   private readonly statusTransport: DaemonClientTransport;
   private readonly coordinator: DaemonStartupCoordinator;
+  private readonly launcher: NodeDaemonProcessLauncher;
   private readonly controlController: DaemonController;
   private readonly statusController: DaemonController;
   private readonly routing = new DaemonRoutingPolicy();
   private readonly clock = new NodeDaemonClock();
+
+  public closeOwnedProcesses(): Promise<void> {
+    return this.launcher.closeOwnedProcesses();
+  }
 
   constructor(private readonly options: DaemonClientOptions) {
     this.policy = options.policy ?? DaemonPolicy.currentSystem();
@@ -177,11 +182,11 @@ export class DaemonClientRuntime {
       routingComponents.execution,
     );
     const processTerminator = new NodeDaemonProcessTerminator(this.policy.values.shutdown);
-    const launcher = new NodeDaemonProcessLauncher(
+    const launcher = (this.launcher = new NodeDaemonProcessLauncher(
       options.productVersion,
       options.executorModuleUrl,
       this.policy,
-    );
+    ));
     this.coordinator = new DaemonStartupCoordinator(
       this.registry,
       launcher,

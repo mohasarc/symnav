@@ -6,6 +6,7 @@ import type { AgentDoctorResult } from "./agent-doctor-result.js";
 import { AgentExecutable } from "./agent-executable.js";
 import type { AgentProbePolicy } from "./agent-probe-policy.js";
 import { SandboxProbeCleanupError } from "./sandbox-probe-cleanup-error.js";
+import { SandboxProbeStartupError } from "./sandbox-probe-startup-error.js";
 import type { AgentSandboxRuntime } from "./agent-sandbox-runtime.js";
 
 interface AgentSandboxDoctorOptions {
@@ -133,6 +134,12 @@ export class AgentSandboxDoctor {
   }
 
   private failure(agent: SupportedAgent, error: unknown): AgentDoctorResult {
+    if (error instanceof SandboxProbeStartupError)
+      return {
+        agent,
+        status: "fail",
+        reason: `${error.message.replace(/\s+/gu, " ").trim()}; investigate the reported startup failure and rerun doctor`,
+      };
     const reason = (error instanceof Error ? error.message : String(error))
       .replace(/\s+/gu, " ")
       .trim()

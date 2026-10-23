@@ -14,6 +14,7 @@ import {
   type AgentSetupResult,
 } from "./agent-configuration.js";
 import { AgentConfigurationFile } from "./agent-configuration-file.js";
+import type { AgentProbePolicy } from "./agent-probe-policy.js";
 import { AgentExecutable } from "./agent-executable.js";
 
 export class ClaudeCodeSandboxConfiguration extends AgentSandboxConfiguration {
@@ -29,6 +30,40 @@ export class ClaudeCodeSandboxConfiguration extends AgentSandboxConfiguration {
       locations.claudeConfigurationDirectory ?? join(locations.homeDirectory, ".claude"),
       "settings.json",
     );
+  }
+
+  public async inspect(stateDirectory: string, _workspace: string): Promise<AgentProbePolicy> {
+    const source = await new AgentConfigurationFile(this.configurationPath).read();
+    const root = this.validateSettings(source || "{}");
+    const enabled = findNodeAtLocation(root, ["sandbox", "enabled"]);
+    if (enabled !== undefined && enabled.type !== "boolean")
+      throw new Error("sandbox.enabled must be a boolean");
+    const filesystem: Record<string, string[]> = {};
+    for (const key of ["allowWrite", "denyWrite", "denyRead"]) {
+      const node = findNodeAtLocation(root, ["sandbox", "filesystem", key]);
+      if (
+        node !== undefined &&
+        (node.type !== "array" || node.children?.some((child) => child.type !== "string"))
+      )
+        throw new Error(`sandbox.filesystem.${key} must be an array of strings`);
+      filesystem[key] = (node?.children ?? []).map((child) => {
+        const path = child.value as string;
+        return path === "~" || path.startsWith("~/")
+          ? join(this.homeDirectory, path.slice(2))
+          : path;
+      });
+    }
+    const denied = [...filesystem.denyWrite!, ...filesystem.denyRead!].some(
+      (path) => this.covers(path, stateDirectory) || /[*?\[\]{}]/u.test(path),
+    );
+    return {
+      grantsState:
+        !denied && filesystem.allowWrite!.some((path) => this.covers(path, stateDirectory)),
+      configuration: JSON.stringify({
+        network: { allowedDomains: [], deniedDomains: ["*"] },
+        filesystem,
+      }),
+    };
   }
 
   public async grant(stateDirectory: string): Promise<AgentSetupResult> {

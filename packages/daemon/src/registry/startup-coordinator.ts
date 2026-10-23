@@ -556,7 +556,10 @@ export class DaemonStartupCoordinator {
     ) {
       return false;
     }
-    const observation = await this.observer.observeIdentity(record);
+    const observation = await new DaemonRecordObserver(
+      this.transport,
+      this.processTerminator,
+    ).observeIdentity(record);
     if (
       JSON.stringify(this.registry.readStoredInstance(identity, record.instanceId)) !==
         JSON.stringify(record) ||

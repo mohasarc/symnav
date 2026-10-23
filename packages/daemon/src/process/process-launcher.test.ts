@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
+import { fstatSync, mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -12,7 +12,10 @@ const { processListeners, spawnMock } = vi.hoisted(() => ({
   spawnMock: vi.fn(),
 }));
 
-vi.mock("node:child_process", () => ({ spawn: spawnMock }));
+vi.mock("node:child_process", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("node:child_process")>()),
+  spawn: spawnMock,
+}));
 
 import { DaemonProcessConfigurationParser, NodeDaemonProcessLauncher } from "./process-launcher.js";
 import { DaemonWorkspaceIdentity } from "../registry/workspace-identity.js";
@@ -164,7 +167,13 @@ describe("NodeDaemonProcessLauncher", () => {
       expect(options.cwd).not.toBe(absoluteStateDirectory);
       expect(options.cwd).not.toBe(absoluteWorkspaceRoot);
       expect(options).toMatchObject({ detached: true });
-      expect(options.stdio).toEqual(["ignore", "ignore", "ignore"]);
+      expect(options.stdio.slice(0, 3)).toEqual(["ignore", "ignore", "ignore"]);
+      if (process.platform !== "win32") {
+        expect(options.stdio).toHaveLength(4);
+        expect(typeof options.stdio[3]).toBe("number");
+        expect(configuration).toHaveProperty("processLifetime");
+        expect(() => fstatSync(options.stdio[3] as number)).toThrow();
+      } else expect(options.stdio).toHaveLength(3);
       expect(spawnMock.mock.results[0]?.value.unref).toHaveBeenCalledOnce();
     },
   );

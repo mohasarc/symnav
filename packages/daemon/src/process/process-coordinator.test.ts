@@ -199,7 +199,7 @@ describe("DaemonProcessCoordinator runtime lifecycle", () => {
     const requestStartedPath = join(stateDirectory, "request-started");
     const lease = registry.acquireStartup(identity, instanceId);
     expect(lease).toBeDefined();
-    const child = spawnStuckDaemon(
+    const fixture = RealChildProcess.spawnStuckDaemon(
       workspaceRoot,
       stateDirectory,
       instanceId,
@@ -207,6 +207,7 @@ describe("DaemonProcessCoordinator runtime lifecycle", () => {
       readyPath,
       requestStartedPath,
     );
+    const child = fixture.child;
     childProcesses.push(child);
     if (child.pid === undefined) throw new Error("Stuck daemon did not receive a PID");
     await waitUntil(() => existsSync(`${readyPath}.boot`));
@@ -261,7 +262,7 @@ describe("DaemonProcessCoordinator runtime lifecycle", () => {
       pid: daemonPid,
     });
     expect(() => process.kill(daemonPid, 0)).toThrow();
-    await waitForProcess(child);
+    await fixture.exited;
     childProcesses.splice(childProcesses.indexOf(child), 1);
     expect(registry.read(identity)).toBeUndefined();
     rmSync(stateDirectory, { recursive: true, force: true });
@@ -786,40 +787,50 @@ class CurrentProcessTerminator implements DaemonProcessTerminator {
   }
 }
 
-function spawnStuckDaemon(
-  workspaceRoot: string,
-  stateDirectory: string,
-  instanceId: string,
-  processToken: string,
-  readyPath: string,
-  requestStartedPath: string,
-): ChildProcess {
-  return spawn(
-    process.execPath,
-    [
-      fileURLToPath(new URL("../../node_modules/tsx/dist/cli.mjs", import.meta.url)),
-      fileURLToPath(
-        new URL("../../test/helpers/daemon-process-coordinator-stuck.ts", import.meta.url),
-      ),
-      workspaceRoot,
-      stateDirectory,
-      instanceId,
-      processToken,
-      readyPath,
-      requestStartedPath,
-    ],
-    { stdio: "ignore" },
-  );
-}
+class RealChildProcess {
+  public constructor(public readonly child: ChildProcess) {}
 
-function waitForProcess(child: ChildProcess): Promise<void> {
-  return new Promise((resolve, reject) => {
-    child.once("error", reject);
-    child.once("exit", (code) => {
-      if (code === 0) resolve();
-      else reject(new Error(`Stuck daemon exited with code ${String(code)}`));
+  public get exited(): Promise<void> {
+    return RealChildProcess.waitForProcess(this.child);
+  }
+
+  public static spawnStuckDaemon(
+    workspaceRoot: string,
+    stateDirectory: string,
+    instanceId: string,
+    processToken: string,
+    readyPath: string,
+    requestStartedPath: string,
+  ): RealChildProcess {
+    return new RealChildProcess(
+      spawn(
+        process.execPath,
+        [
+          fileURLToPath(new URL("../../node_modules/tsx/dist/cli.mjs", import.meta.url)),
+          fileURLToPath(
+            new URL("../../test/helpers/daemon-process-coordinator-stuck.ts", import.meta.url),
+          ),
+          workspaceRoot,
+          stateDirectory,
+          instanceId,
+          processToken,
+          readyPath,
+          requestStartedPath,
+        ],
+        { stdio: "ignore" },
+      ),
+    );
+  }
+
+  private static waitForProcess(child: ChildProcess): Promise<void> {
+    return new Promise((resolve, reject) => {
+      child.once("error", reject);
+      child.once("exit", (code) => {
+        if (code === 0) resolve();
+        else reject(new Error(`Stuck daemon exited with code ${String(code)}`));
+      });
     });
-  });
+  }
 }
 
 async function waitUntil(predicate: () => boolean): Promise<void> {

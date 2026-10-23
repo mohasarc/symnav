@@ -170,13 +170,23 @@ describe("symnav doctor", () => {
 });
 
 const supported = process.platform === "darwin" || process.platform === "linux";
+const sandboxApplication =
+  process.platform === "darwin"
+    ? spawnSync("/usr/bin/sandbox-exec", ["-p", "(version 1) (allow default)", "/usr/bin/true"])
+    : process.platform === "linux"
+      ? spawnSync("bwrap", ["--unshare-user", "--dev-bind", "/", "/", "true"])
+      : undefined;
+const sandboxApplicationAvailable = sandboxApplication?.status === 0;
 const claudeRuntimeAvailable =
   supported &&
+  sandboxApplicationAvailable &&
   spawnSync("srt", ["--version"], { encoding: "utf8" }).status === 0 &&
   (process.platform !== "linux" ||
     ["bwrap", "socat"].every((command) => spawnSync("which", [command]).status === 0));
 const codexRuntimeAvailable =
-  supported && spawnSync("codex", ["--version"], { encoding: "utf8" }).status === 0;
+  supported &&
+  sandboxApplicationAvailable &&
+  spawnSync("codex", ["--version"], { encoding: "utf8" }).status === 0;
 if (process.env.SYMNAV_REQUIRE_SANDBOX_RUNTIME === "1" && !claudeRuntimeAvailable)
   throw new Error("Required doctor sandbox-runtime is unavailable");
 

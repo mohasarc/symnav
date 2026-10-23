@@ -24,6 +24,7 @@ interface FakeChildProcess {
   readonly pid: number;
   readonly once: ReturnType<typeof vi.fn>;
   readonly unref: ReturnType<typeof vi.fn>;
+  readonly kill: ReturnType<typeof vi.fn>;
   emit(event: string, ...args: unknown[]): void;
 }
 
@@ -43,6 +44,10 @@ describe("NodeDaemonProcessLauncher", () => {
           return child;
         }),
         unref: vi.fn(),
+        kill: vi.fn((signal: NodeJS.Signals) => {
+          queueMicrotask(() => processListeners.get("exit")?.(null, signal));
+          return true;
+        }),
         emit(event: string, ...args: unknown[]) {
           processListeners.get(event)?.(...args);
         },
@@ -188,6 +193,10 @@ describe("NodeDaemonProcessLauncher", () => {
           return child;
         }),
         unref: vi.fn(),
+        kill: vi.fn((signal: NodeJS.Signals) => {
+          queueMicrotask(() => processListeners.get("exit")?.(null, signal));
+          return true;
+        }),
         emit: vi.fn(),
       };
       return child;
@@ -240,6 +249,26 @@ describe("NodeDaemonProcessLauncher", () => {
     expect(DaemonProcessConfigurationParser.parse(args[1]).executorModuleUrl).toBe(
       "https://example.test/daemon-executor.js",
     );
+  });
+
+  it("terminates only its retained child handle", async () => {
+    const identity = launcherIdentity(roots);
+    const daemonProcess = await new NodeDaemonProcessLauncher(
+      "1.2.3",
+      executorModuleUrl,
+      DaemonPolicy.currentSystem(),
+    ).launch(identity, "instance", "process-token");
+    const child = spawnMock.mock.results[0]!.value as FakeChildProcess;
+    const rawSignal = vi.spyOn(process, "kill").mockImplementation(() => {
+      throw Object.assign(new Error("unrelated PID"), { code: "ESRCH" });
+    });
+    try {
+      await daemonProcess.terminate();
+      expect(child.kill).toHaveBeenCalledWith("SIGTERM");
+      expect(rawSignal).not.toHaveBeenCalled();
+    } finally {
+      rawSignal.mockRestore();
+    }
   });
 
   it("reports child exit through the launched process immediately", async () => {

@@ -116,7 +116,7 @@ export class DaemonController {
       stopRequest,
       this.pause(Math.max(0, gracefulDeadline - this.clock.wallNowMs())).then(() => false),
     ]);
-    if (acknowledged && (await this.waitForExit(record.pid, gracefulDeadline))) {
+    if (acknowledged && (await this.waitForExit(record, gracefulDeadline))) {
       this.registry.removeIfProcess(identity, record.instanceId, record.processToken);
       return { status: "stopped", workspaceRoot, pid: record.pid };
     }
@@ -144,31 +144,12 @@ export class DaemonController {
         }
         return this.statusForObservation(observation);
       }
-      const ownerForRecord = this.registry.startupOwnerForRecordCredentials(identity, record);
-      const ownerForInstance = this.registry.startupOwnerForInstance(identity, record.instanceId);
-      const armedLaunchIsWithinGrace =
-        ownerForRecord !== undefined && this.registry.startupOwnerIsWithinGrace(ownerForRecord);
-      if (
-        armedLaunchIsWithinGrace ||
-        (ownerForInstance !== undefined &&
-          this.processTerminator.isAlive(ownerForInstance.ownerPid) &&
-          this.registry.startupOwnerIsWithinGrace(ownerForInstance))
-      ) {
+      const owner = this.registry.startupOwnerForInstance(identity, record.instanceId);
+      const lifetime = record.processLifetime ?? owner?.ownerLifetime;
+      if (!this.processTerminator.hasExited(record.pid || owner?.ownerPid || 0, lifetime))
         return this.startingStatus(record);
-      }
-      if (ownerForInstance !== undefined) {
-        if (!this.registry.removeStartupLockIfOwner(identity, ownerForInstance)) {
-          const renewedOwner = this.registry.startupOwnerForInstance(identity, record.instanceId);
-          if (
-            renewedOwner !== undefined &&
-            this.processTerminator.isAlive(renewedOwner.ownerPid) &&
-            this.registry.startupOwnerIsWithinGrace(renewedOwner)
-          ) {
-            return this.startingStatus(record);
-          }
-          return undefined;
-        }
-      }
+      if (owner !== undefined && !this.registry.removeStartupLockIfOwner(identity, owner))
+        return this.startingStatus(record);
       this.registry.removeIfProcess(identity, record.instanceId, record.processToken);
       return undefined;
     }
@@ -190,7 +171,7 @@ export class DaemonController {
       return { status: "not-running", workspaceRoot: record.workspaceRoot };
     }
 
-    if (!this.processTerminator.isAlive(record.pid)) {
+    if (this.processTerminator.hasExited(record.pid, record.processLifetime)) {
       this.removeStartingOwnership(identity, record);
       return { status: "not-running", workspaceRoot: record.workspaceRoot };
     }
@@ -397,12 +378,18 @@ export class DaemonController {
 
   private async waitForIdentifiedExit(record: DaemonRecord, deadline: number): Promise<boolean> {
     while (this.clock.wallNowMs() <= deadline) {
-      if (!(await this.identifies(record)) && !this.processTerminator.isAlive(record.pid)) {
+      if (
+        !(await this.identifies(record)) &&
+        this.processTerminator.hasExited(record.pid, record.processLifetime)
+      ) {
         return true;
       }
       await this.pause(this.pollIntervalMs);
     }
-    return !(await this.identifies(record)) && !this.processTerminator.isAlive(record.pid);
+    return (
+      !(await this.identifies(record)) &&
+      this.processTerminator.hasExited(record.pid, record.processLifetime)
+    );
   }
 
   private async identifies(record: DaemonRecord): Promise<boolean> {
@@ -422,12 +409,12 @@ export class DaemonController {
     }
   }
 
-  private async waitForExit(pid: number, deadline: number): Promise<boolean> {
+  private async waitForExit(record: DaemonRecord, deadline: number): Promise<boolean> {
     while (this.clock.wallNowMs() <= deadline) {
-      if (!this.processTerminator.isAlive(pid)) return true;
+      if (this.processTerminator.hasExited(record.pid, record.processLifetime)) return true;
       await this.pause(this.pollIntervalMs);
     }
-    return !this.processTerminator.isAlive(pid);
+    return this.processTerminator.hasExited(record.pid, record.processLifetime);
   }
 
   private pause(durationMs: number): Promise<void> {

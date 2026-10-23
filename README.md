@@ -96,6 +96,8 @@ Live checks use the installed Codex sandbox command or the standalone Claude san
 
 Recorded daemon startup failures include the phase, reason, optional OS error code and affected workspace. The workspace identifies the probe; it is not the original failing write path. Investigate the reported startup condition, then rerun doctor.
 
+Doctor directs the Claude runtime's temporary files to its existing scratch workspace. It does not depend on a global `/tmp/claude` directory or add filesystem grants for temporary files.
+
 Setup never removes denies or changes read-only session policy. Restart agent sessions after granting access; existing project or managed session restrictions can still deny it. For other agents, manually allow writes to the effective state directory and reads of the workspace. Keep state outside project configuration and grant no network, TCP, or Unix-socket permission for symnav. Doctor's live probe also runs without network access. See [Codex permissions](https://developers.openai.com/codex/permissions) and [Claude sandbox filesystem settings](https://code.claude.com/docs/en/sandboxing) for agent policy syntax.
 
 When a required state write fails, symnav disables daemon and telemetry work for that invocation. Navigation executes locally when no request has been submitted; accepted work keeps its result or controlled failure. One warning follows ordinary stderr, and the command keeps its own exit code:

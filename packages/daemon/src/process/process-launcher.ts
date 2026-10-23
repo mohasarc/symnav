@@ -6,7 +6,7 @@ import type { DaemonProcessLifetimeIdentity } from "./process-lifetime-identity.
 import { mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
-import { spawn } from "node:child_process";
+import { spawn, type ChildProcess } from "node:child_process";
 import { type DaemonExecutorModuleUrl, type DaemonPolicyValues } from "@symnav/daemon";
 import {
   DaemonPolicyCodec,
@@ -61,15 +61,45 @@ export interface DaemonProcessLauncher {
 export class DaemonProcessTerminationError extends Error {}
 
 class SpawnedDaemonProcess implements DaemonProcess {
-  constructor(
-    readonly pid: number,
-    readonly exited: Promise<DaemonProcessExit>,
-    private readonly terminator: DaemonProcessTerminator,
-    readonly processLifetime?: DaemonProcessLifetimeIdentity,
-  ) {}
+  private observedExit = false;
 
-  terminate(): Promise<void> {
-    return this.terminator.terminate(this.pid);
+  public constructor(
+    private readonly child: ChildProcess,
+    public readonly exited: Promise<DaemonProcessExit>,
+    private readonly exitTimeoutMs: number,
+    public readonly processLifetime?: DaemonProcessLifetimeIdentity,
+  ) {
+    void exited.then(() => {
+      this.observedExit = true;
+    });
+  }
+
+  public get pid(): number {
+    return this.child.pid!;
+  }
+
+  public async terminate(): Promise<void> {
+    if (this.observedExit) return;
+    this.child.kill("SIGTERM");
+    if (await this.waitForExit()) return;
+    if (this.observedExit) return;
+    this.child.kill("SIGKILL");
+    if (await this.waitForExit()) return;
+    throw new DaemonProcessTerminationError(`Daemon child ${this.pid} did not terminate`);
+  }
+
+  private async waitForExit(): Promise<boolean> {
+    let timeout: NodeJS.Timeout | undefined;
+    try {
+      return await Promise.race([
+        this.exited.then(() => true),
+        new Promise<false>((resolve) => {
+          timeout = setTimeout(() => resolve(false), this.exitTimeoutMs);
+        }),
+      ]);
+    } finally {
+      if (timeout !== undefined) clearTimeout(timeout);
+    }
   }
 }
 
@@ -134,16 +164,11 @@ export class NodeDaemonProcessTerminator implements DaemonProcessTerminator {
 }
 
 export class NodeDaemonProcessLauncher implements DaemonProcessLauncher {
-  private readonly terminator: DaemonProcessTerminator;
-
   constructor(
     readonly symnavVersion: string,
     readonly executorModuleUrl: DaemonExecutorModuleUrl,
     readonly policy: DaemonPolicy,
-    terminator: DaemonProcessTerminator = new NodeDaemonProcessTerminator(policy.values.shutdown),
-  ) {
-    this.terminator = terminator;
-  }
+  ) {}
 
   get memoryCapBytes(): number {
     return this.policy.values.resources.hardProcessRssBytes;
@@ -217,7 +242,14 @@ export class NodeDaemonProcessLauncher implements DaemonProcessLauncher {
         lifetime?.closeParentCopy();
         processSpawned = true;
         child.unref();
-        resolve(new SpawnedDaemonProcess(child.pid!, exited, this.terminator, lifetime?.identity));
+        resolve(
+          new SpawnedDaemonProcess(
+            child,
+            exited,
+            this.policy.values.shutdown.processSignalExitTimeoutMs,
+            lifetime?.identity,
+          ),
+        );
       });
       child.once("exit", (code, signal) => {
         settleExit({ code, signal, cause: "exit" });

@@ -153,3 +153,18 @@ it("retains only its own scratch when owned process exit cannot be confirmed", a
   const scratch = h.runtimes[0]!.calls[0]!.scratchDirectory;
   expect(await readdir(scratch)).toContain("workspace");
 });
+it("leaves concurrent doctor scratch and ordinary state untouched", async () => {
+  const h = await Harness.create();
+  const other = join(h.root, "doctor", "other");
+  await filesystem.mkdir(other, { recursive: true });
+  await writeFile(join(other, "marker"), "keep");
+  await writeFile(join(h.root, "usage.jsonl"), "private usage");
+  vi.spyOn(AgentExecutable, "installed").mockResolvedValue(true);
+  h.runtimes[0]!.available = "available";
+  expect(await h.doctor().doctor.check("codex")).toEqual([
+    { agent: "codex", status: "ok", check: "live" },
+  ]);
+  expect(await readdir(join(h.root, "doctor"))).toEqual(["other"]);
+  expect(await filesystem.readFile(join(other, "marker"), "utf8")).toBe("keep");
+  expect(await filesystem.readFile(join(h.root, "usage.jsonl"), "utf8")).toBe("private usage");
+});

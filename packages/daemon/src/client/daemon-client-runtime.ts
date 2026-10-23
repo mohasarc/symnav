@@ -297,7 +297,6 @@ export class DaemonClientRuntime {
           this.options.productVersion,
           this.options.executorModuleUrl,
           this.policy,
-          processTerminator,
         ),
         startupCoordinator: this.coordinator,
       },

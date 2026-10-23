@@ -91,12 +91,14 @@ export class DaemonWorkerGenerationManager {
     return this.startOperation;
   }
 
-  activateReadiness(): void {
-    if (this.protocolReadyGeneration !== this.currentGeneration) {
-      throw new Error("Navigation worker protocol readiness is unavailable");
+  async activateReadiness(): Promise<DaemonWorkerReadyReport> {
+    for (;;) {
+      const report = await this.waitForReadyGeneration();
+      if (this.protocolReadyGeneration !== this.currentGeneration) continue;
+      this.readinessActivated = true;
+      this.workerReady = true;
+      return report;
     }
-    this.readinessActivated = true;
-    this.workerReady = true;
   }
 
   execute(

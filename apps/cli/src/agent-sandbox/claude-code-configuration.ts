@@ -1,3 +1,4 @@
+import { applyEdits, findNodeAtLocation, modify, parseTree, type ParseError } from "jsonc-parser";
 import { join } from "node:path";
 import {
   AgentSandboxConfiguration,
@@ -20,9 +21,7 @@ export class ClaudeCodeSandboxConfiguration extends AgentSandboxConfiguration {
     try {
       const file = new AgentConfigurationFile(this.configurationPath);
       const original = await file.read();
-      const updated =
-        original ||
-        `${JSON.stringify({ sandbox: { filesystem: { allowWrite: [stateDirectory] } } }, null, 2)}\n`;
+      const updated = this.addGrant(original, stateDirectory);
       const changed = updated !== original;
       if (changed) await file.publish(original, updated);
       return {
@@ -38,5 +37,17 @@ export class ClaudeCodeSandboxConfiguration extends AgentSandboxConfiguration {
         { cause: error },
       );
     }
+  }
+  private addGrant(original: string, stateDirectory: string): string {
+    if (original.length === 0)
+      return `${JSON.stringify({ sandbox: { filesystem: { allowWrite: [stateDirectory] } } }, null, 2)}\n`;
+    const errors: ParseError[] = [];
+    const root = parseTree(original, errors, { disallowComments: true, allowTrailingComma: false });
+    if (root === undefined || errors.length > 0) throw new Error("invalid JSON");
+    const path = ["sandbox", "filesystem", "allowWrite"];
+    const grants = findNodeAtLocation(root, path)?.children ?? [];
+    if (grants.some((grant) => grant.value === stateDirectory)) return original;
+    const updated = applyEdits(original, modify(original, [...path, -1], stateDirectory, {}));
+    return updated;
   }
 }

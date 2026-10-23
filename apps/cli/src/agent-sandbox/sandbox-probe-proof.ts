@@ -3,6 +3,7 @@ import { NodeUsageLogReader, usageLogPath } from "@symnav/telemetry";
 import type { SandboxProbeChannel } from "./sandbox-probe-channel.js";
 import type { SandboxProbeReply } from "./sandbox-probe-message.js";
 import { SandboxProbeCleanupError } from "./sandbox-probe-cleanup-error.js";
+import { SandboxProbeStartupError } from "./sandbox-probe-startup-error.js";
 
 interface SandboxProbeProofOptions {
   readonly session: SandboxProbeChannel;
@@ -81,12 +82,10 @@ export class SandboxProbeProof {
       signal.throwIfAborted();
       const reply = await this.options.session.request({ action: "status" }, signal);
       if (reply.kind !== "status") throw new Error("sandbox daemon status failed");
-      if (
-        reply.report.startupFailures?.some(
-          (failure) => failure.workspaceRoot === this.options.workspace,
-        )
-      )
-        throw new Error("sandbox daemon warm-up failed");
+      const startupFailure = reply.report.startupFailures?.find(
+        (failure) => failure.workspaceRoot === this.options.workspace,
+      );
+      if (startupFailure !== undefined) throw new SandboxProbeStartupError(startupFailure);
       const daemon = reply.report.daemons.find(
         (daemon) => daemon.workspaceRoot === this.options.workspace,
       );

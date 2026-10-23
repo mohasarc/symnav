@@ -51,12 +51,7 @@ export class DaemonRecordObserver {
   ) {}
 
   async observeIdentity(record: DaemonRecord): Promise<DaemonIdentityObservation> {
-    if (record.state === "starting") {
-      if (record.pid > 0 && this.processTerminator.hasExited(record.pid, record.processLifetime)) {
-        return { kind: "exited", record };
-      }
-      return { kind: "starting", record };
-    }
+    if (record.state === "starting" && record.pid <= 0) return { kind: "starting", record };
     if (this.processTerminator.hasExited(record.pid, record.processLifetime))
       return { kind: "exited", record };
     const authenticated = await this.authenticate(record);

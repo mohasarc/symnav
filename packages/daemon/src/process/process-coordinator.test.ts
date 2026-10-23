@@ -201,6 +201,54 @@ describe("DaemonProcessCoordinator runtime lifecycle", () => {
     await expect(fixture.exited).resolves.toBeUndefined();
   });
 
+  it("resolves real-child completion awaited before exit only after a successful exit", async () => {
+    const fixture = new RealChildProcess(
+      spawn(process.execPath, ["-e", "process.stdin.once('data', () => process.exit(0))"], {
+        stdio: ["pipe", "ignore", "ignore"],
+      }),
+    );
+    childProcesses.push(fixture.child);
+    const completion = expect(fixture.exited).resolves.toBeUndefined();
+    expect(fixture.child.exitCode).toBeNull();
+
+    fixture.child.stdin?.end("exit\n");
+    await completion;
+
+    expect(fixture.child.exitCode).toBe(0);
+    expect(fixture.child.signalCode).toBeNull();
+  });
+
+  it("retains unsuccessful real-child completion for a delayed consumer", async () => {
+    const fixture = new RealChildProcess(
+      spawn(process.execPath, ["-e", "process.stdin.once('data', () => process.exit(7))"], {
+        stdio: ["pipe", "ignore", "ignore"],
+      }),
+    );
+    childProcesses.push(fixture.child);
+    const observedExit = new Promise((resolve) => fixture.child.once("exit", resolve));
+
+    fixture.child.stdin?.end("exit\n");
+    await expect(observedExit).resolves.toBe(7);
+    await new Promise((resolve) => setImmediate(resolve));
+
+    await expect(fixture.exited).rejects.toThrow("Stuck daemon exited with code 7");
+  });
+
+  it("retains the original real-child spawn error for a delayed consumer", async () => {
+    const executableDirectory = mkdtempSync(join(tmpdir(), "symnav-missing-child-"));
+    const fixture = new RealChildProcess(
+      spawn(join(executableDirectory, "missing-executable"), [], { stdio: "ignore" }),
+    );
+    childProcesses.push(fixture.child);
+    const observedError = new Promise<Error>((resolve) => fixture.child.once("error", resolve));
+
+    const error = await observedError;
+    await new Promise((resolve) => setImmediate(resolve));
+    rmSync(executableDirectory, { recursive: true, force: true });
+
+    await expect(fixture.exited).rejects.toBe(error);
+  });
+
   it("force-stops a real matching daemon process with a stuck request", async () => {
     const stateDirectory = CanonicalTestPath.resolve(
       mkdtempSync(join(tmpdir(), "symnav-daemon-child-state-")),
@@ -805,10 +853,11 @@ class CurrentProcessTerminator implements DaemonProcessTerminator {
 }
 
 class RealChildProcess {
-  public constructor(public readonly child: ChildProcess) {}
+  public readonly exited: Promise<void>;
 
-  public get exited(): Promise<void> {
-    return RealChildProcess.waitForProcess(this.child);
+  public constructor(public readonly child: ChildProcess) {
+    this.exited = RealChildProcess.waitForProcess(child);
+    void this.exited.catch(() => undefined);
   }
 
   public static spawnStuckDaemon(

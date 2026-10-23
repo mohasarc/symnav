@@ -167,12 +167,21 @@ export class NodeDaemonProcessTerminator implements DaemonProcessTerminator {
 
 export class NodeDaemonProcessLauncher implements DaemonProcessLauncher {
   private readonly children = new Set<DaemonProcess>();
+  private readonly launching = new Set<Promise<DaemonProcess>>();
+  private closing: Promise<void> | undefined;
 
-  public async closeOwnedProcesses(): Promise<void> {
+  public closeOwnedProcesses(): Promise<void> {
+    this.closing ??= this.finishOwnedProcesses();
+    return this.closing;
+  }
+
+  private async finishOwnedProcesses(): Promise<void> {
+    await Promise.allSettled([...this.launching]);
     const results = await Promise.allSettled([...this.children].map((child) => child.terminate()));
     const failure = results.find((result) => result.status === "rejected");
     if (failure?.status === "rejected") throw failure.reason;
   }
+
   constructor(
     readonly symnavVersion: string,
     readonly executorModuleUrl: DaemonExecutorModuleUrl,
@@ -190,6 +199,22 @@ export class NodeDaemonProcessLauncher implements DaemonProcessLauncher {
   }
 
   async launch(
+    identity: DaemonWorkspaceIdentity,
+    instanceId: string,
+    processToken: string,
+    preparedLifetime?: PosixDaemonChildLifetime,
+  ): Promise<DaemonProcess> {
+    if (this.closing !== undefined) throw new Error("Daemon client is closing its owned children");
+    const child = this.launchChild(identity, instanceId, processToken, preparedLifetime);
+    this.launching.add(child);
+    try {
+      return await child;
+    } finally {
+      this.launching.delete(child);
+    }
+  }
+
+  private async launchChild(
     identity: DaemonWorkspaceIdentity,
     instanceId: string,
     processToken: string,

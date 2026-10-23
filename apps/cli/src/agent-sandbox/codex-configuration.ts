@@ -1,5 +1,6 @@
 import { ParseError } from "toml-eslint-parser";
 import { isAbsolute, join, relative, resolve, sep } from "node:path";
+import type { AgentProbePolicy } from "./agent-probe-policy.js";
 import { TomlDocument } from "./toml-document.js";
 import {
   AgentSandboxConfiguration,
@@ -22,6 +23,42 @@ export class CodexSandboxConfiguration extends AgentSandboxConfiguration {
       locations.codexHome ?? join(locations.homeDirectory, ".codex"),
       "config.toml",
     );
+  }
+
+  public async inspect(stateDirectory: string, workspace: string): Promise<AgentProbePolicy> {
+    const document = new TomlDocument(
+      await new AgentConfigurationFile(this.configurationPath).read(),
+    );
+    this.validateLegacy(document);
+    const selected = document.configuration.default_permissions;
+    if (selected !== undefined || document.configuration.permissions !== undefined)
+      this.validateProfiles(document);
+    const unrestricted =
+      selected === ":danger-full-access" ||
+      document.configuration.sandbox_mode === "danger-full-access";
+    const legacyRoots = (document.value(["sandbox_workspace_write", "writable_roots"]) ??
+      []) as string[];
+    const grantsState =
+      unrestricted ||
+      (typeof selected === "string"
+        ? this.profileGrants(document, selected, stateDirectory, new Set())
+        : document.configuration.sandbox_mode !== "read-only" &&
+          legacyRoots.some((root) => this.covers(root, stateDirectory)));
+    const rules = unrestricted
+      ? [{ path: ":root", access: "write" }]
+      : typeof selected === "string"
+        ? this.profileRules(document, selected, new Set())
+        : legacyRoots.map((path) => ({ path, access: "write" }));
+    const filesystem = rules
+      .map(
+        (rule) =>
+          `${JSON.stringify(this.absolutePath(rule.path) ?? rule.path)} = ${JSON.stringify(rule.access)}`,
+      )
+      .join("\n");
+    return {
+      grantsState,
+      configuration: `default_permissions = "symnav-doctor"\n[permissions.symnav-doctor]\nextends = ":read-only"\n[permissions.symnav-doctor.filesystem]\n${filesystem}\n${rules.some((rule) => (this.absolutePath(rule.path) ?? rule.path) === workspace) ? "" : `${JSON.stringify(workspace)} = "read"\n`}[permissions.symnav-doctor.network]\nenabled = false\n`,
+    };
   }
 
   public async grant(stateDirectory: string): Promise<AgentSetupResult> {

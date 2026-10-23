@@ -141,6 +141,13 @@ describe("CodexSandboxConfiguration", () => {
       );
       expect(updated).not.toContain("sandbox_workspace_write");
       if (style !== "built-in") {
+        let firstChange = 0;
+        while (original[firstChange] === updated[firstChange]) firstChange += 1;
+        expect(
+          updated.slice(0, firstChange) +
+            updated.slice(firstChange + updated.length - original.length),
+        ).toBe(original);
+
         expect(result.default_permissions).toBe(selected);
         expect(updated).toContain(
           policies[style]!.includes("enabled = false") ? "enabled = false" : "enabled = false",
@@ -316,4 +323,35 @@ describe("CodexSandboxConfiguration", () => {
     },
   );
 
+  it("preserves scoped state denies when upgrading only the state access value", async () => {
+    const homeDirectory = await mkdtemp(join(tmpdir(), "symnav-codex-scoped-"));
+    scratchDirectories.push(homeDirectory);
+    const adapter = new CodexSandboxConfiguration({ homeDirectory });
+    const stateDirectory = join(homeDirectory, "state");
+    const original = `default_permissions = "p"\n[permissions.p.filesystem.${JSON.stringify(stateDirectory)}]\n"." = "read" # state\n"secret" = "deny" # keep\n[permissions.p.network]\nenabled = true\n`;
+    await mkdir(join(homeDirectory, ".codex"));
+    await writeFile(adapter.configurationPath, original);
+    expect(await adapter.grant(stateDirectory)).toMatchObject({ changed: true });
+    expect(await readFile(adapter.configurationPath, "utf8")).toBe(
+      original.replace('"read" # state', '"write" # state'),
+    );
+    expect(await adapter.grant(stateDirectory)).toMatchObject({ changed: false });
+  });
+
+  it("retains read and deny root rules while adding only the state path", async () => {
+    const homeDirectory = await mkdtemp(join(tmpdir(), "symnav-codex-root-"));
+    scratchDirectories.push(homeDirectory);
+    const adapter = new CodexSandboxConfiguration({ homeDirectory });
+    const stateDirectory = join(homeDirectory, "state");
+    const original =
+      'default_permissions = "p"\n[permissions.p.filesystem]\n":root" = "deny" # preserve\n":minimal" = "read"\n[permissions.p.network]\nenabled = false\n';
+    await mkdir(join(homeDirectory, ".codex"));
+    await writeFile(adapter.configurationPath, original);
+    await adapter.grant(stateDirectory);
+    const expected = original.replace(
+      "[permissions.p.network]",
+      `${JSON.stringify(stateDirectory)} = "write"\n[permissions.p.network]`,
+    );
+    expect(await readFile(adapter.configurationPath, "utf8")).toBe(expected);
+  });
 });

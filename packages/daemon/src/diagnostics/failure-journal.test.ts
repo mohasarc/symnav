@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { createRequire } from "node:module";
 import { join } from "node:path";
 import { promisify } from "node:util";
+import { pathToFileURL } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
 import { DaemonPolicy } from "../daemon-policy.js";
 import type { DaemonFailureEvent } from "../daemon-failure.js";
@@ -109,7 +110,8 @@ describe("DaemonFailureJournal", () => {
     ).toEqual([]);
     const identity = DaemonWorkspaceIdentity.from("/workspace", root);
     expect(await readdir(identity.identityDirectory)).toEqual(["failures"]);
-    expect((await stat(join(identity.identityDirectory, "failures"))).mode & 0o777).toBe(0o700);
+    if (process.platform !== "win32")
+      expect((await stat(join(identity.identityDirectory, "failures"))).mode & 0o777).toBe(0o700);
   });
 
   it("ignores partial, malformed, noncanonical and open-ended evidence", async () => {
@@ -176,7 +178,7 @@ describe("DaemonFailureJournal", () => {
       Array.from({ length: 6 }, (_, writer) =>
         promisify(execFile)(process.execPath, [
           "--import",
-          createRequire(import.meta.url).resolve("tsx"),
+          pathToFileURL(createRequire(import.meta.url).resolve("tsx")).href,
           "--input-type=module",
           "-e",
           script,
@@ -201,8 +203,9 @@ describe("DaemonFailureJournal", () => {
       "failures",
     );
     expect(await readdir(directory)).toHaveLength(8);
-    for (const name of await readdir(directory))
-      expect((await stat(join(directory, name))).mode & 0o777).toBe(0o600);
+    if (process.platform !== "win32")
+      for (const name of await readdir(directory))
+        expect((await stat(join(directory, name))).mode & 0o777).toBe(0o600);
   });
 
   it("bounds retained bytes with the diagnostics rotation budget", async () => {

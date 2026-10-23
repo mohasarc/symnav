@@ -326,8 +326,8 @@ describe("DaemonProcessCoordinator runtime lifecycle", () => {
       workspaceRoot,
       pid: daemonPid,
     });
-    expect(() => process.kill(daemonPid, 0)).toThrow();
     await fixture.exited;
+    expect(() => process.kill(daemonPid, 0)).toThrow();
     childProcesses.splice(childProcesses.indexOf(child), 1);
     expect(registry.read(identity)).toBeUndefined();
     rmSync(stateDirectory, { recursive: true, force: true });

@@ -143,7 +143,8 @@ export class CliInvocationRunner {
       { ...result, output: new StateObservedCommandOutput(result.output, state) },
       replayContext,
     );
-    const warning = state.renderWarning();
+    const warningOptions = buildProgram(context, dependencies).warningOptions(request.argv);
+    const warning = state.renderWarning(warningOptions);
     if (warning !== undefined) {
       await CommandResultReplayer.replay(
         {

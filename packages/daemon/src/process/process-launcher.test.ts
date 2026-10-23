@@ -63,6 +63,24 @@ describe("NodeDaemonProcessLauncher", () => {
     roots.length = 0;
   });
 
+  it("terminates only retained children and waits for their observed exits", async () => {
+    const root = mkdtempSync(join(tmpdir(), "symnav-owned-launcher-"));
+    roots.push(root);
+    const identity = DaemonWorkspaceIdentity.from(join(root, "workspace"), join(root, "state"));
+    const launcher = new NodeDaemonProcessLauncher(
+      "1",
+      executorModuleUrl,
+      DaemonPolicy.currentSystem(),
+    );
+    const child = await launcher.launch(identity, "instance", "token");
+    const terminate = vi.spyOn(child, "terminate");
+    await launcher.closeOwnedProcesses();
+    expect(terminate).toHaveBeenCalledOnce();
+    await expect(child.exited).resolves.toMatchObject({ signal: "SIGTERM" });
+    await launcher.closeOwnedProcesses();
+    expect(terminate).toHaveBeenCalledOnce();
+  });
+
   it.each([
     ["absolute", (stateDirectory: string) => stateDirectory],
     ["relative", (stateDirectory: string) => relative(process.cwd(), stateDirectory)],

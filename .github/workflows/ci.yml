@@ -78,4 +78,4 @@ jobs:
           sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
       - run: pnpm install --frozen-lockfile
       - run: pnpm build
-      - run: pnpm --filter symnav exec vitest run test/e2e/sandbox/warm-navigation.test.ts
+      - run: pnpm --filter symnav exec vitest run test/e2e/sandbox/warm-navigation.test.ts test/e2e/sandbox/doctor.test.ts

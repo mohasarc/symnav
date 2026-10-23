@@ -1,3 +1,4 @@
+import type { DaemonProcessLifetimeIdentity } from "../process/process-lifetime-identity.js";
 import {
   existsSync,
   mkdirSync,
@@ -22,6 +23,8 @@ export interface DaemonStartupOwner {
   readonly identityKey: string;
   readonly instanceId: string;
   readonly processToken: string;
+  readonly ownerLifetime?: DaemonProcessLifetimeIdentity;
+  readonly claimToken?: string;
   readonly ownerPid: number;
   readonly ownerKind: "launcher" | "daemon";
   readonly heartbeatAt: number;
@@ -34,7 +37,11 @@ export type StartupOwner = DaemonStartupOwner;
 export interface DaemonStartupLease {
   readonly owner: DaemonStartupOwner;
   readonly instanceId: string;
-  transferToDaemon(pid: number, processToken: string): boolean;
+  transferToDaemon(
+    pid: number,
+    processToken: string,
+    processLifetime?: DaemonProcessLifetimeIdentity,
+  ): boolean;
   heartbeat(): boolean;
   release(): boolean;
 }
@@ -42,6 +49,7 @@ export interface DaemonStartupLease {
 export type StartupLease = DaemonStartupLease;
 
 interface StartupMutationOwner {
+  readonly ownerLifetime?: DaemonProcessLifetimeIdentity;
   readonly ownerPid: number;
   readonly acquiredAt: number;
   readonly token: string;

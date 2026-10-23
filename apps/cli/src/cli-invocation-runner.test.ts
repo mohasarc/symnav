@@ -1,6 +1,7 @@
+import { join, resolve } from "node:path";
 import { Writable } from "node:stream";
 import { describe, expect, it, vi } from "vitest";
-import type { OverviewFileEntries } from "@symnav/core";
+import { InMemoryFileSystem, type OverviewFileEntries } from "@symnav/core";
 import type { ProgramContext } from "./program-context.js";
 import type { DaemonExecutorExecutionResult } from "@symnav/daemon";
 import type { CliInvocationCoordinator } from "./cli-invocation-coordinator.js";
@@ -64,8 +65,17 @@ describe("CliInvocationRunner", () => {
   });
 
   it("normalizes the final relative cwd before direct execution", async () => {
-    const dependencies = fakeDependencies({ daemonEnabled: false });
-    const context = createFakeProgramContext({ cwd: "/repo/nested" });
+    const workspaceRoot = resolve("/repo");
+    const nestedDirectory = join(workspaceRoot, "nested");
+    const fileSystemRoot = workspaceRoot.replaceAll("\\", "/");
+    const dependencies = fakeDependencies({
+      daemonEnabled: false,
+      fs: new InMemoryFileSystem({
+        [`${fileSystemRoot}/.git/HEAD`]: "ref: refs/heads/main\n",
+        [`${fileSystemRoot}/src/a.ts`]: "export const x = 1;",
+      }),
+    });
+    const context = createFakeProgramContext({ cwd: nestedDirectory });
     const runner = new CliInvocationRunner({
       dependencies,
       coordinator: RunnerHarness.coordinator(),
@@ -74,7 +84,7 @@ describe("CliInvocationRunner", () => {
       runner.run(
         {
           argv: ["--cwd=../ignored", "--cwd", "..", "overview", "src/a.ts"],
-          cwd: "/repo/nested",
+          cwd: nestedDirectory,
           telemetryEnabled: false,
         },
         context,

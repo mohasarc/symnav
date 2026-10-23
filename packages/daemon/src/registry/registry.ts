@@ -727,11 +727,15 @@ export class DaemonRegistry {
     const claimPath = identity.startupMutationClaimPath(token);
     mkdirSync(claimPath, { mode: 0o700 });
     mkdirSync(join(claimPath, token), { mode: 0o700 });
-    DaemonRegistry.writeFile(identity.startupOwnerPath(join(claimPath, token)), JSON.stringify(owner), {
-      encoding: "utf8",
-      flag: "wx",
-      mode: 0o600,
-    });
+    DaemonRegistry.writeFile(
+      identity.startupOwnerPath(join(claimPath, token)),
+      JSON.stringify(owner),
+      {
+        encoding: "utf8",
+        flag: "wx",
+        mode: 0o600,
+      },
+    );
     try {
       renameSync(claimPath, identity.startupMutationPath);
       return new RegistryStartupMutationLease(this, identity, owner);

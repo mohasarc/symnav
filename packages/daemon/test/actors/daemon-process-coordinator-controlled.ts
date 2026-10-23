@@ -237,6 +237,9 @@ const startingRecord: DaemonRecord = {
   instanceId,
   processToken,
   endpoint: identity.endpoint(instanceId),
+  ...(startupLease.owner.ownerLifetime === undefined
+    ? {}
+    : { processLifetime: startupLease.owner.ownerLifetime }),
   pid: process.pid,
   state: "starting",
   startedAt: configuredWallNow === undefined ? Date.now() : Number(configuredWallNow),

@@ -11,6 +11,32 @@ import type {
 import { DaemonWorkerGenerationManager } from "./worker-generation-manager.js";
 
 describe("DaemonWorkerGenerationManager", () => {
+  it.each(["old-first", "replacement-first", "obsolete-rejection"] as const)(
+    "follows current startup readiness through %s completion",
+    async (order) => {
+      const initial = new ControlledNavigationWorker(1);
+      const replacement = new ControlledNavigationWorker(2);
+      const manager = createManager({ initialWorker: initial, createWorker: () => replacement });
+      const starting = manager.start();
+      const settled = vi.fn();
+      void starting.then(settled, settled);
+      const replacing = manager.replace("hard-pressure");
+      if (order === "old-first") {
+        initial.completeReady(3);
+        await vi.waitFor(() => expect(manager.snapshot.generation).toBe(2));
+        expect(settled).not.toHaveBeenCalled();
+      } else if (order === "obsolete-rejection") {
+        initial.rejectStart(new Error("intentionally terminated"));
+      }
+      replacement.completeReady(11);
+      await replacing;
+      await vi.waitFor(() => expect(settled).toHaveBeenCalledOnce());
+      await expect(starting).resolves.toMatchObject({ generation: 2, fileCount: 11 });
+      initial.rejectStart(new Error("late obsolete termination"));
+      expect(manager.snapshot).toEqual({ generation: 2, ready: false, fileCount: 11 });
+    },
+  );
+
   it("keeps protocol initialization distinct from externally activated readiness", async () => {
     const worker = new ControlledNavigationWorker(1);
     const manager = createManager({ createWorker: () => worker });

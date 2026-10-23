@@ -182,6 +182,13 @@ export class DaemonStartupCoordinator {
         continue;
       }
       if (storedRecord?.state === "starting") {
+        if (
+          owner !== undefined &&
+          (await this.retainLegacyStartupIfUnverifiable(identity, storedRecord, owner))
+        ) {
+          await this.pause();
+          continue;
+        }
         if (owner !== undefined && this.startupOwnerIsAbandoned(identity, owner)) {
           if (this.cleanupAbandonedStartup(identity, owner)) {
             throw new DaemonWarmupLostError("Daemon child exited before readiness");
@@ -356,10 +363,22 @@ export class DaemonStartupCoordinator {
       }
       const owner = this.registry.startupOwner(identity);
       if (owner === undefined) return this.trigger(identity);
-      if (this.startupOwnerIsAbandoned(identity, owner)) {
+      const startingRecord = this.registry.readStoredInstance(identity, owner.instanceId);
+      const retainedLegacyStartup =
+        startingRecord !== undefined &&
+        (await this.retainLegacyStartupIfUnverifiable(identity, startingRecord, owner));
+      if (
+        retainedLegacyStartup &&
+        (JSON.stringify(this.registry.readStoredInstance(identity, owner.instanceId)) !==
+          JSON.stringify(startingRecord) ||
+          JSON.stringify(this.registry.startupOwner(identity)) !== JSON.stringify(owner))
+      ) {
+        await this.pause();
+        continue;
+      }
+      if (!retainedLegacyStartup && this.startupOwnerIsAbandoned(identity, owner)) {
         if (this.cleanupAbandonedStartup(identity, owner)) return this.trigger(identity);
       }
-      const startingRecord = this.registry.readStoredInstance(identity, owner.instanceId);
       if (
         startingRecord?.state === "starting" &&
         startingRecord.pid > 0 &&
@@ -373,6 +392,43 @@ export class DaemonStartupCoordinator {
       }
       await this.pause();
     }
+  }
+
+  private async retainLegacyStartupIfUnverifiable(
+    identity: DaemonWorkspaceIdentity,
+    record: DaemonRecord,
+    owner: StartupOwner,
+  ): Promise<boolean> {
+    if (
+      process.platform === "win32" ||
+      record.state !== "starting" ||
+      record.pid <= 0 ||
+      record.processLifetime !== undefined ||
+      this.launchedProcesses.has(record.instanceId) ||
+      record.identityKey !== identity.identityKey ||
+      owner.identityKey !== record.identityKey ||
+      owner.instanceId !== record.instanceId ||
+      (owner.processToken !== record.processToken &&
+        !(owner.ownerKind === "launcher" && owner.processToken === "")) ||
+      (owner.ownerKind === "daemon" && owner.ownerPid !== record.pid) ||
+      (owner.ownerLifetime !== undefined &&
+        !this.processTerminator.hasExited(owner.ownerPid, owner.ownerLifetime))
+    ) {
+      return false;
+    }
+    const observation = await this.observer.observeIdentity(record);
+    if (
+      JSON.stringify(this.registry.readStoredInstance(identity, record.instanceId)) !==
+        JSON.stringify(record) ||
+      JSON.stringify(this.registry.startupOwner(identity)) !== JSON.stringify(owner)
+    ) {
+      return true;
+    }
+    if (observation.kind === "authenticated") return true;
+    if (observation.kind === "exited") return false;
+    throw new DaemonOwnedButUnresponsiveError(
+      `Daemon startup ownership for process ${record.pid} could not be verified; ownership was retained`,
+    );
   }
 
   private cleanupAbandonedStartup(identity: DaemonWorkspaceIdentity, owner: StartupOwner): boolean {

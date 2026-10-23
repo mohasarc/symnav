@@ -17,6 +17,7 @@ import type { DaemonResourceSupervisor } from "../resources/resource-supervisor.
 import type { DaemonWorkerGenerationManager } from "../worker/worker-generation-manager.js";
 import { WorkspaceRequestQueue } from "./request-queue.js";
 import type { DaemonStateWriteFailure } from "../state-write-failure.js";
+import { DaemonStateWriteErrors } from "../state-write-errors.js";
 import { DaemonLogger, type DaemonLogStorage } from "../diagnostics/logger.js";
 import { DaemonWorkspaceIdentity } from "../registry/workspace-identity.js";
 import { DaemonPolicy } from "../daemon-policy.js";
@@ -24,9 +25,14 @@ import { NodeDaemonClock } from "../lifecycle/daemon-clock.js";
 import type { DaemonDiagnosticRecorder } from "../delivery/delivery-session.js";
 
 describe("AcceptedExecutionSession", () => {
-  it.each(["before-worker", "failure-record"] as const)(
-    "retains a real logger denial on failed execution first observed at %s",
-    async (denialPoint) => {
+  it.each([
+    ["before-worker", false],
+    ["failure-record", false],
+    ["before-worker", true],
+    ["failure-record", true],
+  ] as const)(
+    "retains the first failed-execution write at %s with direct worker denial %s",
+    async (denialPoint, directWorkerDenial) => {
       const storage = new RecoverableDiagnosticStorage();
       storage.denied = denialPoint === "before-worker";
       const logger = new DaemonLogger(
@@ -39,15 +45,25 @@ describe("AcceptedExecutionSession", () => {
       if (denialPoint === "before-worker") logger.record({ kind: "start" });
       harness.workerExecute.mockImplementationOnce(async () => {
         storage.denied = true;
+        if (directWorkerDenial)
+          throw DaemonStateWriteErrors.failedWrite(
+            "/state/worker",
+            Object.assign(new Error("worker denied"), { code: "EPERM" }),
+          );
         throw new Error("worker failed");
       });
       const request = harness.request("failed");
-      harness.session.accept({ ...request, request: { ...request.request, telemetryEnabled: true } });
+      harness.session.accept({
+        ...request,
+        request: { ...request.request, telemetryEnabled: true },
+      });
       await vi.waitFor(() => expect(harness.session.status("failed").state).toBe("failed"));
       expect(harness.terminalState("failed")).toMatchObject({
         state: "failed",
         code: "internal",
-        stateWriteFailure: { osCode: "EACCES" },
+        stateWriteFailure: {
+          osCode: directWorkerDenial && denialPoint === "failure-record" ? "EPERM" : "EACCES",
+        },
       });
       expect(harness.workerExecute).toHaveBeenCalledOnce();
       expect(harness.workerExecute.mock.calls[0]?.[1]).toMatchObject({

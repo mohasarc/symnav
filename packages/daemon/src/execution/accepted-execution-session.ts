@@ -166,6 +166,7 @@ export class AcceptedExecutionSession {
         },
       );
     } catch (error) {
+      const stateWriteFailure = diagnosticWriteFailure ?? DaemonStateWriteErrors.from(error);
       trace.executionTerminated("failed");
       this.recordFailure("request", "internal", error);
       const shutdown = this.options.processLifecycle.shutdownSnapshot();
@@ -178,14 +179,16 @@ export class AcceptedExecutionSession {
           : { shutdownFailureCode: shutdown.failureCode }),
         shutdownStarted: shutdown.started,
       });
+      await this.options.diagnostics.flush?.();
       await completion?.dispose().catch((cleanupError) => {
         this.recordFailure("completion-cleanup", "internal", cleanupError);
       });
+      await this.options.diagnostics.flush?.();
       this.options.ledger.fail(
         request.requestId,
         code,
         this.options.clock.wallNowMs(),
-        DaemonStateWriteErrors.from(error),
+        stateWriteFailure ?? diagnosticWriteFailure,
       );
     } finally {
       stopObserving?.();

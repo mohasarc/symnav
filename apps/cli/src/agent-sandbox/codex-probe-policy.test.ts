@@ -114,3 +114,26 @@ it("preserves builtin workspace grants and equal-path permission precedence", as
     ]),
   ).toMatchObject({ ".": "write", ".codex": "read" });
 });
+it("keeps legacy workspace-write permissions at the original workspace", async () => {
+  const home = await mkdtemp(join(tmpdir(), "codex-legacy-workspace-"));
+  ProbePolicyScratch.directories.push(home);
+  const original = join(home, "original");
+  const adapter = new CodexSandboxConfiguration({
+    homeDirectory: home,
+    workspaceDirectory: original,
+  });
+  await mkdir(join(home, ".codex"));
+  await writeFile(
+    adapter.configurationPath,
+    'sandbox_mode="workspace-write"\n[sandbox_workspace_write]\nwritable_roots=[]\nexclude_tmpdir_env_var=true\nexclude_slash_tmp=true\n',
+  );
+  const result = await adapter.inspect(join(original, "state"), join(home, "scratch", "workspace"));
+  expect(result.grantsState).toBe(true);
+  const filesystem = new TomlDocument(result.configuration).value([
+    "permissions",
+    "symnav-doctor",
+    "filesystem",
+  ]) as Record<string, unknown>;
+  expect(filesystem[original]).toMatchObject({ ".": "write", ".codex": "read" });
+  expect(result.configuration).not.toContain(":tmpdir");
+});

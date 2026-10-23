@@ -12,7 +12,7 @@ import type { ProgramContext } from "../../program-context.js";
 export function registerSetupCommand(program: Command, context: ProgramContext): void {
   program
     .command("setup")
-    .description("grant an agent sandbox write access to the symnav state directory")
+    .description("grant Codex or Claude Code write access to the state directory")
     .addArgument(new Argument("<agent>", "agent to configure").choices(["codex", "claude-code"]))
     .allowExcessArguments(false)
     .action(async (agent: SupportedAgent) => {

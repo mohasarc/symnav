@@ -1,3 +1,4 @@
+import { DaemonProcessLifetimeCreationError } from "../process/process-lifetime-creation-error.js";
 import { DaemonFailureJournal } from "../diagnostics/failure-journal.js";
 import { DaemonFailureRecorder } from "../diagnostics/failure-recorder.js";
 import type { DaemonFailurePhase, DaemonFailureReason } from "../daemon-failure.js";
@@ -149,13 +150,33 @@ export class DaemonStartupCoordinator {
     stateWriteFailed?: DaemonStateWriteFailureObserver,
   ): Promise<void> {
     if (typeof error === "object" && error !== null && this.recordedFailures.has(error)) return;
+    await this.recordStartupFailure(identity, error, undefined, stateWriteFailed);
+  }
+
+  private async recordStartupFailure(
+    identity: DaemonWorkspaceIdentity,
+    error: unknown,
+    instanceId?: string,
+    stateWriteFailed?: DaemonStateWriteFailureObserver,
+  ): Promise<void> {
+    if (error instanceof DaemonProcessLifetimeCreationError) {
+      await this.recordFailure(
+        identity,
+        "endpoint create",
+        "endpoint-create-failed",
+        error,
+        instanceId,
+        stateWriteFailed,
+      );
+      return;
+    }
     const stateFailure = DaemonStateWriteErrors.from(error);
     await this.recordFailure(
       identity,
       stateFailure === undefined ? "process spawn" : "state location",
       stateFailure === undefined ? "process-spawn-failed" : "state-write-failed",
       error,
-      undefined,
+      instanceId,
       stateWriteFailed,
     );
   }
@@ -374,15 +395,7 @@ export class DaemonStartupCoordinator {
       };
     } catch (error) {
       lifetime?.closeParentCopy();
-      const stateFailure = DaemonStateWriteErrors.from(error);
-      await this.recordFailure(
-        identity,
-        stateFailure !== undefined ? "state location" : "process spawn",
-        stateFailure !== undefined ? "state-write-failed" : "process-spawn-failed",
-        error,
-        instanceId,
-        stateWriteFailed,
-      );
+      await this.recordStartupFailure(identity, error, instanceId, stateWriteFailed);
       if (error instanceof DaemonChildExitError) {
         this.cleanupLaunchedProcess(identity, instanceId, processToken);
         throw error;

@@ -63,7 +63,7 @@ export class ClaudeCodeSandboxConfiguration extends AgentSandboxConfiguration {
         !filesystem.allowRead!.some(
           (allowed) =>
             this.probeCovers(allowed, stateDirectory) &&
-            this.probeCovers(path.replace(/\/\*\*$/u, ""), allowed),
+            this.probeCovers(this.subtreePath(path), allowed),
         ),
     );
     const grantsState =
@@ -95,8 +95,12 @@ export class ClaudeCodeSandboxConfiguration extends AgentSandboxConfiguration {
     );
   }
 
+  private subtreePath(path: string): string {
+    return path.replace(/\/\*\*$/u, "") || "/";
+  }
+
   private deniesState(path: string, stateDirectory: string): boolean {
-    const subtree = path.replace(/\/\*\*$/u, "");
+    const subtree = this.subtreePath(path);
     if (!/[*?\[\]{}]/u.test(subtree)) return this.probeCovers(subtree, stateDirectory);
     const prefix = subtree.slice(0, subtree.search(/[*?\[\]{}]/u));
     if (
@@ -128,7 +132,7 @@ export class ClaudeCodeSandboxConfiguration extends AgentSandboxConfiguration {
             : resolve(this.workspaceDirectory, path.replace(/^\//u, ""));
         const key =
           match[1] === "Read" ? "denyRead" : disposition === "allow" ? "allowWrite" : "denyWrite";
-        filesystem[key]!.push(absolute.replace(/\/\*\*$/u, ""));
+        filesystem[key]!.push(this.subtreePath(absolute));
       }
     }
   }

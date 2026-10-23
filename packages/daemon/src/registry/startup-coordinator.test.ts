@@ -1,3 +1,5 @@
+import { DaemonProcessLifetimeCreationError } from "../process/process-lifetime-creation-error.js";
+import { DaemonStateWriteErrors } from "../state-write-errors.js";
 import { PosixDaemonProcessLifetime } from "../process/posix-process-lifetime.js";
 import type { DaemonProcessLifetimeIdentity } from "../process/process-lifetime-identity.js";
 import { spawn, type ChildProcess } from "node:child_process";
@@ -379,6 +381,107 @@ describe("DaemonStartupCoordinator", () => {
 
     expect(harness.registry.readStored(harness.identity)).toBeUndefined();
     expect(harness.registry.startupOwner(harness.identity)).toBeUndefined();
+  });
+
+  it.each(["ensureRunning", "trigger"] as const)(
+    "retains typed endpoint creation failures before launch through %s",
+    async (entrypoint) => {
+      for (const point of ["current", "prepare", "launch"] as const) {
+        for (const osCode of ["EACCES", undefined]) {
+          const harness = new CoordinatorHarness(roots);
+          const path = join(harness.identity.stateDirectory, "process-lifetimes", "failed.fifo");
+          const original = Object.assign(new Error("lifetime creation failed"), {
+            path,
+            ...(osCode === undefined ? {} : { code: osCode }),
+          });
+          const cause =
+            osCode === undefined ? original : DaemonStateWriteErrors.failedWrite(path, original);
+          const error = new DaemonProcessLifetimeCreationError(cause);
+          const preparation = vi.fn(() => {
+            throw error;
+          });
+          let coordinator = harness.coordinator();
+          if (point === "current") {
+            const registry = new DaemonRegistry(harness.identity.registryDirectory, "linux");
+            vi.spyOn(PosixDaemonProcessLifetime, "current").mockImplementation(preparation);
+            coordinator = new DaemonStartupCoordinator(
+              registry,
+              harness.launcher,
+              harness.transport,
+            );
+          } else if (point === "prepare") {
+            Object.assign(harness.launcher, { prepareLifetime: preparation });
+          } else {
+            vi.spyOn(harness.launcher, "launch").mockRejectedValue(error);
+          }
+          await expect(coordinator[entrypoint](harness.identity)).rejects.toBe(error);
+          await coordinator.recordTriggerFailure(harness.identity, error);
+          expect(error).toMatchObject({ cause, path, code: osCode });
+          expect(harness.registry.readStored(harness.identity)).toBeUndefined();
+          expect(harness.registry.startupOwner(harness.identity)).toBeUndefined();
+          expect(harness.launcher.launchCount).toBe(0);
+          const journal = new DaemonFailureJournal(
+            harness.identity.stateDirectory,
+            DaemonPolicy.currentSystem().values.diagnostics,
+            new NodeDaemonClock(),
+          );
+          expect(await journal.recent(Date.now())).toEqual([
+            expect.objectContaining({
+              kind: "startup-failure",
+              failure: {
+                phase: "endpoint create",
+                reason: "endpoint-create-failed",
+                timestamp: expect.any(Number),
+                ...(osCode === undefined ? {} : { osCode }),
+              },
+            }),
+          ]);
+          vi.restoreAllMocks();
+        }
+      }
+    },
+  );
+
+  it("reports diagnostic denial once without replacing the initial endpoint failure", async () => {
+    const harness = new CoordinatorHarness(roots);
+    const cause = Object.assign(new Error("missing utility"), { code: "ENOENT", path: "mkfifo" });
+    const error = new DaemonProcessLifetimeCreationError(cause);
+    Object.assign(harness.launcher, {
+      prepareLifetime: () => {
+        throw error;
+      },
+    });
+    const journalPath = join(harness.identity.stateDirectory, "failures");
+    const record = vi
+      .spyOn(DaemonFailureJournal.prototype, "record")
+      .mockRejectedValue(
+        DaemonStateWriteErrors.failedWrite(
+          journalPath,
+          Object.assign(new Error("denied"), { code: "EACCES" }),
+        ),
+      );
+    const stateWriteFailed = vi.fn();
+    const coordinator = harness.coordinator();
+    await expect(coordinator.ensureRunning(harness.identity, stateWriteFailed)).rejects.toBe(error);
+    await coordinator.recordTriggerFailure(harness.identity, error, stateWriteFailed);
+    expect(record).toHaveBeenCalledTimes(1);
+    expect(record).toHaveBeenCalledWith(
+      expect.objectContaining({
+        failure: {
+          phase: "endpoint create",
+          reason: "endpoint-create-failed",
+          osCode: "ENOENT",
+          timestamp: expect.any(Number),
+        },
+      }),
+    );
+    expect(stateWriteFailed).toHaveBeenCalledTimes(1);
+    expect(stateWriteFailed).toHaveBeenCalledWith({
+      path: journalPath,
+      osCode: "EACCES",
+    });
+    expect(error.cause).toBe(cause);
+    vi.restoreAllMocks();
   });
 
   it("retains the process spawn OS cause after failed startup records are removed", async () => {

@@ -28,7 +28,7 @@ class SandboxNavigationHarness {
   public readonly workspace: string;
   public readonly forbiddenTemporaryDirectory = join(this.root, "forbidden-tmp");
   public readonly testing: CliDaemonTesting;
-  private readonly children: ChildProcessWithoutNullStreams[] = [];
+  private readonly sessions: SandboxNavigationSession[] = [];
   private static readonly cli = fileURLToPath(new URL("../../../dist/cli.js", import.meta.url));
   private static readonly session = fileURLToPath(
     new URL("../../helpers/sandbox-navigation-session.mjs", import.meta.url),
@@ -79,13 +79,13 @@ class SandboxNavigationHarness {
       },
       stdio: "pipe",
     });
-    this.children.push(child);
     const session = new SandboxNavigationSession(child);
+    this.sessions.push(session);
     await session.ready;
     return session;
   }
 
-  public async waitUntilReady(): Promise<number> {
+  public async waitUntilReady(): Promise<string> {
     const deadline = Date.now() + 20_000;
     while (Date.now() < deadline) {
       const status = this.outside(["daemon", "status", "--json"], { SYMNAV_TELEMETRY: "0" });
@@ -93,7 +93,12 @@ class SandboxNavigationHarness {
       const daemons = (JSON.parse(status.stdout) as { daemons: { state: string; pid: number }[] })
         .daemons;
       const ready = daemons.find((daemon) => daemon.state === "ready");
-      if (ready !== undefined) return ready.pid;
+      if (ready !== undefined) {
+        const instances = this.testing.inspector
+          .listInstances()
+          .filter((instance) => instance.state === "ready");
+        if (instances.length === 1) return instances[0]!.instanceId;
+      }
       await new Promise((resolve) => setTimeout(resolve, 20));
     }
     throw new Error("Sandbox daemon did not become ready");
@@ -137,14 +142,38 @@ class SandboxNavigationHarness {
     );
   }
 
+  public instanceIds(): readonly string[] {
+    return this.testing.inspector.listInstances().map((instance) => instance.instanceId);
+  }
+
+  public async waitForExitedLifetimes(): Promise<void> {
+    const deadline = Date.now() + 5_000;
+    while (Date.now() < deadline) {
+      if (
+        this.testing.inspector
+          .processLifetimeObservations()
+          .every((observation) => observation === "exited")
+      )
+        return;
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+    throw new Error("Sandbox process lifetime was not proven exited");
+  }
+
   public async dispose(): Promise<void> {
-    for (const child of this.children) child.stdin.end();
-    this.outside(["daemon", "stop"], { SYMNAV_TELEMETRY: "0" });
-    await E2eProcessCleanup.terminateAndRemoveDirectories(
-      [this.root],
-      () => this.testing.processIds(),
-      { children: this.children },
-    );
+    let stopFailure: Error | undefined;
+    try {
+      const stopped = this.outside(["daemon", "stop"], { SYMNAV_TELEMETRY: "0" });
+      if (stopped.status !== 0) throw new Error(stopped.stderr);
+      await this.waitForExitedLifetimes();
+    } catch (error) {
+      stopFailure = error as Error;
+    } finally {
+      await Promise.all(this.sessions.map((session) => session.close()));
+    }
+    if (stopFailure !== undefined) throw stopFailure;
+    await this.waitForExitedLifetimes();
+    E2eProcessCleanup.removeDirectories([this.root]);
   }
 
   private command(runtime: SandboxRuntime): {
@@ -207,6 +236,8 @@ class SandboxNavigationHarness {
 
 class SandboxNavigationSession {
   public readonly ready: Promise<unknown>;
+  public readonly exited: Promise<void>;
+  private closing: Promise<void> | undefined;
   private readonly replies: unknown[] = [];
   private pending:
     | { resolve: (value: unknown) => void; reject: (error: Error) => void }
@@ -215,6 +246,7 @@ class SandboxNavigationSession {
   private stderr = "";
 
   public constructor(private readonly child: ChildProcessWithoutNullStreams) {
+    this.exited = new Promise((resolve) => child.once("close", () => resolve()));
     createInterface({ input: child.stdout }).on("line", (line) => {
       const value: unknown = JSON.parse(line);
       const pending = this.pending;
@@ -241,10 +273,19 @@ class SandboxNavigationSession {
     return this.request({ kind: "run", argv, environment }) as Promise<RunSymnavBinaryResult>;
   }
   public close(): Promise<void> {
-    return new Promise((resolve) => {
-      this.child.once("close", () => resolve());
-      this.child.stdin.end();
-    });
+    this.closing ??= this.finish();
+    return this.closing;
+  }
+
+  private async finish(): Promise<void> {
+    if (this.child.exitCode !== null || this.child.signalCode !== null) return this.exited;
+    this.child.stdin.end();
+    const deadline = setTimeout(() => this.child.kill("SIGKILL"), 3_000);
+    try {
+      await this.exited;
+    } finally {
+      clearTimeout(deadline);
+    }
   }
 
   public async request(value: unknown): Promise<unknown> {
@@ -319,13 +360,13 @@ describe.each([
         ),
       });
       expect(await session.run(["overview", "src/index.ts"])).toEqual(baseline);
-      const pid = await harness.waitUntilReady();
+      const instanceId = await harness.waitUntilReady();
       expect(await session.run(["overview", "src/index.ts"])).toEqual(baseline);
       expect(harness.outside(["overview", "src/index.ts"])).toEqual(baseline);
       expect(
-        harness.testing.processIds(),
+        harness.instanceIds(),
         JSON.stringify(harness.testing.inspector.readDiagnostics(harness.workspace).events),
-      ).toEqual([pid]);
+      ).toEqual([instanceId]);
       expect(harness.modes()).toEqual(["cold", "warm", "warm"]);
       expect(readdirSync(harness.forbiddenTemporaryDirectory)).toEqual([]);
     },
@@ -344,13 +385,13 @@ describe.each([
       });
       expect(Buffer.byteLength(baseline.stdout)).toBeGreaterThan(256 * 1024);
       harness.outside(["overview", "src/index.ts"]);
-      const pid = await harness.waitUntilReady();
+      const instanceId = await harness.waitUntilReady();
       const session = await harness.start(runtime);
       expect(await session.run(["overview", "large.ts"])).toEqual(baseline);
       expect(
-        harness.testing.processIds(),
+        harness.instanceIds(),
         JSON.stringify(harness.testing.inspector.readDiagnostics(harness.workspace).events),
-      ).toEqual([pid]);
+      ).toEqual([instanceId]);
       await session.close();
       const independentSession = await harness.start(runtime);
       const smallBaseline = harness.outside(["overview", "src/index.ts"], {
@@ -359,9 +400,9 @@ describe.each([
       });
       expect(await independentSession.run(["overview", "src/index.ts"])).toEqual(smallBaseline);
       expect(
-        harness.testing.processIds(),
+        harness.instanceIds(),
         JSON.stringify(harness.testing.inspector.readDiagnostics(harness.workspace).events),
-      ).toEqual([pid]);
+      ).toEqual([instanceId]);
       expect(harness.modes()).toEqual(["cold", "warm", "warm"]);
       expect(readdirSync(join(harness.stateDirectory, "captures"))).toEqual([]);
       expect(readdirSync(harness.forbiddenTemporaryDirectory)).toEqual([]);
@@ -385,15 +426,44 @@ describe.each([
         sessions.map((session) => session.run(["overview", "src/index.ts"])),
       );
       expect(results).toEqual([baseline, baseline]);
-      const firstPid = await first.waitUntilReady();
-      expect(first.testing.processIds()).toEqual([firstPid]);
+      const firstInstanceId = await first.waitUntilReady();
+      expect(first.instanceIds()).toEqual([firstInstanceId]);
       const isolated = await second.start(runtime);
       expect(await isolated.run(["overview", "src/index.ts"])).toEqual(baseline);
-      const secondPid = await second.waitUntilReady();
-      expect(secondPid).not.toBe(firstPid);
+      const secondInstanceId = await second.waitUntilReady();
+      expect(secondInstanceId).not.toBe(firstInstanceId);
       expect(await isolated.run(["overview", "src/index.ts"])).toEqual(baseline);
-      expect(first.testing.processIds()).toEqual([firstPid]);
+      expect(first.instanceIds()).toEqual([firstInstanceId]);
       expect(second.modes()).toEqual(["cold", "warm"]);
+    },
+    40_000,
+  );
+
+  it.skipIf(!available)(
+    "observes wrapper lifetime and replaces only a genuinely terminated daemon",
+    async () => {
+      const harness = new SandboxNavigationHarness();
+      harnesses.push(harness);
+      const session = await harness.start(runtime);
+      await session.run(["overview", "src/index.ts"]);
+      const original = await harness.waitUntilReady();
+      await session.run(["overview", "src/index.ts"]);
+      await session.close();
+      const lifetimes = harness.testing.inspector.processLifetimeObservations();
+      expect(lifetimes).not.toContain("unknown");
+      const exited = lifetimes.every((observation) => observation === "exited");
+      if (process.platform === "linux" && runtime === "claude-code") expect(exited).toBe(true);
+      harness.outside(["overview", "src/index.ts"]);
+      const replacement = await harness.waitUntilReady();
+      harness.outside(["overview", "src/index.ts"]);
+      if (exited) {
+        expect(replacement).not.toBe(original);
+        expect(harness.modes()).toEqual(["cold", "warm", "cold", "warm"]);
+      } else {
+        expect(replacement).toBe(original);
+        expect(harness.modes()).toEqual(["cold", "warm", "warm", "warm"]);
+      }
+      expect(harness.instanceIds()).toEqual([replacement]);
     },
     40_000,
   );

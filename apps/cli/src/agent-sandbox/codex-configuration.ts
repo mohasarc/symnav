@@ -1,5 +1,5 @@
 import { join } from "node:path";
-import { getStaticTOMLValue, parseTOML } from "toml-eslint-parser";
+import { TomlDocument } from "./toml-document.js";
 import {
   AgentSandboxConfiguration,
   type AgentConfigurationLocations,
@@ -23,14 +23,21 @@ export class CodexSandboxConfiguration extends AgentSandboxConfiguration {
   public async grant(stateDirectory: string): Promise<AgentSetupResult> {
     const file = new AgentConfigurationFile(this.configurationPath);
     const original = await file.read();
-    const configuration = getStaticTOMLValue(parseTOML(original)) as {
-      sandbox_workspace_write?: { writable_roots?: string[] };
-    };
-    const granted =
-      configuration.sandbox_workspace_write?.writable_roots?.includes(stateDirectory) ?? false;
+    const document = new TomlDocument(original);
+    const path = ["sandbox_workspace_write", "writable_roots"];
+    const roots = document.value(path) as string[] | undefined;
+    const granted = roots?.includes(stateDirectory) ?? false;
     if (!granted) {
-      const updated = `${original}[sandbox_workspace_write]\nwritable_roots = [${JSON.stringify(stateDirectory)}]\n`;
-      parseTOML(updated);
+      const updated =
+        roots === undefined
+          ? original.length === 0
+            ? document.appendTable(
+                ["sandbox_workspace_write"],
+                `writable_roots = [${JSON.stringify(stateDirectory)}]`,
+              )
+            : document.set(path, `[${JSON.stringify(stateDirectory)}]`)
+          : document.appendString(path, stateDirectory);
+      new TomlDocument(updated);
       await file.publish(original, updated);
     }
     return {

@@ -220,7 +220,20 @@ export class DaemonStartupCoordinator {
         await this.replaceStoredRecord(identity, storedRecord, stateWriteFailed);
       return await this.launch(identity, instanceId, processToken, lease, stateWriteFailed);
     } catch (error) {
-      lease.release();
+      if (!(error instanceof DaemonProcessLifetimeCreationError)) {
+        lease.release();
+        throw error;
+      }
+      const originalWriteFailure = DaemonStateWriteErrors.from(error);
+      if (originalWriteFailure !== undefined) stateWriteFailed?.(originalWriteFailure);
+      await this.recordTriggerFailure(identity, error, stateWriteFailed);
+      try {
+        lease.release();
+      } catch (cleanupError) {
+        const cleanupWriteFailure = DaemonStateWriteErrors.from(cleanupError);
+        if (cleanupWriteFailure === undefined) throw cleanupError;
+        stateWriteFailed?.(cleanupWriteFailure);
+      }
       throw error;
     }
   }

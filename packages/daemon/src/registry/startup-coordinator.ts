@@ -573,7 +573,10 @@ export class DaemonStartupCoordinator {
     if (record !== undefined && record.pid > 0) {
       if ((await this.observeRecord(identity, record, stateWriteFailed)).kind !== "exited")
         return false;
-    } else if (owner.ownerKind === "daemon" && !this.processTerminator.isAlive(owner.ownerPid)) {
+    } else if (
+      owner.ownerKind === "daemon" &&
+      this.processTerminator.hasExited(owner.ownerPid, owner.ownerLifetime)
+    ) {
       await this.recordObservedExit(identity, owner.instanceId, "starting", stateWriteFailed);
     }
     return this.registry.removeAbandonedStartupOwner(identity, owner);

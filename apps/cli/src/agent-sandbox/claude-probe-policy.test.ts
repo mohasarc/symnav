@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, expect, it } from "vitest";
@@ -100,4 +100,27 @@ it("retains native Edit/Read denial paths instead of dropping permission restric
   const inspected = await adapter.inspect(state, join(state, "workspace"));
   expect(JSON.parse(inspected.configuration).filesystem.denyRead).toContain(join(home, "secret"));
   expect(JSON.parse(inspected.configuration).filesystem.denyWrite.length).toBe(1);
+});
+
+it("checks grants and denies through canonical filesystem aliases", async () => {
+  const home = await mkdtemp(join(tmpdir(), "claude-alias-"));
+  ProbePolicyScratch.directories.push(home);
+  const physical = join(home, "physical");
+  const alias = join(home, "alias");
+  await mkdir(physical);
+  await symlink(physical, alias, "junction");
+  const adapter = new ClaudeCodeSandboxConfiguration({ homeDirectory: home });
+  await mkdir(join(home, ".claude"));
+  const source: { sandbox: { filesystem: { allowWrite: string[]; denyWrite: string[] } } } = {
+    sandbox: { filesystem: { allowWrite: [alias], denyWrite: [] as string[] } },
+  };
+  await writeFile(adapter.configurationPath, JSON.stringify(source));
+  expect(
+    (await adapter.inspect(join(physical, "state"), join(physical, "workspace"))).grantsState,
+  ).toBe(true);
+  source.sandbox.filesystem.denyWrite.push(join(alias, "state"));
+  await writeFile(adapter.configurationPath, JSON.stringify(source));
+  expect(
+    (await adapter.inspect(join(physical, "state"), join(physical, "workspace"))).grantsState,
+  ).toBe(false);
 });

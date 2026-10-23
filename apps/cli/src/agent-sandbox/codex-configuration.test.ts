@@ -8,7 +8,9 @@ describe("CodexSandboxConfiguration", () => {
   const scratchDirectories: string[] = [];
   afterEach(async () => {
     vi.unstubAllEnvs();
-    await Promise.all(scratchDirectories.splice(0).map((path) => rm(path, { recursive: true, force: true })));
+    await Promise.all(
+      scratchDirectories.splice(0).map((path) => rm(path, { recursive: true, force: true })),
+    );
   });
 
   it("creates missing user config with only the state write grant and changes nothing on repeat", async () => {
@@ -19,7 +21,11 @@ describe("CodexSandboxConfiguration", () => {
     const stateDirectory = join(homeDirectory, "custom state 雪");
     const expected = `[sandbox_workspace_write]\nwritable_roots = [${JSON.stringify(stateDirectory)}]\n`;
     expect(await adapter.grant(stateDirectory)).toEqual({
-      agent: "codex", stateDirectory, configurationPath: join(homeDirectory, ".codex", "config.toml"), changed: true, installed: false,
+      agent: "codex",
+      stateDirectory,
+      configurationPath: join(homeDirectory, ".codex", "config.toml"),
+      changed: true,
+      installed: false,
     });
     expect(await readFile(adapter.configurationPath, "utf8")).toBe(expected);
     expect(await adapter.grant(stateDirectory)).toMatchObject({ changed: false });

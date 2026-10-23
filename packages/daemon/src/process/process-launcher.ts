@@ -180,81 +180,86 @@ export class NodeDaemonProcessLauncher implements DaemonProcessLauncher {
       : PosixDaemonProcessLifetime.prepareChild(identity.stateDirectory);
   }
 
-  launch(
+  async launch(
     identity: DaemonWorkspaceIdentity,
     instanceId: string,
     processToken: string,
     preparedLifetime?: PosixDaemonChildLifetime,
   ): Promise<DaemonProcess> {
     const lifetime = preparedLifetime ?? this.prepareLifetime(identity);
-    const stateDirectory = identity.stateDirectory;
-    const configuration: DaemonProcessConfiguration = {
-      workspaceRoot: identity.workspaceRoot,
-      stateDirectory,
-      workspaceKey: identity.workspaceKey,
-      stateKey: identity.stateKey,
-      identityKey: identity.identityKey,
-      instanceId,
-      processToken,
-      endpoint: identity.endpoint(instanceId),
-      symnavVersion: this.symnavVersion,
-      executorModuleUrl: this.executorModuleUrl,
-      policy: DaemonPolicyCodec.serialize(this.policy),
-      startupOwnerKind: "daemon",
-      ...(lifetime === undefined ? {} : { processLifetime: lifetime.identity }),
-    };
-    const encodedConfiguration = Buffer.from(JSON.stringify(configuration)).toString("base64url");
-    const daemonEntryPath = fileURLToPath(new URL("../process-entry.js", import.meta.url));
-    mkdirSync(identity.identityDirectory, { recursive: true, mode: 0o700 });
-
-    return new Promise((resolve, reject) => {
-      let processSpawned = false;
-      let exitResolved = false;
-      let resolveExit: (exit: DaemonProcessExit) => void = () => undefined;
-      const exited = new Promise<DaemonProcessExit>((exitResolve) => {
-        resolveExit = exitResolve;
-      });
-      const settleExit = (exit: DaemonProcessExit): void => {
-        if (exitResolved) return;
-        exitResolved = true;
-        resolveExit(exit);
+    try {
+      const stateDirectory = identity.stateDirectory;
+      const configuration: DaemonProcessConfiguration = {
+        workspaceRoot: identity.workspaceRoot,
+        stateDirectory,
+        workspaceKey: identity.workspaceKey,
+        stateKey: identity.stateKey,
+        identityKey: identity.identityKey,
+        instanceId,
+        processToken,
+        endpoint: identity.endpoint(instanceId),
+        symnavVersion: this.symnavVersion,
+        executorModuleUrl: this.executorModuleUrl,
+        policy: DaemonPolicyCodec.serialize(this.policy),
+        startupOwnerKind: "daemon",
+        ...(lifetime === undefined ? {} : { processLifetime: lifetime.identity }),
       };
-      const child = spawn(process.execPath, [daemonEntryPath, encodedConfiguration], {
-        cwd: tmpdir(),
-        detached: true,
-        stdio:
-          lifetime === undefined
-            ? ["ignore", "ignore", "ignore"]
-            : ["ignore", "ignore", "ignore", lifetime.descriptor],
-        env: { ...process.env, SYMNAV_STATE_DIR: stateDirectory },
-      });
-      child.once("error", (error) => {
-        lifetime?.closeParentCopy();
-        settleExit({
-          code: null,
-          signal: null,
-          cause: "spawn-error",
-          errorName: error.name,
+      const encodedConfiguration = Buffer.from(JSON.stringify(configuration)).toString("base64url");
+      const daemonEntryPath = fileURLToPath(new URL("../process-entry.js", import.meta.url));
+      mkdirSync(identity.identityDirectory, { recursive: true, mode: 0o700 });
+
+      return await new Promise<DaemonProcess>((resolve, reject) => {
+        let processSpawned = false;
+        let exitResolved = false;
+        let resolveExit: (exit: DaemonProcessExit) => void = () => undefined;
+        const exited = new Promise<DaemonProcessExit>((exitResolve) => {
+          resolveExit = exitResolve;
         });
-        if (!processSpawned) reject(error);
+        const settleExit = (exit: DaemonProcessExit): void => {
+          if (exitResolved) return;
+          exitResolved = true;
+          resolveExit(exit);
+        };
+        const child = spawn(process.execPath, [daemonEntryPath, encodedConfiguration], {
+          cwd: tmpdir(),
+          detached: true,
+          stdio:
+            lifetime === undefined
+              ? ["ignore", "ignore", "ignore"]
+              : ["ignore", "ignore", "ignore", lifetime.descriptor],
+          env: { ...process.env, SYMNAV_STATE_DIR: stateDirectory },
+        });
+        child.once("error", (error) => {
+          lifetime?.closeParentCopy();
+          settleExit({
+            code: null,
+            signal: null,
+            cause: "spawn-error",
+            errorName: error.name,
+          });
+          if (!processSpawned) reject(error);
+        });
+        child.once("spawn", () => {
+          lifetime?.closeParentCopy();
+          processSpawned = true;
+          child.unref();
+          resolve(
+            new SpawnedDaemonProcess(
+              child,
+              exited,
+              this.policy.values.shutdown.processSignalExitTimeoutMs,
+              lifetime?.identity,
+            ),
+          );
+        });
+        child.once("exit", (code, signal) => {
+          settleExit({ code, signal, cause: "exit" });
+        });
       });
-      child.once("spawn", () => {
-        lifetime?.closeParentCopy();
-        processSpawned = true;
-        child.unref();
-        resolve(
-          new SpawnedDaemonProcess(
-            child,
-            exited,
-            this.policy.values.shutdown.processSignalExitTimeoutMs,
-            lifetime?.identity,
-          ),
-        );
-      });
-      child.once("exit", (code, signal) => {
-        settleExit({ code, signal, cause: "exit" });
-      });
-    });
+    } catch (error) {
+      lifetime?.closeParentCopy();
+      throw error;
+    }
   }
 }
 

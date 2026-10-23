@@ -1,4 +1,4 @@
-import { fstatSync, mkdirSync, mkdtempSync, rmSync } from "node:fs";
+import { fstatSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -18,6 +18,7 @@ vi.mock("node:child_process", async (importOriginal) => ({
 }));
 
 import { DaemonProcessConfigurationParser, NodeDaemonProcessLauncher } from "./process-launcher.js";
+import { PosixDaemonProcessLifetime } from "./posix-process-lifetime.js";
 import { DaemonWorkspaceIdentity } from "../registry/workspace-identity.js";
 
 interface FakeChildProcess {
@@ -33,6 +34,7 @@ describe("NodeDaemonProcessLauncher", () => {
   const executorModuleUrl = "file:///absolute/symnav/daemon-executor.js";
 
   beforeEach(() => {
+    vi.restoreAllMocks();
     processListeners.clear();
     spawnMock.mockReset();
     spawnMock.mockImplementation(() => {
@@ -180,6 +182,67 @@ describe("NodeDaemonProcessLauncher", () => {
         expect(() => fstatSync(options.stdio[3] as number)).toThrow();
       } else expect(options.stdio).toHaveLength(3);
       expect(spawnMock.mock.results[0]?.value.unref).toHaveBeenCalledOnce();
+    },
+  );
+
+  it.skipIf(process.platform === "win32")(
+    "closes its prepared reader when identity directory creation fails before spawn",
+    async () => {
+      const root = mkdtempSync(join(tmpdir(), "symnav-launcher-setup-"));
+      roots.push(root);
+      const identity = DaemonWorkspaceIdentity.from(join(root, "workspace"), root);
+      writeFileSync(identity.registryDirectory, "not a directory");
+      const launcher = new NodeDaemonProcessLauncher(
+        "1.2.3",
+        executorModuleUrl,
+        DaemonPolicy.currentSystem(),
+      );
+      const preparation = vi.spyOn(PosixDaemonProcessLifetime, "prepareChild");
+      try {
+        await expect(async () =>
+          launcher.launch(identity, "instance", "process-token"),
+        ).rejects.toMatchObject({
+          code: "ENOTDIR",
+          path: identity.identityDirectory,
+        });
+        const lifetime = preparation.mock.results[0]!.value!;
+        expect(() => fstatSync(lifetime.descriptor)).toThrow(
+          expect.objectContaining({ code: "EBADF" }),
+        );
+        expect(PosixDaemonProcessLifetime.observe(lifetime.identity)).toBe("exited");
+        expect(spawnMock).not.toHaveBeenCalled();
+      } finally {
+        preparation.mock.results[0]?.value?.closeParentCopy();
+      }
+    },
+  );
+
+  it.skipIf(process.platform === "win32")(
+    "closes its prepared reader when spawn throws synchronously",
+    async () => {
+      const error = new Error("synchronous spawn failure");
+      spawnMock.mockImplementationOnce(() => {
+        throw error;
+      });
+      const launcher = new NodeDaemonProcessLauncher(
+        "1.2.3",
+        executorModuleUrl,
+        DaemonPolicy.currentSystem(),
+      );
+      const preparation = vi.spyOn(PosixDaemonProcessLifetime, "prepareChild");
+      try {
+        await expect(
+          launcher.launch(launcherIdentity(roots), "instance", "process-token"),
+        ).rejects.toBe(error);
+        const lifetime = preparation.mock.results[0]!.value!;
+        expect(() => fstatSync(lifetime.descriptor)).toThrow(
+          expect.objectContaining({ code: "EBADF" }),
+        );
+        expect(PosixDaemonProcessLifetime.observe(lifetime.identity)).toBe("exited");
+        expect(spawnMock).toHaveBeenCalledOnce();
+      } finally {
+        preparation.mock.results[0]?.value?.closeParentCopy();
+      }
     },
   );
 

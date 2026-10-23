@@ -804,8 +804,8 @@ class DaemonProcessCoordinatorHarness {
 
   logEvents(): readonly Record<string, unknown>[] {
     return readFileSync(this.identity.logPath, "utf8")
-      .trim()
       .split("\n")
+      .slice(0, -1)
       .map((line) => JSON.parse(line) as Record<string, unknown>);
   }
 

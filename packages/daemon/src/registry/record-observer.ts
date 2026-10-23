@@ -52,14 +52,16 @@ export class DaemonRecordObserver {
 
   async observeIdentity(record: DaemonRecord): Promise<DaemonIdentityObservation> {
     if (record.state === "starting") {
-      if (record.pid > 0 && !this.processTerminator.isAlive(record.pid)) {
+      if (record.pid > 0 && this.processTerminator.hasExited(record.pid, record.processLifetime)) {
         return { kind: "exited", record };
       }
       return { kind: "starting", record };
     }
-    if (!this.processTerminator.isAlive(record.pid)) return { kind: "exited", record };
+    if (this.processTerminator.hasExited(record.pid, record.processLifetime))
+      return { kind: "exited", record };
     const authenticated = await this.authenticate(record);
-    if (!this.processTerminator.isAlive(record.pid)) return { kind: "exited", record };
+    if (this.processTerminator.hasExited(record.pid, record.processLifetime))
+      return { kind: "exited", record };
     return authenticated
       ? { kind: "authenticated", record }
       : { kind: "unresponsive", record, failureCode: "authentication" };
@@ -67,7 +69,8 @@ export class DaemonRecordObserver {
 
   async observe(record: DaemonRecord): Promise<DaemonObservation> {
     if (record.state === "starting" && record.pid <= 0) return { kind: "starting", record };
-    if (!this.processTerminator.isAlive(record.pid)) return { kind: "exited", record };
+    if (this.processTerminator.hasExited(record.pid, record.processLifetime))
+      return { kind: "exited", record };
 
     const [authenticated, ping] = await Promise.all([
       this.authenticate(record),
@@ -82,7 +85,8 @@ export class DaemonRecordObserver {
           (error: unknown) => ({ kind: "error" as const, error }),
         ),
     ]);
-    if (!this.processTerminator.isAlive(record.pid)) return { kind: "exited", record };
+    if (this.processTerminator.hasExited(record.pid, record.processLifetime))
+      return { kind: "exited", record };
     if (!authenticated) {
       if (record.state === "starting") return { kind: "starting", record };
       return { kind: "unresponsive", record, failureCode: "authentication" };

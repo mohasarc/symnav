@@ -773,6 +773,10 @@ function emptyResult(): CommandExecutionResult {
 class CurrentProcessTerminator implements DaemonProcessTerminator {
   constructor(private readonly exited: () => boolean) {}
 
+  hasExited(pid: number): boolean {
+    return !this.isAlive(pid);
+  }
+
   isAlive(pid: number): boolean {
     return pid === process.pid && !this.exited();
   }

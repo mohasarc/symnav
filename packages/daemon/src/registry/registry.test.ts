@@ -1099,6 +1099,10 @@ class ControllerTerminator implements DaemonProcessTerminator {
     this.alive = new Set(alive);
   }
 
+  hasExited(pid: number): boolean {
+    return !this.isAlive(pid);
+  }
+
   isAlive(pid: number): boolean {
     return this.alive.has(pid);
   }

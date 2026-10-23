@@ -354,6 +354,10 @@ class ControllerTerminator implements DaemonProcessTerminator {
     this.alive = new Set(alive);
   }
 
+  hasExited(pid: number): boolean {
+    return !this.isAlive(pid);
+  }
+
   isAlive(pid: number): boolean {
     return this.alive.has(pid);
   }
@@ -378,6 +382,10 @@ class BlockingControllerTerminator implements DaemonProcessTerminator {
     this.exitAllowed = new Promise((resolve) => {
       this.resolveExitAllowed = resolve;
     });
+  }
+
+  hasExited(pid: number): boolean {
+    return !this.isAlive(pid);
   }
 
   isAlive(pid: number): boolean {
@@ -406,6 +414,10 @@ class ReplacingControllerTerminator implements DaemonProcessTerminator {
     private readonly observedPid: number,
     private readonly replace: () => void,
   ) {}
+
+  hasExited(pid: number): boolean {
+    return !this.isAlive(pid);
+  }
 
   isAlive(pid: number): boolean {
     if (pid === this.observedPid && !this.replaced) {

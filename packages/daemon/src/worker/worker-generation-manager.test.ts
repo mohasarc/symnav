@@ -59,6 +59,19 @@ describe("DaemonWorkerGenerationManager", () => {
     expect(manager.snapshot.ready).toBe(false);
   });
 
+  it("rejects startup when the current replacement fails while the obsolete startup is unsettled", async () => {
+    const initial = new ControlledNavigationWorker(1);
+    const replacement = new ControlledNavigationWorker(2);
+    const manager = createManager({ initialWorker: initial, createWorker: () => replacement });
+    const starting = manager.start();
+    const failure = expect(starting).rejects.toThrow("current startup failed");
+    const replacing = manager.replace("hard-pressure");
+    replacement.rejectStart(new Error("current startup failed"));
+    await expect(replacing).rejects.toThrow("current startup failed");
+    await failure;
+    expect(manager.snapshot.ready).toBe(false);
+  });
+
   it.each(["old-first", "replacement-first", "obsolete-rejection"] as const)(
     "follows current startup readiness through %s completion",
     async (order) => {
@@ -102,7 +115,10 @@ describe("DaemonWorkerGenerationManager", () => {
       fileCount: 7,
     });
     expect(manager.snapshot).toEqual({ generation: 1, ready: false, fileCount: 7 });
-    await manager.activateReadiness();
+    await expect(manager.activateReadiness()).resolves.toMatchObject({
+      generation: 1,
+      fileCount: 7,
+    });
     expect(manager.snapshot).toEqual({ generation: 1, ready: true, fileCount: 7 });
     expect(Object.isFrozen(manager.snapshot)).toBe(true);
   });

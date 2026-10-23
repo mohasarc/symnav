@@ -40,19 +40,12 @@ export class CodexSandboxConfiguration extends AgentSandboxConfiguration {
     const original = await file.read();
     const document = new TomlDocument(original);
     this.validateLegacy(document);
-    const path = ["sandbox_workspace_write", "writable_roots"];
-    const roots = document.value(path) as string[] | undefined;
-    const granted = roots?.includes(stateDirectory) ?? false;
-    if (!granted) {
-      const updated =
-        roots === undefined
-          ? original.length === 0
-            ? document.appendTable(
-                ["sandbox_workspace_write"],
-                `writable_roots = [${JSON.stringify(stateDirectory)}]`,
-              )
-            : document.set(path, `[${JSON.stringify(stateDirectory)}]`)
-          : document.appendString(path, stateDirectory);
+    const updated =
+      document.configuration.default_permissions !== undefined
+        ? this.grantProfile(document, stateDirectory)
+        : this.grantLegacy(document, stateDirectory, original);
+    const changed = updated !== original;
+    if (changed) {
       new TomlDocument(updated);
       await file.publish(original, updated);
     }
@@ -60,10 +53,45 @@ export class CodexSandboxConfiguration extends AgentSandboxConfiguration {
       agent: this.agent,
       stateDirectory,
       configurationPath: this.configurationPath,
-      changed: !granted,
+      changed,
       installed: await AgentExecutable.installed("codex"),
     };
   }
+  private grantLegacy(document: TomlDocument, stateDirectory: string, original: string): string {
+    const path = ["sandbox_workspace_write", "writable_roots"];
+    const roots = document.value(path) as string[] | undefined;
+    if (roots?.includes(stateDirectory)) return original;
+    if (roots !== undefined) return document.appendString(path, stateDirectory);
+    return original.length === 0
+      ? document.appendTable(
+          ["sandbox_workspace_write"],
+          `writable_roots = [${JSON.stringify(stateDirectory)}]`,
+        )
+      : document.set(path, `[${JSON.stringify(stateDirectory)}]`);
+  }
+
+  private grantProfile(document: TomlDocument, stateDirectory: string): string {
+    const selected = document.configuration.default_permissions as string;
+    if (selected === ":danger-full-access") return document.source;
+    if (selected === ":workspace" || selected === ":read-only") {
+      let name = "symnav";
+      for (let suffix = 2; document.value(["permissions", name]) !== undefined; suffix += 1)
+        name = `symnav-${suffix}`;
+      const selection = document.set(["default_permissions"], JSON.stringify(name));
+      const parent = new TomlDocument(selection).set(
+        ["permissions", name, "extends"],
+        JSON.stringify(selected),
+      );
+      return new TomlDocument(parent).set(
+        ["permissions", name, "filesystem", stateDirectory],
+        '"write"',
+      );
+    }
+    const path = ["permissions", selected, "filesystem", stateDirectory];
+    if (document.value(path) === "write") return document.source;
+    return document.set(path, '"write"');
+  }
+
   private validateLegacy(document: TomlDocument): void {
     const configuration = document.configuration;
     if (

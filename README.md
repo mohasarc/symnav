@@ -72,6 +72,15 @@ On macOS and Linux, daemon communication uses regular files inside the state dir
 
 POSIX daemon ownership requires the standard `mkfifo` executable on `PATH` and a state filesystem that supports FIFOs. Node 20 remains supported. FIFO readers prove process lifetime across PID namespaces; displayed PIDs belong to the daemon’s own namespace and are not host signal targets. Starting and ready daemons stop through authenticated controls; success requires confirmed process exit. A live daemon that cannot authenticate within the stop deadline retains ownership. Unreachable legacy PID-only owners are retained conservatively. Explicit start reports failure when matched legacy startup ownership cannot be verified, leaving the owner and record intact. If a sandbox wrapper terminates its descendants, the next command starts a fresh cold warm-up; symnav does not extend the wrapper lifetime.
 
+Run `symnav setup codex` to grant write access to the effective state directory in Codex's user config. `CODEX_HOME` selects the config directory; otherwise it uses `~/.codex/config.toml`. Set the same `SYMNAV_STATE_DIR` when running setup and navigation:
+
+```bash
+symnav setup codex
+SYMNAV_STATE_DIR=/path/to/state symnav setup codex
+```
+
+Setup preserves existing config content, comments, file permissions, network policy and other grants. It updates legacy `sandbox_workspace_write.writable_roots` or the selected named permission profile. A built-in profile receives a derived profile that inherits its policy and adds only the state path. Existing grants remain unchanged. Setup never changes the legacy sandbox mode; read-only sessions still need a supported write-capable sandbox policy. Restart Codex sessions after a change. The grant is written even when Codex is not installed, with a note in the output. Invalid TOML, conflicting legacy/named selections and exact state denials fail without changing the config. Other agents can grant the state directory manually.
+
 When a required state write fails, symnav disables daemon and telemetry work for that invocation. Navigation executes locally when no request has been submitted; accepted work keeps its result or controlled failure. One warning follows ordinary stderr, and the command keeps its own exit code:
 
 ```text

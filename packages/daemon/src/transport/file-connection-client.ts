@@ -1,4 +1,5 @@
 import { PosixDaemonProcessLifetime } from "../process/posix-process-lifetime.js";
+import { DaemonStateWriteErrors } from "../state-write-errors.js";
 import { NodeDaemonClock } from "../lifecycle/daemon-clock.js";
 import { randomUUID } from "node:crypto";
 import { mkdir, rename, rm, writeFile } from "node:fs/promises";
@@ -8,6 +9,7 @@ import type { DaemonConnection, DaemonConnectionClient } from "./contracts.js";
 import { FileDaemonConnection } from "./file-connection.js";
 import { LocalDaemonSocketClient } from "./socket-client.js";
 import { FileDaemonEndpoint } from "./file-endpoint.js";
+import type { FileDaemonEndpointOwner } from "./file-owner.js";
 
 interface FileDaemonConnectionClientOptions {
   readonly policy: DaemonPolicyValues["transport"];
@@ -29,15 +31,24 @@ export class FileDaemonConnectionClient implements DaemonConnectionClient {
       throw Object.assign(new Error("Daemon file endpoint unavailable"), { code: "ECONNREFUSED" });
     const temporaryDirectory = join(peer.directory, `${identifier}.tmp`);
     const directory = join(peer.directory, `${identifier}.channel`);
-    await mkdir(temporaryDirectory, { mode: 0o700 });
+    await mkdir(temporaryDirectory, { mode: 0o700 }).catch(async (error: NodeJS.ErrnoException) => {
+      if (error.code === "ENOENT" && (await this.endpointClosed(endpoint, peer)))
+        throw Object.assign(new Error("Daemon file endpoint unavailable"), {
+          code: "ECONNREFUSED",
+        });
+      throw error;
+    });
     try {
       await mkdir(join(temporaryDirectory, "request"), { mode: 0o700 });
       await mkdir(join(temporaryDirectory, "response"), { mode: 0o700 });
+      const ownershipPath = join(temporaryDirectory, "owner.json");
       await writeFile(
-        join(temporaryDirectory, "owner.json"),
+        ownershipPath,
         JSON.stringify({ pid: process.pid, token: randomUUID(), processLifetime: lifetime }),
         { flag: "wx", mode: 0o600 },
-      );
+      ).catch((error: unknown) => {
+        throw DaemonStateWriteErrors.failedWrite(ownershipPath, error);
+      });
       if (!FileDaemonEndpoint.sameOwner(await FileDaemonEndpoint.owner(endpoint), peer))
         throw new Error("Daemon file endpoint owner changed");
       await rename(temporaryDirectory, directory);
@@ -48,8 +59,23 @@ export class FileDaemonConnectionClient implements DaemonConnectionClient {
         ...(timeoutMs === undefined ? {} : { timeoutMs }),
       });
     } catch (error) {
-      await rm(temporaryDirectory, { recursive: true, force: true });
+      try {
+        await rm(temporaryDirectory, { recursive: true, force: true });
+      } catch (cleanupError) {
+        if (DaemonStateWriteErrors.from(error) === undefined)
+          throw DaemonStateWriteErrors.failedWrite(temporaryDirectory, cleanupError);
+      }
       throw error;
+    }
+  }
+
+  private async endpointClosed(endpoint: string, peer: FileDaemonEndpointOwner): Promise<boolean> {
+    if (PosixDaemonProcessLifetime.observe(peer.processLifetime) === "exited") return true;
+    try {
+      await FileDaemonEndpoint.readOwner(peer.directory);
+      return !FileDaemonEndpoint.sameOwner(await FileDaemonEndpoint.owner(endpoint), peer);
+    } catch (error) {
+      return (error as NodeJS.ErrnoException).code === "ENOENT";
     }
   }
 }

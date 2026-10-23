@@ -556,7 +556,7 @@ export class DaemonScaleBenchmarkHarness {
         env: {
           ...process.env,
           SYMNAV_STATE_DIR: stateDirectory,
-          SYMNAV_DAEMON: daemon ? "1" : "0",
+          SYMNAV_DAEMON: daemon || argv[0] === "stats" ? "1" : "0",
           SYMNAV_TELEMETRY: telemetry ? "1" : "0",
         },
       });

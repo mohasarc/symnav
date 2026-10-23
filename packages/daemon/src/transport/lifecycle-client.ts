@@ -106,7 +106,7 @@ export class DaemonLifecycleClient implements DaemonLifecycleRequester {
         throw new DaemonTransportError("timeout", delivery, "Daemon request timed out");
       }
       const message = error instanceof Error ? error.message : String(error);
-      throw new DaemonTransportError("unreachable", delivery, message);
+      throw new DaemonTransportError("unreachable", delivery, message, undefined, undefined, error);
     }
     try {
       delivery = "submitted-unconfirmed";
@@ -150,7 +150,7 @@ export class DaemonLifecycleClient implements DaemonLifecycleRequester {
       }
       if (!(error instanceof DaemonTransportError) && !(error instanceof DaemonProtocolError)) {
         const message = error instanceof Error ? error.message : String(error);
-        throw new DaemonTransportError("closed", delivery, message);
+        throw new DaemonTransportError("closed", delivery, message, undefined, undefined, error);
       }
       throw DaemonLifecycleClient.transportError(error, delivery);
     }
@@ -170,7 +170,7 @@ export class DaemonLifecycleClient implements DaemonLifecycleRequester {
       );
     }
     const message = error instanceof Error ? error.message : String(error);
-    return new DaemonTransportError("corrupt", delivery, message);
+    return new DaemonTransportError("corrupt", delivery, message, undefined, undefined, error);
   }
 
   private static isSocketTimeout(error: unknown): boolean {

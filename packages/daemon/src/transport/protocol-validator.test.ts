@@ -25,6 +25,23 @@ const executionRequest: DaemonExecuteRequest = {
 };
 
 describe("DaemonProtocolValidator", () => {
+  it("accepts structured failure metadata and rejects rendered stderr", () => {
+    const frame: DaemonExecutionServerFrame = {
+      kind: "execution-failed",
+      instanceId: "instance",
+      processToken: "token",
+      requestId: "request",
+      code: "internal",
+      stateWriteFailure: { path: "/state/captures", osCode: "ENOSPC" },
+    };
+    expect(validator.executionFrame(executionRequest, frame)).toEqual(frame);
+    expect(() =>
+      validator.executionFrame(executionRequest, {
+        ...frame,
+        stateWriteFailure: { path: "/state", stderr: "warning" },
+      }),
+    ).toThrow();
+  });
   it.each([
     { kind: "identify", instanceId: "instance", processToken: "token" },
     { kind: "terminate", instanceId: "instance", processToken: "token" },

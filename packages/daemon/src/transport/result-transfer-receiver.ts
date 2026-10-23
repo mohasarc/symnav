@@ -114,7 +114,9 @@ export class DaemonResultTransferReceiver {
         throw new Error("Daemon result transfer failed digest validation");
       }
       this.completed = true;
-      return captured.result;
+      return manifest.stateWriteFailure === undefined
+        ? captured.result
+        : { ...captured.result, stateWriteFailure: manifest.stateWriteFailure };
     } catch (error) {
       await this.dispose();
       throw error;
@@ -136,6 +138,8 @@ export class DaemonResultTransferReceiver {
       actual.requestId === expected.requestId &&
       actual.instanceId === expected.instanceId &&
       actual.exitCode === expected.exitCode &&
+      actual.stateWriteFailure?.path === expected.stateWriteFailure?.path &&
+      actual.stateWriteFailure?.osCode === expected.stateWriteFailure?.osCode &&
       DaemonResultTransferReceiver.summariesMatch(actual, expected)
     );
   }

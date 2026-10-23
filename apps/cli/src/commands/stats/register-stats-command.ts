@@ -20,9 +20,12 @@ export function registerStatsCommand(
     .action((options: StatsOptions) => {
       const telemetryStartedAt = dependencies.clock.now();
       const navigationStartedAt = performance.now();
-      const events = new NodeUsageLogReader()
-        .read(usageLogPath(dependencies.stateDirectory))
-        .filter((event) => event.command !== "stats");
+      const events =
+        dependencies.stateDirectory === ""
+          ? []
+          : new NodeUsageLogReader()
+              .read(usageLogPath(dependencies.stateDirectory))
+              .filter((event) => event.command !== "stats");
       const summary = new UsageAggregator(events).aggregate();
       const navigationCompletedAt = performance.now();
       const renderStartedAt = performance.now();

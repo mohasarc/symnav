@@ -254,3 +254,46 @@ it.each(["legacy", "named"])(
     expect(filesystem[state]).toBeUndefined();
   },
 );
+it.each(["scoped", "absolute"])(
+  "rejects unverifiable relevant %s patterned denies instead of claiming a state grant",
+  async (style) => {
+    const home = await mkdtemp(join(tmpdir(), "codex-pattern-deny-"));
+    ProbePolicyScratch.directories.push(home);
+    const parent = join(home, "states");
+    const state = join(parent, "private", "state");
+    await mkdir(state, { recursive: true });
+    await mkdir(join(home, ".codex"));
+    const adapter = new CodexSandboxConfiguration({ homeDirectory: home });
+    const rules =
+      style === "scoped"
+        ? `${JSON.stringify(parent)}={ "."="write", "*/state"="deny" }`
+        : `${JSON.stringify(parent)}="write"\n${JSON.stringify(join(parent, "*", "state"))}="deny"`;
+    const original = `default_permissions="selected"\n[permissions.selected]\nextends=":read-only"\n[permissions.selected.filesystem]\n${rules}\n`;
+    await writeFile(adapter.configurationPath, original);
+    await expect(adapter.inspect(state, join(parent, "doctor", "workspace"))).rejects.toThrow(
+      "cannot verify patterned Codex state denial",
+    );
+    expect(await readFile(adapter.configurationPath, "utf8")).toBe(original);
+  },
+);
+it("retains an unrelated patterned deny without rejecting an otherwise literal state grant", async () => {
+  const home = await mkdtemp(join(tmpdir(), "codex-unrelated-pattern-"));
+  ProbePolicyScratch.directories.push(home);
+  await mkdir(join(home, ".codex"));
+  const state = join(home, "states", "private", "state");
+  const pattern = join(home, "secrets", "*", "state");
+  const adapter = new CodexSandboxConfiguration({ homeDirectory: home });
+  const original = `default_permissions="selected"\n[permissions.selected]\nextends=":read-only"\n[permissions.selected.filesystem]\n${JSON.stringify(join(home, "states"))}="write"\n${JSON.stringify(pattern)}="deny"\n`;
+  await writeFile(adapter.configurationPath, original);
+  const result = await adapter.inspect(state, join(home, "doctor", "workspace"));
+  expect(result.grantsState).toBe(true);
+  expect(
+    new TomlDocument(result.configuration).value([
+      "permissions",
+      "symnav-doctor",
+      "filesystem",
+      pattern,
+    ]),
+  ).toBe("deny");
+  expect(await readFile(adapter.configurationPath, "utf8")).toBe(original);
+});

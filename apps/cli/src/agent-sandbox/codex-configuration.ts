@@ -1,5 +1,5 @@
 import { ParseError } from "toml-eslint-parser";
-import { join } from "node:path";
+import { isAbsolute, join, relative, resolve, sep } from "node:path";
 import { TomlDocument } from "./toml-document.js";
 import {
   AgentSandboxConfiguration,
@@ -13,8 +13,11 @@ export class CodexSandboxConfiguration extends AgentSandboxConfiguration {
   public readonly agent = "codex";
   public readonly configurationPath: string;
 
+  private readonly homeDirectory: string;
+
   public constructor(locations: AgentConfigurationLocations) {
     super();
+    this.homeDirectory = locations.homeDirectory;
     this.configurationPath = join(
       locations.codexHome ?? join(locations.homeDirectory, ".codex"),
       "config.toml",
@@ -60,7 +63,11 @@ export class CodexSandboxConfiguration extends AgentSandboxConfiguration {
   private grantLegacy(document: TomlDocument, stateDirectory: string, original: string): string {
     const path = ["sandbox_workspace_write", "writable_roots"];
     const roots = document.value(path) as string[] | undefined;
-    if (roots?.includes(stateDirectory)) return original;
+    if (
+      document.configuration.sandbox_mode === "danger-full-access" ||
+      roots?.some((root) => this.covers(root, stateDirectory))
+    )
+      return original;
     if (roots !== undefined) return document.appendString(path, stateDirectory);
     return original.length === 0
       ? document.appendTable(
@@ -87,9 +94,62 @@ export class CodexSandboxConfiguration extends AgentSandboxConfiguration {
         '"write"',
       );
     }
+    if (this.profileGrants(document, selected, stateDirectory, new Set())) return document.source;
     const path = ["permissions", selected, "filesystem", stateDirectory];
     if (document.value(path) === "write") return document.source;
     return document.set(path, '"write"');
+  }
+
+  private profileGrants(
+    document: TomlDocument,
+    name: string,
+    stateDirectory: string,
+    ancestors: Set<string>,
+  ): boolean {
+    if (ancestors.has(name)) throw new Error("permission profile inheritance cycle");
+    if (name === ":workspace" || name === ":read-only") return false;
+    ancestors.add(name);
+    const profile = document.value(["permissions", name]) as Record<string, unknown> | undefined;
+    if (profile === undefined) return false;
+    const filesystem = profile.filesystem as Record<string, unknown> | undefined;
+    if (filesystem !== undefined) {
+      let mostSpecific = -1;
+      let granted = false;
+      for (const [path, access] of Object.entries(filesystem)) {
+        const entries =
+          typeof access === "object" && access !== null ? Object.entries(access) : [[".", access]];
+        for (const [subpath, permission] of entries) {
+          const rulePath = subpath === "." ? path : join(path, subpath as string);
+          if (!this.covers(rulePath, stateDirectory)) continue;
+          const specificity = this.absolutePath(rulePath)?.length ?? -1;
+          if (specificity < mostSpecific) continue;
+          mostSpecific = specificity;
+          granted = permission === "write";
+        }
+      }
+      if (mostSpecific >= 0) return granted;
+    }
+    return (
+      typeof profile.extends === "string" &&
+      this.profileGrants(document, profile.extends, stateDirectory, ancestors)
+    );
+  }
+
+  private covers(configuredPath: string, stateDirectory: string): boolean {
+    const absolute = this.absolutePath(configuredPath);
+    if (absolute === undefined) return false;
+    const descendant = relative(absolute, stateDirectory);
+    return (
+      descendant === "" ||
+      (!isAbsolute(descendant) && descendant !== ".." && !descendant.startsWith(`..${sep}`))
+    );
+  }
+
+  private absolutePath(path: string): string | undefined {
+    if (path === ":root") return resolve(sep);
+    if (path === "~" || path.startsWith("~/") || path.startsWith("~\\"))
+      return resolve(this.homeDirectory, path.slice(2));
+    return isAbsolute(path) ? resolve(path) : undefined;
   }
 
   private validateLegacy(document: TomlDocument): void {

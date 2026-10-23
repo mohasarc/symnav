@@ -1,3 +1,4 @@
+import { StateDirectoryResolver } from "../state-directory-resolver.js";
 import { tmpdir } from "node:os";
 import { ParseError } from "toml-eslint-parser";
 import { isAbsolute, join, relative, resolve, sep } from "node:path";
@@ -57,13 +58,17 @@ export class CodexSandboxConfiguration extends AgentSandboxConfiguration {
       if (path === "glob_scan_max_depth") continue;
       for (const [subpath, permission] of this.isTable(access)
         ? Object.entries(access)
-        : [[".", access]])
+        : [[".", access]]) {
+        const rulePath = subpath === "." ? path : join(path, subpath as string);
+        const absolute = this.absolutePath(rulePath);
         rules.push({
-          path: subpath === "." ? path : join(path, subpath as string),
+          path: absolute === undefined ? rulePath : StateDirectoryResolver.canonicalize(absolute),
           access: permission,
         });
+      }
     }
-    const covering = rules.filter((rule) => this.covers(rule.path, stateDirectory));
+    const canonicalState = StateDirectoryResolver.canonicalize(stateDirectory);
+    const covering = rules.filter((rule) => this.covers(rule.path, canonicalState));
     const specificity = Math.max(
       -1,
       ...covering.map((rule) => this.absolutePath(rule.path)!.length),

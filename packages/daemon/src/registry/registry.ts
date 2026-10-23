@@ -359,7 +359,7 @@ export class DaemonRegistry {
       },
     );
     try {
-      renameSync(claimPath, identity.lockPath);
+      this.renamePath(claimPath, identity.lockPath);
       return new RegistryStartupLease(this, identity, owner);
     } catch (error) {
       rmSync(claimPath, { recursive: true, force: true });

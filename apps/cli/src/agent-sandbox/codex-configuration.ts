@@ -45,7 +45,7 @@ export class CodexSandboxConfiguration extends AgentSandboxConfiguration {
       ? { ":root": "write" }
       : typeof selected === "string"
         ? this.profileFilesystem(document, selected, new Set(), true)
-        : { ":root": "read", ...Object.fromEntries(legacyRoots.map((path) => [path, "write"])) };
+        : this.legacyProbeFilesystem(document, legacyRoots);
     const filesystem = this.absoluteProbeFilesystem(
       effective,
       typeof selected === "string"
@@ -81,6 +81,27 @@ export class CodexSandboxConfiguration extends AgentSandboxConfiguration {
       grantsState,
       configuration: `default_permissions = "symnav-doctor"\n[permissions.symnav-doctor.filesystem]\n${assignments}\n[permissions.symnav-doctor.network]\nenabled = false\n`,
     };
+  }
+
+  private legacyProbeFilesystem(
+    document: TomlDocument,
+    roots: readonly string[],
+  ): Record<string, unknown> {
+    const filesystem: Record<string, unknown> =
+      document.configuration.sandbox_mode === "workspace-write"
+        ? this.builtinProbeFilesystem(":workspace")
+        : { ":root": "read" };
+    for (const [flag, path] of [
+      ["exclude_tmpdir_env_var", ":tmpdir"],
+      ["exclude_slash_tmp", ":slash_tmp"],
+    ]) {
+      const excluded = document.value(["sandbox_workspace_write", flag!]);
+      if (excluded !== undefined && typeof excluded !== "boolean")
+        throw new Error(`${flag} must be a boolean`);
+      if (excluded) delete filesystem[path!];
+    }
+    for (const root of roots) filesystem[root] = "write";
+    return filesystem;
   }
 
   private absoluteProbeFilesystem(

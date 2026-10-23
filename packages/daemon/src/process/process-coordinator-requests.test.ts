@@ -113,6 +113,45 @@ describe("DaemonProcessCoordinator requests", () => {
     expect(workers[1]!.execute).toHaveBeenCalledOnce();
   });
 
+  it("records a current warm-up replacement failure without publishing startup completion", async () => {
+    const policy = DaemonResourcePolicy.fromSystemMemory(1024 * 1024 * 1024);
+    const { daemon, harness } = RequestHarness.create(undefined, {
+      resourcePolicy: policy,
+      residentMemoryBytes: () => policy.record.hardProcessRssBytes + 1,
+      navigationWorkerFactory: (generation) => {
+        const worker = new ExecutorNavigationWorker(new ImmediateExecutor(), generation);
+        if (generation === 2)
+          vi.spyOn(worker, "start").mockRejectedValue(
+            Object.assign(new Error("replacement failed"), { code: "EIO" }),
+          );
+        return worker;
+      },
+    });
+    harnesses.push(harness);
+    await expect(daemon.start()).rejects.toThrow("replacement failed");
+    expect(harness.registry.read(harness.identity)).toBeUndefined();
+    expect(harness.registry.startupOwner(harness.identity)).toBeUndefined();
+    expect(
+      harness
+        .logEvents()
+        .filter((event) => event.kind === "ready" || event.kind === "startup-completed"),
+    ).toEqual([]);
+    expect(
+      await new DaemonTestingInspector(harness.stateDirectory).readFailures(harness.workspaceRoot),
+    ).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          kind: "startup-failure",
+          failure: expect.objectContaining({
+            phase: "warm-up",
+            reason: "startup-failed",
+            osCode: "EIO",
+          }),
+        }),
+      ]),
+    );
+  });
+
   it("authorizes startup before listening and publishes readiness", async () => {
     const harness = await RequestHarness.start(new ImmediateExecutor());
     harnesses.push(harness);

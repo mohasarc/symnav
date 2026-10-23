@@ -63,7 +63,7 @@ interface CallerOwnershipRegistryTestAccess {
 }
 
 interface DaemonRegistryClassTestAccess {
-  startupMutationClaimWasContended(error: unknown): boolean;
+  startupClaimWasContended(error: unknown): boolean;
 }
 
 describe("daemon registry", () => {
@@ -695,8 +695,8 @@ describe("daemon registry", () => {
     (code) => {
       const registryClass = DaemonRegistry as unknown as DaemonRegistryClassTestAccess;
 
-      expect(registryClass.startupMutationClaimWasContended({ code })).toBe(true);
-      expect(registryClass.startupMutationClaimWasContended({ code: "EACCES" })).toBe(false);
+      expect(registryClass.startupClaimWasContended({ code })).toBe(true);
+      expect(registryClass.startupClaimWasContended({ code: "EACCES" })).toBe(false);
     },
   );
 

@@ -1,3 +1,4 @@
+import * as filesystem from "node:fs/promises";
 import { mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -8,6 +9,11 @@ import { ClaudeCodeSandboxConfiguration } from "./claude-code-configuration.js";
 import { AgentSandboxRuntime, type SandboxProbeRequest } from "./agent-sandbox-runtime.js";
 import { AgentSandboxDoctor } from "./agent-sandbox-doctor.js";
 import type { SupportedAgent } from "./agent-configuration.js";
+
+vi.mock("node:fs/promises", async (original) => {
+  const module = await original<typeof import("node:fs/promises")>();
+  return { ...module, mkdir: vi.fn(module.mkdir) };
+});
 
 class Runtime extends AgentSandboxRuntime {
   public calls: SandboxProbeRequest[] = [];
@@ -122,4 +128,17 @@ it("errors if doctor cannot write selected state", async () => {
   await expect(
     new AgentSandboxDoctor({ stateDirectory: state, configurations: [], runtimes: [] }).check(),
   ).rejects.toThrow("cannot write");
+});
+it("inspects original configuration before the host creates any scratch directories", async () => {
+  const h = await Harness.create();
+  vi.spyOn(AgentExecutable, "installed").mockResolvedValue(true);
+  const { doctor, configurations } = h.doctor();
+  const writes = vi.mocked(filesystem.mkdir);
+  writes.mockClear();
+  vi.mocked(configurations[0]!.inspect).mockImplementation(async () => {
+    expect(writes).not.toHaveBeenCalled();
+    expect(await readdir(h.root)).toEqual([]);
+    return { grantsState: true, configuration: "policy" };
+  });
+  expect(await doctor.check("codex")).toMatchObject([{ status: "ok", check: "configuration" }]);
 });

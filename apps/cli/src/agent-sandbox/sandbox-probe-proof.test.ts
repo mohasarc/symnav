@@ -2,6 +2,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, expect, it, vi } from "vitest";
+import type { DaemonStartupFailureStatus } from "@symnav/daemon";
 import { NodeUsageLogReader, SCHEMA_VERSION, type UsageEvent } from "@symnav/telemetry";
 import type { SandboxProbeMessage, SandboxProbeReply } from "./sandbox-probe-message.js";
 import type { SandboxProbeChannel } from "./sandbox-probe-channel.js";
@@ -10,6 +11,10 @@ import { SandboxProbeProof } from "./sandbox-probe-proof.js";
 class Channel implements SandboxProbeChannel {
   public readonly actions: string[] = [];
   public failure: string | undefined;
+  public startupFailure: DaemonStartupFailureStatus = {
+    workspaceRoot: "/workspace",
+    failure: { phase: "warm-up", timestamp: 1, reason: "startup-failed" },
+  };
   public ready = vi.fn(async (_signal: AbortSignal) => {
     if (this.failure === "runtime") throw new Error("runtime rejected policy");
   });
@@ -26,12 +31,7 @@ class Channel implements SandboxProbeChannel {
           this.failure === "warmup"
             ? {
                 daemons: [],
-                startupFailures: [
-                  {
-                    workspaceRoot: "/workspace",
-                    failure: { phase: "warm-up", timestamp: 1, reason: "startup-failed" },
-                  },
-                ],
+                startupFailures: [this.startupFailure],
               }
             : {
                 daemons: [
@@ -116,6 +116,51 @@ it.each(["runtime", "command", "warmup", "parity", "telemetry", "stop"])(
     expect(h.cleanup).toHaveBeenCalledOnce();
   },
 );
+it.each([undefined, "EACCES"])(
+  "retains matching startup failure with OS code %s through owned cleanup",
+  async (osCode) => {
+    const h = await Harness.create();
+    h.channel.failure = "warmup";
+    h.channel.startupFailure = {
+      workspaceRoot: "/workspace",
+      failure: {
+        phase: "state location",
+        reason: "state-write-failed",
+        timestamp: 42,
+        ...(osCode === undefined ? {} : { osCode }),
+      },
+    };
+    const proof = h.proof().run();
+    await expect(proof).rejects.toHaveProperty("startupFailure", h.channel.startupFailure);
+    await expect(proof).rejects.toThrow(
+      `sandbox daemon warm-up failed (phase: state location; reason: state-write-failed${osCode === undefined ? "" : `; OS code: ${osCode}`}; workspace: /workspace)`,
+    );
+    expect(h.channel.actions).toEqual(["run", "status", "cleanup"]);
+    expect(h.channel.close).toHaveBeenCalledOnce();
+    expect(h.cleanup).toHaveBeenCalledOnce();
+  },
+);
+it("continues warm proof when startup failure belongs to another workspace", async () => {
+  const h = await Harness.create();
+  vi.spyOn(NodeUsageLogReader.prototype, "read").mockReturnValue(Harness.events());
+  const request = h.channel.request.bind(h.channel);
+  vi.spyOn(h.channel, "request").mockImplementation(async (message) => {
+    const reply = await request(message);
+    return reply.kind === "status"
+      ? {
+          ...reply,
+          report: {
+            ...reply.report,
+            startupFailures: [{ ...h.channel.startupFailure, workspaceRoot: "/other" }],
+          },
+        }
+      : reply;
+  });
+  await h.proof().run();
+  expect(h.channel.actions).toEqual(["run", "status", "run", "cleanup"]);
+  expect(h.channel.close).toHaveBeenCalledOnce();
+  expect(h.cleanup).toHaveBeenCalledOnce();
+});
 it("cancels a probe and still cleans its owned work", async () => {
   const h = await Harness.create();
   const controller = new AbortController();

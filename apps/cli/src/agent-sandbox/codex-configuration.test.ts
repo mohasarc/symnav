@@ -151,4 +151,38 @@ describe("CodexSandboxConfiguration", () => {
       expect(await readFile(adapter.configurationPath, "utf8")).toBe(updated);
     },
   );
+  it.each([
+    [
+      "legacy broad",
+      (home: string) =>
+        `[sandbox_workspace_write]\nwritable_roots = [${JSON.stringify(home)}] # broad\n`,
+    ],
+    ["legacy home", () => '[sandbox_workspace_write]\nwritable_roots = ["~/"]\n'],
+    ["legacy unrestricted", () => "sandbox_mode = 'danger-full-access'\n"],
+    ["named unrestricted", () => "default_permissions = ':danger-full-access'\n"],
+    [
+      "inherited broad",
+      (home: string) =>
+        `default_permissions = "child"\n[permissions.parent.filesystem]\n${JSON.stringify(home)} = 'write' # broad\n[permissions.child]\nextends = "parent"\n`,
+    ],
+    [
+      "exact single quotes",
+      (home: string) =>
+        `default_permissions = "p"\n[permissions.p.filesystem]\n${JSON.stringify(join(home, "state"))} = 'write'\n`,
+    ],
+    [
+      "scoped broad",
+      (home: string) =>
+        `default_permissions = "p"\n[permissions.p.filesystem.${JSON.stringify(home)}]\n"." = "write"\n"secret" = "deny"\n`,
+    ],
+  ])("retains byte-identical %s grants", async (_name, configuration) => {
+    const homeDirectory = await mkdtemp(join(tmpdir(), "symnav-codex-broad-"));
+    scratchDirectories.push(homeDirectory);
+    const adapter = new CodexSandboxConfiguration({ homeDirectory });
+    await mkdir(join(homeDirectory, ".codex"));
+    const original = configuration(homeDirectory);
+    await writeFile(adapter.configurationPath, original);
+    expect(await adapter.grant(join(homeDirectory, "state"))).toMatchObject({ changed: false });
+    expect(await readFile(adapter.configurationPath, "utf8")).toBe(original);
+  });
 });

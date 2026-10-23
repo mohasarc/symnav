@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, expect, it } from "vitest";
@@ -136,4 +136,23 @@ it("keeps legacy workspace-write permissions at the original workspace", async (
   ]) as Record<string, unknown>;
   expect(filesystem[original]).toMatchObject({ ".": "write", ".codex": "read" });
   expect(result.configuration).not.toContain(":tmpdir");
+});
+
+it("checks an existing grant through its canonical filesystem path", async () => {
+  const home = await mkdtemp(join(tmpdir(), "codex-alias-"));
+  ProbePolicyScratch.directories.push(home);
+  const physical = join(home, "physical");
+  const alias = join(home, "alias");
+  await mkdir(physical);
+  await symlink(physical, alias, "junction");
+  const adapter = new CodexSandboxConfiguration({ homeDirectory: home });
+  await mkdir(join(home, ".codex"));
+  await writeFile(
+    adapter.configurationPath,
+    `sandbox_mode="workspace-write"\n[sandbox_workspace_write]\nwritable_roots=[${JSON.stringify(alias)}]\nexclude_tmpdir_env_var=true\nexclude_slash_tmp=true\n`,
+  );
+  expect(
+    (await adapter.inspect(join(physical, "state"), join(physical, "doctor", "workspace")))
+      .grantsState,
+  ).toBe(true);
 });

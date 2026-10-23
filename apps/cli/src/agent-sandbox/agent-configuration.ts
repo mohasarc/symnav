@@ -12,6 +12,7 @@ export interface AgentSetupResult {
 
 export interface AgentConfigurationLocations {
   readonly homeDirectory: string;
+  readonly workspaceDirectory?: string;
   readonly codexHome?: string;
   readonly claudeConfigurationDirectory?: string;
 }

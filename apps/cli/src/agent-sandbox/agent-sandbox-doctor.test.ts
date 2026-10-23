@@ -168,3 +168,35 @@ it("leaves concurrent doctor scratch and ordinary state untouched", async () => 
   expect(await filesystem.readFile(join(other, "marker"), "utf8")).toBe("keep");
   expect(await filesystem.readFile(join(h.root, "usage.jsonl"), "utf8")).toBe("private usage");
 });
+it.each(["available", "not-found"] as const)(
+  "fails unsupported patterned state denial before %s runtime selection",
+  async (availability) => {
+    const h = await Harness.create();
+    vi.spyOn(AgentExecutable, "installed").mockResolvedValue(true);
+    const parent = join(h.root, "states");
+    const state = join(parent, "private", "state");
+    await filesystem.mkdir(state, { recursive: true });
+    await filesystem.mkdir(join(h.root, ".codex"));
+    const configuration = new CodexSandboxConfiguration({ homeDirectory: h.root });
+    await writeFile(
+      configuration.configurationPath,
+      `default_permissions="selected"\n[permissions.selected]\nextends=":read-only"\n[permissions.selected.filesystem]\n${JSON.stringify(parent)}={ "."="write", "*/state"="deny" }\n`,
+    );
+    h.runtimes[0]!.available = availability;
+    const runtimeAvailability = vi.spyOn(h.runtimes[0]!, "availability");
+    const doctor = new AgentSandboxDoctor({
+      stateDirectory: state,
+      configurations: [configuration],
+      runtimes: h.runtimes,
+    });
+    expect(await doctor.check("codex")).toEqual([
+      {
+        agent: "codex",
+        status: "fail",
+        reason: expect.stringContaining("cannot verify patterned Codex state denial"),
+      },
+    ]);
+    expect(runtimeAvailability).not.toHaveBeenCalled();
+    expect(h.runtimes[0]!.calls).toEqual([]);
+  },
+);

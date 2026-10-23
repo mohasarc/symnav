@@ -1,6 +1,6 @@
 import { StateDirectoryResolver } from "../state-directory-resolver.js";
 import { ParseError } from "toml-eslint-parser";
-import { isAbsolute, join, relative, resolve, sep } from "node:path";
+import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import type { AgentProbePolicy } from "./agent-probe-policy.js";
 import { TomlDocument } from "./toml-document.js";
 import {
@@ -67,6 +67,7 @@ export class CodexSandboxConfiguration extends AgentSandboxConfiguration {
       }
     }
     const canonicalState = StateDirectoryResolver.canonicalize(stateDirectory);
+    this.rejectRelevantPatternedDenials(rules, canonicalState);
     const covering = rules.filter((rule) => this.covers(rule.path, canonicalState));
     const specificity = Math.max(
       -1,
@@ -85,6 +86,21 @@ export class CodexSandboxConfiguration extends AgentSandboxConfiguration {
       grantsState,
       configuration: `default_permissions = "symnav-doctor"\n[permissions.symnav-doctor.filesystem]\n${assignments}\n[permissions.symnav-doctor.network]\nenabled = false\n`,
     };
+  }
+
+  private rejectRelevantPatternedDenials(
+    rules: readonly { path: string; access: unknown }[],
+    stateDirectory: string,
+  ): void {
+    for (const rule of rules) {
+      if (rule.access !== "deny") continue;
+      const wildcard = rule.path.search(/[*?\[\]{}]/u);
+      if (wildcard === -1) continue;
+      const prefix = rule.path.slice(0, wildcard);
+      const staticDirectory = prefix.endsWith(sep) ? resolve(prefix) : dirname(prefix);
+      if (this.covers(staticDirectory, stateDirectory))
+        throw new Error("cannot verify patterned Codex state denial; use explicit state rules");
+    }
   }
 
   private legacyProbeFilesystem(

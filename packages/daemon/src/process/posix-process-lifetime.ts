@@ -1,3 +1,4 @@
+import { DaemonStateWriteErrors } from "../state-write-errors.js";
 import { DaemonProcessLifetimeCreationError } from "./process-lifetime-creation-error.js";
 import { spawnSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
@@ -59,8 +60,11 @@ export class PosixDaemonProcessLifetime {
     const creation = spawnSync("mkfifo", ["-m", "600", identity.path], { stdio: "ignore" });
     if (creation.error !== undefined) throw creation.error;
     if (creation.status !== 0)
-      throw new Error(
-        `Daemon process lifetime creation failed (${creation.status ?? creation.signal})`,
+      throw DaemonStateWriteErrors.failedWrite(
+        identity.path,
+        new Error(
+          `Daemon process lifetime creation failed (${creation.status ?? creation.signal})`,
+        ),
       );
     const descriptor = openSync(
       identity.path,

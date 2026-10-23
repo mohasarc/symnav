@@ -1,5 +1,5 @@
 import { applyEdits, findNodeAtLocation, modify, parseTree, type ParseError } from "jsonc-parser";
-import { join } from "node:path";
+import { isAbsolute, join, relative, resolve, sep } from "node:path";
 import {
   AgentSandboxConfiguration,
   type AgentConfigurationLocations,
@@ -12,9 +12,15 @@ export class ClaudeCodeSandboxConfiguration extends AgentSandboxConfiguration {
   public readonly agent = "claude-code";
   public readonly configurationPath: string;
 
+  private readonly homeDirectory: string;
+
   public constructor(locations: AgentConfigurationLocations) {
     super();
-    this.configurationPath = join(locations.homeDirectory, ".claude", "settings.json");
+    this.homeDirectory = locations.homeDirectory;
+    this.configurationPath = join(
+      locations.claudeConfigurationDirectory ?? join(locations.homeDirectory, ".claude"),
+      "settings.json",
+    );
   }
 
   public async grant(stateDirectory: string): Promise<AgentSetupResult> {
@@ -46,8 +52,28 @@ export class ClaudeCodeSandboxConfiguration extends AgentSandboxConfiguration {
     if (root === undefined || errors.length > 0) throw new Error("invalid JSON");
     const path = ["sandbox", "filesystem", "allowWrite"];
     const grants = findNodeAtLocation(root, path)?.children ?? [];
-    if (grants.some((grant) => grant.value === stateDirectory)) return original;
+    if (
+      grants.some(
+        (grant) => typeof grant.value === "string" && this.covers(grant.value, stateDirectory),
+      )
+    )
+      return original;
     const updated = applyEdits(original, modify(original, [...path, -1], stateDirectory, {}));
     return updated;
+  }
+  private covers(grant: string, stateDirectory: string): boolean {
+    if (grant === stateDirectory) return true;
+    const expanded =
+      grant === "~"
+        ? this.homeDirectory
+        : grant.startsWith("~/")
+          ? join(this.homeDirectory, grant.slice(2))
+          : grant;
+    if (!isAbsolute(expanded) || /[*?\[\]{}]/u.test(expanded)) return false;
+    const remainder = relative(resolve(expanded), resolve(stateDirectory));
+    return (
+      remainder === "" ||
+      (!isAbsolute(remainder) && remainder !== ".." && !remainder.startsWith(`..${sep}`))
+    );
   }
 }

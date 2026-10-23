@@ -45,3 +45,68 @@ it.each([
     expect(await readFile(adapter.configurationPath, "utf8")).toBe(original);
   },
 );
+
+it("keeps scoped special roots at their original absolute locations and never grants scratch state", async () => {
+  const home = await mkdtemp(join(tmpdir(), "codex-special-"));
+  directories.push(home);
+  const workspace = join(home, "original");
+  const scratch = join(home, "state", "doctor", "id", "workspace");
+  const adapter = new CodexSandboxConfiguration({
+    homeDirectory: home,
+    workspaceDirectory: workspace,
+    codexHome: join(home, "configuration"),
+  });
+  await mkdir(join(home, "configuration"));
+  await writeFile(
+    adapter.configurationPath,
+    `default_permissions = "child"\n[permissions.base]\nextends = ":read-only"\n[permissions.base.workspace_roots]\n"~/extra" = true\n[permissions.base.filesystem.\":workspace_roots\"]\n\".\" = "write"\nsecret = "deny"\n[permissions.child]\nextends = "base"\n[permissions.child.filesystem]\n\"~/configuration\" = "deny"\n\":tmpdir\" = "read"\n`,
+  );
+  const result = await adapter.inspect(join(workspace, "state"), scratch);
+  expect(result.grantsState).toBe(true);
+  const doc = new TomlDocument(result.configuration);
+  const filesystem = doc.value(["permissions", "symnav-doctor", "filesystem"]) as Record<
+    string,
+    unknown
+  >;
+  expect(filesystem[workspace]).toEqual({ ".": "write", secret: "deny" });
+  expect(filesystem[join(home, "extra")]).toEqual({ ".": "write", secret: "deny" });
+  expect(filesystem[join(home, "configuration")]).toBe("deny");
+  expect(filesystem[scratch]).toBe("read");
+  expect(result.configuration).not.toContain(":workspace_roots");
+  expect(result.configuration).not.toContain("probe-state");
+});
+it("does not add a root-read baseline to a custom profile with no parent", async () => {
+  const home = await mkdtemp(join(tmpdir(), "codex-restricted-"));
+  directories.push(home);
+  const adapter = new CodexSandboxConfiguration({ homeDirectory: home });
+  await mkdir(join(home, ".codex"));
+  await writeFile(
+    adapter.configurationPath,
+    'default_permissions="strict"\n[permissions.strict.filesystem]\n":minimal"="read"\n"/state"="write"\n',
+  );
+  const result = await adapter.inspect("/state", "/state/doctor/id/workspace");
+  const doc = new TomlDocument(result.configuration);
+  expect(doc.value(["permissions", "symnav-doctor", "extends"])).toBeUndefined();
+  expect(doc.value(["permissions", "symnav-doctor", "filesystem", ":root"])).toBeUndefined();
+  expect(doc.value(["permissions", "symnav-doctor", "filesystem", ":minimal"])).toBe("read");
+});
+it("preserves builtin workspace grants and equal-path permission precedence", async () => {
+  const home = await mkdtemp(join(tmpdir(), "codex-builtin-"));
+  directories.push(home);
+  const adapter = new CodexSandboxConfiguration({ homeDirectory: home, workspaceDirectory: home });
+  await mkdir(join(home, ".codex"));
+  await writeFile(
+    adapter.configurationPath,
+    'default_permissions="selected"\n[permissions.selected]\nextends=":workspace"\nfilesystem."/"="write"\n',
+  );
+  const inspected = await adapter.inspect(join(home, "state"), "/scratch/workspace");
+  expect(inspected.grantsState).toBe(true);
+  expect(
+    new TomlDocument(inspected.configuration).value([
+      "permissions",
+      "symnav-doctor",
+      "filesystem",
+      home,
+    ]),
+  ).toMatchObject({ ".": "write", ".codex": "read" });
+});

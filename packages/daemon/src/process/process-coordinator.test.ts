@@ -1,5 +1,13 @@
 import { spawn, type ChildProcess } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  appendFileSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -47,6 +55,50 @@ describe("DaemonProcessCoordinator runtime lifecycle", () => {
     for (const child of childProcesses) child.kill("SIGTERM");
     childProcesses.length = 0;
     vi.restoreAllMocks();
+  });
+
+  it("reads no events from an empty live diagnostic snapshot", async () => {
+    await DaemonProcessCoordinatorHarness.start(new ImmediateExecutor(), {
+      onCreated: (harness) => {
+        harnesses.push(harness);
+        mkdirSync(harness.identity.identityDirectory, { recursive: true });
+        writeFileSync(harness.identity.logPath, "");
+
+        expect(harness.hasExited).toBe(false);
+        expect(harness.logEvents()).toEqual([]);
+      },
+    });
+  });
+
+  it("reads complete live diagnostic events while retaining an unfinished tail for the next snapshot", async () => {
+    await DaemonProcessCoordinatorHarness.start(new ImmediateExecutor(), {
+      onCreated: (harness) => {
+        harnesses.push(harness);
+        mkdirSync(harness.identity.identityDirectory, { recursive: true });
+        writeFileSync(harness.identity.logPath, '{"kind":"start"}\n{"kind":"failure",');
+
+        expect(harness.logEvents()).toEqual([{ kind: "start" }]);
+        appendFileSync(harness.identity.logPath, '"operation":"start"}');
+        expect(harness.logEvents()).toEqual([{ kind: "start" }]);
+        appendFileSync(harness.identity.logPath, "\n");
+        expect(harness.logEvents()).toEqual([
+          { kind: "start" },
+          { kind: "failure", operation: "start" },
+        ]);
+      },
+    });
+  });
+
+  it("rejects a malformed complete live diagnostic record", async () => {
+    await DaemonProcessCoordinatorHarness.start(new ImmediateExecutor(), {
+      onCreated: (harness) => {
+        harnesses.push(harness);
+        mkdirSync(harness.identity.identityDirectory, { recursive: true });
+        writeFileSync(harness.identity.logPath, '{"kind":"start"}\n{"kind":\n');
+
+        expect(harness.logEvents.bind(harness)).toThrow(SyntaxError);
+      },
+    });
   });
 
   it.each([process.platform === "win32" ? "endpoint bind" : "endpoint create", "warm-up"] as const)(

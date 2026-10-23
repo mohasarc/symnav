@@ -135,7 +135,6 @@ export class DaemonClientRuntime {
       options.productVersion,
       options.executorModuleUrl,
       this.policy,
-      processTerminator,
     );
     this.observer = new DaemonRecordObserver(this.routingTransport, processTerminator);
     this.coordinator = new DaemonStartupCoordinator(

@@ -1,4 +1,9 @@
-import { spawn, spawnSync, type ChildProcessWithoutNullStreams } from "node:child_process";
+import {
+  spawn,
+  spawnSync,
+  type ChildProcess,
+  type ChildProcessWithoutNullStreams,
+} from "node:child_process";
 import {
   cpSync,
   existsSync,
@@ -29,6 +34,7 @@ class SandboxNavigationHarness {
   public readonly forbiddenTemporaryDirectory = join(this.root, "forbidden-tmp");
   public readonly testing: CliDaemonTesting;
   private readonly sessions: SandboxNavigationSession[] = [];
+  private readonly children = new Map<ChildProcess, Promise<RunSymnavBinaryResult>>();
   private static readonly cli = fileURLToPath(new URL("../../../dist/cli.js", import.meta.url));
   private static readonly session = fileURLToPath(
     new URL("../../helpers/sandbox-navigation-session.mjs", import.meta.url),
@@ -83,6 +89,55 @@ class SandboxNavigationHarness {
     this.sessions.push(session);
     await session.ready;
     return session;
+  }
+
+  public outsideAsync(
+    argv: readonly string[],
+    script = SandboxNavigationHarness.cli,
+    environment: NodeJS.ProcessEnv = {},
+  ): Promise<RunSymnavBinaryResult> {
+    const child = spawn(process.execPath, [script, ...argv], {
+      cwd: this.workspace,
+      env: { ...this.environment(), ...environment },
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    const exited = new Promise<RunSymnavBinaryResult>((resolve, reject) => {
+      let stdout = "";
+      let stderr = "";
+      child.stdout.on("data", (bytes: Buffer) => {
+        stdout += bytes.toString();
+      });
+      child.stderr.on("data", (bytes: Buffer) => {
+        stderr += bytes.toString();
+      });
+      child.once("error", reject);
+      child.once("close", (status) => resolve({ status, stdout, stderr }));
+    });
+    this.children.set(child, exited);
+    return exited;
+  }
+
+  public async waitForWorker(): Promise<void> {
+    const deadline = Date.now() + 10_000;
+    while (Date.now() < deadline) {
+      if (existsSync(join(this.stateDirectory, "lifecycle-worker-started"))) return;
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+    throw new Error("Lifecycle fixture worker did not start");
+  }
+
+  public async releaseDrainingWorker(): Promise<void> {
+    const deadline = Date.now() + 4_000;
+    while (Date.now() < deadline) {
+      const status = this.outside(["daemon", "status", "--json"], { SYMNAV_TELEMETRY: "0" });
+      const daemons = (JSON.parse(status.stdout) as { daemons: { detail?: string }[] }).daemons;
+      if (daemons.some((daemon) => daemon.detail === "draining")) {
+        writeFileSync(join(this.stateDirectory, "lifecycle-worker-release"), "released");
+        return;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+    throw new Error("Lifecycle fixture daemon did not begin authenticated drain");
   }
 
   public async waitUntilReady(): Promise<string> {
@@ -170,6 +225,10 @@ class SandboxNavigationHarness {
       stopFailure = error as Error;
     } finally {
       await Promise.all(this.sessions.map((session) => session.close()));
+      for (const [child, exited] of this.children) {
+        if (child.exitCode === null && child.signalCode === null) child.kill("SIGTERM");
+        await exited;
+      }
     }
     if (stopFailure !== undefined) throw stopFailure;
     await this.waitForExitedLifetimes();
@@ -269,8 +328,14 @@ class SandboxNavigationSession {
   public async run(
     argv: readonly string[],
     environment: NodeJS.ProcessEnv = {},
+    script?: string,
   ): Promise<RunSymnavBinaryResult> {
-    return this.request({ kind: "run", argv, environment }) as Promise<RunSymnavBinaryResult>;
+    return this.request({
+      kind: "run",
+      argv,
+      environment,
+      script,
+    }) as Promise<RunSymnavBinaryResult>;
   }
   public close(): Promise<void> {
     this.closing ??= this.finish();
@@ -444,26 +509,125 @@ describe.each([
     async () => {
       const harness = new SandboxNavigationHarness();
       harnesses.push(harness);
+      const baseline = harness.outside(["overview", "src/index.ts"], {
+        SYMNAV_DAEMON: "0",
+        SYMNAV_TELEMETRY: "0",
+      });
+      expect(baseline).toMatchObject({ status: 0, stderr: "" });
       const session = await harness.start(runtime);
-      await session.run(["overview", "src/index.ts"]);
+      expect(await session.run(["overview", "src/index.ts"])).toEqual(baseline);
       const original = await harness.waitUntilReady();
-      await session.run(["overview", "src/index.ts"]);
+      expect(await session.run(["overview", "src/index.ts"])).toEqual(baseline);
       await session.close();
       const lifetimes = harness.testing.inspector.processLifetimeObservations();
+      expect(lifetimes.length).toBeGreaterThan(0);
       expect(lifetimes).not.toContain("unknown");
       const exited = lifetimes.every((observation) => observation === "exited");
       if (process.platform === "linux" && runtime === "claude-code") expect(exited).toBe(true);
-      harness.outside(["overview", "src/index.ts"]);
+      const ownershipAfterClose = harness.testing.inspector.listInstances();
+      let recoveryMode: "cold" | "fallback" | "warm";
+      if (exited && ownershipAfterClose.length === 0) recoveryMode = "cold";
+      else {
+        expect(ownershipAfterClose).toEqual([
+          expect.objectContaining({ instanceId: original, state: "ready" }),
+        ]);
+        recoveryMode = exited ? "fallback" : "warm";
+      }
+      expect(harness.outside(["overview", "src/index.ts"])).toEqual(baseline);
       const replacement = await harness.waitUntilReady();
-      harness.outside(["overview", "src/index.ts"]);
+      expect(harness.outside(["overview", "src/index.ts"])).toEqual(baseline);
       if (exited) {
         expect(replacement).not.toBe(original);
-        expect(harness.modes()).toEqual(["cold", "warm", "cold", "warm"]);
       } else {
         expect(replacement).toBe(original);
-        expect(harness.modes()).toEqual(["cold", "warm", "warm", "warm"]);
       }
+      expect(harness.modes()).toEqual(["cold", "warm", recoveryMode, "warm"]);
       expect(harness.instanceIds()).toEqual([replacement]);
+    },
+    40_000,
+  );
+
+  it.skipIf(!available).each(["host", "sandbox"] as const)(
+    "stops a ready daemon started in %s from the other side",
+    async (origin) => {
+      const harness = new SandboxNavigationHarness();
+      harnesses.push(harness);
+      const session = await harness.start(runtime);
+      const start =
+        origin === "host"
+          ? harness.outside(["overview", "src/index.ts"])
+          : await session.run(["overview", "src/index.ts"]);
+      expect(start.status).toBe(0);
+      const instanceId = await harness.waitUntilReady();
+      expect(harness.instanceIds()).toEqual([instanceId]);
+      const stopped =
+        origin === "host"
+          ? await session.run(["daemon", "stop"])
+          : harness.outside(["daemon", "stop"]);
+      expect(stopped).toEqual({
+        status: 0,
+        stderr: "",
+        stdout: expect.stringMatching(/^Stopped daemon for .+ \(pid \d+\)\n$/),
+      });
+      await harness.waitForExitedLifetimes();
+      const absent =
+        origin === "host"
+          ? await session.run(["daemon", "stop"])
+          : harness.outside(["daemon", "stop"]);
+      expect(absent).toEqual({
+        status: 0,
+        stderr: "",
+        stdout: `No daemon running for ${harness.workspace}\n`,
+      });
+    },
+    40_000,
+  );
+
+  it.skipIf(!available).each([
+    ["host", "graceful"],
+    ["sandbox", "graceful"],
+    ["host", "blocked"],
+    ["sandbox", "blocked"],
+  ] as const)(
+    "stops %s starting daemon with %s worker through the other side",
+    async (origin, worker) => {
+      const harness = new SandboxNavigationHarness();
+      harnesses.push(harness);
+      const session = await harness.start(runtime);
+      const fixture = fileURLToPath(
+        new URL("../../helpers/daemon-lifecycle-fixture.mjs", import.meta.url),
+      );
+      const environment: NodeJS.ProcessEnv = { SYMNAV_TEST_STARTING_STOP: worker };
+      const launched =
+        origin === "host"
+          ? await harness.outsideAsync([], fixture, environment)
+          : await session.run([], environment, fixture);
+      expect(launched).toEqual({ status: 0, stdout: "cold\n", stderr: "" });
+      await harness.waitForWorker();
+      const instances = harness.testing.inspector.listInstances();
+      expect(instances).toHaveLength(1);
+      expect(instances[0]?.state).toBe("starting");
+      const stopping =
+        origin === "host"
+          ? session.run(["daemon", "stop"])
+          : harness.outsideAsync(["daemon", "stop"]);
+      if (worker === "graceful") await harness.releaseDrainingWorker();
+      expect(await stopping).toEqual({
+        status: 0,
+        stderr: "",
+        stdout: `${worker === "blocked" ? "Killed" : "Stopped"} daemon for ${harness.workspace} (pid ${instances[0]!.pid})\n`,
+      });
+      await harness.waitForExitedLifetimes();
+      expect(harness.instanceIds()).toEqual([]);
+      const absent =
+        origin === "host"
+          ? await session.run(["daemon", "stop"])
+          : harness.outside(["daemon", "stop"]);
+      expect(absent).toEqual({
+        status: 0,
+        stderr: "",
+        stdout: `No daemon running for ${harness.workspace}\n`,
+      });
     },
     40_000,
   );

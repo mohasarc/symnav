@@ -17,7 +17,7 @@ class SandboxNavigationSession {
         const result =
           request.kind === "permissions"
             ? await this.permissions(request)
-            : await this.run(request.argv, request.environment);
+            : await this.run(request.argv, request.environment, request.script);
         process.stdout.write(JSON.stringify(result) + "\n");
       } catch (error) {
         process.stdout.write(JSON.stringify({ error: String(error) }) + "\n");
@@ -25,9 +25,9 @@ class SandboxNavigationSession {
     }
   }
 
-  static run(argv, environment = {}) {
+  static run(argv, environment = {}, script = process.argv[2]) {
     return new Promise((resolve, reject) => {
-      const child = spawn(process.execPath, [process.argv[2], ...argv], {
+      const child = spawn(process.execPath, [script, ...argv], {
         env: { ...process.env, ...environment },
         stdio: ["ignore", "pipe", "pipe"],
       });

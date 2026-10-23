@@ -9,6 +9,7 @@ import { ClaudeCodeSandboxRuntime } from "../../../dist/agent-sandbox/claude-cod
 import { CliDaemonTesting } from "../../helpers/daemon-testing.js";
 import {
   chmodSync,
+  cpSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
@@ -21,11 +22,12 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { runSymnavBinary } from "@symnav/testing";
+import { fixturePath, runSymnavBinary } from "@symnav/testing";
 
 class DoctorHarness {
   public static readonly roots: string[] = [];
   public static readonly probeStates: string[] = [];
+  public static readonly daemons: { workspace: string; state: string }[] = [];
   public readonly root = realpathSync(mkdtempSync(join(tmpdir(), "symnav-doctor-")));
   public readonly state = join(
     this.root,
@@ -89,6 +91,18 @@ class DoctorHarness {
   }
 }
 afterEach(() => {
+  for (const daemon of DoctorHarness.daemons.splice(0)) {
+    const stopped = runSymnavBinary(["daemon", "stop"], {
+      cwd: daemon.workspace,
+      env: { SYMNAV_STATE_DIR: daemon.state, SYMNAV_DAEMON: "1", SYMNAV_TELEMETRY: "0" },
+    });
+    expect(stopped.status, stopped.stderr).toBe(0);
+    expect(
+      new CliDaemonTesting(daemon.state).inspector
+        .processLifetimeObservations()
+        .every((value) => value === "exited"),
+    ).toBe(true);
+  }
   for (const state of DoctorHarness.probeStates.splice(0))
     expect(new CliDaemonTesting(state).inspector.processLifetimeObservations()).not.toContain(
       "live",
@@ -209,6 +223,19 @@ describe.each([
       const config =
         agent === "codex" ? join(h.codex, "config.toml") : join(h.claude, "settings.json");
       const original = readFileSync(config, "utf8");
+      const userWorkspace = join(h.root, "user-workspace");
+      cpSync(fixturePath("trivial-project"), userWorkspace, { recursive: true });
+      mkdirSync(join(userWorkspace, ".git"), { recursive: true });
+      DoctorHarness.daemons.push({ workspace: userWorkspace, state: h.state });
+      const started = h.run(["daemon", "start", "--cwd", userWorkspace], {
+        ...h.runtimeEnvironment(),
+        SYMNAV_DAEMON: "1",
+      });
+      expect(started.status, started.stderr).toBe(0);
+      const inspector = new CliDaemonTesting(h.state).inspector;
+      const originalInstances = inspector.listInstances().map((instance) => instance.instanceId);
+      expect(originalInstances).toHaveLength(1);
+      const originalStateFiles = readdirSync(h.state);
       expect(h.run(["doctor", agent], h.runtimeEnvironment())).toEqual({
         status: 0,
         stderr: "",
@@ -216,7 +243,10 @@ describe.each([
       });
       expect(readFileSync(config, "utf8")).toBe(original);
       expect(readFileSync(join(h.state, "usage.jsonl"), "utf8")).toBe("existing private usage\n");
-      expect(readdirSync(h.state)).toEqual(["usage.jsonl"]);
+      expect(readdirSync(h.state)).toEqual(originalStateFiles);
+      expect(inspector.listInstances().map((instance) => instance.instanceId)).toEqual(
+        originalInstances,
+      );
     },
     60000,
   );

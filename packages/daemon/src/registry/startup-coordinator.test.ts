@@ -840,6 +840,90 @@ describe("DaemonStartupCoordinator", () => {
     ).resolves.toMatchObject({ status: "ready", workspaceRoot: "/repo" });
   });
 
+  it.each([false, true])(
+    "records confirmed abandoned lifetime exit when its displayed PID is locally alive %s",
+    async (numericPidIsAlive) => {
+      const harness = new CoordinatorHarness(roots);
+      const lifetime: DaemonProcessLifetimeIdentity = {
+        token: "12345678-1234-1234-1234-123456789012",
+        path: join(
+          harness.identity.stateDirectory,
+          "process-lifetimes",
+          "12345678-1234-1234-1234-123456789012.fifo",
+        ),
+      };
+      const lease = harness.registry.acquireStartup(harness.identity, "orphan")!;
+      expect(lease.transferToDaemon(43210, "", lifetime)).toBe(true);
+      const hasExited = vi
+        .spyOn(harness.terminator, "hasExited")
+        .mockImplementation((pid) => pid === 43210);
+      const isAlive = vi.spyOn(harness.terminator, "isAlive").mockReturnValue(numericPidIsAlive);
+      await expect(harness.coordinator().trigger(harness.identity)).resolves.toMatchObject({
+        status: "launched",
+      });
+      const journal = new DaemonFailureJournal(
+        harness.identity.stateDirectory,
+        DaemonPolicy.currentSystem().values.diagnostics,
+        new NodeDaemonClock(),
+      );
+      expect(await journal.recent(Date.now())).toEqual([
+        expect.objectContaining({
+          instanceId: "orphan",
+          kind: "startup-failure",
+          failure: expect.objectContaining({ reason: "process-terminated" }),
+        }),
+      ]);
+      expect(hasExited.mock.calls.filter(([pid]) => pid === 43210)).toEqual([
+        [43210, lifetime],
+        [43210, lifetime],
+      ]);
+      expect(isAlive).not.toHaveBeenCalled();
+      expect(harness.terminator.terminated).toEqual([]);
+      vi.restoreAllMocks();
+    },
+  );
+
+  it.each([false, true])(
+    "retains live and unknown startup lifetimes when their displayed PID is locally alive %s",
+    async (numericPidIsAlive) => {
+      for (const lifetime of [
+        undefined,
+        {
+          token: "12345678-1234-1234-1234-123456789012",
+          path: "/state/process-lifetimes/12345678-1234-1234-1234-123456789012.fifo",
+        },
+      ]) {
+        const harness = new CoordinatorHarness(roots);
+        const lease = harness.registry.acquireStartup(harness.identity, "orphan")!;
+        expect(lease.transferToDaemon(43210, "", lifetime)).toBe(true);
+        const owner = harness.registry.startupOwner(harness.identity);
+        const startingRecord: DaemonRecord = {
+          ...harness.readyRecord("orphan", "0.1.0", 43210),
+          state: "starting",
+        };
+        vi.spyOn(harness.registry, "readStoredInstance").mockReturnValue(startingRecord);
+        vi.spyOn(harness.terminator, "hasExited").mockReturnValue(false);
+        vi.spyOn(harness.terminator, "isAlive").mockReturnValue(numericPidIsAlive);
+        const remove = vi.spyOn(harness.registry, "removeAbandonedStartupOwner");
+        await expect(harness.coordinator().trigger(harness.identity)).resolves.toMatchObject({
+          status: "starting",
+          instanceId: "orphan",
+        });
+        expect(remove).not.toHaveBeenCalled();
+        expect(harness.registry.startupOwner(harness.identity)).toEqual(owner);
+        expect(harness.launcher.launchCount).toBe(0);
+        expect(harness.terminator.terminated).toEqual([]);
+        const journal = new DaemonFailureJournal(
+          harness.identity.stateDirectory,
+          DaemonPolicy.currentSystem().values.diagnostics,
+          new NodeDaemonClock(),
+        );
+        expect(await journal.recent(Date.now())).toEqual([]);
+        vi.restoreAllMocks();
+      }
+    },
+  );
+
   it("recovers a durable startup lock when its owner published no record", async () => {
     const harness = new CoordinatorHarness(roots, { neverReady: true });
     expect(harness.registry.acquireStartup(harness.identity, "orphan")).toBeDefined();

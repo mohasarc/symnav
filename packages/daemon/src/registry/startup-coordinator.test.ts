@@ -1,5 +1,5 @@
 import { spawn, type ChildProcess } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, fstatSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -12,6 +12,7 @@ import { TestDaemonController as DaemonController } from "../../test/helpers/dae
 import { TestDaemonStartupCoordinator as DaemonStartupCoordinator } from "../../test/helpers/daemon-startup-coordinator.js";
 import {
   DaemonProcessTerminationError,
+  NodeDaemonProcessLauncher,
   type DaemonProcess,
   type DaemonProcessExit,
   type DaemonProcessLauncher,
@@ -671,6 +672,43 @@ describe("DaemonStartupCoordinator", () => {
     expect(harness.registry.startupOwner(harness.identity)?.instanceId).not.toBe("orphan");
     expect(harness.registry.acquireStartup(harness.identity, "recovered")).toBeUndefined();
   });
+
+  it.skipIf(process.platform === "win32")(
+    "closes the prepared child reader when initial starting publication throws",
+    async () => {
+      const stateDirectory = temporaryDirectory(roots);
+      const identity = DaemonWorkspaceIdentity.from(
+        join(stateDirectory, "workspace"),
+        stateDirectory,
+      );
+      const registry = new DaemonRegistry(identity.registryDirectory);
+      const launcher = new NodeDaemonProcessLauncher(
+        "0.1.0",
+        "file:///absolute/symnav/daemon-executor.js",
+        DaemonPolicy.currentSystem(),
+      );
+      const preparation = vi.spyOn(launcher, "prepareLifetime");
+      const launch = vi.spyOn(launcher, "launch");
+      const error = Object.assign(new Error("record write denied"), { code: "EACCES" });
+      vi.spyOn(registry, "writeStartingIfStartupOwner").mockImplementation(() => {
+        throw error;
+      });
+      const coordinator = new DaemonStartupCoordinator(registry, launcher, new DaemonTransport());
+      try {
+        await expect(coordinator.trigger(identity)).rejects.toBe(error);
+        const lifetime = preparation.mock.results[0]!.value!;
+        expect(() => fstatSync(lifetime.descriptor)).toThrow(
+          expect.objectContaining({ code: "EBADF" }),
+        );
+        expect(PosixDaemonProcessLifetime.observe(lifetime.identity)).toBe("exited");
+        expect(launch).not.toHaveBeenCalled();
+        expect(registry.startupOwner(identity)).toBeUndefined();
+        expect(registry.readStored(identity)).toBeUndefined();
+      } finally {
+        preparation.mock.results[0]?.value?.closeParentCopy();
+      }
+    },
+  );
 
   it("does not launch after startup ownership changes before publication", async () => {
     const harness = new CoordinatorHarness(roots);

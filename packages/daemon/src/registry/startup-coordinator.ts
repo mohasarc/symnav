@@ -234,30 +234,36 @@ export class DaemonStartupCoordinator {
     processToken: string,
     lease: NonNullable<ReturnType<DaemonRegistry["acquireStartup"]>>,
   ): Promise<DaemonWarmupTriggerResult> {
-    const startedAt = this.clock.wallNowMs();
-    const startingRecord: DaemonRecord = {
-      schemaVersion: DAEMON_RECORD_SCHEMA_VERSION,
-      protocolVersion: DAEMON_PROTOCOL_VERSION,
-      symnavVersion: this.launcher.symnavVersion,
-      workspaceRoot: identity.workspaceRoot,
-      workspaceKey: identity.workspaceKey,
-      stateKey: identity.stateKey,
-      identityKey: identity.identityKey,
-      instanceId,
-      processToken,
-      endpoint: identity.endpoint(instanceId),
-      pid: 0,
-      state: "starting",
-      startedAt,
-      memoryCapBytes: this.launcher.memoryCapBytes,
-    };
-    if (!this.registry.writeStartingIfStartupOwner(identity, startingRecord)) {
-      throw new Error("Daemon startup ownership changed before process launch");
-    }
+    const lifetime = this.launcher.prepareLifetime?.(identity);
     let daemonProcess: DaemonProcess | undefined;
     try {
-      daemonProcess = await this.launcher.launch(identity, instanceId, processToken);
-      const transferred = lease.transferToDaemon(daemonProcess.pid, processToken);
+      const startedAt = this.clock.wallNowMs();
+      const startingRecord: DaemonRecord = {
+        schemaVersion: DAEMON_RECORD_SCHEMA_VERSION,
+        protocolVersion: DAEMON_PROTOCOL_VERSION,
+        symnavVersion: this.launcher.symnavVersion,
+        workspaceRoot: identity.workspaceRoot,
+        workspaceKey: identity.workspaceKey,
+        stateKey: identity.stateKey,
+        identityKey: identity.identityKey,
+        instanceId,
+        processToken,
+        endpoint: identity.endpoint(instanceId),
+        ...(lifetime === undefined ? {} : { processLifetime: lifetime.identity }),
+        pid: 0,
+        state: "starting",
+        startedAt,
+        memoryCapBytes: this.launcher.memoryCapBytes,
+      };
+      if (!this.registry.writeStartingIfStartupOwner(identity, startingRecord)) {
+        throw new Error("Daemon startup ownership changed before process launch");
+      }
+      daemonProcess = await this.launcher.launch(identity, instanceId, processToken, lifetime);
+      const transferred = lease.transferToDaemon(
+        daemonProcess.pid,
+        processToken,
+        daemonProcess.processLifetime,
+      );
       if (
         !transferred &&
         !this.registry.daemonOwnsStartupProcess(
@@ -272,6 +278,9 @@ export class DaemonStartupCoordinator {
       if (
         !this.registry.writeStartingIfStartupOwner(identity, {
           ...startingRecord,
+          ...(daemonProcess.processLifetime === undefined
+            ? {}
+            : { processLifetime: daemonProcess.processLifetime }),
           pid: daemonProcess.pid,
         })
       ) {
@@ -287,6 +296,7 @@ export class DaemonStartupCoordinator {
         pid: daemonProcess.pid,
       };
     } catch (error) {
+      lifetime?.closeParentCopy();
       if (error instanceof DaemonChildExitError) {
         this.cleanupLaunchedProcess(identity, instanceId, processToken);
         throw error;
@@ -371,14 +381,8 @@ export class DaemonStartupCoordinator {
 
   private startupOwnerIsAbandoned(identity: DaemonWorkspaceIdentity, owner: StartupOwner): boolean {
     const record = this.registry.readStoredInstance(identity, owner.instanceId);
-    if (record !== undefined && record.pid > 0) {
-      return !this.processTerminator.isAlive(record.pid);
-    }
-    if (owner.ownerKind === "daemon") return !this.processTerminator.isAlive(owner.ownerPid);
-    return (
-      !this.processTerminator.isAlive(owner.ownerPid) ||
-      !this.registry.startupOwnerIsWithinGrace(owner)
-    );
+    const lifetime = record?.processLifetime ?? owner.ownerLifetime;
+    return this.processTerminator.hasExited(record?.pid || owner.ownerPid, lifetime);
   }
 
   private async validatedChildRecord(
@@ -439,7 +443,7 @@ export class DaemonStartupCoordinator {
     const waitStartedAt = this.clock.wallNowMs();
     while (this.clock.wallNowMs() - waitStartedAt <= this.terminationTimeoutMs) {
       const endpointReleased = !(await this.identifiesRecordedProcess(record));
-      const processExited = !this.processTerminator.isAlive(record.pid);
+      const processExited = this.processTerminator.hasExited(record.pid, record.processLifetime);
       if (endpointReleased && processExited) return;
       await this.pause();
     }

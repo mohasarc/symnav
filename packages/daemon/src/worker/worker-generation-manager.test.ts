@@ -11,6 +11,22 @@ import type {
 import { DaemonWorkerGenerationManager } from "./worker-generation-manager.js";
 
 describe("DaemonWorkerGenerationManager", () => {
+  it.each(["close", "terminate"] as const)(
+    "does not activate a startup report after %s while readiness is pending",
+    async (action) => {
+      const worker = new ControlledNavigationWorker(1);
+      const manager = createManager({ initialWorker: worker });
+      const starting = manager.start();
+      const activating = manager.activateReadiness();
+      const startupFailure = expect(starting).rejects.toThrow("stopping");
+      const activationFailure = expect(activating).rejects.toThrow("stopping");
+      await manager[action]();
+      await Promise.all([startupFailure, activationFailure]);
+      worker.completeReady(3);
+      expect(manager.snapshot.ready).toBe(false);
+    },
+  );
+
   it("activates only the current generation across multiple replacements after initial readiness", async () => {
     const workers = [1, 2, 3].map((generation) => new ControlledNavigationWorker(generation));
     const manager = createManager({ createWorker: (generation) => workers[generation - 1]! });

@@ -65,6 +65,21 @@ class Harness {
   public static async create() {
     return new Harness(await mkdtemp(join(tmpdir(), "probe-proof-")));
   }
+  public static events(): readonly UsageEvent[] {
+    return (["cold", "warm"] as const).map((executionMode) => ({
+      schemaVersion: SCHEMA_VERSION,
+      sessionId: "session",
+      symnavVersion: "test",
+      timestamp: 1,
+      durationMs: 1,
+      argShape: { kind: "path", lengthBucket: "short", flags: [] },
+      workspaceId: "workspace",
+      machineId: "machine",
+      command: "overview",
+      outcome: "success",
+      executionMode,
+    }));
+  }
   public proof() {
     return new SandboxProbeProof({
       session: this.channel,
@@ -83,20 +98,7 @@ afterEach(async () => {
 });
 it("requires successful cold/warm output and actual warm telemetry before cleanup", async () => {
   const h = await Harness.create();
-  const events: readonly UsageEvent[] = (["cold", "warm"] as const).map((executionMode) => ({
-    schemaVersion: SCHEMA_VERSION,
-    sessionId: "session",
-    symnavVersion: "test",
-    timestamp: 1,
-    durationMs: 1,
-    argShape: { kind: "path", lengthBucket: "short", flags: [] },
-    workspaceId: "workspace",
-    machineId: "machine",
-    command: "overview",
-    outcome: "success",
-    executionMode,
-  }));
-  vi.spyOn(NodeUsageLogReader.prototype, "read").mockReturnValue(events);
+  vi.spyOn(NodeUsageLogReader.prototype, "read").mockReturnValue(Harness.events());
   await h.proof().run();
   expect(h.channel.actions).toEqual(["run", "status", "run", "cleanup"]);
   expect(h.channel.close).toHaveBeenCalledOnce();
@@ -131,6 +133,19 @@ it("bounds only the diagnostic probe and cleans after its deadline", async () =>
       ),
   );
   await expect(h.proof().run()).rejects.toThrow("timed out");
+  expect(h.channel.close).toHaveBeenCalledOnce();
+  expect(h.cleanup).toHaveBeenCalledOnce();
+});
+
+it("fails when the runtime exits during cleanup after a successful proof", async () => {
+  const h = await Harness.create();
+  vi.spyOn(NodeUsageLogReader.prototype, "read").mockReturnValue(Harness.events());
+  const request = h.channel.request.bind(h.channel);
+  vi.spyOn(h.channel, "request").mockImplementation(async (message) => {
+    if (message.action === "cleanup") throw new Error("runtime exited before cleanup");
+    return request(message);
+  });
+  await expect(h.proof().run()).rejects.toThrow("cleanup");
   expect(h.channel.close).toHaveBeenCalledOnce();
   expect(h.cleanup).toHaveBeenCalledOnce();
 });

@@ -335,13 +335,30 @@ describe("DaemonProcessCoordinator runtime lifecycle", () => {
   }, 10_000);
 
   it("retains exact ownership after autonomous idle shutdown for an exit observer", async () => {
-    const harness = await DaemonProcessCoordinatorHarness.start(new ImmediateExecutor(), {
-      idleTimeoutMs: 10,
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    let harness: DaemonProcessCoordinatorHarness;
+    let hasExitedAtReadiness: boolean;
+    let readyOwnership: ReturnType<DaemonRegistry["read"]>;
+    try {
+      harness = await DaemonProcessCoordinatorHarness.start(new ImmediateExecutor(), {
+        idleTimeoutMs: 10,
+      });
+      harnesses.push(harness);
+      hasExitedAtReadiness = harness.hasExited;
+      readyOwnership = harness.registry.read(harness.identity);
+
+      await vi.advanceTimersByTimeAsync(10);
+      await expect(harness.exited).resolves.toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
+
+    expect(hasExitedAtReadiness).toBe(false);
+    expect(readyOwnership).toMatchObject({
+      instanceId: harness.instanceId,
+      processToken: "runtime-token",
+      state: "ready",
     });
-    harnesses.push(harness);
-
-    await harness.exited;
-
     expect(harness.registry.read(harness.identity)).toMatchObject({
       instanceId: harness.instanceId,
       processToken: "runtime-token",

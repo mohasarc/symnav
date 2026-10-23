@@ -267,7 +267,7 @@ export class DaemonProcessCoordinator {
       });
       this.logger.record({ kind: "freshness", ...response.refresh });
       await this.resourceSupervisor.sample("warmup");
-      this.workerManager.activateReadiness();
+      await this.workerManager.activateReadiness();
       const readyRecord: DaemonRecord = {
         schemaVersion: DAEMON_RECORD_SCHEMA_VERSION,
         protocolVersion: DAEMON_PROTOCOL_VERSION,

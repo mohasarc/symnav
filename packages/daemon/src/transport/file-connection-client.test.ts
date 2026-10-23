@@ -11,11 +11,115 @@ import { FileDaemonConnectionClient } from "./file-connection-client.js";
 
 vi.mock("node:fs/promises", async (importOriginal) => {
   const actual = await importOriginal<typeof import("node:fs/promises")>();
-  return { ...actual, writeFile: vi.fn(actual.writeFile), rm: vi.fn(actual.rm) };
+  return {
+    ...actual,
+    mkdir: vi.fn(actual.mkdir),
+    writeFile: vi.fn(actual.writeFile),
+    rm: vi.fn(actual.rm),
+  };
 });
 
 describe.skipIf(process.platform === "win32")("FileDaemonConnectionClient write provenance", () => {
   afterEach(() => vi.restoreAllMocks());
+
+  it.each(["endpoint", "token", "successor"] as const)(
+    "does not report an obsolete initial channel write after %s removal",
+    async (removal) => {
+      const fixture = await ChannelWriteFixture.create();
+      const readOwner = FileDaemonEndpoint.owner.bind(FileDaemonEndpoint);
+      let successor: string | undefined;
+      vi.spyOn(FileDaemonEndpoint, "owner").mockImplementationOnce(async (endpoint) => {
+        const peer = await readOwner(endpoint);
+        await files.rm(removal === "endpoint" ? fixture.endpoint : fixture.directory, {
+          recursive: true,
+          force: true,
+        });
+        if (removal === "successor") {
+          const token = randomUUID();
+          successor = join(fixture.endpoint, token);
+          await files.mkdir(successor);
+          await files.writeFile(join(successor, "owner.json"), JSON.stringify({ ...peer, token }));
+        }
+        return peer;
+      });
+      try {
+        const client = new FileDaemonConnectionClient({
+          policy: DaemonPolicy.currentSystem().values.transport,
+        });
+        const error: unknown = await client
+          .connect(fixture.endpoint)
+          .catch((cause: unknown) => cause);
+        expect(error).toMatchObject({ code: "ECONNREFUSED" });
+        expect(DaemonStateWriteErrors.from(error)).toBeUndefined();
+        if (successor !== undefined) expect(await files.readdir(successor)).toEqual(["owner.json"]);
+      } finally {
+        await fixture.dispose();
+      }
+    },
+  );
+
+  it.each(["live", "unknown", "malformed", "denied"] as const)(
+    "retains the initial required mkdir failure with %s ownership evidence",
+    async (evidence) => {
+      const fixture = await ChannelWriteFixture.create();
+      const failure = Object.assign(new Error("required mkdir failed"), {
+        code: "ENOENT",
+        syscall: "mkdir",
+        path: join(fixture.directory, "required-channel"),
+      });
+      const readOwner = FileDaemonEndpoint.owner.bind(FileDaemonEndpoint);
+      vi.spyOn(FileDaemonEndpoint, "owner").mockImplementationOnce(async (endpoint) => {
+        const peer = await readOwner(endpoint);
+        if (evidence === "malformed") await files.writeFile(fixture.owner, "invalid");
+        if (evidence === "denied")
+          vi.spyOn(FileDaemonEndpoint, "readOwner").mockRejectedValue(
+            Object.assign(new Error("owner read denied"), { code: "EACCES", syscall: "open" }),
+          );
+        return peer;
+      });
+      if (evidence === "unknown")
+        vi.spyOn(PosixDaemonProcessLifetime, "observe").mockReturnValue("unknown");
+      vi.mocked(files.mkdir).mockRejectedValueOnce(failure);
+      try {
+        const client = new FileDaemonConnectionClient({
+          policy: DaemonPolicy.currentSystem().values.transport,
+        });
+        const error: unknown = await client
+          .connect(fixture.endpoint)
+          .catch((cause: unknown) => cause);
+        expect(error).toBe(failure);
+        expect(DaemonStateWriteErrors.from(error)).toEqual({
+          path: failure.path,
+          osCode: "ENOENT",
+        });
+      } finally {
+        await fixture.dispose();
+      }
+    },
+  );
+
+  it.skipIf(process.getuid?.() === 0)(
+    "retains a genuine initial channel mkdir denial",
+    async () => {
+      const fixture = await ChannelWriteFixture.create();
+      await files.chmod(fixture.directory, 0o500);
+      try {
+        const client = new FileDaemonConnectionClient({
+          policy: DaemonPolicy.currentSystem().values.transport,
+        });
+        const error: unknown = await client
+          .connect(fixture.endpoint)
+          .catch((cause: unknown) => cause);
+        expect(DaemonStateWriteErrors.from(error)).toEqual({
+          path: expect.stringContaining(fixture.directory),
+          osCode: "EACCES",
+        });
+      } finally {
+        await files.chmod(fixture.directory, 0o700);
+        await fixture.dispose();
+      }
+    },
+  );
 
   it.skipIf(process.platform === "win32" || process.getuid?.() === 0)(
     "reports a real cleanup write failure after an ownership read fails",

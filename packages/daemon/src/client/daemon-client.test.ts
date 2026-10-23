@@ -96,6 +96,54 @@ describe("DaemonClient execution", () => {
     },
   );
 
+  it.skipIf(process.platform === "win32").each(["endpoint", "token"] as const)(
+    "keeps local telemetry when %s vanishes before the initial channel write",
+    async (removal) => {
+      const fixture = await ClientOwnershipFixture.create();
+      const harness = new ClientHarness({
+        record: daemonRecord({
+          endpoint: fixture.endpoint,
+          pid: process.pid,
+          processLifetime: fixture.lifetime,
+        }),
+      });
+      vi.mocked(DaemonRecordObserver.prototype.observe).mockRestore();
+      const readOwner = FileDaemonEndpoint.owner.bind(FileDaemonEndpoint);
+      let observations = 0;
+      let completeRemoval!: () => void;
+      const removed = new Promise<void>((resolve) => {
+        completeRemoval = resolve;
+      });
+      vi.spyOn(FileDaemonEndpoint, "owner").mockImplementation(async (endpoint) => {
+        const peer = await readOwner(endpoint);
+        observations += 1;
+        if (observations === 2) {
+          await rm(removal === "endpoint" ? fixture.endpoint : fixture.directory, {
+            recursive: true,
+            force: true,
+          });
+          completeRemoval();
+        }
+        await removed;
+        return peer;
+      });
+      const stateWriteFailed = vi.fn();
+      try {
+        const result = await harness.client.execute({ ...harness.request(), stateWriteFailed });
+        expect(observations).toBe(2);
+        expect(result.mode).toBe("cold");
+        expect(stateWriteFailed).not.toHaveBeenCalled();
+        expect(harness.localRequests).toEqual([
+          expect.objectContaining({ telemetryEnabled: true, executionMode: "cold" }),
+        ]);
+        expect(harness.warmRequests).toEqual([]);
+        expect(harness.trigger).not.toHaveBeenCalled();
+      } finally {
+        await fixture.dispose();
+      }
+    },
+  );
+
   it.skipIf(process.platform === "win32" || process.getuid?.() === 0)(
     "reports denied channel cleanup once and disables local telemetry after an ownership read fails",
     async () => {

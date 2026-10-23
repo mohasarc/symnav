@@ -16,6 +16,7 @@ import { NodeGitHistory } from "./git/node-git-history.js";
 import { registerOverviewCommand } from "./commands/overview/register-overview-command.js";
 import { registerRefsCommand } from "./commands/refs/register-refs-command.js";
 import { registerResolveCommand } from "./commands/resolve/register-resolve-command.js";
+import { registerSetupCommand } from "./commands/setup/register-setup-command.js";
 import { registerStatsCommand } from "./commands/stats/register-stats-command.js";
 import type { ProgramContext } from "./program-context.js";
 import type { ProgramDependencies } from "./program-dependencies.js";
@@ -143,5 +144,6 @@ export function buildProgram(
   registerGraphCommand(program, ctx, commandDependencies);
   registerDaemonCommand(program, ctx, commandDependencies);
   registerStatsCommand(program, ctx, commandDependencies);
+  registerSetupCommand(program, ctx);
   return program;
 }

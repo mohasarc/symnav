@@ -11,6 +11,7 @@ export interface AgentSetupResult {
 export interface AgentConfigurationLocations {
   readonly homeDirectory: string;
   readonly codexHome?: string;
+  readonly claudeConfigurationDirectory?: string;
 }
 
 export abstract class AgentSandboxConfiguration {

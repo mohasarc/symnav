@@ -58,6 +58,8 @@ symnav daemon status --json
 
 Daemons exit after 30 minutes without navigation work, when their workspace is deleted, or when resident memory exceeds one quarter of system memory, bounded between 256 MiB and 4 GiB. A failure before request submission permits one local attempt; submitted or accepted requests are never replayed locally. A later eligible invocation can start a replacement.
 
+Warm-up follows navigation worker replacements caused by memory pressure. Readiness and startup diagnostics describe the current worker after resource checks; an obsolete worker finishing or stopping does not fail a healthy replacement.
+
 Registry records and per-workspace JSON diagnostic logs live under `~/.symnav/daemons/`. Set `SYMNAV_STATE_DIR` to relocate all symnav state; daemon files then live under `$SYMNAV_STATE_DIR/daemons/`. Diagnostics are not written to command stdout or stderr.
 
 `daemon status` adds fallback counts and the latest reason from the last hour below each running daemon. A workspace without a live daemon shows its last startup failure from that hour, including the operating-system error code when available. Busy and unresponsive processes remain listed. Status never starts a daemon or waits for warm-up; JSON keeps `schemaVersion: 1` and adds optional `recentFallbacks` and `startupFailures` fields.

@@ -1,5 +1,6 @@
 import { PosixDaemonProcessLifetime } from "./posix-process-lifetime.js";
 import { DaemonStateWriteErrors } from "../state-write-errors.js";
+import { DaemonWorkerStoppingError } from "../worker/worker-stopping-error.js";
 import { DaemonFailureJournal } from "../diagnostics/failure-journal.js";
 import { DaemonFailureRecorder } from "../diagnostics/failure-recorder.js";
 import type { DaemonFailurePhase, DaemonFailureReason } from "../daemon-failure.js";
@@ -301,11 +302,15 @@ export class DaemonProcessCoordinator {
       this.resourceSupervisor.start();
       await this.logger.flush();
     } catch (error) {
+      if (startupHeartbeat !== undefined) clearInterval(startupHeartbeat);
+      if (error instanceof DaemonWorkerStoppingError && this.shutdownOperation !== undefined) {
+        startupLease?.release();
+        return;
+      }
       if (failurePhase === "warm-up" && DaemonStateWriteErrors.from(error) !== undefined) {
         failurePhase = "state location";
         failureReason = "state-write-failed";
       }
-      if (startupHeartbeat !== undefined) clearInterval(startupHeartbeat);
       await this.failureRecorder.record(
         "startup-failure",
         failurePhase,

@@ -1,3 +1,4 @@
+import { PosixDaemonProcessLifetime } from "./posix-process-lifetime.js";
 import { access } from "node:fs/promises";
 import {
   type DaemonExecutorModuleUrl,
@@ -257,6 +258,9 @@ export class DaemonProcessCoordinator {
         instanceId: this.options.coordinates.instanceId,
         processToken: this.options.coordinates.processToken,
         endpoint: this.options.coordinates.endpoint,
+        ...(startingRecord.processLifetime === undefined
+          ? {}
+          : { processLifetime: startingRecord.processLifetime }),
         pid: process.pid,
         state: "ready",
         startedAt: startingRecord.startedAt,
@@ -307,6 +311,9 @@ export class DaemonProcessCoordinator {
           this.options.coordinates.instanceId,
           this.options.coordinates.processToken,
           process.pid,
+          process.platform === "win32"
+            ? undefined
+            : PosixDaemonProcessLifetime.current(this.options.identity.stateDirectory),
         );
         if (lease === undefined) {
           await this.pause();
@@ -314,6 +321,13 @@ export class DaemonProcessCoordinator {
         }
         this.options.registry.writeStartingIfStartupOwner(this.options.identity, {
           ...record,
+          ...(process.platform === "win32"
+            ? {}
+            : {
+                processLifetime: PosixDaemonProcessLifetime.current(
+                  this.options.identity.stateDirectory,
+                ),
+              }),
           pid: process.pid,
         });
         const adoptedRecord = this.options.registry.readInstance(

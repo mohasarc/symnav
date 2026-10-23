@@ -1,3 +1,4 @@
+import { PosixDaemonProcessLifetime } from "./process/posix-process-lifetime.js";
 import { DaemonPolicyCodec } from "./daemon-policy.js";
 import { NodeDaemonClock } from "./lifecycle/daemon-clock.js";
 import { DaemonLogger } from "./diagnostics/logger.js";
@@ -11,6 +12,12 @@ import { DaemonTransportFactory } from "./transport/daemon-transport.js";
 class DaemonProcessEntry {
   static async run(encodedConfiguration: string | undefined): Promise<void> {
     const configuration = DaemonProcessConfigurationParser.parse(encodedConfiguration);
+    if (configuration.processLifetime !== undefined)
+      PosixDaemonProcessLifetime.adoptChild(
+        configuration.stateDirectory,
+        configuration.processLifetime,
+        3,
+      );
     const identity = DaemonWorkspaceIdentity.from(
       configuration.workspaceRoot,
       configuration.stateDirectory,

@@ -43,6 +43,11 @@ export class CodexSandboxConfiguration extends AgentSandboxConfiguration {
     const original = await file.read();
     const document = new TomlDocument(original);
     this.validateLegacy(document);
+    if (
+      document.configuration.default_permissions !== undefined ||
+      document.configuration.permissions !== undefined
+    )
+      this.validateProfiles(document);
     const updated =
       document.configuration.default_permissions !== undefined
         ? this.grantProfile(document, stateDirectory)
@@ -95,7 +100,18 @@ export class CodexSandboxConfiguration extends AgentSandboxConfiguration {
       );
     }
     if (this.profileGrants(document, selected, stateDirectory, new Set())) return document.source;
+    const rules = this.profileRules(document, selected, new Set());
+    if (
+      rules.some(
+        (rule) =>
+          rule.access === "deny" && this.absolutePath(rule.path) === resolve(stateDirectory),
+      )
+    ) {
+      throw new Error("state directory has an explicit deny rule");
+    }
     const path = ["permissions", selected, "filesystem", stateDirectory];
+    if (this.isTable(this.profileFilesystem(document, selected, new Set())[stateDirectory]))
+      path.push(".");
     if (document.value(path) === "write") return document.source;
     return document.set(path, '"write"');
   }
@@ -106,32 +122,118 @@ export class CodexSandboxConfiguration extends AgentSandboxConfiguration {
     stateDirectory: string,
     ancestors: Set<string>,
   ): boolean {
+    const rules = this.profileRules(document, name, ancestors).filter((rule) =>
+      this.covers(rule.path, stateDirectory),
+    );
+    const mostSpecific = Math.max(-1, ...rules.map((rule) => this.absolutePath(rule.path)!.length));
+    const effective = rules.filter((rule) => this.absolutePath(rule.path)!.length === mostSpecific);
+    return (
+      !effective.some((rule) => rule.access === "deny") &&
+      effective.some((rule) => rule.access === "write")
+    );
+  }
+
+  private profileRules(
+    document: TomlDocument,
+    name: string,
+    ancestors: Set<string>,
+  ): { path: string; access: unknown }[] {
+    const rules: { path: string; access: unknown }[] = [];
+    for (const [path, access] of Object.entries(
+      this.profileFilesystem(document, name, ancestors),
+    )) {
+      if (path === "glob_scan_max_depth") continue;
+      const entries = this.isTable(access) ? Object.entries(access) : [[".", access]];
+      for (const [subpath, permission] of entries) {
+        rules.push({
+          path: subpath === "." ? path : join(path, subpath as string),
+          access: permission,
+        });
+      }
+    }
+    return rules;
+  }
+
+  private profileFilesystem(
+    document: TomlDocument,
+    name: string,
+    ancestors: Set<string>,
+  ): Record<string, unknown> {
     if (ancestors.has(name)) throw new Error("permission profile inheritance cycle");
-    if (name === ":workspace" || name === ":read-only") return false;
+    if (name === ":workspace" || name === ":read-only") return {};
     ancestors.add(name);
-    const profile = document.value(["permissions", name]) as Record<string, unknown> | undefined;
-    if (profile === undefined) return false;
-    const filesystem = profile.filesystem as Record<string, unknown> | undefined;
-    if (filesystem !== undefined) {
-      let mostSpecific = -1;
-      let granted = false;
-      for (const [path, access] of Object.entries(filesystem)) {
-        const entries =
-          typeof access === "object" && access !== null ? Object.entries(access) : [[".", access]];
-        for (const [subpath, permission] of entries) {
-          const rulePath = subpath === "." ? path : join(path, subpath as string);
-          if (!this.covers(rulePath, stateDirectory)) continue;
-          const specificity = this.absolutePath(rulePath)?.length ?? -1;
-          if (specificity < mostSpecific) continue;
-          mostSpecific = specificity;
-          granted = permission === "write";
+    const profile = document.value(["permissions", name]) as Record<string, unknown>;
+    const inherited =
+      typeof profile.extends === "string"
+        ? this.profileFilesystem(document, profile.extends, ancestors)
+        : {};
+    const filesystem: Record<string, unknown> = { ...inherited };
+    for (const [path, access] of Object.entries(
+      (profile.filesystem ?? {}) as Record<string, unknown>,
+    )) {
+      const ancestor = inherited[path];
+      filesystem[path] =
+        this.isTable(ancestor) && this.isTable(access) ? { ...ancestor, ...access } : access;
+    }
+    return filesystem;
+  }
+
+  private validateProfiles(document: TomlDocument): void {
+    const selected = document.configuration.default_permissions;
+    if (typeof selected !== "string")
+      throw new Error("default_permissions must select a permission profile");
+    const profiles = document.configuration.permissions;
+    if (profiles !== undefined && !this.isTable(profiles))
+      throw new Error("permissions must be a table");
+    this.validateProfile(document, selected, new Set());
+  }
+
+  private validateProfile(document: TomlDocument, name: string, ancestors: Set<string>): void {
+    if ([":workspace", ":read-only", ":danger-full-access"].includes(name)) return;
+    if (ancestors.has(name)) throw new Error("permission profile inheritance cycle");
+    ancestors.add(name);
+    const profile = document.value(["permissions", name]);
+    if (profile === undefined) throw new Error(`unknown permission profile: ${name}`);
+    if (!this.isTable(profile)) throw new Error(`permission profile ${name} must be a table`);
+    if (profile.extends !== undefined) {
+      if (typeof profile.extends !== "string")
+        throw new Error("extends must name a permission profile");
+      if (profile.extends === ":danger-full-access")
+        throw new Error("cannot extend :danger-full-access");
+      this.validateProfile(document, profile.extends, ancestors);
+    }
+    if (profile.filesystem !== undefined) {
+      if (!this.isTable(profile.filesystem)) throw new Error("filesystem must be a table");
+      for (const [path, access] of Object.entries(profile.filesystem)) {
+        if (path === "glob_scan_max_depth") {
+          if (!Number.isInteger(access) || (access as number) < 1)
+            throw new Error("glob_scan_max_depth must be a positive integer");
+          continue;
+        }
+        const permissions = this.isTable(access) ? Object.values(access) : [access];
+        if (
+          !permissions.every(
+            (permission) =>
+              permission === "read" || permission === "write" || permission === "deny",
+          )
+        ) {
+          throw new Error("filesystem access must be read, write or deny");
         }
       }
-      if (mostSpecific >= 0) return granted;
     }
+    if (profile.network !== undefined) {
+      if (!this.isTable(profile.network)) throw new Error("network must be a table");
+      if (profile.network.enabled !== undefined && typeof profile.network.enabled !== "boolean")
+        throw new Error("network.enabled must be a boolean");
+    }
+  }
+
+  private isTable(value: unknown): value is Record<string, unknown> {
     return (
-      typeof profile.extends === "string" &&
-      this.profileGrants(document, profile.extends, stateDirectory, ancestors)
+      typeof value === "object" &&
+      value !== null &&
+      !Array.isArray(value) &&
+      !(value instanceof Date)
     );
   }
 

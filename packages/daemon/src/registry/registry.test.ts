@@ -1200,7 +1200,7 @@ function spawnRegistryCleaner(
       readyPath,
       barrierPath,
     ],
-    { stdio: "ignore" },
+    { stdio: ["ignore", "ignore", "inherit"] },
   );
 }
 

@@ -48,3 +48,29 @@ it("reports actual command stdout and status through the normal runner", async (
     telemetryEnabled: true,
   });
 });
+it("does not acknowledge cleanup before retained child exit is observed", async () => {
+  let release: (() => void) | undefined;
+  const closeOwnedProcesses = vi.fn(
+    () =>
+      new Promise<void>((resolve) => {
+        release = resolve;
+      }),
+  );
+  const actor = new SandboxProbeActor(
+    {
+      daemonClient: { control: vi.fn(async () => ({ status: "stopped" })), closeOwnedProcesses },
+    } as unknown as ProgramDependencies,
+    { run: vi.fn() },
+    "/scratch/workspace",
+  );
+  let completed = false;
+  const operation = actor.cleanup().then((reply) => {
+    completed = true;
+    return reply;
+  });
+  await vi.waitFor(() => expect(closeOwnedProcesses).toHaveBeenCalledOnce());
+  expect(completed).toBe(false);
+  release!();
+  await expect(operation).resolves.toEqual({ kind: "cleaned" });
+  expect(completed).toBe(true);
+});

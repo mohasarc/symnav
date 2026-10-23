@@ -1,3 +1,4 @@
+import type { DaemonProcessLifetimeIdentity } from "../process/process-lifetime-identity.js";
 import type { DaemonCommandName, DaemonExecutorRequest, DaemonOutputStream } from "@symnav/daemon";
 import type { DaemonRejectedExecutionFrame } from "../daemon-admission.js";
 import type { DaemonExecutionFailureCode } from "../daemon-execution-failure.js";
@@ -21,6 +22,7 @@ export interface DaemonRecord extends DaemonIdentityCoordinates {
   readonly schemaVersion: number;
   readonly protocolVersion: number;
   readonly symnavVersion: string;
+  readonly processLifetime?: DaemonProcessLifetimeIdentity;
   readonly pid: number;
   readonly state: "starting" | "ready";
   readonly startedAt: number;

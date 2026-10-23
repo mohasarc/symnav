@@ -1,3 +1,4 @@
+import type { DaemonProcessLifetimeIdentity } from "./process-lifetime-identity.js";
 import { mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
@@ -28,6 +29,7 @@ export interface DaemonProcessExit {
 }
 
 export interface DaemonProcess {
+  readonly processLifetime?: DaemonProcessLifetimeIdentity;
   readonly pid: number;
   readonly exited: Promise<DaemonProcessExit>;
   terminate(): Promise<void>;

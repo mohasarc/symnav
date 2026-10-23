@@ -74,19 +74,20 @@ describe("InvocationStateWriteCoordinator", () => {
     },
   );
 
-  it.each(["usage.jsonl"])(
-    "rejects a denied required %s inside a writable root",
-    async (target) => {
-      const directory = await StateHarness.directory();
-      const path = join(directory, target);
-      await mkdir(path);
-      const coordinator = new InvocationStateWriteCoordinator(directory);
-      expect(await coordinator.prepare({ daemon: false, telemetry: true })).toMatchObject({
-        kind: "disabled",
-        failure: { stateDirectory: directory, operationPath: path, osCode: "EISDIR" },
-      });
-    },
-  );
+  it("retains actual append-open preparation results for a usage directory", async () => {
+    const directory = await StateHarness.directory();
+    const path = join(directory, "usage.jsonl");
+    await mkdir(path);
+    const coordinator = new InvocationStateWriteCoordinator(directory);
+    expect(await coordinator.prepare({ daemon: false, telemetry: true })).toEqual(
+      process.platform === "win32"
+        ? { kind: "available" }
+        : {
+            kind: "disabled",
+            failure: { stateDirectory: directory, operationPath: path, osCode: "EISDIR" },
+          },
+    );
+  });
 
   it.each(["EPERM", "EACCES", "ENOSPC", undefined])(
     "retains the first actual failure (%s) and never retries",

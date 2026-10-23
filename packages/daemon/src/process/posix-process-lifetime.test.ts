@@ -1,5 +1,6 @@
 import { spawn, spawnSync } from "node:child_process";
 import {
+  chmodSync,
   constants,
   closeSync,
   mkdtempSync,
@@ -11,9 +12,15 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import * as files from "node:fs";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { DaemonStateWriteErrors } from "../state-write-errors.js";
 import { PosixDaemonProcessLifetime } from "./posix-process-lifetime.js";
+
+vi.mock("node:fs", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("node:fs")>();
+  return { ...actual, openSync: vi.fn(actual.openSync) };
+});
 
 class LifetimeFixture {
   public readonly state = mkdtempSync(join(tmpdir(), "symnav lifetime 日本語-"));
@@ -25,6 +32,7 @@ class LifetimeFixture {
 describe.skipIf(process.platform === "win32")("POSIX daemon process lifetime", () => {
   const fixtures: LifetimeFixture[] = [];
   afterEach(() => {
+    vi.restoreAllMocks();
     for (const fixture of fixtures.splice(0)) fixture.dispose();
   });
   const fixture = (): LifetimeFixture => {
@@ -104,6 +112,76 @@ describe.skipIf(process.platform === "win32")("POSIX daemon process lifetime", (
     expect(readdirSync(outside)).toEqual([]);
   });
 
+  it.skipIf(process.getuid?.() === 0)("retains the actual denied lifetime directory write", () => {
+    const state = fixture().state;
+    chmodSync(state, 0o500);
+    let failure: unknown;
+    try {
+      PosixDaemonProcessLifetime.prepareChild(state);
+    } catch (error) {
+      failure = error;
+    } finally {
+      chmodSync(state, 0o700);
+    }
+    expect(DaemonStateWriteErrors.from(failure)).toEqual({
+      path: join(state, "process-lifetimes"),
+      osCode: "EACCES",
+    });
+    expect(failure).toMatchObject({ cause: { syscall: "mkdir", code: "EACCES" } });
+  });
+
+  it("does not classify a FIFO reader acquisition error as a write", () => {
+    const denied = Object.assign(new Error("reader denied"), { code: "EACCES", syscall: "open" });
+    vi.mocked(files.openSync).mockImplementationOnce(() => {
+      throw denied;
+    });
+    let failure: unknown;
+    try {
+      PosixDaemonProcessLifetime.prepareChild(fixture().state);
+    } catch (error) {
+      failure = error;
+    }
+    expect(failure).toMatchObject({ cause: denied });
+    expect(DaemonStateWriteErrors.from(failure)).toBeUndefined();
+  });
+
+  it("retains unknown probe denial without reporting a write", () => {
+    const prepared = PosixDaemonProcessLifetime.prepareChild(fixture().state);
+    const denied = Object.assign(new Error("probe denied"), { code: "EACCES", syscall: "open" });
+    vi.mocked(files.openSync).mockImplementationOnce(() => {
+      throw denied;
+    });
+    try {
+      expect(PosixDaemonProcessLifetime.observe(prepared.identity)).toBe("unknown");
+      expect(DaemonStateWriteErrors.from(denied)).toBeUndefined();
+    } finally {
+      prepared.closeParentCopy();
+    }
+  });
+
+  it.skipIf(process.getuid?.() === 0)(
+    "preserves denied utility execution without reporting a write",
+    () => {
+      const utilities = fixture().state;
+      writeFileSync(join(utilities, "mkfifo"), "#!/bin/sh\nexit 3\n", { mode: 0o600 });
+      const original = process.env.PATH;
+      process.env.PATH = utilities;
+      let failure: unknown;
+      try {
+        PosixDaemonProcessLifetime.prepareChild(fixture().state);
+      } catch (error) {
+        failure = error;
+      } finally {
+        process.env.PATH = original;
+      }
+      expect(failure).toMatchObject({
+        code: "EACCES",
+        cause: { code: "EACCES", syscall: "spawnSync mkfifo" },
+      });
+      expect(DaemonStateWriteErrors.from(failure)).toBeUndefined();
+    },
+  );
+
   it("reports executed unsuccessful FIFO creation as a required write without invented errno", () => {
     const state = fixture().state;
     const utilities = fixture().state;
@@ -133,9 +211,14 @@ describe.skipIf(process.platform === "win32")("POSIX daemon process lifetime", (
     const original = process.env.PATH;
     process.env.PATH = "";
     try {
-      expect(() => PosixDaemonProcessLifetime.prepareChild(fixture().state)).toThrow(
-        expect.objectContaining({ name: "DaemonProcessLifetimeCreationError", code: "ENOENT" }),
-      );
+      let failure: unknown;
+      try {
+        PosixDaemonProcessLifetime.prepareChild(fixture().state);
+      } catch (error) {
+        failure = error;
+      }
+      expect(failure).toMatchObject({ name: "DaemonProcessLifetimeCreationError", code: "ENOENT" });
+      expect(DaemonStateWriteErrors.from(failure)).toBeUndefined();
     } finally {
       process.env.PATH = original;
     }

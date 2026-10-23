@@ -8,6 +8,7 @@ import { CodexSandboxConfiguration } from "./codex-configuration.js";
 import { ClaudeCodeSandboxConfiguration } from "./claude-code-configuration.js";
 import { AgentSandboxRuntime, type SandboxProbeRequest } from "./agent-sandbox-runtime.js";
 import { AgentSandboxDoctor } from "./agent-sandbox-doctor.js";
+import { SandboxProbeStartupError } from "./sandbox-probe-startup-error.js";
 import type { SupportedAgent } from "./agent-configuration.js";
 
 vi.mock("node:fs/promises", async (original) => {
@@ -121,6 +122,31 @@ it("keeps installed runtime failures as failures and isolates each live probe", 
   expect(h.runtimes[0]!.calls[0]!.workspace).toMatch(/doctor\/.+\/workspace$/);
   expect(await readdir(h.root)).toEqual([]);
 });
+it.each([undefined, "ENOENT"])(
+  "reports recorded startup fields without inventing a cause with OS code %s",
+  async (osCode) => {
+    const h = await Harness.create();
+    vi.spyOn(AgentExecutable, "installed").mockResolvedValue(true);
+    h.runtimes[1]!.available = "available";
+    h.runtimes[1]!.failure = new SandboxProbeStartupError({
+      workspaceRoot: "/observed-workspace",
+      failure: {
+        phase: "process spawn",
+        reason: "process-spawn-failed",
+        timestamp: 42,
+        ...(osCode === undefined ? {} : { osCode }),
+      },
+    });
+    expect(await h.doctor().doctor.check("claude-code")).toEqual([
+      {
+        agent: "claude-code",
+        status: "fail",
+        reason: `sandbox daemon warm-up failed (phase: process spawn; reason: process-spawn-failed${osCode === undefined ? "" : `; OS code: ${osCode}`}; workspace: /observed-workspace); investigate the reported startup failure and rerun doctor`,
+      },
+    ]);
+    expect(await readdir(h.root)).toEqual([]);
+  },
+);
 it("errors if doctor cannot write selected state", async () => {
   const h = await Harness.create();
   const state = join(h.root, "file");

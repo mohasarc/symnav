@@ -1,3 +1,4 @@
+import { FileDaemonEndpoint } from "./file-endpoint.js";
 import { spawn } from "node:child_process";
 import { once } from "node:events";
 import { mkdtemp, readdir, rm, writeFile, mkdir } from "node:fs/promises";
@@ -59,6 +60,27 @@ describe.skipIf(process.platform === "win32")("filesystem daemon server", () => 
     expect(handled.sort()).toEqual(["first", "second"]);
     await listening.close();
     expect(await readdir(join(endpoint, ".."))).toEqual([]);
+  });
+
+  it("connects to a live endpoint whose PID is absent in the caller namespace", async () => {
+    const endpoint = await harness.endpoint();
+    const transport = DaemonTransportFactory.create({ policy: harness.policy });
+    const listening = await transport.server.listen(endpoint, async (request) =>
+      harness.pong(request.instanceId),
+    );
+    const owner = await FileDaemonEndpoint.owner(endpoint);
+    await writeFile(
+      join(owner.directory, "owner.json"),
+      JSON.stringify({ ...owner, pid: 2147483647 }),
+    );
+    try {
+      await expect(
+        transport.lifecycle.request(endpoint, harness.ping("foreign")),
+      ).resolves.toMatchObject({ kind: "pong" });
+      await expect(transport.server.removeUnavailableEndpoint(endpoint)).resolves.toBe(false);
+    } finally {
+      await listening.close(true);
+    }
   });
 
   it("never removes a live endpoint because responses are slow", async () => {

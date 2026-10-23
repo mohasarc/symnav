@@ -81,6 +81,35 @@ describe("NodeDaemonProcessLauncher", () => {
     expect(terminate).toHaveBeenCalledOnce();
   });
 
+  it("includes a child still spawning when owned cleanup begins", async () => {
+    const root = mkdtempSync(join(tmpdir(), "symnav-pending-child-"));
+    roots.push(root);
+    const identity = DaemonWorkspaceIdentity.from(join(root, "workspace"), join(root, "state"));
+    const launcher = new NodeDaemonProcessLauncher(
+      "1",
+      executorModuleUrl,
+      DaemonPolicy.currentSystem(),
+    );
+    const childFactory = spawnMock.getMockImplementation()!;
+    spawnMock.mockImplementation(() => {
+      const child = childFactory() as FakeChildProcess;
+      child.once.mockImplementation((event: string, listener: (...args: unknown[]) => void) => {
+        processListeners.set(event, listener);
+        return child;
+      });
+      return child;
+    });
+    const launched = launcher.launch(identity, "instance", "token");
+    const closed = launcher.closeOwnedProcesses();
+    processListeners.get("spawn")!();
+    const child = await launched;
+    await closed;
+    expect((spawnMock.mock.results[0]!.value as FakeChildProcess).kill).toHaveBeenCalledWith(
+      "SIGTERM",
+    );
+    await expect(child.exited).resolves.toMatchObject({ signal: "SIGTERM" });
+  });
+
   it.each([
     ["absolute", (stateDirectory: string) => stateDirectory],
     ["relative", (stateDirectory: string) => relative(process.cwd(), stateDirectory)],

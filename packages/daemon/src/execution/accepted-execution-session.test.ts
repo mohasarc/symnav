@@ -24,6 +24,42 @@ import { NodeDaemonClock } from "../lifecycle/daemon-clock.js";
 import type { DaemonDiagnosticRecorder } from "../delivery/delivery-session.js";
 
 describe("AcceptedExecutionSession", () => {
+  it.each(["before-worker", "failure-record"] as const)(
+    "retains a real logger denial on failed execution first observed at %s",
+    async (denialPoint) => {
+      const storage = new RecoverableDiagnosticStorage();
+      storage.denied = denialPoint === "before-worker";
+      const logger = new DaemonLogger(
+        DaemonWorkspaceIdentity.from("/workspace", "/state"),
+        "instance",
+        new NodeDaemonClock(),
+        { storage, policy: DaemonPolicy.currentSystem().values.diagnostics },
+      );
+      const harness = new AcceptedExecutionHarness({ diagnosticRecorder: logger });
+      if (denialPoint === "before-worker") logger.record({ kind: "start" });
+      harness.workerExecute.mockImplementationOnce(async () => {
+        storage.denied = true;
+        throw new Error("worker failed");
+      });
+      const request = harness.request("failed");
+      harness.session.accept({ ...request, request: { ...request.request, telemetryEnabled: true } });
+      await vi.waitFor(() => expect(harness.session.status("failed").state).toBe("failed"));
+      expect(harness.terminalState("failed")).toMatchObject({
+        state: "failed",
+        code: "internal",
+        stateWriteFailure: { osCode: "EACCES" },
+      });
+      expect(harness.workerExecute).toHaveBeenCalledOnce();
+      expect(harness.workerExecute.mock.calls[0]?.[1]).toMatchObject({
+        request: { telemetryEnabled: denialPoint !== "before-worker" },
+      });
+      storage.denied = false;
+      harness.session.accept(harness.request("recovered"));
+      await vi.waitFor(() => expect(harness.session.status("recovered").state).toBe("completed"));
+      expect(harness.finishedWriteFailure).toBeUndefined();
+      await logger.close();
+    },
+  );
   it("retains the first current-request diagnostic failure after later successful writes", async () => {
     const storage = new RecoverableDiagnosticStorage();
     const logger = new DaemonLogger(
@@ -430,6 +466,10 @@ class AcceptedExecutionHarness {
     this.ledger.subscribe(requestId, (entry) => {
       if (entry.state.state === "completed") this.events.push("ledger-completed");
     });
+  }
+
+  terminalState(requestId: string) {
+    return this.ledger.entryFor(requestId)?.state;
   }
 }
 

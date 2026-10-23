@@ -13,7 +13,7 @@ import type {
   DaemonExecutionAcceptance,
   DaemonExecutionReceipt,
   DaemonExecutionRequester,
-  DaemonSocketClient,
+  DaemonConnectionClient,
 } from "./contracts.js";
 import { DaemonTransportError, type DaemonDeliveryState } from "./transport-error.js";
 import type { DaemonWireCodec } from "./wire-codec.js";
@@ -25,7 +25,7 @@ class DaemonResultFetchEndedError extends DaemonTransportError {
 }
 
 interface DaemonExecutionClientOptions {
-  readonly sockets: DaemonSocketClient;
+  readonly sockets: DaemonConnectionClient;
   readonly lifecycle: Pick<DaemonLifecycleClient, "acknowledgeResult">;
   readonly codec: DaemonWireCodec;
   readonly validator: DaemonProtocolValidator;
@@ -84,7 +84,7 @@ export class DaemonExecutionClient implements DaemonExecutionRequester {
         request.requestId,
         this.options.createOutput(),
       );
-      let connection: Awaited<ReturnType<DaemonSocketClient["connect"]>> | undefined;
+      let connection: Awaited<ReturnType<DaemonConnectionClient["connect"]>> | undefined;
       let delivery: DaemonDeliveryState = "not-submitted";
       let acceptance: DaemonExecutionAcceptance | undefined;
       let terminal = false;
@@ -248,8 +248,8 @@ export class DaemonExecutionClient implements DaemonExecutionRequester {
           return;
         }
         try {
-          connection.write(this.options.codec.encodeControl(request));
           delivery = "submitted-unconfirmed";
+          await connection.write(this.options.codec.encodeControl(request));
         } catch (error) {
           fail(error);
           return;
@@ -304,7 +304,7 @@ export class DaemonExecutionClient implements DaemonExecutionRequester {
     transfer: DaemonResultTransferReceiver,
   ): DaemonExecutionReceipt["completion"] {
     const decoder = this.options.codec.transferDecoder();
-    let connection: Awaited<ReturnType<DaemonSocketClient["connect"]>>;
+    let connection: Awaited<ReturnType<DaemonConnectionClient["connect"]>>;
     try {
       connection = await this.options.sockets.connect(endpoint);
     } catch (error) {
@@ -312,7 +312,7 @@ export class DaemonExecutionClient implements DaemonExecutionRequester {
       throw new DaemonTransportError("closed", "accepted", message, request.instanceId);
     }
     try {
-      connection.write(
+      await connection.write(
         this.options.codec.encodeControl({
           kind: "result-fetch",
           protocolVersion: request.protocolVersion,

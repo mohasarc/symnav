@@ -13,6 +13,11 @@ import type {
 } from "../../src/transport/protocol.js";
 import type { DaemonRequestHandler } from "../../src/transport/contracts.js";
 
+import { LocalDaemonSocketClient } from "../../src/transport/socket-client.js";
+import { LocalDaemonSocketServer } from "../../src/transport/socket-server.js";
+import { DaemonWireCodec } from "../../src/transport/wire-codec.js";
+import { DaemonProtocolValidator } from "../../src/transport/protocol-validator.js";
+
 type DaemonTransportPolicy = Pick<DaemonPolicyValues, "transport" | "delivery" | "output">;
 
 interface TestDaemonTransportOptions {
@@ -26,6 +31,9 @@ interface TestDaemonTransportOptions {
 
 export class TestDaemonTransport {
   private readonly components: DaemonTransportComponents;
+  private readonly injectedSockets:
+    | import("../../src/transport/contracts.js").DaemonConnectionClient
+    | undefined;
 
   constructor(
     policyOrOptions:
@@ -35,6 +43,7 @@ export class TestDaemonTransport {
       | TestDaemonTransportOptions = {},
   ) {
     if ("policy" in policyOrOptions) {
+      this.injectedSockets = policyOrOptions.sockets;
       this.components = DaemonTransportFactory.create(policyOrOptions);
       return;
     }
@@ -97,10 +106,24 @@ export class TestDaemonTransport {
   }
 
   listen(endpoint: string, handler: DaemonRequestHandler) {
-    return this.components.server.listen(endpoint, handler);
+    return this.server(endpoint).listen(endpoint, handler);
+  }
+
+  private server(endpoint: string) {
+    if (!endpoint.endsWith(".sock") && !this.injectedSockets) return this.components.server;
+    const policy = DaemonPolicy.currentSystem().values;
+    return new LocalDaemonSocketServer({
+      sockets: this.injectedSockets ?? new LocalDaemonSocketClient(),
+      codec: new DaemonWireCodec({
+        ...policy.transport,
+        maximumChunkRawBytes: policy.output.maximumChunkRawBytes,
+      }),
+      validator: new DaemonProtocolValidator(),
+      policy: policy.transport,
+    });
   }
 
   removeUnavailableEndpoint(endpoint: string) {
-    return this.components.server.removeUnavailableEndpoint(endpoint);
+    return this.server(endpoint).removeUnavailableEndpoint(endpoint);
   }
 }

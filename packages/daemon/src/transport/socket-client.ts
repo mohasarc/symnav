@@ -1,11 +1,11 @@
 import { createConnection, type Socket } from "node:net";
-import type { DaemonSocketClient, DaemonSocketConnection } from "./contracts.js";
+import type { DaemonConnectionClient, DaemonConnection } from "./contracts.js";
 
 interface LocalDaemonSocketClientOptions {
   readonly writeChunkSize?: number;
 }
 
-class LocalDaemonSocketConnection implements DaemonSocketConnection, AsyncIterable<Uint8Array> {
+class LocalDaemonSocketConnection implements DaemonConnection, AsyncIterable<Uint8Array> {
   readonly incoming: AsyncIterable<Uint8Array> = this;
   private readonly queuedBytes: Uint8Array[] = [];
   private pendingRead:
@@ -132,10 +132,10 @@ class LocalDaemonSocketConnection implements DaemonSocketConnection, AsyncIterab
   }
 }
 
-export class LocalDaemonSocketClient implements DaemonSocketClient {
+export class LocalDaemonSocketClient implements DaemonConnectionClient {
   constructor(private readonly options: LocalDaemonSocketClientOptions = {}) {}
 
-  connect(endpoint: string, timeoutMs?: number): Promise<DaemonSocketConnection> {
+  connect(endpoint: string, timeoutMs?: number): Promise<DaemonConnection> {
     return new Promise((resolve, reject) => {
       const socket = createConnection(endpoint);
       let connection: LocalDaemonSocketConnection | undefined;

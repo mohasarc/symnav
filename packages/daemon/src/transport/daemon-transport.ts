@@ -3,10 +3,13 @@ import { DaemonClientResultCapture, type DaemonOutputCapture } from "./client-re
 import { DaemonExecutionClient } from "./execution-client.js";
 import { DaemonLifecycleClient } from "./lifecycle-client.js";
 import { DaemonProtocolValidator } from "./protocol-validator.js";
-import type { DaemonRequestServer, DaemonSocketClient } from "./contracts.js";
+import type { DaemonRequestServer, DaemonConnectionClient } from "./contracts.js";
 import { DaemonWireCodec } from "./wire-codec.js";
 import { LocalDaemonSocketClient } from "./socket-client.js";
 import { LocalDaemonSocketServer } from "./socket-server.js";
+
+import { FileDaemonConnectionClient } from "./file-connection-client.js";
+import { FileDaemonRequestServer } from "./file-server.js";
 
 export interface DaemonTransportOptions {
   readonly policy: DaemonPolicy;
@@ -15,7 +18,7 @@ export interface DaemonTransportOptions {
   readonly captureDirectory?: string;
   readonly codec?: DaemonWireCodec;
   readonly validator?: DaemonProtocolValidator;
-  readonly sockets?: DaemonSocketClient;
+  readonly sockets?: DaemonConnectionClient;
   readonly lifecycle?: DaemonLifecycleClient;
   readonly execution?: DaemonExecutionClient;
   readonly server?: DaemonRequestServer;
@@ -42,9 +45,11 @@ export class DaemonTransportFactory {
     const validator = options.validator ?? new DaemonProtocolValidator();
     const sockets =
       options.sockets ??
-      new LocalDaemonSocketClient(
-        options.writeChunkSize === undefined ? {} : { writeChunkSize: options.writeChunkSize },
-      );
+      (process.platform !== "win32"
+        ? new FileDaemonConnectionClient({ policy: policy.values.transport })
+        : new LocalDaemonSocketClient(
+            options.writeChunkSize === undefined ? {} : { writeChunkSize: options.writeChunkSize },
+          ));
     const lifecycle =
       options.lifecycle ??
       new DaemonLifecycleClient({
@@ -75,13 +80,17 @@ export class DaemonTransportFactory {
       });
     const server =
       options.server ??
-      new LocalDaemonSocketServer({
-        sockets,
-        codec,
-        validator,
-        policy: policy.values.transport,
-        ...(options.writeChunkSize === undefined ? {} : { writeChunkSize: options.writeChunkSize }),
-      });
+      (process.platform !== "win32"
+        ? new FileDaemonRequestServer({ codec, validator, policy: policy.values.transport })
+        : new LocalDaemonSocketServer({
+            sockets,
+            codec,
+            validator,
+            policy: policy.values.transport,
+            ...(options.writeChunkSize === undefined
+              ? {}
+              : { writeChunkSize: options.writeChunkSize }),
+          }));
     return { lifecycle, execution, server };
   }
 }

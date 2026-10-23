@@ -4,6 +4,7 @@ import { DaemonClientResultCapture } from "./client-result-capture.js";
 import { DaemonExecutionClient } from "./execution-client.js";
 import { DaemonLifecycleClient } from "./lifecycle-client.js";
 import { DaemonTransportFactory } from "./daemon-transport.js";
+import { FileDaemonRequestServer } from "./file-server.js";
 import { LocalDaemonSocketServer } from "./socket-server.js";
 
 describe("DaemonTransportFactory", () => {
@@ -13,7 +14,9 @@ describe("DaemonTransportFactory", () => {
 
     expect(components.lifecycle).toBeInstanceOf(DaemonLifecycleClient);
     expect(components.execution).toBeInstanceOf(DaemonExecutionClient);
-    expect(components.server).toBeInstanceOf(LocalDaemonSocketServer);
+    expect(components.server).toBeInstanceOf(
+      process.platform === "win32" ? LocalDaemonSocketServer : FileDaemonRequestServer,
+    );
     const execution = components.execution as unknown as {
       readonly options: { readonly createOutput: () => unknown };
     };

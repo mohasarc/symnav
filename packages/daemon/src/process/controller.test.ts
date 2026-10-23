@@ -64,11 +64,16 @@ describe("DaemonController", () => {
     expect(registry.writeStartingIfStartupOwner(identity, startingRecord(identity))).toBe(true);
     expect(registry.armStartingProcessLaunch(identity, startingRecord(identity))).toBe(true);
     const terminator = new BlockingControllerTerminator([process.pid, 7000]);
-    const controller = new DaemonController(registry, new ControllerTransport(), stateDirectory, {
-      processTerminator: terminator,
-      stopTimeoutMs: 1_000,
-      pollIntervalMs: 1,
-    });
+    const controller = new DaemonController(
+      registry,
+      new ControllerTransport(terminator, { ...startingRecord(identity), pid: 7000 }),
+      stateDirectory,
+      {
+        processTerminator: terminator,
+        stopTimeoutMs: 1_000,
+        pollIntervalMs: 1,
+      },
+    );
 
     const stopping = controller.stop("/repo");
     const published = registry.writeStartingIfStartupOwner(identity, {
@@ -100,9 +105,14 @@ describe("DaemonController", () => {
     expect(registry.acquireStartup(identity, record.instanceId)).toBeDefined();
     expect(registry.writeStartingIfStartupOwner(identity, record)).toBe(true);
     const terminator = new BlockingControllerTerminator([process.pid, record.pid]);
-    const controller = new DaemonController(registry, new ControllerTransport(), stateDirectory, {
-      processTerminator: terminator,
-    });
+    const controller = new DaemonController(
+      registry,
+      new ControllerTransport(terminator, record),
+      stateDirectory,
+      {
+        processTerminator: terminator,
+      },
+    );
 
     const stopping = controller.stop("/repo");
     try {
@@ -257,7 +267,7 @@ describe("DaemonController", () => {
     expect(registry.writeStartingIfStartupOwner(identity, startingRecord(identity))).toBe(true);
     const owner = registry.startupOwner(identity);
     writeFileSync(
-      identity.startupOwnerPath(identity.lockPath),
+      identity.startupOwnerPath(join(identity.lockPath, owner!.claimToken!)),
       JSON.stringify({ ...owner, heartbeatAt: Date.now() - 60_000 }),
     );
     const controller = new DaemonController(registry, new ControllerTransport(), stateDirectory, {
@@ -300,12 +310,36 @@ describe("DaemonController", () => {
 });
 
 class ControllerTransport {
+  constructor(
+    private readonly terminator?: BlockingControllerTerminator,
+    private readonly record?: DaemonRecord,
+  ) {}
   execute(): Promise<never> {
     return Promise.reject(new Error("Starting-daemon cancellation must not execute"));
   }
 
-  request(_endpoint: string, _request: DaemonRequest): Promise<DaemonResponse> {
-    throw new Error("Starting-daemon cancellation must not use transport");
+  async request(_endpoint: string, request: DaemonRequest): Promise<DaemonResponse> {
+    if (this.record !== undefined && request.kind === "identify")
+      return {
+        kind: "identity",
+        instanceId: this.record.instanceId,
+        processToken: this.record.processToken,
+        pid: this.record.pid,
+        startedAt: this.record.startedAt,
+      };
+    if (
+      this.record !== undefined &&
+      this.terminator !== undefined &&
+      request.kind === "terminate"
+    ) {
+      await this.terminator.drain(this.record.pid);
+      return {
+        kind: "terminating",
+        instanceId: this.record.instanceId,
+        processToken: this.record.processToken,
+      };
+    }
+    throw new Error("Unexpected controller request");
   }
 
   async removeUnavailableEndpoint(_endpoint: string): Promise<boolean> {
@@ -354,6 +388,10 @@ class ControllerTerminator implements DaemonProcessTerminator {
     this.alive = new Set(alive);
   }
 
+  hasExited(pid: number): boolean {
+    return !this.isAlive(pid);
+  }
+
   isAlive(pid: number): boolean {
     return this.alive.has(pid);
   }
@@ -380,11 +418,19 @@ class BlockingControllerTerminator implements DaemonProcessTerminator {
     });
   }
 
+  hasExited(pid: number): boolean {
+    return !this.isAlive(pid);
+  }
+
   isAlive(pid: number): boolean {
     return this.alive.has(pid);
   }
 
   async terminate(pid: number): Promise<void> {
+    throw new Error(`Raw PID termination is forbidden: ${pid}`);
+  }
+
+  async drain(pid: number): Promise<void> {
     this.resolveTerminationRequested();
     await this.exitAllowed;
     this.alive.delete(pid);
@@ -406,6 +452,10 @@ class ReplacingControllerTerminator implements DaemonProcessTerminator {
     private readonly observedPid: number,
     private readonly replace: () => void,
   ) {}
+
+  hasExited(pid: number): boolean {
+    return !this.isAlive(pid);
+  }
 
   isAlive(pid: number): boolean {
     if (pid === this.observedPid && !this.replaced) {

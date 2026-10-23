@@ -12,7 +12,10 @@ import { DaemonWorkspaceIdentity } from "../../dist/registry/workspace-identity.
 
 const { spawnMock } = vi.hoisted(() => ({ spawnMock: vi.fn() }));
 
-vi.mock("node:child_process", () => ({ spawn: spawnMock }));
+vi.mock("node:child_process", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("node:child_process")>()),
+  spawn: spawnMock,
+}));
 
 describe("built daemon process launcher", () => {
   const roots: string[] = [];

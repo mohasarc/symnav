@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { DaemonPolicy } from "@symnav/daemon";
-import type { DaemonSocketClient, DaemonSocketConnection } from "./contracts.js";
+import type { DaemonConnectionClient, DaemonConnection } from "./contracts.js";
 import { DAEMON_PROTOCOL_VERSION, type DaemonRequest } from "./protocol.js";
 import { DaemonProtocolValidator } from "./protocol-validator.js";
 import { DaemonWireCodec } from "./wire-codec.js";
@@ -20,8 +20,8 @@ describe("LocalDaemonSocketServer", () => {
   });
 
   it("probes endpoint reachability through the injected socket client", async () => {
-    const connection = new RecordingDaemonSocketConnection();
-    const sockets = new RecordingDaemonSocketClient(connection);
+    const connection = new RecordingDaemonConnection();
+    const sockets = new RecordingDaemonConnectionClient(connection);
     const policy = DaemonPolicy.currentSystem().values;
     const server = new LocalDaemonSocketServer({
       sockets,
@@ -158,13 +158,16 @@ describe("LocalDaemonSocketServer", () => {
       return writes.length !== 1;
     };
     const server = harness.server({ writeChunkSize: 1 }) as unknown as {
-      writeServerMessage(socket: Socket, value: unknown): Promise<void>;
+      writeEncodedServerFrame(socket: Socket, value: Uint8Array): Promise<void>;
     };
 
-    const writing = server.writeServerMessage(socket as unknown as Socket, {
-      kind: "stopped",
-      instanceId: "instance",
-    });
+    const writing = server.writeEncodedServerFrame(
+      socket as unknown as Socket,
+      harness.encode({
+        kind: "stopped",
+        instanceId: "instance",
+      }),
+    );
     await Promise.resolve();
 
     expect(writes).toHaveLength(1);
@@ -293,7 +296,7 @@ describe("LocalDaemonSocketServer", () => {
 });
 
 interface SocketServerOptions {
-  readonly sockets?: DaemonSocketClient;
+  readonly sockets?: DaemonConnectionClient;
   readonly writeChunkSize?: number;
 }
 
@@ -455,19 +458,19 @@ class DaemonSocketServerHarness {
   }
 }
 
-class RecordingDaemonSocketClient implements DaemonSocketClient {
+class RecordingDaemonConnectionClient implements DaemonConnectionClient {
   readonly connections: { readonly endpoint: string; readonly timeoutMs?: number }[] = [];
 
-  constructor(private readonly connection: DaemonSocketConnection) {}
+  constructor(private readonly connection: DaemonConnection) {}
 
-  connect(endpoint: string, timeoutMs?: number): Promise<DaemonSocketConnection> {
+  connect(endpoint: string, timeoutMs?: number): Promise<DaemonConnection> {
     this.connections.push({ endpoint, ...(timeoutMs === undefined ? {} : { timeoutMs }) });
     return Promise.resolve(this.connection);
   }
 }
 
-class RecordingDaemonSocketConnection implements DaemonSocketConnection {
-  readonly incoming: AsyncIterable<Uint8Array> = RecordingDaemonSocketConnection.empty();
+class RecordingDaemonConnection implements DaemonConnection {
+  readonly incoming: AsyncIterable<Uint8Array> = RecordingDaemonConnection.empty();
   destroyCount = 0;
 
   write(): void {}

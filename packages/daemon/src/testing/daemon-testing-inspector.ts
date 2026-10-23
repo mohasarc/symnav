@@ -1,3 +1,8 @@
+import { PosixDaemonProcessLifetime } from "../process/posix-process-lifetime.js";
+import type {
+  DaemonProcessLifetimeIdentity,
+  DaemonProcessLifetimeObservation,
+} from "../process/process-lifetime-identity.js";
 import { lstatSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 import type { DaemonDiagnosticValue } from "../daemon-diagnostics.js";
@@ -52,6 +57,43 @@ export class DaemonTestingInspector {
         );
     } catch (error) {
       if (["ENOENT", "ENOTDIR"].includes(DaemonTestingInspector.errorCode(error) ?? "")) return [];
+      throw error;
+    }
+  }
+
+  public processLifetimeObservations(): readonly DaemonProcessLifetimeObservation[] {
+    if (process.platform === "win32") return [];
+    const registry = DaemonWorkspaceIdentity.registryDirectory(this.#stateDirectory);
+    const identityDirectories = DaemonTestingInspector.directoriesIn(registry);
+    const processDirectories = [this.#stateDirectory, ...identityDirectories];
+    return processDirectories.flatMap((directory) => {
+      const sentinelDirectory = join(directory, "process-lifetimes");
+      return DaemonTestingInspector.namesIn(sentinelDirectory).map((name) => {
+        const identity: DaemonProcessLifetimeIdentity = {
+          token: name.replace(/\.fifo$/, ""),
+          path: join(sentinelDirectory, name),
+        };
+        return PosixDaemonProcessLifetime.observe(identity);
+      });
+    });
+  }
+
+  private static namesIn(directory: string): readonly string[] {
+    try {
+      return readdirSync(directory).sort();
+    } catch (error) {
+      if (DaemonTestingInspector.errorCode(error) === "ENOENT") return [];
+      throw error;
+    }
+  }
+
+  private static directoriesIn(directory: string): readonly string[] {
+    try {
+      return readdirSync(directory, { withFileTypes: true })
+        .filter((entry) => entry.isDirectory())
+        .map((entry) => join(directory, entry.name));
+    } catch (error) {
+      if (DaemonTestingInspector.errorCode(error) === "ENOENT") return [];
       throw error;
     }
   }

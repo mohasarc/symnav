@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { DaemonPolicy } from "@symnav/daemon";
 import { DaemonPolicyTestFactory } from "../../test/helpers/daemon-policy.js";
-import type { DaemonSocketClient, DaemonSocketConnection } from "./contracts.js";
+import type { DaemonConnectionClient, DaemonConnection } from "./contracts.js";
 import { DAEMON_PROTOCOL_VERSION } from "./protocol.js";
 import { DaemonWireCodec } from "./wire-codec.js";
 import { TestDaemonTransport as DaemonTransport } from "../../test/helpers/daemon-transport.js";
@@ -21,11 +21,11 @@ describe("DaemonTransport socket client boundary", () => {
       instanceId: "instance",
       symnavVersion: "test",
     });
-    const connection = new ScriptedDaemonSocketConnection([
+    const connection = new ScriptedDaemonConnection([
       response.subarray(0, 2),
       response.subarray(2),
     ]);
-    const sockets = new RecordingDaemonSocketClient(connection);
+    const sockets = new RecordingDaemonConnectionClient(connection);
     const transport = new DaemonTransport({ policy, sockets });
 
     await expect(
@@ -61,7 +61,7 @@ describe("DaemonTransport socket client boundary", () => {
         policy.values.transport.maximumExecutionControlPayloadBytes,
       maximumChunkRawBytes: policy.values.output.maximumChunkRawBytes,
     });
-    const connection = new ScriptedDaemonSocketConnection([
+    const connection = new ScriptedDaemonConnection([
       codec.encodeControl({
         kind: "pong",
         protocolVersion: DAEMON_PROTOCOL_VERSION,
@@ -69,7 +69,7 @@ describe("DaemonTransport socket client boundary", () => {
         symnavVersion: "test",
       }),
     ]);
-    const sockets = new RecordingDaemonSocketClient(connection);
+    const sockets = new RecordingDaemonConnectionClient(connection);
     const transport = new DaemonTransport({
       policy,
       sockets,
@@ -104,7 +104,7 @@ describe("DaemonTransport socket client boundary", () => {
         policy.values.transport.maximumExecutionControlPayloadBytes,
       maximumChunkRawBytes: policy.values.output.maximumChunkRawBytes,
     });
-    const connection = new ScriptedDaemonSocketConnection([
+    const connection = new ScriptedDaemonConnection([
       codec.encodeControl({
         kind: "execution-status",
         instanceId: "instance",
@@ -113,7 +113,7 @@ describe("DaemonTransport socket client boundary", () => {
         status: { state: "unknown" },
       }),
     ]);
-    const sockets = new RecordingDaemonSocketClient(connection);
+    const sockets = new RecordingDaemonConnectionClient(connection);
     const transport = new DaemonTransport({ policy, sockets });
 
     await transport.executionStatus("daemon-endpoint", {
@@ -155,8 +155,8 @@ describe("DaemonTransport socket client boundary", () => {
       requestId: "request",
       code: "internal",
     });
-    const connection = new ScriptedDaemonSocketConnection([Buffer.concat([accepted, failed])]);
-    const sockets = new RecordingDaemonSocketClient(connection);
+    const connection = new ScriptedDaemonConnection([Buffer.concat([accepted, failed])]);
+    const sockets = new RecordingDaemonConnectionClient(connection);
     const transport = new DaemonTransport({ policy, sockets });
 
     const receipt = await transport.execute("daemon-endpoint", {
@@ -204,7 +204,7 @@ describe("DaemonTransport socket client boundary", () => {
       recordCount: 0,
       sha256: "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
     } satisfies import("../delivery/completion-spool.js").CompletionSpoolManifest;
-    const acceptanceAndManifest = new ScriptedDaemonSocketConnection([
+    const acceptanceAndManifest = new ScriptedDaemonConnection([
       Buffer.concat([
         codec.encodeServerMessage({
           kind: "accepted",
@@ -223,7 +223,7 @@ describe("DaemonTransport socket client boundary", () => {
         }),
       ]),
     ]);
-    const resumedResult = new ScriptedDaemonSocketConnection([
+    const resumedResult = new ScriptedDaemonConnection([
       Buffer.concat([
         codec.encodeServerMessage({
           kind: "result-manifest",
@@ -244,7 +244,7 @@ describe("DaemonTransport socket client boundary", () => {
         }),
       ]),
     ]);
-    const acknowledgement = new ScriptedDaemonSocketConnection([
+    const acknowledgement = new ScriptedDaemonConnection([
       codec.encodeControl({
         kind: "result-acknowledged",
         instanceId: "instance",
@@ -253,7 +253,7 @@ describe("DaemonTransport socket client boundary", () => {
         transferId: "transfer",
       }),
     ]);
-    const sockets = new RecordingDaemonSocketClient(
+    const sockets = new RecordingDaemonConnectionClient(
       acceptanceAndManifest,
       resumedResult,
       acknowledgement,
@@ -296,8 +296,8 @@ describe("DaemonTransport socket client boundary", () => {
 
   it("probes endpoint reachability through the injected socket client", async () => {
     const policy = DaemonPolicy.currentSystem();
-    const connection = new ScriptedDaemonSocketConnection([]);
-    const sockets = new RecordingDaemonSocketClient(connection);
+    const connection = new ScriptedDaemonConnection([]);
+    const sockets = new RecordingDaemonConnectionClient(connection);
     const transport = new DaemonTransport({ policy, sockets });
 
     await expect(transport.removeUnavailableEndpoint("daemon-endpoint")).resolves.toBe(false);
@@ -312,15 +312,15 @@ describe("DaemonTransport socket client boundary", () => {
   });
 });
 
-class RecordingDaemonSocketClient implements DaemonSocketClient {
+class RecordingDaemonConnectionClient implements DaemonConnectionClient {
   readonly connections: { readonly endpoint: string; readonly timeoutMs?: number }[] = [];
-  private readonly scriptedConnections: DaemonSocketConnection[];
+  private readonly scriptedConnections: DaemonConnection[];
 
-  constructor(...connections: DaemonSocketConnection[]) {
+  constructor(...connections: DaemonConnection[]) {
     this.scriptedConnections = [...connections];
   }
 
-  connect(endpoint: string, timeoutMs?: number): Promise<DaemonSocketConnection> {
+  connect(endpoint: string, timeoutMs?: number): Promise<DaemonConnection> {
     this.connections.push({ endpoint, ...(timeoutMs === undefined ? {} : { timeoutMs }) });
     const connection = this.scriptedConnections.shift();
     if (connection === undefined) throw new Error("No scripted daemon socket connection");
@@ -328,7 +328,7 @@ class RecordingDaemonSocketClient implements DaemonSocketClient {
   }
 }
 
-class ScriptedDaemonSocketConnection implements DaemonSocketConnection {
+class ScriptedDaemonConnection implements DaemonConnection {
   readonly writes: Uint8Array[] = [];
   disableTimeoutCount = 0;
   endCount = 0;
@@ -336,7 +336,7 @@ class ScriptedDaemonSocketConnection implements DaemonSocketConnection {
   readonly incoming: AsyncIterable<Uint8Array>;
 
   constructor(bytes: readonly Uint8Array[]) {
-    this.incoming = ScriptedDaemonSocketConnection.stream(bytes);
+    this.incoming = ScriptedDaemonConnection.stream(bytes);
   }
 
   write(frame: Uint8Array): void {

@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync, readdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Writable } from "node:stream";
@@ -45,6 +45,31 @@ describe("CliProgramExecutor", () => {
     expect(context.stderr.text()).toBe("Warning: unicode ✓\nnext\n");
     expect(context.stdout.text()).toBe("Overview: src/a.ts\n(no symbols)\n");
     expect(context.exitCodes).toEqual([]);
+  });
+
+  it("keeps spilled worker output inside state and removes it after replay", async () => {
+    const stateDirectory = mkdtempSync(join(tmpdir(), "symnav-output-state-"));
+    temporaryRoots.push(stateDirectory);
+    const entries: OverviewFileEntries = {
+      file: "src/a.ts",
+      entries: [],
+      diagnostics: [{ severity: "warning", dedupeKey: "large", message: "x".repeat(300_000) }],
+    };
+    const executor = new CliProgramExecutor(
+      fakeDependencies({
+        stateDirectory,
+        backends: () => [new FakeLanguageBackend({ entries: () => entries })],
+      }),
+    );
+    const result = await executor.execute({
+      argv: ["overview", "src/a.ts"],
+      cwd: "/repo",
+      telemetryEnabled: false,
+    });
+    const directory = join(stateDirectory, "captures");
+    expect(readdirSync(directory)).toHaveLength(1);
+    await CommandResultReplayer.replay(result, createFakeProgramContext({ cwd: "/repo" }));
+    expect(readdirSync(directory)).toEqual([]);
   });
 
   it("replays identical ordered bytes from inline and spilled command output", async () => {

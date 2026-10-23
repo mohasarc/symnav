@@ -257,7 +257,7 @@ describe("DaemonController", () => {
     expect(registry.writeStartingIfStartupOwner(identity, startingRecord(identity))).toBe(true);
     const owner = registry.startupOwner(identity);
     writeFileSync(
-      identity.startupOwnerPath(identity.lockPath),
+      identity.startupOwnerPath(join(identity.lockPath, owner!.claimToken!)),
       JSON.stringify({ ...owner, heartbeatAt: Date.now() - 60_000 }),
     );
     const controller = new DaemonController(registry, new ControllerTransport(), stateDirectory, {

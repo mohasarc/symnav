@@ -997,7 +997,16 @@ describe("daemon registry", () => {
     const stateDirectory = temporaryDirectory(roots);
     const identity = DaemonWorkspaceIdentity.from("/repo", stateDirectory);
     const registry = new DaemonRegistry(identity.registryDirectory);
-    registry.write({ ...record(identity, "ready", "stale-stop"), pid: 999_999_999 });
+    const lifetime =
+      process.platform === "win32"
+        ? undefined
+        : PosixDaemonProcessLifetime.prepareChild(stateDirectory);
+    lifetime?.closeParentCopy();
+    registry.write({
+      ...record(identity, "ready", "stale-stop"),
+      ...(lifetime === undefined ? {} : { processLifetime: lifetime.identity }),
+      pid: 999_999_999,
+    });
     const controller = new DaemonController(
       registry,
       new ControllerTransport(registry),

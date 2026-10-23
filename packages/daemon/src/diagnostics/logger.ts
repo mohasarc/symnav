@@ -214,7 +214,7 @@ class NodeDaemonLogStorage implements DaemonLogStorage {
   async sync(path: string): Promise<void> {
     let file;
     try {
-      file = await open(path, "r");
+      file = await open(path, "r+");
       await file.sync();
     } catch (error) {
       if (NodeDaemonLogStorage.errorCode(error) !== "ENOENT") throw error;

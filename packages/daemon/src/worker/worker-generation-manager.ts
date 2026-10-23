@@ -52,6 +52,8 @@ export interface DaemonWorkerGenerationManagerOptions {
 
 interface DaemonWorkerGeneration {
   readonly worker: DaemonNavigationWorker;
+  readonly changed: Promise<void>;
+  readonly notifyChanged: () => void;
   ready: Promise<DaemonWorkerReadyReport> | undefined;
 }
 
@@ -84,11 +86,8 @@ export class DaemonWorkerGenerationManager {
   start(): Promise<DaemonWorkerReadyReport> {
     if (this.startOperation !== undefined) return this.startOperation;
     const generation = this.currentGeneration;
-    generation.ready = this.startGeneration(generation);
-    this.startOperation = this.waitForReadyGeneration(generation).then((report) => {
-      this.publishProtocolReady(generation, report);
-      return report;
-    });
+    generation.ready ??= this.startGeneration(generation);
+    this.startOperation = this.waitForReadyGeneration();
     return this.startOperation;
   }
 
@@ -178,8 +177,11 @@ export class DaemonWorkerGenerationManager {
     const next = this.createGeneration(nextWorker);
     this.currentGeneration = next;
     next.ready = this.startGeneration(next);
-    await previous.worker.terminate().catch(() => undefined);
-    const report = await next.ready;
+    previous.notifyChanged();
+    const [, report] = await Promise.all([
+      previous.worker.terminate().catch(() => undefined),
+      next.ready,
+    ]);
     this.publishProtocolReady(next, report);
     this.options.onDiagnostic({
       kind: "worker-replaced",
@@ -203,26 +205,34 @@ export class DaemonWorkerGenerationManager {
       });
   }
 
-  private async waitForReadyGeneration(
-    generation: DaemonWorkerGeneration,
-  ): Promise<DaemonWorkerReadyReport> {
-    try {
+  private async waitForReadyGeneration(): Promise<DaemonWorkerReadyReport> {
+    for (;;) {
+      const generation = this.currentGeneration;
       if (generation.ready === undefined) throw new Error("Navigation worker is not starting");
-      return await generation.ready;
-    } catch (error) {
-      if (!(error instanceof DaemonNavigationWorkerExitedError)) throw error;
-      await generation.worker.exited;
-      const recovery = this.recoveryOperation;
-      if (recovery === undefined) throw error;
-      await recovery;
-      const replacement = this.currentGeneration;
-      if (replacement === generation || replacement.ready === undefined) throw error;
-      return replacement.ready;
+      try {
+        const report = await Promise.race([generation.ready, generation.changed]);
+        if (generation !== this.currentGeneration) continue;
+        if (report === undefined) throw new Error("Navigation worker readiness is unavailable");
+        this.publishProtocolReady(generation, report);
+        return report;
+      } catch (error) {
+        if (generation !== this.currentGeneration) continue;
+        if (!(error instanceof DaemonNavigationWorkerExitedError)) throw error;
+        await generation.worker.exited;
+        const recovery = this.recoveryOperation;
+        if (recovery === undefined) throw error;
+        await recovery;
+        if (this.currentGeneration === generation) throw error;
+      }
     }
   }
 
   private createGeneration(worker: DaemonNavigationWorker): DaemonWorkerGeneration {
-    const generation: DaemonWorkerGeneration = { worker, ready: undefined };
+    let notifyChanged!: () => void;
+    const changed = new Promise<void>((resolve) => {
+      notifyChanged = resolve;
+    });
+    const generation: DaemonWorkerGeneration = { worker, ready: undefined, changed, notifyChanged };
     void worker.exited.then((exit) => this.observeExit(generation, exit));
     return generation;
   }

@@ -10,7 +10,7 @@ import { SandboxProbeProof } from "./sandbox-probe-proof.js";
 class Channel implements SandboxProbeChannel {
   public readonly actions: string[] = [];
   public failure: string | undefined;
-  public ready = vi.fn(async () => {
+  public ready = vi.fn(async (_signal: AbortSignal) => {
     if (this.failure === "runtime") throw new Error("runtime rejected policy");
   });
   public close = vi.fn(async () => {});
@@ -119,6 +119,18 @@ it("cancels a probe and still cleans its owned work", async () => {
   const controller = new AbortController();
   controller.abort(new Error("cancelled"));
   await expect(h.proof().run(controller.signal)).rejects.toThrow("cancelled");
+  expect(h.channel.close).toHaveBeenCalledOnce();
+  expect(h.cleanup).toHaveBeenCalledOnce();
+});
+it("bounds only the diagnostic probe and cleans after its deadline", async () => {
+  const h = await Harness.create();
+  h.channel.ready.mockImplementation(
+    async (signal: AbortSignal) =>
+      new Promise<void>((_resolve, reject) =>
+        signal.addEventListener("abort", () => reject(signal.reason), { once: true }),
+      ),
+  );
+  await expect(h.proof().run()).rejects.toThrow("timed out");
   expect(h.channel.close).toHaveBeenCalledOnce();
   expect(h.cleanup).toHaveBeenCalledOnce();
 });

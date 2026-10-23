@@ -1,9 +1,12 @@
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+import { DaemonController } from "../../dist/process/controller.js";
+import { PosixDaemonProcessLifetime } from "../../dist/process/posix-process-lifetime.js";
+import { DaemonTransportFactory } from "../../dist/transport/daemon-transport.js";
 import { DaemonPolicy } from "../../dist/daemon-policy.js";
 import {
   type DaemonProcess,
@@ -91,7 +94,11 @@ class BuiltProcessEntryHarness {
     void daemonProcess.exited.then((exit) => {
       this.observedExit = exit;
     });
-    const transferred = lease.transferToDaemon(daemonProcess.pid, this.processToken);
+    const transferred = lease.transferToDaemon(
+      daemonProcess.pid,
+      this.processToken,
+      daemonProcess.processLifetime,
+    );
     if (
       !transferred &&
       !this.registry.daemonOwnsStartupProcess(
@@ -111,6 +118,28 @@ class BuiltProcessEntryHarness {
     ) {
       throw new Error("Built process entry process record unavailable");
     }
+  }
+
+  async stop(): Promise<unknown> {
+    const components = DaemonTransportFactory.create({ policy: this.policy });
+    const controller = new DaemonController(
+      this.registry,
+      {
+        request: components.lifecycle.request.bind(components.lifecycle),
+        execute: components.execution.execute.bind(components.execution),
+      },
+      this.stateDirectory,
+      { policy: this.policy.values },
+    );
+    return controller.stop(this.workspaceRoot);
+  }
+
+  async waitForBootstrap(): Promise<void> {
+    for (let attempt = 0; attempt < 400; attempt += 1) {
+      if (existsSync(join(this.stateDirectory, "bootstrap-waiting"))) return;
+      await delay(5);
+    }
+    throw new Error("Built entry did not reach delayed bootstrap");
   }
 
   async waitForReady(): Promise<DaemonRecord> {
@@ -201,6 +230,9 @@ class BuiltProcessEntryHarness {
       processToken: this.processToken,
       endpoint: this.identity.endpoint(this.instanceId),
       pid,
+      ...(this.daemonProcess?.processLifetime === undefined
+        ? {}
+        : { processLifetime: this.daemonProcess.processLifetime }),
       state: "starting",
       startedAt: this.startedAt,
       memoryCapBytes: this.policy.values.resources.hardProcessRssBytes,
@@ -242,7 +274,11 @@ describe("built daemon process entry", () => {
         "startup-completed",
       ]);
       expect(harness.diagnosticKinds().filter((kind) => kind === "ready")).toEqual(["ready"]);
-      await expect(harness.terminate()).resolves.toMatchObject({ cause: "exit", code: 1 });
+      await expect(harness.terminate()).resolves.toEqual(
+        process.platform === "win32"
+          ? { cause: "exit", code: null, signal: "SIGTERM" }
+          : { cause: "exit", code: 1, signal: null },
+      );
       const processTerminationDiagnostics = harness
         .diagnosticKinds()
         .filter((kind) => kind === "process-termination");
@@ -259,6 +295,75 @@ describe("built daemon process entry", () => {
       await harness.dispose();
     }
   }, 10_000);
+
+  it.skipIf(process.platform === "win32")(
+    "authenticates a delayed pre-listen bootstrap within the existing stop deadline",
+    async () => {
+      const harness = new BuiltProcessEntryHarness(observableExecutorModuleUrl);
+      const preload = pathToFileURL(
+        join(packageDirectory, "test", "fixtures", "delayed-process-bootstrap.mjs"),
+      ).href;
+      try {
+        vi.stubEnv("NODE_OPTIONS", `--import=${preload}`);
+        await harness.launch();
+        vi.unstubAllEnvs();
+        await harness.waitForBootstrap();
+        let settled = false;
+        const stopping = harness.stop().finally(() => {
+          settled = true;
+        });
+        await delay(20);
+        expect(settled).toBe(false);
+        expect(harness.startupArtifacts().record).toMatchObject({ state: "starting" });
+        writeFileSync(join(harness.stateDirectory, "bootstrap-release"), "released");
+        await expect(stopping).resolves.toMatchObject({ status: "stopped" });
+        await expect(harness.waitForExit()).resolves.toMatchObject({ code: 0, cause: "exit" });
+        expect(harness.startupArtifacts()).toEqual({ record: undefined, owner: undefined });
+      } finally {
+        vi.unstubAllEnvs();
+        await harness.dispose();
+      }
+    },
+    10_000,
+  );
+
+  it.skipIf(process.platform === "win32")(
+    "retains a live pre-listen bootstrap after the existing stop deadline",
+    async () => {
+      const harness = new BuiltProcessEntryHarness(observableExecutorModuleUrl);
+      const preload = pathToFileURL(
+        join(packageDirectory, "test", "fixtures", "delayed-process-bootstrap.mjs"),
+      ).href;
+      try {
+        vi.stubEnv("NODE_OPTIONS", `--import=${preload}`);
+        await harness.launch();
+        vi.unstubAllEnvs();
+        await harness.waitForBootstrap();
+        const ownership = harness.startupArtifacts();
+        const lifetime = ownership.record!.processLifetime!;
+        expect(PosixDaemonProcessLifetime.observe(lifetime)).toBe("live");
+        const stopStartedAt = Date.now();
+
+        await expect(harness.stop()).rejects.toThrow("live but unresponsive");
+
+        expect(Date.now() - stopStartedAt).toBeGreaterThanOrEqual(
+          harness.policy.values.shutdown.stopTimeoutMs,
+        );
+        expect(harness.startupArtifacts()).toEqual(ownership);
+        expect(PosixDaemonProcessLifetime.observe(lifetime)).toBe("live");
+        expect(harness.events()).toEqual([]);
+        writeFileSync(join(harness.stateDirectory, "bootstrap-release"), "released");
+        await expect(harness.stop()).resolves.toMatchObject({ status: "stopped" });
+        await harness.waitForExit();
+        expect(PosixDaemonProcessLifetime.observe(lifetime)).toBe("exited");
+        expect(harness.startupArtifacts()).toEqual({ record: undefined, owner: undefined });
+      } finally {
+        vi.unstubAllEnvs();
+        await harness.dispose();
+      }
+    },
+    15_000,
+  );
 
   it.each([
     [

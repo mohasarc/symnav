@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { runSymnavBinary } from "@symnav/testing";
 import { canonicalWorkspaceRoot } from "../../helpers/canonical-workspace-root.js";
 import { E2eProcessCleanup } from "../../helpers/e2e-process-cleanup.js";
+import { DaemonFailureContext } from "../../helpers/daemon-failure-context.js";
 import { CliDaemonTesting } from "../../helpers/daemon-testing.js";
 import { ControlledLifecycleDaemon } from "../../helpers/controlled-lifecycle-daemon.js";
 
@@ -52,13 +53,21 @@ describe("symnav daemon stop", () => {
     const cwd = temporaryWorkspace(stateDirectories);
     const daemon = await ControlledLifecycleDaemon.start(cwd, stateDir, "starting");
     controlledDaemons.push(daemon);
-    expect(await daemon.runAsync(["daemon", "stop"])).toEqual({
-      stdout: `Stopped daemon for ${daemon.workspaceRoot} (pid ${String(daemon.actor.pid)})\n`,
-      stderr: "",
-      status: 0,
+    const result = await daemon.runAsync(["daemon", "stop"]);
+    await new DaemonFailureContext({
+      stateDirectory: stateDir,
+      workspaceRoot: cwd,
+      result,
+      actor: daemon,
+    }).assert(async () => {
+      expect(result).toEqual({
+        stdout: `Stopped daemon for ${daemon.workspaceRoot} (pid ${String(daemon.actor.pid)})\n`,
+        stderr: "",
+        status: 0,
+      });
+      await E2eProcessCleanup.waitForExit([daemon.actor.pid!]);
+      expect(new CliDaemonTesting(stateDir).inspector.listInstances()).toEqual([]);
     });
-    await E2eProcessCleanup.waitForExit([daemon.actor.pid!]);
-    expect(new CliDaemonTesting(stateDir).inspector.listInstances()).toEqual([]);
   });
 
   it("lets accepted long-running work finish before a graceful stop", async () => {
@@ -75,14 +84,29 @@ describe("symnav daemon stop", () => {
     );
     daemon.release();
     const navigationResult = await navigation;
-    expect(navigationResult).toMatchObject({ status: 0, stderr: "" });
-    expect(await stopped).toEqual({
-      status: 0,
-      stderr: "",
-      stdout: `${JSON.stringify({ status: "stopped", workspaceRoot: daemon.workspaceRoot, pid: daemon.actor.pid })}\n`,
+    await new DaemonFailureContext({
+      stateDirectory: stateDir,
+      workspaceRoot: cwd,
+      result: navigationResult,
+      actor: daemon,
+    }).assert(() => {
+      expect(navigationResult).toMatchObject({ status: 0, stderr: "" });
     });
-    expect(await daemon.exited).toBe(0);
-    await E2eProcessCleanup.waitForExit([daemon.actor.pid!]);
+    const result = await stopped;
+    await new DaemonFailureContext({
+      stateDirectory: stateDir,
+      workspaceRoot: cwd,
+      result,
+      actor: daemon,
+    }).assert(async () => {
+      expect(result).toEqual({
+        status: 0,
+        stderr: "",
+        stdout: `${JSON.stringify({ status: "stopped", workspaceRoot: daemon.workspaceRoot, pid: daemon.actor.pid })}\n`,
+      });
+      expect(await daemon.exited).toBe(0);
+      await E2eProcessCleanup.waitForExit([daemon.actor.pid!]);
+    });
   }, 15_000);
 
   it.each([false, true])(
@@ -97,19 +121,27 @@ describe("symnav daemon stop", () => {
       const startedAt = Date.now();
       const result = await daemon.runAsync(["daemon", "stop", ...(json ? ["--json"] : [])]);
       const elapsedMs = Date.now() - startedAt;
-      expect(result).toEqual({
-        status: 0,
-        stderr: "",
-        stdout: json
-          ? `${JSON.stringify({ status: "killed", workspaceRoot: daemon.workspaceRoot, pid: daemon.actor.pid })}\n`
-          : `Killed daemon for ${daemon.workspaceRoot} (pid ${String(daemon.actor.pid)})\n`,
+      await new DaemonFailureContext({
+        stateDirectory: stateDir,
+        workspaceRoot: cwd,
+        result,
+        elapsedMs,
+        actor: daemon,
+      }).assert(async () => {
+        expect(result).toEqual({
+          status: 0,
+          stderr: "",
+          stdout: json
+            ? `${JSON.stringify({ status: "killed", workspaceRoot: daemon.workspaceRoot, pid: daemon.actor.pid })}\n`
+            : `Killed daemon for ${daemon.workspaceRoot} (pid ${String(daemon.actor.pid)})\n`,
+        });
+        expect(elapsedMs).toBeGreaterThanOrEqual(3_500);
+        expect(elapsedMs).toBeLessThan(6_500);
+        expect((await navigation).status).toBe(1);
+        expect(await daemon.exited).toBe(0);
+        await E2eProcessCleanup.waitForExit([daemon.actor.pid!]);
+        expect(new CliDaemonTesting(stateDir).inspector.listInstances()).toEqual([]);
       });
-      expect(elapsedMs).toBeGreaterThanOrEqual(3_500);
-      expect(elapsedMs).toBeLessThan(6_500);
-      expect((await navigation).status).toBe(1);
-      expect(await daemon.exited).toBe(0);
-      await E2eProcessCleanup.waitForExit([daemon.actor.pid!]);
-      expect(new CliDaemonTesting(stateDir).inspector.listInstances()).toEqual([]);
     },
     15_000,
   );

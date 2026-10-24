@@ -1,6 +1,5 @@
-import { createHash } from "node:crypto";
-import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir, userInfo } from "node:os";
+import { existsSync, mkdtempSync, realpathSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DaemonTestingInspector } from "@symnav/daemon/testing";
 import type { RunSymnavBinaryResult } from "@symnav/testing";
@@ -37,6 +36,10 @@ it("retains command and owned evidence in the original assertion after source de
     })
     .catch((error: unknown) => error);
   rmSync(fixture.root, { recursive: true, force: true });
+  const inspector = new DaemonTestingInspector(fixture.root);
+  expect(() => inspector.listInstances()).toThrow("Fixture removed");
+  expect(() => inspector.readDiagnostics(fixture.root)).toThrow("Fixture removed");
+  await expect(inspector.readFailures(fixture.root)).rejects.toThrow("Fixture removed");
 
   expect(caught).toBe(assertion);
   expect(assertion.message).toContain("expected 2 to be +0");
@@ -156,68 +159,66 @@ class FailureContextFixture {
       realpathSync(mkdtempSync(join(tmpdir(), "symnav-failure-context-"))),
     );
     directories.push(this.root);
-    const key = FailureContextFixture.hash(this.root);
-    const identityDirectory = join(
-      this.root,
-      "daemons",
-      FailureContextFixture.hash(`${key}:${key}`),
+    vi.spyOn(DaemonTestingInspector.prototype, "listInstances").mockImplementation(() => {
+      this.requireRoot();
+      return [{ workspaceRoot: this.root, pid: 123, instanceId: "instance", state: "ready" }];
+    });
+    vi.spyOn(DaemonTestingInspector.prototype, "readDiagnostics").mockImplementation(
+      (workspaceRoot) => {
+        this.requireRoot();
+        if (workspaceRoot !== canonicalWorkspaceRoot(realpathSync(this.root)))
+          return { events: [], nextCursor: 0 };
+        return {
+          events: [
+            {
+              kind: "process-termination",
+              terminationReason: "unhandled-rejection",
+              errorName: "Error",
+              operation: "hostile-payload",
+              token: "owned-secret-token",
+              message: "hostile-payload",
+              signal: "owned-secret-token",
+              timestamp: 3,
+              failure: {
+                phase: "transfer",
+                reason: "transfer-failed",
+                timestamp: 3,
+                osCode: "EACCES",
+                token: "owned-secret-token",
+              },
+            },
+          ],
+          nextCursor: 1,
+        };
+      },
     );
-    mkdirSync(join(identityDirectory, "failures"), { recursive: true });
-    writeFileSync(
-      join(identityDirectory, "instance.json"),
-      JSON.stringify({
-        schemaVersion: 2,
-        protocolVersion: 5,
-        symnavVersion: "1.0.0",
-        workspaceRoot: this.root,
-        workspaceKey: key,
-        stateKey: key,
-        identityKey: FailureContextFixture.hash(`${key}:${key}`),
-        instanceId: "instance",
-        processToken: "owned-secret-token",
-        endpoint: FailureContextFixture.endpoint(
-          identityDirectory,
-          FailureContextFixture.hash(`${key}:${key}`),
-        ),
-        pid: 123,
-        state: "ready",
-        startedAt: 1,
-        readyAt: 2,
-        fileCount: 1,
-        memoryCapBytes: 4,
-      }),
-    );
-    writeFileSync(
-      join(identityDirectory, "daemon.log"),
-      JSON.stringify({
-        kind: "process-termination",
-        terminationReason: "unhandled-rejection",
-        errorName: "Error",
-        operation: "hostile-payload",
-        token: "owned-secret-token",
-        message: "hostile-payload",
-        signal: "owned-secret-token",
-        timestamp: 3,
-        failure: {
-          phase: "transfer",
-          reason: "transfer-failed",
-          timestamp: 3,
-          osCode: "EACCES",
-          token: "owned-secret-token",
-        },
-      }) + "\n",
-    );
-    writeFileSync(
-      join(identityDirectory, "failures", `${FailureContextFixture.hash("failure-event")}.json`),
-      JSON.stringify({
-        schemaVersion: 1,
-        eventId: "failure-event",
-        workspaceRoot: this.root,
-        kind: "termination",
-        failure: { phase: "transfer", reason: "transfer-failed", timestamp: 3, osCode: "EACCES" },
-      }),
+    vi.spyOn(DaemonTestingInspector.prototype, "readFailures").mockImplementation(
+      async (workspaceRoot) => {
+        this.requireRoot();
+        if (workspaceRoot !== canonicalWorkspaceRoot(realpathSync(this.root))) return [];
+        return [
+          {
+            schemaVersion: 1,
+            eventId: "failure-event",
+            workspaceRoot: this.root,
+            kind: "termination",
+            failure: {
+              phase: "transfer",
+              reason: "transfer-failed",
+              timestamp: 3,
+              osCode: "EACCES",
+            },
+          },
+        ];
+      },
     );
   }
+
+  private requireRoot(): void {
+    if (!existsSync(this.root))
+      throw Object.assign(new Error("Fixture removed"), { code: "ENOENT" });
+  }
+
   public assertion(): Error {
     try {
       expect(2).toBe(0);
@@ -225,16 +226,5 @@ class FailureContextFixture {
       return error as Error;
     }
     throw new Error("Expected failing assertion");
-  }
-  private static endpoint(identityDirectory: string, identityKey: string): string {
-    const instanceKey = this.hash("instance").slice(0, 12);
-    if (process.platform !== "win32") return join(identityDirectory, `${instanceKey}.mailbox`);
-    const user =
-      typeof process.getuid === "function" ? String(process.getuid()) : userInfo().username;
-    return `\\\\.\\pipe\\symnav-${this.hash(user).slice(0, 8)}-${identityKey.slice(0, 20)}-${instanceKey}`;
-  }
-
-  private static hash(value: string): string {
-    return createHash("sha256").update(value).digest("hex");
   }
 }

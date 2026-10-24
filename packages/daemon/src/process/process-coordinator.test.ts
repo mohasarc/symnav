@@ -1,5 +1,13 @@
 import { spawn, type ChildProcess } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  appendFileSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -47,6 +55,50 @@ describe("DaemonProcessCoordinator runtime lifecycle", () => {
     for (const child of childProcesses) child.kill("SIGTERM");
     childProcesses.length = 0;
     vi.restoreAllMocks();
+  });
+
+  it("reads no events from an empty live diagnostic snapshot", async () => {
+    await DaemonProcessCoordinatorHarness.start(new ImmediateExecutor(), {
+      onCreated: (harness) => {
+        harnesses.push(harness);
+        mkdirSync(harness.identity.identityDirectory, { recursive: true });
+        writeFileSync(harness.identity.logPath, "");
+
+        expect(harness.hasExited).toBe(false);
+        expect(harness.logEvents()).toEqual([]);
+      },
+    });
+  });
+
+  it("reads complete live diagnostic events while retaining an unfinished tail for the next snapshot", async () => {
+    await DaemonProcessCoordinatorHarness.start(new ImmediateExecutor(), {
+      onCreated: (harness) => {
+        harnesses.push(harness);
+        mkdirSync(harness.identity.identityDirectory, { recursive: true });
+        writeFileSync(harness.identity.logPath, '{"kind":"start"}\n{"kind":"failure",');
+
+        expect(harness.logEvents()).toEqual([{ kind: "start" }]);
+        appendFileSync(harness.identity.logPath, '"operation":"start"}');
+        expect(harness.logEvents()).toEqual([{ kind: "start" }]);
+        appendFileSync(harness.identity.logPath, "\n");
+        expect(harness.logEvents()).toEqual([
+          { kind: "start" },
+          { kind: "failure", operation: "start" },
+        ]);
+      },
+    });
+  });
+
+  it("rejects a malformed complete live diagnostic record", async () => {
+    await DaemonProcessCoordinatorHarness.start(new ImmediateExecutor(), {
+      onCreated: (harness) => {
+        harnesses.push(harness);
+        mkdirSync(harness.identity.identityDirectory, { recursive: true });
+        writeFileSync(harness.identity.logPath, '{"kind":"start"}\n{"kind":\n');
+
+        expect(harness.logEvents.bind(harness)).toThrow(SyntaxError);
+      },
+    });
   });
 
   it.each([process.platform === "win32" ? "endpoint bind" : "endpoint create", "warm-up"] as const)(
@@ -235,6 +287,78 @@ describe("DaemonProcessCoordinator runtime lifecycle", () => {
     expect(worker.terminateCount).toBe(1);
     expect(harness.registry.read(harness.identity)).toBeUndefined();
   });
+
+  it.each(["graceful", "forced"] as const)(
+    "retains %s authenticated shutdown ownership while initialization is pending",
+    async (completion) => {
+      const worker = new BlockingDrainNavigationWorker();
+      let resolveWorkerStarted!: () => void;
+      const workerStarted = new Promise<void>((resolve) => {
+        resolveWorkerStarted = resolve;
+      });
+      vi.spyOn(worker, "start").mockImplementation(() => {
+        resolveWorkerStarted();
+        return new Promise(() => undefined);
+      });
+      let harness!: DaemonProcessCoordinatorHarness;
+      const starting = DaemonProcessCoordinatorHarness.start(new ImmediateExecutor(), {
+        navigationWorker: worker,
+        onCreated: (created) => {
+          harness = created;
+          harnesses.push(created);
+        },
+      }).then(
+        () => ({ error: undefined }),
+        (error: unknown) => ({ error }),
+      );
+      await workerStarted;
+
+      await expect(
+        harness.transport.request(harness.identity.endpoint(harness.instanceId), {
+          kind: "terminate",
+          instanceId: harness.instanceId,
+          processToken: "runtime-token",
+        }),
+      ).resolves.toMatchObject({ kind: "terminating" });
+      await worker.drainStarted;
+      await expect(starting).resolves.toEqual({ error: undefined });
+      expect(worker.terminateCount).toBe(0);
+      expect(harness.hasExited).toBe(false);
+      expect(harness.registry.read(harness.identity)).toMatchObject({ state: "starting" });
+      expect(harness.registry.startupOwner(harness.identity)).toBeUndefined();
+      await expect(harness.ping()).resolves.toMatchObject({
+        kind: "pong",
+        activity: { lifecycle: "draining" },
+      });
+      expect(harness.logEvents()).not.toEqual(
+        expect.arrayContaining([expect.objectContaining({ kind: "failure", operation: "start" })]),
+      );
+
+      if (completion === "graceful") worker.allowDrain();
+      else {
+        await expect(
+          harness.transport.request(harness.identity.endpoint(harness.instanceId), {
+            kind: "kill",
+            instanceId: harness.instanceId,
+            processToken: "runtime-token",
+          }),
+        ).resolves.toMatchObject({ kind: "killing" });
+      }
+      await expect(harness.exited).resolves.toBe(0);
+      expect(worker.terminateCount).toBe(completion === "forced" ? 1 : 0);
+      expect(
+        await new DaemonFailureJournal(
+          harness.stateDirectory,
+          DaemonPolicy.currentSystem().values.diagnostics,
+          new NodeDaemonClock(),
+        ).recent(Date.now()),
+      ).toEqual([expect.objectContaining({ kind: "termination" })]);
+      expect(harness.logEvents()).not.toEqual(
+        expect.arrayContaining([expect.objectContaining({ kind: "ready" })]),
+      );
+    },
+    2_000,
+  );
 
   it("retains successful real-child completion when consumed after exit", async () => {
     const fixture = new RealChildProcess(
@@ -680,8 +804,8 @@ class DaemonProcessCoordinatorHarness {
 
   logEvents(): readonly Record<string, unknown>[] {
     return readFileSync(this.identity.logPath, "utf8")
-      .trim()
       .split("\n")
+      .slice(0, -1)
       .map((line) => JSON.parse(line) as Record<string, unknown>);
   }
 
@@ -859,6 +983,11 @@ class BlockingDrainNavigationWorker extends ExecutorNavigationWorker {
     this.terminateCount += 1;
     this.resolveDrain();
     await super.terminate();
+  }
+
+  allowDrain(): void {
+    this.resolveDrain();
+    void super.drainAndClose();
   }
 }
 

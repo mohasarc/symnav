@@ -53,6 +53,18 @@ describe("DaemonBenchmarkGate", () => {
 
     const result = new DaemonBenchmarkGate().evaluate(input);
 
+    if (failure === "raw-runtime-failure") {
+      for (const predicate of [
+        result.parity,
+        result.freshness,
+        result.statusResponsive,
+        result.continuity,
+        result.exactlyOnceTelemetry,
+        result.resourcesWithinPolicy,
+        result.spoolsCleaned,
+      ])
+        expect(predicate).toBe(true);
+    }
     expect(result.failures).toEqual([failure]);
     expect(result.passed).toBe(false);
   });

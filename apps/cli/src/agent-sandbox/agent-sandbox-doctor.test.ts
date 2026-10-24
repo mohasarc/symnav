@@ -1,7 +1,7 @@
 import * as filesystem from "node:fs/promises";
 import { mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import { afterEach, expect, it, vi } from "vitest";
 import { AgentExecutable } from "./agent-executable.js";
 import { CodexSandboxConfiguration } from "./codex-configuration.js";
@@ -118,8 +118,13 @@ it("keeps installed runtime failures as failures and isolates each live probe", 
       reason: "warm telemetry missing; check sandbox policy and restart the agent session",
     },
   ]);
-  expect(h.runtimes[0]!.calls[0]!.stateDirectory).toMatch(/doctor\/.+\/probe-state$/);
-  expect(h.runtimes[0]!.calls[0]!.workspace).toMatch(/doctor\/.+\/workspace$/);
+  const probe = h.runtimes[0]!.calls[0]!;
+  expect(basename(probe.stateDirectory)).toBe("probe-state");
+  expect(basename(probe.workspace)).toBe("workspace");
+  expect(dirname(probe.stateDirectory)).toBe(probe.scratchDirectory);
+  expect(dirname(probe.workspace)).toBe(probe.scratchDirectory);
+  expect(dirname(probe.scratchDirectory)).toBe(join(h.root, "doctor"));
+  expect(probe.stateDirectory).not.toBe(probe.workspace);
   expect(await readdir(h.root)).toEqual([]);
 });
 it.each([undefined, "ENOENT"])(

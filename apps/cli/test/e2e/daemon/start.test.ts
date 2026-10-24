@@ -8,6 +8,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { runSymnavBinary, type RunSymnavBinaryResult } from "@symnav/testing";
 import { canonicalWorkspaceRoot } from "../../helpers/canonical-workspace-root.js";
 import { E2eProcessCleanup } from "../../helpers/e2e-process-cleanup.js";
+import { DaemonFailureContext } from "../../helpers/daemon-failure-context.js";
 import { CliDaemonTesting } from "../../helpers/daemon-testing.js";
 
 describe("symnav daemon start", () => {
@@ -56,7 +57,7 @@ describe("symnav daemon start", () => {
     },
   );
 
-  it("starts, warms, and then reports the existing daemon", () => {
+  it("starts, warms, and then reports the existing daemon", async () => {
     const stateDir = temporaryStateDirectory(stateDirectories);
     const cwd = temporaryWorkspace(stateDirectories);
     const first = runSymnavBinary(["daemon", "start"], {
@@ -69,15 +70,27 @@ describe("symnav daemon start", () => {
       env: { SYMNAV_STATE_DIR: stateDir },
     });
 
-    expect(first.status).toBe(0);
-    expect(first.stderr).toBe("");
-    expect(first.stdout).toMatch(/^Daemon ready for .+\n\d+ files loaded in .+\n$/);
-    expect(second.status).toBe(0);
-    expect(second.stderr).toBe("");
-    expect(second.stdout).toMatch(/^Daemon already running for .+ \(pid \d+, up .+\)\n$/);
+    await new DaemonFailureContext({
+      stateDirectory: stateDir,
+      workspaceRoot: cwd,
+      result: first,
+    }).assert(() => {
+      expect(first.status).toBe(0);
+      expect(first.stderr).toBe("");
+      expect(first.stdout).toMatch(/^Daemon ready for .+\n\d+ files loaded in .+\n$/);
+    });
+    await new DaemonFailureContext({
+      stateDirectory: stateDir,
+      workspaceRoot: cwd,
+      result: second,
+    }).assert(() => {
+      expect(second.status).toBe(0);
+      expect(second.stderr).toBe("");
+      expect(second.stdout).toMatch(/^Daemon already running for .+ \(pid \d+, up .+\)\n$/);
+    });
   });
 
-  it("supports --cwd and stable JSON", () => {
+  it("supports --cwd and stable JSON", async () => {
     const stateDir = temporaryStateDirectory(stateDirectories);
     const cwd = temporaryWorkspace(stateDirectories);
     const result = runSymnavBinary(["--cwd", cwd, "daemon", "start", "--json"], {
@@ -86,11 +99,17 @@ describe("symnav daemon start", () => {
     });
     captureDaemonPid(stateDir, daemonPids);
 
-    expect(result.status).toBe(0);
-    expect(result.stderr).toBe("");
-    expect(JSON.parse(result.stdout)).toMatchObject({
-      status: "ready",
-      workspaceRoot: canonicalWorkspaceRoot(resolve(cwd)),
+    await new DaemonFailureContext({
+      stateDirectory: stateDir,
+      workspaceRoot: cwd,
+      result,
+    }).assert(() => {
+      expect(result.status).toBe(0);
+      expect(result.stderr).toBe("");
+      expect(JSON.parse(result.stdout)).toMatchObject({
+        status: "ready",
+        workspaceRoot: canonicalWorkspaceRoot(resolve(cwd)),
+      });
     });
   });
 

@@ -1,4 +1,6 @@
-import { readFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import type { DaemonTestingDiagnosticPage } from "@symnav/daemon/testing";
 import { DAEMON_BENCHMARK_WARM_REPETITIONS } from "./daemon-benchmark-gate.js";
@@ -31,6 +33,8 @@ describe("DaemonScaleBenchmarkHarness", () => {
       seed: "acceptance-seed",
     }).run();
 
+    expect(artifact.rawRuntimeFailureCount).toBe(0);
+    expect(Array.isArray(artifact.runtimeFailureEvidence)).toBe(true);
     expect(artifact.samples).toHaveLength(7 * DAEMON_BENCHMARK_WARM_REPETITIONS);
     expect(artifact.largeResponseBytes).toBeGreaterThan(8 * 1024 * 1024);
     expect(artifact.responsePeakBytes).toBe(artifact.largeResponseBytes);
@@ -63,6 +67,104 @@ describe("DaemonScaleBenchmarkHarness", () => {
       failures: [],
     });
   }, 120_000);
+
+  it("retains every counted runtime failure and closed stop context after source deletion", () => {
+    const directory = mkdtempSync(join(tmpdir(), "symnav-benchmark-failure-evidence-"));
+    try {
+      const path = join(directory, "diagnostics.json");
+      const events = [
+        {
+          kind: "process-termination",
+          timestamp: 1,
+          terminationReason: "signal",
+          signal: "SIGTERM",
+          requestId: "a".repeat(64),
+          token: "secret-token",
+          message: "secret-token",
+          payload: { secret: "secret-token" },
+        },
+        {
+          kind: "failure",
+          timestamp: 2,
+          operation: "transport-close",
+          errorName: "TypeError",
+          osCode: "EACCES",
+          durationMs: 4,
+          failure: {
+            phase: "transfer",
+            reason: "transfer-failed",
+            timestamp: 2,
+            osCode: "EACCES",
+            message: "secret-token",
+          },
+        },
+        {
+          kind: "process-termination",
+          timestamp: 3,
+          terminationReason: "unhandled-rejection",
+          errorName: "Error",
+          operation: "secret-token",
+          signal: "secret-token",
+          requestId: "secret-token",
+          osCode: "secret-token",
+        },
+        { kind: "stop", timestamp: 4, reason: "graceful", force: false },
+        {
+          kind: "process-termination",
+          terminationReason: "secret-token",
+          errorName: "secret-token",
+          timestamp: 5,
+        },
+      ];
+      writeFileSync(path, JSON.stringify({ events, nextCursor: events.length }));
+      const diagnostics = DaemonBenchmarkDiagnostics.from(
+        JSON.parse(readFileSync(path, "utf8")) as DaemonTestingDiagnosticPage,
+      );
+      const artifact = JSON.stringify({
+        rawRuntimeFailureCount: diagnostics.rawRuntimeFailureCount,
+        runtimeFailureEvidence: diagnostics.runtimeFailureEvidence,
+      });
+      rmSync(directory, { recursive: true, force: true });
+      const retained = JSON.parse(artifact) as {
+        rawRuntimeFailureCount: number;
+        runtimeFailureEvidence: readonly Record<string, unknown>[];
+      };
+      expect(retained.rawRuntimeFailureCount).toBe(3);
+      expect(
+        retained.runtimeFailureEvidence.filter((event) => event.kind === "process-termination"),
+      ).toHaveLength(retained.rawRuntimeFailureCount);
+      expect(retained.runtimeFailureEvidence).toEqual([
+        {
+          kind: "process-termination",
+          timestamp: 1,
+          terminationReason: "signal",
+          signal: "SIGTERM",
+          requestId: "a".repeat(64),
+        },
+        {
+          kind: "failure",
+          timestamp: 2,
+          operation: "transport-close",
+          errorName: "TypeError",
+          osCode: "EACCES",
+          durationMs: 4,
+          failure: { phase: "transfer", reason: "transfer-failed", timestamp: 2, osCode: "EACCES" },
+        },
+        {
+          kind: "process-termination",
+          timestamp: 3,
+          terminationReason: "unhandled-rejection",
+          errorName: "Error",
+        },
+        { kind: "stop", timestamp: 4, reason: "graceful", force: false },
+        { kind: "process-termination", timestamp: 5 },
+      ]);
+      expect(artifact).not.toContain("secret-token");
+      expect(artifact).not.toContain("payload");
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
+  });
 
   it("rejects a fixed invocation whose diagnostic is masked by later operation evidence", () => {
     const page = TestDiagnostics.withMissingOverviewAndLaterResolve();

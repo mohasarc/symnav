@@ -140,6 +140,16 @@ export class DaemonScaleBenchmarkHarness {
         process.constrainedMemory?.(),
       ).record;
       const expectedTelemetryCount = enrichedSamples.length + 7;
+      const expectedTelemetryCommands: readonly DaemonCommandName[] = [
+        ...enrichedSamples.map((sample) => sample.command),
+        "overview",
+        "resolve",
+        "resolve",
+        "overview",
+        "overview",
+        "overview",
+        "overview",
+      ];
       const gate = new DaemonBenchmarkGate().evaluate({
         scale: this.options.scale,
         samples: enrichedSamples,
@@ -164,16 +174,7 @@ export class DaemonScaleBenchmarkHarness {
         hardProcessRssBytes: resourcePolicy.hardProcessRssBytes,
         expectedTelemetryCount,
         actualTelemetryCount: telemetryCommands.length,
-        expectedTelemetryCommands: [
-          ...enrichedSamples.map((sample) => sample.command),
-          "overview",
-          "resolve",
-          "resolve",
-          "overview",
-          "overview",
-          "overview",
-          "overview",
-        ],
+        expectedTelemetryCommands,
         actualTelemetryCommands: telemetryCommands,
         invocationTelemetryComplete:
           enrichedSamples.every((sample) => sample.telemetryMatched) &&
@@ -186,6 +187,24 @@ export class DaemonScaleBenchmarkHarness {
         expectedVisibleFiles: generated.expectedProfile.visibleTypeScriptFiles,
         mutationsCurrent: mutations.current,
       });
+      if (!gate.exactlyOnceTelemetry)
+        console.error(
+          "Daemon benchmark telemetry gate evidence",
+          JSON.stringify({
+            expectedTelemetryCount,
+            actualTelemetryCount: telemetryCommands.length,
+            expectedTelemetryCommands,
+            actualTelemetryCommands: telemetryCommands,
+            telemetry: this.telemetryEvents(stateDirectory),
+            fixedWindows: enrichedSamples.map((sample) => ({
+              command: sample.command,
+              repetition: sample.repetition,
+              telemetryMatched: sample.telemetryMatched,
+            })),
+            mutationWindowsComplete: mutations.telemetryComplete,
+            largeResponseWindowComplete: largeResponse.telemetryMatched,
+          }),
+        );
       return {
         schemaVersion: 1,
         profileVersion: this.options.profile.profileVersion,
@@ -259,6 +278,14 @@ export class DaemonScaleBenchmarkHarness {
         );
         const wallMs = performance.now() - startedAt;
         const telemetryAfter = this.telemetryEvents(stateDirectory);
+        const telemetryMatched = this.invocationTelemetryMatches(
+          {
+            before: telemetryBefore,
+            after: telemetryAfter,
+            command: command as keyof typeof generated.commands,
+          },
+          warm,
+        );
         samples.push(
           BenchmarkSampleEvidence.from(
             command as keyof typeof generated.commands,
@@ -267,11 +294,7 @@ export class DaemonScaleBenchmarkHarness {
             warm,
             wallMs,
             benchmark,
-            BenchmarkSampleEvidence.telemetryMatched(
-              telemetryBefore,
-              telemetryAfter,
-              command as keyof typeof generated.commands,
-            ),
+            telemetryMatched,
           ),
         );
       }
@@ -465,16 +488,20 @@ export class DaemonScaleBenchmarkHarness {
     const telemetryAfter = this.telemetryEvents(stateDirectory);
     const route = new InvocationWorkspaceSelector().select(argv, root).route;
     if (route.kind !== "workspace") throw new Error("Benchmark command must select a workspace");
+    const telemetryMatched = this.invocationTelemetryMatches(
+      {
+        before: telemetryBefore,
+        after: telemetryAfter,
+        command: route.commandName,
+      },
+      warm,
+    );
     return {
       cold,
       warm,
       parity:
         cold.status === warm.status && cold.stdout === warm.stdout && cold.stderr === warm.stderr,
-      telemetryMatched: BenchmarkInvocationTelemetry.matches({
-        before: telemetryBefore,
-        after: telemetryAfter,
-        command: route.commandName,
-      }),
+      telemetryMatched,
     };
   }
 
@@ -528,6 +555,14 @@ export class DaemonScaleBenchmarkHarness {
     const warm = await warmPromise;
     const telemetryAfter = this.telemetryEvents(stateDirectory);
     unlinkSync(sourcePath);
+    const telemetryMatched = this.invocationTelemetryMatches(
+      {
+        before: telemetryBefore,
+        after: telemetryAfter,
+        command: "overview",
+      },
+      warm,
+    );
     return {
       responseBytes: Buffer.byteLength(warm.stdout) + Buffer.byteLength(warm.stderr),
       stdoutParity: cold.stdout === warm.stdout,
@@ -535,12 +570,25 @@ export class DaemonScaleBenchmarkHarness {
       exitParity: cold.status === warm.status,
       busyStatusObserved,
       statusMaximumMs,
-      telemetryMatched: BenchmarkInvocationTelemetry.matches({
-        before: telemetryBefore,
-        after: telemetryAfter,
-        command: "overview",
-      }),
+      telemetryMatched,
     };
+  }
+
+  private invocationTelemetryMatches(
+    window: BenchmarkTelemetryWindow,
+    result: RunSymnavBinaryResult,
+  ): boolean {
+    const matched = BenchmarkInvocationTelemetry.matches(window);
+    if (!matched)
+      console.error(
+        "Daemon benchmark invocation telemetry evidence",
+        JSON.stringify({
+          ...window,
+          stderr: result.stderr,
+          status: result.status,
+        }),
+      );
+    return matched;
   }
 
   private runCommandAsync(

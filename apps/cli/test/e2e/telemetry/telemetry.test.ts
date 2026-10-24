@@ -5,6 +5,7 @@ import { beforeAll, describe, expect, it } from "vitest";
 import { fixturePath, runSymnavBinary } from "@symnav/testing";
 
 import { ensureFixtureGitMarker } from "../ensure-fixture-git-marker.js";
+import { DaemonFailureContext } from "../../helpers/daemon-failure-context.js";
 import { CliDaemonTesting } from "../../helpers/daemon-testing.js";
 
 const fixtureRoot = fixturePath("overview-cases");
@@ -87,7 +88,7 @@ describe("symnav telemetry e2e", () => {
     expect(enabled.stderr).toBe(disabled.stderr);
   });
 
-  it("records cold during automatic warm-up and warm after readiness", () => {
+  it("records cold during automatic warm-up and warm after readiness", async () => {
     const stateDir = newStateDir();
     try {
       const cold = runSymnavBinary(overviewArgs, {
@@ -119,7 +120,7 @@ describe("symnav telemetry e2e", () => {
       expect(warm.status, warm.stderr).toBe(0);
       expect(executionModes).toEqual(["cold", "warm"]);
     } finally {
-      stopDaemon(stateDir);
+      await stopDaemon(stateDir);
     }
   });
 
@@ -142,7 +143,7 @@ describe("symnav telemetry e2e", () => {
     expect(daemonTesting.processIds()).toEqual([]);
   });
 
-  it("keeps daemon telemetry inert for an opted-out client", () => {
+  it("keeps daemon telemetry inert for an opted-out client", async () => {
     const stateDir = newStateDir();
     const result = runSymnavBinary(overviewArgs, {
       cwd: fixtureRoot,
@@ -155,7 +156,7 @@ describe("symnav telemetry e2e", () => {
 
     expect(result.status).toBe(0);
     expect(existsSync(usageLogPath(stateDir))).toBe(false);
-    stopDaemon(stateDir);
+    await stopDaemon(stateDir);
   });
 
   it("records a user_error outcome when resolve flags conflict", () => {
@@ -215,12 +216,18 @@ function usageLogPath(stateDir: string): string {
   return join(stateDir, "usage.jsonl");
 }
 
-function stopDaemon(stateDir: string): void {
+async function stopDaemon(stateDir: string): Promise<void> {
   const result = runSymnavBinary(["daemon", "stop"], {
     cwd: fixtureRoot,
     env: { SYMNAV_STATE_DIR: stateDir, SYMNAV_DAEMON: "1" },
   });
-  expect(result.status).toBe(0);
+  await new DaemonFailureContext({
+    stateDirectory: stateDir,
+    workspaceRoot: fixtureRoot,
+    result,
+  }).assert(() => {
+    expect(result.status).toBe(0);
+  });
 }
 
 function singleUsageLine(stateDir: string): string {

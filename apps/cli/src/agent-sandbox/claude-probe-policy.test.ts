@@ -1,6 +1,6 @@
 import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { dirname, join, parse } from "node:path";
 import { afterEach, expect, it } from "vitest";
 import { ClaudeCodeSandboxConfiguration } from "./claude-code-configuration.js";
 
@@ -96,17 +96,95 @@ it("retains native Edit/Read denial paths instead of dropping permission restric
   });
   await mkdir(join(home, ".claude"));
   const state = join(home, "state");
+  const original = JSON.stringify({
+    permissions: { deny: [`Edit(/${state}/**)`, `Read(~/secret)`] },
+    sandbox: { filesystem: { allowWrite: [state] } },
+  });
+  await writeFile(adapter.configurationPath, original);
+  const inspected = await adapter.inspect(state, join(state, "workspace"));
+  expect(inspected.grantsState).toBe(false);
+  expect(JSON.parse(inspected.configuration).filesystem.denyRead).toContain(join(home, "secret"));
+  expect(JSON.parse(inspected.configuration).filesystem.denyWrite).toEqual([state]);
+  expect(await readFile(adapter.configurationPath, "utf8")).toBe(original);
+});
+
+it.each([false, true])(
+  "retains a terminal Read denial with read carve-out %s",
+  async (carveOut) => {
+    const home = await mkdtemp(join(tmpdir(), "claude-permission-read-"));
+    ProbePolicyScratch.directories.push(home);
+    const adapter = new ClaudeCodeSandboxConfiguration({ homeDirectory: home });
+    await mkdir(join(home, ".claude"));
+    const state = join(home, "state");
+    const workspace = join(state, "doctor", "random", "workspace");
+    const allowRead = carveOut ? [state, join(home, "public")] : [];
+    const original = JSON.stringify({
+      permissions: { deny: [`Read(/${state}/**)`] },
+      sandbox: { filesystem: { allowWrite: [state], allowRead } },
+    });
+    await writeFile(adapter.configurationPath, original);
+    const inspected = await adapter.inspect(state, workspace);
+    expect(inspected.grantsState).toBe(carveOut);
+    expect(JSON.parse(inspected.configuration).filesystem).toEqual({
+      allowWrite: [state],
+      denyWrite: [],
+      denyRead: [state],
+      allowRead: [...allowRead, workspace],
+    });
+    expect(await readFile(adapter.configurationPath, "utf8")).toBe(original);
+  },
+);
+
+it.each([
+  ["state", false],
+  [join("state", "child"), false],
+  ["state-sibling", true],
+] as const)("preserves native subtree containment for %s", async (name, granted) => {
+  const home = await mkdtemp(join(tmpdir(), "claude-permission-containment-"));
+  ProbePolicyScratch.directories.push(home);
+  const adapter = new ClaudeCodeSandboxConfiguration({ homeDirectory: home });
+  await mkdir(join(home, ".claude"));
+  const denied = join(home, "state");
+  const state = join(home, name);
   await writeFile(
     adapter.configurationPath,
     JSON.stringify({
-      permissions: { deny: [`Edit(/${state}/**)`, `Read(~/secret)`] },
-      sandbox: { filesystem: { allowWrite: [state] } },
+      permissions: { deny: [`Edit(/${denied}/**)`] },
+      sandbox: { filesystem: { allowWrite: [home] } },
     }),
   );
-  const inspected = await adapter.inspect(state, join(state, "workspace"));
-  expect(JSON.parse(inspected.configuration).filesystem.denyRead).toContain(join(home, "secret"));
-  expect(JSON.parse(inspected.configuration).filesystem.denyWrite.length).toBe(1);
+  const inspected = await adapter.inspect(state, join(home, "workspace"));
+  expect(inspected.grantsState).toBe(granted);
+  expect(JSON.parse(inspected.configuration).filesystem.denyWrite).toEqual([denied]);
 });
+
+it.each([true, false])(
+  "retains interior wildcard safeguards for a matching denial %s",
+  async (matching) => {
+    const home = await mkdtemp(join(tmpdir(), "claude-permission-pattern-"));
+    ProbePolicyScratch.directories.push(home);
+    const adapter = new ClaudeCodeSandboxConfiguration({ homeDirectory: home });
+    await mkdir(join(home, ".claude"));
+    const state = join(home, "private", "state");
+    const denied = matching ? join(home, "*", "state") : join(home, "unrelated", "*", "state");
+    const original = JSON.stringify({
+      permissions: { deny: [`Edit(/${denied}/**)`] },
+      sandbox: { filesystem: { allowWrite: [state] } },
+    });
+    await writeFile(adapter.configurationPath, original);
+    const inspection = adapter.inspect(state, join(home, "workspace"));
+    if (matching) {
+      await expect(inspection).rejects.toThrow(
+        "cannot verify a patterned state denial; use an absolute state policy",
+      );
+    } else {
+      const inspected = await inspection;
+      expect(inspected.grantsState).toBe(true);
+      expect(JSON.parse(inspected.configuration).filesystem.denyWrite).toEqual([denied]);
+    }
+    expect(await readFile(adapter.configurationPath, "utf8")).toBe(original);
+  },
+);
 
 it("checks grants and denies through canonical filesystem aliases", async () => {
   const home = await mkdtemp(join(tmpdir(), "claude-alias-"));
@@ -170,4 +248,22 @@ it("translates a native root subtree Edit denial to the filesystem root", async 
   const policy = await adapter.inspect(state, join(state, "workspace"));
   expect(policy.grantsState).toBe(false);
   expect(JSON.parse(policy.configuration).filesystem.denyWrite).toEqual(["/"]);
+});
+
+it("preserves the native absolute root when translating a root subtree permission", async () => {
+  const home = await mkdtemp(join(tmpdir(), "claude-drive-root-"));
+  ProbePolicyScratch.directories.push(home);
+  const adapter = new ClaudeCodeSandboxConfiguration({ homeDirectory: home });
+  await mkdir(join(home, ".claude"));
+  const state = join(home, "state");
+  const root = parse(state).root;
+  const original = JSON.stringify({
+    permissions: { deny: [`Edit(/${root}**)`] },
+    sandbox: { filesystem: { allowWrite: [state] } },
+  });
+  await writeFile(adapter.configurationPath, original);
+  const policy = await adapter.inspect(state, join(state, "workspace"));
+  expect(policy.grantsState).toBe(false);
+  expect(JSON.parse(policy.configuration).filesystem.denyWrite).toEqual([root]);
+  expect(await readFile(adapter.configurationPath, "utf8")).toBe(original);
 });

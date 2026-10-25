@@ -119,7 +119,14 @@ export class NodeDaemonProcessTerminator implements DaemonProcessTerminator {
 
   hasExited(pid: number, lifetime?: DaemonProcessLifetimeIdentity): boolean {
     if (process.platform === "win32") return !this.isAlive(pid);
-    return lifetime !== undefined && PosixDaemonProcessLifetime.observe(lifetime) === "exited";
+    if (lifetime !== undefined) return PosixDaemonProcessLifetime.observe(lifetime) === "exited";
+    if (process.platform !== "darwin") return false;
+    try {
+      process.kill(pid, 0);
+      return false;
+    } catch (error) {
+      return NodeDaemonProcessTerminator.errorCode(error) === "ESRCH";
+    }
   }
 
   isAlive(pid: number): boolean {

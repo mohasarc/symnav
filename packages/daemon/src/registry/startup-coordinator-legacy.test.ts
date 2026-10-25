@@ -13,6 +13,7 @@ import { CommandOutputSnapshot } from "../../test/helpers/executor-output.js";
 import { TestDaemonRegistry } from "../../test/helpers/daemon-registry.js";
 import { TestDaemonStartupCoordinator } from "../../test/helpers/daemon-startup-coordinator.js";
 import { TestNodeDaemonProcessTerminator } from "../../test/helpers/daemon-process-terminator.js";
+import type { DaemonProcessLifetimeIdentity } from "../process/process-lifetime-identity.js";
 import type { DaemonProcessLauncher } from "../process/process-launcher.js";
 import type {
   DaemonLifecycleRequestSender,
@@ -28,11 +29,21 @@ import {
 import type { StartupOwner } from "./registry.js";
 import { DaemonWorkspaceIdentity } from "./workspace-identity.js";
 
+class UnverifiableLegacyProcessTerminator extends TestNodeDaemonProcessTerminator {
+  public static readonly unverifiablePid = 999_999_999;
+
+  public override hasExited(pid: number, lifetime?: DaemonProcessLifetimeIdentity): boolean {
+    if (pid === UnverifiableLegacyProcessTerminator.unverifiablePid && lifetime === undefined)
+      return false;
+    return super.hasExited(pid, lifetime);
+  }
+}
+
 class LegacyStartupFixture {
   public readonly root = mkdtempSync(join(tmpdir(), "symnav-legacy-startup-"));
   public readonly identity = DaemonWorkspaceIdentity.from("/repo", this.root);
   public readonly registry = new TestDaemonRegistry(this.identity.registryDirectory);
-  public readonly terminator = new TestNodeDaemonProcessTerminator(100, 1);
+  public readonly terminator = new UnverifiableLegacyProcessTerminator(100, 1);
   public readonly launcher: DaemonProcessLauncher = {
     symnavVersion: "0.1.0",
     memoryCapBytes: 1024,
@@ -107,7 +118,7 @@ class LegacyStartupFixture {
       instanceId: "legacy",
       processToken: "legacy-token",
       endpoint: this.identity.endpoint("legacy"),
-      pid: 999_999_999,
+      pid: UnverifiableLegacyProcessTerminator.unverifiablePid,
       state: "starting",
       startedAt: 10,
       memoryCapBytes: 1024,

@@ -60,7 +60,7 @@ Daemons exit after 30 minutes without navigation work, when their workspace is d
 
 Warm-up follows navigation worker replacements caused by memory pressure. Readiness and startup diagnostics describe the current worker after resource checks; an obsolete worker finishing or stopping does not fail a healthy replacement.
 
-Registry records and per-workspace JSON diagnostic logs live under `~/.symnav/daemons/`. Set `SYMNAV_STATE_DIR` to relocate all symnav state; daemon files then live under `$SYMNAV_STATE_DIR/daemons/`. Diagnostics are not written to command stdout or stderr.
+Registry records and per-workspace JSON diagnostic logs live under `~/.symnav/daemons/`. Set `SYMNAV_STATE_DIR` to relocate all symnav state; daemon files then live under `$SYMNAV_STATE_DIR/daemons/`. Diagnostics are not written to command stdout or stderr. Status removes stale records for confirmed exited processes, including older daemon records on macOS. A permission-denied liveness probe does not count as proof of exit. Linux retains older records whose process identity cannot be verified across PID namespaces.
 
 `daemon status` adds fallback counts and the latest reason from the last hour below each running daemon. A workspace without a live daemon shows its last startup failure from that hour, including the operating-system error code when available. Busy and unresponsive processes remain listed. Status never starts a daemon or waits for warm-up; JSON keeps `schemaVersion: 1` and adds optional `recentFallbacks` and `startupFailures` fields.
 

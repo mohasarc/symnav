@@ -5,21 +5,28 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { DaemonPolicy } from "../daemon-policy.js";
 import { NodeDaemonProcessTerminator } from "./process-launcher.js";
 import { PosixDaemonProcessLifetime } from "./posix-process-lifetime.js";
+import type { DaemonProcessLifetimeIdentity } from "./process-lifetime-identity.js";
 
 describe("NodeDaemonProcessTerminator", () => {
   afterEach(() => vi.restoreAllMocks());
 
-  it("recognizes an exited legacy process without lifetime metadata", () => {
+  it("uses the host's legacy exit evidence for a reaped process", () => {
     const child = spawnSync(process.execPath, ["-e", "process.exit(0)"], { stdio: "ignore" });
     expect(child.error).toBeUndefined();
     expect(child.status).toBe(0);
-    const terminator = new NodeDaemonProcessTerminator(DaemonPolicy.currentSystem().values.shutdown);
+    const terminator = new NodeDaemonProcessTerminator(
+      DaemonPolicy.currentSystem().values.shutdown,
+    );
 
-    expect(terminator.hasExited(child.pid)).toBe(true);
+    expect(terminator.hasExited(child.pid)).toBe(
+      process.platform === "darwin" || process.platform === "win32",
+    );
   });
 
   it("retains a live legacy process without lifetime metadata", () => {
-    const terminator = new NodeDaemonProcessTerminator(DaemonPolicy.currentSystem().values.shutdown);
+    const terminator = new NodeDaemonProcessTerminator(
+      DaemonPolicy.currentSystem().values.shutdown,
+    );
 
     expect(terminator.hasExited(process.pid)).toBe(false);
   });
@@ -36,7 +43,8 @@ describe("NodeDaemonProcessTerminator", () => {
         );
 
         expect(terminator.hasExited(12345)).toBe(false);
-        expect(probe).toHaveBeenCalledWith(12345, 0);
+        if (process.platform === "darwin") expect(probe).toHaveBeenCalledWith(12345, 0);
+        else expect(probe).not.toHaveBeenCalled();
       },
     );
 
@@ -46,7 +54,10 @@ describe("NodeDaemonProcessTerminator", () => {
       ["exited", true],
     ] as const)("keeps %s lifetime evidence independent of PID probes", (observation, exited) => {
       const token = "12345678-1234-1234-1234-123456789abc";
-      const lifetime = { token, path: join(tmpdir(), "process-lifetimes", `${token}.fifo`) };
+      const lifetime: DaemonProcessLifetimeIdentity = {
+        token,
+        path: join(tmpdir(), "process-lifetimes", `${token}.fifo`),
+      };
       const observe = vi.spyOn(PosixDaemonProcessLifetime, "observe").mockReturnValue(observation);
       const probe = vi.spyOn(process, "kill").mockImplementation(() => {
         throw Object.assign(new Error("PID no longer exists"), { code: "ESRCH" });

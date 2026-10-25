@@ -90,7 +90,9 @@ describe.skipIf(process.platform === "win32")("namespace-safe record observation
       kind: "unresponsive",
     });
     const { processLifetime: _lifetime, ...legacy } = fixture.record;
-    await expect(fixture.observer.observe(legacy)).resolves.toMatchObject({ kind: "unresponsive" });
+    await expect(fixture.observer.observe({ ...legacy, pid: process.pid })).resolves.toMatchObject({
+      kind: "unresponsive",
+    });
   });
   it("proves death despite an unrelated matching local PID", async () => {
     const fixture = new NamespaceObservationFixture();

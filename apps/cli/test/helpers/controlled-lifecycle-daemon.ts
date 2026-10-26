@@ -9,9 +9,25 @@ import { runSymnavBinary, type RunSymnavBinaryResult } from "@symnav/testing";
 import { canonicalWorkspaceRoot } from "./canonical-workspace-root.js";
 import { E2eProcessCleanup } from "./e2e-process-cleanup.js";
 
+export interface ControlledLifecycleDiagnosticSnapshot {
+  readonly pid: number | undefined;
+  readonly stderr: string;
+  readonly exitCode: number | null;
+  readonly signalCode: NodeJS.Signals | null;
+  readonly close:
+    | { readonly state: "pending" }
+    | {
+        readonly state: "closed";
+        readonly status: number | null;
+        readonly signal: NodeJS.Signals | null;
+      };
+}
+
 export class ControlledLifecycleDaemon {
   private readonly children: ChildProcess[] = [];
   private actorStderr = "";
+  private readonly processToken: string;
+  private close: ControlledLifecycleDiagnosticSnapshot["close"] = { state: "pending" };
   private readonly readyPath: string;
   private readonly requestStartedPath: string;
   private readonly releasePath: string;
@@ -28,6 +44,7 @@ export class ControlledLifecycleDaemon {
   ) {
     this.workspaceRoot = canonicalWorkspaceRoot(realpathSync(workspaceRoot));
     const instanceId = randomUUID();
+    this.processToken = `${instanceId}-token`;
     this.readyPath = join(stateDirectory, `${instanceId}-actor-ready`);
     this.requestStartedPath = join(stateDirectory, `${instanceId}-request-started`);
     this.releasePath = join(stateDirectory, `${instanceId}-release`);
@@ -46,7 +63,7 @@ export class ControlledLifecycleDaemon {
         this.workspaceRoot,
         stateDirectory,
         instanceId,
-        `${instanceId}-token`,
+        this.processToken,
         this.readyPath,
         this.requestStartedPath,
         mode === "ready" ? this.releasePath : mode === "stuck" ? "--no-release" : `--${mode}`,
@@ -75,7 +92,10 @@ export class ControlledLifecycleDaemon {
     this.children.push(this.actor);
     this.exited = new Promise((resolve, reject) => {
       this.actor.once("error", reject);
-      this.actor.once("close", resolve);
+      this.actor.once("close", (status, signal) => {
+        this.close = { state: "closed", status, signal };
+        resolve(status);
+      });
     });
   }
 
@@ -162,6 +182,16 @@ export class ControlledLifecycleDaemon {
 
   public recoverDiagnosticWrites(): void {
     rmSync(`${this.readyPath}.diagnostics-denied`);
+  }
+
+  public diagnosticSnapshot(): ControlledLifecycleDiagnosticSnapshot {
+    return {
+      pid: this.actor.pid,
+      stderr: this.actorStderr.replaceAll(this.processToken, "[redacted]"),
+      exitCode: this.actor.exitCode,
+      signalCode: this.actor.signalCode,
+      close: this.close,
+    };
   }
 
   public async dispose(): Promise<void> {

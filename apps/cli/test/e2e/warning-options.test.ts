@@ -15,6 +15,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { fixturePath, runSymnavBinary } from "@symnav/testing";
 import { canonicalWorkspaceRoot } from "../helpers/canonical-workspace-root.js";
 import { CliDaemonTesting } from "../helpers/daemon-testing.js";
+import { DaemonFailureContext } from "../helpers/daemon-failure-context.js";
 import { E2eProcessCleanup } from "../helpers/e2e-process-cleanup.js";
 
 class WarningOptionsHarness {
@@ -177,6 +178,11 @@ describe("global warning options through the built CLI", () => {
       "warm",
       "fallback",
     ]);
-    expect(harness.run(["daemon", "stop", "--no-warnings"], "1").status).toBe(0);
+    const stopped = harness.run(["daemon", "stop", "--no-warnings"], "1");
+    await new DaemonFailureContext({
+      stateDirectory: harness.state,
+      workspaceRoot: harness.workspace,
+      result: stopped,
+    }).assert(() => expect(stopped.status).toBe(0));
   }, 20_000);
 });

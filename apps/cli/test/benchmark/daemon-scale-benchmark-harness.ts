@@ -20,6 +20,8 @@ import { performance } from "node:perf_hooks";
 import { fileURLToPath } from "node:url";
 import { runSymnavBinary, type RunSymnavBinaryResult } from "@symnav/testing";
 import { DAEMON_COMMAND_NAMES, type DaemonCommandName } from "@symnav/daemon";
+import type { DaemonTestingDiagnosticEvent } from "@symnav/daemon/testing";
+import { DaemonDiagnosticEvidence } from "../helpers/daemon-diagnostic-evidence.js";
 import { DaemonTestingInspector } from "@symnav/daemon/testing";
 import { TestDaemonResourcePolicy as DaemonResourcePolicy } from "../helpers/daemon-resource-policy.js";
 import { InvocationWorkspaceSelector } from "../../src/invocation-workspace-selector.js";
@@ -79,6 +81,8 @@ export interface DaemonBenchmarkArtifact {
   readonly exactlyOnceTelemetry: boolean;
   readonly resourcesWithinPolicy: boolean;
   readonly spoolsCleaned: boolean;
+  readonly rawRuntimeFailureCount: number;
+  readonly runtimeFailureEvidence: readonly DaemonTestingDiagnosticEvent[];
   readonly failures: DaemonBenchmarkGateResult["failures"];
   readonly samples: readonly DaemonBenchmarkSample[];
 }
@@ -241,6 +245,8 @@ export class DaemonScaleBenchmarkHarness {
         exactlyOnceTelemetry: gate.exactlyOnceTelemetry,
         resourcesWithinPolicy: gate.resourcesWithinPolicy,
         spoolsCleaned: gate.spoolsCleaned,
+        rawRuntimeFailureCount: diagnostics.rawRuntimeFailureCount,
+        runtimeFailureEvidence: diagnostics.runtimeFailureEvidence,
         failures: gate.failures,
         samples: enrichedSamples,
       };
@@ -874,6 +880,7 @@ export class DaemonBenchmarkDiagnostics {
     readonly restartCount: number,
     readonly capacityResultCount: number,
     readonly rawRuntimeFailureCount: number,
+    readonly runtimeFailureEvidence: readonly DaemonTestingDiagnosticEvent[],
     readonly processRssPeakBytes: number,
     readonly workerHeapPeakBytes: number | undefined,
     readonly spoolPeakBytes: number,
@@ -954,6 +961,11 @@ export class DaemonBenchmarkDiagnostics {
       events.filter((event) => event.kind === "worker-replaced").length,
       events.filter((event) => event.failureCode === "response-capacity").length,
       events.filter((event) => event.kind === "process-termination").length,
+      events
+        .filter((event) =>
+          ["process-termination", "failure", "stop", "shutdown"].includes(String(event.kind)),
+        )
+        .map((event) => DaemonDiagnosticEvidence.event(event)),
       Math.max(0, ...operationMetrics.map((metric) => metric.processRssPeakBytes)),
       DaemonBenchmarkDiagnostics.maximumOptional(
         operationMetrics.map((metric) => metric.workerHeapPeakBytes),

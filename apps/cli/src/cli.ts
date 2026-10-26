@@ -16,11 +16,7 @@ const selectedRoute = new InvocationWorkspaceSelector().classify(
   process.argv.slice(2),
   process.cwd(),
 );
-const stateRequired =
-  daemonEnabled ||
-  telemetryEnabled ||
-  selectedRoute.kind === "control" ||
-  (selectedRoute.kind === "workspace" && selectedRoute.commandName === "stats");
+const stateRequired = (daemonEnabled || telemetryEnabled) && selectedRoute.kind !== "local";
 const stateDirectory = stateRequired ? new StateDirectoryResolver(process.env).resolve() : "";
 const dependencies = createDefaultDependencies(stateDirectory, daemonPolicy, daemonEnabled);
 const coordinator = new CliInvocationCoordinator({

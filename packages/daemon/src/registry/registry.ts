@@ -1,5 +1,6 @@
 import { PosixDaemonProcessLifetime } from "../process/posix-process-lifetime.js";
 import type { DaemonProcessLifetimeIdentity } from "../process/process-lifetime-identity.js";
+import { DaemonStateWriteErrors } from "../state-write-errors.js";
 import {
   existsSync,
   mkdirSync,
@@ -136,6 +137,14 @@ class RegistryStartupLease implements StartupLease {
 }
 
 export class DaemonRegistry {
+  private static writeFile(...arguments_: Parameters<typeof writeFileSync>): void {
+    try {
+      writeFileSync(...arguments_);
+    } catch (error) {
+      throw DaemonStateWriteErrors.failedWrite(String(arguments_[0]), error);
+    }
+  }
+
   private readonly platform: NodeJS.Platform;
   private readonly renamePath: typeof renameSync;
   private readonly startupPolicy: DaemonPolicyValues["startup"];
@@ -192,7 +201,10 @@ export class DaemonRegistry {
     mkdirSync(identity.identityDirectory, { recursive: true, mode: 0o700 });
     const recordPath = identity.recordPath(record.instanceId);
     const temporaryPath = `${recordPath}.${process.pid}.${randomUUID()}.tmp`;
-    writeFileSync(temporaryPath, JSON.stringify(record), { encoding: "utf8", mode: 0o600 });
+    DaemonRegistry.writeFile(temporaryPath, JSON.stringify(record), {
+      encoding: "utf8",
+      mode: 0o600,
+    });
     renameSync(temporaryPath, recordPath);
   }
 
@@ -271,7 +283,7 @@ export class DaemonRegistry {
       };
       const ownerPath = DaemonRegistry.ownerMetadataPath(identity, identity.lockPath);
       const temporaryPath = `${identity.lockPath}.${process.pid}.${randomUUID()}.owner.tmp`;
-      writeFileSync(temporaryPath, JSON.stringify(adoptedOwner), {
+      DaemonRegistry.writeFile(temporaryPath, JSON.stringify(adoptedOwner), {
         encoding: "utf8",
         mode: 0o600,
       });
@@ -337,7 +349,7 @@ export class DaemonRegistry {
     const claimPath = identity.startupClaimPath(owner.instanceId);
     mkdirSync(claimPath, { mode: 0o700 });
     mkdirSync(join(claimPath, owner.claimToken!), { mode: 0o700 });
-    writeFileSync(
+    DaemonRegistry.writeFile(
       identity.startupOwnerPath(join(claimPath, owner.claimToken!)),
       JSON.stringify(owner),
       {
@@ -715,11 +727,15 @@ export class DaemonRegistry {
     const claimPath = identity.startupMutationClaimPath(token);
     mkdirSync(claimPath, { mode: 0o700 });
     mkdirSync(join(claimPath, token), { mode: 0o700 });
-    writeFileSync(identity.startupOwnerPath(join(claimPath, token)), JSON.stringify(owner), {
-      encoding: "utf8",
-      flag: "wx",
-      mode: 0o600,
-    });
+    DaemonRegistry.writeFile(
+      identity.startupOwnerPath(join(claimPath, token)),
+      JSON.stringify(owner),
+      {
+        encoding: "utf8",
+        flag: "wx",
+        mode: 0o600,
+      },
+    );
     try {
       renameSync(claimPath, identity.startupMutationPath);
       return new RegistryStartupMutationLease(this, identity, owner);
@@ -1006,7 +1022,7 @@ export class DaemonRegistry {
     const ownerPath = DaemonRegistry.ownerMetadataPath(identity, identity.lockPath);
     const temporaryPath = `${identity.lockPath}.${process.pid}.${randomUUID()}.owner.tmp`;
     try {
-      writeFileSync(temporaryPath, JSON.stringify(replacementOwner), {
+      DaemonRegistry.writeFile(temporaryPath, JSON.stringify(replacementOwner), {
         encoding: "utf8",
         mode: 0o600,
       });

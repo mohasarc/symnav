@@ -187,7 +187,7 @@ describe("symnav telemetry e2e", () => {
 
     const result = runSymnavBinary(["stats", "--json"], {
       cwd: fixtureRoot,
-      env: { SYMNAV_STATE_DIR: stateDir },
+      env: { SYMNAV_STATE_DIR: stateDir, SYMNAV_DAEMON: "1" },
     });
     const summary = JSON.parse(result.stdout) as { totalEvents: number };
 
@@ -218,7 +218,7 @@ function usageLogPath(stateDir: string): string {
 function stopDaemon(stateDir: string): void {
   const result = runSymnavBinary(["daemon", "stop"], {
     cwd: fixtureRoot,
-    env: { SYMNAV_STATE_DIR: stateDir },
+    env: { SYMNAV_STATE_DIR: stateDir, SYMNAV_DAEMON: "1" },
   });
   expect(result.status).toBe(0);
 }

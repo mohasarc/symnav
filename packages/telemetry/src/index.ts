@@ -25,3 +25,4 @@ export type {
 } from "./usage-summary.js";
 export { NodeTelemetryWritePort } from "./node-telemetry-write-port.js";
 export type { TelemetryWritePort } from "./write-port.js";
+export type { TelemetryWriteFailure, TelemetryFailureObserver } from "./write-failure.js";

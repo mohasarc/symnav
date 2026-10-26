@@ -1,3 +1,5 @@
+import { DaemonStateWriteErrors } from "../state-write-errors.js";
+import type { DaemonStateWriteReport } from "../state-write-failure.js";
 import {
   type DaemonCommandName,
   type DaemonDiagnostics,
@@ -65,7 +67,7 @@ export type DaemonNavigationWorkerResponse =
       readonly kind: "result";
       readonly generation: number;
       readonly requestId: string;
-      readonly result: { readonly exitCode: number };
+      readonly result: { readonly exitCode: number } & DaemonStateWriteReport;
       readonly refresh: DaemonRefreshSummary;
       readonly durations: WorkerCommandDurations;
       readonly diagnostics?: DaemonDiagnostics;
@@ -249,7 +251,14 @@ export class DaemonNavigationWorkerProtocol {
 
   private static isExecutionResult(value: unknown): value is { readonly exitCode: number } {
     return (
-      this.isRecord(value) && this.hasKeys(value, ["exitCode"]) && this.isCount(value.exitCode)
+      this.isRecord(value) &&
+      this.hasKeys(
+        value,
+        value.stateWriteFailure === undefined ? ["exitCode"] : ["exitCode", "stateWriteFailure"],
+      ) &&
+      this.isCount(value.exitCode) &&
+      (value.stateWriteFailure === undefined ||
+        DaemonStateWriteErrors.isFailure(value.stateWriteFailure))
     );
   }
 

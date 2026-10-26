@@ -7,7 +7,7 @@ import { NodeFileSystem } from "@symnav/core";
 import { DaemonClient, DaemonPolicy, type DaemonExecutorFactory } from "@symnav/daemon";
 import { TypeScriptBackend } from "@symnav/backend-typescript";
 import { NodeTelemetryWritePort, NodeUsageRecorder, usageLogPath } from "@symnav/telemetry";
-import type { Clock } from "@symnav/telemetry";
+import type { Clock, TelemetryFailureObserver } from "@symnav/telemetry";
 import { registerContextCommand } from "./commands/context/register-context-command.js";
 import { registerDaemonCommand } from "./commands/daemon/register-daemon-command.js";
 import { registerDefCommand } from "./commands/def/register-def-command.js";
@@ -50,6 +50,19 @@ export function createDefaultDependencies(
   const fs = new NodeFileSystem();
   const clock: Clock = { now: () => Date.now() };
   const symnavVersion = readPackageVersion();
+  const sessionId = randomUUID();
+  const invocationTelemetry = (observer?: TelemetryFailureObserver) => ({
+    recorder: new NodeUsageRecorder(
+      new NodeTelemetryWritePort(usageLogPath(canonicalStateDirectory), observer),
+      { next: () => sessionId },
+    ),
+    identity: new NodeTelemetryIdentityProvider(
+      canonicalStateDirectory,
+      new NodeGitRemoteReader(),
+      undefined,
+      observer,
+    ),
+  });
   let dependencies: ProgramDependencies;
   const executorFactory: DaemonExecutorFactory = async (options) => {
     const { createDaemonExecutorFromDependencies } = await import("./daemon-executor.js");
@@ -72,13 +85,10 @@ export function createDefaultDependencies(
     fs,
     backends: () => [new TypeScriptBackend(fs)],
     git: new NodeGitHistory(),
-    recorder: new NodeUsageRecorder(
-      new NodeTelemetryWritePort(usageLogPath(canonicalStateDirectory)),
-      { next: () => randomUUID() },
-    ),
+    ...invocationTelemetry(),
+    invocationTelemetry,
     clock,
     telemetryEnabled: isTelemetryEnabled(process.env),
-    identity: new NodeTelemetryIdentityProvider(canonicalStateDirectory, new NodeGitRemoteReader()),
     symnavVersion,
   };
   return dependencies;
@@ -92,8 +102,11 @@ export function buildProgram(
   const deps =
     dependencies ??
     createDefaultDependencies(
-      new StateDirectoryResolver(process.env).resolve(),
+      process.env.SYMNAV_DAEMON === "0" && !isTelemetryEnabled(process.env)
+        ? ""
+        : new StateDirectoryResolver(process.env).resolve(),
       DaemonPolicy.currentSystem(),
+      process.env.SYMNAV_DAEMON !== "0",
     );
   const program = new CommanderCommand();
   program

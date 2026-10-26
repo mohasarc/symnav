@@ -62,6 +62,9 @@ class DaemonStartAction {
       const workspace = await createWorkspace({ startDir: cwd, fs: dependencies.fs });
       const result = await dependencies.daemonClient.control({
         action: "start",
+        ...(dependencies.stateWriteFailed === undefined
+          ? {}
+          : { stateWriteFailed: dependencies.stateWriteFailed }),
         workspaceRoot: workspace.root,
       });
       context.stdout.write(
@@ -87,7 +90,12 @@ class DaemonStatusAction {
     dependencies: ProgramDependencies,
     options: DaemonOutputOptions,
   ): Promise<void> {
-    const results = await dependencies.daemonClient.control({ action: "status" });
+    const results = await dependencies.daemonClient.control({
+      action: "status",
+      ...(dependencies.stateWriteFailed === undefined
+        ? {}
+        : { stateWriteFailed: dependencies.stateWriteFailed }),
+    });
     context.stdout.write(
       options.json
         ? DaemonLifecycleRenderer.renderStatusJson(results)
@@ -108,6 +116,9 @@ class DaemonStopAction {
       const workspace = await createWorkspace({ startDir: cwd, fs: dependencies.fs });
       const result = await dependencies.daemonClient.control({
         action: "stop",
+        ...(dependencies.stateWriteFailed === undefined
+          ? {}
+          : { stateWriteFailed: dependencies.stateWriteFailed }),
         workspaceRoot: workspace.root,
       });
       context.stdout.write(

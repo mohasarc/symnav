@@ -62,6 +62,11 @@ export class DaemonClient {
   async control(
     request: DaemonControlRequest,
   ): Promise<DaemonStartResult | readonly RunningDaemonStatus[] | DaemonStopResult> {
+    if (this.options.stateDirectory === "") {
+      if (request.action === "start") return { status: "disabled" };
+      if (request.action === "status") return [];
+      return { status: "not-running", workspaceRoot: request.workspaceRoot };
+    }
     return (await this.loadRuntime()).control(request);
   }
 }

@@ -60,6 +60,12 @@ Daemons exit after 30 minutes without navigation work, when their workspace is d
 
 Registry records and per-workspace JSON diagnostic logs live under `~/.symnav/daemons/`. Set `SYMNAV_STATE_DIR` to relocate all symnav state; daemon files then live under `$SYMNAV_STATE_DIR/daemons/`. Diagnostics are not written to command stdout or stderr.
 
+On macOS and Linux, daemon communication uses regular files inside the state directory. An agent sandbox needs workspace read access and write access to `~/.symnav` (or the effective `SYMNAV_STATE_DIR`); it needs no network or Unix-socket grant. Sandboxed and unsandboxed commands selecting the same workspace and state directory share one daemon. Windows retains named pipes.
+
+POSIX daemon ownership requires the standard `mkfifo` executable on `PATH` and a state filesystem that supports FIFOs. Node 20 remains supported. FIFO readers prove process lifetime across PID namespaces; displayed PIDs belong to the daemon’s own namespace and are not host signal targets. Starting and ready daemons stop through authenticated controls; success requires confirmed process exit. A live daemon that cannot authenticate within the stop deadline retains ownership. Unreachable legacy PID-only owners are retained conservatively. Explicit start reports failure when matched legacy startup ownership cannot be verified, leaving the owner and record intact. If a sandbox wrapper terminates its descendants, the next command starts a fresh cold warm-up; symnav does not extend the wrapper lifetime.
+
+Command and result spill files also stay inside state and are removed after delivery. Setting both `SYMNAV_DAEMON=0` and `SYMNAV_TELEMETRY=0` runs navigation directly without accessing state or creating spill files.
+
 ## Telemetry
 
 Symnav records local, shape-only usage telemetry by default. Each command appends one JSON line to `~/.symnav/usage.jsonl` with command name, timestamp, duration, outcome, execution mode (`warm`, `cold`, or `fallback`), enabled flag names, result-size counts, argument shape, `workspaceId`, `machineId`, `sessionId`, symnav version, and schema version.
@@ -83,3 +89,5 @@ To run the CLI from source during development, use the `dev` script in `apps/cli
 ```sh
 pnpm --filter symnav dev --version
 ```
+
+Real sandbox checks use pinned `@anthropic-ai/sandbox-runtime` on macOS and Linux. Linux needs `bubblewrap`, `socat`, `ripgrep`, and working unprivileged user namespaces. Run `pnpm --filter symnav exec vitest run test/e2e/sandbox/warm-navigation.test.ts` after building. Set `SYMNAV_REQUIRE_SANDBOX_RUNTIME=1` to fail when runtime prerequisites are unavailable; CI requires this on both platforms. Installed Codex runtimes run the same checks with an isolated configuration.

@@ -22,6 +22,8 @@ describe("public DaemonClient", () => {
       policy: DaemonPolicy.currentSystem(),
     });
 
+    expect((client as unknown as { runtime: unknown }).runtime).toBeUndefined();
+
     await expect(
       client.execute({
         workspaceRoot: "/workspace",

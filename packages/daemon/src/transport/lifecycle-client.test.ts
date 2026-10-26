@@ -11,7 +11,7 @@ import type {
 } from "./protocol.js";
 import { DAEMON_PROTOCOL_VERSION } from "./protocol.js";
 import { DaemonProtocolValidator } from "./protocol-validator.js";
-import type { DaemonSocketClient, DaemonSocketConnection } from "./contracts.js";
+import type { DaemonConnectionClient, DaemonConnection } from "./contracts.js";
 import { DaemonWireCodec } from "./wire-codec.js";
 
 describe("DaemonLifecycleClient", () => {
@@ -273,14 +273,14 @@ describe("DaemonLifecycleClient", () => {
 class LifecycleClientHarness {
   readonly responseTimeoutMs = 321;
   readonly codec: DaemonWireCodec;
-  readonly connection: ScriptedDaemonSocketConnection;
-  readonly sockets: RecordingDaemonSocketClient;
+  readonly connection: ScriptedDaemonConnection;
+  readonly sockets: RecordingDaemonConnectionClient;
   readonly client: DaemonLifecycleClient;
 
   private constructor(incoming: readonly Uint8Array[]) {
     this.codec = lifecycleCodec();
-    this.connection = new ScriptedDaemonSocketConnection(incoming);
-    this.sockets = new RecordingDaemonSocketClient(this.connection);
+    this.connection = new ScriptedDaemonConnection(incoming);
+    this.sockets = new RecordingDaemonConnectionClient(this.connection);
     this.client = new DaemonLifecycleClient({
       sockets: this.sockets,
       codec: this.codec,
@@ -299,25 +299,25 @@ class LifecycleClientHarness {
   }
 }
 
-class RecordingDaemonSocketClient implements DaemonSocketClient {
+class RecordingDaemonConnectionClient implements DaemonConnectionClient {
   readonly connections: { readonly endpoint: string; readonly timeoutMs?: number }[] = [];
 
-  constructor(private readonly connection: DaemonSocketConnection) {}
+  constructor(private readonly connection: DaemonConnection) {}
 
-  connect(endpoint: string, timeoutMs?: number): Promise<DaemonSocketConnection> {
+  connect(endpoint: string, timeoutMs?: number): Promise<DaemonConnection> {
     this.connections.push({ endpoint, ...(timeoutMs === undefined ? {} : { timeoutMs }) });
     return Promise.resolve(this.connection);
   }
 }
 
-class ScriptedDaemonSocketConnection implements DaemonSocketConnection {
+class ScriptedDaemonConnection implements DaemonConnection {
   readonly writes: Uint8Array[] = [];
   endCount = 0;
   destroyCount = 0;
   readonly incoming: AsyncIterable<Uint8Array>;
 
   constructor(bytes: readonly Uint8Array[]) {
-    this.incoming = ScriptedDaemonSocketConnection.stream(bytes);
+    this.incoming = ScriptedDaemonConnection.stream(bytes);
   }
 
   write(frame: Uint8Array): void {

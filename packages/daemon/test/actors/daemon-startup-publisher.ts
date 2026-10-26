@@ -1,3 +1,4 @@
+import { PosixDaemonProcessLifetime } from "../../src/process/posix-process-lifetime.js";
 import { existsSync, writeFileSync } from "node:fs";
 import { CanonicalTestPath } from "../helpers/canonical-path.js";
 import { TestDaemonRegistry as DaemonRegistry } from "../helpers/daemon-registry.js";
@@ -38,6 +39,9 @@ const startingRecord: DaemonRecord = {
   instanceId,
   processToken: "cross-process-token",
   endpoint: identity.endpoint(instanceId),
+  ...(process.platform === "win32"
+    ? {}
+    : { processLifetime: PosixDaemonProcessLifetime.current(identity.stateDirectory) }),
   pid: 0,
   state: "starting",
   startedAt: Date.now(),

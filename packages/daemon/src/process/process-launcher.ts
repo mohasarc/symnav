@@ -1,7 +1,12 @@
+import {
+  type PosixDaemonChildLifetime,
+  PosixDaemonProcessLifetime,
+} from "./posix-process-lifetime.js";
+import type { DaemonProcessLifetimeIdentity } from "./process-lifetime-identity.js";
 import { mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
-import { spawn } from "node:child_process";
+import { spawn, type ChildProcess } from "node:child_process";
 import { type DaemonExecutorModuleUrl, type DaemonPolicyValues } from "@symnav/daemon";
 import {
   DaemonPolicyCodec,
@@ -18,6 +23,7 @@ interface DaemonProcessConfiguration extends DaemonIdentityCoordinates {
   readonly executorModuleUrl: DaemonExecutorModuleUrl;
   readonly policy: SerializedDaemonPolicy;
   readonly startupOwnerKind: "daemon";
+  readonly processLifetime?: DaemonProcessLifetimeIdentity;
 }
 
 export interface DaemonProcessExit {
@@ -28,12 +34,14 @@ export interface DaemonProcessExit {
 }
 
 export interface DaemonProcess {
+  readonly processLifetime?: DaemonProcessLifetimeIdentity | undefined;
   readonly pid: number;
   readonly exited: Promise<DaemonProcessExit>;
   terminate(): Promise<void>;
 }
 
 export interface DaemonProcessTerminator {
+  hasExited(pid: number, lifetime?: DaemonProcessLifetimeIdentity): boolean;
   isAlive(pid: number): boolean;
   terminate(pid: number): Promise<void>;
 }
@@ -41,24 +49,57 @@ export interface DaemonProcessTerminator {
 export interface DaemonProcessLauncher {
   readonly symnavVersion: string;
   readonly memoryCapBytes: number;
+  prepareLifetime?(identity: DaemonWorkspaceIdentity): PosixDaemonChildLifetime | undefined;
   launch(
     identity: DaemonWorkspaceIdentity,
     instanceId: string,
     processToken: string,
+    lifetime?: PosixDaemonChildLifetime,
   ): Promise<DaemonProcess>;
 }
 
 export class DaemonProcessTerminationError extends Error {}
 
 class SpawnedDaemonProcess implements DaemonProcess {
-  constructor(
-    readonly pid: number,
-    readonly exited: Promise<DaemonProcessExit>,
-    private readonly terminator: DaemonProcessTerminator,
-  ) {}
+  private observedExit = false;
 
-  terminate(): Promise<void> {
-    return this.terminator.terminate(this.pid);
+  public constructor(
+    private readonly child: ChildProcess,
+    public readonly exited: Promise<DaemonProcessExit>,
+    private readonly exitTimeoutMs: number,
+    public readonly processLifetime?: DaemonProcessLifetimeIdentity,
+  ) {
+    void exited.then(() => {
+      this.observedExit = true;
+    });
+  }
+
+  public get pid(): number {
+    return this.child.pid!;
+  }
+
+  public async terminate(): Promise<void> {
+    if (this.observedExit) return;
+    this.child.kill("SIGTERM");
+    if (await this.waitForExit()) return;
+    if (this.observedExit) return;
+    this.child.kill("SIGKILL");
+    if (await this.waitForExit()) return;
+    throw new DaemonProcessTerminationError(`Daemon child ${this.pid} did not terminate`);
+  }
+
+  private async waitForExit(): Promise<boolean> {
+    let timeout: NodeJS.Timeout | undefined;
+    try {
+      return await Promise.race([
+        this.exited.then(() => true),
+        new Promise<false>((resolve) => {
+          timeout = setTimeout(() => resolve(false), this.exitTimeoutMs);
+        }),
+      ]);
+    } finally {
+      if (timeout !== undefined) clearTimeout(timeout);
+    }
   }
 }
 
@@ -72,6 +113,11 @@ export class NodeDaemonProcessTerminator implements DaemonProcessTerminator {
   ) {
     this.gracefulTimeoutMs = policy.processSignalExitTimeoutMs;
     this.pollIntervalMs = policy.processExitPollIntervalMs;
+  }
+
+  hasExited(pid: number, lifetime?: DaemonProcessLifetimeIdentity): boolean {
+    if (process.platform === "win32") return !this.isAlive(pid);
+    return lifetime !== undefined && PosixDaemonProcessLifetime.observe(lifetime) === "exited";
   }
 
   isAlive(pid: number): boolean {
@@ -118,81 +164,102 @@ export class NodeDaemonProcessTerminator implements DaemonProcessTerminator {
 }
 
 export class NodeDaemonProcessLauncher implements DaemonProcessLauncher {
-  private readonly terminator: DaemonProcessTerminator;
-
   constructor(
     readonly symnavVersion: string,
     readonly executorModuleUrl: DaemonExecutorModuleUrl,
     readonly policy: DaemonPolicy,
-    terminator: DaemonProcessTerminator = new NodeDaemonProcessTerminator(policy.values.shutdown),
-  ) {
-    this.terminator = terminator;
-  }
+  ) {}
 
   get memoryCapBytes(): number {
     return this.policy.values.resources.hardProcessRssBytes;
   }
 
-  launch(
+  public prepareLifetime(identity: DaemonWorkspaceIdentity): PosixDaemonChildLifetime | undefined {
+    return process.platform === "win32"
+      ? undefined
+      : PosixDaemonProcessLifetime.prepareChild(identity.stateDirectory);
+  }
+
+  async launch(
     identity: DaemonWorkspaceIdentity,
     instanceId: string,
     processToken: string,
+    preparedLifetime?: PosixDaemonChildLifetime,
   ): Promise<DaemonProcess> {
-    const stateDirectory = identity.stateDirectory;
-    const configuration: DaemonProcessConfiguration = {
-      workspaceRoot: identity.workspaceRoot,
-      stateDirectory,
-      workspaceKey: identity.workspaceKey,
-      stateKey: identity.stateKey,
-      identityKey: identity.identityKey,
-      instanceId,
-      processToken,
-      endpoint: identity.endpoint(instanceId),
-      symnavVersion: this.symnavVersion,
-      executorModuleUrl: this.executorModuleUrl,
-      policy: DaemonPolicyCodec.serialize(this.policy),
-      startupOwnerKind: "daemon",
-    };
-    const encodedConfiguration = Buffer.from(JSON.stringify(configuration)).toString("base64url");
-    const daemonEntryPath = fileURLToPath(new URL("../process-entry.js", import.meta.url));
-    mkdirSync(identity.identityDirectory, { recursive: true, mode: 0o700 });
-
-    return new Promise((resolve, reject) => {
-      let processSpawned = false;
-      let exitResolved = false;
-      let resolveExit: (exit: DaemonProcessExit) => void = () => undefined;
-      const exited = new Promise<DaemonProcessExit>((exitResolve) => {
-        resolveExit = exitResolve;
-      });
-      const settleExit = (exit: DaemonProcessExit): void => {
-        if (exitResolved) return;
-        exitResolved = true;
-        resolveExit(exit);
+    const lifetime = preparedLifetime ?? this.prepareLifetime(identity);
+    try {
+      const stateDirectory = identity.stateDirectory;
+      const configuration: DaemonProcessConfiguration = {
+        workspaceRoot: identity.workspaceRoot,
+        stateDirectory,
+        workspaceKey: identity.workspaceKey,
+        stateKey: identity.stateKey,
+        identityKey: identity.identityKey,
+        instanceId,
+        processToken,
+        endpoint: identity.endpoint(instanceId),
+        symnavVersion: this.symnavVersion,
+        executorModuleUrl: this.executorModuleUrl,
+        policy: DaemonPolicyCodec.serialize(this.policy),
+        startupOwnerKind: "daemon",
+        ...(lifetime === undefined ? {} : { processLifetime: lifetime.identity }),
       };
-      const child = spawn(process.execPath, [daemonEntryPath, encodedConfiguration], {
-        cwd: tmpdir(),
-        detached: true,
-        stdio: ["ignore", "ignore", "ignore"],
-        env: { ...process.env, SYMNAV_STATE_DIR: stateDirectory },
-      });
-      child.once("error", (error) => {
-        settleExit({
-          code: null,
-          signal: null,
-          cause: "spawn-error",
-          errorName: error.name,
+      const encodedConfiguration = Buffer.from(JSON.stringify(configuration)).toString("base64url");
+      const daemonEntryPath = fileURLToPath(new URL("../process-entry.js", import.meta.url));
+      mkdirSync(identity.identityDirectory, { recursive: true, mode: 0o700 });
+
+      return await new Promise<DaemonProcess>((resolve, reject) => {
+        let processSpawned = false;
+        let exitResolved = false;
+        let resolveExit: (exit: DaemonProcessExit) => void = () => undefined;
+        const exited = new Promise<DaemonProcessExit>((exitResolve) => {
+          resolveExit = exitResolve;
         });
-        if (!processSpawned) reject(error);
+        const settleExit = (exit: DaemonProcessExit): void => {
+          if (exitResolved) return;
+          exitResolved = true;
+          resolveExit(exit);
+        };
+        const child = spawn(process.execPath, [daemonEntryPath, encodedConfiguration], {
+          cwd: tmpdir(),
+          detached: true,
+          stdio:
+            lifetime === undefined
+              ? ["ignore", "ignore", "ignore"]
+              : ["ignore", "ignore", "ignore", lifetime.descriptor],
+          env: { ...process.env, SYMNAV_STATE_DIR: stateDirectory },
+        });
+        child.once("error", (error) => {
+          lifetime?.closeParentCopy();
+          settleExit({
+            code: null,
+            signal: null,
+            cause: "spawn-error",
+            errorName: error.name,
+          });
+          if (!processSpawned) reject(error);
+        });
+        child.once("spawn", () => {
+          lifetime?.closeParentCopy();
+          processSpawned = true;
+          child.unref();
+          resolve(
+            new SpawnedDaemonProcess(
+              child,
+              exited,
+              this.policy.values.shutdown.processSignalExitTimeoutMs,
+              lifetime?.identity,
+            ),
+          );
+        });
+        child.once("exit", (code, signal) => {
+          settleExit({ code, signal, cause: "exit" });
+        });
       });
-      child.once("spawn", () => {
-        processSpawned = true;
-        child.unref();
-        resolve(new SpawnedDaemonProcess(child.pid!, exited, this.terminator));
-      });
-      child.once("exit", (code, signal) => {
-        settleExit({ code, signal, cause: "exit" });
-      });
-    });
+    } catch (error) {
+      lifetime?.closeParentCopy();
+      throw error;
+    }
   }
 }
 
@@ -223,6 +290,7 @@ export class DaemonProcessConfigurationParser {
         "executorModuleUrl",
         "policy",
         "startupOwnerKind",
+        ...(configuration.processLifetime === undefined ? [] : ["processLifetime"]),
       ]) &&
       typeof configuration.workspaceRoot === "string" &&
       typeof configuration.stateDirectory === "string" &&
@@ -235,7 +303,13 @@ export class DaemonProcessConfigurationParser {
       typeof configuration.symnavVersion === "string" &&
       DaemonProcessConfigurationParser.isModuleUrl(configuration.executorModuleUrl) &&
       DaemonProcessConfigurationParser.isPolicy(configuration.policy) &&
-      configuration.startupOwnerKind === "daemon"
+      configuration.startupOwnerKind === "daemon" &&
+      (configuration.processLifetime === undefined ||
+        (typeof configuration.stateDirectory === "string" &&
+          PosixDaemonProcessLifetime.isIdentity(
+            configuration.processLifetime,
+            configuration.stateDirectory,
+          )))
     );
   }
 

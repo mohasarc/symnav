@@ -1,5 +1,6 @@
 import { PosixDaemonProcessLifetime } from "./posix-process-lifetime.js";
 import { DaemonStateWriteErrors } from "../state-write-errors.js";
+import { DaemonWorkerStoppingError } from "../worker/worker-stopping-error.js";
 import { DaemonFailureJournal } from "../diagnostics/failure-journal.js";
 import { DaemonFailureRecorder } from "../diagnostics/failure-recorder.js";
 import type { DaemonFailurePhase, DaemonFailureReason } from "../daemon-failure.js";
@@ -258,16 +259,9 @@ export class DaemonProcessCoordinator {
       );
       failurePhase = "warm-up";
       failureReason = "startup-failed";
-      const response = await this.workerManager.start();
-      this.operationObserver.startup({
-        kind: "startup-completed",
-        workerGeneration: response.generation,
-        fileCount: response.fileCount,
-        ...response.startupDurations,
-      });
-      this.logger.record({ kind: "freshness", ...response.refresh });
+      await this.workerManager.start();
       await this.resourceSupervisor.sample("warmup");
-      this.workerManager.activateReadiness();
+      const response = await this.workerManager.activateReadiness();
       const readyRecord: DaemonRecord = {
         schemaVersion: DAEMON_RECORD_SCHEMA_VERSION,
         protocolVersion: DAEMON_PROTOCOL_VERSION,
@@ -297,15 +291,26 @@ export class DaemonProcessCoordinator {
       if (startupHeartbeat !== undefined) clearInterval(startupHeartbeat);
       startupHeartbeat = undefined;
       startupLease.release();
+      this.operationObserver.startup({
+        kind: "startup-completed",
+        workerGeneration: response.generation,
+        fileCount: response.fileCount,
+        ...response.startupDurations,
+      });
+      this.logger.record({ kind: "freshness", ...response.refresh });
       this.logger.record({ kind: "ready", fileCount: response.fileCount });
       this.resourceSupervisor.start();
       await this.logger.flush();
     } catch (error) {
+      if (startupHeartbeat !== undefined) clearInterval(startupHeartbeat);
+      if (error instanceof DaemonWorkerStoppingError && this.shutdownOperation !== undefined) {
+        startupLease?.release();
+        return;
+      }
       if (failurePhase === "warm-up" && DaemonStateWriteErrors.from(error) !== undefined) {
         failurePhase = "state location";
         failureReason = "state-write-failed";
       }
-      if (startupHeartbeat !== undefined) clearInterval(startupHeartbeat);
       await this.failureRecorder.record(
         "startup-failure",
         failurePhase,

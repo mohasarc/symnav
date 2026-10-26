@@ -6,6 +6,7 @@ import {
   type DaemonNavigationWorkerExit,
 } from "./navigation-worker.js";
 import type { DaemonNavigationWorkerResponse } from "./worker-protocol.js";
+import { DaemonWorkerStoppingError } from "./worker-stopping-error.js";
 import type {
   DaemonWorkerDiagnostic,
   DaemonWorkerReplacementCause,
@@ -52,6 +53,8 @@ export interface DaemonWorkerGenerationManagerOptions {
 
 interface DaemonWorkerGeneration {
   readonly worker: DaemonNavigationWorker;
+  readonly changed: Promise<void>;
+  readonly notifyChanged: () => void;
   ready: Promise<DaemonWorkerReadyReport> | undefined;
 }
 
@@ -84,20 +87,24 @@ export class DaemonWorkerGenerationManager {
   start(): Promise<DaemonWorkerReadyReport> {
     if (this.startOperation !== undefined) return this.startOperation;
     const generation = this.currentGeneration;
-    generation.ready = this.startGeneration(generation);
-    this.startOperation = this.waitForReadyGeneration(generation).then((report) => {
-      this.publishProtocolReady(generation, report);
-      return report;
-    });
+    generation.ready ??= this.startGeneration(generation);
+    this.startOperation = this.waitForReadyGeneration();
     return this.startOperation;
   }
 
-  activateReadiness(): void {
-    if (this.protocolReadyGeneration !== this.currentGeneration) {
-      throw new Error("Navigation worker protocol readiness is unavailable");
+  async activateReadiness(): Promise<DaemonWorkerReadyReport> {
+    for (;;) {
+      const report = await this.waitForReadyGeneration();
+      if (this.stopping) throw new DaemonWorkerStoppingError();
+      if (
+        this.protocolReadyGeneration !== this.currentGeneration ||
+        report.generation !== this.currentGeneration.worker.generation
+      )
+        continue;
+      this.readinessActivated = true;
+      this.workerReady = true;
+      return report;
     }
-    this.readinessActivated = true;
-    this.workerReady = true;
   }
 
   execute(
@@ -152,6 +159,7 @@ export class DaemonWorkerGenerationManager {
     if (this.closeOperation !== undefined) return this.closeOperation;
     this.stopping = true;
     this.workerReady = false;
+    this.currentGeneration.notifyChanged();
     this.closeOperation = this.currentGeneration.worker.drainAndClose();
     return this.closeOperation;
   }
@@ -160,6 +168,7 @@ export class DaemonWorkerGenerationManager {
     if (this.terminationOperation !== undefined) return this.terminationOperation;
     this.stopping = true;
     this.workerReady = false;
+    this.currentGeneration.notifyChanged();
     this.terminationOperation = this.currentGeneration.worker.terminate();
     return this.terminationOperation;
   }
@@ -178,8 +187,11 @@ export class DaemonWorkerGenerationManager {
     const next = this.createGeneration(nextWorker);
     this.currentGeneration = next;
     next.ready = this.startGeneration(next);
-    await previous.worker.terminate().catch(() => undefined);
-    const report = await next.ready;
+    previous.notifyChanged();
+    const [, report] = await Promise.all([
+      previous.worker.terminate().catch(() => undefined),
+      next.ready,
+    ]);
     this.publishProtocolReady(next, report);
     this.options.onDiagnostic({
       kind: "worker-replaced",
@@ -203,26 +215,37 @@ export class DaemonWorkerGenerationManager {
       });
   }
 
-  private async waitForReadyGeneration(
-    generation: DaemonWorkerGeneration,
-  ): Promise<DaemonWorkerReadyReport> {
-    try {
+  private async waitForReadyGeneration(): Promise<DaemonWorkerReadyReport> {
+    for (;;) {
+      if (this.stopping) throw new DaemonWorkerStoppingError();
+      const generation = this.currentGeneration;
       if (generation.ready === undefined) throw new Error("Navigation worker is not starting");
-      return await generation.ready;
-    } catch (error) {
-      if (!(error instanceof DaemonNavigationWorkerExitedError)) throw error;
-      await generation.worker.exited;
-      const recovery = this.recoveryOperation;
-      if (recovery === undefined) throw error;
-      await recovery;
-      const replacement = this.currentGeneration;
-      if (replacement === generation || replacement.ready === undefined) throw error;
-      return replacement.ready;
+      try {
+        const report = await Promise.race([generation.ready, generation.changed]);
+        if (this.stopping) throw new DaemonWorkerStoppingError();
+        if (generation !== this.currentGeneration) continue;
+        if (report === undefined) throw new Error("Navigation worker readiness is unavailable");
+        this.publishProtocolReady(generation, report);
+        return report;
+      } catch (error) {
+        if (this.stopping) throw error;
+        if (generation !== this.currentGeneration) continue;
+        if (!(error instanceof DaemonNavigationWorkerExitedError)) throw error;
+        await generation.worker.exited;
+        const recovery = this.recoveryOperation;
+        if (recovery === undefined) throw error;
+        await recovery;
+        if (this.currentGeneration === generation) throw error;
+      }
     }
   }
 
   private createGeneration(worker: DaemonNavigationWorker): DaemonWorkerGeneration {
-    const generation: DaemonWorkerGeneration = { worker, ready: undefined };
+    let notifyChanged!: () => void;
+    const changed = new Promise<void>((resolve) => {
+      notifyChanged = resolve;
+    });
+    const generation: DaemonWorkerGeneration = { worker, ready: undefined, changed, notifyChanged };
     void worker.exited.then((exit) => this.observeExit(generation, exit));
     return generation;
   }
@@ -238,7 +261,7 @@ export class DaemonWorkerGenerationManager {
     generation: DaemonWorkerGeneration,
     report: DaemonWorkerReadyReport,
   ): void {
-    if (generation !== this.currentGeneration) return;
+    if (this.stopping || generation !== this.currentGeneration) return;
     this.protocolReadyGeneration = generation;
     this.fileCount = report.fileCount;
     if (this.readinessActivated) this.workerReady = true;

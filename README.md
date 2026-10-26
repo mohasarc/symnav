@@ -70,6 +70,8 @@ When a required state write fails, symnav disables daemon and telemetry work for
 symnav: warning: cannot write /Users/mo/.symnav (EPERM); daemon and telemetry are off for this command. Grant access with 'symnav setup <agent>', or pass --no-warnings.
 ```
 
+Use global `--no-warnings` before the command, between command arguments, or at the end to suppress all warning emissions. It preserves errors, stdout, exit status, daemon routing, and telemetry. Extraction warnings use the `symnav: warning:` prefix. A literal `--no-warnings` after `--` or as an option value remains an argument.
+
 Grant the sandbox write access to the effective state directory. Help, version, and read-only commands do not warn when they need no write. With both `SYMNAV_DAEMON=0` and `SYMNAV_TELEMETRY=0`, commands never access state; `stats` consequently reports an empty summary. To read existing stats without recording another event, run `SYMNAV_DAEMON=1 SYMNAV_TELEMETRY=0 symnav stats --json`.
 
 Command and result spill files also stay inside state and are removed after delivery. Setting both `SYMNAV_DAEMON=0` and `SYMNAV_TELEMETRY=0` runs navigation directly without accessing state or creating spill files.

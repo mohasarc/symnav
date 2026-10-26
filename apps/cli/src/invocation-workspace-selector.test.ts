@@ -28,6 +28,17 @@ describe("InvocationWorkspaceSelector", () => {
     },
   );
 
+  it.each([
+    ["--no-warnings", "daemon", "status"],
+    ["daemon", "--no-warnings", "status"],
+    ["daemon", "status", "--no-warnings"],
+  ])("keeps daemon action routing with suppression in %j", (...argv) => {
+    expect(selector.select(argv, workspaceRoot)).toEqual({
+      route: { kind: "control", action: "status" },
+      argv,
+    });
+  });
+
   it("absolutizes cwd overrides through the selected workspace", () => {
     expect(selector.select(["--cwd", otherWorkspaceRoot, "refs", "target"], workspaceRoot)).toEqual(
       {

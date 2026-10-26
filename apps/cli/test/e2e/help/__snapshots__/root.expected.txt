@@ -3,6 +3,7 @@ Usage: symnav [options] [command]
 Options:
   -v, --version               output the version number
   --cwd <dir>                 run as if symnav was started in <dir>
+  --no-warnings               suppress warning messages
   -h, --help                  display help for command
 
 Commands:

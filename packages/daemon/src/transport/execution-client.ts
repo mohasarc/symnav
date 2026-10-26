@@ -247,7 +247,16 @@ export class DaemonExecutionClient implements DaemonExecutionRequester {
           );
         } catch (error) {
           if (DaemonExecutionClient.isSocketTimeout(error)) {
-            fail(new DaemonTransportError("timeout", delivery, "Daemon request timed out"));
+            fail(
+              new DaemonTransportError(
+                "timeout",
+                delivery,
+                "Daemon request timed out",
+                undefined,
+                undefined,
+                error,
+              ),
+            );
             return;
           }
           const message = error instanceof Error ? error.message : String(error);
@@ -295,7 +304,16 @@ export class DaemonExecutionClient implements DaemonExecutionRequester {
             return;
           }
           if (DaemonExecutionClient.isSocketTimeout(error)) {
-            fail(new DaemonTransportError("timeout", delivery, "Daemon request timed out"));
+            fail(
+              new DaemonTransportError(
+                "timeout",
+                delivery,
+                "Daemon request timed out",
+                undefined,
+                undefined,
+                error,
+              ),
+            );
             return;
           }
           if (resume()) return;

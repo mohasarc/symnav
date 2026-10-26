@@ -1,3 +1,4 @@
+import type { DaemonFallbackSummary, DaemonStartupFailureStatus } from "./daemon-failure.js";
 import type { DaemonCommandName } from "./daemon-command-name.js";
 
 export interface DaemonActivitySnapshot {
@@ -21,54 +22,56 @@ export interface DaemonActivitySnapshot {
   readonly spoolBytes: number;
 }
 
-export type RunningDaemonStatus =
-  | {
-      readonly state: "starting";
-      readonly workspaceRoot: string;
-      readonly pid: number;
-      readonly startupElapsedMs: number;
-      readonly memoryBytes?: number;
-    }
-  | {
-      readonly state: "ready";
-      readonly workspaceRoot: string;
-      readonly pid: number;
-      readonly uptimeMs: number;
-      readonly fileCount: number;
-      readonly memoryBytes: number;
-      readonly lastRequestAgoMs?: number;
-    }
-  | {
-      readonly state: "busy";
-      readonly workspaceRoot: string;
-      readonly pid: number;
-      readonly uptimeMs: number;
-      readonly command: DaemonCommandName;
-      readonly elapsedMs: number;
-      readonly queued: number;
-      readonly memoryBytes: number;
-    }
-  | {
-      readonly state: "recovering";
-      readonly workspaceRoot: string;
-      readonly pid: number;
-      readonly uptimeMs: number;
-      readonly detail: "resource-pressure" | "worker-replacement" | "draining";
-      readonly queued: number;
-      readonly memoryBytes: number;
-    }
-  | {
-      readonly state: "unresponsive";
-      readonly workspaceRoot: string;
-      readonly pid: number;
-      readonly uptimeMs: number;
-      readonly lastResponseAgoMs?: number;
-      readonly lastKnown?: DaemonActivitySnapshot;
-    };
+interface RunningDaemonStatusBase {
+  readonly workspaceRoot: string;
+  readonly pid: number;
+  readonly recentFallbacks?: DaemonFallbackSummary;
+}
 
-export interface DaemonStatusEnvelope {
-  readonly schemaVersion: 1;
+export type RunningDaemonStatus = RunningDaemonStatusBase &
+  (
+    | {
+        readonly state: "starting";
+        readonly startupElapsedMs: number;
+        readonly memoryBytes?: number;
+      }
+    | {
+        readonly state: "ready";
+        readonly uptimeMs: number;
+        readonly fileCount: number;
+        readonly memoryBytes: number;
+        readonly lastRequestAgoMs?: number;
+      }
+    | {
+        readonly state: "busy";
+        readonly uptimeMs: number;
+        readonly command: DaemonCommandName;
+        readonly elapsedMs: number;
+        readonly queued: number;
+        readonly memoryBytes: number;
+      }
+    | {
+        readonly state: "recovering";
+        readonly uptimeMs: number;
+        readonly detail: "resource-pressure" | "worker-replacement" | "draining";
+        readonly queued: number;
+        readonly memoryBytes: number;
+      }
+    | {
+        readonly state: "unresponsive";
+        readonly uptimeMs: number;
+        readonly lastResponseAgoMs?: number;
+        readonly lastKnown?: DaemonActivitySnapshot;
+      }
+  );
+
+export interface DaemonStatusReport {
   readonly daemons: readonly RunningDaemonStatus[];
+  readonly startupFailures?: readonly DaemonStartupFailureStatus[];
+}
+
+export interface DaemonStatusEnvelope extends DaemonStatusReport {
+  readonly schemaVersion: 1;
 }
 
 export type DaemonStartResult =

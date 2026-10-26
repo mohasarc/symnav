@@ -34,6 +34,8 @@ import { DaemonWorkspaceIdentity } from "../registry/workspace-identity.js";
 import type { DaemonServerSend } from "../transport/contracts.js";
 import { TestDaemonTransport as DaemonTransport } from "../../test/helpers/daemon-transport.js";
 import { TestDaemonProcessCoordinator as DaemonProcessCoordinator } from "../../test/helpers/daemon-process-coordinator.js";
+import { DaemonFailureJournal } from "../diagnostics/failure-journal.js";
+import { NodeDaemonClock } from "../lifecycle/daemon-clock.js";
 
 describe("DaemonProcessCoordinator runtime lifecycle", () => {
   const harnesses: DaemonProcessCoordinatorHarness[] = [];
@@ -44,7 +46,50 @@ describe("DaemonProcessCoordinator runtime lifecycle", () => {
     harnesses.length = 0;
     for (const child of childProcesses) child.kill("SIGTERM");
     childProcesses.length = 0;
+    vi.restoreAllMocks();
   });
+
+  it.each([process.platform === "win32" ? "endpoint bind" : "endpoint create", "warm-up"] as const)(
+    "records %s failure before startup cleanup",
+    async (phase) => {
+      const transport = new DaemonTransport({ requestTimeoutMs: 200 });
+      const worker = new ExecutorNavigationWorker(new ImmediateExecutor());
+      const error = Object.assign(new Error("secret startup error"), { code: "EACCES" });
+      if (phase !== "warm-up") vi.spyOn(transport, "listen").mockRejectedValue(error);
+      else vi.spyOn(worker, "start").mockRejectedValue(error);
+      await expect(
+        DaemonProcessCoordinatorHarness.start(new ImmediateExecutor(), {
+          transport,
+          navigationWorker: worker,
+          onCreated: (harness) => harnesses.push(harness),
+        }),
+      ).rejects.toThrow(error.message);
+      const harness = harnesses.at(-1)!;
+      const journal = new DaemonFailureJournal(
+        harness.stateDirectory,
+        DaemonPolicy.currentSystem().values.diagnostics,
+        new NodeDaemonClock(),
+      );
+      expect(await journal.recent(Date.now())).toEqual([
+        expect.objectContaining({
+          kind: "startup-failure",
+          instanceId: harness.instanceId,
+          failure: {
+            phase,
+            reason:
+              phase === "endpoint bind"
+                ? "endpoint-bind-denied"
+                : phase === "endpoint create"
+                  ? "endpoint-create-failed"
+                  : "startup-failed",
+            timestamp: expect.any(Number),
+            osCode: "EACCES",
+          },
+        }),
+      ]);
+      expect(harness.registry.read(harness.identity)).toBeUndefined();
+    },
+  );
 
   it("returns an in-flight navigation result before a graceful stop exits", async () => {
     const executor = new DeferredExecutor();
@@ -68,6 +113,13 @@ describe("DaemonProcessCoordinator runtime lifecycle", () => {
       instanceId: harness.instanceId,
     });
     await harness.exited;
+    expect(
+      await new DaemonFailureJournal(
+        harness.stateDirectory,
+        DaemonPolicy.currentSystem().values.diagnostics,
+        new NodeDaemonClock(),
+      ).recent(Date.now()),
+    ).toEqual([expect.objectContaining({ kind: "termination", instanceId: harness.instanceId })]);
     expect(harness.registry.read(harness.identity)).toMatchObject({
       instanceId: harness.instanceId,
       processToken: "runtime-token",
@@ -504,6 +556,7 @@ describe("DaemonProcessCoordinator runtime lifecycle", () => {
 });
 
 interface RuntimeOptions {
+  readonly onCreated?: (harness: DaemonProcessCoordinatorHarness) => void;
   readonly idleTimeoutMs?: number;
   readonly memoryCapBytes?: number;
   readonly resourcePolicy?: DaemonResourcePolicy;
@@ -546,6 +599,7 @@ class DaemonProcessCoordinatorHarness {
     runtime: RuntimeOptions = {},
   ): Promise<DaemonProcessCoordinatorHarness> {
     const harness = new DaemonProcessCoordinatorHarness(runtime.transport);
+    runtime.onCreated?.(harness);
     const lease = harness.registry.acquireStartup(harness.identity, harness.instanceId);
     if (lease === undefined) throw new Error("Expected startup ownership");
     if (

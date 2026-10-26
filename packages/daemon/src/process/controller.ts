@@ -1,3 +1,8 @@
+import { DaemonFailureJournal } from "../diagnostics/failure-journal.js";
+import { DaemonFailureRecorder } from "../diagnostics/failure-recorder.js";
+import type { DaemonFailureEvent, DaemonStartupFailureStatus } from "../daemon-failure.js";
+import type { DaemonStatusReport } from "../daemon-lifecycle-report.js";
+import type { DaemonStateWriteFailureObserver } from "../state-write-failure.js";
 import type { DaemonPolicyValues } from "@symnav/daemon";
 import type {
   DaemonRecord,
@@ -23,10 +28,11 @@ import type {
 } from "../transport/contracts.js";
 
 interface DaemonControllerOptions {
-  readonly policy: Pick<DaemonPolicyValues, "startup" | "shutdown">;
+  readonly policy: Pick<DaemonPolicyValues, "startup" | "shutdown" | "diagnostics">;
   readonly clock?: Pick<DaemonClock, "wallNowMs">;
   readonly processTerminator?: DaemonProcessTerminator;
   readonly launcher?: DaemonProcessLauncher;
+  readonly stateWriteFailed?: DaemonStateWriteFailureObserver;
   readonly startupCoordinator?: Pick<DaemonStartupCoordinator, "ensureRunning">;
 }
 
@@ -38,7 +44,9 @@ export class DaemonController {
   private readonly launcher: DaemonProcessLauncher | undefined;
   private readonly startupCoordinator: Pick<DaemonStartupCoordinator, "ensureRunning"> | undefined;
   private readonly observer: DaemonRecordObserver;
-  private readonly policy: Pick<DaemonPolicyValues, "startup" | "shutdown">;
+  private readonly journal: DaemonFailureJournal;
+  private readonly stateWriteFailed: DaemonStateWriteFailureObserver | undefined;
+  private readonly policy: Pick<DaemonPolicyValues, "startup" | "shutdown" | "diagnostics">;
 
   constructor(
     private readonly registry: DaemonRegistry,
@@ -54,7 +62,11 @@ export class DaemonController {
       options.processTerminator ??
       new NodeDaemonProcessTerminator(this.policy.shutdown, this.clock);
     this.launcher = options.launcher;
-    this.observer = new DaemonRecordObserver(this.transport, this.processTerminator);
+    this.stateWriteFailed = options.stateWriteFailed;
+    this.journal = new DaemonFailureJournal(stateDirectory, this.policy.diagnostics, this.clock);
+    this.observer = new DaemonRecordObserver(this.transport, this.processTerminator, (record) =>
+      this.recordExited(record),
+    );
     this.startupCoordinator =
       options.startupCoordinator ??
       (this.launcher === undefined
@@ -69,16 +81,66 @@ export class DaemonController {
       throw new Error("Daemon controller has no process launcher");
     }
     const identity = DaemonWorkspaceIdentity.from(workspaceRoot, this.stateDirectory);
-    return this.startupCoordinator.ensureRunning(identity);
+    return this.startupCoordinator.ensureRunning(identity, this.stateWriteFailed);
   }
 
-  async status(): Promise<readonly RunningDaemonStatus[]> {
+  async status(): Promise<DaemonStatusReport> {
     const statuses = await Promise.all(
       this.registry.list().map((record) => this.statusForRecord(record)),
     );
-    return statuses
+    const daemons = statuses
       .filter((status): status is RunningDaemonStatus => status !== undefined)
       .sort((left, right) => left.workspaceRoot.localeCompare(right.workspaceRoot));
+    const events = await this.journal.recent(this.clock.wallNowMs()).catch(() => []);
+    return this.statusReport(daemons, events);
+  }
+
+  private statusReport(
+    daemons: readonly RunningDaemonStatus[],
+    events: readonly DaemonFailureEvent[],
+  ): DaemonStatusReport {
+    const liveRoots = new Set(daemons.map((daemon) => daemon.workspaceRoot));
+    const startupFailures = new Map<string, DaemonStartupFailureStatus>();
+    for (const event of events) {
+      if (event.kind === "startup-failure" && !liveRoots.has(event.workspaceRoot))
+        startupFailures.set(event.workspaceRoot, {
+          workspaceRoot: event.workspaceRoot,
+          failure: event.failure,
+        });
+    }
+    return {
+      daemons: daemons.map((daemon) => {
+        const fallbacks = events.filter(
+          (event) => event.kind === "fallback" && event.workspaceRoot === daemon.workspaceRoot,
+        );
+        const latest = fallbacks.at(-1)?.failure;
+        return latest === undefined
+          ? daemon
+          : { ...daemon, recentFallbacks: { count: fallbacks.length, latest } };
+      }),
+      ...(startupFailures.size === 0
+        ? {}
+        : {
+            startupFailures: [...startupFailures.values()].sort((left, right) =>
+              left.workspaceRoot.localeCompare(right.workspaceRoot),
+            ),
+          }),
+    };
+  }
+
+  private async recordExited(record: DaemonRecord): Promise<void> {
+    await new DaemonFailureRecorder(
+      this.journal,
+      record.workspaceRoot,
+      this.clock,
+      this.stateWriteFailed,
+    ).record(
+      record.state === "starting" ? "startup-failure" : "termination",
+      "process spawn",
+      "process-terminated",
+      undefined,
+      record.instanceId,
+    );
   }
 
   async stop(workspaceRoot: string): Promise<DaemonStopResult> {
@@ -113,11 +175,11 @@ export class DaemonController {
       })
       .then(() => true)
       .catch(() => false);
-    const acknowledged = await Promise.race([
+    await Promise.race([
       stopRequest,
       this.pause(Math.max(0, gracefulDeadline - this.clock.wallNowMs())).then(() => false),
     ]);
-    if (acknowledged && (await this.waitForExit(record, gracefulDeadline))) {
+    if (await this.waitForExit(record, gracefulDeadline)) {
       this.registry.removeIfProcess(identity, record.instanceId, record.processToken);
       return { status: "stopped", workspaceRoot, pid: record.pid };
     }
@@ -151,6 +213,7 @@ export class DaemonController {
         return this.startingStatus(record);
       if (owner !== undefined && !this.registry.removeStartupLockIfOwner(identity, owner))
         return this.startingStatus(record);
+      await this.recordExited(record);
       this.registry.removeIfProcess(identity, record.instanceId, record.processToken);
       return undefined;
     }
@@ -174,6 +237,7 @@ export class DaemonController {
     }
 
     if (this.processTerminator.hasExited(record.pid, record.processLifetime)) {
+      await this.recordExited(record);
       this.removeStartingOwnership(identity, record);
       return { status: "not-running", workspaceRoot: record.workspaceRoot };
     }

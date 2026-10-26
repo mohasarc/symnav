@@ -3,6 +3,7 @@ import {
   PosixDaemonProcessLifetime,
 } from "./posix-process-lifetime.js";
 import type { DaemonProcessLifetimeIdentity } from "./process-lifetime-identity.js";
+import { DaemonFailureRecorder } from "../diagnostics/failure-recorder.js";
 import { mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
@@ -31,6 +32,7 @@ export interface DaemonProcessExit {
   readonly signal: NodeJS.Signals | null;
   readonly cause: "exit" | "spawn-error";
   readonly errorName?: string;
+  readonly osCode?: string;
 }
 
 export interface DaemonProcess {
@@ -236,6 +238,9 @@ export class NodeDaemonProcessLauncher implements DaemonProcessLauncher {
             signal: null,
             cause: "spawn-error",
             errorName: error.name,
+            ...(DaemonFailureRecorder.osCode(error) === undefined
+              ? {}
+              : { osCode: DaemonFailureRecorder.osCode(error)! }),
           });
           if (!processSpawned) reject(error);
         });

@@ -1,4 +1,10 @@
-import type { DaemonStartResult, DaemonStopResult, RunningDaemonStatus } from "@symnav/daemon";
+import type {
+  DaemonStartResult,
+  DaemonStopResult,
+  RunningDaemonStatus,
+  DaemonStatusReport,
+  DaemonFailure,
+} from "@symnav/daemon";
 
 export class DaemonLifecycleRenderer {
   static renderStartText(result: DaemonStartResult): string {
@@ -15,13 +21,33 @@ export class DaemonLifecycleRenderer {
     return `${JSON.stringify(result)}\n`;
   }
 
-  static renderStatusText(results: readonly RunningDaemonStatus[]): string {
-    if (results.length === 0) return "No daemons running.\n";
-    return `${results.map((result) => DaemonLifecycleRenderer.statusLine(result)).join("\n")}\n`;
+  static renderStatusText(report: DaemonStatusReport, now = Date.now()): string {
+    const lines =
+      report.daemons.length === 0
+        ? ["No daemons running."]
+        : report.daemons.flatMap((daemon) => {
+            const status = DaemonLifecycleRenderer.statusLine(daemon);
+            const fallbacks = daemon.recentFallbacks;
+            return fallbacks === undefined
+              ? [status]
+              : [
+                  status,
+                  `  ${fallbacks.count} ${fallbacks.count === 1 ? "fallback" : "fallbacks"} in last hour: ${DaemonLifecycleRenderer.failureText(fallbacks.latest)}`,
+                ];
+          });
+    for (const startup of report.startupFailures ?? [])
+      lines.push(
+        `${startup.workspaceRoot}  last startup failed ${DaemonLifecycleRenderer.uptime(now - startup.failure.timestamp)} ago: ${DaemonLifecycleRenderer.failureText(startup.failure)}`,
+      );
+    return `${lines.join("\n")}\n`;
   }
 
-  static renderStatusJson(results: readonly RunningDaemonStatus[]): string {
-    return `${JSON.stringify({ schemaVersion: 1, daemons: results })}\n`;
+  static renderStatusJson(report: DaemonStatusReport): string {
+    return `${JSON.stringify({ schemaVersion: 1, daemons: report.daemons, ...(report.startupFailures === undefined || report.startupFailures.length === 0 ? {} : { startupFailures: report.startupFailures }) })}\n`;
+  }
+
+  private static failureText(failure: DaemonFailure): string {
+    return `${failure.reason.replaceAll("-", " ")}${failure.osCode === undefined ? "" : ` (${failure.osCode})`}`;
   }
 
   static renderStopText(result: DaemonStopResult): string {

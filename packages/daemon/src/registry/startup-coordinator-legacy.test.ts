@@ -1,3 +1,6 @@
+import { DaemonPolicy } from "../daemon-policy.js";
+import { DaemonFailureJournal } from "../diagnostics/failure-journal.js";
+import { NodeDaemonClock } from "../lifecycle/daemon-clock.js";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -383,5 +386,82 @@ describe.skipIf(process.platform === "win32")("unverifiable POSIX legacy startup
       fixture.ready();
       await operation.catch(() => undefined);
     }
+  });
+  it.each(["trigger", "readiness"] as const)(
+    "retains mixed legacy ownership with truthful %s journal evidence",
+    async (operation) => {
+      const fixture = new LegacyStartupFixture();
+      fixtures.push(fixture);
+      fixture.owner = { ...fixture.owner, ownerLifetime: fixture.lifetime("exited") };
+      fixture.publish();
+      const before = fixture.snapshot();
+      const cleanup = vi.spyOn(fixture.registry, "removeAbandonedStartupOwner");
+      const terminate = vi.spyOn(fixture.terminator, "terminate");
+      if (operation === "readiness") {
+        fixture.authenticated = true;
+        const original = vi.mocked(fixture.transport.request).getMockImplementation()!;
+        vi.mocked(fixture.transport.request).mockImplementation(async (endpoint, request) => {
+          const response = await original(endpoint, request);
+          if (request.kind === "identify") fixture.authenticated = false;
+          return response;
+        });
+      }
+      await expect(fixture.coordinator.ensureRunning(fixture.identity)).rejects.toMatchObject({
+        message: expect.stringContaining("ownership was retained"),
+      });
+      expect(fixture.snapshot()).toEqual(before);
+      expect(cleanup).not.toHaveBeenCalled();
+      expect(terminate).not.toHaveBeenCalled();
+      expect(fixture.launcher.launch).not.toHaveBeenCalled();
+      expect(fixture.transport.execute).not.toHaveBeenCalled();
+      const journal = new DaemonFailureJournal(
+        fixture.root,
+        DaemonPolicy.currentSystem().values.diagnostics,
+        new NodeDaemonClock(),
+      );
+      expect(await journal.retained()).toEqual([
+        expect.objectContaining({
+          kind: "startup-failure",
+          failure: {
+            phase: operation === "trigger" ? "process spawn" : "warm-up",
+            reason: operation === "trigger" ? "process-spawn-failed" : "startup-failed",
+            timestamp: expect.any(Number),
+          },
+        }),
+      ]);
+    },
+  );
+  it("retains authenticated mixed legacy warmup without recording process death", async () => {
+    const fixture = new LegacyStartupFixture();
+    fixtures.push(fixture);
+    fixture.owner = { ...fixture.owner, ownerLifetime: fixture.lifetime("exited") };
+    fixture.authenticated = true;
+    fixture.publish();
+    const before = fixture.snapshot();
+    const cleanup = vi.spyOn(fixture.registry, "removeAbandonedStartupOwner");
+    await expect(
+      fixture.transport.request(fixture.record.endpoint, {
+        kind: "ping",
+        protocolVersion: DAEMON_PROTOCOL_VERSION,
+        instanceId: fixture.record.instanceId,
+      }),
+    ).rejects.toThrow("Unavailable");
+    await expect(fixture.coordinator.trigger(fixture.identity)).resolves.toMatchObject({
+      status: "starting",
+      instanceId: fixture.record.instanceId,
+    });
+    expect(await fixture.observe(fixture.coordinator.waitUntilReady(fixture.identity))).toEqual({
+      kind: "pending",
+    });
+    expect(fixture.observedSnapshot).toEqual(before);
+    expect(cleanup).not.toHaveBeenCalled();
+    expect(fixture.launcher.launch).not.toHaveBeenCalled();
+    expect(fixture.transport.execute).toHaveBeenCalledTimes(1);
+    const journal = new DaemonFailureJournal(
+      fixture.root,
+      DaemonPolicy.currentSystem().values.diagnostics,
+      new NodeDaemonClock(),
+    );
+    expect(await journal.retained()).toEqual([]);
   });
 });

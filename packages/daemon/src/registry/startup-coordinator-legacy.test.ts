@@ -175,19 +175,21 @@ class LegacyStartupFixture {
       (value) => ({ kind: "resolved" as const, value }),
       (error) => ({ kind: "rejected" as const, error }),
     );
+    let observation: Awaited<typeof outcome> | { kind: "pending" };
+    let completion: Awaited<typeof outcome>;
     try {
-      const result = await Promise.race([
+      observation = await Promise.race([
         outcome,
         new Promise<{ kind: "pending" }>((resolve) =>
           setTimeout(() => resolve({ kind: "pending" }), 40),
         ),
       ]);
       this.observedSnapshot = this.snapshot();
-      return result;
     } finally {
       this.ready();
-      await outcome;
+      completion = await outcome;
     }
+    return completion.kind === "rejected" ? completion : observation;
   }
 }
 
@@ -199,6 +201,33 @@ describe.skipIf(process.platform === "win32")("unverifiable POSIX legacy startup
       rmSync(fixture.root, { recursive: true, force: true });
     }
   });
+
+  it.each(["resolved", "rejected"] as const)(
+    "preserves a delayed %s outcome after the observation window",
+    async (settlement) => {
+      const fixture = new LegacyStartupFixture();
+      fixtures.push(fixture);
+      const error = new Error("ownership was retained");
+      let complete!: () => void;
+      const operation = new Promise<string>((resolve, reject) => {
+        complete = () => {
+          if (settlement === "rejected") reject(error);
+          else resolve("ready");
+        };
+      });
+      const observation = fixture.observe(operation);
+      try {
+        await new Promise((resolve) => setTimeout(resolve, 80));
+        complete();
+        expect(await observation).toEqual(
+          settlement === "rejected" ? { kind: "rejected", error } : { kind: "pending" },
+        );
+      } finally {
+        complete();
+        await observation;
+      }
+    },
+  );
 
   it.each(["daemon", "launcher", "empty-launcher"] as const)(
     "retains %s ownership across all startup entrypoints",
@@ -215,7 +244,7 @@ describe.skipIf(process.platform === "win32")("unverifiable POSIX legacy startup
         const outcome = await fixture.observe<unknown>(
           fixture.coordinator[entrypoint](fixture.identity),
         );
-        expect(outcome).toMatchObject({
+        expect(outcome, entrypoint).toMatchObject({
           kind: "rejected",
           error: expect.objectContaining({
             message: expect.stringContaining("ownership was retained"),

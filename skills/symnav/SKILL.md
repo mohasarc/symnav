@@ -12,6 +12,36 @@ Reach for it at two moments, both worth it:
 
 Run inside a git workspace. `--cwd <dir>` targets another workspace; `--json` gives machine output. Cold TypeScript start can yield early with empty output — that's not the result, wait for it. Warnings on stderr are non-fatal; exit 0 means stdout is the answer.
 
+## Agent sandboxes
+
+Codex and Claude Code sandboxes usually deny writes to symnav's state folder (`~/.symnav`). Then every command runs cold and stderr says `symnav: warning: cannot write <dir> (EPERM); daemon and telemetry are off for this command`. Stdout is still the answer.
+
+**When you see that warning, you MUST fix it with setup before doing anything else. Do not jump to a workaround.**
+
+1. Run setup yourself, then check it:
+
+   ```
+   symnav setup codex        # or: symnav setup claude-code
+   symnav doctor codex
+   ```
+
+2. If setup fails (the sandbox often can't write its own config), stop and ask the user to run it, with the `!` prefix so it runs right there in the session:
+
+   ```
+   ! symnav setup codex
+   ```
+
+   Wait for their reply. Don't continue the task with a workaround while you wait.
+
+3. After setup succeeds, ask the user to restart the agent session; the grant applies to new sessions.
+
+### Last resort only
+
+Use these only if the user declines setup, says it can't be done, or no human can answer (a non-interactive run). Never pick them yourself just to save a step.
+
+- Point state at a folder the sandbox can already write — its temp folder, or a gitignored folder in the workspace. Prefix every symnav command with the same value; shells often don't keep exports between commands: `SYMNAV_STATE_DIR="$TMPDIR/symnav-state" symnav refs charge`. Its daemon and stats are separate from the host's `~/.symnav`, and a wiped temp folder means cold again.
+- `SYMNAV_DAEMON=0 SYMNAV_TELEMETRY=0` never touches state and stays quiet, but is always cold.
+
 ## Commands
 
 | Need | Command | Gives |

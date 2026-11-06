@@ -4,7 +4,7 @@ What the navigation CLI does, from the user's side. No implementation choices he
 
 ## Goal
 
-Agent-first code navigation for TypeScript that a human can also read directly. It replaces semantic misuse of text search. It does not replace `rg` for plain text search.
+Agent-first, language-agnostic code navigation by symbol that a human can also read directly. It replaces semantic misuse of text search. It does not replace `rg` for plain text search.
 
 ## User
 

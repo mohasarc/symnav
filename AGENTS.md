@@ -2,7 +2,7 @@
 
 ## Orientation
 
-`symnav` is a CLI for navigating TypeScript codebases by symbol — definitions, references, and the surrounding context graph. Read before changing code:
+`symnav` is a language-agnostic CLI for navigating codebases by symbol — definitions, references, and the surrounding context graph. Read before changing code:
 
 - [`docs/navigation.md`](docs/navigation.md) — navigation commands, targets, output, errors, non-goals.
 - [`docs/daemon.md`](docs/daemon.md) — workspace daemon, sandbox support, `setup`, `doctor`. Policy values in [`docs/daemon-policy.md`](docs/daemon-policy.md).

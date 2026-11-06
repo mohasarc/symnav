@@ -56,13 +56,21 @@ symnav daemon status --json
 
 `start`, `status`, and `stop` all accept `--json`. `start` and `stop` select the workspace from the current directory or global `--cwd`; `status` lists every validated daemon in workspace-path order.
 
-Daemons exit after 30 minutes without navigation work, when their workspace is deleted, or when resident memory exceeds one quarter of system memory, bounded between 256 MiB and 4 GiB. A daemon startup, connection, or response failure runs that invocation locally once; a later eligible invocation can start a replacement.
+Daemons exit after 30 minutes without navigation work, when their workspace is deleted, or when resident memory exceeds one quarter of system memory, bounded between 256 MiB and 4 GiB. A failure before request submission permits one local attempt; submitted or accepted requests are never replayed locally. A later eligible invocation can start a replacement.
 
 Registry records and per-workspace JSON diagnostic logs live under `~/.symnav/daemons/`. Set `SYMNAV_STATE_DIR` to relocate all symnav state; daemon files then live under `$SYMNAV_STATE_DIR/daemons/`. Diagnostics are not written to command stdout or stderr.
 
 On macOS and Linux, daemon communication uses regular files inside the state directory. An agent sandbox needs workspace read access and write access to `~/.symnav` (or the effective `SYMNAV_STATE_DIR`); it needs no network or Unix-socket grant. Sandboxed and unsandboxed commands selecting the same workspace and state directory share one daemon. Windows retains named pipes.
 
 POSIX daemon ownership requires the standard `mkfifo` executable on `PATH` and a state filesystem that supports FIFOs. Node 20 remains supported. FIFO readers prove process lifetime across PID namespaces; displayed PIDs belong to the daemon’s own namespace and are not host signal targets. Starting and ready daemons stop through authenticated controls; success requires confirmed process exit. A live daemon that cannot authenticate within the stop deadline retains ownership. Unreachable legacy PID-only owners are retained conservatively. Explicit start reports failure when matched legacy startup ownership cannot be verified, leaving the owner and record intact. If a sandbox wrapper terminates its descendants, the next command starts a fresh cold warm-up; symnav does not extend the wrapper lifetime.
+
+When a required state write fails, symnav disables daemon and telemetry work for that invocation. Navigation executes locally when no request has been submitted; accepted work keeps its result or controlled failure. One warning follows ordinary stderr, and the command keeps its own exit code:
+
+```text
+symnav: warning: cannot write /Users/mo/.symnav (EPERM); daemon and telemetry are off for this command. Grant access with 'symnav setup <agent>', or pass --no-warnings.
+```
+
+Grant the sandbox write access to the effective state directory. Help, version, and read-only commands do not warn when they need no write. With both `SYMNAV_DAEMON=0` and `SYMNAV_TELEMETRY=0`, commands never access state; `stats` consequently reports an empty summary. To read existing stats without recording another event, run `SYMNAV_DAEMON=1 SYMNAV_TELEMETRY=0 symnav stats --json`.
 
 Command and result spill files also stay inside state and are removed after delivery. Setting both `SYMNAV_DAEMON=0` and `SYMNAV_TELEMETRY=0` runs navigation directly without accessing state or creating spill files.
 

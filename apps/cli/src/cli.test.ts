@@ -19,7 +19,7 @@ it.each([
   async (environmentValue, daemonEnabled, telemetryValue, argv) => {
     vi.stubEnv("SYMNAV_DAEMON", environmentValue);
     vi.stubEnv("SYMNAV_TELEMETRY", telemetryValue);
-    const needsState = daemonEnabled || telemetryValue === "1" || argv[0] === "stats";
+    const needsState = daemonEnabled || telemetryValue === "1";
     const stateDirectory = "/canonical/state";
     const daemonPolicy = {} as DaemonPolicy;
     const daemonClient = {} as DaemonClient;

@@ -61,7 +61,7 @@ describe("DaemonNavigationWorkerProtocol", () => {
       kind: "result",
       generation: 4,
       requestId: "request-1",
-      result: { exitCode: 0 },
+      result: { exitCode: 0, stateWriteFailure: { path: "/state/usage.jsonl", osCode: "EACCES" } },
       refresh,
       durations: { freshnessMs: 1, navigationMs: 2, renderMs: 3, outputMs: 4 },
       diagnostics: { future: { metric: 17 } },

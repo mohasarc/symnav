@@ -1,3 +1,4 @@
+import { DaemonStateWriteErrors } from "../state-write-errors.js";
 import { createHash, randomUUID } from "node:crypto";
 import { constants } from "node:fs";
 import { mkdir, open, unlink, type FileHandle } from "node:fs/promises";
@@ -72,7 +73,11 @@ export class DaemonClientResultCapture implements DaemonOutputCapture {
       if (this.rawBytes + record.bytes.byteLength > this.maximumResultRawBytes) {
         throw new DaemonClientResultCapacityError();
       }
-      await this.storeRecord({ ...record, bytes: Buffer.from(record.bytes) });
+      try {
+        await this.storeRecord({ ...record, bytes: Buffer.from(record.bytes) });
+      } catch (error) {
+        throw DaemonStateWriteErrors.failedWrite(this.filePath ?? this.directory, error);
+      }
     });
     this.tail = operation.catch((error: unknown) => {
       this.failure = error instanceof Error ? error : new Error(String(error));

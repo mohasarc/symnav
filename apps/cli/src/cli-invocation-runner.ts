@@ -1,4 +1,5 @@
 import { Writable } from "node:stream";
+import { inspect } from "node:util";
 import { finished } from "node:stream/promises";
 import type { CliInvocationCoordinator } from "./cli-invocation-coordinator.js";
 import type { CliExecutionRequest } from "./command-execution-result.js";
@@ -14,10 +15,39 @@ import type { ProgramContext } from "./program-context.js";
 import type { ProgramDependencies } from "./program-dependencies.js";
 import { InvocationWorkspaceSelector } from "./invocation-workspace-selector.js";
 import { buildProgram } from "./program.js";
+import type { DaemonExecutorOutput } from "@symnav/daemon";
+import { InvocationStateWriteCoordinator } from "./state/state-write-coordinator.js";
+import { InvocationStateDependencies } from "./state/invocation-state-dependencies.js";
 
 export interface CliInvocationRunnerOptions {
   readonly dependencies: ProgramDependencies;
   readonly coordinator: CliInvocationCoordinator;
+}
+
+class StateObservedCommandOutput implements DaemonExecutorOutput {
+  public constructor(
+    private readonly output: DaemonExecutorOutput,
+    private readonly state: InvocationStateWriteCoordinator,
+  ) {}
+
+  public records() {
+    return this.output.records();
+  }
+
+  public async dispose(): Promise<void> {
+    try {
+      await this.output.dispose();
+    } catch (error) {
+      if (typeof error !== "object" || error === null) throw error;
+      const failure = error as NodeJS.ErrnoException;
+      if (
+        typeof failure.path !== "string" ||
+        !/^(unlink|rmdir|rename)/u.test(failure.syscall ?? "")
+      )
+        throw error;
+      this.state.failed(failure.path, failure);
+    }
+  }
 }
 
 class DirectProgramExit extends Error {
@@ -72,18 +102,67 @@ export class CliInvocationRunner {
   public constructor(private readonly options: CliInvocationRunnerOptions) {}
 
   public async run(request: CliExecutionRequest, context: ProgramContext): Promise<number> {
-    if (!this.options.dependencies.daemonEnabled) return this.runLocally(request, context);
-    const execution = await this.options.coordinator.execute(request);
-    await CommandResultReplayer.replay(execution.result, {
-      ...context,
-      exit: () => undefined as never,
+    const state = new InvocationStateWriteCoordinator(this.options.dependencies.stateDirectory);
+    const route = new InvocationWorkspaceSelector().classify(request.argv, request.cwd);
+    const daemonEligible =
+      route.kind === "workspace" && (route.commandName !== "stats" || request.telemetryEnabled);
+    await state.prepare({
+      daemon: daemonEligible && this.options.dependencies.daemonEnabled,
+      telemetry: route.kind === "workspace" && request.telemetryEnabled,
     });
-    return execution.result.exitCode;
+    const dependencies = InvocationStateDependencies.create(
+      this.options.dependencies,
+      state,
+      request.telemetryEnabled,
+    );
+    const local = (mode: "cold" | "fallback") =>
+      this.executeLocally({ ...request, executionMode: mode }, dependencies, state);
+    const result =
+      state.access.kind === "disabled" || !dependencies.daemonEnabled || !daemonEligible
+        ? await local("cold")
+        : (
+            await this.options.coordinator.execute({
+              ...request,
+              stateWriteFailed: (failure) =>
+                state.failed(
+                  failure.path,
+                  failure.osCode === undefined ? undefined : { code: failure.osCode },
+                ),
+              executeLocally: local,
+            })
+          ).result;
+    if (result.stateWriteFailure !== undefined) {
+      const failure = result.stateWriteFailure;
+      state.failed(
+        failure.path,
+        failure.osCode === undefined ? undefined : { code: failure.osCode },
+      );
+    }
+    const replayContext: ProgramContext = { ...context, exit: () => undefined as never };
+    await CommandResultReplayer.replay(
+      { ...result, output: new StateObservedCommandOutput(result.output, state) },
+      replayContext,
+    );
+    const warning = state.renderWarning();
+    if (warning !== undefined) {
+      await CommandResultReplayer.replay(
+        {
+          exitCode: 0,
+          output: new CommandOutputSnapshot([{ stream: "stderr", bytes: Buffer.from(warning) }]),
+        },
+        replayContext,
+      );
+    }
+    return result.exitCode;
   }
 
-  private async runLocally(request: CliExecutionRequest, context: ProgramContext): Promise<number> {
+  private async executeLocally(
+    request: CliExecutionRequest,
+    dependencies: ProgramDependencies,
+    state: InvocationStateWriteCoordinator,
+  ): Promise<CommandExecutionResult> {
     const output = new DirectCommandOutput(
-      this.options.dependencies.daemonPolicy.values.output.maximumResultRawBytes,
+      dependencies.daemonPolicy.values.output.maximumResultRawBytes,
     );
     const stdout = new DirectCommandWritable("stdout", output);
     const stderr = new DirectCommandWritable("stderr", output);
@@ -100,26 +179,23 @@ export class CliInvocationRunner {
           },
         },
         {
-          ...this.options.dependencies,
-          telemetryEnabled: request.telemetryEnabled,
-          executionMode: "cold",
+          ...dependencies,
+          executionMode: request.executionMode ?? "cold",
         },
       );
       const selected = new InvocationWorkspaceSelector().select(request.argv, request.cwd);
       await program.parseAsync([...selected.argv], { from: "user" });
     } catch (error) {
       if (error instanceof DirectProgramExit) exitCode = error.exitCode;
-      else throw error;
+      else if (state.access.kind === "disabled") {
+        stderr.write(`${inspect(error)}\n`);
+        exitCode = 1;
+      } else throw error;
     } finally {
       stdout.end();
       stderr.end();
       await completion;
     }
-    const result = output.finish(exitCode);
-    await CommandResultReplayer.replay(result, {
-      ...context,
-      exit: () => undefined as never,
-    });
-    return result.exitCode;
+    return output.finish(exitCode);
   }
 }

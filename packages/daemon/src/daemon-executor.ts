@@ -1,3 +1,5 @@
+import { DaemonStateWriteErrors } from "./state-write-errors.js";
+import type { DaemonStateWriteReport } from "./state-write-failure.js";
 import { DaemonDiagnosticValues, type DaemonDiagnostics } from "./daemon-diagnostics.js";
 
 export type DaemonExecutionMode = "cold" | "warm" | "fallback";
@@ -33,7 +35,7 @@ export interface DaemonExecutorInitializationResult {
   readonly diagnostics?: DaemonDiagnostics;
 }
 
-export interface DaemonExecutorExecutionResult {
+export interface DaemonExecutorExecutionResult extends DaemonStateWriteReport {
   readonly exitCode: number;
   readonly output: DaemonExecutorOutput;
   readonly diagnostics?: DaemonDiagnostics;
@@ -150,9 +152,19 @@ class DaemonExecutorValidation {
   static isExecutionResult(value: unknown): value is DaemonExecutorExecutionResult {
     if (!this.isRecord(value)) return false;
     return (
-      this.hasExactKeys(value, this.keysWithDiagnostics(["exitCode", "output"], value)) &&
+      this.hasExactKeys(
+        value,
+        this.keysWithDiagnostics(
+          value.stateWriteFailure === undefined
+            ? ["exitCode", "output"]
+            : ["exitCode", "output", "stateWriteFailure"],
+          value,
+        ),
+      ) &&
       this.isCount(value.exitCode) &&
       this.isOutput(value.output) &&
+      (value.stateWriteFailure === undefined ||
+        DaemonStateWriteErrors.isFailure(value.stateWriteFailure)) &&
       this.isDiagnostics(value.diagnostics)
     );
   }

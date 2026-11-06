@@ -1,5 +1,10 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { randomUUID } from "node:crypto";
+import { PosixDaemonProcessLifetime } from "../process/posix-process-lifetime.js";
 import { join } from "node:path";
+import { chmod, mkdir, mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { FileDaemonEndpoint } from "../transport/file-endpoint.js";
 import type {
   DaemonExecutor,
   DaemonExecutorExecutionResult,
@@ -28,6 +33,276 @@ const success: DaemonExecutorExecutionResult = {
 };
 
 describe("DaemonClient execution", () => {
+  it.each(["not-submitted", "submitted-unconfirmed", "accepted"] as const)(
+    "reports a %s write denial without replaying uncertain work",
+    async (delivery) => {
+      const cause = Object.assign(new Error("denied"), {
+        syscall: "mkdir",
+        path: "/state/channel",
+        code: "EACCES",
+      });
+      const harness = new ClientHarness({
+        warmFailure: new DaemonTransportError(
+          "unreachable",
+          delivery,
+          "denied",
+          undefined,
+          undefined,
+          cause,
+        ),
+      });
+      const stateWriteFailed = vi.fn();
+      const executeLocally = vi.fn(async () => success);
+      const result = await harness.client.execute({
+        ...harness.request(),
+        stateWriteFailed,
+        executeLocally,
+      });
+      expect(stateWriteFailed).toHaveBeenCalledWith({ path: "/state/channel", osCode: "EACCES" });
+      expect(executeLocally).toHaveBeenCalledTimes(delivery === "not-submitted" ? 1 : 0);
+      expect(harness.executorFactory).not.toHaveBeenCalled();
+      expect(result.mode).toBe(delivery === "not-submitted" ? "fallback" : "warm");
+    },
+  );
+
+  it.skipIf(process.platform === "win32")(
+    "keeps telemetry enabled when endpoint ownership vanishes after channel writes",
+    async () => {
+      const fixture = await ClientOwnershipFixture.create();
+      const harness = new ClientHarness({
+        record: daemonRecord({
+          endpoint: fixture.endpoint,
+          pid: process.pid,
+          processLifetime: fixture.lifetime,
+        }),
+      });
+      vi.mocked(DaemonRecordObserver.prototype.observe).mockRestore();
+      fixture.vanishAfterChannelWrites(false);
+      const stateWriteFailed = vi.fn();
+      try {
+        const result = await harness.client.execute({ ...harness.request(), stateWriteFailed });
+        expect(fixture.completedChannels.size).toBe(2);
+        expect(stateWriteFailed).not.toHaveBeenCalled();
+        expect(result.mode).toBe("cold");
+        expect(harness.localRequests).toEqual([
+          expect.objectContaining({ telemetryEnabled: true, executionMode: "cold" }),
+        ]);
+        expect(harness.warmRequests).toEqual([]);
+        expect(harness.trigger).not.toHaveBeenCalled();
+        expect(await readdir(fixture.directory)).toEqual([]);
+      } finally {
+        await fixture.dispose();
+      }
+    },
+  );
+
+  it.skipIf(process.platform === "win32").each(["endpoint", "token"] as const)(
+    "keeps local telemetry when %s vanishes before the initial channel write",
+    async (removal) => {
+      const fixture = await ClientOwnershipFixture.create();
+      const harness = new ClientHarness({
+        record: daemonRecord({
+          endpoint: fixture.endpoint,
+          pid: process.pid,
+          processLifetime: fixture.lifetime,
+        }),
+      });
+      vi.mocked(DaemonRecordObserver.prototype.observe).mockRestore();
+      const readOwner = FileDaemonEndpoint.owner.bind(FileDaemonEndpoint);
+      let observations = 0;
+      let completeRemoval!: () => void;
+      const removed = new Promise<void>((resolve) => {
+        completeRemoval = resolve;
+      });
+      vi.spyOn(FileDaemonEndpoint, "owner").mockImplementation(async (endpoint) => {
+        const peer = await readOwner(endpoint);
+        observations += 1;
+        if (observations === 2) {
+          await rm(removal === "endpoint" ? fixture.endpoint : fixture.directory, {
+            recursive: true,
+            force: true,
+          });
+          completeRemoval();
+        }
+        await removed;
+        return peer;
+      });
+      const stateWriteFailed = vi.fn();
+      try {
+        const result = await harness.client.execute({ ...harness.request(), stateWriteFailed });
+        expect(observations).toBe(2);
+        expect(result.mode).toBe("cold");
+        expect(stateWriteFailed).not.toHaveBeenCalled();
+        expect(harness.localRequests).toEqual([
+          expect.objectContaining({ telemetryEnabled: true, executionMode: "cold" }),
+        ]);
+        expect(harness.warmRequests).toEqual([]);
+        expect(harness.trigger).not.toHaveBeenCalled();
+      } finally {
+        await fixture.dispose();
+      }
+    },
+  );
+
+  it.skipIf(process.platform === "win32" || process.getuid?.() === 0)(
+    "reports denied channel cleanup once and disables local telemetry after an ownership read fails",
+    async () => {
+      const fixture = await ClientOwnershipFixture.create();
+      const harness = new ClientHarness({
+        record: daemonRecord({
+          endpoint: fixture.endpoint,
+          pid: process.pid,
+          processLifetime: fixture.lifetime,
+        }),
+      });
+      vi.mocked(DaemonRecordObserver.prototype.observe).mockRestore();
+      fixture.vanishAfterChannelWrites(true);
+      const stateWriteFailed = vi.fn();
+      try {
+        const result = await harness.client.execute({ ...harness.request(), stateWriteFailed });
+        expect(fixture.completedChannels.size).toBe(2);
+        expect(stateWriteFailed).toHaveBeenCalledOnce();
+        expect(stateWriteFailed).toHaveBeenCalledWith({
+          path: expect.stringContaining(fixture.directory),
+          osCode: "EACCES",
+        });
+        expect(result.mode).toBe("cold");
+        expect(harness.localRequests).toEqual([
+          expect.objectContaining({ telemetryEnabled: false, executionMode: "cold" }),
+        ]);
+        expect(harness.trigger).not.toHaveBeenCalled();
+        expect(harness.warmRequests).toEqual([]);
+        expect(
+          (await readdir(fixture.directory)).filter((entry) => entry.endsWith(".tmp")),
+        ).toHaveLength(2);
+      } finally {
+        await fixture.dispose();
+      }
+    },
+  );
+
+  it
+    .skipIf(process.platform === "win32" || process.getuid?.() === 0)
+    .each(["missing", "denied", "unsuccessful", "directory"] as const)(
+    "preserves invocation telemetry semantics for %s lifetime creation",
+    async (operation) => {
+      const fixture = await ClientOwnershipFixture.create();
+      const clientState = join(fixture.state, "client-state");
+      const endpoint = join(clientState, "endpoint");
+      const token = randomUUID();
+      const directory = join(endpoint, token);
+      const utilities = join(fixture.state, "utilities");
+      await mkdir(directory, { recursive: true });
+      await mkdir(utilities);
+      await writeFile(
+        join(directory, "owner.json"),
+        JSON.stringify({ pid: process.pid, token, processLifetime: fixture.lifetime }),
+      );
+      if (operation !== "missing")
+        await writeFile(join(utilities, "mkfifo"), "#!/bin/sh\nexit 3\n", {
+          mode: operation === "denied" ? 0o600 : 0o700,
+        });
+      const harness = new ClientHarness({
+        record: daemonRecord({ endpoint, pid: process.pid, processLifetime: fixture.lifetime }),
+      });
+      vi.mocked(DaemonRecordObserver.prototype.observe).mockRestore();
+      const stateWriteFailed = vi.fn();
+      const originalPath = process.env.PATH;
+      if (operation === "directory") await chmod(clientState, 0o500);
+      else process.env.PATH = utilities;
+      try {
+        const result = await harness.client.execute({ ...harness.request(), stateWriteFailed });
+        const failedWrite = operation === "directory" || operation === "unsuccessful";
+        expect(result.mode).toBe("cold");
+        expect(harness.localRequests).toEqual([
+          expect.objectContaining({ telemetryEnabled: !failedWrite, executionMode: "cold" }),
+        ]);
+        expect(harness.warmRequests).toEqual([]);
+        expect(harness.trigger).not.toHaveBeenCalled();
+        expect(stateWriteFailed).toHaveBeenCalledTimes(failedWrite ? 1 : 0);
+        if (operation === "directory")
+          expect(stateWriteFailed).toHaveBeenCalledWith({
+            path: join(clientState, "process-lifetimes"),
+            osCode: "EACCES",
+          });
+        if (operation === "unsuccessful")
+          expect(stateWriteFailed).toHaveBeenCalledWith({
+            path: expect.stringMatching(/process-lifetimes[/\\][a-f0-9-]+\.fifo$/u),
+          });
+      } finally {
+        process.env.PATH = originalPath;
+        await chmod(clientState, 0o700);
+        await fixture.dispose();
+      }
+    },
+  );
+
+  it("does not report generic connection failures as state failures", async () => {
+    const harness = new ClientHarness({
+      warmFailure: new DaemonTransportError("unreachable", "not-submitted", "refused"),
+    });
+    const stateWriteFailed = vi.fn();
+    await harness.client.execute({ ...harness.request(), stateWriteFailed });
+    expect(stateWriteFailed).not.toHaveBeenCalled();
+  });
+
+  it
+    .skipIf(process.platform === "win32" || process.getuid?.() === 0)
+    .each(["missing", "denied", "unsuccessful"] as const)(
+    "observes only executed %s FIFO creation during explicit start",
+    async (operation) => {
+      const state = await mkdtemp(join(tmpdir(), "symnav-start-write-"));
+      const utilities = join(state, "utilities");
+      await mkdir(utilities);
+      if (operation !== "missing")
+        await writeFile(join(utilities, "mkfifo"), "#!/bin/sh\nexit 3\n", {
+          mode: operation === "denied" ? 0o600 : 0o700,
+        });
+      const harness = new ClientHarness({ stateDirectory: state, record: undefined });
+      vi.mocked(DaemonRegistry.prototype.read).mockRestore();
+      vi.mocked(DaemonStartupCoordinator.prototype.trigger).mockRestore();
+      const stateWriteFailed = vi.fn();
+      const originalPath = process.env.PATH;
+      process.env.PATH = utilities;
+      try {
+        await expect(
+          harness.client.control({
+            action: "start",
+            workspaceRoot: join(state, "workspace"),
+            stateWriteFailed,
+          }),
+        ).rejects.toThrow();
+        expect(stateWriteFailed).toHaveBeenCalledTimes(operation === "unsuccessful" ? 1 : 0);
+        if (operation === "unsuccessful")
+          expect(stateWriteFailed).toHaveBeenCalledWith({
+            path: expect.stringMatching(/process-lifetimes[/\\][a-f0-9-]+\.fifo$/u),
+          });
+        expect(harness.localRequests).toEqual([]);
+        expect(harness.warmRequests).toEqual([]);
+      } finally {
+        process.env.PATH = originalPath;
+        await rm(state, { recursive: true, force: true });
+      }
+    },
+  );
+
+  it("observes actual background startup write failure without waiting for warmup", async () => {
+    const harness = new ClientHarness({ record: undefined });
+    harness.trigger.mockRejectedValueOnce(
+      Object.assign(new Error("denied"), {
+        syscall: "mkdir",
+        path: "/state/daemons/lease",
+        code: "EPERM",
+      }),
+    );
+    const stateWriteFailed = vi.fn();
+    await harness.client.execute({ ...harness.request(), stateWriteFailed });
+    expect(stateWriteFailed).toHaveBeenCalledWith({
+      path: "/state/daemons/lease",
+      osCode: "EPERM",
+    });
+  });
+
   afterEach(() => vi.restoreAllMocks());
 
   it.each([
@@ -278,6 +553,7 @@ describe("DaemonClient execution", () => {
 });
 
 interface ClientHarnessOptions {
+  readonly stateDirectory?: string;
   readonly daemonEnabled?: boolean;
   readonly record?: DaemonRecord | undefined;
   readonly readFailure?: Error;
@@ -374,7 +650,7 @@ class ClientHarness {
       return executor;
     });
     this.client = new DaemonClient({
-      stateDirectory: "/state",
+      stateDirectory: options.stateDirectory ?? "/state",
       productVersion: "0.1.0",
       daemonEnabled: options.daemonEnabled ?? true,
       executorFactory: this.executorFactory,
@@ -444,4 +720,55 @@ async function outputText(result: DaemonExecutorExecutionResult): Promise<string
   for await (const outputRecord of result.output.records()) chunks.push(outputRecord.bytes);
   await result.output.dispose();
   return Buffer.concat(chunks).toString();
+}
+
+class ClientOwnershipFixture {
+  public readonly completedChannels = new Set<string>();
+  private constructor(
+    public readonly state: string,
+    public readonly endpoint: string,
+    public readonly directory: string,
+    public readonly lifetime: ReturnType<typeof PosixDaemonProcessLifetime.current>,
+  ) {}
+  public static async create(): Promise<ClientOwnershipFixture> {
+    const state = await mkdtemp(join(tmpdir(), "symnav-owner-read-"));
+    const endpoint = join(state, "endpoint");
+    const token = randomUUID();
+    const directory = join(endpoint, token);
+    const lifetime = PosixDaemonProcessLifetime.current(state);
+    await mkdir(directory, { recursive: true, mode: 0o700 });
+    await writeFile(
+      join(directory, "owner.json"),
+      JSON.stringify({ pid: process.pid, token, processLifetime: lifetime }),
+    );
+    return new ClientOwnershipFixture(state, endpoint, directory, lifetime);
+  }
+  public vanishAfterChannelWrites(denyCleanup: boolean): void {
+    const readOwner = FileDaemonEndpoint.owner.bind(FileDaemonEndpoint);
+    let finish!: () => void;
+    const removed = new Promise<void>((resolve) => {
+      finish = resolve;
+    });
+    vi.spyOn(FileDaemonEndpoint, "owner").mockImplementation(async (endpoint) => {
+      const temporary = (await readdir(this.directory)).filter((entry) => entry.endsWith(".tmp"));
+      for (const entry of temporary) {
+        const directory = join(this.directory, entry);
+        if ((await readdir(directory)).includes("owner.json"))
+          this.completedChannels.add(directory);
+      }
+      if (this.completedChannels.size === 0) return readOwner(endpoint);
+      if (this.completedChannels.size === 2) {
+        if (denyCleanup) for (const channel of this.completedChannels) await chmod(channel, 0o500);
+        await rm(join(this.directory, "owner.json"), { force: true });
+        finish();
+      }
+      await removed;
+      return readOwner(endpoint);
+    });
+  }
+  public async dispose(): Promise<void> {
+    for (const channel of this.completedChannels)
+      await chmod(channel, 0o700).catch(() => undefined);
+    await rm(this.state, { recursive: true, force: true });
+  }
 }

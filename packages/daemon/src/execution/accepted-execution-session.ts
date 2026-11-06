@@ -1,3 +1,4 @@
+import { DaemonStateWriteErrors } from "../state-write-errors.js";
 import { DaemonExecutionFailures } from "../daemon-execution-failure.js";
 import type { AcceptedRequestCompatibility } from "../daemon-admission.js";
 import type {
@@ -128,7 +129,7 @@ export class AcceptedExecutionSession {
               },
               response.refresh,
             );
-            await completion.finish(response.result.exitCode);
+            await completion.finish(response.result.exitCode, response.result.stateWriteFailure);
             this.lastCompletedMonotonicAt = this.options.clock.monotonicNowMs();
             const workspaceExists = await this.options.processLifecycle.workspaceExists();
             trace.executionTerminated("completed");
@@ -162,7 +163,12 @@ export class AcceptedExecutionSession {
       await completion?.dispose().catch((cleanupError) => {
         this.recordFailure("completion-cleanup", "internal", cleanupError);
       });
-      this.options.ledger.fail(request.requestId, code, this.options.clock.wallNowMs());
+      this.options.ledger.fail(
+        request.requestId,
+        code,
+        this.options.clock.wallNowMs(),
+        DaemonStateWriteErrors.from(error),
+      );
     } finally {
       if (this.options.queue.isIdle) this.options.lifetime.queueBecameIdle();
     }

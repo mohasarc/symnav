@@ -11,6 +11,9 @@ import {
 } from "../transport/protocol.js";
 import { DaemonRuntimeValues } from "../process/runtime-values.js";
 import type { DaemonWorkspaceIdentity } from "../registry/workspace-identity.js";
+import { DaemonFailureValues } from "./failure-values.js";
+import type { DaemonStateWriteFailureObserver } from "../state-write-failure.js";
+import { DaemonStateWriteErrors } from "../state-write-errors.js";
 
 const DIAGNOSTIC_FIELDS = [
   "schemaVersion",
@@ -60,6 +63,9 @@ const DIAGNOSTIC_FIELDS = [
   "terminationReason",
   "signal",
   "droppedCount",
+  "failure",
+  "phase",
+  "osCode",
 ] as const;
 
 const DIAGNOSTIC_KINDS = new Set([
@@ -169,6 +175,7 @@ export interface DaemonLogStorage {
 interface DaemonLoggerOptions {
   readonly policy: DaemonPolicyValues["diagnostics"];
   readonly storage?: DaemonLogStorage;
+  readonly stateWriteFailed?: DaemonStateWriteFailureObserver;
 }
 
 class NodeDaemonLogStorage implements DaemonLogStorage {
@@ -207,7 +214,7 @@ class NodeDaemonLogStorage implements DaemonLogStorage {
   async sync(path: string): Promise<void> {
     let file;
     try {
-      file = await open(path, "r");
+      file = await open(path, "r+");
       await file.sync();
     } catch (error) {
       if (NodeDaemonLogStorage.errorCode(error) !== "ENOENT") throw error;
@@ -232,6 +239,7 @@ export class DaemonLogger {
   private droppedCount = 0;
   private drainOperation: Promise<void> | undefined;
   private closed = false;
+  private readonly writeObservers = new Set<DaemonStateWriteFailureObserver>();
 
   constructor(
     private readonly identity: DaemonWorkspaceIdentity,
@@ -244,6 +252,20 @@ export class DaemonLogger {
     this.maximumQueuedEvents = policy.maximumQueuedEvents;
     this.backupCount = policy.logBackupCount;
     this.storage = options.storage ?? new NodeDaemonLogStorage();
+    if (options.stateWriteFailed !== undefined) this.observeStateWrites(options.stateWriteFailed);
+  }
+
+  public observeStateWrites(observer: DaemonStateWriteFailureObserver): () => void {
+    let observed = false;
+    const firstFailure: DaemonStateWriteFailureObserver = (failure) => {
+      if (observed) return;
+      observed = true;
+      observer(failure);
+    };
+    this.writeObservers.add(firstFailure);
+    return () => {
+      this.writeObservers.delete(firstFailure);
+    };
   }
 
   record(event: DaemonDiagnosticEvent): void {
@@ -271,7 +293,7 @@ export class DaemonLogger {
       this.startDrain();
       await this.drainOperation;
     }
-    await this.storage.sync(this.identity.logPath).catch(() => undefined);
+    await this.write(() => this.storage.sync(this.identity.logPath)).catch(() => undefined);
   }
 
   async close(): Promise<void> {
@@ -295,6 +317,7 @@ export class DaemonLogger {
     const diagnostic = event as unknown as Record<string, unknown>;
     if (!DIAGNOSTIC_KINDS.has(String(diagnostic.kind))) return undefined;
     const closed: Record<string, unknown> = { ...diagnostic };
+    if ("failure" in closed && !DaemonFailureValues.isFailure(closed.failure)) return undefined;
     if ("command" in closed && !DaemonRuntimeValues.isCommandName(closed.command)) {
       closed.command = "unknown";
     }
@@ -365,7 +388,7 @@ export class DaemonLogger {
     const logDirectory = dirname(this.identity.logPath);
     let currentBytes: number;
     try {
-      await this.storage.prepare(logDirectory, this.identity.logPath);
+      await this.write(() => this.storage.prepare(logDirectory, this.identity.logPath));
       currentBytes = await this.storage.size(this.identity.logPath);
     } catch {
       this.pendingLines.length = 0;
@@ -385,10 +408,10 @@ export class DaemonLogger {
       try {
         if (currentBytes + lineBytes > this.rotateBytes) {
           await this.rotate();
-          await this.storage.prepare(logDirectory, this.identity.logPath);
+          await this.write(() => this.storage.prepare(logDirectory, this.identity.logPath));
           currentBytes = 0;
         }
-        await this.storage.append(this.identity.logPath, line);
+        await this.write(() => this.storage.append(this.identity.logPath, line));
         currentBytes += lineBytes;
       } catch {
         continue;
@@ -397,13 +420,27 @@ export class DaemonLogger {
   }
 
   private async rotate(): Promise<void> {
-    await this.storage.remove(`${this.identity.logPath}.${this.backupCount}`);
+    await this.write(() => this.storage.remove(`${this.identity.logPath}.${this.backupCount}`));
     for (let index = this.backupCount - 1; index >= 1; index -= 1) {
-      await this.storage.move(
-        `${this.identity.logPath}.${index}`,
-        `${this.identity.logPath}.${index + 1}`,
+      await this.write(() =>
+        this.storage.move(
+          `${this.identity.logPath}.${index}`,
+          `${this.identity.logPath}.${index + 1}`,
+        ),
       );
     }
-    await this.storage.move(this.identity.logPath, `${this.identity.logPath}.1`);
+    await this.write(() => this.storage.move(this.identity.logPath, `${this.identity.logPath}.1`));
+  }
+
+  private async write(operation: () => Promise<void>): Promise<void> {
+    try {
+      await operation();
+    } catch (error) {
+      const failure = DaemonStateWriteErrors.from(
+        DaemonStateWriteErrors.failedWrite(this.identity.logPath, error),
+      );
+      if (failure !== undefined) for (const observer of this.writeObservers) observer(failure);
+      throw error;
+    }
   }
 }

@@ -1,7 +1,7 @@
 import type {
   DaemonStartResult,
   DaemonStopResult,
-  RunningDaemonStatus,
+  DaemonStatusReport,
 } from "../daemon-lifecycle-report.js";
 import type {
   DaemonClientExecuteRequest,
@@ -14,7 +14,7 @@ interface DaemonClientRuntimePort {
   execute(request: DaemonClientExecuteRequest): Promise<DaemonClientExecuteResult>;
   control(
     request: DaemonControlRequest,
-  ): Promise<DaemonStartResult | readonly RunningDaemonStatus[] | DaemonStopResult>;
+  ): Promise<DaemonStartResult | DaemonStatusReport | DaemonStopResult>;
 }
 
 class DaemonClientRuntimeLoader {
@@ -55,16 +55,16 @@ export class DaemonClient {
   ): Promise<DaemonStartResult>;
   control(
     request: Extract<DaemonControlRequest, { readonly action: "status" }>,
-  ): Promise<readonly RunningDaemonStatus[]>;
+  ): Promise<DaemonStatusReport>;
   control(
     request: Extract<DaemonControlRequest, { readonly action: "stop" }>,
   ): Promise<DaemonStopResult>;
   async control(
     request: DaemonControlRequest,
-  ): Promise<DaemonStartResult | readonly RunningDaemonStatus[] | DaemonStopResult> {
+  ): Promise<DaemonStartResult | DaemonStatusReport | DaemonStopResult> {
     if (this.options.stateDirectory === "") {
       if (request.action === "start") return { status: "disabled" };
-      if (request.action === "status") return [];
+      if (request.action === "status") return { daemons: [] };
       return { status: "not-running", workspaceRoot: request.workspaceRoot };
     }
     return (await this.loadRuntime()).control(request);

@@ -19,6 +19,7 @@ export type {
   DaemonActivitySnapshot,
   DaemonStartResult,
   DaemonStatusEnvelope,
+  DaemonStatusReport,
   DaemonStopResult,
   RunningDaemonStatus,
 } from "./daemon-lifecycle-report.js";
@@ -36,3 +37,12 @@ export type {
   DaemonStateWriteFailure,
   DaemonStateWriteFailureObserver,
 } from "./state-write-failure.js";
+
+export type {
+  DaemonFailure,
+  DaemonFailurePhase,
+  DaemonFailureReason,
+  DaemonFailureEvent,
+  DaemonFallbackSummary,
+  DaemonStartupFailureStatus,
+} from "./daemon-failure.js";

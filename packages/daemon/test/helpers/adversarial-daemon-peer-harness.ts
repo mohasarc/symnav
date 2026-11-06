@@ -74,7 +74,7 @@ export class AdversarialDaemonPeerHarness {
   }
 
   status(): Promise<readonly RunningDaemonStatus[]> {
-    return this.#client.control({ action: "status" });
+    return this.#client.control({ action: "status" }).then((report) => report.daemons);
   }
 
   record(): DaemonRecord | undefined {

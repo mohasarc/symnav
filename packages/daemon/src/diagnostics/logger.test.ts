@@ -1,4 +1,13 @@
-import { mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -7,6 +16,7 @@ import { DaemonPolicyTestFactory } from "../../test/helpers/daemon-policy.js";
 import { NodeDaemonClock, type DaemonClock } from "../lifecycle/daemon-clock.js";
 import { DaemonLogger as RuntimeDaemonLogger, type DaemonLogStorage } from "./logger.js";
 import type { DaemonDiagnosticEvent } from "../transport/protocol.js";
+import type { DaemonStateWriteFailureObserver } from "../state-write-failure.js";
 import { DaemonWorkspaceIdentity } from "../registry/workspace-identity.js";
 
 interface TestDaemonLoggerOptions {
@@ -14,6 +24,7 @@ interface TestDaemonLoggerOptions {
   readonly rotateBytes?: number;
   readonly maximumQueuedEvents?: number;
   readonly storage?: DaemonLogStorage;
+  readonly stateWriteFailed?: DaemonStateWriteFailureObserver;
 }
 
 class DaemonLogger extends RuntimeDaemonLogger {
@@ -36,6 +47,9 @@ class DaemonLogger extends RuntimeDaemonLogger {
     super(identity, instanceId, clock, {
       policy: diagnostics,
       ...(options.storage === undefined ? {} : { storage: options.storage }),
+      ...(options.stateWriteFailed === undefined
+        ? {}
+        : { stateWriteFailed: options.stateWriteFailed }),
     });
   }
 }
@@ -45,6 +59,159 @@ describe("DaemonLogger", () => {
   afterEach(() => {
     for (const root of roots) rmSync(root, { recursive: true, force: true });
     roots.length = 0;
+  });
+
+  it("flushes and closes default storage without reporting successful writes as failures", async () => {
+    const root = mkdtempSync(join(tmpdir(), "symnav-log-flush-"));
+    roots.push(root);
+    const identity = DaemonWorkspaceIdentity.from("/repo", root);
+    const stateWriteFailures: unknown[] = [];
+    const logger = new DaemonLogger(identity, "one", new NodeDaemonClock(), {
+      stateWriteFailed: (failure) => stateWriteFailures.push(failure),
+    });
+
+    logger.record({ kind: "start" });
+    logger.record({ kind: "ready", fileCount: 2 });
+    await logger.flush();
+    const bytes = readFileSync(identity.logPath);
+    const events = bytes
+      .toString()
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line) as unknown);
+    expect(events).toEqual([
+      expect.objectContaining({ kind: "start" }),
+      expect.objectContaining({ kind: "ready", fileCount: 2 }),
+    ]);
+
+    await logger.close();
+    expect(readFileSync(identity.logPath)).toEqual(bytes);
+    expect(stateWriteFailures).toEqual([]);
+  });
+
+  it("preserves existing log bytes when flushing without queued events", async () => {
+    const root = mkdtempSync(join(tmpdir(), "symnav-log-existing-flush-"));
+    roots.push(root);
+    const identity = DaemonWorkspaceIdentity.from("/repo", root);
+    mkdirSync(identity.identityDirectory, { recursive: true });
+    const bytes = Buffer.from('existing diagnostic bytes\n{"kind":"start"}\n');
+    writeFileSync(identity.logPath, bytes);
+    const stateWriteFailures: unknown[] = [];
+    const logger = new DaemonLogger(identity, "one", new NodeDaemonClock(), {
+      stateWriteFailed: (failure) => stateWriteFailures.push(failure),
+    });
+
+    await logger.flush();
+    expect(readFileSync(identity.logPath)).toEqual(bytes);
+    await logger.close();
+    expect(readFileSync(identity.logPath)).toEqual(bytes);
+    expect(stateWriteFailures).toEqual([]);
+  });
+
+  it("does not create a missing log or directory during flush and close", async () => {
+    const root = mkdtempSync(join(tmpdir(), "symnav-log-missing-flush-"));
+    roots.push(root);
+    const identity = DaemonWorkspaceIdentity.from("/repo", root);
+    const stateWriteFailures: unknown[] = [];
+    const logger = new DaemonLogger(identity, "one", new NodeDaemonClock(), {
+      stateWriteFailed: (failure) => stateWriteFailures.push(failure),
+    });
+
+    await logger.flush();
+    expect(existsSync(identity.identityDirectory)).toBe(false);
+    mkdirSync(identity.identityDirectory, { recursive: true });
+    await logger.flush();
+    await logger.close();
+    expect(existsSync(identity.logPath)).toBe(false);
+    expect(stateWriteFailures).toEqual([]);
+  });
+
+  it("reports genuine denied sync with the original path and code once per observer", async () => {
+    const root = mkdtempSync(join(tmpdir(), "symnav-log-sync-denied-"));
+    roots.push(root);
+    const identity = DaemonWorkspaceIdentity.from("/repo", root);
+    const error = Object.assign(new Error("sync denied"), { code: "EPERM" });
+    const storage = new DeniedSyncLogStorage(error);
+    const stateWriteFailures: unknown[] = [];
+    const requestWriteFailures: unknown[] = [];
+    const logger = new DaemonLogger(identity, "one", new NodeDaemonClock(), {
+      storage,
+      stateWriteFailed: (failure) => stateWriteFailures.push(failure),
+    });
+    const stopObserving = logger.observeStateWrites((failure) =>
+      requestWriteFailures.push(failure),
+    );
+
+    await expect(storage.sync()).rejects.toBe(error);
+    await logger.flush();
+    await logger.flush();
+    await logger.close();
+    stopObserving();
+
+    const expected = [{ path: identity.logPath, osCode: "EPERM" }];
+    expect(stateWriteFailures).toEqual(expected);
+    expect(requestWriteFailures).toEqual(expected);
+  });
+
+  it("observes failed diagnostic writes once without recursive records", async () => {
+    const root = mkdtempSync(join(tmpdir(), "symnav-log-denied-"));
+    roots.push(root);
+    const stateWriteFailures: unknown[] = [];
+    const identity = DaemonWorkspaceIdentity.from("/repo", root);
+    writeFileSync(identity.registryDirectory, "blocked");
+    const logger = new DaemonLogger(identity, "one", new NodeDaemonClock(), {
+      stateWriteFailed: (failure) => stateWriteFailures.push(failure),
+    });
+    logger.record({ kind: "start" });
+    await logger.flush();
+    logger.record({ kind: "ready", fileCount: 1 });
+    await logger.flush();
+    expect(stateWriteFailures).toEqual([expect.objectContaining({ osCode: "ENOTDIR" })]);
+  });
+
+  it("retains exact structured failure fields and rejects open-ended failure objects", async () => {
+    const root = mkdtempSync(join(tmpdir(), "symnav-daemon-failure-log-"));
+    roots.push(root);
+    const identity = DaemonWorkspaceIdentity.from("/repo", root);
+    const logger = new DaemonLogger(identity, "one", new NodeDaemonClock());
+    logger.record({
+      kind: "failure",
+      operation: "start",
+      failureCode: "operation-failed",
+      errorName: "Error",
+      failure: {
+        phase: "endpoint bind",
+        reason: "endpoint-bind-denied",
+        timestamp: 4,
+        osCode: "EPERM",
+      },
+    });
+    logger.record({
+      kind: "failure",
+      operation: "start",
+      failureCode: "operation-failed",
+      errorName: "Error",
+      failure: {
+        phase: "endpoint bind",
+        reason: "endpoint-bind-denied",
+        timestamp: 4,
+        message: "secret",
+      },
+    } as unknown as DaemonDiagnosticEvent);
+    await logger.flush();
+    const events = readFileSync(identity.logPath, "utf8")
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line) as unknown);
+    expect(events).toHaveLength(1);
+    expect(events[0]).toMatchObject({
+      failure: {
+        phase: "endpoint bind",
+        reason: "endpoint-bind-denied",
+        timestamp: 4,
+        osCode: "EPERM",
+      },
+    });
   });
 
   it("writes ordered JSON lifecycle, request, freshness, and failure events", async () => {
@@ -441,6 +608,16 @@ class BlockingLogStorage implements DaemonLogStorage {
 
   events(): readonly Record<string, unknown>[] {
     return this.lines.map((line) => JSON.parse(line) as Record<string, unknown>);
+  }
+}
+
+class DeniedSyncLogStorage extends BlockingLogStorage {
+  constructor(private readonly error: Error) {
+    super();
+  }
+
+  override sync(): Promise<void> {
+    return Promise.reject(this.error);
   }
 }
 

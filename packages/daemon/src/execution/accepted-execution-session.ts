@@ -1,4 +1,6 @@
+import { DaemonFailureRecorder } from "../diagnostics/failure-recorder.js";
 import { DaemonStateWriteErrors } from "../state-write-errors.js";
+import type { DaemonStateWriteFailure } from "../state-write-failure.js";
 import { DaemonExecutionFailures } from "../daemon-execution-failure.js";
 import type { AcceptedRequestCompatibility } from "../daemon-admission.js";
 import type {
@@ -96,6 +98,10 @@ export class AcceptedExecutionSession {
     request: AuthenticatedDaemonExecuteRequest,
     trace: DaemonOperationTrace,
   ): Promise<void> {
+    let diagnosticWriteFailure: DaemonStateWriteFailure | undefined;
+    const stopObserving = this.options.diagnostics.observeStateWrites?.((failure) => {
+      diagnosticWriteFailure ??= failure;
+    });
     let completion: DaemonCompletionWriter | undefined;
     try {
       await this.options.queue.enqueue(
@@ -107,11 +113,19 @@ export class AcceptedExecutionSession {
         async () => {
           trace.turnStarted(this.options.resourceSupervisor.snapshot.generation);
           try {
+            if (this.options.diagnostics.flush !== undefined)
+              await this.options.diagnostics.flush();
             completion = await this.options.delivery.createCompletion(request.requestId);
             this.options.ledger.markRunning(request.requestId, this.options.clock.wallNowMs());
             const response = await this.options.worker.execute(
               request.requestId,
-              { commandName: request.commandName, request: request.request },
+              {
+                commandName: request.commandName,
+                request:
+                  diagnosticWriteFailure === undefined
+                    ? request.request
+                    : { ...request.request, telemetryEnabled: false },
+              },
               completion,
             );
             this.options.resourceSupervisor.workerHeapReported(
@@ -129,7 +143,11 @@ export class AcceptedExecutionSession {
               },
               response.refresh,
             );
-            await completion.finish(response.result.exitCode, response.result.stateWriteFailure);
+            await this.options.diagnostics.flush?.();
+            await completion.finish(
+              response.result.exitCode,
+              response.result.stateWriteFailure ?? diagnosticWriteFailure,
+            );
             this.lastCompletedMonotonicAt = this.options.clock.monotonicNowMs();
             const workspaceExists = await this.options.processLifecycle.workspaceExists();
             trace.executionTerminated("completed");
@@ -148,6 +166,7 @@ export class AcceptedExecutionSession {
         },
       );
     } catch (error) {
+      const stateWriteFailure = diagnosticWriteFailure ?? DaemonStateWriteErrors.from(error);
       trace.executionTerminated("failed");
       this.recordFailure("request", "internal", error);
       const shutdown = this.options.processLifecycle.shutdownSnapshot();
@@ -160,16 +179,19 @@ export class AcceptedExecutionSession {
           : { shutdownFailureCode: shutdown.failureCode }),
         shutdownStarted: shutdown.started,
       });
+      await this.options.diagnostics.flush?.();
       await completion?.dispose().catch((cleanupError) => {
         this.recordFailure("completion-cleanup", "internal", cleanupError);
       });
+      await this.options.diagnostics.flush?.();
       this.options.ledger.fail(
         request.requestId,
         code,
         this.options.clock.wallNowMs(),
-        DaemonStateWriteErrors.from(error),
+        stateWriteFailure ?? diagnosticWriteFailure,
       );
     } finally {
+      stopObserving?.();
       if (this.options.queue.isIdle) this.options.lifetime.queueBecameIdle();
     }
   }
@@ -193,6 +215,12 @@ export class AcceptedExecutionSession {
     this.options.diagnostics.record({
       kind: "failure",
       operation,
+      failure: DaemonFailureRecorder.failure(
+        this.options.clock.wallNowMs(),
+        operation === "completion-cleanup" ? "transfer" : "worker",
+        operation === "completion-cleanup" ? "transfer-failed" : "worker-failed",
+        error,
+      ),
       failureCode,
       errorName: DaemonLogger.errorName(error),
     });

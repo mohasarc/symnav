@@ -21,12 +21,12 @@ describe("symnav daemon start", () => {
     stateDirectories.length = 0;
   });
 
-  it.skipIf(process.platform === "win32")(
-    "reports retained unverifiable legacy startup without launching another daemon",
-    async () => {
+  it.skipIf(process.platform === "win32").each(["pid-only", "exited-owner"] as const)(
+    "reports retained unverifiable %s startup without launching another daemon",
+    async (fixtureIntent) => {
       const stateDir = realpathSync(temporaryStateDirectory(stateDirectories));
       const cwd = canonicalWorkspaceRoot(realpathSync(temporaryWorkspace(stateDirectories)));
-      const fixture = new BuiltLegacyStartupFixture(cwd, stateDir);
+      const fixture = new BuiltLegacyStartupFixture(cwd, stateDir, fixtureIntent);
       try {
         await fixture.seeded;
         const before = new CliDaemonTesting(stateDir).inspector.listInstances();
@@ -39,6 +39,17 @@ describe("symnav daemon start", () => {
         expect(result.stderr).toContain("could not be verified; ownership was retained");
         expect(new CliDaemonTesting(stateDir).inspector.listInstances()).toEqual(before);
         expect(await fixture.unchanged()).toBe(true);
+        const failures = await new CliDaemonTesting(stateDir).inspector.readFailures(cwd);
+        expect(failures).toEqual([
+          expect.objectContaining({
+            kind: "startup-failure",
+            failure: {
+              phase: "process spawn",
+              reason: "process-spawn-failed",
+              timestamp: expect.any(Number),
+            },
+          }),
+        ]);
       } finally {
         await fixture.dispose();
       }
@@ -128,6 +139,7 @@ class BuiltLegacyStartupFixture {
   public constructor(
     private readonly workspace: string,
     private readonly stateDirectory: string,
+    fixtureIntent: "pid-only" | "exited-owner" = "pid-only",
   ) {
     this.actor = spawn(
       process.execPath,
@@ -142,7 +154,7 @@ class BuiltLegacyStartupFixture {
         ),
         workspace,
         stateDirectory,
-        "pid-only",
+        fixtureIntent,
       ],
       { stdio: ["ignore", "ignore", "pipe", "ipc"] },
     );

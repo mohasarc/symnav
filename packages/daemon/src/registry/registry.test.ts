@@ -855,7 +855,7 @@ describe("daemon registry", () => {
       processTerminator: terminator,
     });
 
-    await expect(controller.status()).resolves.toEqual([
+    await expect(controller.status().then((report) => report.daemons)).resolves.toEqual([
       {
         workspaceRoot: "/alpha",
         state: "starting",
@@ -887,7 +887,7 @@ describe("daemon registry", () => {
       { processTerminator: new ControllerTerminator([401]) },
     );
 
-    await expect(controller.status()).resolves.toEqual([
+    await expect(controller.status().then((report) => report.daemons)).resolves.toEqual([
       {
         workspaceRoot: "/repo",
         state: "unresponsive",

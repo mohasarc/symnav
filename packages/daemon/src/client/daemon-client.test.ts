@@ -1,3 +1,4 @@
+import { DaemonProcessLifetimeCreationError } from "../process/process-lifetime-creation-error.js";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { randomUUID } from "node:crypto";
 import { PosixDaemonProcessLifetime } from "../process/posix-process-lifetime.js";
@@ -26,6 +27,10 @@ import {
 } from "../transport/protocol.js";
 import { DaemonTransportError } from "../transport/transport-error.js";
 import { DaemonClientRuntime as DaemonClient } from "./daemon-client-runtime.js";
+import { DaemonFailureJournal } from "../diagnostics/failure-journal.js";
+import { DaemonLogger } from "../diagnostics/logger.js";
+import type { DaemonFailureEvent } from "../daemon-failure.js";
+import { NodeDaemonProcessTerminator } from "../process/process-launcher.js";
 
 const success: DaemonExecutorExecutionResult = {
   exitCode: 0,
@@ -33,6 +38,220 @@ const success: DaemonExecutorExecutionResult = {
 };
 
 describe("DaemonClient execution", () => {
+  it("journals proven starting-process death before cleanup and retriggers cold execution without fallback", async () => {
+    const record = daemonRecord({ state: "starting" });
+    const harness = new ClientHarness({ record });
+    vi.spyOn(NodeDaemonProcessTerminator.prototype, "hasExited").mockReturnValue(true);
+    vi.mocked(DaemonRecordObserver.prototype.observeIdentity).mockImplementation(
+      async (record) => ({ kind: "exited", record }),
+    );
+    harness.removeIfProcess.mockImplementation(() => {
+      expect(harness.failureEvents.map((event) => event.kind)).toEqual(["startup-failure"]);
+      return true;
+    });
+    expect((await harness.client.execute(harness.request())).mode).toBe("cold");
+    expect(harness.localRequests[0]).toMatchObject({ executionMode: "cold" });
+    expect(harness.failureEvents).toEqual([
+      expect.objectContaining({
+        kind: "startup-failure",
+        instanceId: record.instanceId,
+        failure: expect.objectContaining({ reason: "process-terminated" }),
+      }),
+    ]);
+    expect(harness.removeIfProcess).toHaveBeenCalledOnce();
+    expect(harness.trigger).toHaveBeenCalledOnce();
+    expect(harness.observe).not.toHaveBeenCalled();
+  });
+
+  it.each(["journal", "cleanup", "replacement"] as const)(
+    "keeps dead-starting recovery cold when %s prevents safe cleanup",
+    async (failurePoint) => {
+      const harness = new ClientHarness({ record: daemonRecord({ state: "starting" }) });
+      vi.spyOn(NodeDaemonProcessTerminator.prototype, "hasExited").mockReturnValue(true);
+      vi.mocked(DaemonRecordObserver.prototype.observeIdentity).mockImplementation(
+        async (record) => ({ kind: "exited", record }),
+      );
+      const stateWriteFailed = vi.fn();
+      const failure = Object.assign(new Error("denied"), {
+        code: "EACCES",
+        syscall: "write",
+        path: "/state/history",
+      });
+      if (failurePoint === "journal")
+        vi.mocked(DaemonFailureJournal.prototype.record).mockRejectedValue(failure);
+      else if (failurePoint === "cleanup")
+        harness.removeIfProcess.mockImplementation(() => {
+          throw failure;
+        });
+      else harness.removeIfProcess.mockReturnValue(false);
+
+      expect((await harness.client.execute({ ...harness.request(), stateWriteFailed })).mode).toBe(
+        "cold",
+      );
+      expect(harness.trigger).not.toHaveBeenCalled();
+      expect(harness.warmRequests).toEqual([]);
+      if (failurePoint === "replacement") expect(stateWriteFailed).not.toHaveBeenCalled();
+      else {
+        expect(stateWriteFailed).toHaveBeenCalledOnce();
+        expect(harness.localRequests[0]).toMatchObject({ telemetryEnabled: false });
+      }
+      if (failurePoint === "journal") {
+        expect(harness.removeIfProcess).not.toHaveBeenCalled();
+        expect(DaemonFailureJournal.prototype.record).toHaveBeenCalledOnce();
+      }
+    },
+  );
+
+  it("counts one actual local fallback with its original connection OS cause", async () => {
+    const cause = Object.assign(new Error("secret"), { code: "ECONNRESET" });
+    const harness = new ClientHarness({
+      warmFailure: new DaemonTransportError(
+        "unreachable",
+        "not-submitted",
+        "secret",
+        undefined,
+        undefined,
+        cause,
+      ),
+    });
+    expect((await harness.client.execute(harness.request())).mode).toBe("fallback");
+    expect(harness.failureEvents).toEqual([
+      expect.objectContaining({
+        kind: "fallback",
+        requestId: expect.any(String),
+        failure: expect.objectContaining({
+          phase: "endpoint connect",
+          reason: "daemon-connection-reset",
+          osCode: "ECONNRESET",
+        }),
+      }),
+    ]);
+  });
+
+  it("records proven daemon death independently of the one local fallback", async () => {
+    const harness = new ClientHarness({ observationKind: "exited" });
+    expect((await harness.client.execute(harness.request())).mode).toBe("fallback");
+    expect(harness.failureEvents.map((event) => event.kind)).toEqual(["termination", "fallback"]);
+    expect(harness.failureEvents[0]).toMatchObject({
+      instanceId: daemonRecord().instanceId,
+      failure: expect.objectContaining({ reason: "process-terminated" }),
+    });
+  });
+
+  it("records accepted transfer failure diagnostics without counting a fallback or replaying work", async () => {
+    const cause = Object.assign(new Error("secret transfer"), { code: "ECONNRESET" });
+    const harness = new ClientHarness({
+      warmFailure: new DaemonTransportError(
+        "closed",
+        "accepted",
+        "secret",
+        undefined,
+        undefined,
+        cause,
+      ),
+    });
+    expect((await harness.client.execute(harness.request())).mode).toBe("warm");
+    expect(harness.localRequests).toEqual([]);
+    expect(harness.failureEvents).toEqual([]);
+    expect(DaemonLogger.prototype.record).toHaveBeenCalledWith(
+      expect.objectContaining({
+        kind: "failure",
+        failure: expect.objectContaining({
+          phase: "transfer",
+          reason: "transfer-failed",
+          osCode: "ECONNRESET",
+        }),
+      }),
+    );
+  });
+
+  it.each(["absent", "starting"] as const)(
+    "does not count cold %s execution as fallback",
+    async (state) => {
+      const harness = new ClientHarness({
+        record: state === "absent" ? undefined : daemonRecord({ state: "starting" }),
+      });
+      expect((await harness.client.execute(harness.request())).mode).toBe("cold");
+      expect(harness.failureEvents.filter((event) => event.kind === "fallback")).toEqual([]);
+    },
+  );
+
+  it("retains failed background startup without changing cold output", async () => {
+    const harness = new ClientHarness({ record: undefined });
+    harness.trigger.mockRejectedValue(Object.assign(new Error("secret spawn"), { code: "EACCES" }));
+    expect((await harness.client.execute(harness.request())).mode).toBe("cold");
+    await vi.waitFor(() =>
+      expect(harness.failureEvents).toEqual([
+        expect.objectContaining({
+          kind: "startup-failure",
+          failure: expect.objectContaining({
+            phase: "process spawn",
+            reason: "process-spawn-failed",
+            osCode: "EACCES",
+          }),
+        }),
+      ]),
+    );
+  });
+
+  it.each(["EACCES", undefined])(
+    "retains nested connection lifetime creation failure with optional errno %s",
+    async (osCode) => {
+      const original = Object.assign(new Error("reader unavailable"), {
+        path: "/state/process-lifetimes/reader.fifo",
+        ...(osCode === undefined ? {} : { code: osCode }),
+      });
+      const lifetimeFailure = new DaemonProcessLifetimeCreationError(original);
+      const nested = new Error("connection setup failed", { cause: lifetimeFailure });
+      const failure = new DaemonTransportError(
+        "unreachable",
+        "not-submitted",
+        "connection failed",
+        undefined,
+        undefined,
+        nested,
+      );
+      const harness = new ClientHarness({ warmFailure: failure });
+      const stateWriteFailed = vi.fn();
+      await expect(
+        harness.client.execute({ ...harness.request(), stateWriteFailed }),
+      ).resolves.toEqual({ mode: "fallback", result: success });
+      expect(harness.failureEvents).toEqual([
+        expect.objectContaining({
+          kind: "fallback",
+          failure: {
+            phase: "endpoint create",
+            reason: "endpoint-create-failed",
+            timestamp: expect.any(Number),
+            ...(osCode === undefined ? {} : { osCode }),
+          },
+        }),
+      ]);
+      expect(lifetimeFailure).toMatchObject({ cause: original, path: original.path, code: osCode });
+      expect(stateWriteFailed).not.toHaveBeenCalled();
+      expect(harness.localRequests[0]).toMatchObject({ telemetryEnabled: true });
+      expect(harness.localRequests).toHaveLength(1);
+    },
+  );
+
+  it("observes journal write failure and disables fallback telemetry without recursive journal writes", async () => {
+    const harness = new ClientHarness({ observationKind: "incompatible" });
+    const stateWriteFailed = vi.fn();
+    vi.mocked(DaemonFailureJournal.prototype.record).mockRejectedValue(
+      Object.assign(new Error("denied"), {
+        code: "EACCES",
+        syscall: "write",
+        path: "/state/history",
+      }),
+    );
+    expect((await harness.client.execute({ ...harness.request(), stateWriteFailed })).mode).toBe(
+      "fallback",
+    );
+    expect(stateWriteFailed).toHaveBeenCalledTimes(1);
+    expect(harness.localRequests[0]).toMatchObject({ telemetryEnabled: false });
+    expect(DaemonFailureJournal.prototype.record).toHaveBeenCalledTimes(1);
+    expect(harness.trigger).not.toHaveBeenCalled();
+  });
   it.each(["not-submitted", "submitted-unconfirmed", "accepted"] as const)(
     "reports a %s write denial without replaying uncertain work",
     async (delivery) => {
@@ -567,6 +786,7 @@ interface ClientHarnessOptions {
 }
 
 class ClientHarness {
+  readonly failureEvents: DaemonFailureEvent[] = [];
   readonly executorFactory = vi.fn();
   readonly executors: DaemonExecutor[] = [];
   readonly localRequests: DaemonExecutorRequest[] = [];
@@ -578,6 +798,15 @@ class ClientHarness {
   readonly client: DaemonClient;
 
   constructor(options: ClientHarnessOptions) {
+    vi.spyOn(NodeDaemonProcessTerminator.prototype, "hasExited").mockReturnValue(false);
+    vi.spyOn(DaemonRecordObserver.prototype, "observeIdentity").mockImplementation(
+      async (record) => ({ kind: "authenticated", record }),
+    );
+    vi.spyOn(DaemonFailureJournal.prototype, "record").mockImplementation(async (event) => {
+      this.failureEvents.push(event);
+    });
+    vi.spyOn(DaemonLogger.prototype, "record").mockImplementation(() => undefined);
+    vi.spyOn(DaemonLogger.prototype, "flush").mockResolvedValue(undefined);
     this.registryRead.mockImplementation(() => {
       if (options.readFailure !== undefined) throw options.readFailure;
       return Object.hasOwn(options, "record") ? options.record : daemonRecord();

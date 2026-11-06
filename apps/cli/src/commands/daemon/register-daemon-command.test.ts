@@ -9,7 +9,7 @@ import type {
   DaemonControlRequest,
   DaemonStartResult,
   DaemonStopResult,
-  RunningDaemonStatus,
+  DaemonStatusReport,
 } from "@symnav/daemon";
 import { DaemonLifecycleRenderer } from "@symnav/renderer";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -25,7 +25,7 @@ class CommandExit extends Error {
   }
 }
 
-type ControlResult = DaemonStartResult | readonly RunningDaemonStatus[] | DaemonStopResult;
+type ControlResult = DaemonStartResult | DaemonStatusReport | DaemonStopResult;
 
 class DaemonCommandHarness {
   readonly stateDirectory = mkdtempSync(join(tmpdir(), "symnav-daemon-command-state-"));
@@ -130,9 +130,16 @@ describe("registerDaemonCommand", () => {
     "writes unchanged status renderer bytes with json=%s",
     async (json, method, bytes) => {
       const harness = createHarness(harnesses, false);
-      const results = [
-        { state: "starting", workspaceRoot: harness.workspaceRoot, pid: 11, startupElapsedMs: 12 },
-      ] as const;
+      const results = {
+        daemons: [
+          {
+            state: "starting",
+            workspaceRoot: harness.workspaceRoot,
+            pid: 11,
+            startupElapsedMs: 12,
+          },
+        ],
+      } as const;
       harness.control.mockResolvedValue(results);
       const render = vi.spyOn(DaemonLifecycleRenderer, method).mockReturnValue(bytes);
 

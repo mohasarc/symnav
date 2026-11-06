@@ -1254,6 +1254,24 @@ describe("DaemonProcessCoordinator requests", () => {
     );
   });
 
+  it("does not label failed startup authorization as an attempted state write", async () => {
+    const { daemon, harness } = RequestHarness.create(new ImmediateExecutor());
+    harnesses.push(harness);
+    vi.spyOn(harness.registry, "claimStartupForDaemon").mockImplementation(() => {
+      throw new Error("Authorization failed");
+    });
+    await expect(daemon.start()).rejects.toThrow("Authorization failed");
+    expect(harness.logEvents()).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          kind: "failure",
+          operation: "start",
+          failure: expect.objectContaining({ phase: "warm-up", reason: "startup-failed" }),
+        }),
+      ]),
+    );
+  });
+
   it("logs startup failures before rethrowing them", async () => {
     const { daemon, harness, lease } = RequestHarness.create(new ImmediateExecutor());
     harnesses.push(harness);
@@ -1311,7 +1329,12 @@ describe("DaemonProcessCoordinator requests", () => {
     const harness = await RequestHarness.start(undefined, { navigationWorker: worker });
     harnesses.push(harness);
 
-    worker.fail({ generation: worker.generation, cause: "error", errorName: "WorkerError" });
+    worker.fail({
+      generation: worker.generation,
+      cause: "error",
+      errorName: "WorkerError",
+      osCode: "EIO",
+    });
 
     await expect(harness.exited).resolves.toBe(0);
     expect(harness.transport.isListening).toBe(false);
@@ -1323,6 +1346,11 @@ describe("DaemonProcessCoordinator requests", () => {
         expect.objectContaining({
           kind: "failure",
           operation: "worker-exit",
+          failure: expect.objectContaining({
+            phase: "worker",
+            reason: "worker-failed",
+            osCode: "EIO",
+          }),
           failureCode: "worker-exit",
           errorName: "UnknownError",
         }),
@@ -2389,6 +2417,7 @@ class RecordingExecutor implements DaemonCommandExecutor {
 }
 
 class SerializedExecutor implements DaemonCommandExecutor {
+  private readonly startWaiters = new Map<number, (() => void)[]>();
   private readonly results: (() => void)[] = [];
   readonly requests: CliExecutionRequest[] = [];
 
@@ -2398,12 +2427,19 @@ class SerializedExecutor implements DaemonCommandExecutor {
 
   async execute(request: CliExecutionRequest): Promise<CommandExecutionResult> {
     this.requests.push(request);
-    await new Promise<void>((resolve) => this.results.push(resolve));
+    await new Promise<void>((resolve) => {
+      this.results.push(resolve);
+      for (const started of this.startWaiters.get(this.results.length) ?? []) started();
+      this.startWaiters.delete(this.results.length);
+    });
     return emptyResult();
   }
 
-  async started(count: number): Promise<void> {
-    while (this.results.length < count) await Promise.resolve();
+  started(count: number): Promise<void> {
+    if (this.results.length >= count) return Promise.resolve();
+    return new Promise((resolve) =>
+      this.startWaiters.set(count, [...(this.startWaiters.get(count) ?? []), resolve]),
+    );
   }
 
   complete(index: number): void {

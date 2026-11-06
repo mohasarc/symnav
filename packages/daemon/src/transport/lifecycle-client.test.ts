@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { DaemonPolicy } from "@symnav/daemon";
 import { DaemonLifecycleClient } from "./lifecycle-client.js";
 import type {
@@ -15,6 +15,18 @@ import type { DaemonConnectionClient, DaemonConnection } from "./contracts.js";
 import { DaemonWireCodec } from "./wire-codec.js";
 
 describe("DaemonLifecycleClient", () => {
+  it("preserves original timeout OS evidence", async () => {
+    const harness = LifecycleClientHarness.responding(pongResponse());
+    const error = Object.assign(new Error("secret timeout"), { code: "ETIMEDOUT" });
+    vi.spyOn(harness.sockets, "connect").mockRejectedValue(error);
+    await expect(
+      harness.client.request("daemon-endpoint", {
+        kind: "ping",
+        protocolVersion: DAEMON_PROTOCOL_VERSION,
+        instanceId: "instance",
+      }),
+    ).rejects.toMatchObject({ code: "timeout", cause: error });
+  });
   it.each([
     [
       {

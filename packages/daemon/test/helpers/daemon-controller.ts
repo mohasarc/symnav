@@ -12,7 +12,7 @@ import type {
 } from "../../src/transport/contracts.js";
 
 interface TestDaemonControllerOptions {
-  readonly policy?: Pick<DaemonPolicyValues, "startup" | "shutdown">;
+  readonly policy?: Pick<DaemonPolicyValues, "startup" | "shutdown" | "diagnostics">;
   readonly now?: () => number;
   readonly stopTimeoutMs?: number;
   readonly pollIntervalMs?: number;

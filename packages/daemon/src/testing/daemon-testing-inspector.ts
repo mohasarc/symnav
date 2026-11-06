@@ -3,6 +3,9 @@ import type {
   DaemonProcessLifetimeIdentity,
   DaemonProcessLifetimeObservation,
 } from "../process/process-lifetime-identity.js";
+import { DaemonFailureJournal } from "../diagnostics/failure-journal.js";
+import type { DaemonFailureEvent } from "../daemon-failure.js";
+import { NodeDaemonClock } from "../lifecycle/daemon-clock.js";
 import { lstatSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 import type { DaemonDiagnosticValue } from "../daemon-diagnostics.js";
@@ -115,6 +118,22 @@ export class DaemonTestingInspector {
     const identity = DaemonWorkspaceIdentity.from(canonicalWorkspaceRoot, this.#stateDirectory);
     const events = DaemonTestingInspector.diagnosticEvents(identity);
     return { events: events.slice(cursor), nextCursor: events.length };
+  }
+
+  public async readFailures(
+    canonicalWorkspaceRoot: string,
+  ): Promise<readonly DaemonFailureEvent[]> {
+    try {
+      const events = await new DaemonFailureJournal(
+        this.#stateDirectory,
+        DaemonPolicy.currentSystem().values.diagnostics,
+        new NodeDaemonClock(),
+      ).retained();
+      return events.filter((event) => event.workspaceRoot === canonicalWorkspaceRoot);
+    } catch (error) {
+      if (["ENOENT", "ENOTDIR"].includes(DaemonTestingInspector.errorCode(error) ?? "")) return [];
+      throw error;
+    }
   }
 
   completionSpoolUsage(canonicalWorkspaceRoot: string): DaemonTestingSpoolUsage {

@@ -20,6 +20,24 @@ const request: DaemonExecutorRequest = {
 describe("NodeDaemonNavigationWorker", () => {
   const executorModuleUrl = "file:///absolute/symnav/daemon-executor.js";
 
+  it("retains original initialization OS codes across the worker boundary", async () => {
+    const directory = mkdtempSync(join(tmpdir(), "symnav-worker-os-code-"));
+    const modulePath = join(directory, "executor.mjs");
+    writeFileSync(
+      modulePath,
+      'export const createDaemonExecutor = () => { throw Object.assign(new Error("secret path"), {code: "EACCES"}); };',
+    );
+    const worker = createInjectedWorker(new URL(`file://${modulePath}`).href, directory);
+    try {
+      await expect(worker.start(fixturePath("overview-cases"))).rejects.toMatchObject({
+        cause: { code: "EACCES" },
+      });
+    } finally {
+      await worker.terminate();
+      rmSync(directory, { recursive: true, force: true });
+    }
+  });
+
   it("passes the exact complete policy to worker data", async () => {
     const directory = mkdtempSync(join(tmpdir(), "symnav-worker-policy-"));
     const policyPath = join(directory, "policy.json");

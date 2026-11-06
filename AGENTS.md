@@ -7,6 +7,12 @@
 - [`docs/navigation.md`](docs/navigation.md) — navigation commands, targets, output, errors.
 - [`docs/daemon.md`](docs/daemon.md) — workspace daemon, sandbox support, `setup`, `doctor`. Policy values in [`docs/daemon-policy.md`](docs/daemon-policy.md).
 
+## How we work
+
+- Rules live in `.agents/rules/` (coding style, commits, PRs, writing voice) and skills in `.agents/skills/`.
+- Project-specific skills end in `+` and are committed, plus `symnav` and `symnav-benchmark-analysis`. The rest are copied from mo-skills and gitignored.
+- Keep this file short. Add a fact here only when an agent would otherwise get it wrong.
+
 ## Repo layout
 
 - `apps/cli` — the `symnav` binary. Wires Commander, owns the user-facing CLI surface, depends on the five production libraries below.

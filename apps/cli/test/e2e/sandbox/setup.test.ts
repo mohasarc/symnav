@@ -12,6 +12,7 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
+import { getStaticTOMLValue, parseTOML } from "toml-eslint-parser";
 import { runSymnavBinary } from "@symnav/testing";
 
 class SetupHarness {
@@ -85,7 +86,10 @@ describe("symnav setup codex", () => {
       `Granted write access to ${harness.state} in ${harness.configurationPath}\nRestart Codex sessions to apply.\nCodex was not found on PATH; the grant applies when installed.\n`,
     );
     expect(result.stderr).toBe("");
-    expect(readFileSync(harness.configurationPath, "utf8")).toContain(harness.state);
+    const configuration = getStaticTOMLValue(
+      parseTOML(readFileSync(harness.configurationPath, "utf8")),
+    ) as { sandbox_workspace_write: { writable_roots: string[] } };
+    expect(configuration.sandbox_workspace_write.writable_roots).toEqual([harness.state]);
   });
 
   it.each([["setup"], ["setup", "codex", "extra"], ["setup", "unknown"]].map((argv) => ({ argv })))(
@@ -139,7 +143,10 @@ describe("symnav setup codex", () => {
     expect(result.stderr).toBe("");
     expect(readFileSync(harness.state, "utf8")).toBe("blocked state");
     expect(readFileSync(projectConfig, "utf8")).toBe("project config stays unchanged");
-    expect(readFileSync(harness.configurationPath, "utf8")).toContain(harness.state);
+    const configuration = getStaticTOMLValue(
+      parseTOML(readFileSync(harness.configurationPath, "utf8")),
+    ) as { sandbox_workspace_write: { writable_roots: string[] } };
+    expect(configuration.sandbox_workspace_write.writable_roots).toEqual([harness.state]);
   });
 });
 

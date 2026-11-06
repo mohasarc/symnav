@@ -8,7 +8,7 @@ import {
   type ParseError,
 } from "jsonc-parser";
 import { lstat } from "node:fs/promises";
-import { isAbsolute, join, relative, resolve, sep } from "node:path";
+import { isAbsolute, join, parse, relative, resolve, sep } from "node:path";
 import {
   AgentSandboxConfiguration,
   type AgentConfigurationLocations,
@@ -96,7 +96,10 @@ export class ClaudeCodeSandboxConfiguration extends AgentSandboxConfiguration {
   }
 
   private subtreePath(path: string): string {
-    return path.replace(/\/\*\*$/u, "") || "/";
+    if (!path.endsWith("/**") && !path.endsWith(`${sep}**`)) return path;
+    const subtree = path.slice(0, -3);
+    const root = parse(path).root;
+    return subtree.length < root.length ? root : subtree;
   }
 
   private deniesState(path: string, stateDirectory: string): boolean {

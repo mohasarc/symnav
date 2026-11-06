@@ -17,3 +17,4 @@ coverage/
 artifacts/
 *.tsbuildinfo
 .agents/feedback.md
+.DS_Store

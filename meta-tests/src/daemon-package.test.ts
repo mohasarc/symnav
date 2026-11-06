@@ -41,7 +41,7 @@ class DaemonPackageMetadata {
   }
 
   public static policyDocument(): string {
-    return readFileSync(join(DaemonPackageMetadata.repoRoot, "plans/005/daemon-policy.md"), "utf8");
+    return readFileSync(join(DaemonPackageMetadata.repoRoot, "docs/daemon-policy.md"), "utf8");
   }
 
   public static appProductionSources(): string {

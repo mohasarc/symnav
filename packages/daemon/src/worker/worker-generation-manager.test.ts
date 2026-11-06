@@ -11,6 +11,93 @@ import type {
 import { DaemonWorkerGenerationManager } from "./worker-generation-manager.js";
 
 describe("DaemonWorkerGenerationManager", () => {
+  it.each(["close", "terminate"] as const)(
+    "does not activate a startup report after %s while readiness is pending",
+    async (action) => {
+      const worker = new ControlledNavigationWorker(1);
+      const manager = createManager({ initialWorker: worker });
+      const starting = manager.start();
+      const activating = manager.activateReadiness();
+      const startupFailure = expect(starting).rejects.toThrow("stopping");
+      const activationFailure = expect(activating).rejects.toThrow("stopping");
+      await manager[action]();
+      await Promise.all([startupFailure, activationFailure]);
+      worker.completeReady(3);
+      expect(manager.snapshot.ready).toBe(false);
+    },
+  );
+
+  it("activates only the current generation across multiple replacements after initial readiness", async () => {
+    const workers = [1, 2, 3].map((generation) => new ControlledNavigationWorker(generation));
+    const manager = createManager({ createWorker: (generation) => workers[generation - 1]! });
+    const starting = manager.start();
+    workers[0]!.completeReady(3);
+    await starting;
+    const firstReplacement = manager.replace("hard-pressure");
+    workers[1]!.completeReady(7);
+    await firstReplacement;
+    const secondReplacement = manager.replace("hard-pressure");
+    const activating = manager.activateReadiness();
+    workers[2]!.completeReady(11);
+    await secondReplacement;
+    await expect(activating).resolves.toMatchObject({ generation: 3, fileCount: 11 });
+    expect(manager.snapshot).toEqual({ generation: 3, fileCount: 11, ready: true });
+  });
+
+  it("propagates the current replacement startup failure to activation", async () => {
+    const initial = new ControlledNavigationWorker(1);
+    const replacement = new ControlledNavigationWorker(2);
+    const manager = createManager({ initialWorker: initial, createWorker: () => replacement });
+    const starting = manager.start();
+    initial.completeReady(3);
+    await starting;
+    const replacing = manager.replace("hard-pressure");
+    const activating = Promise.resolve().then(() => manager.activateReadiness());
+    replacement.rejectStart(new Error("current startup failed"));
+    await expect(replacing).rejects.toThrow("current startup failed");
+    await expect(activating).rejects.toThrow("current startup failed");
+    expect(manager.snapshot.ready).toBe(false);
+  });
+
+  it("rejects startup when the current replacement fails while the obsolete startup is unsettled", async () => {
+    const initial = new ControlledNavigationWorker(1);
+    const replacement = new ControlledNavigationWorker(2);
+    const manager = createManager({ initialWorker: initial, createWorker: () => replacement });
+    const starting = manager.start();
+    const failure = expect(starting).rejects.toThrow("current startup failed");
+    const replacing = manager.replace("hard-pressure");
+    replacement.rejectStart(new Error("current startup failed"));
+    await expect(replacing).rejects.toThrow("current startup failed");
+    await failure;
+    expect(manager.snapshot.ready).toBe(false);
+  });
+
+  it.each(["old-first", "replacement-first", "obsolete-rejection"] as const)(
+    "follows current startup readiness through %s completion",
+    async (order) => {
+      const initial = new ControlledNavigationWorker(1);
+      const replacement = new ControlledNavigationWorker(2);
+      const manager = createManager({ initialWorker: initial, createWorker: () => replacement });
+      const starting = manager.start();
+      const settled = vi.fn();
+      void starting.then(settled, settled);
+      const replacing = manager.replace("hard-pressure");
+      if (order === "old-first") {
+        initial.completeReady(3);
+        await vi.waitFor(() => expect(manager.snapshot.generation).toBe(2));
+        expect(settled).not.toHaveBeenCalled();
+      } else if (order === "obsolete-rejection") {
+        initial.rejectStart(new Error("intentionally terminated"));
+      }
+      replacement.completeReady(11);
+      await replacing;
+      await vi.waitFor(() => expect(settled).toHaveBeenCalledOnce());
+      await expect(starting).resolves.toMatchObject({ generation: 2, fileCount: 11 });
+      initial.rejectStart(new Error("late obsolete termination"));
+      expect(manager.snapshot).toEqual({ generation: 2, ready: false, fileCount: 11 });
+    },
+  );
+
   it("keeps protocol initialization distinct from externally activated readiness", async () => {
     const worker = new ControlledNavigationWorker(1);
     const manager = createManager({ createWorker: () => worker });
@@ -28,7 +115,10 @@ describe("DaemonWorkerGenerationManager", () => {
       fileCount: 7,
     });
     expect(manager.snapshot).toEqual({ generation: 1, ready: false, fileCount: 7 });
-    manager.activateReadiness();
+    await expect(manager.activateReadiness()).resolves.toMatchObject({
+      generation: 1,
+      fileCount: 7,
+    });
     expect(manager.snapshot).toEqual({ generation: 1, ready: true, fileCount: 7 });
     expect(Object.isFrozen(manager.snapshot)).toBe(true);
   });
@@ -107,7 +197,7 @@ describe("DaemonWorkerGenerationManager", () => {
     const starting = manager.start();
     initial.completeReady(7);
     await starting;
-    manager.activateReadiness();
+    await manager.activateReadiness();
     operations.length = 0;
 
     const first = manager.replace("hard-pressure");

@@ -20,6 +20,7 @@ import type {
 } from "../transport/protocol.js";
 import { DAEMON_PROTOCOL_VERSION, DAEMON_RECORD_SCHEMA_VERSION } from "../transport/protocol.js";
 import { DaemonPolicyCodec } from "../daemon-policy.js";
+import { DaemonTestingInspector } from "../testing/daemon-testing-inspector.js";
 import {
   CompletionSpoolCapacityError,
   NodeCompletionSpoolStorage,
@@ -56,6 +57,99 @@ describe("DaemonProcessCoordinator requests", () => {
   afterEach(async () => {
     const harnessesToDispose = harnesses.splice(0);
     await Promise.all(harnessesToDispose.map((harness) => harness.dispose()));
+  });
+
+  it("publishes the replacement readiness after warm-up resource sampling", async () => {
+    const policy = DaemonResourcePolicy.fromSystemMemory(1024 * 1024 * 1024);
+    const workers: ExecutorNavigationWorker[] = [];
+    let resolveReplacement!: (report: DaemonNavigationWorkerResponse) => void;
+    const replacementReady = new Promise<DaemonNavigationWorkerResponse>((resolve) => {
+      resolveReplacement = resolve;
+    });
+    const { daemon, harness } = RequestHarness.create(undefined, {
+      resourcePolicy: policy,
+      residentMemoryBytes: () => (workers.length === 1 ? policy.record.hardProcessRssBytes + 1 : 0),
+      navigationWorkerFactory: (generation) => {
+        const worker = new ExecutorNavigationWorker(new ImmediateExecutor(), generation);
+        workers.push(worker);
+        if (generation === 2) vi.spyOn(worker, "start").mockReturnValue(replacementReady);
+        vi.spyOn(worker, "execute");
+        return worker;
+      },
+    });
+    harnesses.push(harness);
+    const write = vi.spyOn(harness.registry, "writeIfStartupOwner");
+    const starting = daemon.start();
+    await vi.waitFor(() => expect(workers).toHaveLength(2));
+    expect.soft(harness.registry.read(harness.identity)?.state).toBe("starting");
+    expect.soft(harness.registry.startupOwner(harness.identity)?.ownerKind).toBe("daemon");
+    expect
+      .soft(harness.logEvents().filter((event) => event.kind === "startup-completed"))
+      .toEqual([]);
+    resolveReplacement({
+      kind: "ready",
+      generation: 2,
+      fileCount: 11,
+      refresh: { added: 11, changed: 0, removed: 0, unchanged: 0 },
+      startupDurations: { discoveryMs: 2, indexingMs: 3, totalMs: 5 },
+    });
+    await starting;
+    expect(harness.registry.read(harness.identity)).toMatchObject({
+      state: "ready",
+      fileCount: 11,
+    });
+    expect(write.mock.calls.filter(([, record]) => record.state === "ready")).toHaveLength(1);
+    expect(harness.registry.startupOwner(harness.identity)).toBeUndefined();
+    expect(harness.logEvents().filter((event) => event.kind === "startup-completed")).toEqual([
+      expect.objectContaining({ workerGeneration: 2, fileCount: 11, totalMs: 5 }),
+    ]);
+    expect(
+      await new DaemonTestingInspector(harness.stateDirectory).readFailures(harness.workspaceRoot),
+    ).toEqual([]);
+    await expect(harness.execute("replacement-warm")).resolves.toMatchObject({
+      kind: "result-end",
+    });
+    expect(workers[0]!.execute).not.toHaveBeenCalled();
+    expect(workers[1]!.execute).toHaveBeenCalledOnce();
+  });
+
+  it("records a current warm-up replacement failure without publishing startup completion", async () => {
+    const policy = DaemonResourcePolicy.fromSystemMemory(1024 * 1024 * 1024);
+    const { daemon, harness } = RequestHarness.create(undefined, {
+      resourcePolicy: policy,
+      residentMemoryBytes: () => policy.record.hardProcessRssBytes + 1,
+      navigationWorkerFactory: (generation) => {
+        const worker = new ExecutorNavigationWorker(new ImmediateExecutor(), generation);
+        if (generation === 2)
+          vi.spyOn(worker, "start").mockRejectedValue(
+            Object.assign(new Error("replacement failed"), { code: "EIO" }),
+          );
+        return worker;
+      },
+    });
+    harnesses.push(harness);
+    await expect(daemon.start()).rejects.toThrow("replacement failed");
+    expect(harness.registry.read(harness.identity)).toBeUndefined();
+    expect(harness.registry.startupOwner(harness.identity)).toBeUndefined();
+    expect(
+      harness
+        .logEvents()
+        .filter((event) => event.kind === "ready" || event.kind === "startup-completed"),
+    ).toEqual([]);
+    expect(
+      await new DaemonTestingInspector(harness.stateDirectory).readFailures(harness.workspaceRoot),
+    ).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          kind: "startup-failure",
+          failure: expect.objectContaining({
+            phase: "warm-up",
+            reason: "startup-failed",
+            osCode: "EIO",
+          }),
+        }),
+      ]),
+    );
   });
 
   it("authorizes startup before listening and publishes readiness", async () => {

@@ -33,7 +33,9 @@ Open work is tracked in GitHub issues, grouped under parent issues #163 (v1 rele
 Before opening or pushing to a PR, run the full CI-parity sequence locally on a clean tree:
 
 ```
-pnpm install --frozen-lockfile && pnpm build && pnpm test && pnpm lint && pnpm typecheck
+pnpm install --frozen-lockfile && pnpm build && pnpm test \
+  && pnpm --filter symnav test:e2e:cold && pnpm --filter symnav test:e2e:warm \
+  && pnpm lint && pnpm typecheck
 ```
 
 The `--frozen-lockfile` install is load-bearing: it's the only step that detects lockfile drift from `package.json` changes. A plain `pnpm install` (or none at all) silently tolerates stale `node_modules` symlinks left over from earlier installs, which can hide a missing dependency declaration that CI will then fail on. Treat anything short of this sequence as not-yet-verified.

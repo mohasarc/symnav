@@ -1,10 +1,8 @@
 # Navigation
 
-What the navigation CLI does, from the user's side. No implementation choices here. Daemon, sandbox `setup`, and `doctor` behavior lives in [`daemon.md`](daemon.md). Open work is tracked in GitHub issues.
-
 ## Goal
 
-Agent-first code navigation for TypeScript that a human can also read directly. It replaces semantic misuse of text search. It does not replace `rg` for plain text search.
+Agent-first, language-agnostic code navigation by symbol that a human can also read directly. It replaces semantic misuse of text search.
 
 ## User
 
@@ -59,8 +57,6 @@ When input matches more than one thing, symnav lists the candidates and stops. I
 Other commands, covered in [`daemon.md`](daemon.md): `daemon start|status|stop`, `setup <agent>`, `doctor [agent]`.
 
 Global options: `--cwd <dir>`, `--no-warnings`, `-v/--version`. `--no-warnings` works in any argument position.
-
-Not built: `impact`, `history`, `diff`, `impls`, `search-text`. Use `graph` for impact and `rg` for text.
 
 Usage telemetry is shape-only and on by default. Set `SYMNAV_TELEMETRY=0` to turn it off.
 
@@ -402,10 +398,3 @@ src/dynamic.ts
         └── 14-16: dynamicBeta  [possible: dynamic dispatch: exact callee not statically resolvable]
             export function dynamicBeta(): number
 ```
-
-## Out of scope
-
-- Languages other than TypeScript. The backend interface in `@symnav/core` is where one would plug in.
-- `impact`, `history`, `diff`, `impls`, `search-text` commands.
-- Renderers other than text and JSON.
-- Uploading telemetry. It stays local and shape-only.

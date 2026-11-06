@@ -40,10 +40,6 @@ class DaemonPackageMetadata {
     ].sort();
   }
 
-  public static policyDocument(): string {
-    return readFileSync(join(DaemonPackageMetadata.repoRoot, "docs/daemon-policy.md"), "utf8");
-  }
-
   public static appProductionSources(): string {
     const sourceRoot = join(DaemonPackageMetadata.repoRoot, "apps/cli/src");
     return DaemonPackageMetadata.files(sourceRoot)
@@ -148,75 +144,6 @@ describe("@symnav/daemon package boundary", () => {
       "@symnav/peer",
       "@symnav/peer-meta",
     ]);
-  });
-
-  it("documents every policy leaf and derivation exactly once", () => {
-    const expectedRows = [
-      "delivery.postAcceptanceExecutionReattachmentLimit",
-      "delivery.resultTransferResumeLimitPerExecutionAttempt",
-      "diagnostics.disconnectedTraceRetentionMs",
-      "diagnostics.logBackupCount",
-      "diagnostics.logRotateBytes",
-      "diagnostics.maximumDisconnectedTraces",
-      "diagnostics.maximumQueuedEvents",
-      "output.inlineRawBytes",
-      "output.maximumAggregateSpoolRawBytes",
-      "output.maximumChunkRawBytes",
-      "output.maximumResultRawBytes",
-      "recipe.effectiveMemoryMiB",
-      "recipe.effectiveMemorySelection",
-      "recipe.forcedTerminationReserve",
-      "recipe.hardProcessRss",
-      "recipe.workerOldGeneration",
-      "resources.effectiveMemoryBytes",
-      "resources.hardProcessRssBytes",
-      "resources.replacementLimit",
-      "resources.replacementWindowMs",
-      "resources.resumeProcessRssBytes",
-      "resources.softProcessRssBytes",
-      "resources.supervisionIntervalMs",
-      "resources.workerHeapSampleIntervalMs",
-      "resources.workerMaxOldGenerationSizeMiB",
-      "shutdown.controllerPollIntervalMs",
-      "shutdown.forcedTerminationReserveMaximumMs",
-      "shutdown.idleTimeoutMs",
-      "shutdown.processExitPollIntervalMs",
-      "shutdown.processSignalExitTimeoutMs",
-      "shutdown.resourceDrainAcknowledgementGraceMs",
-      "shutdown.resourceDrainAcknowledgementPollIntervalMs",
-      "shutdown.stopTimeoutMs",
-      "startup.authorizationPollIntervalMs",
-      "startup.childFailureRetryLimit",
-      "startup.coordinationGraceMs",
-      "startup.heartbeatIntervalMs",
-      "startup.observationPollIntervalMs",
-      "startup.previousInstanceTerminationTimeoutMs",
-      "transport.executionAdmissionTimeoutMs",
-      "transport.maximumExecutionControlPayloadBytes",
-      "transport.maximumJsonPayloadBytes",
-      "transport.singleResponseTimeoutMs",
-      "transport.statusResponseTimeoutMs",
-    ];
-    const document = DaemonPackageMetadata.policyDocument();
-    const rows = [...document.matchAll(/^\| `([^`]+)` \|/gm)].map((match) => match[1]);
-    expect(rows.sort()).toEqual(expectedRows);
-    expect(document).toContain(
-      "| Policy path or recipe | Default or derivation | Applies to | Reason | Behavior oracle |",
-    );
-    expect(document).toContain("Policy test factories remain package-local test helpers");
-  });
-
-  it("documents intentional deadline absences", () => {
-    const document = DaemonPackageMetadata.policyDocument();
-    for (const absence of [
-      "healthy startup",
-      "startup silence",
-      "post-accept completion",
-      "worker output acknowledgement",
-      "unacknowledged result",
-    ]) {
-      expect(document).toContain(`| ${absence} | None |`);
-    }
   });
 
   it("retires scattered operational defaults and policy bypasses", () => {

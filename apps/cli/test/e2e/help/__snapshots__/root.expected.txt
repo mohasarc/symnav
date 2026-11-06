@@ -15,3 +15,5 @@ Commands:
                               references, and recent history
   graph [options] <target>    Show call paths around a symbol
   daemon                      Manage the workspace daemon
+  setup <agent>               grant Codex or Claude Code write access to the
+                              state directory

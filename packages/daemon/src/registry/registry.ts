@@ -359,12 +359,12 @@ export class DaemonRegistry {
       },
     );
     try {
-      renameSync(claimPath, identity.lockPath);
+      this.renamePath(claimPath, identity.lockPath);
       return new RegistryStartupLease(this, identity, owner);
     } catch (error) {
       rmSync(claimPath, { recursive: true, force: true });
-      if (DaemonRegistry.startupMutationClaimWasContended(error) || existsSync(identity.lockPath))
-        return undefined;
+      if (DaemonRegistry.startupClaimWasContended(error)) return undefined;
+      if (existsSync(identity.lockPath)) return undefined;
       throw error;
     }
   }
@@ -741,13 +741,13 @@ export class DaemonRegistry {
       return new RegistryStartupMutationLease(this, identity, owner);
     } catch (error) {
       rmSync(claimPath, { recursive: true, force: true });
-      if (DaemonRegistry.startupMutationClaimWasContended(error)) return undefined;
+      if (DaemonRegistry.startupClaimWasContended(error)) return undefined;
       if (existsSync(identity.startupMutationPath)) return undefined;
       throw error;
     }
   }
 
-  private static startupMutationClaimWasContended(error: unknown): boolean {
+  private static startupClaimWasContended(error: unknown): boolean {
     const code = DaemonRegistry.errorCode(error);
     return code === "EEXIST" || code === "ENOTEMPTY";
   }

@@ -1,560 +1,368 @@
-# Symnav Functional Spec
+# Navigation
+
+What the navigation CLI does, from the user's side. No implementation choices here. Daemon, sandbox `setup`, and `doctor` behavior lives in [`daemon.md`](daemon.md). Open work is tracked in GitHub issues.
 
 ## Goal
 
-Build an agent-first code discovery CLI that feels clean enough for a human to read directly. The tool should replace semantic misuse of text search, not replace `rg` for plain text search.
+Agent-first code navigation for TypeScript that a human can also read directly. It replaces semantic misuse of text search. It does not replace `rg` for plain text search.
 
-This spec defines product behavior only. It intentionally avoids implementation technology choices.
+## User
 
-## First-Class User
+The main user is a coding agent. Output is still human-readable by default:
 
-The first-class user is an agent.
+- concise, deterministic, non-interactive
+- Unicode tree characters, no ASCII fallback
+- no machine noise unless asked for
 
-Agents should still receive clean, human-readable output by default. JSON is optional, not the default.
+`--json` on every navigation command gives structured output instead.
 
-Default output should be:
+## Core guarantees
 
-- concise
-- deterministic
-- non-interactive
-- readable in a terminal
-- formatted with Unicode tree characters
-- free of machine-oriented noise unless requested
+### Current results only
 
-Structured output can exist behind:
+Every answer reflects the workspace at the moment the command runs. There's no stale-data mode. This holds whether the command runs locally or through the workspace daemon: both routes give the same stdout, stderr, and exit code.
 
-```bash
---json
-```
+### Workspace scope
 
-## Core Guarantees
-
-### Current Results Only
-
-The tool must never return stale navigation results.
-
-Functional rule:
+- The workspace is the nearest Git root at or above the current directory, or `--cwd <dir>`.
+- `.gitignore` decides which files are in scope. Ignored files are never returned, and there's no include-ignored override.
+- Nested Git repositories, worktrees, and submodules are separate workspaces. A parent workspace never traverses or returns their files.
 
 ```text
-All answers reflect the current workspace at command execution time.
+Cannot answer: ignored.ts is ignored by .gitignore.
+Cannot answer: vendor/package/src/index.ts belongs to nested Git workspace rooted at /repo/vendor/package, not selected workspace /repo; run from /repo/vendor/package or use --cwd /repo/vendor/package.
+Cannot answer: not in a git workspace (no .git found in or above /x).
+Cannot answer: foo.ts is outside the workspace rooted at /repo.
 ```
 
-If the tool cannot produce current results, it fails instead of returning stale data.
+### Ambiguity stops
 
-Example:
+When input matches more than one thing, symnav lists the candidates and stops. It never guesses, ranks, or picks a first result. There's no first-result override.
+
+### Exit and streams
+
+- Success: result on stdout, exit 0. An empty `resolve` or `refs` result is still success.
+- User-facing failure: one `Cannot answer: …` message on stderr, exit 1, nothing on stdout.
+- Warnings go to stderr as `symnav: warning: …` and never change stdout or the exit code. `--no-warnings` drops them.
+
+## Commands
+
+| Command            | Purpose                                                                   |
+| ------------------ | ------------------------------------------------------------------------- |
+| `overview <file>`  | Symbol and fold tree of one file                                          |
+| `resolve <query>`  | Find symbols and files by name                                            |
+| `def <target>`     | Where a symbol is defined                                                 |
+| `refs <target>`    | Every reference to a symbol                                               |
+| `context <target>` | Definition, direct callers and callees, reference summary, recent history |
+| `graph <target>`   | Multi-hop call paths                                                      |
+
+Other commands, covered in [`daemon.md`](daemon.md): `daemon start|status|stop`, `setup <agent>`, `doctor [agent]`.
+
+Global options: `--cwd <dir>`, `--no-warnings`, `-v/--version`. `--no-warnings` works in any argument position.
+
+Not built: `impact`, `history`, `diff`, `impls`, `search-text`. Use `graph` for impact and `rg` for text.
+
+Usage telemetry is shape-only and on by default. Set `SYMNAV_TELEMETRY=0` to turn it off.
+
+## Symbol targets
+
+`def`, `refs`, `context`, and `graph` take one positional target. Line numbers are output only; they're never accepted as targets. `--line` narrows targets (see below).
+
+### Canonical IDs
 
 ```text
-Cannot answer: current navigation data unavailable.
-```
-
-There is no stale-data override.
-
-### Ignored Files
-
-All commands operate only on non-ignored workspace files.
-
-Rules:
-
-- Project ignore files define which files are ignored within one workspace.
-- Nested Git repositories, worktrees, and submodules are separate workspace boundaries, not ignore rules.
-- Parent commands never traverse or return files from a nested workspace.
-- Ignored files are always out of scope.
-- There are no built-in ignore rules beyond project ignore behavior.
-- There is no include-ignored override.
-- There is no include-nested-workspaces override.
-- The tool does not mention ignored files unless the user directly queries an ignored path.
-
-Example:
-
-```text
-Cannot answer: path is ignored by project rules.
-```
-
-Directly querying a path owned by a nested workspace fails with guidance to select that workspace through the current directory or `--cwd`.
-
-### Ambiguity
-
-When input is ambiguous, the tool stops and shows candidates.
-
-It must not guess or recommend one candidate as the likely intended answer.
-
-Example:
-
-```text
-Ambiguous symbol: processPayment
-
-Candidates
-├── src/checkout/CheckoutService.ts
-│   └── 42-78: CheckoutService::processPayment
-│       async processPayment(...)
-└── src/payments/PaymentProcessor.ts
-    └── 18-31: PaymentProcessor::processPayment
-        async processPayment(...)
-```
-
-## V1 Commands
-
-V1 includes:
-
-```text
-resolve
-def
-refs
-overview
-context
-graph
-```
-
-V1 excludes:
-
-```text
-impact
-history
-diff
-impls
-search-text
-```
-
-## Input Model
-
-V1 command inputs are semantic. Line numbers and line ranges are output metadata only; they are not accepted as command targets.
-
-`resolve` accepts a name or query:
-
-```bash
-symnav resolve PaymentProcessor
-symnav resolve --fuzzy payment
-```
-
-`overview` accepts a file path:
-
-```bash
-symnav overview src/checkout/CheckoutService.ts
-```
-
-Symbol commands accept canonical symbol IDs:
-
-```bash
-symnav def src/checkout/CheckoutService.ts::CheckoutService::processPayment
-symnav refs src/checkout/CheckoutService.ts::CheckoutService::processPayment
-symnav context src/checkout/CheckoutService.ts::CheckoutService::processPayment
-symnav graph src/checkout/CheckoutService.ts::CheckoutService::processPayment
-```
-
-Canonical symbol IDs use this shape:
-
-```text
-<file-path>::<symbol-path>
-```
-
-Human-readable output does not repeat canonical IDs when they can be derived. When a symbol is shown under a file path, its canonical ID is `<file-path>::<symbol-path>`.
-
-The shown symbol path must include any disambiguator needed to reconstruct a valid canonical ID.
-
-Examples:
-
-```text
-src/checkout/CheckoutService.ts
-└── 42-78: CheckoutService::processPayment
-    async processPayment(order: Order): Promise<Receipt>
-
-Canonical ID:
+<workspace-relative-file>::<symbol-path>
 src/checkout/CheckoutService.ts::CheckoutService::processPayment
 ```
 
-```text
-src/http/Router.ts
-├── 40: Router::post#overload1
-│   post(path: string, handler: Handler): void
-├── 44: Router::post#overload2
-│   post(path: RegExp, handler: Handler): void
-└── 48-62: Router::post#implementation
-    post(path: string | RegExp, handler: Handler) { ... }
-```
+- Nested declarations add segments, e.g. `src/domain/orders.ts::PaymentProcessor::charge::formatCharge`.
+- Folds (callbacks, control-flow blocks) are transparent and add no segment. A helper declared inside `describe("x", () => { … })` is `file.ts::helper`.
+- Same-name siblings get a source-order disambiguator: `Router::post#1`, `Router::post#2`. A target without the disambiguator addresses the whole overload family.
+- Output shows enough of the symbol path under its file to rebuild the canonical ID.
 
-Exact/default input should not silently fuzzy-match.
+### Suffix matching (default)
 
-## Output Grammar
-
-Human-readable output uses Unicode tree characters.
-
-There is no ASCII fallback requirement.
-
-Reference-like lines use this shape:
+A candidate matches when its canonical ID ends with the target at a `/` or `::` boundary, never mid-name. Exactly one match runs the command. Two or more is ambiguous.
 
 ```text
-<line>: <preview>  [<kind-or-metadata>]
+Candidates:
+  src/adapters/orders.ts::charge
+  src/domain/orders.ts::PaymentProcessor::charge
+
+orders.ts::charge          → src/adapters/orders.ts::charge
+domain/orders.ts::charge   → not found (doesn't reach past PaymentProcessor)
+charge                     → ambiguous
 ```
 
-Example:
+A bare name and its full canonical ID print identical output when both resolve to the same symbol.
+
+### `--regex`
+
+Treats the target as a case-sensitive JavaScript regex over full canonical IDs, including disambiguators. It never searches source text, signatures, or previews. There's no case-insensitive option and no `--fuzzy` on symbol commands.
+
+```sh
+symnav def --regex 'PaymentProcessor::charge$'
+symnav refs --regex 'src/domain/.+::charge$'
+symnav graph --regex 'Router::dispatch#[1-3]$'
+```
+
+Zero matches is not-found, one runs, several is ambiguous.
+
+### `--line <n>`
+
+Applied after matching. Keeps only matches whose declaration contains line `n`. The error tells you which step removed everything.
+
+### Order
+
+1. Match target or regex against canonical IDs.
+2. Apply `--line`.
+3. Return one winner, not-found, line mismatch, or ambiguity.
+
+### Target errors
 
 ```text
-└── 58: await checkoutService.processPayment(order)  [usage]
+Cannot answer: no symbol target "src/hub.ts::missing" found.
+Cannot answer: no symbol target "helper" matching line 99.
+Cannot answer: file not found: missing.ts.
+Cannot answer: invalid symbol target (empty path segment between "::" separators): "::charge".
+Cannot answer: invalid regex "[": Unterminated character class.
 ```
 
-Metadata is shown as a bracket tag after the source preview.
+A file part that matches no workspace file reports the file as missing, with or without a `/`. A copied fold header is a plain not-found, since folds aren't symbols.
 
-Symbol-like lines use this shape:
+Ambiguity prints copyable IDs with signatures, plus the way out:
 
 ```text
-<line-range>: <symbol-path>
-<signature-or-declaration>
+Cannot answer: symbol target "PaymentProcessor::charge" is ambiguous.
+
+Candidates
+├── src/domain/invoices.ts::PaymentProcessor::charge
+│   charge(amount: number, currency?: string): string
+└── src/domain/orders.ts::PaymentProcessor::charge
+    charge(amount: number): string
+
+Copy a candidate id, or narrow with --line.
 ```
 
-When output is shown in a terminal, matched symbols may be highlighted with ANSI styling. When output is piped, no highlight markers or extra characters are emitted.
+## Output grammar
+
+Symbol lines:
+
+```text
+<line-range>: <symbol-path>  [<tag>]
+    <signature>
+```
+
+Reference lines:
+
+```text
+<line>: <source preview>  [<kind>]
+```
+
+Tags go in brackets after the text. Signatures are collapsed headers: no JSDoc and no bodies. Function-valued initializers render as `const helper = () => …`.
 
 ## Pagination
 
-Large result sets are paginated.
+`refs` and `graph` take `--page <n>`, `--page-size <n>` (default 100), and `--all`. For the same workspace state and query, every page is identical across runs.
 
-Common flags:
+## Extraction warnings
 
-```bash
---page <n>
---page-size <n>
---all
+Known irrelevant syntax (e.g. `export as namespace x;`) is skipped silently. Syntax symnav doesn't recognize is skipped with one warning per kind and file, and the command still returns partial results. `--json` stdout stays parseable; warnings go to stderr.
+
+## `overview`
+
+```sh
+symnav overview src/orders.ts
+symnav overview src/orders.ts --depth 1
+symnav overview src/orders.ts --at 'describe("cursor")' --depth 2
+symnav overview src/orders.ts --line 14
 ```
 
-Default page size:
+Takes a file path, not a symbol target. Shows a VS Code-style fold tree: declarations, signatures, line ranges, barrel re-export lines, and fold headers for callbacks, calls, and control-flow blocks (`if`, `for`, `switch`, `try`, …).
+
+- Default `--depth 0`: top-level entries only.
+- `--depth n` opens `n` child levels. Class members, local declarations, and fold interiors each cost one level.
+- `--at <text>`: substring match against node headers, as copied from earlier output. A node whose label equals the text exactly beats longer substring matches, so `--at Greeter` picks the class, not `Greeter::greet`. `--depth` then counts from that node.
+- `--line <n>`: narrows candidates to nodes on that line. It can be combined with `--at`.
+- Several candidates left means ambiguous, with candidates listed. There's no innermost-wins.
+- Each signature line carries its source line number. Long headers are capped at 6 lines of 80 characters.
 
 ```text
-100
+Overview: class-with-methods.ts
+└── 1-9: Greeter
+    1 export class Greeter
+    ├── 2-4: Greeter::greet
+    │   2 greet(name: string): string
+    └── 6-8: Greeter::shout
+        6 shout(name: string): string
 ```
 
-Pagination must be stable:
+Folds at depth 1:
 
 ```text
-For the same workspace state and same query, page 2 contains the same results every time.
+Overview: targeted-expansion.ts
+├── 1-3: describe("setup", () => {
+│   └── 2: setupHelper
+│       2 const setupHelper = () => 1
+│
+└── 13-18: action
+    13 export function action(flag: boolean): void
+    └── 14-17: if (flag) {
 ```
 
-Sorting rules for reference-style output:
+A file with no symbols prints `(no symbols)`. Errors:
 
 ```text
-1. file path
-2. line number within each file
+Cannot answer: file not found: missing.ts.
+Cannot answer: src/rules is a directory; expected a source file.
+Cannot answer: cannot read .json files (package.json).
+Cannot answer: no overview target matching --at "missing".
+Cannot answer: overview target matches multiple nodes.
+Cannot answer: line 14 matches multiple overview nodes; use --at with copied header text.
 ```
 
 ## `resolve`
 
-Purpose:
-
-```text
-Find matching symbols and files for a provided name.
+```sh
+symnav resolve PaymentProvider
+symnav resolve --fuzzy payment
+symnav resolve --regex '^to[A-Z].*'
 ```
 
-`resolve` returns symbols and files in separate sections.
+Finds symbols and files by name. It never returns text matches.
 
-It does not include arbitrary text/string matches.
+- Exact (default): case-sensitive match on a symbol's own name.
+- `--fuzzy`: fuzzy subsequence match.
+- `--regex`: JavaScript regex anchored to the whole own name, not the parent path. `--regex` with `--fuzzy` is an error.
 
-Example:
-
-```bash
-symnav resolve --fuzzy Payment
-```
+Output has two sections. Files lists basename matches that aren't already shown under Symbols.
 
 ```text
-Resolve: Payment (fuzzy)
+Resolve: payment (fuzzy)
 
 Symbols
 ├── src/checkout/CheckoutService.ts
-│   ├── 8: MAX_PAYMENT_RETRIES
-│   │   const MAX_PAYMENT_RETRIES: number
-│   └── 42-78: CheckoutService::processPayment
-│       async processPayment(order: Order): Promise<Receipt>
-├── src/payments/PaymentProvider.ts
-│   └── 2-5: PaymentProvider
-│       interface PaymentProvider
-├── src/payments/PaymentProcessor.ts
-│   ├── 8-64: PaymentProcessor
-│   │   class PaymentProcessor
-│   └── 22-36: PaymentProcessor::charge
-│       static async charge(order: Order): Promise<Payment>
-└── src/payments/types.ts
-    ├── 1: PaymentStatus
-    │   type PaymentStatus = "pending" | "paid" | "failed"
-    └── 6-10: PaymentMethod
-        enum PaymentMethod
+│   ├── 1: MAX_PAYMENT_RETRIES
+│   │   export const MAX_PAYMENT_RETRIES = 3
+│   └── 8-10: CheckoutService::processPayment
+│       async processPayment(orderId: string): Promise<string>
+└── src/payments/PaymentProvider.ts
+    └── 1-3: PaymentProvider
+        export interface PaymentProvider
 
 Files
-(none)
+└── src/Payment.ts
 ```
 
-The Files section excludes any file already present in the Symbols section. Only files whose basename matches the query and that contain no matching symbol appear here.
+An empty exact result exits 0. Text output then adds `No exact match; try --fuzzy for approximate names, or --regex for a pattern.` JSON output gets no hint.
 
 ## `def`
 
-Purpose:
-
-```text
-Show where a symbol is defined.
-```
-
-`def` returns:
-
-- implementation, when one exists
-- declarations
-- overload signatures
-- multiple implementations when the queried symbol represents a contract/base symbol
-
-`def` never returns usages.
-
-Example:
+Shows where a symbol is defined: the implementation, declarations, overload signatures, and every implementation of a contract or base member. It never shows usages.
 
 ```text
 Definition: Router::post
 
 src/http/Router.ts
-├── 40: Router::post#1  [overload]
+├── 4: Router::post#1  [overload]
 │   post(path: string, handler: Handler): void
-├── 44: Router::post#2  [overload]
+├── 5: Router::post#2  [overload]
 │   post(path: RegExp, handler: Handler): void
-└── 48-62: Router::post#3  [implementation]
+└── 6-9: Router::post#3  [implementation]
     post(path: string | RegExp, handler: Handler): void
 ```
-
-When a name collides with siblings in the same scope, each colliding symbol carries a numeric disambiguator (`#1`, `#2`, …) assigned in source order. The query may include or omit the disambiguator: with it, exactly that symbol matches; without it, every same-name sibling matches.
-
-Example with multiple implementations:
 
 ```text
 Definition: PaymentProvider::charge
 
 src/payments/PaymentProvider.ts
 └── 2: PaymentProvider::charge  [declaration]
-    charge(): Promise<void>
+    charge(orderId: string): Promise<string>
 
 src/payments/StripeProvider.ts
-└── 10-18: StripeProvider::charge  [implementation]
-    charge(): Promise<void>
-
-src/payments/PaypalProvider.ts
-└── 10-18: PaypalProvider::charge  [implementation]
-    charge(): Promise<void>
+└── 4-6: StripeProvider::charge  [implementation]
+    async charge(orderId: string): Promise<string>
 ```
 
 ## `refs`
 
-Purpose:
+Every reference in non-ignored workspace files except the symbol's own declaration. Imports, exports, and type references are included. Kinds: `usage`, `import`, `export`, `type`.
 
-```text
-Show all references to a symbol, excluding the symbol's own definition/declaration.
-```
-
-`refs` should not hide import/export/type references. It shows everything within non-ignored workspace files, except the symbol's own definition/declaration.
-
-Default output is a compact Unicode filesystem tree.
-
-Directory chains with only one child should collapse.
-
-Files and line entries remain separate levels, even when a file has only one reference.
-
-Example:
+Sorted by file path, then line. Single-child directory chains collapse. Files and lines are always separate levels.
 
 ```text
 References: PaymentProcessor
-Total: 6
-Kinds: usage 3, import 2, export 1
-Page: 1/1
+Total: 14
+Kinds: usage 7, import 5, export 1, type 1
+Page: 1/5
 Sort: path, line
 
 src/
-├── checkout/CheckoutService.ts
-│   ├── 3: import { PaymentProcessor } from "../payments/PaymentProcessor"  [import]
-│   └── 44: const receipt = await PaymentProcessor.charge(order)  [usage]
-├── payments/
-│   ├── index.ts
-│   │   └── 2: export { PaymentProcessor } from "./PaymentProcessor"  [export]
-│   └── RefundService.ts
-│       ├── 6: import { PaymentProcessor } from "./PaymentProcessor"  [import]
-│       └── 29: await PaymentProcessor.refund(paymentId)  [usage]
-└── tests/payments/PaymentProcessor.test.ts
-    └── 18: expect(await PaymentProcessor.charge(order)).toEqual(receipt)  [usage]
+├── billing/RefundService.ts
+│   ├── 1: import { PaymentProcessor } from "../payments";  [import]
+│   └── 5: const processor = new PaymentProcessor();  [usage]
+└── checkout/CheckoutService.ts
+    └── 1: import { PaymentProcessor } from "../payments/PaymentProcessor";  [import]
 ```
 
-Preview rules:
-
-- one preview line by default
-- trim long lines by default
-- preserve the matched symbol in the trimmed preview when possible
-- full lines can be requested explicitly
-
-Example:
-
-```bash
-symnav refs src/payments/PaymentProcessor.ts::PaymentProcessor --full-lines
-```
-
-## `overview`
-
-Purpose:
-
-```text
-Show the symbol structure of a file.
-```
-
-`overview` replaces the earlier `symbols` command name.
-
-`overview` shows:
-
-- private/local symbols
-- signatures
-- line ranges
-- nested symbol hierarchy
-
-Default depth:
-
-```text
-0
-```
-
-`--depth n` renders n child levels below each top-level entry. Every node type charges the
-same: class members, function-local declarations, and fold interiors all cost one level.
-Default output is top-level entries only.
-
-Example, `overview src/checkout/CheckoutService.ts`:
-
-```text
-Overview: src/checkout/CheckoutService.ts
-
-8: MAX_RETRY_ATTEMPTS
-8: const MAX_RETRY_ATTEMPTS: number
-
-12-96: CheckoutService
-12: class CheckoutService
-
-98-112: createReceipt
-98: function createReceipt(order: Order, payment: Payment): Receipt
-```
-
-Same file at `--depth 1`:
-
-```text
-Overview: src/checkout/CheckoutService.ts
-
-8: MAX_RETRY_ATTEMPTS
-8: const MAX_RETRY_ATTEMPTS: number
-
-12-96: CheckoutService
-12: class CheckoutService
-├── 24-34: CheckoutService::constructor
-│   24: constructor(paymentProcessor: PaymentProcessor, inventory: InventoryService)
-├── 42-78: CheckoutService::processPayment
-│   42: async processPayment(order: Order): Promise<Receipt>
-└── 80-94: CheckoutService::validateOrder
-    80: private validateOrder(order: Order): void
-
-98-112: createReceipt
-98: function createReceipt(order: Order, payment: Payment): Receipt
-```
-
-Each signature line is prefixed with its source line number; a multi-line signature renders one numbered line per source line.
+Previews are one line, trimmed around the match. `--full-lines` prints them verbatim. Zero references prints the header with `Total: 0`.
 
 ## `context`
 
-Purpose:
+A compact picture of one symbol. Every section is always shown, `(none)` when empty.
+
+- **Definition.**
+- **Callers.** Direct only, with the call-site preview. `[call ×2]` marks repeated calls from one caller.
+- **Callees.** Direct only, with their signature.
+- **References.** Total and kinds, plus a `Run: symnav refs <id>` line.
+- **Recent History.** Recent commits touching the symbol.
+
+Callers and callees include only certain, statically resolved edges into workspace files, capped at 20 per direction. Overflow prints `… N more callers. Run: symnav graph <id> --incoming`. Possible or dynamic edges appear only in `graph`.
+
+A call inside a function-valued initializer is attributed to the declaration whose body contains it, never to an earlier unrelated declaration. `graph --incoming` follows the same rule.
 
 ```text
-Show compact context around a symbol without dumping full reference output.
-```
-
-`context` includes:
-
-- definition
-- direct callers with previews
-- direct callees with previews
-- reference summary
-- recent history summary
-
-`context` does not include:
-
-- full refs output
-- mini graph
-- full diffs
-- full function bodies by default
-- separate top signature for now
-
-Sections with no results should be shown in `context`.
-
-Example:
-
-```text
-Context: CheckoutService::processPayment
-File: src/checkout/CheckoutService.ts
-Lines: 42-78
+Context: compute
+File: src/math/calculator.ts
+Lines: 3-7
 
 Definition
-src/checkout/CheckoutService.ts
-└── 42-78: CheckoutService::processPayment  [implementation]
-    async processPayment(order: Order): Promise<Receipt>
+src/math/calculator.ts
+└── 3-7: compute  [implementation]
+    export function compute(a: number, b: number): number
 
 Callers
-src/api/CheckoutController.ts
-└── 58-72: CheckoutController::submitOrder  [call]
-    return checkoutService.processPayment(order)
+src/app/runner.ts
+├── 3-5: runOnce  [call]
+│     return compute(1, 2);
+└── 7-11: runTwice  [call ×2]
+      const first = compute(3, 4);
 
 Callees
-src/payments/PaymentProcessor.ts
-├── 22-36: PaymentProcessor::charge  [call]
-│   static async charge(order: Order): Promise<Payment>
-└── 47-55: PaymentProcessor::recordReceipt  [call]
-    static async recordReceipt(receipt: Receipt): Promise<void>
+src/math/operations.ts
+└── 1-3: add  [call]
+    export function add(a: number, b: number): number
 
 References
-Total: 8
-Kinds: call 3, import 2, test 3
-Run: symnav refs src/checkout/CheckoutService.ts::CheckoutService::processPayment
+Total: 4
+Kinds: usage 3, import 1
+Run: symnav refs src/math/calculator.ts::compute
 
 Recent History
-1. abc123f 2026-04-12 Alice
-   add retry handling to payment processing
-
-2. def456a 2026-03-29 Bob
-   move checkout flow into CheckoutService
+1. 7828a8b 2023-04-25 Calc Bot
+   name the scaled value
 ```
-
-Callers/callees in `context`:
-
-- use filesystem tree format
-- show direct callers/callees only
-- include one preview line
-- are capped by default
-
-Default cap:
-
-```text
-20 callers
-20 callees
-```
-
-If more exist, output should point to `graph`.
 
 ## `graph`
 
-Purpose:
-
-```text
-Show relationships around a symbol.
+```sh
+symnav graph <target>                # depth 1, both directions
+symnav graph <target> --incoming     # callers only
+symnav graph <target> --outgoing     # callees only
+symnav graph <target> --depth 3 --page-size 50
 ```
 
-`graph` is the only v1 relationship-graph command. There is no separate `impact` command.
-
-Defaults:
-
-```text
-Depth: 1
-Direction: both
-Edges: calls
-```
-
-Maximum depth:
-
-```text
-5
-```
-
-If a requested depth exceeds max, the tool refuses and explains how to continue from leaves.
-
-Example:
+Call edges only. Default depth 1, max 5. Depth and pagination are independent: `--depth 3 --page-size 50` explores 3 hops and shows the first 50 paths.
 
 ```text
 Cannot run graph with depth 12.
@@ -566,153 +374,38 @@ To continue exploration:
 3. Run graph again from that symbol.
 ```
 
-No graph presets in v1.
-
-Explicit flags:
-
-```bash
-symnav graph src/checkout/CheckoutService.ts::CheckoutService::processPayment
-symnav graph src/checkout/CheckoutService.ts::CheckoutService::processPayment --incoming
-symnav graph src/checkout/CheckoutService.ts::CheckoutService::processPayment --outgoing
-symnav graph src/checkout/CheckoutService.ts::CheckoutService::processPayment --depth 2
-```
-
-Graph nodes are shown under file paths with line ranges, symbol paths, and signatures when available.
+- Nodes show line range, symbol path, and signature. No source previews.
+- The root sits on top of both the Incoming and Outgoing sections.
+- Edges symnav can't statically confirm are still shown, labelled inline: `[possible: dynamic dispatch: exact callee not statically resolvable]`.
+- A symbol reached by different paths shows on each one. When that happens: `Note: N symbols appear in multiple paths.`
+- Paths are sorted shorter first, then by canonical ID along the path. Pages are stable.
+- A contract member with several implementations is refused: `Cannot answer: symbol src/contract.ts::GraphShape::render matches multiple implementations: src/contract.ts::Box::render, src/contract.ts::Circle::render — query one directly.`
 
 ```text
-<line-range>: <symbol-path>
-<signature>
-```
-
-Graph shows symbol nodes only. It does not show source preview lines.
-
-Root stays at the top for both incoming and outgoing sections.
-
-Example:
-
-```text
-Graph: CheckoutService::processPayment
-File: src/checkout/CheckoutService.ts
-Lines: 42-78
+Graph: dynamicRoot
+File: src/dynamic.ts
+Lines: 1-3
 Depth: 2
-Direction: both
+Direction: outgoing
 Edges: calls
 
-Incoming
-src/checkout/CheckoutService.ts
-└── 42-78: CheckoutService::processPayment
-    async processPayment(order: Order): Promise<Receipt>
-    └── src/api/CheckoutController.ts
-        └── 58-72: CheckoutController::submitOrder  [caller]
-            submitOrder(req: Request): Promise<Response>
-            └── src/api/routes.ts
-                └── 14-20: registerCheckoutRoutes  [caller]
-                    function registerCheckoutRoutes(router: Router): void
-
 Outgoing
-src/checkout/CheckoutService.ts
-└── 42-78: CheckoutService::processPayment
-    async processPayment(order: Order): Promise<Receipt>
-    ├── src/payments/PaymentProcessor.ts
-    │   └── 22-36: PaymentProcessor::charge  [callee]
-    │       static async charge(order: Order): Promise<Payment>
-    │       └── src/payments/GatewayClient.ts
-    │           └── 31-46: GatewayClient::capture  [callee]
-    │               capture(payment: Payment): Promise<CaptureResult>
-    └── src/orders/OrderRepository.ts
-        └── 65-81: OrderRepository::markPaid  [callee]
-            markPaid(orderId: string): Promise<void>
-            └── src/database/Database.ts
-                └── 18-34: Database::transaction  [callee]
-                    transaction<T>(callback: TransactionCallback<T>): Promise<T>
+src/dynamic.ts
+└── 1-3: dynamicRoot
+    export function dynamicRoot(kind: "alpha" | "beta"): number
+    └── src/dynamic.ts
+        ├── 10-12: dynamicAlpha  [possible: dynamic dispatch: exact callee not statically resolvable]
+        │   export function dynamicAlpha(): number
+        │   └── src/dynamic.ts
+        │       └── 18-20: alphaLeaf  [callee]
+        │           export function alphaLeaf(): number
+        └── 14-16: dynamicBeta  [possible: dynamic dispatch: exact callee not statically resolvable]
+            export function dynamicBeta(): number
 ```
 
-Possible/low-confidence edges are included by default but labeled inline.
+## Out of scope
 
-Example:
-
-```text
-Graph: SomeHandler::handle
-File: src/handlers/SomeHandler.ts
-Lines: 12-40
-Depth: 1
-Direction: both
-Edges: calls
-
-Incoming
-src/handlers/SomeHandler.ts
-└── 12-40: SomeHandler::handle
-    handle(action: string): Promise<void>
-    ├── src/callers/DirectCaller.ts
-    │   └── 27-36: DirectCaller::callThing  [caller]
-    │       callThing(): Promise<void>
-    └── src/routing/DynamicRouter.ts
-        └── 44-58: DynamicRouter::dispatch  [possible: dynamic property access]
-            dispatch(action: string): Promise<void>
-
-Outgoing
-src/handlers/SomeHandler.ts
-└── 12-40: SomeHandler::handle
-    handle(action: string): Promise<void>
-    ├── src/services/KnownService.ts
-    │   └── 18-26: KnownService::run  [callee]
-    │       run(): Promise<void>
-    └── src/handlers/HandlerRegistry.ts
-        └── 33-48: HandlerRegistry::dispatchAction  [possible: dynamic property access]
-            dispatchAction(action: string): Promise<void>
-```
-
-Repeated symbols are not hidden if they appear through different paths. Path information matters.
-
-If repetition is significant, include a compact note:
-
-```text
-Note: 3 symbols appear in multiple paths.
-```
-
-Graph pagination is path-based.
-
-For the same workspace state, query, direction, depth, and page settings, graph pages must contain the same paths in the same order every time.
-
-Graph output should prioritize shorter paths before deeper paths. When paths are otherwise equivalent, sort by canonical symbol ID.
-
-Default graph page size:
-
-```text
-100 paths
-```
-
-Depth and pagination are separate:
-
-```bash
-symnav graph src/checkout/CheckoutService.ts::CheckoutService::processPayment --depth 3 --page-size 100
-```
-
-This means:
-
-```text
-Explore up to 3 hops.
-Show the first 100 resulting paths.
-```
-
-## Final V1 Command Summary
-
-```text
-resolve
-Find matching symbols/files for a user-provided name.
-
-def
-Show where a symbol is defined, including implementation/declarations/overloads when relevant.
-
-refs
-Show all references to a symbol, excluding its own definition/declaration.
-
-overview
-Show the symbol hierarchy inside a file with signatures and line ranges.
-
-context
-Show compact symbol context: definition, direct callers/callees, reference summary, and recent history summary.
-
-graph
-Show a configurable call relationship graph around a symbol.
-```
+- Languages other than TypeScript. The backend interface in `@symnav/core` is where one would plug in.
+- `impact`, `history`, `diff`, `impls`, `search-text` commands.
+- Renderers other than text and JSON.
+- Uploading telemetry. It stays local and shape-only.

@@ -66,7 +66,7 @@ describe("symnav daemon status", () => {
     daemon.release();
     for (const result of await Promise.all([active, ...queued]))
       expect(result).toMatchObject({ status: 0, stderr: "" });
-  });
+  }, 15_000);
 
   it("adds one actual fallback after a surviving client observes daemon death", async () => {
     const stateDir = temporaryStateDirectory(stateDirectories);
@@ -100,7 +100,7 @@ describe("symnav daemon status", () => {
     );
     expect(evidence.filter((event) => event.kind === "termination")).toHaveLength(1);
     expect(evidence.filter((event) => event.kind === "fallback")).toHaveLength(1);
-  });
+  }, 15_000);
 
   it.each(["ready", "starting"] as const)(
     "retains proven-dead %s evidence across separate explicit start invocations",

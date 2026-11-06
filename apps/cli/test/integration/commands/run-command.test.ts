@@ -266,7 +266,7 @@ describe("runCommand lifecycle", () => {
       },
     );
 
-    expect(context.stderr.text()).toBe("Warning: first\nWarning: second\n");
+    expect(context.stderr.text()).toBe("symnav: warning: first\nsymnav: warning: second\n");
     expect(context.stdout.text()).toBe("text:computed");
     expect(context.exitCodes).toEqual([]);
   });
@@ -290,8 +290,55 @@ describe("runCommand lifecycle", () => {
       },
     );
 
-    expect(context.stderr.text()).toBe("Warning: first\n");
+    expect(context.stderr.text()).toBe("symnav: warning: first\n");
     expect(context.stdout.text()).toBe("json:computed");
+  });
+
+  it("suppresses typed diagnostics while preserving source output and telemetry", async () => {
+    const context = createFakeProgramContext({ cwd: "/repo" });
+    const record = vi.fn();
+    await runCommand(
+      new StubCommand({
+        compute: async () => ({
+          value: "symnav: warning: source text",
+          diagnostics: [{ severity: "warning", dedupeKey: "one", message: "hidden" }],
+        }),
+      }),
+      {
+        context,
+        dependencies: {
+          ...fakeDependencies({ telemetryEnabled: true, recorder: { record } }),
+          warningOptions: { warnings: false },
+        },
+        cwdOverride: undefined,
+        json: false,
+        args: stubArgs("hi"),
+      },
+    );
+    expect(context.stderr.text()).toBe("");
+    expect(context.stdout.text()).toBe("text:symnav: warning: source text");
+    expect(context.exitCodes).toEqual([]);
+    expect(record).toHaveBeenCalledOnce();
+  });
+
+  it("preserves error text containing the warning prefix when warnings are suppressed", async () => {
+    const context = createFakeProgramContext({ cwd: "/repo" });
+    await runCommand(
+      new StubCommand({
+        compute: async () => {
+          throw new Error("symnav: warning: ordinary error");
+        },
+      }),
+      {
+        context,
+        dependencies: { ...fakeDependencies(), warningOptions: { warnings: false } },
+        cwdOverride: undefined,
+        json: false,
+        args: stubArgs("hi"),
+      },
+    );
+    expect(context.stderr.text()).toBe("symnav: warning: ordinary error\n");
+    expect(context.exitCodes).toEqual([2]);
   });
 
   it("passes workspace, router, git, cwd, and args to compute and nothing else", async () => {

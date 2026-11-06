@@ -26,6 +26,7 @@ export class InvocationWorkspaceSelector {
       .allowUnknownOption(true)
       .allowExcessArguments(true)
       .option("--cwd <dir>")
+      .option("--no-warnings")
       .option("-h, --help")
       .option("-v, --version")
       .argument("[command]")

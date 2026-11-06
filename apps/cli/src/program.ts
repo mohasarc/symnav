@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { Command as CommanderCommand } from "commander";
+import { InvocationProgram } from "./invocation-program.js";
 import { NodeFileSystem } from "@symnav/core";
 import { DaemonClient, DaemonPolicy, type DaemonExecutorFactory } from "@symnav/daemon";
 import { TypeScriptBackend } from "@symnav/backend-typescript";
@@ -97,7 +97,7 @@ export function createDefaultDependencies(
 export function buildProgram(
   context?: ProgramContext,
   dependencies?: ProgramDependencies,
-): CommanderCommand {
+): InvocationProgram {
   const ctx = context ?? createDefaultProgramContext();
   const deps =
     dependencies ??
@@ -108,11 +108,12 @@ export function buildProgram(
       DaemonPolicy.currentSystem(),
       process.env.SYMNAV_DAEMON !== "0",
     );
-  const program = new CommanderCommand();
+  const program = new InvocationProgram();
   program
     .name("symnav")
     .version(readPackageVersion(), "-v, --version")
     .option("--cwd <dir>", "run as if symnav was started in <dir>")
+    .option("--no-warnings", "suppress warning messages")
     .configureOutput({
       writeOut: (s) => {
         ctx.stdout.write(s);
@@ -128,13 +129,19 @@ export function buildProgram(
       program.outputHelp({ error: true });
       ctx.exit(1);
     });
-  registerOverviewCommand(program, ctx, deps);
-  registerResolveCommand(program, ctx, deps);
-  registerDefCommand(program, ctx, deps);
-  registerRefsCommand(program, ctx, deps);
-  registerContextCommand(program, ctx, deps);
-  registerGraphCommand(program, ctx, deps);
-  registerDaemonCommand(program, ctx, deps);
-  registerStatsCommand(program, ctx, deps);
+  const commandDependencies: ProgramDependencies = {
+    ...deps,
+    get warningOptions() {
+      return { warnings: program.opts<{ warnings: boolean }>().warnings };
+    },
+  };
+  registerOverviewCommand(program, ctx, commandDependencies);
+  registerResolveCommand(program, ctx, commandDependencies);
+  registerDefCommand(program, ctx, commandDependencies);
+  registerRefsCommand(program, ctx, commandDependencies);
+  registerContextCommand(program, ctx, commandDependencies);
+  registerGraphCommand(program, ctx, commandDependencies);
+  registerDaemonCommand(program, ctx, commandDependencies);
+  registerStatsCommand(program, ctx, commandDependencies);
   return program;
 }

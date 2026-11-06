@@ -17,4 +17,9 @@ coverage/
 artifacts/
 *.tsbuildinfo
 .agents/feedback.md
+.claude/settings.local.json
+.claude/worktrees/
+.env
+.env.*
+!.env.example
 .DS_Store

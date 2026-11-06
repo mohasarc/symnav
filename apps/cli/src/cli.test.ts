@@ -10,12 +10,16 @@ afterEach(() => {
 });
 
 it.each([
-  ["0", false],
-  ["1", true],
+  ["0", false, "1", ["overview", "src/a.ts"]],
+  ["1", true, "1", ["overview", "src/a.ts"]],
+  ["0", false, "0", ["overview", "src/a.ts"]],
+  ["0", false, "0", ["stats", "--json"]],
 ] as const)(
   "composes one state, dependency set, client, and daemon flag for SYMNAV_DAEMON=%s",
-  async (environmentValue, daemonEnabled) => {
+  async (environmentValue, daemonEnabled, telemetryValue, argv) => {
     vi.stubEnv("SYMNAV_DAEMON", environmentValue);
+    vi.stubEnv("SYMNAV_TELEMETRY", telemetryValue);
+    const needsState = daemonEnabled || telemetryValue === "1" || argv[0] === "stats";
     const stateDirectory = "/canonical/state";
     const daemonPolicy = {} as DaemonPolicy;
     const daemonClient = {} as DaemonClient;
@@ -31,12 +35,12 @@ it.each([
           daemonPolicy: receivedPolicy,
           daemonClient,
           daemonEnabled: receivedEnabled,
-          telemetryEnabled: true,
+          telemetryEnabled: telemetryValue === "1",
           fs: {},
         }) as unknown as ProgramDependencies,
     );
     const execute = vi.fn(async () => ({ mode: "warm" as const, result: executionResult }));
-    const replay = vi.fn();
+    const run = vi.fn(async () => 0);
     const coordinatorOptions: unknown[] = [];
 
     vi.doMock("./state-directory-resolver.js", () => ({
@@ -53,7 +57,6 @@ it.each([
     }));
     vi.doMock("./cli-program-executor.js", () => ({
       CliProgramExecutor: class {},
-      CommandResultReplayer: { replay },
     }));
     vi.doMock("./cli-invocation-coordinator.js", () => ({
       CliInvocationCoordinator: class {
@@ -65,19 +68,32 @@ it.each([
       },
     }));
 
-    await import("./cli.js");
+    vi.doMock("./cli-invocation-runner.js", () => ({
+      CliInvocationRunner: class {
+        run = run;
+      },
+    }));
+    const originalArgv = process.argv;
+    process.argv = [...originalArgv.slice(0, 2), ...argv];
+    try {
+      await import("./cli.js");
+    } finally {
+      process.argv = originalArgv;
+    }
 
-    expect(resolveStateDirectory).toHaveBeenCalledOnce();
+    expect(resolveStateDirectory).toHaveBeenCalledTimes(needsState ? 1 : 0);
     expect(createDefaultDependencies).toHaveBeenCalledOnce();
     expect(createDefaultDependencies).toHaveBeenCalledWith(
-      stateDirectory,
+      needsState ? stateDirectory : "",
       daemonPolicy,
       daemonEnabled,
     );
     expect(coordinatorOptions).toEqual([
       expect.objectContaining({ daemonClient, createLocalExecutor: expect.any(Function) }),
     ]);
-    expect(execute).toHaveBeenCalledOnce();
-    expect(replay).toHaveBeenCalledWith(executionResult, expect.any(Object));
+    expect(run).toHaveBeenCalledWith(
+      expect.objectContaining({ telemetryEnabled: telemetryValue === "1" }),
+      expect.any(Object),
+    );
   },
 );

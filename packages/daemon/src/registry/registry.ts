@@ -1,3 +1,5 @@
+import { PosixDaemonProcessLifetime } from "../process/posix-process-lifetime.js";
+import type { DaemonProcessLifetimeIdentity } from "../process/process-lifetime-identity.js";
 import {
   existsSync,
   mkdirSync,
@@ -5,6 +7,7 @@ import {
   readdirSync,
   renameSync,
   rmSync,
+  rmdirSync,
   writeFileSync,
 } from "node:fs";
 import { randomUUID } from "node:crypto";
@@ -22,6 +25,8 @@ export interface DaemonStartupOwner {
   readonly identityKey: string;
   readonly instanceId: string;
   readonly processToken: string;
+  readonly ownerLifetime?: DaemonProcessLifetimeIdentity;
+  readonly claimToken?: string;
   readonly ownerPid: number;
   readonly ownerKind: "launcher" | "daemon";
   readonly heartbeatAt: number;
@@ -34,7 +39,11 @@ export type StartupOwner = DaemonStartupOwner;
 export interface DaemonStartupLease {
   readonly owner: DaemonStartupOwner;
   readonly instanceId: string;
-  transferToDaemon(pid: number, processToken: string): boolean;
+  transferToDaemon(
+    pid: number,
+    processToken: string,
+    processLifetime?: DaemonProcessLifetimeIdentity,
+  ): boolean;
   heartbeat(): boolean;
   release(): boolean;
 }
@@ -42,6 +51,7 @@ export interface DaemonStartupLease {
 export type StartupLease = DaemonStartupLease;
 
 interface StartupMutationOwner {
+  readonly ownerLifetime?: DaemonProcessLifetimeIdentity;
   readonly ownerPid: number;
   readonly acquiredAt: number;
   readonly token: string;
@@ -95,13 +105,18 @@ class RegistryStartupLease implements StartupLease {
     return this.currentOwner.instanceId;
   }
 
-  transferToDaemon(pid: number, processToken: string): boolean {
+  transferToDaemon(
+    pid: number,
+    processToken: string,
+    processLifetime?: DaemonProcessLifetimeIdentity,
+  ): boolean {
     if (this.released) return false;
     return this.registry.transferStartupToDaemon(
       this.identity,
       this.currentOwner,
       pid,
       processToken,
+      processLifetime,
     );
   }
 
@@ -138,13 +153,18 @@ export class DaemonRegistry {
   }
 
   read(identity: DaemonWorkspaceIdentity): DaemonRecord | undefined {
-    return this.records(identity).find((record) => DaemonRegistry.isCurrentRecord(record));
+    return this.records(identity).find(
+      (record) =>
+        DaemonRegistry.isCurrentRecord(record) &&
+        record.endpoint === identity.endpoint(record.instanceId),
+    );
   }
 
   readInstance(identity: DaemonWorkspaceIdentity, instanceId: string): DaemonRecord | undefined {
     const record = this.readStoredPath(identity.recordPath(instanceId));
     return record !== undefined &&
       DaemonRegistry.isCurrentRecord(record) &&
+      record.endpoint === identity.endpoint(record.instanceId) &&
       DaemonRegistry.matchesIdentity(record, identity)
       ? record
       : undefined;
@@ -241,6 +261,7 @@ export class DaemonRegistry {
       if (owner === undefined) return false;
       const adoptedOwner: StartupOwner = {
         ...owner,
+        ...(record.processLifetime === undefined ? {} : { ownerLifetime: record.processLifetime }),
         identityKey: identity.identityKey,
         ownerPid: record.pid > 0 ? record.pid : owner.ownerPid,
         processToken: record.processToken,
@@ -248,7 +269,7 @@ export class DaemonRegistry {
         heartbeatAt: this.clock.wallNowMs(),
         revision: randomUUID(),
       };
-      const ownerPath = identity.startupOwnerPath(identity.lockPath);
+      const ownerPath = DaemonRegistry.ownerMetadataPath(identity, identity.lockPath);
       const temporaryPath = `${identity.lockPath}.${process.pid}.${randomUUID()}.owner.tmp`;
       writeFileSync(temporaryPath, JSON.stringify(adoptedOwner), {
         encoding: "utf8",
@@ -302,22 +323,36 @@ export class DaemonRegistry {
     }
     const owner: StartupOwner = {
       ...suppliedOwner,
+      ...(this.platform === "win32"
+        ? {}
+        : {
+            ownerLifetime:
+              suppliedOwner.ownerLifetime ??
+              PosixDaemonProcessLifetime.current(identity.stateDirectory),
+          }),
+      claimToken: randomUUID(),
       acquiredAt,
       revision: randomUUID(),
     };
     const claimPath = identity.startupClaimPath(owner.instanceId);
     mkdirSync(claimPath, { mode: 0o700 });
-    writeFileSync(identity.startupOwnerPath(claimPath), JSON.stringify(owner), {
-      encoding: "utf8",
-      flag: "wx",
-      mode: 0o600,
-    });
+    mkdirSync(join(claimPath, owner.claimToken!), { mode: 0o700 });
+    writeFileSync(
+      identity.startupOwnerPath(join(claimPath, owner.claimToken!)),
+      JSON.stringify(owner),
+      {
+        encoding: "utf8",
+        flag: "wx",
+        mode: 0o600,
+      },
+    );
     try {
       renameSync(claimPath, identity.lockPath);
       return new RegistryStartupLease(this, identity, owner);
     } catch (error) {
       rmSync(claimPath, { recursive: true, force: true });
-      if (existsSync(identity.lockPath)) return undefined;
+      if (DaemonRegistry.startupMutationClaimWasContended(error) || existsSync(identity.lockPath))
+        return undefined;
       throw error;
     }
   }
@@ -327,6 +362,7 @@ export class DaemonRegistry {
     instanceId: string,
     processToken: string,
     pid: number,
+    processLifetime?: DaemonProcessLifetimeIdentity,
   ): DaemonStartupLease | undefined {
     if (!Number.isInteger(pid) || pid <= 0) return undefined;
     const daemonOwner = this.startupOwnershipMatches(identity, {
@@ -346,6 +382,7 @@ export class DaemonRegistry {
     if (launcherOwner === undefined) return undefined;
     const transferredOwner = this.replaceStartupOwnerIfOwner(identity, launcherOwner, {
       ...launcherOwner,
+      ...(processLifetime === undefined ? {} : { ownerLifetime: processLifetime }),
       ownerPid: pid,
       ownerKind: "daemon",
       heartbeatAt: this.clock.wallNowMs(),
@@ -361,6 +398,7 @@ export class DaemonRegistry {
     launcherOwner: StartupOwner,
     pid: number,
     processToken: string,
+    processLifetime?: DaemonProcessLifetimeIdentity,
   ): boolean {
     if (!Number.isInteger(pid) || pid <= 0) return false;
     const currentLauncher = this.startupOwnershipMatches(identity, {
@@ -373,6 +411,7 @@ export class DaemonRegistry {
     return (
       this.replaceStartupOwnerIfOwner(identity, currentLauncher, {
         ...currentLauncher,
+        ...(processLifetime === undefined ? {} : { ownerLifetime: processLifetime }),
         ownerPid: pid,
         ownerKind: "daemon",
         heartbeatAt: this.clock.wallNowMs(),
@@ -412,7 +451,7 @@ export class DaemonRegistry {
   startupOwner(identity: DaemonWorkspaceIdentity): StartupOwner | undefined {
     try {
       const value: unknown = JSON.parse(
-        readFileSync(identity.startupOwnerPath(identity.lockPath), "utf8"),
+        readFileSync(DaemonRegistry.ownerMetadataPath(identity, identity.lockPath), "utf8"),
       );
       return DaemonRegistry.isStartupOwner(value) ? value : undefined;
     } catch (error) {
@@ -500,6 +539,12 @@ export class DaemonRegistry {
     const owner = this.startupOwnershipMatches(identity, observedOwner);
     if (owner === undefined) return false;
     const record = this.readStoredInstance(identity, owner.instanceId);
+    const lifetime = record?.processLifetime ?? owner.ownerLifetime;
+    if (
+      this.platform !== "win32" &&
+      (lifetime === undefined || PosixDaemonProcessLifetime.observe(lifetime) !== "exited")
+    )
+      return false;
     if (
       record !== undefined &&
       ((owner.processToken.length > 0 && record.processToken !== owner.processToken) ||
@@ -553,23 +598,13 @@ export class DaemonRegistry {
   }
 
   removeStartupLockIfInstance(identity: DaemonWorkspaceIdentity, instanceId: string): boolean {
-    const releasedPath = identity.releasedStartupLockPath(instanceId);
     const owner = this.startupOwnershipMatches(identity, {
       identityKey: identity.identityKey,
       instanceId,
     });
-    if (owner === undefined) {
-      return DaemonRegistry.readStartupOwner(identity, releasedPath)?.instanceId === instanceId;
-    }
-    try {
-      renameSync(identity.lockPath, releasedPath);
-      return true;
-    } catch (error) {
-      if (DaemonRegistry.readStartupOwner(identity, releasedPath)?.instanceId === instanceId) {
-        return true;
-      }
-      throw error;
-    }
+    if (owner === undefined) return false;
+    if (owner.claimToken === undefined) return false;
+    return DaemonRegistry.removeTokenClaim(identity.lockPath, owner.claimToken);
   }
 
   removeStartupLockIfOwner(
@@ -640,21 +675,7 @@ export class DaemonRegistry {
 
   releaseStartupMutation(identity: DaemonWorkspaceIdentity, owner: StartupMutationOwner): void {
     if (!this.isStartupMutationOwner(identity, owner)) return;
-    const releasedPath = identity.releasedStartupMutationPath(owner.token);
-    try {
-      renameSync(identity.startupMutationPath, releasedPath);
-      if (
-        DaemonRegistry.sameStartupMutationOwner(
-          DaemonRegistry.readStartupMutationOwner(identity, releasedPath),
-          owner,
-        )
-      ) {
-        rmSync(releasedPath, { recursive: true, force: true });
-      }
-    } catch (error) {
-      if (DaemonRegistry.errorCode(error) === "ENOENT") return;
-      throw error;
-    }
+    DaemonRegistry.removeTokenClaim(identity.startupMutationPath, owner.token);
   }
 
   private beginStartupMutation(
@@ -666,13 +687,14 @@ export class DaemonRegistry {
       identity,
       identity.startupMutationPath,
     );
-    if (
-      observedOwner !== undefined &&
-      DaemonRegistry.processIsAlive(observedOwner.ownerPid) &&
-      this.clock.wallNowMs() - observedOwner.acquiredAt <= this.startupPolicy.coordinationGraceMs
-    ) {
-      return undefined;
-    }
+    if (observedOwner === undefined) return undefined;
+    if (this.platform !== "win32") {
+      if (
+        observedOwner.ownerLifetime === undefined ||
+        PosixDaemonProcessLifetime.observe(observedOwner.ownerLifetime) !== "exited"
+      )
+        return undefined;
+    } else if (DaemonRegistry.processIsAlive(observedOwner.ownerPid)) return undefined;
     if (!this.recoverStartupMutation(identity, observedOwner)) return undefined;
     return this.claimStartupMutation(identity);
   }
@@ -684,12 +706,16 @@ export class DaemonRegistry {
     const token = randomUUID();
     const owner: StartupMutationOwner = {
       ownerPid: process.pid,
+      ...(this.platform === "win32"
+        ? {}
+        : { ownerLifetime: PosixDaemonProcessLifetime.current(identity.stateDirectory) }),
       acquiredAt: this.clock.wallNowMs(),
       token,
     };
     const claimPath = identity.startupMutationClaimPath(token);
     mkdirSync(claimPath, { mode: 0o700 });
-    writeFileSync(identity.startupOwnerPath(claimPath), JSON.stringify(owner), {
+    mkdirSync(join(claimPath, token), { mode: 0o700 });
+    writeFileSync(identity.startupOwnerPath(join(claimPath, token)), JSON.stringify(owner), {
       encoding: "utf8",
       flag: "wx",
       mode: 0o600,
@@ -714,21 +740,40 @@ export class DaemonRegistry {
     identity: DaemonWorkspaceIdentity,
     observedOwner: StartupMutationOwner | undefined,
   ): boolean {
+    if (observedOwner === undefined) return false;
     const currentOwner = DaemonRegistry.readStartupMutationOwner(
       identity,
       identity.startupMutationPath,
     );
-    if (!DaemonRegistry.sameOptionalStartupMutationOwner(currentOwner, observedOwner)) return false;
-    const recoveryToken = observedOwner?.token ?? "ownerless";
-    const releasedPath = identity.releasedStartupMutationPath(recoveryToken);
+    if (!DaemonRegistry.sameStartupMutationOwner(currentOwner, observedOwner)) return false;
+    if (
+      this.platform !== "win32" &&
+      (observedOwner.ownerLifetime === undefined ||
+        PosixDaemonProcessLifetime.observe(observedOwner.ownerLifetime) !== "exited")
+    )
+      return false;
+    return DaemonRegistry.removeTokenClaim(identity.startupMutationPath, observedOwner.token);
+  }
+
+  private static removeTokenClaim(path: string, token: string): boolean {
+    if (!/^[a-f0-9-]{36}$/.test(token)) return false;
     try {
-      renameSync(identity.startupMutationPath, releasedPath);
+      rmSync(join(path, token), { recursive: true, force: true });
+      rmdirSync(path);
       return true;
     } catch (error) {
-      if (existsSync(releasedPath)) return true;
-      if (DaemonRegistry.errorCode(error) === "ENOENT") return false;
+      const code = DaemonRegistry.errorCode(error);
+      if (code === "ENOENT" || code === "ENOTEMPTY" || code === "EEXIST") return false;
       throw error;
     }
+  }
+
+  private static ownerMetadataPath(identity: DaemonWorkspaceIdentity, path: string): string {
+    const entries = readdirSync(path, { withFileTypes: true });
+    const tokens = entries.filter(
+      (entry) => entry.isDirectory() && /^[a-f0-9-]{36}$/.test(entry.name),
+    );
+    return identity.startupOwnerPath(tokens.length === 1 ? join(path, tokens[0]!.name) : path);
   }
 
   private recordPaths(): readonly string[] {
@@ -783,7 +828,8 @@ export class DaemonRegistry {
       record.workspaceKey === identity.workspaceKey &&
       record.stateKey === identity.stateKey &&
       record.identityKey === identity.identityKey &&
-      record.endpoint === identity.endpoint(record.instanceId)
+      (record.endpoint === identity.endpoint(record.instanceId) ||
+        record.endpoint === identity.legacySocketEndpoint(record.instanceId))
     );
   }
 
@@ -835,7 +881,9 @@ export class DaemonRegistry {
       (owner.ownerKind === "launcher" || owner.ownerKind === "daemon") &&
       typeof owner.acquiredAt === "number" &&
       typeof owner.heartbeatAt === "number" &&
-      typeof owner.revision === "string"
+      typeof owner.revision === "string" &&
+      (owner.ownerLifetime === undefined ||
+        PosixDaemonProcessLifetime.isIdentity(owner.ownerLifetime))
     );
   }
 
@@ -883,7 +931,9 @@ export class DaemonRegistry {
     path: string,
   ): StartupOwner | undefined {
     try {
-      const value: unknown = JSON.parse(readFileSync(identity.startupOwnerPath(path), "utf8"));
+      const value: unknown = JSON.parse(
+        readFileSync(DaemonRegistry.ownerMetadataPath(identity, path), "utf8"),
+      );
       return DaemonRegistry.isStartupOwner(value) ? value : undefined;
     } catch {
       return undefined;
@@ -895,7 +945,9 @@ export class DaemonRegistry {
     path: string,
   ): StartupMutationOwner | undefined {
     try {
-      const value: unknown = JSON.parse(readFileSync(identity.startupOwnerPath(path), "utf8"));
+      const value: unknown = JSON.parse(
+        readFileSync(DaemonRegistry.ownerMetadataPath(identity, path), "utf8"),
+      );
       return DaemonRegistry.isStartupMutationOwner(value) ? value : undefined;
     } catch {
       return undefined;
@@ -908,7 +960,9 @@ export class DaemonRegistry {
     return (
       Number.isInteger(owner.ownerPid) &&
       typeof owner.acquiredAt === "number" &&
-      typeof owner.token === "string"
+      typeof owner.token === "string" &&
+      (owner.ownerLifetime === undefined ||
+        PosixDaemonProcessLifetime.isIdentity(owner.ownerLifetime))
     );
   }
 
@@ -949,7 +1003,7 @@ export class DaemonRegistry {
   ): StartupOwner | undefined {
     const mutation = this.beginStartupMutation(identity);
     if (mutation === undefined) return undefined;
-    const ownerPath = identity.startupOwnerPath(identity.lockPath);
+    const ownerPath = DaemonRegistry.ownerMetadataPath(identity, identity.lockPath);
     const temporaryPath = `${identity.lockPath}.${process.pid}.${randomUUID()}.owner.tmp`;
     try {
       writeFileSync(temporaryPath, JSON.stringify(replacementOwner), {

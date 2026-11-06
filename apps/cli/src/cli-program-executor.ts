@@ -1,3 +1,4 @@
+import { join } from "node:path";
 import type { CliExecutionRequest, CommandExecutionResult } from "./command-execution-result.js";
 import type { WorkspaceSession } from "@symnav/core";
 import {
@@ -26,6 +27,7 @@ export class CliProgramExecutor {
   async execute(request: CliExecutionRequest): Promise<CommandExecutionResult> {
     const output = new OrderedCommandOutput({
       policy: this.dependencies.daemonPolicy.values.output,
+      directory: join(this.dependencies.stateDirectory, "captures"),
     });
     const context: ProgramContext = {
       stdout: output.stdout,

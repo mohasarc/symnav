@@ -1,5 +1,7 @@
+import { PosixDaemonProcessLifetime } from "../process/posix-process-lifetime.js";
+import type { DaemonProcessLifetimeIdentity } from "../process/process-lifetime-identity.js";
 import { spawn, type ChildProcess } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, fstatSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -12,6 +14,7 @@ import { TestDaemonController as DaemonController } from "../../test/helpers/dae
 import { TestDaemonStartupCoordinator as DaemonStartupCoordinator } from "../../test/helpers/daemon-startup-coordinator.js";
 import {
   DaemonProcessTerminationError,
+  NodeDaemonProcessLauncher,
   type DaemonProcess,
   type DaemonProcessExit,
   type DaemonProcessLauncher,
@@ -321,7 +324,13 @@ describe("DaemonStartupCoordinator", () => {
     expect(runtime.registry.readStored(runtime.identity)?.instanceId).toBe("old");
   });
 
-  it.each(["schema", "prior-protocol", "future-protocol", "symnav"] as const)(
+  it.each([
+    "schema",
+    "prior-protocol",
+    "future-protocol",
+    "symnav",
+    ...(process.platform === "win32" ? [] : ["legacy-endpoint"]),
+  ] as const)(
     "proves and replaces a real daemon for $mismatch mismatch",
     async (mismatch) => {
       const runtime = socketBackedCoordinator(roots);
@@ -335,6 +344,7 @@ describe("DaemonStartupCoordinator", () => {
       const oldRecord = readyRecord(runtime.identity, "old", "old-process", oldPid);
       const incompatibleRecord: DaemonRecord = {
         ...oldRecord,
+        endpoint: runtime.identity.legacySocketEndpoint("old"),
         schemaVersion:
           mismatch === "schema" ? DAEMON_RECORD_SCHEMA_VERSION + 1 : oldRecord.schemaVersion,
         protocolVersion:
@@ -442,7 +452,9 @@ describe("DaemonStartupCoordinator", () => {
     expect(originalRecord?.pid).toBe(harness.launcher.lastPid);
     expect(originalOwner).toBeDefined();
     writeFileSync(
-      harness.identity.startupOwnerPath(harness.identity.lockPath),
+      harness.identity.startupOwnerPath(
+        join(harness.identity.lockPath, originalOwner!.claimToken!),
+      ),
       JSON.stringify({ ...originalOwner, heartbeatAt: Date.now() - 60_000 }),
     );
     harness.terminator.currentProcessIsAlive = false;
@@ -665,6 +677,43 @@ describe("DaemonStartupCoordinator", () => {
     expect(harness.registry.acquireStartup(harness.identity, "recovered")).toBeUndefined();
   });
 
+  it.skipIf(process.platform === "win32")(
+    "closes the prepared child reader when initial starting publication throws",
+    async () => {
+      const stateDirectory = temporaryDirectory(roots);
+      const identity = DaemonWorkspaceIdentity.from(
+        join(stateDirectory, "workspace"),
+        stateDirectory,
+      );
+      const registry = new DaemonRegistry(identity.registryDirectory);
+      const launcher = new NodeDaemonProcessLauncher(
+        "0.1.0",
+        "file:///absolute/symnav/daemon-executor.js",
+        DaemonPolicy.currentSystem(),
+      );
+      const preparation = vi.spyOn(launcher, "prepareLifetime");
+      const launch = vi.spyOn(launcher, "launch");
+      const error = Object.assign(new Error("record write denied"), { code: "EACCES" });
+      vi.spyOn(registry, "writeStartingIfStartupOwner").mockImplementation(() => {
+        throw error;
+      });
+      const coordinator = new DaemonStartupCoordinator(registry, launcher, new DaemonTransport());
+      try {
+        await expect(coordinator.trigger(identity)).rejects.toBe(error);
+        const lifetime = preparation.mock.results[0]!.value!;
+        expect(() => fstatSync(lifetime.descriptor)).toThrow(
+          expect.objectContaining({ code: "EBADF" }),
+        );
+        expect(PosixDaemonProcessLifetime.observe(lifetime.identity)).toBe("exited");
+        expect(launch).not.toHaveBeenCalled();
+        expect(registry.startupOwner(identity)).toBeUndefined();
+        expect(registry.readStored(identity)).toBeUndefined();
+      } finally {
+        preparation.mock.results[0]?.value?.closeParentCopy();
+      }
+    },
+  );
+
   it("does not launch after startup ownership changes before publication", async () => {
     const harness = new CoordinatorHarness(roots);
     vi.spyOn(harness.registry, "writeStartingIfStartupOwner").mockReturnValue(false);
@@ -788,7 +837,7 @@ describe("DaemonStartupCoordinator", () => {
     expect(harness.registry.acquireStartup(harness.identity, "orphan")).toBeDefined();
     const owner = harness.registry.startupOwner(harness.identity)!;
     writeFileSync(
-      harness.identity.startupOwnerPath(harness.identity.lockPath),
+      harness.identity.startupOwnerPath(join(harness.identity.lockPath, owner.claimToken!)),
       JSON.stringify({ ...owner, heartbeatAt: Date.now() - 20_000 }),
     );
 
@@ -911,7 +960,7 @@ class CoordinatorHarness {
   constructor(roots: string[], options: CoordinatorHarnessOptions = {}) {
     const stateDir = temporaryDirectory(roots);
     this.identity = DaemonWorkspaceIdentity.from("/repo", stateDir);
-    this.registry = new DaemonRegistry(this.identity.registryDirectory);
+    this.registry = new DaemonRegistry(this.identity.registryDirectory, "win32");
     this.launcher = new ReadyTestLauncher(this.registry, this.identity, this.terminator, options);
     this.transport = new RegistryTransport(
       this.registry,
@@ -1130,6 +1179,10 @@ class TestProcessTerminator implements DaemonProcessTerminator {
   readonly terminated: number[] = [];
 
   constructor(public currentProcessIsAlive = true) {}
+
+  hasExited(pid: number): boolean {
+    return !this.isAlive(pid);
+  }
 
   isAlive(pid: number): boolean {
     return (this.currentProcessIsAlive && pid === process.pid) || this.alive.has(pid);
@@ -1377,6 +1430,9 @@ class InProcessReadyLauncher implements DaemonProcessLauncher {
       });
     }, 0);
     return {
+      ...(process.platform === "win32"
+        ? {}
+        : { processLifetime: PosixDaemonProcessLifetime.current(identity.stateDirectory) }),
       pid: process.pid,
       exited: new Promise(() => undefined),
       terminate: () => this.close(),
@@ -1407,6 +1463,9 @@ function readyRecord(
     instanceId,
     processToken,
     endpoint: identity.endpoint(instanceId),
+    ...(IdentifiableDaemonLifetimes.identities.has(pid)
+      ? { processLifetime: IdentifiableDaemonLifetimes.identities.get(pid)! }
+      : {}),
     pid,
     state: "ready",
     startedAt: 10,
@@ -1414,6 +1473,10 @@ function readyRecord(
     fileCount: 2,
     memoryCapBytes: 256 * 1024 * 1024,
   };
+}
+
+class IdentifiableDaemonLifetimes {
+  public static readonly identities = new Map<number, DaemonProcessLifetimeIdentity>();
 }
 
 function spawnIdentifiableDaemon(
@@ -1424,23 +1487,38 @@ function spawnIdentifiableDaemon(
   processIds: number[],
 ): Promise<number> {
   if (process.platform !== "win32") {
-    mkdirSync(dirname(identity.endpoint(instanceId)), { recursive: true, mode: 0o700 });
+    mkdirSync(dirname(identity.legacySocketEndpoint(instanceId)), { recursive: true, mode: 0o700 });
   }
+  const lifetime =
+    process.platform === "win32"
+      ? undefined
+      : PosixDaemonProcessLifetime.prepareChild(identity.stateDirectory);
   return new Promise((resolve, reject) => {
     const child = spawn(
       process.execPath,
       [
         "-e",
         identifiableDaemonSource,
-        identity.endpoint(instanceId),
+        identity.legacySocketEndpoint(instanceId),
         instanceId,
         processToken,
         String(startedAt),
       ],
-      { stdio: ["ignore", "pipe", "ignore"] },
+      {
+        stdio:
+          lifetime === undefined
+            ? ["ignore", "pipe", "ignore"]
+            : ["ignore", "pipe", "ignore", lifetime.descriptor],
+      },
     );
-    child.once("error", reject);
+    child.once("error", (error) => {
+      lifetime?.closeParentCopy();
+      reject(error);
+    });
     child.stdout?.once("data", () => {
+      lifetime?.closeParentCopy();
+      if (lifetime !== undefined)
+        IdentifiableDaemonLifetimes.identities.set(child.pid!, lifetime.identity);
       processIds.push(child.pid!);
       resolve(child.pid!);
     });

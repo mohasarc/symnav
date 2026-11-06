@@ -184,6 +184,71 @@ describe("DaemonProcessCoordinator runtime lifecycle", () => {
     expect(harness.registry.read(harness.identity)).toBeUndefined();
   });
 
+  it("retains successful real-child completion when consumed after exit", async () => {
+    const fixture = new RealChildProcess(
+      spawn(process.execPath, ["-e", "process.stdin.once('data', () => process.exit(0))"], {
+        stdio: ["pipe", "ignore", "ignore"],
+      }),
+    );
+    childProcesses.push(fixture.child);
+    const observedExit = new Promise((resolve) => fixture.child.once("exit", resolve));
+
+    fixture.child.stdin?.end("exit\n");
+    await expect(observedExit).resolves.toBe(0);
+    expect(fixture.child.exitCode).toBe(0);
+    expect(fixture.child.signalCode).toBeNull();
+
+    await expect(fixture.exited).resolves.toBeUndefined();
+  });
+
+  it("resolves real-child completion awaited before exit only after a successful exit", async () => {
+    const fixture = new RealChildProcess(
+      spawn(process.execPath, ["-e", "process.stdin.once('data', () => process.exit(0))"], {
+        stdio: ["pipe", "ignore", "ignore"],
+      }),
+    );
+    childProcesses.push(fixture.child);
+    const completion = expect(fixture.exited).resolves.toBeUndefined();
+    expect(fixture.child.exitCode).toBeNull();
+
+    fixture.child.stdin?.end("exit\n");
+    await completion;
+
+    expect(fixture.child.exitCode).toBe(0);
+    expect(fixture.child.signalCode).toBeNull();
+  });
+
+  it("retains unsuccessful real-child completion for a delayed consumer", async () => {
+    const fixture = new RealChildProcess(
+      spawn(process.execPath, ["-e", "process.stdin.once('data', () => process.exit(7))"], {
+        stdio: ["pipe", "ignore", "ignore"],
+      }),
+    );
+    childProcesses.push(fixture.child);
+    const observedExit = new Promise((resolve) => fixture.child.once("exit", resolve));
+
+    fixture.child.stdin?.end("exit\n");
+    await expect(observedExit).resolves.toBe(7);
+    await new Promise((resolve) => setImmediate(resolve));
+
+    await expect(fixture.exited).rejects.toThrow("Stuck daemon exited with code 7");
+  });
+
+  it("retains the original real-child spawn error for a delayed consumer", async () => {
+    const executableDirectory = mkdtempSync(join(tmpdir(), "symnav-missing-child-"));
+    const fixture = new RealChildProcess(
+      spawn(join(executableDirectory, "missing-executable"), [], { stdio: "ignore" }),
+    );
+    childProcesses.push(fixture.child);
+    const observedError = new Promise<Error>((resolve) => fixture.child.once("error", resolve));
+
+    const error = await observedError;
+    await new Promise((resolve) => setImmediate(resolve));
+    rmSync(executableDirectory, { recursive: true, force: true });
+
+    await expect(fixture.exited).rejects.toBe(error);
+  });
+
   it("force-stops a real matching daemon process with a stuck request", async () => {
     const stateDirectory = CanonicalTestPath.resolve(
       mkdtempSync(join(tmpdir(), "symnav-daemon-child-state-")),
@@ -199,7 +264,7 @@ describe("DaemonProcessCoordinator runtime lifecycle", () => {
     const requestStartedPath = join(stateDirectory, "request-started");
     const lease = registry.acquireStartup(identity, instanceId);
     expect(lease).toBeDefined();
-    const child = spawnStuckDaemon(
+    const fixture = RealChildProcess.spawnStuckDaemon(
       workspaceRoot,
       stateDirectory,
       instanceId,
@@ -207,6 +272,7 @@ describe("DaemonProcessCoordinator runtime lifecycle", () => {
       readyPath,
       requestStartedPath,
     );
+    const child = fixture.child;
     childProcesses.push(child);
     if (child.pid === undefined) throw new Error("Stuck daemon did not receive a PID");
     await waitUntil(() => existsSync(`${readyPath}.boot`));
@@ -261,7 +327,7 @@ describe("DaemonProcessCoordinator runtime lifecycle", () => {
       pid: daemonPid,
     });
     expect(() => process.kill(daemonPid, 0)).toThrow();
-    await waitForProcess(child);
+    await fixture.exited;
     childProcesses.splice(childProcesses.indexOf(child), 1);
     expect(registry.read(identity)).toBeUndefined();
     rmSync(stateDirectory, { recursive: true, force: true });
@@ -269,13 +335,30 @@ describe("DaemonProcessCoordinator runtime lifecycle", () => {
   }, 10_000);
 
   it("retains exact ownership after autonomous idle shutdown for an exit observer", async () => {
-    const harness = await DaemonProcessCoordinatorHarness.start(new ImmediateExecutor(), {
-      idleTimeoutMs: 10,
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    let harness: DaemonProcessCoordinatorHarness;
+    let hasExitedAtReadiness: boolean;
+    let readyOwnership: ReturnType<DaemonRegistry["read"]>;
+    try {
+      harness = await DaemonProcessCoordinatorHarness.start(new ImmediateExecutor(), {
+        idleTimeoutMs: 10,
+      });
+      harnesses.push(harness);
+      hasExitedAtReadiness = harness.hasExited;
+      readyOwnership = harness.registry.read(harness.identity);
+
+      await vi.advanceTimersByTimeAsync(10);
+      await expect(harness.exited).resolves.toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
+
+    expect(hasExitedAtReadiness).toBe(false);
+    expect(readyOwnership).toMatchObject({
+      instanceId: harness.instanceId,
+      processToken: "runtime-token",
+      state: "ready",
     });
-    harnesses.push(harness);
-
-    await harness.exited;
-
     expect(harness.registry.read(harness.identity)).toMatchObject({
       instanceId: harness.instanceId,
       processToken: "runtime-token",
@@ -773,6 +856,10 @@ function emptyResult(): CommandExecutionResult {
 class CurrentProcessTerminator implements DaemonProcessTerminator {
   constructor(private readonly exited: () => boolean) {}
 
+  hasExited(pid: number): boolean {
+    return !this.isAlive(pid);
+  }
+
   isAlive(pid: number): boolean {
     return pid === process.pid && !this.exited();
   }
@@ -782,40 +869,51 @@ class CurrentProcessTerminator implements DaemonProcessTerminator {
   }
 }
 
-function spawnStuckDaemon(
-  workspaceRoot: string,
-  stateDirectory: string,
-  instanceId: string,
-  processToken: string,
-  readyPath: string,
-  requestStartedPath: string,
-): ChildProcess {
-  return spawn(
-    process.execPath,
-    [
-      fileURLToPath(new URL("../../node_modules/tsx/dist/cli.mjs", import.meta.url)),
-      fileURLToPath(
-        new URL("../../test/helpers/daemon-process-coordinator-stuck.ts", import.meta.url),
-      ),
-      workspaceRoot,
-      stateDirectory,
-      instanceId,
-      processToken,
-      readyPath,
-      requestStartedPath,
-    ],
-    { stdio: "ignore" },
-  );
-}
+class RealChildProcess {
+  public readonly exited: Promise<void>;
 
-function waitForProcess(child: ChildProcess): Promise<void> {
-  return new Promise((resolve, reject) => {
-    child.once("error", reject);
-    child.once("exit", (code) => {
-      if (code === 0) resolve();
-      else reject(new Error(`Stuck daemon exited with code ${String(code)}`));
+  public constructor(public readonly child: ChildProcess) {
+    this.exited = RealChildProcess.waitForProcess(child);
+    void this.exited.catch(() => undefined);
+  }
+
+  public static spawnStuckDaemon(
+    workspaceRoot: string,
+    stateDirectory: string,
+    instanceId: string,
+    processToken: string,
+    readyPath: string,
+    requestStartedPath: string,
+  ): RealChildProcess {
+    return new RealChildProcess(
+      spawn(
+        process.execPath,
+        [
+          fileURLToPath(new URL("../../node_modules/tsx/dist/cli.mjs", import.meta.url)),
+          fileURLToPath(
+            new URL("../../test/helpers/daemon-process-coordinator-stuck.ts", import.meta.url),
+          ),
+          workspaceRoot,
+          stateDirectory,
+          instanceId,
+          processToken,
+          readyPath,
+          requestStartedPath,
+        ],
+        { stdio: "ignore" },
+      ),
+    );
+  }
+
+  private static waitForProcess(child: ChildProcess): Promise<void> {
+    return new Promise((resolve, reject) => {
+      child.once("error", reject);
+      child.once("exit", (code) => {
+        if (code === 0) resolve();
+        else reject(new Error(`Stuck daemon exited with code ${String(code)}`));
+      });
     });
-  });
+  }
 }
 
 async function waitUntil(predicate: () => boolean): Promise<void> {

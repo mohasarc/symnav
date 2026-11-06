@@ -1,3 +1,4 @@
+import { join } from "node:path";
 import { randomUUID } from "node:crypto";
 import type { DaemonExecutionFailureCode } from "../daemon-execution-failure.js";
 import type {
@@ -110,10 +111,15 @@ export class DaemonClientRuntime {
     );
     const routingComponents = DaemonTransportFactory.create({
       policy: this.policy,
-      createOutput: () => new DaemonClientResultCapture({ policy: this.policy.values.output }),
+      createOutput: () =>
+        new DaemonClientResultCapture({
+          policy: this.policy.values.output,
+          directory: join(options.stateDirectory, "captures"),
+        }),
     });
     const statusComponents = DaemonTransportFactory.create({
       policy: this.policy,
+      captureDirectory: join(options.stateDirectory, "captures"),
       lifecycleResponseTimeoutMs: this.policy.values.transport.statusResponseTimeoutMs,
     });
     this.routingTransport = new DaemonClientTransport(
@@ -129,7 +135,6 @@ export class DaemonClientRuntime {
       options.productVersion,
       options.executorModuleUrl,
       this.policy,
-      processTerminator,
     );
     this.observer = new DaemonRecordObserver(this.routingTransport, processTerminator);
     this.coordinator = new DaemonStartupCoordinator(

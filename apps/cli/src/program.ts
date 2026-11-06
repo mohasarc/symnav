@@ -9,6 +9,7 @@ import { TypeScriptBackend } from "@symnav/backend-typescript";
 import { NodeTelemetryWritePort, NodeUsageRecorder, usageLogPath } from "@symnav/telemetry";
 import type { Clock, TelemetryFailureObserver } from "@symnav/telemetry";
 import { registerContextCommand } from "./commands/context/register-context-command.js";
+import { registerDoctorCommand } from "./commands/doctor/register-doctor-command.js";
 import { registerDaemonCommand } from "./commands/daemon/register-daemon-command.js";
 import { registerDefCommand } from "./commands/def/register-def-command.js";
 import { registerGraphCommand } from "./commands/graph/register-graph-command.js";
@@ -145,5 +146,6 @@ export function buildProgram(
   registerDaemonCommand(program, ctx, commandDependencies);
   registerStatsCommand(program, ctx, commandDependencies);
   registerSetupCommand(program, ctx);
+  registerDoctorCommand(program, ctx);
   return program;
 }

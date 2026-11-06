@@ -1,3 +1,4 @@
+import { StateDirectoryResolver } from "../state-directory-resolver.js";
 import {
   applyEdits,
   findNodeAtLocation,
@@ -14,6 +15,7 @@ import {
   type AgentSetupResult,
 } from "./agent-configuration.js";
 import { AgentConfigurationFile } from "./agent-configuration-file.js";
+import type { AgentProbePolicy } from "./agent-probe-policy.js";
 import { AgentExecutable } from "./agent-executable.js";
 
 export class ClaudeCodeSandboxConfiguration extends AgentSandboxConfiguration {
@@ -21,14 +23,118 @@ export class ClaudeCodeSandboxConfiguration extends AgentSandboxConfiguration {
   public readonly configurationPath: string;
 
   private readonly homeDirectory: string;
+  private readonly workspaceDirectory: string;
 
   public constructor(locations: AgentConfigurationLocations) {
     super();
     this.homeDirectory = locations.homeDirectory;
+    this.workspaceDirectory = resolve(locations.workspaceDirectory ?? process.cwd());
     this.configurationPath = join(
       locations.claudeConfigurationDirectory ?? join(locations.homeDirectory, ".claude"),
       "settings.json",
     );
+  }
+
+  public async inspect(stateDirectory: string, workspace: string): Promise<AgentProbePolicy> {
+    const source = await new AgentConfigurationFile(this.configurationPath).read();
+    const root = this.validateSettings(source || "{}");
+    const enabled = findNodeAtLocation(root, ["sandbox", "enabled"]);
+    if (enabled !== undefined && enabled.type !== "boolean")
+      throw new Error("sandbox.enabled must be a boolean");
+    const filesystem: Record<string, string[]> = {};
+    for (const key of ["allowWrite", "denyWrite", "denyRead", "allowRead"]) {
+      const node = findNodeAtLocation(root, ["sandbox", "filesystem", key]);
+      if (
+        node !== undefined &&
+        (node.type !== "array" || node.children?.some((child) => child.type !== "string"))
+      )
+        throw new Error(`sandbox.filesystem.${key} must be an array of strings`);
+      filesystem[key] = (node?.children ?? []).map((child) =>
+        this.absoluteProbePath(child.value as string),
+      );
+    }
+    this.addPermissionPaths(root, filesystem);
+    const deniedWrite = filesystem.denyWrite!.some((path) =>
+      this.deniesState(path, stateDirectory),
+    );
+    const deniedRead = filesystem.denyRead!.some(
+      (path) =>
+        this.deniesState(path, stateDirectory) &&
+        !filesystem.allowRead!.some(
+          (allowed) =>
+            this.probeCovers(allowed, stateDirectory) &&
+            this.probeCovers(this.subtreePath(path), allowed),
+        ),
+    );
+    const grantsState =
+      !deniedWrite &&
+      !deniedRead &&
+      filesystem.allowWrite!.some((path) => this.probeCovers(path, stateDirectory));
+    filesystem.allowRead!.push(workspace);
+    return {
+      grantsState,
+      configuration: JSON.stringify({
+        network: { allowedDomains: [], deniedDomains: ["*"] },
+        filesystem,
+      }),
+    };
+  }
+
+  private absoluteProbePath(path: string): string {
+    const expanded =
+      path === "~" || path.startsWith("~/") ? join(this.homeDirectory, path.slice(2)) : path;
+    if (!isAbsolute(expanded))
+      throw new Error(`cannot translate relative Claude filesystem path ${path}`);
+    return expanded;
+  }
+
+  private probeCovers(grant: string, stateDirectory: string): boolean {
+    return this.covers(
+      StateDirectoryResolver.canonicalize(grant),
+      StateDirectoryResolver.canonicalize(stateDirectory),
+    );
+  }
+
+  private subtreePath(path: string): string {
+    return path.replace(/\/\*\*$/u, "") || "/";
+  }
+
+  private deniesState(path: string, stateDirectory: string): boolean {
+    const subtree = this.subtreePath(path);
+    if (!/[*?\[\]{}]/u.test(subtree)) return this.probeCovers(subtree, stateDirectory);
+    const prefix = subtree.slice(0, subtree.search(/[*?\[\]{}]/u));
+    if (
+      StateDirectoryResolver.canonicalize(stateDirectory).startsWith(
+        StateDirectoryResolver.canonicalize(prefix),
+      )
+    )
+      throw new Error("cannot verify a patterned state denial; use an absolute state policy");
+    return false;
+  }
+
+  private addPermissionPaths(root: Node, filesystem: Record<string, string[]>): void {
+    for (const disposition of ["allow", "deny"]) {
+      const rules = findNodeAtLocation(root, ["permissions", disposition]);
+      if (
+        rules !== undefined &&
+        (rules.type !== "array" || rules.children?.some((rule) => rule.type !== "string"))
+      )
+        throw new Error(`permissions.${disposition} must be an array of strings`);
+      for (const rule of rules?.children ?? []) {
+        const value = rule.value as string;
+        const match = /^(Read|Edit)(?:\((.*)\))?$/u.exec(value);
+        if (match === null || (disposition === "allow" && match[1] === "Read")) continue;
+        const path = match[2] ?? "//";
+        const absolute = path.startsWith("//")
+          ? path.slice(1)
+          : path.startsWith("~/")
+            ? this.absoluteProbePath(path)
+            : resolve(this.workspaceDirectory, path.replace(/^\//u, ""));
+        const key =
+          match[1] === "Read" ? "denyRead" : disposition === "allow" ? "allowWrite" : "denyWrite";
+        filesystem[key]!.push(this.subtreePath(absolute));
+      }
+    }
   }
 
   public async grant(stateDirectory: string): Promise<AgentSetupResult> {

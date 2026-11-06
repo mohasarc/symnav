@@ -82,6 +82,24 @@ SYMNAV_STATE_DIR=/path/to/state symnav setup codex
 
 Setup preserves existing config content, comments, file permissions, network policy and other grants. It updates legacy `sandbox_workspace_write.writable_roots` or the selected named permission profile. A built-in profile receives a derived profile that inherits its policy and adds only the state path. Existing grants remain unchanged. Setup never changes the legacy sandbox mode; read-only sessions still need a supported write-capable sandbox policy. Restart agent sessions after a change. The grant is written even when Codex is not installed, with a note in the output. Invalid TOML, conflicting legacy/named selections and exact state denials fail without changing the config. Claude Code uses `~/.claude/settings.json`, or `settings.json` inside `CLAUDE_CONFIG_DIR` when set. Setup adds only `sandbox.filesystem.allowWrite`; it preserves sandbox enablement, network settings, deny lists and permission rules. It never enables sandboxing or removes a conflicting deny rule. Invalid JSON, duplicate keys and mistyped grant nodes fail without changing the file. Other agents can grant the state directory manually.
 
+Run `symnav doctor` to check Codex then Claude Code, or select one supported agent:
+
+```bash
+symnav doctor
+symnav doctor codex
+SYMNAV_STATE_DIR=/path/to/state symnav doctor claude-code
+```
+
+Use the same `SYMNAV_STATE_DIR`, `CODEX_HOME`, and `CLAUDE_CONFIG_DIR` as setup and navigation. Doctor checks the original user policy, creates a scratch workspace and isolated telemetry under the selected state directory, and keeps the sandbox wrapper alive through cold execution, readiness and a warm command. Success requires recorded warm telemetry. It stops only scratch work, waits for owned processes to exit and removes its scratch files. If owned exit cannot be confirmed, it fails and preserves scratch rather than deleting live process state. User configuration and existing telemetry remain unchanged. An unwritable state directory is an error, including with `--no-warnings`. Doctor uses isolated probe state even when normal daemon use and telemetry recording are opted out.
+
+Live checks use the installed Codex sandbox command or the standalone Claude sandbox runtime, `srt`, on `PATH`; no authenticated agent or model session runs. Claude Code's interactive sandbox enablement setting is preserved: doctor explicitly starts standalone SRT with the configured filesystem rules and network disabled. If a runtime is genuinely unavailable, a valid grant produces an explicit configuration-only result. A missing or denied grant, an unsupported policy translation, and an installed runtime that rejects or fails the proof produce `fail` and exit 1. No installed agents produce `skip` and exit 0. Doctor status lines remain visible with `--no-warnings`.
+
+Recorded daemon startup failures include the phase, reason, optional OS error code and affected workspace. The workspace identifies the probe; it is not the original failing write path. Investigate the reported startup condition, then rerun doctor.
+
+Doctor directs the Claude runtime's temporary files to its existing scratch workspace. It does not depend on a global `/tmp/claude` directory or add filesystem grants for temporary files.
+
+Setup never removes denies or changes read-only session policy. Restart agent sessions after granting access; existing project or managed session restrictions can still deny it. For other agents, manually allow writes to the effective state directory and reads of the workspace. Keep state outside project configuration and grant no network, TCP, or Unix-socket permission for symnav. Doctor's live probe also runs without network access. See [Codex permissions](https://developers.openai.com/codex/permissions) and [Claude sandbox filesystem settings](https://code.claude.com/docs/en/sandboxing) for agent policy syntax.
+
 When a required state write fails, symnav disables daemon and telemetry work for that invocation. Navigation executes locally when no request has been submitted; accepted work keeps its result or controlled failure. One warning follows ordinary stderr, and the command keeps its own exit code:
 
 ```text
@@ -90,7 +108,7 @@ symnav: warning: cannot write /Users/mo/.symnav (EPERM); daemon and telemetry ar
 
 Use global `--no-warnings` before the command, between command arguments, or at the end to suppress all warning emissions. It preserves errors, stdout, exit status, daemon routing, and telemetry. Extraction warnings use the `symnav: warning:` prefix. A literal `--no-warnings` after `--` or as an option value remains an argument.
 
-Grant the sandbox write access to the effective state directory. Help, version, and read-only commands do not warn when they need no write. With both `SYMNAV_DAEMON=0` and `SYMNAV_TELEMETRY=0`, commands never access state; `stats` consequently reports an empty summary. To read existing stats without recording another event, run `SYMNAV_DAEMON=1 SYMNAV_TELEMETRY=0 symnav stats --json`.
+Grant the sandbox write access to the effective state directory. Help, version, and read-only commands do not warn when they need no write. With both `SYMNAV_DAEMON=0` and `SYMNAV_TELEMETRY=0`, navigation commands never access state; `stats` consequently reports an empty summary. To read existing stats without recording another event, run `SYMNAV_DAEMON=1 SYMNAV_TELEMETRY=0 symnav stats --json`.
 
 Command and result spill files also stay inside state and are removed after delivery. Setting both `SYMNAV_DAEMON=0` and `SYMNAV_TELEMETRY=0` runs navigation directly without accessing state or creating spill files.
 
@@ -118,4 +136,4 @@ To run the CLI from source during development, use the `dev` script in `apps/cli
 pnpm --filter symnav dev --version
 ```
 
-Real sandbox checks use pinned `@anthropic-ai/sandbox-runtime` on macOS and Linux. Linux needs `bubblewrap`, `socat`, `ripgrep`, and working unprivileged user namespaces. Run `pnpm --filter symnav exec vitest run test/e2e/sandbox/warm-navigation.test.ts` after building. Set `SYMNAV_REQUIRE_SANDBOX_RUNTIME=1` to fail when runtime prerequisites are unavailable; CI requires this on both platforms. Installed Codex runtimes run the same checks with an isolated configuration.
+Real sandbox checks use pinned `@anthropic-ai/sandbox-runtime` on macOS and Linux, which requires Node 22.12 or newer. Linux needs `bubblewrap`, `socat`, `ripgrep`, and working unprivileged user namespaces. Run `pnpm --filter symnav exec vitest run test/e2e/sandbox/warm-navigation.test.ts test/e2e/sandbox/doctor.test.ts` after building. Set `SYMNAV_REQUIRE_SANDBOX_RUNTIME=1` to fail when runtime prerequisites are unavailable; CI requires this on both platforms and uses Node 22 for sandbox jobs. Main compatibility checks continue to use Node 20. Installed Codex runtimes run the same checks with an isolated configuration.

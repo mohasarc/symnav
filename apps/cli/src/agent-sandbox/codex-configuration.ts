@@ -1,5 +1,7 @@
+import { StateDirectoryResolver } from "../state-directory-resolver.js";
 import { ParseError } from "toml-eslint-parser";
-import { isAbsolute, join, relative, resolve, sep } from "node:path";
+import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
+import type { AgentProbePolicy } from "./agent-probe-policy.js";
 import { TomlDocument } from "./toml-document.js";
 import {
   AgentSandboxConfiguration,
@@ -14,14 +16,201 @@ export class CodexSandboxConfiguration extends AgentSandboxConfiguration {
   public readonly configurationPath: string;
 
   private readonly homeDirectory: string;
+  private readonly workspaceDirectory: string;
 
   public constructor(locations: AgentConfigurationLocations) {
     super();
     this.homeDirectory = locations.homeDirectory;
+    this.workspaceDirectory = resolve(locations.workspaceDirectory ?? process.cwd());
     this.configurationPath = join(
       locations.codexHome ?? join(locations.homeDirectory, ".codex"),
       "config.toml",
     );
+  }
+
+  public async inspect(stateDirectory: string, workspace: string): Promise<AgentProbePolicy> {
+    const document = new TomlDocument(
+      await new AgentConfigurationFile(this.configurationPath).read(),
+    );
+    this.validateLegacy(document);
+    const selected = document.configuration.default_permissions;
+    if (selected !== undefined || document.configuration.permissions !== undefined)
+      this.validateProfiles(document);
+    const unrestricted =
+      selected === ":danger-full-access" ||
+      document.configuration.sandbox_mode === "danger-full-access";
+    const legacyRoots = (document.value(["sandbox_workspace_write", "writable_roots"]) ??
+      []) as string[];
+    const effective = unrestricted
+      ? { ":root": "write" }
+      : typeof selected === "string"
+        ? this.profileFilesystem(document, selected, new Set(), true)
+        : this.legacyProbeFilesystem(document, legacyRoots);
+    const filesystem = this.absoluteProbeFilesystem(
+      effective,
+      typeof selected === "string"
+        ? this.probeWorkspaceRoots(document, selected)
+        : [this.workspaceDirectory],
+    );
+    const rules: { path: string; access: unknown }[] = [];
+    for (const [path, access] of Object.entries(filesystem)) {
+      if (path === "glob_scan_max_depth") continue;
+      for (const [subpath, permission] of this.isTable(access)
+        ? Object.entries(access)
+        : [[".", access]]) {
+        const rulePath = subpath === "." ? path : join(path, subpath as string);
+        const absolute = this.absolutePath(rulePath);
+        rules.push({
+          path: absolute === undefined ? rulePath : StateDirectoryResolver.canonicalize(absolute),
+          access: permission,
+        });
+      }
+    }
+    const canonicalState = StateDirectoryResolver.canonicalize(stateDirectory);
+    this.rejectRelevantPatternedDenials(rules, canonicalState);
+    const covering = rules.filter((rule) => this.covers(rule.path, canonicalState));
+    const specificity = Math.max(
+      -1,
+      ...covering.map((rule) => this.absolutePath(rule.path)!.length),
+    );
+    const nearest = covering.filter((rule) => this.absolutePath(rule.path)!.length === specificity);
+    const grantsState =
+      document.configuration.sandbox_mode !== "read-only" &&
+      !nearest.some((rule) => rule.access === "deny") &&
+      nearest.some((rule) => rule.access === "write");
+    if (!Object.hasOwn(filesystem, workspace)) filesystem[workspace] = "read";
+    const assignments = Object.entries(filesystem)
+      .map(([path, access]) => `${JSON.stringify(path)} = ${this.serializeProbeValue(access)}`)
+      .join("\n");
+    return {
+      grantsState,
+      configuration: `default_permissions = "symnav-doctor"\n[permissions.symnav-doctor.filesystem]\n${assignments}\n[permissions.symnav-doctor.network]\nenabled = false\n`,
+    };
+  }
+
+  private rejectRelevantPatternedDenials(
+    rules: readonly { path: string; access: unknown }[],
+    stateDirectory: string,
+  ): void {
+    for (const rule of rules) {
+      if (rule.access !== "deny") continue;
+      const wildcard = rule.path.search(/[*?\[\]{}]/u);
+      if (wildcard === -1) continue;
+      const prefix = rule.path.slice(0, wildcard);
+      const staticDirectory = prefix.endsWith(sep) ? resolve(prefix) : dirname(prefix);
+      if (this.covers(staticDirectory, stateDirectory))
+        throw new Error("cannot verify patterned Codex state denial; use explicit state rules");
+    }
+  }
+
+  private legacyProbeFilesystem(
+    document: TomlDocument,
+    roots: readonly string[],
+  ): Record<string, unknown> {
+    const filesystem: Record<string, unknown> =
+      document.configuration.sandbox_mode === "workspace-write"
+        ? this.builtinProbeFilesystem(":workspace")
+        : { ":root": "read" };
+    for (const [flag, path] of [
+      ["exclude_tmpdir_env_var", ":tmpdir"],
+      ["exclude_slash_tmp", ":slash_tmp"],
+    ]) {
+      const excluded = document.value(["sandbox_workspace_write", flag!]);
+      if (excluded !== undefined && typeof excluded !== "boolean")
+        throw new Error(`${flag} must be a boolean`);
+      if (excluded) delete filesystem[path!];
+    }
+    for (const root of roots) filesystem[root] = "write";
+    return filesystem;
+  }
+
+  private absoluteProbeFilesystem(
+    filesystem: Record<string, unknown>,
+    workspaceRoots: readonly string[],
+  ): Record<string, unknown> {
+    const expanded: Record<string, unknown> = {};
+    for (const [path, access] of Object.entries(filesystem)) {
+      const temporaryRoot = process.env.TMPDIR;
+      if (path === ":tmpdir" && (temporaryRoot === undefined || !isAbsolute(temporaryRoot)))
+        continue;
+      const paths =
+        path === ":workspace_roots"
+          ? workspaceRoots
+          : [path === ":tmpdir" ? temporaryRoot! : path === ":slash_tmp" ? resolve("/tmp") : path];
+      for (const root of paths) {
+        if (root === "glob_scan_max_depth") {
+          expanded[root] = access;
+          continue;
+        }
+        const absolute = this.absolutePath(root) ?? (root === ":minimal" ? root : undefined);
+        if (absolute === undefined)
+          throw new Error(`cannot translate Codex filesystem path ${root}`);
+        expanded[absolute] = Object.hasOwn(expanded, absolute)
+          ? this.mergeProbeAccess(expanded[absolute], access)
+          : access;
+      }
+    }
+    return expanded;
+  }
+
+  private mergeProbeAccess(left: unknown, right: unknown): unknown {
+    const priority = ["read", "write", "deny"];
+    if (!this.isTable(left) && !this.isTable(right))
+      return priority[Math.max(priority.indexOf(String(left)), priority.indexOf(String(right)))];
+    const merged: Record<string, unknown> = this.isTable(left) ? { ...left } : { ".": left };
+    for (const [path, access] of Object.entries(this.isTable(right) ? right : { ".": right }))
+      merged[path] = Object.hasOwn(merged, path)
+        ? this.mergeProbeAccess(merged[path], access)
+        : access;
+    return merged;
+  }
+
+  private serializeProbeValue(value: unknown): string {
+    if (this.isTable(value))
+      return `{ ${Object.entries(value)
+        .map(([key, access]) => `${JSON.stringify(key)} = ${JSON.stringify(access)}`)
+        .join(", ")} }`;
+    return JSON.stringify(value);
+  }
+
+  private probeWorkspaceRoots(document: TomlDocument, name: string): readonly string[] {
+    if (name.startsWith(":")) return [this.workspaceDirectory];
+    const profile = document.value(["permissions", name]) as Record<string, unknown>;
+    const inherited =
+      typeof profile.extends === "string"
+        ? this.probeWorkspaceRoots(document, profile.extends)
+        : [this.workspaceDirectory];
+    const configured = profile.workspace_roots;
+    if (configured === undefined) return inherited;
+    if (
+      !this.isTable(configured) ||
+      Object.values(configured).some((value) => typeof value !== "boolean")
+    )
+      throw new Error("workspace_roots must map paths to booleans");
+    const roots = new Set(inherited);
+    for (const [path, enabled] of Object.entries(configured)) {
+      const absolute = this.absolutePath(path);
+      if (absolute === undefined) throw new Error(`cannot translate workspace root ${path}`);
+      if (enabled) roots.add(absolute);
+      else roots.delete(absolute);
+    }
+    return [...roots];
+  }
+
+  private builtinProbeFilesystem(name: string): Record<string, unknown> {
+    if (name === ":read-only") return { ":root": "read" };
+    return {
+      ":root": "read",
+      ":workspace_roots": {
+        ".": "write",
+        ".git": "read",
+        ".agents": "read",
+        ".codex": "read",
+        ".aws": "read",
+      },
+      ":tmpdir": "write",
+      ":slash_tmp": "write",
+    };
   }
 
   public async grant(stateDirectory: string): Promise<AgentSetupResult> {
@@ -158,14 +347,16 @@ export class CodexSandboxConfiguration extends AgentSandboxConfiguration {
     document: TomlDocument,
     name: string,
     ancestors: Set<string>,
+    includeBuiltins = false,
   ): Record<string, unknown> {
     if (ancestors.has(name)) throw new Error("permission profile inheritance cycle");
-    if (name === ":workspace" || name === ":read-only") return {};
+    if (name === ":workspace" || name === ":read-only")
+      return includeBuiltins ? this.builtinProbeFilesystem(name) : {};
     ancestors.add(name);
     const profile = document.value(["permissions", name]) as Record<string, unknown>;
     const inherited =
       typeof profile.extends === "string"
-        ? this.profileFilesystem(document, profile.extends, ancestors)
+        ? this.profileFilesystem(document, profile.extends, ancestors, includeBuiltins)
         : {};
     const filesystem: Record<string, unknown> = { ...inherited };
     for (const [path, access] of Object.entries(

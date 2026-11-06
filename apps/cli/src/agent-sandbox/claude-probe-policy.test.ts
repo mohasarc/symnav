@@ -1,0 +1,173 @@
+import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { dirname, join } from "node:path";
+import { afterEach, expect, it } from "vitest";
+import { ClaudeCodeSandboxConfiguration } from "./claude-code-configuration.js";
+
+class ProbePolicyScratch {
+  public static readonly directories: string[] = [];
+  public static async rootDenialHome(prefix: string): Promise<string> {
+    const directory = process.platform === "win32" ? dirname(process.cwd()) : tmpdir();
+    const home = await mkdtemp(join(directory, prefix));
+    this.directories.push(home);
+    return home;
+  }
+}
+afterEach(async () => {
+  await Promise.all(
+    ProbePolicyScratch.directories
+      .splice(0)
+      .map((path) => rm(path, { recursive: true, force: true })),
+  );
+});
+it.each([
+  [true, [], [], true],
+  [true, ["/state"], [], false],
+  [true, [], ["/state/sub"], false],
+  [false, [], [], true],
+] as const)(
+  "inspects Claude effective grants and isolates runtime policy: enabled %s denies %s %s",
+  async (enabled, denyWrite, denyRead, granted) => {
+    const home = await mkdtemp(join(tmpdir(), "claude-probe-"));
+    ProbePolicyScratch.directories.push(home);
+    const adapter = new ClaudeCodeSandboxConfiguration({ homeDirectory: home });
+    await mkdir(join(home, ".claude"));
+    const original = JSON.stringify({
+      hooks: { private: "credentials" },
+      sandbox: {
+        enabled,
+        network: { allowedDomains: ["example.com"] },
+        filesystem: { allowWrite: ["/state"], denyWrite, denyRead },
+      },
+    });
+    await writeFile(adapter.configurationPath, original);
+    const result = await adapter.inspect("/state/sub", "/state/doctor/random/workspace");
+    expect(result.grantsState).toBe(granted);
+    expect(JSON.parse(result.configuration)).toEqual({
+      network: { allowedDomains: [], deniedDomains: ["*"] },
+      filesystem: {
+        allowWrite: ["/state"],
+        denyWrite,
+        denyRead,
+        allowRead: ["/state/doctor/random/workspace"],
+      },
+    });
+    expect(await readFile(adapter.configurationPath, "utf8")).toBe(original);
+  },
+);
+it("rejects invalid deny nodes instead of dropping restrictions", async () => {
+  const home = await mkdtemp(join(tmpdir(), "claude-probe-"));
+  ProbePolicyScratch.directories.push(home);
+  const adapter = new ClaudeCodeSandboxConfiguration({ homeDirectory: home });
+  await mkdir(join(home, ".claude"));
+  await writeFile(adapter.configurationPath, '{"sandbox":{"filesystem":{"denyWrite":"/state"}}}');
+  await expect(adapter.inspect("/state", "/workspace")).rejects.toThrow(
+    "denyWrite must be an array of strings",
+  );
+});
+it("preserves original read carve-outs and adds only scratch workspace read access", async () => {
+  const home = await mkdtemp(join(tmpdir(), "claude-read-"));
+  ProbePolicyScratch.directories.push(home);
+  const adapter = new ClaudeCodeSandboxConfiguration({ homeDirectory: home });
+  await mkdir(join(home, ".claude"));
+  const state = join(home, "state");
+  const workspace = join(state, "doctor", "random", "workspace");
+  await writeFile(
+    adapter.configurationPath,
+    JSON.stringify({
+      sandbox: { filesystem: { allowWrite: [state], denyRead: [home], allowRead: [state] } },
+    }),
+  );
+  const inspected = await adapter.inspect(state, workspace);
+  expect(inspected.grantsState).toBe(true);
+  expect(JSON.parse(inspected.configuration).filesystem).toEqual({
+    allowWrite: [state],
+    denyWrite: [],
+    denyRead: [home],
+    allowRead: [state, workspace],
+  });
+});
+it("retains native Edit/Read denial paths instead of dropping permission restrictions", async () => {
+  const home = await mkdtemp(join(tmpdir(), "claude-permission-"));
+  ProbePolicyScratch.directories.push(home);
+  const adapter = new ClaudeCodeSandboxConfiguration({
+    homeDirectory: home,
+    workspaceDirectory: join(home, "project"),
+  });
+  await mkdir(join(home, ".claude"));
+  const state = join(home, "state");
+  await writeFile(
+    adapter.configurationPath,
+    JSON.stringify({
+      permissions: { deny: [`Edit(/${state}/**)`, `Read(~/secret)`] },
+      sandbox: { filesystem: { allowWrite: [state] } },
+    }),
+  );
+  const inspected = await adapter.inspect(state, join(state, "workspace"));
+  expect(JSON.parse(inspected.configuration).filesystem.denyRead).toContain(join(home, "secret"));
+  expect(JSON.parse(inspected.configuration).filesystem.denyWrite.length).toBe(1);
+});
+
+it("checks grants and denies through canonical filesystem aliases", async () => {
+  const home = await mkdtemp(join(tmpdir(), "claude-alias-"));
+  ProbePolicyScratch.directories.push(home);
+  const physical = join(home, "physical");
+  const alias = join(home, "alias");
+  await mkdir(physical);
+  await symlink(physical, alias, "junction");
+  const adapter = new ClaudeCodeSandboxConfiguration({ homeDirectory: home });
+  await mkdir(join(home, ".claude"));
+  const source: { sandbox: { filesystem: { allowWrite: string[]; denyWrite: string[] } } } = {
+    sandbox: { filesystem: { allowWrite: [alias], denyWrite: [] as string[] } },
+  };
+  await writeFile(adapter.configurationPath, JSON.stringify(source));
+  expect(
+    (await adapter.inspect(join(physical, "state"), join(physical, "workspace"))).grantsState,
+  ).toBe(true);
+  source.sandbox.filesystem.denyWrite.push(join(alias, "state"));
+  await writeFile(adapter.configurationPath, JSON.stringify(source));
+  expect(
+    (await adapter.inspect(join(physical, "state"), join(physical, "workspace"))).grantsState,
+  ).toBe(false);
+});
+it.each(["denyRead", "denyWrite"])(
+  "retains a global root subtree %s denial outside cwd",
+  async (denial) => {
+    const home = await ProbePolicyScratch.rootDenialHome("claude-root-denial-");
+    const adapter = new ClaudeCodeSandboxConfiguration({ homeDirectory: home });
+    await mkdir(join(home, ".claude"));
+    const state = join(home, "state");
+    const filesystem: Record<string, string[]> = { allowWrite: [state], [denial]: ["/**"] };
+    await writeFile(adapter.configurationPath, JSON.stringify({ sandbox: { filesystem } }));
+    expect((await adapter.inspect(state, join(state, "workspace"))).grantsState).toBe(false);
+  },
+);
+it("keeps an original read carve-out beneath a root subtree denial", async () => {
+  const home = await ProbePolicyScratch.rootDenialHome("claude-root-carveout-");
+  const adapter = new ClaudeCodeSandboxConfiguration({ homeDirectory: home });
+  await mkdir(join(home, ".claude"));
+  const state = join(home, "state");
+  await writeFile(
+    adapter.configurationPath,
+    JSON.stringify({
+      sandbox: { filesystem: { allowWrite: [state], denyRead: ["/**"], allowRead: [state] } },
+    }),
+  );
+  expect((await adapter.inspect(state, join(state, "workspace"))).grantsState).toBe(true);
+});
+it("translates a native root subtree Edit denial to the filesystem root", async () => {
+  const home = await ProbePolicyScratch.rootDenialHome("claude-native-root-");
+  const adapter = new ClaudeCodeSandboxConfiguration({ homeDirectory: home });
+  await mkdir(join(home, ".claude"));
+  const state = join(home, "state");
+  await writeFile(
+    adapter.configurationPath,
+    JSON.stringify({
+      permissions: { deny: ["Edit(//**)"] },
+      sandbox: { filesystem: { allowWrite: [state] } },
+    }),
+  );
+  const policy = await adapter.inspect(state, join(state, "workspace"));
+  expect(policy.grantsState).toBe(false);
+  expect(JSON.parse(policy.configuration).filesystem.denyWrite).toEqual(["/"]);
+});

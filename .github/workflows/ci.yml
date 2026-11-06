@@ -68,7 +68,7 @@ jobs:
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:
-          node-version-file: .nvmrc
+          node-version: "22"
           cache: pnpm
       - name: Install Linux sandbox prerequisites
         if: runner.os == 'Linux'
@@ -78,4 +78,4 @@ jobs:
           sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
       - run: pnpm install --frozen-lockfile
       - run: pnpm build
-      - run: pnpm --filter symnav exec vitest run test/e2e/sandbox/warm-navigation.test.ts
+      - run: pnpm --filter symnav exec vitest run test/e2e/sandbox/warm-navigation.test.ts test/e2e/sandbox/doctor.test.ts

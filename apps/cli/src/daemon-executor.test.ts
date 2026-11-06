@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -10,6 +10,12 @@ import { CommandOutputSnapshot } from "./command-execution-result.js";
 import { createDaemonExecutor, daemonExecutorModuleUrl } from "./daemon-executor.js";
 import { CliProgramExecutor } from "./cli-program-executor.js";
 import type { ProgramDependencies } from "./program-dependencies.js";
+
+const cliPackageVersion = (
+  JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")) as {
+    version: string;
+  }
+).version;
 
 describe("createDaemonExecutor", () => {
   const temporaryDirectories: string[] = [];
@@ -44,7 +50,7 @@ describe("createDaemonExecutor", () => {
     const prepare = vi.spyOn(WorkspaceSession.prototype, "prepare");
     const executor = await createDaemonExecutor({
       stateDirectory,
-      productVersion: "0.1.0",
+      productVersion: cliPackageVersion,
       sampleResources: () => undefined,
     });
 
@@ -74,7 +80,7 @@ describe("createDaemonExecutor", () => {
       const stateDirectory = temporaryDirectory(temporaryDirectories);
       const executor = await createDaemonExecutor({
         stateDirectory,
-        productVersion: "0.1.0",
+        productVersion: cliPackageVersion,
         sampleResources: () => undefined,
       });
 
@@ -86,7 +92,7 @@ describe("createDaemonExecutor", () => {
       });
 
       expect(result.exitCode).toBe(0);
-      expect(await outputText(result.output)).toBe("0.1.0\n");
+      expect(await outputText(result.output)).toBe(`${cliPackageVersion}\n`);
       await result.output.dispose();
     },
   );
@@ -96,7 +102,7 @@ describe("createDaemonExecutor", () => {
     const release = vi.spyOn(WorkspaceSession.prototype, "releaseTransientResources");
     const executor = await createDaemonExecutor({
       stateDirectory,
-      productVersion: "0.1.0",
+      productVersion: cliPackageVersion,
       sampleResources: () => undefined,
     });
     const workspaceRoot = fixturePath("trivial-project");
@@ -118,7 +124,7 @@ describe("createDaemonExecutor", () => {
     });
 
     expect(await outputText(overview.output)).toContain("trivial-project/src/index.ts");
-    expect(await outputText(version.output)).toBe("0.1.0\n");
+    expect(await outputText(version.output)).toBe(`${cliPackageVersion}\n`);
     expect(release).toHaveBeenCalledTimes(2);
     await overview.output.dispose();
     await version.output.dispose();
@@ -128,7 +134,7 @@ describe("createDaemonExecutor", () => {
     const stateDirectory = temporaryDirectory(temporaryDirectories);
     const executor = await createDaemonExecutor({
       stateDirectory,
-      productVersion: "0.1.0",
+      productVersion: cliPackageVersion,
       sampleResources: () => undefined,
     });
     const result = await executor.execute({
@@ -166,7 +172,7 @@ describe("createDaemonExecutor", () => {
     });
     const executor = await createDaemonExecutor({
       stateDirectory,
-      productVersion: "0.1.0",
+      productVersion: cliPackageVersion,
       sampleResources: () => order.push("sample"),
     });
 

@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { beforeEach, expect, it, vi } from "vitest";
 import type { DaemonClientOptions } from "@symnav/daemon";
 
@@ -18,6 +19,12 @@ vi.mock("@symnav/daemon", async (importOriginal) => {
 import { DaemonPolicy } from "@symnav/daemon";
 import { createDefaultDependencies } from "./program.js";
 
+const cliPackageVersion = (
+  JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")) as {
+    version: string;
+  }
+).version;
+
 beforeEach(() => {
   captured.options.length = 0;
 });
@@ -33,7 +40,7 @@ it.each([true, false])(
     expect(captured.options).toHaveLength(1);
     expect(captured.options[0]).toMatchObject({
       stateDirectory: "/canonical/state",
-      productVersion: "0.1.0",
+      productVersion: cliPackageVersion,
       daemonEnabled,
       policy,
       readinessProbe: { commandName: "version", argv: ["--version"] },

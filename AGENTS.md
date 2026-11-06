@@ -48,19 +48,6 @@ The `--frozen-lockfile` install is load-bearing: it's the only step that detects
 - A fixture's `.git` directory is checked in as `dot-git/` — the host repo would otherwise treat a real nested `.git` as a submodule. The e2e setup renames `dot-git/` to `.git/` via `ensureFixtureGitMarker` before the suite runs. `packages/testing/fixtures/overview-cases/` is the canonical example.
 - Try `overview` against the fixture with `pnpm --filter symnav dev -- overview <file>` from inside `packages/testing/fixtures/overview-cases/`, or against any real file with `pnpm --filter symnav dev -- overview path/to/file.ts`.
 
-## PR descriptions
-
-Use the template at `.github/PULL_REQUEST_TEMPLATE.md`. Per-section purpose is explained inline there.
-
-Writing rules:
-
-- Conciseness is non-negotiable. Structure beats wall-of-text. Short prose is fine where bullets would be awkward — pick whichever reads faster.
-- One concrete fact per sentence or bullet. Prefer concrete nouns ("validates input order") over hand-waving ("improves robustness").
-- Cut filler: no metaphors, no "really" / "very" / "simply" / "just", no decorative adjectives.
-- Drop unnecessary articles where readability holds.
-- Skip any section that would be empty or restate the title.
-- Do not add a "Summary" / "What changed" section — reviewers read the commits and diff for that.
-
 ## Dependency direction
 
 The package dependency graph is locked. A given package may import only from the packages listed below.

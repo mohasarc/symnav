@@ -29,7 +29,7 @@
 - `pnpm test` — run Vitest across the workspace.
 - `pnpm lint` — run ESLint (boundaries + Prettier).
 - `pnpm typecheck` — TypeScript build + per-package test-config typecheck.
-- `pnpm build` — `tsc --build` across the workspace.
+- `pnpm build` — `tsc --build`, then esbuild bundles the CLI into `apps/cli/dist` with `@symnav/*` inlined. CLI tsc output lands in `apps/cli/build`.
 - `pnpm --filter symnav dev -- <args>` — run the CLI from source via `tsx` (no build step).
 
 ## Pre-PR verification

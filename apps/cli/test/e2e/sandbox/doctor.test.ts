@@ -1,11 +1,11 @@
-import type { AgentConfigurationLocations } from "../../../dist/agent-sandbox/agent-configuration.js";
+import type { AgentConfigurationLocations } from "../../../src/agent-sandbox/agent-configuration.js";
 import { spawnSync } from "node:child_process";
 import { delimiter, resolve } from "node:path";
 import { NodeUsageLogReader, usageLogPath } from "@symnav/telemetry";
-import { CodexSandboxConfiguration } from "../../../dist/agent-sandbox/codex-configuration.js";
-import { ClaudeCodeSandboxConfiguration } from "../../../dist/agent-sandbox/claude-code-configuration.js";
-import { CodexSandboxRuntime } from "../../../dist/agent-sandbox/codex-runtime.js";
-import { ClaudeCodeSandboxRuntime } from "../../../dist/agent-sandbox/claude-code-runtime.js";
+import { CodexSandboxConfiguration } from "../../../src/agent-sandbox/codex-configuration.js";
+import { ClaudeCodeSandboxConfiguration } from "../../../src/agent-sandbox/claude-code-configuration.js";
+import { CodexSandboxRuntime } from "../../../src/agent-sandbox/codex-runtime.js";
+import { ClaudeCodeSandboxRuntime } from "../../../src/agent-sandbox/claude-code-runtime.js";
 import { CliDaemonTesting } from "../../helpers/daemon-testing.js";
 import {
   chmodSync,
@@ -21,8 +21,25 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
 import { fixturePath, runSymnavBinary } from "@symnav/testing";
+
+const BUNDLED_SANDBOX_PROBE_ENTRY = fileURLToPath(
+  new URL("../../../dist/sandbox-probe-entry.js", import.meta.url),
+);
+
+class BundledCodexSandboxRuntime extends CodexSandboxRuntime {
+  protected override entry(): string {
+    return BUNDLED_SANDBOX_PROBE_ENTRY;
+  }
+}
+
+class BundledClaudeCodeSandboxRuntime extends ClaudeCodeSandboxRuntime {
+  protected override entry(): string {
+    return BUNDLED_SANDBOX_PROBE_ENTRY;
+  }
+}
 
 class DoctorHarness {
   public static readonly roots: string[] = [];
@@ -310,7 +327,9 @@ describe.each([
           ? new CodexSandboxConfiguration(locations)
           : new ClaudeCodeSandboxConfiguration(locations);
       DoctorHarness.probeStates.push(state);
-      await (agent === "codex" ? new CodexSandboxRuntime() : new ClaudeCodeSandboxRuntime()).probe({
+      await (
+        agent === "codex" ? new BundledCodexSandboxRuntime() : new BundledClaudeCodeSandboxRuntime()
+      ).probe({
         scratchDirectory: scratch,
         workspace,
         stateDirectory: state,

@@ -68,6 +68,7 @@ export default [
   {
     ignores: [
       "**/dist/**",
+      "apps/cli/build/**",
       "**/node_modules/**",
       "**/coverage/**",
       "**/*.tsbuildinfo",

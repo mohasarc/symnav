@@ -47,18 +47,14 @@
     "test": "vitest run",
     "test:e2e:cold": "tsx test/e2e/run-navigation-mode.ts 0",
     "test:e2e:warm": "tsx test/e2e/run-navigation-mode.ts 1",
-    "build": "tsc --build",
+    "build": "tsc --build && pnpm run bundle",
+    "bundle": "tsx scripts/run-cli-bundle.ts",
     "typecheck": "tsc --build",
     "lint": "eslint src test scripts",
     "typecheck:test": "tsc -p tsconfig.test.json --noEmit",
     "dev": "tsx src/cli.ts"
   },
   "dependencies": {
-    "@symnav/backend-typescript": "workspace:*",
-    "@symnav/core": "workspace:*",
-    "@symnav/daemon": "workspace:*",
-    "@symnav/renderer": "workspace:*",
-    "@symnav/telemetry": "workspace:*",
     "commander": "^14.0.3",
     "fuzzysort": "^3.1.0",
     "ignore": "^7.0.5",
@@ -68,6 +64,11 @@
   },
   "devDependencies": {
     "@anthropic-ai/sandbox-runtime": "0.0.81",
+    "@symnav/backend-typescript": "workspace:*",
+    "@symnav/core": "workspace:*",
+    "@symnav/daemon": "workspace:*",
+    "@symnav/renderer": "workspace:*",
+    "@symnav/telemetry": "workspace:*",
     "@symnav/testing": "workspace:*",
     "esbuild": "^0.27.7",
     "tsx": "^4.21.0"

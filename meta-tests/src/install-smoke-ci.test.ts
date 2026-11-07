@@ -111,11 +111,30 @@ describe("CI install smoke", () => {
     expect(packJob).toContain("require('./apps/cli/package.json').version");
   });
 
+  it("packs a runner-only prerelease version so the upgrade smoke crosses versions", () => {
+    const packJob = WorkflowSource.job(workflow, "pack");
+    WorkflowSource.expectOrdered(packJob, [
+      "pnpm build",
+      'version="$(node -p "require(\'./apps/cli/package.json\').version")-smoke-${GITHUB_SHA::7}"',
+      'npm version "$version" --no-git-tag-version --prefix apps/cli',
+      'echo "version=$version" >> "$GITHUB_OUTPUT"',
+      "pnpm --filter symnav pack",
+    ]);
+  });
+
   it("runs the reusable install smoke on the packed tarball", () => {
     const smokeJob = WorkflowSource.job(workflow, "install-smoke");
     expect(smokeJob).toContain("needs: pack");
     expect(smokeJob).toContain("uses: ./.github/workflows/install-smoke.yml");
     expect(smokeJob).toContain("tarball-artifact: symnav-tarball");
     expect(smokeJob).toContain("expected-version: ${{ needs.pack.outputs.version }}");
+  });
+});
+
+describe("release install smoke", () => {
+  const workflow = WorkflowSource.read("release.yml");
+
+  it("packs the tagged version without changing it", () => {
+    expect(WorkflowSource.job(workflow, "pack")).not.toContain("npm version");
   });
 });

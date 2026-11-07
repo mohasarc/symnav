@@ -33,6 +33,20 @@ export class InstalledSymnav {
     return { status: result.status, stdout: result.stdout, stderr: result.stderr };
   }
 
+  runShim(args: readonly string[]): RunSymnavBinaryResult {
+    const isWindows = process.platform === "win32";
+    const shimPath = isWindows
+      ? join(this.options.prefix, `${InstalledSymnav.PACKAGE_NAME}.cmd`)
+      : join(this.options.prefix, "bin", InstalledSymnav.PACKAGE_NAME);
+    const result = spawnSync(shimPath, args, {
+      cwd: this.options.workspaceDirectory,
+      encoding: "utf8",
+      env: this.environment(),
+      shell: isWindows,
+    });
+    return { status: result.status, stdout: result.stdout, stderr: result.stderr };
+  }
+
   async stopDaemons(): Promise<void> {
     const status = this.run(["daemon", "status", "--json"]);
     const daemons = NavigationModeDaemonStatusDecoder.decode(JSON.parse(status.stdout) as unknown);

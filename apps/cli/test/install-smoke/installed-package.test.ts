@@ -98,4 +98,11 @@ describe("installed symnav package", () => {
     expect(result.status).toBe(0);
     expect(result.stdout).toBe(`${InstallSmokeEnvironment.expectedVersion()}\n`);
   });
+
+  it("prints the expected version through the installed shim", () => {
+    const result = symnav.runShim(["--version"]);
+
+    expect(result.status, result.stderr).toBe(0);
+    expect(result.stdout).toBe(`${InstallSmokeEnvironment.expectedVersion()}\n`);
+  });
 });

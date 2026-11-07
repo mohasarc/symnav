@@ -1,6 +1,8 @@
 import { spawnSync } from "node:child_process";
 import { join } from "node:path";
 import type { RunSymnavBinaryResult } from "@symnav/testing";
+import { NavigationModeDaemonStatusDecoder } from "../e2e/run-navigation-mode.js";
+import { E2eProcessCleanup } from "../helpers/e2e-process-cleanup.js";
 
 export interface InstalledSymnavOptions {
   readonly prefix: string;
@@ -29,6 +31,13 @@ export class InstalledSymnav {
       env: this.environment(),
     });
     return { status: result.status, stdout: result.stdout, stderr: result.stderr };
+  }
+
+  async stopDaemons(): Promise<void> {
+    const status = this.run(["daemon", "status", "--json"]);
+    const daemons = NavigationModeDaemonStatusDecoder.decode(JSON.parse(status.stdout) as unknown);
+    for (const daemon of daemons) this.run(["--cwd", daemon.workspaceRoot, "daemon", "stop"]);
+    await E2eProcessCleanup.terminate(daemons.map((daemon) => daemon.pid));
   }
 
   private environment(): NodeJS.ProcessEnv {

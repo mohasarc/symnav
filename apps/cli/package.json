@@ -2,6 +2,27 @@
   "name": "symnav",
   "version": "0.4.0",
   "private": true,
+  "description": "Language-agnostic CLI for navigating codebases by symbol: definitions, references, and call paths. TypeScript supported today.",
+  "keywords": [
+    "cli",
+    "code-navigation",
+    "symbols",
+    "definitions",
+    "references",
+    "call-graph",
+    "typescript",
+    "agents"
+  ],
+  "homepage": "https://github.com/mohasarc/symnav#readme",
+  "bugs": {
+    "url": "https://github.com/mohasarc/symnav/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/mohasarc/symnav.git",
+    "directory": "apps/cli"
+  },
+  "license": "Apache-2.0",
   "type": "module",
   "bin": {
     "symnav": "./dist/cli.js"

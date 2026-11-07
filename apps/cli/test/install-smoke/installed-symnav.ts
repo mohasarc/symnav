@@ -61,6 +61,7 @@ export class InstalledSymnav {
     };
     delete environment.NODE_PATH;
     delete environment.SYMNAV_DAEMON;
+    delete environment.SYMNAV_TELEMETRY;
     if (this.options.daemon === "cold") environment.SYMNAV_DAEMON = "0";
     return environment;
   }

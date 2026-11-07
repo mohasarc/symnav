@@ -38,6 +38,7 @@
     "test": "vitest run",
     "test:e2e:cold": "tsx test/e2e/run-navigation-mode.ts 0",
     "test:e2e:warm": "tsx test/e2e/run-navigation-mode.ts 1",
+    "test:install-smoke": "vitest run --config vitest.install-smoke.config.ts",
     "build": "tsc --build && pnpm run bundle",
     "bundle": "tsx scripts/run-cli-bundle.ts",
     "typecheck": "tsc --build",

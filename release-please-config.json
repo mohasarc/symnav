@@ -1,0 +1,26 @@
+{
+  "$schema": "https://raw.githubusercontent.com/googleapis/release-please/main/schemas/config.json",
+  "last-release-sha": "a6633bca5bee1f1dd6c03a1e89366b9c2f48ba94",
+  "packages": {
+    ".": {
+      "release-type": "node",
+      "package-name": "symnav",
+      "include-component-in-tag": false,
+      "release-as": "1.0.0",
+      "changelog-path": "CHANGELOG.md",
+      "pull-request-title-pattern": "chore: Release ${version}",
+      "extra-files": [{ "type": "json", "path": "apps/cli/package.json", "jsonpath": "$.version" }],
+      "changelog-sections": [
+        { "type": "feat", "section": "Features" },
+        { "type": "fix", "section": "Bug Fixes" },
+        { "type": "perf", "section": "Performance" },
+        { "type": "docs", "section": "Documentation", "hidden": true },
+        { "type": "chore", "section": "Chores", "hidden": true },
+        { "type": "refactor", "section": "Refactors", "hidden": true },
+        { "type": "test", "section": "Tests", "hidden": true },
+        { "type": "ci", "section": "CI", "hidden": true },
+        { "type": "build", "section": "Build", "hidden": true }
+      ]
+    }
+  }
+}

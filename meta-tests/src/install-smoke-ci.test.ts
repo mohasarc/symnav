@@ -37,6 +37,11 @@ describe("install smoke workflow", () => {
     expect(workflow).toMatch(/^ {6}expected-version:\n {8}required: true\n {8}type: string$/m);
   });
 
+  it("checks out the caller-given ref, defaulting to the triggering commit", () => {
+    expect(workflow).toMatch(/^ {6}ref:\n {8}required: false\n {8}type: string\n {8}default: ""$/m);
+    WorkflowSource.expectOrdered(workflow, ["uses: actions/checkout@v4", "ref: ${{ inputs.ref }}"]);
+  });
+
   it("runs on Linux, macOS, and Windows under Node 20 and .nvmrc", () => {
     expect(workflow).toContain("os: [ubuntu-latest, macos-latest, windows-latest]");
     expect(workflow).toContain('node: ["20", nvmrc]');

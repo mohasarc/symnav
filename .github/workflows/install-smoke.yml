@@ -8,6 +8,10 @@ on:
       expected-version:
         required: true
         type: string
+      ref:
+        required: false
+        type: string
+        default: ""
 jobs:
   install-smoke:
     strategy:
@@ -21,6 +25,8 @@ jobs:
         shell: bash
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:

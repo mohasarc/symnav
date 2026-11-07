@@ -55,6 +55,33 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm build
+  pack:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+      - run: pnpm --filter symnav pack --pack-destination "$RUNNER_TEMP/symnav-tarball"
+      - id: version
+        run: echo "version=$(node -p "require('./apps/cli/package.json').version")" >> "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: symnav-tarball
+          path: ${{ runner.temp }}/symnav-tarball/*.tgz
+          if-no-files-found: error
+  install-smoke:
+    needs: pack
+    uses: ./.github/workflows/install-smoke.yml
+    with:
+      tarball-artifact: symnav-tarball
+      expected-version: ${{ needs.pack.outputs.version }}
   sandbox:
     strategy:
       fail-fast: false

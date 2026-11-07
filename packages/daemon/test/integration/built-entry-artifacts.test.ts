@@ -10,8 +10,9 @@ describe("built daemon entry artifacts", () => {
     join(packageDirectory, "test", "fixtures", "executor-module.mjs"),
   ).href;
   const policy = DaemonPolicy.fromSystemMemory({ totalBytes: 512 * 1024 * 1024 });
+  const workerEntryUrl = new URL("../../dist/worker-entry.js", import.meta.url);
 
-  it("runs the package-relative worker entry with an absolute executor file URL", async () => {
+  it("runs the built worker entry with an absolute executor file URL", async () => {
     const worker = new NodeDaemonNavigationWorker({
       generation: 1,
       configuration: {
@@ -21,6 +22,7 @@ describe("built daemon entry artifacts", () => {
         policy: DaemonPolicyCodec.serialize(policy),
       },
       resourceLimits: { maxOldGenerationSizeMb: 128 },
+      entryUrl: workerEntryUrl,
     });
     try {
       await expect(worker.start("files:3")).resolves.toMatchObject({
@@ -69,6 +71,7 @@ describe("built daemon entry artifacts", () => {
         policy: DaemonPolicyCodec.serialize(policy),
       },
       resourceLimits: { maxOldGenerationSizeMb: 128 },
+      entryUrl: workerEntryUrl,
     });
     try {
       await expect(worker.start("files:1")).rejects.toThrow(/initialization failure/i);

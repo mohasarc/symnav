@@ -206,6 +206,7 @@ function coordinatorOptions(roots: string[]): DaemonProcessCoordinatorOptions {
     registry: new DaemonRegistry(identity.registryDirectory),
     server: new InertRequestServer(),
     clock: new NodeDaemonClock(),
+    workerEntryUrl: new URL("file:///unused/worker-entry.js"),
   };
 }
 

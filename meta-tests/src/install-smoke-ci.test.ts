@@ -65,6 +65,30 @@ describe("install smoke workflow", () => {
     expect(workflow).toContain("SYMNAV_INSTALL_PREFIX: ${{ runner.temp }}/symnav-prefix");
     expect(workflow).toContain("SYMNAV_EXPECTED_VERSION: ${{ inputs.expected-version }}");
   });
+
+  it("packs the npm latest release as the previous tarball unless it is missing, 0.0.0, or the expected version", () => {
+    const resolveStep = workflow.slice(workflow.indexOf("id: previous-release"));
+    WorkflowSource.expectOrdered(resolveStep, [
+      'latest="$(npm view symnav version 2>/dev/null || true)"',
+      '[ -z "$latest" ]',
+      '[ "$latest" = "0.0.0" ]',
+      '[ "$latest" = "$SYMNAV_EXPECTED_VERSION" ]',
+      "exit 0",
+      'npm pack "symnav@$latest" --pack-destination',
+      'echo "tarball=',
+      "pnpm --filter symnav test:install-smoke",
+    ]);
+  });
+
+  it("points the upgrade smoke at the new and previous tarballs", () => {
+    const smokeStep = workflow.slice(workflow.indexOf("pnpm --filter symnav test:install-smoke"));
+    expect(smokeStep).toContain(
+      "SYMNAV_TARBALL: ${{ runner.temp }}/symnav-tarball/symnav-${{ inputs.expected-version }}.tgz",
+    );
+    expect(smokeStep).toContain(
+      "SYMNAV_PREVIOUS_TARBALL: ${{ steps.previous-release.outputs.tarball }}",
+    );
+  });
 });
 
 describe("CI install smoke", () => {

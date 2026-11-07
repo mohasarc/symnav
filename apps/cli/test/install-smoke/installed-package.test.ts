@@ -91,4 +91,11 @@ describe("installed symnav package", () => {
       expect(existsSync(join(symnav.packageDirectory, "node_modules", packageName))).toBe(true);
     }
   });
+
+  it("prints the expected version", () => {
+    const result = symnav.run(["--version"]);
+
+    expect(result.status).toBe(0);
+    expect(result.stdout).toBe(`${InstallSmokeEnvironment.expectedVersion()}\n`);
+  });
 });

@@ -14,6 +14,10 @@ export class InstallSmokeEnvironment {
     return InstallSmokeEnvironment.required("SYMNAV_INSTALL_PREFIX");
   }
 
+  static expectedVersion(): string {
+    return InstallSmokeEnvironment.required("SYMNAV_EXPECTED_VERSION");
+  }
+
   private static required(name: string): string {
     const value = process.env[name];
     if (value === undefined || value === "") {

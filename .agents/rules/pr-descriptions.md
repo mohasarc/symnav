@@ -5,7 +5,7 @@ alwaysApply: true
 
 # PR descriptions
 
-- Use `.github/PULL_REQUEST_TEMPLATE.md`. Its comments explain each section
+- Write it with the describe-work skill
 - Cover this PR only. Skip stack position and what comes before or after
 - Skip any section that would be empty or restate the title
 - One concrete fact per sentence or bullet. "validates input order", not "improves robustness"

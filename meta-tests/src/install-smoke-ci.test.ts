@@ -37,8 +37,14 @@ describe("install smoke workflow", () => {
     expect(workflow).toMatch(/^ {6}expected-version:\n {8}required: true\n {8}type: string$/m);
   });
 
-  it("runs on Linux", () => {
-    expect(workflow).toContain("runs-on: ubuntu-latest");
+  it("runs on Linux, macOS, and Windows under Node 20 and .nvmrc", () => {
+    expect(workflow).toContain("os: [ubuntu-latest, macos-latest, windows-latest]");
+    expect(workflow).toContain('node: ["20", nvmrc]');
+    expect(workflow).toContain("runs-on: ${{ matrix.os }}");
+    expect(workflow).toContain("node-version: ${{ matrix.node != 'nvmrc' && matrix.node || '' }}");
+    expect(workflow).toContain(
+      "node-version-file: ${{ matrix.node == 'nvmrc' && '.nvmrc' || '' }}",
+    );
   });
 
   it("installs the downloaded tarball globally under a prefix before running the smoke", () => {

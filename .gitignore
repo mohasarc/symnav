@@ -17,6 +17,7 @@ coverage/
 artifacts/
 *.tsbuildinfo
 .agents/feedback.md
+.agents/temp/
 .claude/settings.local.json
 .claude/worktrees/
 .env

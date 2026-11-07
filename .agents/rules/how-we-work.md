@@ -11,3 +11,4 @@ alwaysApply: true
 - Don't build ahead of consumers. A type, helper, endpoint, or config lands with the first slice that uses it
 - Update docs and examples in the same PR when behavior changes
 - Before opening or pushing to a PR, run the same steps CI runs, from a clean tree with a frozen-lockfile install. Anything less is not verified
+- Scratch Markdown written for the human to read once (notes, reports, reviews, walkthroughs) goes in `.agents/temp/`, which is gitignored, even when a skill suggests `docs/`. Never the repo root

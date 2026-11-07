@@ -1,7 +1,7 @@
 import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { pathToFileURL } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { DaemonPolicy } from "../../src/daemon-policy.js";
 import {
@@ -29,7 +29,7 @@ describe("built daemon process launcher", () => {
   it.each([
     ["POSIX", pathToFileURL("/tmp/symnav executor.mjs").href],
     ["Windows", "file:///C:/symnav/executor-module.mjs"],
-  ])("resolves process-entry.js and retains the %s executor file URL", async (_form, moduleUrl) => {
+  ])("spawns the injected entry and retains the %s executor URL", async (_form, moduleUrl) => {
     spawnMock.mockImplementation(() => {
       const child: {
         readonly pid: number;
@@ -49,16 +49,18 @@ describe("built daemon process launcher", () => {
     roots.push(root);
     const identity = DaemonWorkspaceIdentity.from(join(root, "workspace"), join(root, "state"));
     mkdirSync(identity.identityDirectory, { recursive: true });
+    const processEntryUrl = pathToFileURL(join(root, "bundle", "process-entry.js")).href;
 
     await new NodeDaemonProcessLauncher(
       "1.2.3",
       moduleUrl,
+      processEntryUrl,
       DaemonPolicy.fromSystemMemory({ totalBytes: 512 * 1024 * 1024 }),
     ).launch(identity, "instance", "process-token");
 
     const [executable, arguments_] = spawnMock.mock.calls[0] as [string, readonly string[]];
     expect(executable).toBe(process.execPath);
-    expect(arguments_[0]).toMatch(/packages[/\\]daemon[/\\]dist[/\\]process-entry\.js$/);
+    expect(arguments_[0]).toBe(fileURLToPath(processEntryUrl));
     expect(DaemonProcessConfigurationParser.parse(arguments_[1]).executorModuleUrl).toBe(moduleUrl);
   });
 });

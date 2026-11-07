@@ -185,6 +185,7 @@ export class DaemonClientRuntime {
     const launcher = (this.launcher = new NodeDaemonProcessLauncher(
       options.productVersion,
       options.executorModuleUrl,
+      options.processEntryUrl,
       this.policy,
     ));
     this.coordinator = new DaemonStartupCoordinator(
@@ -372,6 +373,7 @@ export class DaemonClientRuntime {
     const launcher = new NodeDaemonProcessLauncher(
       this.options.productVersion,
       this.options.executorModuleUrl,
+      this.options.processEntryUrl,
       this.policy,
     );
     return new DaemonController(this.registry, transport, this.options.stateDirectory, {

@@ -1014,6 +1014,7 @@ describe("DaemonStartupCoordinator", () => {
       const launcher = new NodeDaemonProcessLauncher(
         "0.1.0",
         "file:///absolute/symnav/daemon-executor.js",
+        "file:///absolute/symnav/process-entry.js",
         DaemonPolicy.currentSystem(),
       );
       const preparation = vi.spyOn(launcher, "prepareLifetime");

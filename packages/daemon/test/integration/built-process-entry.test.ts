@@ -88,6 +88,7 @@ class BuiltProcessEntryHarness {
     const daemonProcess = await new NodeDaemonProcessLauncher(
       this.productVersion,
       this.executorModuleUrl,
+      new URL("../../dist/process-entry.js", import.meta.url).href,
       this.policy,
     ).launch(this.identity, this.instanceId, this.processToken);
     this.daemonProcess = daemonProcess;

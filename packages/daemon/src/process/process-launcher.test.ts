@@ -32,6 +32,7 @@ interface FakeChildProcess {
 describe("NodeDaemonProcessLauncher", () => {
   const roots: string[] = [];
   const executorModuleUrl = "file:///absolute/symnav/daemon-executor.js";
+  const processEntryUrl = "file:///absolute/symnav/process-entry.js";
 
   beforeEach(() => {
     vi.restoreAllMocks();
@@ -70,6 +71,7 @@ describe("NodeDaemonProcessLauncher", () => {
     const launcher = new NodeDaemonProcessLauncher(
       "1",
       executorModuleUrl,
+      processEntryUrl,
       DaemonPolicy.currentSystem(),
     );
     const child = await launcher.launch(identity, "instance", "token");
@@ -88,6 +90,7 @@ describe("NodeDaemonProcessLauncher", () => {
     const launcher = new NodeDaemonProcessLauncher(
       "1",
       executorModuleUrl,
+      processEntryUrl,
       DaemonPolicy.currentSystem(),
     );
     const childFactory = spawnMock.getMockImplementation()!;
@@ -183,11 +186,12 @@ describe("NodeDaemonProcessLauncher", () => {
           },
         },
       );
-      await new NodeDaemonProcessLauncher("1.2.3", executorModuleUrl, policy).launch(
-        identity,
-        "instance",
-        "process-token",
-      );
+      await new NodeDaemonProcessLauncher(
+        "1.2.3",
+        executorModuleUrl,
+        processEntryUrl,
+        policy,
+      ).launch(identity, "instance", "process-token");
 
       const [, args, options] = spawnMock.mock.calls[0] as [
         string,
@@ -242,6 +246,7 @@ describe("NodeDaemonProcessLauncher", () => {
       const launcher = new NodeDaemonProcessLauncher(
         "1.2.3",
         executorModuleUrl,
+        processEntryUrl,
         DaemonPolicy.currentSystem(),
       );
       const preparation = vi.spyOn(PosixDaemonProcessLifetime, "prepareChild");
@@ -274,6 +279,7 @@ describe("NodeDaemonProcessLauncher", () => {
       const launcher = new NodeDaemonProcessLauncher(
         "1.2.3",
         executorModuleUrl,
+        processEntryUrl,
         DaemonPolicy.currentSystem(),
       );
       const preparation = vi.spyOn(PosixDaemonProcessLifetime, "prepareChild");
@@ -317,6 +323,7 @@ describe("NodeDaemonProcessLauncher", () => {
       new NodeDaemonProcessLauncher(
         "1.2.3",
         executorModuleUrl,
+        processEntryUrl,
         DaemonPolicy.fromSystemMemory({ totalBytes: 256 * 1024 * 1024 }),
       ).launch(identity, "instance", "process-token"),
     ).rejects.toThrow("spawn refused");
@@ -331,6 +338,7 @@ describe("NodeDaemonProcessLauncher", () => {
     await new NodeDaemonProcessLauncher(
       "1.2.3",
       executorModuleUrl,
+      processEntryUrl,
       DaemonPolicy.fromSystemMemory({ totalBytes: 256 * 1024 * 1024 }),
     ).launch(identity, "instance", "process-token");
     const [, args] = spawnMock.mock.calls[0] as [string, readonly string[]];
@@ -352,6 +360,7 @@ describe("NodeDaemonProcessLauncher", () => {
     await new NodeDaemonProcessLauncher(
       "1.2.3",
       "https://example.test/daemon-executor.js",
+      processEntryUrl,
       DaemonPolicy.fromSystemMemory({ totalBytes: 256 * 1024 * 1024 }),
     ).launch(identity, "instance", "process-token");
     const [, args] = spawnMock.mock.calls[0] as [string, readonly string[]];
@@ -366,6 +375,7 @@ describe("NodeDaemonProcessLauncher", () => {
     const daemonProcess = await new NodeDaemonProcessLauncher(
       "1.2.3",
       executorModuleUrl,
+      processEntryUrl,
       DaemonPolicy.currentSystem(),
     ).launch(identity, "instance", "process-token");
     const child = spawnMock.mock.results[0]!.value as FakeChildProcess;
@@ -386,6 +396,7 @@ describe("NodeDaemonProcessLauncher", () => {
     const daemonProcess = await new NodeDaemonProcessLauncher(
       "1.2.3",
       executorModuleUrl,
+      processEntryUrl,
       DaemonPolicy.fromSystemMemory({ totalBytes: 256 * 1024 * 1024 }),
     ).launch(identity, "instance", "process-token");
     const child = spawnMock.mock.results[0]?.value as FakeChildProcess;
@@ -404,6 +415,7 @@ describe("NodeDaemonProcessLauncher", () => {
     const daemonProcess = await new NodeDaemonProcessLauncher(
       "1.2.3",
       executorModuleUrl,
+      processEntryUrl,
       DaemonPolicy.fromSystemMemory({ totalBytes: 256 * 1024 * 1024 }),
     ).launch(identity, "instance", "process-token");
     const child = spawnMock.mock.results[0]?.value as FakeChildProcess;

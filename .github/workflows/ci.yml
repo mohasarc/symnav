@@ -68,9 +68,12 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm build
-      - run: pnpm --filter symnav pack --pack-destination "$RUNNER_TEMP/symnav-tarball"
       - id: version
-        run: echo "version=$(node -p "require('./apps/cli/package.json').version")" >> "$GITHUB_OUTPUT"
+        run: |
+          version="$(node -p "require('./apps/cli/package.json').version")-smoke-${GITHUB_SHA::7}"
+          npm version "$version" --no-git-tag-version --prefix apps/cli
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+      - run: pnpm --filter symnav pack --pack-destination "$RUNNER_TEMP/symnav-tarball"
       - uses: actions/upload-artifact@v4
         with:
           name: symnav-tarball

@@ -79,6 +79,10 @@ describe("installed symnav package", () => {
     expect(existsSync(join(symnav.packageDirectory, "LICENSE"))).toBe(true);
   });
 
+  it("ships the readme", () => {
+    expect(existsSync(join(symnav.packageDirectory, "README.md"))).toBe(true);
+  });
+
   it("installs every package the bundle imports as its own dependency", () => {
     const dependencies = Object.keys(installedPackage.manifest().dependencies ?? {});
 

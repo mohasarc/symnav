@@ -15,7 +15,7 @@ How to structure and write commits. When the repository ships its own commit rul
 - Don't refactor and add behavior at the same time: refactor first, behavior on top
 - Don't change a contract and update its callers at the same time: the signature, interface, or type change lands first with the code that implements it, then the next commit makes the mechanical caller updates
 - When a new value threads through several layers, the commit where it matters lands first (where it's stored, read, or acts). Threading it through intermediate layers and callers follows in later commits, outer layers last
-- Order commits as a story the reviewer reads top-down: foundation type → refactor existing users onto it → data layer → state → component → page rework → wiring → interaction state. Foundation before consumer, leaf component before its composite. This order runs once per slice, not once across the branch: finish one slice's layers before starting the next slice
+- Order commits as a story the reviewer reads top-down: foundation type → refactor existing users onto it → data layer → state → component → page rework → wiring → interaction state. Foundation before consumer, leaf component before its composite. This order is per feature. A branch usually holds one; when it holds several, each feature gets its own run of commits, type to wiring, before the next starts
 - Supporting material (test helpers, small utils) lands right before its first consumer, not at the front of the branch
 - One exported function per commit, even within the same file
 - A file gaining several distinct behaviors gets one commit per behavior, even though they all touch the same file

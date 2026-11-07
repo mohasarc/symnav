@@ -41,6 +41,7 @@
     "test:install-smoke": "vitest run --config vitest.install-smoke.config.ts",
     "build": "tsc --build && pnpm run bundle",
     "bundle": "tsx scripts/run-cli-bundle.ts",
+    "prepack": "node -e \"require('node:fs').copyFileSync('../../README.md', 'README.md')\"",
     "typecheck": "tsc --build",
     "lint": "eslint src test scripts",
     "typecheck:test": "tsc -p tsconfig.test.json --noEmit",

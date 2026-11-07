@@ -39,6 +39,7 @@ export class AdversarialDaemonPeerHarness {
       daemonEnabled: true,
       executorFactory: createDaemonExecutor,
       executorModuleUrl: new URL("../fixtures/executor-module.mjs", import.meta.url).href,
+      processEntryUrl: new URL("../../dist/process-entry.js", import.meta.url).href,
       readinessProbe: { commandName: "version", argv: ["--version"] },
       policy: DaemonPolicy.currentSystem(),
     });

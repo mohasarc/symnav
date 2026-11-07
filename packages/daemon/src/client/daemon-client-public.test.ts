@@ -18,6 +18,7 @@ describe("public DaemonClient", () => {
       daemonEnabled: false,
       executorFactory,
       executorModuleUrl: "file:///executor.js",
+      processEntryUrl: "file:///process-entry.js",
       readinessProbe: { commandName: "version", argv: ["--version"] },
       policy: DaemonPolicy.currentSystem(),
     });

@@ -1,7 +1,8 @@
 import { randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
+import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { InvocationProgram } from "./invocation-program.js";
 import { NodeFileSystem } from "@symnav/core";
 import { DaemonClient, DaemonPolicy, type DaemonExecutorFactory } from "@symnav/daemon";
@@ -76,6 +77,9 @@ export function createDefaultDependencies(
     daemonEnabled,
     executorFactory,
     executorModuleUrl: new URL("./daemon-executor.js", import.meta.url).href,
+    processEntryUrl: pathToFileURL(
+      createRequire(import.meta.url).resolve("@symnav/daemon/process-entry"),
+    ).href,
     readinessProbe: { commandName: "version", argv: ["--version"] },
     policy: daemonPolicy,
   });

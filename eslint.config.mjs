@@ -27,10 +27,9 @@ const elements = [
   { type: "cli", pattern: "apps/cli/**" },
 ];
 
-const aliasMap = [
-  ...packages.map((p) => /** @type {[string, string]} */ ([p.name, pkg(`${p.dir}/src/index.ts`)])),
-  /** @type {[string, string]} */ (["symnav", pkg("apps/cli/src/index.ts")]),
-];
+const aliasMap = packages.map(
+  (p) => /** @type {[string, string]} */ ([p.name, pkg(`${p.dir}/src/index.ts`)]),
+);
 
 function productionRules() {
   return [

@@ -224,13 +224,3 @@ Refs, context, and graph: under 5 s for depth-one queries
 ```
 
 `pnpm daemon:benchmark --scale <n>` gates `1x`, `2x`, `3x`, and `10x` workspaces on startup time, command time, queue wait, peak memory, response size, parity, freshness, and daemon continuity. A gate fails if the daemon restarts, vanishes from status, emits raw resource failures, or replays accepted work locally.
-
-## Out of scope
-
-- Concurrent navigation inside one daemon.
-- Sharing project state across workspaces.
-- Network-reachable daemon, third-party protocol, transport options, or network fallback.
-- Persisting loaded state across daemon restarts.
-- User knobs for timeouts, idle lifetime, or memory limits.
-- Running under sandboxes that deny writes to the state location (e.g. Codex `read-only`).
-- Writing state into the workspace.

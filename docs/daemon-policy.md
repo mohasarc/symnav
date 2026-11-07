@@ -4,7 +4,7 @@
 
 | Policy path or recipe | Default or derivation | Applies to | Reason | Behavior oracle |
 | --- | --- | --- | --- | --- |
-| `transport.singleResponseTimeoutMs` | 250 ms | Ordinary lifecycle and execution-status exchanges | Bound one-response local socket waits | Transport timeout characterization |
+| `transport.singleResponseTimeoutMs` | 250 ms | Ordinary lifecycle and execution-status exchanges | Bound one-response local endpoint waits | Transport timeout characterization |
 | `transport.statusResponseTimeoutMs` | 100 ms | Status observer lifecycle exchange | Keep status aggregation responsive independently of routing | Status timeout characterization |
 | `transport.executionAdmissionTimeoutMs` | 5 s | Execute submission until acceptance | Bound admission without timing accepted completion | Long-command transport characterization |
 | `transport.maximumJsonPayloadBytes` | 8 MiB | Ordinary JSON control frames | Bound decoded control input | Transport frame-cap tests |
@@ -54,10 +54,10 @@
 | Deadline | Value | Reason |
 | --- | --- | --- |
 | healthy startup | None | Progressing warm-up has no project-size deadline. |
-| startup silence | None | Silence handling is deferred to the daemon follow-up contract. |
+| startup silence | None | Not implemented; a hung-but-alive warm-up is never abandoned (#170). |
 | post-accept completion | None | Accepted work is not replayed or failed because it runs long. |
 | worker output acknowledgement | None | Backpressure waits for durable consumption without a timer. |
-| unacknowledged result | None | Retention eviction is deferred to the daemon follow-up contract. |
+| unacknowledged result | None | Not implemented; the accepted-request ledger never evicts (#166). |
 
 ## Migration access
 

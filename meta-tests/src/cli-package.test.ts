@@ -29,4 +29,8 @@ describe("symnav package", () => {
     expect(manifest).not.toHaveProperty("types");
     expect(manifest).not.toHaveProperty("exports");
   });
+
+  it("is publishable", () => {
+    expect(CliPackage.manifest()).not.toHaveProperty("private");
+  });
 });

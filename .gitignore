@@ -18,6 +18,7 @@ artifacts/
 *.tsbuildinfo
 .agents/feedback.md
 .agents/temp/
+.agents/scaffold-manifest
 .claude/settings.local.json
 .claude/worktrees/
 .env

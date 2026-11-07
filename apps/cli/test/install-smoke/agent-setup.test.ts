@@ -39,4 +39,15 @@ describe("installed symnav agent setup", () => {
       JSON.stringify(stateDirectory),
     );
   });
+
+  it("doctor reports one row each for codex and claude-code", () => {
+    const result = symnav.run(["doctor"], agentEnvironment);
+    const agents = result.stdout
+      .trim()
+      .split("\n")
+      .map((row) => row.split(/\s+/)[0]);
+
+    expect(result.status, result.stdout + result.stderr).toBe(0);
+    expect(agents.sort()).toEqual(["claude-code", "codex"]);
+  });
 });

@@ -23,12 +23,12 @@ export class InstalledSymnav {
     return join(this.options.prefix, "lib", "node_modules", InstalledSymnav.PACKAGE_NAME);
   }
 
-  run(args: readonly string[]): RunSymnavBinaryResult {
+  run(args: readonly string[], environment: NodeJS.ProcessEnv = {}): RunSymnavBinaryResult {
     const cliPath = join(this.packageDirectory, "dist", "cli.js");
     const result = spawnSync(process.execPath, [cliPath, ...args], {
       cwd: this.options.workspaceDirectory,
       encoding: "utf8",
-      env: this.environment(),
+      env: { ...this.environment(), ...environment },
     });
     return { status: result.status, stdout: result.stdout, stderr: result.stderr };
   }

@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, realpathSync } from "node:fs";
+import { mkdtempSync, realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -8,21 +8,7 @@ import { E2eProcessCleanup } from "../helpers/e2e-process-cleanup.js";
 import { InstallSmokeEnvironment } from "./install-smoke-environment.js";
 import { InstalledSymnav } from "./installed-symnav.js";
 import { NavigationCommands } from "./navigation-commands.js";
-
-interface UsageEvent {
-  readonly command: string;
-  readonly executionMode: string;
-  readonly symnavVersion: string;
-}
-
-class UsageLog {
-  constructor(private readonly stateDirectory: string) {}
-
-  events(): readonly UsageEvent[] {
-    const lines = readFileSync(join(this.stateDirectory, "usage.jsonl"), "utf8").trim().split("\n");
-    return lines.map((line) => JSON.parse(line) as UsageEvent);
-  }
-}
+import { UsageLog } from "./usage-log.js";
 
 describe("installed symnav warm navigation", () => {
   const runRoot = mkdtempSync(join(tmpdir(), "symnav-install-smoke-"));

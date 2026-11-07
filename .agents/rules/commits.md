@@ -11,7 +11,7 @@ How to structure and write commits. When the repository ships its own commit rul
 
 - One logical change per commit. If the description needs "and", split
 - Don't move and change at the same time: pure move commit, then edits
-- Don't introduce a type and use it at the same time: type commit, then first use. Types only — never stubs or placeholder implementations. Shared types with multiple consumers especially get their own preceding commit
+- Don't introduce a shared type and use it at the same time: type commit, then first use. Types only — never stubs or placeholder implementations. A type with a single consumer lands with that consumer
 - Don't refactor and add behavior at the same time: refactor first, behavior on top
 - Don't change a contract and update its callers at the same time: the signature, interface, or type change lands first with the code that implements it, then the next commit makes the mechanical caller updates
 - When a new value threads through several layers, the commit where it matters lands first (where it's stored, read, or acts). Threading it through intermediate layers and callers follows in later commits, outer layers last
@@ -36,3 +36,9 @@ How to structure and write commits. When the repository ships its own commit rul
 - Imperative title, no type prefix (`feat:`, `fix:`, `test:`)
 - Title-only by default, keep messages concise. Add a body only when the change is weird, confusing, or unusual — then state why it was done. Everything else (general rationale, root cause narrative) belongs in the PR description
 - Be specific and plain — name real symbols: "Rename getUserData to fetchUserProfile", not "Rename function" or invented vocabulary
+- Review-fix commits: title plus link to the GitHub comment as body
+
+## Branching
+
+- Never commit on `main`. Branch from pulled `main` first
+- One fix per branch/PR

@@ -1,0 +1,36 @@
+name: Install smoke
+on:
+  workflow_call:
+    inputs:
+      tarball-artifact:
+        required: true
+        type: string
+      expected-version:
+        required: true
+        type: string
+jobs:
+  install-smoke:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - uses: actions/download-artifact@v4
+        with:
+          name: ${{ inputs.tarball-artifact }}
+          path: ${{ runner.temp }}/symnav-tarball
+      - run: npm install -g --prefix "$SYMNAV_INSTALL_PREFIX" "$SYMNAV_TARBALL"
+        env:
+          SYMNAV_INSTALL_PREFIX: ${{ runner.temp }}/symnav-prefix
+          SYMNAV_TARBALL: ${{ runner.temp }}/symnav-tarball/symnav-${{ inputs.expected-version }}.tgz
+      - run: pnpm --filter symnav test:install-smoke
+        env:
+          SYMNAV_INSTALL_PREFIX: ${{ runner.temp }}/symnav-prefix
+          SYMNAV_EXPECTED_VERSION: ${{ inputs.expected-version }}

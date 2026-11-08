@@ -179,7 +179,7 @@ $ symnav daemon start
 Daemon already running for /Users/mo/projects/reelcut (pid 48213, up 14m)
 ```
 
-With `SYMNAV_DAEMON=0`: prints `Daemon disabled by SYMNAV_DAEMON=0` on stderr, exit 1.
+With `SYMNAV_DAEMON=0`: prints `symnav: error: daemon disabled by SYMNAV_DAEMON=0` on stderr, exit 1.
 
 ### `daemon status`
 

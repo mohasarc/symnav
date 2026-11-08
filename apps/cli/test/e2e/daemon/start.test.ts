@@ -128,7 +128,7 @@ describe("symnav daemon start", () => {
     expect(nonGit.status).toBe(1);
     expect(nonGit.stderr).toContain("Cannot answer: not in a git workspace");
     expect(disabled.status).toBe(1);
-    expect(disabled.stderr).toBe("Daemon disabled by SYMNAV_DAEMON=0\n");
+    expect(disabled.stderr).toBe("symnav: error: daemon disabled by SYMNAV_DAEMON=0\n");
   });
 });
 

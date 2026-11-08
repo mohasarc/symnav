@@ -3,6 +3,7 @@ import { resolve } from "node:path";
 import { createWorkspace, UserFacingError } from "@symnav/core";
 import type { DaemonStatusReport } from "@symnav/daemon";
 import { DaemonLifecycleRenderer } from "@symnav/renderer";
+import { CommandErrorLine } from "../../output/command-error-line.js";
 import { OPERATION_FAILURE_EXIT_CODE, OperationFailure } from "../../output/operation-failure.js";
 import type { ProgramContext } from "../../program-context.js";
 import type { ProgramDependencies } from "../../program-dependencies.js";
@@ -56,7 +57,7 @@ class DaemonStartAction {
     options: DaemonStartOptions,
   ): Promise<void> {
     if (!dependencies.daemonEnabled) {
-      context.stderr.write("Daemon disabled by SYMNAV_DAEMON=0\n");
+      context.stderr.write(CommandErrorLine.render("daemon disabled by SYMNAV_DAEMON=0"));
       context.exit(1);
     }
     const cwd = DaemonWorkspaceDirectory.resolve(program, context);

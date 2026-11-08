@@ -1,1 +1,1 @@
-Daemon disabled by SYMNAV_DAEMON=0
+symnav: error: daemon disabled by SYMNAV_DAEMON=0

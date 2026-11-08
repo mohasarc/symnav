@@ -202,7 +202,7 @@ describe("registerDaemonCommand", () => {
 
     expect(output).toEqual({
       stdout: "",
-      stderr: "Daemon disabled by SYMNAV_DAEMON=0\n",
+      stderr: "symnav: error: daemon disabled by SYMNAV_DAEMON=0\n",
       exitCode: 1,
     });
     expect(harness.control).not.toHaveBeenCalled();

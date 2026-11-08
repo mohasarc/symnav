@@ -1,5 +1,5 @@
 import { PageOutOfRangeError } from "./errors.js";
-import { validatePageRequest } from "./validate-page-request.js";
+import { validatePageRequest, type PageRequestInput } from "./validate-page-request.js";
 
 export const DEFAULT_PAGE_SIZE = 100;
 
@@ -16,8 +16,10 @@ export interface Page<T> {
 }
 
 export class Paginator {
-  constructor(private readonly request: PageRequest) {
-    validatePageRequest(request);
+  private readonly request: PageRequest;
+
+  constructor(request: PageRequestInput) {
+    this.request = validatePageRequest(request);
   }
 
   paginate<T>(items: readonly T[]): Page<T> {

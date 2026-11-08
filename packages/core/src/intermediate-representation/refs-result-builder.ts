@@ -1,5 +1,5 @@
-import type { PageRequest } from "../pagination/paginator.js";
 import { Paginator } from "../pagination/paginator.js";
+import type { PageRequestInput } from "../pagination/validate-page-request.js";
 import { countReferenceKinds } from "./reference-kinds.js";
 import type { RefsResult, SymbolReference } from "./references.js";
 import type { SymbolIdentity } from "./symbol-identity.js";
@@ -7,7 +7,7 @@ import type { SymbolIdentity } from "./symbol-identity.js";
 export interface BuildRefsResultArgs {
   readonly identity: SymbolIdentity;
   readonly references: readonly SymbolReference[];
-  readonly pageRequest: PageRequest;
+  readonly pageRequest: PageRequestInput;
   readonly fullLines: boolean;
 }
 

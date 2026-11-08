@@ -76,6 +76,7 @@ export { DEFAULT_CONTEXT_CAP } from "./intermediate-representation/context-resul
 export type { BuildContextResultArgs } from "./intermediate-representation/context-result-builder.js";
 export { ContextResultBuilder } from "./intermediate-representation/context-result-builder.js";
 export type { PageRequest, Page } from "./pagination/paginator.js";
+export type { PageRequestInput } from "./pagination/validate-page-request.js";
 export { DEFAULT_PAGE_SIZE, Paginator } from "./pagination/paginator.js";
 export { InvalidPageRequestError, PageOutOfRangeError } from "./pagination/errors.js";
 export { isPositiveInteger } from "./validation/is-positive-integer.js";

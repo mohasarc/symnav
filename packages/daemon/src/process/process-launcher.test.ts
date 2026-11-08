@@ -1,6 +1,7 @@
 import { fstatSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
+import { pathToFileURL } from "node:url";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { CanonicalTestPath } from "../../test/helpers/canonical-path.js";
 import { DaemonPolicy } from "@symnav/daemon";
@@ -32,7 +33,7 @@ interface FakeChildProcess {
 describe("NodeDaemonProcessLauncher", () => {
   const roots: string[] = [];
   const executorModuleUrl = "file:///absolute/symnav/daemon-executor.js";
-  const processEntryUrl = "file:///absolute/symnav/process-entry.js";
+  const processEntryUrl = pathToFileURL(resolve("/absolute/symnav/process-entry.js")).href;
 
   beforeEach(() => {
     vi.restoreAllMocks();

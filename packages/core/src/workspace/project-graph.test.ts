@@ -35,6 +35,7 @@ class FakeProjectGraph extends ProjectGraph<FakeConfiguration, FakeProject> {
   readonly parsedPaths: string[] = [];
   readonly preparationRequests: ProjectGraphPreparationRequest<FakeConfiguration>[] = [];
   initialPaths: readonly string[] = [];
+  nestedPaths: readonly string[] = [];
   configurations = new Map<string, FakeConfiguration>();
   preparedInputPaths: readonly string[] = [];
   preparedInputs: readonly ProjectInput[] = [];
@@ -65,6 +66,10 @@ class FakeProjectGraph extends ProjectGraph<FakeConfiguration, FakeProject> {
 
   protected initialConfigurationPaths(): readonly string[] {
     return this.initialPaths;
+  }
+
+  protected nestedConfigurationPaths(): readonly string[] {
+    return this.nestedPaths;
   }
 
   protected async parseConfiguration(request: {
@@ -238,6 +243,34 @@ describe("ProjectGraph", () => {
       "/repo/a.json",
       "/repo/b.json",
       "/repo/c.json",
+    ]);
+  });
+
+  it("discovers nested configurations in path order after the referenced configurations", async () => {
+    const graph = new FakeProjectGraph(
+      new InMemoryFileSystem({
+        "/repo/root.json": "root",
+        "/repo/shared/ref.json": "ref",
+        "/repo/a/nested.json": "a",
+        "/repo/z/nested.json": "z",
+      }),
+    );
+    graph.initialPaths = ["/repo/root.json"];
+    graph.nestedPaths = ["/repo/z/nested.json", "/repo/shared/ref.json", "/repo/a/nested.json"];
+    graph.configurations = new Map([
+      ["/repo/root.json", { referencedPaths: ["/repo/shared/ref.json"], filePaths: [] }],
+      ["/repo/shared/ref.json", { referencedPaths: [], filePaths: [] }],
+      ["/repo/a/nested.json", { referencedPaths: [], filePaths: [] }],
+      ["/repo/z/nested.json", { referencedPaths: [], filePaths: [] }],
+    ]);
+
+    await graph.refresh(snapshot());
+
+    expect(graph.parsedPaths).toEqual([
+      "/repo/root.json",
+      "/repo/shared/ref.json",
+      "/repo/a/nested.json",
+      "/repo/z/nested.json",
     ]);
   });
 

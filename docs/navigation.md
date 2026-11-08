@@ -378,7 +378,7 @@ Cannot answer: --depth 12 exceeds the maximum of 5; run with --depth 5, then run
 - Edges symnav can't statically confirm are still shown, labelled inline: `[possible: dynamic dispatch: exact callee not statically resolvable]`.
 - A symbol reached by different paths shows on each one. When that happens: `Note: N symbols appear in multiple paths.`
 - Paths are sorted shorter first, then by canonical ID along the path. Pages are stable.
-- A contract member with several implementations is refused: `Cannot answer: symbol src/contract.ts::GraphShape::render matches multiple implementations: src/contract.ts::Box::render, src/contract.ts::Circle::render — query one directly.`
+- A contract member with several implementations is refused: `Cannot answer: symbol src/contract.ts::GraphShape::render matches multiple implementations: src/contract.ts::Box::render, src/contract.ts::Circle::render; query one directly.`
 
 ```text
 Graph: dynamicRoot

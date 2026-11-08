@@ -519,7 +519,7 @@ describe("symnav overview e2e (targeting)", () => {
     expect(r.stdout).toBe("");
     expect(r.status).toBe(1);
     expect(r.stderr).toBe(
-      "Cannot answer: invalid overview request: depth must be a non-negative integer, got NaN.\n",
+      "Cannot answer: invalid overview request: depth must be a non-negative integer, got x.\n",
     );
   });
 
@@ -539,7 +539,7 @@ describe("symnav overview e2e (targeting)", () => {
     expect(r.stdout).toBe("");
     expect(r.status).toBe(1);
     expect(r.stderr).toBe(
-      "Cannot answer: invalid overview request: line must be a positive integer, got NaN.\n",
+      "Cannot answer: invalid overview request: line must be a positive integer, got x.\n",
     );
   });
 

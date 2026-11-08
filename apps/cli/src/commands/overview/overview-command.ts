@@ -1,4 +1,4 @@
-import type { OverviewExpansionResult } from "@symnav/core";
+import type { OverviewExpansionRequestInput, OverviewExpansionResult } from "@symnav/core";
 import { OverviewExpander, OverviewTree } from "@symnav/core";
 import {
   OverviewErrorRenderer,
@@ -59,24 +59,10 @@ function flagsFor(args: OverviewArgs): readonly string[] {
   return flags;
 }
 
-function overviewRequestFrom(args: OverviewArgs): {
-  readonly depth: number;
-  readonly at: string | undefined;
-  readonly line: number | undefined;
-} {
+function overviewRequestFrom(args: OverviewArgs): OverviewExpansionRequestInput {
   return {
-    depth: depthFrom(args.depth),
+    depth: args.depth ?? 0,
     at: args.at === undefined ? undefined : stripHeaderEllipsis(args.at),
-    line: lineFrom(args.line),
+    line: args.line,
   };
-}
-
-function depthFrom(depth: OverviewArgs["depth"]): number {
-  if (depth === undefined) return 0;
-  return Number(depth);
-}
-
-function lineFrom(line: OverviewArgs["line"]): number | undefined {
-  if (line === undefined) return undefined;
-  return Number(line);
 }

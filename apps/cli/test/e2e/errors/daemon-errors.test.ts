@@ -42,6 +42,17 @@ describe("daemon error paths", () => {
     },
   );
 
+  it.skipIf(isWindows)("status when the state directory is a file", async () => {
+    const scratch = new ScratchWorkspace("nested-workspace-cases");
+    scratch.blockStateDirectory();
+
+    await ErrorOutput.expectSnapshot(
+      scratch.run(["daemon", "status"]),
+      "daemon-status-state-directory-is-file",
+      { exitCode: OPERATION_FAILURE_EXIT_CODE, placeholders: scratch.placeholders() },
+    );
+  });
+
   it.each([
     ["daemon-unknown-subcommand", ["daemon", "bogus"]],
     ["daemon-start-excess-arguments", ["daemon", "start", "extra"]],

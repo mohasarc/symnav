@@ -38,3 +38,7 @@ pnpm --filter symnav exec vitest run test/e2e/sandbox/warm-navigation.test.ts te
 ```
 
 Set `SYMNAV_REQUIRE_SANDBOX_RUNTIME=1` to fail instead of skip when prerequisites are missing. CI sets it on both platforms and uses Node 22 for sandbox jobs; everything else runs on Node 20. An installed Codex runs the same checks with an isolated config.
+
+## Pull requests
+
+PRs are squash-merged, so the PR title becomes the commit on `main` and drives the release version. Titles need a conventional type and no scope: `feat: Add regex targets`. Types: `feat`, `fix`, `perf`, `docs`, `chore`, `refactor`, `test`, `ci`, `build`; `!` after the type marks a breaking change.

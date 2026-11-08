@@ -368,10 +368,10 @@ export class TypeScriptProjectGraph
   ): ts.CompilerOptions {
     const pathDialect = new WorkspacePathDialect(root);
     const compilerOptions: ts.CompilerOptions = { ...configuration.compilerOptions };
-    const baseUrl = compilerOptions.baseUrl ?? configuration.directory;
+    const pathsBase = TypeScriptProjectGraph.pathsBaseDirectory(configuration);
     const paths = TypeScriptProjectGraph.workspacePackagePaths(workspacePackages);
     for (const [specifier, targets] of Object.entries(compilerOptions.paths ?? {})) {
-      paths[specifier] = targets.map((target) => pathDialect.resolve(baseUrl, target));
+      paths[specifier] = targets.map((target) => pathDialect.resolve(pathsBase, target));
     }
     delete compilerOptions.rootDir;
     delete compilerOptions.outDir;
@@ -380,6 +380,12 @@ export class TypeScriptProjectGraph
     compilerOptions.paths = paths;
     compilerOptions.noEmit = true;
     return compilerOptions;
+  }
+
+  private static pathsBaseDirectory(configuration: ParsedTypeScriptConfiguration): string {
+    const { baseUrl, pathsBasePath } = configuration.compilerOptions;
+    if (baseUrl !== undefined) return baseUrl;
+    return typeof pathsBasePath === "string" ? pathsBasePath : configuration.directory;
   }
 
   private static inferredCompilerOptions(

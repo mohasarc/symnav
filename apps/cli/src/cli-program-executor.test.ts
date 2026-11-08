@@ -418,7 +418,7 @@ describe("CliProgramExecutor", () => {
     expect(userError.exitCode).toBe(1);
     expect(await decode(userError)).toContain("Cannot answer: file not found");
     expect(crash.exitCode).toBe(2);
-    expect(await decode(crash)).toBe("boom\n");
+    expect(await decode(crash)).toBe("symnav: error: boom\n");
     expect(JSON.parse(await decode(json))).toMatchObject({ file: "src/a.ts" });
     expect(JSON.parse(await decode(stats))).toMatchObject({ totalEvents: 0 });
   });

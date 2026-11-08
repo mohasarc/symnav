@@ -210,7 +210,7 @@ describe("workspace discovery before request validation", () => {
       "/repo",
     );
 
-    expect(result.stderr).toBe("workspace discovery failed\n");
+    expect(result.stderr).toBe("symnav: error: workspace discovery failed\n");
     expect(result.exitCodes).toEqual([2]);
   });
 });

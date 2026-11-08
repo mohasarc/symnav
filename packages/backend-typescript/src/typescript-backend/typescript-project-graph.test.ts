@@ -485,6 +485,31 @@ describe("TypeScriptProjectGraph", () => {
     expect(graph.programFor("src/vs/skip/c.ts")?.getCompilerOptions().strict).toBeUndefined();
   });
 
+  it("resolves extended paths without baseUrl against the configuration that declares them", async () => {
+    const projectFixture = fixture();
+    const backend = new TypeScriptBackend(projectFixture.fileSystem);
+    projectFixture.write("tsconfig.json", JSON.stringify({ extends: "./src/tsconfig.json" }));
+    projectFixture.write(
+      "src/tsconfig.json",
+      JSON.stringify({
+        compilerOptions: { paths: { "vs/*": ["./vs/*"] } },
+        include: ["./vs/**/*.ts"],
+      }),
+    );
+    projectFixture.write(
+      "src/vs/a.ts",
+      'import { aliasTarget } from "vs/b";\nexport function useAlias(): number { return aliasTarget(); }\n',
+    );
+    projectFixture.write("src/vs/b.ts", "export function aliasTarget(): number { return 1; }\n");
+    const snapshot = await projectFixture.snapshot();
+
+    await backend.refresh({ snapshot, coverage: "workspace" });
+
+    await expect(
+      calleeNames(backend, snapshot.files, symbolIdentity("src/vs/a.ts", "useAlias")),
+    ).resolves.toEqual(["aliasTarget"]);
+  });
+
   it("falls back to one inferred project for malformed or missing root configuration", async () => {
     const projectFixture = fixture();
     const graph = new TypeScriptProjectGraph(projectFixture.fileSystem);

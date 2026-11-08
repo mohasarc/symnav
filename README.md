@@ -55,18 +55,4 @@ Set `SYMNAV_TELEMETRY` to `0`, `false`, `off`, or `no` (case-insensitive) to dis
 
 ## Development
 
-Install dependencies and build the workspace before running tests; e2e tests exercise the built binary, not source.
-
-```sh
-pnpm install
-pnpm build
-pnpm test
-```
-
-To run the CLI from source during development, use the `dev` script in `apps/cli`:
-
-```sh
-pnpm --filter symnav dev --version
-```
-
-Real sandbox checks use pinned `@anthropic-ai/sandbox-runtime` on macOS and Linux, which requires Node 22.12 or newer. Linux needs `bubblewrap`, `socat`, `ripgrep`, and working unprivileged user namespaces. Run `pnpm --filter symnav exec vitest run test/e2e/sandbox/warm-navigation.test.ts test/e2e/sandbox/doctor.test.ts` after building. Set `SYMNAV_REQUIRE_SANDBOX_RUNTIME=1` to fail when runtime prerequisites are unavailable; CI requires this on both platforms and uses Node 22 for sandbox jobs. Main compatibility checks continue to use Node 20. Installed Codex runtimes run the same checks with an isolated configuration.
+See [`CONTRIBUTING.md`](CONTRIBUTING.md).

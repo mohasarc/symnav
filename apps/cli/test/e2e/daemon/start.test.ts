@@ -36,7 +36,7 @@ describe("symnav daemon start", () => {
         const result = await fixture.start();
         expect(result.status).toBe(2);
         expect(result.stdout).toBe("");
-        expect(result.stderr).toContain("Cannot start daemon:");
+        expect(result.stderr).toContain("symnav: error: cannot start daemon:");
         expect(result.stderr).toContain("could not be verified; ownership was retained");
         expect(new CliDaemonTesting(stateDir).inspector.listInstances()).toEqual(before);
         expect(await fixture.unchanged()).toBe(true);

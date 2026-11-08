@@ -79,9 +79,8 @@ class DaemonStartAction {
         context.stderr.write(error.render());
         context.exit(1);
       }
-      const message = error instanceof Error ? error.message : String(error);
-      context.stderr.write(`Cannot start daemon: ${message}\n`);
-      context.exit(2);
+      context.stderr.write(OperationFailure.render("start daemon", error));
+      context.exit(OPERATION_FAILURE_EXIT_CODE);
     }
   }
 }
@@ -139,9 +138,8 @@ class DaemonStopAction {
         context.stderr.write(error.render());
         context.exit(1);
       }
-      const message = error instanceof Error ? error.message : String(error);
-      context.stderr.write(`Cannot stop daemon: ${message}\n`);
-      context.exit(2);
+      context.stderr.write(OperationFailure.render("stop daemon", error));
+      context.exit(OPERATION_FAILURE_EXIT_CODE);
     }
   }
 }

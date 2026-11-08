@@ -88,7 +88,7 @@ describe("symnav required state writes", () => {
       harness.deny(harness.state);
       const result = harness.run(["daemon", "start"], { SYMNAV_DAEMON: "1" });
       expect(result.status).toBe(2);
-      expect(result.stderr.startsWith("Cannot start daemon:")).toBe(true);
+      expect(result.stderr.startsWith("symnav: error: cannot start daemon:")).toBe(true);
       expect(result.stderr.endsWith(harness.warning("EACCES"))).toBe(true);
     },
   );

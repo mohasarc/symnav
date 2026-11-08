@@ -1,2 +1,2 @@
-Cannot start daemon: ENOTDIR: not a directory, scandir '<state>/daemons/<workspace-id>'
+symnav: error: cannot start daemon: cannot access <state>/daemons/<workspace-id> (ENOTDIR)
 symnav: warning: cannot write <state> (ENOTDIR); daemon and telemetry are off for this command. Grant access with 'symnav setup <agent>', or pass --no-warnings.

@@ -209,8 +209,8 @@ describe("registerDaemonCommand", () => {
   });
 
   it.each([
-    ["start", "Cannot start daemon: broken\n"],
-    ["stop", "Cannot stop daemon: broken\n"],
+    ["start", "symnav: error: cannot start daemon: broken\n"],
+    ["stop", "symnav: error: cannot stop daemon: broken\n"],
   ] as const)("preserves %s failure wording and exit code", async (command, errorOutput) => {
     const harness = createHarness(harnesses);
     harness.control.mockRejectedValue(new Error("broken"));

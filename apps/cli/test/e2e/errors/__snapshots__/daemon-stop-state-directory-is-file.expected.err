@@ -1,0 +1,1 @@
+Cannot stop daemon: ENOTDIR: not a directory, scandir '<state>/daemons/<workspace-id>'

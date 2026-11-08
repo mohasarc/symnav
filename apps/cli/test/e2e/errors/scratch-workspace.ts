@@ -48,6 +48,10 @@ export class ScratchWorkspace {
     this.unreadableDirectories.push(path);
   }
 
+  blockStateDirectory(): void {
+    writeFileSync(this.stateDirectory, "");
+  }
+
   run(args: readonly string[], options: ScratchRunOptions = {}): RunSymnavBinaryResult {
     return runSymnavBinary(args, {
       cwd: options.cwd ?? this.workspaceRoot,
@@ -58,6 +62,7 @@ export class ScratchWorkspace {
   placeholders(): readonly PathPlaceholder[] {
     return [
       { path: this.workspaceRoot, placeholder: "<workspace>" },
+      { path: this.stateDirectory, placeholder: "<state>" },
       { path: this.root, placeholder: "<scratch>" },
     ];
   }

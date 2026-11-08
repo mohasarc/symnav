@@ -54,7 +54,9 @@ export class UnreadableDirectoryWarningCandidateError extends UserFacingError {
   }
 
   get reason(): string {
-    return `cannot read directory during enumeration: ${this.directory} — warning candidate: downgrade to a non-fatal warning once enumerate can report partial results instead of throwing`;
+    const code = (this.cause as NodeJS.ErrnoException | undefined)?.code;
+    if (code === undefined) return `cannot read directory ${this.directory}`;
+    return `cannot read directory ${this.directory} (${code})`;
   }
 }
 

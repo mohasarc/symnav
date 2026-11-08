@@ -115,8 +115,8 @@ describe("Workspace.enumerate", () => {
       (thrown: unknown) => thrown,
     );
     expect(error).toBeInstanceOf(UnreadableDirectoryWarningCandidateError);
-    expect((error as UnreadableDirectoryWarningCandidateError).reason).toContain(
-      "warning candidate",
+    expect((error as UnreadableDirectoryWarningCandidateError).reason).toBe(
+      "cannot read directory /repo/src (EACCES)",
     );
     expect((error as Error).cause).toBe(cause);
     expect(fs.unreadableDirectoryReads).toBe(1);

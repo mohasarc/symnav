@@ -31,6 +31,7 @@ Cannot answer: ignored.ts is ignored by .gitignore.
 Cannot answer: vendor/package/src/index.ts belongs to nested Git workspace rooted at /repo/vendor/package, not selected workspace /repo; run from /repo/vendor/package or use --cwd /repo/vendor/package.
 Cannot answer: not in a git workspace (no .git found in or above /x).
 Cannot answer: foo.ts is outside the workspace rooted at /repo.
+Cannot answer: cannot read directory /repo/src/locked (EACCES).
 ```
 
 ### Ambiguity stops

@@ -41,6 +41,7 @@ import type {
   DaemonRequestServer,
 } from "../transport/contracts.js";
 import { TestDaemonTransport as DaemonTransport } from "../../test/helpers/daemon-transport.js";
+import { DaemonTransportError } from "../transport/transport-error.js";
 import { DaemonFailureJournal } from "../diagnostics/failure-journal.js";
 import { NodeDaemonClock } from "../lifecycle/daemon-clock.js";
 
@@ -618,6 +619,28 @@ describe("DaemonStartupCoordinator", () => {
         failure: expect.objectContaining({ phase: "process spawn", reason: "process-terminated" }),
       }),
     ]);
+  });
+
+  it("replaces a different-version daemon whose terminate reply arrives after the request timeout", async () => {
+    const harness = new CoordinatorHarness(roots);
+    harness.seedReady("existing", "0.0.9", 4006);
+    const deliver = harness.transport.request.bind(harness.transport);
+    vi.spyOn(harness.transport, "request").mockImplementation(async (endpoint, request) => {
+      const response = await deliver(endpoint, request);
+      if (request.kind !== "terminate") return response;
+      throw new DaemonTransportError(
+        "timeout",
+        "submitted-unconfirmed",
+        "Daemon request timed out",
+      );
+    });
+
+    const result = await harness.coordinator().ensureRunning(harness.identity);
+
+    expect(harness.transport.terminationCount).toBe(1);
+    expect(harness.launcher.launchCount).toBe(1);
+    expect(result.status).toBe("ready");
+    expect(harness.registry.list()).toHaveLength(1);
   });
 
   it("does not launch a replacement until the authenticated daemon process exits", async () => {

@@ -32,6 +32,7 @@ export type {
   DaemonControlRequest,
 } from "./client/daemon-client-contracts.js";
 export { DaemonClient } from "./client/daemon-client.js";
+export { DaemonControlledFailureMessage } from "./client/daemon-controlled-failure-message.js";
 
 export type {
   DaemonStateWriteFailure,

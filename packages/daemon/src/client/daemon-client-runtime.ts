@@ -24,6 +24,7 @@ import type {
   DaemonStatusReport,
 } from "../daemon-lifecycle-report.js";
 import { DaemonController } from "../process/controller.js";
+import { DaemonControlledFailureMessage } from "./daemon-controlled-failure-message.js";
 import {
   NodeDaemonProcessLauncher,
   NodeDaemonProcessTerminator,
@@ -122,15 +123,15 @@ class DaemonWriteObservedLifecycle
 
 class DaemonControlledResult {
   static acceptedRequestDidNotComplete(): DaemonExecutorExecutionResult {
-    return this.failure("Cannot answer: accepted daemon request did not complete.\n");
+    return this.failure(DaemonControlledFailureMessage.acceptedRequestDidNotComplete);
   }
 
   static workspaceCapacityExceeded(): DaemonExecutorExecutionResult {
-    return this.failure("Cannot answer: daemon workspace capacity exceeded.\n");
+    return this.failure(DaemonControlledFailureMessage.workspaceCapacityExceeded);
   }
 
   static responseCapacityExceeded(): DaemonExecutorExecutionResult {
-    return this.failure("Cannot answer: daemon response capacity exceeded.\n");
+    return this.failure(DaemonControlledFailureMessage.responseCapacityExceeded);
   }
 
   private static failure(message: string): DaemonExecutorExecutionResult {

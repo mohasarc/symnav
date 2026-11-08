@@ -259,19 +259,23 @@ describe("TypeScriptProjectGraph", () => {
       "tsconfig.json",
       JSON.stringify({ files: [], references: [{ path: "packages/domain" }] }),
     );
-    const narrowedSnapshot = await projectFixture.snapshot();
-    const narrowed = await graph.refresh(narrowedSnapshot);
-    const inferredService = graph.languageServiceFor("packages/app/src/index.ts");
-
     projectFixture.write(
       "packages/app/tsconfig.json",
-      JSON.stringify({ include: ["src/index.ts"], compilerOptions: { strict: true } }),
+      JSON.stringify({ include: ["src/**/*.ts"] }),
+    );
+    const narrowedSnapshot = await projectFixture.snapshot();
+    const narrowed = await graph.refresh(narrowedSnapshot);
+    const appService = graph.languageServiceFor("packages/app/src/index.ts");
+
+    projectFixture.write(
+      "packages/app/tsconfig.base.json",
+      JSON.stringify({ compilerOptions: { strict: true } }),
     );
     const unchanged = await graph.refresh(narrowedSnapshot);
 
     expect(narrowed.changedConfigurationCount).toBe(3);
     expect(unchanged.changedConfigurationCount).toBe(0);
-    expect(graph.languageServiceFor("packages/app/src/index.ts")).toBe(inferredService);
+    expect(graph.languageServiceFor("packages/app/src/index.ts")).toBe(appService);
   });
 
   it("orders every owning project and uses the last owner as primary", async () => {
@@ -361,10 +365,12 @@ describe("TypeScriptProjectGraph", () => {
     const referencesChanged = await graph.refresh(await projectFixture.snapshot());
     const referencedOptions = graph.programFor("packages/app/src/index.ts")?.getCompilerOptions();
 
-    expect(referencesChanged.configuredProjectCount).toBe(2);
-    expect(referencesChanged.inferredFileCount).toBe(3);
-    expect(referencesChanged.changedConfigurationCount).toBe(2);
-    expect(referencedOptions?.paths?.["@changed/*"]).toBeUndefined();
+    expect(referencesChanged.configuredProjectCount).toBe(3);
+    expect(referencesChanged.inferredFileCount).toBe(1);
+    expect(referencesChanged.changedConfigurationCount).toBe(1);
+    expect(referencedOptions?.paths?.["@changed/*"]).toEqual([
+      `${projectFixture.root.replaceAll("\\", "/")}/packages/domain/src/*`,
+    ]);
   });
 
   it("invalidates workspace package exports and source membership", async () => {
@@ -510,7 +516,7 @@ describe("TypeScriptProjectGraph", () => {
     ).resolves.toEqual(["aliasTarget"]);
   });
 
-  it("falls back to one inferred project for malformed or missing root configuration", async () => {
+  it("discovers nested configurations behind a malformed or missing root configuration", async () => {
     const projectFixture = fixture();
     const graph = new TypeScriptProjectGraph(projectFixture.fileSystem);
     projectFixture.write("tsconfig.json", "{ malformed");
@@ -519,11 +525,52 @@ describe("TypeScriptProjectGraph", () => {
     projectFixture.remove("tsconfig.json");
     const missing = await graph.refresh(await projectFixture.snapshot());
 
-    expect(malformed.configuredProjectCount).toBe(0);
-    expect(malformed.inferredFileCount).toBe(8);
-    expect(missing.configuredProjectCount).toBe(0);
-    expect(missing.inferredFileCount).toBe(8);
-    expect(graph.languageServiceFor("scratch/outside.ts")).toBeDefined();
+    expect(malformed.configuredProjectCount).toBe(2);
+    expect(missing.configuredProjectCount).toBe(2);
+    expect(graph.programFor("packages/app/src/index.ts")?.getCompilerOptions().baseUrl).toBe(
+      `${projectFixture.root.replaceAll("\\", "/")}/packages/app`,
+    );
+    expect(graph.programFor("scratch/outside.ts")?.getCompilerOptions().composite).toBeUndefined();
+  });
+
+  it("ignores configurations below node_modules", async () => {
+    const projectFixture = fixture();
+    const graph = new TypeScriptProjectGraph(projectFixture.fileSystem);
+    projectFixture.remove("tsconfig.json");
+    projectFixture.write(
+      "node_modules/vendored/tsconfig.json",
+      JSON.stringify({ compilerOptions: { strict: true } }),
+    );
+    projectFixture.write("node_modules/vendored/index.ts", "export const vendored = 1;\n");
+
+    const refresh = await graph.refresh(await projectFixture.snapshot());
+
+    expect(refresh.configuredProjectCount).toBe(2);
+    expect(
+      graph.programFor("node_modules/vendored/index.ts")?.getCompilerOptions().strict,
+    ).toBeUndefined();
+  });
+
+  it("invalidates the graph when a nested configuration appears or disappears", async () => {
+    const projectFixture = fixture();
+    const graph = new TypeScriptProjectGraph(projectFixture.fileSystem);
+    projectFixture.remove("tsconfig.json");
+    const snapshot = await projectFixture.snapshot();
+    await graph.refresh(snapshot);
+
+    projectFixture.write(
+      "scratch/tsconfig.json",
+      JSON.stringify({ compilerOptions: { strict: true } }),
+    );
+    const appeared = await graph.refresh(snapshot);
+    const appearedStrict = graph.programFor("scratch/outside.ts")?.getCompilerOptions().strict;
+    projectFixture.remove("scratch/tsconfig.json");
+    const disappeared = await graph.refresh(snapshot);
+
+    expect(appeared.configuredProjectCount).toBe(3);
+    expect(appearedStrict).toBe(true);
+    expect(disappeared.configuredProjectCount).toBe(2);
+    expect(graph.programFor("scratch/outside.ts")?.getCompilerOptions().strict).toBeUndefined();
   });
 
   it("gives uncovered files workspace mappings without configured compiler options", async () => {

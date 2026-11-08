@@ -32,6 +32,8 @@
 - `pnpm build` — `tsc --build`, then esbuild bundles the CLI into `apps/cli/dist` with `@symnav/*` inlined. CLI tsc output lands in `apps/cli/build`.
 - `pnpm --filter symnav dev -- <args>` — run the CLI from source via `tsx` (no build step).
 
+Don't bump versions by hand. release-please owns `version` in `package.json`, `apps/cli/package.json` and `.release-please-manifest.json`, and a meta-test fails if they drift.
+
 ## Pre-PR verification
 
 Before opening or pushing to a PR, run the full CI-parity sequence locally on a clean tree:

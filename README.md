@@ -1,58 +1,62 @@
 # symnav
 
-A CLI for navigating TypeScript codebases by symbol.
+Language-agnostic CLI for navigating codebases by symbol: definitions, references, and call paths. TypeScript supported today.
 
-## Commands
-
-`overview`, `resolve`, `def`, and `refs` navigate symbols. `context <target>` prints one block per symbol: its definition, direct callers, direct callees, a reference summary, and recent git history.
-
-`context` is workspace-only and certain-edges-only. Callers and callees count only statically-resolved calls to non-ignored workspace files, capped at 20 per direction; overflow points at `graph`. Possible and dynamic edges (element-access dispatch, calls into `node_modules`) are dropped here — `graph` surfaces them. An ambiguous target is refused with `Cannot answer:`; copy one printed candidate and query that directly.
-
-`def`, `refs`, `context`, and `graph` accept structured suffix targets by default. Use the shortest target that is unique; when a target is ambiguous, copy one printed candidate.
+## Install
 
 ```sh
-symnav def charge
-symnav refs PaymentProvider.ts::charge
-symnav context src/payments/PaymentProvider.ts::PaymentProvider::charge
+npm install -g symnav
 ```
 
-Use `--regex` for a case-sensitive JavaScript regex over full canonical symbol IDs.
+Needs Node 20 or newer.
+
+## Quick start
+
+Run inside a Git repository. The workspace is the nearest Git root, or `--cwd <dir>`.
 
 ```sh
-symnav def --regex 'PaymentProcessor::charge$'
-symnav refs --regex 'src/payments/.+::charge$'
-symnav context --regex '::build[A-Z][^:]*$'
-symnav graph --regex 'Router::dispatch#[1-3]$'
+symnav overview src/orders.ts                # symbols in one file
+symnav resolve PaymentProcessor              # find symbols and files by name
+symnav def PaymentProcessor::charge          # where it's defined
+symnav refs PaymentProcessor::charge         # every reference
+symnav context PaymentProcessor::charge      # definition, callers, callees, recent history
 ```
 
-`overview` starts collapsed. Expand one area by depth, copied header text, or both. When `--at` text matches several entries, one whose symbol path or header equals the text exactly wins over longer substring matches, so `--at Greeter` selects the class, not its members.
+`def`, `refs`, `context`, and `graph` take a target: any unique suffix of the symbol's id, like `charge`, `orders.ts::PaymentProcessor`, or `src/orders.ts::PaymentProcessor::charge`. An ambiguous target lists candidates to copy. `--regex` matches full ids instead, and `--json` gives machine output on every navigation command.
+
+## Agent setup
+
+Install the symnav skill so your agent knows when and how to call it. The `skills` CLI needs Node 22.20 or newer; add `-g` to install for your user instead of the project.
 
 ```sh
-symnav overview src/orders.ts
-symnav overview src/orders.ts --depth 1
-symnav overview src/orders.ts --at 'describe("cursor pagination")' --depth 2
+npx skills add mohasarc/symnav --skill symnav
 ```
 
-`resolve` can match exact names, fuzzy subsequences, or JavaScript regexes. An exact query with no match ends with a hint to retry with `--fuzzy` or `--regex`.
+The skill lives in [`skills/symnav`](https://github.com/mohasarc/symnav/blob/main/skills/symnav/SKILL.md).
+
+Codex and Claude Code sandboxes usually block writes to `~/.symnav`, so every command runs cold and warns on stderr. Grant access once, check it, then restart the agent session:
 
 ```sh
-symnav resolve PaymentProvider
-symnav resolve --fuzzy payment
-symnav resolve --regex '^to[A-Z].*'
+symnav setup codex          # or: symnav setup claude-code
+symnav doctor
 ```
 
-## Workspace daemon
+## Stability
 
-Daemon, agent sandbox, `setup`, and `doctor` behavior is in [`docs/daemon.md`](docs/daemon.md).
+symnav follows semver from 1.0. A major version is needed to change command names, flags, target syntax (`::` suffixes, `--regex`), exit codes, `--json` output fields, the `Cannot answer:` refusal prefix, environment variables (`SYMNAV_DAEMON`, `SYMNAV_TELEMETRY`, `SYMNAV_STATE_DIR`), or the state directory location. Text output layout, hint and warning wording, daemon internals and policy defaults, and telemetry shape can change in any release.
 
 ## Telemetry
 
-Symnav records local, shape-only usage telemetry by default. Each command appends one JSON line to `~/.symnav/usage.jsonl` with command name, timestamp, duration, outcome, execution mode (`warm`, `cold`, or `fallback`), enabled flag names, result-size counts, argument shape, `workspaceId`, `machineId`, `sessionId`, symnav version, and schema version.
+Local only, nothing is sent anywhere. Each command appends one line to `~/.symnav/usage.jsonl`: command name, timestamp, duration, outcome, execution mode (`warm`, `cold`, `fallback`), flag names, result-size counts, argument shape, version, a hashed workspace id, and random machine and session ids. It never records symbol names, file paths, queries, source, or output.
 
-Telemetry does not record symbol names, file paths, query strings, source previews, or command output. `machineId` is stored in `~/.symnav/machine-id`; `workspaceId` is derived from the git remote URL when available, with a workspace-path fallback.
+Opt out with `SYMNAV_TELEMETRY=0` (also `false`, `off`, `no`). Then symnav writes no telemetry at all.
 
-Set `SYMNAV_TELEMETRY` to `0`, `false`, `off`, or `no` (case-insensitive) to disable telemetry. When disabled, `symnav` does not create the telemetry directory and does not write `usage.jsonl`.
+## Docs
+
+- [`docs/navigation.md`](https://github.com/mohasarc/symnav/blob/main/docs/navigation.md): commands, targets, output, errors
+- [`docs/daemon.md`](https://github.com/mohasarc/symnav/blob/main/docs/daemon.md): workspace daemon, agent sandboxes, `setup`, `doctor`
+- [`docs/daemon-policy.md`](https://github.com/mohasarc/symnav/blob/main/docs/daemon-policy.md): daemon timeouts and limits
 
 ## Development
 
-See [`CONTRIBUTING.md`](CONTRIBUTING.md).
+See [`CONTRIBUTING.md`](https://github.com/mohasarc/symnav/blob/main/CONTRIBUTING.md). Licensed under [Apache-2.0](https://github.com/mohasarc/symnav/blob/main/LICENSE).

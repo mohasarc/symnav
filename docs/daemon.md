@@ -74,10 +74,12 @@ src/orders.ts
 symnav: warning: cannot write /Users/mo/.symnav (EPERM); daemon and telemetry are off for this command. Grant access with 'symnav setup <agent>', or pass --no-warnings.
 ```
 
-- `--no-warnings`: no line, behavior otherwise identical.
+- The warning comes after the command's ordinary stderr. Work the daemon already accepted keeps its result or controlled failure; anything not yet submitted runs locally.
+- `--no-warnings`: no line, behavior otherwise identical. Works before the command, between arguments, or at the end. A literal `--no-warnings` after `--` or as an option value stays an argument.
+- `--help`, `--version`, and read-only commands like `daemon status` don't warn when they need no write.
 - `SYMNAV_DAEMON=0` with telemetry on: still warns, telemetry needs the write.
-- `SYMNAV_DAEMON=0` and `SYMNAV_TELEMETRY=0`: state location never touched, no warning.
-- No telemetry or diagnostics are written anywhere else.
+- `SYMNAV_DAEMON=0` and `SYMNAV_TELEMETRY=0`: state location never touched, no warning, no spill files.
+- No telemetry or diagnostics are written anywhere else. Command and result spill files stay inside the state location and are removed after delivery.
 
 ## Routing
 
@@ -104,6 +106,10 @@ Routed commands: `overview`, `resolve`, `def`, `refs`, `context`, `graph`, `stat
 
 Coding agents run symnav inside OS sandboxes that deny network and restrict writes. The daemon works there as long as the sandbox grants write access to the state location. Without the grant, every command runs cold and prints the warning above.
 
+On macOS and Linux daemon ownership needs the standard `mkfifo` executable on `PATH` and a state filesystem that supports FIFOs. PIDs shown by `daemon status` belong to the daemon's own PID namespace, so inside a Linux sandbox they aren't host signal targets. If a sandbox wrapper kills its descendants when the command ends, the next command starts a fresh warm-up; symnav doesn't extend the wrapper's lifetime.
+
+For agents `setup` doesn't know, grant write access to the state location and read access to the workspace by hand. symnav needs no network, TCP, or Unix-socket permission. Policy syntax: [Codex permissions](https://developers.openai.com/codex/permissions), [Claude Code sandboxing](https://code.claude.com/docs/en/sandboxing).
+
 ### `symnav setup <agent>`
 
 Adds the state location to the agent's user-level sandbox write grants. Agents: `codex` (`~/.codex/config.toml`, or `$CODEX_HOME`), `claude-code` (`sandbox.filesystem.allowWrite` in `~/.claude/settings.json`, or `$CLAUDE_CONFIG_DIR`).
@@ -125,6 +131,9 @@ symnav: error: cannot update /Users/mo/.codex/config.toml: invalid TOML at line 
 - Agent not on PATH: grant still written, plus `Codex was not found on PATH; the grant applies when installed.`
 - Never enables network, grants other paths, or touches project-level agent config.
 - Uses the state location in effect, so set `SYMNAV_STATE_DIR` when running it if you use a custom one.
+- Codex: updates legacy `sandbox_workspace_write.writable_roots` or the selected named permission profile. A built-in profile gets a derived profile that inherits its policy and adds only the state path. Never changes the sandbox mode, so read-only sessions still need a write-capable policy. Invalid TOML, conflicting legacy and named selections, and an exact deny of the state path fail without changing the file.
+- Claude Code: adds only `sandbox.filesystem.allowWrite`. Keeps sandbox enablement, network settings, deny lists, and permission rules; never enables sandboxing or removes a conflicting deny. Invalid JSON, duplicate keys, and mistyped grant nodes fail without changing the file.
+- Restart agent sessions after a change. Project or managed agent policy can still deny the grant.
 
 ### `symnav doctor [agent]`
 
@@ -141,7 +150,13 @@ claude-code  ok    configuration grants /Users/mo/.symnav; live sandbox check sk
 codex        skip  not installed
 ```
 
-Exit 0 when nothing failed, 1 otherwise. If doctor itself can't write the state location: `symnav: error: cannot write <dir> (<code>)`, exit 1.
+Exit 0 when nothing failed, 1 otherwise. If doctor itself can't write the state location: `symnav: error: cannot write <dir> (<code>)`, exit 1, even with `--no-warnings`.
+
+- No agent argument checks Codex, then Claude Code. Use the same `SYMNAV_STATE_DIR`, `CODEX_HOME`, and `CLAUDE_CONFIG_DIR` as setup and navigation.
+- The live check runs Codex's sandbox command, or Claude Code's standalone sandbox runtime `srt` from `PATH`, with network off. No agent or model session starts.
+- Runtime missing: a valid grant gives the configuration-only `ok` above. A missing or denied grant, a policy symnav can't translate, or a runtime that rejects the probe gives `fail`. No agents installed: `skip`, exit 0.
+- Probe state is isolated, so doctor works with `SYMNAV_DAEMON=0` and `SYMNAV_TELEMETRY=0`. Status lines stay with `--no-warnings`.
+- If doctor can't confirm its own processes exited, it fails and keeps the scratch files instead of deleting live process state.
 
 ### Platforms
 
@@ -190,7 +205,9 @@ No daemons running.
 /Users/mo/projects/reelcut  last startup failed 2m ago: endpoint bind denied (EPERM)
 ```
 
-Failure reasons: `state write failed`, `endpoint create failed`, `endpoint bind denied`, `endpoint connect failed`, `daemon connection reset`, `process spawn failed`, `startup failed`, `worker failed`, `transfer failed`, `process terminated`, `daemon incompatible`, plus the OS error code when there is one. Older records stay in the diagnostics log.
+Failure reasons: `state write failed`, `endpoint create failed`, `endpoint bind denied`, `endpoint connect failed`, `daemon connection reset`, `process spawn failed`, `startup failed`, `worker failed`, `transfer failed`, `process terminated`, `daemon incompatible`, plus the OS error code when there is one. Older records stay in the diagnostics log. `--json` keeps `schemaVersion: 1` and adds optional `recentFallbacks` and `startupFailures`.
+
+Status removes records of processes confirmed exited. A permission-denied liveness probe isn't proof of exit, and Linux keeps older records whose process identity can't be checked across PID namespaces.
 
 ### `daemon stop`
 
@@ -209,9 +226,9 @@ No daemon running for /Users/mo/projects/reelcut
 
 ## Diagnostics and telemetry
 
-Diagnostics go to `daemon.log` in the daemon's state directory, never to navigation stdout or stderr. They record startup duration and outcome, queue depth and wait, current command, freshness and navigation duration, response size, memory, and every failure with phase, reason, and OS code.
+Diagnostics go to `daemon.log` in the daemon's state directory, never to navigation stdout or stderr. They record startup duration and outcome, queue depth and wait, current command, freshness and navigation duration, response size, memory, and every failure with phase, reason, and OS code. Failure records keep phase, reason, timestamps, workspace, and OS code, and leave out error messages, stacks, source, and environment values. They survive registry cleanup. Rotation limits are in [`daemon-policy.md`](daemon-policy.md).
 
-Telemetry execution mode per command: `warm`, `cold` (local, including during warm-up), or `fallback` (replayed locally after a pre-acceptance daemon failure). Accepted work is recorded once, even if the caller disconnected.
+Telemetry execution mode per command: `warm`, `cold` (local, including during warm-up), or `fallback` (replayed locally after a pre-acceptance daemon failure). Accepted work is recorded once, even if the caller disconnected. To read stats without recording another event: `SYMNAV_DAEMON=1 SYMNAV_TELEMETRY=0 symnav stats --json`.
 
 ## Performance
 

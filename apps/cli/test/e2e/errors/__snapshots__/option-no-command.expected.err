@@ -1,0 +1,20 @@
+Usage: symnav [options] [command]
+
+Options:
+  -v, --version               output the version number
+  --cwd <dir>                 run as if symnav was started in <dir>
+  --no-warnings               suppress warning messages
+  -h, --help                  display help for command
+
+Commands:
+  overview [options] <file>   Print a one-screen overview of a file's symbols
+  resolve [options] <query>   Find matching symbols and files for a name
+  def [options] <target>      Show where a symbol is defined
+  refs [options] <target>     List references to a symbol across the workspace
+  context [options] <target>  Show a symbol's definition, callers, callees,
+                              references, and recent history
+  graph [options] <target>    Show call paths around a symbol
+  daemon                      Manage the workspace daemon
+  setup <agent>               grant Codex or Claude Code write access to the
+                              state directory
+  doctor [agent]              check sandboxed daemon execution and telemetry

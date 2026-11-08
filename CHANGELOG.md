@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.1](https://github.com/mohasarc/symnav/compare/v1.0.0...v1.0.1) (2026-11-08)
+
+
+### Bug Fixes
+
+* Limit the --json stability promise to removed or renamed fields ([#233](https://github.com/mohasarc/symnav/issues/233)) ([3a279b7](https://github.com/mohasarc/symnav/commit/3a279b7f693045c70110213dedf4aa059d518689))
+
 ## [1.0.0](https://github.com/mohasarc/symnav/compare/v0.4.0...v1.0.0) (2026-11-08)
 
 

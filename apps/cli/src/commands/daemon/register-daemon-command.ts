@@ -1,7 +1,9 @@
 import type { Command as CommanderCommand } from "commander";
 import { resolve } from "node:path";
 import { createWorkspace, UserFacingError } from "@symnav/core";
+import type { DaemonStatusReport } from "@symnav/daemon";
 import { DaemonLifecycleRenderer } from "@symnav/renderer";
+import { OPERATION_FAILURE_EXIT_CODE, OperationFailure } from "../../output/operation-failure.js";
 import type { ProgramContext } from "../../program-context.js";
 import type { ProgramDependencies } from "../../program-dependencies.js";
 
@@ -90,12 +92,18 @@ class DaemonStatusAction {
     dependencies: ProgramDependencies,
     options: DaemonOutputOptions,
   ): Promise<void> {
-    const report = await dependencies.daemonClient.control({
-      action: "status",
-      ...(dependencies.stateWriteFailed === undefined
-        ? {}
-        : { stateWriteFailed: dependencies.stateWriteFailed }),
-    });
+    let report: DaemonStatusReport;
+    try {
+      report = await dependencies.daemonClient.control({
+        action: "status",
+        ...(dependencies.stateWriteFailed === undefined
+          ? {}
+          : { stateWriteFailed: dependencies.stateWriteFailed }),
+      });
+    } catch (error) {
+      context.stderr.write(OperationFailure.render("read daemon status", error));
+      context.exit(OPERATION_FAILURE_EXIT_CODE);
+    }
     context.stdout.write(
       options.json
         ? DaemonLifecycleRenderer.renderStatusJson(report)

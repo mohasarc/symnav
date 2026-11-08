@@ -107,10 +107,14 @@ describe("symnav required state writes", () => {
         await E2eProcessCleanup.kill([instance.pid]);
         harness.denyDirectoryTree(harness.state);
         const result = harness.run(["daemon", "status", "--json"], { SYMNAV_DAEMON: "1" });
-        expect(result.status).toBe(1);
+        expect(result.status).toBe(2);
         expect(result.stdout).toBe("");
-        expect(result.stderr).toContain("EACCES: permission denied, unlink");
-        expect(result.stderr).toContain(harness.state);
+        expect(
+          result.stderr.startsWith(
+            `symnav: error: cannot read daemon status: cannot access ${harness.state}`,
+          ),
+        ).toBe(true);
+        expect(result.stderr).toContain("(EACCES)\n");
         expect(result.stderr.endsWith(harness.warning("EACCES"))).toBe(true);
         expect(result.stderr.split("symnav: warning:")).toHaveLength(2);
         expect(inspector.listInstances()).toEqual(instances);

@@ -1,6 +1,8 @@
 import type { Command as CommanderCommand } from "commander";
 import { performance } from "node:perf_hooks";
 import { NodeUsageLogReader, UsageAggregator, usageLogPath } from "@symnav/telemetry";
+import type { UsageEvent } from "@symnav/telemetry";
+import { OPERATION_FAILURE_EXIT_CODE, OperationFailure } from "../../output/operation-failure.js";
 import type { ProgramContext } from "../../program-context.js";
 import type { ProgramDependencies } from "../../program-dependencies.js";
 import { renderStatsJson, renderStatsText } from "./render-stats.js";
@@ -20,12 +22,13 @@ export function registerStatsCommand(
     .action((options: StatsOptions) => {
       const telemetryStartedAt = dependencies.clock.now();
       const navigationStartedAt = performance.now();
-      const events =
-        dependencies.stateDirectory === ""
-          ? []
-          : new NodeUsageLogReader()
-              .read(usageLogPath(dependencies.stateDirectory))
-              .filter((event) => event.command !== "stats");
+      let events: readonly UsageEvent[];
+      try {
+        events = StatsUsageEvents.read(dependencies.stateDirectory);
+      } catch (error) {
+        context.stderr.write(OperationFailure.render("read stats", error));
+        context.exit(OPERATION_FAILURE_EXIT_CODE);
+      }
       const summary = new UsageAggregator(events).aggregate();
       const navigationCompletedAt = performance.now();
       const renderStartedAt = performance.now();
@@ -62,4 +65,13 @@ export function registerStatsCommand(
         return;
       }
     });
+}
+
+class StatsUsageEvents {
+  static read(stateDirectory: string): readonly UsageEvent[] {
+    if (stateDirectory === "") return [];
+    return new NodeUsageLogReader()
+      .read(usageLogPath(stateDirectory))
+      .filter((event) => event.command !== "stats");
+  }
 }

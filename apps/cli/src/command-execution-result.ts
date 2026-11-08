@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Writable } from "node:stream";
 import { finished as streamFinished } from "node:stream/promises";
+import { DaemonControlledFailureMessage } from "@symnav/daemon";
 import type {
   DaemonExecutorExecutionResult,
   DaemonExecutorOutput,
@@ -460,16 +461,18 @@ export class CommandResultReplayer {
 export class ControlledCommandResult {
   static acceptedRequestDidNotComplete(): CommandExecutionResult {
     return ControlledCommandResult.failure(
-      "Cannot answer: accepted daemon request did not complete.\n",
+      DaemonControlledFailureMessage.acceptedRequestDidNotComplete,
     );
   }
 
   static workspaceCapacityExceeded(): CommandExecutionResult {
-    return ControlledCommandResult.failure("Cannot answer: daemon workspace capacity exceeded.\n");
+    return ControlledCommandResult.failure(
+      DaemonControlledFailureMessage.workspaceCapacityExceeded,
+    );
   }
 
   static responseCapacityExceeded(): CommandExecutionResult {
-    return ControlledCommandResult.failure("Cannot answer: daemon response capacity exceeded.\n");
+    return ControlledCommandResult.failure(DaemonControlledFailureMessage.responseCapacityExceeded);
   }
 
   private static failure(message: string): CommandExecutionResult {

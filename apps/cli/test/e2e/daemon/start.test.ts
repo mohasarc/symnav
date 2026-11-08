@@ -36,7 +36,7 @@ describe("symnav daemon start", () => {
         const result = await fixture.start();
         expect(result.status).toBe(2);
         expect(result.stdout).toBe("");
-        expect(result.stderr).toContain("Cannot start daemon:");
+        expect(result.stderr).toContain("symnav: error: cannot start daemon:");
         expect(result.stderr).toContain("could not be verified; ownership was retained");
         expect(new CliDaemonTesting(stateDir).inspector.listInstances()).toEqual(before);
         expect(await fixture.unchanged()).toBe(true);
@@ -128,7 +128,7 @@ describe("symnav daemon start", () => {
     expect(nonGit.status).toBe(1);
     expect(nonGit.stderr).toContain("Cannot answer: not in a git workspace");
     expect(disabled.status).toBe(1);
-    expect(disabled.stderr).toBe("Daemon disabled by SYMNAV_DAEMON=0\n");
+    expect(disabled.stderr).toBe("symnav: error: daemon disabled by SYMNAV_DAEMON=0\n");
   });
 });
 

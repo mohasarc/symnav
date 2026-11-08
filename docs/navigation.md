@@ -31,6 +31,7 @@ Cannot answer: ignored.ts is ignored by .gitignore.
 Cannot answer: vendor/package/src/index.ts belongs to nested Git workspace rooted at /repo/vendor/package, not selected workspace /repo; run from /repo/vendor/package or use --cwd /repo/vendor/package.
 Cannot answer: not in a git workspace (no .git found in or above /x).
 Cannot answer: foo.ts is outside the workspace rooted at /repo.
+Cannot answer: cannot read directory /repo/src/locked (EACCES).
 ```
 
 ### Ambiguity stops
@@ -41,6 +42,8 @@ When input matches more than one thing, symnav lists the candidates and stops. I
 
 - Success: result on stdout, exit 0. An empty `resolve` or `refs` result is still success.
 - User-facing failure: one `Cannot answer: …` message on stderr, exit 1, nothing on stdout.
+- Usage error, such as an unknown command or option or a missing argument: one `symnav: error: …` line on stderr, exit 1, nothing on stdout. There's no `help` command; `symnav help` is `symnav: error: unknown command 'help'`. Use `--help`.
+- Internal failure: one `symnav: error: …` line on stderr, exit 2, nothing on stdout.
 - Warnings go to stderr as `symnav: warning: …` and never change stdout or the exit code. `--no-warnings` drops them.
 
 ## Commands
@@ -124,7 +127,7 @@ Cannot answer: invalid symbol target (empty path segment between "::" separators
 Cannot answer: invalid regex "[": Unterminated character class.
 ```
 
-A file part that matches no workspace file reports the file as missing, with or without a `/`. A copied fold header is a plain not-found, since folds aren't symbols.
+A file part that matches no workspace file reports the file as missing, with or without a `/`, even when an ignored file ends with it. A file part that is the exact path of an ignored file reports `is ignored by .gitignore`, same as `overview`. A copied fold header is a plain not-found, since folds aren't symbols.
 
 Ambiguity prints copyable IDs with signatures, plus the way out:
 
@@ -160,6 +163,14 @@ Tags go in brackets after the text. Signatures are collapsed headers: no JSDoc a
 ## Pagination
 
 `refs` and `graph` take `--page <n>`, `--page-size <n>` (default 100), and `--all`. For the same workspace state and query, every page is identical across runs.
+
+Integer options (`--page`, `--page-size`, `--depth`, `--line`) name the flag and echo what you typed:
+
+```text
+Cannot answer: --page must be a positive integer, got abc.
+Cannot answer: --all cannot be combined with --page.
+Cannot answer: page 99 is out of range (1-3).
+```
 
 ## Extraction warnings
 
@@ -361,13 +372,7 @@ symnav graph <target> --depth 3 --page-size 50
 Call edges only. Default depth 1, max 5. Depth and pagination are independent: `--depth 3 --page-size 50` explores 3 hops and shows the first 50 paths.
 
 ```text
-Cannot run graph with depth 12.
-Maximum supported depth is 5.
-
-To continue exploration:
-1. Run with depth 5.
-2. Pick a leaf symbol from the output.
-3. Run graph again from that symbol.
+Cannot answer: --depth 12 exceeds the maximum of 5; run with --depth 5, then run graph again from a leaf symbol.
 ```
 
 - Nodes show line range, symbol path, and signature. No source previews.
@@ -375,7 +380,7 @@ To continue exploration:
 - Edges symnav can't statically confirm are still shown, labelled inline: `[possible: dynamic dispatch: exact callee not statically resolvable]`.
 - A symbol reached by different paths shows on each one. When that happens: `Note: N symbols appear in multiple paths.`
 - Paths are sorted shorter first, then by canonical ID along the path. Pages are stable.
-- A contract member with several implementations is refused: `Cannot answer: symbol src/contract.ts::GraphShape::render matches multiple implementations: src/contract.ts::Box::render, src/contract.ts::Circle::render — query one directly.`
+- A contract member with several implementations is refused: `Cannot answer: symbol src/contract.ts::GraphShape::render matches multiple implementations: src/contract.ts::Box::render, src/contract.ts::Circle::render; query one directly.`
 
 ```text
 Graph: dynamicRoot

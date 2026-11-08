@@ -113,7 +113,7 @@ export class SymbolTargetResolver {
     }
     const numericLine = typeof line === "number" ? line : Number(line);
     if (!isPositiveInteger(numericLine)) {
-      throw new InvalidSymbolTargetRequestError(`line must be a positive integer, got ${line}`);
+      throw new InvalidSymbolTargetRequestError(`--line must be a positive integer, got ${line}`);
     }
     return numericLine;
   }

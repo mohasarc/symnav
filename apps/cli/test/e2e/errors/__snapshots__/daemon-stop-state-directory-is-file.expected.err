@@ -1,0 +1,1 @@
+symnav: error: cannot stop daemon: cannot access <state>/daemons/<workspace-id> (ENOTDIR)

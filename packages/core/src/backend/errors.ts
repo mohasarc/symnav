@@ -55,6 +55,6 @@ export class AmbiguousSymbolError extends UserFacingError {
     const candidateIds = this.candidates
       .map((candidate) => formatSymbolIdentity(candidate.identity))
       .join(", ");
-    return `symbol ${formatSymbolIdentity(this.identity)} matches multiple implementations: ${candidateIds} — query one directly`;
+    return `symbol ${formatSymbolIdentity(this.identity)} matches multiple implementations: ${candidateIds}; query one directly`;
   }
 }

@@ -2,6 +2,7 @@ import { Command as CommanderCommand } from "commander";
 import { resolve } from "node:path";
 import type { DaemonCommandName } from "@symnav/daemon";
 import type { InvocationRoute, SelectedInvocation } from "./invocation-route.js";
+import { CommanderErrorOutput } from "./output/commander-error-output.js";
 
 type WorkspaceCommandName = Exclude<DaemonCommandName, "help" | "version" | "unknown">;
 
@@ -23,6 +24,7 @@ export class InvocationWorkspaceSelector {
   select(argv: readonly string[], cwd: string): SelectedInvocation {
     const parsed = new CommanderCommand()
       .helpOption(false)
+      .configureOutput({ outputError: CommanderErrorOutput.write })
       .allowUnknownOption(true)
       .allowExcessArguments(true)
       .option("--cwd <dir>")

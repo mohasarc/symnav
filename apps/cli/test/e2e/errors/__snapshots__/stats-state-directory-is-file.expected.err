@@ -1,0 +1,2 @@
+symnav: error: cannot read stats: cannot access <state>/usage.jsonl (ENOTDIR)
+symnav: warning: cannot write <state> (EEXIST); daemon and telemetry are off for this command. Grant access with 'symnav setup <agent>', or pass --no-warnings.

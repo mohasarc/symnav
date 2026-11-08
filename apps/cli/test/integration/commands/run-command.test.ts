@@ -337,7 +337,7 @@ describe("runCommand lifecycle", () => {
         args: stubArgs("hi"),
       },
     );
-    expect(context.stderr.text()).toBe("symnav: warning: ordinary error\n");
+    expect(context.stderr.text()).toBe("symnav: error: symnav: warning: ordinary error\n");
     expect(context.exitCodes).toEqual([2]);
   });
 
@@ -438,7 +438,7 @@ describe("runCommand lifecycle", () => {
     );
 
     expect(context.stdout.text()).toBe("");
-    expect(context.stderr.text()).toBe("internal boom\n");
+    expect(context.stderr.text()).toBe("symnav: error: internal boom\n");
     expect(context.exitCodes).toEqual([2]);
   });
 
@@ -571,7 +571,7 @@ describe("runCommand lifecycle", () => {
     );
 
     expect(context.stdout.text()).toBe("");
-    expect(context.stderr.text()).toBe("internal boom\n");
+    expect(context.stderr.text()).toBe("symnav: error: internal boom\n");
     expect(context.exitCodes).toEqual([2]);
     expect(recorder.events).toEqual([
       expect.objectContaining({
@@ -606,7 +606,7 @@ describe("runCommand lifecycle", () => {
     );
 
     expect(context.stdout.text()).toBe("");
-    expect(context.stderr.text()).toBe("render boom\n");
+    expect(context.stderr.text()).toBe("symnav: error: render boom\n");
     expect(context.exitCodes).toEqual([2]);
     expect(recorder.events).toEqual([
       expect.objectContaining({
@@ -636,7 +636,7 @@ describe("runCommand lifecycle", () => {
       args: stubArgs("hi"),
     });
 
-    expect(context.stderr.text()).toBe("write boom\n");
+    expect(context.stderr.text()).toBe("symnav: error: write boom\n");
     expect(context.exitCodes).toEqual([2]);
     expect(recorder.events).toEqual([
       expect.objectContaining({

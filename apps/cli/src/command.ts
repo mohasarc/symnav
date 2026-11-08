@@ -13,6 +13,7 @@ import { performance } from "node:perf_hooks";
 import type { ArgShape, OutcomeReport } from "@symnav/telemetry";
 import type { ProgramContext } from "./program-context.js";
 import type { ProgramDependencies } from "./program-dependencies.js";
+import { CommandErrorLine } from "./output/command-error-line.js";
 import { InvocationWarningRenderer } from "./output/invocation-warning-renderer.js";
 
 export interface CommandContext<Args> {
@@ -214,7 +215,6 @@ function handleError<Result extends ResultWithDiagnostics, Args>(
     context.exit(1);
     return;
   }
-  const message = err instanceof Error ? err.message : String(err);
-  context.stderr.write(`${message}\n`);
+  context.stderr.write(CommandErrorLine.renderError(err));
   context.exit(2);
 }

@@ -48,8 +48,8 @@ export function registerGraphCommand(
           incoming: options.incoming,
           outgoing: options.outgoing,
           depth: options.depth,
-          page: options.page === undefined ? undefined : Number(options.page),
-          pageSize: options.pageSize === undefined ? undefined : Number(options.pageSize),
+          page: options.page,
+          pageSize: options.pageSize,
           all: options.all,
         },
       });

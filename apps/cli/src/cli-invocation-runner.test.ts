@@ -128,7 +128,7 @@ describe("CliInvocationRunner", () => {
   );
 
   it.each([true, false])(
-    "preserves lifecycle rejection semantics and finalizes only observed state failures (%s)",
+    "reports a rejected lifecycle command as one line and finalizes only observed state failures (%s)",
     async (observed) => {
       const stateDirectory = await mkdtemp(join(tmpdir(), "symnav-rejected-lifecycle-"));
       try {
@@ -155,20 +155,14 @@ describe("CliInvocationRunner", () => {
           { argv: ["daemon", "status", "--json"], cwd: "/repo", telemetryEnabled: false },
           context,
         );
+        const failureLine = "symnav: error: cannot read daemon status: lifecycle cleanup denied\n";
+        expect(await completion).toBe(2);
         if (observed) {
-          expect(await completion).toBe(1);
-          expect(context.stderr.text()).toContain(failure.stack);
-          expect(
-            context.stderr
-              .text()
-              .endsWith(
-                `symnav: warning: cannot write ${stateDirectory} (EACCES); daemon and telemetry are off for this command. Grant access with 'symnav setup <agent>', or pass --no-warnings.\n`,
-              ),
-          ).toBe(true);
-          expect(context.stderr.text().split("symnav: warning:")).toHaveLength(2);
+          expect(context.stderr.text()).toBe(
+            `${failureLine}symnav: warning: cannot write ${stateDirectory} (EACCES); daemon and telemetry are off for this command. Grant access with 'symnav setup <agent>', or pass --no-warnings.\n`,
+          );
         } else {
-          await expect(completion).rejects.toBe(failure);
-          expect(context.stderr.text()).toBe("");
+          expect(context.stderr.text()).toBe(failureLine);
         }
         expect(control).toHaveBeenCalledTimes(1);
         expect(execute).not.toHaveBeenCalled();

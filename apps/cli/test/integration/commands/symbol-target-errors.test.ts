@@ -86,7 +86,7 @@ describe("symbol target failures surfaced by commands", () => {
 
     expect(context.stdout.text()).toBe("");
     expect(context.stderr.text()).toBe(
-      "Cannot answer: line must be a positive integer, got abc.\n",
+      "Cannot answer: --line must be a positive integer, got abc.\n",
     );
     expect(context.exitCodes).toEqual([1]);
   });
@@ -109,7 +109,9 @@ describe("symbol target failures surfaced by commands", () => {
     });
 
     expect(context.stdout.text()).toBe("");
-    expect(context.stderr.text()).toBe("Cannot answer: line must be a positive integer, got 0.\n");
+    expect(context.stderr.text()).toBe(
+      "Cannot answer: --line must be a positive integer, got 0.\n",
+    );
     expect(context.exitCodes).toEqual([1]);
   });
 });

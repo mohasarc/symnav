@@ -1,7 +1,7 @@
 import type { GraphPath } from "../graph/graph-path.js";
 import { InvalidPageRequestError, PageOutOfRangeError } from "../pagination/errors.js";
 import { DEFAULT_PAGE_SIZE, type PageRequest } from "../pagination/paginator.js";
-import { validatePageRequest } from "../pagination/validate-page-request.js";
+import { validatePageRequest, type PageRequestInput } from "../pagination/validate-page-request.js";
 import { formatSymbolIdentity } from "./canonical-identity.js";
 import type { GraphDirection, GraphDirectionPage, GraphResult } from "./graph-result.js";
 import type { SymbolIdentity } from "./symbol-identity.js";
@@ -14,18 +14,21 @@ export interface BuildGraphResultArgs {
   readonly direction: GraphDirection;
   readonly incomingPaths: readonly GraphPath[];
   readonly outgoingPaths: readonly GraphPath[];
-  readonly pageRequest: PageRequest;
+  readonly pageRequest: PageRequestInput;
 }
 
 export class GraphResultBuilder {
-  constructor(private readonly args: BuildGraphResultArgs) {}
+  private readonly pageRequest: PageRequest;
+
+  constructor(private readonly args: BuildGraphResultArgs) {
+    this.pageRequest = validatePageRequest(args.pageRequest);
+  }
 
   build(): GraphResult {
-    validatePageRequest(this.args.pageRequest);
     this.validateGraphPageRequest();
     const directionPages = this.directionPages();
     const pageCount = this.pageCount(directionPages);
-    const page = this.args.pageRequest.all ? 1 : (this.args.pageRequest.page ?? 1);
+    const page = this.pageRequest.all ? 1 : (this.pageRequest.page ?? 1);
     if (page > pageCount) {
       throw new PageOutOfRangeError(page, pageCount);
     }
@@ -48,16 +51,16 @@ export class GraphResultBuilder {
   }
 
   private validateGraphPageRequest(): void {
-    const pageSize = this.args.pageRequest.pageSize ?? DEFAULT_PAGE_SIZE;
-    if (this.args.direction === "both" && pageSize < 2 && !this.args.pageRequest.all) {
+    const pageSize = this.pageRequest.pageSize ?? DEFAULT_PAGE_SIZE;
+    if (this.args.direction === "both" && pageSize < 2 && !this.pageRequest.all) {
       throw new InvalidPageRequestError(
-        `page size must be at least 2 when graph direction is both, got ${pageSize}`,
+        `--page-size must be at least 2 without --incoming or --outgoing, got ${pageSize}`,
       );
     }
   }
 
   private directionPages(): DirectionPages {
-    if (this.args.pageRequest.all) {
+    if (this.pageRequest.all) {
       return {
         ...(this.includesIncoming()
           ? { incoming: this.allDirectionPage(this.args.incomingPaths) }
@@ -130,7 +133,7 @@ export class GraphResultBuilder {
   }
 
   private directionBudget(): DirectionBudget {
-    const pageSize = this.args.pageRequest.pageSize ?? DEFAULT_PAGE_SIZE;
+    const pageSize = this.pageRequest.pageSize ?? DEFAULT_PAGE_SIZE;
     if (this.args.direction === "both") {
       return {
         incoming: Math.ceil(pageSize / 2),

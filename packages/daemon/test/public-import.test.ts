@@ -38,6 +38,7 @@ describe("@symnav/daemon public import", () => {
     expect(Object.keys(daemonRuntime).sort()).toEqual([
       "DAEMON_COMMAND_NAMES",
       "DaemonClient",
+      "DaemonControlledFailureMessage",
       "DaemonPolicy",
     ]);
     expect(DAEMON_COMMAND_NAMES.length).toBeGreaterThan(0);

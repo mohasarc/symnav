@@ -1,4 +1,4 @@
-import type { GraphDirection, GraphResult, PageRequest } from "@symnav/core";
+import type { GraphDirection, GraphResult, PageRequestInput } from "@symnav/core";
 import {
   DEFAULT_GRAPH_DEPTH,
   GraphDepthExceededError,
@@ -23,8 +23,8 @@ export interface GraphArgs {
   readonly incoming: boolean;
   readonly outgoing: boolean;
   readonly depth: number | string | undefined;
-  readonly page: number | undefined;
-  readonly pageSize: number | undefined;
+  readonly page: number | string | undefined;
+  readonly pageSize: number | string | undefined;
   readonly all: boolean;
 }
 
@@ -97,7 +97,7 @@ export const graphCommand: Command<GraphResult, GraphArgs> = {
 interface GraphRequest {
   readonly depth: number;
   readonly direction: GraphDirection;
-  readonly pageRequest: PageRequest;
+  readonly pageRequest: PageRequestInput;
 }
 
 function graphRequestFrom(args: GraphArgs): GraphRequest {
@@ -125,7 +125,7 @@ function depthFrom(depth: GraphArgs["depth"]): number {
   }
   const numericDepth = typeof depth === "number" ? depth : Number(depth);
   if (!isPositiveInteger(numericDepth)) {
-    throw new InvalidGraphRequestError(`depth must be a positive integer, got ${depth}`);
+    throw new InvalidGraphRequestError(`--depth must be a positive integer, got ${depth}`);
   }
   return numericDepth;
 }

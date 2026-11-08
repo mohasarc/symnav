@@ -18,9 +18,15 @@ import type {
   OverviewExpansionResult,
 } from "./overview-expansion-result.js";
 
+export interface OverviewExpansionRequestInput {
+  readonly depth: number | string;
+  readonly at: string | undefined;
+  readonly line: number | string | undefined;
+}
+
 export interface ExpandOverviewArgs {
   readonly file: OverviewFileEntries;
-  readonly request: OverviewExpansionRequest;
+  readonly request: OverviewExpansionRequestInput;
 }
 
 export class OverviewExpander {
@@ -29,22 +35,25 @@ export class OverviewExpander {
 
   constructor(args: ExpandOverviewArgs) {
     this.file = args.file;
-    this.request = args.request;
-    this.validateRequest();
+    this.request = OverviewExpander.validatedRequest(args.request);
   }
 
-  private validateRequest(): void {
-    const { depth, line } = this.request;
+  private static validatedRequest(
+    request: OverviewExpansionRequestInput,
+  ): OverviewExpansionRequest {
+    const depth = Number(request.depth);
     if (!Number.isInteger(depth) || depth < 0) {
       throw new InvalidOverviewExpansionRequestError(
-        `depth must be a non-negative integer, got ${depth}`,
+        `--depth must be a non-negative integer, got ${request.depth}`,
       );
     }
+    const line = request.line === undefined ? undefined : Number(request.line);
     if (line !== undefined && !isPositiveInteger(line)) {
       throw new InvalidOverviewExpansionRequestError(
-        `line must be a positive integer, got ${line}`,
+        `--line must be a positive integer, got ${request.line}`,
       );
     }
+    return { depth, at: request.at, line };
   }
 
   expand(): OverviewExpansionResult {

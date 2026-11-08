@@ -7,7 +7,7 @@ export class InvalidPageRequestError extends UserFacingError {
   }
 
   get reason(): string {
-    return `invalid page request: ${this.detail}`;
+    return this.detail;
   }
 }
 

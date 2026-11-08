@@ -529,7 +529,7 @@ describe("symnav overview user errors", () => {
     );
 
     expect(r.stdout).toBe("");
-    expect(r.stderr).toBe("backend went sideways\n");
+    expect(r.stderr).toBe("symnav: error: backend went sideways\n");
     expect(r.exitCodes).toEqual([2]);
   });
 });

@@ -1,4 +1,4 @@
-import type { PageRequest, RefsResult } from "@symnav/core";
+import type { PageRequestInput, RefsResult } from "@symnav/core";
 import { RefsResultBuilder, SymbolTargetResolver } from "@symnav/core";
 import { SymbolTargetErrorRenderer, renderRefsJson, renderRefsText } from "@symnav/renderer";
 
@@ -10,8 +10,8 @@ export interface RefsArgs {
   readonly target: string;
   readonly line: number | string | undefined;
   readonly regex: boolean;
-  readonly page: number | undefined;
-  readonly pageSize: number | undefined;
+  readonly page: number | string | undefined;
+  readonly pageSize: number | string | undefined;
   readonly all: boolean;
   readonly fullLines: boolean;
 }
@@ -62,7 +62,7 @@ export const refsCommand: Command<RefsResult, RefsArgs> = {
   renderError: SymbolTargetErrorRenderer.render,
 };
 
-function pageRequestFrom(args: RefsArgs): PageRequest {
+function pageRequestFrom(args: RefsArgs): PageRequestInput {
   return {
     ...(args.page !== undefined && { page: args.page }),
     ...(args.pageSize !== undefined && { pageSize: args.pageSize }),

@@ -202,15 +202,15 @@ describe("registerDaemonCommand", () => {
 
     expect(output).toEqual({
       stdout: "",
-      stderr: "Daemon disabled by SYMNAV_DAEMON=0\n",
+      stderr: "symnav: error: daemon disabled by SYMNAV_DAEMON=0\n",
       exitCode: 1,
     });
     expect(harness.control).not.toHaveBeenCalled();
   });
 
   it.each([
-    ["start", "Cannot start daemon: broken\n"],
-    ["stop", "Cannot stop daemon: broken\n"],
+    ["start", "symnav: error: cannot start daemon: broken\n"],
+    ["stop", "symnav: error: cannot stop daemon: broken\n"],
   ] as const)("preserves %s failure wording and exit code", async (command, errorOutput) => {
     const harness = createHarness(harnesses);
     harness.control.mockRejectedValue(new Error("broken"));

@@ -1,0 +1,1 @@
+Cannot answer: nested/src/nested.ts belongs to nested Git workspace rooted at <workspace>/nested, not selected workspace <workspace>; run from <workspace>/nested or use --cwd <workspace>/nested.

@@ -6,7 +6,12 @@ import { describe, expect, it } from "vitest";
 import * as daemonRuntime from "./index.js";
 import { DaemonPolicy } from "./index.js";
 
-const runtimeExports = ["DAEMON_COMMAND_NAMES", "DaemonClient", "DaemonPolicy"];
+const runtimeExports = [
+  "DAEMON_COMMAND_NAMES",
+  "DaemonClient",
+  "DaemonControlledFailureMessage",
+  "DaemonPolicy",
+];
 const typeExports = [
   "DaemonActivitySnapshot",
   "DaemonClientExecuteRequest",

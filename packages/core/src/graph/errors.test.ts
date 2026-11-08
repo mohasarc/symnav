@@ -3,15 +3,9 @@ import { describe, expect, it } from "vitest";
 import { GraphDepthExceededError, InvalidGraphRequestError } from "./errors.js";
 
 describe("GraphDepthExceededError", () => {
-  it("renders the graph depth refusal text", () => {
+  it("refuses with the maximum depth and the way to continue", () => {
     expect(new GraphDepthExceededError(12).render()).toBe(
-      "Cannot run graph with depth 12.\n" +
-        "Maximum supported depth is 5.\n" +
-        "\n" +
-        "To continue exploration:\n" +
-        "1. Run with depth 5.\n" +
-        "2. Pick a leaf symbol from the output.\n" +
-        "3. Run graph again from that symbol.\n",
+      "Cannot answer: --depth 12 exceeds the maximum of 5; run with --depth 5, then run graph again from a leaf symbol.\n",
     );
   });
 });

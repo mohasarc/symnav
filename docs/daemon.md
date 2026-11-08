@@ -179,7 +179,7 @@ $ symnav daemon start
 Daemon already running for /Users/mo/projects/reelcut (pid 48213, up 14m)
 ```
 
-With `SYMNAV_DAEMON=0`: prints `Daemon disabled by SYMNAV_DAEMON=0` on stderr, exit 1.
+With `SYMNAV_DAEMON=0`: prints `symnav: error: daemon disabled by SYMNAV_DAEMON=0` on stderr, exit 1.
 
 ### `daemon status`
 
@@ -207,11 +207,13 @@ No daemons running.
 
 Failure reasons: `state write failed`, `endpoint create failed`, `endpoint bind denied`, `endpoint connect failed`, `daemon connection reset`, `process spawn failed`, `startup failed`, `worker failed`, `transfer failed`, `process terminated`, `daemon incompatible`, plus the OS error code when there is one. Older records stay in the diagnostics log. `--json` keeps `schemaVersion: 1` and adds optional `recentFallbacks` and `startupFailures`.
 
+If the state location can't be read, status prints `symnav: error: cannot read daemon status: cannot access <path> (<code>)` and exits 2.
+
 Status removes records of processes confirmed exited. A permission-denied liveness probe isn't proof of exit, and Linux keeps older records whose process identity can't be checked across PID namespaces.
 
 ### `daemon stop`
 
-Graceful wait `5 s`, then forced termination. The three outcomes below exit 0. A `Cannot answer:` refusal, such as no Git workspace, exits 1. Any other stop failure prints `Cannot stop daemon: <reason>` and exits 2.
+Graceful wait `5 s`, then forced termination. The three outcomes below exit 0. A `Cannot answer:` refusal, such as no Git workspace, exits 1. Any other stop failure prints `symnav: error: cannot stop daemon: <reason>` and exits 2. A filesystem failure names the path and OS code: `cannot access <path> (<code>)`.
 
 ```console
 $ symnav daemon stop
@@ -228,7 +230,7 @@ No daemon running for /Users/mo/projects/reelcut
 
 Diagnostics go to `daemon.log` in the daemon's state directory, never to navigation stdout or stderr. They record startup duration and outcome, queue depth and wait, current command, freshness and navigation duration, response size, memory, and every failure with phase, reason, and OS code. Failure records keep phase, reason, timestamps, workspace, and OS code, and leave out error messages, stacks, source, and environment values. They survive registry cleanup. Rotation limits are in [`daemon-policy.md`](daemon-policy.md).
 
-Telemetry execution mode per command: `warm`, `cold` (local, including during warm-up), or `fallback` (replayed locally after a pre-acceptance daemon failure). Accepted work is recorded once, even if the caller disconnected. To read stats without recording another event: `SYMNAV_DAEMON=1 SYMNAV_TELEMETRY=0 symnav stats --json`.
+Telemetry execution mode per command: `warm`, `cold` (local, including during warm-up), or `fallback` (replayed locally after a pre-acceptance daemon failure). Accepted work is recorded once, even if the caller disconnected. To read stats without recording another event: `SYMNAV_DAEMON=1 SYMNAV_TELEMETRY=0 symnav stats --json`. If the usage log can't be read, stats prints `symnav: error: cannot read stats: cannot access <path> (<code>)` and exits 2.
 
 ## Performance
 

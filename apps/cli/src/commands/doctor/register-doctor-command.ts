@@ -11,6 +11,7 @@ import { ClaudeCodeSandboxConfiguration } from "../../agent-sandbox/claude-code-
 import { ClaudeCodeSandboxRuntime } from "../../agent-sandbox/claude-code-runtime.js";
 import { CodexSandboxConfiguration } from "../../agent-sandbox/codex-configuration.js";
 import { CodexSandboxRuntime } from "../../agent-sandbox/codex-runtime.js";
+import { CommandErrorLine } from "../../output/command-error-line.js";
 import type { ProgramContext } from "../../program-context.js";
 import { StateDirectoryResolver } from "../../state-directory-resolver.js";
 
@@ -54,9 +55,7 @@ class DoctorCommandAction {
     try {
       results = await doctor.check(agent, controller.signal);
     } catch (error) {
-      context.stderr.write(
-        `symnav: error: ${error instanceof Error ? error.message : String(error)}\n`,
-      );
+      context.stderr.write(CommandErrorLine.renderError(error));
       context.exit(1);
     } finally {
       process.off("SIGINT", interrupt);

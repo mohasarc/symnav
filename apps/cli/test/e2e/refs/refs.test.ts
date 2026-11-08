@@ -243,7 +243,7 @@ describe("symnav refs e2e (errors)", () => {
     const r = runRefs([processorId, "--page", page]);
     expect(r.status).toBe(1);
     expect(r.stdout).toBe("");
-    expect(r.stderr).toContain(`page must be a positive integer, got ${page}`);
+    expect(r.stderr).toContain(`--page must be a positive integer, got ${page}`);
   });
 
   it("rejects --all combined with an explicit page", () => {

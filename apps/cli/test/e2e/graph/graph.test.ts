@@ -171,21 +171,12 @@ describe("symnav graph e2e (default output)", () => {
 });
 
 describe("symnav graph e2e (errors)", () => {
-  it("refuses depth beyond the maximum with the graph-specific message", () => {
+  it("refuses depth beyond the maximum with the way to continue", () => {
     const r = runGraph([hubId, "--depth", "12"]);
     expect(r.status).toBe(1);
     expect(r.stdout).toBe("");
     expect(r.stderr).toBe(
-      [
-        "Cannot run graph with depth 12.",
-        "Maximum supported depth is 5.",
-        "",
-        "To continue exploration:",
-        "1. Run with depth 5.",
-        "2. Pick a leaf symbol from the output.",
-        "3. Run graph again from that symbol.",
-        "",
-      ].join("\n"),
+      "Cannot answer: --depth 12 exceeds the maximum of 5; run with --depth 5, then run graph again from a leaf symbol.\n",
     );
   });
 
@@ -194,7 +185,7 @@ describe("symnav graph e2e (errors)", () => {
     expect(r.status).toBe(1);
     expect(r.stdout).toBe("");
     expect(r.stderr).toContain("Cannot answer:");
-    expect(r.stderr).toContain(`depth must be a positive integer, got ${depth}`);
+    expect(r.stderr).toContain(`--depth must be a positive integer, got ${depth}`);
   });
 
   it("rejects conflicting direction flags", () => {

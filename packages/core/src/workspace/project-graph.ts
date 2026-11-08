@@ -1,3 +1,5 @@
+import { posix } from "node:path";
+
 import type { FileSystem } from "./file-system.js";
 import type { WorkspaceFile, WorkspaceSnapshot } from "./workspace.js";
 
@@ -92,6 +94,8 @@ export abstract class ProjectGraph<
   ConfigurationUnit,
   Project extends ProjectWithTransientResources,
 > {
+  private static readonly UNRELATED_OWNER_NEARNESS = -1;
+
   private state: ProjectGraphState<Project> | undefined;
 
   protected constructor(protected readonly fileSystem: FileSystem) {}
@@ -353,6 +357,7 @@ export abstract class ProjectGraph<
   } {
     const projectsByRelativePath = new Map<string, Project[]>();
     const primaryProjectByRelativePath = new Map<string, Project>();
+    const primaryNearnessByRelativePath = new Map<string, number>();
     for (const [index, configuration] of configurations.entries()) {
       const project = configuredProjects[index];
       if (!project) continue;
@@ -360,9 +365,21 @@ export abstract class ProjectGraph<
         const projects = projectsByRelativePath.get(file.relative) ?? [];
         projects.push(project);
         projectsByRelativePath.set(file.relative, projects);
+        const nearness = ProjectGraph.ownerNearness(configuration.path, file);
+        const primaryNearness = primaryNearnessByRelativePath.get(file.relative);
+        if (primaryNearness !== undefined && nearness < primaryNearness) continue;
         primaryProjectByRelativePath.set(file.relative, project);
+        primaryNearnessByRelativePath.set(file.relative, nearness);
       }
     }
     return { projectsByRelativePath, primaryProjectByRelativePath };
+  }
+
+  private static ownerNearness(configurationPath: string, file: WorkspaceFile): number {
+    const directory = posix.dirname(configurationPath.replaceAll("\\", "/"));
+    const directoryPrefix = directory.endsWith("/") ? directory : `${directory}/`;
+    const containsFile = file.absolute.replaceAll("\\", "/").startsWith(directoryPrefix);
+    if (!containsFile) return ProjectGraph.UNRELATED_OWNER_NEARNESS;
+    return directoryPrefix.length;
   }
 }

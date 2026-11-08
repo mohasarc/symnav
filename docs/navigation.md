@@ -362,13 +362,7 @@ symnav graph <target> --depth 3 --page-size 50
 Call edges only. Default depth 1, max 5. Depth and pagination are independent: `--depth 3 --page-size 50` explores 3 hops and shows the first 50 paths.
 
 ```text
-Cannot run graph with depth 12.
-Maximum supported depth is 5.
-
-To continue exploration:
-1. Run with depth 5.
-2. Pick a leaf symbol from the output.
-3. Run graph again from that symbol.
+Cannot answer: --depth 12 exceeds the maximum of 5; run with --depth 5, then run graph again from a leaf symbol.
 ```
 
 - Nodes show line range, symbol path, and signature. No source previews.

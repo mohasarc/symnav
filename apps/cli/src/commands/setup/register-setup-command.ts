@@ -7,6 +7,7 @@ import type {
 import { ClaudeCodeSandboxConfiguration } from "../../agent-sandbox/claude-code-configuration.js";
 import { CodexSandboxConfiguration } from "../../agent-sandbox/codex-configuration.js";
 import { StateDirectoryResolver } from "../../state-directory-resolver.js";
+import { CommandErrorLine } from "../../output/command-error-line.js";
 import type { ProgramContext } from "../../program-context.js";
 
 export function registerSetupCommand(program: Command, context: ProgramContext): void {
@@ -44,9 +45,7 @@ export function registerSetupCommand(program: Command, context: ProgramContext):
             `${agentName} was not found on PATH; the grant applies when installed.\n`,
           );
       } catch (error) {
-        context.stderr.write(
-          `symnav: error: ${error instanceof Error ? error.message : String(error)}\n`,
-        );
+        context.stderr.write(CommandErrorLine.renderError(error));
         context.exit(1);
       }
     });

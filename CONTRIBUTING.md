@@ -42,3 +42,11 @@ Set `SYMNAV_REQUIRE_SANDBOX_RUNTIME=1` to fail instead of skip when prerequisite
 ## Pull requests
 
 PRs are squash-merged, so the PR title becomes the commit on `main` and drives the release version. Titles need a conventional type and no scope: `feat: Add regex targets`. Types: `feat`, `fix`, `perf`, `docs`, `chore`, `refactor`, `test`, `ci`, `build`; `!` after the type marks a breaking change.
+
+## License
+
+symnav is Apache-2.0. Contributions are accepted under the same license with a [Developer Certificate of Origin](https://developercertificate.org/) sign-off. Sign off every commit with `git commit -s`, which adds:
+
+```text
+Signed-off-by: Your Name <you@example.com>
+```

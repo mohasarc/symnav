@@ -1,12 +1,10 @@
 {
   "$schema": "https://raw.githubusercontent.com/googleapis/release-please/main/schemas/config.json",
-  "last-release-sha": "a6633bca5bee1f1dd6c03a1e89366b9c2f48ba94",
   "packages": {
     ".": {
       "release-type": "node",
       "package-name": "symnav",
       "include-component-in-tag": false,
-      "release-as": "1.0.0",
       "changelog-path": "CHANGELOG.md",
       "pull-request-title-pattern": "chore: Release ${version}",
       "extra-files": [{ "type": "json", "path": "apps/cli/package.json", "jsonpath": "$.version" }],

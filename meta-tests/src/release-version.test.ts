@@ -16,9 +16,11 @@ interface ReleasePleasePackage {
   "extra-files": unknown[];
   "changelog-sections": ChangelogSection[];
   "pull-request-title-pattern": string;
+  "release-as"?: string;
 }
 
 interface ReleasePleaseConfig {
+  "last-release-sha"?: string;
   packages: Record<string, ReleasePleasePackage>;
 }
 
@@ -76,6 +78,11 @@ describe("release version source", () => {
       "package-name": "symnav",
       "include-component-in-tag": false,
     });
+  });
+
+  it("derives the next version from commits since the last tag", () => {
+    expect(config["last-release-sha"]).toBeUndefined();
+    expect(rootPackage?.["release-as"]).toBeUndefined();
   });
 
   it("bumps the CLI package version alongside the root", () => {

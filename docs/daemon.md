@@ -243,3 +243,21 @@ Refs, context, and graph: under 5 s for depth-one queries
 ```
 
 `pnpm daemon:benchmark --scale <n>` gates `1x`, `2x`, `3x`, and `10x` workspaces on startup time, command time, queue wait, peak memory, response size, parity, freshness, and daemon continuity. A gate fails if the daemon restarts, vanishes from status, emits raw resource failures, or replays accepted work locally.
+
+### Cold time-to-first-result baseline
+
+Each benchmark run also records `coldTimeToFirstResult` in its artifact: wall-clock time for a fresh `node dist/cli.js` process running one fixed-suite command with `SYMNAV_DAEMON=0`, from spawn to exit, one run per navigation command. The argv for each command is in `apps/cli/test/benchmark/daemon-workspace-generator.ts`, for example `refs <target> --all --json` and `graph <target> --depth 1 --json`. It isn't gated. The benchmark daemon is up but idle during these runs, and the generated workspace was just written, so the OS file cache is warm. `stats` is left out because its first run goes to the daemon.
+
+Measured 2026-11-08 on an Apple M5 Pro (18 cores, 48 GiB), macOS 26.6, on battery, Node v20.20.2, bundle built from the commit that added this section. Two runs per scale, in ms. A third 3x run was dropped because the machine idle-slept during it.
+
+```text
+Command   1x (3,904 files)  2x (7,808 files)  3x (11,712 files)
+overview  156 / 165         155 / 155         159 / 161
+resolve   1,776 / 1,681     3,579 / 3,642     6,130 / 6,184
+def       1,976 / 1,889     3,815 / 3,722     6,082 / 6,059
+refs      4,132 / 3,982     9,319 / 8,880     15,154 / 14,987
+context   4,059 / 4,051     9,025 / 8,859     17,440 / 15,097
+graph     3,936 / 3,957     8,729 / 8,693     20,973 / 14,931
+```
+
+10x, Linux, Windows, and CI runners aren't measured yet. Compare a new run against this table on the same hardware; the artifact carries platform, architecture, Node version, and CPU count.

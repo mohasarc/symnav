@@ -1,0 +1,1 @@
+Cannot answer: cannot read directory during enumeration: <workspace>/src/locked — warning candidate: downgrade to a non-fatal warning once enumerate can report partial results instead of throwing.

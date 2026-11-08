@@ -299,6 +299,33 @@ describe("ProjectGraph", () => {
     expect(graph.primary("shared.ts")?.name).toBe("/repo/c.json");
   });
 
+  it("selects the owner nearest to a file as primary", async () => {
+    const graph = new FakeProjectGraph(
+      new InMemoryFileSystem({
+        "/repo/packages/app/app.json": "app",
+        "/repo/packages/other/other.json": "other",
+        "/repo/root.json": "root",
+      }),
+    );
+    graph.initialPaths = [
+      "/repo/packages/app/app.json",
+      "/repo/packages/other/other.json",
+      "/repo/root.json",
+    ];
+    graph.configurations = new Map([
+      ["/repo/packages/app/app.json", { referencedPaths: [], filePaths: ["packages/app/a.ts"] }],
+      [
+        "/repo/packages/other/other.json",
+        { referencedPaths: [], filePaths: ["packages/app/a.ts"] },
+      ],
+      ["/repo/root.json", { referencedPaths: [], filePaths: ["packages/app/a.ts"] }],
+    ]);
+
+    await graph.refresh(snapshot(workspaceFile("packages/app/a.ts")));
+
+    expect(graph.primary("packages/app/a.ts")?.name).toBe("/repo/packages/app/app.json");
+  });
+
   it("uses the inferred project only for unowned workspace files", async () => {
     const graph = new FakeProjectGraph(
       new InMemoryFileSystem({

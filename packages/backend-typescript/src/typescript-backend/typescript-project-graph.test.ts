@@ -278,7 +278,7 @@ describe("TypeScriptProjectGraph", () => {
     expect(graph.languageServiceFor("packages/app/src/index.ts")).toBe(appService);
   });
 
-  it("orders every owning project and uses the last owner as primary", async () => {
+  it("orders every owning project and uses the nearest owner as primary", async () => {
     const projectFixture = fixture();
     projectFixture.write(
       "packages/app/tsconfig.json",
@@ -302,7 +302,7 @@ describe("TypeScriptProjectGraph", () => {
       projectFixture.root.replaceAll("\\", "/") + "/packages/domain",
       projectFixture.root.replaceAll("\\", "/") + "/packages/app",
     ]);
-    expect(primary).toBe(sourceFiles.at(-1));
+    expect(primary).toBe(sourceFiles[0]);
   });
 
   it("invalidates equal-size configuration content after modification time is restored", async () => {

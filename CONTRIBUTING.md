@@ -2,6 +2,8 @@
 
 ## Setup
 
+Needs Node 20 or newer (`.nvmrc`) and pnpm 10 (`packageManager` in `package.json`).
+
 ```sh
 pnpm install
 pnpm build

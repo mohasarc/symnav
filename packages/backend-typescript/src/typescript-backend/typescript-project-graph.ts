@@ -433,10 +433,7 @@ export class TypeScriptProjectGraph
     root: string,
     paths: WorkspacePathDialect,
   ): boolean {
-    const normalizedPattern = paths.normalize(pattern);
-    const relativePattern = paths.isAbsolute(normalizedPattern)
-      ? paths.relative(root, normalizedPattern)
-      : normalizedPattern;
+    const relativePattern = paths.relative(root, paths.resolve(root, paths.normalize(pattern)));
     return TypeScriptProjectGraph.matchesGlob(path, relativePattern, paths.caseSensitive);
   }
 

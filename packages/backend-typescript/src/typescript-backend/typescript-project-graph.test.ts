@@ -424,6 +424,47 @@ describe("TypeScriptProjectGraph", () => {
     ]);
   });
 
+  it("owns the files a root configuration includes through extends", async () => {
+    const projectFixture = fixture();
+    const graph = new TypeScriptProjectGraph(projectFixture.fileSystem);
+    projectFixture.write("tsconfig.json", JSON.stringify({ extends: "./src/tsconfig.json" }));
+    projectFixture.write(
+      "src/tsconfig.json",
+      JSON.stringify({ compilerOptions: { strict: true }, include: ["./vs/**/*.ts"] }),
+    );
+    projectFixture.write("src/vs/a.ts", "export const a = 1;\n");
+    projectFixture.write("src/vs/b.ts", "export const b = 2;\n");
+
+    await graph.refresh(await projectFixture.snapshot());
+    const program = graph.programFor("src/vs/a.ts");
+
+    expect(program?.getCompilerOptions().strict).toBe(true);
+    expect(program?.getRootFileNames()).toContain(
+      `${projectFixture.root.replaceAll("\\", "/")}/src/vs/b.ts`,
+    );
+  });
+
+  it("leaves files a root configuration excludes through extends inferred", async () => {
+    const projectFixture = fixture();
+    const graph = new TypeScriptProjectGraph(projectFixture.fileSystem);
+    projectFixture.write("tsconfig.json", JSON.stringify({ extends: "./src/tsconfig.json" }));
+    projectFixture.write(
+      "src/tsconfig.json",
+      JSON.stringify({
+        compilerOptions: { strict: true },
+        include: ["./vs/**/*.ts"],
+        exclude: ["./vs/skip/**"],
+      }),
+    );
+    projectFixture.write("src/vs/a.ts", "export const a = 1;\n");
+    projectFixture.write("src/vs/skip/c.ts", "export const c = 3;\n");
+
+    await graph.refresh(await projectFixture.snapshot());
+
+    expect(graph.programFor("src/vs/a.ts")?.getCompilerOptions().strict).toBe(true);
+    expect(graph.programFor("src/vs/skip/c.ts")?.getCompilerOptions().strict).toBeUndefined();
+  });
+
   it("falls back to one inferred project for malformed or missing root configuration", async () => {
     const projectFixture = fixture();
     const graph = new TypeScriptProjectGraph(projectFixture.fileSystem);

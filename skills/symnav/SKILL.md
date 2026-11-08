@@ -1,16 +1,16 @@
 ---
 name: symnav
-description: Navigate TypeScript by symbol from the CLI — file symbol tree (overview), find a symbol (resolve), where it's defined (def), references (refs), local context (context), call paths (graph). Deterministic, project-wide, alongside normal reads, search, and edits.
+description: Navigate code by symbol from the CLI — file symbol tree (overview), find a symbol (resolve), where it's defined (def), references (refs), local context (context), call paths (graph). Deterministic, project-wide, alongside normal reads, search, and edits.
 ---
 
-`symnav` answers TypeScript navigation questions deterministically, project-wide: what's in a file, where a symbol is defined, who references it, how calls flow.
+`symnav` answers code navigation questions deterministically, project-wide: what's in a file, where a symbol is defined, who references it, how calls flow.
 
 Reach for it at two moments, both worth it:
 
 - **Orienting** — map a file, find where a symbol lives, understand it before editing, find an existing helper to reuse.
 - **Confirming** — after a change, check the rename hit every site, the new symbol is referenced where it should be, callers still connect, blast radius matches expectation.
 
-Run inside a git workspace. `--cwd <dir>` targets another workspace; `--json` gives machine output. Cold TypeScript start can yield early with empty output — that's not the result, wait for it. Warnings on stderr are non-fatal; exit 0 means stdout is the answer.
+Run inside a git workspace. `--cwd <dir>` targets another workspace; `--json` gives machine output. A cold start can yield early with empty output — that's not the result, wait for it. Warnings on stderr are non-fatal; exit 0 means stdout is the answer.
 
 ## Agent sandboxes
 
@@ -46,7 +46,7 @@ Use these only if the user declines setup, says it can't be done, or no human ca
 
 | Need | Command | Gives |
 | --- | --- | --- |
-| File map | `overview <file>` | symbol/fold tree for one `.ts`/`.tsx`. `--depth` nests; `--at '<text>'` selects a symbol, test block, or region — an exact symbol path or header beats longer substring matches |
+| File map | `overview <file>` | symbol/fold tree for one supported file (today `.ts`/`.tsx`). `--depth` nests; `--at '<text>'` selects a symbol, test block, or region — an exact symbol path or header beats longer substring matches |
 | Find a symbol | `resolve <query>` | every symbol/file matching the name; an empty exact result names `--fuzzy`/`--regex` as the retry |
 | Declaration | `def <target>` | file, line range, signature |
 | Use sites | `refs <target>` | every reference, grouped by file, tagged by kind, paginated |

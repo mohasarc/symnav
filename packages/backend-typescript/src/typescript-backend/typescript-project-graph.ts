@@ -106,6 +106,8 @@ export class TypeScriptProjectGraph
   extends ProjectGraph<ParsedTypeScriptConfiguration, TypeScriptSemanticProject>
   implements TypeScriptSemanticSourceProvider
 {
+  private static readonly WHOLE_DIRECTORY_PATTERN = "**/*";
+
   private semanticProjects: readonly TypeScriptSemanticProject[] = [];
   private preparedSemanticProjects: readonly TypeScriptSemanticProject[] | undefined;
 
@@ -434,7 +436,9 @@ export class TypeScriptProjectGraph
     paths: WorkspacePathDialect,
   ): boolean {
     const relativePattern = paths.relative(root, paths.resolve(root, paths.normalize(pattern)));
-    return TypeScriptProjectGraph.matchesGlob(path, relativePattern, paths.caseSensitive);
+    const globPattern =
+      relativePattern === "" ? TypeScriptProjectGraph.WHOLE_DIRECTORY_PATTERN : relativePattern;
+    return TypeScriptProjectGraph.matchesGlob(path, globPattern, paths.caseSensitive);
   }
 
   private static parseJson(content: string): Record<string, unknown> | undefined {

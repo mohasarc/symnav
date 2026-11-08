@@ -261,3 +261,23 @@ graph     3,936 / 3,957     8,729 / 8,693     20,973 / 14,931
 ```
 
 10x, Linux, Windows, and CI runners aren't measured yet. Compare a new run against this table on the same hardware; the artifact carries platform, architecture, Node version, and CPU count.
+
+### Warm command time baseline
+
+`commandStatistics` in the same artifact holds warm command time: service time inside the ready daemon, queue wait excluded, 9 samples per command. The gate passes a command when 8 of 9 samples are under its target.
+
+Same machine and the same 2x and 3x runs as the cold table. The 1x pair includes a later run on the same machine and code, since one cold 1x artifact was overwritten. p50 of 9 samples, two runs per scale, in ms.
+
+```text
+Command         1x             2x             3x
+overview        26 / 25        36 / 39        49 / 50
+resolve         73 / 68        126 / 128      189 / 195
+def             69 / 65        120 / 120      183 / 177
+refs            109 / 113      231 / 242      761 / 728
+context         122 / 124      238 / 241      737 / 387
+graph           112 / 107      227 / 228      1,477 / 750
+stats           9 / 9          9 / 9          9 / 10
+daemon startup  2,065 / 1,945  3,787 / 3,841  5,953 / 6,051
+```
+
+The first `refs` after the daemon is ready is much slower than the rest: 2,567 / 2,485 ms at 1x, 5,500 / 5,515 at 2x, 9,201 / 9,204 at 3x, nearly all of it navigation time. At 3x that sample is over the 5 s target, and the gate passes on the other 8. The first `def` is about twice its p50. 3x `context` and `graph` p50 vary by up to 2x between runs. Same unmeasured platforms and scales as the cold table.

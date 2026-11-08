@@ -49,6 +49,7 @@ The `--frozen-lockfile` install is load-bearing: it's the only step that detects
 - Unit tests are colocated next to source: `<package>/src/foo.test.ts`.
 - Integration tests live under `<package>/test/integration/`.
 - End-to-end tests live under `apps/cli/test/e2e/` and spawn the built binary.
+- Install-smoke tests live under `apps/cli/test/install-smoke/` and run against a globally installed tarball, not the repo build. `pnpm test` skips them. To run locally: `pnpm --filter symnav pack --pack-destination <dir>`, `npm install -g --prefix <prefix> <dir>/symnav-<version>.tgz`, then `SYMNAV_INSTALL_PREFIX=<prefix> SYMNAV_EXPECTED_VERSION=<version> pnpm --filter symnav test:install-smoke`.
 - Fixture projects live under `packages/testing/fixtures/`. Resolve them via `fixturePath("name")` from `@symnav/testing` — never hardcode paths.
 - In-memory or mock helpers live beside the tests that use them — not in `@symnav/testing`, which is reserved for cross-cutting test utils with no upstream package deps.
 - A fixture's `.git` directory is checked in as `dot-git/` — the host repo would otherwise treat a real nested `.git` as a submodule. The e2e setup renames `dot-git/` to `.git/` via `ensureFixtureGitMarker` before the suite runs. `packages/testing/fixtures/overview-cases/` is the canonical example.

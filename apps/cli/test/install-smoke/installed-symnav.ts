@@ -23,6 +23,15 @@ export class InstalledSymnav {
     return join(this.options.prefix, "lib", "node_modules", InstalledSymnav.PACKAGE_NAME);
   }
 
+  install(tarball: string): void {
+    const result = spawnSync("npm", ["install", "-g", "--prefix", this.options.prefix, tarball], {
+      encoding: "utf8",
+      env: this.environment(),
+      shell: process.platform === "win32",
+    });
+    if (result.status !== 0) throw new Error(`npm install ${tarball} failed:\n${result.stderr}`);
+  }
+
   run(args: readonly string[], environment: NodeJS.ProcessEnv = {}): RunSymnavBinaryResult {
     const cliPath = join(this.packageDirectory, "dist", "cli.js");
     const result = spawnSync(process.execPath, [cliPath, ...args], {
@@ -61,6 +70,7 @@ export class InstalledSymnav {
     };
     delete environment.NODE_PATH;
     delete environment.SYMNAV_DAEMON;
+    delete environment.SYMNAV_TELEMETRY;
     if (this.options.daemon === "cold") environment.SYMNAV_DAEMON = "0";
     return environment;
   }

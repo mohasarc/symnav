@@ -18,6 +18,15 @@ export class InstallSmokeEnvironment {
     return InstallSmokeEnvironment.required("SYMNAV_EXPECTED_VERSION");
   }
 
+  static tarball(): string {
+    return InstallSmokeEnvironment.required("SYMNAV_TARBALL");
+  }
+
+  static previousTarball(): string | undefined {
+    const value = process.env.SYMNAV_PREVIOUS_TARBALL;
+    return value === "" ? undefined : value;
+  }
+
   private static required(name: string): string {
     const value = process.env[name];
     if (value === undefined || value === "") {

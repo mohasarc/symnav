@@ -42,7 +42,22 @@ jobs:
         env:
           SYMNAV_INSTALL_PREFIX: ${{ runner.temp }}/symnav-prefix
           SYMNAV_TARBALL: ${{ runner.temp }}/symnav-tarball/symnav-${{ inputs.expected-version }}.tgz
+      - id: previous-release
+        run: |
+          latest="$(npm view symnav version 2>/dev/null || true)"
+          if [ -z "$latest" ] || [ "$latest" = "0.0.0" ] || [ "$latest" = "$SYMNAV_EXPECTED_VERSION" ]; then
+            echo "Upgrade smoke skipped: npm latest is '${latest:-missing}'"
+            exit 0
+          fi
+          mkdir -p "$SYMNAV_PREVIOUS_DIRECTORY"
+          npm pack "symnav@$latest" --pack-destination "$SYMNAV_PREVIOUS_DIRECTORY"
+          echo "tarball=$SYMNAV_PREVIOUS_DIRECTORY/symnav-$latest.tgz" >> "$GITHUB_OUTPUT"
+        env:
+          SYMNAV_EXPECTED_VERSION: ${{ inputs.expected-version }}
+          SYMNAV_PREVIOUS_DIRECTORY: ${{ runner.temp }}/symnav-previous
       - run: pnpm --filter symnav test:install-smoke
         env:
           SYMNAV_INSTALL_PREFIX: ${{ runner.temp }}/symnav-prefix
           SYMNAV_EXPECTED_VERSION: ${{ inputs.expected-version }}
+          SYMNAV_TARBALL: ${{ runner.temp }}/symnav-tarball/symnav-${{ inputs.expected-version }}.tgz
+          SYMNAV_PREVIOUS_TARBALL: ${{ steps.previous-release.outputs.tarball }}

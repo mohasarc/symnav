@@ -107,6 +107,8 @@ export class TypeScriptProjectGraph
   implements TypeScriptSemanticSourceProvider
 {
   private static readonly WHOLE_DIRECTORY_PATTERN = "**/*";
+  private static readonly CONFIGURATION_FILE_NAME = "tsconfig.json";
+  private static readonly DEPENDENCY_DIRECTORY_NAME = "node_modules";
 
   private semanticProjects: readonly TypeScriptSemanticProject[] = [];
   private preparedSemanticProjects: readonly TypeScriptSemanticProject[] | undefined;
@@ -157,7 +159,16 @@ export class TypeScriptProjectGraph
 
   protected initialConfigurationPaths(root: string): readonly string[] {
     const paths = new WorkspacePathDialect(root);
-    return [paths.join(root, "tsconfig.json")];
+    return [paths.join(root, TypeScriptProjectGraph.CONFIGURATION_FILE_NAME)];
+  }
+
+  protected nestedConfigurationPaths(snapshot: WorkspaceSnapshot): readonly string[] {
+    const paths = new WorkspacePathDialect(snapshot.root);
+    return TypeScriptProjectGraph.sourceDirectories(snapshot, paths)
+      .filter(
+        (directory) => !TypeScriptProjectGraph.isDependencyDirectory(snapshot, directory, paths),
+      )
+      .map((directory) => paths.join(directory, TypeScriptProjectGraph.CONFIGURATION_FILE_NAME));
   }
 
   protected async parseConfiguration(request: {
@@ -344,6 +355,17 @@ export class TypeScriptProjectGraph
       }
     }
     return [...directories.values()];
+  }
+
+  private static isDependencyDirectory(
+    snapshot: WorkspaceSnapshot,
+    directory: string,
+    paths: WorkspacePathDialect,
+  ): boolean {
+    return paths
+      .relative(snapshot.root, directory)
+      .split("/")
+      .includes(TypeScriptProjectGraph.DEPENDENCY_DIRECTORY_NAME);
   }
 
   private static refreshSummary(

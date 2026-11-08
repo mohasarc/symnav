@@ -465,12 +465,6 @@ export class ControlledCommandResult {
     );
   }
 
-  static workspaceCapacityExceeded(): CommandExecutionResult {
-    return ControlledCommandResult.failure(
-      DaemonControlledFailureMessage.workspaceCapacityExceeded,
-    );
-  }
-
   static responseCapacityExceeded(): CommandExecutionResult {
     return ControlledCommandResult.failure(DaemonControlledFailureMessage.responseCapacityExceeded);
   }

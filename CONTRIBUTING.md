@@ -17,6 +17,18 @@ pnpm --filter symnav dev --version
 pnpm --filter symnav dev overview src/program.ts
 ```
 
+## Checks
+
+CI runs this sequence. Run it on a clean tree before opening or updating a PR:
+
+```sh
+pnpm install --frozen-lockfile && pnpm build && pnpm test \
+  && pnpm --filter symnav test:e2e:cold && pnpm --filter symnav test:e2e:warm \
+  && pnpm lint && pnpm typecheck
+```
+
+`--frozen-lockfile` is the only step that catches lockfile drift.
+
 ## Sandbox checks
 
 Real sandbox checks use the pinned `@anthropic-ai/sandbox-runtime` on macOS and Linux, which needs Node 22.12 or newer. Linux also needs `bubblewrap`, `socat`, `ripgrep`, and working unprivileged user namespaces. After building:

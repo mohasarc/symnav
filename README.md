@@ -43,7 +43,7 @@ symnav doctor
 
 ## Stability
 
-symnav follows semver from 1.0. A major version is needed to change command names, flags, target syntax (`::` suffixes, `--regex`), exit codes, `--json` output fields, the `Cannot answer:` refusal prefix, environment variables (`SYMNAV_DAEMON`, `SYMNAV_TELEMETRY`, `SYMNAV_STATE_DIR`), or the state directory location. Text output layout, hint and warning wording, daemon internals and policy defaults, and telemetry shape can change in any release.
+symnav follows semver from 1.0. A major version is needed to change command names, flags, target syntax (`::` suffixes, `--regex`), exit codes, the `Cannot answer:` refusal prefix, environment variables (`SYMNAV_DAEMON`, `SYMNAV_TELEMETRY`, `SYMNAV_STATE_DIR`), or the state directory location, or to remove or rename a `--json` output field. New `--json` fields, text output layout, hint and warning wording, daemon internals and policy defaults, and telemetry shape can change in any release.
 
 ## Telemetry
 

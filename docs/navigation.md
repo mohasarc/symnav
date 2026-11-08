@@ -124,7 +124,7 @@ Cannot answer: invalid symbol target (empty path segment between "::" separators
 Cannot answer: invalid regex "[": Unterminated character class.
 ```
 
-A file part that matches no workspace file reports the file as missing, with or without a `/`. A copied fold header is a plain not-found, since folds aren't symbols.
+A file part that matches no workspace file reports the file as missing, with or without a `/`, even when an ignored file ends with it. A file part that is the exact path of an ignored file reports `is ignored by .gitignore`, same as `overview`. A copied fold header is a plain not-found, since folds aren't symbols.
 
 Ambiguity prints copyable IDs with signatures, plus the way out:
 

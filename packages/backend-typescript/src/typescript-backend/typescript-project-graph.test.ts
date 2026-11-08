@@ -424,6 +424,26 @@ describe("TypeScriptProjectGraph", () => {
     ]);
   });
 
+  it.each([".", "./"])(
+    "owns every file below a root configuration that includes %j",
+    async (include) => {
+      const projectFixture = fixture();
+      const graph = new TypeScriptProjectGraph(projectFixture.fileSystem);
+      projectFixture.write(
+        "tsconfig.json",
+        JSON.stringify({ compilerOptions: { strict: true }, include: [include] }),
+      );
+
+      await graph.refresh(await projectFixture.snapshot());
+      const program = graph.programFor("scratch/outside.ts");
+
+      expect(program?.getCompilerOptions().strict).toBe(true);
+      expect(program?.getRootFileNames()).toContain(
+        `${projectFixture.root.replaceAll("\\", "/")}/packages/domain/src/index.ts`,
+      );
+    },
+  );
+
   it("owns the files a root configuration includes through extends", async () => {
     const projectFixture = fixture();
     const graph = new TypeScriptProjectGraph(projectFixture.fileSystem);

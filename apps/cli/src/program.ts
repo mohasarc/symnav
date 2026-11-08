@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { InvocationProgram } from "./invocation-program.js";
+import { CommanderErrorOutput } from "./output/commander-error-output.js";
 import { NodeFileSystem } from "@symnav/core";
 import { DaemonClient, DaemonPolicy, type DaemonExecutorFactory } from "@symnav/daemon";
 import { TypeScriptBackend } from "@symnav/backend-typescript";
@@ -124,6 +125,7 @@ export function buildProgram(
       writeErr: (s) => {
         ctx.stderr.write(s);
       },
+      outputError: CommanderErrorOutput.write,
     })
     .exitOverride((err) => {
       ctx.exit(err.exitCode);

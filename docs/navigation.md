@@ -42,6 +42,7 @@ When input matches more than one thing, symnav lists the candidates and stops. I
 
 - Success: result on stdout, exit 0. An empty `resolve` or `refs` result is still success.
 - User-facing failure: one `Cannot answer: …` message on stderr, exit 1, nothing on stdout.
+- Usage error, such as an unknown command or option or a missing argument: one `symnav: error: …` line on stderr, exit 1, nothing on stdout.
 - Internal failure: one `symnav: error: …` line on stderr, exit 2, nothing on stdout.
 - Warnings go to stderr as `symnav: warning: …` and never change stdout or the exit code. `--no-warnings` drops them.
 

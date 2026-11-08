@@ -1,1 +1,1 @@
-error: command-argument value 'bogus' is invalid for argument 'agent'. Allowed choices are codex, claude-code.
+symnav: error: command-argument value 'bogus' is invalid for argument 'agent'. Allowed choices are codex, claude-code.

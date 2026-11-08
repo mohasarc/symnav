@@ -54,6 +54,17 @@ describe("DaemonScaleBenchmarkHarness", () => {
         stats: expect.any(Object),
       }),
     );
+    expect(artifact.coldTimeToFirstResult.map((sample) => sample.command)).toEqual([
+      "overview",
+      "resolve",
+      "def",
+      "refs",
+      "context",
+      "graph",
+    ]);
+    for (const sample of artifact.coldTimeToFirstResult) {
+      expect(sample.durationMs).toBeGreaterThan(0);
+    }
     expect(artifact).toMatchObject({
       schemaVersion: 1,
       scale: 1,

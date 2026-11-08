@@ -1,0 +1,7 @@
+Cannot run graph with depth 99.
+Maximum supported depth is 5.
+
+To continue exploration:
+1. Run with depth 5.
+2. Pick a leaf symbol from the output.
+3. Run graph again from that symbol.

@@ -9,6 +9,7 @@ import { NodeDaemonClock } from "../lifecycle/daemon-clock.js";
 import type {
   DaemonNavigationWorker,
   DaemonNavigationWorkerExit,
+  NodeDaemonNavigationWorkerOptions,
 } from "../worker/navigation-worker.js";
 import type { DaemonNavigationWorkerResponse } from "../worker/worker-protocol.js";
 import {
@@ -19,6 +20,21 @@ import type { DaemonIdentityCoordinates, DaemonServer } from "../transport/proto
 import type { DaemonRequestHandler, DaemonRequestServer } from "../transport/contracts.js";
 import { DaemonWorkspaceIdentity } from "../registry/workspace-identity.js";
 import { TestDaemonRegistry as DaemonRegistry } from "../../test/helpers/daemon-registry.js";
+
+const createdWorkers = vi.hoisted(() => ({ options: [] as NodeDaemonNavigationWorkerOptions[] }));
+
+vi.mock("../worker/navigation-worker.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../worker/navigation-worker.js")>()),
+  NodeDaemonNavigationWorker: class {
+    readonly generation: number;
+    readonly exited = new Promise<DaemonNavigationWorkerExit>(() => undefined);
+
+    constructor(options: NodeDaemonNavigationWorkerOptions) {
+      createdWorkers.options.push(options);
+      this.generation = options.generation;
+    }
+  },
+}));
 
 interface CoordinatorPrototypeTestAccess {
   recoverWorkerExit(exit: DaemonNavigationWorkerExit): Promise<void>;
@@ -53,6 +69,7 @@ describe("DaemonProcessCoordinator construction", () => {
 
   afterEach(() => {
     vi.restoreAllMocks();
+    createdWorkers.options.length = 0;
     for (const root of roots) rmSync(root, { recursive: true, force: true });
     roots.length = 0;
   });
@@ -92,6 +109,15 @@ describe("DaemonProcessCoordinator construction", () => {
       "Daemon process identity does not match configuration",
     );
     expect(componentObserved).toBe(false);
+  });
+
+  it("hands workerEntryUrl to the navigation worker it creates", () => {
+    const workerEntryUrl = new URL("file:///bundle/worker-entry.js");
+
+    new DaemonProcessCoordinator({ ...coordinatorOptions(roots), workerEntryUrl });
+
+    expect(createdWorkers.options).toHaveLength(1);
+    expect(createdWorkers.options[0]!.entryUrl).toBe(workerEntryUrl);
   });
 
   it("binds every cyclic callback without routing during construction", async () => {
@@ -153,11 +179,18 @@ describe("DaemonProcessCoordinator construction", () => {
 });
 
 function createCoordinator(roots: string[]): DaemonProcessCoordinator {
+  return new DaemonProcessCoordinator({
+    ...coordinatorOptions(roots),
+    navigationWorker: new InertNavigationWorker(),
+  });
+}
+
+function coordinatorOptions(roots: string[]): DaemonProcessCoordinatorOptions {
   const stateDirectory = mkdtempSync(join(tmpdir(), "symnav-coordinator-composition-"));
   roots.push(stateDirectory);
   const identity = DaemonWorkspaceIdentity.from("/workspace", stateDirectory);
   const instanceId = "instance";
-  return new DaemonProcessCoordinator({
+  return {
     identity,
     coordinates: {
       workspaceRoot: identity.workspaceRoot,
@@ -172,9 +205,9 @@ function createCoordinator(roots: string[]): DaemonProcessCoordinator {
     policy: DaemonPolicy.currentSystem(),
     registry: new DaemonRegistry(identity.registryDirectory),
     server: new InertRequestServer(),
-    navigationWorker: new InertNavigationWorker(),
     clock: new NodeDaemonClock(),
-  });
+    workerEntryUrl: new URL("file:///unused/worker-entry.js"),
+  };
 }
 
 class InertRequestServer implements DaemonRequestServer {

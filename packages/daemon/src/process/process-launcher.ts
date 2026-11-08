@@ -192,6 +192,7 @@ export class NodeDaemonProcessLauncher implements DaemonProcessLauncher {
   constructor(
     readonly symnavVersion: string,
     readonly executorModuleUrl: DaemonExecutorModuleUrl,
+    readonly processEntryUrl: string,
     readonly policy: DaemonPolicy,
   ) {}
 
@@ -246,7 +247,7 @@ export class NodeDaemonProcessLauncher implements DaemonProcessLauncher {
         ...(lifetime === undefined ? {} : { processLifetime: lifetime.identity }),
       };
       const encodedConfiguration = Buffer.from(JSON.stringify(configuration)).toString("base64url");
-      const daemonEntryPath = fileURLToPath(new URL("../process-entry.js", import.meta.url));
+      const daemonEntryPath = fileURLToPath(this.processEntryUrl);
       mkdirSync(identity.identityDirectory, { recursive: true, mode: 0o700 });
 
       return await new Promise<DaemonProcess>((resolve, reject) => {

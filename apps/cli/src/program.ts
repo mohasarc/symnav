@@ -76,6 +76,7 @@ export function createDefaultDependencies(
     daemonEnabled,
     executorFactory,
     executorModuleUrl: new URL("./daemon-executor.js", import.meta.url).href,
+    processEntryUrl: new URL("./process-entry.js", import.meta.url).href,
     readinessProbe: { commandName: "version", argv: ["--version"] },
     policy: daemonPolicy,
   });

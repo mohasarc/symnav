@@ -54,7 +54,7 @@ describe("ESLint workspace config", () => {
 
   it("reports a boundaries violation when daemon imports CLI", async () => {
     const eslint = await makeESLint();
-    const code = `import type * as Cli from "symnav";\nexport type X = typeof Cli;\n`;
+    const code = `import type * as Cli from "../../../apps/cli/src/program";\nexport type X = typeof Cli;\n`;
     const [result] = await eslint.lintText(code, {
       filePath: join(repoRoot, "packages/daemon/src/forbidden.ts"),
     });

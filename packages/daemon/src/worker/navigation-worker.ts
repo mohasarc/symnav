@@ -57,7 +57,7 @@ export interface NodeDaemonNavigationWorkerOptions {
   readonly resourceLimits: {
     readonly maxOldGenerationSizeMb: number;
   };
-  readonly entryUrl?: URL;
+  readonly entryUrl: URL;
   readonly workerData?: Readonly<Record<string, unknown>>;
 }
 
@@ -92,7 +92,7 @@ export class NodeDaemonNavigationWorker implements DaemonNavigationWorker {
     this.exited = new Promise((resolve) => {
       this.resolveExited = resolve;
     });
-    this.worker = new Worker(options.entryUrl ?? new URL("../worker-entry.js", import.meta.url), {
+    this.worker = new Worker(options.entryUrl, {
       workerData: {
         ...options.workerData,
         stateDirectory: options.configuration.stateDirectory,

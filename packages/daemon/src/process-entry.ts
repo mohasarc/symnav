@@ -44,6 +44,7 @@ class DaemonProcessEntry {
       server,
       clock,
       logger,
+      workerEntryUrl: new URL("./worker-entry.js", import.meta.url),
     });
     const failureJournal = new DaemonFailureJournal(
       identity.stateDirectory,

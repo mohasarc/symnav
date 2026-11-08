@@ -65,6 +65,7 @@ export interface DaemonProcessCoordinatorOptions {
   readonly residentMemoryBytes?: () => number;
   readonly completionSpoolStorage?: CompletionSpoolStorage;
   readonly logger?: DaemonLogger;
+  readonly workerEntryUrl: URL;
 }
 
 export class DaemonProcessCoordinator {
@@ -143,6 +144,7 @@ export class DaemonProcessCoordinator {
               resourceLimits: {
                 maxOldGenerationSizeMb: resourcePolicy.workerMaxOldGenerationSizeMiB,
               },
+              entryUrl: options.workerEntryUrl,
             })
         : undefined);
     const createNavigationWorker = (generation: number): DaemonNavigationWorker => {

@@ -134,6 +134,7 @@ class StartWriteFixture {
       daemonEnabled: true,
       executorFactory: this.executorFactory,
       executorModuleUrl: "file:///unused-executor.js",
+      processEntryUrl: "file:///unused-process-entry.js",
       readinessProbe: { commandName: "version", argv: ["--version"] },
     });
     const connect = FileDaemonConnectionClient.prototype.connect;

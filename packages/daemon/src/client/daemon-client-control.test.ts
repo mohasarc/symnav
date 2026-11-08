@@ -98,6 +98,7 @@ function createClient(policy: DaemonPolicy, daemonEnabled = true): DaemonClient 
     daemonEnabled,
     executorFactory: () => localExecutor(),
     executorModuleUrl: "file:///executor.js",
+    processEntryUrl: "file:///process-entry.js",
     readinessProbe: { commandName: "version", argv: ["--version"] },
     policy,
   });

@@ -14,6 +14,7 @@ export interface DaemonClientOptions {
   readonly daemonEnabled: boolean;
   readonly executorFactory: DaemonExecutorFactory;
   readonly executorModuleUrl: DaemonExecutorModuleUrl;
+  readonly processEntryUrl: string;
   readonly readinessProbe: DaemonReadinessProbe;
   readonly policy?: DaemonPolicy;
 }

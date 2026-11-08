@@ -20,8 +20,7 @@ interface DaemonClientRuntimePort {
 
 class DaemonClientRuntimeLoader {
   static async load(options: DaemonClientOptions): Promise<DaemonClientRuntimePort> {
-    const runtimeModuleUrl: string = "./daemon-client-runtime.js";
-    const loaded: unknown = await import(runtimeModuleUrl);
+    const loaded: unknown = await import("./daemon-client-runtime.js");
     if (
       typeof loaded !== "object" ||
       loaded === null ||

@@ -38,6 +38,7 @@ class LifecycleFixture {
       daemonEnabled: true,
       executorFactory: createDaemonExecutor,
       executorModuleUrl: import.meta.url,
+      processEntryUrl: import.meta.resolve("@symnav/daemon/process-entry"),
       readinessProbe: { commandName: "version", argv: ["--version"] },
     });
     const result = await client.execute({

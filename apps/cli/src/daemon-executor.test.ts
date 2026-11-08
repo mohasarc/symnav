@@ -4,10 +4,8 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { WorkspaceSession } from "@symnav/core";
 import { fixturePath } from "@symnav/testing";
-import { fileURLToPath } from "node:url";
-import { isAbsolute } from "node:path";
 import { CommandOutputSnapshot } from "./command-execution-result.js";
-import { createDaemonExecutor, daemonExecutorModuleUrl } from "./daemon-executor.js";
+import { createDaemonExecutor } from "./daemon-executor.js";
 import { CliProgramExecutor } from "./cli-program-executor.js";
 import type { ProgramDependencies } from "./program-dependencies.js";
 
@@ -26,13 +24,6 @@ describe("createDaemonExecutor", () => {
       rmSync(directory, { recursive: true, force: true });
     }
     temporaryDirectories.length = 0;
-  });
-
-  it("publishes its absolute file module URL", () => {
-    const moduleUrl = daemonExecutorModuleUrl();
-
-    expect(new URL(moduleUrl).protocol).toBe("file:");
-    expect(isAbsolute(fileURLToPath(moduleUrl))).toBe(true);
   });
 
   it("rejects a product version that does not match the CLI", () => {

@@ -46,6 +46,9 @@ it.each([true, false])(
       readinessProbe: { commandName: "version", argv: ["--version"] },
     });
     expect(new URL(captured.options[0]!.executorModuleUrl).protocol).toBe("file:");
+    expect(captured.options[0]!.processEntryUrl).toBe(
+      new URL("./process-entry.js", captured.options[0]!.executorModuleUrl).href,
+    );
     expect(dependencies.daemonClient).toBeDefined();
   },
 );

@@ -28,7 +28,13 @@ interface TestDaemonProcessCoordinatorPolicyOptions {
 
 export type TestDaemonProcessCoordinatorOptions = Omit<
   DaemonProcessCoordinatorOptions,
-  "clock" | "coordinates" | "productVersion" | "server" | "workspaceExists" | "policy"
+  | "clock"
+  | "coordinates"
+  | "productVersion"
+  | "server"
+  | "workspaceExists"
+  | "policy"
+  | "workerEntryUrl"
 > &
   TestDaemonProcessCoordinatorPolicyOptions & {
     readonly instanceId: string;
@@ -41,6 +47,8 @@ export type TestDaemonProcessCoordinatorOptions = Omit<
   };
 
 export class TestDaemonProcessCoordinator extends RuntimeDaemonProcessCoordinator {
+  private static readonly UNUSED_WORKER_ENTRY_URL = new URL("file:///unused/worker-entry.js");
+
   constructor(options: TestDaemonProcessCoordinatorOptions) {
     const base = options.policy ?? DaemonPolicy.currentSystem();
     const resourceRecord = options.resourcePolicy?.record;
@@ -128,6 +136,7 @@ export class TestDaemonProcessCoordinator extends RuntimeDaemonProcessCoordinato
           monotonicNowMs: () => performance.now(),
         }),
       policy,
+      workerEntryUrl: TestDaemonProcessCoordinator.UNUSED_WORKER_ENTRY_URL,
     });
   }
 }

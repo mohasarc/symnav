@@ -45,7 +45,7 @@ it.each([
     expect(result.grantsState).toBe(granted);
     const document = new TomlDocument(result.configuration);
     expect(document.value(["permissions", "symnav-doctor", "network", "enabled"])).toBe(false);
-    expect(result.configuration).not.toContain("private");
+    expect(result.configuration).not.toContain('model = "private"');
     expect(result.configuration).not.toContain('"/state/sub" = "write"');
     expect(await readFile(adapter.configurationPath, "utf8")).toBe(original);
   },

@@ -211,7 +211,7 @@ Status removes records of processes confirmed exited. A permission-denied livene
 
 ### `daemon stop`
 
-Graceful wait `5 s`, then forced termination. All cases exit 0.
+Graceful wait `5 s`, then forced termination. The three outcomes below exit 0. A `Cannot answer:` refusal, such as no Git workspace, exits 1. Any other stop failure prints `Cannot stop daemon: <reason>` and exits 2.
 
 ```console
 $ symnav daemon stop

@@ -28,7 +28,10 @@ export {
   InvalidOverviewExpansionRequestError,
   OverviewTargetNotFoundError,
 } from "./overview/errors.js";
-export type { ExpandOverviewArgs } from "./overview/overview-expander.js";
+export type {
+  ExpandOverviewArgs,
+  OverviewExpansionRequestInput,
+} from "./overview/overview-expander.js";
 export { OverviewExpander } from "./overview/overview-expander.js";
 export type {
   NavigationDiagnosticSeverity,

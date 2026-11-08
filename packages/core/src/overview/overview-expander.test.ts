@@ -5,7 +5,7 @@ import type {
   OverviewNode,
 } from "../intermediate-representation/overview-tree.js";
 import { OverviewTree } from "../intermediate-representation/overview-tree.js";
-import { OverviewExpander } from "./overview-expander.js";
+import { OverviewExpander, type OverviewExpansionRequestInput } from "./overview-expander.js";
 import {
   AmbiguousLineTargetError,
   AmbiguousOverviewError,
@@ -30,11 +30,11 @@ function expandRequest(
   }).expand();
 }
 
-function construct(request: OverviewExpansionRequest): OverviewExpander {
+function construct(request: OverviewExpansionRequestInput): OverviewExpander {
   return new OverviewExpander({ file: { file: "src/file.ts", entries: [] }, request });
 }
 
-function thrownValidationReason(request: OverviewExpansionRequest): string {
+function thrownValidationReason(request: OverviewExpansionRequestInput): string {
   try {
     construct(request);
   } catch (err) {
@@ -67,6 +67,24 @@ describe("OverviewExpander request validation", () => {
     expect(thrownValidationReason({ depth: 0, at: undefined, line })).toBe(
       `invalid overview request: line must be a positive integer, got ${line}`,
     );
+  });
+
+  it.each([
+    [
+      { depth: "abc", at: undefined, line: undefined },
+      "depth must be a non-negative integer, got abc",
+    ],
+    [{ depth: 0, at: undefined, line: "abc" }, "line must be a positive integer, got abc"],
+  ])("echoes the raw option text of %o", (request, detail) => {
+    expect(thrownValidationReason(request)).toBe(`invalid overview request: ${detail}`);
+  });
+
+  it("expands integer option text as numbers", () => {
+    expect(construct({ depth: "2", at: undefined, line: undefined }).expand().request).toEqual({
+      depth: 2,
+      at: undefined,
+      line: undefined,
+    });
   });
 
   it("constructs at depth 0 without a line", () => {

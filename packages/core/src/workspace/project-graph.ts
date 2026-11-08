@@ -171,6 +171,10 @@ export abstract class ProjectGraph<
 
   protected abstract initialConfigurationPaths(root: string): readonly string[];
 
+  protected nestedConfigurationPaths(_snapshot: WorkspaceSnapshot): readonly string[] {
+    return [];
+  }
+
   protected abstract parseConfiguration(request: {
     readonly path: string;
     readonly content: string;
@@ -191,8 +195,32 @@ export abstract class ProjectGraph<
     snapshot: WorkspaceSnapshot,
     inputCollector: ProjectInputCollector,
   ): Promise<readonly DiscoveredProjectConfiguration<ConfigurationUnit>[]> {
-    const pending = [...this.initialConfigurationPaths(snapshot.root)];
     const seen = new Set<string>();
+    const configurations: DiscoveredProjectConfiguration<ConfigurationUnit>[] = [];
+    const seeds = [
+      this.initialConfigurationPaths(snapshot.root),
+      [...this.nestedConfigurationPaths(snapshot)].sort(),
+    ];
+    for (const seed of seeds) {
+      const discovered = await this.discoverReachableConfigurations({
+        seed,
+        seen,
+        snapshot,
+        inputCollector,
+      });
+      configurations.push(...discovered);
+    }
+    return configurations;
+  }
+
+  private async discoverReachableConfigurations(request: {
+    readonly seed: readonly string[];
+    readonly seen: Set<string>;
+    readonly snapshot: WorkspaceSnapshot;
+    readonly inputCollector: ProjectInputCollector;
+  }): Promise<readonly DiscoveredProjectConfiguration<ConfigurationUnit>[]> {
+    const { seen, snapshot, inputCollector } = request;
+    const pending = [...request.seed];
     const configurations: DiscoveredProjectConfiguration<ConfigurationUnit>[] = [];
     while (pending.length > 0) {
       const path = pending.shift() as string;

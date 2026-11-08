@@ -2,6 +2,14 @@ name: Release
 on:
   push:
     branches: [main]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing release tag to publish, like v1.0.0
+        required: true
+        type: string
+permissions:
+  contents: read
 jobs:
   release-please:
     runs-on: ubuntu-latest
@@ -11,9 +19,101 @@ jobs:
     outputs:
       release_created: ${{ steps.release.outputs.release_created }}
       tag_name: ${{ steps.release.outputs.tag_name }}
+      release_tag: ${{ inputs.tag || steps.release.outputs.tag_name }}
     steps:
       - uses: googleapis/release-please-action@v4
+        if: github.event_name == 'push'
         id: release
         with:
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
+  verify:
+    needs: release-please
+    if: needs.release-please.outputs.release_created == 'true' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.release-please.outputs.release_tag }}
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+      - run: pnpm test
+      - run: pnpm --filter symnav test:e2e:cold
+      - run: pnpm --filter symnav test:e2e:warm
+      - run: pnpm lint
+      - run: pnpm typecheck
+  pack:
+    needs: [release-please, verify]
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.release-please.outputs.release_tag }}
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+      - run: pnpm --filter symnav pack --pack-destination "$RUNNER_TEMP/symnav-tarball"
+      - id: version
+        run: echo "version=${RELEASE_TAG#v}" >> "$GITHUB_OUTPUT"
+        env:
+          RELEASE_TAG: ${{ needs.release-please.outputs.release_tag }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: symnav-release-tarball
+          path: ${{ runner.temp }}/symnav-tarball/*.tgz
+          if-no-files-found: error
+  install-smoke:
+    needs: [release-please, pack]
+    uses: ./.github/workflows/install-smoke.yml
+    with:
+      tarball-artifact: symnav-release-tarball
+      expected-version: ${{ needs.pack.outputs.version }}
+      ref: ${{ needs.release-please.outputs.release_tag }}
+  publish-npm:
+    needs: [release-please, pack, install-smoke]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.release-please.outputs.release_tag }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          registry-url: https://registry.npmjs.org
+      - run: npm install -g npm@^11.5.1
+      - uses: actions/download-artifact@v4
+        with:
+          name: symnav-release-tarball
+          path: ${{ runner.temp }}/symnav-tarball
+      - run: npm publish "$SYMNAV_TARBALL" --provenance --access public
+        env:
+          SYMNAV_TARBALL: ${{ runner.temp }}/symnav-tarball/symnav-${{ needs.pack.outputs.version }}.tgz
+  upload-release-asset:
+    needs: [release-please, pack, publish-npm]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: symnav-release-tarball
+          path: ${{ runner.temp }}/symnav-tarball
+      - run: gh release upload "$RELEASE_TAG" "$SYMNAV_TARBALL" --clobber --repo "$GITHUB_REPOSITORY"
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ needs.release-please.outputs.release_tag }}
+          SYMNAV_TARBALL: ${{ runner.temp }}/symnav-tarball/symnav-${{ needs.pack.outputs.version }}.tgz

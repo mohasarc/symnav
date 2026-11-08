@@ -32,7 +32,7 @@
 - `pnpm build` — `tsc --build`, then esbuild bundles the CLI into `apps/cli/dist` with `@symnav/*` inlined. CLI tsc output lands in `apps/cli/build`.
 - `pnpm --filter symnav dev -- <args>` — run the CLI from source via `tsx` (no build step).
 
-Don't bump versions by hand. release-please owns `version` in `package.json`, `apps/cli/package.json` and `.release-please-manifest.json`, and a meta-test fails if they drift.
+Don't bump versions by hand. release-please owns `version` in `package.json`, `apps/cli/package.json` and `.release-please-manifest.json`, and a meta-test fails if they drift. Don't `npm publish` by hand either. Merging the release PR makes `release.yml` verify, pack, smoke, publish over OIDC, and attach the tarball to the GitHub Release. To retry a failed publish, dispatch `release.yml` with the tag.
 
 ## Pre-PR verification
 

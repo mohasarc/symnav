@@ -18,6 +18,7 @@ import type { DaemonRecord, DaemonStartResult } from "../transport/protocol.js";
 import { DAEMON_PROTOCOL_VERSION, DAEMON_RECORD_SCHEMA_VERSION } from "../transport/protocol.js";
 import type { DaemonRegistry, StartupOwner } from "./registry.js";
 import { DaemonRecordObserver } from "./record-observer.js";
+import { DaemonTransportError } from "../transport/transport-error.js";
 import type { DaemonWorkspaceIdentity } from "./workspace-identity.js";
 import type {
   DaemonExecutionRequester,
@@ -652,13 +653,25 @@ export class DaemonStartupCoordinator {
         `Daemon process ${record.pid} is live but unresponsive; ownership was retained`,
       );
     }
-    await this.transport.request(record.endpoint, {
-      kind: "terminate",
-      instanceId: record.instanceId,
-      processToken: record.processToken,
-    });
+    await this.requestTermination(record);
     await this.waitForProcessExitAndEndpointRelease(record);
     this.registry.removeIfProcess(identity, record.instanceId, record.processToken);
+  }
+
+  private async requestTermination(record: DaemonRecord): Promise<void> {
+    try {
+      await this.transport.request(record.endpoint, {
+        kind: "terminate",
+        instanceId: record.instanceId,
+        processToken: record.processToken,
+      });
+    } catch (error) {
+      const replyTimedOutAfterDelivery =
+        error instanceof DaemonTransportError &&
+        error.code === "timeout" &&
+        error.delivery === "submitted-unconfirmed";
+      if (!replyTimedOutAfterDelivery) throw error;
+    }
   }
 
   private observeRecord(

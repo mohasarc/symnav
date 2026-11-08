@@ -52,6 +52,11 @@ export interface DaemonBenchmarkHarnessOptions {
   readonly stateDirectory?: string;
 }
 
+export interface DaemonBenchmarkColdSample {
+  readonly command: DaemonCommandName;
+  readonly durationMs: number;
+}
+
 export interface DaemonBenchmarkArtifact {
   readonly schemaVersion: 1;
   readonly profileVersion: string;
@@ -67,6 +72,7 @@ export interface DaemonBenchmarkArtifact {
   readonly startupPhaseStatistics: Readonly<Record<string, DaemonBenchmarkDurationStatistics>>;
   readonly commandStatistics: Readonly<Record<string, DaemonBenchmarkStatistics>>;
   readonly commandPhaseStatistics: Readonly<Record<string, DaemonBenchmarkCommandPhaseStatistics>>;
+  readonly coldTimeToFirstResult: readonly DaemonBenchmarkColdSample[];
   readonly processRssPeakBytes: number;
   readonly workerHeapPeakBytes?: number;
   readonly spoolPeakBytes: number;
@@ -118,7 +124,10 @@ export class DaemonScaleBenchmarkHarness {
         throw new Error("Daemon benchmark startup record is missing");
 
       const fixedDiagnosticCursor = await this.waitForStartupDiagnostics(inspector, canonicalRoot);
-      const samples = await this.runFixedSuite(generated, stateDirectory);
+      const { samples, coldTimeToFirstResult } = await this.runFixedSuite(
+        generated,
+        stateDirectory,
+      );
       const fixedDiagnostics = await this.waitForFixedDiagnostics(
         inspector,
         canonicalRoot,
@@ -226,6 +235,7 @@ export class DaemonScaleBenchmarkHarness {
         ),
         commandStatistics: gate.commandStatistics,
         commandPhaseStatistics: DaemonBenchmarkPhaseStatistics.from(enrichedSamples),
+        coldTimeToFirstResult,
         processRssPeakBytes: diagnostics.processRssPeakBytes,
         ...(diagnostics.workerHeapPeakBytes === undefined
           ? {}
@@ -262,9 +272,11 @@ export class DaemonScaleBenchmarkHarness {
   private async runFixedSuite(
     generated: GeneratedDaemonWorkspace,
     stateDirectory: string,
-  ): Promise<BenchmarkSampleEvidence[]> {
+  ): Promise<FixedSuiteEvidence> {
     const samples: BenchmarkSampleEvidence[] = [];
+    const coldTimeToFirstResult: DaemonBenchmarkColdSample[] = [];
     for (const [command, benchmark] of Object.entries(generated.commands)) {
+      const coldStartedAt = performance.now();
       const cold = await this.runCommandAsync(
         generated.workspaceRoot,
         stateDirectory,
@@ -272,6 +284,13 @@ export class DaemonScaleBenchmarkHarness {
         false,
         false,
       );
+      const coldDurationMs = performance.now() - coldStartedAt;
+      if (!DaemonScaleBenchmarkHarness.routesToDaemon(benchmark.argv, false)) {
+        coldTimeToFirstResult.push({
+          command: command as keyof typeof generated.commands,
+          durationMs: coldDurationMs,
+        });
+      }
       for (let repetition = 0; repetition < DAEMON_BENCHMARK_WARM_REPETITIONS; repetition += 1) {
         const telemetryBefore = this.telemetryEvents(stateDirectory);
         const startedAt = performance.now();
@@ -305,7 +324,7 @@ export class DaemonScaleBenchmarkHarness {
         );
       }
     }
-    return samples;
+    return { samples, coldTimeToFirstResult };
   }
 
   private async waitForFixedDiagnostics(
@@ -610,7 +629,7 @@ export class DaemonScaleBenchmarkHarness {
         env: {
           ...process.env,
           SYMNAV_STATE_DIR: stateDirectory,
-          SYMNAV_DAEMON: daemon || argv[0] === "stats" ? "1" : "0",
+          SYMNAV_DAEMON: DaemonScaleBenchmarkHarness.routesToDaemon(argv, daemon) ? "1" : "0",
           SYMNAV_TELEMETRY: telemetry ? "1" : "0",
         },
       });
@@ -621,6 +640,10 @@ export class DaemonScaleBenchmarkHarness {
       child.once("error", reject);
       child.once("close", (status) => resolveResult({ status, stdout, stderr }));
     });
+  }
+
+  private static routesToDaemon(argv: readonly string[], daemon: boolean): boolean {
+    return daemon || argv[0] === "stats";
   }
 
   private static get cliPath(): string {
@@ -696,6 +719,11 @@ export interface BenchmarkSampleEvidence extends DaemonBenchmarkSample {
   readonly nonEmpty: boolean;
   readonly diagnosticMatched: boolean;
   readonly telemetryMatched: boolean;
+}
+
+interface FixedSuiteEvidence {
+  readonly samples: BenchmarkSampleEvidence[];
+  readonly coldTimeToFirstResult: readonly DaemonBenchmarkColdSample[];
 }
 
 interface LargeResponseEvidence {

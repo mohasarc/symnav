@@ -15,6 +15,10 @@ The 1x, 2x, and 3x runners require at least 8 GiB of effective memory. The provi
 requires at least 32 GiB. `SYMNAV_BENCHMARK_MIN_MEMORY_BYTES` can raise the requirement for a
 specific runner. An undersized runner fails before generation.
 
+The artifact's `coldTimeToFirstResult` holds one wall-clock duration per navigation command for a
+fresh process with `SYMNAV_DAEMON=0`. It is reported, not gated. `stats` is left out because its
+first run goes to the daemon.
+
 Local profiling is opt-in and emits only the versioned aggregate schema. Review the output before
 replacing the checked-in profile.
 

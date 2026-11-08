@@ -10,10 +10,11 @@ pnpm test
 
 Build before testing: e2e tests spawn the built `apps/cli/dist/cli.js`, not source.
 
-Run the CLI from source with `tsx`, no build step:
+Run the CLI from source with `tsx`, no build step. It runs in `apps/cli`, so paths are relative to that folder:
 
 ```sh
 pnpm --filter symnav dev --version
+pnpm --filter symnav dev overview src/program.ts
 ```
 
 ## Sandbox checks

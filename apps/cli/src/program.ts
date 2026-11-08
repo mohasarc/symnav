@@ -118,6 +118,7 @@ export function buildProgram(
     .version(readPackageVersion(), "-v, --version")
     .option("--cwd <dir>", "run as if symnav was started in <dir>")
     .option("--no-warnings", "suppress warning messages")
+    .helpCommand(false)
     .configureOutput({
       writeOut: (s) => {
         ctx.stdout.write(s);
@@ -129,10 +130,6 @@ export function buildProgram(
     })
     .exitOverride((err) => {
       ctx.exit(err.exitCode);
-    })
-    .action(() => {
-      program.outputHelp({ error: true });
-      ctx.exit(1);
     });
   const commandDependencies: ProgramDependencies = {
     ...deps,

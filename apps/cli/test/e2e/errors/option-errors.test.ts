@@ -8,6 +8,8 @@ describe("option parsing error paths", () => {
   it.each([
     ["option-no-command", []],
     ["option-unknown-command", ["bogus"]],
+    ["option-help-command", ["help"]],
+    ["option-help-command", ["help", "overview"]],
     ["option-unknown-global-option", ["--bogus"]],
     ["option-unknown-command-option", ["def", "helper", "--bogus"]],
     ["option-missing-argument", ["def"]],

@@ -610,7 +610,7 @@ export class DaemonScaleBenchmarkHarness {
         env: {
           ...process.env,
           SYMNAV_STATE_DIR: stateDirectory,
-          SYMNAV_DAEMON: daemon || argv[0] === "stats" ? "1" : "0",
+          SYMNAV_DAEMON: DaemonScaleBenchmarkHarness.routesToDaemon(argv, daemon) ? "1" : "0",
           SYMNAV_TELEMETRY: telemetry ? "1" : "0",
         },
       });
@@ -621,6 +621,10 @@ export class DaemonScaleBenchmarkHarness {
       child.once("error", reject);
       child.once("close", (status) => resolveResult({ status, stdout, stderr }));
     });
+  }
+
+  private static routesToDaemon(argv: readonly string[], daemon: boolean): boolean {
+    return daemon || argv[0] === "stats";
   }
 
   private static get cliPath(): string {

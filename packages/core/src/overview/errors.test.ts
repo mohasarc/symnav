@@ -79,6 +79,6 @@ describe("InvalidOverviewExpansionRequestError", () => {
   it("carries the request detail as its reason", () => {
     const err = new InvalidOverviewExpansionRequestError("depth must be a non-negative integer");
 
-    expect(err.reason).toBe("invalid overview request: depth must be a non-negative integer");
+    expect(err.reason).toBe("depth must be a non-negative integer");
   });
 });

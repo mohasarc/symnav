@@ -12,7 +12,7 @@ describe("InvalidPageRequestError", () => {
 
   it("renders a reason carrying the detail", () => {
     expect(new InvalidPageRequestError("page must be a positive integer").reason).toBe(
-      "invalid page request: page must be a positive integer",
+      "page must be a positive integer",
     );
   });
 });

@@ -19,11 +19,8 @@ describe("validatePageRequest", () => {
   });
 
   it.each([
-    [{ page: "abc", all: false }, "invalid page request: page must be a positive integer, got abc"],
-    [
-      { pageSize: "abc", all: false },
-      "invalid page request: page size must be a positive integer, got abc",
-    ],
+    [{ page: "abc", all: false }, "page must be a positive integer, got abc"],
+    [{ pageSize: "abc", all: false }, "page size must be a positive integer, got abc"],
   ])("echoes the raw option text of %o", (request, reason) => {
     expect(() => validatePageRequest(request)).toThrowError(
       expect.objectContaining({ reason }) as Error,

@@ -49,7 +49,7 @@ export class InvalidOverviewExpansionRequestError extends UserFacingError {
   }
 
   get reason(): string {
-    return `invalid overview request: ${this.detail}`;
+    return this.detail;
   }
 }
 

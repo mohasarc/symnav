@@ -59,22 +59,22 @@ function thrownCandidateHeaders(thunk: () => void): readonly string[] {
 describe("OverviewExpander request validation", () => {
   it.each([-1, 1.5, Number.NaN])("rejects depth %s at construction", (depth) => {
     expect(thrownValidationReason({ depth, at: undefined, line: undefined })).toBe(
-      `depth must be a non-negative integer, got ${depth}`,
+      `--depth must be a non-negative integer, got ${depth}`,
     );
   });
 
   it.each([0, -3, 2.5])("rejects line %s at construction", (line) => {
     expect(thrownValidationReason({ depth: 0, at: undefined, line })).toBe(
-      `line must be a positive integer, got ${line}`,
+      `--line must be a positive integer, got ${line}`,
     );
   });
 
   it.each([
     [
       { depth: "abc", at: undefined, line: undefined },
-      "depth must be a non-negative integer, got abc",
+      "--depth must be a non-negative integer, got abc",
     ],
-    [{ depth: 0, at: undefined, line: "abc" }, "line must be a positive integer, got abc"],
+    [{ depth: 0, at: undefined, line: "abc" }, "--line must be a positive integer, got abc"],
   ])("echoes the raw option text of %o", (request, detail) => {
     expect(thrownValidationReason(request)).toBe(detail);
   });

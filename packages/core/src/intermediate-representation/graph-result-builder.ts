@@ -54,7 +54,7 @@ export class GraphResultBuilder {
     const pageSize = this.pageRequest.pageSize ?? DEFAULT_PAGE_SIZE;
     if (this.args.direction === "both" && pageSize < 2 && !this.pageRequest.all) {
       throw new InvalidPageRequestError(
-        `page size must be at least 2 when graph direction is both, got ${pageSize}`,
+        `--page-size must be at least 2 without --incoming or --outgoing, got ${pageSize}`,
       );
     }
   }

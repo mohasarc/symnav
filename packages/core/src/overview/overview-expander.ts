@@ -44,13 +44,13 @@ export class OverviewExpander {
     const depth = Number(request.depth);
     if (!Number.isInteger(depth) || depth < 0) {
       throw new InvalidOverviewExpansionRequestError(
-        `depth must be a non-negative integer, got ${request.depth}`,
+        `--depth must be a non-negative integer, got ${request.depth}`,
       );
     }
     const line = request.line === undefined ? undefined : Number(request.line);
     if (line !== undefined && !isPositiveInteger(line)) {
       throw new InvalidOverviewExpansionRequestError(
-        `line must be a positive integer, got ${request.line}`,
+        `--line must be a positive integer, got ${request.line}`,
       );
     }
     return { depth, at: request.at, line };

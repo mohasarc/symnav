@@ -162,6 +162,14 @@ Tags go in brackets after the text. Signatures are collapsed headers: no JSDoc a
 
 `refs` and `graph` take `--page <n>`, `--page-size <n>` (default 100), and `--all`. For the same workspace state and query, every page is identical across runs.
 
+Integer options (`--page`, `--page-size`, `--depth`, `--line`) name the flag and echo what you typed:
+
+```text
+Cannot answer: --page must be a positive integer, got abc.
+Cannot answer: --all cannot be combined with --page.
+Cannot answer: page 99 is out of range (1-3).
+```
+
 ## Extraction warnings
 
 Known irrelevant syntax (e.g. `export as namespace x;`) is skipped silently. Syntax symnav doesn't recognize is skipped with one warning per kind and file, and the command still returns partial results. `--json` stdout stays parseable; warnings go to stderr.

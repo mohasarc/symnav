@@ -130,7 +130,7 @@ describe("request validation before backend preparation", () => {
   it("rejects invalid graph depth before reading workspace sources", async () => {
     const result = await runInvalidRequest(graphCommand, graphArgs({ depth: "0" }));
 
-    expect(result.stderr).toBe("Cannot answer: depth must be a positive integer, got 0.\n");
+    expect(result.stderr).toBe("Cannot answer: --depth must be a positive integer, got 0.\n");
     expect(result.exitCodes).toEqual([1]);
     expect(result.reads).toEqual([]);
   });
@@ -150,7 +150,7 @@ describe("request validation before backend preparation", () => {
     const args: DefArgs = { target: "charge", line: "abc", regex: false };
     const result = await runInvalidRequest(defCommand, args);
 
-    expect(result.stderr).toBe("Cannot answer: line must be a positive integer, got abc.\n");
+    expect(result.stderr).toBe("Cannot answer: --line must be a positive integer, got abc.\n");
     expect(result.exitCodes).toEqual([1]);
     expect(result.reads).toEqual([]);
   });

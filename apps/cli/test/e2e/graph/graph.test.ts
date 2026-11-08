@@ -185,7 +185,7 @@ describe("symnav graph e2e (errors)", () => {
     expect(r.status).toBe(1);
     expect(r.stdout).toBe("");
     expect(r.stderr).toContain("Cannot answer:");
-    expect(r.stderr).toContain(`depth must be a positive integer, got ${depth}`);
+    expect(r.stderr).toContain(`--depth must be a positive integer, got ${depth}`);
   });
 
   it("rejects conflicting direction flags", () => {

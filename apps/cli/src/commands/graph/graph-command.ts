@@ -125,7 +125,7 @@ function depthFrom(depth: GraphArgs["depth"]): number {
   }
   const numericDepth = typeof depth === "number" ? depth : Number(depth);
   if (!isPositiveInteger(numericDepth)) {
-    throw new InvalidGraphRequestError(`depth must be a positive integer, got ${depth}`);
+    throw new InvalidGraphRequestError(`--depth must be a positive integer, got ${depth}`);
   }
   return numericDepth;
 }

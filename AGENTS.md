@@ -30,7 +30,7 @@
 - `pnpm lint` — run ESLint (boundaries + Prettier).
 - `pnpm typecheck` — TypeScript build + per-package test-config typecheck.
 - `pnpm build` — `tsc --build`, then esbuild bundles the CLI into `apps/cli/dist` with `@symnav/*` inlined. CLI tsc output lands in `apps/cli/build`.
-- `pnpm --filter symnav dev -- <args>` — run the CLI from source via `tsx` (no build step).
+- `pnpm --filter symnav dev <args>` — run the CLI from source via `tsx` (no build step).
 
 Don't bump versions by hand. release-please owns `version` in `package.json`, `apps/cli/package.json` and `.release-please-manifest.json`, and a meta-test fails if they drift. Don't `npm publish` by hand either. Merging the release PR makes `release.yml` verify, pack, smoke, publish over OIDC, and attach the tarball to the GitHub Release. To retry a failed publish, dispatch `release.yml` with the tag.
 
@@ -55,7 +55,7 @@ The `--frozen-lockfile` install is load-bearing: it's the only step that detects
 - Fixture projects live under `packages/testing/fixtures/`. Resolve them via `fixturePath("name")` from `@symnav/testing` — never hardcode paths.
 - In-memory or mock helpers live beside the tests that use them — not in `@symnav/testing`, which is reserved for cross-cutting test utils with no upstream package deps.
 - A fixture's `.git` directory is checked in as `dot-git/` — the host repo would otherwise treat a real nested `.git` as a submodule. The e2e setup renames `dot-git/` to `.git/` via `ensureFixtureGitMarker` before the suite runs. `packages/testing/fixtures/overview-cases/` is the canonical example.
-- Try `overview` against the fixture with `pnpm --filter symnav dev -- overview <file>` from inside `packages/testing/fixtures/overview-cases/`, or against any real file with `pnpm --filter symnav dev -- overview path/to/file.ts`.
+- Try `overview` against the fixture with `pnpm --filter symnav dev overview <file>` from inside `packages/testing/fixtures/overview-cases/`, or against any real file with `pnpm --filter symnav dev overview path/to/file.ts`.
 
 ## Dependency direction
 

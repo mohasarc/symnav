@@ -17,6 +17,7 @@ import type {
 import { FileNotFoundError, WorkspaceSourceCache } from "@symnav/core";
 
 import { SymbolResolver } from "../resolve/resolve-symbols.js";
+import { JavaScriptDeclarationTwin } from "./javascript-declaration-twin.js";
 import { TypeScriptProjectGraph } from "./typescript-project-graph.js";
 import type { TypeScriptSemanticQueryObserver } from "./typescript-semantic-query-observer.js";
 import { TypeScriptSemanticQueryService } from "./typescript-semantic-query-service.js";
@@ -27,7 +28,17 @@ import {
 } from "./typescript-workspace-state.js";
 
 export class TypeScriptBackend implements LanguageBackend {
-  static readonly extensions: readonly string[] = [".d.ts", ".ts", ".tsx", ".mts", ".cts"];
+  static readonly extensions: readonly string[] = [
+    ".d.ts",
+    ".ts",
+    ".tsx",
+    ".mts",
+    ".cts",
+    ".js",
+    ".jsx",
+    ".mjs",
+    ".cjs",
+  ];
 
   static accepts(filePath: string): boolean {
     const name = basename(filePath);
@@ -108,6 +119,25 @@ export class TypeScriptBackend implements LanguageBackend {
     return await this.state.declarations(files);
   }
 
+  preferredTargetCandidates(
+    candidates: readonly SymbolOverviewNode[],
+  ): readonly SymbolOverviewNode[] {
+    const declarationTwinKeys = new Set(
+      candidates.flatMap((candidate) => {
+        const declarationTwinFile = JavaScriptDeclarationTwin.fileOf(candidate.identity.file);
+        return declarationTwinFile
+          ? [TypeScriptBackend.symbolPathKey(declarationTwinFile, candidate.identity)]
+          : [];
+      }),
+    );
+    return candidates.filter(
+      (candidate) =>
+        !declarationTwinKeys.has(
+          TypeScriptBackend.symbolPathKey(candidate.identity.file, candidate.identity),
+        ),
+    );
+  }
+
   async findDefinitions(
     files: readonly ResolvedPath[],
     identity: SymbolIdentity,
@@ -146,5 +176,9 @@ export class TypeScriptBackend implements LanguageBackend {
   ): Promise<readonly CallEdge[]> {
     await this.state.ensureFiles(files);
     return this.semanticQueries.findCallers(identity);
+  }
+
+  private static symbolPathKey(file: string, identity: SymbolIdentity): string {
+    return JSON.stringify([file, identity.segments.map((segment) => segment.name)]);
   }
 }

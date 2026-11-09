@@ -8,6 +8,8 @@ import {
   type ResolvedPath,
   type FileMetadata,
   type SymbolIdentity,
+  type SymbolOverviewNode,
+  type SymbolPathSegment,
   type WorkspaceFile,
   OverviewTree,
 } from "@symnav/core";
@@ -65,14 +67,17 @@ class CountingFileSystem implements FileSystem {
 }
 
 describe("TypeScriptBackend.accepts", () => {
-  it("returns true for .ts, .tsx, .mts, .cts, .d.ts; false for .js, .json, .md", () => {
+  it("returns true for TypeScript and JavaScript sources; false for .json, .md", () => {
     const { backend } = backendOver({});
     expect(backend.accepts("src/a.ts")).toBe(true);
     expect(backend.accepts("src/a.tsx")).toBe(true);
     expect(backend.accepts("src/a.mts")).toBe(true);
     expect(backend.accepts("src/a.cts")).toBe(true);
     expect(backend.accepts("src/a.d.ts")).toBe(true);
-    expect(backend.accepts("src/a.js")).toBe(false);
+    expect(backend.accepts("src/a.js")).toBe(true);
+    expect(backend.accepts("src/a.jsx")).toBe(true);
+    expect(backend.accepts("src/a.mjs")).toBe(true);
+    expect(backend.accepts("src/a.cjs")).toBe(true);
     expect(backend.accepts("src/a.json")).toBe(false);
     expect(backend.accepts("README.md")).toBe(false);
   });
@@ -82,12 +87,72 @@ describe("TypeScriptBackend.accepts", () => {
     expect(backend.accepts("src/a.TS")).toBe(false);
     expect(backend.accepts("src/a.TSX")).toBe(false);
     expect(backend.accepts("src/a.D.TS")).toBe(false);
+    expect(backend.accepts("src/a.JS")).toBe(false);
   });
 
   it("exposes extension knowledge statically (no workspace required)", () => {
     expect(TypeScriptBackend.accepts("src/a.ts")).toBe(true);
-    expect(TypeScriptBackend.accepts("src/a.js")).toBe(false);
-    expect(TypeScriptBackend.extensions).toEqual([".d.ts", ".ts", ".tsx", ".mts", ".cts"]);
+    expect(TypeScriptBackend.accepts("src/a.py")).toBe(false);
+    expect(TypeScriptBackend.extensions).toEqual([
+      ".d.ts",
+      ".ts",
+      ".tsx",
+      ".mts",
+      ".cts",
+      ".js",
+      ".jsx",
+      ".mjs",
+      ".cjs",
+    ]);
+  });
+});
+
+describe("TypeScriptBackend.preferredTargetCandidates", () => {
+  function candidate(file: string, ...segments: SymbolPathSegment[]): SymbolOverviewNode {
+    return {
+      type: "symbol",
+      identity: { file, segments },
+      kind: { role: "callable", nativeLabel: "function-implementation" },
+      children: [],
+      range: { startLine: 1, endLine: 1 },
+      header: { startLine: 1, lines: ["function Tabs() {}"] },
+    };
+  }
+
+  function preferredIds(candidates: readonly SymbolOverviewNode[]): readonly string[] {
+    const { backend } = backendOver({});
+    return backend
+      .preferredTargetCandidates(candidates)
+      .map((preferred) => formatSymbolIdentity(preferred.identity));
+  }
+
+  it("drops a .d.ts candidate whose .js twin declares the same symbol", () => {
+    expect(
+      preferredIds([
+        candidate("src/Tabs.d.ts", { name: "Tabs" }),
+        candidate("src/Tabs.js", { name: "Tabs" }),
+      ]),
+    ).toEqual(["src/Tabs.js::Tabs"]);
+  });
+
+  it("drops .d.mts overloads whose .mjs twin declares the same symbol", () => {
+    expect(
+      preferredIds([
+        candidate("src/lib.d.mts", { name: "shout", disambiguator: 1 }),
+        candidate("src/lib.d.mts", { name: "shout", disambiguator: 2 }),
+        candidate("src/lib.mjs", { name: "shout" }),
+      ]),
+    ).toEqual(["src/lib.mjs::shout"]);
+  });
+
+  it("keeps a .d.ts candidate that is no twin of a .js candidate", () => {
+    expect(
+      preferredIds([
+        candidate("src/types.d.ts", { name: "Tabs" }),
+        candidate("src/Tabs.js", { name: "Tabs" }),
+        candidate("src/Tabs.d.ts", { name: "Tabs" }, { name: "props" }),
+      ]),
+    ).toEqual(["src/types.d.ts::Tabs", "src/Tabs.js::Tabs", "src/Tabs.d.ts::Tabs::props"]);
   });
 });
 

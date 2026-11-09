@@ -223,7 +223,7 @@ export class TypeScriptProjectGraph
           this.readConfiguredDirectory(snapshot, root, extensions, excludes, includes, depth),
       },
       paths.dirname(normalizedPath),
-      undefined,
+      { allowJs: true },
       normalizedPath,
     );
     const configuration: ParsedTypeScriptConfiguration = {
@@ -471,6 +471,7 @@ export class TypeScriptProjectGraph
     return {
       baseUrl: root,
       paths: TypeScriptProjectGraph.workspacePackagePaths(workspacePackages),
+      allowJs: true,
       noEmit: true,
     };
   }

@@ -187,6 +187,23 @@ describe("SymbolTargetResolver.resolve across backends", () => {
       (error as AmbiguousSymbolTargetError).candidates.map((candidate) => candidate.canonicalId),
     ).toEqual(["src/alpha.ts::walk", "src/gamma.ts::walk"]);
   });
+
+  it("resolves to the one candidate its backend prefers among equally strong candidates", async () => {
+    const backend = new FakeLanguageBackend({
+      accept: (filePath) => filePath.endsWith(".ts"),
+      declarations: [
+        ResolverScenario.candidateFor("src/alpha.ts", [{ name: "walk" }]).symbol,
+        ResolverScenario.candidateFor("src/gamma.ts", [{ name: "walk" }]).symbol,
+      ],
+      preferredTargetCandidates: (candidates) =>
+        candidates.filter((candidate) => candidate.identity.file === "src/gamma.ts"),
+    });
+
+    const resolved = await ResolverScenario.resolveWith(new BackendRouter([backend]), "walk");
+
+    expect(resolved.identity).toEqual({ file: "src/gamma.ts", segments: [{ name: "walk" }] });
+  });
+
   it("narrows by line before reporting ambiguity", async () => {
     const backend = ResolverScenario.typescriptFake([
       ResolverScenario.candidateFor("src/alpha.ts", [{ name: "charge" }], {

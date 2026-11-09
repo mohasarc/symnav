@@ -72,7 +72,8 @@ export class SymbolTargetResolver {
     if (containingLine !== undefined && lineCandidates.length === 0) {
       throw new SymbolTargetLineMismatchError(request.raw, containingLine);
     }
-    const sortedOwnedCandidates = [...lineCandidates].sort((left, right) =>
+    const preferredCandidates = SymbolTargetResolver.preferredByBackend(lineCandidates);
+    const sortedOwnedCandidates = [...preferredCandidates].sort((left, right) =>
       left.candidate.canonicalId.localeCompare(right.candidate.canonicalId),
     );
     const winner = sortedOwnedCandidates[0]!;
@@ -193,6 +194,20 @@ export class SymbolTargetResolver {
       }
     }
     return ownedCandidates;
+  }
+
+  private static preferredByBackend(
+    ownedCandidates: readonly OwnedCandidate[],
+  ): readonly OwnedCandidate[] {
+    const backends = new Set(ownedCandidates.map((owned) => owned.backend));
+    return [...backends].flatMap((backend) => {
+      const backendCandidates = ownedCandidates.filter((owned) => owned.backend === backend);
+      if (!backend.preferredTargetCandidates) return backendCandidates;
+      const preferredSymbols = new Set(
+        backend.preferredTargetCandidates(backendCandidates.map((owned) => owned.candidate.symbol)),
+      );
+      return backendCandidates.filter((owned) => preferredSymbols.has(owned.candidate.symbol));
+    });
   }
 
   private static matchesLine(

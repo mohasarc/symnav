@@ -1,0 +1,26 @@
+Overview: src/Tabs/Tabs.js
+├── 5-7: styles
+│   5 export const styles = { … }
+│
+├── 9-30: Tabs
+│   9 class Tabs extends React.Component
+│   ├── 10: Tabs::state
+│   │   10 state = { indicatorStyle: {} }
+│   ├── 12-14: Tabs::componentDidMount
+│   │   12 componentDidMount()
+│   │   └── 13: this.updateIndicatorState();
+│   ├── 16-20: Tabs::componentDidUpdate
+│   │   16 componentDidUpdate(prevProps)
+│   │   └── 17-19: if (prevProps.value !== this.props.value) {
+│   ├── 22-24: Tabs::updateIndicatorState
+│   │   22 updateIndicatorState()
+│   │   └── 23: this.setState({ indicatorStyle: { left: 0 } });
+│   └── 26-29: Tabs::render
+│       26 render()
+│       └── 27: Tabs::render::{ classes, children }
+│           27 const { classes, children } = this.props
+│
+├── 37: export { Tabs };
+│
+└── 38: default
+    38 export default withStyles(styles)(Tabs)

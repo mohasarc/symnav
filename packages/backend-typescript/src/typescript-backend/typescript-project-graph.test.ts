@@ -31,6 +31,7 @@ import { TypeScriptWorkspaceState } from "./typescript-workspace-state.js";
 class ConfiguredProjectFixture {
   readonly root: string;
   readonly fileSystem = new NodeFileSystem();
+  private readonly ignoredDirectories = new Set<string>();
 
   constructor() {
     this.root = mkdtempSync(join(tmpdir(), "symnav-configured-projects-"));
@@ -47,6 +48,10 @@ class ConfiguredProjectFixture {
     const absolute = join(this.root, relativePath);
     mkdirSync(join(absolute, ".."), { recursive: true });
     writeFileSync(absolute, content);
+  }
+
+  ignore(relativeDirectory: string): void {
+    this.ignoredDirectories.add(join(this.root, relativeDirectory));
   }
 
   remove(relativePath: string): void {
@@ -83,7 +88,8 @@ class ConfiguredProjectFixture {
   private workspaceFiles(directory: string): string[] {
     return readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
       const absolute = join(directory, entry.name);
-      if (entry.isDirectory()) return entry.name === ".git" ? [] : this.workspaceFiles(absolute);
+      const skipped = entry.name === ".git" || this.ignoredDirectories.has(absolute);
+      if (entry.isDirectory()) return skipped ? [] : this.workspaceFiles(absolute);
       return [absolute];
     });
   }
@@ -806,6 +812,123 @@ describe("TypeScriptProjectGraph", () => {
     expect(options?.paths?.["@local/*"]).toBeUndefined();
   });
 
+  it("loads JavaScript sources into the inferred project", async () => {
+    const projectFixture = fixture();
+    projectFixture.write("scratch/lib.mjs", 'export function shout() { return "hey"; }\n');
+    projectFixture.write(
+      "scratch/use.js",
+      'import { shout } from "./lib.mjs";\nexport function useShout() { return shout(); }\n',
+    );
+    const snapshot = await projectFixture.snapshot();
+    const backend = new TypeScriptBackend(projectFixture.fileSystem);
+    await backend.refresh({
+      snapshot,
+      workspaceSnapshot: await projectFixture.workspaceSnapshot(),
+      coverage: "workspace",
+    });
+
+    await expect(
+      calleeNames(backend, snapshot.files, symbolIdentity("scratch/use.js", "useShout")),
+    ).resolves.toEqual(["shout"]);
+  });
+
+  it("keeps untracked node_modules JavaScript out of semantic programs", async () => {
+    const projectFixture = fixture();
+    projectFixture.write(
+      "node_modules/untyped/package.json",
+      JSON.stringify({ name: "untyped", main: "index.js" }),
+    );
+    projectFixture.write("node_modules/untyped/index.js", "export function untyped() {}\n");
+    projectFixture.write(
+      "scratch/consumer.ts",
+      'import { untyped } from "untyped";\nexport const value = untyped();\n',
+    );
+    const graph = new TypeScriptProjectGraph(projectFixture.fileSystem);
+
+    projectFixture.ignore("node_modules");
+
+    await graph.refresh(await projectFixture.snapshot(), await projectFixture.workspaceSnapshot());
+    const loadedFiles = graph
+      .programFor("scratch/consumer.ts")
+      ?.getSourceFiles()
+      .map((sourceFile) => sourceFile.fileName);
+
+    expect(loadedFiles).toContain(
+      `${projectFixture.root.replaceAll("\\", "/")}/scratch/consumer.ts`,
+    );
+    expect(loadedFiles?.filter((fileName) => fileName.includes("/node_modules/untyped/"))).toEqual(
+      [],
+    );
+  });
+
+  it("owns and resolves JavaScript a configuration includes without allowJs", async () => {
+    const projectFixture = fixture();
+    projectFixture.write(
+      "legacy/tsconfig.json",
+      JSON.stringify({ compilerOptions: { strict: true }, include: ["src"] }),
+    );
+    projectFixture.write("legacy/src/legacy.js", "export function legacyTarget() {}\n");
+    projectFixture.write(
+      "legacy/src/use.ts",
+      'import { legacyTarget } from "./legacy.js";\nexport function useLegacy(): void { legacyTarget(); }\n',
+    );
+    const snapshot = await projectFixture.snapshot();
+    const backend = new TypeScriptBackend(projectFixture.fileSystem);
+    await backend.refresh({
+      snapshot,
+      workspaceSnapshot: await projectFixture.workspaceSnapshot(),
+      coverage: "workspace",
+    });
+    const graph = new TypeScriptProjectGraph(projectFixture.fileSystem);
+    await graph.refresh(snapshot, await projectFixture.workspaceSnapshot());
+
+    await expect(
+      calleeNames(backend, snapshot.files, symbolIdentity("legacy/src/use.ts", "useLegacy")),
+    ).resolves.toEqual(["legacyTarget"]);
+    expect(graph.programFor("legacy/src/legacy.js")?.getCompilerOptions().strict).toBe(true);
+  });
+
+  it("owns JavaScript of a configuration that sets allowJs false", async () => {
+    const projectFixture = fixture();
+    projectFixture.write(
+      "legacy/tsconfig.json",
+      JSON.stringify({ compilerOptions: { strict: true, allowJs: false }, include: ["src"] }),
+    );
+    projectFixture.write("legacy/src/legacy.js", "export function legacyTarget() {}\n");
+    const graph = new TypeScriptProjectGraph(projectFixture.fileSystem);
+
+    await graph.refresh(await projectFixture.snapshot(), await projectFixture.workspaceSnapshot());
+    const options = graph.programFor("legacy/src/legacy.js")?.getCompilerOptions();
+
+    expect(options?.allowJs).toBe(true);
+    expect(options?.strict).toBe(true);
+  });
+
+  it("finds importers of an inferred .d.ts twin in references to a .js symbol", async () => {
+    const projectFixture = fixture();
+    writeDeclarationTwinSources(projectFixture, "scratch");
+
+    await expect(
+      referencesOf(projectFixture, symbolIdentity("scratch/Tabs.js", "Tabs")),
+    ).resolves.toEqual([
+      ["scratch/App.ts", 1, "import"],
+      ["scratch/App.ts", 3, "usage"],
+    ]);
+  });
+
+  it("finds importers of a configured .d.ts twin in references to a .js symbol", async () => {
+    const projectFixture = fixture();
+    projectFixture.write("legacy/tsconfig.json", JSON.stringify({ include: ["src"] }));
+    writeDeclarationTwinSources(projectFixture, "legacy/src");
+
+    await expect(
+      referencesOf(projectFixture, symbolIdentity("legacy/src/Tabs.js", "Tabs")),
+    ).resolves.toEqual([
+      ["legacy/src/App.ts", 1, "import"],
+      ["legacy/src/App.ts", 3, "usage"],
+    ]);
+  });
+
   it("keeps implicit outDir contents outside configured membership", async () => {
     const projectFixture = fixture();
     const graph = new TypeScriptProjectGraph(projectFixture.fileSystem);
@@ -1064,6 +1187,33 @@ async function calleeNames(
 ): Promise<readonly string[]> {
   const callees = await backend.findCallees(files, identity);
   return callees.map((callee) => callee.symbol.identity.segments.at(-1)?.name ?? "");
+}
+
+function writeDeclarationTwinSources(
+  projectFixture: ConfiguredProjectFixture,
+  directory: string,
+): void {
+  projectFixture.write(`${directory}/Tabs.js`, "export function Tabs() {}\n");
+  projectFixture.write(`${directory}/Tabs.d.ts`, "export declare function Tabs(): void;\n");
+  projectFixture.write(
+    `${directory}/App.ts`,
+    'import { Tabs } from "./Tabs.js";\n\nexport const tabs = Tabs();\n',
+  );
+}
+
+async function referencesOf(
+  projectFixture: ConfiguredProjectFixture,
+  identity: SymbolIdentity,
+): Promise<readonly (string | number)[][]> {
+  const snapshot = await projectFixture.snapshot();
+  const backend = new TypeScriptBackend(projectFixture.fileSystem);
+  await backend.refresh({
+    snapshot,
+    workspaceSnapshot: await projectFixture.workspaceSnapshot(),
+    coverage: "workspace",
+  });
+  const references = await backend.findReferences(snapshot.files, identity);
+  return references.map((reference) => [reference.file, reference.line, reference.kind]);
 }
 
 function symbolIdentity(file: string, name: string): SymbolIdentity {

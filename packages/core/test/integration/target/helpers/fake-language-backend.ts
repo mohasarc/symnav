@@ -14,6 +14,9 @@ export interface FakeLanguageBackendOptions {
   accept?: (filePath: string) => boolean;
   entries?: (filePath: string) => OverviewFileEntries;
   declarations?: readonly SymbolOverviewNode[];
+  preferredTargetCandidates?: (
+    candidates: readonly SymbolOverviewNode[],
+  ) => readonly SymbolOverviewNode[];
 }
 
 export class FakeLanguageBackend implements LanguageBackend {
@@ -22,11 +25,16 @@ export class FakeLanguageBackend implements LanguageBackend {
   private readonly acceptFn: (filePath: string) => boolean;
   private readonly entriesFn: (filePath: string) => OverviewFileEntries;
   private readonly declarationSymbols: readonly SymbolOverviewNode[];
+  private readonly preferredTargetCandidatesFn: (
+    candidates: readonly SymbolOverviewNode[],
+  ) => readonly SymbolOverviewNode[];
 
   constructor(options: FakeLanguageBackendOptions = {}) {
     this.acceptFn = options.accept ?? (() => true);
     this.entriesFn = options.entries ?? ((filePath: string) => ({ file: filePath, entries: [] }));
     this.declarationSymbols = options.declarations ?? [];
+    this.preferredTargetCandidatesFn =
+      options.preferredTargetCandidates ?? ((candidates) => candidates);
   }
 
   accepts(filePath: string): boolean {
@@ -54,6 +62,12 @@ export class FakeLanguageBackend implements LanguageBackend {
     this.declarationCalls.push(files.map((file) => file.relative));
     const suppliedFiles = new Set(files.map((file) => file.relative));
     return this.declarationSymbols.filter((symbol) => suppliedFiles.has(symbol.identity.file));
+  }
+
+  preferredTargetCandidates(
+    candidates: readonly SymbolOverviewNode[],
+  ): readonly SymbolOverviewNode[] {
+    return this.preferredTargetCandidatesFn(candidates);
   }
 
   async findDefinitions(): Promise<readonly SymbolOverviewNode[]> {

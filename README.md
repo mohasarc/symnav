@@ -1,6 +1,6 @@
 # symnav
 
-Language-agnostic CLI for navigating codebases by symbol: definitions, references, and call paths. TypeScript supported today.
+Language-agnostic CLI for navigating codebases by symbol: definitions, references, and call paths. TypeScript and JavaScript supported today.
 
 ## Install
 

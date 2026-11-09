@@ -34,6 +34,14 @@ Cannot answer: foo.ts is outside the workspace rooted at /repo.
 Cannot answer: cannot read directory /repo/src/locked (EACCES).
 ```
 
+### Supported files
+
+TypeScript and JavaScript: `.ts`, `.tsx`, `.mts`, `.cts`, `.d.ts`, `.js`, `.jsx`, `.mjs`, `.cjs`. Every command refuses other files with `cannot read <ext> files`.
+
+- JS works with no `tsconfig.json` and under any tsconfig: symnav reads JS as if `allowJs` were on, even where a tsconfig sets `allowJs: false`.
+- An import of an untyped package doesn't pull its `node_modules` JS in.
+- CommonJS exports (`module.exports`, `exports.x =`) aren't symbols, in `.cjs` or `.js`. Functions and classes declared in those files are, but `refs` on one exported through `module.exports` or `exports.x` misses every use reached through `require`.
+
 ### Ambiguity stops
 
 When input matches more than one thing, symnav lists the candidates and stops. It never guesses, ranks, or picks a first result. There's no first-result override.

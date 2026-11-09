@@ -1,7 +1,7 @@
 {
   "name": "symnav",
   "version": "1.0.1",
-  "description": "Language-agnostic CLI for navigating codebases by symbol: definitions, references, and call paths. TypeScript supported today.",
+  "description": "Language-agnostic CLI for navigating codebases by symbol: definitions, references, and call paths. TypeScript and JavaScript supported today.",
   "keywords": [
     "cli",
     "code-navigation",

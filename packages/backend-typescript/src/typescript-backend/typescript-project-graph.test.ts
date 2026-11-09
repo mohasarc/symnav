@@ -13,7 +13,7 @@ import {
 import { tmpdir } from "node:os";
 import { join, relative } from "node:path";
 
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { fixturePath } from "@symnav/testing";
 import {
   InMemoryFileSystem,
@@ -675,6 +675,42 @@ describe("TypeScriptProjectGraph", () => {
     expect(
       graph.programFor("node_modules/vendored/index.ts")?.getCompilerOptions().strict,
     ).toBeUndefined();
+  });
+
+  it("ignores nested configurations missing from the workspace snapshot", async () => {
+    const projectFixture = fixture();
+    const graph = new TypeScriptProjectGraph(projectFixture.fileSystem);
+    projectFixture.remove("tsconfig.json");
+    projectFixture.write(
+      "scratch/tsconfig.json",
+      JSON.stringify({ compilerOptions: { strict: true } }),
+    );
+    const workspaceSnapshot = await projectFixture.workspaceSnapshot();
+    const ignoredSnapshot: WorkspaceSnapshot = {
+      root: workspaceSnapshot.root,
+      files: workspaceSnapshot.files.filter((file) => file.relative !== "scratch/tsconfig.json"),
+    };
+
+    const refresh = await graph.refresh(await projectFixture.snapshot(), ignoredSnapshot);
+
+    expect(refresh.configuredProjectCount).toBe(2);
+    expect(graph.programFor("scratch/outside.ts")?.getCompilerOptions().strict).toBeUndefined();
+  });
+
+  it("probes no nested configuration path missing from the workspace snapshot", async () => {
+    const projectFixture = fixture();
+    const graph = new TypeScriptProjectGraph(projectFixture.fileSystem);
+    const exists = vi.spyOn(projectFixture.fileSystem, "existsSync");
+
+    await graph.refresh(await projectFixture.snapshot(), await projectFixture.workspaceSnapshot());
+
+    const probedPaths = exists.mock.calls.map(([path]) => path.replaceAll("\\", "/"));
+    expect(probedPaths).not.toContain(
+      `${projectFixture.root.replaceAll("\\", "/")}/packages/domain/src/tsconfig.json`,
+    );
+    expect(probedPaths).not.toContain(
+      `${projectFixture.root.replaceAll("\\", "/")}/scratch/tsconfig.json`,
+    );
   });
 
   it("invalidates the graph when a nested configuration appears or disappears", async () => {

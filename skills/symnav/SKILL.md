@@ -48,7 +48,7 @@ Use these only if the user declines setup, says it can't be done, or no human ca
 | --- | --- | --- |
 | File map | `overview <file>` | symbol/fold tree for one supported file (today TypeScript and JavaScript: `.ts`/`.tsx`/`.mts`/`.cts`/`.js`/`.jsx`/`.mjs`/`.cjs`). `--depth` nests; `--at '<text>'` selects a symbol, test block, or region — an exact symbol path or header wins, then a symbol's own name, then substring matches |
 | Find a symbol | `resolve <query>` | every symbol/file matching the name; an empty exact result names `--fuzzy`/`--regex` as the retry |
-| Declaration | `def <target>` | file, line range, signature |
+| Declaration | `def <target>` | file, line range, signature; `--source` prints the numbered source lines instead of reading the file |
 | Use sites | `refs <target>` | every reference, grouped by file, tagged by kind, paginated |
 | Local blast radius | `context <target>` | definition + direct callers + callees + reference summary + git history |
 | Call paths | `graph <target>` | multi-hop incoming/outgoing call paths |
@@ -88,6 +88,7 @@ Anchor with `$` — an unanchored regex matches anywhere in the id and goes ambi
 - `overview` — `--depth <n>`, `--at <text>`, `--line <n>`, `--all` (text is cut at 8000 chars by default; the footer says what was cut)
 - `resolve` — `--fuzzy` (subsequence), `--regex` (JS regex; not with `--fuzzy`)
 - `def`/`refs`/`context`/`graph` — `--regex` (JS regex target), `--line <n>`
+- `def` — `--source` (each definition's source with line numbers; text is cut at 12000 chars and the footer names what was cut), `--all` (with `--source`, no cut)
 - `refs` — `--page <n>`, `--page-size <n>`, `--all`, `--full-lines`
 - `graph` — `--incoming`, `--outgoing`, `--depth <n>`, `--page <n>`, `--page-size <n>`, `--all`
 - all — `--json`

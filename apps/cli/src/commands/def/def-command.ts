@@ -1,5 +1,5 @@
-import type { DefinitionResult } from "@symnav/core";
-import { SymbolTargetResolver } from "@symnav/core";
+import type { DefinitionResult, DefinitionSymbol, SymbolOverviewNode } from "@symnav/core";
+import { DefinitionSourceReader, SymbolTargetResolver } from "@symnav/core";
 import {
   SymbolTargetErrorRenderer,
   renderDefinitionJson,
@@ -14,6 +14,23 @@ export interface DefArgs {
   readonly target: string;
   readonly line: number | string | undefined;
   readonly regex: boolean;
+  readonly source: boolean;
+  readonly all: boolean;
+}
+
+class DefinitionSourceAttachment {
+  static async attach(
+    symbols: readonly SymbolOverviewNode[],
+    ctx: CommandContext<DefArgs>,
+  ): Promise<readonly DefinitionSymbol[]> {
+    const reader = new DefinitionSourceReader(ctx.fileSystem);
+    return Promise.all(
+      symbols.map(async (symbol) => {
+        const path = await ctx.workspace.resolveInputPath(symbol.identity.file, ctx.workspace.root);
+        return { ...symbol, source: await reader.read(path, symbol.range) };
+      }),
+    );
+  }
 }
 
 export const defCommand: Command<DefinitionResult, DefArgs> = {
@@ -32,6 +49,8 @@ export const defCommand: Command<DefinitionResult, DefArgs> = {
       flags: [
         ...(args.line === undefined ? [] : ["line"]),
         ...(args.regex ? ["regex"] : []),
+        ...(args.source ? ["source"] : []),
+        ...(args.all ? ["all"] : []),
       ].sort(),
     };
   },
@@ -47,8 +66,11 @@ export const defCommand: Command<DefinitionResult, DefArgs> = {
       line: ctx.args.line,
       regex: ctx.args.regex,
     });
-    const symbols = await resolved.backend.findDefinitions(resolved.files, resolved.identity);
-    const result: DefinitionResult = { identity: resolved.identity, symbols };
+    const definitions = await resolved.backend.findDefinitions(resolved.files, resolved.identity);
+    const symbols = ctx.args.source
+      ? await DefinitionSourceAttachment.attach(definitions, ctx)
+      : definitions;
+    const result: DefinitionResult = { identity: resolved.identity, symbols, all: ctx.args.all };
     return NavigationDiagnosticsCollector.attach(result, ctx.workspace, ctx.router);
   },
   renderText: renderDefinitionText,

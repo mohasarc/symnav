@@ -341,7 +341,7 @@ describe("runCommand lifecycle", () => {
     expect(context.exitCodes).toEqual([2]);
   });
 
-  it("passes workspace, router, git, cwd, and args to compute and nothing else", async () => {
+  it("passes workspace, router, git, fileSystem, cwd, and args to compute and nothing else", async () => {
     const context = createFakeProgramContext({ cwd: "/repo" });
     const dependencies = fakeDependencies();
     let seen: CommandContext<StubArgs> | undefined;
@@ -363,10 +363,18 @@ describe("runCommand lifecycle", () => {
     );
 
     expect(seen).toBeDefined();
-    expect(Object.keys(seen!).sort()).toEqual(["args", "cwd", "git", "router", "workspace"]);
+    expect(Object.keys(seen!).sort()).toEqual([
+      "args",
+      "cwd",
+      "fileSystem",
+      "git",
+      "router",
+      "workspace",
+    ]);
     expect(seen!.cwd).toBe("/repo");
     expect(seen!.args).toEqual({ note: "hi" });
     expect(seen!.git).toBe(dependencies.git);
+    expect(seen!.fileSystem).toBe(dependencies.fs);
   });
 
   it("writes a Cannot answer line and exits 1 when workspace creation fails", async () => {

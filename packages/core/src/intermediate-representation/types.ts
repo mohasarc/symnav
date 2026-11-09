@@ -31,7 +31,17 @@ export interface ResolveResult extends ResultWithDiagnostics {
   readonly files: readonly string[];
 }
 
+export interface DefinitionSource {
+  readonly startLine: number;
+  readonly lines: readonly string[];
+}
+
+export interface DefinitionSymbol extends SymbolOverviewNode {
+  readonly source?: DefinitionSource;
+}
+
 export interface DefinitionResult extends ResultWithDiagnostics {
   readonly identity: SymbolIdentity;
-  readonly symbols: readonly SymbolOverviewNode[];
+  readonly symbols: readonly DefinitionSymbol[];
+  readonly all?: boolean;
 }

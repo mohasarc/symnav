@@ -1,0 +1,12 @@
+Definition: Router::post
+
+src/http/Router.ts
+├── 4: Router::post#1  [overload]
+│   4   post(path: string, handler: Handler): void;
+├── 5: Router::post#2  [overload]
+│   5   post(path: RegExp, handler: Handler): void;
+└── 6-9: Router::post#3  [implementation]
+    6   post(path: string | RegExp, handler: Handler): void {
+    7     void path;
+    8     void handler;
+    9   }

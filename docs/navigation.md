@@ -295,6 +295,13 @@ An empty exact result exits 0. Text output then adds `No exact match; try --fuzz
 
 ## `def`
 
+```sh
+symnav def Router::post
+symnav def --source Router::post
+symnav def --source --regex 'Router::post#3$'
+symnav def --source --all Provider::charge
+```
+
 Shows where a symbol is defined: the implementation, declarations, overload signatures, and every implementation of a contract or base member. It never shows usages.
 
 ```text
@@ -320,6 +327,42 @@ src/payments/StripeProvider.ts
 └── 4-6: StripeProvider::charge  [implementation]
     async charge(orderId: string): Promise<string>
 ```
+
+`--source` prints each definition's source lines with their line numbers in place of the signature, as is, indentation kept. Use it instead of reading the file's line range. Works with every target form. JSDoc above the declaration isn't included.
+
+```text
+Definition: Router::post
+
+src/http/Router.ts
+├── 4: Router::post#1  [overload]
+│   4   post(path: string, handler: Handler): void;
+├── 5: Router::post#2  [overload]
+│   5   post(path: RegExp, handler: Handler): void;
+└── 6-9: Router::post#3  [implementation]
+    6   post(path: string | RegExp, handler: Handler): void {
+    7     void path;
+    8     void handler;
+    9   }
+```
+
+Text output stays within 12000 chars. Definitions print their source in order until the next one wouldn't fit. The rest print their signature, and a footer names each one so you can ask for it alone:
+
+```text
+… cut to fit 12000 chars
+… source not shown: src/providers/provider-3.ts::Provider3::charge
+… source not shown: src/providers/provider-4.ts::Provider4::charge
+… more: def --source '<id>' for one definition, or --all
+```
+
+When even the first definition doesn't fit, its lines are cut and the omitted span is named. For a class, interface, enum or namespace the footer also points at its members:
+
+```text
+    … omitted: lines 291-460 (170 lines)
+… cut to fit 12000 chars
+… more: overview src/big.ts --at 'Big' --depth 1 then def --source on a member, or --all
+```
+
+The budget counts characters, so long lines take more of it. 12000 fits a definition of about 250 typical lines whole. `--all` turns the budget off. `--json` is never cut: each symbol gets `source: { startLine, lines }` only when `--source` is set.
 
 ## `refs`
 

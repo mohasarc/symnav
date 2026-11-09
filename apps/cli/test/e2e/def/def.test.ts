@@ -113,6 +113,67 @@ describe("symnav def e2e (errors and empty results)", () => {
   });
 });
 
+describe("symnav def e2e (--source)", () => {
+  it("prints each overload and the implementation with numbered source lines", async () => {
+    const r = runDef(["def", "--source", "src/http/Router.ts::Router::post"]);
+    expect(r.stderr).toBe("");
+    expect(r.status).toBe(0);
+    await expect(r.stdout).toMatchFileSnapshot(snapshot("router-post-source.expected.txt"));
+  });
+
+  it("prints source for a --regex target", () => {
+    const r = runDef(["def", "--source", "--regex", "Router::post#3$"]);
+    expect(r.stderr).toBe("");
+    expect(r.status).toBe(0);
+    expect(r.stdout).toContain(
+      [
+        "└── 6-9: Router::post#3  [implementation]",
+        "    6   post(path: string | RegExp, handler: Handler): void {",
+        "    7     void path;",
+        "    8     void handler;",
+        "    9   }",
+        "",
+      ].join("\n"),
+    );
+  });
+
+  it("prints source for a --line target", () => {
+    const r = runDef(["def", "--source", "--line", "4", "Router::post"]);
+    expect(r.stderr).toBe("");
+    expect(r.status).toBe(0);
+    expect(r.stdout).toContain(
+      [
+        "└── 4: Router::post#1  [overload]",
+        "    4   post(path: string, handler: Handler): void;",
+        "",
+      ].join("\n"),
+    );
+  });
+
+  it("adds source to each JSON symbol only when --source is set", () => {
+    const withSource = runDef(["def", "--source", "--json", "src/http/Router.ts::Router::post#3"]);
+    const withoutSource = runDef(["def", "--json", "src/http/Router.ts::Router::post#3"]);
+    expect(withSource.stderr).toBe("");
+    expect(withSource.status).toBe(0);
+    const parsed = JSON.parse(withSource.stdout) as {
+      symbols: readonly { source?: { startLine: number; lines: readonly string[] } }[];
+    };
+    expect(parsed.symbols.map((symbol) => symbol.source)).toEqual([
+      {
+        startLine: 6,
+        lines: [
+          "  post(path: string | RegExp, handler: Handler): void {",
+          "    void path;",
+          "    void handler;",
+          "  }",
+        ],
+      },
+    ]);
+    expect(withoutSource.status).toBe(0);
+    expect(withoutSource.stdout).not.toContain('"source"');
+  });
+});
+
 describe("symnav def e2e (JSON output)", () => {
   it("emits parseable JSON matching the expected object", () => {
     const r = runDef(["def", "src/http/Router.ts::Router::post#1", "--json"]);

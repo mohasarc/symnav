@@ -1,8 +1,15 @@
 import { describe, expect, it } from "vitest";
 
-import type { DefinitionResult, Header, SymbolOverviewNode, SymbolPathSegment } from "@symnav/core";
+import type {
+  DefinitionResult,
+  DefinitionSymbol,
+  Header,
+  SymbolOverviewNode,
+  SymbolPathSegment,
+  SymbolRole,
+} from "@symnav/core";
 
-import { renderDefinitionText } from "./render-definition-text.js";
+import { DefinitionTextRenderer, renderDefinitionText } from "./render-definition-text.js";
 
 interface DeclInput {
   readonly file: string;
@@ -156,6 +163,245 @@ describe("renderDefinitionText", () => {
       ["Definition: PI", "", "src/util/constants.ts", "└── 1: PI", "    const PI = 3.14", ""].join(
         "\n",
       ),
+    );
+  });
+
+  it("prints numbered source lines in place of the header when source is attached", () => {
+    const result: DefinitionResult = {
+      identity: { file: "src/http/Router.ts", segments: [{ name: "Router" }, { name: "post" }] },
+      symbols: [
+        {
+          ...decl({
+            file: "src/http/Router.ts",
+            segments: [{ name: "Router" }, { name: "post", disambiguator: 1 }],
+            nativeLabel: "method-overload-signature",
+            startLine: 8,
+            endLine: 8,
+            header: ["post(path: string, handler: Handler): void"],
+          }),
+          source: { startLine: 8, lines: ["  post(path: string, handler: Handler): void;"] },
+        },
+        {
+          ...decl({
+            file: "src/http/Router.ts",
+            segments: [{ name: "Router" }, { name: "post", disambiguator: 2 }],
+            nativeLabel: "method-implementation",
+            startLine: 9,
+            endLine: 12,
+            header: ["post(path: string | RegExp, handler: Handler): void"],
+          }),
+          source: {
+            startLine: 9,
+            lines: [
+              "  post(path: string | RegExp, handler: Handler): void {",
+              "    void path;",
+              "    void handler;",
+              "  }",
+            ],
+          },
+        },
+      ],
+    };
+    expect(renderDefinitionText(result)).toBe(
+      [
+        "Definition: Router::post",
+        "",
+        "src/http/Router.ts",
+        "├── 8: Router::post#1  [overload]",
+        "│   8   post(path: string, handler: Handler): void;",
+        "└── 9-12: Router::post#2  [implementation]",
+        "     9   post(path: string | RegExp, handler: Handler): void {",
+        "    10     void path;",
+        "    11     void handler;",
+        "    12   }",
+        "",
+      ].join("\n"),
+    );
+  });
+});
+
+class SourcedDefinition {
+  static of(input: {
+    readonly file: string;
+    readonly names: readonly string[];
+    readonly role: SymbolRole;
+    readonly nativeLabel: string;
+    readonly startLine: number;
+    readonly lines: readonly string[];
+  }): DefinitionSymbol {
+    return {
+      type: "symbol",
+      identity: { file: input.file, segments: input.names.map((name) => ({ name })) },
+      kind: { role: input.role, nativeLabel: input.nativeLabel },
+      range: { startLine: input.startLine, endLine: input.startLine + input.lines.length - 1 },
+      header: { startLine: input.startLine, lines: [input.lines[0]?.trim() ?? ""] },
+      children: [],
+      source: { startLine: input.startLine, lines: input.lines },
+    };
+  }
+
+  static runMethod(file: string, className: string, startLine: number): DefinitionSymbol {
+    const steps = Array.from({ length: 6 }, (_, index) => `    step${className}${index}();`);
+    return SourcedDefinition.of({
+      file,
+      names: [className, "run"],
+      role: "callable",
+      nativeLabel: "method-implementation",
+      startLine,
+      lines: ["  run(): number {", ...steps, "    return 0;", "  }"],
+    });
+  }
+}
+
+describe("DefinitionTextRenderer source budget", () => {
+  it("prints later definitions as signatures and names them once the budget is spent", () => {
+    const result: DefinitionResult = {
+      identity: { file: "src/a.ts", segments: [{ name: "Runner" }, { name: "run" }] },
+      symbols: [
+        SourcedDefinition.runMethod("src/a.ts", "A", 2),
+        SourcedDefinition.runMethod("src/b.ts", "B", 2),
+        SourcedDefinition.runMethod("src/b.ts", "C", 12),
+      ],
+    };
+
+    const text = DefinitionTextRenderer.render(result, 600);
+
+    expect(text).toBe(
+      [
+        "Definition: Runner::run",
+        "",
+        "src/a.ts",
+        "└── 2-10: A::run  [implementation]",
+        "     2   run(): number {",
+        "     3     stepA0();",
+        "     4     stepA1();",
+        "     5     stepA2();",
+        "     6     stepA3();",
+        "     7     stepA4();",
+        "     8     stepA5();",
+        "     9     return 0;",
+        "    10   }",
+        "",
+        "src/b.ts",
+        "├── 2-10: B::run  [implementation]",
+        "│   run(): number {",
+        "└── 12-20: C::run  [implementation]",
+        "    run(): number {",
+        "… cut to fit 600 chars",
+        "… source not shown: src/b.ts::B::run",
+        "… source not shown: src/b.ts::C::run",
+        "… more: def --source '<id>' for one definition, or --all",
+        "",
+      ].join("\n"),
+    );
+    expect(text.length).toBeLessThanOrEqual(600);
+  });
+
+  it("prints every source when the whole output fits", () => {
+    const result: DefinitionResult = {
+      identity: { file: "src/a.ts", segments: [{ name: "Runner" }, { name: "run" }] },
+      symbols: [
+        SourcedDefinition.runMethod("src/a.ts", "A", 2),
+        SourcedDefinition.runMethod("src/b.ts", "B", 2),
+      ],
+    };
+
+    const text = DefinitionTextRenderer.render(result, 600);
+
+    expect(text).toContain("     8     stepA5();");
+    expect(text).toContain("     8     stepB5();");
+    expect(text).not.toContain("… cut to fit");
+  });
+
+  it("prints every source past the budget when all is set", () => {
+    const result: DefinitionResult = {
+      identity: { file: "src/a.ts", segments: [{ name: "Runner" }, { name: "run" }] },
+      symbols: [
+        SourcedDefinition.runMethod("src/a.ts", "A", 2),
+        SourcedDefinition.runMethod("src/b.ts", "B", 2),
+        SourcedDefinition.runMethod("src/b.ts", "C", 12),
+      ],
+      all: true,
+    };
+
+    const text = DefinitionTextRenderer.render(result, 100);
+
+    expect(text).toContain("     8     stepA5();");
+    expect(text).toContain("│    8     stepB5();");
+    expect(text).toContain("    18     stepC5();");
+    expect(text).not.toContain("… cut to fit");
+  });
+
+  it("cuts the first definition's lines when even its whole source doesn't fit", () => {
+    const lines = [
+      "function long(): void {",
+      ...Array.from({ length: 9 }, (_, index) => `  step${index + 1}();`),
+    ];
+    const result: DefinitionResult = {
+      identity: { file: "src/long.ts", segments: [{ name: "long" }] },
+      symbols: [
+        SourcedDefinition.of({
+          file: "src/long.ts",
+          names: ["long"],
+          role: "callable",
+          nativeLabel: "function",
+          startLine: 1,
+          lines,
+        }),
+      ],
+    };
+
+    expect(DefinitionTextRenderer.render(result, 200)).toBe(
+      [
+        "Definition: long",
+        "",
+        "src/long.ts",
+        "└── 1-10: long",
+        "    1 function long(): void {",
+        "    2   step1();",
+        "    3   step2();",
+        "    4   step3();",
+        "    … omitted: lines 5-10 (6 lines)",
+        "… cut to fit 200 chars",
+        "… more: --all",
+        "",
+      ].join("\n"),
+    );
+  });
+
+  it("points a cut container at its members", () => {
+    const lines = [
+      "export class Big {",
+      ...Array.from({ length: 9 }, (_, index) => `  m${index + 1}(): void {}`),
+    ];
+    const result: DefinitionResult = {
+      identity: { file: "src/big.ts", segments: [{ name: "Big" }] },
+      symbols: [
+        SourcedDefinition.of({
+          file: "src/big.ts",
+          names: ["Big"],
+          role: "container",
+          nativeLabel: "class",
+          startLine: 1,
+          lines,
+        }),
+      ],
+    };
+
+    expect(DefinitionTextRenderer.render(result, 260)).toBe(
+      [
+        "Definition: Big",
+        "",
+        "src/big.ts",
+        "└── 1-10: Big",
+        "    1 export class Big {",
+        "    2   m1(): void {}",
+        "    3   m2(): void {}",
+        "    … omitted: lines 4-10 (7 lines)",
+        "… cut to fit 260 chars",
+        "… more: overview src/big.ts --at 'Big' --depth 1 then def --source on a member, or --all",
+        "",
+      ].join("\n"),
     );
   });
 });

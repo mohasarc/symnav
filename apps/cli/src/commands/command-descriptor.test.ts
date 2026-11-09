@@ -87,20 +87,66 @@ describe("command telemetry descriptors", () => {
   });
 
   it("describes def arguments", () => {
-    expect(defCommand.describeArgs({ target: "a.ts::Foo", line: undefined, regex: false })).toEqual(
-      {
-        kind: "symbol_id",
-        lengthBucket: "short",
-        flags: [],
-      },
-    );
+    expect(
+      defCommand.describeArgs({
+        target: "a.ts::Foo",
+        line: undefined,
+        regex: false,
+        source: false,
+        all: false,
+      }),
+    ).toEqual({
+      kind: "symbol_id",
+      lengthBucket: "short",
+      flags: [],
+    });
   });
 
   it("describes def line narrowing", () => {
-    expect(defCommand.describeArgs({ target: "a.ts::Foo", line: 4, regex: false })).toEqual({
+    expect(
+      defCommand.describeArgs({
+        target: "a.ts::Foo",
+        line: 4,
+        regex: false,
+        source: false,
+        all: false,
+      }),
+    ).toEqual({
       kind: "symbol_id",
       lengthBucket: "short",
       flags: ["line"],
+    });
+  });
+
+  it("describes def source printing", () => {
+    expect(
+      defCommand.describeArgs({
+        target: "a.ts::Foo",
+        line: undefined,
+        regex: false,
+        source: true,
+        all: false,
+      }),
+    ).toEqual({
+      kind: "symbol_id",
+      lengthBucket: "short",
+      flags: ["source"],
+    });
+  });
+
+  it("describes def source printing past the budget", () => {
+    expect(
+      defCommand.describeArgs({
+        target: "a.ts::Foo",
+        line: undefined,
+        regex: false,
+        source: true,
+        all: true,
+      }),
+    ).toEqual({
+      kind: "symbol_id",
+      lengthBucket: "short",
+      flags: ["all", "source"],
     });
   });
 

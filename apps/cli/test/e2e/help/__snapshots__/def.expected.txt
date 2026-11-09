@@ -6,5 +6,8 @@ Options:
   --line <n>  narrow target matches to declarations containing this line
   --regex     match full canonical symbol ids by JavaScript regex (default:
               false)
+  --source    print each definition's source with line numbers (default: false)
+  --all       with --source, print every source line past the text budget
+              (default: false)
   --json      emit JSON instead of text (default: false)
   -h, --help  display help for command

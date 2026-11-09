@@ -502,6 +502,27 @@ describe("TypeScriptProjectGraph", () => {
     expect(loadedFileCounts.filter((fileCount) => fileCount === 3)).toHaveLength(1);
   });
 
+  it("keeps separate semantic projects for equal files with different compiler options", async () => {
+    const projectFixture = fixture();
+    projectFixture.write(
+      "tsconfig.json",
+      JSON.stringify({ extends: "./src/tsconfig.json", compilerOptions: { strict: false } }),
+    );
+    projectFixture.write(
+      "src/tsconfig.json",
+      JSON.stringify({ compilerOptions: { strict: true }, include: ["./vs/**/*.ts"] }),
+    );
+    projectFixture.write("src/vs/a.ts", "export const a = 1;\n");
+    const graph = new TypeScriptProjectGraph(projectFixture.fileSystem);
+
+    await graph.refresh(await projectFixture.snapshot(), await projectFixture.workspaceSnapshot());
+    const strictness = graph
+      .sourceFilesFor("src/vs/a.ts")
+      .map((sourceFile) => sourceFile.getProject().getCompilerOptions().strict);
+
+    expect(strictness).toEqual([false, true]);
+  });
+
   it.each([".", "./"])(
     "owns every file below a root configuration that includes %j",
     async (include) => {

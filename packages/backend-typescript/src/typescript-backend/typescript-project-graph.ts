@@ -266,20 +266,26 @@ export class TypeScriptProjectGraph
       configurations,
       request.inputCollector,
     );
-    const configuredProjects = request.configurations.map(
-      ({ configuration, files }) =>
-        new TypeScriptSemanticProject(
-          this.fileSystem,
-          TypeScriptProjectGraph.compilerOptionsFor(
-            request.snapshot.root,
-            configuration,
-            workspacePackages,
-          ),
-          files,
-          this.sourceFileRegistry,
-          this.observer,
-        ),
-    );
+    const projectsByKey = new Map<string, TypeScriptSemanticProject>();
+    const configuredProjects = request.configurations.map(({ configuration, files }) => {
+      const compilerOptions = TypeScriptProjectGraph.compilerOptionsFor(
+        request.snapshot.root,
+        configuration,
+        workspacePackages,
+      );
+      const key = TypeScriptProjectGraph.semanticProjectKey(compilerOptions, files);
+      const existing = projectsByKey.get(key);
+      if (existing) return existing;
+      const project = new TypeScriptSemanticProject(
+        this.fileSystem,
+        compilerOptions,
+        files,
+        this.sourceFileRegistry,
+        this.observer,
+      );
+      projectsByKey.set(key, project);
+      return project;
+    });
     const inferredProject = new TypeScriptSemanticProject(
       this.fileSystem,
       TypeScriptProjectGraph.inferredCompilerOptions(request.snapshot.root, workspacePackages),
@@ -287,7 +293,7 @@ export class TypeScriptProjectGraph
       this.sourceFileRegistry,
       this.observer,
     );
-    this.preparedSemanticProjects = [...configuredProjects, inferredProject];
+    this.preparedSemanticProjects = [...projectsByKey.values(), inferredProject];
     return {
       configuredProjects,
       inferredProject,
@@ -421,6 +427,14 @@ export class TypeScriptProjectGraph
       const resolved = paths.resolve(configuration.directory, referencePath);
       return [resolved.endsWith(".json") ? resolved : paths.join(resolved, "tsconfig.json")];
     });
+  }
+
+  private static semanticProjectKey(
+    compilerOptions: ts.CompilerOptions,
+    files: readonly WorkspaceFile[],
+  ): string {
+    const { configFilePath: _configFilePath, ...programOptions } = compilerOptions;
+    return JSON.stringify([programOptions, files.map((file) => file.absolute)]);
   }
 
   private static compilerOptionsFor(

@@ -8,6 +8,7 @@ interface OverviewOptions {
   readonly depth?: string;
   readonly at?: string;
   readonly line?: string;
+  readonly all: boolean;
   readonly json: boolean;
 }
 
@@ -22,6 +23,7 @@ export function registerOverviewCommand(
     .option("--depth <n>", "number of child tree levels to render")
     .option("--at <text>", "expand the overview node whose header contains text")
     .option("--line <n>", "narrow overview target candidates to a source line")
+    .option("--all", "print the whole tree, past the text size budget", false)
     .option("--json", "emit JSON instead of text", false)
     .action(async (file: string, options: OverviewOptions) => {
       const cwdOverride = program.opts<{ cwd?: string }>().cwd;
@@ -35,6 +37,7 @@ export function registerOverviewCommand(
           depth: options.depth,
           at: options.at,
           line: options.line,
+          all: options.all,
         },
       });
     });

@@ -14,6 +14,7 @@ export interface OverviewArgs {
   readonly depth: string | undefined;
   readonly at: string | undefined;
   readonly line: string | undefined;
+  readonly all: boolean;
 }
 
 export const overviewCommand: Command<OverviewExpansionResult, OverviewArgs> = {
@@ -56,6 +57,7 @@ function flagsFor(args: OverviewArgs): readonly string[] {
   if (args.depth !== undefined) flags.push("depth");
   if (args.at !== undefined) flags.push("at");
   if (args.line !== undefined) flags.push("line");
+  if (args.all) flags.push("all");
   return flags;
 }
 
@@ -64,6 +66,6 @@ function overviewRequestFrom(args: OverviewArgs): OverviewExpansionRequestInput 
     depth: args.depth ?? 0,
     at: args.at === undefined ? undefined : stripHeaderEllipsis(args.at),
     line: args.line,
-    all: false,
+    all: args.all,
   };
 }

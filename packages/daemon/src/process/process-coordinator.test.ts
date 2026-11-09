@@ -47,6 +47,7 @@ import { NodeDaemonClock } from "../lifecycle/daemon-clock.js";
 
 const FORCED_STOP_TIMEOUT_MS =
   2 * DaemonPolicy.currentSystem().values.shutdown.forcedTerminationReserveMaximumMs;
+const TEST_PACED_STOP_RESPONSE_TIMEOUT_MS = 2_000;
 
 describe("DaemonProcessCoordinator runtime lifecycle", () => {
   const harnesses: DaemonProcessCoordinatorHarness[] = [];
@@ -187,6 +188,7 @@ describe("DaemonProcessCoordinator runtime lifecycle", () => {
     const resourcePolicy = DaemonResourcePolicy.fromSystemMemory(512 * 1024 * 1024);
     const executor = new DeferredExecutor();
     const harness = await DaemonProcessCoordinatorHarness.start(executor, {
+      transport: new DaemonTransport({ requestTimeoutMs: TEST_PACED_STOP_RESPONSE_TIMEOUT_MS }),
       resourcePolicy,
       resourceCheckIntervalMs: 5,
       residentMemoryBytes: () =>

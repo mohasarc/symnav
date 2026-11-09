@@ -26,7 +26,7 @@ const expectedDefaults: DaemonPolicyValues = {
   shutdown: {
     idleTimeoutMs: 30 * 60_000,
     stopTimeoutMs: 5_000,
-    forcedTerminationReserveMaximumMs: 500,
+    forcedTerminationReserveMaximumMs: 1_000,
     controllerPollIntervalMs: 20,
     processSignalExitTimeoutMs: 500,
     processExitPollIntervalMs: 20,

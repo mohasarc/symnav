@@ -186,6 +186,44 @@ describe("DaemonController", () => {
     expect(requests).not.toContain("kill");
   });
 
+  it("leaves a killed daemon unprobed until its process exits", async () => {
+    const stateDirectory = temporaryDirectory(roots);
+    const identity = DaemonWorkspaceIdentity.from("/repo", stateDirectory);
+    const registry = new DaemonRegistry(identity.registryDirectory);
+    const record = readyRecord(identity);
+    registry.write(record);
+    const terminator = new ControllerTerminator([record.pid]);
+    const transport = new ActivityControllerTransport(record);
+    const originalRequest = transport.request.bind(transport);
+    let killed = false;
+    const requestsAfterKillWhileAlive: string[] = [];
+    vi.spyOn(transport, "request").mockImplementation((endpoint, request) => {
+      if (killed && terminator.isAlive(record.pid)) requestsAfterKillWhileAlive.push(request.kind);
+      if (request.kind === "stop") return Promise.reject(new Error("Stop response timed out"));
+      if (!terminator.isAlive(record.pid)) return Promise.reject(new Error("Endpoint closed"));
+      if (request.kind !== "kill") return originalRequest(endpoint, request);
+      killed = true;
+      setTimeout(() => terminator.alive.delete(record.pid), 20);
+      return Promise.resolve({
+        kind: "killing",
+        instanceId: record.instanceId,
+        processToken: record.processToken,
+      });
+    });
+    const controller = new DaemonController(registry, transport, stateDirectory, {
+      stopTimeoutMs: 100,
+      pollIntervalMs: 1,
+      processTerminator: terminator,
+    });
+
+    await expect(controller.stop("/repo")).resolves.toEqual({
+      status: "killed",
+      workspaceRoot: "/repo",
+      pid: record.pid,
+    });
+    expect(requestsAfterKillWhileAlive).toEqual([]);
+  });
+
   it("uses coordinator startup recovery for explicit starts", async () => {
     const stateDirectory = temporaryDirectory(roots);
     const registry = new DaemonRegistry(stateDirectory);

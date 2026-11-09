@@ -490,18 +490,15 @@ export class DaemonController {
 
   private async waitForIdentifiedExit(record: DaemonRecord, deadline: number): Promise<boolean> {
     while (this.clock.wallNowMs() <= deadline) {
-      if (
-        !(await this.identifies(record)) &&
-        this.processTerminator.hasExited(record.pid, record.processLifetime)
-      ) {
-        return true;
-      }
+      if (await this.exitedUnidentified(record)) return true;
       await this.pause(this.pollIntervalMs);
     }
-    return (
-      !(await this.identifies(record)) &&
-      this.processTerminator.hasExited(record.pid, record.processLifetime)
-    );
+    return this.exitedUnidentified(record);
+  }
+
+  private async exitedUnidentified(record: DaemonRecord): Promise<boolean> {
+    if (!this.processTerminator.hasExited(record.pid, record.processLifetime)) return false;
+    return !(await this.identifies(record));
   }
 
   private async identifies(record: DaemonRecord): Promise<boolean> {

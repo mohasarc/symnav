@@ -1,5 +1,6 @@
 import {
   type BackendRouter,
+  type FileSystem,
   type GitHistory,
   type ResultWithDiagnostics,
   UserFacingError,
@@ -20,6 +21,7 @@ export interface CommandContext<Args> {
   readonly workspace: Workspace;
   readonly router: BackendRouter;
   readonly git: GitHistory;
+  readonly fileSystem: FileSystem;
   readonly cwd: string;
   readonly args: Args;
 }
@@ -74,6 +76,7 @@ export async function runCommand<Result extends ResultWithDiagnostics, Args>(
                 workspace: scopeWorkspace,
                 router: scopeRouter,
                 git: dependencies.git,
+                fileSystem: fs,
                 cwd,
                 args,
               }),
@@ -90,6 +93,7 @@ export async function runCommand<Result extends ResultWithDiagnostics, Args>(
       workspace,
       router: preparedScope.router,
       git: dependencies.git,
+      fileSystem: fs,
       cwd,
       args,
     };

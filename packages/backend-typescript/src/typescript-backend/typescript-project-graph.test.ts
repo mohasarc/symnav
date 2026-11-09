@@ -557,6 +557,42 @@ describe("TypeScriptProjectGraph", () => {
     ).resolves.toEqual(["call"]);
   });
 
+  it.each(["../../api/vscode.d.ts", "../../api/**/*"])(
+    "includes %j from outside a nested configuration without owning it",
+    async (outsideInclude) => {
+      const projectFixture = fixture();
+      const graph = new TypeScriptProjectGraph(projectFixture.fileSystem);
+      const backend = new TypeScriptBackend(projectFixture.fileSystem, undefined, graph);
+      projectFixture.write(
+        "api/vscode.d.ts",
+        'declare module "vscode" {\n  export function show(): number;\n}\n',
+      );
+      projectFixture.write(
+        "extensions/git/tsconfig.json",
+        JSON.stringify({
+          compilerOptions: { strict: true },
+          include: ["src/**/*", outsideInclude],
+        }),
+      );
+      projectFixture.write(
+        "extensions/git/src/main.ts",
+        'import { show } from "vscode";\nexport function useShow(): number {\n  return show();\n}\n',
+      );
+      const snapshot = await projectFixture.snapshot();
+
+      await backend.refresh({ snapshot, coverage: "workspace" });
+
+      await expect(
+        calleeNames(
+          backend,
+          snapshot.files,
+          symbolIdentity("extensions/git/src/main.ts", "useShow"),
+        ),
+      ).resolves.toEqual(["show"]);
+      expect(graph.programFor("api/vscode.d.ts")?.getCompilerOptions().strict).toBeUndefined();
+    },
+  );
+
   it("ignores configurations below node_modules", async () => {
     const projectFixture = fixture();
     const graph = new TypeScriptProjectGraph(projectFixture.fileSystem);

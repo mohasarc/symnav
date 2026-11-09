@@ -1,8 +1,15 @@
 import { describe, expect, it } from "vitest";
 
-import type { DefinitionResult, Header, SymbolOverviewNode, SymbolPathSegment } from "@symnav/core";
+import type {
+  DefinitionResult,
+  DefinitionSymbol,
+  Header,
+  SymbolOverviewNode,
+  SymbolPathSegment,
+  SymbolRole,
+} from "@symnav/core";
 
-import { renderDefinitionText } from "./render-definition-text.js";
+import { DefinitionTextRenderer, renderDefinitionText } from "./render-definition-text.js";
 
 interface DeclInput {
   readonly file: string;
@@ -210,5 +217,99 @@ describe("renderDefinitionText", () => {
         "",
       ].join("\n"),
     );
+  });
+});
+
+class SourcedDefinition {
+  static of(input: {
+    readonly file: string;
+    readonly names: readonly string[];
+    readonly role: SymbolRole;
+    readonly nativeLabel: string;
+    readonly startLine: number;
+    readonly lines: readonly string[];
+  }): DefinitionSymbol {
+    return {
+      type: "symbol",
+      identity: { file: input.file, segments: input.names.map((name) => ({ name })) },
+      kind: { role: input.role, nativeLabel: input.nativeLabel },
+      range: { startLine: input.startLine, endLine: input.startLine + input.lines.length - 1 },
+      header: { startLine: input.startLine, lines: [input.lines[0]?.trim() ?? ""] },
+      children: [],
+      source: { startLine: input.startLine, lines: input.lines },
+    };
+  }
+
+  static runMethod(file: string, className: string, startLine: number): DefinitionSymbol {
+    const steps = Array.from({ length: 6 }, (_, index) => `    step${className}${index}();`);
+    return SourcedDefinition.of({
+      file,
+      names: [className, "run"],
+      role: "callable",
+      nativeLabel: "method-implementation",
+      startLine,
+      lines: ["  run(): number {", ...steps, "    return 0;", "  }"],
+    });
+  }
+}
+
+describe("DefinitionTextRenderer source budget", () => {
+  it("prints later definitions as signatures and names them once the budget is spent", () => {
+    const result: DefinitionResult = {
+      identity: { file: "src/a.ts", segments: [{ name: "Runner" }, { name: "run" }] },
+      symbols: [
+        SourcedDefinition.runMethod("src/a.ts", "A", 2),
+        SourcedDefinition.runMethod("src/b.ts", "B", 2),
+        SourcedDefinition.runMethod("src/b.ts", "C", 12),
+      ],
+    };
+
+    const text = DefinitionTextRenderer.render(result, 600);
+
+    expect(text).toBe(
+      [
+        "Definition: Runner::run",
+        "",
+        "src/a.ts",
+        "└── 2-10: A::run  [implementation]",
+        "     2   run(): number {",
+        "     3     stepA0();",
+        "     4     stepA1();",
+        "     5     stepA2();",
+        "     6     stepA3();",
+        "     7     stepA4();",
+        "     8     stepA5();",
+        "     9     return 0;",
+        "    10   }",
+        "",
+        "src/b.ts",
+        "├── 2-10: B::run  [implementation]",
+        "│   run(): number {",
+        "└── 12-20: C::run  [implementation]",
+        "    run(): number {",
+        "… cut to fit 600 chars",
+        "… source not shown: src/b.ts::B::run",
+        "… source not shown: src/b.ts::C::run",
+        "… more: def --source '<id>' for one definition",
+        "",
+      ].join("\n"),
+    );
+    expect(text.length).toBeLessThanOrEqual(600);
+  });
+
+  it("prints every source when the whole output fits", () => {
+    const result: DefinitionResult = {
+      identity: { file: "src/a.ts", segments: [{ name: "Runner" }, { name: "run" }] },
+      symbols: [
+        SourcedDefinition.runMethod("src/a.ts", "A", 2),
+        SourcedDefinition.runMethod("src/b.ts", "B", 2),
+      ],
+    };
+
+    const text = DefinitionTextRenderer.render(result, 600);
+
+    expect(text).toContain("     8     stepA5();");
+    expect(text).toContain("     8     stepB5();");
+    expect(text).not.toContain("… cut to fit");
   });
 });

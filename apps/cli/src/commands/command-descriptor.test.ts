@@ -43,6 +43,7 @@ describe("command telemetry descriptors", () => {
         depth: undefined,
         at: undefined,
         line: undefined,
+        all: false,
       }),
     ).toEqual({
       kind: "path",
@@ -58,11 +59,12 @@ describe("command telemetry descriptors", () => {
         depth: "2",
         at: "describe",
         line: "10",
+        all: true,
       }),
     ).toEqual({
       kind: "path",
       lengthBucket: "short",
-      flags: ["depth", "at", "line"],
+      flags: ["depth", "at", "line", "all"],
     });
   });
 

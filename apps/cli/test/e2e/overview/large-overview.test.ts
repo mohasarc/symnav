@@ -33,4 +33,14 @@ describe("symnav overview e2e (size budget)", () => {
     expect(r.stdout).toContain("Shapes::Shape29\n");
     expect(r.stdout).toContain("showing depth 1 of 2");
   });
+
+  it("prints the whole tree past the budget with --all", () => {
+    const r = runLargeOverview(["--depth", "2", "--all"]);
+
+    expect(r.stderr).toBe("");
+    expect(r.status).toBe(0);
+    expect(r.stdout.length).toBeGreaterThan(OVERVIEW_TEXT_BUDGET);
+    expect(r.stdout).not.toContain("… cut to fit");
+    expect(r.stdout).toContain("helper399\n");
+  });
 });

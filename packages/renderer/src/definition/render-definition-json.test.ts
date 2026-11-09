@@ -62,4 +62,14 @@ describe("renderDefinitionJson", () => {
       ].join("\n"),
     );
   });
+
+  it("leaves the text-only all flag out", () => {
+    const result: DefinitionResult = {
+      identity: { file: "a.ts", segments: [{ name: "X" }] },
+      symbols: [],
+      all: true,
+    };
+    const parsed = JSON.parse(renderDefinitionJson(result)) as Record<string, unknown>;
+    expect(Object.keys(parsed)).toEqual(["identity", "symbols"]);
+  });
 });

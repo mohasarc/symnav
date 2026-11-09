@@ -104,10 +104,15 @@ export abstract class ProjectGraph<
 
   protected async refreshProjectGraph(
     snapshot: WorkspaceSnapshot,
+    workspaceSnapshot: WorkspaceSnapshot,
   ): Promise<ProjectGraphRefreshSummary> {
     if (this.projectStateUnchanged(snapshot)) return this.currentSummary(0);
     const inputCollector = new ProjectInputCollector(this.fileSystem);
-    const discovered = await this.discoverConfigurations(snapshot, inputCollector);
+    const discovered = await this.discoverConfigurations({
+      snapshot,
+      workspaceSnapshot,
+      inputCollector,
+    });
     const candidateConfigurations = discovered.map(({ path, parsed }) => ({
       path,
       configuration: parsed.configuration,
@@ -187,9 +192,9 @@ export abstract class ProjectGraph<
 
   protected abstract initialConfigurationPaths(root: string): readonly string[];
 
-  protected nestedConfigurationPaths(_snapshot: WorkspaceSnapshot): readonly string[] {
-    return [];
-  }
+  protected abstract nestedConfigurationPaths(
+    workspaceSnapshot: WorkspaceSnapshot,
+  ): readonly string[];
 
   protected abstract parseConfiguration(request: {
     readonly path: string;
@@ -207,12 +212,14 @@ export abstract class ProjectGraph<
     request: ProjectGraphPreparationRequest<ConfigurationUnit>,
   ): Promise<PreparedProjectGraph<Project>>;
 
-  private async discoverConfigurations(
-    snapshot: WorkspaceSnapshot,
-    inputCollector: ProjectInputCollector,
-  ): Promise<readonly DiscoveredProjectConfiguration<ConfigurationUnit>[]> {
+  private async discoverConfigurations(request: {
+    readonly snapshot: WorkspaceSnapshot;
+    readonly workspaceSnapshot: WorkspaceSnapshot;
+    readonly inputCollector: ProjectInputCollector;
+  }): Promise<readonly DiscoveredProjectConfiguration<ConfigurationUnit>[]> {
+    const { snapshot, workspaceSnapshot, inputCollector } = request;
     const seen = new Set<string>();
-    const nestedPaths = [...this.nestedConfigurationPaths(snapshot)].sort();
+    const nestedPaths = [...this.nestedConfigurationPaths(workspaceSnapshot)].sort();
     const seeds = [
       { paths: this.initialConfigurationPaths(snapshot.root), confinedPaths: new Set<string>() },
       { paths: nestedPaths, confinedPaths: new Set(nestedPaths) },

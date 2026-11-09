@@ -121,9 +121,12 @@ export class TypeScriptProjectGraph
     super(fileSystem);
   }
 
-  async refresh(snapshot: WorkspaceSnapshot): Promise<TypeScriptProjectGraphRefresh> {
+  async refresh(
+    snapshot: WorkspaceSnapshot,
+    workspaceSnapshot: WorkspaceSnapshot,
+  ): Promise<TypeScriptProjectGraphRefresh> {
     try {
-      const summary = await this.refreshProjectGraph(snapshot);
+      const summary = await this.refreshProjectGraph(snapshot, workspaceSnapshot);
       if (this.preparedSemanticProjects) {
         this.semanticProjects = this.preparedSemanticProjects;
         this.preparedSemanticProjects = undefined;
@@ -163,11 +166,12 @@ export class TypeScriptProjectGraph
     return [paths.join(root, TypeScriptProjectGraph.CONFIGURATION_FILE_NAME)];
   }
 
-  protected nestedConfigurationPaths(snapshot: WorkspaceSnapshot): readonly string[] {
-    const paths = new WorkspacePathDialect(snapshot.root);
-    return TypeScriptProjectGraph.sourceDirectories(snapshot, paths)
+  protected nestedConfigurationPaths(workspaceSnapshot: WorkspaceSnapshot): readonly string[] {
+    const paths = new WorkspacePathDialect(workspaceSnapshot.root);
+    return TypeScriptProjectGraph.sourceDirectories(workspaceSnapshot, paths)
       .filter(
-        (directory) => !TypeScriptProjectGraph.isDependencyDirectory(snapshot, directory, paths),
+        (directory) =>
+          !TypeScriptProjectGraph.isDependencyDirectory(workspaceSnapshot, directory, paths),
       )
       .map((directory) => paths.join(directory, TypeScriptProjectGraph.CONFIGURATION_FILE_NAME));
   }

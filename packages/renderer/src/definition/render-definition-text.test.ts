@@ -331,4 +331,41 @@ describe("DefinitionTextRenderer source budget", () => {
     expect(text).toContain("    18     stepC5();");
     expect(text).not.toContain("… cut to fit");
   });
+
+  it("cuts the first definition's lines when even its whole source doesn't fit", () => {
+    const lines = [
+      "function long(): void {",
+      ...Array.from({ length: 9 }, (_, index) => `  step${index + 1}();`),
+    ];
+    const result: DefinitionResult = {
+      identity: { file: "src/long.ts", segments: [{ name: "long" }] },
+      symbols: [
+        SourcedDefinition.of({
+          file: "src/long.ts",
+          names: ["long"],
+          role: "callable",
+          nativeLabel: "function",
+          startLine: 1,
+          lines,
+        }),
+      ],
+    };
+
+    expect(DefinitionTextRenderer.render(result, 200)).toBe(
+      [
+        "Definition: long",
+        "",
+        "src/long.ts",
+        "└── 1-10: long",
+        "    1 function long(): void {",
+        "    2   step1();",
+        "    3   step2();",
+        "    4   step3();",
+        "    … omitted: lines 5-10 (6 lines)",
+        "… cut to fit 200 chars",
+        "… more: --all",
+        "",
+      ].join("\n"),
+    );
+  });
 });

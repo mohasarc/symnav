@@ -8,6 +8,7 @@ import {
 } from "@symnav/core";
 
 import { enumMemberName } from "../extract/enum-member-name.js";
+import { NodeLineNumbers } from "../extract/node-line-numbers.js";
 
 export interface LocatedDeclaration {
   readonly declaration: SymbolOverviewNode;
@@ -55,7 +56,7 @@ export class DeclarationLocator {
       if (!this.isDefinitionNode(node)) return;
       const name = this.declarationName(node);
       if (!name) return;
-      const location = DeclarationLocator.locationKey(node.getStartLineNumber(), name);
+      const location = DeclarationLocator.locationKey(NodeLineNumbers.startLine(node), name);
       const declarations = declarationsByLineAndName.get(location);
       const declaration = declarations?.shift();
       if (declaration) locatedDeclarations.push({ declaration, node });
@@ -97,7 +98,7 @@ export class DeclarationLocator {
     this.sourceFile.forEachDescendant((node) => {
       if (found) return;
       if (!this.isDefinitionNode(node)) return;
-      if (node.getStartLineNumber() !== startLine) return;
+      if (NodeLineNumbers.startLine(node) !== startLine) return;
       if (this.declarationName(node) !== OverviewTree.ownName(declaration)) return;
       found = node;
     });

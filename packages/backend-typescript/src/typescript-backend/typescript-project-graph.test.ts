@@ -1160,7 +1160,300 @@ describe("TypeScriptProjectGraph", () => {
     expect(afterRelease).toBeDefined();
     expect(afterRelease).not.toBe(beforeRelease);
   });
+
+  it.each([{ mode: "exact" }, { mode: "fuzzy" }, { mode: "regex", regex: /^shared$/ }] as const)(
+    "resolves $mode symbol queries without loading a semantic project",
+    async (options) => {
+      const projectFixture = fixture();
+      writeImporterProjects(projectFixture);
+      const loadedFileCounts: number[] = [];
+      const backend = new TypeScriptBackend(projectFixture.fileSystem, undefined, undefined, {
+        semanticProjectLoaded: (fileCount) => loadedFileCounts.push(fileCount),
+      });
+      const snapshot = await projectFixture.snapshot();
+      await backend.refresh({
+        snapshot,
+        workspaceSnapshot: await projectFixture.workspaceSnapshot(),
+        coverage: "workspace",
+      });
+
+      const symbols = await backend.resolveSymbols(snapshot.files, "shared", options);
+
+      expect(symbols.length).toBeGreaterThan(0);
+      expect(loadedFileCounts).toEqual([]);
+    },
+  );
+
+  it("loads only semantic projects whose files can import the requested file", async () => {
+    const projectFixture = fixture();
+    writeImporterProjects(projectFixture);
+    const loadedFileCounts: number[] = [];
+    const graph = new TypeScriptProjectGraph(projectFixture.fileSystem, {
+      semanticProjectLoaded: (fileCount) => loadedFileCounts.push(fileCount),
+    });
+    await graph.refresh(await projectFixture.snapshot(), await projectFixture.workspaceSnapshot());
+
+    const configurations = importerProjectConfigurations(graph, projectFixture);
+
+    expect(configurations).toEqual(
+      ["core", "ext/alias", "ext/package", "ext/relative", "ext/transitive"].map(
+        (directory) => `${directory}/tsconfig.json`,
+      ),
+    );
+    expect(loadedFileCounts).toHaveLength(configurations.length);
+  });
+
+  it.each(["core/src/shared.ts", "shapes/index.ts", "core/src/globals.d.ts"])(
+    "returns every project whose program contains %s",
+    async (target) => {
+      const projectFixture = fixture();
+      writeResolutionEdgeProjects(projectFixture);
+      const snapshot = await projectFixture.snapshot();
+      const graph = new TypeScriptProjectGraph(projectFixture.fileSystem);
+      await graph.refresh(snapshot, await projectFixture.workspaceSnapshot());
+
+      const returned = projectsReturnedFor(graph, projectFixture, target);
+
+      expect(returned.length).toBeGreaterThan(1);
+      expect(returned).toEqual(projectsWhoseProgramContains(graph, snapshot, target));
+    },
+  );
+
+  it("returns a project that starts importing the target after a refresh", async () => {
+    const projectFixture = fixture();
+    writeImporterProjects(projectFixture);
+    const graph = new TypeScriptProjectGraph(projectFixture.fileSystem);
+    await graph.refresh(await projectFixture.snapshot(), await projectFixture.workspaceSnapshot());
+    const target = "core/src/shared.ts";
+    expect(projectsReturnedFor(graph, projectFixture, target)).not.toContain(
+      "ext/other/tsconfig.json",
+    );
+
+    projectFixture.write(
+      "ext/other/late.ts",
+      'import { shared } from "../../core/src/shared";\nexport const late = shared();\n',
+    );
+    const snapshot = await projectFixture.snapshot();
+    await graph.refresh(snapshot, await projectFixture.workspaceSnapshot());
+    const returned = projectsReturnedFor(graph, projectFixture, target);
+
+    expect(returned).toContain("ext/other/tsconfig.json");
+    expect(returned).toEqual(projectsWhoseProgramContains(graph, snapshot, target));
+  });
+
+  it("returns every project whose program contains a tracked node_modules target", async () => {
+    const projectFixture = fixture();
+    writeImporterProjects(projectFixture);
+    projectFixture.write(
+      "node_modules/vlib/index.d.ts",
+      "export declare function vendored(): number;\n",
+    );
+    projectFixture.write("ext/vendor/tsconfig.json", JSON.stringify({ include: ["./**/*.ts"] }));
+    projectFixture.write(
+      "ext/vendor/use.ts",
+      'import { vendored } from "vlib";\nexport const value = vendored();\n',
+    );
+    const snapshot = await projectFixture.snapshot();
+    const graph = new TypeScriptProjectGraph(projectFixture.fileSystem);
+    await graph.refresh(snapshot, await projectFixture.workspaceSnapshot());
+    const target = "node_modules/vlib/index.d.ts";
+
+    const returned = projectsReturnedFor(graph, projectFixture, target);
+
+    expect(returned).toContain("ext/vendor/tsconfig.json");
+    expect(returned).toEqual(projectsWhoseProgramContains(graph, snapshot, target));
+  });
+
+  it("returns every project whose program contains a target imported through package imports", async () => {
+    const projectFixture = fixture();
+    writeResolutionEdgeProjects(projectFixture);
+    writePackageImportsProject(projectFixture);
+    const snapshot = await projectFixture.snapshot();
+    const graph = new TypeScriptProjectGraph(projectFixture.fileSystem);
+    await graph.refresh(snapshot, await projectFixture.workspaceSnapshot());
+    const target = "core/src/shared.ts";
+
+    const returned = projectsReturnedFor(graph, projectFixture, target);
+
+    expect(returned).toContain("ext/package-imports/tsconfig.json");
+    expect(returned).toEqual(projectsWhoseProgramContains(graph, snapshot, target));
+  });
+
+  it.each([
+    { jsx: "react-jsx" },
+    { importHelpers: true },
+    { rootDirs: [".", "../../core/src"] },
+    { typeRoots: ["./types"] },
+    { moduleSuffixes: [".native", ""] },
+    { types: ["../../core/src/globals"] },
+  ])("loads a project whose resolution the importer scan can't bound: %j", async (options) => {
+    const projectFixture = fixture();
+    writeImporterProjects(projectFixture);
+    projectFixture.write(
+      "ext/unrelated/tsconfig.json",
+      JSON.stringify({ compilerOptions: options, include: ["./**/*.ts"] }),
+    );
+    const loadedFileCounts: number[] = [];
+    const graph = new TypeScriptProjectGraph(projectFixture.fileSystem, {
+      semanticProjectLoaded: (fileCount) => loadedFileCounts.push(fileCount),
+    });
+    await graph.refresh(await projectFixture.snapshot(), await projectFixture.workspaceSnapshot());
+
+    const reachingProjectCount = importerProjectConfigurations(graph, projectFixture).length;
+
+    expect(loadedFileCounts).toHaveLength(reachingProjectCount + 1);
+  });
 });
+
+function configurationName(configFilePath: unknown, root: string): string {
+  return typeof configFilePath === "string" ? configFilePath.replace(root, "") : "inferred";
+}
+
+function projectsReturnedFor(
+  graph: TypeScriptProjectGraph,
+  projectFixture: ConfiguredProjectFixture,
+  target: string,
+): readonly string[] {
+  const root = `${projectFixture.root.replaceAll("\\", "/")}/`;
+  return graph
+    .sourceFilesFor(target)
+    .map((sourceFile) =>
+      configurationName(sourceFile.getProject().getCompilerOptions().configFilePath, root),
+    )
+    .sort();
+}
+
+function projectsWhoseProgramContains(
+  graph: TypeScriptProjectGraph,
+  snapshot: WorkspaceSnapshot,
+  target: string,
+): readonly string[] {
+  const root = `${snapshot.root}/`;
+  const programs = new Set(
+    snapshot.files.flatMap((file) => {
+      const program = graph.programFor(file.relative);
+      return program ? [program] : [];
+    }),
+  );
+  return [...programs]
+    .filter((program) => program.getSourceFile(`${root}${target}`) !== undefined)
+    .map((program) => configurationName(program.getCompilerOptions().configFilePath, root))
+    .sort();
+}
+
+function writeResolutionEdgeProjects(projectFixture: ConfiguredProjectFixture): void {
+  writeImporterProjects(projectFixture);
+  const root = projectFixture.root.replaceAll("\\", "/");
+  const ownConfiguration = JSON.stringify({ include: ["./**/*.ts"] });
+  const consumers: Readonly<Record<string, string>> = {
+    template: "export const loaded = import(`../../core/src/shared`);\n",
+    absolute: `import { shared } from "${root}/core/src/shared";\nexport const value = shared();\n`,
+    index: 'import { circle } from "../../shapes";\nexport const value = circle;\n',
+  };
+  for (const [name, source] of Object.entries(consumers)) {
+    projectFixture.write(`ext/${name}/tsconfig.json`, ownConfiguration);
+    projectFixture.write(`ext/${name}/use.ts`, source);
+  }
+  projectFixture.write("shapes/index.ts", "export const circle = 1;\n");
+  projectFixture.write(
+    "ext/base-url/tsconfig.json",
+    JSON.stringify({ compilerOptions: { baseUrl: "../.." }, include: ["./**/*.ts"] }),
+  );
+  projectFixture.write(
+    "ext/base-url/use.ts",
+    'import { shared } from "core/src/shared";\nexport const value = shared();\n',
+  );
+  projectFixture.write(
+    "scratch/importer.ts",
+    'import { shared } from "../core/src/shared";\nexport const value = shared();\n',
+  );
+  projectFixture.write("core/src/globals.d.ts", "declare function globalShared(): number;\n");
+  projectFixture.write(
+    "ext/types/tsconfig.json",
+    JSON.stringify({
+      compilerOptions: { types: ["../../core/src/globals"] },
+      include: ["./**/*.ts"],
+    }),
+  );
+  projectFixture.write("ext/types/use.ts", "export const value = globalShared();\n");
+}
+
+function writePackageImportsProject(projectFixture: ConfiguredProjectFixture): void {
+  projectFixture.write(
+    "package.json",
+    JSON.stringify({
+      name: "configured-project-cases",
+      private: true,
+      type: "module",
+      imports: { "#core/*": "./core/src/*.ts" },
+    }),
+  );
+  projectFixture.write(
+    "ext/package-imports/tsconfig.json",
+    JSON.stringify({
+      compilerOptions: { module: "nodenext", moduleResolution: "nodenext" },
+      include: ["./**/*.ts"],
+    }),
+  );
+  projectFixture.write(
+    "ext/package-imports/use.ts",
+    'import { shared } from "#core/shared";\nexport const value = shared();\n',
+  );
+}
+
+function importerProjectConfigurations(
+  graph: TypeScriptProjectGraph,
+  projectFixture: ConfiguredProjectFixture,
+): readonly string[] {
+  const root = `${projectFixture.root.replaceAll("\\", "/")}/`;
+  return graph
+    .sourceFilesFor("core/src/shared.ts")
+    .map((sourceFile) =>
+      String(sourceFile.getProject().getCompilerOptions().configFilePath).replace(root, ""),
+    );
+}
+
+function writeImporterProjects(projectFixture: ConfiguredProjectFixture): void {
+  const ownConfiguration = JSON.stringify({ include: ["./**/*.ts"] });
+  projectFixture.write("tsconfig.json", JSON.stringify({ files: [] }));
+  projectFixture.write("core/tsconfig.json", ownConfiguration);
+  projectFixture.write("core/src/shared.ts", "export function shared(): number { return 1; }\n");
+  projectFixture.write("core/src/bridge.ts", 'export { shared } from "./shared";\n');
+  projectFixture.write("ext/relative/tsconfig.json", ownConfiguration);
+  projectFixture.write(
+    "ext/relative/use.ts",
+    'import { shared } from "../../core/src/shared.js";\nexport const value = shared();\n',
+  );
+  projectFixture.write(
+    "ext/alias/tsconfig.json",
+    JSON.stringify({
+      compilerOptions: { baseUrl: ".", paths: { "@core/*": ["../../core/src/*"] } },
+      include: ["./**/*.ts"],
+    }),
+  );
+  projectFixture.write(
+    "ext/alias/use.ts",
+    'import { shared } from "@core/shared";\nexport const value = shared();\n',
+  );
+  projectFixture.write("ext/transitive/tsconfig.json", ownConfiguration);
+  projectFixture.write(
+    "ext/transitive/use.ts",
+    'import { shared } from "../../core/src/bridge";\nexport const value = shared();\n',
+  );
+  projectFixture.write("core/package.json", JSON.stringify({ types: "src/shared.ts" }));
+  projectFixture.write("ext/package/tsconfig.json", ownConfiguration);
+  projectFixture.write(
+    "ext/package/use.ts",
+    'import { shared } from "../../core";\nexport const value = shared();\n',
+  );
+  for (const name of ["unrelated", "other"]) {
+    projectFixture.write(`ext/${name}/tsconfig.json`, ownConfiguration);
+    projectFixture.write(
+      `ext/${name}/local.ts`,
+      'export function shared(): string { return "local"; }\n',
+    );
+  }
+}
 
 function writeSharedImportProjects(projectFixture: ConfiguredProjectFixture): void {
   projectFixture.write("core/shared.ts", "export function shared(): number { return 1; }\n");

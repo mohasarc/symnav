@@ -31,6 +31,7 @@ import { nodeKind } from "./node-kind.js";
 import { refineLabel } from "./refine-label.js";
 import { statementCallExpression, trailingCallbackBody } from "./trailing-callback.js";
 import { roleOf } from "./typescript-symbol-kind.js";
+import { NodeLineNumbers } from "./node-line-numbers.js";
 
 export class OverviewChildrenExtractor {
   private static readonly IGNORED_STATEMENT_KINDS: ReadonlySet<SyntaxKind> = new Set([
@@ -224,7 +225,7 @@ export class OverviewChildrenExtractor {
         type: "fold",
         foldKind: "finally",
         range: OverviewChildrenExtractor.nodeRange(finallyBlock),
-        header: { startLine: finallyBlock.getStartLineNumber(), lines: ["finally {"] },
+        header: { startLine: NodeLineNumbers.startLine(finallyBlock), lines: ["finally {"] },
         children: this.extractNodes({
           nodes: finallyBlock.getStatements(),
           symbolSegments,
@@ -426,8 +427,8 @@ export class OverviewChildrenExtractor {
 
   private static nodeRange(node: Node): LineRange {
     return {
-      startLine: node.getStartLineNumber(),
-      endLine: node.getEndLineNumber(),
+      startLine: NodeLineNumbers.startLine(node),
+      endLine: NodeLineNumbers.endLine(node),
     };
   }
 

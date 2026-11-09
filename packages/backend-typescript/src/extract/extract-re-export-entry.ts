@@ -5,6 +5,7 @@ import {
   type ReExportOverviewNode,
   type Header,
 } from "@symnav/core";
+import { NodeLineNumbers } from "./node-line-numbers.js";
 
 export class ReExportEntryExtractor {
   static extract(node: Node): ReExportOverviewNode | undefined {
@@ -66,8 +67,8 @@ export class ReExportEntryExtractor {
 
   private static nodeRange(node: Node): LineRange {
     return {
-      startLine: node.getStartLineNumber(),
-      endLine: node.getEndLineNumber(),
+      startLine: NodeLineNumbers.startLine(node),
+      endLine: NodeLineNumbers.endLine(node),
     };
   }
 }

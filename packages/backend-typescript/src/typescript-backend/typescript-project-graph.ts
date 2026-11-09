@@ -1,4 +1,4 @@
-import { posix } from "node:path";
+import { posix, win32 } from "node:path";
 
 import {
   ProjectGraph,
@@ -15,6 +15,7 @@ import { Project, type SourceFile, ts } from "ts-morph";
 
 import type { TypeScriptSemanticSourceProvider } from "./typescript-workspace-state.js";
 import type { TypeScriptSemanticQueryObserver } from "./typescript-semantic-query-observer.js";
+import { ModuleImporterIndex, type ModuleResolutionScope } from "./module-importer-index.js";
 import { SharedSourceFileRegistry } from "./shared-source-file-registry.js";
 import { WorkspaceFileSystemHost } from "./workspace-file-system-host.js";
 import { WorkspacePathDialect } from "./workspace-path-dialect.js";
@@ -48,6 +49,8 @@ interface WorkspacePackage {
 }
 
 class TypeScriptSemanticProject {
+  private static readonly RELATIVE_TYPE_ENTRY = /^\.\.?(?:[\\/]|$)/;
+
   private project: Project;
   private loaded = false;
 
@@ -69,6 +72,15 @@ class TypeScriptSemanticProject {
   languageService(): ts.LanguageService {
     this.load();
     return this.project.getLanguageService().compilerObject;
+  }
+
+  moduleResolutionScope(): ModuleResolutionScope {
+    return { baseUrl: this.compilerOptions.baseUrl, paths: this.compilerOptions.paths ?? {} };
+  }
+
+  mayInclude(fileKeys: ReadonlySet<string>, paths: WorkspacePathDialect): boolean {
+    if (TypeScriptSemanticProject.hasUnindexedResolution(this.compilerOptions)) return true;
+    return this.ownedFiles.some((file) => fileKeys.has(paths.key(file.absolute)));
   }
 
   sourceFile(absolutePath: string): SourceFile | undefined {
@@ -95,6 +107,28 @@ class TypeScriptSemanticProject {
     this.loaded = true;
   }
 
+  private static hasUnindexedResolution(compilerOptions: ts.CompilerOptions): boolean {
+    const implicitJsxImport =
+      compilerOptions.jsx === ts.JsxEmit.ReactJSX || compilerOptions.jsx === ts.JsxEmit.ReactJSXDev;
+    return (
+      implicitJsxImport ||
+      compilerOptions.importHelpers === true ||
+      compilerOptions.rootDirs !== undefined ||
+      compilerOptions.typeRoots !== undefined ||
+      compilerOptions.moduleSuffixes !== undefined ||
+      TypeScriptSemanticProject.hasTypePathEntry(compilerOptions)
+    );
+  }
+
+  private static hasTypePathEntry(compilerOptions: ts.CompilerOptions): boolean {
+    return (compilerOptions.types ?? []).some(
+      (entry) =>
+        TypeScriptSemanticProject.RELATIVE_TYPE_ENTRY.test(entry) ||
+        posix.isAbsolute(entry) ||
+        win32.isAbsolute(entry),
+    );
+  }
+
   private createProject(): Project {
     const project = new Project({
       fileSystem: new WorkspaceFileSystemHost(this.fileSystem),
@@ -114,10 +148,16 @@ export class TypeScriptProjectGraph
   private static readonly WILDCARD_SEGMENT = /[*?]/;
   private static readonly CONFIGURATION_FILE_NAME = "tsconfig.json";
   private static readonly DEPENDENCY_DIRECTORY_NAME = "node_modules";
+  private static readonly PACKAGE_FILE_NAME = "package.json";
 
   private readonly sourceFileRegistry = new SharedSourceFileRegistry();
   private semanticProjects: readonly TypeScriptSemanticProject[] = [];
   private preparedSemanticProjects: readonly TypeScriptSemanticProject[] | undefined;
+  private semanticSnapshot: WorkspaceSnapshot | undefined;
+  private preparedSemanticSnapshot: WorkspaceSnapshot | undefined;
+  private packageDirectories: readonly string[] = [];
+  private packageImportsDeclared = false;
+  private importerIndex: ModuleImporterIndex | undefined;
 
   constructor(
     fileSystem: FileSystem,
@@ -134,11 +174,17 @@ export class TypeScriptProjectGraph
       const summary = await this.refreshProjectGraph(snapshot, workspaceSnapshot);
       if (this.preparedSemanticProjects) {
         this.semanticProjects = this.preparedSemanticProjects;
+        this.semanticSnapshot = this.preparedSemanticSnapshot;
+        this.packageDirectories = TypeScriptProjectGraph.packageDirectories(workspaceSnapshot);
+        this.packageImportsDeclared = this.declaresPackageImports(this.packageDirectories);
+        this.importerIndex = undefined;
         this.preparedSemanticProjects = undefined;
+        this.preparedSemanticSnapshot = undefined;
       }
       return TypeScriptProjectGraph.refreshSummary(summary);
     } catch (error) {
       this.preparedSemanticProjects = undefined;
+      this.preparedSemanticSnapshot = undefined;
       throw error;
     }
   }
@@ -159,7 +205,8 @@ export class TypeScriptProjectGraph
   sourceFilesFor(relativePath: string): readonly SourceFile[] {
     const file = this.workspaceFile(relativePath);
     if (!file) return [];
-    return this.semanticProjects.flatMap((project) => {
+    const candidateProjects = this.projectsReaching(file.absolute);
+    return candidateProjects.flatMap((project) => {
       const sourceFile = project.sourceFile(file.absolute);
       return sourceFile ? [sourceFile] : [];
     });
@@ -169,6 +216,41 @@ export class TypeScriptProjectGraph
     const file = this.workspaceFile(relativePath);
     if (!file) return undefined;
     return this.primaryProjectFor(relativePath)?.sourceFile(file.absolute);
+  }
+
+  private projectsReaching(absolutePath: string): readonly TypeScriptSemanticProject[] {
+    const snapshot = this.semanticSnapshot;
+    if (!snapshot) return this.semanticProjects;
+    const paths = new WorkspacePathDialect(snapshot.root);
+    const dependency = TypeScriptProjectGraph.isDependencyDirectory(
+      snapshot,
+      paths.dirname(absolutePath),
+      paths,
+    );
+    const unindexedTarget = dependency || this.packageImportsDeclared;
+    if (unindexedTarget) return this.semanticProjects;
+    const importerIndex = this.moduleImporterIndex(snapshot, paths);
+    return this.semanticProjects.filter((project) =>
+      project.mayInclude(
+        importerIndex.filesReaching(absolutePath, project.moduleResolutionScope()),
+        paths,
+      ),
+    );
+  }
+
+  private moduleImporterIndex(
+    snapshot: WorkspaceSnapshot,
+    paths: WorkspacePathDialect,
+  ): ModuleImporterIndex {
+    this.importerIndex ??= new ModuleImporterIndex({
+      paths,
+      sources: snapshot.files.map((file) => ({
+        absolute: file.absolute,
+        text: this.fileSystem.readFileSync(file.absolute),
+      })),
+      packageDirectories: this.packageDirectories,
+    });
+    return this.importerIndex;
   }
 
   protected initialConfigurationPaths(root: string): readonly string[] {
@@ -294,6 +376,7 @@ export class TypeScriptProjectGraph
       this.observer,
     );
     this.preparedSemanticProjects = [...projectsByKey.values(), inferredProject];
+    this.preparedSemanticSnapshot = request.snapshot;
     return {
       configuredProjects,
       inferredProject,
@@ -390,6 +473,21 @@ export class TypeScriptProjectGraph
       }
     }
     return [...directories.values()];
+  }
+
+  private declaresPackageImports(packageDirectories: readonly string[]): boolean {
+    return packageDirectories.some((directory) => {
+      const manifestPath = `${directory}/${TypeScriptProjectGraph.PACKAGE_FILE_NAME}`;
+      const manifest = TypeScriptProjectGraph.parseJson(this.fileSystem.readFileSync(manifestPath));
+      return manifest?.imports !== undefined;
+    });
+  }
+
+  private static packageDirectories(workspaceSnapshot: WorkspaceSnapshot): readonly string[] {
+    const paths = new WorkspacePathDialect(workspaceSnapshot.root);
+    return workspaceSnapshot.files
+      .filter((file) => posix.basename(file.relative) === TypeScriptProjectGraph.PACKAGE_FILE_NAME)
+      .map((file) => paths.dirname(file.absolute));
   }
 
   private static isDependencyDirectory(

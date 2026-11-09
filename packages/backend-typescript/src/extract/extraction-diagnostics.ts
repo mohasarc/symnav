@@ -1,5 +1,6 @@
 import type { Node } from "ts-morph";
 import type { DiagnosticSink } from "@symnav/core";
+import { NodeLineNumbers } from "./node-line-numbers.js";
 
 export interface ReportUnrecognisedNodeArgs {
   readonly sink: DiagnosticSink;
@@ -10,7 +11,7 @@ export interface ReportUnrecognisedNodeArgs {
 
 export function reportUnrecognisedNode(args: ReportUnrecognisedNodeArgs): void {
   const kind = args.node.getKindName();
-  const line = args.node.getStartLineNumber();
+  const line = NodeLineNumbers.startLine(args.node);
   args.sink.report({
     severity: "warning",
     dedupeKey: `${args.filePath}:${args.category}:${kind}`,

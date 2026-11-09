@@ -9,6 +9,7 @@ export type {
   DefinitionSymbol,
   DefinitionResult,
 } from "./intermediate-representation/types.js";
+export { DefinitionSourceReader } from "./definition/definition-source-reader.js";
 export type {
   FoldOverviewNode,
   OverviewFileEntries,

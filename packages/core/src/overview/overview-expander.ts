@@ -99,10 +99,20 @@ export class OverviewExpander {
     const at = this.request.at;
     if (at === undefined) return candidates;
 
-    const exactCandidates = candidates.filter((candidate) =>
+    const exactLabelCandidates = candidates.filter((candidate) =>
       OverviewExpander.targetLabels(candidate.node).includes(at),
     );
-    return exactCandidates.length === 0 ? candidates : exactCandidates;
+    if (exactLabelCandidates.length > 0) return exactLabelCandidates;
+
+    const exactNameCandidates = candidates.filter(
+      (candidate) => OverviewExpander.lastSegmentName(candidate.node) === at,
+    );
+    return exactNameCandidates.length === 0 ? candidates : exactNameCandidates;
+  }
+
+  private static lastSegmentName(node: OverviewNode): string | undefined {
+    if (node.type !== "symbol") return undefined;
+    return node.identity.segments.at(-1)?.name;
   }
 
   private matchesRequest(candidate: OverviewExpansionCandidate): boolean {

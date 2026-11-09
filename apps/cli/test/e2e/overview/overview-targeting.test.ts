@@ -222,6 +222,23 @@ describe("symnav overview e2e (targeting)", () => {
     expect(r.stdout).toContain("Greeter::shout");
   });
 
+  it("targets a nested symbol by its own name over substring candidates", () => {
+    const r = runOverview([
+      "overview",
+      "exact-name-targeting.ts",
+      "--at",
+      "initialize",
+      "--depth",
+      "1",
+    ]);
+
+    expect(r.stderr).toBe("");
+    expect(r.status).toBe(0);
+    expect(r.stdout).toContain("3: createContainer::initialize");
+    expect(r.stdout).toContain("3: initializedValues.clear();");
+    expect(r.stdout).not.toContain("createContainer::initializedValues");
+  });
+
   it("prints target candidates for ambiguous header text", async () => {
     const r = runOverview(["overview", "targeted-expansion.ts", "--at", "describe"]);
 

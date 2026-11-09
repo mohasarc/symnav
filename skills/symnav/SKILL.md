@@ -46,7 +46,7 @@ Use these only if the user declines setup, says it can't be done, or no human ca
 
 | Need | Command | Gives |
 | --- | --- | --- |
-| File map | `overview <file>` | symbol/fold tree for one supported file (today TypeScript and JavaScript: `.ts`/`.tsx`/`.mts`/`.cts`/`.js`/`.jsx`/`.mjs`/`.cjs`). `--depth` nests; `--at '<text>'` selects a symbol, test block, or region — an exact symbol path or header beats longer substring matches |
+| File map | `overview <file>` | symbol/fold tree for one supported file (today TypeScript and JavaScript: `.ts`/`.tsx`/`.mts`/`.cts`/`.js`/`.jsx`/`.mjs`/`.cjs`). `--depth` nests; `--at '<text>'` selects a symbol, test block, or region — an exact symbol path or header wins, then a symbol's own name, then substring matches |
 | Find a symbol | `resolve <query>` | every symbol/file matching the name; an empty exact result names `--fuzzy`/`--regex` as the retry |
 | Declaration | `def <target>` | file, line range, signature |
 | Use sites | `refs <target>` | every reference, grouped by file, tagged by kind, paginated |

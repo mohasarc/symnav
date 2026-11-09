@@ -8,7 +8,7 @@ import type {
   SymbolOverviewNode,
 } from "@symnav/core";
 
-import { renderOverviewText } from "./render-overview-text.js";
+import { MAX_OVERVIEW_TEXT_CHARS, renderOverviewText } from "./render-overview-text.js";
 import { HEADER_CAP_LINES, HEADER_CAP_LINE_LENGTH, HEADER_ELLIPSIS } from "./header-cap.js";
 
 type DeclPartial = Pick<SymbolOverviewNode["identity"], "segments"> &
@@ -64,6 +64,49 @@ function overviewResult(
     request: { depth: 0, at: undefined, line: undefined },
     totalSymbolCount: 0,
   };
+}
+
+const NAMESPACE_COUNT = 3;
+const CLASSES_PER_NAMESPACE = 20;
+const METHODS_PER_CLASS = 30;
+const LINES_PER_CLASS = METHODS_PER_CLASS + 2;
+const LINES_PER_NAMESPACE = CLASSES_PER_NAMESPACE * LINES_PER_CLASS + 2;
+
+function method(namespace: string, className: string, index: number, line: number) {
+  const name = `method${index}`;
+  return decl({
+    kind: "method",
+    segments: [{ name: namespace }, { name: className }, { name }],
+    range: { startLine: line, endLine: line },
+    header: header(line, `${name}(value: number): number`),
+  });
+}
+
+function classWithMethods(namespace: string, index: number, startLine: number) {
+  const name = `Shape${index}`;
+  return decl({
+    kind: "class",
+    segments: [{ name: namespace }, { name }],
+    range: { startLine, endLine: startLine + LINES_PER_CLASS - 1 },
+    header: header(startLine, `export class ${name}`),
+    children: Array.from({ length: METHODS_PER_CLASS }, (_, methodIndex) =>
+      method(namespace, name, methodIndex, startLine + 1 + methodIndex),
+    ),
+  });
+}
+
+function namespaceOfClasses(index: number): SymbolOverviewNode {
+  const name = `Space${index}`;
+  const startLine = 1 + index * LINES_PER_NAMESPACE;
+  return decl({
+    kind: "namespace",
+    segments: [{ name }],
+    range: { startLine, endLine: startLine + LINES_PER_NAMESPACE - 1 },
+    header: header(startLine, `export namespace ${name}`),
+    children: Array.from({ length: CLASSES_PER_NAMESPACE }, (_, classIndex) =>
+      classWithMethods(name, classIndex, startLine + 1 + classIndex * LINES_PER_CLASS),
+    ),
+  });
 }
 
 function assertSingleTrailingNewline(output: string): void {
@@ -602,5 +645,20 @@ describe("renderOverviewText", () => {
     expect(renderOverviewText(result)).toBe(
       ["Overview: src/index.ts", '└── 1: export * from "./core";', ""].join("\n"),
     );
+  });
+});
+
+describe("renderOverviewText size budget", () => {
+  it("drops to the deepest full depth that fits MAX_OVERVIEW_TEXT_CHARS", () => {
+    const result = overviewResult({
+      file: "src/shapes.ts",
+      entries: Array.from({ length: NAMESPACE_COUNT }, (_, index) => namespaceOfClasses(index)),
+    });
+
+    const output = renderOverviewText(result);
+
+    expect(output.length).toBeLessThanOrEqual(MAX_OVERVIEW_TEXT_CHARS);
+    expect(output).toContain("Space2::Shape19\n");
+    expect(output).toContain(`… cut to fit ${MAX_OVERVIEW_TEXT_CHARS} chars: showing depth 1 of 2`);
   });
 });

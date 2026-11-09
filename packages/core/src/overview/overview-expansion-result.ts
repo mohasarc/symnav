@@ -5,6 +5,7 @@ export interface OverviewExpansionRequest {
   readonly depth: number;
   readonly at: string | undefined;
   readonly line: number | undefined;
+  readonly all: boolean;
 }
 
 export interface OverviewExpansionCandidate {

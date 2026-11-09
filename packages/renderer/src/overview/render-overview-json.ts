@@ -1,19 +1,22 @@
-import type { OverviewExpansionResult } from "@symnav/core";
+import type { OverviewExpansionRequest, OverviewExpansionResult } from "@symnav/core";
 
 export function renderOverviewJson(result: OverviewExpansionResult): string {
   return JSON.stringify(wireShapeOf(result), sortedKeyReplacer, 2) + "\n";
 }
 
-type OverviewWireShape = Pick<
-  OverviewExpansionResult,
-  "file" | "entries" | "request" | "diagnostics"
->;
+type OverviewWireShape = Pick<OverviewExpansionResult, "file" | "entries" | "diagnostics"> & {
+  readonly request: Omit<OverviewExpansionRequest, "all">;
+};
 
 function wireShapeOf(result: OverviewExpansionResult): OverviewWireShape {
   const wire: OverviewWireShape = {
     file: result.file,
     entries: result.entries,
-    request: result.request,
+    request: {
+      depth: result.request.depth,
+      at: result.request.at,
+      line: result.request.line,
+    },
   };
   if (result.diagnostics === undefined) return wire;
   return { ...wire, diagnostics: result.diagnostics };

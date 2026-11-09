@@ -22,6 +22,7 @@ export interface OverviewExpansionRequestInput {
   readonly depth: number | string;
   readonly at: string | undefined;
   readonly line: number | string | undefined;
+  readonly all: boolean;
 }
 
 export interface ExpandOverviewArgs {
@@ -53,7 +54,7 @@ export class OverviewExpander {
         `--line must be a positive integer, got ${request.line}`,
       );
     }
-    return { depth, at: request.at, line };
+    return { depth, at: request.at, line, all: request.all };
   }
 
   expand(): OverviewExpansionResult {

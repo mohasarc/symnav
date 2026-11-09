@@ -87,6 +87,12 @@ describe("OverviewExpander request validation", () => {
     });
   });
 
+  it("carries all into the request", () => {
+    expect(
+      construct({ depth: 0, at: undefined, line: undefined, all: true }).expand().request.all,
+    ).toBe(true);
+  });
+
   it("constructs at depth 0 without a line", () => {
     expect(() => construct({ depth: 0, at: undefined, line: undefined })).not.toThrow();
   });

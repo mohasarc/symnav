@@ -22,6 +22,7 @@ import {
   type SymbolIdentity,
   type WorkspaceSnapshot,
 } from "@symnav/core";
+import type { ts } from "ts-morph";
 
 import { TypeScriptBackend } from "./typescript-backend.js";
 import { TypeScriptProjectGraph } from "./typescript-project-graph.js";
@@ -87,6 +88,8 @@ class ConfiguredProjectFixture {
     });
   }
 }
+
+const SHARED_IMPORT_PROJECT_COUNT = 60;
 
 const fixtures: ConfiguredProjectFixture[] = [];
 
@@ -925,7 +928,44 @@ describe("TypeScriptProjectGraph", () => {
       backend.resolveSymbols(snapshot.files, "addedInferredTarget", { mode: "exact" }),
     ).resolves.toEqual([]);
   });
+
+  it("parses shared and default library files once across many configured projects", async () => {
+    const projectFixture = fixture();
+    writeSharedImportProjects(projectFixture);
+    const graph = new TypeScriptProjectGraph(projectFixture.fileSystem);
+    await graph.refresh(await projectFixture.snapshot(), await projectFixture.workspaceSnapshot());
+
+    const programs = sharedImportProjectFiles().map((path) => graph.programFor(path)!);
+    const sharedPath = `${projectFixture.root.replaceAll("\\", "/")}/core/shared.ts`;
+    const sharedSourceFiles = new Set(programs.map((program) => program.getSourceFile(sharedPath)));
+    const libraryFiles = (program: ts.Program) =>
+      program.getSourceFiles().filter((file) => program.isSourceFileDefaultLibrary(file));
+    const distinctLibraryFiles = new Set(programs.flatMap(libraryFiles));
+
+    expect(new Set(programs).size).toBe(SHARED_IMPORT_PROJECT_COUNT);
+    expect(sharedSourceFiles.size).toBe(1);
+    expect(libraryFiles(programs[0]!).length).toBeGreaterThan(0);
+    expect(distinctLibraryFiles.size).toBe(libraryFiles(programs[0]!).length);
+  });
 });
+
+function writeSharedImportProjects(projectFixture: ConfiguredProjectFixture): void {
+  projectFixture.write("core/shared.ts", "export function shared(): number { return 1; }\n");
+  for (const [index, path] of sharedImportProjectFiles().entries()) {
+    projectFixture.write(
+      `ext/e${index}/tsconfig.json`,
+      JSON.stringify({ compilerOptions: { strict: true }, include: ["./**/*.ts"] }),
+    );
+    projectFixture.write(
+      path,
+      'import { shared } from "../../core/shared";\nexport const value = shared();\n',
+    );
+  }
+}
+
+function sharedImportProjectFiles(): readonly string[] {
+  return Array.from({ length: SHARED_IMPORT_PROJECT_COUNT }, (_, index) => `ext/e${index}/f.ts`);
+}
 
 async function calleeNames(
   backend: TypeScriptBackend,

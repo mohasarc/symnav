@@ -45,6 +45,8 @@ import { TestDaemonProcessCoordinator as DaemonProcessCoordinator } from "../../
 import { DaemonFailureJournal } from "../diagnostics/failure-journal.js";
 import { NodeDaemonClock } from "../lifecycle/daemon-clock.js";
 
+const TEST_PACED_STOP_RESPONSE_TIMEOUT_MS = 2_000;
+
 describe("DaemonProcessCoordinator runtime lifecycle", () => {
   const harnesses: DaemonProcessCoordinatorHarness[] = [];
   const childProcesses: ChildProcess[] = [];
@@ -184,6 +186,7 @@ describe("DaemonProcessCoordinator runtime lifecycle", () => {
     const resourcePolicy = DaemonResourcePolicy.fromSystemMemory(512 * 1024 * 1024);
     const executor = new DeferredExecutor();
     const harness = await DaemonProcessCoordinatorHarness.start(executor, {
+      transport: new DaemonTransport({ requestTimeoutMs: TEST_PACED_STOP_RESPONSE_TIMEOUT_MS }),
       resourcePolicy,
       resourceCheckIntervalMs: 5,
       residentMemoryBytes: () =>
@@ -700,6 +703,7 @@ class DaemonProcessCoordinatorHarness {
   readonly exited: Promise<number>;
   private resolveExit!: (code: number) => void;
   private exitCode: number | undefined;
+  private started = false;
 
   get hasExited(): boolean {
     return this.exitCode !== undefined;
@@ -764,6 +768,7 @@ class DaemonProcessCoordinatorHarness {
       ...runtime,
     });
     await daemon.start();
+    harness.started = true;
     return harness;
   }
 
@@ -818,7 +823,8 @@ class DaemonProcessCoordinatorHarness {
           processToken: "runtime-token",
         })
         .catch(() => undefined);
-      await Promise.race([this.exited, new Promise((resolve) => setTimeout(resolve, 250))]);
+      if (this.started) await this.exited;
+      else await Promise.race([this.exited, new Promise((resolve) => setTimeout(resolve, 250))]);
     }
     rmSync(this.stateDirectory, { recursive: true, force: true });
     rmSync(this.workspaceRoot, { recursive: true, force: true });

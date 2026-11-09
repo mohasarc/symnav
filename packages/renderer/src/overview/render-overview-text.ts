@@ -14,6 +14,7 @@ export function renderOverviewText(result: OverviewExpansionResult): string {
     return formatEmptyOverview(result.file);
   }
   const fileHeader = formatOverviewHeader(result.file);
+  if (result.request.all) return fileHeader + renderTopLevelChildren(result.entries);
   const budget = new OverviewTextBudget({
     maxChars: MAX_OVERVIEW_TEXT_CHARS,
     renderTree: (entries) => fileHeader + renderTopLevelChildren(entries),

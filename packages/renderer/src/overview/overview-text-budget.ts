@@ -6,6 +6,8 @@ export interface OverviewTextBudgetArgs {
 }
 
 const NO_LEVELS_SHOWN = -1;
+const AT_HINT = "--at '<label>' --depth <n> on a shown node";
+const ALL_HINT = "--all";
 
 export class OverviewTextBudget {
   private readonly maxChars: number;
@@ -40,15 +42,16 @@ export class OverviewTextBudget {
   }
 
   private footer(levels: readonly (readonly OverviewNode[])[], deepestLevel: number): string {
-    const totalNodes = OverviewTextBudget.countUpTo(levels, levels.length - 1);
+    const deepestTreeLevel = levels.length - 1;
+    const totalNodes = OverviewTextBudget.countUpTo(levels, deepestTreeLevel);
     const shownNodes = OverviewTextBudget.countUpTo(levels, deepestLevel);
     const omitted = `${totalNodes - shownNodes} nodes omitted`;
-    const cutLine =
-      deepestLevel === NO_LEVELS_SHOWN
-        ? `… cut to fit ${this.maxChars} chars: ${omitted}\n`
-        : `… cut to fit ${this.maxChars} chars: showing depth ${deepestLevel} of ${levels.length - 1}, ${omitted}\n`;
-    if (deepestLevel === NO_LEVELS_SHOWN) return cutLine;
-    return cutLine + "… more: --at '<label>' --depth <n> on a shown node\n";
+    const nothingShown = deepestLevel === NO_LEVELS_SHOWN;
+    const shown = nothingShown
+      ? omitted
+      : `showing depth ${deepestLevel} of ${deepestTreeLevel}, ${omitted}`;
+    const hints = nothingShown ? [ALL_HINT] : [AT_HINT, ALL_HINT];
+    return `… cut to fit ${this.maxChars} chars: ${shown}\n… more: ${hints.join(", or ")}\n`;
   }
 
   private static countUpTo(levels: readonly (readonly OverviewNode[])[], level: number): number {

@@ -466,6 +466,19 @@ describe("ProjectGraph", () => {
     expect(graph.primary("owned.ts")).not.toBe(changedSourceProject);
   });
 
+  it("rebuilds when only the nested configuration paths change", async () => {
+    const graph = new FakeProjectGraph(new InMemoryFileSystem({ "/repo/a/nested.json": "a" }));
+    graph.configurations.set("/repo/a/nested.json", { referencedPaths: [], filePaths: [] });
+    const workspace = snapshot();
+
+    const before = await graph.refresh(workspace);
+    graph.nestedPaths = ["/repo/a/nested.json"];
+    const after = await graph.refresh(workspace);
+
+    expect(before.configuredProjectCount).toBe(0);
+    expect(after.configuredProjectCount).toBe(1);
+  });
+
   it("rejects unobserved active inputs without replacing the graph", async () => {
     const fileSystem = new MutableProjectFileSystem({
       "/repo/root.json": "root",

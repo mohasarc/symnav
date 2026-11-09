@@ -85,7 +85,7 @@ Anchor with `$` — an unanchored regex matches anywhere in the id and goes ambi
 
 ## Options
 
-- `overview` — `--depth <n>`, `--at <text>`, `--line <n>`
+- `overview` — `--depth <n>`, `--at <text>`, `--line <n>`, `--all` (text is cut at 8000 chars by default; the footer says what was cut)
 - `resolve` — `--fuzzy` (subsequence), `--regex` (JS regex; not with `--fuzzy`)
 - `def`/`refs`/`context`/`graph` — `--regex` (JS regex target), `--line <n>`
 - `refs` — `--page <n>`, `--page-size <n>`, `--all`, `--full-lines`

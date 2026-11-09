@@ -18,6 +18,7 @@ const targetErrorCases: readonly (readonly [string, readonly string[]])[] = [
   ["target-file-not-found", ["missing.ts::charge"]],
   ["target-ignored-file", ["src/ignored-stuff.ts::HiddenProcessor"]],
   ["target-ignored-file-suffix", ["ignored-stuff.ts::HiddenProcessor"]],
+  ["target-unsupported-file", ["report.py::summarize"]],
 ];
 
 describe("symbol target error paths", () => {

@@ -137,6 +137,8 @@ class RegistryStartupLease implements StartupLease {
 }
 
 export class DaemonRegistry {
+  private static readonly windowsClaimPublishAttempts = 2;
+
   private static writeFile(...arguments_: Parameters<typeof writeFileSync>): void {
     try {
       writeFileSync(...arguments_);
@@ -359,7 +361,7 @@ export class DaemonRegistry {
       },
     );
     try {
-      this.renamePath(claimPath, identity.lockPath);
+      this.publishClaim(claimPath, identity.lockPath);
       return new RegistryStartupLease(this, identity, owner);
     } catch (error) {
       rmSync(claimPath, { recursive: true, force: true });
@@ -737,7 +739,7 @@ export class DaemonRegistry {
       },
     );
     try {
-      this.renamePath(claimPath, identity.startupMutationPath);
+      this.publishClaim(claimPath, identity.startupMutationPath);
       return new RegistryStartupMutationLease(this, identity, owner);
     } catch (error) {
       rmSync(claimPath, { recursive: true, force: true });
@@ -745,6 +747,28 @@ export class DaemonRegistry {
       if (existsSync(identity.startupMutationPath)) return undefined;
       throw error;
     }
+  }
+
+  private publishClaim(claimPath: string, destination: string): void {
+    for (let attempt = 1; ; attempt += 1) {
+      try {
+        this.renamePath(claimPath, destination);
+        return;
+      } catch (error) {
+        const retryable =
+          attempt < DaemonRegistry.windowsClaimPublishAttempts &&
+          this.collidedWithReleasedWindowsClaim(error, destination);
+        if (!retryable) throw error;
+      }
+    }
+  }
+
+  private collidedWithReleasedWindowsClaim(error: unknown, destination: string): boolean {
+    return (
+      this.platform === "win32" &&
+      DaemonRegistry.errorCode(error) === "EPERM" &&
+      !existsSync(destination)
+    );
   }
 
   private static startupClaimWasContended(error: unknown): boolean {

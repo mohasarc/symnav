@@ -692,6 +692,21 @@ describe("daemon registry", () => {
     expect(lease?.release()).toBe(true);
   });
 
+  it("preserves a repeated Windows EPERM startup claim failure when no winner exists", () => {
+    const identity = DaemonWorkspaceIdentity.from("/repo", temporaryDirectory(roots));
+    const denied = Object.assign(new Error("claim publication denied"), { code: "EPERM" });
+    let attempts = 0;
+    const registry = new DaemonRegistry(identity.registryDirectory, "win32", () => {
+      attempts += 1;
+      throw denied;
+    });
+
+    expect(() => registry.acquireStartup(identity, "denied")).toThrow(denied);
+    expect(attempts).toBe(2);
+    expect(existsSync(identity.startupClaimPath("denied"))).toBe(false);
+    expect(registry.startupOwner(identity)).toBeUndefined();
+  });
+
   it("preserves real startup claim write failures when no winner exists", () => {
     const identity = DaemonWorkspaceIdentity.from("/repo", temporaryDirectory(roots));
     const denied = Object.assign(new Error("claim publication denied"), { code: "EACCES" });

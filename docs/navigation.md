@@ -40,6 +40,7 @@ TypeScript and JavaScript: `.ts`, `.tsx`, `.mts`, `.cts`, `.d.ts`, `.js`, `.jsx`
 
 - JS works with no `tsconfig.json` and under any tsconfig: symnav reads JS as if `allowJs` were on, even where a tsconfig sets `allowJs: false`.
 - An import of an untyped package doesn't pull its `node_modules` JS in.
+- A `.js` file with a `.d.ts` twin beside it (`Tabs.js` + `Tabs.d.ts`, `.mjs` + `.d.mts`, `.cjs` + `.d.cts`): imports resolve to the twin, so `refs` and `context` on a JS symbol include uses reached through the twin's same-named symbol. A target matching both picks the JS one.
 - CommonJS exports (`module.exports`, `exports.x =`) aren't symbols, in `.cjs` or `.js`. Functions and classes declared in those files are, but `refs` on one exported through `module.exports` or `exports.x` misses every use reached through `require`.
 
 ### Ambiguity stops

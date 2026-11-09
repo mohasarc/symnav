@@ -929,6 +929,31 @@ describe("TypeScriptProjectGraph", () => {
     ).resolves.toEqual([]);
   });
 
+  it("parses a shared file separately for configured projects with different targets", async () => {
+    const projectFixture = fixture();
+    projectFixture.write("core/shared.ts", "export function shared(): number { return 1; }\n");
+    for (const target of ["es5", "esnext"]) {
+      projectFixture.write(
+        `ext/${target}/tsconfig.json`,
+        JSON.stringify({ compilerOptions: { target }, include: ["./**/*.ts"] }),
+      );
+      projectFixture.write(
+        `ext/${target}/f.ts`,
+        'import { shared } from "../../core/shared";\nexport const value = shared();\n',
+      );
+    }
+    const graph = new TypeScriptProjectGraph(projectFixture.fileSystem);
+    await graph.refresh(await projectFixture.snapshot(), await projectFixture.workspaceSnapshot());
+
+    const sharedPath = `${projectFixture.root.replaceAll("\\", "/")}/core/shared.ts`;
+    const es5Shared = graph.programFor("ext/es5/f.ts")?.getSourceFile(sharedPath);
+    const esnextShared = graph.programFor("ext/esnext/f.ts")?.getSourceFile(sharedPath);
+
+    expect(es5Shared).toBeDefined();
+    expect(esnextShared).toBeDefined();
+    expect(es5Shared).not.toBe(esnextShared);
+  });
+
   it("parses shared and default library files once across many configured projects", async () => {
     const projectFixture = fixture();
     writeSharedImportProjects(projectFixture);

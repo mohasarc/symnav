@@ -904,6 +904,31 @@ describe("TypeScriptProjectGraph", () => {
     expect(options?.strict).toBe(true);
   });
 
+  it("finds importers of an inferred .d.ts twin in references to a .js symbol", async () => {
+    const projectFixture = fixture();
+    writeDeclarationTwinSources(projectFixture, "scratch");
+
+    await expect(
+      referencesOf(projectFixture, symbolIdentity("scratch/Tabs.js", "Tabs")),
+    ).resolves.toEqual([
+      ["scratch/App.ts", 1, "import"],
+      ["scratch/App.ts", 3, "usage"],
+    ]);
+  });
+
+  it("finds importers of a configured .d.ts twin in references to a .js symbol", async () => {
+    const projectFixture = fixture();
+    projectFixture.write("legacy/tsconfig.json", JSON.stringify({ include: ["src"] }));
+    writeDeclarationTwinSources(projectFixture, "legacy/src");
+
+    await expect(
+      referencesOf(projectFixture, symbolIdentity("legacy/src/Tabs.js", "Tabs")),
+    ).resolves.toEqual([
+      ["legacy/src/App.ts", 1, "import"],
+      ["legacy/src/App.ts", 3, "usage"],
+    ]);
+  });
+
   it("keeps implicit outDir contents outside configured membership", async () => {
     const projectFixture = fixture();
     const graph = new TypeScriptProjectGraph(projectFixture.fileSystem);
@@ -1162,6 +1187,33 @@ async function calleeNames(
 ): Promise<readonly string[]> {
   const callees = await backend.findCallees(files, identity);
   return callees.map((callee) => callee.symbol.identity.segments.at(-1)?.name ?? "");
+}
+
+function writeDeclarationTwinSources(
+  projectFixture: ConfiguredProjectFixture,
+  directory: string,
+): void {
+  projectFixture.write(`${directory}/Tabs.js`, "export function Tabs() {}\n");
+  projectFixture.write(`${directory}/Tabs.d.ts`, "export declare function Tabs(): void;\n");
+  projectFixture.write(
+    `${directory}/App.ts`,
+    'import { Tabs } from "./Tabs.js";\n\nexport const tabs = Tabs();\n',
+  );
+}
+
+async function referencesOf(
+  projectFixture: ConfiguredProjectFixture,
+  identity: SymbolIdentity,
+): Promise<readonly (string | number)[][]> {
+  const snapshot = await projectFixture.snapshot();
+  const backend = new TypeScriptBackend(projectFixture.fileSystem);
+  await backend.refresh({
+    snapshot,
+    workspaceSnapshot: await projectFixture.workspaceSnapshot(),
+    coverage: "workspace",
+  });
+  const references = await backend.findReferences(snapshot.files, identity);
+  return references.map((reference) => [reference.file, reference.line, reference.kind]);
 }
 
 function symbolIdentity(file: string, name: string): SymbolIdentity {

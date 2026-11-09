@@ -504,6 +504,19 @@ describe("OverviewExpander target selection", () => {
         ),
       ).toEqual(["1-2: object#1", "4-5: object#2"]);
     });
+
+    it("prefers a full label match over a last segment match", () => {
+      const topLevel = symbol("object", { range: { startLine: 1, endLine: 2 } });
+      const nested = symbol("object", {
+        range: { startLine: 5, endLine: 6 },
+        identity: { file: containerFile, segments: [{ name: "outer" }, { name: "object" }] },
+      });
+      const outer = symbol("outer", { range: { startLine: 4, endLine: 7 }, children: [nested] });
+
+      expect(
+        expandRequest([topLevel, outer], { depth: 0, at: "object", line: undefined }).entries,
+      ).toEqual([topLevel]);
+    });
   });
 
   it("keeps multiple exact labels ambiguous", () => {

@@ -453,6 +453,59 @@ describe("OverviewExpander target selection", () => {
     ).toEqual([exact]);
   });
 
+  describe("symbol last segment name", () => {
+    const containerFile = "src/file.ts";
+    const initializedValues = symbol("initializedValues", {
+      range: { startLine: 2, endLine: 2 },
+      identity: {
+        file: containerFile,
+        segments: [{ name: "createContainer" }, { name: "initializedValues" }],
+      },
+    });
+    const initialize = symbol("initialize", {
+      range: { startLine: 3, endLine: 3 },
+      identity: {
+        file: containerFile,
+        segments: [{ name: "createContainer" }, { name: "initialize" }],
+      },
+      children: [fold("initializedValues.clear();", { range: { startLine: 3, endLine: 3 } })],
+    });
+    const createContainer = symbol("createContainer", {
+      range: { startLine: 1, endLine: 5 },
+      children: [initializedValues, initialize],
+    });
+
+    it("selects the symbol whose last segment equals the name over substring candidates", () => {
+      expect(
+        expandRequest([createContainer], { depth: 1, at: "initialize", line: undefined }).entries,
+      ).toEqual([initialize]);
+    });
+
+    it("selects the symbol by last segment name under line narrowing", () => {
+      expect(
+        expandRequest([createContainer], { depth: 0, at: "initialize", line: 3 }).entries,
+      ).toEqual([{ ...initialize, children: [] }]);
+    });
+
+    it("keeps disambiguated symbols with the same name ambiguous", () => {
+      const first = symbol("object", {
+        range: { startLine: 1, endLine: 2 },
+        identity: { file: containerFile, segments: [{ name: "object", disambiguator: 1 }] },
+      });
+      const second = symbol("object", {
+        range: { startLine: 4, endLine: 5 },
+        identity: { file: containerFile, segments: [{ name: "object", disambiguator: 2 }] },
+      });
+      const statement = fold('typeof state === "object"', { range: { startLine: 7, endLine: 8 } });
+
+      expect(
+        thrownCandidateHeaders(() =>
+          expandRequest([first, second, statement], { depth: 0, at: "object", line: undefined }),
+        ),
+      ).toEqual(["1-2: object#1", "4-5: object#2"]);
+    });
+  });
+
   it("keeps multiple exact labels ambiguous", () => {
     const entries = [
       fold("cursor", { range: { startLine: 1, endLine: 2 } }),

@@ -703,6 +703,7 @@ class DaemonProcessCoordinatorHarness {
   readonly exited: Promise<number>;
   private resolveExit!: (code: number) => void;
   private exitCode: number | undefined;
+  private started = false;
 
   get hasExited(): boolean {
     return this.exitCode !== undefined;
@@ -767,6 +768,7 @@ class DaemonProcessCoordinatorHarness {
       ...runtime,
     });
     await daemon.start();
+    harness.started = true;
     return harness;
   }
 
@@ -821,7 +823,8 @@ class DaemonProcessCoordinatorHarness {
           processToken: "runtime-token",
         })
         .catch(() => undefined);
-      await Promise.race([this.exited, new Promise((resolve) => setTimeout(resolve, 250))]);
+      if (this.started) await this.exited;
+      else await Promise.race([this.exited, new Promise((resolve) => setTimeout(resolve, 250))]);
     }
     rmSync(this.stateDirectory, { recursive: true, force: true });
     rmSync(this.workspaceRoot, { recursive: true, force: true });

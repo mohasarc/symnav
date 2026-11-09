@@ -368,4 +368,40 @@ describe("DefinitionTextRenderer source budget", () => {
       ].join("\n"),
     );
   });
+
+  it("points a cut container at its members", () => {
+    const lines = [
+      "export class Big {",
+      ...Array.from({ length: 9 }, (_, index) => `  m${index + 1}(): void {}`),
+    ];
+    const result: DefinitionResult = {
+      identity: { file: "src/big.ts", segments: [{ name: "Big" }] },
+      symbols: [
+        SourcedDefinition.of({
+          file: "src/big.ts",
+          names: ["Big"],
+          role: "container",
+          nativeLabel: "class",
+          startLine: 1,
+          lines,
+        }),
+      ],
+    };
+
+    expect(DefinitionTextRenderer.render(result, 260)).toBe(
+      [
+        "Definition: Big",
+        "",
+        "src/big.ts",
+        "└── 1-10: Big",
+        "    1 export class Big {",
+        "    2   m1(): void {}",
+        "    3   m2(): void {}",
+        "    … omitted: lines 4-10 (7 lines)",
+        "… cut to fit 260 chars",
+        "… more: overview src/big.ts --at 'Big' --depth 1 then def --source on a member, or --all",
+        "",
+      ].join("\n"),
+    );
+  });
 });

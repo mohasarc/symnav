@@ -199,7 +199,7 @@ Takes a file path, not a symbol target. Shows a VS Code-style fold tree: declara
 
 - Default `--depth 0`: top-level entries only.
 - `--depth n` opens `n` child levels. Class members, local declarations, and fold interiors each cost one level.
-- `--at <text>`: substring match against node headers, as copied from earlier output. A node whose label equals the text exactly beats longer substring matches, so `--at Greeter` picks the class, not `Greeter::greet`. `--depth` then counts from that node.
+- `--at <text>`: substring match against node headers, as copied from earlier output. A node whose label equals the text exactly beats longer substring matches, so `--at Greeter` picks the class, not `Greeter::greet`. Next comes a symbol whose own name equals the text, so `--at initialize` picks `createContainer::initialize` over `createContainer::initializedValues` and statements that mention it. Several symbols with that name (`object#1`, `object#2`) still refuse with candidates. `--depth` then counts from that node.
 - `--line <n>`: narrows candidates to nodes on that line. It can be combined with `--at`.
 - Several candidates left means ambiguous, with candidates listed. There's no innermost-wins.
 - Each signature line carries its source line number. Long headers are capped at 6 lines of 80 characters.

@@ -1,6 +1,6 @@
 ---
 name: symnav-context
-description: Use `symnav context` for deterministic TypeScript symbol navigation in this benchmark arm.
+description: Use `symnav context` for deterministic symbol navigation in this benchmark arm.
 ---
 
 `symnav context` command is installed globally.

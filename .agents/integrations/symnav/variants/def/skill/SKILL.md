@@ -1,6 +1,6 @@
 ---
 name: symnav-def
-description: Use `symnav def` for deterministic TypeScript symbol navigation in this benchmark arm.
+description: Use `symnav def` for deterministic symbol navigation in this benchmark arm.
 ---
 
 `symnav def` command is installed globally.

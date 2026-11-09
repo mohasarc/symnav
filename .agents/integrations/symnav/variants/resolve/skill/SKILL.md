@@ -1,6 +1,6 @@
 ---
 name: symnav-resolve
-description: Use `symnav resolve` for deterministic TypeScript symbol navigation in this benchmark arm.
+description: Use `symnav resolve` for deterministic symbol navigation in this benchmark arm.
 ---
 
 `symnav resolve` command is installed globally.

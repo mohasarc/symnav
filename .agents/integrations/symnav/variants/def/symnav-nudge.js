@@ -3,6 +3,6 @@ const text = input.command || input.pattern || input.file_path || "";
 
 if (/\b(rg|grep|find|cat|sed|head|awk)\b/.test(text) && !/\bsymnav\b/.test(text)) {
   console.error(
-    "The global def command is available for TypeScript symbol navigation in this benchmark arm. Invoke it alongside normal reads and search.",
+    "The global def command is available for symbol navigation in this benchmark arm. Invoke it alongside normal reads and search.",
   );
 }

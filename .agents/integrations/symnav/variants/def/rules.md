@@ -1,6 +1,6 @@
 # def symnav integration
 
-Using `symnav def` is required for this task, and using it *well* matters. Reach for it ahead of grep, find, and plain file reads for any question about the TypeScript code. It is not just an orientation tool — use it to reuse existing code, trace call flow, and understand a symbol's blast radius. Prefer it over the usual tools and lean on it hard.
+Using `symnav def` is required for this task, and using it *well* matters. Reach for it ahead of grep, find, and plain file reads for any question about the code. It is not just an orientation tool — use it to reuse existing code, trace call flow, and understand a symbol's blast radius. Prefer it over the usual tools and lean on it hard.
 
 Make strong, deliberate use of it:
 - **Jump to a declaration.** `symnav def '<file>::<symbol>'` prints the exact location and signature of a symbol.

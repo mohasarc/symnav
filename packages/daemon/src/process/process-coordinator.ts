@@ -1,3 +1,4 @@
+import { DiagLaps } from "../diag-laps.js";
 import { PosixDaemonProcessLifetime } from "./posix-process-lifetime.js";
 import { DaemonStateWriteErrors } from "../state-write-errors.js";
 import { DaemonWorkerStoppingError } from "../worker/worker-stopping-error.js";
@@ -487,6 +488,7 @@ export class DaemonProcessCoordinator {
     ) {
       throw new Error("Daemon termination does not match process instance");
     }
+    DiagLaps.mark("daemon", `received-${request.kind}`);
     this.beginGracefulShutdown();
     if (request.kind === "terminate") {
       await this.acceptedExecutionSession.drain();
@@ -666,14 +668,17 @@ export class DaemonProcessCoordinator {
     reason: "graceful" | "idle" | "resource" | "workspace-deleted",
     force: boolean,
   ): Promise<void> {
+    DiagLaps.mark("daemon", `shutdown-begin force=${force}`);
     this.lifetime.stop();
     this.resourceSupervisor.stop();
     if (force) await this.forceWorkerShutdown();
     else await this.gracefullyShutdownWorker();
+    DiagLaps.mark("daemon", "worker-done");
     this.operationObserver.shutdown({ kind: "shutdown", reason, force });
     this.logger.record({ kind: "stop", reason });
     try {
       await this.server?.close();
+      DiagLaps.mark("daemon", "server-closed");
     } catch (error) {
       this.logger.record({
         kind: "failure",
@@ -683,6 +688,7 @@ export class DaemonProcessCoordinator {
       });
     }
     await this.deliverySession.cleanupInstance();
+    DiagLaps.mark("daemon", "cleanup-done");
     this.deliverySession.completeRetainedTraces();
     await this.failureRecorder.record(
       "termination",
@@ -691,7 +697,9 @@ export class DaemonProcessCoordinator {
       undefined,
       this.options.coordinates.instanceId,
     );
+    DiagLaps.mark("daemon", "journal-done");
     await this.logger.close();
+    DiagLaps.mark("daemon", "logger-closed-exiting");
     this.exit(0);
   }
 

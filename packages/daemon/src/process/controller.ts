@@ -1,3 +1,4 @@
+import { DiagLaps } from "../diag-laps.js";
 import { DaemonFailureJournal } from "../diagnostics/failure-journal.js";
 import { DaemonFailureRecorder } from "../diagnostics/failure-recorder.js";
 import type { DaemonFailureEvent, DaemonStartupFailureStatus } from "../daemon-failure.js";
@@ -145,6 +146,7 @@ export class DaemonController {
 
   async stop(workspaceRoot: string): Promise<DaemonStopResult> {
     const stopStartedAt = this.clock.wallNowMs();
+    DiagLaps.mark("controller", "stop-start");
     const deadline = stopStartedAt + this.stopTimeoutMs;
     const forceWaitMs = Math.min(
       this.policy.shutdown.forcedTerminationReserveMaximumMs,
@@ -179,15 +181,20 @@ export class DaemonController {
       stopRequest,
       this.pause(Math.max(0, gracefulDeadline - this.clock.wallNowMs())).then(() => false),
     ]);
+    DiagLaps.mark("controller", `graceful-wait deadlineIn=${deadline - this.clock.wallNowMs()}`);
     if (await this.waitForExit(record, gracefulDeadline)) {
       this.registry.removeIfProcess(identity, record.instanceId, record.processToken);
       return { status: "stopped", workspaceRoot, pid: record.pid };
     }
 
+    DiagLaps.mark("controller", `kill-send deadlineIn=${deadline - this.clock.wallNowMs()}`);
     const killed = await this.killIdentified(record, deadline);
+    DiagLaps.mark("controller", `kill-ack=${killed} deadlineIn=${deadline - this.clock.wallNowMs()}`);
     if (!killed || !(await this.waitForIdentifiedExit(record, deadline))) {
+      DiagLaps.mark("controller", `kill-unconfirmed deadlineIn=${deadline - this.clock.wallNowMs()} alive=${this.processTerminator.isAlive(record.pid)}`);
       throw new Error(`Daemon process ${record.pid} did not exit after authenticated kill`);
     }
+    DiagLaps.mark("controller", `kill-confirmed deadlineIn=${deadline - this.clock.wallNowMs()}`);
     this.registry.removeIfProcess(identity, record.instanceId, record.processToken);
     return { status: "killed", workspaceRoot, pid: record.pid };
   }

@@ -8,7 +8,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest]
+        os: [windows-latest]
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -19,9 +19,17 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm build
-      - run: pnpm test
-      - run: pnpm --filter symnav test:e2e:cold
-      - run: pnpm --filter symnav test:e2e:warm
+      - name: diag loop
+        shell: bash
+        env:
+          SYMNAV_DIAG_LAPS: ${{ runner.temp }}/laps.txt
+        run: |
+          for i in $(seq 1 20); do
+            echo "=== iteration $i"
+            (cd packages/daemon && npx vitest run src/process/process-coordinator.test.ts 2>&1 | grep -E "✓|×|FAIL|Tests|Error" | head -40) || true
+            (cd apps/cli && npx vitest run test/e2e/daemon/stop.test.ts -t "kills accepted stuck work" 2>&1 | grep -E "✓|×|FAIL|Tests|Error|elapsedMs" | head -40) || true
+          done
+          cat "$SYMNAV_DIAG_LAPS" || true
   typecheck:
     runs-on: ubuntu-latest
     steps:

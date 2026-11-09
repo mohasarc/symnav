@@ -1,8 +1,8 @@
 import type { ChildProcess } from "node:child_process";
-import { mkdirSync, mkdtempSync, realpathSync, writeFileSync } from "node:fs";
+import { appendFileSync, mkdirSync, mkdtempSync, realpathSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { runSymnavBinary } from "@symnav/testing";
 import { canonicalWorkspaceRoot } from "../../helpers/canonical-workspace-root.js";
 import { E2eProcessCleanup } from "../../helpers/e2e-process-cleanup.js";
@@ -15,6 +15,11 @@ describe("symnav daemon stop", () => {
   const daemonPids: number[] = [];
   const helperProcesses: ChildProcess[] = [];
   const controlledDaemons: ControlledLifecycleDaemon[] = [];
+
+  beforeEach((context) => {
+    if (process.env.SYMNAV_DIAG_LAPS)
+      appendFileSync(process.env.SYMNAV_DIAG_LAPS, `${Date.now()} ${process.pid} test ${context.task.name}\n`);
+  });
 
   afterEach(async () => {
     await Promise.all(controlledDaemons.splice(0).map((daemon) => daemon.dispose()));

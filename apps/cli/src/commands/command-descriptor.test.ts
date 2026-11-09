@@ -111,6 +111,16 @@ describe("command telemetry descriptors", () => {
     });
   });
 
+  it("describes def source printing", () => {
+    expect(
+      defCommand.describeArgs({ target: "a.ts::Foo", line: undefined, regex: false, source: true }),
+    ).toEqual({
+      kind: "symbol_id",
+      lengthBucket: "short",
+      flags: ["source"],
+    });
+  });
+
   it("describes refs arguments", () => {
     expect(
       refsCommand.describeArgs({

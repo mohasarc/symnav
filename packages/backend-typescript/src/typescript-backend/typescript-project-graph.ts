@@ -168,12 +168,17 @@ export class TypeScriptProjectGraph
 
   protected nestedConfigurationPaths(workspaceSnapshot: WorkspaceSnapshot): readonly string[] {
     const paths = new WorkspacePathDialect(workspaceSnapshot.root);
-    return TypeScriptProjectGraph.sourceDirectories(workspaceSnapshot, paths)
+    return workspaceSnapshot.files
       .filter(
-        (directory) =>
-          !TypeScriptProjectGraph.isDependencyDirectory(workspaceSnapshot, directory, paths),
+        (file) =>
+          posix.basename(file.relative) === TypeScriptProjectGraph.CONFIGURATION_FILE_NAME &&
+          !TypeScriptProjectGraph.isDependencyDirectory(
+            workspaceSnapshot,
+            paths.dirname(file.absolute),
+            paths,
+          ),
       )
-      .map((directory) => paths.join(directory, TypeScriptProjectGraph.CONFIGURATION_FILE_NAME));
+      .map((file) => file.absolute);
   }
 
   protected async parseConfiguration(request: {

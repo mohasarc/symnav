@@ -57,7 +57,7 @@ describe("symbol target failures surfaced by commands", () => {
       }),
       cwdOverride: undefined,
       json: false,
-      args: { target: "helper", line: undefined, regex: false, source: false },
+      args: { target: "helper", line: undefined, regex: false, source: false, all: false },
     });
 
     expect(context.stdout.text()).toBe("");
@@ -81,7 +81,7 @@ describe("symbol target failures surfaced by commands", () => {
       }),
       cwdOverride: undefined,
       json: false,
-      args: { target: "walk", line: "abc", regex: false, source: false },
+      args: { target: "walk", line: "abc", regex: false, source: false, all: false },
     });
 
     expect(context.stdout.text()).toBe("");
@@ -105,7 +105,7 @@ describe("symbol target failures surfaced by commands", () => {
       }),
       cwdOverride: undefined,
       json: false,
-      args: { target: "walk", line: "0", regex: false, source: false },
+      args: { target: "walk", line: "0", regex: false, source: false, all: false },
     });
 
     expect(context.stdout.text()).toBe("");

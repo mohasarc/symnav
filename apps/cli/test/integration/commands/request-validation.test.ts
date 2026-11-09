@@ -136,7 +136,13 @@ describe("request validation before backend preparation", () => {
   });
 
   it("rejects an invalid symbol target before reading workspace sources", async () => {
-    const args: DefArgs = { target: "::charge", line: undefined, regex: false, source: false };
+    const args: DefArgs = {
+      target: "::charge",
+      line: undefined,
+      regex: false,
+      source: false,
+      all: false,
+    };
     const result = await runInvalidRequest(defCommand, args);
 
     expect(result.stderr).toBe(
@@ -147,7 +153,13 @@ describe("request validation before backend preparation", () => {
   });
 
   it("rejects an invalid symbol line before reading workspace sources", async () => {
-    const args: DefArgs = { target: "charge", line: "abc", regex: false, source: false };
+    const args: DefArgs = {
+      target: "charge",
+      line: "abc",
+      regex: false,
+      source: false,
+      all: false,
+    };
     const result = await runInvalidRequest(defCommand, args);
 
     expect(result.stderr).toBe("Cannot answer: --line must be a positive integer, got abc.\n");
@@ -186,7 +198,13 @@ describe("workspace discovery before request validation", () => {
   });
 
   it("reports a missing workspace before an invalid shared symbol target", async () => {
-    const args: DefArgs = { target: "::charge", line: undefined, regex: false, source: false };
+    const args: DefArgs = {
+      target: "::charge",
+      line: undefined,
+      regex: false,
+      source: false,
+      all: false,
+    };
     const result = await runRequest(
       defCommand,
       args,

@@ -15,6 +15,7 @@ export interface DefArgs {
   readonly line: number | string | undefined;
   readonly regex: boolean;
   readonly source: boolean;
+  readonly all: boolean;
 }
 
 class DefinitionSourceAttachment {
@@ -68,7 +69,7 @@ export const defCommand: Command<DefinitionResult, DefArgs> = {
     const symbols = ctx.args.source
       ? await DefinitionSourceAttachment.attach(definitions, ctx)
       : definitions;
-    const result: DefinitionResult = { identity: resolved.identity, symbols };
+    const result: DefinitionResult = { identity: resolved.identity, symbols, all: ctx.args.all };
     return NavigationDiagnosticsCollector.attach(result, ctx.workspace, ctx.router);
   },
   renderText: renderDefinitionText,

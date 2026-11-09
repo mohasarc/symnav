@@ -93,6 +93,7 @@ describe("command telemetry descriptors", () => {
         line: undefined,
         regex: false,
         source: false,
+        all: false,
       }),
     ).toEqual({
       kind: "symbol_id",
@@ -103,7 +104,13 @@ describe("command telemetry descriptors", () => {
 
   it("describes def line narrowing", () => {
     expect(
-      defCommand.describeArgs({ target: "a.ts::Foo", line: 4, regex: false, source: false }),
+      defCommand.describeArgs({
+        target: "a.ts::Foo",
+        line: 4,
+        regex: false,
+        source: false,
+        all: false,
+      }),
     ).toEqual({
       kind: "symbol_id",
       lengthBucket: "short",
@@ -113,7 +120,13 @@ describe("command telemetry descriptors", () => {
 
   it("describes def source printing", () => {
     expect(
-      defCommand.describeArgs({ target: "a.ts::Foo", line: undefined, regex: false, source: true }),
+      defCommand.describeArgs({
+        target: "a.ts::Foo",
+        line: undefined,
+        regex: false,
+        source: true,
+        all: false,
+      }),
     ).toEqual({
       kind: "symbol_id",
       lengthBucket: "short",

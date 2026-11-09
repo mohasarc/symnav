@@ -77,6 +77,7 @@ export interface ProjectGraphRefreshSummary {
 interface DiscoveredProjectConfiguration<ConfigurationUnit> {
   readonly path: string;
   readonly parsed: ParsedProjectConfiguration<ConfigurationUnit>;
+  readonly confinedToDirectory: boolean;
 }
 
 interface ProjectGraphState<Project> {
@@ -113,8 +114,18 @@ export abstract class ProjectGraph<
       files: this.filesForConfiguration(parsed.configuration, snapshot),
     }));
     const configurations = ProjectGraph.canonicalizeMembership(snapshot, candidateConfigurations);
+    const ownedConfigurations = configurations.map((configuration, index) =>
+      discovered[index]?.confinedToDirectory
+        ? {
+            ...configuration,
+            files: ProjectGraph.filesInsideDirectoryOf(configuration.path, configuration.files),
+          }
+        : configuration,
+    );
     const ownedRelativePaths = new Set(
-      configurations.flatMap((configuration) => configuration.files.map((file) => file.relative)),
+      ownedConfigurations.flatMap((configuration) =>
+        configuration.files.map((file) => file.relative),
+      ),
     );
     const inferredFiles = snapshot.files.filter((file) => !ownedRelativePaths.has(file.relative));
     const prepared = await this.prepareProjects({
@@ -132,7 +143,7 @@ export abstract class ProjectGraph<
       this.state?.inputsByPath ?? new Map(),
       inputsByPath,
     );
-    const ownership = ProjectGraph.buildOwnership(configurations, prepared.configuredProjects);
+    const ownership = ProjectGraph.buildOwnership(ownedConfigurations, prepared.configuredProjects);
     this.state = {
       root: snapshot.root,
       filesByRelativePath: new Map(snapshot.files.map((file) => [file.relative, file])),
@@ -201,14 +212,16 @@ export abstract class ProjectGraph<
     inputCollector: ProjectInputCollector,
   ): Promise<readonly DiscoveredProjectConfiguration<ConfigurationUnit>[]> {
     const seen = new Set<string>();
-    const configurations: DiscoveredProjectConfiguration<ConfigurationUnit>[] = [];
+    const nestedPaths = [...this.nestedConfigurationPaths(snapshot)].sort();
     const seeds = [
-      this.initialConfigurationPaths(snapshot.root),
-      [...this.nestedConfigurationPaths(snapshot)].sort(),
+      { paths: this.initialConfigurationPaths(snapshot.root), confinedPaths: new Set<string>() },
+      { paths: nestedPaths, confinedPaths: new Set(nestedPaths) },
     ];
+    const configurations: DiscoveredProjectConfiguration<ConfigurationUnit>[] = [];
     for (const seed of seeds) {
       const discovered = await this.discoverReachableConfigurations({
-        seed,
+        seed: seed.paths,
+        confinedPaths: seed.confinedPaths,
         seen,
         snapshot,
         inputCollector,
@@ -220,11 +233,12 @@ export abstract class ProjectGraph<
 
   private async discoverReachableConfigurations(request: {
     readonly seed: readonly string[];
+    readonly confinedPaths: ReadonlySet<string>;
     readonly seen: Set<string>;
     readonly snapshot: WorkspaceSnapshot;
     readonly inputCollector: ProjectInputCollector;
   }): Promise<readonly DiscoveredProjectConfiguration<ConfigurationUnit>[]> {
-    const { seen, snapshot, inputCollector } = request;
+    const { confinedPaths, seen, snapshot, inputCollector } = request;
     const pending = [...request.seed];
     const configurations: DiscoveredProjectConfiguration<ConfigurationUnit>[] = [];
     while (pending.length > 0) {
@@ -240,7 +254,7 @@ export abstract class ProjectGraph<
         inputCollector,
       });
       if (!parsed) continue;
-      configurations.push({ path, parsed });
+      configurations.push({ path, parsed, confinedToDirectory: confinedPaths.has(path) });
       pending.push(...parsed.referencedConfigurationPaths);
     }
     return configurations;
@@ -380,6 +394,14 @@ export abstract class ProjectGraph<
     const directory = ProjectGraph.configurationDirectory(configurationPath);
     if (!isUnderRoot(file.absolute, directory)) return ProjectGraph.UNRELATED_OWNER_NEARNESS;
     return directory.length;
+  }
+
+  private static filesInsideDirectoryOf(
+    configurationPath: string,
+    files: readonly WorkspaceFile[],
+  ): readonly WorkspaceFile[] {
+    const directory = ProjectGraph.configurationDirectory(configurationPath);
+    return files.filter((file) => isUnderRoot(file.absolute, directory));
   }
 
   private static configurationDirectory(configurationPath: string): string {

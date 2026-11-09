@@ -45,6 +45,8 @@ import { TestDaemonProcessCoordinator as DaemonProcessCoordinator } from "../../
 import { DaemonFailureJournal } from "../diagnostics/failure-journal.js";
 import { NodeDaemonClock } from "../lifecycle/daemon-clock.js";
 
+const TEST_PACED_STOP_RESPONSE_TIMEOUT_MS = 2_000;
+
 describe("DaemonProcessCoordinator runtime lifecycle", () => {
   const harnesses: DaemonProcessCoordinatorHarness[] = [];
   const childProcesses: ChildProcess[] = [];
@@ -184,6 +186,7 @@ describe("DaemonProcessCoordinator runtime lifecycle", () => {
     const resourcePolicy = DaemonResourcePolicy.fromSystemMemory(512 * 1024 * 1024);
     const executor = new DeferredExecutor();
     const harness = await DaemonProcessCoordinatorHarness.start(executor, {
+      transport: new DaemonTransport({ requestTimeoutMs: TEST_PACED_STOP_RESPONSE_TIMEOUT_MS }),
       resourcePolicy,
       resourceCheckIntervalMs: 5,
       residentMemoryBytes: () =>

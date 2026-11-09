@@ -106,6 +106,8 @@ export class TypeScriptProjectGraph
   extends ProjectGraph<ParsedTypeScriptConfiguration, TypeScriptSemanticProject>
   implements TypeScriptSemanticSourceProvider
 {
+  private static readonly WHOLE_DIRECTORY_PATTERN = "**/*";
+
   private semanticProjects: readonly TypeScriptSemanticProject[] = [];
   private preparedSemanticProjects: readonly TypeScriptSemanticProject[] | undefined;
 
@@ -366,10 +368,10 @@ export class TypeScriptProjectGraph
   ): ts.CompilerOptions {
     const pathDialect = new WorkspacePathDialect(root);
     const compilerOptions: ts.CompilerOptions = { ...configuration.compilerOptions };
-    const baseUrl = compilerOptions.baseUrl ?? configuration.directory;
+    const pathsBase = TypeScriptProjectGraph.pathsBaseDirectory(configuration);
     const paths = TypeScriptProjectGraph.workspacePackagePaths(workspacePackages);
     for (const [specifier, targets] of Object.entries(compilerOptions.paths ?? {})) {
-      paths[specifier] = targets.map((target) => pathDialect.resolve(baseUrl, target));
+      paths[specifier] = targets.map((target) => pathDialect.resolve(pathsBase, target));
     }
     delete compilerOptions.rootDir;
     delete compilerOptions.outDir;
@@ -378,6 +380,12 @@ export class TypeScriptProjectGraph
     compilerOptions.paths = paths;
     compilerOptions.noEmit = true;
     return compilerOptions;
+  }
+
+  private static pathsBaseDirectory(configuration: ParsedTypeScriptConfiguration): string {
+    const { baseUrl, pathsBasePath } = configuration.compilerOptions;
+    if (baseUrl !== undefined) return baseUrl;
+    return typeof pathsBasePath === "string" ? pathsBasePath : configuration.directory;
   }
 
   private static inferredCompilerOptions(
@@ -433,11 +441,10 @@ export class TypeScriptProjectGraph
     root: string,
     paths: WorkspacePathDialect,
   ): boolean {
-    const normalizedPattern = paths.normalize(pattern);
-    const relativePattern = paths.isAbsolute(normalizedPattern)
-      ? paths.relative(root, normalizedPattern)
-      : normalizedPattern;
-    return TypeScriptProjectGraph.matchesGlob(path, relativePattern, paths.caseSensitive);
+    const relativePattern = paths.relative(root, paths.resolve(root, paths.normalize(pattern)));
+    const globPattern =
+      relativePattern === "" ? TypeScriptProjectGraph.WHOLE_DIRECTORY_PATTERN : relativePattern;
+    return TypeScriptProjectGraph.matchesGlob(path, globPattern, paths.caseSensitive);
   }
 
   private static parseJson(content: string): Record<string, unknown> | undefined {

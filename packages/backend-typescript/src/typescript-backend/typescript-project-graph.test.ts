@@ -475,6 +475,33 @@ describe("TypeScriptProjectGraph", () => {
     ]);
   });
 
+  it("builds one semantic project for a root configuration and the nested configuration it extends", async () => {
+    const projectFixture = fixture();
+    const loadedFileCounts: number[] = [];
+    const graph = new TypeScriptProjectGraph(projectFixture.fileSystem, {
+      semanticProjectLoaded: (fileCount) => loadedFileCounts.push(fileCount),
+    });
+    projectFixture.write("tsconfig.json", JSON.stringify({ extends: "./src/tsconfig.json" }));
+    projectFixture.write(
+      "src/tsconfig.json",
+      JSON.stringify({ compilerOptions: { strict: true }, include: ["./vs/**/*.ts"] }),
+    );
+    for (const name of ["a", "b", "c"]) {
+      projectFixture.write(`src/vs/${name}.ts`, `export const ${name} = 1;\n`);
+    }
+
+    const refresh = await graph.refresh(
+      await projectFixture.snapshot(),
+      await projectFixture.workspaceSnapshot(),
+    );
+    const sourceFiles = graph.sourceFilesFor("src/vs/a.ts");
+
+    expect(refresh.configuredProjectCount).toBe(4);
+    expect(sourceFiles).toHaveLength(1);
+    expect(sourceFiles[0]?.getProject().getCompilerOptions().strict).toBe(true);
+    expect(loadedFileCounts.filter((fileCount) => fileCount === 3)).toHaveLength(1);
+  });
+
   it.each([".", "./"])(
     "owns every file below a root configuration that includes %j",
     async (include) => {

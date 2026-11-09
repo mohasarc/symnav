@@ -50,6 +50,7 @@ export const defCommand: Command<DefinitionResult, DefArgs> = {
         ...(args.line === undefined ? [] : ["line"]),
         ...(args.regex ? ["regex"] : []),
         ...(args.source ? ["source"] : []),
+        ...(args.all ? ["all"] : []),
       ].sort(),
     };
   },

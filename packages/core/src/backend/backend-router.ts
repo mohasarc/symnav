@@ -35,6 +35,7 @@ export class BackendRouter {
           root: snapshot.root,
           files: filesByBackend.get(backend) ?? [],
         },
+        workspaceSnapshot: snapshot,
         coverage,
       });
       total = {

@@ -274,7 +274,11 @@ function workspaceFile(relative: string, fs: InMemoryFileSystem): WorkspaceFile 
 }
 
 function refreshRequest(files: readonly WorkspaceFile[]) {
-  return { snapshot: { root: "/repo", files }, coverage: "workspace" as const };
+  return {
+    snapshot: { root: "/repo", files },
+    workspaceSnapshot: { root: "/repo", files },
+    coverage: "workspace" as const,
+  };
 }
 
 describe("TypeScriptBackend.findReferences", () => {
@@ -422,6 +426,7 @@ describe("TypeScriptBackend retained workspace refresh", () => {
 
     await backend.refresh({
       snapshot: { root: "/repo", files: [files[0]!] },
+      workspaceSnapshot: { root: "/repo", files: [files[0]!] },
       coverage: "selection",
     });
 

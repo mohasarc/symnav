@@ -35,6 +35,7 @@ class FakeProjectGraph extends ProjectGraph<FakeConfiguration, FakeProject> {
   readonly parsedPaths: string[] = [];
   readonly preparationRequests: ProjectGraphPreparationRequest<FakeConfiguration>[] = [];
   initialPaths: readonly string[] = [];
+  nestedPaths: readonly string[] = [];
   configurations = new Map<string, FakeConfiguration>();
   preparedInputPaths: readonly string[] = [];
   preparedInputs: readonly ProjectInput[] = [];
@@ -48,7 +49,7 @@ class FakeProjectGraph extends ProjectGraph<FakeConfiguration, FakeProject> {
   }
 
   refresh(snapshot: WorkspaceSnapshot): Promise<ProjectGraphRefreshSummary> {
-    return this.refreshProjectGraph(snapshot);
+    return this.refreshProjectGraph(snapshot, snapshot);
   }
 
   primary(relativePath: string): FakeProject | undefined {
@@ -65,6 +66,10 @@ class FakeProjectGraph extends ProjectGraph<FakeConfiguration, FakeProject> {
 
   protected initialConfigurationPaths(): readonly string[] {
     return this.initialPaths;
+  }
+
+  protected nestedConfigurationPaths(): readonly string[] {
+    return this.nestedPaths;
   }
 
   protected async parseConfiguration(request: {
@@ -241,6 +246,34 @@ describe("ProjectGraph", () => {
     ]);
   });
 
+  it("discovers nested configurations in path order after the referenced configurations", async () => {
+    const graph = new FakeProjectGraph(
+      new InMemoryFileSystem({
+        "/repo/root.json": "root",
+        "/repo/shared/ref.json": "ref",
+        "/repo/a/nested.json": "a",
+        "/repo/z/nested.json": "z",
+      }),
+    );
+    graph.initialPaths = ["/repo/root.json"];
+    graph.nestedPaths = ["/repo/z/nested.json", "/repo/shared/ref.json", "/repo/a/nested.json"];
+    graph.configurations = new Map([
+      ["/repo/root.json", { referencedPaths: ["/repo/shared/ref.json"], filePaths: [] }],
+      ["/repo/shared/ref.json", { referencedPaths: [], filePaths: [] }],
+      ["/repo/a/nested.json", { referencedPaths: [], filePaths: [] }],
+      ["/repo/z/nested.json", { referencedPaths: [], filePaths: [] }],
+    ]);
+
+    await graph.refresh(snapshot());
+
+    expect(graph.parsedPaths).toEqual([
+      "/repo/root.json",
+      "/repo/shared/ref.json",
+      "/repo/a/nested.json",
+      "/repo/z/nested.json",
+    ]);
+  });
+
   it("orders all owners and selects the last owner as primary", async () => {
     const graph = new FakeProjectGraph(
       new InMemoryFileSystem({
@@ -264,6 +297,80 @@ describe("ProjectGraph", () => {
       "/repo/c.json",
     ]);
     expect(graph.primary("shared.ts")?.name).toBe("/repo/c.json");
+  });
+
+  it("selects the owner nearest to a file as primary", async () => {
+    const graph = new FakeProjectGraph(
+      new InMemoryFileSystem({
+        "/repo/packages/app/app.json": "app",
+        "/repo/packages/other/other.json": "other",
+        "/repo/root.json": "root",
+      }),
+    );
+    graph.initialPaths = [
+      "/repo/packages/app/app.json",
+      "/repo/packages/other/other.json",
+      "/repo/root.json",
+    ];
+    graph.configurations = new Map([
+      ["/repo/packages/app/app.json", { referencedPaths: [], filePaths: ["packages/app/a.ts"] }],
+      [
+        "/repo/packages/other/other.json",
+        { referencedPaths: [], filePaths: ["packages/app/a.ts"] },
+      ],
+      ["/repo/root.json", { referencedPaths: [], filePaths: ["packages/app/a.ts"] }],
+    ]);
+
+    await graph.refresh(snapshot(workspaceFile("packages/app/a.ts")));
+
+    expect(graph.primary("packages/app/a.ts")?.name).toBe("/repo/packages/app/app.json");
+  });
+
+  it("confines nested configurations to files inside their own directory", async () => {
+    const graph = new FakeProjectGraph(
+      new InMemoryFileSystem({
+        "/repo/config/root.json": "root",
+        "/repo/vendor/nested.json": "vendor",
+        "/repo/packages/app/app.json": "app",
+        "/repo/packages/app/build/build.json": "build",
+      }),
+    );
+    graph.initialPaths = ["/repo/config/root.json"];
+    graph.nestedPaths = ["/repo/vendor/nested.json", "/repo/packages/app/app.json"];
+    graph.configurations = new Map([
+      ["/repo/config/root.json", { referencedPaths: [], filePaths: ["rooted.ts"] }],
+      ["/repo/vendor/nested.json", { referencedPaths: [], filePaths: ["loose.ts", "vendor/v.ts"] }],
+      [
+        "/repo/packages/app/app.json",
+        { referencedPaths: ["/repo/packages/app/build/build.json"], filePaths: [] },
+      ],
+      [
+        "/repo/packages/app/build/build.json",
+        { referencedPaths: [], filePaths: ["packages/app/src/a.ts"] },
+      ],
+    ]);
+
+    await graph.refresh(
+      snapshot(
+        workspaceFile("rooted.ts"),
+        workspaceFile("loose.ts"),
+        workspaceFile("vendor/v.ts"),
+        workspaceFile("packages/app/src/a.ts"),
+      ),
+    );
+
+    expect(graph.projects("rooted.ts").map(({ name }) => name)).toEqual(["/repo/config/root.json"]);
+    expect(graph.projects("loose.ts").map(({ name }) => name)).toEqual(["inferred"]);
+    expect(graph.projects("vendor/v.ts").map(({ name }) => name)).toEqual([
+      "/repo/vendor/nested.json",
+    ]);
+    expect(graph.projects("packages/app/src/a.ts").map(({ name }) => name)).toEqual([
+      "/repo/packages/app/build/build.json",
+    ]);
+    const [request] = graph.preparationRequests;
+    const vendor = request?.configurations.find(({ path }) => path === "/repo/vendor/nested.json");
+    expect(vendor?.files.map(({ relative }) => relative)).toEqual(["loose.ts", "vendor/v.ts"]);
+    expect(request?.inferredFiles.map(({ relative }) => relative)).toEqual(["loose.ts"]);
   });
 
   it("uses the inferred project only for unowned workspace files", async () => {
@@ -357,6 +464,19 @@ describe("ProjectGraph", () => {
     expect(rootChanged.root).toBe("/other");
     expect(rootChanged.changedInputCount).toBe(0);
     expect(graph.primary("owned.ts")).not.toBe(changedSourceProject);
+  });
+
+  it("rebuilds when only the nested configuration paths change", async () => {
+    const graph = new FakeProjectGraph(new InMemoryFileSystem({ "/repo/a/nested.json": "a" }));
+    graph.configurations.set("/repo/a/nested.json", { referencedPaths: [], filePaths: [] });
+    const workspace = snapshot();
+
+    const before = await graph.refresh(workspace);
+    graph.nestedPaths = ["/repo/a/nested.json"];
+    const after = await graph.refresh(workspace);
+
+    expect(before.configuredProjectCount).toBe(0);
+    expect(after.configuredProjectCount).toBe(1);
   });
 
   it("rejects unobserved active inputs without replacing the graph", async () => {

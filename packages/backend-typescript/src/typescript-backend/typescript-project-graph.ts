@@ -15,6 +15,7 @@ import { Project, type SourceFile, ts } from "ts-morph";
 
 import type { TypeScriptSemanticSourceProvider } from "./typescript-workspace-state.js";
 import type { TypeScriptSemanticQueryObserver } from "./typescript-semantic-query-observer.js";
+import { SharedSourceFileRegistry } from "./shared-source-file-registry.js";
 import { WorkspaceFileSystemHost } from "./workspace-file-system-host.js";
 import { WorkspacePathDialect } from "./workspace-path-dialect.js";
 
@@ -54,6 +55,7 @@ class TypeScriptSemanticProject {
     private readonly fileSystem: FileSystem,
     private readonly compilerOptions: ts.CompilerOptions,
     private readonly ownedFiles: readonly WorkspaceFile[],
+    private readonly sourceFileRegistry: SharedSourceFileRegistry,
     private readonly observer?: TypeScriptSemanticQueryObserver,
   ) {
     this.project = this.createProject();
@@ -94,11 +96,13 @@ class TypeScriptSemanticProject {
   }
 
   private createProject(): Project {
-    return new Project({
+    const project = new Project({
       fileSystem: new WorkspaceFileSystemHost(this.fileSystem),
       compilerOptions: this.compilerOptions,
       skipAddingFilesFromTsConfig: true,
     });
+    this.sourceFileRegistry.share(project);
+    return project;
   }
 }
 
@@ -107,7 +111,11 @@ export class TypeScriptProjectGraph
   implements TypeScriptSemanticSourceProvider
 {
   private static readonly WHOLE_DIRECTORY_PATTERN = "**/*";
+  private static readonly WILDCARD_SEGMENT = /[*?]/;
+  private static readonly CONFIGURATION_FILE_NAME = "tsconfig.json";
+  private static readonly DEPENDENCY_DIRECTORY_NAME = "node_modules";
 
+  private readonly sourceFileRegistry = new SharedSourceFileRegistry();
   private semanticProjects: readonly TypeScriptSemanticProject[] = [];
   private preparedSemanticProjects: readonly TypeScriptSemanticProject[] | undefined;
 
@@ -118,9 +126,12 @@ export class TypeScriptProjectGraph
     super(fileSystem);
   }
 
-  async refresh(snapshot: WorkspaceSnapshot): Promise<TypeScriptProjectGraphRefresh> {
+  async refresh(
+    snapshot: WorkspaceSnapshot,
+    workspaceSnapshot: WorkspaceSnapshot,
+  ): Promise<TypeScriptProjectGraphRefresh> {
     try {
-      const summary = await this.refreshProjectGraph(snapshot);
+      const summary = await this.refreshProjectGraph(snapshot, workspaceSnapshot);
       if (this.preparedSemanticProjects) {
         this.semanticProjects = this.preparedSemanticProjects;
         this.preparedSemanticProjects = undefined;
@@ -130,6 +141,11 @@ export class TypeScriptProjectGraph
       this.preparedSemanticProjects = undefined;
       throw error;
     }
+  }
+
+  async releaseTransientResources(): Promise<void> {
+    await super.releaseTransientResources();
+    this.sourceFileRegistry.clear();
   }
 
   programFor(relativePath: string): ts.Program | undefined {
@@ -157,7 +173,22 @@ export class TypeScriptProjectGraph
 
   protected initialConfigurationPaths(root: string): readonly string[] {
     const paths = new WorkspacePathDialect(root);
-    return [paths.join(root, "tsconfig.json")];
+    return [paths.join(root, TypeScriptProjectGraph.CONFIGURATION_FILE_NAME)];
+  }
+
+  protected nestedConfigurationPaths(workspaceSnapshot: WorkspaceSnapshot): readonly string[] {
+    const paths = new WorkspacePathDialect(workspaceSnapshot.root);
+    return workspaceSnapshot.files
+      .filter(
+        (file) =>
+          posix.basename(file.relative) === TypeScriptProjectGraph.CONFIGURATION_FILE_NAME &&
+          !TypeScriptProjectGraph.isDependencyDirectory(
+            workspaceSnapshot,
+            paths.dirname(file.absolute),
+            paths,
+          ),
+      )
+      .map((file) => file.absolute);
   }
 
   protected async parseConfiguration(request: {
@@ -235,26 +266,34 @@ export class TypeScriptProjectGraph
       configurations,
       request.inputCollector,
     );
-    const configuredProjects = request.configurations.map(
-      ({ configuration, files }) =>
-        new TypeScriptSemanticProject(
-          this.fileSystem,
-          TypeScriptProjectGraph.compilerOptionsFor(
-            request.snapshot.root,
-            configuration,
-            workspacePackages,
-          ),
-          files,
-          this.observer,
-        ),
-    );
+    const projectsByKey = new Map<string, TypeScriptSemanticProject>();
+    const configuredProjects = request.configurations.map(({ configuration, files }) => {
+      const compilerOptions = TypeScriptProjectGraph.compilerOptionsFor(
+        request.snapshot.root,
+        configuration,
+        workspacePackages,
+      );
+      const key = TypeScriptProjectGraph.semanticProjectKey(compilerOptions, files);
+      const existing = projectsByKey.get(key);
+      if (existing) return existing;
+      const project = new TypeScriptSemanticProject(
+        this.fileSystem,
+        compilerOptions,
+        files,
+        this.sourceFileRegistry,
+        this.observer,
+      );
+      projectsByKey.set(key, project);
+      return project;
+    });
     const inferredProject = new TypeScriptSemanticProject(
       this.fileSystem,
       TypeScriptProjectGraph.inferredCompilerOptions(request.snapshot.root, workspacePackages),
       request.inferredFiles,
+      this.sourceFileRegistry,
       this.observer,
     );
-    this.preparedSemanticProjects = [...configuredProjects, inferredProject];
+    this.preparedSemanticProjects = [...projectsByKey.values(), inferredProject];
     return {
       configuredProjects,
       inferredProject,
@@ -275,22 +314,29 @@ export class TypeScriptProjectGraph
     return snapshot.files
       .filter((file) => {
         const relative = paths.relative(normalizedRoot, file.absolute);
-        if (!paths.contains(normalizedRoot, file.absolute)) return false;
-        if (depth !== undefined && relative.split("/").length - 1 > depth) return false;
+        const insideRoot = paths.contains(normalizedRoot, file.absolute);
+        if (insideRoot && depth !== undefined && relative.split("/").length - 1 > depth) {
+          return false;
+        }
         if (!extensions.some((extension) => file.absolute.endsWith(extension))) return false;
-        if (
-          includes &&
-          includes.length > 0 &&
-          !includes.some((pattern) =>
+        if (!includes || includes.length === 0) {
+          if (!insideRoot) return false;
+        } else {
+          const reachingIncludes = includes.filter((pattern) =>
+            paths.contains(
+              TypeScriptProjectGraph.includeBaseDirectory(pattern, normalizedRoot, paths),
+              file.absolute,
+            ),
+          );
+          const included = reachingIncludes.some((pattern) =>
             TypeScriptProjectGraph.matchesConfiguredPattern(
               relative,
               pattern,
               normalizedRoot,
               paths,
             ),
-          )
-        ) {
-          return false;
+          );
+          if (!included) return false;
         }
         return !excludes?.some((pattern) =>
           TypeScriptProjectGraph.matchesConfiguredPattern(relative, pattern, normalizedRoot, paths),
@@ -309,13 +355,8 @@ export class TypeScriptProjectGraph
     for (const configuration of configurations) {
       directories.set(paths.key(configuration.directory), configuration.directory);
     }
-    for (const file of snapshot.files) {
-      let directory = paths.dirname(file.absolute);
-      while (paths.contains(snapshot.root, directory)) {
-        directories.set(paths.key(directory), directory);
-        if (paths.equals(directory, snapshot.root)) break;
-        directory = paths.dirname(directory);
-      }
+    for (const directory of TypeScriptProjectGraph.sourceDirectories(snapshot, paths)) {
+      directories.set(paths.key(directory), directory);
     }
     const packages: WorkspacePackage[] = [];
     for (const directory of directories.values()) {
@@ -333,6 +374,33 @@ export class TypeScriptProjectGraph
       packages.push({ path, content, mappings });
     }
     return packages;
+  }
+
+  private static sourceDirectories(
+    snapshot: WorkspaceSnapshot,
+    paths: WorkspacePathDialect,
+  ): readonly string[] {
+    const directories = new Map<string, string>();
+    for (const file of snapshot.files) {
+      let directory = paths.dirname(file.absolute);
+      while (paths.contains(snapshot.root, directory)) {
+        directories.set(paths.key(directory), directory);
+        if (paths.equals(directory, snapshot.root)) break;
+        directory = paths.dirname(directory);
+      }
+    }
+    return [...directories.values()];
+  }
+
+  private static isDependencyDirectory(
+    snapshot: WorkspaceSnapshot,
+    directory: string,
+    paths: WorkspacePathDialect,
+  ): boolean {
+    return paths
+      .relative(snapshot.root, directory)
+      .split("/")
+      .includes(TypeScriptProjectGraph.DEPENDENCY_DIRECTORY_NAME);
   }
 
   private static refreshSummary(
@@ -359,6 +427,14 @@ export class TypeScriptProjectGraph
       const resolved = paths.resolve(configuration.directory, referencePath);
       return [resolved.endsWith(".json") ? resolved : paths.join(resolved, "tsconfig.json")];
     });
+  }
+
+  private static semanticProjectKey(
+    compilerOptions: ts.CompilerOptions,
+    files: readonly WorkspaceFile[],
+  ): string {
+    const { configFilePath: _configFilePath, ...programOptions } = compilerOptions;
+    return JSON.stringify([programOptions, files.map((file) => file.absolute)]);
   }
 
   private static compilerOptionsFor(
@@ -433,6 +509,20 @@ export class TypeScriptProjectGraph
       }
     }
     return new RegExp(`^${expression}$`, caseSensitive ? "" : "i").test(path);
+  }
+
+  private static includeBaseDirectory(
+    pattern: string,
+    root: string,
+    paths: WorkspacePathDialect,
+  ): string {
+    const resolved = paths.resolve(root, paths.normalize(pattern));
+    const segments = resolved.split("/");
+    const wildcardIndex = segments.findIndex((segment) =>
+      TypeScriptProjectGraph.WILDCARD_SEGMENT.test(segment),
+    );
+    if (wildcardIndex >= 0) return segments.slice(0, wildcardIndex).join("/") || "/";
+    return posix.extname(resolved) === "" ? resolved : paths.dirname(resolved);
   }
 
   private static matchesConfiguredPattern(

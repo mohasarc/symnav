@@ -151,11 +151,13 @@ describe("TypeScriptSemanticQueryService", () => {
     });
     const snapshot: WorkspaceSnapshot = { root: "/repo", files: [] };
     const target = identity("src/app.ts", "target");
-    await backend.refresh({ snapshot, coverage: "workspace" });
+    await backend.refresh({ snapshot, workspaceSnapshot: snapshot, coverage: "workspace" });
     const definitions = await backend.findDefinitions([], target);
     refreshFails = true;
 
-    await expect(backend.refresh({ snapshot, coverage: "workspace" })).rejects.toBe(failure);
+    await expect(
+      backend.refresh({ snapshot, workspaceSnapshot: snapshot, coverage: "workspace" }),
+    ).rejects.toBe(failure);
 
     await expect(backend.findDefinitions([], target)).resolves.toBe(definitions);
     expect(definitionSearches).toBe(1);
@@ -189,7 +191,7 @@ describe("TypeScriptSemanticQueryService", () => {
     });
     const snapshot: WorkspaceSnapshot = { root: "/repo", files: [] };
     const target = identity("src/app.ts", "target");
-    await backend.refresh({ snapshot, coverage: "selection" });
+    await backend.refresh({ snapshot, workspaceSnapshot: snapshot, coverage: "selection" });
     const beforeRelease = await backend.findDefinitions([], target);
 
     const release = backend.releaseTransientResources();
@@ -231,7 +233,11 @@ describe("TypeScriptSemanticQueryService", () => {
     });
     const files = workspaceFiles(fileSystem, "src/app.ts", "src/lib.ts");
     const target = identity("src/lib.ts", "target");
-    await backend.refresh({ snapshot: { root: "/repo", files }, coverage: "workspace" });
+    await backend.refresh({
+      snapshot: { root: "/repo", files },
+      workspaceSnapshot: { root: "/repo", files },
+      coverage: "workspace",
+    });
 
     await expect(backend.findCallers(files, target)).resolves.toHaveLength(1);
     await expect(backend.findReferences(files, target)).resolves.toHaveLength(2);
@@ -256,13 +262,13 @@ describe("TypeScriptSemanticQueryService", () => {
     const files = workspaceFiles(fileSystem, "src/app.ts", "src/lib.ts");
     const snapshot: WorkspaceSnapshot = { root: "/repo", files };
     const target = identity("src/lib.ts", "target");
-    await backend.refresh({ snapshot, coverage: "workspace" });
+    await backend.refresh({ snapshot, workspaceSnapshot: snapshot, coverage: "workspace" });
 
     await backend.findReferences(files, target);
     await backend.findReferences(files, target);
     expect(referenceSearches).toBe(1);
 
-    await backend.refresh({ snapshot, coverage: "workspace" });
+    await backend.refresh({ snapshot, workspaceSnapshot: snapshot, coverage: "workspace" });
     await backend.findReferences(files, target);
     expect(referenceSearches).toBe(2);
   });
@@ -284,7 +290,11 @@ describe("TypeScriptSemanticQueryService", () => {
     });
     const files = workspaceFiles(fileSystem, "src/app.ts");
     const caller = identity("src/app.ts", "caller");
-    await backend.refresh({ snapshot: { root: "/repo", files }, coverage: "workspace" });
+    await backend.refresh({
+      snapshot: { root: "/repo", files },
+      workspaceSnapshot: { root: "/repo", files },
+      coverage: "workspace",
+    });
 
     const first = await backend.findCallees(files, caller);
     const second = await backend.findCallees(files, caller);
@@ -314,7 +324,11 @@ describe("TypeScriptSemanticQueryService", () => {
         resolvedPositions.push(`${relativePath}:${start}`),
     });
     const files = workspaceFiles(fileSystem, "src/graph.ts");
-    await backend.refresh({ snapshot: { root: "/repo", files }, coverage: "workspace" });
+    await backend.refresh({
+      snapshot: { root: "/repo", files },
+      workspaceSnapshot: { root: "/repo", files },
+      coverage: "workspace",
+    });
     const [root] = await backend.findDefinitions(files, identity("src/graph.ts", "root"));
     if (!root) throw new Error("expected root declaration");
 
@@ -350,7 +364,7 @@ describe("TypeScriptSemanticQueryService", () => {
     let files = snapshot.files;
     const stable = identity("src/stable.ts", "stableTarget");
     const original = identity("src/lib.ts", "originalTarget");
-    await backend.refresh({ snapshot, coverage: "workspace" });
+    await backend.refresh({ snapshot, workspaceSnapshot: snapshot, coverage: "workspace" });
     const [preparedDeclaration] = await backend.findDefinitions(files, stable);
     const stableFile = files.find((file) => file.relative === "src/stable.ts");
     if (!stableFile) throw new Error("expected stable source");
@@ -370,7 +384,7 @@ describe("TypeScriptSemanticQueryService", () => {
     );
     snapshot = await fixture.snapshot();
     files = snapshot.files;
-    await backend.refresh({ snapshot, coverage: "workspace" });
+    await backend.refresh({ snapshot, workspaceSnapshot: snapshot, coverage: "workspace" });
 
     await expect(
       backend.resolveSymbols(files, "originalTarget", { mode: "exact" }),
@@ -386,7 +400,7 @@ describe("TypeScriptSemanticQueryService", () => {
     expect(referenceSearches).toBe(2);
 
     await backend.releaseTransientResources();
-    await backend.refresh({ snapshot, coverage: "workspace" });
+    await backend.refresh({ snapshot, workspaceSnapshot: snapshot, coverage: "workspace" });
 
     expect(semanticReleases).toBe(1);
     expect(semanticProjectLoads).toBe(2);

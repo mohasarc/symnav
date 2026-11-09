@@ -19,6 +19,7 @@ export type BackendRefreshCoverage = "workspace" | "selection";
 
 export interface BackendRefreshRequest {
   readonly snapshot: WorkspaceSnapshot;
+  readonly workspaceSnapshot: WorkspaceSnapshot;
   readonly coverage: BackendRefreshCoverage;
 }
 

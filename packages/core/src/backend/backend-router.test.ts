@@ -89,13 +89,25 @@ describe("BackendRouter", () => {
       unchanged: 1,
     });
     expect(tsBackend.refreshCalls).toEqual([
-      { snapshot: { root: "/repo", files: [snapshot.files[0]] }, coverage: "workspace" },
+      {
+        snapshot: { root: "/repo", files: [snapshot.files[0]] },
+        workspaceSnapshot: snapshot,
+        coverage: "workspace",
+      },
     ]);
     expect(pyBackend.refreshCalls).toEqual([
-      { snapshot: { root: "/repo", files: [snapshot.files[1]] }, coverage: "workspace" },
+      {
+        snapshot: { root: "/repo", files: [snapshot.files[1]] },
+        workspaceSnapshot: snapshot,
+        coverage: "workspace",
+      },
     ]);
     expect(unusedBackend.refreshCalls).toEqual([
-      { snapshot: { root: "/repo", files: [] }, coverage: "workspace" },
+      {
+        snapshot: { root: "/repo", files: [] },
+        workspaceSnapshot: snapshot,
+        coverage: "workspace",
+      },
     ]);
   });
 
@@ -104,14 +116,23 @@ describe("BackendRouter", () => {
     const second = fakeBackend("second", () => true);
     const router = new BackendRouter([first, second]);
     const file = workspaceFile("src/a.ts");
+    const snapshot: WorkspaceSnapshot = { root: "/repo", files: [file] };
 
-    await router.refresh({ root: "/repo", files: [file] });
+    await router.refresh(snapshot);
 
     expect(first.refreshCalls).toEqual([
-      { snapshot: { root: "/repo", files: [file] }, coverage: "workspace" },
+      {
+        snapshot: { root: "/repo", files: [file] },
+        workspaceSnapshot: snapshot,
+        coverage: "workspace",
+      },
     ]);
     expect(second.refreshCalls).toEqual([
-      { snapshot: { root: "/repo", files: [] }, coverage: "workspace" },
+      {
+        snapshot: { root: "/repo", files: [] },
+        workspaceSnapshot: snapshot,
+        coverage: "workspace",
+      },
     ]);
   });
 
@@ -120,18 +141,21 @@ describe("BackendRouter", () => {
     const pyBackend = fakeBackend("py", (path) => path.endsWith(".py"));
     const router = new BackendRouter([tsBackend, pyBackend]);
     const file = workspaceFile("src/a.ts");
+    const snapshot: WorkspaceSnapshot = { root: "/canonical/repo", files: [file] };
 
-    await router.refresh({ root: "/canonical/repo", files: [file] }, "selection");
+    await router.refresh(snapshot, "selection");
 
     expect(tsBackend.refreshCalls).toEqual([
       {
         snapshot: { root: "/canonical/repo", files: [file] },
+        workspaceSnapshot: snapshot,
         coverage: "selection",
       },
     ]);
     expect(pyBackend.refreshCalls).toEqual([
       {
         snapshot: { root: "/canonical/repo", files: [] },
+        workspaceSnapshot: snapshot,
         coverage: "selection",
       },
     ]);

@@ -41,6 +41,9 @@ export interface LanguageBackend {
     options: ResolveSymbolsOptions,
   ): Promise<readonly SymbolOverviewNode[]>;
   declarations(files: readonly ResolvedPath[]): Promise<readonly SymbolOverviewNode[]>;
+  preferredTargetCandidates?(
+    candidates: readonly SymbolOverviewNode[],
+  ): readonly SymbolOverviewNode[];
   findDefinitions(
     files: readonly ResolvedPath[],
     identity: SymbolIdentity,

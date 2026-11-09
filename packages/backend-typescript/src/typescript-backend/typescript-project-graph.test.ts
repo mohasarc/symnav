@@ -806,6 +806,26 @@ describe("TypeScriptProjectGraph", () => {
     expect(options?.paths?.["@local/*"]).toBeUndefined();
   });
 
+  it("loads JavaScript sources into the inferred project", async () => {
+    const projectFixture = fixture();
+    projectFixture.write("scratch/lib.mjs", 'export function shout() { return "hey"; }\n');
+    projectFixture.write(
+      "scratch/use.js",
+      'import { shout } from "./lib.mjs";\nexport function useShout() { return shout(); }\n',
+    );
+    const snapshot = await projectFixture.snapshot();
+    const backend = new TypeScriptBackend(projectFixture.fileSystem);
+    await backend.refresh({
+      snapshot,
+      workspaceSnapshot: await projectFixture.workspaceSnapshot(),
+      coverage: "workspace",
+    });
+
+    await expect(
+      calleeNames(backend, snapshot.files, symbolIdentity("scratch/use.js", "useShout")),
+    ).resolves.toEqual(["shout"]);
+  });
+
   it("keeps implicit outDir contents outside configured membership", async () => {
     const projectFixture = fixture();
     const graph = new TypeScriptProjectGraph(projectFixture.fileSystem);

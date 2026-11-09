@@ -46,6 +46,15 @@ describe("nodeKind", () => {
     expect(nodeKind(firstStatement(file))).toBe("enum");
   });
 
+  it("classifies an enum member as enum-member", () => {
+    const file = parseTypeScriptSource("enum E { A }");
+    const enumDeclaration = firstStatement(file);
+    if (!Node.isEnumDeclaration(enumDeclaration)) throw new Error("expected enum");
+    const member = enumDeclaration.getMembers()[0];
+    if (!member) throw new Error("expected member");
+    expect(nodeKind(member)).toBe("enum-member");
+  });
+
   it("classifies a namespace declaration as namespace", () => {
     const file = parseTypeScriptSource("namespace N {}");
     expect(nodeKind(firstStatement(file))).toBe("namespace");

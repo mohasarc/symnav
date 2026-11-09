@@ -141,7 +141,7 @@ describe("symnav daemon parity", () => {
   }, 15_000);
 
   it.each([
-    ["text", ["overview", "large.ts"]],
+    ["text", ["overview", "large.ts", "--all"]],
     ["JSON", ["overview", "large.ts", "--json"]],
   ] as const)(
     "keeps a real >8 MiB %s result byte-identical between cold and warm",

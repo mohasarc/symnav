@@ -15,6 +15,10 @@ describe("roleOf", () => {
     expect(roleOf("variable")).toBe("value");
   });
 
+  it("maps an enum member to the value role", () => {
+    expect(roleOf("enum-member")).toBe("value");
+  });
+
   it("maps a type alias to the type role", () => {
     expect(roleOf("type-alias")).toBe("type");
   });

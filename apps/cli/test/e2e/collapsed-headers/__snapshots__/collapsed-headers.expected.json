@@ -164,7 +164,66 @@
       "type": "symbol"
     },
     {
-      "children": [],
+      "children": [
+        {
+          "children": [],
+          "header": {
+            "lines": [
+              "Read = \"read\""
+            ],
+            "startLine": 25
+          },
+          "identity": {
+            "file": "collapsed-headers.ts",
+            "segments": [
+              {
+                "name": "HeaderMode"
+              },
+              {
+                "name": "Read"
+              }
+            ]
+          },
+          "kind": {
+            "nativeLabel": "enum-member",
+            "role": "value"
+          },
+          "range": {
+            "endLine": 25,
+            "startLine": 25
+          },
+          "type": "symbol"
+        },
+        {
+          "children": [],
+          "header": {
+            "lines": [
+              "Write = \"write\""
+            ],
+            "startLine": 26
+          },
+          "identity": {
+            "file": "collapsed-headers.ts",
+            "segments": [
+              {
+                "name": "HeaderMode"
+              },
+              {
+                "name": "Write"
+              }
+            ]
+          },
+          "kind": {
+            "nativeLabel": "enum-member",
+            "role": "value"
+          },
+          "range": {
+            "endLine": 26,
+            "startLine": 26
+          },
+          "type": "symbol"
+        }
+      ],
       "header": {
         "lines": [
           "export enum HeaderMode"

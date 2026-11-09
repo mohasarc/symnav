@@ -15,3 +15,9 @@ Overview: nested-symbols.ts
 │
 └── 12-16: Color
     12 export enum Color
+    ├── 13: Color::Red
+    │   13 Red
+    ├── 14: Color::Green
+    │   14 Green
+    └── 15: Color::Blue
+        15 Blue

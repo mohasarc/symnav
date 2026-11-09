@@ -6,5 +6,6 @@ Options:
   --depth <n>  number of child tree levels to render
   --at <text>  expand the overview node whose header contains text
   --line <n>   narrow overview target candidates to a source line
+  --all        print the whole tree, past the text size budget (default: false)
   --json       emit JSON instead of text (default: false)
   -h, --help   display help for command

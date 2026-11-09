@@ -43,6 +43,7 @@ describe("command telemetry descriptors", () => {
         depth: undefined,
         at: undefined,
         line: undefined,
+        all: false,
       }),
     ).toEqual({
       kind: "path",
@@ -58,11 +59,12 @@ describe("command telemetry descriptors", () => {
         depth: "2",
         at: "describe",
         line: "10",
+        all: true,
       }),
     ).toEqual({
       kind: "path",
       lengthBucket: "short",
-      flags: ["depth", "at", "line"],
+      flags: ["depth", "at", "line", "all"],
     });
   });
 
@@ -158,7 +160,7 @@ describe("command telemetry descriptors", () => {
     const result: OverviewExpansionResult = {
       file: "src/a.ts",
       entries: [symbol("top", [symbol("nested", [symbol("leaf")])]), symbol("other")],
-      request: { depth: 0, at: undefined, line: undefined },
+      request: { depth: 0, at: undefined, line: undefined, all: false },
       totalSymbolCount: 6,
     };
 

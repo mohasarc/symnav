@@ -44,7 +44,7 @@ function overviewResult(
 ): OverviewExpansionResult {
   return {
     ...partial,
-    request: { depth: 0, at: undefined, line: undefined },
+    request: { depth: 0, at: undefined, line: undefined, all: false },
     totalSymbolCount: 0,
   };
 }

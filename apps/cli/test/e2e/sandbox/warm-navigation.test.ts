@@ -191,7 +191,7 @@ class SandboxNavigationHarness {
   public addLargeSource(): void {
     writeFileSync(
       join(this.workspace, "large.ts"),
-      Array.from({ length: 5_000 }, (_, index) => `export const entry${index} = ${index};`).join(
+      Array.from({ length: 1_000 }, (_, index) => `export const entry${index} = ${index};`).join(
         "\n",
       ),
     );
@@ -444,7 +444,7 @@ describe.each([
       const harness = new SandboxNavigationHarness();
       harnesses.push(harness);
       harness.addLargeSource();
-      const baseline = harness.outside(["overview", "large.ts"], {
+      const baseline = harness.outside(["overview", "large.ts", "--json"], {
         SYMNAV_DAEMON: "0",
         SYMNAV_TELEMETRY: "0",
       });
@@ -452,7 +452,7 @@ describe.each([
       harness.outside(["overview", "src/index.ts"]);
       const instanceId = await harness.waitUntilReady();
       const session = await harness.start(runtime);
-      expect(await session.run(["overview", "large.ts"])).toEqual(baseline);
+      expect(await session.run(["overview", "large.ts", "--json"])).toEqual(baseline);
       expect(
         harness.instanceIds(),
         JSON.stringify(harness.testing.inspector.readDiagnostics(harness.workspace).events),
@@ -638,13 +638,13 @@ describe.each([
       const harness = new SandboxNavigationHarness();
       harnesses.push(harness);
       harness.addLargeSource();
-      const baseline = harness.outside(["overview", "large.ts"], {
+      const baseline = harness.outside(["overview", "large.ts", "--json"], {
         SYMNAV_DAEMON: "0",
         SYMNAV_TELEMETRY: "0",
       });
       const session = await harness.start(runtime);
       expect(
-        await session.run(["overview", "large.ts"], {
+        await session.run(["overview", "large.ts", "--json"], {
           SYMNAV_DAEMON: "0",
           SYMNAV_TELEMETRY: "0",
           SYMNAV_STATE_DIR: join(harness.workspace, "denied-state"),

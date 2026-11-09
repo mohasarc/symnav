@@ -83,6 +83,22 @@ const FIXTURE: Record<string, string> = {
     "}",
     "",
   ].join("\n"),
+  "/repo/src/syntax/Token.ts": [
+    "export enum Token {",
+    "  None,",
+    "  UsingKeyword = 1 << 3,",
+    '  ["a-b"] = 7,',
+    "}",
+    "",
+    "export enum Merged {",
+    "  One = 1,",
+    "}",
+    "",
+    "export namespace Merged {",
+    "  export const two = 2;",
+    "}",
+    "",
+  ].join("\n"),
   "/repo/src/util/constants.ts": [
     "export const MAX_RETRIES = 3;",
     "",
@@ -108,6 +124,7 @@ const ALL_FILES = pathsFor([
   "src/payments/PaypalProvider.ts",
   "src/payments/StripeProvider.ts",
   "src/shapes/Shape.ts",
+  "src/syntax/Token.ts",
   "src/util/constants.ts",
 ]);
 
@@ -255,5 +272,54 @@ describe("findDefinitions", () => {
       file: "src/control-flow/LocalDeclarations.ts",
       segments: [{ name: "outer" }, { name: "insideLoop" }],
     });
+  });
+
+  it("returns an enum member nested under its enum", async () => {
+    const result = await findDefinitions({
+      workspaceState: new WorkspaceDeclarationIndex(fsWithFixture()),
+      files: ALL_FILES,
+      identity: {
+        file: "src/syntax/Token.ts",
+        segments: [{ name: "Token" }, { name: "UsingKeyword" }],
+      },
+    });
+    expect(labelsAndFiles(result)).toEqual([
+      {
+        label: "enum-member",
+        file: "src/syntax/Token.ts",
+        name: "UsingKeyword",
+        disambiguator: undefined,
+      },
+    ]);
+    expect(result[0]?.range).toEqual({ startLine: 3, endLine: 3 });
+  });
+
+  it("returns a member of an enum merged with a namespace of the same name", async () => {
+    const result = await findDefinitions({
+      workspaceState: new WorkspaceDeclarationIndex(fsWithFixture()),
+      files: ALL_FILES,
+      identity: {
+        file: "src/syntax/Token.ts",
+        segments: [{ name: "Merged" }, { name: "One" }],
+      },
+    });
+    expect(labelsAndFiles(result)).toEqual([
+      { label: "enum-member", file: "src/syntax/Token.ts", name: "One", disambiguator: undefined },
+    ]);
+  });
+
+  it("returns a computed string-literal enum member by its literal text", async () => {
+    const result = await findDefinitions({
+      workspaceState: new WorkspaceDeclarationIndex(fsWithFixture()),
+      files: ALL_FILES,
+      identity: {
+        file: "src/syntax/Token.ts",
+        segments: [{ name: "Token" }, { name: "a-b" }],
+      },
+    });
+    expect(labelsAndFiles(result)).toEqual([
+      { label: "enum-member", file: "src/syntax/Token.ts", name: "a-b", disambiguator: undefined },
+    ]);
+    expect(result[0]?.range).toEqual({ startLine: 4, endLine: 4 });
   });
 });

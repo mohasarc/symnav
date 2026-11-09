@@ -228,8 +228,8 @@ describe("symnav required state writes", () => {
     writeFileSync(harness.state, "blocked");
     const temporary = join(harness.root, "temporary");
     mkdirSync(temporary);
-    const baseline = harness.run(["overview", "large.ts"]);
-    const result = harness.run(["overview", "large.ts"], {
+    const baseline = harness.run(["overview", "large.ts", "--json"]);
+    const result = harness.run(["overview", "large.ts", "--json"], {
       SYMNAV_DAEMON: "1",
       SYMNAV_TELEMETRY: "1",
       TMPDIR: temporary,

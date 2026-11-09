@@ -58,41 +58,53 @@ function thrownCandidateHeaders(thunk: () => void): readonly string[] {
 
 describe("OverviewExpander request validation", () => {
   it.each([-1, 1.5, Number.NaN])("rejects depth %s at construction", (depth) => {
-    expect(thrownValidationReason({ depth, at: undefined, line: undefined })).toBe(
+    expect(thrownValidationReason({ depth, at: undefined, line: undefined, all: false })).toBe(
       `--depth must be a non-negative integer, got ${depth}`,
     );
   });
 
   it.each([0, -3, 2.5])("rejects line %s at construction", (line) => {
-    expect(thrownValidationReason({ depth: 0, at: undefined, line })).toBe(
+    expect(thrownValidationReason({ depth: 0, at: undefined, line, all: false })).toBe(
       `--line must be a positive integer, got ${line}`,
     );
   });
 
   it.each([
     [
-      { depth: "abc", at: undefined, line: undefined },
+      { depth: "abc", at: undefined, line: undefined, all: false },
       "--depth must be a non-negative integer, got abc",
     ],
-    [{ depth: 0, at: undefined, line: "abc" }, "--line must be a positive integer, got abc"],
+    [
+      { depth: 0, at: undefined, line: "abc", all: false },
+      "--line must be a positive integer, got abc",
+    ],
   ])("echoes the raw option text of %o", (request, detail) => {
     expect(thrownValidationReason(request)).toBe(detail);
   });
 
   it("expands integer option text as numbers", () => {
-    expect(construct({ depth: "2", at: undefined, line: undefined }).expand().request).toEqual({
+    expect(
+      construct({ depth: "2", at: undefined, line: undefined, all: false }).expand().request,
+    ).toEqual({
       depth: 2,
       at: undefined,
       line: undefined,
+      all: false,
     });
   });
 
+  it("carries all into the request", () => {
+    expect(
+      construct({ depth: 0, at: undefined, line: undefined, all: true }).expand().request.all,
+    ).toBe(true);
+  });
+
   it("constructs at depth 0 without a line", () => {
-    expect(() => construct({ depth: 0, at: undefined, line: undefined })).not.toThrow();
+    expect(() => construct({ depth: 0, at: undefined, line: undefined, all: false })).not.toThrow();
   });
 
   it("constructs with positive integer depth and line", () => {
-    expect(() => construct({ depth: 2, at: undefined, line: 5 })).not.toThrow();
+    expect(() => construct({ depth: 2, at: undefined, line: 5, all: false })).not.toThrow();
   });
 });
 
@@ -111,7 +123,9 @@ describe("OverviewExpander depth", () => {
       }),
     ];
 
-    expect(expandRequest(entries, { depth: 0, at: undefined, line: undefined }).entries).toEqual([
+    expect(
+      expandRequest(entries, { depth: 0, at: undefined, line: undefined, all: false }).entries,
+    ).toEqual([
       symbol("outer", {
         range: { startLine: 1, endLine: 10 },
         children: [],
@@ -133,7 +147,9 @@ describe("OverviewExpander depth", () => {
       }),
     ];
 
-    expect(expandRequest(entries, { depth: 1, at: undefined, line: undefined }).entries).toEqual([
+    expect(
+      expandRequest(entries, { depth: 1, at: undefined, line: undefined, all: false }).entries,
+    ).toEqual([
       fold('describe("outer", () => {', {
         range: { startLine: 1, endLine: 8 },
         children: [
@@ -161,7 +177,9 @@ describe("OverviewExpander depth", () => {
       }),
     ];
 
-    expect(expandRequest(entries, { depth: 2, at: undefined, line: undefined }).entries).toEqual([
+    expect(
+      expandRequest(entries, { depth: 2, at: undefined, line: undefined, all: false }).entries,
+    ).toEqual([
       fold('describe("outer", () => {', {
         range: { startLine: 1, endLine: 10 },
         children: [
@@ -198,7 +216,9 @@ describe("OverviewExpander depth", () => {
       }),
     ];
 
-    expect(expandRequest(entries, { depth: 2, at: undefined, line: undefined }).entries).toEqual([
+    expect(
+      expandRequest(entries, { depth: 2, at: undefined, line: undefined, all: false }).entries,
+    ).toEqual([
       fold('describe("outer", () => {', {
         range: { startLine: 1, endLine: 12 },
         children: [
@@ -239,7 +259,9 @@ describe("OverviewExpander depth", () => {
       }),
     ];
 
-    expect(expandRequest(entries, { depth: 3, at: undefined, line: undefined }).entries).toEqual([
+    expect(
+      expandRequest(entries, { depth: 3, at: undefined, line: undefined, all: false }).entries,
+    ).toEqual([
       fold('describe("outer", () => {', {
         range: { startLine: 1, endLine: 12 },
         children: [
@@ -278,7 +300,7 @@ describe("OverviewExpander totalSymbolCount", () => {
 
     const result = new OverviewExpander({
       file: { file: "src/file.ts", entries },
-      request: { depth: 0, at: undefined, line: undefined },
+      request: { depth: 0, at: undefined, line: undefined, all: false },
     }).expand();
 
     expect(result.totalSymbolCount).toBe(3);
@@ -293,7 +315,7 @@ describe("OverviewExpander totalSymbolCount", () => {
 
     const result = new OverviewExpander({
       file: { file: "src/file.ts", entries },
-      request: { depth: 0, at: "alpha", line: undefined },
+      request: { depth: 0, at: "alpha", line: undefined, all: false },
     }).expand();
 
     expect(result.totalSymbolCount).toBe(2);
@@ -322,10 +344,10 @@ describe("OverviewExpander target selection", () => {
     ];
 
     expect(
-      expandRequest(entries, { depth: 1, at: 'describe("cursor")', line: undefined }),
+      expandRequest(entries, { depth: 1, at: 'describe("cursor")', line: undefined, all: false }),
     ).toMatchObject({
       file: "src/file.ts",
-      request: { depth: 1, at: 'describe("cursor")', line: undefined },
+      request: { depth: 1, at: 'describe("cursor")', line: undefined, all: false },
       entries: [
         fold('describe("cursor", () => {', {
           range: { startLine: 5, endLine: 9 },
@@ -352,7 +374,8 @@ describe("OverviewExpander target selection", () => {
     ];
 
     expect(
-      expandRequest(entries, { depth: 1, at: 'describe("beta")', line: undefined }).entries,
+      expandRequest(entries, { depth: 1, at: 'describe("beta")', line: undefined, all: false })
+        .entries,
     ).toEqual([
       fold('describe("beta", async () => {', {
         range: { startLine: 1, endLine: 3 },
@@ -371,7 +394,8 @@ describe("OverviewExpander target selection", () => {
     ];
 
     expect(
-      expandRequest(entries, { depth: 0, at: '1-3: describe("beta")', line: undefined }).entries,
+      expandRequest(entries, { depth: 0, at: '1-3: describe("beta")', line: undefined, all: false })
+        .entries,
     ).toEqual([
       fold('describe("beta", async () => {', {
         range: { startLine: 1, endLine: 3 },
@@ -388,7 +412,7 @@ describe("OverviewExpander target selection", () => {
     ];
 
     expect(() =>
-      expandRequest(entries, { depth: 0, at: 'describe("beta")', line: undefined }),
+      expandRequest(entries, { depth: 0, at: 'describe("beta")', line: undefined, all: false }),
     ).toThrow(OverviewTargetNotFoundError);
   });
 
@@ -398,9 +422,9 @@ describe("OverviewExpander target selection", () => {
       symbol("beta", { range: { startLine: 4, endLine: 5 } }),
     ];
 
-    expect(expandRequest(entries, { depth: 0, at: "alpha", line: undefined }).entries).toEqual([
-      symbol("alpha", { range: { startLine: 1, endLine: 2 } }),
-    ]);
+    expect(
+      expandRequest(entries, { depth: 0, at: "alpha", line: undefined, all: false }).entries,
+    ).toEqual([symbol("alpha", { range: { startLine: 1, endLine: 2 } })]);
   });
 
   it("prefers an exact symbol label over longer symbol labels", () => {
@@ -424,9 +448,9 @@ describe("OverviewExpander target selection", () => {
       ],
     });
 
-    expect(expandRequest([greeter], { depth: 1, at: "Greeter", line: undefined }).entries).toEqual([
-      greeter,
-    ]);
+    expect(
+      expandRequest([greeter], { depth: 1, at: "Greeter", line: undefined, all: false }).entries,
+    ).toEqual([greeter]);
   });
 
   it("prefers an exact fold primary label over longer primary labels", () => {
@@ -434,7 +458,8 @@ describe("OverviewExpander target selection", () => {
     const longer = fold("cursor details", { range: { startLine: 4, endLine: 5 } });
 
     expect(
-      expandRequest([exact, longer], { depth: 0, at: "cursor", line: undefined }).entries,
+      expandRequest([exact, longer], { depth: 0, at: "cursor", line: undefined, all: false })
+        .entries,
     ).toEqual([exact]);
   });
 
@@ -449,7 +474,8 @@ describe("OverviewExpander target selection", () => {
     });
 
     expect(
-      expandRequest([exact, longer], { depth: 0, at: "cursor", line: undefined }).entries,
+      expandRequest([exact, longer], { depth: 0, at: "cursor", line: undefined, all: false })
+        .entries,
     ).toEqual([exact]);
   });
 
@@ -477,13 +503,19 @@ describe("OverviewExpander target selection", () => {
 
     it("selects the symbol whose last segment equals the name over substring candidates", () => {
       expect(
-        expandRequest([createContainer], { depth: 1, at: "initialize", line: undefined }).entries,
+        expandRequest([createContainer], {
+          depth: 1,
+          at: "initialize",
+          line: undefined,
+          all: false,
+        }).entries,
       ).toEqual([initialize]);
     });
 
     it("selects the symbol by last segment name under line narrowing", () => {
       expect(
-        expandRequest([createContainer], { depth: 0, at: "initialize", line: 3 }).entries,
+        expandRequest([createContainer], { depth: 0, at: "initialize", line: 3, all: false })
+          .entries,
       ).toEqual([{ ...initialize, children: [] }]);
     });
 
@@ -500,7 +532,12 @@ describe("OverviewExpander target selection", () => {
 
       expect(
         thrownCandidateHeaders(() =>
-          expandRequest([first, second, statement], { depth: 0, at: "object", line: undefined }),
+          expandRequest([first, second, statement], {
+            depth: 0,
+            at: "object",
+            line: undefined,
+            all: false,
+          }),
         ),
       ).toEqual(["1-2: object#1", "4-5: object#2"]);
     });
@@ -514,7 +551,8 @@ describe("OverviewExpander target selection", () => {
       const outer = symbol("outer", { range: { startLine: 4, endLine: 7 }, children: [nested] });
 
       expect(
-        expandRequest([topLevel, outer], { depth: 0, at: "object", line: undefined }).entries,
+        expandRequest([topLevel, outer], { depth: 0, at: "object", line: undefined, all: false })
+          .entries,
       ).toEqual([topLevel]);
     });
   });
@@ -525,9 +563,9 @@ describe("OverviewExpander target selection", () => {
       fold("cursor", { range: { startLine: 4, endLine: 5 } }),
     ];
 
-    expect(() => expandRequest(entries, { depth: 0, at: "cursor", line: undefined })).toThrow(
-      AmbiguousOverviewTargetError,
-    );
+    expect(() =>
+      expandRequest(entries, { depth: 0, at: "cursor", line: undefined, all: false }),
+    ).toThrow(AmbiguousOverviewTargetError);
   });
 
   it("preserves substring ambiguity when no label matches exactly", () => {
@@ -536,9 +574,9 @@ describe("OverviewExpander target selection", () => {
       fold("cursor two", { range: { startLine: 4, endLine: 5 } }),
     ];
 
-    expect(() => expandRequest(entries, { depth: 0, at: "cursor", line: undefined })).toThrow(
-      AmbiguousOverviewTargetError,
-    );
+    expect(() =>
+      expandRequest(entries, { depth: 0, at: "cursor", line: undefined, all: false }),
+    ).toThrow(AmbiguousOverviewTargetError);
   });
 
   it("applies line narrowing before exact label preference", () => {
@@ -550,6 +588,7 @@ describe("OverviewExpander target selection", () => {
         depth: 0,
         at: "cursor",
         line: 5,
+        all: false,
       }).entries,
     ).toEqual([substringAtLine]);
   });
@@ -558,7 +597,7 @@ describe("OverviewExpander target selection", () => {
     const target = fold("cursor", { range: { startLine: 1, endLine: 3 } });
 
     expect(
-      expandRequest([target], { depth: 0, at: "1-3: cursor", line: undefined }).entries,
+      expandRequest([target], { depth: 0, at: "1-3: cursor", line: undefined, all: false }).entries,
     ).toEqual([target]);
   });
 
@@ -573,6 +612,7 @@ describe("OverviewExpander target selection", () => {
         depth: 0,
         at: "1-3: cursor",
         line: undefined,
+        all: false,
       }),
     ).toThrow(AmbiguousOverviewTargetError);
   });
@@ -590,9 +630,9 @@ describe("OverviewExpander target selection", () => {
       }),
     ];
 
-    expect(expandRequest(entries, { depth: 0, at: "inside", line: undefined }).entries).toEqual([
-      symbol("inside", { range: { startLine: 4, endLine: 4 } }),
-    ]);
+    expect(
+      expandRequest(entries, { depth: 0, at: "inside", line: undefined, all: false }).entries,
+    ).toEqual([symbol("inside", { range: { startLine: 4, endLine: 4 } })]);
   });
 
   it("returns candidates for a line-only match instead of picking an innermost node", () => {
@@ -608,11 +648,13 @@ describe("OverviewExpander target selection", () => {
       }),
     ];
 
-    expect(() => expandRequest(entries, { depth: 0, at: undefined, line: 4 })).toThrow(
+    expect(() => expandRequest(entries, { depth: 0, at: undefined, line: 4, all: false })).toThrow(
       AmbiguousLineTargetError,
     );
     expect(
-      thrownCandidateHeaders(() => expandRequest(entries, { depth: 0, at: undefined, line: 4 })),
+      thrownCandidateHeaders(() =>
+        expandRequest(entries, { depth: 0, at: undefined, line: 4, all: false }),
+      ),
     ).toContain("4: inside");
   });
 
@@ -626,7 +668,9 @@ describe("OverviewExpander target selection", () => {
       }),
     ];
 
-    expect(expandRequest(entries, { depth: 0, at: "describe", line: 9 }).entries).toEqual([
+    expect(
+      expandRequest(entries, { depth: 0, at: "describe", line: 9, all: false }).entries,
+    ).toEqual([
       fold('describe("second", () => {', {
         range: { startLine: 8, endLine: 10 },
       }),
@@ -640,7 +684,7 @@ describe("OverviewExpander target selection", () => {
       }),
     ];
 
-    expect(() => expandRequest(entries, { depth: 0, at: "cursor", line: 9 })).toThrow(
+    expect(() => expandRequest(entries, { depth: 0, at: "cursor", line: 9, all: false })).toThrow(
       OverviewTargetNotFoundError,
     );
   });
@@ -655,11 +699,13 @@ describe("OverviewExpander target selection", () => {
       }),
     ];
 
-    expect(() => expandRequest(entries, { depth: 0, at: "describe", line: 1 })).toThrow(
+    expect(() => expandRequest(entries, { depth: 0, at: "describe", line: 1, all: false })).toThrow(
       AmbiguousOverviewTargetError,
     );
     expect(
-      thrownCandidateHeaders(() => expandRequest(entries, { depth: 0, at: "describe", line: 1 })),
+      thrownCandidateHeaders(() =>
+        expandRequest(entries, { depth: 0, at: "describe", line: 1, all: false }),
+      ),
     ).toContain('1: describe("b", () => {');
   });
 
@@ -675,11 +721,12 @@ describe("OverviewExpander target selection", () => {
       }),
     ];
 
-    expect(() => expandRequest(entries, { depth: 0, at: undefined, line: 1 })).toThrow(
+    expect(() => expandRequest(entries, { depth: 0, at: undefined, line: 1, all: false })).toThrow(
       AmbiguousLineTargetError,
     );
     expect(
-      expandRequest(entries, { depth: 0, at: 'describe("cursor nested")', line: 1 }).entries,
+      expandRequest(entries, { depth: 0, at: 'describe("cursor nested")', line: 1, all: false })
+        .entries,
     ).toEqual([
       fold('describe("cursor nested", () => {', {
         range: { startLine: 1, endLine: 1 },
@@ -718,7 +765,7 @@ describe("OverviewExpander identity stability across expansion", () => {
   ];
 
   it("preserves identity segments through depth pruning", () => {
-    const result = expandRequest(entries, { depth: 1, at: undefined, line: undefined });
+    const result = expandRequest(entries, { depth: 1, at: undefined, line: undefined, all: false });
     const survivors = OverviewTree.walkSymbols(result.entries);
 
     expect(survivors.map((survivor) => survivor.identity.segments)).toEqual([
@@ -728,7 +775,12 @@ describe("OverviewExpander identity stability across expansion", () => {
   });
 
   it("shows a targeted fold's symbol under its file-global disambiguator", () => {
-    const result = expandRequest(entries, { depth: 1, at: 'describe("beta"', line: undefined });
+    const result = expandRequest(entries, {
+      depth: 1,
+      at: 'describe("beta"',
+      line: undefined,
+      all: false,
+    });
     const shown = OverviewTree.walkSymbols(result.entries);
 
     expect(shown).toHaveLength(1);
@@ -736,12 +788,12 @@ describe("OverviewExpander identity stability across expansion", () => {
   });
 
   it("preserves identity segments under line and at subtree selection", () => {
-    const byLine = expandRequest(entries, { depth: 1, at: undefined, line: 11 });
+    const byLine = expandRequest(entries, { depth: 1, at: undefined, line: 11, all: false });
     expect(
       OverviewTree.walkSymbols(byLine.entries).map((shown) => shown.identity.segments),
     ).toEqual([[{ name: "dup", disambiguator: 2 }]]);
 
-    const byAt = expandRequest(entries, { depth: 0, at: "dup#2", line: undefined });
+    const byAt = expandRequest(entries, { depth: 0, at: "dup#2", line: undefined, all: false });
     expect(OverviewTree.walkSymbols(byAt.entries).map((shown) => shown.identity.segments)).toEqual([
       [{ name: "dup", disambiguator: 2 }],
     ]);

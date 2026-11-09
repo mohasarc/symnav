@@ -12,6 +12,7 @@ const processorId = "src/payments/PaymentProcessor.ts::PaymentProcessor";
 const controlFlowTargetId = "src/control-flow/ControlFlowTarget.ts::controlFlowTarget";
 const foldedInnerId = "src/folded-symbols.ts::foldedRoot::foldedInner";
 const foldedNestedId = "src/folded-symbols.ts::foldedHost::foldedNested";
+const enumMemberId = "src/syntax/Token.ts::Token::UsingKeyword";
 
 function snapshot(name: string): string {
   return join(snapshotsDir, name);
@@ -159,6 +160,55 @@ describe("symnav refs e2e (default output)", () => {
     expect(
       parsed.references.map((reference) => [reference.line, reference.previewSource.trim()]),
     ).toEqual([[23, "return foldedNested();"]]);
+  });
+});
+
+describe("symnav refs e2e (enum members)", () => {
+  it("lists every use of an enum member, including a switch case", () => {
+    const r = runRefs([enumMemberId, "--json"]);
+    expect(r.stderr).toBe("");
+    expect(r.status).toBe(0);
+    const parsed = parseJsonRefs(r.stdout);
+    expect(parsed.total).toBe(3);
+    expect(
+      parsed.references.map((reference) => [
+        reference.file,
+        reference.line,
+        reference.kind,
+        reference.previewSource.trim(),
+      ]),
+    ).toEqual([
+      ["src/syntax/Scanner.ts", 3, "usage", "export const firstToken = Token.UsingKeyword;"],
+      ["src/syntax/Scanner.ts", 7, "usage", "case Token.UsingKeyword:"],
+      [
+        "src/syntax/Scanner.ts",
+        10,
+        "usage",
+        'return token === Token.UsingKeyword ? "using" : "other";',
+      ],
+    ]);
+  });
+
+  it("lists uses of a computed string-literal enum member", () => {
+    const r = runRefs(["src/syntax/Token.ts::Token::a-b", "--json"]);
+    expect(r.stderr).toBe("");
+    expect(r.status).toBe(0);
+    const parsed = parseJsonRefs(r.stdout);
+    expect(
+      parsed.references.map((reference) => [reference.line, reference.previewSource.trim()]),
+    ).toEqual([[14, 'export const dashedToken = Token["a-b"];']]);
+  });
+
+  it("resolves a bare enum member name to the member under its enum", () => {
+    const r = runRefs(["UsingKeyword", "--json"]);
+    expect(r.stderr).toBe("");
+    expect(r.status).toBe(0);
+    const parsed = parseJsonRefs(r.stdout);
+    expect(parsed.identity).toEqual({
+      file: "src/syntax/Token.ts",
+      segments: [{ name: "Token" }, { name: "UsingKeyword" }],
+    });
+    expect(parsed.total).toBe(3);
   });
 });
 

@@ -70,7 +70,7 @@ describe("OverviewErrorRenderer", () => {
   });
 
   it("renders not-found requests naming both at text and line", () => {
-    const err = new OverviewTargetNotFoundError({ depth: 0, at: "describe", line: 9 });
+    const err = new OverviewTargetNotFoundError({ depth: 0, at: "describe", line: 9, all: false });
 
     expect(OverviewErrorRenderer.render(err)).toBe(
       'Cannot answer: no overview target matching --at "describe" on line 9.\n',
@@ -78,7 +78,12 @@ describe("OverviewErrorRenderer", () => {
   });
 
   it("renders not-found requests naming at text alone", () => {
-    const err = new OverviewTargetNotFoundError({ depth: 0, at: "describe", line: undefined });
+    const err = new OverviewTargetNotFoundError({
+      depth: 0,
+      at: "describe",
+      line: undefined,
+      all: false,
+    });
 
     expect(OverviewErrorRenderer.render(err)).toBe(
       'Cannot answer: no overview target matching --at "describe".\n',
@@ -86,7 +91,7 @@ describe("OverviewErrorRenderer", () => {
   });
 
   it("renders not-found requests naming the line alone", () => {
-    const err = new OverviewTargetNotFoundError({ depth: 0, at: undefined, line: 9 });
+    const err = new OverviewTargetNotFoundError({ depth: 0, at: undefined, line: 9, all: false });
 
     expect(OverviewErrorRenderer.render(err)).toBe(
       "Cannot answer: no overview target matching line 9.\n",

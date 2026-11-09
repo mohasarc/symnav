@@ -84,6 +84,7 @@ src/checkout/CheckoutService.ts::CheckoutService::processPayment
 ```
 
 - Nested declarations add segments, e.g. `src/domain/orders.ts::PaymentProcessor::charge::formatCharge`.
+- Enum members nest under their enum: `src/token.ts::Token::UsingKeyword`. A quoted or computed member name uses its text, so `["a-b"] = 7` is `Token::a-b`.
 - Folds (callbacks, control-flow blocks) are transparent and add no segment. A helper declared inside `describe("x", () => { … })` is `file.ts::helper`.
 - Same-name siblings get a source-order disambiguator: `Router::post#1`, `Router::post#2`. A target without the disambiguator addresses the whole overload family.
 - Output shows enough of the symbol path under its file to rebuild the canonical ID.
@@ -193,16 +194,18 @@ symnav overview src/orders.ts
 symnav overview src/orders.ts --depth 1
 symnav overview src/orders.ts --at 'describe("cursor")' --depth 2
 symnav overview src/orders.ts --line 14
+symnav overview src/orders.ts --depth 2 --all
 ```
 
 Takes a file path, not a symbol target. Shows a VS Code-style fold tree: declarations, signatures, line ranges, barrel re-export lines, and fold headers for callbacks, calls, and control-flow blocks (`if`, `for`, `switch`, `try`, …).
 
 - Default `--depth 0`: top-level entries only.
-- `--depth n` opens `n` child levels. Class members, local declarations, and fold interiors each cost one level.
+- `--depth n` opens `n` child levels. Class and enum members, local declarations, and fold interiors each cost one level.
 - `--at <text>`: substring match against node headers, as copied from earlier output. A node whose label equals the text exactly beats longer substring matches, so `--at Greeter` picks the class, not `Greeter::greet`. Next comes a symbol whose own name equals the text, so `--at initialize` picks `createContainer::initialize` over `createContainer::initializedValues` and statements that mention it. Several symbols with that name (`object#1`, `object#2`) still refuse with candidates. `--depth` then counts from that node.
 - `--line <n>`: narrows candidates to nodes on that line. It can be combined with `--at`.
 - Several candidates left means ambiguous, with candidates listed. There's no innermost-wins.
 - Each signature line carries its source line number. Long headers are capped at 6 lines of 80 characters.
+- Text output stays within 8000 chars. Over that, it keeps the deepest depth that fits in full, then fills the next level in source order, and ends with a footer saying what it cut and how to get more. `--all` turns the budget off. `--json` is never cut.
 
 ```text
 Overview: class-with-methods.ts
@@ -226,6 +229,23 @@ Overview: targeted-expansion.ts
     13 export function action(flag: boolean): void
     └── 14-17: if (flag) {
 ```
+
+Cut to fit, an enum with 400 members at `--at SyntaxKind --depth 1`:
+
+```text
+Overview: large-overview.ts
+└── 1-402: SyntaxKind
+    1 export enum SyntaxKind
+    ├── 2: SyntaxKind::Kind000
+    …
+    └── 138: SyntaxKind::Kind136
+        138 Kind136 = 136
+… cut to fit 8000 chars: showing depth 0 of 1, depth 1 through line 138, 263 nodes omitted
+… omitted at depth 1: lines 139-401
+… more: --all
+```
+
+The footer suggests `--at '<label>' --depth <n>` when a node it fills in at the cut level has hidden children, or when at least two shown parents lost children to the cut. With one such parent, as with the enum above, drilling into it would print the same cut, so the footer offers only `--all`.
 
 A file with no symbols prints `(no symbols)`. Errors:
 

@@ -134,6 +134,18 @@ describe("symnav context e2e (nested call sites)", () => {
     expect(parsed.references.total).toBe(1);
   });
 
+  it("counts references to a computed string-literal enum member", () => {
+    const r = runContext(["src/syntax/token.ts::Token::a-b", "--json"]);
+    expect(r.stderr).toBe("");
+    expect(r.status).toBe(0);
+    const parsed = JSON.parse(r.stdout) as JsonContextResult;
+    expect(parsed.identity).toEqual({
+      file: "src/syntax/token.ts",
+      segments: [{ name: "Token" }, { name: "a-b" }],
+    });
+    expect(parsed.references.total).toBe(1);
+  });
+
   it("accepts a folded declaration inside a variable initializer as the target", () => {
     const r = runContext([foldedNestedId, "--json"]);
     expect(r.stderr).toBe("");

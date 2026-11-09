@@ -543,7 +543,7 @@ export class DaemonScaleBenchmarkHarness {
         `export function largeSymbol${String(index).padStart(5, "0")}(value: ${longType}): string { return value; }\n`,
     );
     writeFileSync(sourcePath, declarations.join(""), "utf8");
-    const argv = ["overview", relativePath] as const;
+    const argv = ["overview", relativePath, "--json"] as const;
     const cold = await this.runCommandAsync(
       generated.workspaceRoot,
       stateDirectory,

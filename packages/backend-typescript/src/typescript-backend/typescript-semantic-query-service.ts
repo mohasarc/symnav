@@ -231,10 +231,27 @@ export class TypeScriptSemanticQueryService implements PositionDefinitionResolve
   }
 
   private static referenceEntriesOf(declarationNode: Node): readonly ReferencedSymbolEntry[] {
+    const computedLiteralName =
+      TypeScriptSemanticQueryService.computedLiteralNameOf(declarationNode);
+    if (computedLiteralName) {
+      return computedLiteralName
+        .getProject()
+        .getLanguageService()
+        .findReferences(computedLiteralName)
+        .flatMap((referencedSymbol) => referencedSymbol.getReferences());
+    }
     if (!Node.isReferenceFindable(declarationNode)) return [];
     return declarationNode
       .findReferences()
       .flatMap((referencedSymbol) => referencedSymbol.getReferences());
+  }
+
+  private static computedLiteralNameOf(declarationNode: Node): Node | undefined {
+    if (!Node.isEnumMember(declarationNode)) return undefined;
+    const nameNode = declarationNode.getNameNode();
+    if (!Node.isComputedPropertyName(nameNode)) return undefined;
+    const expression = nameNode.getExpression();
+    return Node.isStringLiteral(expression) ? expression : undefined;
   }
 
   private static lineText(sourceFile: SourceFile, zeroBasedLine: number): string {

@@ -58,10 +58,11 @@ function header(startLine: number, ...lines: string[]): Header {
 
 function overviewResult(
   partial: Omit<OverviewExpansionResult, "request" | "totalSymbolCount">,
+  all = false,
 ): OverviewExpansionResult {
   return {
     ...partial,
-    request: { depth: 0, at: undefined, line: undefined, all: false },
+    request: { depth: 0, at: undefined, line: undefined, all },
     totalSymbolCount: 0,
   };
 }
@@ -660,5 +661,17 @@ describe("renderOverviewText size budget", () => {
     expect(output.length).toBeLessThanOrEqual(MAX_OVERVIEW_TEXT_CHARS);
     expect(output).toContain("Space2::Shape19\n");
     expect(output).toContain(`… cut to fit ${MAX_OVERVIEW_TEXT_CHARS} chars: showing depth 1 of 2`);
+  });
+
+  it("prints the whole tree past the budget when all is set", () => {
+    const entries = Array.from({ length: NAMESPACE_COUNT }, (_, index) =>
+      namespaceOfClasses(index),
+    );
+
+    const output = renderOverviewText(overviewResult({ file: "src/shapes.ts", entries }, true));
+
+    expect(output.length).toBeGreaterThan(MAX_OVERVIEW_TEXT_CHARS);
+    expect(output).not.toContain("… cut to fit");
+    expect(output).toContain("Space2::Shape19::method29\n");
   });
 });

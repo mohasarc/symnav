@@ -5,7 +5,7 @@ import { OverviewTree, type OverviewNode } from "@symnav/core";
 import { OverviewTextBudget } from "./overview-text-budget.js";
 
 const LONG_LABEL_LENGTH = 100;
-const DEPTH_ONE_WITH_FOOTER_CHARS = 137;
+const DEPTH_ONE_WITH_FOOTER_CHARS = 147;
 
 function node(
   name: string,
@@ -71,7 +71,7 @@ describe("OverviewTextBudget", () => {
       "  b1",
       "  b2",
       `… cut to fit ${DEPTH_ONE_WITH_FOOTER_CHARS} chars: showing depth 1 of 2, 4 nodes omitted`,
-      "… more: --at '<label>' --depth <n> on a shown node",
+      "… more: --at '<label>' --depth <n> on a shown node, or --all",
       "",
     ].join("\n");
 

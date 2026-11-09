@@ -140,7 +140,11 @@ export class OverviewChildrenExtractor {
     node: Node,
     symbolSegments: readonly SymbolPathSegment[],
   ): readonly OverviewNode[] {
-    if (Node.isClassDeclaration(node) || Node.isInterfaceDeclaration(node)) {
+    if (
+      Node.isClassDeclaration(node) ||
+      Node.isInterfaceDeclaration(node) ||
+      Node.isEnumDeclaration(node)
+    ) {
       return this.extractNodes({ nodes: node.getMembers(), symbolSegments, category: "member" });
     }
     if (Node.isModuleDeclaration(node)) {
@@ -404,6 +408,7 @@ export class OverviewChildrenExtractor {
       Node.isInterfaceDeclaration(node) ||
       Node.isTypeAliasDeclaration(node) ||
       Node.isEnumDeclaration(node) ||
+      Node.isEnumMember(node) ||
       Node.isModuleDeclaration(node) ||
       Node.isMethodDeclaration(node) ||
       Node.isGetAccessorDeclaration(node) ||

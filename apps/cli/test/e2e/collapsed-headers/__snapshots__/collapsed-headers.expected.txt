@@ -21,6 +21,10 @@ Overview: collapsed-headers.ts
 │
 ├── 24-27: HeaderMode
 │   24 export enum HeaderMode
+│   ├── 25: HeaderMode::Read
+│   │   25 Read = "read"
+│   └── 26: HeaderMode::Write
+│       26 Write = "write"
 │
 ├── 29-35: HeaderNamespace
 │   29 export namespace HeaderNamespace

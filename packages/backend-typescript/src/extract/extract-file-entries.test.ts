@@ -95,6 +95,7 @@ describe("extractFileEntries", () => {
       ["interface", "Iface"],
       ["type-alias", "Alias"],
       ["enum", "Mode"],
+      ["enum-member", "On"],
       ["namespace", "Ns"],
       ["variable", "variable"],
       ["default-export", "default"],

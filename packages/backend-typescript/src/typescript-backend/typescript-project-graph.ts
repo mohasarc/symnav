@@ -107,6 +107,7 @@ export class TypeScriptProjectGraph
   implements TypeScriptSemanticSourceProvider
 {
   private static readonly WHOLE_DIRECTORY_PATTERN = "**/*";
+  private static readonly WILDCARD_SEGMENT = /[*?]/;
   private static readonly CONFIGURATION_FILE_NAME = "tsconfig.json";
   private static readonly DEPENDENCY_DIRECTORY_NAME = "node_modules";
 
@@ -286,22 +287,29 @@ export class TypeScriptProjectGraph
     return snapshot.files
       .filter((file) => {
         const relative = paths.relative(normalizedRoot, file.absolute);
-        if (!paths.contains(normalizedRoot, file.absolute)) return false;
-        if (depth !== undefined && relative.split("/").length - 1 > depth) return false;
+        const insideRoot = paths.contains(normalizedRoot, file.absolute);
+        if (insideRoot && depth !== undefined && relative.split("/").length - 1 > depth) {
+          return false;
+        }
         if (!extensions.some((extension) => file.absolute.endsWith(extension))) return false;
-        if (
-          includes &&
-          includes.length > 0 &&
-          !includes.some((pattern) =>
+        if (!includes || includes.length === 0) {
+          if (!insideRoot) return false;
+        } else {
+          const reachingIncludes = includes.filter((pattern) =>
+            paths.contains(
+              TypeScriptProjectGraph.includeBaseDirectory(pattern, normalizedRoot, paths),
+              file.absolute,
+            ),
+          );
+          const included = reachingIncludes.some((pattern) =>
             TypeScriptProjectGraph.matchesConfiguredPattern(
               relative,
               pattern,
               normalizedRoot,
               paths,
             ),
-          )
-        ) {
-          return false;
+          );
+          if (!included) return false;
         }
         return !excludes?.some((pattern) =>
           TypeScriptProjectGraph.matchesConfiguredPattern(relative, pattern, normalizedRoot, paths),
@@ -466,6 +474,20 @@ export class TypeScriptProjectGraph
       }
     }
     return new RegExp(`^${expression}$`, caseSensitive ? "" : "i").test(path);
+  }
+
+  private static includeBaseDirectory(
+    pattern: string,
+    root: string,
+    paths: WorkspacePathDialect,
+  ): string {
+    const resolved = paths.resolve(root, paths.normalize(pattern));
+    const segments = resolved.split("/");
+    const wildcardIndex = segments.findIndex((segment) =>
+      TypeScriptProjectGraph.WILDCARD_SEGMENT.test(segment),
+    );
+    if (wildcardIndex >= 0) return segments.slice(0, wildcardIndex).join("/") || "/";
+    return posix.extname(resolved) === "" ? resolved : paths.dirname(resolved);
   }
 
   private static matchesConfiguredPattern(

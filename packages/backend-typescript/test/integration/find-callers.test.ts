@@ -542,7 +542,7 @@ describe("TypeScriptBackend.findCallers", () => {
     ["calledFromTopLevelCallback", "definition-time-shapes", "list"],
     ["calledFromClassExpressionMethod", "definition-time-shapes", "Klass"],
     ["calledFromHeritageClause", "definition-time-shapes", "Derived"],
-    ["calledFromEnumMember", "definition-time-shapes", "Flags"],
+    ["calledFromEnumMember", "definition-time-shapes", "Flags.A"],
     ["calledFromNamespaceInitializer", "definition-time-shapes", "Space.value"],
     ["calledFromDefaultExportArrow", "default-export-arrow", "default"],
     ["calledFromAssignedArrow", "assigned-arrow", "late"],

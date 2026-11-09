@@ -114,6 +114,7 @@ export class DeclarationLocator {
       Node.isInterfaceDeclaration(node) ||
       Node.isTypeAliasDeclaration(node) ||
       Node.isEnumDeclaration(node) ||
+      Node.isEnumMember(node) ||
       Node.isModuleDeclaration(node) ||
       Node.isPropertyDeclaration(node) ||
       Node.isPropertySignature(node) ||
@@ -131,6 +132,7 @@ export class DeclarationLocator {
       Node.isInterfaceDeclaration(node) ||
       Node.isTypeAliasDeclaration(node) ||
       Node.isEnumDeclaration(node) ||
+      Node.isEnumMember(node) ||
       Node.isModuleDeclaration(node) ||
       Node.isMethodDeclaration(node) ||
       Node.isMethodSignature(node) ||

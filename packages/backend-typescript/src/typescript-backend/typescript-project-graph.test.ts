@@ -31,6 +31,7 @@ import { TypeScriptWorkspaceState } from "./typescript-workspace-state.js";
 class ConfiguredProjectFixture {
   readonly root: string;
   readonly fileSystem = new NodeFileSystem();
+  private readonly ignoredDirectories = new Set<string>();
 
   constructor() {
     this.root = mkdtempSync(join(tmpdir(), "symnav-configured-projects-"));
@@ -47,6 +48,10 @@ class ConfiguredProjectFixture {
     const absolute = join(this.root, relativePath);
     mkdirSync(join(absolute, ".."), { recursive: true });
     writeFileSync(absolute, content);
+  }
+
+  ignore(relativeDirectory: string): void {
+    this.ignoredDirectories.add(join(this.root, relativeDirectory));
   }
 
   remove(relativePath: string): void {
@@ -83,7 +88,8 @@ class ConfiguredProjectFixture {
   private workspaceFiles(directory: string): string[] {
     return readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
       const absolute = join(directory, entry.name);
-      if (entry.isDirectory()) return entry.name === ".git" ? [] : this.workspaceFiles(absolute);
+      const skipped = entry.name === ".git" || this.ignoredDirectories.has(absolute);
+      if (entry.isDirectory()) return skipped ? [] : this.workspaceFiles(absolute);
       return [absolute];
     });
   }
@@ -824,6 +830,35 @@ describe("TypeScriptProjectGraph", () => {
     await expect(
       calleeNames(backend, snapshot.files, symbolIdentity("scratch/use.js", "useShout")),
     ).resolves.toEqual(["shout"]);
+  });
+
+  it("keeps untracked node_modules JavaScript out of semantic programs", async () => {
+    const projectFixture = fixture();
+    projectFixture.write(
+      "node_modules/untyped/package.json",
+      JSON.stringify({ name: "untyped", main: "index.js" }),
+    );
+    projectFixture.write("node_modules/untyped/index.js", "export function untyped() {}\n");
+    projectFixture.write(
+      "scratch/consumer.ts",
+      'import { untyped } from "untyped";\nexport const value = untyped();\n',
+    );
+    const graph = new TypeScriptProjectGraph(projectFixture.fileSystem);
+
+    projectFixture.ignore("node_modules");
+
+    await graph.refresh(await projectFixture.snapshot(), await projectFixture.workspaceSnapshot());
+    const loadedFiles = graph
+      .programFor("scratch/consumer.ts")
+      ?.getSourceFiles()
+      .map((sourceFile) => sourceFile.fileName);
+
+    expect(loadedFiles).toContain(
+      `${projectFixture.root.replaceAll("\\", "/")}/scratch/consumer.ts`,
+    );
+    expect(loadedFiles?.filter((fileName) => fileName.includes("/node_modules/untyped/"))).toEqual(
+      [],
+    );
   });
 
   it("keeps implicit outDir contents outside configured membership", async () => {

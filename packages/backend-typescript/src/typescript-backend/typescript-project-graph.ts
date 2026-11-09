@@ -471,6 +471,7 @@ export class TypeScriptProjectGraph
     return {
       baseUrl: root,
       paths: TypeScriptProjectGraph.workspacePackagePaths(workspacePackages),
+      allowJs: true,
       noEmit: true,
     };
   }

@@ -27,7 +27,17 @@ import {
 } from "./typescript-workspace-state.js";
 
 export class TypeScriptBackend implements LanguageBackend {
-  static readonly extensions: readonly string[] = [".d.ts", ".ts", ".tsx", ".mts", ".cts"];
+  static readonly extensions: readonly string[] = [
+    ".d.ts",
+    ".ts",
+    ".tsx",
+    ".mts",
+    ".cts",
+    ".js",
+    ".jsx",
+    ".mjs",
+    ".cjs",
+  ];
 
   static accepts(filePath: string): boolean {
     const name = basename(filePath);

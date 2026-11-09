@@ -35,7 +35,7 @@ export class SharedSourceFileRegistry {
   private static readonly INITIAL_VERSION = "0";
 
   private readonly settingsKeys = ts.createDocumentRegistry();
-  private readonly sourceFilesByKey = new Map<string, ts.SourceFile>();
+  private sourceFilesByKey = new Map<string, ts.SourceFile>();
 
   share(project: Project): void {
     const registry = (project as unknown as ProjectWithDocumentRegistry)._context.compilerFactory
@@ -53,6 +53,10 @@ export class SharedSourceFileRegistry {
       _version,
       scriptKind,
     ) => this.sourceFile({ fileName, compilationSettings, scriptSnapshot, scriptKind, registry });
+  }
+
+  clear(): void {
+    this.sourceFilesByKey = new Map();
   }
 
   private sourceFile(request: SharedSourceFileRequest): ts.SourceFile {

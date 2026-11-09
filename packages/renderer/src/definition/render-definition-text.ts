@@ -120,7 +120,9 @@ export class DefinitionTextRenderer {
     const hiddenLines = hidden.map(
       (symbol) => `… source not shown: ${formatSymbolIdentity(symbol.identity)}\n`,
     );
+    const offersMemberHint = partial !== undefined && partial.symbol.kind.role === "container";
     const hints = [
+      ...(offersMemberHint ? [DefinitionTextRenderer.memberHint(partial.symbol)] : []),
       ...(hidden.length > 0 ? ["def --source '<id>' for one definition"] : []),
       "--all",
     ];
@@ -129,6 +131,11 @@ export class DefinitionTextRenderer {
       hiddenLines.join("") +
       `… more: ${DefinitionTextRenderer.joinHints(hints)}\n`
     );
+  }
+
+  private static memberHint(symbol: DefinitionSymbol): string {
+    const symbolPath = formatIdentityPath(symbol.identity);
+    return `overview ${symbol.identity.file} --at '${symbolPath}' --depth 1 then def --source on a member`;
   }
 
   private static joinHints(hints: readonly string[]): string {

@@ -972,6 +972,23 @@ describe("TypeScriptProjectGraph", () => {
     expect(libraryFiles(programs[0]!).length).toBeGreaterThan(0);
     expect(distinctLibraryFiles.size).toBe(libraryFiles(programs[0]!).length);
   });
+
+  it("drops shared source files when semantic projects release transient resources", async () => {
+    const projectFixture = fixture();
+    writeSharedImportProjects(projectFixture);
+    const graph = new TypeScriptProjectGraph(projectFixture.fileSystem);
+    await graph.refresh(await projectFixture.snapshot(), await projectFixture.workspaceSnapshot());
+    const [path] = sharedImportProjectFiles();
+    const sharedPath = `${projectFixture.root.replaceAll("\\", "/")}/core/shared.ts`;
+    const beforeRelease = graph.programFor(path!)?.getSourceFile(sharedPath);
+
+    await graph.releaseTransientResources();
+    const afterRelease = graph.programFor(path!)?.getSourceFile(sharedPath);
+
+    expect(beforeRelease).toBeDefined();
+    expect(afterRelease).toBeDefined();
+    expect(afterRelease).not.toBe(beforeRelease);
+  });
 });
 
 function writeSharedImportProjects(projectFixture: ConfiguredProjectFixture): void {

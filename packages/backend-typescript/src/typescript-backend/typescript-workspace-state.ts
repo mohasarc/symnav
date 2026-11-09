@@ -16,6 +16,7 @@ import { Project, type Node, type SourceFile } from "ts-morph";
 
 import { extractFileEntries } from "../extract/extract-file-entries.js";
 import { DeclarationLocator, type LocatedDeclaration } from "../identity/locate-declarations.js";
+import { JavaScriptDeclarationTwin } from "./javascript-declaration-twin.js";
 import { WorkspaceFileSystemHost } from "./workspace-file-system-host.js";
 
 export type IndexedDeclaration = IndexedBackendDeclaration;
@@ -87,8 +88,13 @@ export class TypeScriptWorkspaceState extends RevisionedBackendState<TypeScriptP
   }
 
   locateSemanticCopies(identity: SymbolIdentity): readonly LocatedDeclaration[] {
-    const semanticSources = this.semanticSources?.sourceFilesFor(identity.file);
-    return this.locateIn(identity, semanticSources);
+    const declarationTwinFile = JavaScriptDeclarationTwin.fileOf(identity.file);
+    const identities = declarationTwinFile
+      ? [identity, { ...identity, file: declarationTwinFile }]
+      : [identity];
+    return identities.flatMap((copyIdentity) =>
+      this.locateIn(copyIdentity, this.semanticSources?.sourceFilesFor(copyIdentity.file)),
+    );
   }
 
   declarationAt(node: Node): SymbolOverviewNode | undefined {

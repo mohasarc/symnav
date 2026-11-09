@@ -53,6 +53,12 @@ describe("symnav e2e on JavaScript sources", () => {
     expect(stdout).toContain('1: export { default, Tabs } from "./Tabs.js";  [export]');
   });
 
+  it("resolves a bare name to the .js class over its .d.ts twin", () => {
+    const stdout = expectAnswer(["refs", "Tabs"]);
+    expect(stdout).toContain("32: Tabs.propTypes = {  [usage]");
+    expect(stdout).toContain('1: import { Tabs } from "./Tabs/index.js";  [import]');
+  });
+
   it("lists a .js method's callee in its context", () => {
     expect(expectAnswer(["context", componentDidUpdate])).toContain(
       "Callees\nsrc/Tabs/Tabs.js\n└── 22-24: Tabs::updateIndicatorState  [call]",

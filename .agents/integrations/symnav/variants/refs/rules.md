@@ -1,11 +1,13 @@
 # refs symnav integration
 
-Using `symnav refs` is required for this task, and using it *well* matters. Reach for it ahead of grep, find, and plain file reads for any question about the TypeScript code. It is not just an orientation tool — use it to reuse existing code, trace call flow, and understand a symbol's blast radius. Prefer it over the usual tools and lean on it hard.
+Using `symnav refs` is required for this task, and using it *well* matters. Reach for it ahead of grep, find, and plain file reads for any question about the code. It is not just an orientation tool — use it to reuse existing code, trace call flow, and understand a symbol's blast radius. Prefer it over the usual tools and lean on it hard.
 
 Make strong, deliberate use of it:
 - **See every use site.** `symnav refs '<file>::<symbol>'` lists all references grouped by file — use it to find reuse opportunities and to see everything that depends on code you are about to change.
 
 Use it early to orient, mid-task to locate and understand symbols, and before editing shared code.
+
+Run each symnav call on its own or join calls with `;`. `Cannot answer: …` exits 1, so `&&` skips whatever comes after it.
 
 Known caveat: `symnav refs` is extremely slow. A single call can take 10 to 20 minutes. That is expected — run it anyway and wait for it to finish. Do not treat a long-running call as stuck, and do not skip it to save time. Time is not what we care about here.
 

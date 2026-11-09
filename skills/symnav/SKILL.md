@@ -1,16 +1,21 @@
 ---
 name: symnav
-description: Navigate code by symbol from the CLI — file symbol tree (overview), find a symbol (resolve), where it's defined (def), references (refs), local context (context), call paths (graph). Deterministic, project-wide, alongside normal reads, search, and edits.
+description: Navigate code by symbol from the CLI — file symbol tree (overview), find a symbol (resolve), where it's defined and its source (def), references (refs), local context (context), call paths (graph). Deterministic, project-wide. Use it instead of reading or grepping code when it answers the question.
 ---
 
-`symnav` answers code navigation questions deterministically, project-wide: what's in a file, where a symbol is defined, who references it, how calls flow.
+`symnav` answers code navigation questions deterministically, project-wide: what's in a file, where a symbol is defined, who references it, how calls flow. When it answers the question, use it instead of a read or a search, not on top of one.
 
-Reach for it at two moments, both worth it:
+- **Orienting** — `overview <file>` instead of reading the whole file, `--at '<name>'` for one part. `def --source <target>` instead of `sed -n`, `cat`, or a line-range read. `resolve`/`refs` instead of grepping for a name. Also finds an existing helper to reuse.
+- **Before the first edit** — `refs` or `context` on what you'll change, so callers and blast radius are known up front. `graph` for calls past one hop.
+- **Confirming** — after a change, check the rename hit every site, the new symbol is referenced where it should be, callers still connect.
 
-- **Orienting** — map a file, find where a symbol lives, understand it before editing, find an existing helper to reuse.
-- **Confirming** — after a change, check the rename hit every site, the new symbol is referenced where it should be, callers still connect, blast radius matches expectation.
+Reads and grep are still the tool for files symnav can't read and for text that isn't a symbol: strings, config, comments.
 
-Run inside a git workspace. `--cwd <dir>` targets another workspace; `--json` gives machine output. A cold start can yield early with empty output — that's not the result, wait for it. Warnings on stderr are non-fatal; exit 0 means stdout is the answer.
+Run inside a git workspace. `--cwd <dir>` targets another workspace; `--json` gives machine output. Warnings on stderr are non-fatal; exit 0 means stdout is the answer.
+
+Run each symnav call on its own or join calls with `;`. `Cannot answer: …` exits 1, so `&&` skips whatever comes after it.
+
+A cold call on a big project can take a while. If your shell yields the call or shows no output yet, keep polling until it exits. An empty poll isn't the answer; don't rerun the call or switch to grep meanwhile.
 
 ## Agent sandboxes
 
@@ -46,7 +51,7 @@ Use these only if the user declines setup, says it can't be done, or no human ca
 
 | Need | Command | Gives |
 | --- | --- | --- |
-| File map | `overview <file>` | symbol/fold tree for one supported file (today TypeScript and JavaScript: `.ts`/`.tsx`/`.mts`/`.cts`/`.js`/`.jsx`/`.mjs`/`.cjs`). `--depth` nests; `--at '<text>'` selects a symbol, test block, or region — an exact symbol path or header wins, then a symbol's own name, then substring matches |
+| File map | `overview <file>` | symbol/fold tree for one supported file (today `.ts`/`.tsx`/`.mts`/`.cts`/`.js`/`.jsx`/`.mjs`/`.cjs`). `--depth` nests; `--at '<text>'` selects a symbol, test block, or region — an exact symbol path or header wins, then a symbol's own name, then substring matches |
 | Find a symbol | `resolve <query>` | every symbol/file matching the name; an empty exact result names `--fuzzy`/`--regex` as the retry |
 | Declaration | `def <target>` | file, line range, signature; `--source` prints the numbered source lines instead of reading the file |
 | Use sites | `refs <target>` | every reference, grouped by file, tagged by kind, paginated |

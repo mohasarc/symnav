@@ -64,5 +64,6 @@ function overviewRequestFrom(args: OverviewArgs): OverviewExpansionRequestInput 
     depth: args.depth ?? 0,
     at: args.at === undefined ? undefined : stripHeaderEllipsis(args.at),
     line: args.line,
+    all: false,
   };
 }

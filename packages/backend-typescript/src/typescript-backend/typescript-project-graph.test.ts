@@ -1161,6 +1161,29 @@ describe("TypeScriptProjectGraph", () => {
     expect(afterRelease).not.toBe(beforeRelease);
   });
 
+  it.each([{ mode: "exact" }, { mode: "fuzzy" }, { mode: "regex", regex: /^shared$/ }] as const)(
+    "resolves $mode symbol queries without loading a semantic project",
+    async (options) => {
+      const projectFixture = fixture();
+      writeImporterProjects(projectFixture);
+      const loadedFileCounts: number[] = [];
+      const backend = new TypeScriptBackend(projectFixture.fileSystem, undefined, undefined, {
+        semanticProjectLoaded: (fileCount) => loadedFileCounts.push(fileCount),
+      });
+      const snapshot = await projectFixture.snapshot();
+      await backend.refresh({
+        snapshot,
+        workspaceSnapshot: await projectFixture.workspaceSnapshot(),
+        coverage: "workspace",
+      });
+
+      const symbols = await backend.resolveSymbols(snapshot.files, "shared", options);
+
+      expect(symbols.length).toBeGreaterThan(0);
+      expect(loadedFileCounts).toEqual([]);
+    },
+  );
+
   it("loads only semantic projects whose files can import the requested file", async () => {
     const projectFixture = fixture();
     writeImporterProjects(projectFixture);

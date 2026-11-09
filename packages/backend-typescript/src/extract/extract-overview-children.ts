@@ -19,6 +19,7 @@ import {
   type SymbolPathSegment,
 } from "@symnav/core";
 
+import { enumMemberName } from "./enum-member-name.js";
 import { reportUnrecognisedNode } from "./extraction-diagnostics.js";
 import { FoldHeaderExtractor } from "./extract-fold-header.js";
 import { FoldHeaderVariantsExtractor } from "./extract-fold-header-variants.js";
@@ -401,6 +402,7 @@ export class OverviewChildrenExtractor {
     if (Node.isConstructSignatureDeclaration(node)) return "new()";
     if (Node.isIndexSignatureDeclaration(node)) return "[index]";
     if (Node.isExportAssignment(node)) return "default";
+    if (Node.isEnumMember(node)) return enumMemberName(node);
 
     if (
       Node.isFunctionDeclaration(node) ||
@@ -408,7 +410,6 @@ export class OverviewChildrenExtractor {
       Node.isInterfaceDeclaration(node) ||
       Node.isTypeAliasDeclaration(node) ||
       Node.isEnumDeclaration(node) ||
-      Node.isEnumMember(node) ||
       Node.isModuleDeclaration(node) ||
       Node.isMethodDeclaration(node) ||
       Node.isGetAccessorDeclaration(node) ||

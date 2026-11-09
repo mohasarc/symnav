@@ -7,6 +7,8 @@ import {
   type SymbolPathSegment,
 } from "@symnav/core";
 
+import { enumMemberName } from "../extract/enum-member-name.js";
+
 export interface LocatedDeclaration {
   readonly declaration: SymbolOverviewNode;
   readonly node: Node;
@@ -126,13 +128,13 @@ export class DeclarationLocator {
   private declarationName(node: Node): string | undefined {
     if (Node.isConstructorDeclaration(node)) return "constructor";
     if (Node.isExportAssignment(node)) return "default";
+    if (Node.isEnumMember(node)) return enumMemberName(node);
     if (
       Node.isFunctionDeclaration(node) ||
       Node.isClassDeclaration(node) ||
       Node.isInterfaceDeclaration(node) ||
       Node.isTypeAliasDeclaration(node) ||
       Node.isEnumDeclaration(node) ||
-      Node.isEnumMember(node) ||
       Node.isModuleDeclaration(node) ||
       Node.isMethodDeclaration(node) ||
       Node.isMethodSignature(node) ||

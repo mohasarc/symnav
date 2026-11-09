@@ -661,6 +661,52 @@ describe("daemon registry", () => {
     },
   );
 
+  it("claims a Windows startup lock that its winner releases after an EPERM collision", () => {
+    const identity = DaemonWorkspaceIdentity.from("/repo", temporaryDirectory(roots));
+    const winnerRegistry = new DaemonRegistry(identity.registryDirectory, "win32");
+    let collisionObserved = false;
+    const registry = new DaemonRegistry(
+      identity.registryDirectory,
+      "win32",
+      (source, destination) => {
+        const contenderClaim =
+          destination === identity.lockPath &&
+          String(source) === identity.startupClaimPath("contender");
+        if (!contenderClaim || collisionObserved) {
+          renameSync(source, destination);
+          return;
+        }
+        collisionObserved = true;
+        const winner = winnerRegistry.acquireStartup(identity, "winner")!;
+        expect(winner.release()).toBe(true);
+        throw Object.assign(new Error("rename onto existing directory"), { code: "EPERM" });
+      },
+    );
+
+    const lease = registry.acquireStartup(identity, "contender");
+
+    expect(collisionObserved).toBe(true);
+    expect(lease).toBeDefined();
+    expect(registry.startupOwner(identity)?.instanceId).toBe("contender");
+    expect(existsSync(identity.startupClaimPath("contender"))).toBe(false);
+    expect(lease?.release()).toBe(true);
+  });
+
+  it("preserves a repeated Windows EPERM startup claim failure when no winner exists", () => {
+    const identity = DaemonWorkspaceIdentity.from("/repo", temporaryDirectory(roots));
+    const denied = Object.assign(new Error("claim publication denied"), { code: "EPERM" });
+    let attempts = 0;
+    const registry = new DaemonRegistry(identity.registryDirectory, "win32", () => {
+      attempts += 1;
+      throw denied;
+    });
+
+    expect(() => registry.acquireStartup(identity, "denied")).toThrow(denied);
+    expect(attempts).toBe(2);
+    expect(existsSync(identity.startupClaimPath("denied"))).toBe(false);
+    expect(registry.startupOwner(identity)).toBeUndefined();
+  });
+
   it("preserves real startup claim write failures when no winner exists", () => {
     const identity = DaemonWorkspaceIdentity.from("/repo", temporaryDirectory(roots));
     const denied = Object.assign(new Error("claim publication denied"), { code: "EACCES" });
@@ -753,6 +799,36 @@ describe("daemon registry", () => {
       expect(registryClass.startupClaimWasContended({ code: "EACCES" })).toBe(false);
     },
   );
+
+  it("claims a Windows startup mutation that its holder releases after an EPERM collision", () => {
+    const identity = DaemonWorkspaceIdentity.from("/repo", temporaryDirectory(roots));
+    const holderRegistry = new DaemonRegistry(identity.registryDirectory, "win32");
+    let collisionObserved = false;
+    const registry = new DaemonRegistry(
+      identity.registryDirectory,
+      "win32",
+      (source, destination) => {
+        if (destination !== identity.startupMutationPath || collisionObserved) {
+          renameSync(source, destination);
+          return;
+        }
+        collisionObserved = true;
+        const holder = (
+          holderRegistry as unknown as StartupMutationLeaseTestAccess
+        ).beginStartupMutation(identity)!;
+        holder.release();
+        throw Object.assign(new Error("rename onto existing directory"), { code: "EPERM" });
+      },
+    );
+
+    const mutation = (registry as unknown as StartupMutationLeaseTestAccess).beginStartupMutation(
+      identity,
+    );
+
+    expect(collisionObserved).toBe(true);
+    expect(mutation?.isOwned()).toBe(true);
+    mutation?.release();
+  });
 
   it("releases startup mutation ownership for the next lease", () => {
     const identity = DaemonWorkspaceIdentity.from("/repo", temporaryDirectory(roots));

@@ -239,6 +239,16 @@ describe("symnav overview e2e (targeting)", () => {
     expect(r.stdout).not.toContain("createContainer::initializedValues");
   });
 
+  it("targets an enum member by its own name", () => {
+    const r = runOverview(["overview", "nested-symbols.ts", "--at", "Green"]);
+
+    expect(r.stderr).toBe("");
+    expect(r.status).toBe(0);
+    expect(r.stdout).toBe(
+      ["Overview: nested-symbols.ts", "└── 14: Color::Green", "    14 Green", ""].join("\n"),
+    );
+  });
+
   it("prints target candidates for ambiguous header text", async () => {
     const r = runOverview(["overview", "targeted-expansion.ts", "--at", "describe"]);
 

@@ -151,6 +151,45 @@ describe("extractFileEntries", () => {
     );
   });
 
+  it("enum children are its members, each with its own identity, range and header", () => {
+    const source = ["export enum Token {", "  None,", "  UsingKeyword = 1 << 3,", "}"].join("\n");
+    const token = symbolsOf(source)[0];
+    if (!token) throw new Error("expected enum");
+    expect(
+      symbolChildren(token).map((member) => ({
+        kind: member.kind,
+        identity: member.identity,
+        range: member.range,
+        header: member.header,
+      })),
+    ).toEqual([
+      {
+        kind: { role: "value", nativeLabel: "enum-member" },
+        identity: { file: "input.ts", segments: [{ name: "Token" }, { name: "None" }] },
+        range: { startLine: 2, endLine: 2 },
+        header: { startLine: 2, lines: ["None"] },
+      },
+      {
+        kind: { role: "value", nativeLabel: "enum-member" },
+        identity: { file: "input.ts", segments: [{ name: "Token" }, { name: "UsingKeyword" }] },
+        range: { startLine: 3, endLine: 3 },
+        header: { startLine: 3, lines: ["UsingKeyword = 1 << 3"] },
+      },
+    ]);
+  });
+
+  it.each([
+    ["const enum", "export const enum Flags { A = 1, B = 2 }"],
+    ["declare enum", "declare enum Flags { A, B }"],
+  ])("%s children are its members", (_form, source) => {
+    const flags = symbolsOf(source)[0];
+    if (!flags) throw new Error("expected enum");
+    expect(symbolChildren(flags).map((member) => formatSymbolIdentity(member.identity))).toEqual([
+      "input.ts::Flags::A",
+      "input.ts::Flags::B",
+    ]);
+  });
+
   it("recurses through namespaces — nested function appears as a child function", () => {
     const source = ["export namespace Outer {", "  export function inner() {}", "}"].join("\n");
     const result = symbolsOf(source);

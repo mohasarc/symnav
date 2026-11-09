@@ -43,4 +43,5 @@ export interface DefinitionSymbol extends SymbolOverviewNode {
 export interface DefinitionResult extends ResultWithDiagnostics {
   readonly identity: SymbolIdentity;
   readonly symbols: readonly DefinitionSymbol[];
+  readonly all?: boolean;
 }

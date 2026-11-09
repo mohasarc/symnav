@@ -30,6 +30,7 @@ export class DefinitionTextRenderer {
     const ordered = [...groupByFile(result.symbols).values()].flat();
     const renderCut = (cut: SourceCut): string =>
       header + DefinitionTextRenderer.renderCut(ordered, cut, maxChars);
+    if (result.all === true) return renderCut({ shownSourceCount: ordered.length });
     return DefinitionTextRenderer.fittingText(ordered, maxChars, renderCut);
   }
 
@@ -78,7 +79,7 @@ export class DefinitionTextRenderer {
     return (
       `… cut to fit ${maxChars} chars\n` +
       hiddenLines.join("") +
-      "… more: def --source '<id>' for one definition\n"
+      "… more: def --source '<id>' for one definition, or --all\n"
     );
   }
 

@@ -52,8 +52,16 @@ class ConfiguredProjectFixture {
     unlinkSync(join(this.root, relativePath));
   }
 
-  async snapshot(): Promise<WorkspaceSnapshot> {
-    const relativePaths = this.sourceFiles(this.root)
+  snapshot(): Promise<WorkspaceSnapshot> {
+    return this.snapshotOf(this.workspaceFiles(this.root).filter(TypeScriptBackend.accepts));
+  }
+
+  workspaceSnapshot(): Promise<WorkspaceSnapshot> {
+    return this.snapshotOf(this.workspaceFiles(this.root));
+  }
+
+  private async snapshotOf(absolutePaths: readonly string[]): Promise<WorkspaceSnapshot> {
+    const relativePaths = absolutePaths
       .map((absolute) => relative(this.root, absolute).replaceAll("\\", "/"))
       .sort();
     return {
@@ -71,11 +79,11 @@ class ConfiguredProjectFixture {
     };
   }
 
-  private sourceFiles(directory: string): string[] {
+  private workspaceFiles(directory: string): string[] {
     return readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
       const absolute = join(directory, entry.name);
-      if (entry.isDirectory()) return entry.name === ".git" ? [] : this.sourceFiles(absolute);
-      return TypeScriptBackend.accepts(entry.name) ? [absolute] : [];
+      if (entry.isDirectory()) return entry.name === ".git" ? [] : this.workspaceFiles(absolute);
+      return [absolute];
     });
   }
 }
@@ -97,7 +105,11 @@ describe("TypeScriptProjectGraph", () => {
     const fileSystem = driveRootFileSystem();
     const files = driveRootWorkspaceFiles(fileSystem);
     const backend = new TypeScriptBackend(fileSystem);
-    await backend.refresh({ snapshot: { root: "C:/repo", files }, coverage: "workspace" });
+    await backend.refresh({
+      snapshot: { root: "C:/repo", files },
+      workspaceSnapshot: { root: "C:/repo", files },
+      coverage: "workspace",
+    });
 
     await expect(
       calleeNames(
@@ -189,14 +201,23 @@ describe("TypeScriptProjectGraph", () => {
     const graph = new TypeScriptProjectGraph(projectFixture.fileSystem);
     const backend = new TypeScriptBackend(projectFixture.fileSystem, undefined, graph);
     const snapshot = await projectFixture.snapshot();
-    await backend.refresh({ snapshot, coverage: "workspace" });
+    await backend.refresh({
+      snapshot,
+      workspaceSnapshot: await projectFixture.workspaceSnapshot(),
+      coverage: "workspace",
+    });
     const languageService = graph.languageServiceFor("packages/app/src/index.ts");
 
     await backend.refresh({
       snapshot: { root: snapshot.root, files: [snapshot.files[0]!] },
+      workspaceSnapshot: await projectFixture.workspaceSnapshot(),
       coverage: "selection",
     });
-    await backend.refresh({ snapshot, coverage: "workspace" });
+    await backend.refresh({
+      snapshot,
+      workspaceSnapshot: await projectFixture.workspaceSnapshot(),
+      coverage: "workspace",
+    });
 
     expect(graph.languageServiceFor("packages/app/src/index.ts")).toBe(languageService);
     expect(graph.programFor("packages/domain/src/index.ts")).toBeDefined();
@@ -509,7 +530,11 @@ describe("TypeScriptProjectGraph", () => {
     projectFixture.write("src/vs/b.ts", "export function aliasTarget(): number { return 1; }\n");
     const snapshot = await projectFixture.snapshot();
 
-    await backend.refresh({ snapshot, coverage: "workspace" });
+    await backend.refresh({
+      snapshot,
+      workspaceSnapshot: await projectFixture.workspaceSnapshot(),
+      coverage: "workspace",
+    });
 
     await expect(
       calleeNames(backend, snapshot.files, symbolIdentity("src/vs/a.ts", "useAlias")),
@@ -550,7 +575,11 @@ describe("TypeScriptProjectGraph", () => {
     );
     const snapshot = await projectFixture.snapshot();
 
-    await backend.refresh({ snapshot, coverage: "workspace" });
+    await backend.refresh({
+      snapshot,
+      workspaceSnapshot: await projectFixture.workspaceSnapshot(),
+      coverage: "workspace",
+    });
 
     await expect(
       calleeNames(backend, snapshot.files, symbolIdentity("ext/src/main.ts", "useApi")),
@@ -580,7 +609,11 @@ describe("TypeScriptProjectGraph", () => {
       );
       const snapshot = await projectFixture.snapshot();
 
-      await backend.refresh({ snapshot, coverage: "workspace" });
+      await backend.refresh({
+        snapshot,
+        workspaceSnapshot: await projectFixture.workspaceSnapshot(),
+        coverage: "workspace",
+      });
 
       await expect(
         calleeNames(
@@ -734,7 +767,11 @@ describe("TypeScriptProjectGraph", () => {
     const projectFixture = fixture();
     const backend = new TypeScriptBackend(projectFixture.fileSystem);
     let snapshot = await projectFixture.snapshot();
-    await backend.refresh({ snapshot, coverage: "workspace" });
+    await backend.refresh({
+      snapshot,
+      workspaceSnapshot: await projectFixture.workspaceSnapshot(),
+      coverage: "workspace",
+    });
     const app = symbolIdentity("packages/app/src/index.ts", "useConfiguredImports");
     expect(await calleeNames(backend, snapshot.files, app)).toEqual([
       "workspaceTarget",
@@ -750,7 +787,11 @@ describe("TypeScriptProjectGraph", () => {
       }),
     );
     snapshot = await projectFixture.snapshot();
-    await backend.refresh({ snapshot, coverage: "workspace" });
+    await backend.refresh({
+      snapshot,
+      workspaceSnapshot: await projectFixture.workspaceSnapshot(),
+      coverage: "workspace",
+    });
 
     expect(await calleeNames(backend, snapshot.files, app)).toEqual(["workspaceTarget"]);
   });
@@ -759,7 +800,11 @@ describe("TypeScriptProjectGraph", () => {
     const projectFixture = fixture();
     const backend = new TypeScriptBackend(projectFixture.fileSystem);
     let snapshot = await projectFixture.snapshot();
-    await backend.refresh({ snapshot, coverage: "workspace" });
+    await backend.refresh({
+      snapshot,
+      workspaceSnapshot: await projectFixture.workspaceSnapshot(),
+      coverage: "workspace",
+    });
     const app = symbolIdentity("packages/app/src/index.ts", "useConfiguredImports");
 
     projectFixture.write(
@@ -767,7 +812,11 @@ describe("TypeScriptProjectGraph", () => {
       JSON.stringify({ name: "@configured/domain", exports: { ".": "./src/missing.ts" } }),
     );
     snapshot = await projectFixture.snapshot();
-    await backend.refresh({ snapshot, coverage: "workspace" });
+    await backend.refresh({
+      snapshot,
+      workspaceSnapshot: await projectFixture.workspaceSnapshot(),
+      coverage: "workspace",
+    });
 
     expect(await calleeNames(backend, snapshot.files, app)).toEqual(["pathTarget"]);
   });
@@ -776,13 +825,21 @@ describe("TypeScriptProjectGraph", () => {
     const projectFixture = fixture();
     const backend = new TypeScriptBackend(projectFixture.fileSystem);
     let snapshot = await projectFixture.snapshot();
-    await backend.refresh({ snapshot, coverage: "workspace" });
+    await backend.refresh({
+      snapshot,
+      workspaceSnapshot: await projectFixture.workspaceSnapshot(),
+      coverage: "workspace",
+    });
     projectFixture.write(
       "scratch/added.ts",
       "export function addedInferredTarget(): string { return 'added'; }\n",
     );
     snapshot = await projectFixture.snapshot();
-    await backend.refresh({ snapshot, coverage: "workspace" });
+    await backend.refresh({
+      snapshot,
+      workspaceSnapshot: await projectFixture.workspaceSnapshot(),
+      coverage: "workspace",
+    });
 
     await expect(
       backend.resolveSymbols(snapshot.files, "addedInferredTarget", { mode: "exact" }),
@@ -790,7 +847,11 @@ describe("TypeScriptProjectGraph", () => {
 
     projectFixture.remove("scratch/added.ts");
     snapshot = await projectFixture.snapshot();
-    await backend.refresh({ snapshot, coverage: "workspace" });
+    await backend.refresh({
+      snapshot,
+      workspaceSnapshot: await projectFixture.workspaceSnapshot(),
+      coverage: "workspace",
+    });
     await expect(
       backend.resolveSymbols(snapshot.files, "addedInferredTarget", { mode: "exact" }),
     ).resolves.toEqual([]);

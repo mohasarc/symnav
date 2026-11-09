@@ -163,7 +163,11 @@ async function backendOverFixture(): Promise<{
     ),
   };
   const backend = new TypeScriptBackend(fileSystem);
-  await backend.refresh({ snapshot: acceptedSnapshot, coverage: "workspace" });
+  await backend.refresh({
+    snapshot: acceptedSnapshot,
+    workspaceSnapshot: acceptedSnapshot,
+    coverage: "workspace",
+  });
   return { backend, files: acceptedSnapshot.files };
 }
 

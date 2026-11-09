@@ -1,6 +1,7 @@
 import { posix } from "node:path";
 
 import type { FileSystem } from "./file-system.js";
+import { isUnderRoot } from "./paths/is-under-root.js";
 import type { WorkspaceFile, WorkspaceSnapshot } from "./workspace.js";
 
 export interface ProjectInput {
@@ -376,10 +377,12 @@ export abstract class ProjectGraph<
   }
 
   private static ownerNearness(configurationPath: string, file: WorkspaceFile): number {
-    const directory = posix.dirname(configurationPath.replaceAll("\\", "/"));
-    const directoryPrefix = directory.endsWith("/") ? directory : `${directory}/`;
-    const containsFile = file.absolute.replaceAll("\\", "/").startsWith(directoryPrefix);
-    if (!containsFile) return ProjectGraph.UNRELATED_OWNER_NEARNESS;
-    return directoryPrefix.length;
+    const directory = ProjectGraph.configurationDirectory(configurationPath);
+    if (!isUnderRoot(file.absolute, directory)) return ProjectGraph.UNRELATED_OWNER_NEARNESS;
+    return directory.length;
+  }
+
+  private static configurationDirectory(configurationPath: string): string {
+    return posix.dirname(configurationPath.replaceAll("\\", "/"));
   }
 }

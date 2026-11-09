@@ -123,11 +123,12 @@ Applied after matching. Keeps only matches whose declaration contains line `n`. 
 Cannot answer: no symbol target "src/hub.ts::missing" found.
 Cannot answer: no symbol target "helper" matching line 99.
 Cannot answer: file not found: missing.ts.
+Cannot answer: cannot read .py files (src/report.py).
 Cannot answer: invalid symbol target (empty path segment between "::" separators): "::charge".
 Cannot answer: invalid regex "[": Unterminated character class.
 ```
 
-A file part that matches no workspace file reports the file as missing, with or without a `/`, even when an ignored file ends with it. A file part that is the exact path of an ignored file reports `is ignored by .gitignore`, same as `overview`. A copied fold header is a plain not-found, since folds aren't symbols.
+A file part that matches no workspace file reports the file as missing, with or without a `/`, even when an ignored file ends with it. A file part that is the exact path of an ignored file reports `is ignored by .gitignore`, same as `overview`. A file part that matches only files no backend reads reports `cannot read <ext> files`, also same as `overview`. A copied fold header is a plain not-found, since folds aren't symbols.
 
 Ambiguity prints copyable IDs with signatures, plus the way out:
 

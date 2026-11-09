@@ -49,7 +49,7 @@ class FakeProjectGraph extends ProjectGraph<FakeConfiguration, FakeProject> {
   }
 
   refresh(snapshot: WorkspaceSnapshot): Promise<ProjectGraphRefreshSummary> {
-    return this.refreshProjectGraph(snapshot);
+    return this.refreshProjectGraph(snapshot, snapshot);
   }
 
   primary(relativePath: string): FakeProject | undefined {

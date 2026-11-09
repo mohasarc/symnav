@@ -123,7 +123,7 @@ describe("TypeScriptProjectGraph", () => {
     ).resolves.toEqual(["featureTarget", "rootTarget", "patternTarget"]);
 
     const graph = new TypeScriptProjectGraph(fileSystem);
-    const refresh = await graph.refresh({ root: "C:/repo", files });
+    const refresh = await graph.refresh({ root: "C:/repo", files }, { root: "C:/repo", files });
     const configuredPaths = graph
       .programFor("packages/app/src/index.ts")
       ?.getCompilerOptions().paths;
@@ -141,7 +141,7 @@ describe("TypeScriptProjectGraph", () => {
     const graph = new TypeScriptProjectGraph(projectFixture.fileSystem, {
       semanticProjectLoaded: (fileCount) => loadedFileCounts.push(fileCount),
     });
-    await graph.refresh(await projectFixture.snapshot());
+    await graph.refresh(await projectFixture.snapshot(), await projectFixture.workspaceSnapshot());
 
     expect(graph.sourceFileFor("packages/domain/src/index.ts")).toBeDefined();
     expect(loadedFileCounts).toEqual([5]);
@@ -154,7 +154,7 @@ describe("TypeScriptProjectGraph", () => {
       semanticProjectLoaded: (fileCount) => loadedFileCounts.push(fileCount),
     });
     const snapshot = await projectFixture.snapshot();
-    await graph.refresh(snapshot);
+    await graph.refresh(snapshot, await projectFixture.workspaceSnapshot());
     const state = new TypeScriptWorkspaceState(projectFixture.fileSystem, undefined, graph);
     await state.refresh(snapshot.files);
 
@@ -168,7 +168,7 @@ describe("TypeScriptProjectGraph", () => {
     const graph = new TypeScriptProjectGraph(projectFixture.fileSystem);
     const snapshot = await projectFixture.snapshot();
 
-    const first = await graph.refresh(snapshot);
+    const first = await graph.refresh(snapshot, await projectFixture.workspaceSnapshot());
     const languageService = graph.languageServiceFor("packages/app/src/index.ts");
     let absoluteReads = 0;
     const unchangedSnapshot: WorkspaceSnapshot = {
@@ -182,7 +182,7 @@ describe("TypeScriptProjectGraph", () => {
         metadata: file.metadata,
       })),
     };
-    const second = await graph.refresh(unchangedSnapshot);
+    const second = await graph.refresh(unchangedSnapshot, await projectFixture.workspaceSnapshot());
 
     expect(first).toEqual({
       root: snapshot.root,
@@ -239,13 +239,13 @@ describe("TypeScriptProjectGraph", () => {
     projectFixture.write("packages/pending/src/index.ts", "export const pendingTarget = true;\n");
     const graph = new TypeScriptProjectGraph(projectFixture.fileSystem);
     const snapshot = await projectFixture.snapshot();
-    const before = await graph.refresh(snapshot);
+    const before = await graph.refresh(snapshot, await projectFixture.workspaceSnapshot());
 
     projectFixture.write(
       "packages/pending/tsconfig.json",
       JSON.stringify({ include: ["src/**/*.ts"] }),
     );
-    const after = await graph.refresh(snapshot);
+    const after = await graph.refresh(snapshot, await projectFixture.workspaceSnapshot());
 
     expect(before.configuredProjectCount).toBe(3);
     expect(after.configuredProjectCount).toBe(4);
@@ -259,10 +259,10 @@ describe("TypeScriptProjectGraph", () => {
     projectFixture.remove("packages/domain/package.json");
     const graph = new TypeScriptProjectGraph(projectFixture.fileSystem);
     const snapshot = await projectFixture.snapshot();
-    const before = await graph.refresh(snapshot);
+    const before = await graph.refresh(snapshot, await projectFixture.workspaceSnapshot());
 
     projectFixture.write("packages/domain/package.json", packageContent);
-    const after = await graph.refresh(snapshot);
+    const after = await graph.refresh(snapshot, await projectFixture.workspaceSnapshot());
     const paths = graph.programFor("packages/app/src/index.ts")?.getCompilerOptions().paths;
 
     expect(before.changedConfigurationCount).toBe(5);
@@ -275,7 +275,7 @@ describe("TypeScriptProjectGraph", () => {
   it("stops observing configuration inputs after they become unreachable", async () => {
     const projectFixture = fixture();
     const graph = new TypeScriptProjectGraph(projectFixture.fileSystem);
-    await graph.refresh(await projectFixture.snapshot());
+    await graph.refresh(await projectFixture.snapshot(), await projectFixture.workspaceSnapshot());
     projectFixture.write(
       "tsconfig.json",
       JSON.stringify({ files: [], references: [{ path: "packages/domain" }] }),
@@ -285,14 +285,20 @@ describe("TypeScriptProjectGraph", () => {
       JSON.stringify({ include: ["src/**/*.ts"] }),
     );
     const narrowedSnapshot = await projectFixture.snapshot();
-    const narrowed = await graph.refresh(narrowedSnapshot);
+    const narrowed = await graph.refresh(
+      narrowedSnapshot,
+      await projectFixture.workspaceSnapshot(),
+    );
     const appService = graph.languageServiceFor("packages/app/src/index.ts");
 
     projectFixture.write(
       "packages/app/tsconfig.base.json",
       JSON.stringify({ compilerOptions: { strict: true } }),
     );
-    const unchanged = await graph.refresh(narrowedSnapshot);
+    const unchanged = await graph.refresh(
+      narrowedSnapshot,
+      await projectFixture.workspaceSnapshot(),
+    );
 
     expect(narrowed.changedConfigurationCount).toBe(3);
     expect(unchanged.changedConfigurationCount).toBe(0);
@@ -312,7 +318,7 @@ describe("TypeScriptProjectGraph", () => {
     );
     projectFixture.write("scratch/outside.ts", "export const outside = true;\n");
     const graph = new TypeScriptProjectGraph(projectFixture.fileSystem);
-    await graph.refresh(await projectFixture.snapshot());
+    await graph.refresh(await projectFixture.snapshot(), await projectFixture.workspaceSnapshot());
 
     const sourceFiles = graph.sourceFilesFor("packages/domain/src/index.ts");
     const primary = graph.sourceFileFor("packages/domain/src/index.ts");
@@ -333,13 +339,13 @@ describe("TypeScriptProjectGraph", () => {
     const originalTimes = statSync(configurationPath);
     const graph = new TypeScriptProjectGraph(projectFixture.fileSystem);
     const snapshot = await projectFixture.snapshot();
-    await graph.refresh(snapshot);
+    await graph.refresh(snapshot, await projectFixture.workspaceSnapshot());
 
     const changedContent = originalContent.replace("@domain/*", "@demand/*");
     expect(changedContent).toHaveLength(originalContent.length);
     projectFixture.write("packages/app/tsconfig.base.json", changedContent);
     utimesSync(configurationPath, originalTimes.atime, originalTimes.mtime);
-    const changed = await graph.refresh(snapshot);
+    const changed = await graph.refresh(snapshot, await projectFixture.workspaceSnapshot());
     const paths = graph.programFor("packages/app/src/index.ts")?.getCompilerOptions().paths;
 
     expect(changed.changedConfigurationCount).toBe(1);
@@ -350,7 +356,7 @@ describe("TypeScriptProjectGraph", () => {
   it("invalidates compiler options and project references on the next refresh", async () => {
     const projectFixture = fixture();
     const graph = new TypeScriptProjectGraph(projectFixture.fileSystem);
-    await graph.refresh(await projectFixture.snapshot());
+    await graph.refresh(await projectFixture.snapshot(), await projectFixture.workspaceSnapshot());
 
     projectFixture.write(
       "packages/app/tsconfig.json",
@@ -360,7 +366,10 @@ describe("TypeScriptProjectGraph", () => {
         include: ["src/**/*.ts"],
       }),
     );
-    const compilerOptionsChanged = await graph.refresh(await projectFixture.snapshot());
+    const compilerOptionsChanged = await graph.refresh(
+      await projectFixture.snapshot(),
+      await projectFixture.workspaceSnapshot(),
+    );
     const changedOptions = graph.programFor("packages/app/src/index.ts")?.getCompilerOptions();
 
     expect(compilerOptionsChanged.configuredProjectCount).toBe(3);
@@ -383,7 +392,10 @@ describe("TypeScriptProjectGraph", () => {
       "tsconfig.json",
       JSON.stringify({ files: [], references: [{ path: "packages/domain" }] }),
     );
-    const referencesChanged = await graph.refresh(await projectFixture.snapshot());
+    const referencesChanged = await graph.refresh(
+      await projectFixture.snapshot(),
+      await projectFixture.workspaceSnapshot(),
+    );
     const referencedOptions = graph.programFor("packages/app/src/index.ts")?.getCompilerOptions();
 
     expect(referencesChanged.configuredProjectCount).toBe(3);
@@ -397,7 +409,7 @@ describe("TypeScriptProjectGraph", () => {
   it("invalidates workspace package exports and source membership", async () => {
     const projectFixture = fixture();
     const graph = new TypeScriptProjectGraph(projectFixture.fileSystem);
-    await graph.refresh(await projectFixture.snapshot());
+    await graph.refresh(await projectFixture.snapshot(), await projectFixture.workspaceSnapshot());
 
     projectFixture.write(
       "packages/domain/package.json",
@@ -409,7 +421,10 @@ describe("TypeScriptProjectGraph", () => {
     );
     projectFixture.remove("scratch/outside.ts");
 
-    const changed = await graph.refresh(await projectFixture.snapshot());
+    const changed = await graph.refresh(
+      await projectFixture.snapshot(),
+      await projectFixture.workspaceSnapshot(),
+    );
     const options = graph.programFor("packages/app/src/index.ts")?.getCompilerOptions();
 
     expect(changed.changedConfigurationCount).toBe(1);
@@ -423,7 +438,10 @@ describe("TypeScriptProjectGraph", () => {
     const projectFixture = fixture();
     const graph = new TypeScriptProjectGraph(projectFixture.fileSystem);
 
-    const first = await graph.refresh(await projectFixture.snapshot());
+    const first = await graph.refresh(
+      await projectFixture.snapshot(),
+      await projectFixture.workspaceSnapshot(),
+    );
     const inheritedOptions = graph.programFor("packages/app/src/index.ts")?.getCompilerOptions();
     projectFixture.write(
       "packages/app/tsconfig.base.json",
@@ -438,7 +456,10 @@ describe("TypeScriptProjectGraph", () => {
         },
       }),
     );
-    const changed = await graph.refresh(await projectFixture.snapshot());
+    const changed = await graph.refresh(
+      await projectFixture.snapshot(),
+      await projectFixture.workspaceSnapshot(),
+    );
     const changedOptions = graph.programFor("packages/app/src/index.ts")?.getCompilerOptions();
 
     expect(first.changedConfigurationCount).toBe(6);
@@ -461,7 +482,10 @@ describe("TypeScriptProjectGraph", () => {
         JSON.stringify({ compilerOptions: { strict: true }, include: [include] }),
       );
 
-      await graph.refresh(await projectFixture.snapshot());
+      await graph.refresh(
+        await projectFixture.snapshot(),
+        await projectFixture.workspaceSnapshot(),
+      );
       const program = graph.programFor("scratch/outside.ts");
 
       expect(program?.getCompilerOptions().strict).toBe(true);
@@ -482,7 +506,7 @@ describe("TypeScriptProjectGraph", () => {
     projectFixture.write("src/vs/a.ts", "export const a = 1;\n");
     projectFixture.write("src/vs/b.ts", "export const b = 2;\n");
 
-    await graph.refresh(await projectFixture.snapshot());
+    await graph.refresh(await projectFixture.snapshot(), await projectFixture.workspaceSnapshot());
     const program = graph.programFor("src/vs/a.ts");
 
     expect(program?.getCompilerOptions().strict).toBe(true);
@@ -506,7 +530,7 @@ describe("TypeScriptProjectGraph", () => {
     projectFixture.write("src/vs/a.ts", "export const a = 1;\n");
     projectFixture.write("src/vs/skip/c.ts", "export const c = 3;\n");
 
-    await graph.refresh(await projectFixture.snapshot());
+    await graph.refresh(await projectFixture.snapshot(), await projectFixture.workspaceSnapshot());
 
     expect(graph.programFor("src/vs/a.ts")?.getCompilerOptions().strict).toBe(true);
     expect(graph.programFor("src/vs/skip/c.ts")?.getCompilerOptions().strict).toBeUndefined();
@@ -546,9 +570,15 @@ describe("TypeScriptProjectGraph", () => {
     const graph = new TypeScriptProjectGraph(projectFixture.fileSystem);
     projectFixture.write("tsconfig.json", "{ malformed");
 
-    const malformed = await graph.refresh(await projectFixture.snapshot());
+    const malformed = await graph.refresh(
+      await projectFixture.snapshot(),
+      await projectFixture.workspaceSnapshot(),
+    );
     projectFixture.remove("tsconfig.json");
-    const missing = await graph.refresh(await projectFixture.snapshot());
+    const missing = await graph.refresh(
+      await projectFixture.snapshot(),
+      await projectFixture.workspaceSnapshot(),
+    );
 
     expect(malformed.configuredProjectCount).toBe(2);
     expect(missing.configuredProjectCount).toBe(2);
@@ -636,7 +666,10 @@ describe("TypeScriptProjectGraph", () => {
     );
     projectFixture.write("node_modules/vendored/index.ts", "export const vendored = 1;\n");
 
-    const refresh = await graph.refresh(await projectFixture.snapshot());
+    const refresh = await graph.refresh(
+      await projectFixture.snapshot(),
+      await projectFixture.workspaceSnapshot(),
+    );
 
     expect(refresh.configuredProjectCount).toBe(2);
     expect(
@@ -649,16 +682,16 @@ describe("TypeScriptProjectGraph", () => {
     const graph = new TypeScriptProjectGraph(projectFixture.fileSystem);
     projectFixture.remove("tsconfig.json");
     const snapshot = await projectFixture.snapshot();
-    await graph.refresh(snapshot);
+    await graph.refresh(snapshot, await projectFixture.workspaceSnapshot());
 
     projectFixture.write(
       "scratch/tsconfig.json",
       JSON.stringify({ compilerOptions: { strict: true } }),
     );
-    const appeared = await graph.refresh(snapshot);
+    const appeared = await graph.refresh(snapshot, await projectFixture.workspaceSnapshot());
     const appearedStrict = graph.programFor("scratch/outside.ts")?.getCompilerOptions().strict;
     projectFixture.remove("scratch/tsconfig.json");
-    const disappeared = await graph.refresh(snapshot);
+    const disappeared = await graph.refresh(snapshot, await projectFixture.workspaceSnapshot());
 
     expect(appeared.configuredProjectCount).toBe(3);
     expect(appearedStrict).toBe(true);
@@ -670,7 +703,7 @@ describe("TypeScriptProjectGraph", () => {
     const projectFixture = fixture();
     const graph = new TypeScriptProjectGraph(projectFixture.fileSystem);
 
-    await graph.refresh(await projectFixture.snapshot());
+    await graph.refresh(await projectFixture.snapshot(), await projectFixture.workspaceSnapshot());
 
     const options = graph.programFor("scratch/outside.ts")?.getCompilerOptions();
 
@@ -707,7 +740,7 @@ describe("TypeScriptProjectGraph", () => {
       ].join("\n"),
     );
 
-    await graph.refresh(await projectFixture.snapshot());
+    await graph.refresh(await projectFixture.snapshot(), await projectFixture.workspaceSnapshot());
     const options = graph.programFor("packages/app/dist/generated.ts")?.getCompilerOptions();
 
     expect(options?.paths?.["@local/*"]).toBeUndefined();
@@ -729,7 +762,7 @@ describe("TypeScriptProjectGraph", () => {
     const files = driveRootWorkspaceFiles(fileSystem, "packages/app/dist/generated.ts");
     const graph = new TypeScriptProjectGraph(fileSystem);
 
-    await graph.refresh({ root: "C:/repo", files });
+    await graph.refresh({ root: "C:/repo", files }, { root: "C:/repo", files });
     const generatedOptions = graph
       .programFor("packages/app/dist/generated.ts")
       ?.getCompilerOptions();
@@ -752,7 +785,7 @@ describe("TypeScriptProjectGraph", () => {
       }),
     );
 
-    await graph.refresh(await projectFixture.snapshot());
+    await graph.refresh(await projectFixture.snapshot(), await projectFixture.workspaceSnapshot());
     const paths = graph.programFor("packages/app/src/index.ts")?.getCompilerOptions().paths;
 
     expect(paths?.["@configured/domain/feature"]).toEqual([

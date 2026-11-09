@@ -68,6 +68,7 @@ src/orders.ts::PaymentProcessor::charge
 - Use workspace-relative paths: `src/orders.ts::charge`, not `/app/src/orders.ts::charge`.
 - One target per command.
 - Quote targets containing `$ * [ ] ( ) !` or spaces in single quotes.
+- Enum members are symbols under their enum: `Token::UsingKeyword`.
 - Naming a file pins the whole symbol path: `orders.ts::charge` finds top-level `charge`, never `orders.ts::PaymentProcessor::charge`. Drop the file part to reach nested symbols.
 - Ambiguous target → symnav prints candidates; copy one and retry.
 - Not found → check the path is workspace-relative and the name appears in `overview`/`resolve`.

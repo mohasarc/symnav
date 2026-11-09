@@ -84,6 +84,7 @@ src/checkout/CheckoutService.ts::CheckoutService::processPayment
 ```
 
 - Nested declarations add segments, e.g. `src/domain/orders.ts::PaymentProcessor::charge::formatCharge`.
+- Enum members nest under their enum: `src/token.ts::Token::UsingKeyword`. A quoted or computed member name uses its text, so `["a-b"] = 7` is `Token::a-b`.
 - Folds (callbacks, control-flow blocks) are transparent and add no segment. A helper declared inside `describe("x", () => { … })` is `file.ts::helper`.
 - Same-name siblings get a source-order disambiguator: `Router::post#1`, `Router::post#2`. A target without the disambiguator addresses the whole overload family.
 - Output shows enough of the symbol path under its file to rebuild the canonical ID.
@@ -198,7 +199,7 @@ symnav overview src/orders.ts --line 14
 Takes a file path, not a symbol target. Shows a VS Code-style fold tree: declarations, signatures, line ranges, barrel re-export lines, and fold headers for callbacks, calls, and control-flow blocks (`if`, `for`, `switch`, `try`, …).
 
 - Default `--depth 0`: top-level entries only.
-- `--depth n` opens `n` child levels. Class members, local declarations, and fold interiors each cost one level.
+- `--depth n` opens `n` child levels. Class and enum members, local declarations, and fold interiors each cost one level.
 - `--at <text>`: substring match against node headers, as copied from earlier output. A node whose label equals the text exactly beats longer substring matches, so `--at Greeter` picks the class, not `Greeter::greet`. Next comes a symbol whose own name equals the text, so `--at initialize` picks `createContainer::initialize` over `createContainer::initializedValues` and statements that mention it. Several symbols with that name (`object#1`, `object#2`) still refuse with candidates. `--depth` then counts from that node.
 - `--line <n>`: narrows candidates to nodes on that line. It can be combined with `--at`.
 - Several candidates left means ambiguous, with candidates listed. There's no innermost-wins.

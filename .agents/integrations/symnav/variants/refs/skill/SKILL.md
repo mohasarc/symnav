@@ -11,6 +11,8 @@ symnav refs ...
 
 Use normal reads, search, tests, and edits whenever they help.
 
+Run each symnav call on its own or join calls with `;`. `Cannot answer: …` exits 1, so `&&` skips whatever comes after it.
+
 ## `refs`
 
 `refs` lists workspace references to a unique symbol target, grouped by file.

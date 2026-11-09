@@ -12,6 +12,8 @@ symnav graph ...
 
 Use normal reads, search, tests, and edits whenever they help.
 
+Run each symnav call on its own or join calls with `;`. `Cannot answer: …` exits 1, so `&&` skips whatever comes after it.
+
 ## `resolve`
 
 `resolve` lists symbols and files whose names match a query.

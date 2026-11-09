@@ -11,6 +11,8 @@ symnav def ...
 
 Use normal reads, search, tests, and edits whenever they help.
 
+Run each symnav call on its own or join calls with `;`. `Cannot answer: …` exits 1, so `&&` skips whatever comes after it.
+
 ## `def`
 
 `def` prints the declaration location and signature for a unique symbol target.

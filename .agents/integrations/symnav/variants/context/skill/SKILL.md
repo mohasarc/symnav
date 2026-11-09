@@ -11,6 +11,8 @@ symnav context ...
 
 Use normal reads, search, tests, and edits whenever they help.
 
+Run each symnav call on its own or join calls with `;`. `Cannot answer: …` exits 1, so `&&` skips whatever comes after it.
+
 ## `context`
 
 `context` prints one block around a symbol: definition, direct callers, direct callees, reference summary, and recent git history.

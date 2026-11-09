@@ -11,6 +11,8 @@ symnav graph ...
 
 Use normal reads, search, tests, and edits whenever they help.
 
+Run each symnav call on its own or join calls with `;`. `Cannot answer: …` exits 1, so `&&` skips whatever comes after it.
+
 ## `graph`
 
 `graph` prints multi-hop incoming or outgoing call paths around a unique symbol target.

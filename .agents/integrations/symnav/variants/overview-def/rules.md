@@ -8,6 +8,8 @@ Make strong, deliberate use of it:
 
 Sequences that work well (examples, not requirements): `overview` → `def`. Use symnav early to orient, mid-task to locate and understand symbols, and before editing shared code to see what depends on it.
 
+Run each symnav call on its own or join calls with `;`. `Cannot answer: …` exits 1, so `&&` skips whatever comes after it.
+
 Known caveat: `symnav overview` and `symnav def` are extremely slow. A single call can take 10 to 20 minutes. That is expected — run it anyway and wait for it to finish. Do not treat a long-running call as stuck, and do not skip it to save time. Time is not what we care about here.
 
 Its full command guide is included below in this file.

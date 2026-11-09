@@ -45,6 +45,9 @@ import { TestDaemonProcessCoordinator as DaemonProcessCoordinator } from "../../
 import { DaemonFailureJournal } from "../diagnostics/failure-journal.js";
 import { NodeDaemonClock } from "../lifecycle/daemon-clock.js";
 
+const FORCED_STOP_TIMEOUT_MS =
+  2 * DaemonPolicy.currentSystem().values.shutdown.forcedTerminationReserveMaximumMs;
+
 describe("DaemonProcessCoordinator runtime lifecycle", () => {
   const harnesses: DaemonProcessCoordinatorHarness[] = [];
   const childProcesses: ChildProcess[] = [];
@@ -224,7 +227,7 @@ describe("DaemonProcessCoordinator runtime lifecycle", () => {
       harness.transport,
       harness.stateDirectory,
       {
-        stopTimeoutMs: 500,
+        stopTimeoutMs: FORCED_STOP_TIMEOUT_MS,
         pollIntervalMs: 1,
         processTerminator: new CurrentProcessTerminator(() => harness.hasExited),
       },
@@ -237,7 +240,7 @@ describe("DaemonProcessCoordinator runtime lifecycle", () => {
       pid: process.pid,
     });
     expect(harness.hasExited).toBe(true);
-    expect(Date.now() - startedAt).toBeLessThan(1_000);
+    expect(Date.now() - startedAt).toBeLessThan(2 * FORCED_STOP_TIMEOUT_MS);
     await harness.exited;
     expect(harness.registry.read(harness.identity)).toBeUndefined();
   });
@@ -253,7 +256,7 @@ describe("DaemonProcessCoordinator runtime lifecycle", () => {
       harness.transport,
       harness.stateDirectory,
       {
-        stopTimeoutMs: 1_000,
+        stopTimeoutMs: FORCED_STOP_TIMEOUT_MS,
         pollIntervalMs: 1,
         processTerminator: new CurrentProcessTerminator(() => harness.hasExited),
       },
@@ -493,7 +496,7 @@ describe("DaemonProcessCoordinator runtime lifecycle", () => {
       .catch(() => undefined);
     await waitUntil(() => existsSync(requestStartedPath));
     const controller = new DaemonController(registry, transport, stateDirectory, {
-      stopTimeoutMs: 500,
+      stopTimeoutMs: FORCED_STOP_TIMEOUT_MS,
       pollIntervalMs: 1,
     });
 

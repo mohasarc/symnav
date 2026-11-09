@@ -36,7 +36,11 @@ export interface DefinitionSource {
   readonly lines: readonly string[];
 }
 
+export interface DefinitionSymbol extends SymbolOverviewNode {
+  readonly source?: DefinitionSource;
+}
+
 export interface DefinitionResult extends ResultWithDiagnostics {
   readonly identity: SymbolIdentity;
-  readonly symbols: readonly SymbolOverviewNode[];
+  readonly symbols: readonly DefinitionSymbol[];
 }

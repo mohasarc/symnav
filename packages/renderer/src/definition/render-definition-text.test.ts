@@ -290,7 +290,7 @@ describe("DefinitionTextRenderer source budget", () => {
         "… cut to fit 600 chars",
         "… source not shown: src/b.ts::B::run",
         "… source not shown: src/b.ts::C::run",
-        "… more: def --source '<id>' for one definition",
+        "… more: def --source '<id>' for one definition, or --all",
         "",
       ].join("\n"),
     );
@@ -310,6 +310,25 @@ describe("DefinitionTextRenderer source budget", () => {
 
     expect(text).toContain("     8     stepA5();");
     expect(text).toContain("     8     stepB5();");
+    expect(text).not.toContain("… cut to fit");
+  });
+
+  it("prints every source past the budget when all is set", () => {
+    const result: DefinitionResult = {
+      identity: { file: "src/a.ts", segments: [{ name: "Runner" }, { name: "run" }] },
+      symbols: [
+        SourcedDefinition.runMethod("src/a.ts", "A", 2),
+        SourcedDefinition.runMethod("src/b.ts", "B", 2),
+        SourcedDefinition.runMethod("src/b.ts", "C", 12),
+      ],
+      all: true,
+    };
+
+    const text = DefinitionTextRenderer.render(result, 100);
+
+    expect(text).toContain("     8     stepA5();");
+    expect(text).toContain("│    8     stepB5();");
+    expect(text).toContain("    18     stepC5();");
     expect(text).not.toContain("… cut to fit");
   });
 });

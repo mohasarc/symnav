@@ -861,6 +861,49 @@ describe("TypeScriptProjectGraph", () => {
     );
   });
 
+  it("owns and resolves JavaScript a configuration includes without allowJs", async () => {
+    const projectFixture = fixture();
+    projectFixture.write(
+      "legacy/tsconfig.json",
+      JSON.stringify({ compilerOptions: { strict: true }, include: ["src"] }),
+    );
+    projectFixture.write("legacy/src/legacy.js", "export function legacyTarget() {}\n");
+    projectFixture.write(
+      "legacy/src/use.ts",
+      'import { legacyTarget } from "./legacy.js";\nexport function useLegacy(): void { legacyTarget(); }\n',
+    );
+    const snapshot = await projectFixture.snapshot();
+    const backend = new TypeScriptBackend(projectFixture.fileSystem);
+    await backend.refresh({
+      snapshot,
+      workspaceSnapshot: await projectFixture.workspaceSnapshot(),
+      coverage: "workspace",
+    });
+    const graph = new TypeScriptProjectGraph(projectFixture.fileSystem);
+    await graph.refresh(snapshot, await projectFixture.workspaceSnapshot());
+
+    await expect(
+      calleeNames(backend, snapshot.files, symbolIdentity("legacy/src/use.ts", "useLegacy")),
+    ).resolves.toEqual(["legacyTarget"]);
+    expect(graph.programFor("legacy/src/legacy.js")?.getCompilerOptions().strict).toBe(true);
+  });
+
+  it("owns JavaScript of a configuration that sets allowJs false", async () => {
+    const projectFixture = fixture();
+    projectFixture.write(
+      "legacy/tsconfig.json",
+      JSON.stringify({ compilerOptions: { strict: true, allowJs: false }, include: ["src"] }),
+    );
+    projectFixture.write("legacy/src/legacy.js", "export function legacyTarget() {}\n");
+    const graph = new TypeScriptProjectGraph(projectFixture.fileSystem);
+
+    await graph.refresh(await projectFixture.snapshot(), await projectFixture.workspaceSnapshot());
+    const options = graph.programFor("legacy/src/legacy.js")?.getCompilerOptions();
+
+    expect(options?.allowJs).toBe(true);
+    expect(options?.strict).toBe(true);
+  });
+
   it("keeps implicit outDir contents outside configured membership", async () => {
     const projectFixture = fixture();
     const graph = new TypeScriptProjectGraph(projectFixture.fileSystem);

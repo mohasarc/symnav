@@ -8,6 +8,7 @@ export function nodeKind(node: Node): TypeScriptSymbolKind | null {
   if (Node.isInterfaceDeclaration(node)) return "interface";
   if (Node.isTypeAliasDeclaration(node)) return "type-alias";
   if (Node.isEnumDeclaration(node)) return "enum";
+  if (Node.isEnumMember(node)) return "enum-member";
   if (Node.isModuleDeclaration(node)) return "namespace";
   if (Node.isVariableStatement(node)) return "variable";
   if (Node.isExportAssignment(node)) return "default-export";

@@ -5,6 +5,7 @@ export type TypeScriptSymbolKind =
   | "interface"
   | "type-alias"
   | "enum"
+  | "enum-member"
   | "namespace"
   | "function"
   | "function-implementation"
@@ -47,6 +48,7 @@ const ROLE_BY_KIND: Record<TypeScriptSymbolKind, SymbolRole> = {
   variable: "value",
   property: "value",
   "default-export": "value",
+  "enum-member": "value",
   "type-alias": "type",
   "index-signature": "type",
 };

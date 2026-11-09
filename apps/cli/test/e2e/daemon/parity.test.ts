@@ -140,10 +140,7 @@ describe("symnav daemon parity", () => {
     expect(harness.completionSpoolFileCount()).toBe(0);
   }, 15_000);
 
-  it.each([
-    ["text", ["overview", "large.ts"]],
-    ["JSON", ["overview", "large.ts", "--json"]],
-  ] as const)(
+  it.each([["JSON", ["overview", "large.ts", "--json"]]] as const)(
     "keeps a real >8 MiB %s result byte-identical between cold and warm",
     async (_name, args) => {
       const harness = new DaemonParityHarness();

@@ -3,6 +3,9 @@ import type { Header, OverviewExpansionResult, OverviewNode } from "@symnav/core
 import { formatHeadLine, formatIdentityPath, treeGlyphsFor } from "../shared/render-format.js";
 import { formatEmptyOverview, formatOverviewHeader, formatHeaderLine } from "./overview-format.js";
 import { capHeaderLineLength, capHeaderLines } from "./header-cap.js";
+import { OverviewTextBudget } from "./overview-text-budget.js";
+
+export const MAX_OVERVIEW_TEXT_CHARS = 8_000;
 
 const TOP_LEVEL_SEPARATOR = "│\n";
 
@@ -10,7 +13,12 @@ export function renderOverviewText(result: OverviewExpansionResult): string {
   if (result.entries.length === 0) {
     return formatEmptyOverview(result.file);
   }
-  return formatOverviewHeader(result.file) + renderTopLevelChildren(result.entries);
+  const fileHeader = formatOverviewHeader(result.file);
+  const budget = new OverviewTextBudget({
+    maxChars: MAX_OVERVIEW_TEXT_CHARS,
+    renderTree: (entries) => fileHeader + renderTopLevelChildren(entries),
+  });
+  return budget.render(result.entries);
 }
 
 function renderTopLevelChildren(children: readonly OverviewNode[]): string {

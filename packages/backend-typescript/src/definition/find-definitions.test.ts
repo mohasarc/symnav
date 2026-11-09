@@ -87,6 +87,7 @@ const FIXTURE: Record<string, string> = {
     "export enum Token {",
     "  None,",
     "  UsingKeyword = 1 << 3,",
+    '  ["a-b"] = 7,',
     "}",
     "",
     "export enum Merged {",
@@ -305,5 +306,20 @@ describe("findDefinitions", () => {
     expect(labelsAndFiles(result)).toEqual([
       { label: "enum-member", file: "src/syntax/Token.ts", name: "One", disambiguator: undefined },
     ]);
+  });
+
+  it("returns a computed string-literal enum member by its literal text", async () => {
+    const result = await findDefinitions({
+      workspaceState: new WorkspaceDeclarationIndex(fsWithFixture()),
+      files: ALL_FILES,
+      identity: {
+        file: "src/syntax/Token.ts",
+        segments: [{ name: "Token" }, { name: "a-b" }],
+      },
+    });
+    expect(labelsAndFiles(result)).toEqual([
+      { label: "enum-member", file: "src/syntax/Token.ts", name: "a-b", disambiguator: undefined },
+    ]);
+    expect(result[0]?.range).toEqual({ startLine: 4, endLine: 4 });
   });
 });

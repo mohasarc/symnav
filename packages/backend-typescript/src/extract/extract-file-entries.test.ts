@@ -379,6 +379,19 @@ describe("extractFileEntries", () => {
     ]);
   });
 
+  it("names string-literal and computed enum members by their literal text, with ids that round-trip", () => {
+    const token = symbolsOf('enum Token { "a b" = 1, ["a-b"] = 7 }')[0];
+    if (!token) throw new Error("expected enum");
+    const ids = symbolChildren(token).map((member) => formatSymbolIdentity(member.identity));
+    expect(ids).toEqual(["input.ts::Token::a b", "input.ts::Token::a-b"]);
+    for (const id of ids) {
+      const pattern = SymbolTargetGrammar.parse(id);
+      expect(
+        formatSymbolIdentity({ file: pattern.fileSuffix!, segments: pattern.segmentSuffix }),
+      ).toBe(id);
+    }
+  });
+
   it("extracts a private field whose canonical id round-trips", () => {
     const result = symbolsOf("class C { #secret = 1; }");
     const cls = result[0];

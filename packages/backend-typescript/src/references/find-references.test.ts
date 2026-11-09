@@ -386,6 +386,24 @@ describe("findReferences", () => {
     expect(result.map(matchedText)).toEqual(["UsingKeyword", "UsingKeyword", "UsingKeyword"]);
   });
 
+  it("finds references to a computed string-literal enum member", async () => {
+    const result = await refsIn(
+      {
+        "src/token.ts": ["export enum Token {", '  ["a-b"] = 7,', "}", ""].join("\n"),
+        "src/user.ts": [
+          'import { Token } from "./token.js";',
+          "",
+          'export const dashed = Token["a-b"];',
+          "",
+        ].join("\n"),
+      },
+      identityOf("src/token.ts", "Token", "a-b"),
+    );
+    expect(result.map((reference) => [reference.file, reference.line, reference.kind])).toEqual([
+      ["src/user.ts", 3, "usage"],
+    ]);
+  });
+
   it("finds references to a method, not its class", async () => {
     const result = await refsIn(
       {

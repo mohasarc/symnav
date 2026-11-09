@@ -10,3 +10,5 @@ export function describeToken(token: Token): string {
       return token === Token.UsingKeyword ? "using" : "other";
   }
 }
+
+export const dashedToken = Token["a-b"];

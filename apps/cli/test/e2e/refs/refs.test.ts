@@ -189,6 +189,16 @@ describe("symnav refs e2e (enum members)", () => {
     ]);
   });
 
+  it("lists uses of a computed string-literal enum member", () => {
+    const r = runRefs(["src/syntax/Token.ts::Token::a-b", "--json"]);
+    expect(r.stderr).toBe("");
+    expect(r.status).toBe(0);
+    const parsed = parseJsonRefs(r.stdout);
+    expect(
+      parsed.references.map((reference) => [reference.line, reference.previewSource.trim()]),
+    ).toEqual([[14, 'export const dashedToken = Token["a-b"];']]);
+  });
+
   it("resolves a bare enum member name to the member under its enum", () => {
     const r = runRefs(["UsingKeyword", "--json"]);
     expect(r.stderr).toBe("");

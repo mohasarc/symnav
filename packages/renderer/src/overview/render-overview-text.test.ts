@@ -71,6 +71,7 @@ const NAMESPACE_COUNT = 3;
 const CLASSES_PER_NAMESPACE = 20;
 const METHODS_PER_CLASS = 30;
 const LINES_PER_CLASS = METHODS_PER_CLASS + 2;
+const TOP_LEVEL_FUNCTION_COUNT = 400;
 const LINES_PER_NAMESPACE = CLASSES_PER_NAMESPACE * LINES_PER_CLASS + 2;
 
 function method(namespace: string, className: string, index: number, line: number) {
@@ -673,5 +674,25 @@ describe("renderOverviewText size budget", () => {
     expect(output.length).toBeGreaterThan(MAX_OVERVIEW_TEXT_CHARS);
     expect(output).not.toContain("… cut to fit");
     expect(output).toContain("Space2::Shape19::method29\n");
+  });
+
+  it("cuts top-level entries in source order when depth 0 does not fit", () => {
+    const entries = Array.from({ length: TOP_LEVEL_FUNCTION_COUNT }, (_, index) =>
+      decl({
+        kind: "function",
+        segments: [{ name: `helper${index}` }],
+        range: { startLine: index + 1, endLine: index + 1 },
+        header: header(index + 1, `export function helper${index}(value: number): number`),
+      }),
+    );
+
+    const output = renderOverviewText(overviewResult({ file: "src/helpers.ts", entries }));
+
+    expect(output.length).toBeLessThanOrEqual(MAX_OVERVIEW_TEXT_CHARS);
+    expect(output).toContain("helper0\n");
+    expect(output).not.toContain(`helper${TOP_LEVEL_FUNCTION_COUNT - 1}\n`);
+    expect(output).toContain(
+      `… cut to fit ${MAX_OVERVIEW_TEXT_CHARS} chars: showing depth 0 through line`,
+    );
   });
 });

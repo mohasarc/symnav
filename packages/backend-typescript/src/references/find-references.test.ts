@@ -351,6 +351,41 @@ describe("findReferences", () => {
     ).rejects.toBeInstanceOf(SymbolNotFoundError);
   });
 
+  it("finds references to an enum member, including a switch case", async () => {
+    const result = await refsIn(
+      {
+        "src/token.ts": [
+          "export enum Token {",
+          "  None,",
+          "  UsingKeyword = 1 << 3,",
+          "}",
+          "",
+        ].join("\n"),
+        "src/scanner.ts": [
+          'import { Token } from "./token.js";',
+          "",
+          "export const first = Token.UsingKeyword;",
+          "export function describe(token: Token): string {",
+          "  switch (token) {",
+          "    case Token.UsingKeyword:",
+          '      return "using";',
+          "    default:",
+          '      return token === Token.UsingKeyword ? "using" : "other";',
+          "  }",
+          "}",
+          "",
+        ].join("\n"),
+      },
+      identityOf("src/token.ts", "Token", "UsingKeyword"),
+    );
+    expect(result.map((reference) => [reference.file, reference.line, reference.kind])).toEqual([
+      ["src/scanner.ts", 3, "usage"],
+      ["src/scanner.ts", 6, "usage"],
+      ["src/scanner.ts", 9, "usage"],
+    ]);
+    expect(result.map(matchedText)).toEqual(["UsingKeyword", "UsingKeyword", "UsingKeyword"]);
+  });
+
   it("finds references to a method, not its class", async () => {
     const result = await refsIn(
       {

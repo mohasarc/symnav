@@ -90,6 +90,7 @@ interface ProjectGraphState<Project> {
   readonly inferredFileCount: number;
   readonly inputsByPath: ReadonlyMap<string, string>;
   readonly observations: readonly ProjectInputObservation[];
+  readonly nestedConfigurationPaths: readonly string[];
 }
 
 export abstract class ProjectGraph<
@@ -106,13 +107,10 @@ export abstract class ProjectGraph<
     snapshot: WorkspaceSnapshot,
     workspaceSnapshot: WorkspaceSnapshot,
   ): Promise<ProjectGraphRefreshSummary> {
-    if (this.projectStateUnchanged(snapshot)) return this.currentSummary(0);
+    const nestedPaths = [...this.nestedConfigurationPaths(workspaceSnapshot)].sort();
+    if (this.projectStateUnchanged(snapshot, nestedPaths)) return this.currentSummary(0);
     const inputCollector = new ProjectInputCollector(this.fileSystem);
-    const discovered = await this.discoverConfigurations({
-      snapshot,
-      workspaceSnapshot,
-      inputCollector,
-    });
+    const discovered = await this.discoverConfigurations({ snapshot, nestedPaths, inputCollector });
     const candidateConfigurations = discovered.map(({ path, parsed }) => ({
       path,
       configuration: parsed.configuration,
@@ -158,6 +156,7 @@ export abstract class ProjectGraph<
       inferredFileCount: inferredFiles.length,
       inputsByPath,
       observations,
+      nestedConfigurationPaths: nestedPaths,
     };
     return this.currentSummary(changedInputCount);
   }
@@ -214,12 +213,11 @@ export abstract class ProjectGraph<
 
   private async discoverConfigurations(request: {
     readonly snapshot: WorkspaceSnapshot;
-    readonly workspaceSnapshot: WorkspaceSnapshot;
+    readonly nestedPaths: readonly string[];
     readonly inputCollector: ProjectInputCollector;
   }): Promise<readonly DiscoveredProjectConfiguration<ConfigurationUnit>[]> {
-    const { snapshot, workspaceSnapshot, inputCollector } = request;
+    const { snapshot, nestedPaths, inputCollector } = request;
     const seen = new Set<string>();
-    const nestedPaths = [...this.nestedConfigurationPaths(workspaceSnapshot)].sort();
     const seeds = [
       { paths: this.initialConfigurationPaths(snapshot.root), confinedPaths: new Set<string>() },
       { paths: nestedPaths, confinedPaths: new Set(nestedPaths) },
@@ -277,8 +275,12 @@ export abstract class ProjectGraph<
     };
   }
 
-  private projectStateUnchanged(snapshot: WorkspaceSnapshot): boolean {
+  private projectStateUnchanged(
+    snapshot: WorkspaceSnapshot,
+    nestedPaths: readonly string[],
+  ): boolean {
     if (!this.workspaceFilesUnchanged(snapshot)) return false;
+    if (!ProjectGraph.samePaths(this.state!.nestedConfigurationPaths, nestedPaths)) return false;
     return this.state!.observations.every(
       (observation) => this.readCurrentInput(observation.path) === observation.content,
     );
@@ -296,6 +298,10 @@ export abstract class ProjectGraph<
   private readCurrentInput(path: string): string | null {
     if (!this.fileSystem.existsSync(path) || this.fileSystem.isDirectorySync(path)) return null;
     return this.fileSystem.readFileSync(path);
+  }
+
+  private static samePaths(left: readonly string[], right: readonly string[]): boolean {
+    return left.length === right.length && left.every((path, index) => path === right[index]);
   }
 
   private static collectInputs(inputs: readonly ProjectInput[]): ReadonlyMap<string, string> {

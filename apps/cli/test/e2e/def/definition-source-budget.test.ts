@@ -37,4 +37,26 @@ describe("symnav def --source e2e (text budget)", () => {
     expect(r.stdout).toMatch(/… omitted: lines \d+-402 \(\d+ lines\)\n/);
     expect(r.stdout).toContain("… more: --all\n");
   });
+
+  it("prints every implementation's source with --all", () => {
+    const r = runDef(["--source", "--all", "Provider::charge"]);
+
+    expect(r.stderr).toBe("");
+    expect(r.status).toBe(0);
+    expect(r.stdout.length).toBeGreaterThan(DEFINITION_TEXT_BUDGET);
+    expect(r.stdout).not.toContain("… cut to fit");
+    expect(r.stdout).toContain(
+      "└── 4-85: Provider6::charge  [implementation]\n     4   charge(amount: number): number {\n",
+    );
+    expect(r.stdout).toContain("    84     return total;");
+  });
+
+  it("prints a long function's every line with --all", () => {
+    const r = runDef(["--source", "--all", "src/long.ts::long"]);
+
+    expect(r.stderr).toBe("");
+    expect(r.status).toBe(0);
+    expect(r.stdout).not.toContain("… cut to fit");
+    expect(r.stdout).toContain("    401   return value;\n    402 }\n");
+  });
 });

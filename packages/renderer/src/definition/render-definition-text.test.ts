@@ -158,4 +158,57 @@ describe("renderDefinitionText", () => {
       ),
     );
   });
+
+  it("prints numbered source lines in place of the header when source is attached", () => {
+    const result: DefinitionResult = {
+      identity: { file: "src/http/Router.ts", segments: [{ name: "Router" }, { name: "post" }] },
+      symbols: [
+        {
+          ...decl({
+            file: "src/http/Router.ts",
+            segments: [{ name: "Router" }, { name: "post", disambiguator: 1 }],
+            nativeLabel: "method-overload-signature",
+            startLine: 8,
+            endLine: 8,
+            header: ["post(path: string, handler: Handler): void"],
+          }),
+          source: { startLine: 8, lines: ["  post(path: string, handler: Handler): void;"] },
+        },
+        {
+          ...decl({
+            file: "src/http/Router.ts",
+            segments: [{ name: "Router" }, { name: "post", disambiguator: 2 }],
+            nativeLabel: "method-implementation",
+            startLine: 9,
+            endLine: 12,
+            header: ["post(path: string | RegExp, handler: Handler): void"],
+          }),
+          source: {
+            startLine: 9,
+            lines: [
+              "  post(path: string | RegExp, handler: Handler): void {",
+              "    void path;",
+              "    void handler;",
+              "  }",
+            ],
+          },
+        },
+      ],
+    };
+    expect(renderDefinitionText(result)).toBe(
+      [
+        "Definition: Router::post",
+        "",
+        "src/http/Router.ts",
+        "├── 8: Router::post#1  [overload]",
+        "│   8   post(path: string, handler: Handler): void;",
+        "└── 9-12: Router::post#2  [implementation]",
+        "     9   post(path: string | RegExp, handler: Handler): void {",
+        "    10     void path;",
+        "    11     void handler;",
+        "    12   }",
+        "",
+      ].join("\n"),
+    );
+  });
 });

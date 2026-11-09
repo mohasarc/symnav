@@ -1,5 +1,5 @@
 import type { BackendRouter } from "../backend/backend-router.js";
-import { NoSupportedFilesError } from "../backend/errors.js";
+import { NoSupportedFilesError, UnsupportedFileError } from "../backend/errors.js";
 import type { LanguageBackend } from "../backend/language-backend.js";
 import { formatSymbolIdentity } from "../intermediate-representation/canonical-identity.js";
 import type { SymbolIdentity } from "../intermediate-representation/symbol-identity.js";
@@ -132,13 +132,23 @@ export class SymbolTargetResolver {
     request: SymbolTargetRequest,
   ): Promise<void> {
     const fileSuffix = request.mode === "regular" ? request.pattern.fileSuffix : undefined;
-    if (
-      fileSuffix === undefined ||
-      files.some((file) => SymbolTargetGrammar.fileSuffixMatches(file.relative, fileSuffix))
-    ) {
+    if (fileSuffix === undefined) {
       return;
     }
-    await args.workspace.resolveInputPath(fileSuffix, args.cwd);
+    const suffixMatches = files.filter((file) =>
+      SymbolTargetGrammar.fileSuffixMatches(file.relative, fileSuffix),
+    );
+    const firstSuffixMatch = suffixMatches[0];
+    if (firstSuffixMatch === undefined) {
+      await args.workspace.resolveInputPath(fileSuffix, args.cwd);
+      return;
+    }
+    const noSuffixMatchIsAccepted = suffixMatches.every(
+      (file) => args.router.find(file.relative) === undefined,
+    );
+    if (noSuffixMatchIsAccepted) {
+      throw new UnsupportedFileError(firstSuffixMatch.relative);
+    }
   }
 
   private static groupFilesByAcceptingBackend(

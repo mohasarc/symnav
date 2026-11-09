@@ -326,6 +326,53 @@ describe("ProjectGraph", () => {
     expect(graph.primary("packages/app/a.ts")?.name).toBe("/repo/packages/app/app.json");
   });
 
+  it("confines nested configurations to files inside their own directory", async () => {
+    const graph = new FakeProjectGraph(
+      new InMemoryFileSystem({
+        "/repo/config/root.json": "root",
+        "/repo/vendor/nested.json": "vendor",
+        "/repo/packages/app/app.json": "app",
+        "/repo/packages/app/build/build.json": "build",
+      }),
+    );
+    graph.initialPaths = ["/repo/config/root.json"];
+    graph.nestedPaths = ["/repo/vendor/nested.json", "/repo/packages/app/app.json"];
+    graph.configurations = new Map([
+      ["/repo/config/root.json", { referencedPaths: [], filePaths: ["rooted.ts"] }],
+      ["/repo/vendor/nested.json", { referencedPaths: [], filePaths: ["loose.ts", "vendor/v.ts"] }],
+      [
+        "/repo/packages/app/app.json",
+        { referencedPaths: ["/repo/packages/app/build/build.json"], filePaths: [] },
+      ],
+      [
+        "/repo/packages/app/build/build.json",
+        { referencedPaths: [], filePaths: ["packages/app/src/a.ts"] },
+      ],
+    ]);
+
+    await graph.refresh(
+      snapshot(
+        workspaceFile("rooted.ts"),
+        workspaceFile("loose.ts"),
+        workspaceFile("vendor/v.ts"),
+        workspaceFile("packages/app/src/a.ts"),
+      ),
+    );
+
+    expect(graph.projects("rooted.ts").map(({ name }) => name)).toEqual(["/repo/config/root.json"]);
+    expect(graph.projects("loose.ts").map(({ name }) => name)).toEqual(["inferred"]);
+    expect(graph.projects("vendor/v.ts").map(({ name }) => name)).toEqual([
+      "/repo/vendor/nested.json",
+    ]);
+    expect(graph.projects("packages/app/src/a.ts").map(({ name }) => name)).toEqual([
+      "/repo/packages/app/build/build.json",
+    ]);
+    const [request] = graph.preparationRequests;
+    const vendor = request?.configurations.find(({ path }) => path === "/repo/vendor/nested.json");
+    expect(vendor?.files.map(({ relative }) => relative)).toEqual(["loose.ts", "vendor/v.ts"]);
+    expect(request?.inferredFiles.map(({ relative }) => relative)).toEqual(["loose.ts"]);
+  });
+
   it("uses the inferred project only for unowned workspace files", async () => {
     const graph = new FakeProjectGraph(
       new InMemoryFileSystem({

@@ -533,6 +533,30 @@ describe("TypeScriptProjectGraph", () => {
     expect(graph.programFor("scratch/outside.ts")?.getCompilerOptions().composite).toBeUndefined();
   });
 
+  it("keeps an outside ambient declaration in a nested configuration's program", async () => {
+    const projectFixture = fixture();
+    const backend = new TypeScriptBackend(projectFixture.fileSystem);
+    projectFixture.write(
+      "types/api.d.ts",
+      'declare module "api" {\n  export function call(): number;\n}\n',
+    );
+    projectFixture.write(
+      "ext/tsconfig.json",
+      JSON.stringify({ files: ["../types/api.d.ts"], include: ["src/**/*"] }),
+    );
+    projectFixture.write(
+      "ext/src/main.ts",
+      'import { call } from "api";\nexport function useApi(): number {\n  return call();\n}\n',
+    );
+    const snapshot = await projectFixture.snapshot();
+
+    await backend.refresh({ snapshot, coverage: "workspace" });
+
+    await expect(
+      calleeNames(backend, snapshot.files, symbolIdentity("ext/src/main.ts", "useApi")),
+    ).resolves.toEqual(["call"]);
+  });
+
   it("ignores configurations below node_modules", async () => {
     const projectFixture = fixture();
     const graph = new TypeScriptProjectGraph(projectFixture.fileSystem);

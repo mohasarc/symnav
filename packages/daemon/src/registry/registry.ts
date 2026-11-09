@@ -737,7 +737,7 @@ export class DaemonRegistry {
       },
     );
     try {
-      renameSync(claimPath, identity.startupMutationPath);
+      this.renamePath(claimPath, identity.startupMutationPath);
       return new RegistryStartupMutationLease(this, identity, owner);
     } catch (error) {
       rmSync(claimPath, { recursive: true, force: true });

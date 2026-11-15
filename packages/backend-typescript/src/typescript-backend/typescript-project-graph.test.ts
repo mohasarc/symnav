@@ -498,20 +498,57 @@ describe("TypeScriptProjectGraph", () => {
     ]);
   });
 
-  it("falls back to one inferred project for malformed or missing root configuration", async () => {
+  it("discovers package configurations when the root configuration is malformed or missing", async () => {
     const projectFixture = fixture();
+    const root = projectFixture.root.replaceAll("\\", "/");
     const graph = new TypeScriptProjectGraph(projectFixture.fileSystem);
     projectFixture.write("tsconfig.json", "{ malformed");
 
     const malformed = await graph.refresh(await projectFixture.snapshot());
     projectFixture.remove("tsconfig.json");
     const missing = await graph.refresh(await projectFixture.snapshot());
+    const appPaths = graph.programFor("packages/app/src/index.ts")?.getCompilerOptions().paths;
 
-    expect(malformed.configuredProjectCount).toBe(0);
-    expect(malformed.inferredFileCount).toBe(8);
-    expect(missing.configuredProjectCount).toBe(0);
-    expect(missing.inferredFileCount).toBe(8);
+    expect(malformed.configuredProjectCount).toBe(2);
+    expect(malformed.inferredFileCount).toBe(1);
+    expect(missing.configuredProjectCount).toBe(2);
+    expect(missing.inferredFileCount).toBe(1);
+    expect(appPaths?.["@local/*"]).toEqual([`${root}/packages/app/src/*`]);
     expect(graph.languageServiceFor("scratch/outside.ts")).toBeDefined();
+  });
+
+  it("uses the deepest owning configuration as primary over an including ancestor", async () => {
+    const projectFixture = fixture();
+    const root = projectFixture.root.replaceAll("\\", "/");
+    projectFixture.write("tsconfig.json", JSON.stringify({ include: ["**/*.ts"] }));
+    const graph = new TypeScriptProjectGraph(projectFixture.fileSystem);
+    await graph.refresh(await projectFixture.snapshot());
+
+    const sourceFiles = graph.sourceFilesFor("packages/domain/src/index.ts");
+    const primary = graph.sourceFileFor("packages/domain/src/index.ts");
+
+    expect(sourceFiles[0]?.getProject().getCompilerOptions().baseUrl).toBe(root);
+    expect(primary?.getProject().getCompilerOptions().baseUrl).toBe(`${root}/packages/domain`);
+    expect(primary).toBe(sourceFiles.at(-1));
+  });
+
+  it("orders nested configurations shallow to deep and uses the deepest as primary", async () => {
+    const projectFixture = fixture();
+    const root = projectFixture.root.replaceAll("\\", "/");
+    projectFixture.write(
+      "packages/app/src/tsconfig.json",
+      JSON.stringify({ compilerOptions: { baseUrl: "." }, include: ["**/*.ts"] }),
+    );
+    const graph = new TypeScriptProjectGraph(projectFixture.fileSystem);
+    await graph.refresh(await projectFixture.snapshot());
+
+    const sourceFiles = graph.sourceFilesFor("packages/app/src/local.ts");
+    const primary = graph.sourceFileFor("packages/app/src/local.ts");
+
+    expect(
+      sourceFiles.map((sourceFile) => sourceFile.getProject().getCompilerOptions().baseUrl),
+    ).toEqual([`${root}/packages/app`, `${root}/packages/app/src`]);
+    expect(primary).toBe(sourceFiles.at(-1));
   });
 
   it("gives uncovered files workspace mappings without configured compiler options", async () => {

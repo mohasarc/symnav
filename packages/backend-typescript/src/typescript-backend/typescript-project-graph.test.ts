@@ -231,6 +231,40 @@ describe("TypeScriptProjectGraph", () => {
     expect(after.changedConfigurationCount).toBe(1);
   });
 
+  it("discovers a nested configuration created later without source changes", async () => {
+    const projectFixture = fixture();
+    const domainConfigurationPath = join(projectFixture.root, "packages/domain/tsconfig.json");
+    const domainConfiguration = readFileSync(domainConfigurationPath, "utf8");
+    projectFixture.write("tsconfig.json", JSON.stringify({ files: [] }));
+    projectFixture.remove("packages/domain/tsconfig.json");
+    const graph = new TypeScriptProjectGraph(projectFixture.fileSystem);
+    const snapshot = await projectFixture.snapshot();
+    const before = await graph.refresh(snapshot);
+
+    projectFixture.write("packages/domain/tsconfig.json", domainConfiguration);
+    const after = await graph.refresh(snapshot);
+
+    expect(after.configuredProjectCount).toBe(before.configuredProjectCount + 1);
+    expect(after.changedConfigurationCount).toBe(1);
+  });
+
+  it("drops a nested configuration deleted later without source changes", async () => {
+    const projectFixture = fixture();
+    const root = projectFixture.root.replaceAll("\\", "/");
+    projectFixture.write("tsconfig.json", JSON.stringify({ files: [] }));
+    const graph = new TypeScriptProjectGraph(projectFixture.fileSystem);
+    const snapshot = await projectFixture.snapshot();
+    const before = await graph.refresh(snapshot);
+
+    projectFixture.remove("packages/domain/tsconfig.json");
+    const after = await graph.refresh(snapshot);
+    const domainOptions = graph.programFor("packages/domain/src/local.ts")?.getCompilerOptions();
+
+    expect(after.configuredProjectCount).toBe(before.configuredProjectCount - 1);
+    expect(after.inferredFileCount).toBe(before.inferredFileCount + 5);
+    expect(domainOptions?.baseUrl).toBe(root);
+  });
+
   it("discovers a previously missing workspace package without source changes", async () => {
     const projectFixture = fixture();
     const packagePath = join(projectFixture.root, "packages/domain/package.json");

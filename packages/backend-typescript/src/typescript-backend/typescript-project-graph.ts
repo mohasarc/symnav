@@ -153,9 +153,9 @@ export class TypeScriptProjectGraph
     return this.primaryProjectFor(relativePath)?.sourceFile(file.absolute);
   }
 
-  protected initialConfigurationPaths(root: string): readonly string[] {
-    const paths = new WorkspacePathDialect(root);
-    return [paths.join(root, "tsconfig.json")];
+  protected initialConfigurationPaths(snapshot: WorkspaceSnapshot): readonly string[] {
+    const paths = new WorkspacePathDialect(snapshot.root);
+    return [paths.join(snapshot.root, "tsconfig.json")];
   }
 
   protected async parseConfiguration(request: {

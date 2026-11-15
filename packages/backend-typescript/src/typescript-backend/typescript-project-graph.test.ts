@@ -253,6 +253,17 @@ describe("TypeScriptProjectGraph", () => {
 
   it("stops observing configuration inputs after they become unreachable", async () => {
     const projectFixture = fixture();
+    projectFixture.write(
+      "tsconfig.json",
+      JSON.stringify({
+        files: [],
+        references: [{ path: "packages/domain" }, { path: "packages/app/tsconfig.build.json" }],
+      }),
+    );
+    projectFixture.write(
+      "packages/app/tsconfig.build.json",
+      JSON.stringify({ include: ["src/index.ts"] }),
+    );
     const graph = new TypeScriptProjectGraph(projectFixture.fileSystem);
     await graph.refresh(await projectFixture.snapshot());
     projectFixture.write(
@@ -261,17 +272,17 @@ describe("TypeScriptProjectGraph", () => {
     );
     const narrowedSnapshot = await projectFixture.snapshot();
     const narrowed = await graph.refresh(narrowedSnapshot);
-    const inferredService = graph.languageServiceFor("packages/app/src/index.ts");
+    const narrowedService = graph.languageServiceFor("packages/app/src/index.ts");
 
     projectFixture.write(
-      "packages/app/tsconfig.json",
+      "packages/app/tsconfig.build.json",
       JSON.stringify({ include: ["src/index.ts"], compilerOptions: { strict: true } }),
     );
     const unchanged = await graph.refresh(narrowedSnapshot);
 
-    expect(narrowed.changedConfigurationCount).toBe(3);
+    expect(narrowed.changedConfigurationCount).toBe(2);
     expect(unchanged.changedConfigurationCount).toBe(0);
-    expect(graph.languageServiceFor("packages/app/src/index.ts")).toBe(inferredService);
+    expect(graph.languageServiceFor("packages/app/src/index.ts")).toBe(narrowedService);
   });
 
   it("orders every owning project and uses the last owner as primary", async () => {
@@ -295,8 +306,8 @@ describe("TypeScriptProjectGraph", () => {
     expect(
       sourceFiles.map((sourceFile) => sourceFile.getProject().getCompilerOptions().baseUrl),
     ).toEqual([
-      projectFixture.root.replaceAll("\\", "/") + "/packages/domain",
       projectFixture.root.replaceAll("\\", "/") + "/packages/app",
+      projectFixture.root.replaceAll("\\", "/") + "/packages/domain",
     ]);
     expect(primary).toBe(sourceFiles.at(-1));
   });
@@ -361,10 +372,10 @@ describe("TypeScriptProjectGraph", () => {
     const referencesChanged = await graph.refresh(await projectFixture.snapshot());
     const referencedOptions = graph.programFor("packages/app/src/index.ts")?.getCompilerOptions();
 
-    expect(referencesChanged.configuredProjectCount).toBe(2);
-    expect(referencesChanged.inferredFileCount).toBe(3);
-    expect(referencesChanged.changedConfigurationCount).toBe(2);
-    expect(referencedOptions?.paths?.["@changed/*"]).toBeUndefined();
+    expect(referencesChanged.configuredProjectCount).toBe(3);
+    expect(referencesChanged.inferredFileCount).toBe(1);
+    expect(referencesChanged.changedConfigurationCount).toBe(1);
+    expect(referencedOptions?.paths?.["@changed/*"]).toBeDefined();
   });
 
   it("invalidates workspace package exports and source membership", async () => {
@@ -430,10 +441,11 @@ describe("TypeScriptProjectGraph", () => {
       const projectFixture = fixture();
       projectFixture.write(
         "tsconfig.json",
-        JSON.stringify({ extends: "./packages/domain/tsconfig.json" }),
+        JSON.stringify({ extends: "./packages/domain/tsconfig.shared.json" }),
       );
+      projectFixture.remove("packages/domain/tsconfig.json");
       projectFixture.write(
-        "packages/domain/tsconfig.json",
+        "packages/domain/tsconfig.shared.json",
         JSON.stringify({ compilerOptions: { baseUrl: "." }, include: [includeSpec] }),
       );
       const graph = new TypeScriptProjectGraph(projectFixture.fileSystem);
@@ -441,8 +453,8 @@ describe("TypeScriptProjectGraph", () => {
       const refresh = await graph.refresh(await projectFixture.snapshot());
       const owner = graph.sourceFileFor("packages/domain/src/index.ts");
 
-      expect(refresh.configuredProjectCount).toBe(1);
-      expect(refresh.inferredFileCount).toBe(3);
+      expect(refresh.configuredProjectCount).toBe(2);
+      expect(refresh.inferredFileCount).toBe(1);
       expect(owner?.getProject().getCompilerOptions().baseUrl).toBe(
         `${projectFixture.root.replaceAll("\\", "/")}/packages/domain`,
       );
@@ -454,10 +466,11 @@ describe("TypeScriptProjectGraph", () => {
     const root = projectFixture.root.replaceAll("\\", "/");
     projectFixture.write(
       "tsconfig.json",
-      JSON.stringify({ extends: "./packages/domain/tsconfig.json" }),
+      JSON.stringify({ extends: "./packages/domain/tsconfig.shared.json" }),
     );
+    projectFixture.remove("packages/domain/tsconfig.json");
     projectFixture.write(
-      "packages/domain/tsconfig.json",
+      "packages/domain/tsconfig.shared.json",
       JSON.stringify({
         compilerOptions: { baseUrl: "." },
         include: ["./src/**/*.ts"],
@@ -470,7 +483,7 @@ describe("TypeScriptProjectGraph", () => {
     const includedOwner = graph.sourceFileFor("packages/domain/src/index.ts");
     const excludedOwner = graph.sourceFileFor("packages/domain/src/features/patterned.ts");
 
-    expect(refresh.inferredFileCount).toBe(4);
+    expect(refresh.inferredFileCount).toBe(2);
     expect(includedOwner?.getProject().getCompilerOptions().baseUrl).toBe(
       `${root}/packages/domain`,
     );
@@ -481,10 +494,11 @@ describe("TypeScriptProjectGraph", () => {
     const projectFixture = fixture();
     projectFixture.write(
       "tsconfig.json",
-      JSON.stringify({ extends: "./packages/app/tsconfig.json" }),
+      JSON.stringify({ extends: "./packages/app/tsconfig.shared.json" }),
     );
+    projectFixture.remove("packages/app/tsconfig.json");
     projectFixture.write(
-      "packages/app/tsconfig.json",
+      "packages/app/tsconfig.shared.json",
       JSON.stringify({ extends: "./tsconfig.base.json", include: ["./src/**/*.ts"] }),
     );
     const backend = new TypeScriptBackend(projectFixture.fileSystem);

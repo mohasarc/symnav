@@ -25,6 +25,8 @@ export interface TypeScriptProjectGraphRefresh {
   readonly changedConfigurationCount: number;
 }
 
+const TYPESCRIPT_CONFIGURATION_FILE_NAME = "tsconfig.json";
+
 interface ParsedTypeScriptConfiguration {
   readonly path: string;
   readonly directory: string;
@@ -155,7 +157,12 @@ export class TypeScriptProjectGraph
 
   protected initialConfigurationPaths(snapshot: WorkspaceSnapshot): readonly string[] {
     const paths = new WorkspacePathDialect(snapshot.root);
-    return [paths.join(snapshot.root, "tsconfig.json")];
+    const directoriesByDepth = TypeScriptProjectGraph.workspaceDirectories(snapshot, paths)
+      .map((directory) => ({ directory, relative: paths.relative(snapshot.root, directory) }))
+      .sort(TypeScriptProjectGraph.compareShallowFirst);
+    return directoriesByDepth.map(({ directory }) =>
+      paths.join(directory, TYPESCRIPT_CONFIGURATION_FILE_NAME),
+    );
   }
 
   protected async parseConfiguration(request: {
@@ -346,6 +353,22 @@ export class TypeScriptProjectGraph
     return [...directories.values()];
   }
 
+  private static compareShallowFirst(
+    left: { readonly relative: string },
+    right: { readonly relative: string },
+  ): number {
+    const depthDifference =
+      TypeScriptProjectGraph.directoryDepth(left.relative) -
+      TypeScriptProjectGraph.directoryDepth(right.relative);
+    if (depthDifference !== 0) return depthDifference;
+    if (left.relative === right.relative) return 0;
+    return left.relative < right.relative ? -1 : 1;
+  }
+
+  private static directoryDepth(relativeDirectory: string): number {
+    return relativeDirectory === "" ? 0 : relativeDirectory.split("/").length;
+  }
+
   private static refreshSummary(
     summary: ProjectGraphRefreshSummary,
   ): TypeScriptProjectGraphRefresh {
@@ -368,7 +391,11 @@ export class TypeScriptProjectGraph
       const referencePath = TypeScriptProjectGraph.recordValue(reference).path;
       if (typeof referencePath !== "string") return [];
       const resolved = paths.resolve(configuration.directory, referencePath);
-      return [resolved.endsWith(".json") ? resolved : paths.join(resolved, "tsconfig.json")];
+      return [
+        resolved.endsWith(".json")
+          ? resolved
+          : paths.join(resolved, TYPESCRIPT_CONFIGURATION_FILE_NAME),
+      ];
     });
   }
 

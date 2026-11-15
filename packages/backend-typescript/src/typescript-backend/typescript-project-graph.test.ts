@@ -449,6 +449,34 @@ describe("TypeScriptProjectGraph", () => {
     },
   );
 
+  it("leaves out files named by an inherited exclude spec", async () => {
+    const projectFixture = fixture();
+    const root = projectFixture.root.replaceAll("\\", "/");
+    projectFixture.write(
+      "tsconfig.json",
+      JSON.stringify({ extends: "./packages/domain/tsconfig.json" }),
+    );
+    projectFixture.write(
+      "packages/domain/tsconfig.json",
+      JSON.stringify({
+        compilerOptions: { baseUrl: "." },
+        include: ["./src/**/*.ts"],
+        exclude: ["./src/features/**"],
+      }),
+    );
+    const graph = new TypeScriptProjectGraph(projectFixture.fileSystem);
+
+    const refresh = await graph.refresh(await projectFixture.snapshot());
+    const includedOwner = graph.sourceFileFor("packages/domain/src/index.ts");
+    const excludedOwner = graph.sourceFileFor("packages/domain/src/features/patterned.ts");
+
+    expect(refresh.inferredFileCount).toBe(4);
+    expect(includedOwner?.getProject().getCompilerOptions().baseUrl).toBe(
+      `${root}/packages/domain`,
+    );
+    expect(excludedOwner?.getProject().getCompilerOptions().baseUrl).toBe(root);
+  });
+
   it("resolves path aliases through an inherited configuration", async () => {
     const projectFixture = fixture();
     projectFixture.write(

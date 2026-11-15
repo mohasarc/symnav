@@ -15,6 +15,7 @@ import { Project, type SourceFile, ts } from "ts-morph";
 
 import type { TypeScriptSemanticSourceProvider } from "./typescript-workspace-state.js";
 import type { TypeScriptSemanticQueryObserver } from "./typescript-semantic-query-observer.js";
+import { SharedSourceFileRegistry } from "./shared-source-file-registry.js";
 import { WorkspaceFileSystemHost } from "./workspace-file-system-host.js";
 import { WorkspacePathDialect } from "./workspace-path-dialect.js";
 
@@ -56,6 +57,7 @@ class TypeScriptSemanticProject {
     private readonly fileSystem: FileSystem,
     private readonly compilerOptions: ts.CompilerOptions,
     private readonly ownedFiles: readonly WorkspaceFile[],
+    private readonly sourceFileRegistry: SharedSourceFileRegistry,
     private readonly observer?: TypeScriptSemanticQueryObserver,
   ) {
     this.project = this.createProject();
@@ -96,11 +98,13 @@ class TypeScriptSemanticProject {
   }
 
   private createProject(): Project {
-    return new Project({
+    const project = new Project({
       fileSystem: new WorkspaceFileSystemHost(this.fileSystem),
       compilerOptions: this.compilerOptions,
       skipAddingFilesFromTsConfig: true,
     });
+    this.sourceFileRegistry.share(project);
+    return project;
   }
 }
 
@@ -108,6 +112,7 @@ export class TypeScriptProjectGraph
   extends ProjectGraph<ParsedTypeScriptConfiguration, TypeScriptSemanticProject>
   implements TypeScriptSemanticSourceProvider
 {
+  private readonly sourceFileRegistry = new SharedSourceFileRegistry();
   private semanticProjects: readonly TypeScriptSemanticProject[] = [];
   private preparedSemanticProjects: readonly TypeScriptSemanticProject[] | undefined;
 
@@ -250,6 +255,7 @@ export class TypeScriptProjectGraph
             workspacePackages,
           ),
           files,
+          this.sourceFileRegistry,
           this.observer,
         ),
     );
@@ -257,6 +263,7 @@ export class TypeScriptProjectGraph
       this.fileSystem,
       TypeScriptProjectGraph.inferredCompilerOptions(request.snapshot.root, workspacePackages),
       request.inferredFiles,
+      this.sourceFileRegistry,
       this.observer,
     );
     this.preparedSemanticProjects = [...configuredProjects, inferredProject];

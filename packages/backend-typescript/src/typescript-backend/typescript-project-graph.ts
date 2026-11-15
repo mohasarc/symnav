@@ -433,7 +433,7 @@ export class TypeScriptProjectGraph
     root: string,
     paths: WorkspacePathDialect,
   ): boolean {
-    const normalizedPattern = paths.normalize(pattern);
+    const normalizedPattern = posix.normalize(paths.normalize(pattern));
     const relativePattern = paths.isAbsolute(normalizedPattern)
       ? paths.relative(root, normalizedPattern)
       : normalizedPattern;

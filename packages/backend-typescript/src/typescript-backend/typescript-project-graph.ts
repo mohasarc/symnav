@@ -307,13 +307,8 @@ export class TypeScriptProjectGraph
     for (const configuration of configurations) {
       directories.set(paths.key(configuration.directory), configuration.directory);
     }
-    for (const file of snapshot.files) {
-      let directory = paths.dirname(file.absolute);
-      while (paths.contains(snapshot.root, directory)) {
-        directories.set(paths.key(directory), directory);
-        if (paths.equals(directory, snapshot.root)) break;
-        directory = paths.dirname(directory);
-      }
+    for (const directory of TypeScriptProjectGraph.workspaceDirectories(snapshot, paths)) {
+      directories.set(paths.key(directory), directory);
     }
     const packages: WorkspacePackage[] = [];
     for (const directory of directories.values()) {
@@ -331,6 +326,22 @@ export class TypeScriptProjectGraph
       packages.push({ path, content, mappings });
     }
     return packages;
+  }
+
+  private static workspaceDirectories(
+    snapshot: WorkspaceSnapshot,
+    paths: WorkspacePathDialect,
+  ): readonly string[] {
+    const directories = new Map<string, string>([[paths.key(snapshot.root), snapshot.root]]);
+    for (const file of snapshot.files) {
+      let directory = paths.dirname(file.absolute);
+      while (paths.contains(snapshot.root, directory)) {
+        directories.set(paths.key(directory), directory);
+        if (paths.equals(directory, snapshot.root)) break;
+        directory = paths.dirname(directory);
+      }
+    }
+    return [...directories.values()];
   }
 
   private static refreshSummary(

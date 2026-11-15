@@ -55,6 +55,10 @@ export class SharedSourceFileRegistry {
     ) => this.sourceFile({ fileName, compilationSettings, scriptSnapshot, scriptKind, registry });
   }
 
+  clear(): void {
+    this.sourceFilesByKey.clear();
+  }
+
   private sourceFile(request: SharedSourceFileRequest): ts.SourceFile {
     const { fileName, compilationSettings, scriptSnapshot, scriptKind, registry } = request;
     const settingsKey = this.settingsKeys.getKeyForCompilationSettings(compilationSettings);

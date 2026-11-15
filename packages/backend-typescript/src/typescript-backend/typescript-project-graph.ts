@@ -137,6 +137,11 @@ export class TypeScriptProjectGraph
     }
   }
 
+  async releaseTransientResources(): Promise<void> {
+    await super.releaseTransientResources();
+    this.sourceFileRegistry.clear();
+  }
+
   programFor(relativePath: string): ts.Program | undefined {
     return this.primaryProjectFor(relativePath)?.program();
   }

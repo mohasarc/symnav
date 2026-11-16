@@ -270,8 +270,10 @@ export class TypeScriptProjectGraph
   ): string[] {
     const paths = new WorkspacePathDialect(snapshot.root);
     const normalizedRoot = paths.normalize(root);
+    const rootKeyPrefix = TypeScriptProjectGraph.directoryKeyPrefix(normalizedRoot, paths);
     return snapshot.files
       .filter((file) => {
+        if (!paths.key(file.absolute).startsWith(rootKeyPrefix)) return false;
         const relative = paths.relative(normalizedRoot, file.absolute);
         if (!paths.contains(normalizedRoot, file.absolute)) return false;
         if (depth !== undefined && relative.split("/").length - 1 > depth) return false;
@@ -410,6 +412,11 @@ export class TypeScriptProjectGraph
       for (const mapping of workspacePackage.mappings) paths[mapping.specifier] = [mapping.target];
     }
     return paths;
+  }
+
+  private static directoryKeyPrefix(directory: string, paths: WorkspacePathDialect): string {
+    const directoryKey = paths.key(paths.resolve(directory, "."));
+    return directoryKey.endsWith("/") ? directoryKey : `${directoryKey}/`;
   }
 
   private static matchesGlob(path: string, pattern: string, caseSensitive = true): boolean {

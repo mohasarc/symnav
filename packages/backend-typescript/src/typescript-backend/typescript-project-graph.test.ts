@@ -424,6 +424,80 @@ describe("TypeScriptProjectGraph", () => {
     ]);
   });
 
+  it.each(["./src/**/*.ts", "../domain/src/**/*.ts"])(
+    "owns files named by inherited include spec %s",
+    async (includeSpec) => {
+      const projectFixture = fixture();
+      projectFixture.write(
+        "tsconfig.json",
+        JSON.stringify({ extends: "./packages/domain/tsconfig.json" }),
+      );
+      projectFixture.write(
+        "packages/domain/tsconfig.json",
+        JSON.stringify({ compilerOptions: { baseUrl: "." }, include: [includeSpec] }),
+      );
+      const graph = new TypeScriptProjectGraph(projectFixture.fileSystem);
+
+      const refresh = await graph.refresh(await projectFixture.snapshot());
+      const owner = graph.sourceFileFor("packages/domain/src/index.ts");
+
+      expect(refresh.configuredProjectCount).toBe(1);
+      expect(refresh.inferredFileCount).toBe(3);
+      expect(owner?.getProject().getCompilerOptions().baseUrl).toBe(
+        `${projectFixture.root.replaceAll("\\", "/")}/packages/domain`,
+      );
+    },
+  );
+
+  it("leaves out files named by an inherited exclude spec", async () => {
+    const projectFixture = fixture();
+    const root = projectFixture.root.replaceAll("\\", "/");
+    projectFixture.write(
+      "tsconfig.json",
+      JSON.stringify({ extends: "./packages/domain/tsconfig.json" }),
+    );
+    projectFixture.write(
+      "packages/domain/tsconfig.json",
+      JSON.stringify({
+        compilerOptions: { baseUrl: "." },
+        include: ["./src/**/*.ts"],
+        exclude: ["./src/features/**"],
+      }),
+    );
+    const graph = new TypeScriptProjectGraph(projectFixture.fileSystem);
+
+    const refresh = await graph.refresh(await projectFixture.snapshot());
+    const includedOwner = graph.sourceFileFor("packages/domain/src/index.ts");
+    const excludedOwner = graph.sourceFileFor("packages/domain/src/features/patterned.ts");
+
+    expect(refresh.inferredFileCount).toBe(4);
+    expect(includedOwner?.getProject().getCompilerOptions().baseUrl).toBe(
+      `${root}/packages/domain`,
+    );
+    expect(excludedOwner?.getProject().getCompilerOptions().baseUrl).toBe(root);
+  });
+
+  it("resolves path aliases through an inherited configuration", async () => {
+    const projectFixture = fixture();
+    projectFixture.write(
+      "tsconfig.json",
+      JSON.stringify({ extends: "./packages/app/tsconfig.json" }),
+    );
+    projectFixture.write(
+      "packages/app/tsconfig.json",
+      JSON.stringify({ extends: "./tsconfig.base.json", include: ["./src/**/*.ts"] }),
+    );
+    const backend = new TypeScriptBackend(projectFixture.fileSystem);
+    const snapshot = await projectFixture.snapshot();
+    await backend.refresh({ snapshot, coverage: "workspace" });
+    const app = symbolIdentity("packages/app/src/index.ts", "useConfiguredImports");
+
+    expect(await calleeNames(backend, snapshot.files, app)).toEqual([
+      "workspaceTarget",
+      "pathTarget",
+    ]);
+  });
+
   it("falls back to one inferred project for malformed or missing root configuration", async () => {
     const projectFixture = fixture();
     const graph = new TypeScriptProjectGraph(projectFixture.fileSystem);

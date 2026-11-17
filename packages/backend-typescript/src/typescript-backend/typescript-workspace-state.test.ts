@@ -602,6 +602,70 @@ describe("TypeScriptWorkspaceState.refresh", () => {
     removeSpy.mockRestore();
   });
 
+  it("keeps importer text and declaration positions when an imported file is removed", async () => {
+    const importerText =
+      "import { removed } from './removed';\nexport function target(): number { return removed; }\n";
+    const fs = new MutableWorkspaceFileSystem({
+      "/repo/src/removed.ts": "export const removed = 1;\n",
+      "/repo/src/importer.ts": importerText,
+    });
+    const state = new TypeScriptWorkspaceState(fs);
+    const targetIdentity: SymbolIdentity = {
+      file: "src/importer.ts",
+      segments: [{ name: "target" }],
+    };
+    await state.refresh(fs.workspaceFiles("src/importer.ts", "src/removed.ts"));
+    fs.deleteFile("/repo/src/removed.ts");
+    const remainingFiles = fs.workspaceFiles("src/importer.ts");
+
+    await state.refresh(remainingFiles);
+    const fresh = new TypeScriptWorkspaceState(fs);
+    await fresh.refresh(remainingFiles);
+
+    expect(state.sourceFile("src/importer.ts")?.getFullText()).toBe(importerText);
+    const located = state.locate(targetIdentity)[0];
+    expect(state.declarationAt(located!.node)).toBe(
+      state.declarationForIdentity(targetIdentity)?.declaration,
+    );
+    expect(located?.node.getStart()).toBe(fresh.locate(targetIdentity)[0]?.node.getStart());
+    expect(await declarationNames(state, remainingFiles)).toEqual(
+      await declarationNames(fresh, remainingFiles),
+    );
+  });
+
+  it("keeps importer text and declaration positions when an imported file is re-keyed", async () => {
+    const importerText =
+      "import { removed } from './removed';\nexport function target(): number { return removed; }\n";
+    const fs = new MutableWorkspaceFileSystem({
+      "/repo/src/removed.ts": "export const removed = 1;\n",
+      "/moved/src/removed.ts": "export const removed = 1;\n",
+      "/repo/src/importer.ts": importerText,
+    });
+    const state = new TypeScriptWorkspaceState(fs);
+    const targetIdentity: SymbolIdentity = {
+      file: "src/importer.ts",
+      segments: [{ name: "target" }],
+    };
+    const [importer] = fs.workspaceFiles("src/importer.ts");
+    await state.refresh(fs.workspaceFiles("src/importer.ts", "src/removed.ts"));
+
+    await state.refresh([
+      importer!,
+      {
+        relative: "src/removed.ts",
+        absolute: "/moved/src/removed.ts",
+        metadata: fs.metadataSync("/moved/src/removed.ts"),
+      },
+    ]);
+
+    expect(state.sourceFile("src/removed.ts")?.getFilePath()).toBe("/moved/src/removed.ts");
+    expect(state.sourceFile("src/importer.ts")?.getFullText()).toBe(importerText);
+    const located = state.locate(targetIdentity)[0];
+    expect(state.declarationAt(located!.node)).toBe(
+      state.declarationForIdentity(targetIdentity)?.declaration,
+    );
+  });
+
   it("keeps the old source published until path replacement commits", async () => {
     const fs = new MutableWorkspaceFileSystem({
       "/repo/src/a.ts": "export const before = 1;\n",

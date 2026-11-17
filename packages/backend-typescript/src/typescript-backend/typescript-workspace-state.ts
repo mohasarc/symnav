@@ -224,7 +224,8 @@ class TypeScriptWorkspacePreparation extends RevisionedBackendPreparation<TypeSc
         paths.push(change.previous.file.absolute);
       }
     }
-    return paths;
+    const publishedPaths = new Set(this.request.effectiveFiles.map((file) => file.absolute));
+    return paths.filter((path) => !publishedPaths.has(path));
   }
 
   private tryForgetObsoleteSource(sourceFile: SourceFile): void {

@@ -638,6 +638,65 @@ describe("TypeScriptWorkspaceState.refresh", () => {
     expect(oldSource?.wasForgotten()).toBe(true);
   });
 
+  it("rolls back prepared mutations and keeps removed sources when preparation fails", async () => {
+    const fs = new MutableWorkspaceFileSystem({
+      "/repo/src/a.ts": "export const beforeA = 1;\n",
+      "/repo/src/b.ts": "export const addedB = 1;\n",
+      "/repo/src/removed.ts": "export const removed = 1;\n",
+    });
+    const extractor = new CountingTypeScriptFileExtractor();
+    const state = new TypeScriptWorkspaceState(fs, extractor);
+    await state.refresh(fs.workspaceFiles("src/a.ts", "src/removed.ts"));
+    const beforeA = state.sourceFile("src/a.ts");
+    const removedSource = state.sourceFile("src/removed.ts");
+    fs.setFile("/repo/src/a.ts", "export const afterA = 2;\n");
+    fs.deleteFile("/repo/src/removed.ts");
+    extractor.failFor("src/b.ts");
+
+    await expect(state.refresh(fs.workspaceFiles("src/a.ts", "src/b.ts"))).rejects.toThrow(
+      "extraction failed: src/b.ts",
+    );
+    expect(state.sourceFile("src/a.ts")).toBe(beforeA);
+    expect(state.sourceFile("src/a.ts")?.getFullText()).toBe("export const beforeA = 1;\n");
+    expect(state.sourceFile("src/b.ts")).toBeUndefined();
+    expect(state.sourceFile("src/removed.ts")).toBe(removedSource);
+    expect(removedSource?.wasForgotten()).toBe(false);
+  });
+
+  it("keeps published source handles when a refresh removing them fails", async () => {
+    const fs = new MutableWorkspaceFileSystem({
+      "/repo/src/first.ts": "export const first = 1;\n",
+      "/repo/src/second.ts": "export const second = 2;\n",
+      "/repo/src/failing.ts": "export const failing = 3;\n",
+    });
+    const extractor = new CountingTypeScriptFileExtractor();
+    const state = new TypeScriptWorkspaceState(fs, extractor);
+    await state.refresh(fs.workspaceFiles("src/first.ts", "src/second.ts"));
+    const firstSource = state.sourceFile("src/first.ts");
+    const secondSource = state.sourceFile("src/second.ts");
+    const firstIdentity: SymbolIdentity = {
+      file: "src/first.ts",
+      segments: [{ name: "first" }],
+    };
+    const firstDeclaration = state.declarationForIdentity(firstIdentity)?.declaration;
+    extractor.failFor("src/failing.ts");
+
+    await expect(state.refresh(fs.workspaceFiles("src/failing.ts"))).rejects.toThrow(
+      "extraction failed: src/failing.ts",
+    );
+    expect(state.sourceFile("src/first.ts")).toBe(firstSource);
+    expect(state.sourceFile("src/second.ts")).toBe(secondSource);
+    expect(firstSource?.wasForgotten()).toBe(false);
+    expect(secondSource?.wasForgotten()).toBe(false);
+    expect(firstSource?.getFullText()).toBe("export const first = 1;\n");
+    expect(secondSource?.getFullText()).toBe("export const second = 2;\n");
+    expect(state.relativePathOf(firstSource!)).toBe("src/first.ts");
+    const located = state.locate(firstIdentity)[0];
+    expect(located?.declaration).toBe(firstDeclaration);
+    expect(located?.node.getText()).toBe("first = 1");
+    expect(state.declarationAt(located!.node)).toBe(firstDeclaration);
+  });
+
   it("rolls back prepared mutations when obsolete-source staging fails", async () => {
     const fs = new MutableWorkspaceFileSystem({
       "/repo/src/a.ts": "export const beforeA = 1;\n",

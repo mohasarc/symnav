@@ -791,4 +791,29 @@ describe("TypeScriptWorkspaceState.refresh", () => {
 
     removeSpy.mockRestore();
   });
+
+  it("keeps the source published when a removed file's absolute path is re-added under a new key", async () => {
+    const fs = new MutableWorkspaceFileSystem({
+      "/repo/src/shared.ts": "export const shared = 1;\n",
+    });
+    const state = new TypeScriptWorkspaceState(fs);
+    const metadata = fs.metadataSync("/repo/src/shared.ts");
+    const sharedIdentity: SymbolIdentity = {
+      file: "lib/shared.ts",
+      segments: [{ name: "shared" }],
+    };
+    await state.refresh([{ relative: "src/shared.ts", absolute: "/repo/src/shared.ts", metadata }]);
+
+    await expect(
+      state.refresh([{ relative: "lib/shared.ts", absolute: "/repo/src/shared.ts", metadata }]),
+    ).resolves.toEqual({ added: 1, changed: 0, removed: 1, unchanged: 0 });
+
+    expect(state.sourceFile("src/shared.ts")).toBeUndefined();
+    expect(state.sourceFile("lib/shared.ts")?.wasForgotten()).toBe(false);
+    const located = state.locate(sharedIdentity)[0];
+    expect(located?.node.getText()).toBe("shared = 1");
+    expect(state.declarationAt(located!.node)).toBe(
+      state.declarationForIdentity(sharedIdentity)?.declaration,
+    );
+  });
 });

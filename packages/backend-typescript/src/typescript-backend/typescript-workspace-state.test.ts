@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { Project, SourceFile } from "ts-morph";
+import { Project } from "ts-morph";
 
 import {
   InMemoryFileSystem,
@@ -602,6 +602,70 @@ describe("TypeScriptWorkspaceState.refresh", () => {
     removeSpy.mockRestore();
   });
 
+  it("keeps importer text and declaration positions when an imported file is removed", async () => {
+    const importerText =
+      "import { removed } from './removed';\nexport function target(): number { return removed; }\n";
+    const fs = new MutableWorkspaceFileSystem({
+      "/repo/src/removed.ts": "export const removed = 1;\n",
+      "/repo/src/importer.ts": importerText,
+    });
+    const state = new TypeScriptWorkspaceState(fs);
+    const targetIdentity: SymbolIdentity = {
+      file: "src/importer.ts",
+      segments: [{ name: "target" }],
+    };
+    await state.refresh(fs.workspaceFiles("src/importer.ts", "src/removed.ts"));
+    fs.deleteFile("/repo/src/removed.ts");
+    const remainingFiles = fs.workspaceFiles("src/importer.ts");
+
+    await state.refresh(remainingFiles);
+    const fresh = new TypeScriptWorkspaceState(fs);
+    await fresh.refresh(remainingFiles);
+
+    expect(state.sourceFile("src/importer.ts")?.getFullText()).toBe(importerText);
+    const located = state.locate(targetIdentity)[0];
+    expect(state.declarationAt(located!.node)).toBe(
+      state.declarationForIdentity(targetIdentity)?.declaration,
+    );
+    expect(located?.node.getStart()).toBe(fresh.locate(targetIdentity)[0]?.node.getStart());
+    expect(await declarationNames(state, remainingFiles)).toEqual(
+      await declarationNames(fresh, remainingFiles),
+    );
+  });
+
+  it("keeps importer text and declaration positions when an imported file is re-keyed", async () => {
+    const importerText =
+      "import { removed } from './removed';\nexport function target(): number { return removed; }\n";
+    const fs = new MutableWorkspaceFileSystem({
+      "/repo/src/removed.ts": "export const removed = 1;\n",
+      "/moved/src/removed.ts": "export const removed = 1;\n",
+      "/repo/src/importer.ts": importerText,
+    });
+    const state = new TypeScriptWorkspaceState(fs);
+    const targetIdentity: SymbolIdentity = {
+      file: "src/importer.ts",
+      segments: [{ name: "target" }],
+    };
+    const [importer] = fs.workspaceFiles("src/importer.ts");
+    await state.refresh(fs.workspaceFiles("src/importer.ts", "src/removed.ts"));
+
+    await state.refresh([
+      importer!,
+      {
+        relative: "src/removed.ts",
+        absolute: "/moved/src/removed.ts",
+        metadata: fs.metadataSync("/moved/src/removed.ts"),
+      },
+    ]);
+
+    expect(state.sourceFile("src/removed.ts")?.getFilePath()).toBe("/moved/src/removed.ts");
+    expect(state.sourceFile("src/importer.ts")?.getFullText()).toBe(importerText);
+    const located = state.locate(targetIdentity)[0];
+    expect(state.declarationAt(located!.node)).toBe(
+      state.declarationForIdentity(targetIdentity)?.declaration,
+    );
+  });
+
   it("keeps the old source published until path replacement commits", async () => {
     const fs = new MutableWorkspaceFileSystem({
       "/repo/src/a.ts": "export const before = 1;\n",
@@ -638,59 +702,39 @@ describe("TypeScriptWorkspaceState.refresh", () => {
     expect(oldSource?.wasForgotten()).toBe(true);
   });
 
-  it("rolls back prepared mutations when obsolete-source staging fails", async () => {
+  it("rolls back prepared mutations and keeps removed sources when preparation fails", async () => {
     const fs = new MutableWorkspaceFileSystem({
       "/repo/src/a.ts": "export const beforeA = 1;\n",
       "/repo/src/b.ts": "export const addedB = 1;\n",
       "/repo/src/removed.ts": "export const removed = 1;\n",
     });
-    const state = new TypeScriptWorkspaceState(fs);
+    const extractor = new CountingTypeScriptFileExtractor();
+    const state = new TypeScriptWorkspaceState(fs, extractor);
     await state.refresh(fs.workspaceFiles("src/a.ts", "src/removed.ts"));
     const beforeA = state.sourceFile("src/a.ts");
+    const removedSource = state.sourceFile("src/removed.ts");
     fs.setFile("/repo/src/a.ts", "export const afterA = 2;\n");
     fs.deleteFile("/repo/src/removed.ts");
-    const originalRemove = Project.prototype.removeSourceFile;
-    const originalMove = SourceFile.prototype.move;
-    const rollbackObservations: string[] = [];
-    const removeSpy = vi.spyOn(Project.prototype, "removeSourceFile").mockImplementation(function (
-      this: Project,
-      sourceFile,
-    ) {
-      if (sourceFile.getFilePath() === "/repo/src/b.ts") {
-        rollbackObservations.push(state.sourceFile("src/a.ts")?.getFullText() ?? "");
-      }
-      return originalRemove.call(this, sourceFile);
-    });
-    const moveSpy = vi.spyOn(SourceFile.prototype, "move").mockImplementation(function (
-      this: SourceFile,
-      filePath,
-      options,
-    ) {
-      if (this.getFilePath() === "/repo/src/removed.ts" && filePath.includes(".symnav-obsolete-")) {
-        throw new Error("commit removal failed");
-      }
-      return originalMove.call(this, filePath, options);
-    });
+    extractor.failFor("src/b.ts");
 
     await expect(state.refresh(fs.workspaceFiles("src/a.ts", "src/b.ts"))).rejects.toThrow(
-      "commit removal failed",
+      "extraction failed: src/b.ts",
     );
-    expect(rollbackObservations).toEqual(["export const afterA = 2;\n"]);
     expect(state.sourceFile("src/a.ts")).toBe(beforeA);
     expect(state.sourceFile("src/a.ts")?.getFullText()).toBe("export const beforeA = 1;\n");
     expect(state.sourceFile("src/b.ts")).toBeUndefined();
-    expect(state.sourceFile("src/removed.ts")).toBeDefined();
-
-    removeSpy.mockRestore();
-    moveSpy.mockRestore();
+    expect(state.sourceFile("src/removed.ts")).toBe(removedSource);
+    expect(removedSource?.wasForgotten()).toBe(false);
   });
 
-  it("restores published source handles when a later obsolete-source staging fails", async () => {
+  it("keeps published source handles when a refresh removing them fails", async () => {
     const fs = new MutableWorkspaceFileSystem({
       "/repo/src/first.ts": "export const first = 1;\n",
       "/repo/src/second.ts": "export const second = 2;\n",
+      "/repo/src/failing.ts": "export const failing = 3;\n",
     });
-    const state = new TypeScriptWorkspaceState(fs);
+    const extractor = new CountingTypeScriptFileExtractor();
+    const state = new TypeScriptWorkspaceState(fs, extractor);
     await state.refresh(fs.workspaceFiles("src/first.ts", "src/second.ts"));
     const firstSource = state.sourceFile("src/first.ts");
     const secondSource = state.sourceFile("src/second.ts");
@@ -699,22 +743,11 @@ describe("TypeScriptWorkspaceState.refresh", () => {
       segments: [{ name: "first" }],
     };
     const firstDeclaration = state.declarationForIdentity(firstIdentity)?.declaration;
-    const originalMove = SourceFile.prototype.move;
-    let stagedRemovalCount = 0;
-    const moveSpy = vi.spyOn(SourceFile.prototype, "move").mockImplementation(function (
-      this: SourceFile,
-      filePath,
-      options,
-    ) {
-      if (filePath.includes(".symnav-obsolete-")) {
-        stagedRemovalCount += 1;
-        if (stagedRemovalCount === 2) throw new Error("obsolete-source removal failed");
-      }
-      return originalMove.call(this, filePath, options);
-    });
+    extractor.failFor("src/failing.ts");
 
-    await expect(state.refresh([])).rejects.toThrow("obsolete-source removal failed");
-    expect(stagedRemovalCount).toBe(2);
+    await expect(state.refresh(fs.workspaceFiles("src/failing.ts"))).rejects.toThrow(
+      "extraction failed: src/failing.ts",
+    );
     expect(state.sourceFile("src/first.ts")).toBe(firstSource);
     expect(state.sourceFile("src/second.ts")).toBe(secondSource);
     expect(firstSource?.wasForgotten()).toBe(false);
@@ -726,7 +759,61 @@ describe("TypeScriptWorkspaceState.refresh", () => {
     expect(located?.declaration).toBe(firstDeclaration);
     expect(located?.node.getText()).toBe("first = 1");
     expect(state.declarationAt(located!.node)).toBe(firstDeclaration);
+  });
 
-    moveSpy.mockRestore();
+  it("unpublishes every removed file when forgetting one obsolete source fails", async () => {
+    const fs = new MutableWorkspaceFileSystem({
+      "/repo/src/kept.ts": "export const kept = 1;\n",
+      "/repo/src/first.ts": "export const first = 1;\n",
+      "/repo/src/second.ts": "export const second = 2;\n",
+    });
+    const state = new TypeScriptWorkspaceState(fs);
+    await state.refresh(fs.workspaceFiles("src/kept.ts", "src/first.ts", "src/second.ts"));
+    const secondSource = state.sourceFile("src/second.ts");
+    const originalRemove = Project.prototype.removeSourceFile;
+    const removeSpy = vi.spyOn(Project.prototype, "removeSourceFile").mockImplementation(function (
+      this: Project,
+      sourceFile,
+    ) {
+      if (sourceFile.getFilePath() === "/repo/src/first.ts") throw new Error("forget failed");
+      return originalRemove.call(this, sourceFile);
+    });
+
+    await expect(state.refresh(fs.workspaceFiles("src/kept.ts"))).resolves.toEqual({
+      added: 0,
+      changed: 0,
+      removed: 2,
+      unchanged: 1,
+    });
+    expect(state.sourceFile("src/first.ts")).toBeUndefined();
+    expect(state.sourceFile("src/second.ts")).toBeUndefined();
+    expect(secondSource?.wasForgotten()).toBe(true);
+
+    removeSpy.mockRestore();
+  });
+
+  it("keeps the source published when a removed file's absolute path is re-added under a new key", async () => {
+    const fs = new MutableWorkspaceFileSystem({
+      "/repo/src/shared.ts": "export const shared = 1;\n",
+    });
+    const state = new TypeScriptWorkspaceState(fs);
+    const metadata = fs.metadataSync("/repo/src/shared.ts");
+    const sharedIdentity: SymbolIdentity = {
+      file: "lib/shared.ts",
+      segments: [{ name: "shared" }],
+    };
+    await state.refresh([{ relative: "src/shared.ts", absolute: "/repo/src/shared.ts", metadata }]);
+
+    await expect(
+      state.refresh([{ relative: "lib/shared.ts", absolute: "/repo/src/shared.ts", metadata }]),
+    ).resolves.toEqual({ added: 1, changed: 0, removed: 1, unchanged: 0 });
+
+    expect(state.sourceFile("src/shared.ts")).toBeUndefined();
+    expect(state.sourceFile("lib/shared.ts")?.wasForgotten()).toBe(false);
+    const located = state.locate(sharedIdentity)[0];
+    expect(located?.node.getText()).toBe("shared = 1");
+    expect(state.declarationAt(located!.node)).toBe(
+      state.declarationForIdentity(sharedIdentity)?.declaration,
+    );
   });
 });

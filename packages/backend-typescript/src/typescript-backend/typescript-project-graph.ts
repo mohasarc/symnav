@@ -15,6 +15,7 @@ import { Project, type SourceFile, ts } from "ts-morph";
 
 import type { TypeScriptSemanticSourceProvider } from "./typescript-workspace-state.js";
 import type { TypeScriptSemanticQueryObserver } from "./typescript-semantic-query-observer.js";
+import { SharedSourceFileRegistry } from "./shared-source-file-registry.js";
 import { WorkspaceFileSystemHost } from "./workspace-file-system-host.js";
 import { WorkspacePathDialect } from "./workspace-path-dialect.js";
 
@@ -24,6 +25,8 @@ export interface TypeScriptProjectGraphRefresh {
   readonly inferredFileCount: number;
   readonly changedConfigurationCount: number;
 }
+
+const TYPESCRIPT_CONFIGURATION_FILE_NAME = "tsconfig.json";
 
 interface ParsedTypeScriptConfiguration {
   readonly path: string;
@@ -54,6 +57,7 @@ class TypeScriptSemanticProject {
     private readonly fileSystem: FileSystem,
     private readonly compilerOptions: ts.CompilerOptions,
     private readonly ownedFiles: readonly WorkspaceFile[],
+    private readonly sourceFileRegistry: SharedSourceFileRegistry,
     private readonly observer?: TypeScriptSemanticQueryObserver,
   ) {
     this.project = this.createProject();
@@ -94,11 +98,13 @@ class TypeScriptSemanticProject {
   }
 
   private createProject(): Project {
-    return new Project({
+    const project = new Project({
       fileSystem: new WorkspaceFileSystemHost(this.fileSystem),
       compilerOptions: this.compilerOptions,
       skipAddingFilesFromTsConfig: true,
     });
+    this.sourceFileRegistry.share(project);
+    return project;
   }
 }
 
@@ -106,6 +112,7 @@ export class TypeScriptProjectGraph
   extends ProjectGraph<ParsedTypeScriptConfiguration, TypeScriptSemanticProject>
   implements TypeScriptSemanticSourceProvider
 {
+  private readonly sourceFileRegistry = new SharedSourceFileRegistry();
   private semanticProjects: readonly TypeScriptSemanticProject[] = [];
   private preparedSemanticProjects: readonly TypeScriptSemanticProject[] | undefined;
 
@@ -128,6 +135,11 @@ export class TypeScriptProjectGraph
       this.preparedSemanticProjects = undefined;
       throw error;
     }
+  }
+
+  async releaseTransientResources(): Promise<void> {
+    await super.releaseTransientResources();
+    this.sourceFileRegistry.clear();
   }
 
   programFor(relativePath: string): ts.Program | undefined {
@@ -153,9 +165,14 @@ export class TypeScriptProjectGraph
     return this.primaryProjectFor(relativePath)?.sourceFile(file.absolute);
   }
 
-  protected initialConfigurationPaths(root: string): readonly string[] {
-    const paths = new WorkspacePathDialect(root);
-    return [paths.join(root, "tsconfig.json")];
+  protected initialConfigurationPaths(snapshot: WorkspaceSnapshot): readonly string[] {
+    const paths = new WorkspacePathDialect(snapshot.root);
+    const directoriesByDepth = TypeScriptProjectGraph.workspaceDirectories(snapshot, paths)
+      .map((directory) => ({ directory, relative: paths.relative(snapshot.root, directory) }))
+      .sort(TypeScriptProjectGraph.compareShallowFirst);
+    return directoriesByDepth.map(({ directory }) =>
+      paths.join(directory, TYPESCRIPT_CONFIGURATION_FILE_NAME),
+    );
   }
 
   protected async parseConfiguration(request: {
@@ -243,6 +260,7 @@ export class TypeScriptProjectGraph
             workspacePackages,
           ),
           files,
+          this.sourceFileRegistry,
           this.observer,
         ),
     );
@@ -250,6 +268,7 @@ export class TypeScriptProjectGraph
       this.fileSystem,
       TypeScriptProjectGraph.inferredCompilerOptions(request.snapshot.root, workspacePackages),
       request.inferredFiles,
+      this.sourceFileRegistry,
       this.observer,
     );
     this.preparedSemanticProjects = [...configuredProjects, inferredProject];
@@ -270,8 +289,10 @@ export class TypeScriptProjectGraph
   ): string[] {
     const paths = new WorkspacePathDialect(snapshot.root);
     const normalizedRoot = paths.normalize(root);
+    const rootKeyPrefix = TypeScriptProjectGraph.directoryKeyPrefix(normalizedRoot, paths);
     return snapshot.files
       .filter((file) => {
+        if (!paths.key(file.absolute).startsWith(rootKeyPrefix)) return false;
         const relative = paths.relative(normalizedRoot, file.absolute);
         if (!paths.contains(normalizedRoot, file.absolute)) return false;
         if (depth !== undefined && relative.split("/").length - 1 > depth) return false;
@@ -307,13 +328,8 @@ export class TypeScriptProjectGraph
     for (const configuration of configurations) {
       directories.set(paths.key(configuration.directory), configuration.directory);
     }
-    for (const file of snapshot.files) {
-      let directory = paths.dirname(file.absolute);
-      while (paths.contains(snapshot.root, directory)) {
-        directories.set(paths.key(directory), directory);
-        if (paths.equals(directory, snapshot.root)) break;
-        directory = paths.dirname(directory);
-      }
+    for (const directory of TypeScriptProjectGraph.workspaceDirectories(snapshot, paths)) {
+      directories.set(paths.key(directory), directory);
     }
     const packages: WorkspacePackage[] = [];
     for (const directory of directories.values()) {
@@ -331,6 +347,38 @@ export class TypeScriptProjectGraph
       packages.push({ path, content, mappings });
     }
     return packages;
+  }
+
+  private static workspaceDirectories(
+    snapshot: WorkspaceSnapshot,
+    paths: WorkspacePathDialect,
+  ): readonly string[] {
+    const directories = new Map<string, string>([[paths.key(snapshot.root), snapshot.root]]);
+    for (const file of snapshot.files) {
+      let directory = paths.dirname(file.absolute);
+      while (paths.contains(snapshot.root, directory)) {
+        directories.set(paths.key(directory), directory);
+        if (paths.equals(directory, snapshot.root)) break;
+        directory = paths.dirname(directory);
+      }
+    }
+    return [...directories.values()];
+  }
+
+  private static compareShallowFirst(
+    left: { readonly relative: string },
+    right: { readonly relative: string },
+  ): number {
+    const depthDifference =
+      TypeScriptProjectGraph.directoryDepth(left.relative) -
+      TypeScriptProjectGraph.directoryDepth(right.relative);
+    if (depthDifference !== 0) return depthDifference;
+    if (left.relative === right.relative) return 0;
+    return left.relative < right.relative ? -1 : 1;
+  }
+
+  private static directoryDepth(relativeDirectory: string): number {
+    return relativeDirectory === "" ? 0 : relativeDirectory.split("/").length;
   }
 
   private static refreshSummary(
@@ -355,7 +403,11 @@ export class TypeScriptProjectGraph
       const referencePath = TypeScriptProjectGraph.recordValue(reference).path;
       if (typeof referencePath !== "string") return [];
       const resolved = paths.resolve(configuration.directory, referencePath);
-      return [resolved.endsWith(".json") ? resolved : paths.join(resolved, "tsconfig.json")];
+      return [
+        resolved.endsWith(".json")
+          ? resolved
+          : paths.join(resolved, TYPESCRIPT_CONFIGURATION_FILE_NAME),
+      ];
     });
   }
 
@@ -399,6 +451,11 @@ export class TypeScriptProjectGraph
       for (const mapping of workspacePackage.mappings) paths[mapping.specifier] = [mapping.target];
     }
     return paths;
+  }
+
+  private static directoryKeyPrefix(directory: string, paths: WorkspacePathDialect): string {
+    const directoryKey = paths.key(paths.resolve(directory, "."));
+    return directoryKey.endsWith("/") ? directoryKey : `${directoryKey}/`;
   }
 
   private static matchesGlob(path: string, pattern: string, caseSensitive = true): boolean {

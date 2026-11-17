@@ -169,7 +169,7 @@ export abstract class ProjectGraph<
     return this.state?.filesByRelativePath.get(relativePath);
   }
 
-  protected abstract initialConfigurationPaths(root: string): readonly string[];
+  protected abstract initialConfigurationPaths(snapshot: WorkspaceSnapshot): readonly string[];
 
   protected abstract parseConfiguration(request: {
     readonly path: string;
@@ -191,7 +191,7 @@ export abstract class ProjectGraph<
     snapshot: WorkspaceSnapshot,
     inputCollector: ProjectInputCollector,
   ): Promise<readonly DiscoveredProjectConfiguration<ConfigurationUnit>[]> {
-    const pending = [...this.initialConfigurationPaths(snapshot.root)];
+    const pending = [...this.initialConfigurationPaths(snapshot)];
     const seen = new Set<string>();
     const configurations: DiscoveredProjectConfiguration<ConfigurationUnit>[] = [];
     while (pending.length > 0) {

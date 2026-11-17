@@ -543,7 +543,7 @@ describe("symnav daemon parity", () => {
     ["malformed", "{ malformed"],
     ["missing", undefined],
   ])(
-    "falls back without raw failures when root tsconfig is %s",
+    "answers from package configurations without raw failures when root tsconfig is %s",
     (_name, config) => {
       const harness = new DaemonParityHarness("configured-project-cases");
       harnesses.push(harness);

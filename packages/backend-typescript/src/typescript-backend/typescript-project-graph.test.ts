@@ -22,6 +22,7 @@ import {
   type SymbolIdentity,
   type WorkspaceSnapshot,
 } from "@symnav/core";
+import type { ts } from "ts-morph";
 
 import { TypeScriptBackend } from "./typescript-backend.js";
 import { TypeScriptProjectGraph } from "./typescript-project-graph.js";
@@ -79,6 +80,8 @@ class ConfiguredProjectFixture {
     });
   }
 }
+
+const SHARED_IMPORT_PROJECT_COUNT = 60;
 
 const fixtures: ConfiguredProjectFixture[] = [];
 
@@ -231,6 +234,40 @@ describe("TypeScriptProjectGraph", () => {
     expect(after.changedConfigurationCount).toBe(1);
   });
 
+  it("discovers a nested configuration created later without source changes", async () => {
+    const projectFixture = fixture();
+    const domainConfigurationPath = join(projectFixture.root, "packages/domain/tsconfig.json");
+    const domainConfiguration = readFileSync(domainConfigurationPath, "utf8");
+    projectFixture.write("tsconfig.json", JSON.stringify({ files: [] }));
+    projectFixture.remove("packages/domain/tsconfig.json");
+    const graph = new TypeScriptProjectGraph(projectFixture.fileSystem);
+    const snapshot = await projectFixture.snapshot();
+    const before = await graph.refresh(snapshot);
+
+    projectFixture.write("packages/domain/tsconfig.json", domainConfiguration);
+    const after = await graph.refresh(snapshot);
+
+    expect(after.configuredProjectCount).toBe(before.configuredProjectCount + 1);
+    expect(after.changedConfigurationCount).toBe(1);
+  });
+
+  it("drops a nested configuration deleted later without source changes", async () => {
+    const projectFixture = fixture();
+    const root = projectFixture.root.replaceAll("\\", "/");
+    projectFixture.write("tsconfig.json", JSON.stringify({ files: [] }));
+    const graph = new TypeScriptProjectGraph(projectFixture.fileSystem);
+    const snapshot = await projectFixture.snapshot();
+    const before = await graph.refresh(snapshot);
+
+    projectFixture.remove("packages/domain/tsconfig.json");
+    const after = await graph.refresh(snapshot);
+    const domainOptions = graph.programFor("packages/domain/src/local.ts")?.getCompilerOptions();
+
+    expect(after.configuredProjectCount).toBe(before.configuredProjectCount - 1);
+    expect(after.inferredFileCount).toBe(before.inferredFileCount + 5);
+    expect(domainOptions?.baseUrl).toBe(root);
+  });
+
   it("discovers a previously missing workspace package without source changes", async () => {
     const projectFixture = fixture();
     const packagePath = join(projectFixture.root, "packages/domain/package.json");
@@ -253,6 +290,17 @@ describe("TypeScriptProjectGraph", () => {
 
   it("stops observing configuration inputs after they become unreachable", async () => {
     const projectFixture = fixture();
+    projectFixture.write(
+      "tsconfig.json",
+      JSON.stringify({
+        files: [],
+        references: [{ path: "packages/domain" }, { path: "packages/app/tsconfig.build.json" }],
+      }),
+    );
+    projectFixture.write(
+      "packages/app/tsconfig.build.json",
+      JSON.stringify({ include: ["src/index.ts"] }),
+    );
     const graph = new TypeScriptProjectGraph(projectFixture.fileSystem);
     await graph.refresh(await projectFixture.snapshot());
     projectFixture.write(
@@ -261,17 +309,17 @@ describe("TypeScriptProjectGraph", () => {
     );
     const narrowedSnapshot = await projectFixture.snapshot();
     const narrowed = await graph.refresh(narrowedSnapshot);
-    const inferredService = graph.languageServiceFor("packages/app/src/index.ts");
+    const narrowedService = graph.languageServiceFor("packages/app/src/index.ts");
 
     projectFixture.write(
-      "packages/app/tsconfig.json",
+      "packages/app/tsconfig.build.json",
       JSON.stringify({ include: ["src/index.ts"], compilerOptions: { strict: true } }),
     );
     const unchanged = await graph.refresh(narrowedSnapshot);
 
-    expect(narrowed.changedConfigurationCount).toBe(3);
+    expect(narrowed.changedConfigurationCount).toBe(2);
     expect(unchanged.changedConfigurationCount).toBe(0);
-    expect(graph.languageServiceFor("packages/app/src/index.ts")).toBe(inferredService);
+    expect(graph.languageServiceFor("packages/app/src/index.ts")).toBe(narrowedService);
   });
 
   it("orders every owning project and uses the last owner as primary", async () => {
@@ -295,8 +343,8 @@ describe("TypeScriptProjectGraph", () => {
     expect(
       sourceFiles.map((sourceFile) => sourceFile.getProject().getCompilerOptions().baseUrl),
     ).toEqual([
-      projectFixture.root.replaceAll("\\", "/") + "/packages/domain",
       projectFixture.root.replaceAll("\\", "/") + "/packages/app",
+      projectFixture.root.replaceAll("\\", "/") + "/packages/domain",
     ]);
     expect(primary).toBe(sourceFiles.at(-1));
   });
@@ -361,10 +409,10 @@ describe("TypeScriptProjectGraph", () => {
     const referencesChanged = await graph.refresh(await projectFixture.snapshot());
     const referencedOptions = graph.programFor("packages/app/src/index.ts")?.getCompilerOptions();
 
-    expect(referencesChanged.configuredProjectCount).toBe(2);
-    expect(referencesChanged.inferredFileCount).toBe(3);
-    expect(referencesChanged.changedConfigurationCount).toBe(2);
-    expect(referencedOptions?.paths?.["@changed/*"]).toBeUndefined();
+    expect(referencesChanged.configuredProjectCount).toBe(3);
+    expect(referencesChanged.inferredFileCount).toBe(1);
+    expect(referencesChanged.changedConfigurationCount).toBe(1);
+    expect(referencedOptions?.paths?.["@changed/*"]).toBeDefined();
   });
 
   it("invalidates workspace package exports and source membership", async () => {
@@ -430,10 +478,11 @@ describe("TypeScriptProjectGraph", () => {
       const projectFixture = fixture();
       projectFixture.write(
         "tsconfig.json",
-        JSON.stringify({ extends: "./packages/domain/tsconfig.json" }),
+        JSON.stringify({ extends: "./packages/domain/tsconfig.shared.json" }),
       );
+      projectFixture.remove("packages/domain/tsconfig.json");
       projectFixture.write(
-        "packages/domain/tsconfig.json",
+        "packages/domain/tsconfig.shared.json",
         JSON.stringify({ compilerOptions: { baseUrl: "." }, include: [includeSpec] }),
       );
       const graph = new TypeScriptProjectGraph(projectFixture.fileSystem);
@@ -441,8 +490,8 @@ describe("TypeScriptProjectGraph", () => {
       const refresh = await graph.refresh(await projectFixture.snapshot());
       const owner = graph.sourceFileFor("packages/domain/src/index.ts");
 
-      expect(refresh.configuredProjectCount).toBe(1);
-      expect(refresh.inferredFileCount).toBe(3);
+      expect(refresh.configuredProjectCount).toBe(2);
+      expect(refresh.inferredFileCount).toBe(1);
       expect(owner?.getProject().getCompilerOptions().baseUrl).toBe(
         `${projectFixture.root.replaceAll("\\", "/")}/packages/domain`,
       );
@@ -454,10 +503,11 @@ describe("TypeScriptProjectGraph", () => {
     const root = projectFixture.root.replaceAll("\\", "/");
     projectFixture.write(
       "tsconfig.json",
-      JSON.stringify({ extends: "./packages/domain/tsconfig.json" }),
+      JSON.stringify({ extends: "./packages/domain/tsconfig.shared.json" }),
     );
+    projectFixture.remove("packages/domain/tsconfig.json");
     projectFixture.write(
-      "packages/domain/tsconfig.json",
+      "packages/domain/tsconfig.shared.json",
       JSON.stringify({
         compilerOptions: { baseUrl: "." },
         include: ["./src/**/*.ts"],
@@ -470,7 +520,7 @@ describe("TypeScriptProjectGraph", () => {
     const includedOwner = graph.sourceFileFor("packages/domain/src/index.ts");
     const excludedOwner = graph.sourceFileFor("packages/domain/src/features/patterned.ts");
 
-    expect(refresh.inferredFileCount).toBe(4);
+    expect(refresh.inferredFileCount).toBe(2);
     expect(includedOwner?.getProject().getCompilerOptions().baseUrl).toBe(
       `${root}/packages/domain`,
     );
@@ -481,10 +531,11 @@ describe("TypeScriptProjectGraph", () => {
     const projectFixture = fixture();
     projectFixture.write(
       "tsconfig.json",
-      JSON.stringify({ extends: "./packages/app/tsconfig.json" }),
+      JSON.stringify({ extends: "./packages/app/tsconfig.shared.json" }),
     );
+    projectFixture.remove("packages/app/tsconfig.json");
     projectFixture.write(
-      "packages/app/tsconfig.json",
+      "packages/app/tsconfig.shared.json",
       JSON.stringify({ extends: "./tsconfig.base.json", include: ["./src/**/*.ts"] }),
     );
     const backend = new TypeScriptBackend(projectFixture.fileSystem);
@@ -498,20 +549,57 @@ describe("TypeScriptProjectGraph", () => {
     ]);
   });
 
-  it("falls back to one inferred project for malformed or missing root configuration", async () => {
+  it("discovers package configurations when the root configuration is malformed or missing", async () => {
     const projectFixture = fixture();
+    const root = projectFixture.root.replaceAll("\\", "/");
     const graph = new TypeScriptProjectGraph(projectFixture.fileSystem);
     projectFixture.write("tsconfig.json", "{ malformed");
 
     const malformed = await graph.refresh(await projectFixture.snapshot());
     projectFixture.remove("tsconfig.json");
     const missing = await graph.refresh(await projectFixture.snapshot());
+    const appPaths = graph.programFor("packages/app/src/index.ts")?.getCompilerOptions().paths;
 
-    expect(malformed.configuredProjectCount).toBe(0);
-    expect(malformed.inferredFileCount).toBe(8);
-    expect(missing.configuredProjectCount).toBe(0);
-    expect(missing.inferredFileCount).toBe(8);
+    expect(malformed.configuredProjectCount).toBe(2);
+    expect(malformed.inferredFileCount).toBe(1);
+    expect(missing.configuredProjectCount).toBe(2);
+    expect(missing.inferredFileCount).toBe(1);
+    expect(appPaths?.["@local/*"]).toEqual([`${root}/packages/app/src/*`]);
     expect(graph.languageServiceFor("scratch/outside.ts")).toBeDefined();
+  });
+
+  it("uses the deepest owning configuration as primary over an including ancestor", async () => {
+    const projectFixture = fixture();
+    const root = projectFixture.root.replaceAll("\\", "/");
+    projectFixture.write("tsconfig.json", JSON.stringify({ include: ["**/*.ts"] }));
+    const graph = new TypeScriptProjectGraph(projectFixture.fileSystem);
+    await graph.refresh(await projectFixture.snapshot());
+
+    const sourceFiles = graph.sourceFilesFor("packages/domain/src/index.ts");
+    const primary = graph.sourceFileFor("packages/domain/src/index.ts");
+
+    expect(sourceFiles[0]?.getProject().getCompilerOptions().baseUrl).toBe(root);
+    expect(primary?.getProject().getCompilerOptions().baseUrl).toBe(`${root}/packages/domain`);
+    expect(primary).toBe(sourceFiles.at(-1));
+  });
+
+  it("orders nested configurations shallow to deep and uses the deepest as primary", async () => {
+    const projectFixture = fixture();
+    const root = projectFixture.root.replaceAll("\\", "/");
+    projectFixture.write(
+      "packages/app/src/tsconfig.json",
+      JSON.stringify({ compilerOptions: { baseUrl: "." }, include: ["**/*.ts"] }),
+    );
+    const graph = new TypeScriptProjectGraph(projectFixture.fileSystem);
+    await graph.refresh(await projectFixture.snapshot());
+
+    const sourceFiles = graph.sourceFilesFor("packages/app/src/local.ts");
+    const primary = graph.sourceFileFor("packages/app/src/local.ts");
+
+    expect(
+      sourceFiles.map((sourceFile) => sourceFile.getProject().getCompilerOptions().baseUrl),
+    ).toEqual([`${root}/packages/app`, `${root}/packages/app/src`]);
+    expect(primary).toBe(sourceFiles.at(-1));
   });
 
   it("gives uncovered files workspace mappings without configured compiler options", async () => {
@@ -676,7 +764,86 @@ describe("TypeScriptProjectGraph", () => {
       backend.resolveSymbols(snapshot.files, "addedInferredTarget", { mode: "exact" }),
     ).resolves.toEqual([]);
   });
+
+  it("parses a shared file separately for configurations with different targets", async () => {
+    const projectFixture = fixture();
+    const sharedPath = `${projectFixture.root.replaceAll("\\", "/")}/core/shared.ts`;
+    projectFixture.write("core/shared.ts", "export function shared(): number { return 1; }\n");
+    for (const target of ["ES5", "ES2022"]) {
+      projectFixture.write(
+        `ext/${target}/tsconfig.json`,
+        JSON.stringify({ compilerOptions: { target }, include: ["./**/*.ts"] }),
+      );
+      projectFixture.write(
+        `ext/${target}/f.ts`,
+        'import { shared } from "../../core/shared";\nexport const value = shared();\n',
+      );
+    }
+    const graph = new TypeScriptProjectGraph(projectFixture.fileSystem);
+    await graph.refresh(await projectFixture.snapshot());
+
+    const olderTargetShared = graph.programFor("ext/ES5/f.ts")?.getSourceFile(sharedPath);
+    const newerTargetShared = graph.programFor("ext/ES2022/f.ts")?.getSourceFile(sharedPath);
+
+    expect(olderTargetShared).toBeDefined();
+    expect(newerTargetShared).toBeDefined();
+    expect(newerTargetShared).not.toBe(olderTargetShared);
+  });
+
+  it("parses shared and default library files once across many configured projects", async () => {
+    const projectFixture = fixture();
+    writeSharedImportProjects(projectFixture);
+    const graph = new TypeScriptProjectGraph(projectFixture.fileSystem);
+    await graph.refresh(await projectFixture.snapshot());
+
+    const programs = sharedImportProjectFiles().map((path) => graph.programFor(path)!);
+    const sharedPath = `${projectFixture.root.replaceAll("\\", "/")}/core/shared.ts`;
+    const sharedSourceFiles = new Set(programs.map((program) => program.getSourceFile(sharedPath)));
+    const libraryFiles = (program: ts.Program) =>
+      program.getSourceFiles().filter((file) => program.isSourceFileDefaultLibrary(file));
+    const distinctLibraryFiles = new Set(programs.flatMap(libraryFiles));
+
+    expect(new Set(programs).size).toBe(SHARED_IMPORT_PROJECT_COUNT);
+    expect(sharedSourceFiles.size).toBe(1);
+    expect(libraryFiles(programs[0]!).length).toBeGreaterThan(0);
+    expect(distinctLibraryFiles.size).toBe(libraryFiles(programs[0]!).length);
+  });
+
+  it("drops shared source files when semantic projects release transient resources", async () => {
+    const projectFixture = fixture();
+    writeSharedImportProjects(projectFixture);
+    const graph = new TypeScriptProjectGraph(projectFixture.fileSystem);
+    await graph.refresh(await projectFixture.snapshot());
+    const [path] = sharedImportProjectFiles();
+    const sharedPath = `${projectFixture.root.replaceAll("\\", "/")}/core/shared.ts`;
+    const beforeRelease = graph.programFor(path!)?.getSourceFile(sharedPath);
+
+    await graph.releaseTransientResources();
+    const afterRelease = graph.programFor(path!)?.getSourceFile(sharedPath);
+
+    expect(beforeRelease).toBeDefined();
+    expect(afterRelease).toBeDefined();
+    expect(afterRelease).not.toBe(beforeRelease);
+  });
 });
+
+function writeSharedImportProjects(projectFixture: ConfiguredProjectFixture): void {
+  projectFixture.write("core/shared.ts", "export function shared(): number { return 1; }\n");
+  for (const [index, path] of sharedImportProjectFiles().entries()) {
+    projectFixture.write(
+      `ext/e${index}/tsconfig.json`,
+      JSON.stringify({ compilerOptions: { strict: true }, include: ["./**/*.ts"] }),
+    );
+    projectFixture.write(
+      path,
+      'import { shared } from "../../core/shared";\nexport const value = shared();\n',
+    );
+  }
+}
+
+function sharedImportProjectFiles(): readonly string[] {
+  return Array.from({ length: SHARED_IMPORT_PROJECT_COUNT }, (_, index) => `ext/e${index}/f.ts`);
+}
 
 async function calleeNames(
   backend: TypeScriptBackend,

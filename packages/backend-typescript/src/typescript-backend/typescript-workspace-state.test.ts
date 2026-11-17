@@ -760,4 +760,35 @@ describe("TypeScriptWorkspaceState.refresh", () => {
     expect(located?.node.getText()).toBe("first = 1");
     expect(state.declarationAt(located!.node)).toBe(firstDeclaration);
   });
+
+  it("unpublishes every removed file when forgetting one obsolete source fails", async () => {
+    const fs = new MutableWorkspaceFileSystem({
+      "/repo/src/kept.ts": "export const kept = 1;\n",
+      "/repo/src/first.ts": "export const first = 1;\n",
+      "/repo/src/second.ts": "export const second = 2;\n",
+    });
+    const state = new TypeScriptWorkspaceState(fs);
+    await state.refresh(fs.workspaceFiles("src/kept.ts", "src/first.ts", "src/second.ts"));
+    const secondSource = state.sourceFile("src/second.ts");
+    const originalRemove = Project.prototype.removeSourceFile;
+    const removeSpy = vi.spyOn(Project.prototype, "removeSourceFile").mockImplementation(function (
+      this: Project,
+      sourceFile,
+    ) {
+      if (sourceFile.getFilePath() === "/repo/src/first.ts") throw new Error("forget failed");
+      return originalRemove.call(this, sourceFile);
+    });
+
+    await expect(state.refresh(fs.workspaceFiles("src/kept.ts"))).resolves.toEqual({
+      added: 0,
+      changed: 0,
+      removed: 2,
+      unchanged: 1,
+    });
+    expect(state.sourceFile("src/first.ts")).toBeUndefined();
+    expect(state.sourceFile("src/second.ts")).toBeUndefined();
+    expect(secondSource?.wasForgotten()).toBe(true);
+
+    removeSpy.mockRestore();
+  });
 });

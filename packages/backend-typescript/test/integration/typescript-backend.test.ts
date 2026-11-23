@@ -1,9 +1,11 @@
 import { describe, expect, it } from "vitest";
+import { fixturePath } from "@symnav/testing";
 
 import {
   FileNotFoundError,
   formatSymbolIdentity,
   InMemoryFileSystem,
+  NodeFileSystem,
   type FileSystem,
   type ResolvedPath,
   type FileMetadata,
@@ -537,3 +539,137 @@ describe("TypeScriptBackend retained workspace refresh", () => {
     expect(await backend.findCallees(files, mainIdentity)).toHaveLength(1);
   });
 });
+
+describe("JavaScript sources", () => {
+  it("lists a TypeScript caller of a JavaScript function", async () => {
+    const { backend, files } = await backendOverJavaScriptFixture();
+    const createTabs = identity("src/Tabs/Tabs.js", "createTabs");
+
+    const references = await backend.findReferences(files, createTabs);
+    const callers = await backend.findCallers(files, createTabs);
+
+    expect(references.map((reference) => [reference.file, reference.line])).toContainEqual([
+      "src/use.ts",
+      4,
+    ]);
+    expect(callers.map((edge) => edge.symbol.identity)).toEqual([
+      identity("src/use.ts", "useTabs"),
+    ]);
+  });
+
+  it("lists a JavaScript caller of a TypeScript function", async () => {
+    const { backend, files } = await backendOverJavaScriptFixture();
+    const formatLabel = identity("src/format.ts", "formatLabel");
+
+    const references = await backend.findReferences(files, formatLabel);
+    const callers = await backend.findCallers(files, formatLabel);
+
+    expect(references.map((reference) => [reference.file, reference.line])).toContainEqual([
+      "src/Tabs/Tabs.js",
+      4,
+    ]);
+    expect(callers.map((edge) => edge.symbol.identity)).toEqual([
+      identity("src/Tabs/Tabs.js", "createTabs"),
+    ]);
+  });
+
+  it("resolves TypeScript references through a JavaScript import outside the snapshot", async () => {
+    const fileSystem = new InMemoryFileSystem({
+      "/repo/.git/HEAD": "ref: refs/heads/main\n",
+      "/repo/src/service.ts": "export class Service {\n  run(): number {\n    return 1;\n  }\n}\n",
+      "/repo/src/factory.js": [
+        'import { Service } from "./service";',
+        "export function make() {",
+        "  return new Service();",
+        "}",
+        "",
+      ].join("\n"),
+      "/repo/src/main.ts": [
+        'import { make } from "./factory.js";',
+        "export function main(): number {",
+        "  return make().run();",
+        "}",
+        "",
+      ].join("\n"),
+    });
+    const backend = new TypeScriptBackend(fileSystem);
+    const files = [
+      workspaceFile("src/main.ts", fileSystem),
+      workspaceFile("src/service.ts", fileSystem),
+    ];
+    await backend.refresh(refreshRequest(files));
+    const run: SymbolIdentity = {
+      file: "src/service.ts",
+      segments: [{ name: "Service" }, { name: "run" }],
+    };
+
+    const references = await backend.findReferences(files, run);
+    const callees = await backend.findCallees(files, identity("src/main.ts", "main"));
+
+    expect(references.map((reference) => [reference.file, reference.line])).toEqual([
+      ["src/main.ts", 3],
+    ]);
+    expect(callees.map((edge) => edge.symbol.identity)).toEqual([run]);
+  });
+
+  it("lists a JSX element usage of a JavaScript class component", async () => {
+    const { backend, files } = await backendOverJavaScriptFixture();
+    const tabs = identity("src/Tabs/Tabs.js", "Tabs");
+
+    const references = await backend.findReferences(files, tabs);
+
+    expect(references.map((reference) => [reference.file, reference.line])).toEqual([
+      ["src/App.jsx", 1],
+      ["src/App.jsx", 6],
+    ]);
+  });
+
+  it("lists a CommonJS callee of an ES module function", async () => {
+    const { backend, files } = await backendOverJavaScriptFixture();
+
+    const callees = await backend.findCallees(files, identity("src/lib.mjs", "greet"));
+
+    expect(callees.map((edge) => edge.symbol.identity)).toEqual([
+      identity("src/legacy.cjs", "legacyGreeting"),
+    ]);
+  });
+});
+
+const javaScriptFixtureRoot = fixturePath("javascript-cases").replaceAll("\\", "/");
+
+async function backendOverJavaScriptFixture(): Promise<{
+  readonly backend: TypeScriptBackend;
+  readonly files: readonly WorkspaceFile[];
+}> {
+  const fileSystem = new NodeFileSystem();
+  const sourceFiles = [
+    "src/App.jsx",
+    "src/Tabs/Tabs.js",
+    "src/format.ts",
+    "src/legacy.cjs",
+    "src/lib.mjs",
+    "src/use.ts",
+  ];
+  const files = await Promise.all(
+    sourceFiles.map(async (relative) => {
+      const absolute = `${javaScriptFixtureRoot}/${relative}`;
+      return { relative, absolute, metadata: await fileSystem.metadata(absolute) };
+    }),
+  );
+  const backend = new TypeScriptBackend(fileSystem);
+  await backend.refresh({
+    snapshot: { root: javaScriptFixtureRoot, files },
+    coverage: "workspace",
+  });
+  return { backend, files };
+}
+
+function javaScriptFile(files: readonly WorkspaceFile[], relative: string): WorkspaceFile {
+  const file = files.find((candidate) => candidate.relative === relative);
+  if (!file) throw new Error(`missing fixture file ${relative}`);
+  return file;
+}
+
+function identity(file: string, name: string): SymbolIdentity {
+  return { file, segments: [{ name }] };
+}

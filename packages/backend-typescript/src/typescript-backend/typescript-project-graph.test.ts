@@ -22,7 +22,7 @@ import {
   type SymbolIdentity,
   type WorkspaceSnapshot,
 } from "@symnav/core";
-import type { ts } from "ts-morph";
+import { ts } from "ts-morph";
 
 import { TypeScriptBackend } from "./typescript-backend.js";
 import { TypeScriptProjectGraph } from "./typescript-project-graph.js";
@@ -620,6 +620,32 @@ describe("TypeScriptProjectGraph", () => {
       `${projectFixture.root.replaceAll("\\", "/")}/packages/domain/src/features/*.ts`,
     ]);
     expect(options?.paths?.["@local/*"]).toBeUndefined();
+  });
+
+  it("loads uncovered JavaScript files into the inferred project with JavaScript defaults", async () => {
+    const fileSystem = new InMemoryFileSystem({
+      "/repo/src/tabs.js": "export function createTabs(label) { return label; }\n",
+      "/repo/src/use.ts": 'import { createTabs } from "./tabs.js";\ncreateTabs("home");\n',
+    });
+    const files = ["src/tabs.js", "src/use.ts"].map((relative) => ({
+      relative,
+      absolute: `/repo/${relative}`,
+      metadata: fileSystem.metadataSync(`/repo/${relative}`),
+    }));
+    const graph = new TypeScriptProjectGraph(fileSystem);
+
+    await graph.refresh({ root: "/repo", files });
+
+    const program = graph.programFor("src/tabs.js");
+    expect(program?.getSourceFile("/repo/src/tabs.js")).toBeDefined();
+    expect(program?.getCompilerOptions()).toMatchObject({
+      allowJs: true,
+      jsx: ts.JsxEmit.Preserve,
+      checkJs: false,
+      maxNodeModuleJsDepth: 0,
+    });
+    expect(program?.getCompilerOptions().module).toBeUndefined();
+    expect(program?.getCompilerOptions().moduleResolution).toBeUndefined();
   });
 
   it("keeps implicit outDir contents outside configured membership", async () => {

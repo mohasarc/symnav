@@ -746,6 +746,30 @@ describe("TypeScriptProjectGraph", () => {
     expect(program?.getCompilerOptions()).toMatchObject({ allowJs: true, maxNodeModuleJsDepth: 0 });
   });
 
+  it.each([
+    ["src/tabs.mjs", "src/tabs.d.mts"],
+    ["src/tabs.cjs", "src/tabs.d.cts"],
+    ["src/tabs.js", "src/tabs.ts"],
+  ])(
+    "owns %s beside %s in one allowJs configuration program",
+    async (javascriptPath, typeScriptPath) => {
+      const workspace = inMemoryWorkspace({
+        "tsconfig.json": JSON.stringify({ compilerOptions: { allowJs: true } }),
+        [javascriptPath]: "export function tabs() {}\n",
+        [typeScriptPath]: "export declare function tabs(): void;\n",
+      });
+      const graph = new TypeScriptProjectGraph(workspace.fileSystem);
+
+      const refresh = await graph.refresh(workspace.snapshot);
+      const program = graph.programFor(javascriptPath);
+
+      expect(refresh.inferredFileCount).toBe(0);
+      expect(program?.getSourceFile(`/repo/${javascriptPath}`)).toBeDefined();
+      expect(program?.getSourceFile(`/repo/${typeScriptPath}`)).toBeDefined();
+      expect(graph.programFor(typeScriptPath)).toBe(program);
+    },
+  );
+
   it("keeps implicit outDir contents outside configured membership", async () => {
     const projectFixture = fixture();
     const graph = new TypeScriptProjectGraph(projectFixture.fileSystem);

@@ -13,6 +13,7 @@ import {
 } from "@symnav/core";
 import { Project, type SourceFile, ts } from "ts-morph";
 
+import { TypeScriptBackend } from "./typescript-backend.js";
 import type { TypeScriptSemanticSourceProvider } from "./typescript-workspace-state.js";
 import type { TypeScriptSemanticQueryObserver } from "./typescript-semantic-query-observer.js";
 import { SharedSourceFileRegistry } from "./shared-source-file-registry.js";
@@ -195,6 +196,7 @@ export class TypeScriptProjectGraph
     if (parsed.error || !parsed.config || typeof parsed.config !== "object") return undefined;
     const value = parsed.config as Record<string, unknown>;
     const extendedInputs = new Map<string, string>();
+    const unrequestedJavaScriptMatches: string[] = [];
     const parsedConfiguration = ts.parseJsonConfigFileContent(
       value,
       {
@@ -210,12 +212,30 @@ export class TypeScriptProjectGraph
           extendedInputs.set(normalizedCandidate, candidateContent);
           return candidateContent;
         },
-        readDirectory: (root, extensions, excludes, includes, depth) =>
-          this.readConfiguredDirectory(snapshot, root, extensions, excludes, includes, depth),
+        readDirectory: (root, extensions, excludes, includes, depth) => {
+          const matches = this.readConfiguredDirectory(
+            snapshot,
+            root,
+            [...extensions, ...TypeScriptBackend.javascriptExtensions],
+            excludes,
+            includes,
+            depth,
+          );
+          const requestedMatches = matches.filter((match) =>
+            TypeScriptProjectGraph.hasExtension(match, extensions),
+          );
+          unrequestedJavaScriptMatches.push(
+            ...matches.filter((match) => !TypeScriptProjectGraph.hasExtension(match, extensions)),
+          );
+          return requestedMatches;
+        },
       },
       paths.dirname(normalizedPath),
       undefined,
       normalizedPath,
+    );
+    const fileNames = [...parsedConfiguration.fileNames, ...unrequestedJavaScriptMatches].map(
+      (fileName) => paths.normalize(fileName),
     );
     const configuration: ParsedTypeScriptConfiguration = {
       path: normalizedPath,
@@ -223,7 +243,7 @@ export class TypeScriptProjectGraph
       content,
       value,
       compilerOptions: parsedConfiguration.options,
-      fileNames: parsedConfiguration.fileNames.map((fileName) => paths.normalize(fileName)),
+      fileNames,
       extendedInputs,
     };
     return {
@@ -264,6 +284,7 @@ export class TypeScriptProjectGraph
           TypeScriptProjectGraph.compilerOptionsFor(
             request.snapshot.root,
             configuration,
+            files,
             workspacePackages,
           ),
           files,
@@ -421,6 +442,7 @@ export class TypeScriptProjectGraph
   private static compilerOptionsFor(
     root: string,
     configuration: ParsedTypeScriptConfiguration,
+    ownedFiles: readonly WorkspaceFile[],
     workspacePackages: readonly WorkspacePackage[],
   ): ts.CompilerOptions {
     const pathDialect = new WorkspacePathDialect(root);
@@ -436,6 +458,13 @@ export class TypeScriptProjectGraph
     compilerOptions.baseUrl ??= root;
     compilerOptions.paths = paths;
     compilerOptions.noEmit = true;
+    const ownsJavaScript = ownedFiles.some((file) =>
+      TypeScriptProjectGraph.hasExtension(file.absolute, TypeScriptBackend.javascriptExtensions),
+    );
+    if (compilerOptions.allowJs !== true && ownsJavaScript) {
+      compilerOptions.allowJs = true;
+      compilerOptions.maxNodeModuleJsDepth ??= 0;
+    }
     return compilerOptions;
   }
 
@@ -459,6 +488,10 @@ export class TypeScriptProjectGraph
       for (const mapping of workspacePackage.mappings) paths[mapping.specifier] = [mapping.target];
     }
     return paths;
+  }
+
+  private static hasExtension(path: string, extensions: readonly string[]): boolean {
+    return extensions.some((extension) => path.endsWith(extension));
   }
 
   private static directoryKeyPrefix(directory: string, paths: WorkspacePathDialect): string {

@@ -796,6 +796,53 @@ describe("TypeScriptProjectGraph", () => {
     });
   });
 
+  it.each([
+    ["an include of TypeScript only", { include: ["src/**/*.ts"] }],
+    ["files only", { files: ["src/a.ts"] }],
+  ])(
+    "keeps compiler options and leaves JavaScript inferred for a configuration with %s",
+    async (_, configuration) => {
+      const workspace = inMemoryWorkspace({
+        "tsconfig.json": JSON.stringify({ compilerOptions: { strict: true }, ...configuration }),
+        "src/a.ts": "export const a = 1;\n",
+        "src/b.js": "export function b() {}\n",
+      });
+      const graph = new TypeScriptProjectGraph(workspace.fileSystem);
+
+      const refresh = await graph.refresh(workspace.snapshot);
+      const options = graph.programFor("src/a.ts")?.getCompilerOptions();
+      const javascriptProgram = graph.programFor("src/b.js");
+
+      expect(refresh.inferredFileCount).toBe(1);
+      expect(options?.strict).toBe(true);
+      expect(options?.allowJs).toBeUndefined();
+      expect(options?.maxNodeModuleJsDepth).toBeUndefined();
+      expect(javascriptProgram?.getCompilerOptions().strict).toBeUndefined();
+    },
+  );
+
+  it("keeps compiler options of a configuration listing JavaScript outside the snapshot", async () => {
+    const fileSystem = new InMemoryFileSystem({
+      "/repo/tsconfig.json": JSON.stringify({ files: ["src/a.ts", "src/b.js"] }),
+      "/repo/src/a.ts": 'import { b } from "./b.js";\nexport const a = b();\n',
+      "/repo/src/b.js": "export function b() {}\n",
+    });
+    const files = [
+      {
+        relative: "src/a.ts",
+        absolute: "/repo/src/a.ts",
+        metadata: fileSystem.metadataSync("/repo/src/a.ts"),
+      },
+    ];
+    const graph = new TypeScriptProjectGraph(fileSystem);
+
+    await graph.refresh({ root: "/repo", files });
+    const options = graph.programFor("src/a.ts")?.getCompilerOptions();
+
+    expect(options?.allowJs).toBeUndefined();
+    expect(options?.maxNodeModuleJsDepth).toBeUndefined();
+  });
+
   it("keeps implicit outDir contents outside configured membership", async () => {
     const projectFixture = fixture();
     const graph = new TypeScriptProjectGraph(projectFixture.fileSystem);

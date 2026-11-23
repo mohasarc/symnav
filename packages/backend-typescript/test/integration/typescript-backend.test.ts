@@ -612,6 +612,25 @@ describe("JavaScript sources", () => {
     expect(callees.map((edge) => edge.symbol.identity)).toEqual([run]);
   });
 
+  it("extracts declarations from JavaScript files containing JSX", async () => {
+    const { backend, files } = await backendOverJavaScriptFixture();
+    const tabsFile = javaScriptFile(files, "src/Tabs/Tabs.js");
+    const appFile = javaScriptFile(files, "src/App.jsx");
+
+    const declarations = await backend.declarations([tabsFile, appFile]);
+    const tabsEntries = await backend.fileEntries(tabsFile);
+    const appEntries = await backend.fileEntries(appFile);
+
+    expect(declarations.map((declaration) => formatSymbolIdentity(declaration.identity))).toEqual([
+      "src/Tabs/Tabs.js::createTabs",
+      "src/Tabs/Tabs.js::Tabs",
+      "src/Tabs/Tabs.js::Tabs::render",
+      "src/App.jsx::App",
+    ]);
+    expect(tabsEntries.diagnostics).toBeUndefined();
+    expect(appEntries.diagnostics).toBeUndefined();
+  });
+
   it("lists a JSX element usage of a JavaScript class component", async () => {
     const { backend, files } = await backendOverJavaScriptFixture();
     const tabs = identity("src/Tabs/Tabs.js", "Tabs");

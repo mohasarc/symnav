@@ -670,6 +670,82 @@ describe("TypeScriptProjectGraph", () => {
     expect(program?.getSourceFile("/repo/node_modules/untyped/index.js")).toBeUndefined();
   });
 
+  it("owns covered JavaScript in a configuration without allowJs and forces allowJs on", async () => {
+    const workspace = inMemoryWorkspace({
+      "tsconfig.json": JSON.stringify({
+        compilerOptions: { strict: true, baseUrl: ".", paths: { "@lib/*": ["lib/*"] } },
+        include: ["src", "lib"],
+      }),
+      "lib/helper.ts": "export function helper(): number { return 1; }\n",
+      "src/b.js":
+        'import { helper } from "@lib/helper";\nexport function useHelper() { return helper(); }\n',
+    });
+    const graph = new TypeScriptProjectGraph(workspace.fileSystem);
+    const backend = new TypeScriptBackend(workspace.fileSystem);
+    await backend.refresh({ snapshot: workspace.snapshot, coverage: "workspace" });
+
+    const refresh = await graph.refresh(workspace.snapshot);
+    const options = graph.programFor("src/b.js")?.getCompilerOptions();
+    const callees = await calleeNames(
+      backend,
+      workspace.snapshot.files,
+      symbolIdentity("src/b.js", "useHelper"),
+    );
+
+    expect(refresh.inferredFileCount).toBe(0);
+    expect(options).toMatchObject({ allowJs: true, maxNodeModuleJsDepth: 0, strict: true });
+    expect(options?.paths?.["@lib/*"]).toEqual(["/repo/lib/*"]);
+    expect(callees).toEqual(["helper"]);
+  });
+
+  it("forces allowJs on for a configuration that disables it but covers JavaScript", async () => {
+    const workspace = inMemoryWorkspace({
+      "tsconfig.json": JSON.stringify({ compilerOptions: { allowJs: false } }),
+      "src/a.ts": "export const a = 1;\n",
+      "src/b.js": "export function b() {}\n",
+    });
+    const graph = new TypeScriptProjectGraph(workspace.fileSystem);
+
+    const refresh = await graph.refresh(workspace.snapshot);
+    const program = graph.programFor("src/b.js");
+
+    expect(refresh.inferredFileCount).toBe(0);
+    expect(program?.getSourceFile("/repo/src/a.ts")).toBeDefined();
+    expect(program?.getSourceFile("/repo/src/b.js")).toBeDefined();
+    expect(program?.getCompilerOptions()).toMatchObject({ allowJs: true, maxNodeModuleJsDepth: 0 });
+  });
+
+  it("forces allowJs on for JavaScript listed in files", async () => {
+    const workspace = inMemoryWorkspace({
+      "tsconfig.json": JSON.stringify({ files: ["src/b.js"] }),
+      "src/b.js": "export function b() {}\n",
+    });
+    const graph = new TypeScriptProjectGraph(workspace.fileSystem);
+
+    const refresh = await graph.refresh(workspace.snapshot);
+    const program = graph.programFor("src/b.js");
+
+    expect(refresh.inferredFileCount).toBe(0);
+    expect(program?.getSourceFile("/repo/src/b.js")).toBeDefined();
+    expect(program?.getCompilerOptions()).toMatchObject({ allowJs: true, maxNodeModuleJsDepth: 0 });
+  });
+
+  it("owns covered JavaScript in a nested configuration without allowJs", async () => {
+    const workspace = inMemoryWorkspace({
+      "packages/a/tsconfig.json": JSON.stringify({ include: ["src"] }),
+      "packages/a/src/x.js": "export function x() {}\n",
+    });
+    const graph = new TypeScriptProjectGraph(workspace.fileSystem);
+
+    const refresh = await graph.refresh(workspace.snapshot);
+    const program = graph.programFor("packages/a/src/x.js");
+
+    expect(refresh.configuredProjectCount).toBe(1);
+    expect(refresh.inferredFileCount).toBe(0);
+    expect(program?.getSourceFile("/repo/packages/a/src/x.js")).toBeDefined();
+    expect(program?.getCompilerOptions()).toMatchObject({ allowJs: true, maxNodeModuleJsDepth: 0 });
+  });
+
   it("keeps implicit outDir contents outside configured membership", async () => {
     const projectFixture = fixture();
     const graph = new TypeScriptProjectGraph(projectFixture.fileSystem);
@@ -891,6 +967,26 @@ function writeSharedImportProjects(projectFixture: ConfiguredProjectFixture): vo
 
 function sharedImportProjectFiles(): readonly string[] {
   return Array.from({ length: SHARED_IMPORT_PROJECT_COUNT }, (_, index) => `ext/e${index}/f.ts`);
+}
+
+function inMemoryWorkspace(sources: Readonly<Record<string, string>>): {
+  readonly fileSystem: InMemoryFileSystem;
+  readonly snapshot: WorkspaceSnapshot;
+} {
+  const fileSystem = new InMemoryFileSystem(
+    Object.fromEntries(
+      Object.entries(sources).map(([relativePath, content]) => [`/repo/${relativePath}`, content]),
+    ),
+  );
+  const files = Object.keys(sources)
+    .filter((relativePath) => !relativePath.endsWith(".json"))
+    .sort()
+    .map((relativePath) => ({
+      relative: relativePath,
+      absolute: `/repo/${relativePath}`,
+      metadata: fileSystem.metadataSync(`/repo/${relativePath}`),
+    }));
+  return { fileSystem, snapshot: { root: "/repo", files } };
 }
 
 async function calleeNames(

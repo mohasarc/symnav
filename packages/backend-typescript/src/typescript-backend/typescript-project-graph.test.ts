@@ -648,6 +648,28 @@ describe("TypeScriptProjectGraph", () => {
     expect(program?.getCompilerOptions().moduleResolution).toBeUndefined();
   });
 
+  it("keeps untyped node_modules JavaScript out of the inferred project", async () => {
+    const fileSystem = new InMemoryFileSystem({
+      "/repo/node_modules/untyped/package.json": JSON.stringify({ name: "untyped" }),
+      "/repo/node_modules/untyped/index.js": "exports.untypedHelper = function () {};\n",
+      "/repo/src/use.ts": 'import { untypedHelper } from "untyped";\nuntypedHelper();\n',
+    });
+    const files = [
+      {
+        relative: "src/use.ts",
+        absolute: "/repo/src/use.ts",
+        metadata: fileSystem.metadataSync("/repo/src/use.ts"),
+      },
+    ];
+    const graph = new TypeScriptProjectGraph(fileSystem);
+
+    await graph.refresh({ root: "/repo", files });
+
+    const program = graph.programFor("src/use.ts");
+    expect(program?.getSourceFile("/repo/src/use.ts")).toBeDefined();
+    expect(program?.getSourceFile("/repo/node_modules/untyped/index.js")).toBeUndefined();
+  });
+
   it("keeps implicit outDir contents outside configured membership", async () => {
     const projectFixture = fixture();
     const graph = new TypeScriptProjectGraph(projectFixture.fileSystem);

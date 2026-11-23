@@ -196,7 +196,7 @@ export class TypeScriptProjectGraph
     if (parsed.error || !parsed.config || typeof parsed.config !== "object") return undefined;
     const value = parsed.config as Record<string, unknown>;
     const extendedInputs = new Map<string, string>();
-    const unrequestedJavaScriptMatches: string[] = [];
+    const javascriptMatches: string[] = [];
     const parsedConfiguration = ts.parseJsonConfigFileContent(
       value,
       {
@@ -224,8 +224,10 @@ export class TypeScriptProjectGraph
           const requestedMatches = matches.filter((match) =>
             TypeScriptProjectGraph.hasExtension(match, extensions),
           );
-          unrequestedJavaScriptMatches.push(
-            ...matches.filter((match) => !TypeScriptProjectGraph.hasExtension(match, extensions)),
+          javascriptMatches.push(
+            ...matches.filter((match) =>
+              TypeScriptProjectGraph.hasExtension(match, TypeScriptBackend.javascriptExtensions),
+            ),
           );
           return requestedMatches;
         },
@@ -234,8 +236,8 @@ export class TypeScriptProjectGraph
       undefined,
       normalizedPath,
     );
-    const fileNames = [...parsedConfiguration.fileNames, ...unrequestedJavaScriptMatches].map(
-      (fileName) => paths.normalize(fileName),
+    const fileNames = [...parsedConfiguration.fileNames, ...javascriptMatches].map((fileName) =>
+      paths.normalize(fileName),
     );
     const configuration: ParsedTypeScriptConfiguration = {
       path: normalizedPath,

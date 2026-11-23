@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { BackendRouter } from "../../../src/backend/backend-router.js";
+import { NoSupportedFilesError, UnsupportedFileError } from "../../../src/backend/errors.js";
 import { formatSymbolIdentity } from "../../../src/intermediate-representation/canonical-identity.js";
 import type { Header } from "../../../src/intermediate-representation/types.js";
 import type {
@@ -472,5 +473,107 @@ describe("SymbolTargetResolver.resolve across backends", () => {
     );
 
     expect(typescriptBackend.declarationCalls).toEqual([["src/alpha.ts", "src/gamma.ts"]]);
+  });
+});
+
+describe("SymbolTargetResolver.resolve on unsupported files", () => {
+  it("refuses a file part that matches only an unsupported file", async () => {
+    const router = new BackendRouter([
+      ResolverScenario.typescriptFake([
+        ResolverScenario.candidateFor("src/alpha.ts", [{ name: "walk" }]),
+      ]),
+    ]);
+
+    const error = await ResolverScenario.resolveWith(router, "beta.zz::walk").then(
+      () => undefined,
+      (thrown: unknown) => thrown,
+    );
+
+    expect(error).toBeInstanceOf(UnsupportedFileError);
+    expect((error as UnsupportedFileError).reason).toBe("cannot read .zz files (src/beta.zz)");
+  });
+  it("names the first unsupported match and counts the rest", async () => {
+    const files = [
+      { relative: "src/alpha.ts", absolute: "/repo/src/alpha.ts" },
+      { relative: "src/a/beta.zz", absolute: "/repo/src/a/beta.zz" },
+      { relative: "src/b/beta.zz", absolute: "/repo/src/b/beta.zz" },
+    ];
+    const router = new BackendRouter([ResolverScenario.typescriptFake([])]);
+
+    const error = await ResolverScenario.resolveWith(
+      router,
+      "beta.zz::walk",
+      undefined,
+      files,
+    ).then(
+      () => undefined,
+      (thrown: unknown) => thrown,
+    );
+
+    expect(error).toBeInstanceOf(UnsupportedFileError);
+    expect((error as UnsupportedFileError).reason).toBe(
+      "cannot read .zz files (src/a/beta.zz, and 1 more)",
+    );
+  });
+  it("refuses a file part in a workspace of only unsupported files", async () => {
+    const files = [{ relative: "src/beta.zz", absolute: "/repo/src/beta.zz" }];
+    const router = new BackendRouter([ResolverScenario.typescriptFake([])]);
+
+    const error = await ResolverScenario.resolveWith(
+      router,
+      "beta.zz::walk",
+      undefined,
+      files,
+    ).then(
+      () => undefined,
+      (thrown: unknown) => thrown,
+    );
+
+    expect(error).toBeInstanceOf(UnsupportedFileError);
+    expect((error as UnsupportedFileError).reason).toBe("cannot read .zz files (src/beta.zz)");
+  });
+  it("resolves a file part that matches an accepted and an unaccepted file", async () => {
+    const files = [
+      { relative: "src/alpha.ts", absolute: "/repo/src/alpha.ts" },
+      { relative: "vendor/alpha.ts", absolute: "/repo/vendor/alpha.ts" },
+    ];
+    const backend = new FakeLanguageBackend({
+      accept: (filePath) => filePath.startsWith("src/"),
+      declarations: [ResolverScenario.candidateFor("src/alpha.ts", [{ name: "walk" }]).symbol],
+    });
+
+    const resolved = await ResolverScenario.resolveWith(
+      new BackendRouter([backend]),
+      "alpha.ts::walk",
+      undefined,
+      files,
+    );
+
+    expect(resolved.identity).toEqual({ file: "src/alpha.ts", segments: [{ name: "walk" }] });
+  });
+  it("keeps the no-supported-files refusal for a bare name", async () => {
+    const files = [{ relative: "src/beta.zz", absolute: "/repo/src/beta.zz" }];
+    const router = new BackendRouter([ResolverScenario.typescriptFake([])]);
+
+    await expect(
+      ResolverScenario.resolveWith(router, "walk", undefined, files),
+    ).rejects.toBeInstanceOf(NoSupportedFilesError);
+  });
+  it("keeps not-found for a regex naming an unsupported file", async () => {
+    const router = new BackendRouter([
+      ResolverScenario.typescriptFake([
+        ResolverScenario.candidateFor("src/alpha.ts", [{ name: "walk" }]),
+      ]),
+    ]);
+
+    await expect(
+      ResolverScenario.resolveWith(
+        router,
+        "beta\\.zz::walk$",
+        undefined,
+        ResolverScenario.WORKSPACE_FILES,
+        true,
+      ),
+    ).rejects.toBeInstanceOf(SymbolTargetNotFoundError);
   });
 });

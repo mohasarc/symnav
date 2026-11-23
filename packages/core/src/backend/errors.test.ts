@@ -13,6 +13,12 @@ describe("UnsupportedFileError", () => {
     expect(new UnsupportedFileError("README.md").reason).toBe("cannot read .md files (README.md)");
   });
 
+  it("names how many more unsupported files matched", () => {
+    expect(new UnsupportedFileError("src/a/x.py", { additionalMatchCount: 2 }).reason).toBe(
+      "cannot read .py files (src/a/x.py, and 2 more)",
+    );
+  });
+
   it("renders a specific reason for extensionless files", () => {
     expect(new UnsupportedFileError("README").reason).toBe(
       "README has no file extension; expected a source file",

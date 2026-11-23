@@ -28,6 +28,13 @@ export interface TypeScriptProjectGraphRefresh {
 
 const TYPESCRIPT_CONFIGURATION_FILE_NAME = "tsconfig.json";
 
+const INFERRED_JAVASCRIPT_OPTIONS: Readonly<ts.CompilerOptions> = {
+  allowJs: true,
+  jsx: ts.JsxEmit.Preserve,
+  checkJs: false,
+  maxNodeModuleJsDepth: 0,
+};
+
 interface ParsedTypeScriptConfiguration {
   readonly path: string;
   readonly directory: string;
@@ -437,6 +444,7 @@ export class TypeScriptProjectGraph
     workspacePackages: readonly WorkspacePackage[],
   ): ts.CompilerOptions {
     return {
+      ...INFERRED_JAVASCRIPT_OPTIONS,
       baseUrl: root,
       paths: TypeScriptProjectGraph.workspacePackagePaths(workspacePackages),
       noEmit: true,

@@ -5,8 +5,15 @@ import { formatSymbolIdentity } from "../intermediate-representation/canonical-i
 import type { SymbolIdentity } from "../intermediate-representation/symbol-identity.js";
 import type { SymbolOverviewNode } from "../intermediate-representation/overview-tree.js";
 
+export interface UnsupportedFileErrorOptions {
+  readonly additionalMatchCount?: number;
+}
+
 export class UnsupportedFileError extends UserFacingError {
-  constructor(private readonly inputPath: string) {
+  constructor(
+    private readonly inputPath: string,
+    private readonly options: UnsupportedFileErrorOptions = {},
+  ) {
     super();
     this.name = "UnsupportedFileError";
   }
@@ -16,7 +23,15 @@ export class UnsupportedFileError extends UserFacingError {
     if (extension === "") {
       return `${this.inputPath} has no file extension; expected a source file`;
     }
-    return `cannot read ${extension} files (${this.inputPath})`;
+    return `cannot read ${extension} files (${this.citedPaths})`;
+  }
+
+  private get citedPaths(): string {
+    const additionalMatchCount = this.options.additionalMatchCount ?? 0;
+    if (additionalMatchCount === 0) {
+      return this.inputPath;
+    }
+    return `${this.inputPath}, and ${additionalMatchCount} more`;
   }
 }
 

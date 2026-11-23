@@ -492,6 +492,29 @@ describe("SymbolTargetResolver.resolve on unsupported files", () => {
     expect(error).toBeInstanceOf(UnsupportedFileError);
     expect((error as UnsupportedFileError).reason).toBe("cannot read .zz files (src/beta.zz)");
   });
+  it("names the first unsupported match and counts the rest", async () => {
+    const files = [
+      { relative: "src/alpha.ts", absolute: "/repo/src/alpha.ts" },
+      { relative: "src/a/beta.zz", absolute: "/repo/src/a/beta.zz" },
+      { relative: "src/b/beta.zz", absolute: "/repo/src/b/beta.zz" },
+    ];
+    const router = new BackendRouter([ResolverScenario.typescriptFake([])]);
+
+    const error = await ResolverScenario.resolveWith(
+      router,
+      "beta.zz::walk",
+      undefined,
+      files,
+    ).then(
+      () => undefined,
+      (thrown: unknown) => thrown,
+    );
+
+    expect(error).toBeInstanceOf(UnsupportedFileError);
+    expect((error as UnsupportedFileError).reason).toBe(
+      "cannot read .zz files (src/a/beta.zz, and 1 more)",
+    );
+  });
   it("refuses a file part in a workspace of only unsupported files", async () => {
     const files = [{ relative: "src/beta.zz", absolute: "/repo/src/beta.zz" }];
     const router = new BackendRouter([ResolverScenario.typescriptFake([])]);

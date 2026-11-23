@@ -147,7 +147,9 @@ export class SymbolTargetResolver {
       (file) => args.router.find(file.relative) === undefined,
     );
     if (everySuffixMatchIsUnsupported) {
-      throw new UnsupportedFileError(firstSuffixMatch.relative);
+      throw new UnsupportedFileError(firstSuffixMatch.relative, {
+        additionalMatchCount: suffixMatches.length - 1,
+      });
     }
   }
 

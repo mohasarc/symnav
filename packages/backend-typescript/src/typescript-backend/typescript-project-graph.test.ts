@@ -772,6 +772,30 @@ describe("TypeScriptProjectGraph", () => {
     },
   );
 
+  it.each([
+    [
+      "directly",
+      { "tsconfig.json": JSON.stringify({ compilerOptions: { maxNodeModuleJsDepth: 3 } }) },
+    ],
+    [
+      "through extends",
+      {
+        "tsconfig.json": JSON.stringify({ extends: "./tsconfig.base.json" }),
+        "tsconfig.base.json": JSON.stringify({ compilerOptions: { maxNodeModuleJsDepth: 3 } }),
+      },
+    ],
+  ])("honors a maxNodeModuleJsDepth configured %s for covered JavaScript", async (_, configs) => {
+    const workspace = inMemoryWorkspace({ ...configs, "src/b.js": "export function b() {}\n" });
+    const graph = new TypeScriptProjectGraph(workspace.fileSystem);
+
+    await graph.refresh(workspace.snapshot);
+
+    expect(graph.programFor("src/b.js")?.getCompilerOptions()).toMatchObject({
+      allowJs: true,
+      maxNodeModuleJsDepth: 3,
+    });
+  });
+
   it("keeps implicit outDir contents outside configured membership", async () => {
     const projectFixture = fixture();
     const graph = new TypeScriptProjectGraph(projectFixture.fileSystem);

@@ -747,6 +747,8 @@ describe("TypeScriptProjectGraph", () => {
   });
 
   it.each([
+    ["src/Tabs.js", "src/Tabs.d.ts"],
+    ["src/Tabs.jsx", "src/Tabs.d.ts"],
     ["src/tabs.mjs", "src/tabs.d.mts"],
     ["src/tabs.cjs", "src/tabs.d.cts"],
     ["src/tabs.js", "src/tabs.ts"],

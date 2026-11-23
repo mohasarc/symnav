@@ -157,22 +157,9 @@ class TypeScriptWorkspacePreparation extends RevisionedBackendPreparation<TypeSc
   }
 
   async commit(): Promise<void> {
-    const obsoleteSourceFiles = this.obsoleteAbsolutePaths().flatMap((absolutePath) => {
+    for (const absolutePath of this.obsoleteAbsolutePaths()) {
       const sourceFile = this.project.getSourceFile(absolutePath);
-      return sourceFile ? [sourceFile] : [];
-    });
-    for (const [index, sourceFile] of obsoleteSourceFiles.entries()) {
-      const absolutePath = sourceFile.getFilePath();
-      const stagingPath = this.obsoleteStagingPath(absolutePath, index);
-      sourceFile.move(stagingPath);
-      this.mutations.push({
-        rollback: () => {
-          sourceFile.move(absolutePath, { overwrite: true });
-        },
-      });
-    }
-    for (const sourceFile of obsoleteSourceFiles) {
-      this.tryForgetObsoleteSource(sourceFile);
+      if (sourceFile) this.tryForgetObsoleteSource(sourceFile);
     }
   }
 
@@ -237,18 +224,8 @@ class TypeScriptWorkspacePreparation extends RevisionedBackendPreparation<TypeSc
         paths.push(change.previous.file.absolute);
       }
     }
-    return paths;
-  }
-
-  private obsoleteStagingPath(absolutePath: string, initialSuffix: number): string {
-    let suffix = initialSuffix;
-    while (true) {
-      const candidate = `${absolutePath}.symnav-obsolete-${suffix}`;
-      const sourceExists = this.project.getSourceFile(candidate) !== undefined;
-      const fileExists = this.project.getFileSystem().fileExistsSync(candidate);
-      if (!sourceExists && !fileExists) return candidate;
-      suffix += 1;
-    }
+    const publishedPaths = new Set(this.request.effectiveFiles.map((file) => file.absolute));
+    return paths.filter((path) => !publishedPaths.has(path));
   }
 
   private tryForgetObsoleteSource(sourceFile: SourceFile): void {

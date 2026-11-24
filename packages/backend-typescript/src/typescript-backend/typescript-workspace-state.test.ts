@@ -10,7 +10,7 @@ import {
 } from "@symnav/core";
 
 import { TypeScriptBackend } from "./typescript-backend.js";
-import * as fileEntryExtraction from "../extract/extract-file-entries.js";
+import { FileDeclarationExtraction } from "../extract/file-declaration-extraction.js";
 import {
   TypeScriptWorkspaceState,
   type TypeScriptFileExtractionRequest,
@@ -34,7 +34,7 @@ class CountingTypeScriptFileExtractor implements TypeScriptFileExtractor {
     if (this.failingPaths.has(request.filePath)) {
       throw new Error(`extraction failed: ${request.filePath}`);
     }
-    return fileEntryExtraction.extractFileEntries(request);
+    return FileDeclarationExtraction.extract(request);
   }
 }
 
@@ -192,7 +192,7 @@ describe("TypeScriptWorkspaceState.refresh", () => {
         "",
       ].join("\n"),
     });
-    const extraction = vi.spyOn(fileEntryExtraction, "extractFileEntries");
+    const extraction = vi.spyOn(FileDeclarationExtraction, "extract");
     const state = new TypeScriptWorkspaceState(fs);
     const backend = new TypeScriptBackend(fs, state);
     const files = fs.workspaceFiles("src/app.ts");

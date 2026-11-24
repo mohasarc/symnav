@@ -25,7 +25,7 @@ class CountingDiagnosticExtractor implements TypeScriptFileExtractor {
       dedupeKey: request.filePath,
       message: `warning from ${request.filePath}`,
     });
-    return { file: request.filePath, entries: [] };
+    return { entries: { file: request.filePath, entries: [] }, declarationNodes: new Map() };
   }
 }
 

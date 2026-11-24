@@ -67,6 +67,7 @@ export class OverviewChildrenExtractor {
   >();
   private readonly emittedAssignmentDeclarations = new Set<ts.Node>();
   private readonly declarationNodes = new Map<SymbolOverviewNode, Node>();
+  private readonly startPositions = new Map<OverviewNode, number>();
   private expandoMembers: JavaScriptExpandoMembers | undefined;
 
   constructor(args: { file: string; diagnostics?: DiagnosticSink | undefined }) {
@@ -100,7 +101,17 @@ export class OverviewChildrenExtractor {
 
   private declared<T extends SymbolOverviewNode>(symbol: T, node: Node): T {
     this.declarationNodes.set(symbol, node);
+    this.startPositions.set(symbol, node.getStart());
     return symbol;
+  }
+
+  private positioned(overviewNodes: readonly OverviewNode[], node: Node): readonly OverviewNode[] {
+    for (const overviewNode of overviewNodes) {
+      if (!this.startPositions.has(overviewNode)) {
+        this.startPositions.set(overviewNode, node.getStart());
+      }
+    }
+    return overviewNodes;
   }
 
   private extractNodes(args: {
@@ -114,6 +125,14 @@ export class OverviewChildrenExtractor {
   }
 
   private toOverviewNode(args: {
+    node: Node;
+    symbolSegments: readonly SymbolPathSegment[];
+    category: "statement" | "member";
+  }): readonly OverviewNode[] {
+    return this.positioned(this.overviewNodesOf(args), args.node);
+  }
+
+  private overviewNodesOf(args: {
     node: Node;
     symbolSegments: readonly SymbolPathSegment[];
     category: "statement" | "member";
@@ -249,10 +268,10 @@ export class OverviewChildrenExtractor {
       this.buildAssignmentDeclarationNode(member, containerSegments),
     );
     if (members.length === 0) return children;
-    return OverviewChildrenExtractor.mergedByStartLine(children, members);
+    return this.mergedByStartPosition(children, members);
   }
 
-  private static mergedByStartLine(
+  private mergedByStartPosition(
     children: readonly OverviewNode[],
     members: readonly OverviewNode[],
   ): readonly OverviewNode[] {
@@ -260,7 +279,7 @@ export class OverviewChildrenExtractor {
     const pendingMembers = members.values();
     let nextMember = pendingMembers.next();
     for (const child of children) {
-      while (!nextMember.done && nextMember.value.range.startLine < child.range.startLine) {
+      while (!nextMember.done && this.startOf(nextMember.value) < this.startOf(child)) {
         merged.push(nextMember.value);
         nextMember = pendingMembers.next();
       }
@@ -268,6 +287,10 @@ export class OverviewChildrenExtractor {
     }
     if (!nextMember.done) merged.push(nextMember.value, ...pendingMembers);
     return merged;
+  }
+
+  private startOf(overviewNode: OverviewNode): number {
+    return this.startPositions.get(overviewNode) ?? Number.POSITIVE_INFINITY;
   }
 
   private symbolChildren(

@@ -786,6 +786,18 @@ describe("CommonJS export declarations against the TypeScript binder", () => {
     ],
     ["a parenthesized module.exports object", ["module.exports = exports = ({ a: 1 });"]],
     ["a module.exports value", ["module.exports = function () {};", "module.exports.extra = 1;"]],
+    [
+      "module.exports assigned in fallback branches",
+      [
+        "try {",
+        '  module.exports = require("./native");',
+        "} catch (error) {",
+        "  module.exports = null;",
+        "}",
+        "if (legacy) module.exports = legacy;",
+        "else module.exports = { b: 1, c() {} };",
+      ],
+    ],
     ["module.exports assigned exports", ["module.exports = exports;", "exports.z = 1;"]],
     [
       "a file with ES module syntax",
@@ -1100,7 +1112,7 @@ function binderExports(sourceFile: SourceFile): readonly string[] {
     .getExports()
     .flatMap((exported) => {
       if (exported.getName() === ts.InternalSymbolName.ExportEquals) {
-        return exportEqualsDeclarations(exported, sourceFile);
+        return exportEqualsDeclarations(exported);
       }
       if (aliasesSameNameLocal(exported) || !spellsCanonicalId(exported.getName())) return [];
       return exported
@@ -1111,25 +1123,25 @@ function binderExports(sourceFile: SourceFile): readonly string[] {
     .sort();
 }
 
-function exportEqualsDeclarations(exportEquals: Symbol, sourceFile: SourceFile): readonly string[] {
-  const [assignment] = exportEquals.getDeclarations();
-  if (!Node.isBinaryExpression(assignment)) return [];
-  const object = rightmostAssignedObject(assignment.getRight());
-  if (!object) return [`default@${assignment.getStartLineNumber()}`];
-  const members = sourceFile
-    .getProject()
-    .getTypeChecker()
-    .getTypeOfSymbolAtLocation(exportEquals, sourceFile)
-    .getProperties();
-  return members.flatMap((member) =>
-    member
-      .getDeclarations()
-      .filter(
-        (declaration) =>
-          declaration.getParent() === object && !Node.isShorthandPropertyAssignment(declaration),
-      )
-      .map((declaration) => `${member.getName()}@${declaration.getStartLineNumber()}`),
-  );
+function exportEqualsDeclarations(exportEquals: Symbol): readonly string[] {
+  return exportEquals.getDeclarations().flatMap((assignment) => {
+    if (!Node.isBinaryExpression(assignment)) return [];
+    const object = rightmostAssignedObject(assignment.getRight());
+    if (!object) return [`default@${assignment.getStartLineNumber()}`];
+    return object
+      .getType()
+      .getProperties()
+      .flatMap((member) =>
+        member
+          .getDeclarations()
+          .filter(
+            (declaration) =>
+              declaration.getParent() === object &&
+              !Node.isShorthandPropertyAssignment(declaration),
+          )
+          .map((declaration) => `${member.getName()}@${declaration.getStartLineNumber()}`),
+      );
+  });
 }
 
 function rightmostAssignedObject(value: Node): Node | undefined {

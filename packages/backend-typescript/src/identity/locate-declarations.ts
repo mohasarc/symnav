@@ -8,6 +8,7 @@ import {
 } from "@symnav/core";
 
 import { JavaScriptAssignmentDeclarations } from "../extract/javascript-assignment-declaration.js";
+import { JavaScriptDocDeclarations } from "../extract/javascript-doc-declarations.js";
 
 export interface DeclarationSpan {
   readonly start: number;
@@ -88,6 +89,8 @@ export class DeclarationLocator {
   private static definitionName(node: Node): string | undefined {
     const assignment = JavaScriptAssignmentDeclarations.declarationAt(node);
     if (assignment) return assignment.name;
+    const typeAlias = JavaScriptDocDeclarations.typeAliasNamedBy(node);
+    if (typeAlias) return typeAlias.name;
     return DeclarationLocator.isDefinitionNode(node)
       ? DeclarationLocator.declarationName(node)
       : undefined;

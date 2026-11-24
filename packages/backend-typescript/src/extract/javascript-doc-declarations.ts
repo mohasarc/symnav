@@ -30,6 +30,12 @@ export class JavaScriptDocDeclarations {
       });
   }
 
+  static typeAliasNamedBy(nameNode: Node): JavaScriptDocTypeAlias | undefined {
+    const tag = nameNode.getParent();
+    const typeAlias = tag && JavaScriptDocDeclarations.typeAliasOf(tag);
+    return typeAlias?.nameNode.compilerNode === nameNode.compilerNode ? typeAlias : undefined;
+  }
+
   static rangeOf(typeAlias: JavaScriptDocTypeAlias): LineRange {
     const { tag } = typeAlias;
     const lastCharacter =

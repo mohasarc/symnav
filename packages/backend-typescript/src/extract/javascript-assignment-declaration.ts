@@ -22,7 +22,10 @@ type ObjectMember =
   | GetAccessorDeclaration
   | SetAccessorDeclaration;
 
-export type JavaScriptAssignmentDeclarationForm = "export-property" | "module-exports-member";
+export type JavaScriptAssignmentDeclarationForm =
+  | "export-property"
+  | "module-exports-member"
+  | "module-exports";
 
 interface SourceFileWithModuleIndicator extends ts.SourceFile {
   readonly externalModuleIndicator?: ts.Node | true;
@@ -87,7 +90,9 @@ export class JavaScriptAssignmentDeclarations {
 
   private static declarationOf(node: Node): JavaScriptAssignmentDeclaration | undefined {
     if (Node.isPropertyAccessExpression(node) || Node.isElementAccessExpression(node)) {
-      return JavaScriptAssignmentDeclarations.exportProperty(node);
+      return JavaScriptAssignmentDeclarations.isModuleExports(node)
+        ? JavaScriptAssignmentDeclarations.moduleExportsValue(node)
+        : JavaScriptAssignmentDeclarations.exportProperty(node);
     }
     if (JavaScriptAssignmentDeclarations.isObjectMember(node)) {
       return JavaScriptAssignmentDeclarations.moduleExportsMember(node);
@@ -161,29 +166,54 @@ export class JavaScriptAssignmentDeclarations {
   private static exportProperty(
     target: PropertyAccessExpression | ElementAccessExpression,
   ): JavaScriptAssignmentDeclaration | undefined {
+    if (!JavaScriptAssignmentDeclarations.isExportsObject(target.getExpression())) return undefined;
+    const assigned = JavaScriptAssignmentDeclarations.assignedTo(target);
+    if (!assigned) return undefined;
+    const name = JavaScriptAssignmentDeclarations.staticAccessName(target);
+    if (name === undefined) return undefined;
+    if (JavaScriptAssignmentDeclarations.aliasesSameNameLocal(assigned.value, name)) {
+      return undefined;
+    }
+    const nameLiteral = Node.isElementAccessExpression(target)
+      ? target.getArgumentExpression()
+      : undefined;
+    return { form: "export-property", name, declarationNode: target, nameLiteral, ...assigned };
+  }
+
+  private static moduleExportsValue(
+    target: PropertyAccessExpression | ElementAccessExpression,
+  ): JavaScriptAssignmentDeclaration | undefined {
+    const assigned = JavaScriptAssignmentDeclarations.assignedTo(target);
+    if (!assigned) return undefined;
+    const value = JavaScriptAssignmentDeclarations.withoutParentheses(assigned.value);
+    const assignsObjectOrItself =
+      Node.isObjectLiteralExpression(value) ||
+      JavaScriptAssignmentDeclarations.isExportsObject(value);
+    if (assignsObjectOrItself) return undefined;
+    return {
+      form: "module-exports",
+      name: "default",
+      declarationNode: target,
+      nameLiteral: undefined,
+      ...assigned,
+    };
+  }
+
+  private static assignedTo(target: Node): { value: Node; statement: Node } | undefined {
     const assignment = target.getParent();
     const isAssignmentTarget =
       JavaScriptAssignmentDeclarations.isAssignment(assignment) && assignment.getLeft() === target;
     if (!isAssignmentTarget) return undefined;
-    if (!JavaScriptAssignmentDeclarations.isExportsObject(target.getExpression())) return undefined;
     const value = JavaScriptAssignmentDeclarations.assignedValue(assignment);
     if (JavaScriptAssignmentDeclarations.isVoidZero(value)) return undefined;
-    const name = JavaScriptAssignmentDeclarations.staticAccessName(target);
-    if (name === undefined) return undefined;
-    if (JavaScriptAssignmentDeclarations.aliasesSameNameLocal(value, name)) return undefined;
     const statement = target.getFirstAncestor(Node.isStatement);
-    if (!statement) return undefined;
-    const nameLiteral = Node.isElementAccessExpression(target)
-      ? target.getArgumentExpression()
-      : undefined;
-    return {
-      form: "export-property",
-      name,
-      declarationNode: target,
-      nameLiteral,
-      value,
-      statement,
-    };
+    return statement ? { value, statement } : undefined;
+  }
+
+  private static withoutParentheses(expression: Node): Node {
+    return Node.isParenthesizedExpression(expression)
+      ? JavaScriptAssignmentDeclarations.withoutParentheses(expression.getExpression())
+      : expression;
   }
 
   private static assignedValue(assignment: BinaryExpression): Node {

@@ -446,6 +446,7 @@ export class OverviewChildrenExtractor {
   private static assignmentDeclarationLabel(
     declaration: JavaScriptAssignmentDeclaration,
   ): TypeScriptSymbolKind {
+    if (declaration.form === "module-exports") return "default-export";
     if (Node.isGetAccessorDeclaration(declaration.value)) return "getter";
     if (Node.isSetAccessorDeclaration(declaration.value)) return "setter";
     if (OverviewChildrenExtractor.isFunctionValue(declaration.value)) {

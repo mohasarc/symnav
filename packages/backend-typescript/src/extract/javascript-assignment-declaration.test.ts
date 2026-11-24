@@ -145,6 +145,80 @@ describe("CommonJS export declarations in overview", () => {
     expect(idsOf(source)).toHaveLength(topLevel.length);
   });
 
+  it("lists the members of a module.exports object literal", () => {
+    const source = [
+      "function a() {}",
+      "module.exports = {",
+      "  a,",
+      "  b(x) {",
+      "    return x;",
+      "  },",
+      "  c: 1,",
+      "  d: function () {},",
+      "};",
+    ].join("\n");
+
+    expect(summariesOf(source)).toEqual([
+      {
+        id: "input.js::a",
+        label: "function-implementation",
+        range: [1, 1],
+        header: ["function a()"],
+      },
+      { id: "input.js::b", label: "function-implementation", range: [4, 6], header: ["b(x)"] },
+      { id: "input.js::c", label: "variable", range: [7, 7], header: ["c: 1"] },
+      {
+        id: "input.js::d",
+        label: "function-implementation",
+        range: [8, 8],
+        header: ["d: function () {}"],
+      },
+    ]);
+  });
+
+  it("lists module.exports object accessors and literal-named members", () => {
+    const source = [
+      "module.exports = {",
+      "  get size() { return 1; },",
+      "  set size(value) {},",
+      '  ["computed"]: 1,',
+      "  7: 2,",
+      "  0x10: 3,",
+      '  "dash-key": 4,',
+      "  [`template`]: 5,",
+      "  [dynamic]: 6,",
+      "  ...rest,",
+      "};",
+    ].join("\n");
+
+    expect(
+      summariesOf(source).map((summary) => [summary.id, summary.label, summary.header]),
+    ).toEqual([
+      ["input.js::size#1", "getter", ["get size()"]],
+      ["input.js::size#2", "setter", ["set size(value)"]],
+      ["input.js::computed", "variable", ['["computed"]: 1']],
+      ["input.js::7", "variable", ["7: 2"]],
+      ["input.js::16", "variable", ["0x10: 3"]],
+      ["input.js::dash-key", "variable", ['"dash-key": 4']],
+      ["input.js::template", "variable", ["[`template`]: 5"]],
+    ]);
+  });
+
+  it("lists the members of a parenthesized or chained module.exports object literal", () => {
+    expect(idsOf("module.exports = ({ a: 1 });\nmodule.exports = exports = { b: 2 };")).toEqual([
+      "input.js::a",
+      "input.js::b",
+    ]);
+  });
+
+  it("nests declarations from a module.exports method body under the member", () => {
+    const source = ["module.exports = {", "  b() {", "    function inner() {}", "  },", "};"].join(
+      "\n",
+    );
+
+    expect(idsOf(source)).toEqual(["input.js::b", "input.js::b::inner"]);
+  });
+
   it("emits no node for CommonJS export syntax in a file with ES module syntax", () => {
     const source = [
       'import helper from "./helper";',
@@ -160,7 +234,11 @@ describe("CommonJS export declarations in overview", () => {
   });
 
   it("emits no symbols for the same syntax in a TypeScript file", () => {
-    const source = ["exports.foo = function () {};", "module.exports.bar = 1;"].join("\n");
+    const source = [
+      "exports.foo = function () {};",
+      "module.exports.bar = 1;",
+      "module.exports = { baz: 1 };",
+    ].join("\n");
 
     expect(OverviewTree.walkSymbols(fileEntriesOf(source, "input.ts").entries)).toEqual([]);
   });

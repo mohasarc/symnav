@@ -19,6 +19,12 @@ describe("UnsupportedFileError", () => {
     );
   });
 
+  it("names the file kind in place of the extension", () => {
+    expect(new UnsupportedFileError("src/x.js", { fileKind: "Flow-typed" }).reason).toBe(
+      "cannot read Flow-typed files (src/x.js)",
+    );
+  });
+
   it("renders a specific reason for extensionless files", () => {
     expect(new UnsupportedFileError("README").reason).toBe(
       "README has no file extension; expected a source file",

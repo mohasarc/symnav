@@ -14,9 +14,11 @@ import type {
   ResolvedPath,
   SymbolOverviewNode,
   SymbolIdentity,
+  UnsupportedFileError,
 } from "@symnav/core";
 import { FileNotFoundError, WorkspaceSourceCache } from "@symnav/core";
 
+import { FlowTypedFiles } from "../flow/flow-typed-files.js";
 import { SymbolResolver } from "../resolve/resolve-symbols.js";
 import { TypeScriptProjectGraph } from "./typescript-project-graph.js";
 import type { TypeScriptSemanticQueryObserver } from "./typescript-semantic-query-observer.js";
@@ -45,6 +47,7 @@ export class TypeScriptBackend implements LanguageBackend {
   private readonly projectGraph: TypeScriptProjectGraph | undefined;
   private readonly sourceCache: WorkspaceSourceCache | undefined;
   private readonly semanticQueries: TypeScriptSemanticQueryService;
+  private readonly flowTypedFiles: FlowTypedFiles;
 
   constructor(
     private readonly fs: FileSystem,
@@ -54,6 +57,7 @@ export class TypeScriptBackend implements LanguageBackend {
     extractor: TypeScriptFileExtractor = new TypeScriptFileEntryExtractor(),
   ) {
     if (state) {
+      this.flowTypedFiles = new FlowTypedFiles(fs, TypeScriptBackend.javascriptExtensions);
       this.state = state;
       this.projectGraph = projectGraph;
       this.sourceCache = undefined;
@@ -65,6 +69,10 @@ export class TypeScriptBackend implements LanguageBackend {
       return;
     }
     this.sourceCache = new WorkspaceSourceCache(fs);
+    this.flowTypedFiles = new FlowTypedFiles(
+      this.sourceCache,
+      TypeScriptBackend.javascriptExtensions,
+    );
     this.projectGraph = projectGraph ?? new TypeScriptProjectGraph(this.sourceCache, observer);
     this.state = new TypeScriptWorkspaceState(this.sourceCache, extractor, this.projectGraph);
     this.semanticQueries = new TypeScriptSemanticQueryService(
@@ -80,10 +88,17 @@ export class TypeScriptBackend implements LanguageBackend {
 
   async refresh(request: BackendRefreshRequest): Promise<BackendRefreshSummary> {
     this.sourceCache?.refresh(request.snapshot);
-    if (request.coverage === "workspace") await this.projectGraph?.refresh(request.snapshot);
-    const summary = await this.state.refresh(request.snapshot.files, request.coverage);
-    this.semanticQueries.beginTurn(request.snapshot.files);
+    const snapshot = await this.flowTypedFiles.refresh(request.snapshot, request.coverage);
+    this.sourceCache?.refresh(snapshot);
+    if (request.coverage === "workspace")
+      await this.projectGraph?.refresh(snapshot, this.flowTypedFiles);
+    const summary = await this.state.refresh(snapshot.files, request.coverage);
+    this.semanticQueries.beginTurn(snapshot.files);
     return summary;
+  }
+
+  refusal(filePath: string): UnsupportedFileError | undefined {
+    return this.flowTypedFiles.refusal(filePath);
   }
 
   async releaseTransientResources(): Promise<void> {
@@ -91,6 +106,8 @@ export class TypeScriptBackend implements LanguageBackend {
   }
 
   async fileEntries(file: ResolvedPath): Promise<OverviewFileEntries> {
+    const refusal = this.refusal(file.relative);
+    if (refusal) throw refusal;
     if (!this.fs.existsSync(file.absolute) || this.fs.isDirectorySync(file.absolute)) {
       throw new FileNotFoundError(file.relative);
     }
@@ -102,18 +119,23 @@ export class TypeScriptBackend implements LanguageBackend {
     query: string,
     options: ResolveSymbolsOptions,
   ): Promise<readonly SymbolOverviewNode[]> {
-    return SymbolResolver.resolveSymbols({ state: this.state, files, query, options });
+    return SymbolResolver.resolveSymbols({
+      state: this.state,
+      files: this.flowTypedFiles.answerable(files),
+      query,
+      options,
+    });
   }
 
   async declarations(files: readonly ResolvedPath[]): Promise<readonly SymbolOverviewNode[]> {
-    return await this.state.declarations(files);
+    return await this.state.declarations(this.flowTypedFiles.answerable(files));
   }
 
   async findDefinitions(
     files: readonly ResolvedPath[],
     identity: SymbolIdentity,
   ): Promise<readonly DefinitionSymbol[]> {
-    await this.state.ensureFiles(files);
+    await this.state.ensureFiles(this.flowTypedFiles.answerable(files));
     return this.semanticQueries.findDefinitions(identity);
   }
 
@@ -121,7 +143,7 @@ export class TypeScriptBackend implements LanguageBackend {
     files: readonly ResolvedPath[],
     identity: SymbolIdentity,
   ): Promise<readonly SymbolReference[]> {
-    await this.state.ensureFiles(files);
+    await this.state.ensureFiles(this.flowTypedFiles.answerable(files));
     return this.semanticQueries.findReferences(identity);
   }
 
@@ -129,7 +151,7 @@ export class TypeScriptBackend implements LanguageBackend {
     files: readonly ResolvedPath[],
     identity: SymbolIdentity,
   ): Promise<CallTargetResolution> {
-    await this.state.ensureFiles(files);
+    await this.state.ensureFiles(this.flowTypedFiles.answerable(files));
     return this.semanticQueries.findCallTarget(identity);
   }
 
@@ -137,7 +159,7 @@ export class TypeScriptBackend implements LanguageBackend {
     files: readonly ResolvedPath[],
     identity: SymbolIdentity,
   ): Promise<readonly CallEdge[]> {
-    await this.state.ensureFiles(files);
+    await this.state.ensureFiles(this.flowTypedFiles.answerable(files));
     return this.semanticQueries.findCallees(identity);
   }
 
@@ -145,7 +167,7 @@ export class TypeScriptBackend implements LanguageBackend {
     files: readonly ResolvedPath[],
     identity: SymbolIdentity,
   ): Promise<readonly CallEdge[]> {
-    await this.state.ensureFiles(files);
+    await this.state.ensureFiles(this.flowTypedFiles.answerable(files));
     return this.semanticQueries.findCallers(identity);
   }
 

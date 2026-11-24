@@ -166,6 +166,28 @@ describe("BackendRouter", () => {
     expect(router.find("foo.json")).toBeUndefined();
   });
 
+  it("returns undefined for a file the accepting backend refuses", () => {
+    const refusal = new UnsupportedFileError("src/x.js", { fileKind: "Flow-typed" });
+    const jsBackend = refusingBackend("js", (p) => p.endsWith(".js"), ["src/x.js"], refusal);
+    const router = new BackendRouter([jsBackend]);
+
+    expect(router.find("src/x.js")).toBeUndefined();
+    expect((router.find("src/y.js") as FakeBackend | undefined)?.label).toBe("js");
+  });
+
+  it("refreshes a refused file with its accepting backend", async () => {
+    const refusal = new UnsupportedFileError("src/x.js", { fileKind: "Flow-typed" });
+    const jsBackend = refusingBackend("js", (p) => p.endsWith(".js"), ["src/x.js"], refusal);
+    const router = new BackendRouter([jsBackend]);
+    const file = workspaceFile("src/x.js");
+
+    await router.refresh({ root: "/repo", files: [file] });
+
+    expect(jsBackend.refreshCalls).toEqual([
+      { snapshot: { root: "/repo", files: [file] }, coverage: "workspace" },
+    ]);
+  });
+
   it("preserves registration order on tie", () => {
     const first = fakeBackend("first", () => true);
     const second = fakeBackend("second", () => true);
@@ -196,8 +218,44 @@ describe("BackendRouter", () => {
         expect((err as UnsupportedFileError).reason).toContain("foo.json");
       }
     });
+
+    it("throws the accepting backend's refusal of the file", () => {
+      const refusal = new UnsupportedFileError("src/x.js", { fileKind: "Flow-typed" });
+      const jsBackend = refusingBackend("js", (p) => p.endsWith(".js"), ["src/x.js"], refusal);
+      const router = new BackendRouter([jsBackend]);
+
+      expect(() => router.findOrThrow("src/x.js")).toThrow(refusal);
+      expect((router.findOrThrow("src/y.js") as FakeBackend).label).toBe("js");
+    });
+  });
+
+  describe("findAcceptingOrThrow", () => {
+    it("returns the accepting backend even when it refuses the file", () => {
+      const refusal = new UnsupportedFileError("src/x.js", { fileKind: "Flow-typed" });
+      const jsBackend = refusingBackend("js", (p) => p.endsWith(".js"), ["src/x.js"], refusal);
+      const router = new BackendRouter([jsBackend]);
+
+      expect((router.findAcceptingOrThrow("src/x.js") as FakeBackend).label).toBe("js");
+    });
+
+    it("throws UnsupportedFileError when no backend accepts", () => {
+      const router = new BackendRouter([fakeBackend("ts", (p) => p.endsWith(".ts"))]);
+
+      expect(() => router.findAcceptingOrThrow("foo.json")).toThrow(UnsupportedFileError);
+    });
   });
 });
+
+function refusingBackend(
+  label: string,
+  accepts: (path: string) => boolean,
+  refusedPaths: readonly string[],
+  refusal: UnsupportedFileError,
+): FakeBackend {
+  return Object.assign(fakeBackend(label, accepts), {
+    refusal: (path: string) => (refusedPaths.includes(path) ? refusal : undefined),
+  });
+}
 
 function workspaceFile(relative: string): WorkspaceFile {
   return {

@@ -7,8 +7,15 @@ function unsupported(): never {
   throw new Error(UNSUPPORTED_HOST_METHOD);
 }
 
+export interface HiddenWorkspaceFiles {
+  hides(absolutePath: string): boolean;
+}
+
 export class WorkspaceFileSystemHost implements FileSystemHost {
-  constructor(private readonly fs: FileSystem) {}
+  constructor(
+    private readonly fs: FileSystem,
+    private readonly hiddenFiles?: HiddenWorkspaceFiles,
+  ) {}
 
   isCaseSensitive(): boolean {
     return true;
@@ -23,10 +30,11 @@ export class WorkspaceFileSystemHost implements FileSystemHost {
   }
 
   async fileExists(filePath: string): Promise<boolean> {
-    return this.fs.existsSync(filePath) && !this.fs.isDirectorySync(filePath);
+    return this.fileExistsSync(filePath);
   }
 
   fileExistsSync(filePath: string): boolean {
+    if (this.hiddenFiles?.hides(filePath) === true) return false;
     return this.fs.existsSync(filePath) && !this.fs.isDirectorySync(filePath);
   }
 

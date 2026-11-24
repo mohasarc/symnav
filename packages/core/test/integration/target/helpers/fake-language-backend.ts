@@ -9,6 +9,7 @@ import type {
   ResolvedPath,
   SymbolIdentity,
   SymbolOverviewNode,
+  UnsupportedFileError,
 } from "../../../../src/index.js";
 
 type CollapsedTargetIdentity = (
@@ -20,6 +21,7 @@ export interface FakeLanguageBackendOptions {
   entries?: (filePath: string) => OverviewFileEntries;
   declarations?: readonly SymbolOverviewNode[];
   collapsedTargetIdentity?: CollapsedTargetIdentity;
+  refuse?: (filePath: string) => UnsupportedFileError | undefined;
 }
 
 export class FakeLanguageBackend implements LanguageBackend {
@@ -30,11 +32,13 @@ export class FakeLanguageBackend implements LanguageBackend {
   private readonly acceptFn: (filePath: string) => boolean;
   private readonly entriesFn: (filePath: string) => OverviewFileEntries;
   private readonly declarationSymbols: readonly SymbolOverviewNode[];
+  private readonly refuseFn: (filePath: string) => UnsupportedFileError | undefined;
 
   constructor(options: FakeLanguageBackendOptions = {}) {
     this.acceptFn = options.accept ?? (() => true);
     this.entriesFn = options.entries ?? ((filePath: string) => ({ file: filePath, entries: [] }));
     this.declarationSymbols = options.declarations ?? [];
+    this.refuseFn = options.refuse ?? (() => undefined);
     const collapse = options.collapsedTargetIdentity;
     if (collapse) {
       this.collapsedTargetIdentity = (candidates) => {
@@ -46,6 +50,10 @@ export class FakeLanguageBackend implements LanguageBackend {
 
   accepts(filePath: string): boolean {
     return this.acceptFn(filePath);
+  }
+
+  refusal(filePath: string): UnsupportedFileError | undefined {
+    return this.refuseFn(filePath);
   }
 
   async refresh(request: BackendRefreshRequest): Promise<BackendRefreshSummary> {

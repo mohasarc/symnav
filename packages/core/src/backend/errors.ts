@@ -6,6 +6,7 @@ import type { SymbolIdentity } from "../intermediate-representation/symbol-ident
 import type { SymbolOverviewNode } from "../intermediate-representation/overview-tree.js";
 
 export interface UnsupportedFileErrorOptions {
+  readonly fileKind?: string;
   readonly additionalMatchCount?: number;
 }
 
@@ -18,7 +19,14 @@ export class UnsupportedFileError extends UserFacingError {
     this.name = "UnsupportedFileError";
   }
 
+  withAdditionalMatchCount(additionalMatchCount: number): UnsupportedFileError {
+    return new UnsupportedFileError(this.inputPath, { ...this.options, additionalMatchCount });
+  }
+
   get reason(): string {
+    if (this.options.fileKind !== undefined) {
+      return `cannot read ${this.options.fileKind} files (${this.citedPaths})`;
+    }
     const extension = extname(this.inputPath);
     if (extension === "") {
       return `${this.inputPath} has no file extension; expected a source file`;

@@ -391,6 +391,29 @@ describe("TypeScriptBackend declaration and implementation pairs", () => {
     expect(referenceLocations(fromDeclaration)).toEqual(expected);
   });
 
+  it.each(["function x(): number;", "const x: () => number;"])(
+    "links a .d.ts namespace member %s to the static JavaScript member, not the same-named instance member",
+    async (namespaceMemberSource) => {
+      const { backend, files } = await backendOverSources({
+        "src/foo.js":
+          "export class Foo {\n  x() { return 1; }\n  static x() { return 2; }\n}\nexport const first = Foo.x();\nexport const second = new Foo().x();\n",
+        "src/foo.d.ts": `export declare class Foo {\n  x(): number;\n}\nexport declare namespace Foo {\n  ${namespaceMemberSource}\n}\n`,
+        "src/use.ts": 'import { Foo } from "./foo";\nexport const viaClass = Foo.x();\n',
+      });
+      const namespaceMember: SymbolIdentity = {
+        file: "src/foo.d.ts",
+        segments: [{ name: "Foo", disambiguator: 2 }, { name: "x" }],
+      };
+
+      const definitions = await backend.findDefinitions(files, namespaceMember);
+
+      expect(definitionRoles(definitions)).toEqual([
+        ["src/foo.js::Foo::x#2", "implementation"],
+        ["src/foo.d.ts::Foo#2::x", "declaration"],
+      ]);
+    },
+  );
+
   it("links static and instance members of a pair separately", async () => {
     const { backend, files } = await backendOverSources(staticAndInstanceSources);
     const staticImplementation: SymbolIdentity = {

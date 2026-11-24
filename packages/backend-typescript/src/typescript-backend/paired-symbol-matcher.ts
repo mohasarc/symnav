@@ -116,7 +116,7 @@ export class PairedSymbolMatcher {
       const local = this.topLevelDeclarationOf(identifier, checker, exportedNode.getSourceFile());
       if (local) return local;
     }
-    return undefined;
+    return Node.isBinaryExpression(exportedNode) ? exportedNode.getLeft() : undefined;
   }
 
   private topLevelDeclarationOf(

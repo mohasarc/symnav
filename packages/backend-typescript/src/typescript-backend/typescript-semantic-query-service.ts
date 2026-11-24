@@ -15,6 +15,8 @@ import { CallerFinder } from "../call-graph/find-callers.js";
 import { findCallees, type PositionDefinitionResolver } from "../call-graph/find-callees.js";
 import { findDefinitions } from "../definition/find-definitions.js";
 import { classifyReferenceKind } from "../references/classify-reference-kind.js";
+import { DeclarationImplementationPairs } from "./declaration-implementation-pairs.js";
+import { PairedSymbolMatcher } from "./paired-symbol-matcher.js";
 import type { TypeScriptProjectGraph } from "./typescript-project-graph.js";
 import type { TypeScriptSemanticQueryObserver } from "./typescript-semantic-query-observer.js";
 import type { TypeScriptWorkspaceState } from "./typescript-workspace-state.js";
@@ -53,12 +55,19 @@ export class TypeScriptSemanticQueryService implements PositionDefinitionResolve
     string,
     readonly SemanticNodeLocation[]
   >();
+  private readonly pairs: DeclarationImplementationPairs | undefined;
+  private readonly pairedSymbols: PairedSymbolMatcher;
 
   constructor(
     private readonly projects: TypeScriptProjectGraph | undefined,
     private readonly workspaceState: TypeScriptWorkspaceState,
     private readonly observer?: TypeScriptSemanticQueryObserver,
-  ) {}
+  ) {
+    this.pairs = projects
+      ? new DeclarationImplementationPairs(projects, workspaceState)
+      : undefined;
+    this.pairedSymbols = new PairedSymbolMatcher(workspaceState);
+  }
 
   beginTurn(files: readonly WorkspaceFile[]): void {
     this.files = files;
@@ -171,10 +180,14 @@ export class TypeScriptSemanticQueryService implements PositionDefinitionResolve
   }
 
   private findReferenceLocations(identity: SymbolIdentity): readonly SemanticReferenceLocation[] {
-    const declarationNodes = this.workspaceState
-      .locateSemanticCopies(identity)
-      .map((located) => located.node);
-    if (declarationNodes.length === 0) throw new SymbolNotFoundError(identity);
+    const ownDeclarationNodes = this.semanticDeclarationNodes(identity);
+    if (ownDeclarationNodes.length === 0) throw new SymbolNotFoundError(identity);
+    const declarationNodes = [
+      ...ownDeclarationNodes,
+      ...this.counterpartIdentities(identity).flatMap((counterpart) =>
+        this.semanticDeclarationNodes(counterpart),
+      ),
+    ];
     const locations = declarationNodes.flatMap((declarationNode) =>
       TypeScriptSemanticQueryService.referenceEntriesOf(declarationNode).flatMap((entry) => {
         const node = entry.getNode();
@@ -199,6 +212,16 @@ export class TypeScriptSemanticQueryService implements PositionDefinitionResolve
       );
     }
     return [...byLocation.values()];
+  }
+
+  private semanticDeclarationNodes(identity: SymbolIdentity): readonly Node[] {
+    return this.workspaceState.locateSemanticCopies(identity).map((located) => located.node);
+  }
+
+  private counterpartIdentities(identity: SymbolIdentity): readonly SymbolIdentity[] {
+    return (this.pairs?.filePairsOf(identity.file) ?? []).flatMap((pair) =>
+      this.pairedSymbols.counterparts(identity, pair),
+    );
   }
 
   private async resolveCallTarget(identity: SymbolIdentity): Promise<CallTargetResolution> {

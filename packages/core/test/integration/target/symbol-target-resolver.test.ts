@@ -60,6 +60,17 @@ class ResolverScenario {
     });
   }
 
+  static pairCollapsingFake(
+    targetCandidates: readonly SymbolTargetCandidate[],
+    collapsedTargetIdentity: (candidates: readonly SymbolIdentity[]) => SymbolIdentity | undefined,
+  ): FakeLanguageBackend {
+    return new FakeLanguageBackend({
+      accept: (filePath) => !filePath.endsWith(".zz"),
+      declarations: targetCandidates.map((candidate) => candidate.symbol),
+      collapsedTargetIdentity,
+    });
+  }
+
   static zetaFake(targetCandidates: readonly SymbolTargetCandidate[]): FakeLanguageBackend {
     return new FakeLanguageBackend({
       accept: (filePath) => filePath.endsWith(".zz"),
@@ -473,6 +484,38 @@ describe("SymbolTargetResolver.resolve across backends", () => {
     );
 
     expect(typescriptBackend.declarationCalls).toEqual([["src/alpha.ts", "src/gamma.ts"]]);
+  });
+});
+
+describe("SymbolTargetResolver.resolve with a backend target collapse", () => {
+  const pairFiles: readonly ResolvedPath[] = [
+    { relative: "src/alpha.d.ts", absolute: "/repo/src/alpha.d.ts" },
+    { relative: "src/alpha.js", absolute: "/repo/src/alpha.js" },
+    { relative: "src/beta.zz", absolute: "/repo/src/beta.zz" },
+    { relative: "src/gamma.ts", absolute: "/repo/src/gamma.ts" },
+  ];
+  const implementation: SymbolIdentity = { file: "src/alpha.js", segments: [{ name: "Tabs" }] };
+  const declaration: SymbolIdentity = { file: "src/alpha.d.ts", segments: [{ name: "Tabs" }] };
+
+  it("resolves to the candidate the owning backend collapses the candidates to", async () => {
+    const backend = ResolverScenario.pairCollapsingFake(
+      [
+        ResolverScenario.candidateFor(implementation.file, implementation.segments),
+        ResolverScenario.candidateFor(declaration.file, declaration.segments),
+      ],
+      () => implementation,
+    );
+
+    const resolved = await ResolverScenario.resolveWith(
+      new BackendRouter([backend]),
+      "Tabs",
+      undefined,
+      pairFiles,
+    );
+
+    expect(resolved.identity).toEqual(implementation);
+    expect(resolved.backend).toBe(backend);
+    expect(backend.collapseCalls).toEqual([[declaration, implementation]]);
   });
 });
 

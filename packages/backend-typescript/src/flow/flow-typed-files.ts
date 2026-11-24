@@ -13,8 +13,13 @@ import { FlowPragmaDetector } from "./flow-pragma-detector.js";
 
 const FLOW_TYPED_FILE_KIND = "Flow-typed";
 
+interface FlowPragmaVerdict {
+  readonly changeToken: string;
+  readonly flowTyped: boolean;
+}
+
 export class FlowTypedFiles {
-  private flowTypedPaths = new Set<string>();
+  private verdictsByRelativePath = new Map<string, FlowPragmaVerdict>();
 
   constructor(
     private readonly fileSystem: FileSystem,
@@ -25,31 +30,41 @@ export class FlowTypedFiles {
     snapshot: WorkspaceSnapshot,
     coverage: BackendRefreshCoverage,
   ): Promise<WorkspaceSnapshot> {
-    const flowTypedPaths =
-      coverage === "workspace" ? new Set<string>() : new Set(this.flowTypedPaths);
+    const verdictsByRelativePath =
+      coverage === "workspace"
+        ? new Map<string, FlowPragmaVerdict>()
+        : new Map(this.verdictsByRelativePath);
     for (const file of snapshot.files) {
-      if (await this.isFlowTyped(file)) {
-        flowTypedPaths.add(file.relative);
-      } else {
-        flowTypedPaths.delete(file.relative);
-      }
+      if (!this.checks(file)) continue;
+      verdictsByRelativePath.set(file.relative, await this.verdictFor(file));
     }
-    this.flowTypedPaths = flowTypedPaths;
+    this.verdictsByRelativePath = verdictsByRelativePath;
     return { root: snapshot.root, files: this.answerable(snapshot.files) };
   }
 
   answerable<File extends ResolvedPath>(files: readonly File[]): readonly File[] {
-    return files.filter((file) => !this.flowTypedPaths.has(file.relative));
+    return files.filter((file) => !this.isFlowTyped(file.relative));
   }
 
   refusal(relativePath: string): UnsupportedFileError | undefined {
-    if (!this.flowTypedPaths.has(relativePath)) return undefined;
+    if (!this.isFlowTyped(relativePath)) return undefined;
     return new UnsupportedFileError(relativePath, { fileKind: FLOW_TYPED_FILE_KIND });
   }
 
-  private async isFlowTyped(file: WorkspaceFile): Promise<boolean> {
+  private isFlowTyped(relativePath: string): boolean {
+    return this.verdictsByRelativePath.get(relativePath)?.flowTyped ?? false;
+  }
+
+  private checks(file: WorkspaceFile): boolean {
     const name = basename(file.relative);
-    if (!this.checkedExtensions.some((extension) => name.endsWith(extension))) return false;
-    return FlowPragmaDetector.hasFlowPragma(await this.fileSystem.readFile(file.absolute));
+    return this.checkedExtensions.some((extension) => name.endsWith(extension));
+  }
+
+  private async verdictFor(file: WorkspaceFile): Promise<FlowPragmaVerdict> {
+    const changeToken = file.metadata.changeToken;
+    const previous = this.verdictsByRelativePath.get(file.relative);
+    if (previous?.changeToken === changeToken) return previous;
+    const text = await this.fileSystem.readFile(file.absolute);
+    return { changeToken, flowTyped: FlowPragmaDetector.hasFlowPragma(text) };
   }
 }

@@ -601,6 +601,29 @@ describe("TypeScriptBackend callees of declaration and implementation pairs", ()
     },
   );
 
+  it("reports a call into a paired .d.ts as one edge to its JavaScript implementation", async () => {
+    const { backend, files } = await backendOverSources(pairedCalleeSources);
+
+    const callees = await backend.findCallees(files, identity("src/app.ts", "app"));
+
+    expect(calleeIdentities(callees)).toEqual(["src/tabs.js::tabs", "src/tabs.js::Tabs"]);
+  });
+
+  it.each([
+    ["src/App.tsx", ["App"], ["src/Tabs/Tabs.js::Tabs"]],
+    ["src/hooks/useTabs.js", ["useTabs"], ["src/Tabs/Tabs.js::Tabs"]],
+    ["src/cjs/consumer.js", ["run"], ["src/cjs/util.js::helper"]],
+  ])(
+    "reports callees of %s %j as the JavaScript implementations",
+    async (file, names, expected) => {
+      const { backend, files } = await backendOverPairFixture();
+
+      const callees = await backend.findCallees(files, identity(file, ...names));
+
+      expect(calleeIdentities(callees)).toEqual(expected);
+    },
+  );
+
   it("continues an outgoing graph path through a .d.ts into its JavaScript twin's body", async () => {
     const { backend, files } = await backendOverSources(pairedCalleeSources);
     const [root] = await backend.findDefinitions(files, identity("src/app.ts", "app"));

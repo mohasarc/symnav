@@ -63,7 +63,7 @@ class TypeScriptSemanticProject {
   private loaded = false;
 
   constructor(
-    private readonly fileSystem: FileSystem,
+    private readonly fileSystemHost: WorkspaceFileSystemHost,
     private readonly compilerOptions: ts.CompilerOptions,
     private readonly ownedFiles: readonly WorkspaceFile[],
     private readonly sourceFileRegistry: SharedSourceFileRegistry,
@@ -108,7 +108,7 @@ class TypeScriptSemanticProject {
 
   private createProject(): Project {
     const project = new Project({
-      fileSystem: new WorkspaceFileSystemHost(this.fileSystem),
+      fileSystem: this.fileSystemHost,
       compilerOptions: this.compilerOptions,
       skipAddingFilesFromTsConfig: true,
     });
@@ -288,10 +288,11 @@ export class TypeScriptProjectGraph
       configurations,
       request.inputCollector,
     );
+    const fileSystemHost = new WorkspaceFileSystemHost(this.fileSystem);
     const configuredProjects = request.configurations.map(
       ({ configuration, files }) =>
         new TypeScriptSemanticProject(
-          this.fileSystem,
+          fileSystemHost,
           TypeScriptProjectGraph.compilerOptionsFor(
             request.snapshot.root,
             configuration,
@@ -304,7 +305,7 @@ export class TypeScriptProjectGraph
         ),
     );
     const inferredProject = new TypeScriptSemanticProject(
-      this.fileSystem,
+      fileSystemHost,
       TypeScriptProjectGraph.inferredCompilerOptions(request.snapshot.root, workspacePackages),
       request.inferredFiles,
       this.sourceFileRegistry,

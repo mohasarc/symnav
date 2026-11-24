@@ -291,6 +291,43 @@ describe("TypeScriptBackend expando member declarations", () => {
     expect(referenceLocations(references)).toEqual(["src/use.js:2"]);
   });
 
+  it.each([
+    ["a class expression method", "var A = class { m() {} }; A.m = function () {};"],
+    ["a class expression static method", "var A = class { static m() {} }; A.m = function () {};"],
+    ["a later object literal method", "A.m = function () {}; function A() {} var o = { m() {} };"],
+  ])(
+    "locates a static member apart from %s with the same name on its line",
+    async (_neighbour, declaration) => {
+      const { backend, files } = await backendOverSources({
+        "src/lib.js": `${declaration}\nA.m();\nnew A().m();\nexports.A = A;\n`,
+      });
+
+      const references = await backend.findReferences(files, identity("src/lib.js", "A", "m"));
+
+      expect(referenceLocations(references)).toEqual(["src/lib.js:2"]);
+    },
+  );
+
+  it("locates functions nested in an unnamed default export next to a same-line expando member", async () => {
+    const { backend, files } = await backendOverSources({
+      "src/lib.js":
+        "export default function () { function Foo() {} Foo.x = 1; function x() {} x(); }\n",
+    });
+    const nested: SymbolIdentity = { file: "src/lib.js", segments: [{ name: "" }, { name: "x" }] };
+    const member: SymbolIdentity = {
+      file: "src/lib.js",
+      segments: [{ name: "" }, { name: "Foo" }, { name: "x" }],
+    };
+
+    const nestedReferences = await backend.findReferences(files, nested);
+    const memberDefinitions = await backend.findDefinitions(files, member);
+
+    expect(referenceLocations(nestedReferences)).toEqual(["src/lib.js:1"]);
+    expect(
+      memberDefinitions.map((definition) => formatSymbolIdentity(definition.identity)),
+    ).toEqual(["src/lib.js::::Foo::x"]);
+  });
+
   it("resolves an Object.defineProperty member of a function and finds its users", async () => {
     const { backend, files } = await backendOverSources({
       "src/lib.js":

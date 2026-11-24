@@ -4,6 +4,8 @@ import {
   formatSymbolIdentity,
   type CallEdge,
   type CallTargetResolution,
+  type DefinitionPairRole,
+  type DefinitionSymbol,
   type SymbolIdentity,
   type SymbolOverviewNode,
   type SymbolReference,
@@ -33,7 +35,7 @@ export class TypeScriptSemanticQueryService implements PositionDefinitionResolve
   private readonly cacheScope = new TurnScopedCacheScope();
   private readonly definitionsByIdentity = this.cacheScope.createCache<
     string,
-    Promise<readonly SymbolOverviewNode[]>
+    Promise<readonly DefinitionSymbol[]>
   >();
   private readonly referencesByIdentity = this.cacheScope.createCache<
     string,
@@ -74,15 +76,11 @@ export class TypeScriptSemanticQueryService implements PositionDefinitionResolve
     this.cacheScope.beginTurn();
   }
 
-  findDefinitions(identity: SymbolIdentity): Promise<readonly SymbolOverviewNode[]> {
+  findDefinitions(identity: SymbolIdentity): Promise<readonly DefinitionSymbol[]> {
     const key = formatSymbolIdentity(identity);
     return this.definitionsByIdentity.getOrCreate(key, () => {
       this.observer?.definitionSearch?.(identity);
-      return findDefinitions({
-        workspaceState: this.workspaceState,
-        files: this.files,
-        identity,
-      });
+      return this.pairedDefinitions(identity);
     });
   }
 
@@ -222,6 +220,41 @@ export class TypeScriptSemanticQueryService implements PositionDefinitionResolve
     return (this.pairs?.filePairsOf(identity.file) ?? []).flatMap((pair) =>
       this.pairedSymbols.counterparts(identity, pair),
     );
+  }
+
+  private async pairedDefinitions(identity: SymbolIdentity): Promise<readonly DefinitionSymbol[]> {
+    const ownDefinitions = await this.definitionsOf(identity);
+    const counterparts = this.counterpartIdentities(identity);
+    if (counterparts.length === 0) return ownDefinitions;
+    const counterpartDefinitions = await Promise.all(
+      counterparts.map((counterpart) => this.definitionsOf(counterpart)),
+    );
+    const byIdentity = new Map<string, SymbolOverviewNode>();
+    for (const definition of [...ownDefinitions, ...counterpartDefinitions.flat()]) {
+      byIdentity.set(formatSymbolIdentity(definition.identity), definition);
+    }
+    const tagged = [...byIdentity.values()].map((definition) => this.withPairRole(definition));
+    return [
+      ...tagged.filter((definition) => definition.pairRole === "implementation"),
+      ...tagged.filter((definition) => definition.pairRole !== "implementation"),
+    ];
+  }
+
+  private definitionsOf(identity: SymbolIdentity): Promise<readonly SymbolOverviewNode[]> {
+    return findDefinitions({ workspaceState: this.workspaceState, files: this.files, identity });
+  }
+
+  private withPairRole(definition: SymbolOverviewNode): DefinitionSymbol {
+    const pairRole = this.pairRoleOf(definition.identity);
+    return pairRole ? { ...definition, pairRole } : definition;
+  }
+
+  private pairRoleOf(identity: SymbolIdentity): DefinitionPairRole | undefined {
+    const linkedPair = (this.pairs?.filePairsOf(identity.file) ?? []).find(
+      (pair) => this.pairedSymbols.counterparts(identity, pair).length > 0,
+    );
+    if (!linkedPair) return undefined;
+    return identity.file === linkedPair.implementationFile ? "implementation" : "declaration";
   }
 
   private async resolveCallTarget(identity: SymbolIdentity): Promise<CallTargetResolution> {

@@ -181,6 +181,22 @@ describe("TypeScriptBackend CommonJS export declarations", () => {
       ["src/lib.d.ts::make", "declaration"],
     ]);
   });
+
+  it("resolves an Object.defineProperty export and finds its require users", async () => {
+    const { backend, files } = await backendOverSources({
+      "src/lib.js": 'Object.defineProperty(exports, "answer", { value: 42 });\n',
+      "src/required.js":
+        "const lib = require('./lib');\nlib.answer;\nconst { answer } = require('./lib');\n",
+    });
+
+    const definitions = await backend.findDefinitions(files, identity("src/lib.js", "answer"));
+    const references = await backend.findReferences(files, identity("src/lib.js", "answer"));
+
+    expect(definitions.map((definition) => formatSymbolIdentity(definition.identity))).toEqual([
+      "src/lib.js::answer",
+    ]);
+    expect(referenceLocations(references)).toEqual(["src/required.js:2", "src/required.js:3"]);
+  });
 });
 
 async function backendOverSources(sources: Readonly<Record<string, string>>): Promise<{

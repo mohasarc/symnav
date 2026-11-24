@@ -499,6 +499,7 @@ export class TypeScriptProjectGraph
     if (compilerOptions.allowJs !== true && ownsJavaScript) {
       compilerOptions.allowJs = true;
       compilerOptions.maxNodeModuleJsDepth ??= 0;
+      compilerOptions.jsx ??= ts.JsxEmit.Preserve;
     }
     return compilerOptions;
   }

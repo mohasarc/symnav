@@ -276,6 +276,31 @@ describe("TypeScriptBackend CommonJS export declarations", () => {
     ]);
   });
 
+  it.each([
+    ["exports.foo", "exports.foo = function () { return 1; };\n"],
+    ["a named exports.foo", "exports.foo = function realFoo() { return 1; };\n"],
+    ["module.exports.foo", "module.exports.foo = function () { return 1; };\n"],
+    ["a module.exports method", "module.exports = { foo() { return 1; } };\n"],
+    ["a module.exports property", "module.exports = { foo: function () { return 1; } };\n"],
+    [
+      "an Object.defineProperty export",
+      'Object.defineProperty(exports, "foo", { value: function () { return 1; } });\n',
+    ],
+  ])("finds destructured require users and callers of %s", async (_form, librarySource) => {
+    const { backend, files } = await backendOverSources({
+      "src/lib.js": librarySource,
+      "src/use.js": "const { foo } = require('./lib');\nfunction callsFoo() { return foo(); }\n",
+    });
+
+    const references = await backend.findReferences(files, identity("src/lib.js", "foo"));
+    const callers = await backend.findCallers(files, identity("src/lib.js", "foo"));
+
+    expect(referenceLocations(references)).toEqual(["src/use.js:1", "src/use.js:2"]);
+    expect(callers.map((edge) => formatSymbolIdentity(edge.symbol.identity))).toEqual([
+      "src/use.js::callsFoo",
+    ]);
+  });
+
   it("pairs a module.exports function with the .d.ts export = declaration", async () => {
     const { backend, files } = await backendOverSources({
       "src/lib.js": "module.exports = function () { return 1; };\n",

@@ -86,6 +86,7 @@ export class CommonJsExportImporters {
           pending.push(...CommonJsExportImporters.exportsNamedBy(bindingReferences));
         }
         found.push(...anchors.members);
+        pending.push(...CommonJsExportImporters.exportsNamedBy(anchors.members));
         for (const sourceFile of anchors.reExportingFiles) {
           pending.push({ sourceFile, exported: next.exported });
         }

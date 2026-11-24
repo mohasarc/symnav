@@ -100,10 +100,15 @@ export class JavaScriptAssignmentDeclarations {
         JavaScriptAssignmentDeclarations.assignsModuleExports(object);
       return exportsMember ? { kind: "member", name: parent.getName() } : undefined;
     }
-    const assignsReference =
-      JavaScriptAssignmentDeclarations.isAssignment(parent) && parent.getRight() === reference;
-    if (!assignsReference) return undefined;
-    const target = parent.getLeft();
+    const value =
+      Node.isPropertyAccessExpression(parent) && parent.getNameNode() === reference
+        ? parent
+        : reference;
+    const assignment = value.getParent();
+    const assignsValue =
+      JavaScriptAssignmentDeclarations.isAssignment(assignment) && assignment.getRight() === value;
+    if (!assignsValue) return undefined;
+    const target = assignment.getLeft();
     if (JavaScriptAssignmentDeclarations.isModuleExports(target)) return { kind: "module" };
     const isExportsMember =
       (Node.isPropertyAccessExpression(target) || Node.isElementAccessExpression(target)) &&

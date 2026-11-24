@@ -715,6 +715,33 @@ describe("TypeScriptProjectGraph", () => {
     expect(program?.getCompilerOptions()).toMatchObject({ allowJs: true, maxNodeModuleJsDepth: 0 });
   });
 
+  it("loads .jsx imported from outside the include of a configuration with forced allowJs", async () => {
+    const workspace = inMemoryWorkspace({
+      "tsconfig.json": JSON.stringify({ include: ["src"] }),
+      "src/a.js": 'import { Chip } from "../ui/Chip";\nexport const chip = Chip;\n',
+      "ui/Chip.jsx": "export function Chip() {\n  return <b>chip</b>;\n}\n",
+    });
+    const graph = new TypeScriptProjectGraph(workspace.fileSystem);
+
+    await graph.refresh(workspace.snapshot);
+    const program = graph.programFor("src/a.js");
+
+    expect(program?.getCompilerOptions().jsx).toBe(ts.JsxEmit.Preserve);
+    expect(program?.getSourceFile("/repo/ui/Chip.jsx")).toBeDefined();
+  });
+
+  it("leaves jsx unset for a configuration that enables allowJs itself", async () => {
+    const workspace = inMemoryWorkspace({
+      "tsconfig.json": JSON.stringify({ compilerOptions: { allowJs: true } }),
+      "src/a.js": "export function a() {}\n",
+    });
+    const graph = new TypeScriptProjectGraph(workspace.fileSystem);
+
+    await graph.refresh(workspace.snapshot);
+
+    expect(graph.programFor("src/a.js")?.getCompilerOptions().jsx).toBeUndefined();
+  });
+
   it("forces allowJs on for JavaScript listed in files", async () => {
     const workspace = inMemoryWorkspace({
       "tsconfig.json": JSON.stringify({ files: ["src/b.js"] }),

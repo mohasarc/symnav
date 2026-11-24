@@ -61,4 +61,5 @@ export interface LanguageBackend {
     files: readonly ResolvedPath[],
     identity: SymbolIdentity,
   ): Promise<readonly CallEdge[]>;
+  collapsedTargetIdentity?(candidates: readonly SymbolIdentity[]): SymbolIdentity | undefined;
 }

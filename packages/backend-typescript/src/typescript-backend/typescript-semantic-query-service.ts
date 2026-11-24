@@ -128,6 +128,7 @@ export class TypeScriptSemanticQueryService implements PositionDefinitionResolve
         workspaceState: this.workspaceState,
         files: this.files,
         identity,
+        counterparts: this.counterpartIdentities(identity),
         definitionResolver: this,
       }),
     );

@@ -162,6 +162,25 @@ describe("TypeScriptBackend CommonJS export declarations", () => {
       expect(referenceLocations(references)).toEqual(["src/imported.ts:1", "src/required.js:1"]);
     },
   );
+
+  it("pairs a module.exports function with the .d.ts export = declaration", async () => {
+    const { backend, files } = await backendOverSources({
+      "src/lib.js": "module.exports = function () { return 1; };\n",
+      "src/lib.d.ts": "declare function make(): number;\nexport = make;\n",
+    });
+
+    const definitions = await backend.findDefinitions(files, identity("src/lib.d.ts", "make"));
+
+    expect(
+      definitions.map((definition) => [
+        formatSymbolIdentity(definition.identity),
+        definition.pairRole,
+      ]),
+    ).toEqual([
+      ["src/lib.js::default", "implementation"],
+      ["src/lib.d.ts::make", "declaration"],
+    ]);
+  });
 });
 
 async function backendOverSources(sources: Readonly<Record<string, string>>): Promise<{

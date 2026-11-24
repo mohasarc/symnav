@@ -22,7 +22,7 @@ export class BackendRouter {
       filesByBackend.set(backend, []);
     }
     for (const file of snapshot.files) {
-      const backend = this.find(file.relative);
+      const backend = this.accepting(file.relative);
       if (backend) {
         filesByBackend.get(backend)?.push(file);
       }
@@ -52,12 +52,11 @@ export class BackendRouter {
   }
 
   find(filePath: string): LanguageBackend | undefined {
-    for (const backend of this.#backends) {
-      if (backend.accepts(filePath)) {
-        return backend;
-      }
+    const backend = this.accepting(filePath);
+    if (backend?.refusal?.(filePath) !== undefined) {
+      return undefined;
     }
-    return undefined;
+    return backend;
   }
 
   findOrThrow(filePath: string): LanguageBackend {
@@ -70,10 +69,19 @@ export class BackendRouter {
   }
 
   findAcceptingOrThrow(filePath: string): LanguageBackend {
-    const backend = this.find(filePath);
+    const backend = this.accepting(filePath);
     if (backend === undefined) {
       throw new UnsupportedFileError(filePath);
     }
     return backend;
+  }
+
+  private accepting(filePath: string): LanguageBackend | undefined {
+    for (const backend of this.#backends) {
+      if (backend.accepts(filePath)) {
+        return backend;
+      }
+    }
+    return undefined;
   }
 }

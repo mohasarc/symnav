@@ -453,6 +453,80 @@ describe("TypeScriptBackend this-property member declarations", () => {
   });
 });
 
+describe("TypeScriptBackend JSDoc type alias declarations", () => {
+  it("resolves @typedef and @callback targets and finds their import type users", async () => {
+    const { backend, files } = await backendOverSources({
+      "src/types.js":
+        "/**\n * @typedef {Object} Shape\n * @property {number} width\n */\n/**\n * @callback Visit\n * @param {Shape} shape\n */\nexports.q = 1;\n",
+      "src/use.js":
+        "/** @type {import('./types.js').Shape} */\nconst shape = null;\n/** @param {import('./types').Visit} visit */\nfunction walk(visit) {}\n",
+      "src/use.ts": "import type { Shape } from './types';\nexport let shape: Shape;\n",
+    });
+
+    const shapeDefinitions = await backend.findDefinitions(
+      files,
+      identity("src/types.js", "Shape"),
+    );
+    const shapeReferences = await backend.findReferences(files, identity("src/types.js", "Shape"));
+    const visitReferences = await backend.findReferences(files, identity("src/types.js", "Visit"));
+
+    expect(shapeDefinitions.map((definition) => formatSymbolIdentity(definition.identity))).toEqual(
+      ["src/types.js::Shape"],
+    );
+    expect(referenceLocations(shapeReferences)).toEqual([
+      "src/types.js:7",
+      "src/use.js:1",
+      "src/use.ts:1",
+      "src/use.ts:2",
+    ]);
+    expect(referenceLocations(visitReferences)).toEqual(["src/use.js:3"]);
+  });
+
+  it("resolves an @enum variable and finds its value and type users", async () => {
+    const { backend, files } = await backendOverSources({
+      "src/lib.js": "/** @enum {number} */\nexport const Color = { Red: 1 };\n",
+      "src/use.js":
+        "import { Color } from './lib.js';\n/** @type {Color} */\nexport let color = Color.Red;\n",
+    });
+
+    const definitions = await backend.findDefinitions(files, identity("src/lib.js", "Color"));
+    const references = await backend.findReferences(files, identity("src/lib.js", "Color"));
+
+    expect(
+      definitions.map((definition) => [
+        formatSymbolIdentity(definition.identity),
+        definition.kind.nativeLabel,
+      ]),
+    ).toEqual([["src/lib.js::Color", "enum"]]);
+    expect(referenceLocations(references)).toEqual([
+      "src/use.js:1",
+      "src/use.js:2",
+      "src/use.js:3",
+    ]);
+  });
+
+  it("resolves a @typedef scoped to a function body and finds its users there", async () => {
+    const { backend, files } = await backendOverSources({
+      "src/lib.js":
+        "function outer() {\n  /** @typedef {string} Inner */\n  /** @type {Inner} */\n  const value = '';\n}\n",
+    });
+
+    const definitions = await backend.findDefinitions(
+      files,
+      identity("src/lib.js", "outer", "Inner"),
+    );
+    const references = await backend.findReferences(
+      files,
+      identity("src/lib.js", "outer", "Inner"),
+    );
+
+    expect(definitions.map((definition) => formatSymbolIdentity(definition.identity))).toEqual([
+      "src/lib.js::outer::Inner",
+    ]);
+    expect(referenceLocations(references)).toEqual(["src/lib.js:3"]);
+  });
+});
+
 async function backendOverSources(sources: Readonly<Record<string, string>>): Promise<{
   readonly backend: TypeScriptBackend;
   readonly files: readonly WorkspaceFile[];

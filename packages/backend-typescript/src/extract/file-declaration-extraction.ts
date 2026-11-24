@@ -24,7 +24,10 @@ export class FileDeclarationExtraction {
       file: args.filePath,
       diagnostics: args.diagnostics,
     });
-    const extracted = extractor.extract(args.sourceFile.getStatements());
+    const extracted = [
+      ...extractor.extract(args.sourceFile.getStatements()),
+      ...extractor.extractEndOfFile(args.sourceFile),
+    ];
     const entries = assignDisambiguators(extracted);
     const extractedSymbols = OverviewTree.walkSymbols(extracted);
     const declarationNodes = new Map<SymbolOverviewNode, Node>();

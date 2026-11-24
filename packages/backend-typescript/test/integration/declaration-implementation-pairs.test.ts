@@ -339,6 +339,70 @@ describe("TypeScriptBackend declaration and implementation pairs", () => {
       "src/use.ts:2",
     ]);
   });
+
+  it("links class members of a pair by member name", async () => {
+    const { backend, files } = await backendOverSources({
+      "src/tabs.js":
+        "export class Tabs {\n  render() { return 1; }\n  first() { return this.render(); }\n}\n",
+      "src/tabs.d.ts": "export declare class Tabs {\n  render(): number;\n  first(): number;\n}\n",
+      "src/use.ts": 'import { Tabs } from "./tabs";\nexport const value = new Tabs().render();\n',
+    });
+    const expected = ["src/tabs.js:3", "src/use.ts:2"];
+
+    const fromImplementation = await backend.findReferences(
+      files,
+      identity("src/tabs.js", "Tabs", "render"),
+    );
+    const fromDeclaration = await backend.findReferences(
+      files,
+      identity("src/tabs.d.ts", "Tabs", "render"),
+    );
+
+    expect(referenceLocations(fromImplementation)).toEqual(expected);
+    expect(referenceLocations(fromDeclaration)).toEqual(expected);
+  });
+
+  it("links a JavaScript static member to a .d.ts namespace member merged with the class", async () => {
+    const { backend, files } = await backendOverSources({
+      "src/foo.js":
+        "export class Foo {\n  static create() { return new Foo(); }\n}\nexport const first = Foo.create();\n",
+      "src/foo.d.ts":
+        "export declare class Foo {}\nexport declare namespace Foo {\n  function create(): Foo;\n}\n",
+      "src/use.ts": 'import { Foo } from "./foo";\nexport const value = Foo.create();\n',
+    });
+    const namespaceMember: SymbolIdentity = {
+      file: "src/foo.d.ts",
+      segments: [{ name: "Foo", disambiguator: 2 }, { name: "create" }],
+    };
+    const expected = ["src/foo.js:4", "src/use.ts:2"];
+
+    const fromImplementation = await backend.findReferences(
+      files,
+      identity("src/foo.js", "Foo", "create"),
+    );
+    const fromDeclaration = await backend.findReferences(files, namespaceMember);
+
+    expect(referenceLocations(fromImplementation)).toEqual(expected);
+    expect(referenceLocations(fromDeclaration)).toEqual(expected);
+  });
+
+  it("links static and instance members of a pair separately", async () => {
+    const { backend, files } = await backendOverSources(staticAndInstanceSources);
+    const staticImplementation: SymbolIdentity = {
+      file: "src/foo.js",
+      segments: [{ name: "Foo" }, { name: "x", disambiguator: 1 }],
+    };
+    const instanceDeclaration: SymbolIdentity = {
+      file: "src/foo.d.ts",
+      segments: [{ name: "Foo" }, { name: "x", disambiguator: 2 }],
+    };
+
+    const staticReferences = await backend.findReferences(files, staticImplementation);
+    const instanceReferences = await backend.findReferences(files, instanceDeclaration);
+
+    expect(referenceLocations(staticReferences)).toEqual(["src/foo.js:5", "src/use.ts:2"]);
+    expect(referenceLocations(instanceReferences)).toEqual(["src/foo.js:6", "src/use.ts:3"]);
+  });
 });
 
 const interfaceFirstSources: Readonly<Record<string, string>> = {
@@ -362,6 +426,14 @@ const overloadedDeclarationSources: Readonly<Record<string, string>> = {
   "src/tabs.d.ts":
     "export declare function tabs(): number;\nexport declare function tabs(x: number): number;\n",
   "src/use.ts": 'import { tabs } from "./tabs";\nexport const value = tabs();\n',
+};
+
+const staticAndInstanceSources: Readonly<Record<string, string>> = {
+  "src/foo.js":
+    "export class Foo {\n  static x() { return 1; }\n  x() { return 2; }\n}\nexport const first = Foo.x();\nexport const second = new Foo().x();\n",
+  "src/foo.d.ts": "export declare class Foo {\n  static x(): number;\n  x(): number;\n}\n",
+  "src/use.ts":
+    'import { Foo } from "./foo";\nexport const viaClass = Foo.x();\nexport const viaInstance = new Foo().x();\n',
 };
 
 async function backendOverSources(sources: Readonly<Record<string, string>>): Promise<{
@@ -417,6 +489,6 @@ function referenceLocations(references: readonly SymbolReference[]): readonly st
   return references.map((reference) => `${reference.file}:${reference.line}`).sort();
 }
 
-function identity(file: string, name: string): SymbolIdentity {
-  return { file, segments: [{ name }] };
+function identity(file: string, ...names: readonly string[]): SymbolIdentity {
+  return { file, segments: names.map((name) => ({ name })) };
 }

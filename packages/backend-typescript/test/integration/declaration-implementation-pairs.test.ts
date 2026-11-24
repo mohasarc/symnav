@@ -62,6 +62,82 @@ describe("TypeScriptBackend declaration and implementation pairs", () => {
       "src/use.ts:2",
     ]);
   });
+
+  it("includes JavaScript in-file uses in references of a .d.ts declaration", async () => {
+    const { backend, files } = await backendOverPairFixture();
+
+    const references = await backend.findReferences(files, identity("src/Tabs/Tabs.d.ts", "Tabs"));
+
+    expect(referenceLocations(references)).toEqual([
+      "src/App.tsx:1",
+      "src/App.tsx:4",
+      "src/Tabs/Tabs.d.ts:7",
+      "src/Tabs/Tabs.js:10",
+      "src/Tabs/index.d.ts:1",
+      "src/Tabs/index.js:1",
+      "src/hooks/useTabs.js:1",
+      "src/hooks/useTabs.js:2",
+      "src/hooks/useTabs.js:5",
+      "src/hooks/useTabs.js:5",
+    ]);
+  });
+
+  it("links a .d.ts const to its JavaScript twin but not the interface merged before it", async () => {
+    const { backend, files } = await backendOverSources(interfaceFirstSources);
+    const interfaceDeclaration: SymbolIdentity = {
+      file: "src/foo.d.ts",
+      segments: [{ name: "Foo", disambiguator: 1 }],
+    };
+    const constDeclaration: SymbolIdentity = {
+      file: "src/foo.d.ts",
+      segments: [{ name: "Foo", disambiguator: 2 }],
+    };
+
+    const interfaceReferences = await backend.findReferences(files, interfaceDeclaration);
+    const constReferences = await backend.findReferences(files, constDeclaration);
+
+    expect(referenceLocations(interfaceReferences)).toEqual(["src/use.ts:1", "src/use.ts:3"]);
+    expect(referenceLocations(constReferences)).toEqual([
+      "src/foo.js:2",
+      "src/use.ts:1",
+      "src/use.ts:2",
+    ]);
+  });
+
+  it("links a .d.ts function to its JavaScript twin but not the type-only namespace merged with it", async () => {
+    const { backend, files } = await backendOverSources(typeOnlyNamespaceSources);
+    const functionDeclaration: SymbolIdentity = {
+      file: "src/foo.d.ts",
+      segments: [{ name: "foo", disambiguator: 1 }],
+    };
+    const namespaceDeclaration: SymbolIdentity = {
+      file: "src/foo.d.ts",
+      segments: [{ name: "foo", disambiguator: 2 }],
+    };
+
+    const functionReferences = await backend.findReferences(files, functionDeclaration);
+    const namespaceReferences = await backend.findReferences(files, namespaceDeclaration);
+
+    expect(referenceLocations(functionReferences)).toEqual([
+      "src/foo.js:2",
+      "src/use.ts:1",
+      "src/use.ts:2",
+    ]);
+    expect(referenceLocations(namespaceReferences)).toEqual(["src/use.ts:1", "src/use.ts:3"]);
+  });
+
+  it("includes JavaScript uses in references of a bare .d.ts target naming a merged family", async () => {
+    const { backend, files } = await backendOverSources(interfaceFirstSources);
+
+    const references = await backend.findReferences(files, identity("src/foo.d.ts", "Foo"));
+
+    expect(referenceLocations(references)).toEqual([
+      "src/foo.js:2",
+      "src/use.ts:1",
+      "src/use.ts:2",
+      "src/use.ts:3",
+    ]);
+  });
 });
 
 const interfaceFirstSources: Readonly<Record<string, string>> = {

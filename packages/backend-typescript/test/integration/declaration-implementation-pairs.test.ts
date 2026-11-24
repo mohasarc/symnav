@@ -204,6 +204,30 @@ describe("TypeScriptBackend declaration and implementation pairs", () => {
     expect(referenceLocations(javaScriptReferences)).toEqual(["src/X.js:2"]);
     expect(referenceLocations(typeScriptReferences)).toEqual(["src/use.ts:1", "src/use.ts:2"]);
   });
+
+  it("pairs a .d.ts and JavaScript an importer reaches through one paths mapping", async () => {
+    const { backend, files } = await backendOverSources({
+      "tsconfig.json": JSON.stringify({
+        compilerOptions: { allowJs: true, baseUrl: ".", paths: { "@ui/*": ["types/*", "lib/*"] } },
+      }),
+      "types/button.d.ts": "export declare function button(): number;\n",
+      "lib/button.js": "export function button() { return 1; }\nexport const first = button();\n",
+      "src/app.ts": 'import { button } from "@ui/button";\nexport const value = button();\n',
+    });
+    const expected = ["lib/button.js:2", "src/app.ts:1", "src/app.ts:2"];
+
+    const fromImplementation = await backend.findReferences(
+      files,
+      identity("lib/button.js", "button"),
+    );
+    const fromDeclaration = await backend.findReferences(
+      files,
+      identity("types/button.d.ts", "button"),
+    );
+
+    expect(referenceLocations(fromImplementation)).toEqual(expected);
+    expect(referenceLocations(fromDeclaration)).toEqual(expected);
+  });
 });
 
 const interfaceFirstSources: Readonly<Record<string, string>> = {

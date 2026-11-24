@@ -6,6 +6,9 @@ import { fixturePath } from "@symnav/testing";
 import {
   InMemoryFileSystem,
   NodeFileSystem,
+  formatSymbolIdentity,
+  type DefinitionPairRole,
+  type DefinitionSymbol,
   type SymbolIdentity,
   type SymbolReference,
   type WorkspaceFile,
@@ -500,6 +503,88 @@ describe("TypeScriptBackend declaration and implementation pairs", () => {
   });
 });
 
+describe("TypeScriptBackend definitions of declaration and implementation pairs", () => {
+  it.each(["src/Tabs/Tabs.js", "src/Tabs/Tabs.d.ts"])(
+    "lists both halves of the Tabs pair from %s, tagged by pair role",
+    async (file) => {
+      const { backend, files } = await backendOverPairFixture();
+
+      const definitions = await backend.findDefinitions(files, identity(file, "Tabs"));
+
+      expect(definitionRoles(definitions)).toEqual([
+        ["src/Tabs/Tabs.js::Tabs", "implementation"],
+        ["src/Tabs/Tabs.d.ts::Tabs", "declaration"],
+      ]);
+    },
+  );
+
+  it("tags every overload of a bare .d.ts target as the declaration half", async () => {
+    const { backend, files } = await backendOverSources(overloadedDeclarationSources);
+
+    const definitions = await backend.findDefinitions(files, identity("src/tabs.d.ts", "tabs"));
+
+    expect(definitionRoles(definitions)).toEqual([
+      ["src/tabs.js::tabs", "implementation"],
+      ["src/tabs.d.ts::tabs#1", "declaration"],
+      ["src/tabs.d.ts::tabs#2", "declaration"],
+    ]);
+  });
+
+  it.each([
+    ["src/Tabs/Tabs.d.ts", ["Tabs"], "src/Tabs/Tabs.js::Tabs"],
+    ["src/cjs/util.d.ts", ["util", "helper"], "src/cjs/util.js::helper"],
+  ])(
+    "resolves the call target of %s %j to its JavaScript implementation",
+    async (file, names, expected) => {
+      const { backend, files } = await backendOverPairFixture();
+
+      const resolution = await backend.findCallTarget(files, identity(file, ...names));
+
+      expect(resolution.outcome).toBe("resolved");
+      expect(
+        resolution.outcome === "resolved" && formatSymbolIdentity(resolution.target.identity),
+      ).toBe(expected);
+    },
+  );
+
+  it("lists only the same-staticness member of the other half", async () => {
+    const { backend, files } = await backendOverSources(staticAndInstanceSources);
+    const staticDeclaration: SymbolIdentity = {
+      file: "src/foo.d.ts",
+      segments: [{ name: "Foo" }, { name: "x", disambiguator: 1 }],
+    };
+
+    const definitions = await backend.findDefinitions(files, staticDeclaration);
+    const resolution = await backend.findCallTarget(files, staticDeclaration);
+
+    expect(definitionRoles(definitions)).toEqual([
+      ["src/foo.js::Foo::x#1", "implementation"],
+      ["src/foo.d.ts::Foo::x#1", "declaration"],
+    ]);
+    expect(
+      resolution.outcome === "resolved" && formatSymbolIdentity(resolution.target.identity),
+    ).toBe("src/foo.js::Foo::x#1");
+  });
+
+  it("leaves definitions outside a pair link untagged", async () => {
+    const { backend, files } = await backendOverPairFixture();
+
+    const unpairedExport = await backend.findDefinitions(
+      files,
+      identity("src/Tabs/Tabs.js", "styles"),
+    );
+    const declarationOnlyExport = await backend.findDefinitions(
+      files,
+      identity("src/Tabs/Tabs.d.ts", "TabsProps"),
+    );
+
+    expect(definitionRoles(unpairedExport)).toEqual([["src/Tabs/Tabs.js::styles", undefined]]);
+    expect(definitionRoles(declarationOnlyExport)).toEqual([
+      ["src/Tabs/Tabs.d.ts::TabsProps", undefined],
+    ]);
+  });
+});
+
 const interfaceFirstSources: Readonly<Record<string, string>> = {
   "src/foo.js": "export const Foo = () => 1;\nexport const first = Foo();\n",
   "src/foo.d.ts":
@@ -582,6 +667,15 @@ function fixtureSourcePaths(directory: string): readonly string[] {
 
 function referenceLocations(references: readonly SymbolReference[]): readonly string[] {
   return references.map((reference) => `${reference.file}:${reference.line}`).sort();
+}
+
+function definitionRoles(
+  definitions: readonly DefinitionSymbol[],
+): readonly (readonly [string, DefinitionPairRole | undefined])[] {
+  return definitions.map((definition) => [
+    formatSymbolIdentity(definition.identity),
+    definition.pairRole,
+  ]);
 }
 
 function identity(file: string, ...names: readonly string[]): SymbolIdentity {

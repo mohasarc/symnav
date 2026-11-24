@@ -3,6 +3,7 @@ import {
   ts,
   type Identifier,
   type ImportDeclaration,
+  type PropertyAccessExpression,
   type SourceFile,
   type StringLiteral,
 } from "ts-morph";
@@ -23,9 +24,10 @@ interface PendingExport {
 interface ImporterAnchors {
   readonly bindings: readonly Identifier[];
   readonly members: readonly Node[];
+  readonly memberBindings: readonly Identifier[];
 }
 
-const NO_ANCHORS: ImporterAnchors = { bindings: [], members: [] };
+const NO_ANCHORS: ImporterAnchors = { bindings: [], members: [], memberBindings: [] };
 
 export class CommonJsExportImporters {
   private static readonly MEMBER_EXPORT_FORMS: ReadonlySet<JavaScriptAssignmentDeclarationForm> =
@@ -55,6 +57,11 @@ export class CommonJsExportImporters {
         for (const binding of anchors.bindings) {
           const bindingReferences = CommonJsExportImporters.otherReferencesInFileOf(binding);
           if (!listedLines.has(CommonJsExportImporters.lineKey(binding))) found.push(binding);
+          found.push(...bindingReferences);
+          pending.push(...CommonJsExportImporters.exportsNamedBy(bindingReferences));
+        }
+        for (const binding of anchors.memberBindings) {
+          const bindingReferences = CommonJsExportImporters.otherReferencesInFileOf(binding);
           found.push(...bindingReferences);
           pending.push(...CommonJsExportImporters.exportsNamedBy(bindingReferences));
         }
@@ -143,7 +150,7 @@ export class CommonJsExportImporters {
         .filter((specifier) => specifier.getName() === exported.name)
         .map((specifier) => specifier.getAliasNode() ?? specifier.getNameNode())
         .filter(Node.isIdentifier);
-      return { bindings, members: [] };
+      return { ...NO_ANCHORS, bindings };
     }
     if (Node.isExternalModuleReference(holder)) {
       const declaration = holder.getParent();
@@ -167,25 +174,26 @@ export class CommonJsExportImporters {
       : NO_ANCHORS;
     if (exported.kind === "module") return moduleAnchors;
     const namespaceImport = clause.getNamespaceImport();
-    const namespaceMembers = namespaceImport
+    const namespaceAnchors = namespaceImport
       ? CommonJsExportImporters.memberAccessesOf(namespaceImport, exported.name)
-      : [];
+      : NO_ANCHORS;
     const namedBindings = clause
       .getNamedImports()
       .filter((specifier) => specifier.getName() === exported.name)
       .map((specifier) => specifier.getAliasNode() ?? specifier.getNameNode())
       .filter(Node.isIdentifier);
-    return {
-      bindings: [...moduleAnchors.bindings, ...namedBindings],
-      members: [...moduleAnchors.members, ...namespaceMembers],
-    };
+    return CommonJsExportImporters.merged([
+      moduleAnchors,
+      namespaceAnchors,
+      { ...NO_ANCHORS, bindings: namedBindings },
+    ]);
   }
 
   private static requireCallAnchors(call: Node, exported: CommonJsExportName): ImporterAnchors {
     const holder = call.getParent();
     if (Node.isPropertyAccessExpression(holder) && holder.getExpression() === call) {
       const accessesMember = exported.kind === "member" && holder.getName() === exported.name;
-      return accessesMember ? { bindings: [], members: [holder.getNameNode()] } : NO_ANCHORS;
+      return accessesMember ? CommonJsExportImporters.memberAccessAnchors(holder) : NO_ANCHORS;
     }
     const isInitializer = Node.isVariableDeclaration(holder) && holder.getInitializer() === call;
     if (!isInitializer) return NO_ANCHORS;
@@ -201,29 +209,48 @@ export class CommonJsExportImporters {
       })
       .map((element) => element.getNameNode())
       .filter(Node.isIdentifier);
-    return { bindings, members: [] };
+    return { ...NO_ANCHORS, bindings };
   }
 
   private static moduleBindingAnchors(
     binding: Identifier,
     exported: CommonJsExportName,
   ): ImporterAnchors {
-    if (exported.kind === "module") return { bindings: [binding], members: [] };
-    return {
-      bindings: [],
-      members: CommonJsExportImporters.memberAccessesOf(binding, exported.name),
-    };
+    if (exported.kind === "module") return { ...NO_ANCHORS, bindings: [binding] };
+    return CommonJsExportImporters.memberAccessesOf(binding, exported.name);
   }
 
-  private static memberAccessesOf(binding: Identifier, name: string): readonly Node[] {
-    return CommonJsExportImporters.referenceNodesOf(binding).flatMap((reference) => {
+  private static memberAccessesOf(binding: Identifier, name: string): ImporterAnchors {
+    const accesses = CommonJsExportImporters.referenceNodesOf(binding).flatMap((reference) => {
       const access = reference.getParent();
       const accessesMember =
         Node.isPropertyAccessExpression(access) &&
         access.getExpression() === reference &&
         access.getName() === name;
-      return accessesMember ? [access.getNameNode()] : [];
+      return accessesMember ? [CommonJsExportImporters.memberAccessAnchors(access)] : [];
     });
+    return CommonJsExportImporters.merged(accesses);
+  }
+
+  private static memberAccessAnchors(access: PropertyAccessExpression): ImporterAnchors {
+    const holder = access.getParent();
+    const initializedName =
+      Node.isVariableDeclaration(holder) && holder.getInitializer() === access
+        ? holder.getNameNode()
+        : undefined;
+    return {
+      bindings: [],
+      members: [access.getNameNode()],
+      memberBindings: Node.isIdentifier(initializedName) ? [initializedName] : [],
+    };
+  }
+
+  private static merged(anchors: readonly ImporterAnchors[]): ImporterAnchors {
+    return {
+      bindings: anchors.flatMap((anchor) => anchor.bindings),
+      members: anchors.flatMap((anchor) => anchor.members),
+      memberBindings: anchors.flatMap((anchor) => anchor.memberBindings),
+    };
   }
 
   private static referenceNodesOf(binding: Identifier): readonly Node[] {

@@ -153,7 +153,31 @@ export class JavaScriptAssignmentDeclarations {
     if (isPrototypeObjectMemberCandidate) {
       return JavaScriptAssignmentDeclarations.prototypeObjectMember(node);
     }
+    if (Node.isCallExpression(node)) return JavaScriptAssignmentDeclarations.definedMember(node);
     return undefined;
+  }
+
+  private static definedMember(call: CallExpression): JavaScriptAssignmentDeclaration | undefined {
+    if (!JavaScriptAssignmentDeclarations.isDefinePropertyCall(call)) return undefined;
+    const [owner, nameArgument, descriptor] = call.getArguments();
+    if (!owner || !nameArgument || !descriptor) return undefined;
+    const prototypeContainerNames = JavaScriptAssignmentDeclarations.prototypeContainerNames(owner);
+    const containerNames =
+      prototypeContainerNames ?? JavaScriptAssignmentDeclarations.bindableNames(owner);
+    const name = JavaScriptAssignmentDeclarations.literalName(nameArgument);
+    const statement = call.getFirstAncestor(Node.isStatement);
+    if (!containerNames || name === undefined || !statement) return undefined;
+    return {
+      form: prototypeContainerNames ? "prototype-property" : "static-property",
+      name,
+      declarationNode: call,
+      nameNode: nameArgument,
+      nameLiteral: nameArgument,
+      value: JavaScriptAssignmentDeclarations.descriptorValue(descriptor),
+      statement,
+      containerNames,
+      containerScope: "enclosing-declaration",
+    };
   }
 
   private static prototypeObjectMember(

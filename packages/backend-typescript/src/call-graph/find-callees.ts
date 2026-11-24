@@ -17,6 +17,7 @@ import type {
   SymbolIdentity,
 } from "@symnav/core";
 
+import { JavaScriptAssignmentDeclarations } from "../extract/javascript-assignment-declaration.js";
 import { DeclarationLocator } from "../identity/locate-declarations.js";
 import type { TypeScriptWorkspaceState } from "../typescript-backend/typescript-workspace-state.js";
 
@@ -73,7 +74,17 @@ class CalleeFinder {
     const outsideDeclarationFile = matches.find(
       (match) => !match.node.getSourceFile().isDeclarationFile(),
     );
-    return (withBody ?? outsideDeclarationFile ?? matches[0])?.node;
+    const target = (withBody ?? outsideDeclarationFile ?? matches[0])?.node;
+    return target && CalleeFinder.assignmentOf(target);
+  }
+
+  private static assignmentOf(target: Node): Node {
+    const assignment = target.getParent();
+    const assignsDeclaration =
+      Node.isBinaryExpression(assignment) &&
+      assignment.getLeft() === target &&
+      JavaScriptAssignmentDeclarations.declarationAt(target) !== undefined;
+    return assignsDeclaration ? assignment : target;
   }
 
   private edgesFrom(bodyNode: Node): readonly CallEdge[] {

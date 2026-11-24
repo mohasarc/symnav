@@ -29,6 +29,15 @@ interface ImporterAnchors {
   readonly reExportingFiles: readonly SourceFile[];
 }
 
+interface TypeCheckerWithNameResolution extends ts.TypeChecker {
+  resolveName(
+    name: string,
+    location: ts.Node,
+    meaning: ts.SymbolFlags,
+    excludeGlobals: boolean,
+  ): ts.Symbol | undefined;
+}
+
 const NO_ANCHORS: ImporterAnchors = {
   bindings: [],
   members: [],
@@ -39,6 +48,7 @@ const NO_ANCHORS: ImporterAnchors = {
 export class CommonJsExportImporters {
   private static readonly MEMBER_EXPORT_FORMS: ReadonlySet<JavaScriptAssignmentDeclarationForm> =
     new Set(["export-property", "module-exports-member", "define-property-export"]);
+  private static readonly MODULE_OBJECT_NAMES = ["exports", "module"];
 
   private readonly importLiteralsByProgram = new WeakMap<
     ts.Program,
@@ -100,7 +110,8 @@ export class CommonJsExportImporters {
   private static ownExportOf(declarationNode: Node): readonly PendingExport[] {
     const declaration = JavaScriptAssignmentDeclarations.declarationAt(declarationNode);
     const exported = declaration && CommonJsExportImporters.exportNameOf(declaration);
-    return exported ? [{ sourceFile: declarationNode.getSourceFile(), exported }] : [];
+    if (!exported || CommonJsExportImporters.shadowsModuleObjects(declarationNode)) return [];
+    return [{ sourceFile: declarationNode.getSourceFile(), exported }];
   }
 
   private static exportNameOf(
@@ -114,8 +125,22 @@ export class CommonJsExportImporters {
   private static exportsNamedBy(references: readonly Node[]): readonly PendingExport[] {
     return references.flatMap((reference) => {
       const exported = JavaScriptAssignmentDeclarations.commonJsExportNamedBy(reference);
-      return exported ? [{ sourceFile: reference.getSourceFile(), exported }] : [];
+      if (!exported || CommonJsExportImporters.shadowsModuleObjects(reference)) return [];
+      return [{ sourceFile: reference.getSourceFile(), exported }];
     });
+  }
+
+  private static shadowsModuleObjects(site: Node): boolean {
+    const checker = site.getProject().getTypeChecker()
+      .compilerObject as TypeCheckerWithNameResolution;
+    return CommonJsExportImporters.MODULE_OBJECT_NAMES.some((name) => {
+      const resolved = checker.resolveName(name, site.compilerNode, ts.SymbolFlags.Value, false);
+      return resolved?.declarations?.some(CommonJsExportImporters.declaresLocally) ?? false;
+    });
+  }
+
+  private static declaresLocally(declaration: ts.Declaration): boolean {
+    return !ts.isSourceFile(declaration) && !ts.isIdentifier(declaration);
   }
 
   private importLiteralsOf(sourceFile: SourceFile): readonly StringLiteral[] {

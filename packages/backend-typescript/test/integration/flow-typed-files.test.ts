@@ -3,6 +3,7 @@ import {
   InMemoryFileSystem,
   UnsupportedFileError,
   type BackendRefreshCoverage,
+  type SymbolIdentity,
   type WorkspaceFile,
 } from "@symnav/core";
 
@@ -59,6 +60,58 @@ describe("TypeScriptBackend Flow-typed files", () => {
 
     expect(workspace.backend.refusal("src/flow.js")).toBeInstanceOf(UnsupportedFileError);
     expect(workspace.backend.refusal("src/other.js")).toBeUndefined();
+  });
+
+  it("leaves Flow-typed files out of declarations and resolved symbols", async () => {
+    const workspace = new FlowWorkspace({
+      "src/flow.js": "// @flow\nexport function legacy() {}\n",
+      "src/plain.js": "export function legacy() {}\n",
+    });
+    const files = await workspace.refresh();
+
+    const declarations = await workspace.backend.declarations(files);
+    const resolved = await workspace.backend.resolveSymbols(files, "legacy", { mode: "exact" });
+
+    expect(declarations.map((declaration) => declaration.identity.file)).toEqual(["src/plain.js"]);
+    expect(resolved.map((symbol) => symbol.identity.file)).toEqual(["src/plain.js"]);
+  });
+
+  it("does not load a Flow-typed file passed to a semantic query", async () => {
+    const workspace = new FlowWorkspace({
+      "src/flow.js": "// @flow\nexport function legacy() {}\n",
+    });
+    const files = await workspace.refresh();
+    const legacy: SymbolIdentity = { file: "src/flow.js", segments: [{ name: "legacy" }] };
+
+    expect(await workspace.backend.findDefinitions(files, legacy)).toEqual([]);
+  });
+
+  it("refuses overview entries of a Flow-typed file", async () => {
+    const workspace = new FlowWorkspace({
+      "src/flow.js": "// @flow\nexport function legacy() {}\n",
+    });
+    const [flowFile] = await workspace.refresh();
+
+    const error = await workspace.backend.fileEntries(flowFile!).then(
+      () => undefined,
+      (thrown: unknown) => thrown,
+    );
+
+    expect(error).toBeInstanceOf(UnsupportedFileError);
+    expect((error as UnsupportedFileError).reason).toBe(
+      "cannot read Flow-typed files (src/flow.js)",
+    );
+  });
+
+  it("drops a file from declarations once it gains a Flow pragma", async () => {
+    const workspace = new FlowWorkspace({ "src/flow.js": "export function legacy() {}\n" });
+    const files = await workspace.refresh();
+    expect(await workspace.backend.declarations(files)).toHaveLength(1);
+
+    workspace.write("src/flow.js", "// @flow\nexport function legacy() {}\n");
+    const changedFiles = await workspace.refresh();
+
+    expect(await workspace.backend.declarations(changedFiles)).toEqual([]);
   });
 });
 

@@ -19,6 +19,10 @@ export class UnsupportedFileError extends UserFacingError {
     this.name = "UnsupportedFileError";
   }
 
+  withAdditionalMatchCount(additionalMatchCount: number): UnsupportedFileError {
+    return new UnsupportedFileError(this.inputPath, { ...this.options, additionalMatchCount });
+  }
+
   get reason(): string {
     if (this.options.fileKind !== undefined) {
       return `cannot read ${this.options.fileKind} files (${this.citedPaths})`;

@@ -1,5 +1,5 @@
 import type { BackendRouter } from "../backend/backend-router.js";
-import { NoSupportedFilesError, UnsupportedFileError } from "../backend/errors.js";
+import { NoSupportedFilesError } from "../backend/errors.js";
 import type { LanguageBackend } from "../backend/language-backend.js";
 import { formatSymbolIdentity } from "../intermediate-representation/canonical-identity.js";
 import type { SymbolIdentity } from "../intermediate-representation/symbol-identity.js";
@@ -145,13 +145,12 @@ export class SymbolTargetResolver {
       await args.workspace.resolveInputPath(fileSuffix, args.cwd);
       return;
     }
-    const everySuffixMatchIsUnsupported = suffixMatches.every(
-      (file) => args.router.find(file.relative) === undefined,
-    );
-    if (everySuffixMatchIsUnsupported) {
-      throw new UnsupportedFileError(firstSuffixMatch.relative, {
-        additionalMatchCount: suffixMatches.length - 1,
-      });
+    const firstSuffixMatchRefusal = args.router.refusal(firstSuffixMatch.relative);
+    const everySuffixMatchIsRefused =
+      firstSuffixMatchRefusal !== undefined &&
+      suffixMatches.every((file) => args.router.find(file.relative) === undefined);
+    if (everySuffixMatchIsRefused) {
+      throw firstSuffixMatchRefusal.withAdditionalMatchCount(suffixMatches.length - 1);
     }
   }
 

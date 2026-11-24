@@ -76,6 +76,14 @@ export class BackendRouter {
     return backend;
   }
 
+  refusal(filePath: string): UnsupportedFileError | undefined {
+    const backend = this.accepting(filePath);
+    if (backend === undefined) {
+      return new UnsupportedFileError(filePath);
+    }
+    return backend.refusal?.(filePath);
+  }
+
   private accepting(filePath: string): LanguageBackend | undefined {
     for (const backend of this.#backends) {
       if (backend.accepts(filePath)) {

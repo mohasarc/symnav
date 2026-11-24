@@ -34,7 +34,7 @@ class ContextTextRenderer {
   static render(result: ContextResult): string {
     const head =
       `Context: ${formatIdentityPath(result.identity)}\n` +
-      `File: ${result.identity.file}\n` +
+      `File: ${result.target.identity.file}\n` +
       `Lines: ${formatRange(result.target.range)}\n`;
     const id = formatSymbolIdentity(result.identity);
     const sections = [

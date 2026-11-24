@@ -58,8 +58,23 @@ export class JavaScriptDocDeclarations {
   }
 
   static signatureOf(typeAlias: JavaScriptDocTypeAlias): string {
+    const { tag, name } = typeAlias;
+    if (JavaScriptDocDeclarations.hasMultiLineTypeExpression(tag)) {
+      return `@${tag.getTagName()} {…} ${name}`;
+    }
     const [firstLine = ""] = JavaScriptDocDeclarations.tagSource(typeAlias).split(/\r?\n/);
     return firstLine.trimEnd();
+  }
+
+  private static hasMultiLineTypeExpression(tag: JSDocTypedefTag | JSDocCallbackTag): boolean {
+    const typeExpression = tag.compilerNode.typeExpression;
+    if (!typeExpression || !ts.isJSDocTypeExpression(typeExpression)) return false;
+    const sourceFile = tag.getSourceFile();
+    const startLine = sourceFile.getLineAndColumnAtPos(
+      typeExpression.getStart(sourceFile.compilerNode),
+    ).line;
+    const endLine = sourceFile.getLineAndColumnAtPos(typeExpression.getEnd()).line;
+    return startLine !== endLine;
   }
 
   private static tagSource(typeAlias: JavaScriptDocTypeAlias): string {

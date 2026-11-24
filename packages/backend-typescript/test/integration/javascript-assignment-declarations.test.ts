@@ -482,6 +482,29 @@ describe("TypeScriptBackend JSDoc type alias declarations", () => {
     expect(referenceLocations(visitReferences)).toEqual(["src/use.js:3"]);
   });
 
+  it("resolves an @enum variable and finds its value and type users", async () => {
+    const { backend, files } = await backendOverSources({
+      "src/lib.js": "/** @enum {number} */\nexport const Color = { Red: 1 };\n",
+      "src/use.js":
+        "import { Color } from './lib.js';\n/** @type {Color} */\nexport let color = Color.Red;\n",
+    });
+
+    const definitions = await backend.findDefinitions(files, identity("src/lib.js", "Color"));
+    const references = await backend.findReferences(files, identity("src/lib.js", "Color"));
+
+    expect(
+      definitions.map((definition) => [
+        formatSymbolIdentity(definition.identity),
+        definition.kind.nativeLabel,
+      ]),
+    ).toEqual([["src/lib.js::Color", "enum"]]);
+    expect(referenceLocations(references)).toEqual([
+      "src/use.js:1",
+      "src/use.js:2",
+      "src/use.js:3",
+    ]);
+  });
+
   it("resolves a @typedef scoped to a function body and finds its users there", async () => {
     const { backend, files } = await backendOverSources({
       "src/lib.js":

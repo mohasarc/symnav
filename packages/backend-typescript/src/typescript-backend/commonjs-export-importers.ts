@@ -119,8 +119,10 @@ export class CommonJsExportImporters {
     declaration: JavaScriptAssignmentDeclaration,
   ): CommonJsExportName | undefined {
     if (declaration.form === "module-exports") return { kind: "module" };
-    if (!CommonJsExportImporters.MEMBER_EXPORT_FORMS.has(declaration.form)) return undefined;
-    return { kind: "member", name: declaration.name };
+    const exportsMember =
+      CommonJsExportImporters.MEMBER_EXPORT_FORMS.has(declaration.form) ||
+      JavaScriptAssignmentDeclarations.isModuleExportsValueMember(declaration);
+    return exportsMember ? { kind: "member", name: declaration.name } : undefined;
   }
 
   private static exportsNamedBy(references: readonly Node[]): readonly PendingExport[] {

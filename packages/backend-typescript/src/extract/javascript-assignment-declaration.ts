@@ -110,12 +110,33 @@ export class JavaScriptAssignmentDeclarations {
     if (!assignsValue) return undefined;
     const target = assignment.getLeft();
     if (JavaScriptAssignmentDeclarations.isModuleExports(target)) return { kind: "module" };
+    const isAccess =
+      Node.isPropertyAccessExpression(target) || Node.isElementAccessExpression(target);
     const isExportsMember =
-      (Node.isPropertyAccessExpression(target) || Node.isElementAccessExpression(target)) &&
-      JavaScriptAssignmentDeclarations.isExportsObject(target.getExpression());
+      isAccess &&
+      (JavaScriptAssignmentDeclarations.isExportsObject(target.getExpression()) ||
+        JavaScriptAssignmentDeclarations.isModuleExportsValue(target.getExpression()));
     if (!isExportsMember) return undefined;
     const name = JavaScriptAssignmentDeclarations.staticAccessName(target);
     return name === undefined ? undefined : { kind: "member", name };
+  }
+
+  static isModuleExportsValue(owner: Node): boolean {
+    if (!Node.isIdentifier(owner)) return false;
+    const ownerSymbol = owner.getSymbol()?.compilerSymbol;
+    if (!ownerSymbol) return false;
+    return JavaScriptAssignmentDeclarations.moduleExportsValueSymbols(owner).includes(ownerSymbol);
+  }
+
+  static isModuleExportsValueMember(declaration: JavaScriptAssignmentDeclaration): boolean {
+    const target = declaration.declarationNode;
+    const isStaticMember =
+      declaration.form === "static-property" &&
+      (Node.isPropertyAccessExpression(target) || Node.isElementAccessExpression(target));
+    return (
+      isStaticMember &&
+      JavaScriptAssignmentDeclarations.isModuleExportsValue(target.getExpression())
+    );
   }
 
   static reExportsModule(value: Node): boolean {
@@ -167,6 +188,31 @@ export class JavaScriptAssignmentDeclarations {
       JavaScriptAssignmentDeclarations.isJavaScriptFile(sourceFile) &&
       !JavaScriptAssignmentDeclarations.hasModuleSyntax(sourceFile)
     );
+  }
+
+  private static moduleExportsValueSymbols(site: Node): readonly ts.Symbol[] {
+    const sourceFile = site.getSourceFile();
+    if (!JavaScriptAssignmentDeclarations.isCommonJsFile(sourceFile)) return [];
+    const { symbol } = sourceFile.compilerNode as BoundSourceFile;
+    const exportAssignment = symbol?.exports?.get(ts.InternalSymbolName.ExportEquals);
+    const checker = site.getProject().getTypeChecker().compilerObject;
+    return (exportAssignment?.declarations ?? []).flatMap((declaration) => {
+      if (!ts.isBinaryExpression(declaration)) return [];
+      const value = JavaScriptAssignmentDeclarations.assignedCompilerValue(declaration.right);
+      const valueSymbol = ts.isIdentifier(value) ? checker.getSymbolAtLocation(value) : undefined;
+      return valueSymbol ? [valueSymbol] : [];
+    });
+  }
+
+  private static assignedCompilerValue(expression: ts.Expression): ts.Expression {
+    if (ts.isParenthesizedExpression(expression)) {
+      return JavaScriptAssignmentDeclarations.assignedCompilerValue(expression.expression);
+    }
+    const isAssignment =
+      ts.isBinaryExpression(expression) && expression.operatorToken.kind === SyntaxKind.EqualsToken;
+    return isAssignment
+      ? JavaScriptAssignmentDeclarations.assignedCompilerValue(expression.right)
+      : expression;
   }
 
   private static hasModuleSyntax(sourceFile: SourceFile): boolean {

@@ -308,6 +308,14 @@ export class JavaScriptAssignmentDeclarations {
   private static thisMemberOf(
     thisContainer: Node,
   ): Pick<JavaScriptAssignmentDeclaration, "form" | "containerNames"> | undefined {
+    const isFunctionContainer =
+      Node.isFunctionDeclaration(thisContainer) || Node.isFunctionExpression(thisContainer);
+    if (isFunctionContainer) {
+      const containerNames =
+        JavaScriptAssignmentDeclarations.prototypeMethodContainerNames(thisContainer) ??
+        JavaScriptAssignmentDeclarations.ownerNamesOf(thisContainer);
+      return containerNames ? { form: "this-property", containerNames } : undefined;
+    }
     const owner = thisContainer.getParent();
     if (!Node.isClassDeclaration(owner) && !Node.isClassExpression(owner)) return undefined;
     const containerNames = JavaScriptAssignmentDeclarations.ownerNamesOf(owner);
@@ -316,6 +324,19 @@ export class JavaScriptAssignmentDeclarations {
       Node.isClassStaticBlockDeclaration(thisContainer) ||
       (Node.isStaticable(thisContainer) && thisContainer.isStatic());
     return { form: isStaticMember ? "static-property" : "this-property", containerNames };
+  }
+
+  private static prototypeMethodContainerNames(method: Node): readonly string[] | undefined {
+    const assignment = method.getParent();
+    const isPrototypeMethod =
+      JavaScriptAssignmentDeclarations.isAssignment(assignment) && assignment.getRight() === method;
+    if (!isPrototypeMethod) return undefined;
+    const target = assignment.getLeft();
+    const isStaticAccess =
+      Node.isPropertyAccessExpression(target) || Node.isElementAccessExpression(target);
+    return isStaticAccess
+      ? JavaScriptAssignmentDeclarations.prototypeContainerNames(target.getExpression())
+      : undefined;
   }
 
   private static ownerNamesOf(declaration: Node): readonly string[] | undefined {

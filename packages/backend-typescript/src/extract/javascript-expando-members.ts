@@ -27,8 +27,8 @@ export class JavaScriptExpandoMembers {
   }
 
   membersOf(container: Node): readonly JavaScriptAssignmentDeclaration[] {
-    const symbol = (container.compilerNode as BoundNode).symbol;
-    if (!symbol || symbol.valueDeclaration !== container.compilerNode) return [];
+    const symbol = JavaScriptExpandoMembers.declaredSymbolOf(container);
+    if (!symbol) return [];
     const prototype = symbol.exports?.get(JavaScriptExpandoMembers.PROTOTYPE);
     return [
       ...[...(symbol.members?.values() ?? []), ...(symbol.exports?.values() ?? [])].flatMap(
@@ -37,7 +37,48 @@ export class JavaScriptExpandoMembers {
       ...(prototype?.declarations ?? []).flatMap((declaration) =>
         this.prototypeObjectMembers(declaration),
       ),
+      ...this.functionValueMembers(container, symbol),
     ].sort((left, right) => left.declarationNode.getStart() - right.declarationNode.getStart());
+  }
+
+  private functionValueMembers(
+    container: Node,
+    containerSymbol: ts.Symbol,
+  ): readonly JavaScriptAssignmentDeclaration[] {
+    const functionValue = JavaScriptExpandoMembers.functionValueOf(container);
+    const functionSymbol =
+      functionValue && JavaScriptExpandoMembers.declaredSymbolOf(functionValue);
+    return [...(functionSymbol?.members ?? new Map<ts.__String, ts.Symbol>())]
+      .filter(([name]) => !containerSymbol.members?.has(name))
+      .flatMap(([, member]) => this.declaredMembers(member));
+  }
+
+  private static declaredSymbolOf(node: Node): ts.Symbol | undefined {
+    const symbol = (node.compilerNode as BoundNode).symbol;
+    return symbol?.valueDeclaration === node.compilerNode ? symbol : undefined;
+  }
+
+  private static functionValueOf(container: Node): Node | undefined {
+    const value = Node.isVariableDeclaration(container)
+      ? container.getInitializer()
+      : JavaScriptExpandoMembers.assignedValueOf(container);
+    const unwrapped = value && JavaScriptExpandoMembers.withoutParentheses(value);
+    return Node.isFunctionExpression(unwrapped) ? unwrapped : undefined;
+  }
+
+  private static assignedValueOf(target: Node): Node | undefined {
+    const assignment = target.getParent();
+    const assignsTarget =
+      Node.isBinaryExpression(assignment) &&
+      assignment.getOperatorToken().getKind() === ts.SyntaxKind.EqualsToken &&
+      assignment.getLeft() === target;
+    return assignsTarget ? assignment.getRight() : undefined;
+  }
+
+  private static withoutParentheses(expression: Node): Node {
+    return Node.isParenthesizedExpression(expression)
+      ? JavaScriptExpandoMembers.withoutParentheses(expression.getExpression())
+      : expression;
   }
 
   private declaredMembers(member: ts.Symbol): readonly JavaScriptAssignmentDeclaration[] {

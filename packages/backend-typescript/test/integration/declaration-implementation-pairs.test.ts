@@ -403,6 +403,39 @@ describe("TypeScriptBackend declaration and implementation pairs", () => {
     expect(referenceLocations(staticReferences)).toEqual(["src/foo.js:5", "src/use.ts:2"]);
     expect(referenceLocations(instanceReferences)).toEqual(["src/foo.js:6", "src/use.ts:3"]);
   });
+
+  it("lists a require caller among the callers of a CommonJS export paired with export =", async () => {
+    const { backend, files } = await backendOverPairFixture();
+
+    const callers = await backend.findCallers(files, identity("src/cjs/util.js", "helper"));
+
+    expect(callers.map((edge) => edge.symbol.identity)).toEqual([
+      identity("src/cjs/consumer.js", "run"),
+    ]);
+  });
+
+  it("links an export = namespace member to its CommonJS export, not the namespace", async () => {
+    const { backend, files } = await backendOverPairFixture();
+
+    const memberReferences = await backend.findReferences(
+      files,
+      identity("src/cjs/util.d.ts", "util", "helper"),
+    );
+    const namespaceReferences = await backend.findReferences(
+      files,
+      identity("src/cjs/util.d.ts", "util"),
+    );
+
+    expect(referenceLocations(memberReferences)).toEqual([
+      "src/cjs/consumer.js:4",
+      "src/cjs/util.js:5",
+    ]);
+    expect(referenceLocations(namespaceReferences)).toEqual([
+      "src/cjs/consumer.js:1",
+      "src/cjs/consumer.js:4",
+      "src/cjs/util.d.ts:5",
+    ]);
+  });
 });
 
 const interfaceFirstSources: Readonly<Record<string, string>> = {

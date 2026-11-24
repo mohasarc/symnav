@@ -41,10 +41,37 @@ export class JavaScriptExpandoMembers {
   }
 
   private declaredMembers(member: ts.Symbol): readonly JavaScriptAssignmentDeclaration[] {
-    return (member.declarations ?? []).flatMap((declaration) => {
+    const declarations = member.declarations ?? [];
+    if (declarations.every(JavaScriptExpandoMembers.isThisDeclaration)) {
+      return this.firstThisAssignment(declarations);
+    }
+    return declarations.flatMap((declaration) => {
       const node = this.wrapped(declaration);
       return node ? JavaScriptExpandoMembers.expandoDeclarationAt(node) : [];
     });
+  }
+
+  private firstThisAssignment(
+    declarations: readonly ts.Declaration[],
+  ): readonly JavaScriptAssignmentDeclaration[] {
+    const assignedTargets = declarations
+      .filter(ts.isBinaryExpression)
+      .map((assignment) => assignment.left)
+      .sort((left, right) => left.pos - right.pos);
+    for (const assignedTarget of assignedTargets) {
+      const node = this.wrapped(assignedTarget);
+      const members = node ? JavaScriptExpandoMembers.expandoDeclarationAt(node) : [];
+      if (members.length > 0) return members;
+    }
+    return [];
+  }
+
+  private static isThisDeclaration(declaration: ts.Declaration): boolean {
+    const declaringAccess = ts.isBinaryExpression(declaration) ? declaration.left : declaration;
+    const isAccess =
+      ts.isPropertyAccessExpression(declaringAccess) ||
+      ts.isElementAccessExpression(declaringAccess);
+    return isAccess && declaringAccess.expression.kind === ts.SyntaxKind.ThisKeyword;
   }
 
   private prototypeObjectMembers(

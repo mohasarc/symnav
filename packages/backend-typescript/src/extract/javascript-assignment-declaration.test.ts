@@ -634,6 +634,50 @@ describe("expando static members in overview", () => {
   });
 });
 
+describe("expando namespace members in overview", () => {
+  it("lists members of variables initialized with an empty object, a defaulted object, or an IIFE", () => {
+    const source = [
+      "const ns = {};",
+      "ns.helper = function () {};",
+      "const opts = defaults || {};",
+      "opts.debug = true;",
+      "var M = (function () { return {}; })();",
+      "M.x = 1;",
+    ].join("\n");
+
+    expect(
+      summariesOf(source).map((summary) => [summary.id, summary.label, summary.header]),
+    ).toEqual([
+      ["input.js::ns", "variable", ["const ns = {}"]],
+      ["input.js::ns::helper", "method-implementation", ["ns.helper = function () {}"]],
+      ["input.js::opts", "variable", ["const opts = defaults || {}"]],
+      ["input.js::opts::debug", "property", ["opts.debug = true"]],
+      ["input.js::M", "variable", ["var M = (function () { return {}; })()"]],
+      ["input.js::M::x", "property", ["M.x = 1"]],
+    ]);
+  });
+
+  it("lists members of any module-level local", () => {
+    expect(idsOf("let o = make();\no.x = 1;")).toEqual(["input.js::o", "input.js::o::x"]);
+  });
+
+  it("lists nested namespace members under the member that declares them", () => {
+    const source = ["const a = {};", "a.b = {};", "a.b.c = 1;", "a.d.e = 2;"].join("\n");
+
+    expect(idsOf(source)).toEqual(["input.js::a", "input.js::a::b", "input.js::a::b::c"]);
+  });
+
+  it("lists members of a CommonJS export under the export", () => {
+    const source = [
+      "exports.foo = function () {};",
+      "exports.foo.bar = 1;",
+      "module.exports.foo.baz = 2;",
+    ].join("\n");
+
+    expect(idsOf(source)).toEqual(["input.js::foo", "input.js::foo::bar", "input.js::foo::baz"]);
+  });
+});
+
 describe("CommonJS export declarations against the TypeScript binder", () => {
   it.each([
     [

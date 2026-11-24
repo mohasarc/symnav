@@ -113,23 +113,52 @@ describe("TypeScriptBackend Flow-typed files", () => {
 
     expect(await workspace.backend.declarations(changedFiles)).toEqual([]);
   });
+
+  it("reads an unchanged Flow-typed file once across refreshes", async () => {
+    const workspace = new FlowWorkspace({
+      "src/flow.js": "// @flow\nexport function legacy() {}\n",
+    });
+
+    await workspace.refresh();
+    await workspace.refresh();
+
+    expect(workspace.readsOf("src/flow.js")).toBe(1);
+  });
 });
+
+class ReadCountingFileSystem extends InMemoryFileSystem {
+  readonly readPaths: string[] = [];
+
+  override async readFile(absPath: string): Promise<string> {
+    this.readPaths.push(absPath);
+    return super.readFile(absPath);
+  }
+
+  override readFileSync(absPath: string): string {
+    this.readPaths.push(absPath);
+    return super.readFileSync(absPath);
+  }
+}
 
 class FlowWorkspace {
   readonly backend: TypeScriptBackend;
   private readonly contents: Record<string, string>;
-  private readonly fileSystem: InMemoryFileSystem;
+  private readonly fileSystem: ReadCountingFileSystem;
 
   constructor(sources: Readonly<Record<string, string>>) {
     this.contents = Object.fromEntries(
       Object.entries(sources).map(([relativePath, content]) => [`/repo/${relativePath}`, content]),
     );
-    this.fileSystem = new InMemoryFileSystem(this.contents);
+    this.fileSystem = new ReadCountingFileSystem(this.contents);
     this.backend = new TypeScriptBackend(this.fileSystem);
   }
 
   write(relativePath: string, content: string): void {
     this.contents[`/repo/${relativePath}`] = content;
+  }
+
+  readsOf(relativePath: string): number {
+    return this.fileSystem.readPaths.filter((path) => path === `/repo/${relativePath}`).length;
   }
 
   async refresh(

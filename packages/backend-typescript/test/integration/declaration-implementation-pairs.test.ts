@@ -482,6 +482,22 @@ describe("TypeScriptBackend declaration and implementation pairs", () => {
       "src/use.ts:2",
     ]);
   });
+
+  it("merges references across a configured .d.ts and inferred JavaScript twin", async () => {
+    const { backend, files } = await backendOverSources({
+      "tsconfig.json": JSON.stringify({ include: ["src/**/*.ts"] }),
+      "src/tabs.js": "export function tabs() { return 1; }\nexport const first = tabs();\n",
+      "src/tabs.d.ts": "export declare function tabs(): number;\n",
+      "src/use.ts": 'import { tabs } from "./tabs";\nexport const value = tabs();\n',
+    });
+    const expected = ["src/tabs.js:2", "src/use.ts:1", "src/use.ts:2"];
+
+    const fromImplementation = await backend.findReferences(files, identity("src/tabs.js", "tabs"));
+    const fromDeclaration = await backend.findReferences(files, identity("src/tabs.d.ts", "tabs"));
+
+    expect(referenceLocations(fromImplementation)).toEqual(expected);
+    expect(referenceLocations(fromDeclaration)).toEqual(expected);
+  });
 });
 
 const interfaceFirstSources: Readonly<Record<string, string>> = {

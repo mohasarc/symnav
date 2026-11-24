@@ -5,6 +5,8 @@ export type {
   Header,
   ResultWithDiagnostics,
   ResolveResult,
+  DefinitionPairRole,
+  DefinitionSymbol,
   DefinitionResult,
 } from "./intermediate-representation/types.js";
 export type {

@@ -6,6 +6,7 @@ import type {
   OverviewFileEntries,
   SymbolOverviewNode,
 } from "../intermediate-representation/overview-tree.js";
+import type { DefinitionSymbol } from "../intermediate-representation/types.js";
 import type { ResolvedPath, WorkspaceSnapshot } from "../workspace/workspace.js";
 
 export interface BackendRefreshSummary {
@@ -43,7 +44,7 @@ export interface LanguageBackend {
   findDefinitions(
     files: readonly ResolvedPath[],
     identity: SymbolIdentity,
-  ): Promise<readonly SymbolOverviewNode[]>;
+  ): Promise<readonly DefinitionSymbol[]>;
   findReferences(
     files: readonly ResolvedPath[],
     identity: SymbolIdentity,

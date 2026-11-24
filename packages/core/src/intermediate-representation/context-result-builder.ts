@@ -5,11 +5,12 @@ import { countReferenceKinds } from "./reference-kinds.js";
 import type { SymbolReference } from "./references.js";
 import type { SymbolIdentity } from "./symbol-identity.js";
 import type { SymbolOverviewNode } from "./overview-tree.js";
+import type { DefinitionSymbol } from "./types.js";
 
 export interface BuildContextResultArgs {
   readonly identity: SymbolIdentity;
   readonly target: SymbolOverviewNode;
-  readonly definitions: readonly SymbolOverviewNode[];
+  readonly definitions: readonly DefinitionSymbol[];
   readonly callerEdgesWithAnyConfidence: readonly CallEdge[];
   readonly calleeEdgesWithAnyConfidence: readonly CallEdge[];
   readonly references: readonly SymbolReference[];

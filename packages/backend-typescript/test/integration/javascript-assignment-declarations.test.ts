@@ -225,6 +225,33 @@ describe("TypeScriptBackend CommonJS export declarations", () => {
   });
 });
 
+describe("TypeScriptBackend expando member declarations", () => {
+  it.each([
+    ["a function", "function Foo() {}\n"],
+    ["a class", "class Foo {}\n"],
+    ["a variable", "var Foo = function () {};\n"],
+  ])(
+    "resolves a prototype member of %s and finds its instance users",
+    async (_container, declaration) => {
+      const { backend, files } = await backendOverSources({
+        "src/lib.js": `${declaration}Foo.prototype.bar = function () { return 1; };\nexports.Foo = Foo;\n`,
+        "src/use.js": "const { Foo } = require('./lib');\nnew Foo().bar();\n",
+      });
+
+      const definitions = await backend.findDefinitions(
+        files,
+        identity("src/lib.js", "Foo", "bar"),
+      );
+      const references = await backend.findReferences(files, identity("src/lib.js", "Foo", "bar"));
+
+      expect(definitions.map((definition) => formatSymbolIdentity(definition.identity))).toEqual([
+        "src/lib.js::Foo::bar",
+      ]);
+      expect(referenceLocations(references)).toEqual(["src/use.js:2"]);
+    },
+  );
+});
+
 async function backendOverSources(sources: Readonly<Record<string, string>>): Promise<{
   readonly backend: TypeScriptBackend;
   readonly files: readonly WorkspaceFile[];

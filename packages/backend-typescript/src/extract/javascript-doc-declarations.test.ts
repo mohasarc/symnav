@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { Project, ts, type SourceFile } from "ts-morph";
+import { Project, ts, type Node, type SourceFile } from "ts-morph";
 import { OverviewTree, formatSymbolIdentity, type SymbolOverviewNode } from "@symnav/core";
 
 import { parseTypeScriptSource } from "../../test/helpers/parse-typescript-source.js";
@@ -290,6 +290,74 @@ describe("JSDoc type alias declarations against the TypeScript binder", () => {
     expect(listedTypeAliases(sourceFile)).toEqual(binderTypeAliases(sourceFile));
   });
 });
+
+describe("JSDoc @enum declarations against the TypeScript binder", () => {
+  it.each([
+    [
+      "CommonJS declarations",
+      [
+        "/** @enum {number} */",
+        "const Color = { Red: 1 };",
+        "/** @enum {string} */",
+        "var first = {}, second = {};",
+        "function Foo() {",
+        "  /** @enum {number} */",
+        "  this.own = {};",
+        "  /** @enum {number} */",
+        "  let Inner;",
+        "}",
+        "/** @enum {number} */",
+        "Foo.Kind = { A: 1 };",
+        "/** @enum {number} */",
+        "Foo.prototype.shared = {};",
+        "const ns = {};",
+        "/** @enum {number} */",
+        "ns.Mode = {};",
+        "/** @enum {string} */",
+        "exports.Exported = {};",
+        "/** @enum {string} */",
+        "module.exports.Level = {};",
+        "/** @enum {number} */",
+        "exports.outer = exports.inner = {};",
+        "/** @enum {number} */",
+        'exports["literal"] = {};',
+        "/** @enum {number} */",
+        "exports.Exported.Deep = {};",
+        "function outer() {",
+        "  function Bar() {}",
+        "  /** @enum {number} */",
+        "  Bar.nested = {};",
+        "}",
+      ],
+    ],
+    ["an ES module", ["/** @enum {number} */", "export const Color = { Red: 1 };"]],
+  ])("labels exactly the values the binder merges an @enum into for %s", (_case, lines) => {
+    const sourceFile = programSourceFile("input.js", lines.join("\n"));
+    const valueDeclarations = [
+      ...FileDeclarationExtraction.extract({ sourceFile, filePath: "input.js" }).declarationNodes,
+    ].filter(([declaration]) => VALUE_LABELS.has(declaration.kind.nativeLabel));
+
+    expect(
+      valueDeclarations.map(([declaration]) => [
+        formatSymbolIdentity(declaration.identity),
+        declaration.kind.nativeLabel === "enum",
+      ]),
+    ).toEqual(
+      valueDeclarations.map(([declaration, node]) => [
+        formatSymbolIdentity(declaration.identity),
+        binderMergesEnum(node),
+      ]),
+    );
+  });
+});
+
+const VALUE_LABELS: ReadonlySet<string> = new Set(["variable", "property", "enum"]);
+
+function binderMergesEnum(declaration: Node): boolean {
+  const declaringNode = declaration.compilerNode as BoundNode;
+  const symbol = declaringNode.symbol ?? (declaringNode.parent as BoundNode).symbol;
+  return symbol?.declarations?.some(ts.isJSDocEnumTag) ?? false;
+}
 
 interface BoundNode extends ts.Node {
   readonly symbol?: ts.Symbol;

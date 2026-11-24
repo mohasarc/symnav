@@ -340,6 +340,129 @@ describe("CommonJS export declarations in overview", () => {
   });
 });
 
+describe("expando prototype members in overview", () => {
+  it("lists Foo.prototype properties under the function, as methods for function values", () => {
+    const source = [
+      "function Foo() {}",
+      "Foo.prototype.bar = function (a) { return a; };",
+      "Foo.prototype.baz = 1;",
+      "Foo.prototype.multi = function () {",
+      "  return 2;",
+      "};",
+    ].join("\n");
+
+    expect(summariesOf(source)).toEqual([
+      {
+        id: "input.js::Foo",
+        label: "function-implementation",
+        range: [1, 1],
+        header: ["function Foo()"],
+      },
+      {
+        id: "input.js::Foo::bar",
+        label: "method-implementation",
+        range: [2, 2],
+        header: ["Foo.prototype.bar = function (a) { return a; }"],
+      },
+      {
+        id: "input.js::Foo::baz",
+        label: "property",
+        range: [3, 3],
+        header: ["Foo.prototype.baz = 1"],
+      },
+      {
+        id: "input.js::Foo::multi",
+        label: "method-implementation",
+        range: [4, 6],
+        header: ["Foo.prototype.multi = function () …"],
+      },
+    ]);
+  });
+
+  it("orders prototype members by line among the container's own children", () => {
+    const source = [
+      "Foo.prototype.early = 1;",
+      "function Foo() {",
+      "  function inner() {}",
+      "}",
+      "Foo.prototype.late = 2;",
+    ].join("\n");
+
+    expect(idsOf(source)).toEqual([
+      "input.js::Foo",
+      "input.js::Foo::early",
+      "input.js::Foo::inner",
+      "input.js::Foo::late",
+    ]);
+  });
+
+  it.each([
+    ["a function expression", "var Foo = function () {};"],
+    ["an arrow function", "const Foo = () => {};"],
+    ["a class declaration", "class Foo {}"],
+    ["a class expression", "const Foo = class {};"],
+    ["any other value", "let Foo = make();"],
+  ])("lists prototype members of a container declared as %s", (_container, declaration) => {
+    expect(idsOf(`${declaration}\nFoo.prototype.m = 1;\nFoo.prototype["lit"] = 2;`)).toEqual([
+      "input.js::Foo",
+      "input.js::Foo::m",
+      "input.js::Foo::lit",
+    ]);
+  });
+
+  it("lists prototype members of a container declared in the same function", () => {
+    const source = [
+      "function outer() {",
+      "  function Foo() {}",
+      "  if (ready) {",
+      "    Foo.prototype.m = 1;",
+      "  }",
+      "}",
+    ].join("\n");
+
+    expect(idsOf(source)).toEqual([
+      "input.js::outer",
+      "input.js::outer::Foo",
+      "input.js::outer::Foo::m",
+    ]);
+  });
+
+  it("nests declarations from a prototype method's body under the member", () => {
+    const source = [
+      "function Foo() {}",
+      "Foo.prototype.bar = function () {",
+      "  function helper() {}",
+      "};",
+    ].join("\n");
+
+    expect(idsOf(source)).toEqual([
+      "input.js::Foo",
+      "input.js::Foo::bar",
+      "input.js::Foo::bar::helper",
+    ]);
+  });
+
+  it("emits no member for a prototype assigned outside its container's scope, on a parameter, or on an undeclared name", () => {
+    const source = [
+      "function Foo() {}",
+      "function init(P) {",
+      "  Foo.prototype.a = 1;",
+      "  P.prototype.b = 2;",
+      "}",
+      "Bar.prototype.c = 3;",
+      "Foo.prototype.d = void 0;",
+    ].join("\n");
+
+    expect(idsOf(source)).toEqual(["input.js::Foo", "input.js::init"]);
+  });
+
+  it("emits no member for the same syntax in a TypeScript file", () => {
+    const { entries } = fileEntriesOf("function Foo() {}\nFoo.prototype.bar = 1;", "input.ts");
+
+    expect(OverviewTree.walkSymbols(entries).map(idOf)).toEqual(["input.ts::Foo"]);
+  });
+});
+
 describe("CommonJS export declarations against the TypeScript binder", () => {
   it.each([
     [

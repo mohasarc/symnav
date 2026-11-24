@@ -13,6 +13,7 @@ import {
 } from "@symnav/core";
 import { Project, type SourceFile, ts } from "ts-morph";
 
+import { TypeScriptBackend } from "./typescript-backend.js";
 import type { TypeScriptSemanticSourceProvider } from "./typescript-workspace-state.js";
 import type { TypeScriptSemanticQueryObserver } from "./typescript-semantic-query-observer.js";
 import { SharedSourceFileRegistry } from "./shared-source-file-registry.js";
@@ -27,6 +28,14 @@ export interface TypeScriptProjectGraphRefresh {
 }
 
 const TYPESCRIPT_CONFIGURATION_FILE_NAME = "tsconfig.json";
+const JAVASCRIPT_CONFIGURATION_FILE_NAME = "jsconfig.json";
+
+const INFERRED_JAVASCRIPT_OPTIONS: Readonly<ts.CompilerOptions> = {
+  allowJs: true,
+  jsx: ts.JsxEmit.Preserve,
+  checkJs: false,
+  maxNodeModuleJsDepth: 0,
+};
 
 interface ParsedTypeScriptConfiguration {
   readonly path: string;
@@ -170,9 +179,10 @@ export class TypeScriptProjectGraph
     const directoriesByDepth = TypeScriptProjectGraph.workspaceDirectories(snapshot, paths)
       .map((directory) => ({ directory, relative: paths.relative(snapshot.root, directory) }))
       .sort(TypeScriptProjectGraph.compareShallowFirst);
-    return directoriesByDepth.map(({ directory }) =>
+    return directoriesByDepth.flatMap(({ directory }) => [
       paths.join(directory, TYPESCRIPT_CONFIGURATION_FILE_NAME),
-    );
+      paths.join(directory, JAVASCRIPT_CONFIGURATION_FILE_NAME),
+    ]);
   }
 
   protected async parseConfiguration(request: {
@@ -184,10 +194,18 @@ export class TypeScriptProjectGraph
     const { path, content, snapshot, inputCollector } = request;
     const paths = new WorkspacePathDialect(snapshot.root);
     const normalizedPath = paths.normalize(path);
+    const shadowedBySiblingTypeScriptConfiguration =
+      TypeScriptProjectGraph.hasSiblingTypeScriptConfiguration(
+        normalizedPath,
+        paths,
+        inputCollector,
+      );
+    if (shadowedBySiblingTypeScriptConfiguration) return undefined;
     const parsed = ts.parseConfigFileTextToJson(normalizedPath, content);
     if (parsed.error || !parsed.config || typeof parsed.config !== "object") return undefined;
     const value = parsed.config as Record<string, unknown>;
     const extendedInputs = new Map<string, string>();
+    const javascriptMatches: string[] = [];
     const parsedConfiguration = ts.parseJsonConfigFileContent(
       value,
       {
@@ -203,12 +221,32 @@ export class TypeScriptProjectGraph
           extendedInputs.set(normalizedCandidate, candidateContent);
           return candidateContent;
         },
-        readDirectory: (root, extensions, excludes, includes, depth) =>
-          this.readConfiguredDirectory(snapshot, root, extensions, excludes, includes, depth),
+        readDirectory: (root, extensions, excludes, includes, depth) => {
+          const matches = this.readConfiguredDirectory(
+            snapshot,
+            root,
+            [...extensions, ...TypeScriptBackend.javascriptExtensions],
+            excludes,
+            includes,
+            depth,
+          );
+          const requestedMatches = matches.filter((match) =>
+            TypeScriptProjectGraph.hasExtension(match, extensions),
+          );
+          javascriptMatches.push(
+            ...matches.filter((match) =>
+              TypeScriptProjectGraph.hasExtension(match, TypeScriptBackend.javascriptExtensions),
+            ),
+          );
+          return requestedMatches;
+        },
       },
       paths.dirname(normalizedPath),
       undefined,
       normalizedPath,
+    );
+    const fileNames = [...parsedConfiguration.fileNames, ...javascriptMatches].map((fileName) =>
+      paths.normalize(fileName),
     );
     const configuration: ParsedTypeScriptConfiguration = {
       path: normalizedPath,
@@ -216,7 +254,7 @@ export class TypeScriptProjectGraph
       content,
       value,
       compilerOptions: parsedConfiguration.options,
-      fileNames: parsedConfiguration.fileNames.map((fileName) => paths.normalize(fileName)),
+      fileNames,
       extendedInputs,
     };
     return {
@@ -257,6 +295,7 @@ export class TypeScriptProjectGraph
           TypeScriptProjectGraph.compilerOptionsFor(
             request.snapshot.root,
             configuration,
+            files,
             workspacePackages,
           ),
           files,
@@ -365,6 +404,19 @@ export class TypeScriptProjectGraph
     return [...directories.values()];
   }
 
+  private static hasSiblingTypeScriptConfiguration(
+    configurationPath: string,
+    paths: WorkspacePathDialect,
+    inputCollector: ProjectInputCollector,
+  ): boolean {
+    if (posix.basename(configurationPath) !== JAVASCRIPT_CONFIGURATION_FILE_NAME) return false;
+    const siblingPath = paths.join(
+      paths.dirname(configurationPath),
+      TYPESCRIPT_CONFIGURATION_FILE_NAME,
+    );
+    return inputCollector.read(siblingPath) !== undefined;
+  }
+
   private static compareShallowFirst(
     left: { readonly relative: string },
     right: { readonly relative: string },
@@ -414,6 +466,7 @@ export class TypeScriptProjectGraph
   private static compilerOptionsFor(
     root: string,
     configuration: ParsedTypeScriptConfiguration,
+    ownedFiles: readonly WorkspaceFile[],
     workspacePackages: readonly WorkspacePackage[],
   ): ts.CompilerOptions {
     const pathDialect = new WorkspacePathDialect(root);
@@ -429,6 +482,13 @@ export class TypeScriptProjectGraph
     compilerOptions.baseUrl ??= root;
     compilerOptions.paths = paths;
     compilerOptions.noEmit = true;
+    const ownsJavaScript = ownedFiles.some((file) =>
+      TypeScriptProjectGraph.hasExtension(file.absolute, TypeScriptBackend.javascriptExtensions),
+    );
+    if (compilerOptions.allowJs !== true && ownsJavaScript) {
+      compilerOptions.allowJs = true;
+      compilerOptions.maxNodeModuleJsDepth ??= 0;
+    }
     return compilerOptions;
   }
 
@@ -437,6 +497,7 @@ export class TypeScriptProjectGraph
     workspacePackages: readonly WorkspacePackage[],
   ): ts.CompilerOptions {
     return {
+      ...INFERRED_JAVASCRIPT_OPTIONS,
       baseUrl: root,
       paths: TypeScriptProjectGraph.workspacePackagePaths(workspacePackages),
       noEmit: true,
@@ -451,6 +512,10 @@ export class TypeScriptProjectGraph
       for (const mapping of workspacePackage.mappings) paths[mapping.specifier] = [mapping.target];
     }
     return paths;
+  }
+
+  private static hasExtension(path: string, extensions: readonly string[]): boolean {
+    return extensions.some((extension) => path.endsWith(extension));
   }
 
   private static directoryKeyPrefix(directory: string, paths: WorkspacePathDialect): string {

@@ -22,7 +22,7 @@ import {
   type SymbolIdentity,
   type WorkspaceSnapshot,
 } from "@symnav/core";
-import type { ts } from "ts-morph";
+import { ts } from "ts-morph";
 
 import { TypeScriptBackend } from "./typescript-backend.js";
 import { TypeScriptProjectGraph } from "./typescript-project-graph.js";
@@ -622,6 +622,439 @@ describe("TypeScriptProjectGraph", () => {
     expect(options?.paths?.["@local/*"]).toBeUndefined();
   });
 
+  it("loads uncovered JavaScript files into the inferred project with JavaScript defaults", async () => {
+    const fileSystem = new InMemoryFileSystem({
+      "/repo/src/tabs.js": "export function createTabs(label) { return label; }\n",
+      "/repo/src/use.ts": 'import { createTabs } from "./tabs.js";\ncreateTabs("home");\n',
+    });
+    const files = ["src/tabs.js", "src/use.ts"].map((relative) => ({
+      relative,
+      absolute: `/repo/${relative}`,
+      metadata: fileSystem.metadataSync(`/repo/${relative}`),
+    }));
+    const graph = new TypeScriptProjectGraph(fileSystem);
+
+    await graph.refresh({ root: "/repo", files });
+
+    const program = graph.programFor("src/tabs.js");
+    expect(program?.getSourceFile("/repo/src/tabs.js")).toBeDefined();
+    expect(program?.getCompilerOptions()).toMatchObject({
+      allowJs: true,
+      jsx: ts.JsxEmit.Preserve,
+      checkJs: false,
+      maxNodeModuleJsDepth: 0,
+    });
+    expect(program?.getCompilerOptions().module).toBeUndefined();
+    expect(program?.getCompilerOptions().moduleResolution).toBeUndefined();
+  });
+
+  it("keeps untyped node_modules JavaScript out of the inferred project", async () => {
+    const fileSystem = new InMemoryFileSystem({
+      "/repo/node_modules/untyped/package.json": JSON.stringify({ name: "untyped" }),
+      "/repo/node_modules/untyped/index.js": "exports.untypedHelper = function () {};\n",
+      "/repo/src/use.ts": 'import { untypedHelper } from "untyped";\nuntypedHelper();\n',
+    });
+    const files = [
+      {
+        relative: "src/use.ts",
+        absolute: "/repo/src/use.ts",
+        metadata: fileSystem.metadataSync("/repo/src/use.ts"),
+      },
+    ];
+    const graph = new TypeScriptProjectGraph(fileSystem);
+
+    await graph.refresh({ root: "/repo", files });
+
+    const program = graph.programFor("src/use.ts");
+    expect(program?.getSourceFile("/repo/src/use.ts")).toBeDefined();
+    expect(program?.getSourceFile("/repo/node_modules/untyped/index.js")).toBeUndefined();
+  });
+
+  it("owns covered JavaScript in a configuration without allowJs and forces allowJs on", async () => {
+    const workspace = inMemoryWorkspace({
+      "tsconfig.json": JSON.stringify({
+        compilerOptions: { strict: true, baseUrl: ".", paths: { "@lib/*": ["lib/*"] } },
+        include: ["src", "lib"],
+      }),
+      "lib/helper.ts": "export function helper(): number { return 1; }\n",
+      "src/b.js":
+        'import { helper } from "@lib/helper";\nexport function useHelper() { return helper(); }\n',
+    });
+    const graph = new TypeScriptProjectGraph(workspace.fileSystem);
+    const backend = new TypeScriptBackend(workspace.fileSystem);
+    await backend.refresh({ snapshot: workspace.snapshot, coverage: "workspace" });
+
+    const refresh = await graph.refresh(workspace.snapshot);
+    const options = graph.programFor("src/b.js")?.getCompilerOptions();
+    const callees = await calleeNames(
+      backend,
+      workspace.snapshot.files,
+      symbolIdentity("src/b.js", "useHelper"),
+    );
+
+    expect(refresh.inferredFileCount).toBe(0);
+    expect(options).toMatchObject({ allowJs: true, maxNodeModuleJsDepth: 0, strict: true });
+    expect(options?.paths?.["@lib/*"]).toEqual(["/repo/lib/*"]);
+    expect(callees).toEqual(["helper"]);
+  });
+
+  it("forces allowJs on for a configuration that disables it but covers JavaScript", async () => {
+    const workspace = inMemoryWorkspace({
+      "tsconfig.json": JSON.stringify({ compilerOptions: { allowJs: false } }),
+      "src/a.ts": "export const a = 1;\n",
+      "src/b.js": "export function b() {}\n",
+    });
+    const graph = new TypeScriptProjectGraph(workspace.fileSystem);
+
+    const refresh = await graph.refresh(workspace.snapshot);
+    const program = graph.programFor("src/b.js");
+
+    expect(refresh.inferredFileCount).toBe(0);
+    expect(program?.getSourceFile("/repo/src/a.ts")).toBeDefined();
+    expect(program?.getSourceFile("/repo/src/b.js")).toBeDefined();
+    expect(program?.getCompilerOptions()).toMatchObject({ allowJs: true, maxNodeModuleJsDepth: 0 });
+  });
+
+  it("forces allowJs on for JavaScript listed in files", async () => {
+    const workspace = inMemoryWorkspace({
+      "tsconfig.json": JSON.stringify({ files: ["src/b.js"] }),
+      "src/b.js": "export function b() {}\n",
+    });
+    const graph = new TypeScriptProjectGraph(workspace.fileSystem);
+
+    const refresh = await graph.refresh(workspace.snapshot);
+    const program = graph.programFor("src/b.js");
+
+    expect(refresh.inferredFileCount).toBe(0);
+    expect(program?.getSourceFile("/repo/src/b.js")).toBeDefined();
+    expect(program?.getCompilerOptions()).toMatchObject({ allowJs: true, maxNodeModuleJsDepth: 0 });
+  });
+
+  it("owns covered JavaScript in a nested configuration without allowJs", async () => {
+    const workspace = inMemoryWorkspace({
+      "packages/a/tsconfig.json": JSON.stringify({ include: ["src"] }),
+      "packages/a/src/x.js": "export function x() {}\n",
+    });
+    const graph = new TypeScriptProjectGraph(workspace.fileSystem);
+
+    const refresh = await graph.refresh(workspace.snapshot);
+    const program = graph.programFor("packages/a/src/x.js");
+
+    expect(refresh.configuredProjectCount).toBe(1);
+    expect(refresh.inferredFileCount).toBe(0);
+    expect(program?.getSourceFile("/repo/packages/a/src/x.js")).toBeDefined();
+    expect(program?.getCompilerOptions()).toMatchObject({ allowJs: true, maxNodeModuleJsDepth: 0 });
+  });
+
+  it.each([
+    ["src/Tabs.js", "src/Tabs.d.ts"],
+    ["src/Tabs.jsx", "src/Tabs.d.ts"],
+    ["src/tabs.mjs", "src/tabs.d.mts"],
+    ["src/tabs.cjs", "src/tabs.d.cts"],
+    ["src/tabs.js", "src/tabs.ts"],
+  ])(
+    "owns %s beside %s in one allowJs configuration program",
+    async (javascriptPath, typeScriptPath) => {
+      const workspace = inMemoryWorkspace({
+        "tsconfig.json": JSON.stringify({ compilerOptions: { allowJs: true } }),
+        [javascriptPath]: "export function tabs() {}\n",
+        [typeScriptPath]: "export declare function tabs(): void;\n",
+      });
+      const graph = new TypeScriptProjectGraph(workspace.fileSystem);
+
+      const refresh = await graph.refresh(workspace.snapshot);
+      const program = graph.programFor(javascriptPath);
+
+      expect(refresh.inferredFileCount).toBe(0);
+      expect(program?.getSourceFile(`/repo/${javascriptPath}`)).toBeDefined();
+      expect(program?.getSourceFile(`/repo/${typeScriptPath}`)).toBeDefined();
+      expect(graph.programFor(typeScriptPath)).toBe(program);
+    },
+  );
+
+  it.each([
+    [
+      "directly",
+      { "tsconfig.json": JSON.stringify({ compilerOptions: { maxNodeModuleJsDepth: 3 } }) },
+    ],
+    [
+      "through extends",
+      {
+        "tsconfig.json": JSON.stringify({ extends: "./tsconfig.base.json" }),
+        "tsconfig.base.json": JSON.stringify({ compilerOptions: { maxNodeModuleJsDepth: 3 } }),
+      },
+    ],
+  ])("honors a maxNodeModuleJsDepth configured %s for covered JavaScript", async (_, configs) => {
+    const workspace = inMemoryWorkspace({ ...configs, "src/b.js": "export function b() {}\n" });
+    const graph = new TypeScriptProjectGraph(workspace.fileSystem);
+
+    await graph.refresh(workspace.snapshot);
+
+    expect(graph.programFor("src/b.js")?.getCompilerOptions()).toMatchObject({
+      allowJs: true,
+      maxNodeModuleJsDepth: 3,
+    });
+  });
+
+  it.each([
+    ["an include of TypeScript only", { include: ["src/**/*.ts"] }],
+    ["files only", { files: ["src/a.ts"] }],
+  ])(
+    "keeps compiler options and leaves JavaScript inferred for a configuration with %s",
+    async (_, configuration) => {
+      const workspace = inMemoryWorkspace({
+        "tsconfig.json": JSON.stringify({ compilerOptions: { strict: true }, ...configuration }),
+        "src/a.ts": "export const a = 1;\n",
+        "src/b.js": "export function b() {}\n",
+      });
+      const graph = new TypeScriptProjectGraph(workspace.fileSystem);
+
+      const refresh = await graph.refresh(workspace.snapshot);
+      const options = graph.programFor("src/a.ts")?.getCompilerOptions();
+      const javascriptProgram = graph.programFor("src/b.js");
+
+      expect(refresh.inferredFileCount).toBe(1);
+      expect(options?.strict).toBe(true);
+      expect(options?.allowJs).toBeUndefined();
+      expect(options?.maxNodeModuleJsDepth).toBeUndefined();
+      expect(javascriptProgram?.getCompilerOptions().strict).toBeUndefined();
+    },
+  );
+
+  it("keeps compiler options of a configuration listing JavaScript outside the snapshot", async () => {
+    const fileSystem = new InMemoryFileSystem({
+      "/repo/tsconfig.json": JSON.stringify({ files: ["src/a.ts", "src/b.js"] }),
+      "/repo/src/a.ts": 'import { b } from "./b.js";\nexport const a = b();\n',
+      "/repo/src/b.js": "export function b() {}\n",
+    });
+    const files = [
+      {
+        relative: "src/a.ts",
+        absolute: "/repo/src/a.ts",
+        metadata: fileSystem.metadataSync("/repo/src/a.ts"),
+      },
+    ];
+    const graph = new TypeScriptProjectGraph(fileSystem);
+
+    await graph.refresh({ root: "/repo", files });
+    const options = graph.programFor("src/a.ts")?.getCompilerOptions();
+
+    expect(options?.allowJs).toBeUndefined();
+    expect(options?.maxNodeModuleJsDepth).toBeUndefined();
+  });
+
+  it("owns JavaScript in a root jsconfig.json project with TypeScript's jsconfig defaults", async () => {
+    const workspace = inMemoryWorkspace({
+      "jsconfig.json": JSON.stringify({}),
+      "src/a.js": "export function a() {}\n",
+      "src/b.js": 'import { a } from "./a.js";\nexport function b() { return a(); }\n',
+    });
+    const graph = new TypeScriptProjectGraph(workspace.fileSystem);
+
+    const refresh = await graph.refresh(workspace.snapshot);
+    const program = graph.programFor("src/b.js");
+
+    expect(refresh.configuredProjectCount).toBe(1);
+    expect(refresh.inferredFileCount).toBe(0);
+    expect(graph.programFor("src/a.js")).toBe(program);
+    expect(program?.getCompilerOptions()).toMatchObject({
+      allowJs: true,
+      allowSyntheticDefaultImports: true,
+      skipLibCheck: true,
+      noEmit: true,
+      maxNodeModuleJsDepth: 2,
+    });
+  });
+
+  it("owns TypeScript a root jsconfig.json covers and resolves its path aliases", async () => {
+    const workspace = inMemoryWorkspace({
+      "jsconfig.json": JSON.stringify({
+        compilerOptions: { baseUrl: ".", paths: { "@lib/*": ["lib/*"] } },
+      }),
+      "lib/helper.ts": "export function helper(): number { return 1; }\n",
+      "src/use.ts":
+        'import { helper } from "@lib/helper";\nexport function useHelper() { return helper(); }\n',
+    });
+    const graph = new TypeScriptProjectGraph(workspace.fileSystem);
+    const backend = new TypeScriptBackend(workspace.fileSystem);
+    await backend.refresh({ snapshot: workspace.snapshot, coverage: "workspace" });
+
+    const refresh = await graph.refresh(workspace.snapshot);
+    const callees = await calleeNames(
+      backend,
+      workspace.snapshot.files,
+      symbolIdentity("src/use.ts", "useHelper"),
+    );
+
+    expect(refresh.configuredProjectCount).toBe(1);
+    expect(refresh.inferredFileCount).toBe(0);
+    expect(callees).toEqual(["helper"]);
+  });
+
+  it("uses only the tsconfig.json when a jsconfig.json shares its directory", async () => {
+    const workspace = inMemoryWorkspace({
+      "tsconfig.json": JSON.stringify({ compilerOptions: { strict: true } }),
+      "jsconfig.json": JSON.stringify({}),
+      "src/a.ts": "export const a = 1;\n",
+    });
+    const graph = new TypeScriptProjectGraph(workspace.fileSystem);
+
+    const refresh = await graph.refresh(workspace.snapshot);
+    const options = graph.programFor("src/a.ts")?.getCompilerOptions();
+
+    expect(refresh.configuredProjectCount).toBe(1);
+    expect(options?.strict).toBe(true);
+    expect(options?.skipLibCheck).toBeUndefined();
+  });
+
+  it("switches between jsconfig.json and tsconfig.json as a sibling tsconfig.json comes and goes", async () => {
+    const projectFixture = fixture();
+    projectFixture.write("scratch/jsconfig.json", JSON.stringify({}));
+    const graph = new TypeScriptProjectGraph(projectFixture.fileSystem);
+    const snapshot = await projectFixture.snapshot();
+    const scratchOptions = () => graph.programFor("scratch/outside.ts")?.getCompilerOptions();
+
+    const withJavaScriptConfiguration = await graph.refresh(snapshot);
+    const javaScriptOptions = scratchOptions();
+    projectFixture.write(
+      "scratch/tsconfig.json",
+      JSON.stringify({ compilerOptions: { strict: true } }),
+    );
+    const withTypeScriptConfiguration = await graph.refresh(snapshot);
+    const typeScriptOptions = scratchOptions();
+    projectFixture.remove("scratch/tsconfig.json");
+    const restored = await graph.refresh(snapshot);
+
+    expect(withJavaScriptConfiguration.inferredFileCount).toBe(0);
+    expect(javaScriptOptions?.skipLibCheck).toBe(true);
+    expect(withTypeScriptConfiguration.configuredProjectCount).toBe(
+      withJavaScriptConfiguration.configuredProjectCount,
+    );
+    expect(typeScriptOptions).toMatchObject({ strict: true });
+    expect(typeScriptOptions?.skipLibCheck).toBeUndefined();
+    expect(restored.configuredProjectCount).toBe(
+      withJavaScriptConfiguration.configuredProjectCount,
+    );
+    expect(scratchOptions()?.skipLibCheck).toBe(true);
+  });
+
+  it("makes a nested jsconfig.json primary for TypeScript under it over an ancestor tsconfig.json", async () => {
+    const workspace = inMemoryWorkspace({
+      "tsconfig.json": JSON.stringify({
+        compilerOptions: { baseUrl: ".", paths: { "@x/*": ["src/*"] } },
+      }),
+      "docs/jsconfig.json": JSON.stringify({}),
+      "src/x.ts": "export function x(): number { return 1; }\n",
+      "docs/demo.ts": 'import { x } from "@x/x";\nexport function demo() { return x(); }\n',
+    });
+    const graph = new TypeScriptProjectGraph(workspace.fileSystem);
+    const backend = new TypeScriptBackend(workspace.fileSystem);
+    await backend.refresh({ snapshot: workspace.snapshot, coverage: "workspace" });
+
+    const refresh = await graph.refresh(workspace.snapshot);
+    const options = graph.programFor("docs/demo.ts")?.getCompilerOptions();
+    const callees = await calleeNames(
+      backend,
+      workspace.snapshot.files,
+      symbolIdentity("docs/demo.ts", "demo"),
+    );
+
+    expect(refresh.configuredProjectCount).toBe(2);
+    expect(options?.skipLibCheck).toBe(true);
+    expect(options?.paths?.["@x/*"]).toBeUndefined();
+    expect(callees).toEqual([]);
+  });
+
+  it("discovers a nested jsconfig.json without a root configuration", async () => {
+    const workspace = inMemoryWorkspace({
+      "packages/a/jsconfig.json": JSON.stringify({}),
+      "packages/a/src/x.js": "export function x() {}\n",
+      "scratch/y.js": "export function y() {}\n",
+    });
+    const graph = new TypeScriptProjectGraph(workspace.fileSystem);
+
+    const refresh = await graph.refresh(workspace.snapshot);
+    const program = graph.programFor("packages/a/src/x.js");
+
+    expect(refresh.configuredProjectCount).toBe(1);
+    expect(refresh.inferredFileCount).toBe(1);
+    expect(program?.getSourceFile("/repo/packages/a/src/x.js")).toBeDefined();
+    expect(program?.getCompilerOptions()).toMatchObject({ skipLibCheck: true });
+  });
+
+  it("applies options a jsconfig.json extends from a base jsconfig", async () => {
+    const workspace = inMemoryWorkspace({
+      "jsconfig.json": JSON.stringify({ extends: "./jsconfig.base.json" }),
+      "jsconfig.base.json": JSON.stringify({ compilerOptions: { checkJs: true } }),
+      "src/b.js": "export function b() {}\n",
+    });
+    const graph = new TypeScriptProjectGraph(workspace.fileSystem);
+
+    const refresh = await graph.refresh(workspace.snapshot);
+
+    expect(refresh.configuredProjectCount).toBe(1);
+    expect(graph.programFor("src/b.js")?.getCompilerOptions()).toMatchObject({
+      checkJs: true,
+      skipLibCheck: true,
+    });
+  });
+
+  it("loads a jsconfig.json reached only through a project reference", async () => {
+    const workspace = inMemoryWorkspace({
+      "tsconfig.json": JSON.stringify({
+        files: [],
+        references: [{ path: "config/jsconfig.json" }],
+      }),
+      "config/jsconfig.json": JSON.stringify({ files: ["../web/src/b.js"] }),
+      "web/src/b.js": "export function b() {}\n",
+    });
+    const graph = new TypeScriptProjectGraph(workspace.fileSystem);
+
+    const refresh = await graph.refresh(workspace.snapshot);
+
+    expect(refresh.configuredProjectCount).toBe(2);
+    expect(refresh.inferredFileCount).toBe(0);
+    expect(graph.programFor("web/src/b.js")?.getCompilerOptions().skipLibCheck).toBe(true);
+  });
+
+  it("resolves jsconfig.json path aliases from JavaScript", async () => {
+    const workspace = inMemoryWorkspace({
+      "jsconfig.json": JSON.stringify({
+        compilerOptions: { baseUrl: ".", paths: { "@lib/*": ["lib/*"] } },
+      }),
+      "lib/helper.js": "export function helper() { return 1; }\n",
+      "src/b.js":
+        'import { helper } from "@lib/helper";\nexport function useHelper() { return helper(); }\n',
+    });
+    const backend = new TypeScriptBackend(workspace.fileSystem);
+    await backend.refresh({ snapshot: workspace.snapshot, coverage: "workspace" });
+
+    const callees = await calleeNames(
+      backend,
+      workspace.snapshot.files,
+      symbolIdentity("src/b.js", "useHelper"),
+    );
+
+    expect(callees).toEqual(["helper"]);
+  });
+
+  it.each(["tsconfig.json", "jsconfig.json"])(
+    "leaves JavaScript a %s excludes in the inferred project",
+    async (configurationName) => {
+      const workspace = inMemoryWorkspace({
+        [configurationName]: JSON.stringify({ exclude: ["src/legacy"] }),
+        "src/b.js": "export function b() {}\n",
+        "src/legacy/x.js": "export function x() {}\n",
+      });
+      const graph = new TypeScriptProjectGraph(workspace.fileSystem);
+
+      const refresh = await graph.refresh(workspace.snapshot);
+
+      expect(refresh.inferredFileCount).toBe(1);
+      expect(graph.programFor("src/legacy/x.js")).not.toBe(graph.programFor("src/b.js"));
+    },
+  );
+
   it("keeps implicit outDir contents outside configured membership", async () => {
     const projectFixture = fixture();
     const graph = new TypeScriptProjectGraph(projectFixture.fileSystem);
@@ -843,6 +1276,26 @@ function writeSharedImportProjects(projectFixture: ConfiguredProjectFixture): vo
 
 function sharedImportProjectFiles(): readonly string[] {
   return Array.from({ length: SHARED_IMPORT_PROJECT_COUNT }, (_, index) => `ext/e${index}/f.ts`);
+}
+
+function inMemoryWorkspace(sources: Readonly<Record<string, string>>): {
+  readonly fileSystem: InMemoryFileSystem;
+  readonly snapshot: WorkspaceSnapshot;
+} {
+  const fileSystem = new InMemoryFileSystem(
+    Object.fromEntries(
+      Object.entries(sources).map(([relativePath, content]) => [`/repo/${relativePath}`, content]),
+    ),
+  );
+  const files = Object.keys(sources)
+    .filter((relativePath) => !relativePath.endsWith(".json"))
+    .sort()
+    .map((relativePath) => ({
+      relative: relativePath,
+      absolute: `/repo/${relativePath}`,
+      metadata: fileSystem.metadataSync(`/repo/${relativePath}`),
+    }));
+  return { fileSystem, snapshot: { root: "/repo", files } };
 }
 
 async function calleeNames(

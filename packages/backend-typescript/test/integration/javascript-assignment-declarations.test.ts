@@ -105,6 +105,41 @@ describe("TypeScriptBackend CommonJS export declarations", () => {
       "src/lib.js:2",
     ]);
   });
+
+  it.each([
+    ["method", "lib.method"],
+    ["property", "lib.property"],
+    ["accessor", "lib.accessor"],
+    ["dash-key", 'lib["dash-key"]'],
+    ["7", "lib[7]"],
+    ["computed", "lib.computed"],
+  ])(
+    "resolves the module.exports object member %s and finds its require users",
+    async (name, use) => {
+      const { backend, files } = await backendOverSources({
+        "src/lib.js": [
+          "module.exports = {",
+          "  method() { return 1; },",
+          "  property: 2,",
+          "  get accessor() { return 3; },",
+          '  "dash-key": 4,',
+          "  7: 5,",
+          '  ["computed"]: 6,',
+          "};",
+          "",
+        ].join("\n"),
+        "src/required.js": `const lib = require('./lib');\n${use};\n`,
+      });
+
+      const definitions = await backend.findDefinitions(files, identity("src/lib.js", name));
+      const references = await backend.findReferences(files, identity("src/lib.js", name));
+
+      expect(definitions.map((definition) => formatSymbolIdentity(definition.identity))).toEqual([
+        `src/lib.js::${name}`,
+      ]);
+      expect(referenceLocations(references)).toEqual(["src/required.js:2"]);
+    },
+  );
 });
 
 async function backendOverSources(sources: Readonly<Record<string, string>>): Promise<{

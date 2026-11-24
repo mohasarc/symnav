@@ -80,6 +80,32 @@ describe("TypeScriptBackend CommonJS export declarations", () => {
     expect(referenceLocations(exportReferences)).toEqual(["src/required.js:2"]);
   });
 
+  it("locates an export hoisted from a function apart from a same-line same-name nested function", async () => {
+    const { backend, files } = await backendOverSources({
+      "src/lib.js": "function f() { exports.g = 1; function g() { return 2; } return g(); }\n",
+      "src/use.js": "const lib = require('./lib');\nlib.g;\n",
+    });
+
+    const exportReferences = await backend.findReferences(files, identity("src/lib.js", "g"));
+    const nestedReferences = await backend.findReferences(files, identity("src/lib.js", "f", "g"));
+
+    expect(referenceLocations(exportReferences)).toEqual(["src/use.js:2"]);
+    expect(referenceLocations(nestedReferences)).toEqual(["src/lib.js:1"]);
+  });
+
+  it("locates a function nested in an export's value apart from the same-line same-name export", async () => {
+    const { backend, files } = await backendOverSources({
+      "src/lib.js": "exports.h = function () { function h() { return 2; } return h(); };\n",
+      "src/use.js": "const lib = require('./lib');\nlib.h();\n",
+    });
+
+    const exportReferences = await backend.findReferences(files, identity("src/lib.js", "h"));
+    const nestedReferences = await backend.findReferences(files, identity("src/lib.js", "h", "h"));
+
+    expect(referenceLocations(exportReferences)).toEqual(["src/use.js:2"]);
+    expect(referenceLocations(nestedReferences)).toEqual(["src/lib.js:1"]);
+  });
+
   it("pairs exports.foo with its .d.ts twin", async () => {
     const { backend, files } = await backendOverSources({
       "src/lib.js": "exports.foo = function () { return 1; };\nexports.first = exports.foo();\n",

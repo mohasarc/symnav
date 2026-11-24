@@ -982,6 +982,23 @@ describe("TypeScriptProjectGraph", () => {
     expect(program?.getCompilerOptions()).toMatchObject({ skipLibCheck: true });
   });
 
+  it("applies options a jsconfig.json extends from a base jsconfig", async () => {
+    const workspace = inMemoryWorkspace({
+      "jsconfig.json": JSON.stringify({ extends: "./jsconfig.base.json" }),
+      "jsconfig.base.json": JSON.stringify({ compilerOptions: { checkJs: true } }),
+      "src/b.js": "export function b() {}\n",
+    });
+    const graph = new TypeScriptProjectGraph(workspace.fileSystem);
+
+    const refresh = await graph.refresh(workspace.snapshot);
+
+    expect(refresh.configuredProjectCount).toBe(1);
+    expect(graph.programFor("src/b.js")?.getCompilerOptions()).toMatchObject({
+      checkJs: true,
+      skipLibCheck: true,
+    });
+  });
+
   it("keeps implicit outDir contents outside configured membership", async () => {
     const projectFixture = fixture();
     const graph = new TypeScriptProjectGraph(projectFixture.fileSystem);

@@ -140,6 +140,28 @@ describe("TypeScriptBackend CommonJS export declarations", () => {
       expect(referenceLocations(references)).toEqual(["src/required.js:2"]);
     },
   );
+
+  it.each([
+    ["a function", "module.exports = function () { return 1; };\n"],
+    ["a local", "function make() { return 1; }\nmodule.exports = make;\n"],
+  ])(
+    "resolves module.exports assigned %s as default and finds its require and import users",
+    async (_value, librarySource) => {
+      const { backend, files } = await backendOverSources({
+        "src/lib.js": librarySource,
+        "src/required.js": "const make = require('./lib');\nmake();\n",
+        "src/imported.ts": "import make from './lib';\nexport const value = make();\n",
+      });
+
+      const definitions = await backend.findDefinitions(files, identity("src/lib.js", "default"));
+      const references = await backend.findReferences(files, identity("src/lib.js", "default"));
+
+      expect(definitions.map((definition) => formatSymbolIdentity(definition.identity))).toEqual([
+        "src/lib.js::default",
+      ]);
+      expect(referenceLocations(references)).toEqual(["src/imported.ts:1", "src/required.js:1"]);
+    },
+  );
 });
 
 async function backendOverSources(sources: Readonly<Record<string, string>>): Promise<{

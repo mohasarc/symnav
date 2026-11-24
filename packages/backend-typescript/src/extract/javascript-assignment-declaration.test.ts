@@ -592,6 +592,32 @@ describe("expando static members in overview", () => {
     ]);
   });
 
+  it("lists Object.defineProperty on a container and its prototype as members", () => {
+    const source = [
+      "function Foo() {}",
+      'Object.defineProperty(Foo, "make", { value: function () {} });',
+      'Object.defineProperty(Foo.prototype, "size", { get: function () { return 1; } });',
+      "Object.defineProperty(Foo, 1, { value: 2 });",
+    ].join("\n");
+
+    expect(
+      summariesOf(source).map((summary) => [summary.id, summary.label, summary.header]),
+    ).toEqual([
+      ["input.js::Foo", "function-implementation", ["function Foo()"]],
+      [
+        "input.js::Foo::make",
+        "method-implementation",
+        ['Object.defineProperty(Foo, "make", { value: function () {} })'],
+      ],
+      [
+        "input.js::Foo::size",
+        "property",
+        ['Object.defineProperty(Foo.prototype, "size", { get: function () { return 1; } })'],
+      ],
+      ["input.js::Foo::1", "property", ["Object.defineProperty(Foo, 1, { value: 2 })"]],
+    ]);
+  });
+
   it("emits no static member on a nested-scope local without an expando value, a parameter, or an outer-scope container", () => {
     const source = [
       "function Foo() {}",

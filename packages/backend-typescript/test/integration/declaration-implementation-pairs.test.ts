@@ -253,6 +253,64 @@ describe("TypeScriptBackend declaration and implementation pairs", () => {
       "src/app.ts:2",
     ]);
   });
+
+  it("keeps a JavaScript export the .d.ts does not declare unpaired", async () => {
+    const { backend, files } = await backendOverPairFixture();
+
+    const references = await backend.findReferences(files, identity("src/Tabs/Tabs.js", "styles"));
+
+    expect(referenceLocations(references)).toEqual(["src/Tabs/Tabs.js:10"]);
+  });
+
+  it("keeps a JavaScript value unpaired from a type-only .d.ts export of the same name", async () => {
+    const { backend, files } = await backendOverSources({
+      "src/foo.js": "export const Opts = { a: 1 };\nexport const first = Opts.a;\n",
+      "src/foo.d.ts": "export interface Opts {\n  a: number;\n}\n",
+      "src/use.ts": 'import type { Opts } from "./foo";\nexport let typed: Opts | undefined;\n',
+    });
+
+    const implementationReferences = await backend.findReferences(
+      files,
+      identity("src/foo.js", "Opts"),
+    );
+    const declarationReferences = await backend.findReferences(
+      files,
+      identity("src/foo.d.ts", "Opts"),
+    );
+
+    expect(referenceLocations(implementationReferences)).toEqual(["src/foo.js:2"]);
+    expect(referenceLocations(declarationReferences)).toEqual(["src/use.ts:1", "src/use.ts:2"]);
+  });
+
+  it.each([
+    [
+      "an aliased JavaScript export",
+      "function local() { return 1; }\nexport { local as tabs };\nexport const first = local();\n",
+      "export declare function tabs(): number;\n",
+      identity("src/tabs.js", "local"),
+      ["src/tabs.js:2", "src/tabs.js:2", "src/tabs.js:3", "src/use.ts:1", "src/use.ts:2"],
+    ],
+    [
+      "an aliased .d.ts export",
+      "export function tabs() { return 1; }\nexport const first = tabs();\n",
+      "declare function local(): number;\nexport { local as tabs };\n",
+      identity("src/tabs.d.ts", "local"),
+      ["src/tabs.d.ts:2", "src/tabs.d.ts:2", "src/tabs.js:2", "src/use.ts:1", "src/use.ts:2"],
+    ],
+  ])(
+    "links locals behind %s by export name",
+    async (_case, implementationSource, declarationSource, target, expected) => {
+      const { backend, files } = await backendOverSources({
+        "src/tabs.js": implementationSource,
+        "src/tabs.d.ts": declarationSource,
+        "src/use.ts": 'import { tabs } from "./tabs";\nexport const value = tabs();\n',
+      });
+
+      const references = await backend.findReferences(files, target);
+
+      expect(referenceLocations(references)).toEqual(expected);
+    },
+  );
 });
 
 const interfaceFirstSources: Readonly<Record<string, string>> = {

@@ -705,6 +705,60 @@ describe("SymbolTargetResolver.resolve on unsupported files", () => {
 
     expect(resolved.identity).toEqual({ file: "src/alpha.ts", segments: [{ name: "walk" }] });
   });
+  it("refuses a file part that matches only a refused file with the backend's reason", async () => {
+    const files = [
+      { relative: "src/alpha.ts", absolute: "/repo/src/alpha.ts" },
+      { relative: "src/flow.ts", absolute: "/repo/src/flow.ts" },
+    ];
+    const backend = new FakeLanguageBackend({
+      declarations: [ResolverScenario.candidateFor("src/flow.ts", [{ name: "walk" }]).symbol],
+      refuse: (filePath) =>
+        filePath === "src/flow.ts"
+          ? new UnsupportedFileError(filePath, { fileKind: "Flow-typed" })
+          : undefined,
+    });
+
+    const error = await ResolverScenario.resolveWith(
+      new BackendRouter([backend]),
+      "flow.ts::walk",
+      undefined,
+      files,
+    ).then(
+      () => undefined,
+      (thrown: unknown) => thrown,
+    );
+
+    expect(error).toBeInstanceOf(UnsupportedFileError);
+    expect((error as UnsupportedFileError).reason).toBe(
+      "cannot read Flow-typed files (src/flow.ts)",
+    );
+  });
+  it("names the first refused or unsupported match and counts the rest", async () => {
+    const files = [
+      { relative: "src/a/flow.ts", absolute: "/repo/src/a/flow.ts" },
+      { relative: "src/b/flow.ts", absolute: "/repo/src/b/flow.ts" },
+      { relative: "src/c/flow.ts", absolute: "/repo/src/c/flow.ts" },
+    ];
+    const backend = new FakeLanguageBackend({
+      accept: (filePath) => !filePath.startsWith("src/c/"),
+      refuse: (filePath) => new UnsupportedFileError(filePath, { fileKind: "Flow-typed" }),
+    });
+
+    const error = await ResolverScenario.resolveWith(
+      new BackendRouter([backend]),
+      "flow.ts::walk",
+      undefined,
+      files,
+    ).then(
+      () => undefined,
+      (thrown: unknown) => thrown,
+    );
+
+    expect(error).toBeInstanceOf(UnsupportedFileError);
+    expect((error as UnsupportedFileError).reason).toBe(
+      "cannot read Flow-typed files (src/a/flow.ts, and 2 more)",
+    );
+  });
   it("resolves a file part that matches a refused and an accepted file", async () => {
     const files = [
       { relative: "src/alpha.ts", absolute: "/repo/src/alpha.ts" },

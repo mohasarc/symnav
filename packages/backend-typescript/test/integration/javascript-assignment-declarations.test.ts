@@ -58,6 +58,27 @@ describe("TypeScriptBackend CommonJS export declarations", () => {
     ]);
     expect(referenceLocations(references)).toEqual(["src/required.js:2", "src/required.js:3"]);
   });
+
+  it("locates an export assigned in a same-name variable's initializer apart from the variable", async () => {
+    const { backend, files } = await backendOverSources({
+      "src/lib.js": "var app = module.exports.app = function () { return 1; };\napp();\n",
+      "src/required.js": "const lib = require('./lib');\nlib.app();\n",
+    });
+    const variable: SymbolIdentity = {
+      file: "src/lib.js",
+      segments: [{ name: "app", disambiguator: 1 }],
+    };
+    const exported: SymbolIdentity = {
+      file: "src/lib.js",
+      segments: [{ name: "app", disambiguator: 2 }],
+    };
+
+    const variableReferences = await backend.findReferences(files, variable);
+    const exportReferences = await backend.findReferences(files, exported);
+
+    expect(referenceLocations(variableReferences)).toEqual(["src/lib.js:2"]);
+    expect(referenceLocations(exportReferences)).toEqual(["src/required.js:2"]);
+  });
 });
 
 async function backendOverSources(sources: Readonly<Record<string, string>>): Promise<{

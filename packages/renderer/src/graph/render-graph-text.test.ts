@@ -319,6 +319,22 @@ describe("renderGraphText", () => {
     );
   });
 
+  it("names the file of the resolved call target when it differs from the requested one", () => {
+    const implementation = decl({
+      file: "src/Tabs/Tabs.js",
+      segments: [{ name: "Tabs" }],
+      startLine: 6,
+      endLine: 8,
+      header: ["const Tabs = React.forwardRef(…)"],
+    });
+    const graph: GraphResult = {
+      ...graphResult(implementation),
+      identity: { file: "src/Tabs/Tabs.d.ts", segments: [{ name: "Tabs" }] },
+    };
+
+    expect(renderGraphText(graph)).toContain("Graph: Tabs\nFile: src/Tabs/Tabs.js\nLines: 6-8\n");
+  });
+
   it("renders only the requested direction", () => {
     const graph = graphResult(root, { direction: "outgoing", omitIncoming: true });
     const text = renderGraphText(graph);

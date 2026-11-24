@@ -9,7 +9,11 @@ pnpm daemon:benchmark --scale 1
 pnpm daemon:benchmark --scale 2
 pnpm daemon:benchmark --scale 3
 pnpm daemon:benchmark --scale 10
+pnpm daemon:benchmark --scale 1 --profile javascript
 ```
+
+`--profile javascript` generates the same connected workspace in JavaScript from
+`profiles/daemon-workspace-js-1x.v1.json` and gates it on the same thresholds.
 
 The 1x, 2x, and 3x runners require at least 8 GiB of effective memory. The provisioned 10x runner
 requires at least 32 GiB. `SYMNAV_BENCHMARK_MIN_MEMORY_BYTES` can raise the requirement for a

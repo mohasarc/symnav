@@ -244,6 +244,8 @@ Refs, context, and graph: under 5 s for depth-one queries
 
 `pnpm daemon:benchmark --scale <n>` gates `1x`, `2x`, `3x`, and `10x` workspaces on startup time, command time, queue wait, peak memory, response size, parity, freshness, and daemon continuity. A gate fails if the daemon restarts, vanishes from status, emits raw resource failures, or replays accepted work locally.
 
+`--profile javascript` runs the same gate on a JavaScript workspace: `.js` and `.jsx` files, 25% with `.d.ts` siblings, 30% CommonJS, package `tsconfig.json` files without `allowJs`, one `jsconfig.json` package, and a 1 MiB one-line minified file. Its artifact is `daemon-benchmark-javascript-<n>x-<platform>.json`. CI runs it in the nightly `2x`/`3x` and weekly `10x` jobs, not on pull requests.
+
 ### Cold time-to-first-result baseline
 
 Each benchmark run also records `coldTimeToFirstResult` in its artifact: wall-clock time for a fresh `node dist/cli.js` process running one fixed-suite command with `SYMNAV_DAEMON=0`, from spawn to exit, one run per navigation command. The argv for each command is in `apps/cli/test/benchmark/daemon-workspace-generator.ts`, for example `refs <target> --all --json` and `graph <target> --depth 1 --json`. It isn't gated. The benchmark daemon is up but idle during these runs, and the generated workspace was just written, so the OS file cache is warm. `stats` is left out because its first run goes to the daemon.

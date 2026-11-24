@@ -625,6 +625,34 @@ describe("TypeScriptBackend definitions of declaration and implementation pairs"
     },
   );
 
+  it("lists only the same-staticness JavaScript member for a .d.ts static or instance member, next to a this-property", async () => {
+    const { backend, files } = await backendOverSources({
+      "src/foo.js":
+        "class Foo {\n  constructor() {\n    this.x = function () { return 2; };\n  }\n}\nFoo.x = function () { return 1; };\nexports.Foo = Foo;\n",
+      "src/foo.d.ts": "export declare class Foo {\n  static x(): number;\n  x(): number;\n}\n",
+    });
+    const staticDeclaration: SymbolIdentity = {
+      file: "src/foo.d.ts",
+      segments: [{ name: "Foo" }, { name: "x", disambiguator: 1 }],
+    };
+    const instanceDeclaration: SymbolIdentity = {
+      file: "src/foo.d.ts",
+      segments: [{ name: "Foo" }, { name: "x", disambiguator: 2 }],
+    };
+
+    const staticDefinitions = await backend.findDefinitions(files, staticDeclaration);
+    const instanceDefinitions = await backend.findDefinitions(files, instanceDeclaration);
+
+    expect(definitionRoles(staticDefinitions)).toEqual([
+      ["src/foo.js::Foo::x#2", "implementation"],
+      ["src/foo.d.ts::Foo::x#1", "declaration"],
+    ]);
+    expect(definitionRoles(instanceDefinitions)).toEqual([
+      ["src/foo.js::Foo::x#1", "implementation"],
+      ["src/foo.d.ts::Foo::x#2", "declaration"],
+    ]);
+  });
+
   it("lists the static JavaScript expando member for a .d.ts namespace member merged with the function", async () => {
     const { backend, files } = await backendOverSources({
       "src/foo.js":

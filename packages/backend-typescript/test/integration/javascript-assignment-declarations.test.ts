@@ -290,6 +290,22 @@ describe("TypeScriptBackend expando member declarations", () => {
     ]);
     expect(referenceLocations(references)).toEqual(["src/use.js:2"]);
   });
+
+  it("resolves an Object.defineProperty member of a function and finds its users", async () => {
+    const { backend, files } = await backendOverSources({
+      "src/lib.js":
+        'function Foo() {}\nObject.defineProperty(Foo, "make", { value: function () { return 1; } });\nexports.Foo = Foo;\n',
+      "src/use.js": "const { Foo } = require('./lib');\nFoo.make();\n",
+    });
+
+    const definitions = await backend.findDefinitions(files, identity("src/lib.js", "Foo", "make"));
+    const references = await backend.findReferences(files, identity("src/lib.js", "Foo", "make"));
+
+    expect(definitions.map((definition) => formatSymbolIdentity(definition.identity))).toEqual([
+      "src/lib.js::Foo::make",
+    ]);
+    expect(referenceLocations(references)).toEqual(["src/use.js:2"]);
+  });
 });
 
 async function backendOverSources(sources: Readonly<Record<string, string>>): Promise<{

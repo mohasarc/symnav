@@ -146,7 +146,10 @@ export class TypeScriptSemanticQueryService implements PositionDefinitionResolve
     const key = `${relativePath}:${node.getStart()}`;
     const locations = this.definitionsByPosition.getOrCreate(key, () => {
       this.observer?.callTargetResolution?.(relativePath, node.getStart());
-      return node.getDefinitionNodes().flatMap((definition) => {
+      const definitions = node
+        .getDefinitionNodes()
+        .flatMap((definition) => this.implementationDefinitionsOf(definition));
+      return definitions.flatMap((definition) => {
         const definitionRelativePath = this.workspaceState.relativePathOf(
           definition.getSourceFile(),
         );
@@ -166,6 +169,23 @@ export class TypeScriptSemanticQueryService implements PositionDefinitionResolve
       const definition = this.nodeAtSemanticLocation(location, sourceFile);
       return definition ? [definition] : [];
     });
+  }
+
+  private implementationDefinitionsOf(definition: Node): readonly Node[] {
+    const declaration = this.workspaceState.declarationAt(definition);
+    const implementations = declaration
+      ? this.implementationCounterparts(declaration.identity)
+      : [];
+    if (implementations.length === 0) return [definition];
+    return implementations.flatMap((implementation) =>
+      this.workspaceState.locate(implementation).map(({ node }) => node),
+    );
+  }
+
+  private implementationCounterparts(identity: SymbolIdentity): readonly SymbolIdentity[] {
+    return (this.pairs?.filePairsOf(identity.file) ?? []).flatMap((pair) =>
+      pair.declarationFile === identity.file ? this.pairedSymbols.counterparts(identity, pair) : [],
+    );
   }
 
   private referenceLocations(

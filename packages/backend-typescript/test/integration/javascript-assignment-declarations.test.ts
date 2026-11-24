@@ -418,6 +418,7 @@ describe("TypeScriptBackend this-property member declarations", () => {
   it.each([
     ["a constructor function", "function Foo() {\n  this.value = 1;\n}\n"],
     ["a function expression", "var Foo = function () {\n  this.value = 1;\n};\n"],
+    ["a parenthesized function expression", "var Foo = (function () {\n  this.value = 1;\n});\n"],
     [
       "a prototype method",
       "function Foo() {}\nFoo.prototype.init = function () {\n  this.value = 1;\n};\n",

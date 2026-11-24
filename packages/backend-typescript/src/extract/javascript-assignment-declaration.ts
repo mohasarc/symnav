@@ -33,6 +33,11 @@ export class JavaScriptAssignmentDeclarations {
     return declarations;
   }
 
+  static declarationAt(node: Node): JavaScriptAssignmentDeclaration | undefined {
+    if (!JavaScriptAssignmentDeclarations.isCommonJsFile(node.getSourceFile())) return undefined;
+    return JavaScriptAssignmentDeclarations.declarationOf(node);
+  }
+
   static rangeOf(declaration: JavaScriptAssignmentDeclaration): LineRange {
     return {
       startLine: declaration.declarationNode.getStartLineNumber(),

@@ -7,6 +7,8 @@ import {
   type SymbolPathSegment,
 } from "@symnav/core";
 
+import { JavaScriptAssignmentDeclarations } from "../extract/javascript-assignment-declaration.js";
+
 export interface LocatedDeclaration {
   readonly declaration: SymbolOverviewNode;
   readonly node: Node;
@@ -50,8 +52,7 @@ export class DeclarationLocator {
     const declarationsByLineAndName = this.declarationsByLineAndName(entries);
     const locatedDeclarations: LocatedDeclaration[] = [];
     this.sourceFile.forEachDescendant((node) => {
-      if (!this.isDefinitionNode(node)) return;
-      const name = this.declarationName(node);
+      const name = this.definitionName(node);
       if (!name) return;
       const location = DeclarationLocator.locationKey(node.getStartLineNumber(), name);
       const declarations = declarationsByLineAndName.get(location);
@@ -94,12 +95,17 @@ export class DeclarationLocator {
     let found: Node | undefined;
     this.sourceFile.forEachDescendant((node) => {
       if (found) return;
-      if (!this.isDefinitionNode(node)) return;
+      if (this.definitionName(node) !== OverviewTree.ownName(declaration)) return;
       if (node.getStartLineNumber() !== startLine) return;
-      if (this.declarationName(node) !== OverviewTree.ownName(declaration)) return;
       found = node;
     });
     return found;
+  }
+
+  private definitionName(node: Node): string | undefined {
+    const assignment = JavaScriptAssignmentDeclarations.declarationAt(node);
+    if (assignment) return assignment.name;
+    return this.isDefinitionNode(node) ? this.declarationName(node) : undefined;
   }
 
   private isDefinitionNode(node: Node): boolean {

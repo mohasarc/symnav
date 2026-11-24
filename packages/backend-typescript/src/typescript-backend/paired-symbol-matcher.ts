@@ -1,5 +1,5 @@
 import type { SymbolIdentity } from "@symnav/core";
-import { Node, type SourceFile, type Symbol, type TypeChecker } from "ts-morph";
+import { Node, ts, type SourceFile, type Symbol, type TypeChecker } from "ts-morph";
 
 import type { DeclarationImplementationFilePair } from "./declaration-implementation-pairs.js";
 import type { TypeScriptWorkspaceState } from "./typescript-workspace-state.js";
@@ -69,13 +69,20 @@ export class PairedSymbolMatcher {
     const moduleSymbol = sourceFile?.getSymbol();
     if (!sourceFile || !moduleSymbol) return exportedDeclarations;
     const checker = sourceFile.getProject().getTypeChecker();
-    for (const exported of checker.getExportsOfModule(moduleSymbol)) {
+    const exportEquals = moduleSymbol.getExport(ts.InternalSymbolName.ExportEquals);
+    const exportedSymbols: readonly (readonly [string, Symbol])[] = [
+      ...(exportEquals ? [[ts.InternalSymbolName.Default, exportEquals] as const] : []),
+      ...checker
+        .getExportsOfModule(moduleSymbol)
+        .map((exported) => [exported.getName(), exported] as const),
+    ];
+    for (const [exportName, exported] of exportedSymbols) {
       const exportedDeclaration = PairedSymbolMatcher.exportedDeclaration(
         exported,
         checker,
         sourceFile,
       );
-      if (exportedDeclaration) exportedDeclarations.set(exported.getName(), exportedDeclaration);
+      if (exportedDeclaration) exportedDeclarations.set(exportName, exportedDeclaration);
     }
     return exportedDeclarations;
   }
@@ -159,6 +166,7 @@ export class PairedSymbolMatcher {
 
   private static exportedExpression(exportedNode: Node): Node | undefined {
     if (Node.isExportAssignment(exportedNode)) return exportedNode.getExpression();
+    if (Node.isBinaryExpression(exportedNode)) return exportedNode.getRight();
     return undefined;
   }
 

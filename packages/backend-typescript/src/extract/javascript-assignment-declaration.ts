@@ -4,18 +4,32 @@ import {
   ts,
   type BinaryExpression,
   type ElementAccessExpression,
+  type GetAccessorDeclaration,
+  type MethodDeclaration,
   type PropertyAccessExpression,
+  type PropertyAssignment,
+  type SetAccessorDeclaration,
   type SourceFile,
 } from "ts-morph";
 import { SEGMENT_SEPARATOR, parseSegment, type LineRange } from "@symnav/core";
 
 import { collapseInitializerSource } from "./collapse-initializer-source.js";
+import { extractSignatureSource } from "./extract-signature-source.js";
+
+type ObjectMember =
+  | PropertyAssignment
+  | MethodDeclaration
+  | GetAccessorDeclaration
+  | SetAccessorDeclaration;
+
+export type JavaScriptAssignmentDeclarationForm = "export-property" | "module-exports-member";
 
 interface SourceFileWithModuleIndicator extends ts.SourceFile {
   readonly externalModuleIndicator?: ts.Node | true;
 }
 
 export interface JavaScriptAssignmentDeclaration {
+  readonly form: JavaScriptAssignmentDeclarationForm;
   readonly name: string;
   readonly declarationNode: Node;
   readonly nameLiteral: Node | undefined;
@@ -40,15 +54,25 @@ export class JavaScriptAssignmentDeclarations {
   }
 
   static rangeOf(declaration: JavaScriptAssignmentDeclaration): LineRange {
+    const { declarationNode } = declaration;
+    const extent =
+      declaration.form === "module-exports-member" ? declarationNode : declaration.statement;
     return {
-      startLine: declaration.declarationNode.getStartLineNumber(),
-      endLine: declaration.statement.getEndLineNumber(),
+      startLine: declarationNode.getStartLineNumber(),
+      endLine: extent.getEndLineNumber(),
     };
   }
 
   static signatureOf(declaration: JavaScriptAssignmentDeclaration): string {
+    const { declarationNode } = declaration;
     const value = collapseInitializerSource(declaration.value);
-    return `${declaration.declarationNode.getText()} = ${value}`;
+    if (Node.isPropertyAssignment(declarationNode)) {
+      return `${declarationNode.getNameNode().getText()}: ${value}`;
+    }
+    if (declaration.form === "module-exports-member") {
+      return extractSignatureSource(declarationNode);
+    }
+    return `${declarationNode.getText()} = ${value}`;
   }
 
   private static isCommonJsFile(sourceFile: SourceFile): boolean {
@@ -65,7 +89,73 @@ export class JavaScriptAssignmentDeclarations {
     if (Node.isPropertyAccessExpression(node) || Node.isElementAccessExpression(node)) {
       return JavaScriptAssignmentDeclarations.exportProperty(node);
     }
+    if (JavaScriptAssignmentDeclarations.isObjectMember(node)) {
+      return JavaScriptAssignmentDeclarations.moduleExportsMember(node);
+    }
     return undefined;
+  }
+
+  private static moduleExportsMember(
+    member: ObjectMember,
+  ): JavaScriptAssignmentDeclaration | undefined {
+    const object = member.getParent();
+    const isModuleExportsObject =
+      Node.isObjectLiteralExpression(object) &&
+      JavaScriptAssignmentDeclarations.assignsModuleExports(object);
+    if (!isModuleExportsObject) return undefined;
+    const nameNode = member.getNameNode();
+    const name = JavaScriptAssignmentDeclarations.propertyName(nameNode);
+    if (name === undefined) return undefined;
+    const value = Node.isPropertyAssignment(member) ? member.getInitializer() : member;
+    const statement = member.getFirstAncestor(Node.isStatement);
+    if (!value || !statement) return undefined;
+    return {
+      form: "module-exports-member",
+      name,
+      declarationNode: member,
+      nameLiteral: JavaScriptAssignmentDeclarations.propertyNameLiteral(nameNode),
+      value,
+      statement,
+    };
+  }
+
+  private static assignsModuleExports(object: Node): boolean {
+    let assigned = object;
+    let parent = object.getParent();
+    while (parent) {
+      const assignsThroughParent =
+        Node.isParenthesizedExpression(parent) ||
+        (JavaScriptAssignmentDeclarations.isAssignment(parent) && parent.getRight() === assigned);
+      if (!assignsThroughParent) return false;
+      const assignsModuleExports =
+        JavaScriptAssignmentDeclarations.isAssignment(parent) &&
+        JavaScriptAssignmentDeclarations.isModuleExports(parent.getLeft());
+      if (assignsModuleExports) return true;
+      assigned = parent;
+      parent = parent.getParent();
+    }
+    return false;
+  }
+
+  private static isObjectMember(node: Node): node is ObjectMember {
+    return (
+      Node.isPropertyAssignment(node) ||
+      Node.isMethodDeclaration(node) ||
+      Node.isGetAccessorDeclaration(node) ||
+      Node.isSetAccessorDeclaration(node)
+    );
+  }
+
+  private static propertyName(nameNode: Node): string | undefined {
+    if (Node.isIdentifier(nameNode)) return nameNode.getText();
+    return JavaScriptAssignmentDeclarations.literalName(
+      JavaScriptAssignmentDeclarations.propertyNameLiteral(nameNode),
+    );
+  }
+
+  private static propertyNameLiteral(nameNode: Node): Node | undefined {
+    if (Node.isIdentifier(nameNode)) return undefined;
+    return Node.isComputedPropertyName(nameNode) ? nameNode.getExpression() : nameNode;
   }
 
   private static exportProperty(
@@ -86,7 +176,14 @@ export class JavaScriptAssignmentDeclarations {
     const nameLiteral = Node.isElementAccessExpression(target)
       ? target.getArgumentExpression()
       : undefined;
-    return { name, declarationNode: target, nameLiteral, value, statement };
+    return {
+      form: "export-property",
+      name,
+      declarationNode: target,
+      nameLiteral,
+      value,
+      statement,
+    };
   }
 
   private static assignedValue(assignment: BinaryExpression): Node {

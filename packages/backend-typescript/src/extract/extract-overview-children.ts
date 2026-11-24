@@ -34,7 +34,7 @@ import {
 import { nodeKind } from "./node-kind.js";
 import { refineLabel } from "./refine-label.js";
 import { statementCallExpression, trailingCallbackBody } from "./trailing-callback.js";
-import { roleOf } from "./typescript-symbol-kind.js";
+import { roleOf, type TypeScriptSymbolKind } from "./typescript-symbol-kind.js";
 
 export class OverviewChildrenExtractor {
   private static readonly IGNORED_STATEMENT_KINDS: ReadonlySet<SyntaxKind> = new Set([
@@ -198,9 +198,7 @@ export class OverviewChildrenExtractor {
   ): SymbolOverviewNode {
     const range = JavaScriptAssignmentDeclarations.rangeOf(declaration);
     const segments = [{ name: declaration.name }];
-    const label = OverviewChildrenExtractor.isFunctionValue(declaration.value)
-      ? "function-implementation"
-      : "variable";
+    const label = OverviewChildrenExtractor.assignmentDeclarationLabel(declaration);
     return {
       type: "symbol",
       identity: this.identityFor(segments),
@@ -445,18 +443,39 @@ export class OverviewChildrenExtractor {
     return topLevel;
   }
 
+  private static assignmentDeclarationLabel(
+    declaration: JavaScriptAssignmentDeclaration,
+  ): TypeScriptSymbolKind {
+    if (Node.isGetAccessorDeclaration(declaration.value)) return "getter";
+    if (Node.isSetAccessorDeclaration(declaration.value)) return "setter";
+    if (OverviewChildrenExtractor.isFunctionValue(declaration.value)) {
+      return "function-implementation";
+    }
+    return "variable";
+  }
+
   private static isFunctionValue(expression: Node): boolean {
     if (Node.isParenthesizedExpression(expression)) {
       return OverviewChildrenExtractor.isFunctionValue(expression.getExpression());
     }
-    return Node.isArrowFunction(expression) || Node.isFunctionExpression(expression);
+    return (
+      Node.isArrowFunction(expression) ||
+      Node.isFunctionExpression(expression) ||
+      Node.isMethodDeclaration(expression)
+    );
   }
 
   private static functionValueBody(expression: Node): Block | undefined {
     if (Node.isParenthesizedExpression(expression)) {
       return OverviewChildrenExtractor.functionValueBody(expression.getExpression());
     }
-    if (Node.isArrowFunction(expression) || Node.isFunctionExpression(expression)) {
+    const isFunctionValue =
+      Node.isArrowFunction(expression) ||
+      Node.isFunctionExpression(expression) ||
+      Node.isMethodDeclaration(expression) ||
+      Node.isGetAccessorDeclaration(expression) ||
+      Node.isSetAccessorDeclaration(expression);
+    if (isFunctionValue) {
       const body = expression.getBody();
       return Node.isBlock(body) ? body : undefined;
     }

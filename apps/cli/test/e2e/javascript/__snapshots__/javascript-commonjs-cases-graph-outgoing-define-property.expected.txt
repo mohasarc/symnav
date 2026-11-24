@@ -1,0 +1,14 @@
+Graph: release
+File: src/tools.js
+Lines: 12-14
+Depth: 1
+Direction: outgoing
+Edges: calls
+
+Outgoing
+src/tools.js
+└── 12-14: release
+    function release()
+    └── src/lib/defined.js
+        └── 1-5: version  [callee]
+            Object.defineProperty(exports, "version", { … })

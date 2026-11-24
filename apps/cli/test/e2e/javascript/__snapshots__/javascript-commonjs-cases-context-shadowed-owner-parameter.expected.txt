@@ -1,0 +1,23 @@
+Context: localLabel
+File: src/lib/setup.js
+Lines: 9-11
+
+Definition
+src/lib/setup.js
+└── 9-11: localLabel  [implementation]
+    function localLabel()
+
+Callers
+(none)
+
+Callees
+(none)
+
+References
+Total: 1
+Kinds: usage 1
+Run: symnav refs src/lib/setup.js::localLabel
+
+Recent History
+1. 056804a 2023-05-02 Script Bot
+   add CommonJS export declaration cases

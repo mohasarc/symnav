@@ -1,0 +1,27 @@
+Context: Shape::square
+File: src/lib/shape.js
+Lines: 2-4
+
+Definition
+src/lib/shape.js
+└── 2-4: Shape::square  [implementation]
+    static square(size)
+
+Callers
+src/extras.js
+└── 9-11: makeSquare  [call]
+      return square(2);
+
+Callees
+src/lib/shape.js
+└── 6-8: Shape::constructor  [call]
+    constructor(size)
+
+References
+Total: 2
+Kinds: usage 2
+Run: symnav refs src/lib/shape.js::Shape::square
+
+Recent History
+1. 056804a 2023-05-02 Script Bot
+   add CommonJS export declaration cases

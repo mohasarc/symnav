@@ -1,0 +1,16 @@
+Graph: format
+File: src/lib/strings.js
+Lines: 5-7
+Depth: 1
+Direction: incoming
+Edges: calls
+
+Incoming
+src/lib/strings.js
+└── 5-7: format
+    module.exports.format = function (parts) …
+    └── src/client.js
+        ├── 15-17: roundTrip  [caller]
+        │   function roundTrip(text)
+        └── 11-13: writeList  [caller]
+            function writeList(parts)

@@ -1,0 +1,25 @@
+Context: realLabel
+File: src/lib/setup.js
+Lines: 5-7
+
+Definition
+src/lib/setup.js
+└── 5-7: realLabel  [implementation]
+    function realLabel()
+
+Callers
+src/extras.js
+└── 13-15: readLabel  [call]
+      return label();
+
+Callees
+(none)
+
+References
+Total: 3
+Kinds: usage 3
+Run: symnav refs src/lib/setup.js::realLabel
+
+Recent History
+1. 056804a 2023-05-02 Script Bot
+   add CommonJS export declaration cases

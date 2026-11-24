@@ -1,1 +1,4 @@
 0000000000000000000000000000000000000000 00ce22561e6a97c01ae3c8e38e9de9de55e8254b Script Bot <script@example.com> 1682942400 +0000	commit (initial): add the javascript-commonjs-cases fixture
+00ce22561e6a97c01ae3c8e38e9de9de55e8254b 17fafc3120854a18f5c8cf92f6ccb7d2688f607e Script Bot <script@example.com> 1683028800 +0000	commit: add CommonJS export declaration cases
+17fafc3120854a18f5c8cf92f6ccb7d2688f607e 69a18af3206917ac8b3fdf9d19017ebcff4c45f5 Script Bot <script@example.com> 1683028800 +0000	commit (amend): add CommonJS export declaration cases
+69a18af3206917ac8b3fdf9d19017ebcff4c45f5 056804a99fb8b767a21e7b6731bca8f9b85369ee Script Bot <script@example.com> 1683028800 +0000	commit (amend): add CommonJS export declaration cases

@@ -436,6 +436,52 @@ describe("TypeScriptBackend declaration and implementation pairs", () => {
       "src/cjs/util.d.ts:5",
     ]);
   });
+
+  it.each([
+    ["export =", "export = Foo;", 'import Foo = require("./foo");'],
+    ["export default", "export default Foo;", 'import Foo from "./foo";'],
+  ])(
+    "links a module.exports class to a .d.ts %s class",
+    async (_case, declarationExport, importStatement) => {
+      const { backend, files } = await backendOverSources({
+        "src/foo.js": "class Foo {\n  run() { return 1; }\n}\nmodule.exports = Foo;\n",
+        "src/foo.d.ts": `declare class Foo {\n  run(): number;\n}\n${declarationExport}\n`,
+        "src/use.ts": `${importStatement}\nexport const value = new Foo().run();\n`,
+      });
+
+      const classReferences = await backend.findReferences(files, identity("src/foo.js", "Foo"));
+      const memberReferences = await backend.findReferences(
+        files,
+        identity("src/foo.js", "Foo", "run"),
+      );
+
+      expect(referenceLocations(classReferences)).toEqual([
+        "src/foo.d.ts:4",
+        "src/foo.js:4",
+        "src/use.ts:1",
+        "src/use.ts:2",
+      ]);
+      expect(referenceLocations(memberReferences)).toEqual(["src/use.ts:2"]);
+    },
+  );
+
+  it("links the local class a wrapped module.exports expression references", async () => {
+    const { backend, files } = await backendOverSources({
+      "src/foo.js":
+        "class Foo {\n  run() { return 1; }\n}\nconst wrap = (c) => c;\nmodule.exports = wrap(Foo);\n",
+      "src/foo.d.ts": "declare class Foo {\n  run(): number;\n}\nexport = Foo;\n",
+      "src/use.ts": 'import Foo = require("./foo");\nexport const value = new Foo().run();\n',
+    });
+
+    const references = await backend.findReferences(files, identity("src/foo.js", "Foo"));
+
+    expect(referenceLocations(references)).toEqual([
+      "src/foo.d.ts:4",
+      "src/foo.js:5",
+      "src/use.ts:1",
+      "src/use.ts:2",
+    ]);
+  });
 });
 
 const interfaceFirstSources: Readonly<Record<string, string>> = {

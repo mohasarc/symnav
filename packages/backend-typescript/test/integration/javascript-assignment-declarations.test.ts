@@ -756,6 +756,34 @@ describe("TypeScriptBackend callees of constructor functions", () => {
   });
 });
 
+describe("TypeScriptBackend callees inside JavaScript assignment declarations", () => {
+  it.each([
+    ["exports.run", "exports.run = function () {\n  return local();\n};\n", ["run"]],
+    ["module.exports.run", "module.exports.run = function () {\n  return local();\n};\n", ["run"]],
+    ["module.exports", "module.exports = function () {\n  return local();\n};\n", ["default"]],
+    [
+      "Foo.prototype.run",
+      "function Foo() {}\nFoo.prototype.run = function () {\n  return local();\n};\n",
+      ["Foo", "run"],
+    ],
+    [
+      "Foo.run",
+      "function Foo() {}\nFoo.run = function () {\n  return local();\n};\n",
+      ["Foo", "run"],
+    ],
+  ])("lists calls inside the function assigned to %s as callees", async (_form, source, names) => {
+    const { backend, files } = await backendOverSources({
+      "src/lib.js": `${source}function local() {\n  return 1;\n}\n`,
+    });
+
+    const callees = await backend.findCallees(files, identity("src/lib.js", ...names));
+
+    expect(callees.map((edge) => formatSymbolIdentity(edge.symbol.identity))).toEqual([
+      "src/lib.js::local",
+    ]);
+  });
+});
+
 describe("TypeScriptBackend callees declared by named function expressions", () => {
   it.each([
     [

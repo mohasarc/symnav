@@ -51,6 +51,28 @@ describe("CommonJS export declarations in overview", () => {
     ]);
   });
 
+  it("lists export properties named by a string, template or numeric element access", () => {
+    const source = [
+      'exports["x"] = 1;',
+      'module["exports"].y = 2;',
+      'module.exports["z"] = 3;',
+      "exports[`t`] = 4;",
+      "exports[0x10] = 5;",
+    ].join("\n");
+
+    expect(summariesOf(source).map((summary) => [summary.id, summary.header])).toEqual([
+      ["input.js::x", ['exports["x"] = 1']],
+      ["input.js::y", ['module["exports"].y = 2']],
+      ["input.js::z", ['module.exports["z"] = 3']],
+      ["input.js::t", ["exports[`t`] = 4"]],
+      ["input.js::16", ["exports[0x10] = 5"]],
+    ]);
+  });
+
+  it("emits no node for an export name a canonical id cannot spell or a computed key", () => {
+    expect(idsOf('exports["a::b"] = 1;\nexports["x#2"] = 2;\nexports[key] = 3;')).toEqual([]);
+  });
+
   it("nests declarations from a function value's body under the export", () => {
     const source = ["exports.foo = function () {", "  function inner() {}", "};"].join("\n");
 

@@ -1,3 +1,5 @@
+import type { DefinitionSymbol } from "@symnav/core";
+
 const TAG_BY_LABEL: ReadonlyMap<string, string> = new Map([
   ["method-implementation", "implementation"],
   ["function-implementation", "implementation"],
@@ -8,6 +10,6 @@ const TAG_BY_LABEL: ReadonlyMap<string, string> = new Map([
   ["constructor-overload-signature", "overload"],
 ]);
 
-export function bracketTagFor(nativeLabel: string): string | undefined {
-  return TAG_BY_LABEL.get(nativeLabel);
+export function bracketTagFor(symbol: Pick<DefinitionSymbol, "kind">): string | undefined {
+  return TAG_BY_LABEL.get(symbol.kind.nativeLabel);
 }

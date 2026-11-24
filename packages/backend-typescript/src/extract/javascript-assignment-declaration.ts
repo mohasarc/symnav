@@ -29,7 +29,10 @@ export type JavaScriptAssignmentDeclarationForm =
   | "export-property"
   | "module-exports-member"
   | "module-exports"
-  | "define-property-export";
+  | "define-property-export"
+  | "prototype-property";
+
+export type JavaScriptDeclarationContainerScope = "module" | "enclosing-declaration";
 
 interface SourceFileWithModuleIndicator extends ts.SourceFile {
   readonly externalModuleIndicator?: ts.Node | true;
@@ -43,22 +46,37 @@ export interface JavaScriptAssignmentDeclaration {
   readonly nameLiteral: Node | undefined;
   readonly value: Node;
   readonly statement: Node;
+  readonly containerNames: readonly string[];
+  readonly containerScope: JavaScriptDeclarationContainerScope;
 }
 
 export class JavaScriptAssignmentDeclarations {
+  private static readonly MODULE_LEVEL = {
+    containerNames: [],
+    containerScope: "module",
+  } as const satisfies Pick<JavaScriptAssignmentDeclaration, "containerNames" | "containerScope">;
+
   static ofSourceFile(sourceFile: SourceFile): readonly JavaScriptAssignmentDeclaration[] {
     if (!JavaScriptAssignmentDeclarations.isCommonJsFile(sourceFile)) return [];
     const declarations: JavaScriptAssignmentDeclaration[] = [];
     sourceFile.forEachDescendant((node) => {
-      const declaration = JavaScriptAssignmentDeclarations.declarationOf(node);
+      const declaration = JavaScriptAssignmentDeclarations.commonJsDeclarationOf(node);
       if (declaration) declarations.push(declaration);
     });
     return declarations;
   }
 
   static declarationAt(node: Node): JavaScriptAssignmentDeclaration | undefined {
-    if (!JavaScriptAssignmentDeclarations.isCommonJsFile(node.getSourceFile())) return undefined;
-    return JavaScriptAssignmentDeclarations.declarationOf(node);
+    const sourceFile = node.getSourceFile();
+    if (!JavaScriptAssignmentDeclarations.isJavaScriptFile(sourceFile)) return undefined;
+    const commonJsDeclaration = JavaScriptAssignmentDeclarations.isCommonJsFile(sourceFile)
+      ? JavaScriptAssignmentDeclarations.commonJsDeclarationOf(node)
+      : undefined;
+    return commonJsDeclaration ?? JavaScriptAssignmentDeclarations.expandoDeclarationOf(node);
+  }
+
+  static isJavaScriptFile(sourceFile: SourceFile): boolean {
+    return (sourceFile.compilerNode.flags & ts.NodeFlags.JavaScriptFile) !== 0;
   }
 
   static rangeOf(declaration: JavaScriptAssignmentDeclaration): LineRange {
@@ -87,8 +105,10 @@ export class JavaScriptAssignmentDeclarations {
   }
 
   private static isCommonJsFile(sourceFile: SourceFile): boolean {
-    const isJavaScriptFile = (sourceFile.compilerNode.flags & ts.NodeFlags.JavaScriptFile) !== 0;
-    return isJavaScriptFile && !JavaScriptAssignmentDeclarations.hasModuleSyntax(sourceFile);
+    return (
+      JavaScriptAssignmentDeclarations.isJavaScriptFile(sourceFile) &&
+      !JavaScriptAssignmentDeclarations.hasModuleSyntax(sourceFile)
+    );
   }
 
   private static hasModuleSyntax(sourceFile: SourceFile): boolean {
@@ -96,7 +116,7 @@ export class JavaScriptAssignmentDeclarations {
     return externalModuleIndicator !== undefined && externalModuleIndicator !== true;
   }
 
-  private static declarationOf(node: Node): JavaScriptAssignmentDeclaration | undefined {
+  private static commonJsDeclarationOf(node: Node): JavaScriptAssignmentDeclaration | undefined {
     if (Node.isPropertyAccessExpression(node) || Node.isElementAccessExpression(node)) {
       return JavaScriptAssignmentDeclarations.isModuleExports(node)
         ? JavaScriptAssignmentDeclarations.moduleExportsValue(node)
@@ -107,6 +127,52 @@ export class JavaScriptAssignmentDeclarations {
     }
     if (Node.isCallExpression(node)) return JavaScriptAssignmentDeclarations.definedExport(node);
     return undefined;
+  }
+
+  private static expandoDeclarationOf(node: Node): JavaScriptAssignmentDeclaration | undefined {
+    if (Node.isPropertyAccessExpression(node) || Node.isElementAccessExpression(node)) {
+      return JavaScriptAssignmentDeclarations.prototypeProperty(node);
+    }
+    return undefined;
+  }
+
+  private static prototypeProperty(
+    target: PropertyAccessExpression | ElementAccessExpression,
+  ): JavaScriptAssignmentDeclaration | undefined {
+    const prototypeAccess = target.getExpression();
+    const accessesPrototype =
+      (Node.isPropertyAccessExpression(prototypeAccess) ||
+        Node.isElementAccessExpression(prototypeAccess)) &&
+      JavaScriptAssignmentDeclarations.staticAccessName(prototypeAccess) === "prototype";
+    if (!accessesPrototype) return undefined;
+    const containerNames = JavaScriptAssignmentDeclarations.bindableNames(
+      prototypeAccess.getExpression(),
+    );
+    const assigned = JavaScriptAssignmentDeclarations.assignedTo(target);
+    const name = JavaScriptAssignmentDeclarations.staticAccessName(target);
+    if (!containerNames || !assigned || name === undefined) return undefined;
+    return {
+      form: "prototype-property",
+      name,
+      declarationNode: target,
+      nameNode: target,
+      nameLiteral: Node.isElementAccessExpression(target)
+        ? target.getArgumentExpression()
+        : undefined,
+      ...assigned,
+      containerNames,
+      containerScope: "enclosing-declaration",
+    };
+  }
+
+  private static bindableNames(expression: Node): readonly string[] | undefined {
+    if (Node.isIdentifier(expression)) return [expression.getText()];
+    const isStaticAccess =
+      Node.isPropertyAccessExpression(expression) || Node.isElementAccessExpression(expression);
+    if (!isStaticAccess) return undefined;
+    const ownerNames = JavaScriptAssignmentDeclarations.bindableNames(expression.getExpression());
+    const name = JavaScriptAssignmentDeclarations.staticAccessName(expression);
+    return ownerNames && name !== undefined ? [...ownerNames, name] : undefined;
   }
 
   private static definedExport(call: CallExpression): JavaScriptAssignmentDeclaration | undefined {
@@ -126,6 +192,7 @@ export class JavaScriptAssignmentDeclarations {
       nameLiteral: nameArgument,
       value: JavaScriptAssignmentDeclarations.descriptorValue(descriptor),
       statement,
+      ...JavaScriptAssignmentDeclarations.MODULE_LEVEL,
     };
   }
 
@@ -173,6 +240,7 @@ export class JavaScriptAssignmentDeclarations {
       nameLiteral: JavaScriptAssignmentDeclarations.propertyNameLiteral(nameNode),
       value,
       statement,
+      ...JavaScriptAssignmentDeclarations.MODULE_LEVEL,
     };
   }
 
@@ -236,6 +304,7 @@ export class JavaScriptAssignmentDeclarations {
       nameNode: target,
       nameLiteral,
       ...assigned,
+      ...JavaScriptAssignmentDeclarations.MODULE_LEVEL,
     };
   }
 
@@ -256,6 +325,7 @@ export class JavaScriptAssignmentDeclarations {
       nameNode: target,
       nameLiteral: undefined,
       ...assigned,
+      ...JavaScriptAssignmentDeclarations.MODULE_LEVEL,
     };
   }
 

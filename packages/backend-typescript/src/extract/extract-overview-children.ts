@@ -31,6 +31,7 @@ import {
   JavaScriptAssignmentDeclarations,
   type JavaScriptAssignmentDeclaration,
 } from "./javascript-assignment-declaration.js";
+import { JavaScriptExpandoMembers } from "./javascript-expando-members.js";
 import { nodeKind } from "./node-kind.js";
 import { refineLabel } from "./refine-label.js";
 import { statementCallExpression, trailingCallbackBody } from "./trailing-callback.js";
@@ -66,6 +67,7 @@ export class OverviewChildrenExtractor {
   >();
   private readonly emittedAssignmentDeclarations = new Set<ts.Node>();
   private readonly declarationNodes = new Map<SymbolOverviewNode, Node>();
+  private expandoMembers: JavaScriptExpandoMembers | undefined;
 
   constructor(args: { file: string; diagnostics?: DiagnosticSink | undefined }) {
     this.file = args.file;
@@ -77,6 +79,7 @@ export class OverviewChildrenExtractor {
     const assignmentDeclarations = sourceFile
       ? JavaScriptAssignmentDeclarations.ofSourceFile(sourceFile)
       : [];
+    this.expandoMembers = sourceFile ? JavaScriptExpandoMembers.of(sourceFile) : undefined;
     this.assignmentDeclarationsByStatement = OverviewChildrenExtractor.groupedBy(
       assignmentDeclarations,
       (declaration) => declaration.statement.compilerNode,
@@ -176,7 +179,11 @@ export class OverviewChildrenExtractor {
         kind: { role: roleOf(refined), nativeLabel: refined },
         range,
         header: OverviewChildrenExtractor.headerFrom(range.startLine, extractSignatureSource(node)),
-        children: this.symbolChildren(node, childSegments),
+        children: this.withExpandoMembers(
+          node,
+          this.symbolChildren(node, childSegments),
+          childSegments,
+        ),
       },
       node,
     );
@@ -208,9 +215,10 @@ export class OverviewChildrenExtractor {
 
   private buildAssignmentDeclarationNode(
     declaration: JavaScriptAssignmentDeclaration,
+    containerSegments: readonly SymbolPathSegment[] = [],
   ): SymbolOverviewNode {
     const range = JavaScriptAssignmentDeclarations.rangeOf(declaration);
-    const segments = [{ name: declaration.name }];
+    const segments = [...containerSegments, { name: declaration.name }];
     const label = OverviewChildrenExtractor.assignmentDeclarationLabel(declaration);
     return this.declared(
       {
@@ -222,10 +230,44 @@ export class OverviewChildrenExtractor {
           range.startLine,
           JavaScriptAssignmentDeclarations.signatureOf(declaration),
         ),
-        children: this.functionValueChildren(declaration.value, segments),
+        children: this.withExpandoMembers(
+          declaration.declarationNode,
+          this.functionValueChildren(declaration.value, segments),
+          segments,
+        ),
       },
       declaration.declarationNode,
     );
+  }
+
+  private withExpandoMembers(
+    container: Node,
+    children: readonly OverviewNode[],
+    containerSegments: readonly SymbolPathSegment[],
+  ): readonly OverviewNode[] {
+    const members = (this.expandoMembers?.membersOf(container) ?? []).map((member) =>
+      this.buildAssignmentDeclarationNode(member, containerSegments),
+    );
+    if (members.length === 0) return children;
+    return OverviewChildrenExtractor.mergedByStartLine(children, members);
+  }
+
+  private static mergedByStartLine(
+    children: readonly OverviewNode[],
+    members: readonly OverviewNode[],
+  ): readonly OverviewNode[] {
+    const merged: OverviewNode[] = [];
+    const pendingMembers = members.values();
+    let nextMember = pendingMembers.next();
+    for (const child of children) {
+      while (!nextMember.done && nextMember.value.range.startLine < child.range.startLine) {
+        merged.push(nextMember.value);
+        nextMember = pendingMembers.next();
+      }
+      merged.push(child);
+    }
+    if (!nextMember.done) merged.push(nextMember.value, ...pendingMembers);
+    return merged;
   }
 
   private symbolChildren(
@@ -404,7 +446,11 @@ export class OverviewChildrenExtractor {
             range.startLine,
             extractVariableSignature({ statement, declaration: decl }),
           ),
-          children: this.variableInitializerChildren(decl, childSegments),
+          children: this.withExpandoMembers(
+            decl,
+            this.variableInitializerChildren(decl, childSegments),
+            childSegments,
+          ),
         },
         decl,
       );
@@ -468,10 +514,11 @@ export class OverviewChildrenExtractor {
     if (declaration.form === "module-exports") return "default-export";
     if (Node.isGetAccessorDeclaration(declaration.value)) return "getter";
     if (Node.isSetAccessorDeclaration(declaration.value)) return "setter";
+    const isMember = declaration.containerNames.length > 0;
     if (OverviewChildrenExtractor.isFunctionValue(declaration.value)) {
-      return "function-implementation";
+      return isMember ? "method-implementation" : "function-implementation";
     }
-    return "variable";
+    return isMember ? "property" : "variable";
   }
 
   private static isFunctionValue(expression: Node): boolean {

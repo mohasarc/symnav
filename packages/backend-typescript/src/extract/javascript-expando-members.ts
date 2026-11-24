@@ -31,7 +31,9 @@ export class JavaScriptExpandoMembers {
     if (!symbol || symbol.valueDeclaration !== container.compilerNode) return [];
     const prototype = symbol.exports?.get(JavaScriptExpandoMembers.PROTOTYPE);
     return [
-      ...[...(symbol.members?.values() ?? [])].flatMap((member) => this.declaredMembers(member)),
+      ...[...(symbol.members?.values() ?? []), ...(symbol.exports?.values() ?? [])].flatMap(
+        (member) => this.declaredMembers(member),
+      ),
       ...(prototype?.declarations ?? []).flatMap((declaration) =>
         this.prototypeObjectMembers(declaration),
       ),

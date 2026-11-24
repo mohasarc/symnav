@@ -32,7 +32,8 @@ export type JavaScriptAssignmentDeclarationForm =
   | "module-exports"
   | "define-property-export"
   | "prototype-property"
-  | "prototype-object-member";
+  | "prototype-object-member"
+  | "static-property";
 
 export type JavaScriptDeclarationContainerScope = "module" | "enclosing-declaration";
 
@@ -141,7 +142,10 @@ export class JavaScriptAssignmentDeclarations {
 
   private static expandoDeclarationOf(node: Node): JavaScriptAssignmentDeclaration | undefined {
     if (Node.isPropertyAccessExpression(node) || Node.isElementAccessExpression(node)) {
-      return JavaScriptAssignmentDeclarations.prototypeProperty(node);
+      return (
+        JavaScriptAssignmentDeclarations.prototypeProperty(node) ??
+        JavaScriptAssignmentDeclarations.staticProperty(node)
+      );
     }
     const isPrototypeObjectMemberCandidate =
       JavaScriptAssignmentDeclarations.isObjectMember(node) ||
@@ -201,6 +205,48 @@ export class JavaScriptAssignmentDeclarations {
       containerNames,
       containerScope: "enclosing-declaration",
     };
+  }
+
+  private static staticProperty(
+    target: PropertyAccessExpression | ElementAccessExpression,
+  ): JavaScriptAssignmentDeclaration | undefined {
+    const ownerNames = JavaScriptAssignmentDeclarations.bindableNames(target.getExpression());
+    const assigned = JavaScriptAssignmentDeclarations.assignedTo(target);
+    const name = JavaScriptAssignmentDeclarations.staticAccessName(target);
+    if (!ownerNames || !assigned || name === undefined) return undefined;
+    const assignsPrototypeObject =
+      name === "prototype" && Node.isObjectLiteralExpression(assigned.value);
+    if (assignsPrototypeObject) return undefined;
+    const container = JavaScriptAssignmentDeclarations.staticContainer(ownerNames);
+    if (!container) return undefined;
+    return {
+      form: "static-property",
+      name,
+      declarationNode: target,
+      nameNode: target,
+      nameLiteral: Node.isElementAccessExpression(target)
+        ? target.getArgumentExpression()
+        : undefined,
+      ...assigned,
+      ...container,
+    };
+  }
+
+  private static staticContainer(
+    ownerNames: readonly string[],
+  ): Pick<JavaScriptAssignmentDeclaration, "containerNames" | "containerScope"> | undefined {
+    const exportsRootLength = JavaScriptAssignmentDeclarations.exportsRootLength(ownerNames);
+    if (exportsRootLength === 0) {
+      return { containerNames: ownerNames, containerScope: "enclosing-declaration" };
+    }
+    const containerNames = ownerNames.slice(exportsRootLength);
+    return containerNames.length > 0 ? { containerNames, containerScope: "module" } : undefined;
+  }
+
+  private static exportsRootLength(ownerNames: readonly string[]): number {
+    if (ownerNames[0] === "exports") return 1;
+    const isModuleExportsRoot = ownerNames[0] === "module" && ownerNames[1] === "exports";
+    return isModuleExportsRoot ? 2 : 0;
   }
 
   private static prototypeContainerNames(prototypeAccess: Node): readonly string[] | undefined {

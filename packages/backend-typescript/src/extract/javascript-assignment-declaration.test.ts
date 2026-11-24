@@ -721,7 +721,10 @@ function programSourceFile(source: string): SourceFile {
 function listedExports(sourceFile: SourceFile): readonly string[] {
   const located = locatedDeclarationsOf(sourceFile);
   return located
-    .filter(({ node }) => isCommonJsDeclarationNode(node))
+    .filter(
+      ({ declaration, node }) =>
+        declaration.identity.segments.length === 1 && isCommonJsDeclarationNode(node),
+    )
     .map(({ declaration, node }) => {
       const path = declaration.identity.segments.map((segment) => segment.name);
       return `${path.join(SEGMENT_SEPARATOR)}@${node.getStartLineNumber()}`;

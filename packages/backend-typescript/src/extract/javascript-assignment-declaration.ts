@@ -350,7 +350,8 @@ export class JavaScriptAssignmentDeclarations {
   private static ownerNamesOf(declaration: Node): readonly string[] | undefined {
     const name = Node.hasName(declaration) ? declaration.getName() : undefined;
     if (name) return [name];
-    const parent = declaration.getParent();
+    let parent = declaration.getParent();
+    while (Node.isParenthesizedExpression(parent)) parent = parent.getParent();
     if (Node.isVariableDeclaration(parent)) return [parent.getName()];
     if (JavaScriptAssignmentDeclarations.isAssignment(parent)) {
       return JavaScriptAssignmentDeclarations.bindableNames(parent.getLeft());

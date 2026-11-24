@@ -100,6 +100,51 @@ describe("CommonJS export declarations in overview", () => {
     expect(idsOf(source)).toEqual(["input.js::server", "input.js::client"]);
   });
 
+  it("lists an export assigned in a variable initializer at module level after the variable", () => {
+    expect(summariesOf("var app = module.exports.app = function () {};")).toEqual([
+      {
+        id: "input.js::app#1",
+        label: "variable",
+        range: [1, 1],
+        header: ["var app = module.exports.app = function () {}"],
+      },
+      {
+        id: "input.js::app#2",
+        label: "function-implementation",
+        range: [1, 1],
+        header: ["module.exports.app = function () {}"],
+      },
+    ]);
+  });
+
+  it("lists exports assigned inside function bodies at module level after their statement", () => {
+    const source = [
+      "function init() {",
+      "  exports.inner = 1;",
+      "}",
+      "function wrap(exports) {",
+      "  exports.shadowed = 2;",
+      "}",
+      "(function () {",
+      "  exports.iife = 3;",
+      "})();",
+      "const later = () => (exports.late = 4);",
+    ].join("\n");
+
+    const topLevel = OverviewTree.directSymbolChildren(fileEntriesOf(source).entries);
+
+    expect(topLevel.map(idOf)).toEqual([
+      "input.js::init",
+      "input.js::inner",
+      "input.js::wrap",
+      "input.js::shadowed",
+      "input.js::iife",
+      "input.js::later",
+      "input.js::late",
+    ]);
+    expect(idsOf(source)).toHaveLength(topLevel.length);
+  });
+
   it("emits no symbols for the same syntax in a TypeScript file", () => {
     const source = ["exports.foo = function () {};", "module.exports.bar = 1;"].join("\n");
 

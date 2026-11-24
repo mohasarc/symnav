@@ -10,6 +10,7 @@ import {
   type PropertyAccessExpression,
   type PropertyAssignment,
   type SetAccessorDeclaration,
+  type ShorthandPropertyAssignment,
   type SourceFile,
 } from "ts-morph";
 import { SEGMENT_SEPARATOR, parseSegment, type LineRange } from "@symnav/core";
@@ -30,7 +31,8 @@ export type JavaScriptAssignmentDeclarationForm =
   | "module-exports-member"
   | "module-exports"
   | "define-property-export"
-  | "prototype-property";
+  | "prototype-property"
+  | "prototype-object-member";
 
 export type JavaScriptDeclarationContainerScope = "module" | "enclosing-declaration";
 
@@ -81,8 +83,9 @@ export class JavaScriptAssignmentDeclarations {
 
   static rangeOf(declaration: JavaScriptAssignmentDeclaration): LineRange {
     const { declarationNode } = declaration;
-    const extent =
-      declaration.form === "module-exports-member" ? declarationNode : declaration.statement;
+    const extent = JavaScriptAssignmentDeclarations.isObjectMemberDeclaration(declaration)
+      ? declarationNode
+      : declaration.statement;
     return {
       startLine: declarationNode.getStartLineNumber(),
       endLine: extent.getEndLineNumber(),
@@ -95,13 +98,20 @@ export class JavaScriptAssignmentDeclarations {
     if (Node.isPropertyAssignment(declarationNode)) {
       return `${declarationNode.getNameNode().getText()}: ${value}`;
     }
-    if (declaration.form === "module-exports-member") {
+    if (Node.isShorthandPropertyAssignment(declarationNode)) return declarationNode.getText();
+    if (JavaScriptAssignmentDeclarations.isObjectMemberDeclaration(declaration)) {
       return extractSignatureSource(declarationNode);
     }
     if (Node.isCallExpression(declarationNode)) {
       return JavaScriptAssignmentDeclarations.definePropertySignature(declarationNode);
     }
     return `${declarationNode.getText()} = ${value}`;
+  }
+
+  private static isObjectMemberDeclaration(declaration: JavaScriptAssignmentDeclaration): boolean {
+    return (
+      declaration.form === "module-exports-member" || declaration.form === "prototype-object-member"
+    );
   }
 
   private static isCommonJsFile(sourceFile: SourceFile): boolean {
@@ -133,20 +143,48 @@ export class JavaScriptAssignmentDeclarations {
     if (Node.isPropertyAccessExpression(node) || Node.isElementAccessExpression(node)) {
       return JavaScriptAssignmentDeclarations.prototypeProperty(node);
     }
+    const isPrototypeObjectMemberCandidate =
+      JavaScriptAssignmentDeclarations.isObjectMember(node) ||
+      Node.isShorthandPropertyAssignment(node);
+    if (isPrototypeObjectMemberCandidate) {
+      return JavaScriptAssignmentDeclarations.prototypeObjectMember(node);
+    }
     return undefined;
+  }
+
+  private static prototypeObjectMember(
+    member: ObjectMember | ShorthandPropertyAssignment,
+  ): JavaScriptAssignmentDeclaration | undefined {
+    const object = member.getParent();
+    const assignment = object.getParent();
+    const assignsObject =
+      JavaScriptAssignmentDeclarations.isAssignment(assignment) && assignment.getRight() === object;
+    if (!assignsObject) return undefined;
+    const containerNames = JavaScriptAssignmentDeclarations.prototypeContainerNames(
+      assignment.getLeft(),
+    );
+    const nameNode = member.getNameNode();
+    const name = JavaScriptAssignmentDeclarations.propertyName(nameNode);
+    const statement = member.getFirstAncestor(Node.isStatement);
+    if (!containerNames || name === undefined || !statement) return undefined;
+    return {
+      form: "prototype-object-member",
+      name,
+      declarationNode: member,
+      nameNode,
+      nameLiteral: JavaScriptAssignmentDeclarations.propertyNameLiteral(nameNode),
+      value: Node.isPropertyAssignment(member) ? member.getInitializerOrThrow() : member,
+      statement,
+      containerNames,
+      containerScope: "enclosing-declaration",
+    };
   }
 
   private static prototypeProperty(
     target: PropertyAccessExpression | ElementAccessExpression,
   ): JavaScriptAssignmentDeclaration | undefined {
-    const prototypeAccess = target.getExpression();
-    const accessesPrototype =
-      (Node.isPropertyAccessExpression(prototypeAccess) ||
-        Node.isElementAccessExpression(prototypeAccess)) &&
-      JavaScriptAssignmentDeclarations.staticAccessName(prototypeAccess) === "prototype";
-    if (!accessesPrototype) return undefined;
-    const containerNames = JavaScriptAssignmentDeclarations.bindableNames(
-      prototypeAccess.getExpression(),
+    const containerNames = JavaScriptAssignmentDeclarations.prototypeContainerNames(
+      target.getExpression(),
     );
     const assigned = JavaScriptAssignmentDeclarations.assignedTo(target);
     const name = JavaScriptAssignmentDeclarations.staticAccessName(target);
@@ -163,6 +201,15 @@ export class JavaScriptAssignmentDeclarations {
       containerNames,
       containerScope: "enclosing-declaration",
     };
+  }
+
+  private static prototypeContainerNames(prototypeAccess: Node): readonly string[] | undefined {
+    const accessesPrototype =
+      (Node.isPropertyAccessExpression(prototypeAccess) ||
+        Node.isElementAccessExpression(prototypeAccess)) &&
+      JavaScriptAssignmentDeclarations.staticAccessName(prototypeAccess) === "prototype";
+    if (!accessesPrototype) return undefined;
+    return JavaScriptAssignmentDeclarations.bindableNames(prototypeAccess.getExpression());
   }
 
   private static bindableNames(expression: Node): readonly string[] | undefined {

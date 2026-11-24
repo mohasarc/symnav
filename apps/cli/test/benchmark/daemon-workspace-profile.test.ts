@@ -23,6 +23,57 @@ describe("daemon workspace profile", () => {
     expect(serialized).not.toMatch(/(?:[A-Za-z]:\\|\/Users\/|\/home\/|::|[a-f\d]{40})/i);
   });
 
+  it("accepts the reviewed JavaScript aggregate with its JavaScript file mix", () => {
+    const serialized = readFileSync(
+      new URL("./profiles/daemon-workspace-js-1x.v1.json", import.meta.url),
+      "utf8",
+    );
+    const profile = DaemonWorkspaceProfileValidator.parse(JSON.parse(serialized));
+
+    expect(profile.language).toBe("javascript");
+    expect(profile.visibleTypeScriptFiles).toBe(reviewedProfile().visibleTypeScriptFiles);
+    expect(profile.declarationSiblingRatio).toBeGreaterThan(0);
+    expect(profile.commonJsRatio).toBeGreaterThan(0);
+    expect(profile.minifiedFileBytes).toBeGreaterThanOrEqual(1024 ** 2);
+    expect(serialized).not.toMatch(/(?:[A-Za-z]:\\|\/Users\/|\/home\/|::|[a-f\d]{40})/i);
+  });
+
+  it("accepts a TypeScript profile with or without its language", () => {
+    const valid = reviewedProfile();
+
+    expect(DaemonWorkspaceProfileValidator.parse(valid).language).toBeUndefined();
+    expect(
+      DaemonWorkspaceProfileValidator.parse({ ...valid, language: "typescript" }).language,
+    ).toBe("typescript");
+  });
+
+  it("rejects JavaScript fields that don't match the profile language", () => {
+    const valid = reviewedProfile();
+    const javaScriptFields: Partial<DaemonWorkspaceProfile> = {
+      declarationSiblingRatio: 0.25,
+      commonJsRatio: 0.3,
+      minifiedFileBytes: 1024,
+    };
+
+    expect(() =>
+      DaemonWorkspaceProfileValidator.parse({ ...valid, language: "javascript" }),
+    ).toThrow("profile fields");
+    expect(() => DaemonWorkspaceProfileValidator.parse({ ...valid, ...javaScriptFields })).toThrow(
+      "profile fields",
+    );
+    expect(() =>
+      DaemonWorkspaceProfileValidator.parse({ ...valid, language: "python", ...javaScriptFields }),
+    ).toThrow("profile language");
+    expect(() =>
+      DaemonWorkspaceProfileValidator.parse({
+        ...valid,
+        language: "javascript",
+        ...javaScriptFields,
+        commonJsRatio: 1.5,
+      }),
+    ).toThrow("commonJsRatio");
+  });
+
   it("rejects extra fields and invalid aggregate quantiles", () => {
     const valid = reviewedProfile();
 

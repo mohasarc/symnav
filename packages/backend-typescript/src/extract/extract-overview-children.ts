@@ -65,6 +65,7 @@ export class OverviewChildrenExtractor {
     JavaScriptAssignmentDeclaration[]
   >();
   private readonly emittedAssignmentDeclarations = new Set<ts.Node>();
+  private readonly declarationNodes = new Map<SymbolOverviewNode, Node>();
 
   constructor(args: { file: string; diagnostics?: DiagnosticSink | undefined }) {
     this.file = args.file;
@@ -88,6 +89,15 @@ export class OverviewChildrenExtractor {
       ...this.toOverviewNode({ node, symbolSegments: [], category: "statement" }),
       ...this.hoistedAssignmentDeclarations(node),
     ]);
+  }
+
+  declarationNodeOf(symbol: SymbolOverviewNode): Node | undefined {
+    return this.declarationNodes.get(symbol);
+  }
+
+  private declared<T extends SymbolOverviewNode>(symbol: T, node: Node): T {
+    this.declarationNodes.set(symbol, node);
+    return symbol;
   }
 
   private extractNodes(args: {
@@ -159,14 +169,17 @@ export class OverviewChildrenExtractor {
     const name = OverviewChildrenExtractor.nodeName(node);
     const refined = refineLabel(node, kind);
     const childSegments = [...symbolSegments, { name }];
-    return {
-      type: "symbol",
-      identity: this.identityFor(childSegments),
-      kind: { role: roleOf(refined), nativeLabel: refined },
-      range,
-      header: OverviewChildrenExtractor.headerFrom(range.startLine, extractSignatureSource(node)),
-      children: this.symbolChildren(node, childSegments),
-    };
+    return this.declared(
+      {
+        type: "symbol",
+        identity: this.identityFor(childSegments),
+        kind: { role: roleOf(refined), nativeLabel: refined },
+        range,
+        header: OverviewChildrenExtractor.headerFrom(range.startLine, extractSignatureSource(node)),
+        children: this.symbolChildren(node, childSegments),
+      },
+      node,
+    );
   }
 
   private moduleScopeAssignmentDeclarations(
@@ -199,17 +212,20 @@ export class OverviewChildrenExtractor {
     const range = JavaScriptAssignmentDeclarations.rangeOf(declaration);
     const segments = [{ name: declaration.name }];
     const label = OverviewChildrenExtractor.assignmentDeclarationLabel(declaration);
-    return {
-      type: "symbol",
-      identity: this.identityFor(segments),
-      kind: { role: roleOf(label), nativeLabel: label },
-      range,
-      header: OverviewChildrenExtractor.headerFrom(
-        range.startLine,
-        JavaScriptAssignmentDeclarations.signatureOf(declaration),
-      ),
-      children: this.functionValueChildren(declaration.value, segments),
-    };
+    return this.declared(
+      {
+        type: "symbol",
+        identity: this.identityFor(segments),
+        kind: { role: roleOf(label), nativeLabel: label },
+        range,
+        header: OverviewChildrenExtractor.headerFrom(
+          range.startLine,
+          JavaScriptAssignmentDeclarations.signatureOf(declaration),
+        ),
+        children: this.functionValueChildren(declaration.value, segments),
+      },
+      declaration.declarationNode,
+    );
   }
 
   private symbolChildren(
@@ -378,17 +394,20 @@ export class OverviewChildrenExtractor {
     const range = OverviewChildrenExtractor.nodeRange(statement);
     return declList.getDeclarations().map((decl) => {
       const childSegments = [...symbolSegments, { name: decl.getName() }];
-      return {
-        type: "symbol",
-        identity: this.identityFor(childSegments),
-        kind: { role: roleOf("variable"), nativeLabel: "variable" },
-        range,
-        header: OverviewChildrenExtractor.headerFrom(
-          range.startLine,
-          extractVariableSignature({ statement, declaration: decl }),
-        ),
-        children: this.variableInitializerChildren(decl, childSegments),
-      };
+      return this.declared(
+        {
+          type: "symbol",
+          identity: this.identityFor(childSegments),
+          kind: { role: roleOf("variable"), nativeLabel: "variable" },
+          range,
+          header: OverviewChildrenExtractor.headerFrom(
+            range.startLine,
+            extractVariableSignature({ statement, declaration: decl }),
+          ),
+          children: this.variableInitializerChildren(decl, childSegments),
+        },
+        decl,
+      );
     });
   }
 

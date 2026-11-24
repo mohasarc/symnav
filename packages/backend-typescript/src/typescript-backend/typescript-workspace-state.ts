@@ -14,7 +14,7 @@ import {
 } from "@symnav/core";
 import { Project, type Node, type SourceFile } from "ts-morph";
 
-import { extractFileEntries } from "../extract/extract-file-entries.js";
+import { FileDeclarationExtraction } from "../extract/file-declaration-extraction.js";
 import { DeclarationLocator, type LocatedDeclaration } from "../identity/locate-declarations.js";
 import { WorkspaceFileSystemHost } from "./workspace-file-system-host.js";
 
@@ -26,8 +26,13 @@ export interface TypeScriptFileExtractionRequest {
   readonly diagnostics?: DiagnosticSink;
 }
 
+export interface TypeScriptFileExtraction {
+  readonly entries: OverviewFileEntries;
+  readonly declarationNodes: ReadonlyMap<SymbolOverviewNode, Node>;
+}
+
 export interface TypeScriptFileExtractor {
-  extract(request: TypeScriptFileExtractionRequest): OverviewFileEntries;
+  extract(request: TypeScriptFileExtractionRequest): TypeScriptFileExtraction;
 }
 
 export interface TypeScriptSemanticSourceProvider {
@@ -36,8 +41,8 @@ export interface TypeScriptSemanticSourceProvider {
 }
 
 export class TypeScriptFileEntryExtractor implements TypeScriptFileExtractor {
-  extract(request: TypeScriptFileExtractionRequest): OverviewFileEntries {
-    return extractFileEntries(request);
+  extract(request: TypeScriptFileExtractionRequest): TypeScriptFileExtraction {
+    return FileDeclarationExtraction.extract(request);
   }
 }
 
@@ -202,7 +207,7 @@ class TypeScriptWorkspacePreparation extends RevisionedBackendPreparation<TypeSc
   ): RevisionedBackendPreparedFile<TypeScriptPreparedFileDetails> {
     const declarationsByPosition = new Map<number, SymbolOverviewNode>();
     const diagnosticSink = new CollectingDiagnosticSink();
-    const extracted = this.extractor.extract({
+    const { entries: extracted } = this.extractor.extract({
       sourceFile,
       filePath: file.relative,
       diagnostics: diagnosticSink,

@@ -9,6 +9,11 @@ interface ExportedDeclaration {
   readonly localName: string;
 }
 
+interface LinkedCounterparts {
+  readonly counterparts: readonly SymbolIdentity[];
+  readonly memberNames: readonly string[];
+}
+
 interface PairedSymbolLink {
   readonly declarations: readonly SymbolIdentity[];
   readonly implementations: readonly SymbolIdentity[];
@@ -22,13 +27,15 @@ export class PairedSymbolMatcher {
     pair: DeclarationImplementationFilePair,
   ): readonly SymbolIdentity[] {
     return this.links(pair).flatMap((link) => {
-      if (PairedSymbolMatcher.includesSymbol(link.implementations, identity)) {
-        return link.declarations;
-      }
-      if (PairedSymbolMatcher.includesSymbol(link.declarations, identity)) {
-        return link.implementations;
-      }
-      return [];
+      const linked = PairedSymbolMatcher.linkedCounterparts(link, identity);
+      if (!linked) return [];
+      if (linked.memberNames.length === 0) return linked.counterparts;
+      const targetStaticness = this.staticnessOf(identity);
+      return linked.counterparts.flatMap((counterpart) =>
+        this.membersNamed(counterpart, linked.memberNames).filter((member) =>
+          PairedSymbolMatcher.staticnessOverlaps(targetStaticness, this.staticnessOf(member)),
+        ),
+      );
     });
   }
 
@@ -120,6 +127,36 @@ export class PairedSymbolMatcher {
       );
   }
 
+  private membersNamed(
+    owner: SymbolIdentity,
+    memberNames: readonly string[],
+  ): readonly SymbolIdentity[] {
+    return (this.workspaceState.declarationsIn(owner.file) ?? []).flatMap(({ identity }) => {
+      const memberSegments = identity.segments.slice(owner.segments.length);
+      const sameMemberNames =
+        memberSegments.length === memberNames.length &&
+        memberSegments.every((segment, index) => segment.name === memberNames[index]);
+      return PairedSymbolMatcher.isPrefix(owner, identity) && sameMemberNames ? [identity] : [];
+    });
+  }
+
+  private staticnessOf(identity: SymbolIdentity): ReadonlySet<boolean> {
+    return new Set(
+      this.workspaceState
+        .locate(identity)
+        .flatMap(({ node }) => (Node.isStaticable(node) ? [node.isStatic()] : [])),
+    );
+  }
+
+  private static staticnessOverlaps(
+    targetStaticness: ReadonlySet<boolean>,
+    memberStaticness: ReadonlySet<boolean>,
+  ): boolean {
+    const eitherIsNotClassMember = targetStaticness.size === 0 || memberStaticness.size === 0;
+    if (eitherIsNotClassMember) return true;
+    return [...memberStaticness].some((isStatic) => targetStaticness.has(isStatic));
+  }
+
   private static exportedExpression(exportedNode: Node): Node | undefined {
     if (Node.isExportAssignment(exportedNode)) return exportedNode.getExpression();
     return undefined;
@@ -139,16 +176,29 @@ export class PairedSymbolMatcher {
     return node.getSourceFile().getFilePath() === sourceFile.getFilePath();
   }
 
-  private static includesSymbol(
-    identities: readonly SymbolIdentity[],
+  private static linkedCounterparts(
+    link: PairedSymbolLink,
     identity: SymbolIdentity,
-  ): boolean {
-    return identities.some(
-      (candidate) =>
-        candidate.file === identity.file &&
-        candidate.segments.length === identity.segments.length &&
-        PairedSymbolMatcher.segmentsMatch(candidate, identity),
-    );
+  ): LinkedCounterparts | undefined {
+    const sides = [
+      [link.implementations, link.declarations],
+      [link.declarations, link.implementations],
+    ] as const;
+    for (const [linkedSide, counterparts] of sides) {
+      const owner = linkedSide.find((linked) => PairedSymbolMatcher.isPrefix(linked, identity));
+      if (!owner) continue;
+      const memberNames = identity.segments
+        .slice(owner.segments.length)
+        .map((segment) => segment.name);
+      return { counterparts, memberNames };
+    }
+    return undefined;
+  }
+
+  private static isPrefix(prefix: SymbolIdentity, identity: SymbolIdentity): boolean {
+    if (prefix.file !== identity.file) return false;
+    if (prefix.segments.length > identity.segments.length) return false;
+    return PairedSymbolMatcher.segmentsMatch(prefix, identity);
   }
 
   private static segmentsMatch(candidate: SymbolIdentity, identity: SymbolIdentity): boolean {

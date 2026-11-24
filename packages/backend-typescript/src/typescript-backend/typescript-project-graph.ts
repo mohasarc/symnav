@@ -194,6 +194,13 @@ export class TypeScriptProjectGraph
     const { path, content, snapshot, inputCollector } = request;
     const paths = new WorkspacePathDialect(snapshot.root);
     const normalizedPath = paths.normalize(path);
+    const shadowedBySiblingTypeScriptConfiguration =
+      TypeScriptProjectGraph.hasSiblingTypeScriptConfiguration(
+        normalizedPath,
+        paths,
+        inputCollector,
+      );
+    if (shadowedBySiblingTypeScriptConfiguration) return undefined;
     const parsed = ts.parseConfigFileTextToJson(normalizedPath, content);
     if (parsed.error || !parsed.config || typeof parsed.config !== "object") return undefined;
     const value = parsed.config as Record<string, unknown>;
@@ -395,6 +402,19 @@ export class TypeScriptProjectGraph
       }
     }
     return [...directories.values()];
+  }
+
+  private static hasSiblingTypeScriptConfiguration(
+    configurationPath: string,
+    paths: WorkspacePathDialect,
+    inputCollector: ProjectInputCollector,
+  ): boolean {
+    if (posix.basename(configurationPath) !== JAVASCRIPT_CONFIGURATION_FILE_NAME) return false;
+    const siblingPath = paths.join(
+      paths.dirname(configurationPath),
+      TYPESCRIPT_CONFIGURATION_FILE_NAME,
+    );
+    return inputCollector.read(siblingPath) !== undefined;
   }
 
   private static compareShallowFirst(

@@ -225,6 +225,23 @@ describe("TypeScriptBackend CommonJS export declarations", () => {
   });
 });
 
+describe("TypeScriptBackend module-level this-property exports", () => {
+  it("resolves a this-property exported after the file becomes CommonJS and finds its require users", async () => {
+    const { backend, files } = await backendOverSources({
+      "src/lib.js": "exports.a = 1;\nthis.after = 2;\n",
+      "src/required.js": "const lib = require('./lib');\nlib.after;\n",
+    });
+
+    const definitions = await backend.findDefinitions(files, identity("src/lib.js", "after"));
+    const references = await backend.findReferences(files, identity("src/lib.js", "after"));
+
+    expect(definitions.map((definition) => formatSymbolIdentity(definition.identity))).toEqual([
+      "src/lib.js::after",
+    ]);
+    expect(referenceLocations(references)).toEqual(["src/required.js:2"]);
+  });
+});
+
 describe("TypeScriptBackend expando member declarations", () => {
   it.each([
     ["a function", "function Foo() {}\n"],

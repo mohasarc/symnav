@@ -14,6 +14,8 @@ export interface DeclarationImplementationFilePair {
 
 const DECLARATION_FILE_PATTERN = /\.d\.[mc]?ts$/;
 const IMPLEMENTATION_FILE_PATTERN = /\.(?:jsx?|mjs|cjs)$/;
+const DECLARATION_FILE_EXTENSION = ".d.ts";
+const IMPLEMENTATION_FILE_EXTENSION = ".js";
 
 export class DeclarationImplementationPairs {
   constructor(
@@ -27,11 +29,14 @@ export class DeclarationImplementationPairs {
   }
 
   private selfResolvedPair(relativePath: string): DeclarationImplementationFilePair | undefined {
-    if (!IMPLEMENTATION_FILE_PATTERN.test(relativePath)) return undefined;
+    const specifier = DeclarationImplementationPairs.selfSpecifier(relativePath);
+    if (!specifier) return undefined;
     const sourceFile = this.semanticSources.sourceFileFor(relativePath);
     if (!sourceFile) return undefined;
-    const pair = this.resolvedPair(`./${posix.basename(relativePath)}`, sourceFile);
-    return pair?.implementationFile === relativePath ? pair : undefined;
+    const pair = this.resolvedPair(specifier, sourceFile);
+    const pairsRelativePath =
+      pair?.declarationFile === relativePath || pair?.implementationFile === relativePath;
+    return pairsRelativePath ? pair : undefined;
   }
 
   private resolvedPair(
@@ -65,6 +70,15 @@ export class DeclarationImplementationPairs {
     const implementationFile = this.workspaceState.relativePathOfAbsolute(implementationPath);
     if (!declarationFile || !implementationFile) return undefined;
     return { declarationFile, implementationFile };
+  }
+
+  private static selfSpecifier(relativePath: string): string | undefined {
+    const name = posix.basename(relativePath);
+    if (IMPLEMENTATION_FILE_PATTERN.test(name)) return `./${name}`;
+    if (name.endsWith(DECLARATION_FILE_EXTENSION)) {
+      return `./${name.slice(0, -DECLARATION_FILE_EXTENSION.length)}${IMPLEMENTATION_FILE_EXTENSION}`;
+    }
+    return undefined;
   }
 
   private static hidingDeclarationFiles(host: ts.ModuleResolutionHost): ts.ModuleResolutionHost {

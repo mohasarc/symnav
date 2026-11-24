@@ -1,4 +1,4 @@
-import { formatSymbolIdentity, type SymbolIdentity } from "@symnav/core";
+import type { SymbolIdentity } from "@symnav/core";
 import { Node, type SourceFile, type Symbol, type TypeChecker } from "ts-morph";
 
 import type { DeclarationImplementationFilePair } from "./declaration-implementation-pairs.js";
@@ -21,10 +21,15 @@ export class PairedSymbolMatcher {
     identity: SymbolIdentity,
     pair: DeclarationImplementationFilePair,
   ): readonly SymbolIdentity[] {
-    if (identity.file !== pair.implementationFile) return [];
-    return this.links(pair).flatMap((link) =>
-      PairedSymbolMatcher.includesSymbol(link.implementations, identity) ? link.declarations : [],
-    );
+    return this.links(pair).flatMap((link) => {
+      if (PairedSymbolMatcher.includesSymbol(link.implementations, identity)) {
+        return link.declarations;
+      }
+      if (PairedSymbolMatcher.includesSymbol(link.declarations, identity)) {
+        return link.implementations;
+      }
+      return [];
+    });
   }
 
   private links(pair: DeclarationImplementationFilePair): readonly PairedSymbolLink[] {
@@ -138,7 +143,21 @@ export class PairedSymbolMatcher {
     identities: readonly SymbolIdentity[],
     identity: SymbolIdentity,
   ): boolean {
-    const key = formatSymbolIdentity(identity);
-    return identities.some((candidate) => formatSymbolIdentity(candidate) === key);
+    return identities.some(
+      (candidate) =>
+        candidate.file === identity.file &&
+        candidate.segments.length === identity.segments.length &&
+        PairedSymbolMatcher.segmentsMatch(candidate, identity),
+    );
+  }
+
+  private static segmentsMatch(candidate: SymbolIdentity, identity: SymbolIdentity): boolean {
+    return candidate.segments.every((segment, index) => {
+      const identitySegment = identity.segments[index]!;
+      const isLeaf = index === identity.segments.length - 1;
+      const namesCollapsedFamily = isLeaf && identitySegment.disambiguator === undefined;
+      const sameDisambiguator = segment.disambiguator === identitySegment.disambiguator;
+      return segment.name === identitySegment.name && (namesCollapsedFamily || sameDisambiguator);
+    });
   }
 }

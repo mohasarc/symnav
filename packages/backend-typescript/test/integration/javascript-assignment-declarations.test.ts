@@ -79,6 +79,32 @@ describe("TypeScriptBackend CommonJS export declarations", () => {
     expect(referenceLocations(variableReferences)).toEqual(["src/lib.js:2"]);
     expect(referenceLocations(exportReferences)).toEqual(["src/required.js:2"]);
   });
+
+  it("pairs exports.foo with its .d.ts twin", async () => {
+    const { backend, files } = await backendOverSources({
+      "src/lib.js": "exports.foo = function () { return 1; };\nexports.first = exports.foo();\n",
+      "src/lib.d.ts": "export declare function foo(): number;\n",
+      "src/imported.ts": "import { foo } from './lib';\nexport const value = foo();\n",
+    });
+
+    const definitions = await backend.findDefinitions(files, identity("src/lib.d.ts", "foo"));
+    const references = await backend.findReferences(files, identity("src/lib.d.ts", "foo"));
+
+    expect(
+      definitions.map((definition) => [
+        formatSymbolIdentity(definition.identity),
+        definition.pairRole,
+      ]),
+    ).toEqual([
+      ["src/lib.js::foo", "implementation"],
+      ["src/lib.d.ts::foo", "declaration"],
+    ]);
+    expect(referenceLocations(references)).toEqual([
+      "src/imported.ts:1",
+      "src/imported.ts:2",
+      "src/lib.js:2",
+    ]);
+  });
 });
 
 async function backendOverSources(sources: Readonly<Record<string, string>>): Promise<{

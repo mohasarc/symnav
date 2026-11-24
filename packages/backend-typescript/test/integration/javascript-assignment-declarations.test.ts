@@ -450,6 +450,30 @@ describe("TypeScriptBackend CommonJS export declarations", () => {
     ]);
   });
 
+  it.each([
+    ["an exports parameter", "function install(exports) { exports.foo = bar; }"],
+    ["a local exports variable", "function install() { const exports = {}; exports.foo = bar; }"],
+    ["a module parameter", "function install(module) { module.exports = { bar }; }"],
+  ])("credits no require users through %s", async (_shadow, installSource) => {
+    const { backend, files } = await backendOverSources({
+      "src/lib.js": [
+        "function bar() { return 1; }",
+        installSource,
+        "install({});",
+        "exports.foo = function () { return 2; };",
+        "",
+      ].join("\n"),
+      "src/use.js":
+        "const { foo, bar } = require('./lib');\nfunction callsBoth() { return foo() + bar(); }\n",
+    });
+
+    const references = await backend.findReferences(files, identity("src/lib.js", "bar"));
+    const callers = await backend.findCallers(files, identity("src/lib.js", "bar"));
+
+    expect(referenceLocations(references)).toEqual(["src/lib.js:2"]);
+    expect(callers).toEqual([]);
+  });
+
   it("pairs a module.exports function with the .d.ts export = declaration", async () => {
     const { backend, files } = await backendOverSources({
       "src/lib.js": "module.exports = function () { return 1; };\n",

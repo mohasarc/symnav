@@ -1017,6 +1017,27 @@ describe("TypeScriptProjectGraph", () => {
     expect(graph.programFor("web/src/b.js")?.getCompilerOptions().skipLibCheck).toBe(true);
   });
 
+  it("resolves jsconfig.json path aliases from JavaScript", async () => {
+    const workspace = inMemoryWorkspace({
+      "jsconfig.json": JSON.stringify({
+        compilerOptions: { baseUrl: ".", paths: { "@lib/*": ["lib/*"] } },
+      }),
+      "lib/helper.js": "export function helper() { return 1; }\n",
+      "src/b.js":
+        'import { helper } from "@lib/helper";\nexport function useHelper() { return helper(); }\n',
+    });
+    const backend = new TypeScriptBackend(workspace.fileSystem);
+    await backend.refresh({ snapshot: workspace.snapshot, coverage: "workspace" });
+
+    const callees = await calleeNames(
+      backend,
+      workspace.snapshot.files,
+      symbolIdentity("src/b.js", "useHelper"),
+    );
+
+    expect(callees).toEqual(["helper"]);
+  });
+
   it("keeps implicit outDir contents outside configured membership", async () => {
     const projectFixture = fixture();
     const graph = new TypeScriptProjectGraph(projectFixture.fileSystem);

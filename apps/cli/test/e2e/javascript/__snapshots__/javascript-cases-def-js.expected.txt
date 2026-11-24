@@ -1,0 +1,5 @@
+Definition: createTabs
+
+src/Tabs/Tabs.js
+└── 3-5: createTabs  [implementation]
+    export function createTabs(label)

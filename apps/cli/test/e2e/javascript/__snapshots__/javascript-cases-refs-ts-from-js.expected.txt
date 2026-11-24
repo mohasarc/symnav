@@ -1,0 +1,9 @@
+References: formatLabel
+Total: 2
+Kinds: usage 1, import 1
+Page: 1/1
+Sort: path, line
+
+src/Tabs/Tabs.js
+├── 1: import { formatLabel } from "../format.js";  [import]
+└── 4: return { label: formatLabel(label) };  [usage]

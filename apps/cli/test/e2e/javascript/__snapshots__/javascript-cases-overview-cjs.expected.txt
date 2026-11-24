@@ -1,0 +1,3 @@
+Overview: src/legacy.cjs
+└── 1-3: legacyGreeting
+    1 function legacyGreeting(name)

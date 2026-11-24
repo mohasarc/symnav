@@ -1,0 +1,6 @@
+Overview: src/Tabs/Tabs.js
+├── 3-5: createTabs
+│   3 export function createTabs(label)
+│
+└── 7-11: Tabs
+    7 export class Tabs

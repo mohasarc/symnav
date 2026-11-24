@@ -1,0 +1,15 @@
+References: gt
+Total: 5
+Kinds: usage 5
+Page: 1/1
+Sort: path, line
+
+src/
+├── consumer.js
+│   ├── 1: const { gt } = require("./index");  [usage]
+│   └── 5: return gt(a, b) ? a : b;  [usage]
+├── functions/gt.js
+│   └── 3: module.exports = gt;  [usage]
+└── index.js
+    ├── 1: const gt = require("./functions/gt");  [usage]
+    └── 4: module.exports = { gt, compare };  [usage]

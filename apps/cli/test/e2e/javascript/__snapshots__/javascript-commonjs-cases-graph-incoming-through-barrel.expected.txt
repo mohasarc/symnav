@@ -1,0 +1,14 @@
+Graph: default
+File: src/functions/gt.js
+Lines: 3
+Depth: 1
+Direction: incoming
+Edges: calls
+
+Incoming
+src/functions/gt.js
+└── 3: default
+    module.exports = gt
+    └── src/consumer.js
+        └── 4-6: pick  [caller]
+            function pick(a, b)

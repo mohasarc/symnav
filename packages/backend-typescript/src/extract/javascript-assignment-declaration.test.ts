@@ -145,6 +145,20 @@ describe("CommonJS export declarations in overview", () => {
     expect(idsOf(source)).toHaveLength(topLevel.length);
   });
 
+  it("emits no node for CommonJS export syntax in a file with ES module syntax", () => {
+    const source = [
+      'import helper from "./helper";',
+      "exports.foo = 1;",
+      'exports["bar"] = 2;',
+      "function init() {",
+      "  module.exports.inner = 3;",
+      "}",
+      "export const real = helper;",
+    ].join("\n");
+
+    expect(idsOf(source)).toEqual(["input.js::init", "input.js::real"]);
+  });
+
   it("emits no symbols for the same syntax in a TypeScript file", () => {
     const source = ["exports.foo = function () {};", "module.exports.bar = 1;"].join("\n");
 

@@ -25,7 +25,7 @@ interface PairedSymbolLink {
 
 export class PairedSymbolMatcher {
   private static readonly INSTANCE_MEMBER_FORMS: ReadonlySet<JavaScriptAssignmentDeclarationForm> =
-    new Set(["prototype-property", "prototype-object-member"]);
+    new Set(["prototype-property", "prototype-object-member", "this-property"]);
 
   constructor(private readonly workspaceState: TypeScriptWorkspaceState) {}
 

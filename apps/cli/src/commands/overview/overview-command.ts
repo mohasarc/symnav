@@ -20,7 +20,7 @@ export const overviewCommand: Command<OverviewExpansionResult, OverviewArgs> = {
   name: "overview",
   async snapshotForBackendRefresh(ctx: CommandContext<OverviewArgs>) {
     const target = await ctx.workspace.resolveInputPath(ctx.args.file, ctx.cwd);
-    ctx.router.findOrThrow(target.relative);
+    ctx.router.findAcceptingOrThrow(target.relative);
     return ctx.workspace.snapshot([target]);
   },
   describeArgs(args: OverviewArgs) {

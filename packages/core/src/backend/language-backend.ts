@@ -7,6 +7,7 @@ import type {
   SymbolOverviewNode,
 } from "../intermediate-representation/overview-tree.js";
 import type { DefinitionSymbol } from "../intermediate-representation/types.js";
+import type { UnsupportedFileError } from "./errors.js";
 import type { ResolvedPath, WorkspaceSnapshot } from "../workspace/workspace.js";
 
 export interface BackendRefreshSummary {
@@ -62,4 +63,5 @@ export interface LanguageBackend {
     identity: SymbolIdentity,
   ): Promise<readonly CallEdge[]>;
   collapsedTargetIdentity?(candidates: readonly SymbolIdentity[]): SymbolIdentity | undefined;
+  refusal?(filePath: string): UnsupportedFileError | undefined;
 }

@@ -61,6 +61,15 @@ export class BackendRouter {
   }
 
   findOrThrow(filePath: string): LanguageBackend {
+    const backend = this.findAcceptingOrThrow(filePath);
+    const refusal = backend.refusal?.(filePath);
+    if (refusal !== undefined) {
+      throw refusal;
+    }
+    return backend;
+  }
+
+  findAcceptingOrThrow(filePath: string): LanguageBackend {
     const backend = this.find(filePath);
     if (backend === undefined) {
       throw new UnsupportedFileError(filePath);

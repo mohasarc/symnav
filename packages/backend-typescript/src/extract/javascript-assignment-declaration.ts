@@ -3,6 +3,7 @@ import {
   SyntaxKind,
   ts,
   type BinaryExpression,
+  type CallExpression,
   type ElementAccessExpression,
   type GetAccessorDeclaration,
   type MethodDeclaration,
@@ -16,6 +17,8 @@ import { SEGMENT_SEPARATOR, parseSegment, type LineRange } from "@symnav/core";
 import { collapseInitializerSource } from "./collapse-initializer-source.js";
 import { extractSignatureSource } from "./extract-signature-source.js";
 
+const DEFINE_PROPERTY_ARITY = 3;
+
 type ObjectMember =
   | PropertyAssignment
   | MethodDeclaration
@@ -25,7 +28,8 @@ type ObjectMember =
 export type JavaScriptAssignmentDeclarationForm =
   | "export-property"
   | "module-exports-member"
-  | "module-exports";
+  | "module-exports"
+  | "define-property-export";
 
 interface SourceFileWithModuleIndicator extends ts.SourceFile {
   readonly externalModuleIndicator?: ts.Node | true;
@@ -76,6 +80,9 @@ export class JavaScriptAssignmentDeclarations {
     if (declaration.form === "module-exports-member") {
       return extractSignatureSource(declarationNode);
     }
+    if (Node.isCallExpression(declarationNode)) {
+      return JavaScriptAssignmentDeclarations.definePropertySignature(declarationNode);
+    }
     return `${declarationNode.getText()} = ${value}`;
   }
 
@@ -98,7 +105,50 @@ export class JavaScriptAssignmentDeclarations {
     if (JavaScriptAssignmentDeclarations.isObjectMember(node)) {
       return JavaScriptAssignmentDeclarations.moduleExportsMember(node);
     }
+    if (Node.isCallExpression(node)) return JavaScriptAssignmentDeclarations.definedExport(node);
     return undefined;
+  }
+
+  private static definedExport(call: CallExpression): JavaScriptAssignmentDeclaration | undefined {
+    if (!JavaScriptAssignmentDeclarations.isDefinePropertyCall(call)) return undefined;
+    const [owner, nameArgument, descriptor] = call.getArguments();
+    const definesExport =
+      owner !== undefined && JavaScriptAssignmentDeclarations.isExportsObject(owner);
+    if (!definesExport || !nameArgument || !descriptor) return undefined;
+    const name = JavaScriptAssignmentDeclarations.literalName(nameArgument);
+    const statement = call.getFirstAncestor(Node.isStatement);
+    if (name === undefined || !statement) return undefined;
+    return {
+      form: "define-property-export",
+      name,
+      declarationNode: call,
+      nameNode: nameArgument,
+      nameLiteral: nameArgument,
+      value: JavaScriptAssignmentDeclarations.descriptorValue(descriptor),
+      statement,
+    };
+  }
+
+  private static isDefinePropertyCall(call: CallExpression): boolean {
+    const callee = call.getExpression();
+    const callsObjectDefineProperty =
+      Node.isPropertyAccessExpression(callee) &&
+      callee.getName() === "defineProperty" &&
+      callee.getExpression().getText() === "Object";
+    return callsObjectDefineProperty && call.getArguments().length === DEFINE_PROPERTY_ARITY;
+  }
+
+  private static descriptorValue(descriptor: Node): Node {
+    if (!Node.isObjectLiteralExpression(descriptor)) return descriptor;
+    const valueProperty = descriptor.getProperty("value");
+    if (!Node.isPropertyAssignment(valueProperty)) return descriptor;
+    return valueProperty.getInitializer() ?? descriptor;
+  }
+
+  private static definePropertySignature(call: CallExpression): string {
+    const [owner, nameArgument, descriptor] = call.getArguments();
+    const descriptorSource = descriptor ? collapseInitializerSource(descriptor) : "";
+    return `${call.getExpression().getText()}(${owner?.getText()}, ${nameArgument?.getText()}, ${descriptorSource})`;
   }
 
   private static moduleExportsMember(

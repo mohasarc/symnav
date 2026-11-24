@@ -60,6 +60,11 @@ export class OverviewChildrenExtractor {
   private readonly file: string;
   private readonly diagnostics: DiagnosticSink | undefined;
   private assignmentDeclarationsByStatement = new Map<ts.Node, JavaScriptAssignmentDeclaration[]>();
+  private assignmentDeclarationsByTopLevelStatement = new Map<
+    ts.Node,
+    JavaScriptAssignmentDeclaration[]
+  >();
+  private readonly emittedAssignmentDeclarations = new Set<ts.Node>();
 
   constructor(args: { file: string; diagnostics?: DiagnosticSink | undefined }) {
     this.file = args.file;
@@ -71,9 +76,18 @@ export class OverviewChildrenExtractor {
     const assignmentDeclarations = sourceFile
       ? JavaScriptAssignmentDeclarations.ofSourceFile(sourceFile)
       : [];
-    this.assignmentDeclarationsByStatement =
-      OverviewChildrenExtractor.byStatement(assignmentDeclarations);
-    return this.extractNodes({ nodes, symbolSegments: [], category: "statement" });
+    this.assignmentDeclarationsByStatement = OverviewChildrenExtractor.groupedBy(
+      assignmentDeclarations,
+      (declaration) => declaration.statement.compilerNode,
+    );
+    this.assignmentDeclarationsByTopLevelStatement = OverviewChildrenExtractor.groupedBy(
+      assignmentDeclarations,
+      (declaration) => OverviewChildrenExtractor.topLevelStatementOf(declaration.statement),
+    );
+    return nodes.flatMap((node) => [
+      ...this.toOverviewNode({ node, symbolSegments: [], category: "statement" }),
+      ...this.hoistedAssignmentDeclarations(node),
+    ]);
   }
 
   private extractNodes(args: {
@@ -161,7 +175,22 @@ export class OverviewChildrenExtractor {
   ): readonly JavaScriptAssignmentDeclaration[] {
     const isModuleScope = symbolSegments.length === 0;
     if (!isModuleScope) return [];
-    return this.assignmentDeclarationsByStatement.get(statement.compilerNode) ?? [];
+    const declarations = this.assignmentDeclarationsByStatement.get(statement.compilerNode) ?? [];
+    for (const declaration of declarations) {
+      this.emittedAssignmentDeclarations.add(declaration.declarationNode.compilerNode);
+    }
+    return declarations;
+  }
+
+  private hoistedAssignmentDeclarations(topLevelStatement: Node): readonly SymbolOverviewNode[] {
+    const declarations =
+      this.assignmentDeclarationsByTopLevelStatement.get(topLevelStatement.compilerNode) ?? [];
+    return declarations
+      .filter(
+        (declaration) =>
+          !this.emittedAssignmentDeclarations.has(declaration.declarationNode.compilerNode),
+      )
+      .map((declaration) => this.buildAssignmentDeclarationNode(declaration));
   }
 
   private buildAssignmentDeclarationNode(
@@ -394,15 +423,26 @@ export class OverviewChildrenExtractor {
     };
   }
 
-  private static byStatement(
+  private static groupedBy(
     declarations: readonly JavaScriptAssignmentDeclaration[],
+    keyOf: (declaration: JavaScriptAssignmentDeclaration) => ts.Node,
   ): Map<ts.Node, JavaScriptAssignmentDeclaration[]> {
-    const byStatement = new Map<ts.Node, JavaScriptAssignmentDeclaration[]>();
+    const grouped = new Map<ts.Node, JavaScriptAssignmentDeclaration[]>();
     for (const declaration of declarations) {
-      const statement = declaration.statement.compilerNode;
-      byStatement.set(statement, [...(byStatement.get(statement) ?? []), declaration]);
+      const key = keyOf(declaration);
+      const group = grouped.get(key);
+      if (group) group.push(declaration);
+      else grouped.set(key, [declaration]);
     }
-    return byStatement;
+    return grouped;
+  }
+
+  private static topLevelStatementOf(statement: Node): ts.Node {
+    let topLevel = statement.compilerNode;
+    while (topLevel.parent && topLevel.parent.kind !== SyntaxKind.SourceFile) {
+      topLevel = topLevel.parent;
+    }
+    return topLevel;
   }
 
   private static isFunctionValue(expression: Node): boolean {

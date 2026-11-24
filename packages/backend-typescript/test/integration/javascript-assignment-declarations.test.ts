@@ -185,9 +185,96 @@ describe("TypeScriptBackend CommonJS export declarations", () => {
       expect(definitions.map((definition) => formatSymbolIdentity(definition.identity))).toEqual([
         "src/lib.js::default",
       ]);
-      expect(referenceLocations(references)).toEqual(["src/imported.ts:1", "src/required.js:1"]);
+      expect(referenceLocations(references)).toEqual([
+        "src/imported.ts:1",
+        "src/imported.ts:1",
+        "src/imported.ts:2",
+        "src/required.js:1",
+        "src/required.js:1",
+        "src/required.js:2",
+      ]);
     },
   );
+
+  it.each([
+    ["a module.exports shorthand member", "module.exports = { helper };\n", ["src/lib.js:2"]],
+    [
+      "a same-name exports property",
+      "exports.helper = helper;\n",
+      ["src/lib.js:2", "src/lib.js:2"],
+    ],
+  ])(
+    "finds require and import users of a local exported as %s",
+    async (_form, exportSource, exportSiteLocations) => {
+      const { backend, files } = await backendOverSources({
+        "src/lib.js": `function helper() { return 1; }\n${exportSource}`,
+        "src/required.js": [
+          "const lib = require('./lib');",
+          "lib.helper();",
+          "const { helper } = require('./lib');",
+          "helper();",
+          "",
+        ].join("\n"),
+        "src/imported.ts": "import { helper } from './lib';\nexport const value = helper();\n",
+      });
+
+      const references = await backend.findReferences(files, identity("src/lib.js", "helper"));
+
+      expect(referenceLocations(references)).toEqual([
+        "src/imported.ts:1",
+        "src/imported.ts:2",
+        ...exportSiteLocations,
+        "src/required.js:2",
+        "src/required.js:3",
+        "src/required.js:4",
+      ]);
+    },
+  );
+
+  it("finds users of a local re-exported through a CommonJS barrel", async () => {
+    const { backend, files } = await backendOverSources({
+      "src/functions/gt.js": "const gt = (a, b) => a > b;\nmodule.exports = gt;\n",
+      "src/index.js": "const gt = require('./functions/gt');\nmodule.exports = { gt };\n",
+      "src/use.js": [
+        "const { gt } = require('./index');",
+        "gt(1, 2);",
+        "const semver = require('./index');",
+        "semver.gt(1, 2);",
+        "",
+      ].join("\n"),
+    });
+
+    const references = await backend.findReferences(files, identity("src/functions/gt.js", "gt"));
+
+    expect(referenceLocations(references)).toEqual([
+      "src/functions/gt.js:2",
+      "src/index.js:1",
+      "src/index.js:2",
+      "src/use.js:1",
+      "src/use.js:2",
+      "src/use.js:4",
+    ]);
+  });
+
+  it("lists callers that reach a CommonJS-exported local through require", async () => {
+    const { backend, files } = await backendOverSources({
+      "src/lib.js": "function helper() { return 1; }\nmodule.exports = { helper };\n",
+      "src/use.js": [
+        "const { helper } = require('./lib');",
+        "const lib = require('./lib');",
+        "function direct() { return helper(); }",
+        "function member() { return lib.helper(); }",
+        "",
+      ].join("\n"),
+    });
+
+    const callers = await backend.findCallers(files, identity("src/lib.js", "helper"));
+
+    expect(callers.map((edge) => formatSymbolIdentity(edge.symbol.identity))).toEqual([
+      "src/use.js::direct",
+      "src/use.js::member",
+    ]);
+  });
 
   it("pairs a module.exports function with the .d.ts export = declaration", async () => {
     const { backend, files } = await backendOverSources({

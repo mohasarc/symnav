@@ -2,6 +2,7 @@ import {
   Node,
   SyntaxKind,
   type Block,
+  type ts,
   type ExpressionStatement,
   type TryStatement,
   type VariableDeclaration,
@@ -26,6 +27,10 @@ import { ReExportEntryExtractor } from "./extract-re-export-entry.js";
 import { extractSignatureSource } from "./extract-signature-source.js";
 import { extractVariableSignature } from "./extract-variable-signature.js";
 import { FoldNodeKind, type TypeScriptFoldKind } from "./fold-node-kind.js";
+import {
+  JavaScriptAssignmentDeclarations,
+  type JavaScriptAssignmentDeclaration,
+} from "./javascript-assignment-declaration.js";
 import { nodeKind } from "./node-kind.js";
 import { refineLabel } from "./refine-label.js";
 import { statementCallExpression, trailingCallbackBody } from "./trailing-callback.js";
@@ -54,6 +59,7 @@ export class OverviewChildrenExtractor {
 
   private readonly file: string;
   private readonly diagnostics: DiagnosticSink | undefined;
+  private assignmentDeclarationsByStatement = new Map<ts.Node, JavaScriptAssignmentDeclaration[]>();
 
   constructor(args: { file: string; diagnostics?: DiagnosticSink | undefined }) {
     this.file = args.file;
@@ -61,6 +67,12 @@ export class OverviewChildrenExtractor {
   }
 
   extract(nodes: readonly Node[]): readonly OverviewNode[] {
+    const sourceFile = nodes[0]?.getSourceFile();
+    const assignmentDeclarations = sourceFile
+      ? JavaScriptAssignmentDeclarations.ofSourceFile(sourceFile)
+      : [];
+    this.assignmentDeclarationsByStatement =
+      OverviewChildrenExtractor.byStatement(assignmentDeclarations);
     return this.extractNodes({ nodes, symbolSegments: [], category: "statement" });
   }
 
@@ -82,6 +94,13 @@ export class OverviewChildrenExtractor {
     const { node, symbolSegments, category } = args;
     const kind = nodeKind(node);
     if (kind) return this.toSymbolNodes(node, kind, symbolSegments);
+
+    const assignmentDeclarations = this.moduleScopeAssignmentDeclarations(node, symbolSegments);
+    if (assignmentDeclarations.length > 0) {
+      return assignmentDeclarations.map((declaration) =>
+        this.buildAssignmentDeclarationNode(declaration),
+      );
+    }
 
     const foldKind = FoldNodeKind.of(node);
     if (foldKind) return this.toFoldNodes(node, foldKind, symbolSegments);
@@ -133,6 +152,36 @@ export class OverviewChildrenExtractor {
       range,
       header: OverviewChildrenExtractor.headerFrom(range.startLine, extractSignatureSource(node)),
       children: this.symbolChildren(node, childSegments),
+    };
+  }
+
+  private moduleScopeAssignmentDeclarations(
+    statement: Node,
+    symbolSegments: readonly SymbolPathSegment[],
+  ): readonly JavaScriptAssignmentDeclaration[] {
+    const isModuleScope = symbolSegments.length === 0;
+    if (!isModuleScope) return [];
+    return this.assignmentDeclarationsByStatement.get(statement.compilerNode) ?? [];
+  }
+
+  private buildAssignmentDeclarationNode(
+    declaration: JavaScriptAssignmentDeclaration,
+  ): SymbolOverviewNode {
+    const range = JavaScriptAssignmentDeclarations.rangeOf(declaration);
+    const segments = [{ name: declaration.name }];
+    const label = OverviewChildrenExtractor.isFunctionValue(declaration.value)
+      ? "function-implementation"
+      : "variable";
+    return {
+      type: "symbol",
+      identity: this.identityFor(segments),
+      kind: { role: roleOf(label), nativeLabel: label },
+      range,
+      header: OverviewChildrenExtractor.headerFrom(
+        range.startLine,
+        JavaScriptAssignmentDeclarations.signatureOf(declaration),
+      ),
+      children: this.functionValueChildren(declaration.value, segments),
     };
   }
 
@@ -343,6 +392,24 @@ export class OverviewChildrenExtractor {
       file: this.file,
       segments: symbolSegments,
     };
+  }
+
+  private static byStatement(
+    declarations: readonly JavaScriptAssignmentDeclaration[],
+  ): Map<ts.Node, JavaScriptAssignmentDeclaration[]> {
+    const byStatement = new Map<ts.Node, JavaScriptAssignmentDeclaration[]>();
+    for (const declaration of declarations) {
+      const statement = declaration.statement.compilerNode;
+      byStatement.set(statement, [...(byStatement.get(statement) ?? []), declaration]);
+    }
+    return byStatement;
+  }
+
+  private static isFunctionValue(expression: Node): boolean {
+    if (Node.isParenthesizedExpression(expression)) {
+      return OverviewChildrenExtractor.isFunctionValue(expression.getExpression());
+    }
+    return Node.isArrowFunction(expression) || Node.isFunctionExpression(expression);
   }
 
   private static functionValueBody(expression: Node): Block | undefined {

@@ -938,6 +938,23 @@ describe("TypeScriptProjectGraph", () => {
     expect(scratchOptions()?.skipLibCheck).toBe(true);
   });
 
+  it("discovers a nested jsconfig.json without a root configuration", async () => {
+    const workspace = inMemoryWorkspace({
+      "packages/a/jsconfig.json": JSON.stringify({}),
+      "packages/a/src/x.js": "export function x() {}\n",
+      "scratch/y.js": "export function y() {}\n",
+    });
+    const graph = new TypeScriptProjectGraph(workspace.fileSystem);
+
+    const refresh = await graph.refresh(workspace.snapshot);
+    const program = graph.programFor("packages/a/src/x.js");
+
+    expect(refresh.configuredProjectCount).toBe(1);
+    expect(refresh.inferredFileCount).toBe(1);
+    expect(program?.getSourceFile("/repo/packages/a/src/x.js")).toBeDefined();
+    expect(program?.getCompilerOptions()).toMatchObject({ skipLibCheck: true });
+  });
+
   it("keeps implicit outDir contents outside configured membership", async () => {
     const projectFixture = fixture();
     const graph = new TypeScriptProjectGraph(projectFixture.fileSystem);

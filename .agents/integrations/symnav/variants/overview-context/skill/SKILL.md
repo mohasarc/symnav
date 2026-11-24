@@ -1,6 +1,6 @@
 ---
 name: symnav-overview-context
-description: Use `symnav overview` and `symnav context` for deterministic TypeScript symbol navigation in this benchmark arm.
+description: Use `symnav overview` and `symnav context` for deterministic TypeScript and JavaScript symbol navigation in this benchmark arm.
 ---
 
 `symnav overview` and `symnav context` commands are installed globally.
@@ -14,7 +14,7 @@ Use normal reads, search, tests, and edits whenever they help.
 
 ## `overview`
 
-`overview` prints a symbol and fold tree for one TypeScript source file.
+`overview` prints a symbol and fold tree for one TypeScript or JavaScript source file.
 
 ```
 $ symnav overview src/file.ts --depth 0

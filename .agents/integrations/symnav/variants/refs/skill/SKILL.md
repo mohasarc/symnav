@@ -1,6 +1,6 @@
 ---
 name: symnav-refs
-description: Use `symnav refs` for deterministic TypeScript symbol navigation in this benchmark arm.
+description: Use `symnav refs` for deterministic TypeScript and JavaScript symbol navigation in this benchmark arm.
 ---
 
 `symnav refs` command is installed globally.

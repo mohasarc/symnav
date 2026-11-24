@@ -40,6 +40,7 @@ export class CommonJsExportImporters {
 
   referencesThrough(declarationNode: Node, references: readonly Node[]): readonly Node[] {
     const found: Node[] = [];
+    const listedLines = new Set(references.map(CommonJsExportImporters.lineKey));
     const visited = new Set<string>();
     const pending = [
       ...CommonJsExportImporters.ownExportOf(declarationNode),
@@ -52,14 +53,28 @@ export class CommonJsExportImporters {
       for (const literal of this.importLiteralsOf(next.sourceFile)) {
         const anchors = CommonJsExportImporters.anchorsAt(literal, next.exported);
         for (const binding of anchors.bindings) {
-          const bindingReferences = CommonJsExportImporters.referenceNodesOf(binding);
-          found.push(binding, ...bindingReferences);
+          const bindingReferences = CommonJsExportImporters.otherReferencesInFileOf(binding);
+          if (!listedLines.has(CommonJsExportImporters.lineKey(binding))) found.push(binding);
+          found.push(...bindingReferences);
           pending.push(...CommonJsExportImporters.exportsNamedBy(bindingReferences));
         }
         found.push(...anchors.members);
+        for (const node of found) listedLines.add(CommonJsExportImporters.lineKey(node));
       }
     }
     return found;
+  }
+
+  private static otherReferencesInFileOf(binding: Identifier): readonly Node[] {
+    const sourceFile = binding.getSourceFile();
+    return CommonJsExportImporters.referenceNodesOf(binding).filter(
+      (reference) =>
+        reference.getSourceFile() === sourceFile && reference.getStart() !== binding.getStart(),
+    );
+  }
+
+  private static lineKey(node: Node): string {
+    return `${node.getSourceFile().getFilePath()}:${node.getStartLineNumber()}`;
   }
 
   private static ownExportOf(declarationNode: Node): readonly PendingExport[] {

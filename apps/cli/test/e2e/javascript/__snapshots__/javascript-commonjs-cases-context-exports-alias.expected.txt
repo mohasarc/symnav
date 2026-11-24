@@ -16,8 +16,8 @@ Callees
 (none)
 
 References
-Total: 5
-Kinds: usage 5
+Total: 4
+Kinds: usage 4
 Run: symnav refs src/compare.js::compare
 
 Recent History

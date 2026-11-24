@@ -704,6 +704,79 @@ describe("expando namespace members in overview", () => {
   });
 });
 
+describe("this-property members in overview", () => {
+  it("lists this-properties of class constructors and methods under the class at their first assignment", () => {
+    const source = [
+      "class Foo {",
+      "  constructor() {",
+      "    this.kx = 1;",
+      "  }",
+      "  method() {",
+      "    this.kx = 2;",
+      '    this["km"] = function () {};',
+      "    const later = () => {",
+      "      this.ka = 3;",
+      "    };",
+      "  }",
+      "  static make() {",
+      "    this.ks = 4;",
+      "  }",
+      "}",
+    ].join("\n");
+
+    expect(
+      summariesOf(source).map((summary) => [
+        summary.id,
+        summary.label,
+        summary.range,
+        summary.header,
+      ]),
+    ).toEqual([
+      ["input.js::Foo", "class", [1, 15], ["class Foo"]],
+      ["input.js::Foo::constructor", "constructor-implementation", [2, 4], ["constructor()"]],
+      ["input.js::Foo::kx", "property", [3, 3], ["this.kx = 1"]],
+      ["input.js::Foo::method", "method-implementation", [5, 11], ["method()"]],
+      ["input.js::Foo::method::later", "variable", [8, 10], ["const later = () => …"]],
+      ["input.js::Foo::km", "method-implementation", [7, 7], ['this["km"] = function () {}']],
+      ["input.js::Foo::ka", "property", [9, 9], ["this.ka = 3"]],
+      ["input.js::Foo::make", "method-implementation", [12, 14], ["static make()"]],
+      ["input.js::Foo::ks", "property", [13, 13], ["this.ks = 4"]],
+    ]);
+  });
+
+  it("emits no member for a this-property that a class element already declares", () => {
+    const source = [
+      "class Foo {",
+      "  declared = 0;",
+      "  constructor() {",
+      "    this.declared = 1;",
+      "    this.bound = this.bound.bind(this);",
+      "    this.#hidden = 2;",
+      "  }",
+      "  bound() {}",
+      "  #hidden;",
+      "}",
+    ].join("\n");
+
+    expect(idsOf(source)).toEqual([
+      "input.js::Foo",
+      "input.js::Foo::declared",
+      "input.js::Foo::constructor",
+      "input.js::Foo::bound",
+      "input.js::Foo::#hidden",
+    ]);
+  });
+
+  it("emits no member for the same syntax in a TypeScript file", () => {
+    const source = "class Foo {\n  constructor() {\n    this.x = 1;\n  }\n}\n";
+
+    expect(OverviewTree.walkSymbols(fileEntriesOf(source, "input.ts").entries).map(idOf)).toEqual([
+      "input.ts::Foo",
+      "input.ts::Foo::constructor",
+    ]);
+  });
+});
+
 describe("CommonJS export declarations against the TypeScript binder", () => {
   it.each([
     [

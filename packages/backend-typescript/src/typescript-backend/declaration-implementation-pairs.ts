@@ -1,6 +1,13 @@
 import { posix } from "node:path";
 
-import { ts, type SourceFile } from "ts-morph";
+import {
+  Node,
+  ts,
+  type Project,
+  type SourceFile,
+  type StringLiteral,
+  type TypeChecker,
+} from "ts-morph";
 
 import type {
   TypeScriptSemanticSourceProvider,
@@ -12,6 +19,13 @@ export interface DeclarationImplementationFilePair {
   readonly implementationFile: string;
 }
 
+interface ImporterResolution {
+  readonly program: ts.Program;
+  readonly checker: TypeChecker;
+  readonly hidingHost: ts.ModuleResolutionHost;
+  readonly cache: ts.ModuleResolutionCache;
+}
+
 const DECLARATION_FILE_PATTERN = /\.d\.[mc]?ts$/;
 const IMPLEMENTATION_FILE_PATTERN = /\.(?:jsx?|mjs|cjs)$/;
 const IMPLEMENTATION_EXTENSION_BY_DECLARATION_EXTENSION: ReadonlyMap<string, string> = new Map([
@@ -21,14 +35,28 @@ const IMPLEMENTATION_EXTENSION_BY_DECLARATION_EXTENSION: ReadonlyMap<string, str
 ]);
 
 export class DeclarationImplementationPairs {
+  private readonly importerPairsByProgram = new WeakMap<
+    ts.Program,
+    readonly DeclarationImplementationFilePair[]
+  >();
+
   constructor(
     private readonly semanticSources: TypeScriptSemanticSourceProvider,
     private readonly workspaceState: TypeScriptWorkspaceState,
   ) {}
 
   filePairsOf(relativePath: string): readonly DeclarationImplementationFilePair[] {
-    const pair = this.selfResolvedPair(relativePath);
-    return pair ? [pair] : [];
+    if (!DeclarationImplementationPairs.selfSpecifier(relativePath)) return [];
+    const selfResolvedPair = this.selfResolvedPair(relativePath);
+    const importerPairs = this.semanticSources
+      .sourceFilesFor(relativePath)
+      .flatMap((sourceFile) => this.importerPairsOf(sourceFile.getProject()))
+      .filter((pair) => DeclarationImplementationPairs.includes(pair, relativePath));
+    const pairsByKey = new Map<string, DeclarationImplementationFilePair>();
+    for (const pair of [...(selfResolvedPair ? [selfResolvedPair] : []), ...importerPairs]) {
+      pairsByKey.set(`${pair.declarationFile}\0${pair.implementationFile}`, pair);
+    }
+    return [...pairsByKey.values()];
   }
 
   private selfResolvedPair(relativePath: string): DeclarationImplementationFilePair | undefined {
@@ -37,9 +65,69 @@ export class DeclarationImplementationPairs {
     const sourceFile = this.semanticSources.sourceFileFor(relativePath);
     if (!sourceFile) return undefined;
     const pair = this.resolvedPair(specifier, sourceFile);
-    const pairsRelativePath =
-      pair?.declarationFile === relativePath || pair?.implementationFile === relativePath;
-    return pairsRelativePath ? pair : undefined;
+    return pair && DeclarationImplementationPairs.includes(pair, relativePath) ? pair : undefined;
+  }
+
+  private importerPairsOf(project: Project): readonly DeclarationImplementationFilePair[] {
+    const program = project.getProgram().compilerObject;
+    const cached = this.importerPairsByProgram.get(program);
+    if (cached) return cached;
+    const pairs = this.scanImporterPairs(project, program);
+    this.importerPairsByProgram.set(program, pairs);
+    return pairs;
+  }
+
+  private scanImporterPairs(
+    project: Project,
+    program: ts.Program,
+  ): readonly DeclarationImplementationFilePair[] {
+    const resolution: ImporterResolution = {
+      program,
+      checker: project.getTypeChecker(),
+      hidingHost: DeclarationImplementationPairs.hidingDeclarationFiles(
+        project.getModuleResolutionHost(),
+      ),
+      cache: ts.createModuleResolutionCache(
+        program.getCurrentDirectory(),
+        (fileName) => fileName,
+        program.getCompilerOptions(),
+      ),
+    };
+    return project.getSourceFiles().flatMap((importer) => {
+      if (!this.workspaceState.relativePathOf(importer)) return [];
+      return importer.getImportStringLiterals().flatMap((literal) => {
+        const pair = this.importerPair(importer, literal, resolution);
+        return pair ? [pair] : [];
+      });
+    });
+  }
+
+  private importerPair(
+    importer: SourceFile,
+    literal: StringLiteral,
+    resolution: ImporterResolution,
+  ): DeclarationImplementationFilePair | undefined {
+    const declarationPath = resolution.checker
+      .getSymbolAtLocation(literal)
+      ?.getDeclarations()
+      .find((declaration) => Node.isSourceFile(declaration))
+      ?.getSourceFile()
+      .getFilePath();
+    const landsInWorkspaceDeclarationFile =
+      declarationPath !== undefined &&
+      DECLARATION_FILE_PATTERN.test(declarationPath) &&
+      this.workspaceState.relativePathOfAbsolute(declarationPath) !== undefined;
+    if (!landsInWorkspaceDeclarationFile) return undefined;
+    const implementationPath = ts.resolveModuleName(
+      literal.getLiteralText(),
+      importer.getFilePath(),
+      resolution.program.getCompilerOptions(),
+      resolution.hidingHost,
+      resolution.cache,
+      undefined,
+      resolution.program.getModeForUsageLocation(importer.compilerNode, literal.compilerNode),
+    ).resolvedModule?.resolvedFileName;
+    return this.workspacePair(declarationPath, implementationPath);
   }
 
   private resolvedPair(
@@ -73,6 +161,10 @@ export class DeclarationImplementationPairs {
     const implementationFile = this.workspaceState.relativePathOfAbsolute(implementationPath);
     if (!declarationFile || !implementationFile) return undefined;
     return { declarationFile, implementationFile };
+  }
+
+  private static includes(pair: DeclarationImplementationFilePair, relativePath: string): boolean {
+    return pair.declarationFile === relativePath || pair.implementationFile === relativePath;
   }
 
   private static selfSpecifier(relativePath: string): string | undefined {

@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { Node, Project, ts, type SourceFile, type Symbol } from "ts-morph";
+import {
+  Node,
+  Project,
+  ts,
+  type ObjectLiteralExpression,
+  type SourceFile,
+  type Symbol,
+} from "ts-morph";
 import {
   OverviewTree,
   SEGMENT_SEPARATOR,
@@ -778,6 +785,146 @@ describe("CommonJS export declarations against the TypeScript binder", () => {
   });
 });
 
+describe("expando member declarations against the TypeScript binder", () => {
+  it.each([
+    [
+      "prototype properties and prototype objects",
+      [
+        "function Foo() {}",
+        "Foo.prototype.bar = function () {};",
+        'Foo.prototype["lit"] = 1;',
+        "Foo.prototype.gone = void 0;",
+        "var Fn = function () {};",
+        "Fn.prototype = {",
+        "  method() { function inner() {} },",
+        "  property: 1,",
+        "  get size() { return 1; },",
+        "  set size(value) {},",
+        "  shorthand,",
+        '  "dash-key": 2,',
+        "  [dynamic]: 3,",
+        "  ...rest,",
+        "};",
+        "class Cls {}",
+        "Cls.prototype.extra = 1;",
+        "const Expr = class {};",
+        "Expr.prototype.m = 1;",
+        "let made = make();",
+        "made.prototype.p = 1;",
+        'Object.defineProperty(Foo.prototype, "defined", { value: 1 });',
+      ],
+    ],
+    [
+      "static and namespace members",
+      [
+        "function Foo() {}",
+        "Foo.make = function () {};",
+        "Foo.a = Foo.b = 1;",
+        'Foo["lit"] = 2;',
+        'Foo["a::b"] = 3;',
+        'Object.defineProperty(Foo, "defined", { value: 4 });',
+        "Foo.prototype = Object.create(Base.prototype);",
+        "class Cls {}",
+        "Cls.instance = new Cls();",
+        "const ns = {};",
+        "ns.helper = function () {};",
+        "const opts = defaults || {};",
+        "opts.debug = true;",
+        "const nullish = defaults ?? {};",
+        "nullish.debug = true;",
+        "var M = (function () { return {}; })();",
+        "M.x = 1;",
+        "const filled = { a: 1 };",
+        "filled.b = 2;",
+        "if (ready) { filled.c = 3; }",
+        "let any = make();",
+        "any.x = 1;",
+        "const a = {};",
+        "a.b = {};",
+        "a.b.c = 1;",
+        "a.d.e = 2;",
+        "Undeclared.x = 1;",
+        "window.y = 2;",
+      ],
+    ],
+    [
+      "containers in nested scopes",
+      [
+        "function outer(P) {",
+        "  function Foo() {}",
+        "  Foo.prototype.m = 1;",
+        "  Foo.s = 2;",
+        "  let made = make();",
+        "  made.x = 3;",
+        "  made.prototype.y = 4;",
+        "  const ns = {};",
+        "  ns.z = 5;",
+        "  P.prototype.q = 6;",
+        "}",
+        "const arrow = () => {",
+        "  function Bar() {}",
+        "  Bar.s = 1;",
+        "};",
+        "function Top() {}",
+        "function init() {",
+        "  Top.late = 1;",
+        "}",
+        "if (ready) {",
+        "  function Block() {}",
+        "}",
+        "Block.x = 1;",
+      ],
+    ],
+    [
+      "CommonJS export containers",
+      [
+        "exports.foo = function () {};",
+        "exports.foo.bar = 1;",
+        "module.exports.foo.baz = 2;",
+        'exports.foo["lit"] = 3;',
+        "exports.missing.member = 4;",
+      ],
+    ],
+    [
+      "one-line code with same-name members",
+      [
+        "function Foo() { function Foo() {} } Foo.Foo = 1; Foo.prototype.Foo = function () { function Foo() {} }; var ns = {}; ns.ns = function () { function ns() {} };",
+        "exports.make = function () { function Foo() {} Foo.Foo = function () { function Foo() {} }; };",
+        "var A = class B { m() { function m() {} } }; A.m = 1; var S = class { static n() {} }; S.n = function () { function n() {} };",
+        "var o = { m() { function m() {} } }; o.m = 1; Late.m = 1; function Late() { function m() {} }",
+      ],
+    ],
+    [
+      "a file with ES module syntax",
+      [
+        'import def from "./x";',
+        "def.y = 1;",
+        "export function F() {}",
+        "F.z = 2;",
+        "F.prototype.m = 1;",
+        "export default function () { function Foo() {} Foo.x = 1; function x() {} }",
+        "exports.foo = function () {};",
+        "exports.foo.bar = 1;",
+      ],
+    ],
+    [
+      "this-property assignments",
+      [
+        "function Foo() {",
+        "  this.x = 1;",
+        "  var self = this;",
+        "  self.y = 2;",
+        "}",
+        "Foo.prototype.z = 3;",
+      ],
+    ],
+  ])("lists exactly the expando members the binder declares for %s", (_case, lines) => {
+    const sourceFile = programSourceFile(lines.join("\n"));
+
+    expect(listedMembers(sourceFile)).toEqual(binderMembers(sourceFile));
+  });
+});
+
 function programSourceFile(source: string): SourceFile {
   const project = new Project({
     useInMemoryFileSystem: true,
@@ -786,6 +933,104 @@ function programSourceFile(source: string): SourceFile {
   const sourceFile = project.createSourceFile("/input.js", source);
   sourceFile.getPreEmitDiagnostics();
   return sourceFile;
+}
+
+interface BoundNode extends ts.Node {
+  readonly symbol?: BoundSymbol;
+}
+
+interface BoundSymbol extends ts.Symbol {
+  readonly parent?: BoundSymbol;
+}
+
+function listedMembers(sourceFile: SourceFile): readonly string[] {
+  return locatedDeclarationsOf(sourceFile)
+    .filter(({ node }) => isExpandoMemberNode(node))
+    .map(({ declaration, node }) => {
+      const [container, member] = declaration.identity.segments.slice(-2);
+      return `${container?.name}::${member?.name}@${node.getStartLineNumber()}`;
+    })
+    .sort();
+}
+
+function isExpandoMemberNode(node: Node): boolean {
+  const isAccessOrCall =
+    Node.isPropertyAccessExpression(node) ||
+    Node.isElementAccessExpression(node) ||
+    Node.isCallExpression(node);
+  if (isAccessOrCall) return !isModuleLevelExport(node);
+  const object = node.getParent();
+  const assignment = object?.getParent();
+  return (
+    Node.isObjectLiteralExpression(object) &&
+    Node.isBinaryExpression(assignment) &&
+    /\.prototype$/.test(assignment.getLeft().getText())
+  );
+}
+
+function isModuleLevelExport(node: Node): boolean {
+  const symbol = (node.compilerNode as BoundNode).symbol;
+  return symbol?.parent === (node.getSourceFile().compilerNode as BoundNode).symbol;
+}
+
+function binderMembers(sourceFile: SourceFile): readonly string[] {
+  const members: string[] = [];
+  sourceFile.forEachDescendant((node) => {
+    const symbol = (node.compilerNode as BoundNode).symbol;
+    const container = symbol?.parent;
+    const declaresMember =
+      (Node.isPropertyAccessExpression(node) ||
+        Node.isElementAccessExpression(node) ||
+        Node.isCallExpression(node)) &&
+      symbol?.declarations?.includes(node.compilerNode as ts.Declaration) === true &&
+      container !== undefined &&
+      !isModuleLevelExport(node) &&
+      isListableContainer(container);
+    if (!symbol || !container || !declaresMember) return;
+    const containerName = ts.symbolName(container);
+    const prototypeObject = assignedPrototypeObject(node, symbol);
+    const memberEntries = prototypeObject
+      ? prototypeObject.getProperties().flatMap((property) => {
+          const name = Node.hasName(property) ? property.getName() : undefined;
+          return name === undefined || Node.isSpreadAssignment(property)
+            ? []
+            : [[property, unquoted(name)] as const];
+        })
+      : [[node, ts.symbolName(symbol)] as const];
+    for (const [memberNode, name] of memberEntries) {
+      if (spellsCanonicalId(name) && !Node.isComputedPropertyName(memberNode.getFirstChild())) {
+        members.push(`${containerName}::${name}@${memberNode.getStartLineNumber()}`);
+      }
+    }
+  });
+  return members.sort();
+}
+
+function isListableContainer(container: BoundSymbol): boolean {
+  const declaration = container.valueDeclaration;
+  return (
+    declaration !== undefined &&
+    (ts.isFunctionDeclaration(declaration) ||
+      ts.isClassDeclaration(declaration) ||
+      ts.isVariableDeclaration(declaration) ||
+      ts.isPropertyAccessExpression(declaration) ||
+      ts.isElementAccessExpression(declaration))
+  );
+}
+
+function assignedPrototypeObject(
+  node: Node,
+  symbol: BoundSymbol,
+): ObjectLiteralExpression | undefined {
+  if (ts.symbolName(symbol) !== "prototype") return undefined;
+  const assignment = node.getParent();
+  if (!Node.isBinaryExpression(assignment)) return undefined;
+  const value = assignment.getRight();
+  return Node.isObjectLiteralExpression(value) ? value : undefined;
+}
+
+function unquoted(name: string): string {
+  return name.replace(/^["'`](.*)["'`]$/, "$1");
 }
 
 function listedExports(sourceFile: SourceFile): readonly string[] {
@@ -812,7 +1057,10 @@ function locatedDeclarationsOf(
   const located = [...declarationNodes]
     .filter(([declaration, node]) => DeclarationLocator.spanOf(declaration, node) !== undefined)
     .map(([declaration, node]) => ({ declaration, node }));
-  expect(located).toHaveLength(OverviewTree.walkSymbols(entries.entries).length);
+  const namedSymbols = OverviewTree.walkSymbols(entries.entries).filter(
+    (symbol) => OverviewTree.ownName(symbol) !== "",
+  );
+  expect(located).toHaveLength(namedSymbols.length);
   return located;
 }
 

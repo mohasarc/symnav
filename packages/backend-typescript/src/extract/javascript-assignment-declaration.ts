@@ -11,6 +11,10 @@ import { SEGMENT_SEPARATOR, parseSegment, type LineRange } from "@symnav/core";
 
 import { collapseInitializerSource } from "./collapse-initializer-source.js";
 
+interface SourceFileWithModuleIndicator extends ts.SourceFile {
+  readonly externalModuleIndicator?: ts.Node | true;
+}
+
 export interface JavaScriptAssignmentDeclaration {
   readonly name: string;
   readonly declarationNode: Node;
@@ -20,7 +24,7 @@ export interface JavaScriptAssignmentDeclaration {
 
 export class JavaScriptAssignmentDeclarations {
   static ofSourceFile(sourceFile: SourceFile): readonly JavaScriptAssignmentDeclaration[] {
-    if (!JavaScriptAssignmentDeclarations.isJavaScriptFile(sourceFile)) return [];
+    if (!JavaScriptAssignmentDeclarations.isCommonJsFile(sourceFile)) return [];
     const declarations: JavaScriptAssignmentDeclaration[] = [];
     sourceFile.forEachDescendant((node) => {
       const declaration = JavaScriptAssignmentDeclarations.declarationOf(node);
@@ -41,8 +45,14 @@ export class JavaScriptAssignmentDeclarations {
     return `${declaration.declarationNode.getText()} = ${value}`;
   }
 
-  private static isJavaScriptFile(sourceFile: SourceFile): boolean {
-    return (sourceFile.compilerNode.flags & ts.NodeFlags.JavaScriptFile) !== 0;
+  private static isCommonJsFile(sourceFile: SourceFile): boolean {
+    const isJavaScriptFile = (sourceFile.compilerNode.flags & ts.NodeFlags.JavaScriptFile) !== 0;
+    return isJavaScriptFile && !JavaScriptAssignmentDeclarations.hasModuleSyntax(sourceFile);
+  }
+
+  private static hasModuleSyntax(sourceFile: SourceFile): boolean {
+    const { externalModuleIndicator } = sourceFile.compilerNode as SourceFileWithModuleIndicator;
+    return externalModuleIndicator !== undefined && externalModuleIndicator !== true;
   }
 
   private static declarationOf(node: Node): JavaScriptAssignmentDeclaration | undefined {

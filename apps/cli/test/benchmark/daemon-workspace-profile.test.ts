@@ -141,6 +141,35 @@ describe("daemon workspace profile", () => {
       rmSync(root, { recursive: true, force: true });
     }
   });
+
+  it("profiles JavaScript files, .d.ts siblings, CommonJS files, and the minified file", async () => {
+    const root = mkdtempSync(join(tmpdir(), "symnav-daemon-profile-"));
+    try {
+      mkdirSync(join(root, ".git"));
+      mkdirSync(join(root, "src"));
+      writeFileSync(join(root, "src", "a.js"), "export const first = 1;\n");
+      writeFileSync(join(root, "src", "a.d.ts"), "export declare const first: number;\n");
+      writeFileSync(
+        join(root, "src", "b.js"),
+        "const { first } = require('./a');\nexports.b = first;\n",
+      );
+      writeFileSync(join(root, "src", "c.jsx"), "export const view = <div />;\n");
+      writeFileSync(join(root, "src", "vendor.min.js"), "function m0(n){return n}");
+      writeFileSync(join(root, "jsconfig.json"), "{}\n");
+
+      const profile = await new DaemonWorkspaceProfiler().profile(root, "javascript");
+
+      expect(profile.language).toBe("javascript");
+      expect(profile.visibleTypeScriptFiles).toBe(4);
+      expect(profile.declarationSiblingRatio).toBe(0.25);
+      expect(profile.commonJsRatio).toBe(0.25);
+      expect(profile.minifiedFileBytes).toBe(24);
+      expect(profile.configCount).toBe(1);
+      expect(() => DaemonWorkspaceProfileValidator.parse(profile)).not.toThrow();
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
 });
 
 function reviewedProfile(): DaemonWorkspaceProfile {

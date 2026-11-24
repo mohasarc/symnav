@@ -134,6 +134,21 @@ export class TypeScriptSemanticQueryService implements PositionDefinitionResolve
     );
   }
 
+  collapsedTargetIdentity(candidates: readonly SymbolIdentity[]): SymbolIdentity | undefined {
+    const implementation = candidates.find(
+      (candidate) => this.pairRoleOf(candidate) === "implementation",
+    );
+    if (!implementation) return undefined;
+    const counterpartIds = new Set(
+      this.counterpartIdentities(implementation).map(formatSymbolIdentity),
+    );
+    const everyOtherCandidateIsCounterpart = candidates.every(
+      (candidate) =>
+        candidate === implementation || counterpartIds.has(formatSymbolIdentity(candidate)),
+    );
+    return everyOtherCandidateIsCounterpart ? implementation : undefined;
+  }
+
   async releaseTransientResources(): Promise<void> {
     this.cacheScope.releaseTransientResources();
     await this.projects?.releaseTransientResources();

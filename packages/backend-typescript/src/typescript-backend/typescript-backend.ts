@@ -148,4 +148,8 @@ export class TypeScriptBackend implements LanguageBackend {
     await this.state.ensureFiles(files);
     return this.semanticQueries.findCallers(identity);
   }
+
+  collapsedTargetIdentity(candidates: readonly SymbolIdentity[]): SymbolIdentity | undefined {
+    return this.semanticQueries.collapsedTargetIdentity(candidates);
+  }
 }

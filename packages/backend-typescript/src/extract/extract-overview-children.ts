@@ -77,10 +77,10 @@ export class OverviewChildrenExtractor {
 
   extract(nodes: readonly Node[]): readonly OverviewNode[] {
     const sourceFile = nodes[0]?.getSourceFile();
+    this.expandoMembers = sourceFile ? JavaScriptExpandoMembers.of(sourceFile) : undefined;
     const assignmentDeclarations = sourceFile
       ? JavaScriptAssignmentDeclarations.ofSourceFile(sourceFile)
       : [];
-    this.expandoMembers = sourceFile ? JavaScriptExpandoMembers.of(sourceFile) : undefined;
     this.assignmentDeclarationsByStatement = OverviewChildrenExtractor.groupedBy(
       assignmentDeclarations,
       (declaration) => declaration.statement.compilerNode,

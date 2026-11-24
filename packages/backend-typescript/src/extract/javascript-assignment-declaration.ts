@@ -42,6 +42,10 @@ interface SourceFileWithModuleIndicator extends ts.SourceFile {
   readonly externalModuleIndicator?: ts.Node | true;
 }
 
+interface BoundSourceFile extends ts.SourceFile {
+  readonly symbol?: ts.Symbol;
+}
+
 export interface JavaScriptAssignmentDeclaration {
   readonly form: JavaScriptAssignmentDeclarationForm;
   readonly name: string;
@@ -130,9 +134,13 @@ export class JavaScriptAssignmentDeclarations {
 
   private static commonJsDeclarationOf(node: Node): JavaScriptAssignmentDeclaration | undefined {
     if (Node.isPropertyAccessExpression(node) || Node.isElementAccessExpression(node)) {
-      return JavaScriptAssignmentDeclarations.isModuleExports(node)
-        ? JavaScriptAssignmentDeclarations.moduleExportsValue(node)
-        : JavaScriptAssignmentDeclarations.exportProperty(node);
+      if (JavaScriptAssignmentDeclarations.isModuleExports(node)) {
+        return JavaScriptAssignmentDeclarations.moduleExportsValue(node);
+      }
+      return (
+        JavaScriptAssignmentDeclarations.exportProperty(node) ??
+        JavaScriptAssignmentDeclarations.moduleThisExport(node)
+      );
     }
     if (JavaScriptAssignmentDeclarations.isObjectMember(node)) {
       return JavaScriptAssignmentDeclarations.moduleExportsMember(node);
@@ -517,6 +525,38 @@ export class JavaScriptAssignmentDeclarations {
       ...assigned,
       ...JavaScriptAssignmentDeclarations.MODULE_LEVEL,
     };
+  }
+
+  private static moduleThisExport(
+    target: PropertyAccessExpression | ElementAccessExpression,
+  ): JavaScriptAssignmentDeclaration | undefined {
+    if (!Node.isThisExpression(target.getExpression())) return undefined;
+    const assigned = JavaScriptAssignmentDeclarations.assignedTo(target);
+    const name = JavaScriptAssignmentDeclarations.staticAccessName(target);
+    if (!assigned || name === undefined) return undefined;
+    const declaresExport = JavaScriptAssignmentDeclarations.isBoundModuleExport(target, name);
+    if (!declaresExport) return undefined;
+    return {
+      form: "export-property",
+      name,
+      declarationNode: target,
+      nameNode: target,
+      nameLiteral: Node.isElementAccessExpression(target)
+        ? target.getArgumentExpression()
+        : undefined,
+      ...assigned,
+      ...JavaScriptAssignmentDeclarations.MODULE_LEVEL,
+    };
+  }
+
+  private static isBoundModuleExport(
+    target: PropertyAccessExpression | ElementAccessExpression,
+    name: string,
+  ): boolean {
+    const sourceFile = target.getSourceFile().compilerNode as BoundSourceFile;
+    const exported = sourceFile.symbol?.exports?.get(ts.escapeLeadingUnderscores(name));
+    const assignment = target.getParentOrThrow().compilerNode as ts.Declaration;
+    return exported?.declarations?.includes(assignment) ?? false;
   }
 
   private static moduleExportsValue(

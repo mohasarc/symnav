@@ -4,6 +4,7 @@ import {
   UnsupportedFileError,
   type BackendRefreshCoverage,
   type FileSystem,
+  type ResolvedPath,
   type WorkspaceFile,
   type WorkspaceSnapshot,
 } from "@symnav/core";
@@ -20,7 +21,10 @@ export class FlowTypedFiles {
     private readonly checkedExtensions: readonly string[],
   ) {}
 
-  async refresh(snapshot: WorkspaceSnapshot, coverage: BackendRefreshCoverage): Promise<void> {
+  async refresh(
+    snapshot: WorkspaceSnapshot,
+    coverage: BackendRefreshCoverage,
+  ): Promise<WorkspaceSnapshot> {
     const flowTypedPaths =
       coverage === "workspace" ? new Set<string>() : new Set(this.flowTypedPaths);
     for (const file of snapshot.files) {
@@ -31,6 +35,11 @@ export class FlowTypedFiles {
       }
     }
     this.flowTypedPaths = flowTypedPaths;
+    return { root: snapshot.root, files: this.answerable(snapshot.files) };
+  }
+
+  answerable<File extends ResolvedPath>(files: readonly File[]): readonly File[] {
+    return files.filter((file) => !this.flowTypedPaths.has(file.relative));
   }
 
   refusal(relativePath: string): UnsupportedFileError | undefined {

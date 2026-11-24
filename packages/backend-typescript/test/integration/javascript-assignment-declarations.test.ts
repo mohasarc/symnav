@@ -378,6 +378,39 @@ describe("TypeScriptBackend expando member declarations", () => {
   );
 });
 
+describe("TypeScriptBackend this-property member declarations", () => {
+  it("resolves a class constructor this-property and finds its instance users", async () => {
+    const { backend, files } = await backendOverSources({
+      "src/lib.js":
+        "class Foo {\n  constructor() {\n    this.count = 0;\n  }\n  bump() {\n    this.count = this.count + 1;\n  }\n}\nexports.Foo = Foo;\n",
+      "src/use.js": "const { Foo } = require('./lib');\nnew Foo().count;\n",
+    });
+
+    const definitions = await backend.findDefinitions(
+      files,
+      identity("src/lib.js", "Foo", "count"),
+    );
+    const references = await backend.findReferences(files, identity("src/lib.js", "Foo", "count"));
+
+    expect(definitions.map((definition) => formatSymbolIdentity(definition.identity))).toEqual([
+      "src/lib.js::Foo::count",
+    ]);
+    expect(referenceLocations(references)).toEqual(["src/lib.js:6", "src/use.js:2"]);
+  });
+
+  it("resolves a static method this-property and finds its static users", async () => {
+    const { backend, files } = await backendOverSources({
+      "src/lib.js":
+        "class Foo {\n  static init() {\n    this.shared = {};\n  }\n}\nexports.Foo = Foo;\n",
+      "src/use.js": "const { Foo } = require('./lib');\nFoo.shared;\n",
+    });
+
+    const references = await backend.findReferences(files, identity("src/lib.js", "Foo", "shared"));
+
+    expect(referenceLocations(references)).toEqual(["src/use.js:2"]);
+  });
+});
+
 async function backendOverSources(sources: Readonly<Record<string, string>>): Promise<{
   readonly backend: TypeScriptBackend;
   readonly files: readonly WorkspaceFile[];

@@ -10,6 +10,8 @@ import {
 import {
   JavaScriptAssignmentDeclarations,
   type CommonJsExportName,
+  type JavaScriptAssignmentDeclaration,
+  type JavaScriptAssignmentDeclarationForm,
 } from "../extract/javascript-assignment-declaration.js";
 import type { TypeScriptWorkspaceState } from "./typescript-workspace-state.js";
 
@@ -26,6 +28,9 @@ interface ImporterAnchors {
 const NO_ANCHORS: ImporterAnchors = { bindings: [], members: [] };
 
 export class CommonJsExportImporters {
+  private static readonly MEMBER_EXPORT_FORMS: ReadonlySet<JavaScriptAssignmentDeclarationForm> =
+    new Set(["export-property", "module-exports-member", "define-property-export"]);
+
   private readonly importLiteralsByProgram = new WeakMap<
     ts.Program,
     ReadonlyMap<string, readonly StringLiteral[]>
@@ -37,7 +42,7 @@ export class CommonJsExportImporters {
     const found: Node[] = [];
     const visited = new Set<string>();
     const pending = [
-      ...CommonJsExportImporters.wholeModuleExportOf(declarationNode),
+      ...CommonJsExportImporters.ownExportOf(declarationNode),
       ...CommonJsExportImporters.exportsNamedBy(references),
     ];
     for (let next = pending.pop(); next; next = pending.pop()) {
@@ -57,10 +62,18 @@ export class CommonJsExportImporters {
     return found;
   }
 
-  private static wholeModuleExportOf(declarationNode: Node): readonly PendingExport[] {
+  private static ownExportOf(declarationNode: Node): readonly PendingExport[] {
     const declaration = JavaScriptAssignmentDeclarations.declarationAt(declarationNode);
-    if (declaration?.form !== "module-exports") return [];
-    return [{ sourceFile: declarationNode.getSourceFile(), exported: { kind: "module" } }];
+    const exported = declaration && CommonJsExportImporters.exportNameOf(declaration);
+    return exported ? [{ sourceFile: declarationNode.getSourceFile(), exported }] : [];
+  }
+
+  private static exportNameOf(
+    declaration: JavaScriptAssignmentDeclaration,
+  ): CommonJsExportName | undefined {
+    if (declaration.form === "module-exports") return { kind: "module" };
+    if (!CommonJsExportImporters.MEMBER_EXPORT_FORMS.has(declaration.form)) return undefined;
+    return { kind: "member", name: declaration.name };
   }
 
   private static exportsNamedBy(references: readonly Node[]): readonly PendingExport[] {

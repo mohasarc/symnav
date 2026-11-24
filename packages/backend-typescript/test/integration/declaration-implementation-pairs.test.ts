@@ -168,6 +168,42 @@ describe("TypeScriptBackend declaration and implementation pairs", () => {
       expect(referenceLocations(fromDeclaration)).toEqual(expected);
     },
   );
+
+  it("pairs a .d.ts nothing imports with its JavaScript twin", async () => {
+    const { backend, files } = await backendOverSources({
+      "src/lone.js": "export function lone() { return 1; }\nexport const first = lone();\n",
+      "src/lone.d.ts": "export declare function lone(): number;\n",
+    });
+
+    const references = await backend.findReferences(files, identity("src/lone.d.ts", "lone"));
+
+    expect(referenceLocations(references)).toEqual(["src/lone.js:2"]);
+  });
+
+  it("keeps a .d.ts without a JavaScript twin unpaired", async () => {
+    const { backend, files } = await backendOverSources({
+      "src/types.d.ts": "export declare function only(): number;\n",
+      "src/use.ts": 'import { only } from "./types";\nexport const value = only();\n',
+    });
+
+    const references = await backend.findReferences(files, identity("src/types.d.ts", "only"));
+
+    expect(referenceLocations(references)).toEqual(["src/use.ts:1", "src/use.ts:2"]);
+  });
+
+  it("does not pair JavaScript with a TypeScript source of the same name", async () => {
+    const { backend, files } = await backendOverSources({
+      "src/X.ts": "export function x(): number { return 1; }\n",
+      "src/X.js": "export function x() { return 2; }\nexport const first = x();\n",
+      "src/use.ts": 'import { x } from "./X";\nexport const value = x();\n',
+    });
+
+    const javaScriptReferences = await backend.findReferences(files, identity("src/X.js", "x"));
+    const typeScriptReferences = await backend.findReferences(files, identity("src/X.ts", "x"));
+
+    expect(referenceLocations(javaScriptReferences)).toEqual(["src/X.js:2"]);
+    expect(referenceLocations(typeScriptReferences)).toEqual(["src/use.ts:1", "src/use.ts:2"]);
+  });
 });
 
 const interfaceFirstSources: Readonly<Record<string, string>> = {

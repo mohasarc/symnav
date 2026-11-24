@@ -25,9 +25,15 @@ interface ImporterAnchors {
   readonly bindings: readonly Identifier[];
   readonly members: readonly Node[];
   readonly memberBindings: readonly Identifier[];
+  readonly reExportingFiles: readonly SourceFile[];
 }
 
-const NO_ANCHORS: ImporterAnchors = { bindings: [], members: [], memberBindings: [] };
+const NO_ANCHORS: ImporterAnchors = {
+  bindings: [],
+  members: [],
+  memberBindings: [],
+  reExportingFiles: [],
+};
 
 export class CommonJsExportImporters {
   private static readonly MEMBER_EXPORT_FORMS: ReadonlySet<JavaScriptAssignmentDeclarationForm> =
@@ -66,6 +72,9 @@ export class CommonJsExportImporters {
           pending.push(...CommonJsExportImporters.exportsNamedBy(bindingReferences));
         }
         found.push(...anchors.members);
+        for (const sourceFile of anchors.reExportingFiles) {
+          pending.push({ sourceFile, exported: next.exported });
+        }
         for (const node of found) listedLines.add(CommonJsExportImporters.lineKey(node));
       }
     }
@@ -190,6 +199,9 @@ export class CommonJsExportImporters {
   }
 
   private static requireCallAnchors(call: Node, exported: CommonJsExportName): ImporterAnchors {
+    if (JavaScriptAssignmentDeclarations.reExportsModule(call)) {
+      return { ...NO_ANCHORS, reExportingFiles: [call.getSourceFile()] };
+    }
     const holder = call.getParent();
     if (Node.isPropertyAccessExpression(holder) && holder.getExpression() === call) {
       const accessesMember = exported.kind === "member" && holder.getName() === exported.name;
@@ -221,7 +233,10 @@ export class CommonJsExportImporters {
   }
 
   private static memberAccessesOf(binding: Identifier, name: string): ImporterAnchors {
-    const accesses = CommonJsExportImporters.referenceNodesOf(binding).flatMap((reference) => {
+    const anchors = CommonJsExportImporters.referenceNodesOf(binding).flatMap((reference) => {
+      if (JavaScriptAssignmentDeclarations.reExportsModule(reference)) {
+        return [{ ...NO_ANCHORS, reExportingFiles: [reference.getSourceFile()] }];
+      }
       const access = reference.getParent();
       const accessesMember =
         Node.isPropertyAccessExpression(access) &&
@@ -229,7 +244,7 @@ export class CommonJsExportImporters {
         access.getName() === name;
       return accessesMember ? [CommonJsExportImporters.memberAccessAnchors(access)] : [];
     });
-    return CommonJsExportImporters.merged(accesses);
+    return CommonJsExportImporters.merged(anchors);
   }
 
   private static memberAccessAnchors(access: PropertyAccessExpression): ImporterAnchors {
@@ -239,7 +254,7 @@ export class CommonJsExportImporters {
         ? holder.getNameNode()
         : undefined;
     return {
-      bindings: [],
+      ...NO_ANCHORS,
       members: [access.getNameNode()],
       memberBindings: Node.isIdentifier(initializedName) ? [initializedName] : [],
     };
@@ -250,6 +265,7 @@ export class CommonJsExportImporters {
       bindings: anchors.flatMap((anchor) => anchor.bindings),
       members: anchors.flatMap((anchor) => anchor.members),
       memberBindings: anchors.flatMap((anchor) => anchor.memberBindings),
+      reExportingFiles: anchors.flatMap((anchor) => anchor.reExportingFiles),
     };
   }
 

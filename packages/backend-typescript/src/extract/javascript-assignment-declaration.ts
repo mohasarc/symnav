@@ -113,6 +113,13 @@ export class JavaScriptAssignmentDeclarations {
     return name === undefined ? undefined : { kind: "member", name };
   }
 
+  static reExportsModule(value: Node): boolean {
+    return (
+      JavaScriptAssignmentDeclarations.isCommonJsFile(value.getSourceFile()) &&
+      JavaScriptAssignmentDeclarations.assignsModuleExports(value)
+    );
+  }
+
   static isJavaScriptFile(sourceFile: SourceFile): boolean {
     return (sourceFile.compilerNode.flags & ts.NodeFlags.JavaScriptFile) !== 0;
   }

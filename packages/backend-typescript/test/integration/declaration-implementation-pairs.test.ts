@@ -4,9 +4,11 @@ import { join, relative } from "node:path";
 import { describe, expect, it } from "vitest";
 import { fixturePath } from "@symnav/testing";
 import {
+  GraphTraverser,
   InMemoryFileSystem,
   NodeFileSystem,
   formatSymbolIdentity,
+  type CallEdge,
   type DefinitionPairRole,
   type DefinitionSymbol,
   type SymbolIdentity,
@@ -585,6 +587,38 @@ describe("TypeScriptBackend definitions of declaration and implementation pairs"
   });
 });
 
+describe("TypeScriptBackend callees of declaration and implementation pairs", () => {
+  it.each(["tabs", "Tabs"])(
+    "uses the JavaScript body for callees of the .d.ts %s",
+    async (name) => {
+      const { backend, files } = await backendOverSources(pairedCalleeSources);
+
+      const fromImplementation = await backend.findCallees(files, identity("src/tabs.js", name));
+      const fromDeclaration = await backend.findCallees(files, identity("src/tabs.d.ts", name));
+
+      expect(calleeIdentities(fromImplementation)).toContain("src/helper.ts::helper");
+      expect(calleeIdentities(fromDeclaration)).toEqual(calleeIdentities(fromImplementation));
+    },
+  );
+
+  it("continues an outgoing graph path through a .d.ts into its JavaScript twin's body", async () => {
+    const { backend, files } = await backendOverSources(pairedCalleeSources);
+    const [root] = await backend.findDefinitions(files, identity("src/app.ts", "app"));
+
+    const paths = await new GraphTraverser({
+      backend,
+      files,
+      root: root!,
+      depth: 2,
+    }).traverseOutgoing();
+
+    const twoHopEnds = paths
+      .filter((path) => path.steps.length === 2)
+      .map((path) => formatSymbolIdentity(path.steps[1]!.symbol.identity));
+    expect(twoHopEnds).toContain("src/helper.ts::helper");
+  });
+});
+
 const interfaceFirstSources: Readonly<Record<string, string>> = {
   "src/foo.js": "export const Foo = () => 1;\nexport const first = Foo();\n",
   "src/foo.d.ts":
@@ -614,6 +648,16 @@ const staticAndInstanceSources: Readonly<Record<string, string>> = {
   "src/foo.d.ts": "export declare class Foo {\n  static x(): number;\n  x(): number;\n}\n",
   "src/use.ts":
     'import { Foo } from "./foo";\nexport const viaClass = Foo.x();\nexport const viaInstance = new Foo().x();\n',
+};
+
+const pairedCalleeSources: Readonly<Record<string, string>> = {
+  "src/helper.ts": "export function helper() {\n  return 1;\n}\n",
+  "src/tabs.js":
+    'import { helper } from "./helper";\nexport function tabs() {\n  return helper();\n}\nexport const Tabs = wrap(() => helper());\nfunction wrap(render) {\n  return render;\n}\n',
+  "src/tabs.d.ts":
+    "export declare function tabs(): number;\nexport declare const Tabs: () => number;\n",
+  "src/app.ts":
+    'import { tabs, Tabs } from "./tabs";\nexport function app() {\n  return tabs() + Tabs();\n}\n',
 };
 
 async function backendOverSources(sources: Readonly<Record<string, string>>): Promise<{
@@ -676,6 +720,10 @@ function definitionRoles(
     formatSymbolIdentity(definition.identity),
     definition.pairRole,
   ]);
+}
+
+function calleeIdentities(edges: readonly CallEdge[]): readonly string[] {
+  return edges.map((edge) => formatSymbolIdentity(edge.symbol.identity));
 }
 
 function identity(file: string, ...names: readonly string[]): SymbolIdentity {

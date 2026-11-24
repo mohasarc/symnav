@@ -15,7 +15,11 @@ import {
 import { Project, type Node, type SourceFile } from "ts-morph";
 
 import { FileDeclarationExtraction } from "../extract/file-declaration-extraction.js";
-import { DeclarationLocator, type LocatedDeclaration } from "../identity/locate-declarations.js";
+import {
+  DeclarationLocator,
+  type DeclarationSpan,
+  type LocatedDeclaration,
+} from "../identity/locate-declarations.js";
 import { WorkspaceFileSystemHost } from "./workspace-file-system-host.js";
 
 export type IndexedDeclaration = IndexedBackendDeclaration;
@@ -49,6 +53,7 @@ export class TypeScriptFileEntryExtractor implements TypeScriptFileExtractor {
 export interface TypeScriptPreparedFileDetails {
   readonly sourceFile: SourceFile;
   readonly declarationsByPosition: ReadonlyMap<number, SymbolOverviewNode>;
+  readonly declarationSpans: ReadonlyMap<SymbolOverviewNode, DeclarationSpan>;
 }
 
 interface ProjectMutation {
@@ -135,7 +140,11 @@ export class TypeScriptWorkspaceState extends RevisionedBackendState<TypeScriptP
             (sourceFile): sourceFile is SourceFile => sourceFile !== undefined,
           );
     return sourceFiles.flatMap((sourceFile) =>
-      new DeclarationLocator(sourceFile).locate(identity, prepared.entries.entries),
+      new DeclarationLocator(sourceFile).locate(
+        identity,
+        prepared.entries.entries,
+        prepared.details.declarationSpans,
+      ),
     );
   }
 }
@@ -205,24 +214,26 @@ class TypeScriptWorkspacePreparation extends RevisionedBackendPreparation<TypeSc
     sourceFile: SourceFile,
     file: RevisionedBackendPreparedFile<TypeScriptPreparedFileDetails>["file"],
   ): RevisionedBackendPreparedFile<TypeScriptPreparedFileDetails> {
-    const declarationsByPosition = new Map<number, SymbolOverviewNode>();
     const diagnosticSink = new CollectingDiagnosticSink();
-    const { entries: extracted } = this.extractor.extract({
+    const { entries: extracted, declarationNodes } = this.extractor.extract({
       sourceFile,
       filePath: file.relative,
       diagnostics: diagnosticSink,
     });
     const diagnostics = diagnosticSink.diagnostics();
     const entries = diagnostics.length === 0 ? extracted : { ...extracted, diagnostics };
-    for (const { declaration, node } of new DeclarationLocator(sourceFile).locateAll(
-      entries.entries,
-    )) {
-      declarationsByPosition.set(node.getStart(), declaration);
+    const declarationsByPosition = new Map<number, SymbolOverviewNode>();
+    const declarationSpans = new Map<SymbolOverviewNode, DeclarationSpan>();
+    for (const [declaration, node] of declarationNodes) {
+      const span = DeclarationLocator.spanOf(declaration, node);
+      if (!span) continue;
+      declarationsByPosition.set(span.start, declaration);
+      declarationSpans.set(declaration, span);
     }
     return {
       file,
       entries,
-      details: { sourceFile, declarationsByPosition },
+      details: { sourceFile, declarationsByPosition, declarationSpans },
     };
   }
 

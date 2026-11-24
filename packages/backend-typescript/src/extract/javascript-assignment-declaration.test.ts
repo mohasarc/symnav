@@ -10,6 +10,7 @@ import {
 import { parseTypeScriptSource } from "../../test/helpers/parse-typescript-source.js";
 import { DeclarationLocator } from "../identity/locate-declarations.js";
 import { extractFileEntries } from "./extract-file-entries.js";
+import { FileDeclarationExtraction } from "./file-declaration-extraction.js";
 
 describe("CommonJS export declarations in overview", () => {
   it.each([
@@ -450,9 +451,7 @@ function programSourceFile(source: string): SourceFile {
 }
 
 function listedExports(sourceFile: SourceFile): readonly string[] {
-  const { entries } = extractFileEntries({ sourceFile, filePath: "input.js" });
-  const located = new DeclarationLocator(sourceFile).locateAll(entries);
-  expect(located).toHaveLength(OverviewTree.walkSymbols(entries).length);
+  const located = locatedDeclarationsOf(sourceFile);
   return located
     .filter(({ node }) => isCommonJsDeclarationNode(node))
     .map(({ declaration, node }) => {
@@ -460,6 +459,20 @@ function listedExports(sourceFile: SourceFile): readonly string[] {
       return `${path.join(SEGMENT_SEPARATOR)}@${node.getStartLineNumber()}`;
     })
     .sort();
+}
+
+function locatedDeclarationsOf(
+  sourceFile: SourceFile,
+): readonly { readonly declaration: SymbolOverviewNode; readonly node: Node }[] {
+  const { entries, declarationNodes } = FileDeclarationExtraction.extract({
+    sourceFile,
+    filePath: "input.js",
+  });
+  const located = [...declarationNodes]
+    .filter(([declaration, node]) => DeclarationLocator.spanOf(declaration, node) !== undefined)
+    .map(([declaration, node]) => ({ declaration, node }));
+  expect(located).toHaveLength(OverviewTree.walkSymbols(entries.entries).length);
+  return located;
 }
 
 function isCommonJsDeclarationNode(node: Node): boolean {

@@ -474,6 +474,29 @@ describe("TypeScriptBackend CommonJS export declarations", () => {
     expect(callers).toEqual([]);
   });
 
+  it("follows exports assigned a member of another module", async () => {
+    const { backend, files } = await backendOverSources({
+      "src/m.js": "exports.foo = function () { return 1; };\n",
+      "src/r.js": "exports.bar = require('./m').foo;\n",
+      "src/a.js": "const m = require('./m');\nexports.y = m.foo;\n",
+      "src/use.js": [
+        "function viaR() { return require('./r').bar(); }",
+        "const { bar } = require('./r');",
+        "function viaDestructure() { return bar(); }",
+        "function viaA() { return require('./a').y(); }",
+        "",
+      ].join("\n"),
+    });
+
+    const callers = await backend.findCallers(files, identity("src/m.js", "foo"));
+
+    expect(callers.map((edge) => formatSymbolIdentity(edge.symbol.identity))).toEqual([
+      "src/use.js::viaR",
+      "src/use.js::viaDestructure",
+      "src/use.js::viaA",
+    ]);
+  });
+
   it("pairs a module.exports function with the .d.ts export = declaration", async () => {
     const { backend, files } = await backendOverSources({
       "src/lib.js": "module.exports = function () { return 1; };\n",

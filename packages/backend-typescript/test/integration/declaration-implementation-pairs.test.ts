@@ -138,6 +138,36 @@ describe("TypeScriptBackend declaration and implementation pairs", () => {
       "src/use.ts:3",
     ]);
   });
+
+  it.each([
+    ["src/Tabs.jsx", "src/Tabs.d.ts", "./Tabs"],
+    ["src/Tabs/index.js", "src/Tabs/index.d.ts", "./Tabs"],
+    ["src/tabs.mjs", "src/tabs.d.mts", "./tabs.mjs"],
+    ["src/tabs.cjs", "src/tabs.d.cts", "./tabs.cjs"],
+  ])(
+    "merges references across %s and %s from either side",
+    async (implementationFile, declarationFile, specifier) => {
+      const { backend, files } = await backendOverSources({
+        [implementationFile]:
+          "export function tabs() { return 1; }\nexport const first = tabs();\n",
+        [declarationFile]: "export declare function tabs(): number;\n",
+        "src/use.ts": `import { tabs } from "${specifier}";\nexport const value = tabs();\n`,
+      });
+      const expected = [`${implementationFile}:2`, "src/use.ts:1", "src/use.ts:2"].sort();
+
+      const fromImplementation = await backend.findReferences(
+        files,
+        identity(implementationFile, "tabs"),
+      );
+      const fromDeclaration = await backend.findReferences(
+        files,
+        identity(declarationFile, "tabs"),
+      );
+
+      expect(referenceLocations(fromImplementation)).toEqual(expected);
+      expect(referenceLocations(fromDeclaration)).toEqual(expected);
+    },
+  );
 });
 
 const interfaceFirstSources: Readonly<Record<string, string>> = {

@@ -398,6 +398,31 @@ describe("TypeScriptBackend this-property member declarations", () => {
     expect(referenceLocations(references)).toEqual(["src/lib.js:6", "src/use.js:2"]);
   });
 
+  it.each([
+    ["a constructor function", "function Foo() {\n  this.value = 1;\n}\n"],
+    ["a function expression", "var Foo = function () {\n  this.value = 1;\n};\n"],
+    [
+      "a prototype method",
+      "function Foo() {}\nFoo.prototype.init = function () {\n  this.value = 1;\n};\n",
+    ],
+  ])("resolves a this-property of %s and finds its instance users", async (_container, source) => {
+    const { backend, files } = await backendOverSources({
+      "src/lib.js": `${source}exports.Foo = Foo;\n`,
+      "src/use.js": "const { Foo } = require('./lib');\nnew Foo().value;\n",
+    });
+
+    const definitions = await backend.findDefinitions(
+      files,
+      identity("src/lib.js", "Foo", "value"),
+    );
+    const references = await backend.findReferences(files, identity("src/lib.js", "Foo", "value"));
+
+    expect(definitions.map((definition) => formatSymbolIdentity(definition.identity))).toEqual([
+      "src/lib.js::Foo::value",
+    ]);
+    expect(referenceLocations(references)).toEqual(["src/use.js:2"]);
+  });
+
   it("resolves a static method this-property and finds its static users", async () => {
     const { backend, files } = await backendOverSources({
       "src/lib.js":

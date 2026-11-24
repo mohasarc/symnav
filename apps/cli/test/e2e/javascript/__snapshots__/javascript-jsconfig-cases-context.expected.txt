@@ -1,0 +1,25 @@
+Context: slugify
+File: src/util.js
+Lines: 1-3
+
+Definition
+src/util.js
+└── 1-3: slugify  [implementation]
+    export function slugify(text)
+
+Callers
+src/index.js
+└── 3-5: title  [call]
+      return slugify(text);
+
+Callees
+(none)
+
+References
+Total: 2
+Kinds: usage 1, import 1
+Run: symnav refs src/util.js::slugify
+
+Recent History
+1. 1304f76 2023-05-01 Script Bot
+   add the javascript-jsconfig-cases fixture

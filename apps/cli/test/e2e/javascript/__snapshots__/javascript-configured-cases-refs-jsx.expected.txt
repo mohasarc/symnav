@@ -1,0 +1,9 @@
+References: Badge
+Total: 2
+Kinds: usage 1, import 1
+Page: 1/1
+Sort: path, line
+
+src/main.ts
+├── 2: import { Badge } from "./Badge";  [import]
+└── 8: export const badge = Badge;  [usage]

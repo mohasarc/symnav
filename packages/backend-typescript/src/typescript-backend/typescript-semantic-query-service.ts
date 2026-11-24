@@ -231,13 +231,16 @@ export class TypeScriptSemanticQueryService implements PositionDefinitionResolve
       ).flatMap((entry) => {
         const node = entry.getNode();
         const relativePath = this.workspaceState.relativePathOf(node.getSourceFile());
+        const namesAssignment =
+          assignment !== undefined &&
+          TypeScriptSemanticQueryService.isWithin(node, assignment.nameNode);
         return relativePath
           ? [
               {
                 relativePath,
                 start: node.getStart(),
                 length: node.getWidth(),
-                isDefinition: entry.isDefinition() ?? false,
+                isDefinition: (entry.isDefinition() ?? false) || namesAssignment,
               },
             ]
           : [];
@@ -342,6 +345,14 @@ export class TypeScriptSemanticQueryService implements PositionDefinitionResolve
     return declarationNode
       .findReferences()
       .flatMap((referencedSymbol) => referencedSymbol.getReferences());
+  }
+
+  private static isWithin(node: Node, container: Node): boolean {
+    return (
+      node.getSourceFile() === container.getSourceFile() &&
+      node.getStart() >= container.getStart() &&
+      node.getEnd() <= container.getEnd()
+    );
   }
 
   private static lineText(sourceFile: SourceFile, zeroBasedLine: number): string {

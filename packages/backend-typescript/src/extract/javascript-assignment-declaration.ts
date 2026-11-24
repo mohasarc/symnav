@@ -35,6 +35,7 @@ export interface JavaScriptAssignmentDeclaration {
   readonly form: JavaScriptAssignmentDeclarationForm;
   readonly name: string;
   readonly declarationNode: Node;
+  readonly nameNode: Node;
   readonly nameLiteral: Node | undefined;
   readonly value: Node;
   readonly statement: Node;
@@ -118,6 +119,7 @@ export class JavaScriptAssignmentDeclarations {
       form: "module-exports-member",
       name,
       declarationNode: member,
+      nameNode,
       nameLiteral: JavaScriptAssignmentDeclarations.propertyNameLiteral(nameNode),
       value,
       statement,
@@ -177,7 +179,14 @@ export class JavaScriptAssignmentDeclarations {
     const nameLiteral = Node.isElementAccessExpression(target)
       ? target.getArgumentExpression()
       : undefined;
-    return { form: "export-property", name, declarationNode: target, nameLiteral, ...assigned };
+    return {
+      form: "export-property",
+      name,
+      declarationNode: target,
+      nameNode: target,
+      nameLiteral,
+      ...assigned,
+    };
   }
 
   private static moduleExportsValue(
@@ -194,6 +203,7 @@ export class JavaScriptAssignmentDeclarations {
       form: "module-exports",
       name: "default",
       declarationNode: target,
+      nameNode: target,
       nameLiteral: undefined,
       ...assigned,
     };

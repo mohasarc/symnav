@@ -624,6 +624,28 @@ describe("TypeScriptBackend callees of declaration and implementation pairs", ()
     },
   );
 
+  it("keeps callee edges into an unpaired .d.ts, a .d.ts export the JavaScript lacks, and a call inside the JavaScript half", async () => {
+    const { backend, files } = await backendOverSources({
+      "src/lib.d.ts": "export declare function lib(): number;\n",
+      "src/tabs.js":
+        "export function tabs() {\n  return 1;\n}\nexport function local() {\n  return tabs();\n}\n",
+      "src/tabs.d.ts":
+        "export declare function tabs(): number;\nexport declare function extra(): number;\nexport declare function local(): number;\n",
+      "src/app.ts":
+        'import { lib } from "./lib";\nimport { extra, tabs } from "./tabs";\nexport function app() {\n  return lib() + extra() + tabs();\n}\n',
+    });
+
+    const callees = await backend.findCallees(files, identity("src/app.ts", "app"));
+    const localCallees = await backend.findCallees(files, identity("src/tabs.js", "local"));
+
+    expect(calleeIdentities(callees)).toEqual([
+      "src/lib.d.ts::lib",
+      "src/tabs.d.ts::extra",
+      "src/tabs.js::tabs",
+    ]);
+    expect(calleeIdentities(localCallees)).toEqual(["src/tabs.js::tabs"]);
+  });
+
   it("continues an outgoing graph path through a .d.ts into its JavaScript twin's body", async () => {
     const { backend, files } = await backendOverSources(pairedCalleeSources);
     const [root] = await backend.findDefinitions(files, identity("src/app.ts", "app"));

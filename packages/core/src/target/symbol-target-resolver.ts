@@ -77,13 +77,15 @@ export class SymbolTargetResolver {
     );
     const winner = sortedOwnedCandidates[0]!;
     if (sortedOwnedCandidates.length > 1) {
-      const sortedCandidates = sortedOwnedCandidates.map((owned) => owned.candidate);
       const collapsedIdentity =
         request.mode === "regular"
-          ? SymbolTargetResolver.collapsedOverloadIdentity(sortedCandidates, request.pattern)
+          ? SymbolTargetResolver.collapsedIdentity(sortedOwnedCandidates, request.pattern)
           : undefined;
       if (collapsedIdentity === undefined) {
-        throw new AmbiguousSymbolTargetError(request.raw, sortedCandidates);
+        throw new AmbiguousSymbolTargetError(
+          request.raw,
+          sortedOwnedCandidates.map((owned) => owned.candidate),
+        );
       }
       return SymbolTargetResolver.resolvedTarget(
         collapsedIdentity,
@@ -205,6 +207,36 @@ export class SymbolTargetResolver {
       return true;
     }
     return containingLine >= symbol.range.startLine && containingLine <= symbol.range.endLine;
+  }
+
+  private static collapsedIdentity(
+    sortedOwnedCandidates: readonly OwnedCandidate[],
+    pattern: Extract<SymbolTargetRequest, { readonly mode: "regular" }>["pattern"],
+  ): SymbolIdentity | undefined {
+    const sortedCandidates = sortedOwnedCandidates.map((owned) => owned.candidate);
+    return (
+      SymbolTargetResolver.collapsedOverloadIdentity(sortedCandidates, pattern) ??
+      SymbolTargetResolver.backendCollapsedIdentity(sortedOwnedCandidates)
+    );
+  }
+
+  private static backendCollapsedIdentity(
+    sortedOwnedCandidates: readonly OwnedCandidate[],
+  ): SymbolIdentity | undefined {
+    const backend = sortedOwnedCandidates[0]!.backend;
+    const oneBackendOwnsEveryCandidate = sortedOwnedCandidates.every(
+      (owned) => owned.backend === backend,
+    );
+    if (!oneBackendOwnsEveryCandidate || !backend.collapsedTargetIdentity) return undefined;
+    const candidateIdentities = sortedOwnedCandidates.map(
+      (owned) => owned.candidate.symbol.identity,
+    );
+    const collapsed = backend.collapsedTargetIdentity(candidateIdentities);
+    if (collapsed === undefined) return undefined;
+    const collapsedCanonicalId = formatSymbolIdentity(collapsed);
+    return sortedOwnedCandidates.find(
+      (owned) => owned.candidate.canonicalId === collapsedCanonicalId,
+    )?.candidate.symbol.identity;
   }
 
   private static collapsedOverloadIdentity(

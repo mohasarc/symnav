@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import type { DefinitionResult } from "@symnav/core";
+import type { DefinitionResult, DefinitionSymbol } from "@symnav/core";
 
 import { renderDefinitionJson } from "./render-definition-json.js";
 
@@ -37,6 +37,31 @@ describe("renderDefinitionJson", () => {
     ]);
     expect(first.kind).toEqual({ role: "callable", nativeLabel: "method-overload-signature" });
     expect(first.range).toEqual({ startLine: 4, endLine: 4 });
+  });
+
+  it("includes pairRole only on paired definitions", () => {
+    const unpaired: DefinitionSymbol = {
+      type: "symbol",
+      identity: { file: "src/Tabs/Tabs.js", segments: [{ name: "styles" }] },
+      kind: { role: "value", nativeLabel: "variable" },
+      range: { startLine: 1, endLine: 1 },
+      header: { startLine: 1, lines: ["const styles = {};"] },
+      children: [],
+    };
+    const paired: DefinitionSymbol = {
+      ...unpaired,
+      identity: { file: "src/Tabs/Tabs.js", segments: [{ name: "Tabs" }] },
+      pairRole: "implementation",
+    };
+    const result: DefinitionResult = {
+      identity: { file: "src/Tabs/Tabs.js", segments: [{ name: "Tabs" }] },
+      symbols: [paired, unpaired],
+    };
+
+    const parsed = JSON.parse(renderDefinitionJson(result)) as DefinitionResult;
+
+    expect(parsed.symbols[0]!.pairRole).toBe("implementation");
+    expect(Object.keys(parsed.symbols[1]!)).not.toContain("pairRole");
   });
 
   it("preserves the result's own key order", () => {

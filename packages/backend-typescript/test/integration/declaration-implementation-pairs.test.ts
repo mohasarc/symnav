@@ -4,8 +4,14 @@ import { join, relative } from "node:path";
 import { describe, expect, it } from "vitest";
 import { fixturePath } from "@symnav/testing";
 import {
+  GraphTraverser,
   InMemoryFileSystem,
   NodeFileSystem,
+  formatSymbolIdentity,
+  type CallEdge,
+  type DefinitionPairRole,
+  type DefinitionSymbol,
+  type LanguageBackend,
   type SymbolIdentity,
   type SymbolReference,
   type WorkspaceFile,
@@ -386,6 +392,29 @@ describe("TypeScriptBackend declaration and implementation pairs", () => {
     expect(referenceLocations(fromDeclaration)).toEqual(expected);
   });
 
+  it.each(["function x(): number;", "const x: () => number;"])(
+    "links a .d.ts namespace member %s to the static JavaScript member, not the same-named instance member",
+    async (namespaceMemberSource) => {
+      const { backend, files } = await backendOverSources({
+        "src/foo.js":
+          "export class Foo {\n  x() { return 1; }\n  static x() { return 2; }\n}\nexport const first = Foo.x();\nexport const second = new Foo().x();\n",
+        "src/foo.d.ts": `export declare class Foo {\n  x(): number;\n}\nexport declare namespace Foo {\n  ${namespaceMemberSource}\n}\n`,
+        "src/use.ts": 'import { Foo } from "./foo";\nexport const viaClass = Foo.x();\n',
+      });
+      const namespaceMember: SymbolIdentity = {
+        file: "src/foo.d.ts",
+        segments: [{ name: "Foo", disambiguator: 2 }, { name: "x" }],
+      };
+
+      const definitions = await backend.findDefinitions(files, namespaceMember);
+
+      expect(definitionRoles(definitions)).toEqual([
+        ["src/foo.js::Foo::x#2", "implementation"],
+        ["src/foo.d.ts::Foo#2::x", "declaration"],
+      ]);
+    },
+  );
+
   it("links static and instance members of a pair separately", async () => {
     const { backend, files } = await backendOverSources(staticAndInstanceSources);
     const staticImplementation: SymbolIdentity = {
@@ -500,6 +529,229 @@ describe("TypeScriptBackend declaration and implementation pairs", () => {
   });
 });
 
+describe("TypeScriptBackend definitions of declaration and implementation pairs", () => {
+  it.each(["src/Tabs/Tabs.js", "src/Tabs/Tabs.d.ts"])(
+    "lists both halves of the Tabs pair from %s, tagged by pair role",
+    async (file) => {
+      const { backend, files } = await backendOverPairFixture();
+
+      const definitions = await backend.findDefinitions(files, identity(file, "Tabs"));
+
+      expect(definitionRoles(definitions)).toEqual([
+        ["src/Tabs/Tabs.js::Tabs", "implementation"],
+        ["src/Tabs/Tabs.d.ts::Tabs", "declaration"],
+      ]);
+    },
+  );
+
+  it("tags every overload of a bare .d.ts target as the declaration half", async () => {
+    const { backend, files } = await backendOverSources(overloadedDeclarationSources);
+
+    const definitions = await backend.findDefinitions(files, identity("src/tabs.d.ts", "tabs"));
+
+    expect(definitionRoles(definitions)).toEqual([
+      ["src/tabs.js::tabs", "implementation"],
+      ["src/tabs.d.ts::tabs#1", "declaration"],
+      ["src/tabs.d.ts::tabs#2", "declaration"],
+    ]);
+  });
+
+  it.each([
+    ["src/Tabs/Tabs.d.ts", ["Tabs"], "src/Tabs/Tabs.js::Tabs"],
+    ["src/cjs/util.d.ts", ["util", "helper"], "src/cjs/util.js::helper"],
+  ])(
+    "resolves the call target of %s %j to its JavaScript implementation",
+    async (file, names, expected) => {
+      const { backend, files } = await backendOverPairFixture();
+
+      const resolution = await backend.findCallTarget(files, identity(file, ...names));
+
+      expect(resolution.outcome).toBe("resolved");
+      expect(
+        resolution.outcome === "resolved" && formatSymbolIdentity(resolution.target.identity),
+      ).toBe(expected);
+    },
+  );
+
+  it("lists only the same-staticness member of the other half", async () => {
+    const { backend, files } = await backendOverSources(staticAndInstanceSources);
+    const staticDeclaration: SymbolIdentity = {
+      file: "src/foo.d.ts",
+      segments: [{ name: "Foo" }, { name: "x", disambiguator: 1 }],
+    };
+
+    const definitions = await backend.findDefinitions(files, staticDeclaration);
+    const resolution = await backend.findCallTarget(files, staticDeclaration);
+
+    expect(definitionRoles(definitions)).toEqual([
+      ["src/foo.js::Foo::x#1", "implementation"],
+      ["src/foo.d.ts::Foo::x#1", "declaration"],
+    ]);
+    expect(
+      resolution.outcome === "resolved" && formatSymbolIdentity(resolution.target.identity),
+    ).toBe("src/foo.js::Foo::x#1");
+  });
+
+  it("leaves definitions outside a pair link untagged", async () => {
+    const { backend, files } = await backendOverPairFixture();
+
+    const unpairedExport = await backend.findDefinitions(
+      files,
+      identity("src/Tabs/Tabs.js", "styles"),
+    );
+    const declarationOnlyExport = await backend.findDefinitions(
+      files,
+      identity("src/Tabs/Tabs.d.ts", "TabsProps"),
+    );
+
+    expect(definitionRoles(unpairedExport)).toEqual([["src/Tabs/Tabs.js::styles", undefined]]);
+    expect(definitionRoles(declarationOnlyExport)).toEqual([
+      ["src/Tabs/Tabs.d.ts::TabsProps", undefined],
+    ]);
+  });
+});
+
+describe("TypeScriptBackend callees of declaration and implementation pairs", () => {
+  it.each(["tabs", "Tabs"])(
+    "uses the JavaScript body for callees of the .d.ts %s",
+    async (name) => {
+      const { backend, files } = await backendOverSources(pairedCalleeSources);
+
+      const fromImplementation = await backend.findCallees(files, identity("src/tabs.js", name));
+      const fromDeclaration = await backend.findCallees(files, identity("src/tabs.d.ts", name));
+
+      expect(calleeIdentities(fromImplementation)).toContain("src/helper.ts::helper");
+      expect(calleeIdentities(fromDeclaration)).toEqual(calleeIdentities(fromImplementation));
+    },
+  );
+
+  it("reports a call into a paired .d.ts as one edge to its JavaScript implementation", async () => {
+    const { backend, files } = await backendOverSources(pairedCalleeSources);
+
+    const callees = await backend.findCallees(files, identity("src/app.ts", "app"));
+
+    expect(calleeIdentities(callees)).toEqual(["src/tabs.js::tabs", "src/tabs.js::Tabs"]);
+  });
+
+  it.each([
+    ["src/App.tsx", ["App"], ["src/Tabs/Tabs.js::Tabs"]],
+    ["src/hooks/useTabs.js", ["useTabs"], ["src/Tabs/Tabs.js::Tabs"]],
+    ["src/cjs/consumer.js", ["run"], ["src/cjs/util.js::helper"]],
+  ])(
+    "reports callees of %s %j as the JavaScript implementations",
+    async (file, names, expected) => {
+      const { backend, files } = await backendOverPairFixture();
+
+      const callees = await backend.findCallees(files, identity(file, ...names));
+
+      expect(calleeIdentities(callees)).toEqual(expected);
+    },
+  );
+
+  it("keeps callee edges into an unpaired .d.ts, a .d.ts export the JavaScript lacks, and a call inside the JavaScript half", async () => {
+    const { backend, files } = await backendOverSources({
+      "src/lib.d.ts": "export declare function lib(): number;\n",
+      "src/tabs.js":
+        "export function tabs() {\n  return 1;\n}\nexport function local() {\n  return tabs();\n}\n",
+      "src/tabs.d.ts":
+        "export declare function tabs(): number;\nexport declare function extra(): number;\nexport declare function local(): number;\n",
+      "src/app.ts":
+        'import { lib } from "./lib";\nimport { extra, tabs } from "./tabs";\nexport function app() {\n  return lib() + extra() + tabs();\n}\n',
+    });
+
+    const callees = await backend.findCallees(files, identity("src/app.ts", "app"));
+    const localCallees = await backend.findCallees(files, identity("src/tabs.js", "local"));
+
+    expect(calleeIdentities(callees)).toEqual([
+      "src/lib.d.ts::lib",
+      "src/tabs.d.ts::extra",
+      "src/tabs.js::tabs",
+    ]);
+    expect(calleeIdentities(localCallees)).toEqual(["src/tabs.js::tabs"]);
+  });
+
+  it("continues an outgoing graph path through a .d.ts into its JavaScript twin's body", async () => {
+    const { backend, files } = await backendOverSources(pairedCalleeSources);
+    const [root] = await backend.findDefinitions(files, identity("src/app.ts", "app"));
+
+    const paths = await new GraphTraverser({
+      backend,
+      files,
+      root: root!,
+      depth: 2,
+    }).traverseOutgoing();
+
+    const twoHopEnds = paths
+      .filter((path) => path.steps.length === 2)
+      .map((path) => formatSymbolIdentity(path.steps[1]!.symbol.identity));
+    expect(twoHopEnds).toContain("src/helper.ts::helper");
+  });
+});
+
+describe("TypeScriptBackend target collapse of declaration and implementation pairs", () => {
+  it("collapses both halves of the Tabs pair to the JavaScript implementation", async () => {
+    const { backend } = await backendOverPairFixture();
+
+    const collapsed = collapsedTargetOf(backend, [
+      identity("src/Tabs/Tabs.d.ts", "Tabs"),
+      identity("src/Tabs/Tabs.js", "Tabs"),
+    ]);
+
+    expect(collapsed && formatSymbolIdentity(collapsed)).toBe("src/Tabs/Tabs.js::Tabs");
+  });
+
+  it("collapses both halves of a paired class member to the JavaScript member", async () => {
+    const { backend } = await backendOverSources({
+      "src/tabs.js": "export class Tabs {\n  render() { return 1; }\n}\n",
+      "src/tabs.d.ts": "export declare class Tabs {\n  render(): number;\n}\n",
+    });
+
+    const collapsed = collapsedTargetOf(backend, [
+      identity("src/tabs.d.ts", "Tabs", "render"),
+      identity("src/tabs.js", "Tabs", "render"),
+    ]);
+
+    expect(collapsed && formatSymbolIdentity(collapsed)).toBe("src/tabs.js::Tabs::render");
+  });
+
+  it("collapses every .d.ts overload and the JavaScript twin to the JavaScript twin", async () => {
+    const { backend } = await backendOverSources(overloadedDeclarationSources);
+
+    const collapsed = collapsedTargetOf(backend, [
+      { file: "src/tabs.d.ts", segments: [{ name: "tabs", disambiguator: 1 }] },
+      { file: "src/tabs.d.ts", segments: [{ name: "tabs", disambiguator: 2 }] },
+      identity("src/tabs.js", "tabs"),
+    ]);
+
+    expect(collapsed && formatSymbolIdentity(collapsed)).toBe("src/tabs.js::tabs");
+  });
+
+  it.each([
+    ["a pair and an unrelated same-name symbol", ["src/other.ts", "src/tabs.d.ts", "src/tabs.js"]],
+    ["two pairs", ["src/second.d.ts", "src/second.js", "src/tabs.d.ts", "src/tabs.js"]],
+    ["unpaired same-name symbols", ["src/loose.js", "src/other.ts"]],
+    ["a TypeScript source and JavaScript of the same name", ["src/same.js", "src/same.ts"]],
+  ])("does not collapse %s", async (_case, candidateFiles) => {
+    const { backend } = await backendOverSources({
+      "src/tabs.js": "export function tabs() { return 1; }\n",
+      "src/tabs.d.ts": "export declare function tabs(): number;\n",
+      "src/second.js": "export function tabs() { return 2; }\n",
+      "src/second.d.ts": "export declare function tabs(): number;\n",
+      "src/other.ts": "export function tabs() { return 3; }\n",
+      "src/loose.js": "export function tabs() { return 4; }\n",
+      "src/same.js": "export function tabs() { return 5; }\n",
+      "src/same.ts": "export function tabs() { return 6; }\n",
+    });
+
+    const collapsed = collapsedTargetOf(
+      backend,
+      candidateFiles.map((file) => identity(file, "tabs")),
+    );
+
+    expect(collapsed).toBeUndefined();
+  });
+});
+
 const interfaceFirstSources: Readonly<Record<string, string>> = {
   "src/foo.js": "export const Foo = () => 1;\nexport const first = Foo();\n",
   "src/foo.d.ts":
@@ -529,6 +781,16 @@ const staticAndInstanceSources: Readonly<Record<string, string>> = {
   "src/foo.d.ts": "export declare class Foo {\n  static x(): number;\n  x(): number;\n}\n",
   "src/use.ts":
     'import { Foo } from "./foo";\nexport const viaClass = Foo.x();\nexport const viaInstance = new Foo().x();\n',
+};
+
+const pairedCalleeSources: Readonly<Record<string, string>> = {
+  "src/helper.ts": "export function helper() {\n  return 1;\n}\n",
+  "src/tabs.js":
+    'import { helper } from "./helper";\nexport function tabs() {\n  return helper();\n}\nexport const Tabs = wrap(() => helper());\nfunction wrap(render) {\n  return render;\n}\n',
+  "src/tabs.d.ts":
+    "export declare function tabs(): number;\nexport declare const Tabs: () => number;\n",
+  "src/app.ts":
+    'import { tabs, Tabs } from "./tabs";\nexport function app() {\n  return tabs() + Tabs();\n}\n',
 };
 
 async function backendOverSources(sources: Readonly<Record<string, string>>): Promise<{
@@ -582,6 +844,26 @@ function fixtureSourcePaths(directory: string): readonly string[] {
 
 function referenceLocations(references: readonly SymbolReference[]): readonly string[] {
   return references.map((reference) => `${reference.file}:${reference.line}`).sort();
+}
+
+function definitionRoles(
+  definitions: readonly DefinitionSymbol[],
+): readonly (readonly [string, DefinitionPairRole | undefined])[] {
+  return definitions.map((definition) => [
+    formatSymbolIdentity(definition.identity),
+    definition.pairRole,
+  ]);
+}
+
+function calleeIdentities(edges: readonly CallEdge[]): readonly string[] {
+  return edges.map((edge) => formatSymbolIdentity(edge.symbol.identity));
+}
+
+function collapsedTargetOf(
+  backend: LanguageBackend,
+  candidates: readonly SymbolIdentity[],
+): SymbolIdentity | undefined {
+  return backend.collapsedTargetIdentity?.(candidates);
 }
 
 function identity(file: string, ...names: readonly string[]): SymbolIdentity {

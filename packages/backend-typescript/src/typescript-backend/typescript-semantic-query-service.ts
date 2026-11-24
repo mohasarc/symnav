@@ -4,6 +4,8 @@ import {
   formatSymbolIdentity,
   type CallEdge,
   type CallTargetResolution,
+  type DefinitionPairRole,
+  type DefinitionSymbol,
   type SymbolIdentity,
   type SymbolOverviewNode,
   type SymbolReference,
@@ -33,7 +35,7 @@ export class TypeScriptSemanticQueryService implements PositionDefinitionResolve
   private readonly cacheScope = new TurnScopedCacheScope();
   private readonly definitionsByIdentity = this.cacheScope.createCache<
     string,
-    Promise<readonly SymbolOverviewNode[]>
+    Promise<readonly DefinitionSymbol[]>
   >();
   private readonly referencesByIdentity = this.cacheScope.createCache<
     string,
@@ -74,15 +76,11 @@ export class TypeScriptSemanticQueryService implements PositionDefinitionResolve
     this.cacheScope.beginTurn();
   }
 
-  findDefinitions(identity: SymbolIdentity): Promise<readonly SymbolOverviewNode[]> {
+  findDefinitions(identity: SymbolIdentity): Promise<readonly DefinitionSymbol[]> {
     const key = formatSymbolIdentity(identity);
     return this.definitionsByIdentity.getOrCreate(key, () => {
       this.observer?.definitionSearch?.(identity);
-      return findDefinitions({
-        workspaceState: this.workspaceState,
-        files: this.files,
-        identity,
-      });
+      return this.pairedDefinitions(identity);
     });
   }
 
@@ -130,9 +128,25 @@ export class TypeScriptSemanticQueryService implements PositionDefinitionResolve
         workspaceState: this.workspaceState,
         files: this.files,
         identity,
+        counterparts: this.counterpartIdentities(identity),
         definitionResolver: this,
       }),
     );
+  }
+
+  collapsedTargetIdentity(candidates: readonly SymbolIdentity[]): SymbolIdentity | undefined {
+    const implementation = candidates.find(
+      (candidate) => this.pairRoleOf(candidate) === "implementation",
+    );
+    if (!implementation) return undefined;
+    const counterpartIds = new Set(
+      this.counterpartIdentities(implementation).map(formatSymbolIdentity),
+    );
+    const everyOtherCandidateIsCounterpart = candidates.every(
+      (candidate) =>
+        candidate === implementation || counterpartIds.has(formatSymbolIdentity(candidate)),
+    );
+    return everyOtherCandidateIsCounterpart ? implementation : undefined;
   }
 
   async releaseTransientResources(): Promise<void> {
@@ -147,7 +161,10 @@ export class TypeScriptSemanticQueryService implements PositionDefinitionResolve
     const key = `${relativePath}:${node.getStart()}`;
     const locations = this.definitionsByPosition.getOrCreate(key, () => {
       this.observer?.callTargetResolution?.(relativePath, node.getStart());
-      return node.getDefinitionNodes().flatMap((definition) => {
+      const definitions = node
+        .getDefinitionNodes()
+        .flatMap((definition) => this.implementationDefinitionsOf(definition));
+      return definitions.flatMap((definition) => {
         const definitionRelativePath = this.workspaceState.relativePathOf(
           definition.getSourceFile(),
         );
@@ -167,6 +184,23 @@ export class TypeScriptSemanticQueryService implements PositionDefinitionResolve
       const definition = this.nodeAtSemanticLocation(location, sourceFile);
       return definition ? [definition] : [];
     });
+  }
+
+  private implementationDefinitionsOf(definition: Node): readonly Node[] {
+    const declaration = this.workspaceState.declarationAt(definition);
+    const implementations = declaration
+      ? this.implementationCounterparts(declaration.identity)
+      : [];
+    if (implementations.length === 0) return [definition];
+    return implementations.flatMap((implementation) =>
+      this.workspaceState.locate(implementation).map(({ node }) => node),
+    );
+  }
+
+  private implementationCounterparts(identity: SymbolIdentity): readonly SymbolIdentity[] {
+    return (this.pairs?.filePairsOf(identity.file) ?? []).flatMap((pair) =>
+      pair.declarationFile === identity.file ? this.pairedSymbols.counterparts(identity, pair) : [],
+    );
   }
 
   private referenceLocations(
@@ -222,6 +256,41 @@ export class TypeScriptSemanticQueryService implements PositionDefinitionResolve
     return (this.pairs?.filePairsOf(identity.file) ?? []).flatMap((pair) =>
       this.pairedSymbols.counterparts(identity, pair),
     );
+  }
+
+  private async pairedDefinitions(identity: SymbolIdentity): Promise<readonly DefinitionSymbol[]> {
+    const ownDefinitions = await this.definitionsOf(identity);
+    const counterparts = this.counterpartIdentities(identity);
+    if (counterparts.length === 0) return ownDefinitions;
+    const counterpartDefinitions = await Promise.all(
+      counterparts.map((counterpart) => this.definitionsOf(counterpart)),
+    );
+    const byIdentity = new Map<string, SymbolOverviewNode>();
+    for (const definition of [...ownDefinitions, ...counterpartDefinitions.flat()]) {
+      byIdentity.set(formatSymbolIdentity(definition.identity), definition);
+    }
+    const tagged = [...byIdentity.values()].map((definition) => this.withPairRole(definition));
+    return [
+      ...tagged.filter((definition) => definition.pairRole === "implementation"),
+      ...tagged.filter((definition) => definition.pairRole !== "implementation"),
+    ];
+  }
+
+  private definitionsOf(identity: SymbolIdentity): Promise<readonly SymbolOverviewNode[]> {
+    return findDefinitions({ workspaceState: this.workspaceState, files: this.files, identity });
+  }
+
+  private withPairRole(definition: SymbolOverviewNode): DefinitionSymbol {
+    const pairRole = this.pairRoleOf(definition.identity);
+    return pairRole ? { ...definition, pairRole } : definition;
+  }
+
+  private pairRoleOf(identity: SymbolIdentity): DefinitionPairRole | undefined {
+    const linkedPair = (this.pairs?.filePairsOf(identity.file) ?? []).find(
+      (pair) => this.pairedSymbols.counterparts(identity, pair).length > 0,
+    );
+    if (!linkedPair) return undefined;
+    return identity.file === linkedPair.implementationFile ? "implementation" : "declaration";
   }
 
   private async resolveCallTarget(identity: SymbolIdentity): Promise<CallTargetResolution> {

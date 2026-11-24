@@ -3,6 +3,7 @@ import type {
   CappedCertainCallEdges,
   ContextReferenceSummary,
   ContextResult,
+  DefinitionSymbol,
   HistoryEntry,
   ReferenceKind,
   SymbolOverviewNode,
@@ -56,7 +57,7 @@ class ContextTextRenderer {
     return [head, ...sections].join("\n");
   }
 
-  private static renderDefinition(definitions: readonly SymbolOverviewNode[]): string {
+  private static renderDefinition(definitions: readonly DefinitionSymbol[]): string {
     if (definitions.length === 0) {
       return `Definition\n${ContextTextRenderer.NONE}`;
     }
@@ -68,7 +69,7 @@ class ContextTextRenderer {
 
   private static renderDefinitionFileGroup(
     file: string,
-    symbols: readonly SymbolOverviewNode[],
+    symbols: readonly DefinitionSymbol[],
   ): string {
     const entries = symbols
       .map((symbol, index) =>
@@ -78,9 +79,9 @@ class ContextTextRenderer {
     return `${file}\n${entries}`;
   }
 
-  private static renderDefinitionEntry(symbol: SymbolOverviewNode, isLast: boolean): string {
+  private static renderDefinitionEntry(symbol: DefinitionSymbol, isLast: boolean): string {
     const { branchGlyph, continuationGlyph } = treeGlyphsFor(isLast);
-    const tag = bracketTagFor(symbol.kind.nativeLabel);
+    const tag = bracketTagFor(symbol);
     const tagSuffix = tag === undefined ? "" : `  [${tag}]`;
     const head = `${branchGlyph}${formatRange(symbol.range)}: ${formatIdentityPath(symbol.identity)}${tagSuffix}\n`;
     const signature = symbol.header.lines.map((line) => `${continuationGlyph}${line}\n`).join("");

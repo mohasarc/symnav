@@ -3,6 +3,7 @@ import { basename } from "node:path";
 import type {
   CallEdge,
   CallTargetResolution,
+  DefinitionSymbol,
   BackendRefreshRequest,
   BackendRefreshSummary,
   FileSystem,
@@ -111,7 +112,7 @@ export class TypeScriptBackend implements LanguageBackend {
   async findDefinitions(
     files: readonly ResolvedPath[],
     identity: SymbolIdentity,
-  ): Promise<readonly SymbolOverviewNode[]> {
+  ): Promise<readonly DefinitionSymbol[]> {
     await this.state.ensureFiles(files);
     return this.semanticQueries.findDefinitions(identity);
   }
@@ -146,5 +147,9 @@ export class TypeScriptBackend implements LanguageBackend {
   ): Promise<readonly CallEdge[]> {
     await this.state.ensureFiles(files);
     return this.semanticQueries.findCallers(identity);
+  }
+
+  collapsedTargetIdentity(candidates: readonly SymbolIdentity[]): SymbolIdentity | undefined {
+    return this.semanticQueries.collapsedTargetIdentity(candidates);
   }
 }

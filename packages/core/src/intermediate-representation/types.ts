@@ -31,7 +31,13 @@ export interface ResolveResult extends ResultWithDiagnostics {
   readonly files: readonly string[];
 }
 
+export type DefinitionPairRole = "implementation" | "declaration";
+
+export interface DefinitionSymbol extends SymbolOverviewNode {
+  readonly pairRole?: DefinitionPairRole;
+}
+
 export interface DefinitionResult extends ResultWithDiagnostics {
   readonly identity: SymbolIdentity;
-  readonly symbols: readonly SymbolOverviewNode[];
+  readonly symbols: readonly DefinitionSymbol[];
 }

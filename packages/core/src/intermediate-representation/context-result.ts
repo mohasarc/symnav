@@ -3,7 +3,7 @@ import type { CallEdge } from "./call-edge.js";
 import type { ReferenceKind } from "./references.js";
 import type { SymbolIdentity } from "./symbol-identity.js";
 import type { SymbolOverviewNode } from "./overview-tree.js";
-import type { ResultWithDiagnostics } from "./types.js";
+import type { DefinitionSymbol, ResultWithDiagnostics } from "./types.js";
 
 export const DEFAULT_CONTEXT_CAP = 20;
 
@@ -20,7 +20,7 @@ export interface ContextReferenceSummary {
 export interface ContextResult extends ResultWithDiagnostics {
   readonly identity: SymbolIdentity;
   readonly target: SymbolOverviewNode;
-  readonly definitions: readonly SymbolOverviewNode[];
+  readonly definitions: readonly DefinitionSymbol[];
   readonly callers: CappedCertainCallEdges;
   readonly callees: CappedCertainCallEdges;
   readonly references: ContextReferenceSummary;

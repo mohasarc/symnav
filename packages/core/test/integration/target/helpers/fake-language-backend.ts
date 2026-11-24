@@ -7,18 +7,26 @@ import type {
   OverviewFileEntries,
   SymbolReference,
   ResolvedPath,
+  SymbolIdentity,
   SymbolOverviewNode,
 } from "../../../../src/index.js";
+
+type CollapsedTargetIdentity = (
+  candidates: readonly SymbolIdentity[],
+) => SymbolIdentity | undefined;
 
 export interface FakeLanguageBackendOptions {
   accept?: (filePath: string) => boolean;
   entries?: (filePath: string) => OverviewFileEntries;
   declarations?: readonly SymbolOverviewNode[];
+  collapsedTargetIdentity?: CollapsedTargetIdentity;
 }
 
 export class FakeLanguageBackend implements LanguageBackend {
   readonly calls: string[] = [];
   readonly declarationCalls: string[][] = [];
+  readonly collapseCalls: (readonly SymbolIdentity[])[] = [];
+  readonly collapsedTargetIdentity?: CollapsedTargetIdentity;
   private readonly acceptFn: (filePath: string) => boolean;
   private readonly entriesFn: (filePath: string) => OverviewFileEntries;
   private readonly declarationSymbols: readonly SymbolOverviewNode[];
@@ -27,6 +35,13 @@ export class FakeLanguageBackend implements LanguageBackend {
     this.acceptFn = options.accept ?? (() => true);
     this.entriesFn = options.entries ?? ((filePath: string) => ({ file: filePath, entries: [] }));
     this.declarationSymbols = options.declarations ?? [];
+    const collapse = options.collapsedTargetIdentity;
+    if (collapse) {
+      this.collapsedTargetIdentity = (candidates) => {
+        this.collapseCalls.push(candidates);
+        return collapse(candidates);
+      };
+    }
   }
 
   accepts(filePath: string): boolean {

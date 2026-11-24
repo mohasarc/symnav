@@ -25,6 +25,7 @@ export interface FindCalleesArgs {
   readonly workspaceState: TypeScriptWorkspaceState;
   readonly files: readonly ResolvedPath[];
   readonly identity: SymbolIdentity;
+  readonly counterparts: readonly SymbolIdentity[];
   readonly definitionResolver?: PositionDefinitionResolver;
 }
 
@@ -64,9 +65,14 @@ class CalleeFinder {
   }
 
   private targetBodyNode(): Node | undefined {
-    const matches = this.workspaceState.locate(this.args.identity);
+    const matches = [this.args.identity, ...this.args.counterparts].flatMap((identity) =>
+      this.workspaceState.locate(identity),
+    );
     const withBody = matches.find((match) => carriesBody(match.node));
-    return (withBody ?? matches[0])?.node;
+    const outsideDeclarationFile = matches.find(
+      (match) => !match.node.getSourceFile().isDeclarationFile(),
+    );
+    return (withBody ?? outsideDeclarationFile ?? matches[0])?.node;
   }
 
   private edgesFrom(bodyNode: Node): readonly CallEdge[] {

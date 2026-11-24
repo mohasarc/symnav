@@ -151,16 +151,23 @@ export class PairedSymbolMatcher {
     return new Set(
       this.workspaceState
         .locate(identity)
-        .flatMap(({ node }) => (Node.isStaticable(node) ? [node.isStatic()] : [])),
+        .flatMap(({ node }) => PairedSymbolMatcher.memberStaticness(node)),
     );
+  }
+
+  private static memberStaticness(node: Node): readonly boolean[] {
+    if (Node.isStaticable(node)) return [node.isStatic()];
+    const statement = Node.isVariableDeclaration(node) ? node.getVariableStatement() : node;
+    const isNamespaceMember = Node.isModuleBlock(statement?.getParent());
+    return isNamespaceMember ? [true] : [];
   }
 
   private static staticnessOverlaps(
     targetStaticness: ReadonlySet<boolean>,
     memberStaticness: ReadonlySet<boolean>,
   ): boolean {
-    const eitherIsNotClassMember = targetStaticness.size === 0 || memberStaticness.size === 0;
-    if (eitherIsNotClassMember) return true;
+    const eitherStaticnessIsUnknown = targetStaticness.size === 0 || memberStaticness.size === 0;
+    if (eitherStaticnessIsUnknown) return true;
     return [...memberStaticness].some((isStatic) => targetStaticness.has(isStatic));
   }
 

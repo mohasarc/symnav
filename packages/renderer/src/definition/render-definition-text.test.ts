@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 
-import type { DefinitionResult, Header, SymbolOverviewNode, SymbolPathSegment } from "@symnav/core";
+import type {
+  DefinitionResult,
+  DefinitionSymbol,
+  Header,
+  SymbolOverviewNode,
+  SymbolPathSegment,
+} from "@symnav/core";
 
 import { renderDefinitionText } from "./render-definition-text.js";
 
@@ -26,6 +32,50 @@ function decl(input: DeclInput): SymbolOverviewNode {
 }
 
 describe("renderDefinitionText", () => {
+  it("tags both halves of a declaration and implementation pair by pair role", () => {
+    const implementation: DefinitionSymbol = {
+      ...decl({
+        file: "src/Tabs/Tabs.js",
+        segments: [{ name: "Tabs" }],
+        nativeLabel: "variable",
+        startLine: 3,
+        endLine: 9,
+        header: ["const Tabs = React.forwardRef(function Tabs(props, ref) {"],
+      }),
+      pairRole: "implementation",
+    };
+    const declaration: DefinitionSymbol = {
+      ...decl({
+        file: "src/Tabs/Tabs.d.ts",
+        segments: [{ name: "Tabs" }],
+        nativeLabel: "function-overload-signature",
+        startLine: 4,
+        endLine: 4,
+        header: ["declare function Tabs(props: TabsProps): JSX.Element;"],
+      }),
+      pairRole: "declaration",
+    };
+    const result: DefinitionResult = {
+      identity: { file: "src/Tabs/Tabs.d.ts", segments: [{ name: "Tabs" }] },
+      symbols: [implementation, declaration],
+    };
+
+    expect(renderDefinitionText(result)).toBe(
+      [
+        "Definition: Tabs",
+        "",
+        "src/Tabs/Tabs.js",
+        "└── 3-9: Tabs  [implementation]",
+        "    const Tabs = React.forwardRef(function Tabs(props, ref) {",
+        "",
+        "src/Tabs/Tabs.d.ts",
+        "└── 4: Tabs  [declaration]",
+        "    declare function Tabs(props: TabsProps): JSX.Element;",
+        "",
+      ].join("\n"),
+    );
+  });
+
   it("renders the overloaded Router::post example with bracket tags", () => {
     const result: DefinitionResult = {
       identity: { file: "src/http/Router.ts", segments: [{ name: "Router" }, { name: "post" }] },

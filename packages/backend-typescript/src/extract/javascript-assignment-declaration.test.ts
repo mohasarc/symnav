@@ -3,6 +3,7 @@ import {
   Node,
   Project,
   ts,
+  type BinaryExpression,
   type ObjectLiteralExpression,
   type SourceFile,
   type Symbol,
@@ -964,6 +965,24 @@ describe("CommonJS export declarations against the TypeScript binder", () => {
         "module.exports.bar = 2;",
         'Object.defineProperty(exports, "baz", { value: 3 });',
         "export const real = helper;",
+        "this.local = 4;",
+      ],
+    ],
+    [
+      "module-level this-properties",
+      [
+        "this.early = 1;",
+        "exports.a = 2;",
+        "this.after = 3;",
+        'this["lit"] = 4;',
+        "this[dynamic] = 5;",
+        "this.gone = void 0;",
+        "if (ready) { this.inBlock = 6; }",
+        "function init() { this.notExport = 7; }",
+        "const arrow = () => { this.arrowed = 8; };",
+        "this.after = 9;",
+        "function local() {}",
+        "this.local = local;",
       ],
     ],
   ])("lists exactly the exports the binder declares for %s", (_case, lines) => {
@@ -1102,8 +1121,38 @@ describe("expando member declarations against the TypeScript binder", () => {
         "  this.x = 1;",
         "  var self = this;",
         "  self.y = 2;",
+        "  this.x = 3;",
+        '  this["lit"] = 4;',
+        "  this[dynamic] = 5;",
+        "  this.gone = void 0;",
+        "  const arrow = () => { this.arrowed = 6; };",
+        "  function inner() { this.innerOwn = 7; }",
         "}",
         "Foo.prototype.z = 3;",
+        "Foo.prototype.meth = function () { this.fromMethod = 1; this.z = 2; };",
+        "Foo.s = function () { this.onStatic = 1; };",
+        "var Bar = function () { this.barOwn = 1; this.dup = 2; };",
+        "Bar.prototype.dup = 3;",
+        "exports.Qux = function () { this.quxOwn = 1; };",
+        "[1].forEach(function () { this.callback = 1; });",
+        "var o = { m() { this.onObject = 1; } };",
+        "function Proto() {}",
+        "Proto.prototype = { m() { this.onPrototypeObject = 1; } };",
+        "class Cls {",
+        "  declared = 0;",
+        "  #hidden;",
+        "  field = this.fromField = 1;",
+        "  constructor() {",
+        "    this.declared = 1;",
+        "    this.bound = this.bound.bind(this);",
+        "    this.own = 2;",
+        "    this.#hidden = 3;",
+        "  }",
+        "  bound() {}",
+        "  static make() { this.shared = 1; }",
+        "  static { this.fromBlock = 1; }",
+        "}",
+        "var Expr = class { constructor() { this.exprOwn = 1; } };",
       ],
     ],
   ])("lists exactly the expando members the binder declares for %s", (_case, lines) => {
@@ -1157,13 +1206,18 @@ function isExpandoMemberNode(node: Node): boolean {
 }
 
 function isModuleLevelExport(node: Node): boolean {
-  const symbol = (node.compilerNode as BoundNode).symbol;
+  const declaringNode = isThisAccess(node) ? node.getParentOrThrow() : node;
+  const symbol = (declaringNode.compilerNode as BoundNode).symbol;
   return symbol?.parent === (node.getSourceFile().compilerNode as BoundNode).symbol;
 }
 
 function binderMembers(sourceFile: SourceFile): readonly string[] {
   const members: string[] = [];
   sourceFile.forEachDescendant((node) => {
+    if (Node.isBinaryExpression(node) && isThisAccess(node.getLeft())) {
+      members.push(...binderThisMember(node));
+      return;
+    }
     const symbol = (node.compilerNode as BoundNode).symbol;
     const container = symbol?.parent;
     const declaresMember =
@@ -1192,6 +1246,73 @@ function binderMembers(sourceFile: SourceFile): readonly string[] {
     }
   });
   return members.sort();
+}
+
+function isThisAccess(node: Node): boolean {
+  const isAccess = Node.isPropertyAccessExpression(node) || Node.isElementAccessExpression(node);
+  return isAccess && Node.isThisExpression(node.getExpression());
+}
+
+function binderThisMember(assignment: BinaryExpression): readonly string[] {
+  const target = assignment.getLeft();
+  const symbol = (assignment.compilerNode as BoundNode).symbol;
+  const container = symbol?.parent;
+  if (!symbol || !container || isModuleLevelExport(target)) return [];
+  const name = ts.symbolName(symbol);
+  const isCurrentMember =
+    container.members?.get(symbol.escapedName) === symbol ||
+    container.exports?.get(symbol.escapedName) === symbol;
+  const ownerName = thisContainerName(container);
+  const isListed =
+    isCurrentMember &&
+    ownerName !== undefined &&
+    !ownerVariableDeclares(container, symbol) &&
+    firstThisAssignment(symbol) === assignment.compilerNode &&
+    hasLiteralName(target) &&
+    spellsCanonicalId(name);
+  return isListed ? [`${ownerName}::${name}@${target.getStartLineNumber()}`] : [];
+}
+
+function firstThisAssignment(symbol: BoundSymbol): ts.Node | undefined {
+  const declarations = symbol.declarations ?? [];
+  const declaresOnlyThroughThis = declarations.every((declaration) => {
+    const declaringAccess = ts.isBinaryExpression(declaration) ? declaration.left : declaration;
+    return (
+      (ts.isPropertyAccessExpression(declaringAccess) ||
+        ts.isElementAccessExpression(declaringAccess)) &&
+      declaringAccess.expression.kind === ts.SyntaxKind.ThisKeyword
+    );
+  });
+  if (!declaresOnlyThroughThis) return undefined;
+  return declarations.filter(ts.isBinaryExpression).sort((left, right) => left.pos - right.pos)[0];
+}
+
+function hasLiteralName(target: Node): boolean {
+  if (!Node.isElementAccessExpression(target)) return true;
+  const argument = target.getArgumentExpression();
+  return Node.isStringLiteral(argument) || Node.isNumericLiteral(argument);
+}
+
+function thisContainerName(container: BoundSymbol): string | undefined {
+  const declaration = container.valueDeclaration;
+  if (!declaration || !ts.isFunctionExpression(declaration)) {
+    return isListableContainer(container) ? ts.symbolName(container) : undefined;
+  }
+  const owner = declaration.parent;
+  if (ts.isVariableDeclaration(owner) && ts.isIdentifier(owner.name)) return owner.name.text;
+  const assignsFunction =
+    ts.isBinaryExpression(owner) &&
+    owner.operatorToken.kind === ts.SyntaxKind.EqualsToken &&
+    owner.right === declaration &&
+    ts.isPropertyAccessExpression(owner.left);
+  return assignsFunction ? owner.left.name.text : undefined;
+}
+
+function ownerVariableDeclares(container: BoundSymbol, member: BoundSymbol): boolean {
+  const owner = container.valueDeclaration?.parent;
+  if (!owner || !ts.isVariableDeclaration(owner)) return false;
+  const ownerSymbol = (owner as ts.Node as BoundNode).symbol;
+  return ownerSymbol?.members?.has(member.escapedName) ?? false;
 }
 
 function isListableContainer(container: BoundSymbol): boolean {
@@ -1274,10 +1395,17 @@ function binderExports(sourceFile: SourceFile): readonly string[] {
       if (aliasesSameNameLocal(exported) || !spellsCanonicalId(exported.getName())) return [];
       return exported
         .getDeclarations()
+        .map(declaringAccessOf)
         .filter(isCommonJsDeclarationNode)
         .map((declaration) => `${exported.getName()}@${declaration.getStartLineNumber()}`);
     })
     .sort();
+}
+
+function declaringAccessOf(declaration: Node): Node {
+  const isThisAssignment =
+    Node.isBinaryExpression(declaration) && isThisAccess(declaration.getLeft());
+  return isThisAssignment ? declaration.getLeft() : declaration;
 }
 
 function exportEqualsDeclarations(exportEquals: Symbol): readonly string[] {

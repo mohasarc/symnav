@@ -463,6 +463,79 @@ describe("expando prototype members in overview", () => {
   });
 });
 
+describe("expando prototype object members in overview", () => {
+  it("lists the members of an object assigned to Foo.prototype under the function", () => {
+    const source = [
+      "function Foo() {}",
+      "const qux = 3;",
+      "Foo.prototype = {",
+      "  bar(a) {",
+      "    return a;",
+      "  },",
+      "  baz: 1,",
+      "  get size() { return 2; },",
+      "  qux,",
+      '  ["lit"]: function () {},',
+      "  ...rest,",
+      "};",
+    ].join("\n");
+
+    expect(
+      summariesOf(source).map((summary) => [
+        summary.id,
+        summary.label,
+        summary.range,
+        summary.header,
+      ]),
+    ).toEqual([
+      ["input.js::Foo", "function-implementation", [1, 1], ["function Foo()"]],
+      ["input.js::Foo::bar", "method-implementation", [4, 6], ["bar(a)"]],
+      ["input.js::Foo::baz", "property", [7, 7], ["baz: 1"]],
+      ["input.js::Foo::size", "getter", [8, 8], ["get size()"]],
+      ["input.js::Foo::qux", "property", [9, 9], ["qux"]],
+      ["input.js::Foo::lit", "method-implementation", [10, 10], ['["lit"]: function () {}']],
+      ["input.js::qux", "variable", [2, 2], ["const qux = 3"]],
+    ]);
+  });
+
+  it.each([
+    ["a class declaration", "class Foo {}"],
+    ["a function expression", "var Foo = function () {};"],
+  ])("lists prototype object members of a container declared as %s", (_container, declaration) => {
+    expect(idsOf(`${declaration}\nFoo.prototype = { m() {} };`)).toEqual([
+      "input.js::Foo",
+      "input.js::Foo::m",
+    ]);
+  });
+
+  it("lists the members of a chained prototype object under the container assigned it directly", () => {
+    const source = [
+      "function Foo() {}",
+      "function Bar() {}",
+      "Foo.prototype = Bar.prototype = { m() {} };",
+    ].join("\n");
+
+    expect(idsOf(source)).toEqual(["input.js::Foo", "input.js::Bar", "input.js::Bar::m"]);
+  });
+
+  it("nests declarations from a prototype object method's body under the member", () => {
+    const source = [
+      "function Foo() {}",
+      "Foo.prototype = {",
+      "  m() {",
+      "    function helper() {}",
+      "  },",
+      "};",
+    ].join("\n");
+
+    expect(idsOf(source)).toEqual([
+      "input.js::Foo",
+      "input.js::Foo::m",
+      "input.js::Foo::m::helper",
+    ]);
+  });
+});
+
 describe("CommonJS export declarations against the TypeScript binder", () => {
   it.each([
     [

@@ -107,6 +107,10 @@ export class TypeScriptWorkspaceState extends RevisionedBackendState<TypeScriptP
     return this.relativePathForAbsolute(sourceFile.getFilePath());
   }
 
+  relativePathOfAbsolute(absolutePath: string): string | undefined {
+    return this.relativePathForAbsolute(absolutePath);
+  }
+
   protected createPreparation(
     request: RevisionedBackendPreparationRequest<TypeScriptPreparedFileDetails>,
   ): RevisionedBackendPreparation<TypeScriptPreparedFileDetails> {

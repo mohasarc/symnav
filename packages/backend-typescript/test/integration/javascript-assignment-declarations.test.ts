@@ -541,6 +541,23 @@ describe("TypeScriptBackend this-property member declarations", () => {
   });
 });
 
+describe("TypeScriptBackend callees of constructor functions", () => {
+  it.each([
+    ["a function declaration", "function Foo(a) {\n  this.a = a;\n}\n"],
+    ["a function expression", "var Foo = function (a) {\n  this.a = a;\n};\n"],
+  ])("lists new on %s as a callee", async (_form, constructorSource) => {
+    const { backend, files } = await backendOverSources({
+      "src/lib.js": `${constructorSource}function make() {\n  return new Foo(1);\n}\n`,
+    });
+
+    const callees = await backend.findCallees(files, identity("src/lib.js", "make"));
+
+    expect(callees.map((edge) => formatSymbolIdentity(edge.symbol.identity))).toEqual([
+      "src/lib.js::Foo",
+    ]);
+  });
+});
+
 describe("TypeScriptBackend JSDoc type alias declarations", () => {
   it("resolves @typedef and @callback targets and finds their import type users", async () => {
     const { backend, files } = await backendOverSources({

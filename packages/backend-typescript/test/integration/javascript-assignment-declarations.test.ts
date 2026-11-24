@@ -187,9 +187,7 @@ describe("TypeScriptBackend CommonJS export declarations", () => {
       ]);
       expect(referenceLocations(references)).toEqual([
         "src/imported.ts:1",
-        "src/imported.ts:1",
         "src/imported.ts:2",
-        "src/required.js:1",
         "src/required.js:1",
         "src/required.js:2",
       ]);
@@ -198,11 +196,7 @@ describe("TypeScriptBackend CommonJS export declarations", () => {
 
   it.each([
     ["a module.exports shorthand member", "module.exports = { helper };\n", ["src/lib.js:2"]],
-    [
-      "a same-name exports property",
-      "exports.helper = helper;\n",
-      ["src/lib.js:2", "src/lib.js:2"],
-    ],
+    ["a same-name exports property", "exports.helper = helper;\n", ["src/lib.js:2"]],
   ])(
     "finds require and import users of a local exported as %s",
     async (_form, exportSource, exportSiteLocations) => {
@@ -273,6 +267,38 @@ describe("TypeScriptBackend CommonJS export declarations", () => {
     expect(callers.map((edge) => formatSymbolIdentity(edge.symbol.identity))).toEqual([
       "src/use.js::direct",
       "src/use.js::member",
+    ]);
+  });
+
+  it("lists a CommonJS-exported local once per importer line", async () => {
+    const { backend, files } = await backendOverSources({
+      "src/lib.js": "function foo() { return 1; }\nexports.foo = foo;\n",
+      "src/use.js": "const { foo } = require('./lib');\nfoo();\n",
+    });
+
+    const references = await backend.findReferences(files, identity("src/lib.js", "foo"));
+
+    expect(referenceLocations(references)).toEqual([
+      "src/lib.js:2",
+      "src/use.js:1",
+      "src/use.js:2",
+    ]);
+  });
+
+  it("lists a module.exports value once per importer line", async () => {
+    const { backend, files } = await backendOverSources({
+      "src/lib.js": "module.exports = function build() { return 1; };\n",
+      "src/use.js": "const build = require('./lib');\nbuild();\n",
+      "src/use.mjs": "import build from './lib.js';\nbuild();\n",
+    });
+
+    const references = await backend.findReferences(files, identity("src/lib.js", "default"));
+
+    expect(referenceLocations(references)).toEqual([
+      "src/use.js:1",
+      "src/use.js:2",
+      "src/use.mjs:1",
+      "src/use.mjs:2",
     ]);
   });
 

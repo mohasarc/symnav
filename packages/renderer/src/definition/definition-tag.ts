@@ -10,6 +10,8 @@ const TAG_BY_LABEL: ReadonlyMap<string, string> = new Map([
   ["constructor-overload-signature", "overload"],
 ]);
 
-export function bracketTagFor(symbol: Pick<DefinitionSymbol, "kind">): string | undefined {
-  return TAG_BY_LABEL.get(symbol.kind.nativeLabel);
+export function bracketTagFor(
+  symbol: Pick<DefinitionSymbol, "kind" | "pairRole">,
+): string | undefined {
+  return symbol.pairRole ?? TAG_BY_LABEL.get(symbol.kind.nativeLabel);
 }

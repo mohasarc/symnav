@@ -3,10 +3,11 @@ import {
   SyntaxKind,
   ts,
   type BinaryExpression,
+  type ElementAccessExpression,
   type PropertyAccessExpression,
   type SourceFile,
 } from "ts-morph";
-import type { LineRange } from "@symnav/core";
+import { SEGMENT_SEPARATOR, parseSegment, type LineRange } from "@symnav/core";
 
 import { collapseInitializerSource } from "./collapse-initializer-source.js";
 
@@ -45,14 +46,14 @@ export class JavaScriptAssignmentDeclarations {
   }
 
   private static declarationOf(node: Node): JavaScriptAssignmentDeclaration | undefined {
-    if (Node.isPropertyAccessExpression(node)) {
+    if (Node.isPropertyAccessExpression(node) || Node.isElementAccessExpression(node)) {
       return JavaScriptAssignmentDeclarations.exportProperty(node);
     }
     return undefined;
   }
 
   private static exportProperty(
-    target: PropertyAccessExpression,
+    target: PropertyAccessExpression | ElementAccessExpression,
   ): JavaScriptAssignmentDeclaration | undefined {
     const assignment = target.getParent();
     const isAssignmentTarget =
@@ -61,7 +62,8 @@ export class JavaScriptAssignmentDeclarations {
     if (!JavaScriptAssignmentDeclarations.isExportsObject(target.getExpression())) return undefined;
     const value = JavaScriptAssignmentDeclarations.assignedValue(assignment);
     if (JavaScriptAssignmentDeclarations.isVoidZero(value)) return undefined;
-    const name = target.getName();
+    const name = JavaScriptAssignmentDeclarations.staticAccessName(target);
+    if (name === undefined) return undefined;
     if (JavaScriptAssignmentDeclarations.aliasesSameNameLocal(value, name)) return undefined;
     const statement = target.getFirstAncestor(Node.isStatement);
     if (!statement) return undefined;
@@ -100,11 +102,38 @@ export class JavaScriptAssignmentDeclarations {
   }
 
   private static isModuleExports(node: Node): boolean {
-    return (
-      Node.isPropertyAccessExpression(node) &&
-      node.getName() === "exports" &&
-      Node.isIdentifier(node.getExpression()) &&
-      node.getExpression().getText() === "module"
-    );
+    const isStaticAccess =
+      Node.isPropertyAccessExpression(node) || Node.isElementAccessExpression(node);
+    if (!isStaticAccess) return false;
+    const owner = node.getExpression();
+    const ownerIsModule = Node.isIdentifier(owner) && owner.getText() === "module";
+    return ownerIsModule && JavaScriptAssignmentDeclarations.staticAccessName(node) === "exports";
+  }
+
+  private static staticAccessName(
+    access: PropertyAccessExpression | ElementAccessExpression,
+  ): string | undefined {
+    if (Node.isPropertyAccessExpression(access)) return access.getName();
+    return JavaScriptAssignmentDeclarations.literalName(access.getArgumentExpression());
+  }
+
+  private static literalName(node: Node | undefined): string | undefined {
+    const isLiteral =
+      Node.isStringLiteral(node) ||
+      Node.isNoSubstitutionTemplateLiteral(node) ||
+      Node.isNumericLiteral(node);
+    if (!isLiteral) return undefined;
+    const name = node.compilerNode.text;
+    return JavaScriptAssignmentDeclarations.spellsCanonicalSegment(name) ? name : undefined;
+  }
+
+  private static spellsCanonicalSegment(name: string): boolean {
+    if (name.length === 0 || name.includes(SEGMENT_SEPARATOR)) return false;
+    try {
+      const segment = parseSegment(name, name);
+      return segment.name === name && segment.disambiguator === undefined;
+    } catch {
+      return false;
+    }
   }
 }

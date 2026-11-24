@@ -2,6 +2,7 @@ import {
   Node,
   SyntaxKind,
   type Block,
+  type ts,
   type ExpressionStatement,
   type TryStatement,
   type VariableDeclaration,
@@ -26,10 +27,14 @@ import { ReExportEntryExtractor } from "./extract-re-export-entry.js";
 import { extractSignatureSource } from "./extract-signature-source.js";
 import { extractVariableSignature } from "./extract-variable-signature.js";
 import { FoldNodeKind, type TypeScriptFoldKind } from "./fold-node-kind.js";
+import {
+  JavaScriptAssignmentDeclarations,
+  type JavaScriptAssignmentDeclaration,
+} from "./javascript-assignment-declaration.js";
 import { nodeKind } from "./node-kind.js";
 import { refineLabel } from "./refine-label.js";
 import { statementCallExpression, trailingCallbackBody } from "./trailing-callback.js";
-import { roleOf } from "./typescript-symbol-kind.js";
+import { roleOf, type TypeScriptSymbolKind } from "./typescript-symbol-kind.js";
 
 export class OverviewChildrenExtractor {
   private static readonly IGNORED_STATEMENT_KINDS: ReadonlySet<SyntaxKind> = new Set([
@@ -54,6 +59,13 @@ export class OverviewChildrenExtractor {
 
   private readonly file: string;
   private readonly diagnostics: DiagnosticSink | undefined;
+  private assignmentDeclarationsByStatement = new Map<ts.Node, JavaScriptAssignmentDeclaration[]>();
+  private assignmentDeclarationsByTopLevelStatement = new Map<
+    ts.Node,
+    JavaScriptAssignmentDeclaration[]
+  >();
+  private readonly emittedAssignmentDeclarations = new Set<ts.Node>();
+  private readonly declarationNodes = new Map<SymbolOverviewNode, Node>();
 
   constructor(args: { file: string; diagnostics?: DiagnosticSink | undefined }) {
     this.file = args.file;
@@ -61,7 +73,31 @@ export class OverviewChildrenExtractor {
   }
 
   extract(nodes: readonly Node[]): readonly OverviewNode[] {
-    return this.extractNodes({ nodes, symbolSegments: [], category: "statement" });
+    const sourceFile = nodes[0]?.getSourceFile();
+    const assignmentDeclarations = sourceFile
+      ? JavaScriptAssignmentDeclarations.ofSourceFile(sourceFile)
+      : [];
+    this.assignmentDeclarationsByStatement = OverviewChildrenExtractor.groupedBy(
+      assignmentDeclarations,
+      (declaration) => declaration.statement.compilerNode,
+    );
+    this.assignmentDeclarationsByTopLevelStatement = OverviewChildrenExtractor.groupedBy(
+      assignmentDeclarations,
+      (declaration) => OverviewChildrenExtractor.topLevelStatementOf(declaration.statement),
+    );
+    return nodes.flatMap((node) => [
+      ...this.toOverviewNode({ node, symbolSegments: [], category: "statement" }),
+      ...this.hoistedAssignmentDeclarations(node),
+    ]);
+  }
+
+  declarationNodeOf(symbol: SymbolOverviewNode): Node | undefined {
+    return this.declarationNodes.get(symbol);
+  }
+
+  private declared<T extends SymbolOverviewNode>(symbol: T, node: Node): T {
+    this.declarationNodes.set(symbol, node);
+    return symbol;
   }
 
   private extractNodes(args: {
@@ -82,6 +118,13 @@ export class OverviewChildrenExtractor {
     const { node, symbolSegments, category } = args;
     const kind = nodeKind(node);
     if (kind) return this.toSymbolNodes(node, kind, symbolSegments);
+
+    const assignmentDeclarations = this.moduleScopeAssignmentDeclarations(node, symbolSegments);
+    if (assignmentDeclarations.length > 0) {
+      return assignmentDeclarations.map((declaration) =>
+        this.buildAssignmentDeclarationNode(declaration),
+      );
+    }
 
     const foldKind = FoldNodeKind.of(node);
     if (foldKind) return this.toFoldNodes(node, foldKind, symbolSegments);
@@ -126,14 +169,63 @@ export class OverviewChildrenExtractor {
     const name = OverviewChildrenExtractor.nodeName(node);
     const refined = refineLabel(node, kind);
     const childSegments = [...symbolSegments, { name }];
-    return {
-      type: "symbol",
-      identity: this.identityFor(childSegments),
-      kind: { role: roleOf(refined), nativeLabel: refined },
-      range,
-      header: OverviewChildrenExtractor.headerFrom(range.startLine, extractSignatureSource(node)),
-      children: this.symbolChildren(node, childSegments),
-    };
+    return this.declared(
+      {
+        type: "symbol",
+        identity: this.identityFor(childSegments),
+        kind: { role: roleOf(refined), nativeLabel: refined },
+        range,
+        header: OverviewChildrenExtractor.headerFrom(range.startLine, extractSignatureSource(node)),
+        children: this.symbolChildren(node, childSegments),
+      },
+      node,
+    );
+  }
+
+  private moduleScopeAssignmentDeclarations(
+    statement: Node,
+    symbolSegments: readonly SymbolPathSegment[],
+  ): readonly JavaScriptAssignmentDeclaration[] {
+    const isModuleScope = symbolSegments.length === 0;
+    if (!isModuleScope) return [];
+    const declarations = this.assignmentDeclarationsByStatement.get(statement.compilerNode) ?? [];
+    for (const declaration of declarations) {
+      this.emittedAssignmentDeclarations.add(declaration.declarationNode.compilerNode);
+    }
+    return declarations;
+  }
+
+  private hoistedAssignmentDeclarations(topLevelStatement: Node): readonly SymbolOverviewNode[] {
+    const declarations =
+      this.assignmentDeclarationsByTopLevelStatement.get(topLevelStatement.compilerNode) ?? [];
+    return declarations
+      .filter(
+        (declaration) =>
+          !this.emittedAssignmentDeclarations.has(declaration.declarationNode.compilerNode),
+      )
+      .map((declaration) => this.buildAssignmentDeclarationNode(declaration));
+  }
+
+  private buildAssignmentDeclarationNode(
+    declaration: JavaScriptAssignmentDeclaration,
+  ): SymbolOverviewNode {
+    const range = JavaScriptAssignmentDeclarations.rangeOf(declaration);
+    const segments = [{ name: declaration.name }];
+    const label = OverviewChildrenExtractor.assignmentDeclarationLabel(declaration);
+    return this.declared(
+      {
+        type: "symbol",
+        identity: this.identityFor(segments),
+        kind: { role: roleOf(label), nativeLabel: label },
+        range,
+        header: OverviewChildrenExtractor.headerFrom(
+          range.startLine,
+          JavaScriptAssignmentDeclarations.signatureOf(declaration),
+        ),
+        children: this.functionValueChildren(declaration.value, segments),
+      },
+      declaration.declarationNode,
+    );
   }
 
   private symbolChildren(
@@ -302,17 +394,20 @@ export class OverviewChildrenExtractor {
     const range = OverviewChildrenExtractor.nodeRange(statement);
     return declList.getDeclarations().map((decl) => {
       const childSegments = [...symbolSegments, { name: decl.getName() }];
-      return {
-        type: "symbol",
-        identity: this.identityFor(childSegments),
-        kind: { role: roleOf("variable"), nativeLabel: "variable" },
-        range,
-        header: OverviewChildrenExtractor.headerFrom(
-          range.startLine,
-          extractVariableSignature({ statement, declaration: decl }),
-        ),
-        children: this.variableInitializerChildren(decl, childSegments),
-      };
+      return this.declared(
+        {
+          type: "symbol",
+          identity: this.identityFor(childSegments),
+          kind: { role: roleOf("variable"), nativeLabel: "variable" },
+          range,
+          header: OverviewChildrenExtractor.headerFrom(
+            range.startLine,
+            extractVariableSignature({ statement, declaration: decl }),
+          ),
+          children: this.variableInitializerChildren(decl, childSegments),
+        },
+        decl,
+      );
     });
   }
 
@@ -345,11 +440,62 @@ export class OverviewChildrenExtractor {
     };
   }
 
+  private static groupedBy(
+    declarations: readonly JavaScriptAssignmentDeclaration[],
+    keyOf: (declaration: JavaScriptAssignmentDeclaration) => ts.Node,
+  ): Map<ts.Node, JavaScriptAssignmentDeclaration[]> {
+    const grouped = new Map<ts.Node, JavaScriptAssignmentDeclaration[]>();
+    for (const declaration of declarations) {
+      const key = keyOf(declaration);
+      const group = grouped.get(key);
+      if (group) group.push(declaration);
+      else grouped.set(key, [declaration]);
+    }
+    return grouped;
+  }
+
+  private static topLevelStatementOf(statement: Node): ts.Node {
+    let topLevel = statement.compilerNode;
+    while (topLevel.parent && topLevel.parent.kind !== SyntaxKind.SourceFile) {
+      topLevel = topLevel.parent;
+    }
+    return topLevel;
+  }
+
+  private static assignmentDeclarationLabel(
+    declaration: JavaScriptAssignmentDeclaration,
+  ): TypeScriptSymbolKind {
+    if (declaration.form === "module-exports") return "default-export";
+    if (Node.isGetAccessorDeclaration(declaration.value)) return "getter";
+    if (Node.isSetAccessorDeclaration(declaration.value)) return "setter";
+    if (OverviewChildrenExtractor.isFunctionValue(declaration.value)) {
+      return "function-implementation";
+    }
+    return "variable";
+  }
+
+  private static isFunctionValue(expression: Node): boolean {
+    if (Node.isParenthesizedExpression(expression)) {
+      return OverviewChildrenExtractor.isFunctionValue(expression.getExpression());
+    }
+    return (
+      Node.isArrowFunction(expression) ||
+      Node.isFunctionExpression(expression) ||
+      Node.isMethodDeclaration(expression)
+    );
+  }
+
   private static functionValueBody(expression: Node): Block | undefined {
     if (Node.isParenthesizedExpression(expression)) {
       return OverviewChildrenExtractor.functionValueBody(expression.getExpression());
     }
-    if (Node.isArrowFunction(expression) || Node.isFunctionExpression(expression)) {
+    const isFunctionValue =
+      Node.isArrowFunction(expression) ||
+      Node.isFunctionExpression(expression) ||
+      Node.isMethodDeclaration(expression) ||
+      Node.isGetAccessorDeclaration(expression) ||
+      Node.isSetAccessorDeclaration(expression);
+    if (isFunctionValue) {
       const body = expression.getBody();
       return Node.isBlock(body) ? body : undefined;
     }

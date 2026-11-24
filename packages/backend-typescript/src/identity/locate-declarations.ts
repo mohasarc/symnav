@@ -1,4 +1,4 @@
-import { Node, type SourceFile } from "ts-morph";
+import { Node, type SourceFile, type SyntaxKind } from "ts-morph";
 import {
   OverviewTree,
   type OverviewNode,
@@ -6,6 +6,14 @@ import {
   type SymbolIdentity,
   type SymbolPathSegment,
 } from "@symnav/core";
+
+import { JavaScriptAssignmentDeclarations } from "../extract/javascript-assignment-declaration.js";
+
+export interface DeclarationSpan {
+  readonly start: number;
+  readonly end: number;
+  readonly kind: SyntaxKind;
+}
 
 export interface LocatedDeclaration {
   readonly declaration: SymbolOverviewNode;
@@ -25,9 +33,16 @@ export class DeclarationLocator {
 
   constructor(private readonly sourceFile: SourceFile) {}
 
+  static spanOf(declaration: SymbolOverviewNode, node: Node): DeclarationSpan | undefined {
+    const locatable = DeclarationLocator.definitionName(node) === OverviewTree.ownName(declaration);
+    if (!locatable) return undefined;
+    return { start: node.getStart(), end: node.getEnd(), kind: node.getKind() };
+  }
+
   locate(
     identity: SymbolIdentity,
     preparedEntries: readonly OverviewNode[],
+    declarationSpans: ReadonlyMap<SymbolOverviewNode, DeclarationSpan>,
   ): readonly LocatedDeclaration[] {
     const { segments } = identity;
     const ownSegment = segments[segments.length - 1];
@@ -35,53 +50,34 @@ export class DeclarationLocator {
     let candidates = OverviewTree.scopeSymbols(preparedEntries);
     for (const ancestorSegment of segments.slice(0, -1)) {
       candidates = candidates
-        .filter((candidate) => this.ownSegmentMatches(candidate, ancestorSegment))
+        .filter((candidate) => DeclarationLocator.ownSegmentMatches(candidate, ancestorSegment))
         .flatMap((candidate) => OverviewTree.scopeSymbols(candidate.children));
     }
     return candidates
-      .filter((candidate) => this.ownSegmentMatches(candidate, ownSegment))
+      .filter((candidate) => DeclarationLocator.ownSegmentMatches(candidate, ownSegment))
       .flatMap((declaration) => {
-        const node = this.locateDeclarationNode(declaration);
+        const span = declarationSpans.get(declaration);
+        const node = span && this.nodeSpanning(span);
         return node ? [{ declaration, node }] : [];
       });
   }
 
-  locateAll(entries: readonly OverviewNode[]): readonly LocatedDeclaration[] {
-    const declarationsByLineAndName = this.declarationsByLineAndName(entries);
-    const locatedDeclarations: LocatedDeclaration[] = [];
-    this.sourceFile.forEachDescendant((node) => {
-      if (!this.isDefinitionNode(node)) return;
-      const name = this.declarationName(node);
-      if (!name) return;
-      const location = DeclarationLocator.locationKey(node.getStartLineNumber(), name);
-      const declarations = declarationsByLineAndName.get(location);
-      const declaration = declarations?.shift();
-      if (declaration) locatedDeclarations.push({ declaration, node });
-    });
-    return locatedDeclarations;
-  }
-
-  private declarationsByLineAndName(
-    entries: readonly OverviewNode[],
-  ): Map<string, SymbolOverviewNode[]> {
-    const declarationsByLineAndName = new Map<string, SymbolOverviewNode[]>();
-    for (const declaration of OverviewTree.walkSymbols(entries)) {
-      const location = DeclarationLocator.locationKey(
-        declaration.range.startLine,
-        OverviewTree.ownName(declaration),
-      );
-      const declarations = declarationsByLineAndName.get(location) ?? [];
-      declarations.push(declaration);
-      declarationsByLineAndName.set(location, declarations);
+  private nodeSpanning(span: DeclarationSpan): Node | undefined {
+    for (
+      let node: Node | undefined = this.sourceFile.getDescendantAtPos(span.start);
+      node && node.getStart() === span.start;
+      node = node.getParent()
+    ) {
+      const spansDeclaration = node.getEnd() === span.end && node.getKind() === span.kind;
+      if (spansDeclaration) return node;
     }
-    return declarationsByLineAndName;
+    return undefined;
   }
 
-  private static locationKey(line: number, name: string): string {
-    return `${line}:${name}`;
-  }
-
-  private ownSegmentMatches(declaration: SymbolOverviewNode, segment: SymbolPathSegment): boolean {
+  private static ownSegmentMatches(
+    declaration: SymbolOverviewNode,
+    segment: SymbolPathSegment,
+  ): boolean {
     const own = declaration.identity.segments[declaration.identity.segments.length - 1];
     if (!own) return false;
     if (own.name !== segment.name) return false;
@@ -89,20 +85,15 @@ export class DeclarationLocator {
     return own.disambiguator === segment.disambiguator;
   }
 
-  private locateDeclarationNode(declaration: SymbolOverviewNode): Node | undefined {
-    const startLine = declaration.range.startLine;
-    let found: Node | undefined;
-    this.sourceFile.forEachDescendant((node) => {
-      if (found) return;
-      if (!this.isDefinitionNode(node)) return;
-      if (node.getStartLineNumber() !== startLine) return;
-      if (this.declarationName(node) !== OverviewTree.ownName(declaration)) return;
-      found = node;
-    });
-    return found;
+  private static definitionName(node: Node): string | undefined {
+    const assignment = JavaScriptAssignmentDeclarations.declarationAt(node);
+    if (assignment) return assignment.name;
+    return DeclarationLocator.isDefinitionNode(node)
+      ? DeclarationLocator.declarationName(node)
+      : undefined;
   }
 
-  private isDefinitionNode(node: Node): boolean {
+  private static isDefinitionNode(node: Node): boolean {
     return (
       Node.isFunctionDeclaration(node) ||
       Node.isMethodDeclaration(node) ||
@@ -122,7 +113,7 @@ export class DeclarationLocator {
     );
   }
 
-  private declarationName(node: Node): string | undefined {
+  private static declarationName(node: Node): string | undefined {
     if (Node.isConstructorDeclaration(node)) return "constructor";
     if (Node.isExportAssignment(node)) return "default";
     if (

@@ -6,6 +6,7 @@ export {
 export {
   TypeScriptFileEntryExtractor,
   TypeScriptWorkspaceState,
+  type TypeScriptFileExtraction,
   type TypeScriptFileExtractionRequest,
   type TypeScriptFileExtractor,
 } from "./typescript-backend/typescript-workspace-state.js";

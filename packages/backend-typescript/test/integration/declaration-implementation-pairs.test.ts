@@ -311,6 +311,34 @@ describe("TypeScriptBackend declaration and implementation pairs", () => {
       expect(referenceLocations(references)).toEqual(expected);
     },
   );
+
+  it("links every overload of a .d.ts function to its JavaScript twin", async () => {
+    const { backend, files } = await backendOverSources({
+      "src/tabs.js": "export function tabs(x) { return 1; }\nexport const first = tabs();\n",
+      "src/tabs.d.ts":
+        "export declare function tabs(): number;\nexport declare function tabs(x: number): number;\n",
+    });
+    const secondOverload: SymbolIdentity = {
+      file: "src/tabs.d.ts",
+      segments: [{ name: "tabs", disambiguator: 2 }],
+    };
+
+    const references = await backend.findReferences(files, secondOverload);
+
+    expect(referenceLocations(references)).toEqual(["src/tabs.js:2"]);
+  });
+
+  it("links a bare .d.ts target naming an overload family to its JavaScript twin", async () => {
+    const { backend, files } = await backendOverSources(overloadedDeclarationSources);
+
+    const references = await backend.findReferences(files, identity("src/tabs.d.ts", "tabs"));
+
+    expect(referenceLocations(references)).toEqual([
+      "src/tabs.js:2",
+      "src/use.ts:1",
+      "src/use.ts:2",
+    ]);
+  });
 });
 
 const interfaceFirstSources: Readonly<Record<string, string>> = {
@@ -327,6 +355,13 @@ const typeOnlyNamespaceSources: Readonly<Record<string, string>> = {
     "export declare function foo(): number;\nexport declare namespace foo {\n  interface Opts {\n    a: number;\n  }\n}\n",
   "src/use.ts":
     'import { foo } from "./foo";\nexport const value = foo();\nexport let typed: foo.Opts | undefined;\n',
+};
+
+const overloadedDeclarationSources: Readonly<Record<string, string>> = {
+  "src/tabs.js": "export function tabs(x) { return 1; }\nexport const first = tabs();\n",
+  "src/tabs.d.ts":
+    "export declare function tabs(): number;\nexport declare function tabs(x: number): number;\n",
+  "src/use.ts": 'import { tabs } from "./tabs";\nexport const value = tabs();\n',
 };
 
 async function backendOverSources(sources: Readonly<Record<string, string>>): Promise<{

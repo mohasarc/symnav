@@ -11,6 +11,7 @@ import {
   type CallEdge,
   type DefinitionPairRole,
   type DefinitionSymbol,
+  type LanguageBackend,
   type SymbolIdentity,
   type SymbolReference,
   type WorkspaceFile,
@@ -687,6 +688,45 @@ describe("TypeScriptBackend callees of declaration and implementation pairs", ()
   });
 });
 
+describe("TypeScriptBackend target collapse of declaration and implementation pairs", () => {
+  it("collapses both halves of the Tabs pair to the JavaScript implementation", async () => {
+    const { backend } = await backendOverPairFixture();
+
+    const collapsed = collapsedTargetOf(backend, [
+      identity("src/Tabs/Tabs.d.ts", "Tabs"),
+      identity("src/Tabs/Tabs.js", "Tabs"),
+    ]);
+
+    expect(collapsed && formatSymbolIdentity(collapsed)).toBe("src/Tabs/Tabs.js::Tabs");
+  });
+
+  it("collapses both halves of a paired class member to the JavaScript member", async () => {
+    const { backend } = await backendOverSources({
+      "src/tabs.js": "export class Tabs {\n  render() { return 1; }\n}\n",
+      "src/tabs.d.ts": "export declare class Tabs {\n  render(): number;\n}\n",
+    });
+
+    const collapsed = collapsedTargetOf(backend, [
+      identity("src/tabs.d.ts", "Tabs", "render"),
+      identity("src/tabs.js", "Tabs", "render"),
+    ]);
+
+    expect(collapsed && formatSymbolIdentity(collapsed)).toBe("src/tabs.js::Tabs::render");
+  });
+
+  it("collapses every .d.ts overload and the JavaScript twin to the JavaScript twin", async () => {
+    const { backend } = await backendOverSources(overloadedDeclarationSources);
+
+    const collapsed = collapsedTargetOf(backend, [
+      { file: "src/tabs.d.ts", segments: [{ name: "tabs", disambiguator: 1 }] },
+      { file: "src/tabs.d.ts", segments: [{ name: "tabs", disambiguator: 2 }] },
+      identity("src/tabs.js", "tabs"),
+    ]);
+
+    expect(collapsed && formatSymbolIdentity(collapsed)).toBe("src/tabs.js::tabs");
+  });
+});
+
 const interfaceFirstSources: Readonly<Record<string, string>> = {
   "src/foo.js": "export const Foo = () => 1;\nexport const first = Foo();\n",
   "src/foo.d.ts":
@@ -792,6 +832,13 @@ function definitionRoles(
 
 function calleeIdentities(edges: readonly CallEdge[]): readonly string[] {
   return edges.map((edge) => formatSymbolIdentity(edge.symbol.identity));
+}
+
+function collapsedTargetOf(
+  backend: LanguageBackend,
+  candidates: readonly SymbolIdentity[],
+): SymbolIdentity | undefined {
+  return backend.collapsedTargetIdentity?.(candidates);
 }
 
 function identity(file: string, ...names: readonly string[]): SymbolIdentity {

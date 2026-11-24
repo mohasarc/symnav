@@ -306,6 +306,39 @@ describe("TypeScriptBackend expando member declarations", () => {
     ]);
     expect(referenceLocations(references)).toEqual(["src/use.js:2"]);
   });
+
+  it.each([
+    [
+      "an empty object",
+      "const ns = {};\nns.helper = function () { return 1; };\nexports.ns = ns;\n",
+    ],
+    [
+      "a CommonJS export",
+      "exports.ns = function () {};\nexports.ns.helper = function () { return 1; };\n",
+    ],
+  ])(
+    "resolves a namespace member of %s and finds its require users",
+    async (_container, librarySource) => {
+      const { backend, files } = await backendOverSources({
+        "src/lib.js": librarySource,
+        "src/use.js": "const lib = require('./lib');\nlib.ns.helper();\n",
+      });
+
+      const definitions = await backend.findDefinitions(
+        files,
+        identity("src/lib.js", "ns", "helper"),
+      );
+      const references = await backend.findReferences(
+        files,
+        identity("src/lib.js", "ns", "helper"),
+      );
+
+      expect(definitions.map((definition) => formatSymbolIdentity(definition.identity))).toEqual([
+        "src/lib.js::ns::helper",
+      ]);
+      expect(referenceLocations(references)).toEqual(["src/use.js:2"]);
+    },
+  );
 });
 
 async function backendOverSources(sources: Readonly<Record<string, string>>): Promise<{

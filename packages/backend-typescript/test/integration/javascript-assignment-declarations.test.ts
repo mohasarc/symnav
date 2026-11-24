@@ -497,6 +497,72 @@ describe("TypeScriptBackend CommonJS export declarations", () => {
     ]);
   });
 
+  it.each([
+    ["module.exports = minimatch", "module.exports = minimatch;"],
+    ["exports = module.exports = minimatch", "exports = module.exports = minimatch;"],
+    [
+      "a conditional module.exports = minimatch",
+      'if (typeof module !== "undefined") module.exports = minimatch;',
+    ],
+  ])("finds destructured require users of static members after %s", async (_form, exportLine) => {
+    const { backend, files } = await backendOverSources({
+      "src/lib.js": [
+        "function minimatch(p) { return p; }",
+        exportLine,
+        "minimatch.makeRe = function (p) { return p; };",
+        "function Minimatch(p) { this.p = p; }",
+        "minimatch.Minimatch = Minimatch;",
+        "",
+      ].join("\n"),
+      "src/use.js": [
+        "const { makeRe, Minimatch } = require('./lib');",
+        "function useMakeRe() { return makeRe('a'); }",
+        "function useCtor() { return new Minimatch('a'); }",
+        "",
+      ].join("\n"),
+    });
+
+    const makeReCallers = await backend.findCallers(
+      files,
+      identity("src/lib.js", "minimatch", "makeRe"),
+    );
+    const constructorCallers = await backend.findCallers(
+      files,
+      identity("src/lib.js", "Minimatch"),
+    );
+
+    expect(makeReCallers.map((edge) => formatSymbolIdentity(edge.symbol.identity))).toEqual([
+      "src/use.js::useMakeRe",
+    ]);
+    expect(constructorCallers.map((edge) => formatSymbolIdentity(edge.symbol.identity))).toEqual([
+      "src/use.js::useCtor",
+    ]);
+  });
+
+  it("credits no require users through a member of a parameter named like the module.exports value", async () => {
+    const { backend, files } = await backendOverSources({
+      "src/lib.js": [
+        "function fn() { return 0; }",
+        "function realParse() { return 1; }",
+        "function localParse() { return 2; }",
+        "function setup(fn) { fn.parse = localParse; }",
+        "module.exports = fn;",
+        "fn.parse = realParse;",
+        "",
+      ].join("\n"),
+      "src/use.js":
+        "const { parse } = require('./lib');\nfunction useParse() { return parse(); }\n",
+    });
+
+    const localCallers = await backend.findCallers(files, identity("src/lib.js", "localParse"));
+    const realCallers = await backend.findCallers(files, identity("src/lib.js", "realParse"));
+
+    expect(localCallers).toEqual([]);
+    expect(realCallers.map((edge) => formatSymbolIdentity(edge.symbol.identity))).toEqual([
+      "src/use.js::useParse",
+    ]);
+  });
+
   it("pairs a module.exports function with the .d.ts export = declaration", async () => {
     const { backend, files } = await backendOverSources({
       "src/lib.js": "module.exports = function () { return 1; };\n",

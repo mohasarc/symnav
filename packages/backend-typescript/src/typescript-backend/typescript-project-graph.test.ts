@@ -1038,6 +1038,23 @@ describe("TypeScriptProjectGraph", () => {
     expect(callees).toEqual(["helper"]);
   });
 
+  it.each(["tsconfig.json", "jsconfig.json"])(
+    "leaves JavaScript a %s excludes in the inferred project",
+    async (configurationName) => {
+      const workspace = inMemoryWorkspace({
+        [configurationName]: JSON.stringify({ exclude: ["src/legacy"] }),
+        "src/b.js": "export function b() {}\n",
+        "src/legacy/x.js": "export function x() {}\n",
+      });
+      const graph = new TypeScriptProjectGraph(workspace.fileSystem);
+
+      const refresh = await graph.refresh(workspace.snapshot);
+
+      expect(refresh.inferredFileCount).toBe(1);
+      expect(graph.programFor("src/legacy/x.js")).not.toBe(graph.programFor("src/b.js"));
+    },
+  );
+
   it("keeps implicit outDir contents outside configured membership", async () => {
     const projectFixture = fixture();
     const graph = new TypeScriptProjectGraph(projectFixture.fileSystem);

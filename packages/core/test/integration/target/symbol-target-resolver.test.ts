@@ -517,6 +517,117 @@ describe("SymbolTargetResolver.resolve with a backend target collapse", () => {
     expect(resolved.backend).toBe(backend);
     expect(backend.collapseCalls).toEqual([[declaration, implementation]]);
   });
+
+  it("keeps a tie ambiguous, listing every candidate, when the backend does not collapse it", async () => {
+    const backend = ResolverScenario.pairCollapsingFake(
+      [
+        ResolverScenario.candidateFor(implementation.file, implementation.segments),
+        ResolverScenario.candidateFor(declaration.file, declaration.segments),
+        ResolverScenario.candidateFor("src/gamma.ts", [{ name: "Tabs" }]),
+      ],
+      () => undefined,
+    );
+
+    const error = await ResolverScenario.resolveWith(
+      new BackendRouter([backend]),
+      "Tabs",
+      undefined,
+      pairFiles,
+    ).then(
+      () => undefined,
+      (thrown: unknown) => thrown,
+    );
+
+    expect(error).toBeInstanceOf(AmbiguousSymbolTargetError);
+    expect(
+      (error as AmbiguousSymbolTargetError).candidates.map((candidate) => candidate.canonicalId),
+    ).toEqual(["src/alpha.d.ts::Tabs", "src/alpha.js::Tabs", "src/gamma.ts::Tabs"]);
+  });
+
+  it("refuses a backend collapse to an identity outside the candidates", async () => {
+    const backend = ResolverScenario.pairCollapsingFake(
+      [
+        ResolverScenario.candidateFor(implementation.file, implementation.segments),
+        ResolverScenario.candidateFor(declaration.file, declaration.segments),
+      ],
+      () => ({ file: "src/gamma.ts", segments: [{ name: "Tabs" }] }),
+    );
+
+    await expect(
+      ResolverScenario.resolveWith(new BackendRouter([backend]), "Tabs", undefined, pairFiles),
+    ).rejects.toBeInstanceOf(AmbiguousSymbolTargetError);
+  });
+
+  it("keeps candidates ambiguous for a backend without a target collapse", async () => {
+    const backend = new FakeLanguageBackend({
+      accept: (filePath) => !filePath.endsWith(".zz"),
+      declarations: [
+        ResolverScenario.candidateFor(implementation.file, implementation.segments).symbol,
+        ResolverScenario.candidateFor(declaration.file, declaration.segments).symbol,
+      ],
+    });
+
+    await expect(
+      ResolverScenario.resolveWith(new BackendRouter([backend]), "Tabs", undefined, pairFiles),
+    ).rejects.toBeInstanceOf(AmbiguousSymbolTargetError);
+  });
+
+  it("does not ask a backend to collapse candidates another backend also owns", async () => {
+    const backend = ResolverScenario.pairCollapsingFake(
+      [ResolverScenario.candidateFor(implementation.file, implementation.segments)],
+      () => implementation,
+    );
+    const router = new BackendRouter([
+      backend,
+      ResolverScenario.zetaFake([ResolverScenario.candidateFor("src/beta.zz", [{ name: "Tabs" }])]),
+    ]);
+
+    await expect(
+      ResolverScenario.resolveWith(router, "Tabs", undefined, pairFiles),
+    ).rejects.toBeInstanceOf(AmbiguousSymbolTargetError);
+    expect(backend.collapseCalls).toEqual([]);
+  });
+
+  it("collapses overloads without asking the backend", async () => {
+    const backend = ResolverScenario.pairCollapsingFake(
+      [
+        ResolverScenario.candidateFor("src/gamma.ts", [{ name: "Tabs", disambiguator: 1 }]),
+        ResolverScenario.candidateFor("src/gamma.ts", [{ name: "Tabs", disambiguator: 2 }]),
+      ],
+      () => implementation,
+    );
+
+    const resolved = await ResolverScenario.resolveWith(
+      new BackendRouter([backend]),
+      "Tabs",
+      undefined,
+      pairFiles,
+    );
+
+    expect(resolved.identity).toEqual({ file: "src/gamma.ts", segments: [{ name: "Tabs" }] });
+    expect(backend.collapseCalls).toEqual([]);
+  });
+
+  it("does not ask the backend to collapse regex matches", async () => {
+    const backend = ResolverScenario.pairCollapsingFake(
+      [
+        ResolverScenario.candidateFor(implementation.file, implementation.segments),
+        ResolverScenario.candidateFor(declaration.file, declaration.segments),
+      ],
+      () => implementation,
+    );
+
+    await expect(
+      ResolverScenario.resolveWith(
+        new BackendRouter([backend]),
+        "::Tabs$",
+        undefined,
+        pairFiles,
+        true,
+      ),
+    ).rejects.toBeInstanceOf(AmbiguousSymbolTargetError);
+    expect(backend.collapseCalls).toEqual([]);
+  });
 });
 
 describe("SymbolTargetResolver.resolve on unsupported files", () => {

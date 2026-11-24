@@ -106,7 +106,10 @@ export class DaemonScaleBenchmarkHarness {
     let daemonStarted = false;
     try {
       const generated = await new DaemonWorkspaceGenerator(this.options).generate(workspaceRoot);
-      const generatedProfile = await new DaemonWorkspaceProfiler().profile(workspaceRoot);
+      const generatedProfile = await new DaemonWorkspaceProfiler().profile(
+        workspaceRoot,
+        this.options.profile.language,
+      );
       const canonicalRoot = canonicalWorkspaceRoot(realpathSync(workspaceRoot));
       const inspector = new DaemonTestingInspector(
         StateDirectoryResolver.canonicalize(stateDirectory),

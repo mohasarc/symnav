@@ -505,11 +505,12 @@ export class OverviewChildrenExtractor {
     const range = OverviewChildrenExtractor.nodeRange(statement);
     return declList.getDeclarations().map((decl) => {
       const childSegments = [...symbolSegments, { name: decl.getName() }];
+      const label = JavaScriptDocDeclarations.isEnumDeclaration(decl) ? "enum" : "variable";
       return this.declared(
         {
           type: "symbol",
           identity: this.identityFor(childSegments),
-          kind: { role: roleOf("variable"), nativeLabel: "variable" },
+          kind: { role: roleOf(label), nativeLabel: label },
           range,
           header: OverviewChildrenExtractor.headerFrom(
             range.startLine,
@@ -581,6 +582,7 @@ export class OverviewChildrenExtractor {
     declaration: JavaScriptAssignmentDeclaration,
   ): TypeScriptSymbolKind {
     if (declaration.form === "module-exports") return "default-export";
+    if (JavaScriptDocDeclarations.isEnumDeclaration(declaration.declarationNode)) return "enum";
     if (Node.isGetAccessorDeclaration(declaration.value)) return "getter";
     if (Node.isSetAccessorDeclaration(declaration.value)) return "setter";
     const isMember = declaration.containerNames.length > 0;

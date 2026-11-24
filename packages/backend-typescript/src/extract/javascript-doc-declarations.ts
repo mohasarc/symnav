@@ -30,6 +30,17 @@ export class JavaScriptDocDeclarations {
       });
   }
 
+  static isEnumDeclaration(declaration: Node): boolean {
+    const isJavaScript = JavaScriptAssignmentDeclarations.isJavaScriptFile(
+      declaration.getSourceFile(),
+    );
+    if (!isJavaScript) return false;
+    const enumHost =
+      JavaScriptDocDeclarations.enumVariableStatement(declaration) ??
+      JavaScriptDocDeclarations.enumAssignmentStatement(declaration);
+    return enumHost !== undefined && JavaScriptDocDeclarations.hasEnumTag(enumHost);
+  }
+
   static typeAliasNamedBy(nameNode: Node): JavaScriptDocTypeAlias | undefined {
     const tag = nameNode.getParent();
     const typeAlias = tag && JavaScriptDocDeclarations.typeAliasOf(tag);
@@ -62,5 +73,42 @@ export class JavaScriptDocDeclarations {
     const nameNode = tag.getNodeProperty("fullName");
     if (!Node.isIdentifier(nameNode)) return undefined;
     return { name: nameNode.getText(), nameNode, tag };
+  }
+
+  private static enumVariableStatement(declaration: Node): Node | undefined {
+    if (!Node.isVariableDeclaration(declaration)) return undefined;
+    const statement = declaration.getVariableStatement();
+    const namesStatement = statement?.getDeclarations()[0] === declaration;
+    return namesStatement ? statement : undefined;
+  }
+
+  private static enumAssignmentStatement(target: Node): Node | undefined {
+    if (!Node.isPropertyAccessExpression(target)) return undefined;
+    const assignment = target.getParent();
+    const statement = assignment?.getParent();
+    const isTopLevelAssignment =
+      Node.isBinaryExpression(assignment) &&
+      assignment.getOperatorToken().getKind() === ts.SyntaxKind.EqualsToken &&
+      assignment.getLeft() === target &&
+      Node.isExpressionStatement(statement) &&
+      Node.isSourceFile(statement.getParent());
+    if (!isTopLevelAssignment) return undefined;
+    const owner = target.getExpression();
+    const ownerMergesEnum =
+      Node.isIdentifier(owner) || JavaScriptDocDeclarations.isModuleExports(owner);
+    return ownerMergesEnum ? statement : undefined;
+  }
+
+  private static isModuleExports(node: Node): boolean {
+    return (
+      Node.isPropertyAccessExpression(node) &&
+      node.getName() === "exports" &&
+      node.getExpression().getText() === "module"
+    );
+  }
+
+  private static hasEnumTag(host: Node): boolean {
+    const comments = (host.compilerNode as JSDocHostNode).jsDoc ?? [];
+    return comments.some((comment) => comment.tags?.some(ts.isJSDocEnumTag) ?? false);
   }
 }

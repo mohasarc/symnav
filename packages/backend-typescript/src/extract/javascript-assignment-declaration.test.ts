@@ -767,6 +767,57 @@ describe("this-property members in overview", () => {
     ]);
   });
 
+  it("lists this-properties of constructor functions and prototype methods under the function", () => {
+    const source = [
+      "function Foo() {",
+      "  this.x = 1;",
+      "  function inner() {",
+      "    this.q = 2;",
+      "  }",
+      "}",
+      "Foo.prototype.meth = function () {",
+      "  this.y = 3;",
+      "  this.x = 4;",
+      "};",
+      "var Bar = function () {",
+      "  this.z = 5;",
+      "};",
+      "Bar.prototype.z = 6;",
+      "exports.Baz = function () { this.w = function () {}; };",
+      "[1].forEach(function () { this.callback = 7; });",
+    ].join("\n");
+
+    expect(
+      summariesOf(source).map((summary) => [
+        summary.id,
+        summary.label,
+        summary.range,
+        summary.header,
+      ]),
+    ).toEqual([
+      ["input.js::Foo", "function-implementation", [1, 6], ["function Foo()"]],
+      ["input.js::Foo::x", "property", [2, 2], ["this.x = 1"]],
+      ["input.js::Foo::inner", "function-implementation", [3, 5], ["function inner()"]],
+      ["input.js::Foo::inner::q", "property", [4, 4], ["this.q = 2"]],
+      [
+        "input.js::Foo::meth",
+        "method-implementation",
+        [7, 10],
+        ["Foo.prototype.meth = function () …"],
+      ],
+      ["input.js::Foo::y", "property", [8, 8], ["this.y = 3"]],
+      ["input.js::Bar", "variable", [11, 13], ["var Bar = function () …"]],
+      ["input.js::Bar::z", "property", [14, 14], ["Bar.prototype.z = 6"]],
+      [
+        "input.js::Baz",
+        "function-implementation",
+        [15, 15],
+        ["exports.Baz = function () { this.w = function () {}; }"],
+      ],
+      ["input.js::Baz::w", "method-implementation", [15, 15], ["this.w = function () {}"]],
+    ]);
+  });
+
   it("emits no member for the same syntax in a TypeScript file", () => {
     const source = "class Foo {\n  constructor() {\n    this.x = 1;\n  }\n}\n";
 

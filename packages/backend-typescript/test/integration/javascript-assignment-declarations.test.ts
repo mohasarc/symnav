@@ -327,6 +327,44 @@ describe("TypeScriptBackend CommonJS export declarations", () => {
     ]);
   });
 
+  it("follows variables initialized from a required member and re-exported under their own name", async () => {
+    const { backend, files } = await backendOverSources({
+      "src/lib.js": "exports.helper = function () { return 1; };\n",
+      "src/mid.js": [
+        "const picked = require('./lib').helper;",
+        "function callsPicked() { return picked(); }",
+        "module.exports = { picked };",
+        "",
+      ].join("\n"),
+      "src/other.js": [
+        "const lib = require('./lib');",
+        "const aliased = lib.helper;",
+        "function callsAliased() { return aliased(); }",
+        "",
+      ].join("\n"),
+      "src/use.js":
+        "const { picked } = require('./mid');\nfunction callsMid() { return picked(); }\n",
+    });
+
+    const references = await backend.findReferences(files, identity("src/lib.js", "helper"));
+    const callers = await backend.findCallers(files, identity("src/lib.js", "helper"));
+
+    expect(referenceLocations(references)).toEqual([
+      "src/mid.js:1",
+      "src/mid.js:2",
+      "src/mid.js:3",
+      "src/other.js:2",
+      "src/other.js:3",
+      "src/use.js:1",
+      "src/use.js:2",
+    ]);
+    expect(callers.map((edge) => formatSymbolIdentity(edge.symbol.identity))).toEqual([
+      "src/mid.js::callsPicked",
+      "src/other.js::callsAliased",
+      "src/use.js::callsMid",
+    ]);
+  });
+
   it("pairs a module.exports function with the .d.ts export = declaration", async () => {
     const { backend, files } = await backendOverSources({
       "src/lib.js": "module.exports = function () { return 1; };\n",

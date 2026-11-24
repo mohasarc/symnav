@@ -1,0 +1,5 @@
+Definition: Stack::peek
+
+src/prototype-object.js
+└── 4-6: Stack::peek  [implementation]
+    peek()

@@ -1,0 +1,5 @@
+Definition: helpers::slug
+
+src/namespace-property.js
+└── 3-5: helpers::slug  [implementation]
+    helpers.slug = function (text) …

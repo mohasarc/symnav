@@ -1,0 +1,5 @@
+Overview: src/static-property.js
+└── 1: Registry
+    1 class Registry
+    └── 3-5: Registry::create
+        3 Registry.create = function () …

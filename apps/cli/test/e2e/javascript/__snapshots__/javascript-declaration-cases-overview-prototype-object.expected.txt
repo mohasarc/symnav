@@ -1,0 +1,5 @@
+Overview: src/prototype-object.js
+└── 1: Stack
+    1 function Stack()
+    └── 4-6: Stack::peek
+        4 peek()

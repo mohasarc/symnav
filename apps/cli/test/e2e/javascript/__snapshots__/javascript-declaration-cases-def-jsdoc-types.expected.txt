@@ -1,0 +1,5 @@
+Definition: Visitor
+
+src/jsdoc-types.js
+└── 8-10: Visitor
+    @callback Visitor

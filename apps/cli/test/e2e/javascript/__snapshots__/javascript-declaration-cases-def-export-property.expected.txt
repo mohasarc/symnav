@@ -1,0 +1,5 @@
+Definition: parse
+
+src/export-property.js
+└── 1-3: parse  [implementation]
+    exports.parse = function (text) …

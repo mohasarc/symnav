@@ -10,6 +10,7 @@ import {
   type PropertyAccessExpression,
   type PropertyAssignment,
   type SetAccessorDeclaration,
+  type ShorthandPropertyAssignment,
   type SourceFile,
 } from "ts-morph";
 import { SEGMENT_SEPARATOR, parseSegment, type LineRange } from "@symnav/core";
@@ -29,10 +30,20 @@ export type JavaScriptAssignmentDeclarationForm =
   | "export-property"
   | "module-exports-member"
   | "module-exports"
-  | "define-property-export";
+  | "define-property-export"
+  | "prototype-property"
+  | "prototype-object-member"
+  | "static-property"
+  | "this-property";
+
+export type JavaScriptDeclarationContainerScope = "module" | "enclosing-declaration";
 
 interface SourceFileWithModuleIndicator extends ts.SourceFile {
   readonly externalModuleIndicator?: ts.Node | true;
+}
+
+interface BoundSourceFile extends ts.SourceFile {
+  readonly symbol?: ts.Symbol;
 }
 
 export interface JavaScriptAssignmentDeclaration {
@@ -43,28 +54,44 @@ export interface JavaScriptAssignmentDeclaration {
   readonly nameLiteral: Node | undefined;
   readonly value: Node;
   readonly statement: Node;
+  readonly containerNames: readonly string[];
+  readonly containerScope: JavaScriptDeclarationContainerScope;
 }
 
 export class JavaScriptAssignmentDeclarations {
+  private static readonly MODULE_LEVEL = {
+    containerNames: [],
+    containerScope: "module",
+  } as const satisfies Pick<JavaScriptAssignmentDeclaration, "containerNames" | "containerScope">;
+
   static ofSourceFile(sourceFile: SourceFile): readonly JavaScriptAssignmentDeclaration[] {
     if (!JavaScriptAssignmentDeclarations.isCommonJsFile(sourceFile)) return [];
     const declarations: JavaScriptAssignmentDeclaration[] = [];
     sourceFile.forEachDescendant((node) => {
-      const declaration = JavaScriptAssignmentDeclarations.declarationOf(node);
+      const declaration = JavaScriptAssignmentDeclarations.commonJsDeclarationOf(node);
       if (declaration) declarations.push(declaration);
     });
     return declarations;
   }
 
   static declarationAt(node: Node): JavaScriptAssignmentDeclaration | undefined {
-    if (!JavaScriptAssignmentDeclarations.isCommonJsFile(node.getSourceFile())) return undefined;
-    return JavaScriptAssignmentDeclarations.declarationOf(node);
+    const sourceFile = node.getSourceFile();
+    if (!JavaScriptAssignmentDeclarations.isJavaScriptFile(sourceFile)) return undefined;
+    const commonJsDeclaration = JavaScriptAssignmentDeclarations.isCommonJsFile(sourceFile)
+      ? JavaScriptAssignmentDeclarations.commonJsDeclarationOf(node)
+      : undefined;
+    return commonJsDeclaration ?? JavaScriptAssignmentDeclarations.expandoDeclarationOf(node);
+  }
+
+  static isJavaScriptFile(sourceFile: SourceFile): boolean {
+    return (sourceFile.compilerNode.flags & ts.NodeFlags.JavaScriptFile) !== 0;
   }
 
   static rangeOf(declaration: JavaScriptAssignmentDeclaration): LineRange {
     const { declarationNode } = declaration;
-    const extent =
-      declaration.form === "module-exports-member" ? declarationNode : declaration.statement;
+    const extent = JavaScriptAssignmentDeclarations.isObjectMemberDeclaration(declaration)
+      ? declarationNode
+      : declaration.statement;
     return {
       startLine: declarationNode.getStartLineNumber(),
       endLine: extent.getEndLineNumber(),
@@ -77,7 +104,8 @@ export class JavaScriptAssignmentDeclarations {
     if (Node.isPropertyAssignment(declarationNode)) {
       return `${declarationNode.getNameNode().getText()}: ${value}`;
     }
-    if (declaration.form === "module-exports-member") {
+    if (Node.isShorthandPropertyAssignment(declarationNode)) return declarationNode.getText();
+    if (JavaScriptAssignmentDeclarations.isObjectMemberDeclaration(declaration)) {
       return extractSignatureSource(declarationNode);
     }
     if (Node.isCallExpression(declarationNode)) {
@@ -86,9 +114,17 @@ export class JavaScriptAssignmentDeclarations {
     return `${declarationNode.getText()} = ${value}`;
   }
 
+  private static isObjectMemberDeclaration(declaration: JavaScriptAssignmentDeclaration): boolean {
+    return (
+      declaration.form === "module-exports-member" || declaration.form === "prototype-object-member"
+    );
+  }
+
   private static isCommonJsFile(sourceFile: SourceFile): boolean {
-    const isJavaScriptFile = (sourceFile.compilerNode.flags & ts.NodeFlags.JavaScriptFile) !== 0;
-    return isJavaScriptFile && !JavaScriptAssignmentDeclarations.hasModuleSyntax(sourceFile);
+    return (
+      JavaScriptAssignmentDeclarations.isJavaScriptFile(sourceFile) &&
+      !JavaScriptAssignmentDeclarations.hasModuleSyntax(sourceFile)
+    );
   }
 
   private static hasModuleSyntax(sourceFile: SourceFile): boolean {
@@ -96,17 +132,266 @@ export class JavaScriptAssignmentDeclarations {
     return externalModuleIndicator !== undefined && externalModuleIndicator !== true;
   }
 
-  private static declarationOf(node: Node): JavaScriptAssignmentDeclaration | undefined {
+  private static commonJsDeclarationOf(node: Node): JavaScriptAssignmentDeclaration | undefined {
     if (Node.isPropertyAccessExpression(node) || Node.isElementAccessExpression(node)) {
-      return JavaScriptAssignmentDeclarations.isModuleExports(node)
-        ? JavaScriptAssignmentDeclarations.moduleExportsValue(node)
-        : JavaScriptAssignmentDeclarations.exportProperty(node);
+      if (JavaScriptAssignmentDeclarations.isModuleExports(node)) {
+        return JavaScriptAssignmentDeclarations.moduleExportsValue(node);
+      }
+      return (
+        JavaScriptAssignmentDeclarations.exportProperty(node) ??
+        JavaScriptAssignmentDeclarations.moduleThisExport(node)
+      );
     }
     if (JavaScriptAssignmentDeclarations.isObjectMember(node)) {
       return JavaScriptAssignmentDeclarations.moduleExportsMember(node);
     }
     if (Node.isCallExpression(node)) return JavaScriptAssignmentDeclarations.definedExport(node);
     return undefined;
+  }
+
+  private static expandoDeclarationOf(node: Node): JavaScriptAssignmentDeclaration | undefined {
+    if (Node.isPropertyAccessExpression(node) || Node.isElementAccessExpression(node)) {
+      return (
+        JavaScriptAssignmentDeclarations.prototypeProperty(node) ??
+        JavaScriptAssignmentDeclarations.staticProperty(node) ??
+        JavaScriptAssignmentDeclarations.thisProperty(node)
+      );
+    }
+    const isPrototypeObjectMemberCandidate =
+      JavaScriptAssignmentDeclarations.isObjectMember(node) ||
+      Node.isShorthandPropertyAssignment(node);
+    if (isPrototypeObjectMemberCandidate) {
+      return JavaScriptAssignmentDeclarations.prototypeObjectMember(node);
+    }
+    if (Node.isCallExpression(node)) return JavaScriptAssignmentDeclarations.definedMember(node);
+    return undefined;
+  }
+
+  private static definedMember(call: CallExpression): JavaScriptAssignmentDeclaration | undefined {
+    if (!JavaScriptAssignmentDeclarations.isDefinePropertyCall(call)) return undefined;
+    const [owner, nameArgument, descriptor] = call.getArguments();
+    if (!owner || !nameArgument || !descriptor) return undefined;
+    const prototypeContainerNames = JavaScriptAssignmentDeclarations.prototypeContainerNames(owner);
+    const containerNames =
+      prototypeContainerNames ?? JavaScriptAssignmentDeclarations.bindableNames(owner);
+    const name = JavaScriptAssignmentDeclarations.literalName(nameArgument);
+    const statement = call.getFirstAncestor(Node.isStatement);
+    if (!containerNames || name === undefined || !statement) return undefined;
+    return {
+      form: prototypeContainerNames ? "prototype-property" : "static-property",
+      name,
+      declarationNode: call,
+      nameNode: nameArgument,
+      nameLiteral: nameArgument,
+      value: JavaScriptAssignmentDeclarations.descriptorValue(descriptor),
+      statement,
+      containerNames,
+      containerScope: "enclosing-declaration",
+    };
+  }
+
+  private static prototypeObjectMember(
+    member: ObjectMember | ShorthandPropertyAssignment,
+  ): JavaScriptAssignmentDeclaration | undefined {
+    const object = member.getParent();
+    const assignment = object.getParent();
+    const assignsObject =
+      JavaScriptAssignmentDeclarations.isAssignment(assignment) && assignment.getRight() === object;
+    if (!assignsObject) return undefined;
+    const containerNames = JavaScriptAssignmentDeclarations.prototypeContainerNames(
+      assignment.getLeft(),
+    );
+    const nameNode = member.getNameNode();
+    const name = JavaScriptAssignmentDeclarations.propertyName(nameNode);
+    const statement = member.getFirstAncestor(Node.isStatement);
+    if (!containerNames || name === undefined || !statement) return undefined;
+    return {
+      form: "prototype-object-member",
+      name,
+      declarationNode: member,
+      nameNode,
+      nameLiteral: JavaScriptAssignmentDeclarations.propertyNameLiteral(nameNode),
+      value: Node.isPropertyAssignment(member) ? member.getInitializerOrThrow() : member,
+      statement,
+      containerNames,
+      containerScope: "enclosing-declaration",
+    };
+  }
+
+  private static prototypeProperty(
+    target: PropertyAccessExpression | ElementAccessExpression,
+  ): JavaScriptAssignmentDeclaration | undefined {
+    const containerNames = JavaScriptAssignmentDeclarations.prototypeContainerNames(
+      target.getExpression(),
+    );
+    const assigned = JavaScriptAssignmentDeclarations.assignedTo(target);
+    const name = JavaScriptAssignmentDeclarations.staticAccessName(target);
+    if (!containerNames || !assigned || name === undefined) return undefined;
+    return {
+      form: "prototype-property",
+      name,
+      declarationNode: target,
+      nameNode: target,
+      nameLiteral: Node.isElementAccessExpression(target)
+        ? target.getArgumentExpression()
+        : undefined,
+      ...assigned,
+      containerNames,
+      containerScope: "enclosing-declaration",
+    };
+  }
+
+  private static staticProperty(
+    target: PropertyAccessExpression | ElementAccessExpression,
+  ): JavaScriptAssignmentDeclaration | undefined {
+    const ownerNames = JavaScriptAssignmentDeclarations.bindableNames(target.getExpression());
+    const assigned = JavaScriptAssignmentDeclarations.assignedTo(target);
+    const name = JavaScriptAssignmentDeclarations.staticAccessName(target);
+    if (!ownerNames || !assigned || name === undefined) return undefined;
+    const assignsPrototypeObject =
+      name === "prototype" && Node.isObjectLiteralExpression(assigned.value);
+    if (assignsPrototypeObject) return undefined;
+    const container = JavaScriptAssignmentDeclarations.staticContainer(ownerNames);
+    if (!container) return undefined;
+    return {
+      form: "static-property",
+      name,
+      declarationNode: target,
+      nameNode: target,
+      nameLiteral: Node.isElementAccessExpression(target)
+        ? target.getArgumentExpression()
+        : undefined,
+      ...assigned,
+      ...container,
+    };
+  }
+
+  private static thisProperty(
+    target: PropertyAccessExpression | ElementAccessExpression,
+  ): JavaScriptAssignmentDeclaration | undefined {
+    const assignsThisMember =
+      Node.isThisExpression(target.getExpression()) &&
+      !(Node.isPropertyAccessExpression(target) && Node.isPrivateIdentifier(target.getNameNode()));
+    if (!assignsThisMember) return undefined;
+    const assigned = JavaScriptAssignmentDeclarations.assignedTo(target);
+    const name = JavaScriptAssignmentDeclarations.staticAccessName(target);
+    const thisContainer = JavaScriptAssignmentDeclarations.thisContainerOf(target);
+    const member = thisContainer && JavaScriptAssignmentDeclarations.thisMemberOf(thisContainer);
+    if (!assigned || name === undefined || !member) return undefined;
+    return {
+      ...member,
+      name,
+      declarationNode: target,
+      nameNode: target,
+      nameLiteral: Node.isElementAccessExpression(target)
+        ? target.getArgumentExpression()
+        : undefined,
+      ...assigned,
+      containerScope: "enclosing-declaration",
+    };
+  }
+
+  private static thisContainerOf(node: Node): Node | undefined {
+    for (let parent = node.getParent(); parent; parent = parent.getParent()) {
+      if (JavaScriptAssignmentDeclarations.isThisContainer(parent)) return parent;
+    }
+    return undefined;
+  }
+
+  private static isThisContainer(node: Node): boolean {
+    return (
+      Node.isFunctionDeclaration(node) ||
+      Node.isFunctionExpression(node) ||
+      Node.isConstructorDeclaration(node) ||
+      Node.isMethodDeclaration(node) ||
+      Node.isGetAccessorDeclaration(node) ||
+      Node.isSetAccessorDeclaration(node) ||
+      Node.isPropertyDeclaration(node) ||
+      Node.isClassStaticBlockDeclaration(node) ||
+      Node.isModuleDeclaration(node) ||
+      Node.isSourceFile(node)
+    );
+  }
+
+  private static thisMemberOf(
+    thisContainer: Node,
+  ): Pick<JavaScriptAssignmentDeclaration, "form" | "containerNames"> | undefined {
+    const isFunctionContainer =
+      Node.isFunctionDeclaration(thisContainer) || Node.isFunctionExpression(thisContainer);
+    if (isFunctionContainer) {
+      const containerNames =
+        JavaScriptAssignmentDeclarations.prototypeMethodContainerNames(thisContainer) ??
+        JavaScriptAssignmentDeclarations.ownerNamesOf(thisContainer);
+      return containerNames ? { form: "this-property", containerNames } : undefined;
+    }
+    const owner = thisContainer.getParent();
+    if (!Node.isClassDeclaration(owner) && !Node.isClassExpression(owner)) return undefined;
+    const containerNames = JavaScriptAssignmentDeclarations.ownerNamesOf(owner);
+    if (!containerNames) return undefined;
+    const isStaticMember =
+      Node.isClassStaticBlockDeclaration(thisContainer) ||
+      (Node.isStaticable(thisContainer) && thisContainer.isStatic());
+    return { form: isStaticMember ? "static-property" : "this-property", containerNames };
+  }
+
+  private static prototypeMethodContainerNames(method: Node): readonly string[] | undefined {
+    const assignment = method.getParent();
+    const isPrototypeMethod =
+      JavaScriptAssignmentDeclarations.isAssignment(assignment) && assignment.getRight() === method;
+    if (!isPrototypeMethod) return undefined;
+    const target = assignment.getLeft();
+    const isStaticAccess =
+      Node.isPropertyAccessExpression(target) || Node.isElementAccessExpression(target);
+    return isStaticAccess
+      ? JavaScriptAssignmentDeclarations.prototypeContainerNames(target.getExpression())
+      : undefined;
+  }
+
+  private static ownerNamesOf(declaration: Node): readonly string[] | undefined {
+    const name = Node.hasName(declaration) ? declaration.getName() : undefined;
+    if (name) return [name];
+    const parent = declaration.getParent();
+    if (Node.isVariableDeclaration(parent)) return [parent.getName()];
+    if (JavaScriptAssignmentDeclarations.isAssignment(parent)) {
+      return JavaScriptAssignmentDeclarations.bindableNames(parent.getLeft());
+    }
+    return undefined;
+  }
+
+  private static staticContainer(
+    ownerNames: readonly string[],
+  ): Pick<JavaScriptAssignmentDeclaration, "containerNames" | "containerScope"> | undefined {
+    const exportsRootLength = JavaScriptAssignmentDeclarations.exportsRootLength(ownerNames);
+    if (exportsRootLength === 0) {
+      return { containerNames: ownerNames, containerScope: "enclosing-declaration" };
+    }
+    const containerNames = ownerNames.slice(exportsRootLength);
+    return containerNames.length > 0 ? { containerNames, containerScope: "module" } : undefined;
+  }
+
+  private static exportsRootLength(ownerNames: readonly string[]): number {
+    if (ownerNames[0] === "exports") return 1;
+    const isModuleExportsRoot = ownerNames[0] === "module" && ownerNames[1] === "exports";
+    return isModuleExportsRoot ? 2 : 0;
+  }
+
+  private static prototypeContainerNames(prototypeAccess: Node): readonly string[] | undefined {
+    const accessesPrototype =
+      (Node.isPropertyAccessExpression(prototypeAccess) ||
+        Node.isElementAccessExpression(prototypeAccess)) &&
+      JavaScriptAssignmentDeclarations.staticAccessName(prototypeAccess) === "prototype";
+    if (!accessesPrototype) return undefined;
+    return JavaScriptAssignmentDeclarations.bindableNames(prototypeAccess.getExpression());
+  }
+
+  private static bindableNames(expression: Node): readonly string[] | undefined {
+    if (Node.isIdentifier(expression)) return [expression.getText()];
+    const isStaticAccess =
+      Node.isPropertyAccessExpression(expression) || Node.isElementAccessExpression(expression);
+    if (!isStaticAccess) return undefined;
+    const ownerNames = JavaScriptAssignmentDeclarations.bindableNames(expression.getExpression());
+    const name = JavaScriptAssignmentDeclarations.staticAccessName(expression);
+    return ownerNames && name !== undefined ? [...ownerNames, name] : undefined;
   }
 
   private static definedExport(call: CallExpression): JavaScriptAssignmentDeclaration | undefined {
@@ -126,6 +411,7 @@ export class JavaScriptAssignmentDeclarations {
       nameLiteral: nameArgument,
       value: JavaScriptAssignmentDeclarations.descriptorValue(descriptor),
       statement,
+      ...JavaScriptAssignmentDeclarations.MODULE_LEVEL,
     };
   }
 
@@ -173,6 +459,7 @@ export class JavaScriptAssignmentDeclarations {
       nameLiteral: JavaScriptAssignmentDeclarations.propertyNameLiteral(nameNode),
       value,
       statement,
+      ...JavaScriptAssignmentDeclarations.MODULE_LEVEL,
     };
   }
 
@@ -236,7 +523,40 @@ export class JavaScriptAssignmentDeclarations {
       nameNode: target,
       nameLiteral,
       ...assigned,
+      ...JavaScriptAssignmentDeclarations.MODULE_LEVEL,
     };
+  }
+
+  private static moduleThisExport(
+    target: PropertyAccessExpression | ElementAccessExpression,
+  ): JavaScriptAssignmentDeclaration | undefined {
+    if (!Node.isThisExpression(target.getExpression())) return undefined;
+    const assigned = JavaScriptAssignmentDeclarations.assignedTo(target);
+    const name = JavaScriptAssignmentDeclarations.staticAccessName(target);
+    if (!assigned || name === undefined) return undefined;
+    const declaresExport = JavaScriptAssignmentDeclarations.isBoundModuleExport(target, name);
+    if (!declaresExport) return undefined;
+    return {
+      form: "export-property",
+      name,
+      declarationNode: target,
+      nameNode: target,
+      nameLiteral: Node.isElementAccessExpression(target)
+        ? target.getArgumentExpression()
+        : undefined,
+      ...assigned,
+      ...JavaScriptAssignmentDeclarations.MODULE_LEVEL,
+    };
+  }
+
+  private static isBoundModuleExport(
+    target: PropertyAccessExpression | ElementAccessExpression,
+    name: string,
+  ): boolean {
+    const sourceFile = target.getSourceFile().compilerNode as BoundSourceFile;
+    const exported = sourceFile.symbol?.exports?.get(ts.escapeLeadingUnderscores(name));
+    const assignment = target.getParentOrThrow().compilerNode as ts.Declaration;
+    return exported?.declarations?.includes(assignment) ?? false;
   }
 
   private static moduleExportsValue(
@@ -256,6 +576,7 @@ export class JavaScriptAssignmentDeclarations {
       nameNode: target,
       nameLiteral: undefined,
       ...assigned,
+      ...JavaScriptAssignmentDeclarations.MODULE_LEVEL,
     };
   }
 

@@ -1,6 +1,10 @@
 import type { SymbolIdentity } from "@symnav/core";
 import { Node, ts, type SourceFile, type Symbol, type TypeChecker } from "ts-morph";
 
+import {
+  JavaScriptAssignmentDeclarations,
+  type JavaScriptAssignmentDeclarationForm,
+} from "../extract/javascript-assignment-declaration.js";
 import type { DeclarationImplementationFilePair } from "./declaration-implementation-pairs.js";
 import type { TypeScriptWorkspaceState } from "./typescript-workspace-state.js";
 
@@ -20,6 +24,9 @@ interface PairedSymbolLink {
 }
 
 export class PairedSymbolMatcher {
+  private static readonly INSTANCE_MEMBER_FORMS: ReadonlySet<JavaScriptAssignmentDeclarationForm> =
+    new Set(["prototype-property", "prototype-object-member", "this-property"]);
+
   constructor(private readonly workspaceState: TypeScriptWorkspaceState) {}
 
   counterparts(
@@ -156,6 +163,10 @@ export class PairedSymbolMatcher {
   }
 
   private static memberStaticness(node: Node): readonly boolean[] {
+    const expandoMember = JavaScriptAssignmentDeclarations.declarationAt(node);
+    if (expandoMember && expandoMember.containerNames.length > 0) {
+      return [!PairedSymbolMatcher.INSTANCE_MEMBER_FORMS.has(expandoMember.form)];
+    }
     if (Node.isStaticable(node)) return [node.isStatic()];
     const statement = Node.isVariableDeclaration(node) ? node.getVariableStatement() : node;
     const isNamespaceMember = Node.isModuleBlock(statement?.getParent());

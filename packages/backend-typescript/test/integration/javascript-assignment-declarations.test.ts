@@ -225,6 +225,234 @@ describe("TypeScriptBackend CommonJS export declarations", () => {
   });
 });
 
+describe("TypeScriptBackend module-level this-property exports", () => {
+  it("resolves a this-property exported after the file becomes CommonJS and finds its require users", async () => {
+    const { backend, files } = await backendOverSources({
+      "src/lib.js": "exports.a = 1;\nthis.after = 2;\n",
+      "src/required.js": "const lib = require('./lib');\nlib.after;\n",
+    });
+
+    const definitions = await backend.findDefinitions(files, identity("src/lib.js", "after"));
+    const references = await backend.findReferences(files, identity("src/lib.js", "after"));
+
+    expect(definitions.map((definition) => formatSymbolIdentity(definition.identity))).toEqual([
+      "src/lib.js::after",
+    ]);
+    expect(referenceLocations(references)).toEqual(["src/required.js:2"]);
+  });
+});
+
+describe("TypeScriptBackend expando member declarations", () => {
+  it.each([
+    ["a function", "function Foo() {}\n"],
+    ["a class", "class Foo {}\n"],
+    ["a variable", "var Foo = function () {};\n"],
+  ])(
+    "resolves a prototype member of %s and finds its instance users",
+    async (_container, declaration) => {
+      const { backend, files } = await backendOverSources({
+        "src/lib.js": `${declaration}Foo.prototype.bar = function () { return 1; };\nexports.Foo = Foo;\n`,
+        "src/use.js": "const { Foo } = require('./lib');\nnew Foo().bar();\n",
+      });
+
+      const definitions = await backend.findDefinitions(
+        files,
+        identity("src/lib.js", "Foo", "bar"),
+      );
+      const references = await backend.findReferences(files, identity("src/lib.js", "Foo", "bar"));
+
+      expect(definitions.map((definition) => formatSymbolIdentity(definition.identity))).toEqual([
+        "src/lib.js::Foo::bar",
+      ]);
+      expect(referenceLocations(references)).toEqual(["src/use.js:2"]);
+    },
+  );
+
+  it.each([
+    ["bar", "bar() { return 1; }", "new Foo().bar();"],
+    ["baz", "baz: 2", "new Foo().baz;"],
+    ["dash-key", '"dash-key": 3', 'new Foo()["dash-key"];'],
+  ])(
+    "resolves the prototype object member %s and finds its instance users",
+    async (name, member, use) => {
+      const { backend, files } = await backendOverSources({
+        "src/lib.js": `function Foo() {}\nFoo.prototype = {\n  ${member},\n};\nexports.Foo = Foo;\n`,
+        "src/use.js": `const { Foo } = require('./lib');\n${use}\n`,
+      });
+
+      const definitions = await backend.findDefinitions(files, identity("src/lib.js", "Foo", name));
+      const references = await backend.findReferences(files, identity("src/lib.js", "Foo", name));
+
+      expect(definitions.map((definition) => formatSymbolIdentity(definition.identity))).toEqual([
+        `src/lib.js::Foo::${name}`,
+      ]);
+      expect(referenceLocations(references)).toEqual(["src/use.js:2"]);
+    },
+  );
+
+  it.each([
+    ["a function", "function Foo() {}\n"],
+    ["a class", "class Foo {}\n"],
+  ])("resolves a static member of %s and finds its users", async (_container, declaration) => {
+    const { backend, files } = await backendOverSources({
+      "src/lib.js": `${declaration}Foo.make = function () { return 1; };\nexports.Foo = Foo;\n`,
+      "src/use.js": "const { Foo } = require('./lib');\nFoo.make();\n",
+    });
+
+    const definitions = await backend.findDefinitions(files, identity("src/lib.js", "Foo", "make"));
+    const references = await backend.findReferences(files, identity("src/lib.js", "Foo", "make"));
+
+    expect(definitions.map((definition) => formatSymbolIdentity(definition.identity))).toEqual([
+      "src/lib.js::Foo::make",
+    ]);
+    expect(referenceLocations(references)).toEqual(["src/use.js:2"]);
+  });
+
+  it.each([
+    ["a class expression method", "var A = class { m() {} }; A.m = function () {};"],
+    ["a class expression static method", "var A = class { static m() {} }; A.m = function () {};"],
+    ["a later object literal method", "A.m = function () {}; function A() {} var o = { m() {} };"],
+  ])(
+    "locates a static member apart from %s with the same name on its line",
+    async (_neighbour, declaration) => {
+      const { backend, files } = await backendOverSources({
+        "src/lib.js": `${declaration}\nA.m();\nnew A().m();\nexports.A = A;\n`,
+      });
+
+      const references = await backend.findReferences(files, identity("src/lib.js", "A", "m"));
+
+      expect(referenceLocations(references)).toEqual(["src/lib.js:2"]);
+    },
+  );
+
+  it("locates functions nested in an unnamed default export next to a same-line expando member", async () => {
+    const { backend, files } = await backendOverSources({
+      "src/lib.js":
+        "export default function () { function Foo() {} Foo.x = 1; function x() {} x(); }\n",
+    });
+    const nested: SymbolIdentity = { file: "src/lib.js", segments: [{ name: "" }, { name: "x" }] };
+    const member: SymbolIdentity = {
+      file: "src/lib.js",
+      segments: [{ name: "" }, { name: "Foo" }, { name: "x" }],
+    };
+
+    const nestedReferences = await backend.findReferences(files, nested);
+    const memberDefinitions = await backend.findDefinitions(files, member);
+
+    expect(referenceLocations(nestedReferences)).toEqual(["src/lib.js:1"]);
+    expect(
+      memberDefinitions.map((definition) => formatSymbolIdentity(definition.identity)),
+    ).toEqual(["src/lib.js::::Foo::x"]);
+  });
+
+  it("resolves an Object.defineProperty member of a function and finds its users", async () => {
+    const { backend, files } = await backendOverSources({
+      "src/lib.js":
+        'function Foo() {}\nObject.defineProperty(Foo, "make", { value: function () { return 1; } });\nexports.Foo = Foo;\n',
+      "src/use.js": "const { Foo } = require('./lib');\nFoo.make();\n",
+    });
+
+    const definitions = await backend.findDefinitions(files, identity("src/lib.js", "Foo", "make"));
+    const references = await backend.findReferences(files, identity("src/lib.js", "Foo", "make"));
+
+    expect(definitions.map((definition) => formatSymbolIdentity(definition.identity))).toEqual([
+      "src/lib.js::Foo::make",
+    ]);
+    expect(referenceLocations(references)).toEqual(["src/use.js:2"]);
+  });
+
+  it.each([
+    [
+      "an empty object",
+      "const ns = {};\nns.helper = function () { return 1; };\nexports.ns = ns;\n",
+    ],
+    [
+      "a CommonJS export",
+      "exports.ns = function () {};\nexports.ns.helper = function () { return 1; };\n",
+    ],
+  ])(
+    "resolves a namespace member of %s and finds its require users",
+    async (_container, librarySource) => {
+      const { backend, files } = await backendOverSources({
+        "src/lib.js": librarySource,
+        "src/use.js": "const lib = require('./lib');\nlib.ns.helper();\n",
+      });
+
+      const definitions = await backend.findDefinitions(
+        files,
+        identity("src/lib.js", "ns", "helper"),
+      );
+      const references = await backend.findReferences(
+        files,
+        identity("src/lib.js", "ns", "helper"),
+      );
+
+      expect(definitions.map((definition) => formatSymbolIdentity(definition.identity))).toEqual([
+        "src/lib.js::ns::helper",
+      ]);
+      expect(referenceLocations(references)).toEqual(["src/use.js:2"]);
+    },
+  );
+});
+
+describe("TypeScriptBackend this-property member declarations", () => {
+  it("resolves a class constructor this-property and finds its instance users", async () => {
+    const { backend, files } = await backendOverSources({
+      "src/lib.js":
+        "class Foo {\n  constructor() {\n    this.count = 0;\n  }\n  bump() {\n    this.count = this.count + 1;\n  }\n}\nexports.Foo = Foo;\n",
+      "src/use.js": "const { Foo } = require('./lib');\nnew Foo().count;\n",
+    });
+
+    const definitions = await backend.findDefinitions(
+      files,
+      identity("src/lib.js", "Foo", "count"),
+    );
+    const references = await backend.findReferences(files, identity("src/lib.js", "Foo", "count"));
+
+    expect(definitions.map((definition) => formatSymbolIdentity(definition.identity))).toEqual([
+      "src/lib.js::Foo::count",
+    ]);
+    expect(referenceLocations(references)).toEqual(["src/lib.js:6", "src/use.js:2"]);
+  });
+
+  it.each([
+    ["a constructor function", "function Foo() {\n  this.value = 1;\n}\n"],
+    ["a function expression", "var Foo = function () {\n  this.value = 1;\n};\n"],
+    [
+      "a prototype method",
+      "function Foo() {}\nFoo.prototype.init = function () {\n  this.value = 1;\n};\n",
+    ],
+  ])("resolves a this-property of %s and finds its instance users", async (_container, source) => {
+    const { backend, files } = await backendOverSources({
+      "src/lib.js": `${source}exports.Foo = Foo;\n`,
+      "src/use.js": "const { Foo } = require('./lib');\nnew Foo().value;\n",
+    });
+
+    const definitions = await backend.findDefinitions(
+      files,
+      identity("src/lib.js", "Foo", "value"),
+    );
+    const references = await backend.findReferences(files, identity("src/lib.js", "Foo", "value"));
+
+    expect(definitions.map((definition) => formatSymbolIdentity(definition.identity))).toEqual([
+      "src/lib.js::Foo::value",
+    ]);
+    expect(referenceLocations(references)).toEqual(["src/use.js:2"]);
+  });
+
+  it("resolves a static method this-property and finds its static users", async () => {
+    const { backend, files } = await backendOverSources({
+      "src/lib.js":
+        "class Foo {\n  static init() {\n    this.shared = {};\n  }\n}\nexports.Foo = Foo;\n",
+      "src/use.js": "const { Foo } = require('./lib');\nFoo.shared;\n",
+    });
+
+    const references = await backend.findReferences(files, identity("src/lib.js", "Foo", "shared"));
+
+    expect(referenceLocations(references)).toEqual(["src/use.js:2"]);
+  });
+});
+
 async function backendOverSources(sources: Readonly<Record<string, string>>): Promise<{
   readonly backend: TypeScriptBackend;
   readonly files: readonly WorkspaceFile[];

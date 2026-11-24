@@ -31,6 +31,7 @@ import {
   JavaScriptAssignmentDeclarations,
   type JavaScriptAssignmentDeclaration,
 } from "./javascript-assignment-declaration.js";
+import { JavaScriptExpandoMembers } from "./javascript-expando-members.js";
 import { nodeKind } from "./node-kind.js";
 import { refineLabel } from "./refine-label.js";
 import { statementCallExpression, trailingCallbackBody } from "./trailing-callback.js";
@@ -66,6 +67,8 @@ export class OverviewChildrenExtractor {
   >();
   private readonly emittedAssignmentDeclarations = new Set<ts.Node>();
   private readonly declarationNodes = new Map<SymbolOverviewNode, Node>();
+  private readonly startPositions = new Map<OverviewNode, number>();
+  private expandoMembers: JavaScriptExpandoMembers | undefined;
 
   constructor(args: { file: string; diagnostics?: DiagnosticSink | undefined }) {
     this.file = args.file;
@@ -74,6 +77,7 @@ export class OverviewChildrenExtractor {
 
   extract(nodes: readonly Node[]): readonly OverviewNode[] {
     const sourceFile = nodes[0]?.getSourceFile();
+    this.expandoMembers = sourceFile ? JavaScriptExpandoMembers.of(sourceFile) : undefined;
     const assignmentDeclarations = sourceFile
       ? JavaScriptAssignmentDeclarations.ofSourceFile(sourceFile)
       : [];
@@ -97,7 +101,17 @@ export class OverviewChildrenExtractor {
 
   private declared<T extends SymbolOverviewNode>(symbol: T, node: Node): T {
     this.declarationNodes.set(symbol, node);
+    this.startPositions.set(symbol, node.getStart());
     return symbol;
+  }
+
+  private positioned(overviewNodes: readonly OverviewNode[], node: Node): readonly OverviewNode[] {
+    for (const overviewNode of overviewNodes) {
+      if (!this.startPositions.has(overviewNode)) {
+        this.startPositions.set(overviewNode, node.getStart());
+      }
+    }
+    return overviewNodes;
   }
 
   private extractNodes(args: {
@@ -111,6 +125,14 @@ export class OverviewChildrenExtractor {
   }
 
   private toOverviewNode(args: {
+    node: Node;
+    symbolSegments: readonly SymbolPathSegment[];
+    category: "statement" | "member";
+  }): readonly OverviewNode[] {
+    return this.positioned(this.overviewNodesOf(args), args.node);
+  }
+
+  private overviewNodesOf(args: {
     node: Node;
     symbolSegments: readonly SymbolPathSegment[];
     category: "statement" | "member";
@@ -176,7 +198,11 @@ export class OverviewChildrenExtractor {
         kind: { role: roleOf(refined), nativeLabel: refined },
         range,
         header: OverviewChildrenExtractor.headerFrom(range.startLine, extractSignatureSource(node)),
-        children: this.symbolChildren(node, childSegments),
+        children: this.withExpandoMembers(
+          node,
+          this.symbolChildren(node, childSegments),
+          childSegments,
+        ),
       },
       node,
     );
@@ -208,9 +234,10 @@ export class OverviewChildrenExtractor {
 
   private buildAssignmentDeclarationNode(
     declaration: JavaScriptAssignmentDeclaration,
+    containerSegments: readonly SymbolPathSegment[] = [],
   ): SymbolOverviewNode {
     const range = JavaScriptAssignmentDeclarations.rangeOf(declaration);
-    const segments = [{ name: declaration.name }];
+    const segments = [...containerSegments, { name: declaration.name }];
     const label = OverviewChildrenExtractor.assignmentDeclarationLabel(declaration);
     return this.declared(
       {
@@ -222,10 +249,48 @@ export class OverviewChildrenExtractor {
           range.startLine,
           JavaScriptAssignmentDeclarations.signatureOf(declaration),
         ),
-        children: this.functionValueChildren(declaration.value, segments),
+        children: this.withExpandoMembers(
+          declaration.declarationNode,
+          this.functionValueChildren(declaration.value, segments),
+          segments,
+        ),
       },
       declaration.declarationNode,
     );
+  }
+
+  private withExpandoMembers(
+    container: Node,
+    children: readonly OverviewNode[],
+    containerSegments: readonly SymbolPathSegment[],
+  ): readonly OverviewNode[] {
+    const members = (this.expandoMembers?.membersOf(container) ?? []).map((member) =>
+      this.buildAssignmentDeclarationNode(member, containerSegments),
+    );
+    if (members.length === 0) return children;
+    return this.mergedByStartPosition(children, members);
+  }
+
+  private mergedByStartPosition(
+    children: readonly OverviewNode[],
+    members: readonly OverviewNode[],
+  ): readonly OverviewNode[] {
+    const merged: OverviewNode[] = [];
+    const pendingMembers = members.values();
+    let nextMember = pendingMembers.next();
+    for (const child of children) {
+      while (!nextMember.done && this.startOf(nextMember.value) < this.startOf(child)) {
+        merged.push(nextMember.value);
+        nextMember = pendingMembers.next();
+      }
+      merged.push(child);
+    }
+    if (!nextMember.done) merged.push(nextMember.value, ...pendingMembers);
+    return merged;
+  }
+
+  private startOf(overviewNode: OverviewNode): number {
+    return this.startPositions.get(overviewNode) ?? Number.POSITIVE_INFINITY;
   }
 
   private symbolChildren(
@@ -404,7 +469,11 @@ export class OverviewChildrenExtractor {
             range.startLine,
             extractVariableSignature({ statement, declaration: decl }),
           ),
-          children: this.variableInitializerChildren(decl, childSegments),
+          children: this.withExpandoMembers(
+            decl,
+            this.variableInitializerChildren(decl, childSegments),
+            childSegments,
+          ),
         },
         decl,
       );
@@ -468,10 +537,11 @@ export class OverviewChildrenExtractor {
     if (declaration.form === "module-exports") return "default-export";
     if (Node.isGetAccessorDeclaration(declaration.value)) return "getter";
     if (Node.isSetAccessorDeclaration(declaration.value)) return "setter";
+    const isMember = declaration.containerNames.length > 0;
     if (OverviewChildrenExtractor.isFunctionValue(declaration.value)) {
-      return "function-implementation";
+      return isMember ? "method-implementation" : "function-implementation";
     }
-    return "variable";
+    return isMember ? "property" : "variable";
   }
 
   private static isFunctionValue(expression: Node): boolean {

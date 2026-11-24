@@ -315,6 +315,25 @@ describe("TypeScriptBackend.findReferences", () => {
       ["src/app/run-user.ts", 13, "usage"],
     ]);
   });
+
+  it("finds references of a function apart from a same-line same-name object literal method", async () => {
+    const files: Record<string, string> = {
+      "/repo/src/lib.ts":
+        "export const o = { f() { return 1; } }; export function f() { return o.f(); }\n",
+      "/repo/src/use.ts": ['import { f, o } from "./lib.js";', "f();", "o.f();", ""].join("\n"),
+    };
+    const { backend, path } = backendOver(files);
+
+    const result = await backend.findReferences([path("src/lib.ts"), path("src/use.ts")], {
+      file: "src/lib.ts",
+      segments: [{ name: "f" }],
+    });
+
+    expect(result.map((reference) => [reference.file, reference.line, reference.kind])).toEqual([
+      ["src/use.ts", 1, "import"],
+      ["src/use.ts", 2, "usage"],
+    ]);
+  });
 });
 
 class MutableBackendFileSystem implements FileSystem {

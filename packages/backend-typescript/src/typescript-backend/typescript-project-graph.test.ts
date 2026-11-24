@@ -938,6 +938,33 @@ describe("TypeScriptProjectGraph", () => {
     expect(scratchOptions()?.skipLibCheck).toBe(true);
   });
 
+  it("makes a nested jsconfig.json primary for TypeScript under it over an ancestor tsconfig.json", async () => {
+    const workspace = inMemoryWorkspace({
+      "tsconfig.json": JSON.stringify({
+        compilerOptions: { baseUrl: ".", paths: { "@x/*": ["src/*"] } },
+      }),
+      "docs/jsconfig.json": JSON.stringify({}),
+      "src/x.ts": "export function x(): number { return 1; }\n",
+      "docs/demo.ts": 'import { x } from "@x/x";\nexport function demo() { return x(); }\n',
+    });
+    const graph = new TypeScriptProjectGraph(workspace.fileSystem);
+    const backend = new TypeScriptBackend(workspace.fileSystem);
+    await backend.refresh({ snapshot: workspace.snapshot, coverage: "workspace" });
+
+    const refresh = await graph.refresh(workspace.snapshot);
+    const options = graph.programFor("docs/demo.ts")?.getCompilerOptions();
+    const callees = await calleeNames(
+      backend,
+      workspace.snapshot.files,
+      symbolIdentity("docs/demo.ts", "demo"),
+    );
+
+    expect(refresh.configuredProjectCount).toBe(2);
+    expect(options?.skipLibCheck).toBe(true);
+    expect(options?.paths?.["@x/*"]).toBeUndefined();
+    expect(callees).toEqual([]);
+  });
+
   it("discovers a nested jsconfig.json without a root configuration", async () => {
     const workspace = inMemoryWorkspace({
       "packages/a/jsconfig.json": JSON.stringify({}),

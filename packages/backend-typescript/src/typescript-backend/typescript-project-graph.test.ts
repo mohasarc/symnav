@@ -891,6 +891,53 @@ describe("TypeScriptProjectGraph", () => {
     expect(callees).toEqual(["helper"]);
   });
 
+  it("uses only the tsconfig.json when a jsconfig.json shares its directory", async () => {
+    const workspace = inMemoryWorkspace({
+      "tsconfig.json": JSON.stringify({ compilerOptions: { strict: true } }),
+      "jsconfig.json": JSON.stringify({}),
+      "src/a.ts": "export const a = 1;\n",
+    });
+    const graph = new TypeScriptProjectGraph(workspace.fileSystem);
+
+    const refresh = await graph.refresh(workspace.snapshot);
+    const options = graph.programFor("src/a.ts")?.getCompilerOptions();
+
+    expect(refresh.configuredProjectCount).toBe(1);
+    expect(options?.strict).toBe(true);
+    expect(options?.skipLibCheck).toBeUndefined();
+  });
+
+  it("switches between jsconfig.json and tsconfig.json as a sibling tsconfig.json comes and goes", async () => {
+    const projectFixture = fixture();
+    projectFixture.write("scratch/jsconfig.json", JSON.stringify({}));
+    const graph = new TypeScriptProjectGraph(projectFixture.fileSystem);
+    const snapshot = await projectFixture.snapshot();
+    const scratchOptions = () => graph.programFor("scratch/outside.ts")?.getCompilerOptions();
+
+    const withJavaScriptConfiguration = await graph.refresh(snapshot);
+    const javaScriptOptions = scratchOptions();
+    projectFixture.write(
+      "scratch/tsconfig.json",
+      JSON.stringify({ compilerOptions: { strict: true } }),
+    );
+    const withTypeScriptConfiguration = await graph.refresh(snapshot);
+    const typeScriptOptions = scratchOptions();
+    projectFixture.remove("scratch/tsconfig.json");
+    const restored = await graph.refresh(snapshot);
+
+    expect(withJavaScriptConfiguration.inferredFileCount).toBe(0);
+    expect(javaScriptOptions?.skipLibCheck).toBe(true);
+    expect(withTypeScriptConfiguration.configuredProjectCount).toBe(
+      withJavaScriptConfiguration.configuredProjectCount,
+    );
+    expect(typeScriptOptions).toMatchObject({ strict: true });
+    expect(typeScriptOptions?.skipLibCheck).toBeUndefined();
+    expect(restored.configuredProjectCount).toBe(
+      withJavaScriptConfiguration.configuredProjectCount,
+    );
+    expect(scratchOptions()?.skipLibCheck).toBe(true);
+  });
+
   it("keeps implicit outDir contents outside configured membership", async () => {
     const projectFixture = fixture();
     const graph = new TypeScriptProjectGraph(projectFixture.fileSystem);

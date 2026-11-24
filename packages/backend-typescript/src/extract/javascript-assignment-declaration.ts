@@ -18,6 +18,7 @@ interface SourceFileWithModuleIndicator extends ts.SourceFile {
 export interface JavaScriptAssignmentDeclaration {
   readonly name: string;
   readonly declarationNode: Node;
+  readonly nameLiteral: Node | undefined;
   readonly value: Node;
   readonly statement: Node;
 }
@@ -82,7 +83,10 @@ export class JavaScriptAssignmentDeclarations {
     if (JavaScriptAssignmentDeclarations.aliasesSameNameLocal(value, name)) return undefined;
     const statement = target.getFirstAncestor(Node.isStatement);
     if (!statement) return undefined;
-    return { name, declarationNode: target, value, statement };
+    const nameLiteral = Node.isElementAccessExpression(target)
+      ? target.getArgumentExpression()
+      : undefined;
+    return { name, declarationNode: target, nameLiteral, value, statement };
   }
 
   private static assignedValue(assignment: BinaryExpression): Node {

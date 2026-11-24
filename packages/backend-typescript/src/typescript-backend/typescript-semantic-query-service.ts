@@ -16,6 +16,7 @@ import { Node, type ReferencedSymbolEntry, type SourceFile } from "ts-morph";
 import { CallerFinder } from "../call-graph/find-callers.js";
 import { findCallees, type PositionDefinitionResolver } from "../call-graph/find-callees.js";
 import { findDefinitions } from "../definition/find-definitions.js";
+import { JavaScriptAssignmentDeclarations } from "../extract/javascript-assignment-declaration.js";
 import { classifyReferenceKind } from "../references/classify-reference-kind.js";
 import { DeclarationImplementationPairs } from "./declaration-implementation-pairs.js";
 import { PairedSymbolMatcher } from "./paired-symbol-matcher.js";
@@ -222,8 +223,12 @@ export class TypeScriptSemanticQueryService implements PositionDefinitionResolve
         this.semanticDeclarationNodes(counterpart),
       ),
     ];
-    const locations = declarationNodes.flatMap((declarationNode) =>
-      TypeScriptSemanticQueryService.referenceEntriesOf(declarationNode).flatMap((entry) => {
+    const locations = declarationNodes.flatMap((declarationNode) => {
+      const assignment = JavaScriptAssignmentDeclarations.declarationAt(declarationNode);
+      return TypeScriptSemanticQueryService.referenceEntriesOf(
+        declarationNode,
+        assignment?.nameLiteral,
+      ).flatMap((entry) => {
         const node = entry.getNode();
         const relativePath = this.workspaceState.relativePathOf(node.getSourceFile());
         return relativePath
@@ -236,8 +241,8 @@ export class TypeScriptSemanticQueryService implements PositionDefinitionResolve
               },
             ]
           : [];
-      }),
-    );
+      });
+    });
     const byLocation = new Map<string, SemanticReferenceLocation>();
     for (const location of locations) {
       byLocation.set(
@@ -322,7 +327,17 @@ export class TypeScriptSemanticQueryService implements PositionDefinitionResolve
     return undefined;
   }
 
-  private static referenceEntriesOf(declarationNode: Node): readonly ReferencedSymbolEntry[] {
+  private static referenceEntriesOf(
+    declarationNode: Node,
+    nameLiteral: Node | undefined,
+  ): readonly ReferencedSymbolEntry[] {
+    if (nameLiteral) {
+      return nameLiteral
+        .getProject()
+        .getLanguageService()
+        .findReferences(nameLiteral)
+        .flatMap((referencedSymbol) => referencedSymbol.getReferences());
+    }
     if (!Node.isReferenceFindable(declarationNode)) return [];
     return declarationNode
       .findReferences()

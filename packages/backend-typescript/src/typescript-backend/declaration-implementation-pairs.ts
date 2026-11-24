@@ -14,8 +14,11 @@ export interface DeclarationImplementationFilePair {
 
 const DECLARATION_FILE_PATTERN = /\.d\.[mc]?ts$/;
 const IMPLEMENTATION_FILE_PATTERN = /\.(?:jsx?|mjs|cjs)$/;
-const DECLARATION_FILE_EXTENSION = ".d.ts";
-const IMPLEMENTATION_FILE_EXTENSION = ".js";
+const IMPLEMENTATION_EXTENSION_BY_DECLARATION_EXTENSION: ReadonlyMap<string, string> = new Map([
+  [".d.ts", ".js"],
+  [".d.mts", ".mjs"],
+  [".d.cts", ".cjs"],
+]);
 
 export class DeclarationImplementationPairs {
   constructor(
@@ -75,10 +78,13 @@ export class DeclarationImplementationPairs {
   private static selfSpecifier(relativePath: string): string | undefined {
     const name = posix.basename(relativePath);
     if (IMPLEMENTATION_FILE_PATTERN.test(name)) return `./${name}`;
-    if (name.endsWith(DECLARATION_FILE_EXTENSION)) {
-      return `./${name.slice(0, -DECLARATION_FILE_EXTENSION.length)}${IMPLEMENTATION_FILE_EXTENSION}`;
-    }
-    return undefined;
+    const declarationExtension = [...IMPLEMENTATION_EXTENSION_BY_DECLARATION_EXTENSION.keys()].find(
+      (extension) => name.endsWith(extension),
+    );
+    if (!declarationExtension) return undefined;
+    const implementationExtension =
+      IMPLEMENTATION_EXTENSION_BY_DECLARATION_EXTENSION.get(declarationExtension);
+    return `./${name.slice(0, -declarationExtension.length)}${implementationExtension}`;
   }
 
   private static hidingDeclarationFiles(host: ts.ModuleResolutionHost): ts.ModuleResolutionHost {

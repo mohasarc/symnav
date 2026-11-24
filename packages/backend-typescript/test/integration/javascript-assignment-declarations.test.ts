@@ -413,6 +413,43 @@ describe("TypeScriptBackend CommonJS export declarations", () => {
     ]);
   });
 
+  it.each([
+    ["exports.helper from lib.js", "exports.helper = function () { return 1; };\n", "src/lib.js"],
+    [
+      "exports.helper from lib.d.ts",
+      "exports.helper = function () { return 1; };\n",
+      "src/lib.d.ts",
+    ],
+    [
+      "an aliased local from lib.js",
+      "function helper() { return 1; }\nmodule.exports = { helper };\n",
+      "src/lib.js",
+    ],
+  ])("finds require users of %s paired with a .d.ts twin", async (_form, librarySource, file) => {
+    const { backend, files } = await backendOverSources({
+      "src/lib.js": librarySource,
+      "src/lib.d.ts": "export declare function helper(): number;\n",
+      "src/use.js": [
+        "const { helper } = require('./lib');",
+        "function destructured() { return helper(); }",
+        "const lib = require('./lib');",
+        "function member() { return lib.helper(); }",
+        "",
+      ].join("\n"),
+    });
+
+    const references = await backend.findReferences(files, identity(file, "helper"));
+    const callers = await backend.findCallers(files, identity(file, "helper"));
+
+    expect(
+      referenceLocations(references).filter((location) => location.startsWith("src/use.js")),
+    ).toEqual(["src/use.js:1", "src/use.js:2", "src/use.js:4"]);
+    expect(callers.map((edge) => formatSymbolIdentity(edge.symbol.identity))).toEqual([
+      "src/use.js::destructured",
+      "src/use.js::member",
+    ]);
+  });
+
   it("pairs a module.exports function with the .d.ts export = declaration", async () => {
     const { backend, files } = await backendOverSources({
       "src/lib.js": "module.exports = function () { return 1; };\n",

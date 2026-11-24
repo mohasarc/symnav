@@ -34,6 +34,12 @@ Cannot answer: foo.ts is outside the workspace rooted at /repo.
 Cannot answer: cannot read directory /repo/src/locked (EACCES).
 ```
 
+### Supported files
+
+TypeScript and JavaScript: `.ts`, `.tsx`, `.mts`, `.cts`, `.d.ts`, `.js`, `.jsx`, `.mjs`, `.cjs`. Any other file gets `cannot read <ext> files`. See [JavaScript](#javascript) for what JS adds.
+
+Projects come from `tsconfig.json` and `jsconfig.json` files anywhere in the workspace, with `extends`, `references`, `paths`, and `include`/`exclude` handled like tsserver. A `tsconfig.json` wins over a `jsconfig.json` in the same directory. A config owns the JS files its `include` covers even without `allowJs`. Files no config owns share one inferred project. A file owned by a nested config doesn't get the root config's `paths` unless the nested one `extends` it, same as tsserver.
+
 ### Ambiguity stops
 
 When input matches more than one thing, symnav lists the candidates and stops. It never guesses, ranks, or picks a first result. There's no first-result override.
@@ -125,11 +131,12 @@ Cannot answer: no symbol target "helper" matching line 99.
 Cannot answer: file not found: missing.ts.
 Cannot answer: cannot read .py files (src/report.py).
 Cannot answer: cannot read .py files (src/adapters/report.py, and 1 more).
+Cannot answer: cannot read Flow-typed files (src/legacy/flow.js).
 Cannot answer: invalid symbol target (empty path segment between "::" separators): "::charge".
 Cannot answer: invalid regex "[": Unterminated character class.
 ```
 
-A file part that matches no workspace file reports the file as missing, with or without a `/`, even when an ignored file ends with it. A file part that is the exact path of an ignored file reports `is ignored by .gitignore`, same as `overview`. A file part whose matches are all files no backend reads reports `cannot read <ext> files` like `overview`, naming the first match by path and counting the rest. Unsupported matches next to a supported one are dropped. Bare names and `--regex` never look at unsupported files. A copied fold header is a plain not-found, since folds aren't symbols.
+A file part that matches no workspace file reports the file as missing, with or without a `/`, even when an ignored file ends with it. A file part that is the exact path of an ignored file reports `is ignored by .gitignore`, same as `overview`. A file part whose matches are all unsupported or refused files (like [Flow-typed](#flow) ones) reports `cannot read …` like `overview`, naming the first match by path and counting the rest. The message gives the first match's reason. Unsupported and refused matches next to a supported one are dropped. Bare names and `--regex` never look at unsupported or refused files. A copied fold header is a plain not-found, since folds aren't symbols.
 
 Ambiguity prints copyable IDs with signatures, plus the way out:
 
@@ -293,6 +300,8 @@ src/payments/StripeProvider.ts
     async charge(orderId: string): Promise<string>
 ```
 
+A JS file with a `.d.ts` twin shows both halves, see [`.d.ts` pairs](#dts-pairs).
+
 ## `refs`
 
 Every reference in non-ignored workspace files except the symbol's own declaration. Imports, exports, and type references are included. Kinds: `usage`, `import`, `export`, `type`.
@@ -404,4 +413,66 @@ src/dynamic.ts
         │           export function alphaLeaf(): number
         └── 14-16: dynamicBeta  [possible: dynamic dispatch: exact callee not statically resolvable]
             export function dynamicBeta(): number
+```
+
+## JavaScript
+
+JS goes through the same TypeScript program as `.ts`, so every command works on it, including across `.ts` ↔ `.js` imports both ways. Unconfigured JS lands in the inferred project with `allowJs`, `jsx: preserve`, and no `node_modules` JS.
+
+### Declaration forms
+
+Besides normal declarations, `overview` lists the assignments TypeScript's binder treats as declarations, and they resolve as targets:
+
+| Form                                                    | Symbol                        |
+| ------------------------------------------------------- | ----------------------------- |
+| `exports.foo = …`, `module.exports.foo = …`             | `foo`                         |
+| `module.exports = { a: 1, b() {} }`                     | `a`, `b`                      |
+| `module.exports = X`                                    | `default`                     |
+| `Object.defineProperty(exports, "x", …)`                | `x`                           |
+| `Foo.prototype.bar = …`, `Foo.prototype = { bar() {} }` | `Foo::bar`                    |
+| `Foo.bar = …` on a function, class, or `const Foo = {}` | `Foo::bar`                    |
+| `this.x = …` in a class member or a named function      | `Foo::x`, at first assignment |
+| JSDoc `@typedef`, `@callback`, `@enum`                  | the tag's name                |
+
+`refs`, `context`, and `graph` on a CommonJS export list its `require` and `import` users: destructured `require` bindings, `require("./m").foo`, `const x = require("./m").foo`, and `require` of a module with a `.d.ts` twin. That covers every export form in the table, plus `fn.foo = …` and `static` class members when `module.exports = fn`, also when that assignment sits inside an `if`. They follow files that re-export a name, like `module.exports = { foo }`, `exports.bar = foo`, or `exports.bar = require("./m").foo`, or the whole module, like `module.exports = require("./m")`.
+
+Same-name aliases, `exports.foo = foo` and `module.exports = { foo }`, add no symbol; `foo` is the local and gets those users. The same goes for `module.exports = foo` and the `default` symbol.
+
+Known gaps:
+
+- JS outside a `tsconfig.json`'s `include`, imported from a file it owns, only links when that config has `allowJs`, set by the user or forced because its `include` covers some JS.
+- `this.x` isn't listed under `let Foo; Foo = function () {…}` or `module.exports = function Foo() {…}`, or as a bare `/** @type {T} */ this.x;`.
+- `x.bar = …` isn't listed when `x` isn't a symbol itself, like a parameter or `window`.
+- Chained `Foo.prototype = Bar.prototype = {…}` lists members under `Bar` only.
+- A `@typedef` in a class member's JSDoc isn't listed.
+- In JS with no `tsconfig.json` or `jsconfig.json`, `import d from "./d.js"` of a CommonJS module lists `d()` as a caller of `d.js::default`, but `graph --outgoing` from the caller shows no callee. Same for `d.foo()`. A `jsconfig.json`, or a `tsconfig.json` with `esModuleInterop`, links both ways.
+- `require` of an ES module, like `const { foo } = require("./esm.js")` where `esm.js` has `export function foo`, links outgoing from the caller, but `refs` and callers on `foo` don't list it.
+- `exports.foo = …` inside a function that takes `exports` as a parameter, as in UMD wrappers, is listed, but isn't followed to destructured `require` users.
+- `new Ctor()` from JS on `mm.Ctor` of a `.d.ts`-paired `mm.js`, where the `.d.ts` declares `Ctor` as a class in a namespace, lists the caller on `Ctor` but no outgoing callee.
+- `module.exports.foo = x` inside a function that takes `module` as a parameter: `graph --outgoing` from a `require` user of `foo` reaches `x`, but `x` lists no callers.
+
+### `.d.ts` pairs
+
+`Tabs.js` next to `Tabs.d.ts` answers as one symbol. Pairs come from module resolution: an import that resolves to the `.d.ts` pairs it with the JS file the same import reaches when `.d.ts` files are hidden. A `.d.ts` nobody imports pairs with what its own path resolves to. Symbols match by export name, class members by member name.
+
+Either half works as a target. `def` lists both, the JS half tagged `[implementation]` and the `.d.ts` half `[declaration]`. `refs`, `context`, and `graph` merge importers and callers of both halves. The `context` and `graph` headers name the implementation file. A bare name that matches only the two halves isn't ambiguous.
+
+```text
+Definition: Tabs
+
+src/Tabs/Tabs.js
+└── 6-8: Tabs  [implementation]
+    const Tabs = React.forwardRef(…)
+
+src/Tabs/Tabs.d.ts
+└── 5: Tabs  [declaration]
+    declare const Tabs: (props: TabsProps) => unknown
+```
+
+### Flow
+
+Files with an `@flow` or `@noflow` pragma are refused on every command and left out of every result, including other files' references and callers. The pragma counts in any leading comment, as a standalone word, with or without a mode like `@flow strict`. A pragma after `'use strict'` isn't detected: Flow scans the first 10 tokens, symnav reads leading comments only. Only JS files are checked.
+
+```text
+Cannot answer: cannot read Flow-typed files (src/x.js).
 ```

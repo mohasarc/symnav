@@ -917,7 +917,8 @@ function fixtureSourcePaths(directory: string): readonly string[] {
   return readdirSync(directory, { withFileTypes: true })
     .flatMap((entry) => {
       const absolute = join(directory, entry.name).replaceAll("\\", "/");
-      if (entry.isDirectory()) return entry.name === "dot-git" ? [] : fixtureSourcePaths(absolute);
+      const isGitMarker = entry.name === "dot-git" || entry.name === ".git";
+      if (entry.isDirectory()) return isGitMarker ? [] : fixtureSourcePaths(absolute);
       return entry.name.endsWith(".json") ? [] : [absolute];
     })
     .sort();

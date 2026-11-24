@@ -1,0 +1,14 @@
+Graph: useTabs
+File: src/hooks/useTabs.js
+Lines: 4-6
+Depth: 1
+Direction: outgoing
+Edges: calls
+
+Outgoing
+src/hooks/useTabs.js
+└── 4-6: useTabs
+    export function useTabs()
+    └── src/Tabs/Tabs.js
+        └── 6-8: Tabs  [callee]
+            const Tabs = React.forwardRef(…)

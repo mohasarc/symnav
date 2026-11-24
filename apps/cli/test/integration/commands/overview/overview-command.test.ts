@@ -2,7 +2,10 @@ import { describe, expect, it } from "vitest";
 import {
   InMemoryFileSystem,
   type OverviewExpansionResult,
+  type BackendRefreshRequest,
+  type BackendRefreshSummary,
   type OverviewFileEntries,
+  UnsupportedFileError,
   WorkspaceSession,
 } from "@symnav/core";
 import { TypeScriptBackend } from "@symnav/backend-typescript";
@@ -113,6 +116,20 @@ class RetainedSiblingMetadataFileSystem extends InMemoryFileSystem {
   }
 }
 
+class RefusalLiftingBackend extends FakeLanguageBackend {
+  private refusesFiles = true;
+
+  refusal(filePath: string): UnsupportedFileError | undefined {
+    if (!this.refusesFiles) return undefined;
+    return new UnsupportedFileError(filePath, { fileKind: "Flow-typed" });
+  }
+
+  override async refresh(request: BackendRefreshRequest): Promise<BackendRefreshSummary> {
+    this.refusesFiles = false;
+    return super.refresh(request);
+  }
+}
+
 describe("symnav overview happy path", () => {
   it("reads an accessible target when an unrelated sibling directory is unreadable", async () => {
     const fs = new UnreadableSiblingFileSystem({
@@ -205,6 +222,28 @@ describe("symnav overview happy path", () => {
 
     expect(warm).toEqual(cold);
     expect(fs.siblingMetadataReads).toBe(0);
+  });
+
+  it("answers a warm overview whose file the backend stops refusing at refresh", async () => {
+    const fs = new InMemoryFileSystem({
+      "/repo/.git/HEAD": "ref: refs/heads/main\n",
+      "/repo/src/a.ts": "export const accessible = true;\n",
+    });
+    const backend = new RefusalLiftingBackend();
+    const workspaceSession = new WorkspaceSession({
+      fileSystem: fs,
+      backends: [backend],
+      discoveryRetention: "session",
+    });
+
+    const result = await parse(["overview", "src/a.ts"], {
+      ...fakeDependencies({ fs, backends: () => [backend] }),
+      workspaceSession,
+    });
+
+    expect(result.stderr).toBe("");
+    expect(result.exitCodes).toEqual([]);
+    expect(result.stdout).toContain("src/a.ts");
   });
 
   it.each([

@@ -778,6 +778,39 @@ describe("this-property members in overview", () => {
     ]);
   });
 
+  it("orders this-properties between the try, catch and finally folds that hold them", () => {
+    const source = [
+      "function Foo() {",
+      "  try {",
+      "    this.a = 1;",
+      "  } catch (error) {",
+      "    this.b = 2;",
+      "  } finally {",
+      "    this.c = 3;",
+      "  }",
+      "}",
+    ].join("\n");
+
+    const [container] = fileEntriesOf(source).entries;
+
+    expect(
+      container?.type === "symbol"
+        ? container.children.map((child) =>
+            child.type === "fold"
+              ? `fold:${child.foldKind}`
+              : child.type === "symbol" && idOf(child),
+          )
+        : [],
+    ).toEqual([
+      "fold:try",
+      "input.js::Foo::a",
+      "fold:catch",
+      "input.js::Foo::b",
+      "fold:finally",
+      "input.js::Foo::c",
+    ]);
+  });
+
   it("emits no member for a this-property that a class element already declares", () => {
     const source = [
       "class Foo {",

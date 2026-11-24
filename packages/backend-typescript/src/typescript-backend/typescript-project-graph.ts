@@ -17,7 +17,10 @@ import { TypeScriptBackend } from "./typescript-backend.js";
 import type { TypeScriptSemanticSourceProvider } from "./typescript-workspace-state.js";
 import type { TypeScriptSemanticQueryObserver } from "./typescript-semantic-query-observer.js";
 import { SharedSourceFileRegistry } from "./shared-source-file-registry.js";
-import { WorkspaceFileSystemHost } from "./workspace-file-system-host.js";
+import {
+  WorkspaceFileSystemHost,
+  type HiddenWorkspaceFiles,
+} from "./workspace-file-system-host.js";
 import { WorkspacePathDialect } from "./workspace-path-dialect.js";
 
 export interface TypeScriptProjectGraphRefresh {
@@ -124,6 +127,7 @@ export class TypeScriptProjectGraph
   private readonly sourceFileRegistry = new SharedSourceFileRegistry();
   private semanticProjects: readonly TypeScriptSemanticProject[] = [];
   private preparedSemanticProjects: readonly TypeScriptSemanticProject[] | undefined;
+  private hiddenFiles: HiddenWorkspaceFiles | undefined;
 
   constructor(
     fileSystem: FileSystem,
@@ -132,7 +136,11 @@ export class TypeScriptProjectGraph
     super(fileSystem);
   }
 
-  async refresh(snapshot: WorkspaceSnapshot): Promise<TypeScriptProjectGraphRefresh> {
+  async refresh(
+    snapshot: WorkspaceSnapshot,
+    hiddenFiles?: HiddenWorkspaceFiles,
+  ): Promise<TypeScriptProjectGraphRefresh> {
+    this.hiddenFiles = hiddenFiles;
     try {
       const summary = await this.refreshProjectGraph(snapshot);
       if (this.preparedSemanticProjects) {
@@ -288,7 +296,9 @@ export class TypeScriptProjectGraph
       configurations,
       request.inputCollector,
     );
-    const fileSystemHost = new WorkspaceFileSystemHost(this.fileSystem);
+    const fileSystemHost = new WorkspaceFileSystemHost(this.fileSystem, {
+      hides: (absolutePath) => this.hiddenFiles?.hides(absolutePath) === true,
+    });
     const configuredProjects = request.configurations.map(
       ({ configuration, files }) =>
         new TypeScriptSemanticProject(

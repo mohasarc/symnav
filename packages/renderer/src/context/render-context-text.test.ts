@@ -4,6 +4,7 @@ import type {
   CallEdge,
   CallSite,
   ContextResult,
+  DefinitionSymbol,
   HistoryEntry,
   ReferenceKind,
   SymbolOverviewNode,
@@ -67,6 +68,46 @@ function baseResult(overrides: Partial<ContextResult> = {}): ContextResult {
 }
 
 describe("renderContextText", () => {
+  it("tags paired definitions by pair role in the Definition section", () => {
+    const implementation: DefinitionSymbol = {
+      ...decl({
+        file: "src/Tabs/Tabs.js",
+        segments: [{ name: "Tabs" }],
+        nativeLabel: "variable",
+        startLine: 3,
+        endLine: 9,
+        header: ["const Tabs = React.forwardRef(function Tabs(props, ref) {"],
+      }),
+      pairRole: "implementation",
+    };
+    const declaration: DefinitionSymbol = {
+      ...decl({
+        file: "src/Tabs/Tabs.d.ts",
+        segments: [{ name: "Tabs" }],
+        nativeLabel: "variable",
+        startLine: 4,
+        endLine: 4,
+        header: ["declare const Tabs: React.ComponentType<TabsProps>;"],
+      }),
+      pairRole: "declaration",
+    };
+
+    const text = renderContextText(baseResult({ definitions: [implementation, declaration] }));
+
+    expect(text).toContain(
+      [
+        "Definition",
+        "src/Tabs/Tabs.js",
+        "└── 3-9: Tabs  [implementation]",
+        "    const Tabs = React.forwardRef(function Tabs(props, ref) {",
+        "src/Tabs/Tabs.d.ts",
+        "└── 4: Tabs  [declaration]",
+        "    declare const Tabs: React.ComponentType<TabsProps>;",
+        "",
+      ].join("\n"),
+    );
+  });
+
   it("renders the full spec-shaped block", () => {
     const caller = decl({
       file: "src/api/CheckoutController.ts",

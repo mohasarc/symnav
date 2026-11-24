@@ -1,7 +1,14 @@
 import { describe, expect, it } from "vitest";
-import { OverviewTree, formatSymbolIdentity, type SymbolOverviewNode } from "@symnav/core";
+import { Node, Project, ts, type SourceFile, type Symbol } from "ts-morph";
+import {
+  OverviewTree,
+  SEGMENT_SEPARATOR,
+  formatSymbolIdentity,
+  type SymbolOverviewNode,
+} from "@symnav/core";
 
 import { parseTypeScriptSource } from "../../test/helpers/parse-typescript-source.js";
+import { DeclarationLocator } from "../identity/locate-declarations.js";
 import { extractFileEntries } from "./extract-file-entries.js";
 
 describe("CommonJS export declarations in overview", () => {
@@ -331,6 +338,192 @@ describe("CommonJS export declarations in overview", () => {
     expect(OverviewTree.walkSymbols(fileEntriesOf(source, "input.ts").entries)).toEqual([]);
   });
 });
+
+describe("CommonJS export declarations against the TypeScript binder", () => {
+  it.each([
+    [
+      "compiled CommonJS output",
+      [
+        '"use strict";',
+        'Object.defineProperty(exports, "__esModule", { value: true });',
+        "exports.first = exports.second = void 0;",
+        "function local() {}",
+        "exports.local = local;",
+        "exports.first = function () {};",
+        "module.exports.second = 2;",
+        "exports.third = module.exports.fourth = 4;",
+        'Object.defineProperty(exports, "fifth", { enumerable: true, get: function () { return 5; } });',
+        "exports.first = 6;",
+        "exports.first.nested = 7;",
+      ],
+    ],
+    [
+      "exports outside module-level expression statements",
+      [
+        "var app = module.exports.app = function () {};",
+        "var _default = exports.default = 1;",
+        "exports.a = 1, exports.b = 2;",
+        "(exports.p = 3);",
+        "if (typeof window === 'undefined') exports.server = true;",
+        "function init() {",
+        "  exports.inner = 1;",
+        "  const nested = { deep: 1 };",
+        "}",
+        "function wrap(exports) {",
+        "  exports.shadowed = 2;",
+        "}",
+        "(function () {",
+        "  exports.iife = 3;",
+        "})();",
+        "factory(function (root) {",
+        "  exports.umd = 4;",
+        "});",
+        "const later = () => (exports.late = 5);",
+      ],
+    ],
+    [
+      "literal-named exports",
+      [
+        'exports["x"] = 1;',
+        'module["exports"].y = 2;',
+        'module.exports["z"] = 3;',
+        "exports[`t`] = 4;",
+        "exports[0x10] = 5;",
+        "exports[key] = 6;",
+        'exports["a::b"] = 7;',
+        'exports["c#2"] = 8;',
+        "Object.defineProperty(exports, 1, { value: 9 });",
+        "Object.defineProperty(module.exports, `u`, { value: 10 });",
+        'Object.defineProperty(target, "other", { value: 11 });',
+      ],
+    ],
+    [
+      "a module.exports object",
+      [
+        "function a() {}",
+        "const rest = { spread: 1 };",
+        "module.exports = {",
+        "  a,",
+        "  b() {},",
+        "  c: 1,",
+        '  "d": function () {},',
+        "  get size() { return 1; },",
+        "  set size(value) {},",
+        '  ["computed"]: 2,',
+        "  7: 3,",
+        "  0x10: 4,",
+        "  [`template`]: 5,",
+        "  [dynamic]: 6,",
+        "  ...rest,",
+        "  nested: { inner: 7 },",
+        "};",
+      ],
+    ],
+    ["a parenthesized module.exports object", ["module.exports = exports = ({ a: 1 });"]],
+    ["a module.exports value", ["module.exports = function () {};", "module.exports.extra = 1;"]],
+    ["module.exports assigned exports", ["module.exports = exports;", "exports.z = 1;"]],
+    [
+      "a file with ES module syntax",
+      [
+        'import helper from "./helper";',
+        "exports.foo = 1;",
+        "module.exports.bar = 2;",
+        'Object.defineProperty(exports, "baz", { value: 3 });',
+        "export const real = helper;",
+      ],
+    ],
+  ])("lists exactly the exports the binder declares for %s", (_case, lines) => {
+    const sourceFile = programSourceFile(lines.join("\n"));
+
+    expect(listedExports(sourceFile)).toEqual(binderExports(sourceFile));
+  });
+});
+
+function programSourceFile(source: string): SourceFile {
+  const project = new Project({
+    useInMemoryFileSystem: true,
+    compilerOptions: { allowJs: true, checkJs: false },
+  });
+  const sourceFile = project.createSourceFile("/input.js", source);
+  sourceFile.getPreEmitDiagnostics();
+  return sourceFile;
+}
+
+function listedExports(sourceFile: SourceFile): readonly string[] {
+  const { entries } = extractFileEntries({ sourceFile, filePath: "input.js" });
+  const located = new DeclarationLocator(sourceFile).locateAll(entries);
+  expect(located).toHaveLength(OverviewTree.walkSymbols(entries).length);
+  return located
+    .filter(({ node }) => isCommonJsDeclarationNode(node))
+    .map(({ declaration, node }) => {
+      const path = declaration.identity.segments.map((segment) => segment.name);
+      return `${path.join(SEGMENT_SEPARATOR)}@${node.getStartLineNumber()}`;
+    })
+    .sort();
+}
+
+function isCommonJsDeclarationNode(node: Node): boolean {
+  if (
+    Node.isPropertyAccessExpression(node) ||
+    Node.isElementAccessExpression(node) ||
+    Node.isCallExpression(node)
+  ) {
+    return true;
+  }
+  return Node.isObjectLiteralExpression(node.getParent());
+}
+
+function binderExports(sourceFile: SourceFile): readonly string[] {
+  return sourceFile
+    .getSymbolOrThrow()
+    .getExports()
+    .flatMap((exported) => {
+      if (exported.getName() === ts.InternalSymbolName.ExportEquals) {
+        return exportEqualsDeclarations(exported, sourceFile);
+      }
+      if (aliasesSameNameLocal(exported) || !spellsCanonicalId(exported.getName())) return [];
+      return exported
+        .getDeclarations()
+        .filter(isCommonJsDeclarationNode)
+        .map((declaration) => `${exported.getName()}@${declaration.getStartLineNumber()}`);
+    })
+    .sort();
+}
+
+function exportEqualsDeclarations(exportEquals: Symbol, sourceFile: SourceFile): readonly string[] {
+  const [assignment] = exportEquals.getDeclarations();
+  if (!Node.isBinaryExpression(assignment)) return [];
+  const object = rightmostAssignedObject(assignment.getRight());
+  if (!object) return [`default@${assignment.getStartLineNumber()}`];
+  const members = sourceFile
+    .getProject()
+    .getTypeChecker()
+    .getTypeOfSymbolAtLocation(exportEquals, sourceFile)
+    .getProperties();
+  return members.flatMap((member) =>
+    member
+      .getDeclarations()
+      .filter(
+        (declaration) =>
+          declaration.getParent() === object && !Node.isShorthandPropertyAssignment(declaration),
+      )
+      .map((declaration) => `${member.getName()}@${declaration.getStartLineNumber()}`),
+  );
+}
+
+function rightmostAssignedObject(value: Node): Node | undefined {
+  if (Node.isParenthesizedExpression(value)) return rightmostAssignedObject(value.getExpression());
+  if (Node.isBinaryExpression(value)) return rightmostAssignedObject(value.getRight());
+  return Node.isObjectLiteralExpression(value) ? value : undefined;
+}
+
+function aliasesSameNameLocal(exported: Symbol): boolean {
+  return exported.isAlias() && exported.getAliasedSymbol()?.getName() === exported.getName();
+}
+
+function spellsCanonicalId(name: string): boolean {
+  return !name.includes(SEGMENT_SEPARATOR) && !/#[1-9][0-9]*$/.test(name);
+}
 
 interface DeclarationSummary {
   readonly id: string;

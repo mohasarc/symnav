@@ -219,6 +219,43 @@ describe("CommonJS export declarations in overview", () => {
     expect(idsOf(source)).toEqual(["input.js::b", "input.js::b::inner"]);
   });
 
+  it("lists module.exports assigned a function as the default export", () => {
+    const source = ["module.exports = function named(a) {", "  function inner() {}", "};"].join(
+      "\n",
+    );
+
+    expect(summariesOf(source)[0]).toEqual({
+      id: "input.js::default",
+      label: "default-export",
+      range: [1, 3],
+      header: ["module.exports = function named(a) …"],
+    });
+    expect(idsOf(source)).toEqual(["input.js::default", "input.js::default::inner"]);
+  });
+
+  it("lists module.exports assigned a local as the default export", () => {
+    const source = ["function Foo() {}", 'module["exports"] = Foo;'].join("\n");
+
+    expect(summariesOf(source)).toEqual([
+      {
+        id: "input.js::Foo",
+        label: "function-implementation",
+        range: [1, 1],
+        header: ["function Foo()"],
+      },
+      {
+        id: "input.js::default",
+        label: "default-export",
+        range: [2, 2],
+        header: ['module["exports"] = Foo'],
+      },
+    ]);
+  });
+
+  it("emits no default export for module.exports assigned exports itself", () => {
+    expect(idsOf("module.exports = exports;\nmodule.exports = module.exports;")).toEqual([]);
+  });
+
   it("emits no node for CommonJS export syntax in a file with ES module syntax", () => {
     const source = [
       'import helper from "./helper";',
@@ -238,6 +275,7 @@ describe("CommonJS export declarations in overview", () => {
       "exports.foo = function () {};",
       "module.exports.bar = 1;",
       "module.exports = { baz: 1 };",
+      "module.exports = qux;",
     ].join("\n");
 
     expect(OverviewTree.walkSymbols(fileEntriesOf(source, "input.ts").entries)).toEqual([]);

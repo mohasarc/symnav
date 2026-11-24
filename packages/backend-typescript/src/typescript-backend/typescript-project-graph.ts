@@ -28,6 +28,7 @@ export interface TypeScriptProjectGraphRefresh {
 }
 
 const TYPESCRIPT_CONFIGURATION_FILE_NAME = "tsconfig.json";
+const JAVASCRIPT_CONFIGURATION_FILE_NAME = "jsconfig.json";
 
 const INFERRED_JAVASCRIPT_OPTIONS: Readonly<ts.CompilerOptions> = {
   allowJs: true,
@@ -178,9 +179,10 @@ export class TypeScriptProjectGraph
     const directoriesByDepth = TypeScriptProjectGraph.workspaceDirectories(snapshot, paths)
       .map((directory) => ({ directory, relative: paths.relative(snapshot.root, directory) }))
       .sort(TypeScriptProjectGraph.compareShallowFirst);
-    return directoriesByDepth.map(({ directory }) =>
+    return directoriesByDepth.flatMap(({ directory }) => [
       paths.join(directory, TYPESCRIPT_CONFIGURATION_FILE_NAME),
-    );
+      paths.join(directory, JAVASCRIPT_CONFIGURATION_FILE_NAME),
+    ]);
   }
 
   protected async parseConfiguration(request: {

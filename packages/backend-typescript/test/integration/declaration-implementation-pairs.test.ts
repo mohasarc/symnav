@@ -725,6 +725,31 @@ describe("TypeScriptBackend target collapse of declaration and implementation pa
 
     expect(collapsed && formatSymbolIdentity(collapsed)).toBe("src/tabs.js::tabs");
   });
+
+  it.each([
+    ["a pair and an unrelated same-name symbol", ["src/other.ts", "src/tabs.d.ts", "src/tabs.js"]],
+    ["two pairs", ["src/second.d.ts", "src/second.js", "src/tabs.d.ts", "src/tabs.js"]],
+    ["unpaired same-name symbols", ["src/loose.js", "src/other.ts"]],
+    ["a TypeScript source and JavaScript of the same name", ["src/same.js", "src/same.ts"]],
+  ])("does not collapse %s", async (_case, candidateFiles) => {
+    const { backend } = await backendOverSources({
+      "src/tabs.js": "export function tabs() { return 1; }\n",
+      "src/tabs.d.ts": "export declare function tabs(): number;\n",
+      "src/second.js": "export function tabs() { return 2; }\n",
+      "src/second.d.ts": "export declare function tabs(): number;\n",
+      "src/other.ts": "export function tabs() { return 3; }\n",
+      "src/loose.js": "export function tabs() { return 4; }\n",
+      "src/same.js": "export function tabs() { return 5; }\n",
+      "src/same.ts": "export function tabs() { return 6; }\n",
+    });
+
+    const collapsed = collapsedTargetOf(
+      backend,
+      candidateFiles.map((file) => identity(file, "tabs")),
+    );
+
+    expect(collapsed).toBeUndefined();
+  });
 });
 
 const interfaceFirstSources: Readonly<Record<string, string>> = {

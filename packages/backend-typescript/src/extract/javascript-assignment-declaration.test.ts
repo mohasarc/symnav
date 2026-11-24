@@ -320,6 +320,39 @@ describe("CommonJS export declarations in overview", () => {
     expect(summariesOf('Object.defineProperty(target, "x", { value: 1 });')).toEqual([]);
   });
 
+  it("lists module-level this-properties assigned after the file becomes CommonJS as exports", () => {
+    const source = [
+      "this.early = 1;",
+      "exports.a = 2;",
+      "this.after = function () {};",
+      "if (ready) {",
+      "  this.inBlock = 3;",
+      "}",
+      "this.after = 4;",
+    ].join("\n");
+
+    expect(
+      summariesOf(source).map((summary) => [
+        summary.id,
+        summary.label,
+        summary.range,
+        summary.header,
+      ]),
+    ).toEqual([
+      ["input.js::a", "variable", [2, 2], ["exports.a = 2"]],
+      ["input.js::after#1", "function-implementation", [3, 3], ["this.after = function () {}"]],
+      ["input.js::inBlock", "variable", [5, 5], ["this.inBlock = 3"]],
+      ["input.js::after#2", "variable", [7, 7], ["this.after = 4"]],
+    ]);
+  });
+
+  it.each([
+    ["a script", "this.global = 1;"],
+    ["a file with ES module syntax", "export const a = 1;\nthis.local = 2;"],
+  ])("emits no export for a module-level this-property in %s", (_file, source) => {
+    expect(idsOf(source).filter((id) => id !== "input.js::a")).toEqual([]);
+  });
+
   it("emits no node for CommonJS export syntax in a file with ES module syntax", () => {
     const source = [
       'import helper from "./helper";',

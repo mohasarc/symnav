@@ -1,5 +1,6 @@
 import {
   Node,
+  SyntaxKind,
   type ArrayLiteralExpression,
   type CallExpression,
   type ClassDeclaration,
@@ -248,7 +249,10 @@ class CalleeFinder {
   }
 
   private workspaceSymbolFor(node: Node): SymbolOverviewNode | undefined {
-    return this.workspaceState.declarationAt(node);
+    const declaration = this.workspaceState.declarationAt(node);
+    if (declaration) return declaration;
+    const owner = namedValueOwnerOf(node);
+    return owner && this.workspaceState.declarationAt(owner);
   }
 
   private siteFor(node: Node): CallSite {
@@ -405,6 +409,21 @@ function compareSymbolOverviewNodes(a: SymbolOverviewNode, b: SymbolOverviewNode
   const aKey = DeclarationLocator.identityKey(a.identity);
   const bKey = DeclarationLocator.identityKey(b.identity);
   return aKey < bKey ? -1 : aKey > bKey ? 1 : 0;
+}
+
+function namedValueOwnerOf(node: Node): Node | undefined {
+  if (!Node.isFunctionExpression(node) && !Node.isClassExpression(node)) return undefined;
+  let value: Node = node;
+  let parent = node.getParent();
+  while (Node.isParenthesizedExpression(parent)) {
+    value = parent;
+    parent = parent.getParent();
+  }
+  if (Node.isVariableDeclaration(parent) || Node.isPropertyAssignment(parent)) return parent;
+  if (!Node.isBinaryExpression(parent)) return undefined;
+  const assignsValue =
+    parent.getOperatorToken().getKind() === SyntaxKind.EqualsToken && parent.getRight() === value;
+  return assignsValue ? parent.getLeft() : undefined;
 }
 
 function isConstructorFunction(node: Node): boolean {

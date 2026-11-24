@@ -21,6 +21,7 @@ import { JavaScriptAssignmentDeclarations } from "../extract/javascript-assignme
 import { DeclarationLocator } from "../identity/locate-declarations.js";
 import type { TypeScriptWorkspaceState } from "../typescript-backend/typescript-workspace-state.js";
 
+const DESCRIPTOR_ARGUMENT_INDEX = 2;
 const DYNAMIC_DISPATCH_REASON = "dynamic dispatch: exact callee not statically resolvable";
 
 export interface FindCalleesArgs {
@@ -262,8 +263,17 @@ class CalleeFinder {
   private workspaceSymbolFor(node: Node): SymbolOverviewNode | undefined {
     const declaration = this.workspaceState.declarationAt(node);
     if (declaration) return declaration;
-    const owner = namedValueOwnerOf(node);
+    const owner = namedValueOwnerOf(node) ?? CalleeFinder.definePropertyCallOf(node);
     return owner && this.workspaceState.declarationAt(owner);
+  }
+
+  private static definePropertyCallOf(node: Node): Node | undefined {
+    if (!Node.isPropertyAssignment(node) || node.getName() !== "value") return undefined;
+    const descriptor = node.getParent();
+    const call = descriptor.getParent();
+    const describesCallProperty =
+      Node.isCallExpression(call) && call.getArguments()[DESCRIPTOR_ARGUMENT_INDEX] === descriptor;
+    return describesCallProperty ? call : undefined;
   }
 
   private siteFor(node: Node): CallSite {

@@ -893,6 +893,30 @@ describe("TypeScriptBackend callees inside JavaScript assignment declarations", 
   });
 });
 
+describe("TypeScriptBackend callees declared by Object.defineProperty", () => {
+  it.each([
+    [
+      "a destructured require",
+      "const { dp } = require('./m');\nfunction calls() { return dp(); }\n",
+    ],
+    [
+      "a required module member",
+      "const m = require('./m');\nfunction calls() { return m.dp(); }\n",
+    ],
+  ])("lists the export as a callee through %s", async (_form, userSource) => {
+    const { backend, files } = await backendOverSources({
+      "src/m.js": 'Object.defineProperty(exports, "dp", { value: function () { return 1; } });\n',
+      "src/use.js": userSource,
+    });
+
+    const callees = await backend.findCallees(files, identity("src/use.js", "calls"));
+
+    expect(callees.map((edge) => formatSymbolIdentity(edge.symbol.identity))).toEqual([
+      "src/m.js::dp",
+    ]);
+  });
+});
+
 describe("TypeScriptBackend callees declared by named function expressions", () => {
   it.each([
     [

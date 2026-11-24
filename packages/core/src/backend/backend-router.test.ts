@@ -166,6 +166,28 @@ describe("BackendRouter", () => {
     expect(router.find("foo.json")).toBeUndefined();
   });
 
+  it("returns undefined for a file the accepting backend refuses", () => {
+    const refusal = new UnsupportedFileError("src/x.js", { fileKind: "Flow-typed" });
+    const jsBackend = refusingBackend("js", (p) => p.endsWith(".js"), ["src/x.js"], refusal);
+    const router = new BackendRouter([jsBackend]);
+
+    expect(router.find("src/x.js")).toBeUndefined();
+    expect((router.find("src/y.js") as FakeBackend | undefined)?.label).toBe("js");
+  });
+
+  it("refreshes a refused file with its accepting backend", async () => {
+    const refusal = new UnsupportedFileError("src/x.js", { fileKind: "Flow-typed" });
+    const jsBackend = refusingBackend("js", (p) => p.endsWith(".js"), ["src/x.js"], refusal);
+    const router = new BackendRouter([jsBackend]);
+    const file = workspaceFile("src/x.js");
+
+    await router.refresh({ root: "/repo", files: [file] });
+
+    expect(jsBackend.refreshCalls).toEqual([
+      { snapshot: { root: "/repo", files: [file] }, coverage: "workspace" },
+    ]);
+  });
+
   it("preserves registration order on tie", () => {
     const first = fakeBackend("first", () => true);
     const second = fakeBackend("second", () => true);

@@ -705,6 +705,32 @@ describe("SymbolTargetResolver.resolve on unsupported files", () => {
 
     expect(resolved.identity).toEqual({ file: "src/alpha.ts", segments: [{ name: "walk" }] });
   });
+  it("resolves a file part that matches a refused and an accepted file", async () => {
+    const files = [
+      { relative: "src/alpha.ts", absolute: "/repo/src/alpha.ts" },
+      { relative: "vendor/alpha.ts", absolute: "/repo/vendor/alpha.ts" },
+    ];
+    const backend = new FakeLanguageBackend({
+      declarations: [
+        ResolverScenario.candidateFor("src/alpha.ts", [{ name: "walk" }]).symbol,
+        ResolverScenario.candidateFor("vendor/alpha.ts", [{ name: "walk" }]).symbol,
+      ],
+      refuse: (filePath) =>
+        filePath.startsWith("vendor/")
+          ? new UnsupportedFileError(filePath, { fileKind: "Flow-typed" })
+          : undefined,
+    });
+
+    const resolved = await ResolverScenario.resolveWith(
+      new BackendRouter([backend]),
+      "alpha.ts::walk",
+      undefined,
+      files,
+    );
+
+    expect(resolved.identity).toEqual({ file: "src/alpha.ts", segments: [{ name: "walk" }] });
+    expect(ResolverScenario.relativeFiles(resolved)).toEqual(["src/alpha.ts"]);
+  });
   it("keeps the no-supported-files refusal for a bare name", async () => {
     const files = [{ relative: "src/beta.zz", absolute: "/repo/src/beta.zz" }];
     const router = new BackendRouter([ResolverScenario.typescriptFake([])]);

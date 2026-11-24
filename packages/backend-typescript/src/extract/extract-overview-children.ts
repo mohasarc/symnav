@@ -358,7 +358,7 @@ export class OverviewChildrenExtractor {
     ];
     const catchClause = node.getCatchClause();
     if (catchClause) {
-      nodes.push({
+      const catchFold: FoldOverviewNode = {
         type: "fold",
         foldKind: "catch",
         range: OverviewChildrenExtractor.nodeRange(catchClause),
@@ -368,11 +368,13 @@ export class OverviewChildrenExtractor {
           symbolSegments,
           category: "statement",
         }),
-      });
+      };
+      this.startPositions.set(catchFold, catchClause.getStart());
+      nodes.push(catchFold);
     }
     const finallyBlock = node.getFinallyBlock();
     if (finallyBlock) {
-      nodes.push({
+      const finallyFold: FoldOverviewNode = {
         type: "fold",
         foldKind: "finally",
         range: OverviewChildrenExtractor.nodeRange(finallyBlock),
@@ -382,7 +384,9 @@ export class OverviewChildrenExtractor {
           symbolSegments,
           category: "statement",
         }),
-      });
+      };
+      this.startPositions.set(finallyFold, finallyBlock.getStart());
+      nodes.push(finallyFold);
     }
     return nodes;
   }

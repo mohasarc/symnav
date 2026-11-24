@@ -19,7 +19,7 @@ class GraphTextRenderer {
   static render(result: GraphResult): string {
     const header = [
       `Graph: ${formatIdentityPath(result.identity)}`,
-      `File: ${result.identity.file}`,
+      `File: ${result.root.identity.file}`,
       `Lines: ${formatRange(result.root.range)}`,
       `Depth: ${result.depth}`,
       `Direction: ${result.direction}`,

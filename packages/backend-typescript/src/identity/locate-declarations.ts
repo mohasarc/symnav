@@ -43,7 +43,7 @@ export class DeclarationLocator {
     return candidates
       .filter((candidate) => this.ownSegmentMatches(candidate, ownSegment))
       .flatMap((declaration) => {
-        const node = this.locateDeclarationNode(declaration);
+        const node = this.locateDeclarationNode(declaration, preparedEntries);
         return node ? [{ declaration, node }] : [];
       });
   }
@@ -90,14 +90,25 @@ export class DeclarationLocator {
     return own.disambiguator === segment.disambiguator;
   }
 
-  private locateDeclarationNode(declaration: SymbolOverviewNode): Node | undefined {
+  private locateDeclarationNode(
+    declaration: SymbolOverviewNode,
+    entries: readonly OverviewNode[],
+  ): Node | undefined {
     const startLine = declaration.range.startLine;
+    const name = OverviewTree.ownName(declaration);
+    const sameLocationDeclarations = OverviewTree.walkSymbols(entries).filter(
+      (candidate) =>
+        candidate.range.startLine === startLine && OverviewTree.ownName(candidate) === name,
+    );
+    const ordinal = Math.max(sameLocationDeclarations.indexOf(declaration), 0);
+    let sameLocationNodes = 0;
     let found: Node | undefined;
     this.sourceFile.forEachDescendant((node) => {
       if (found) return;
-      if (this.definitionName(node) !== OverviewTree.ownName(declaration)) return;
+      if (this.definitionName(node) !== name) return;
       if (node.getStartLineNumber() !== startLine) return;
-      found = node;
+      if (sameLocationNodes === ordinal) found = node;
+      sameLocationNodes += 1;
     });
     return found;
   }

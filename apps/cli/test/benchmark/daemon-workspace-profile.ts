@@ -7,9 +7,12 @@ export interface DistributionSummary {
   readonly maximum: number;
 }
 
+export type DaemonWorkspaceLanguage = "typescript" | "javascript";
+
 export interface DaemonWorkspaceProfile {
   readonly schemaVersion: 1;
   readonly profileVersion: string;
+  readonly language?: DaemonWorkspaceLanguage;
   readonly visibleTypeScriptFiles: number;
   readonly sourceBytes: DistributionSummary;
   readonly sourceLines: DistributionSummary;
@@ -20,6 +23,9 @@ export interface DaemonWorkspaceProfile {
   readonly importsPerFile: DistributionSummary;
   readonly aliasImportRatio: number;
   readonly workspaceImportRatio: number;
+  readonly declarationSiblingRatio?: number;
+  readonly commonJsRatio?: number;
+  readonly minifiedFileBytes?: number;
 }
 
 export class DaemonWorkspaceProfileValidator {
@@ -38,10 +44,28 @@ export class DaemonWorkspaceProfileValidator {
     "workspaceImportRatio",
   ] as const;
 
+  private static readonly javaScriptFields = [
+    "language",
+    "declarationSiblingRatio",
+    "commonJsRatio",
+    "minifiedFileBytes",
+  ] as const;
+
+  private static readonly languages: readonly unknown[] = [
+    "typescript",
+    "javascript",
+  ] satisfies readonly DaemonWorkspaceLanguage[];
+
   private static readonly distributionFields = ["minimum", "p50", "p95", "maximum"] as const;
 
   static parse(value: unknown): DaemonWorkspaceProfile {
-    if (!this.hasExactFields(value, this.fields)) throw new Error("Invalid daemon profile fields");
+    if (!this.isRecord(value)) throw new Error("Invalid daemon profile fields");
+    if (value.language !== undefined && !this.languages.includes(value.language)) {
+      throw new Error("Invalid daemon profile language");
+    }
+    if (!this.hasExactFields(value, this.expectedFields(value.language))) {
+      throw new Error("Invalid daemon profile fields");
+    }
     if (value.schemaVersion !== 1) throw new Error("Invalid daemon profile schema version");
     if (typeof value.profileVersion !== "string" || !/^\d+\.\d+\.\d+$/.test(value.profileVersion)) {
       throw new Error("Invalid daemon profile version");
@@ -65,7 +89,18 @@ export class DaemonWorkspaceProfileValidator {
     for (const field of ["aliasImportRatio", "workspaceImportRatio"] as const) {
       this.assertRatio(value[field], field);
     }
+    if (value.language === "javascript") {
+      this.assertRatio(value.declarationSiblingRatio, "declarationSiblingRatio");
+      this.assertRatio(value.commonJsRatio, "commonJsRatio");
+      this.assertCount(value.minifiedFileBytes, "minifiedFileBytes");
+    }
     return value as unknown as DaemonWorkspaceProfile;
+  }
+
+  private static expectedFields(language: unknown): readonly string[] {
+    if (language === "javascript") return [...this.fields, ...this.javaScriptFields];
+    if (language === "typescript") return [...this.fields, "language"];
+    return this.fields;
   }
 
   private static assertDistribution(value: unknown): asserts value is DistributionSummary {

@@ -843,6 +843,54 @@ describe("TypeScriptProjectGraph", () => {
     expect(options?.maxNodeModuleJsDepth).toBeUndefined();
   });
 
+  it("owns JavaScript in a root jsconfig.json project with TypeScript's jsconfig defaults", async () => {
+    const workspace = inMemoryWorkspace({
+      "jsconfig.json": JSON.stringify({}),
+      "src/a.js": "export function a() {}\n",
+      "src/b.js": 'import { a } from "./a.js";\nexport function b() { return a(); }\n',
+    });
+    const graph = new TypeScriptProjectGraph(workspace.fileSystem);
+
+    const refresh = await graph.refresh(workspace.snapshot);
+    const program = graph.programFor("src/b.js");
+
+    expect(refresh.configuredProjectCount).toBe(1);
+    expect(refresh.inferredFileCount).toBe(0);
+    expect(graph.programFor("src/a.js")).toBe(program);
+    expect(program?.getCompilerOptions()).toMatchObject({
+      allowJs: true,
+      allowSyntheticDefaultImports: true,
+      skipLibCheck: true,
+      noEmit: true,
+      maxNodeModuleJsDepth: 2,
+    });
+  });
+
+  it("owns TypeScript a root jsconfig.json covers and resolves its path aliases", async () => {
+    const workspace = inMemoryWorkspace({
+      "jsconfig.json": JSON.stringify({
+        compilerOptions: { baseUrl: ".", paths: { "@lib/*": ["lib/*"] } },
+      }),
+      "lib/helper.ts": "export function helper(): number { return 1; }\n",
+      "src/use.ts":
+        'import { helper } from "@lib/helper";\nexport function useHelper() { return helper(); }\n',
+    });
+    const graph = new TypeScriptProjectGraph(workspace.fileSystem);
+    const backend = new TypeScriptBackend(workspace.fileSystem);
+    await backend.refresh({ snapshot: workspace.snapshot, coverage: "workspace" });
+
+    const refresh = await graph.refresh(workspace.snapshot);
+    const callees = await calleeNames(
+      backend,
+      workspace.snapshot.files,
+      symbolIdentity("src/use.ts", "useHelper"),
+    );
+
+    expect(refresh.configuredProjectCount).toBe(1);
+    expect(refresh.inferredFileCount).toBe(0);
+    expect(callees).toEqual(["helper"]);
+  });
+
   it("keeps implicit outDir contents outside configured membership", async () => {
     const projectFixture = fixture();
     const graph = new TypeScriptProjectGraph(projectFixture.fileSystem);

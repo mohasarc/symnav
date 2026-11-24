@@ -256,6 +256,55 @@ describe("CommonJS export declarations in overview", () => {
     expect(idsOf("module.exports = exports;\nmodule.exports = module.exports;")).toEqual([]);
   });
 
+  it.each(["exports", "module.exports"])(
+    "lists Object.defineProperty on %s with a function value as a function implementation",
+    (owner) => {
+      const source = `Object.defineProperty(${owner}, "run", { value: function () {} });`;
+
+      expect(summariesOf(source)).toEqual([
+        {
+          id: "input.js::run",
+          label: "function-implementation",
+          range: [1, 1],
+          header: [`Object.defineProperty(${owner}, "run", { value: function () {} })`],
+        },
+      ]);
+    },
+  );
+
+  it("lists an Object.defineProperty getter export as a variable spanning its statement", () => {
+    const source = [
+      'Object.defineProperty(exports, "foo", {',
+      "  enumerable: true,",
+      "  get: function () {",
+      "    return lib.foo;",
+      "  },",
+      "});",
+    ].join("\n");
+
+    expect(summariesOf(source)).toEqual([
+      {
+        id: "input.js::foo",
+        label: "variable",
+        range: [1, 6],
+        header: ['Object.defineProperty(exports, "foo", { … })'],
+      },
+    ]);
+  });
+
+  it("lists Object.defineProperty exports named by a numeric or template literal", () => {
+    const source = [
+      "Object.defineProperty(exports, 1, { value: 1 });",
+      'Object.defineProperty(module["exports"], `t`, { value: 2 });',
+    ].join("\n");
+
+    expect(idsOf(source)).toEqual(["input.js::1", "input.js::t"]);
+  });
+
+  it("emits no node for Object.defineProperty on another object", () => {
+    expect(summariesOf('Object.defineProperty(target, "x", { value: 1 });')).toEqual([]);
+  });
+
   it("emits no node for CommonJS export syntax in a file with ES module syntax", () => {
     const source = [
       'import helper from "./helper";',
@@ -276,6 +325,7 @@ describe("CommonJS export declarations in overview", () => {
       "module.exports.bar = 1;",
       "module.exports = { baz: 1 };",
       "module.exports = qux;",
+      'Object.defineProperty(exports, "quux", { value: 1 });',
     ].join("\n");
 
     expect(OverviewTree.walkSymbols(fileEntriesOf(source, "input.ts").entries)).toEqual([]);

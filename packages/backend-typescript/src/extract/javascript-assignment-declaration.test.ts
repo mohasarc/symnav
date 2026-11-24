@@ -403,6 +403,25 @@ describe("expando prototype members in overview", () => {
     ]);
   });
 
+  it("orders members by position among the container's own children on the same line", () => {
+    const oneLine = "Late.m = 1; Late.prototype.m = 2; function Late() { function m() {} }";
+    const formatted = [
+      "Late.m = 1;",
+      "Late.prototype.m = 2;",
+      "function Late() {",
+      "  function m() {}",
+      "}",
+    ].join("\n");
+
+    expect(summariesOf(oneLine).map((summary) => [summary.id, summary.header])).toEqual([
+      ["input.js::Late", ["function Late()"]],
+      ["input.js::Late::m#1", ["Late.m = 1"]],
+      ["input.js::Late::m#2", ["Late.prototype.m = 2"]],
+      ["input.js::Late::m#3", ["function m()"]],
+    ]);
+    expect(idsOf(formatted)).toEqual(idsOf(oneLine));
+  });
+
   it.each([
     ["a function expression", "var Foo = function () {};"],
     ["an arrow function", "const Foo = () => {};"],

@@ -558,6 +558,58 @@ describe("TypeScriptBackend callees of constructor functions", () => {
   });
 });
 
+describe("TypeScriptBackend callees declared by named function expressions", () => {
+  it.each([
+    [
+      "an exports property",
+      "exports.parse = function parse() {\n  return 1;\n};\n",
+      "const lib = require('./lib');\nfunction run() {\n  return lib.parse();\n}\n",
+      "src/lib.js::parse",
+    ],
+    [
+      "a prototype method",
+      "function Queue() {}\nQueue.prototype.push = function push() {};\nexports.Queue = Queue;\n",
+      "const { Queue } = require('./lib');\nfunction run(queue = new Queue()) {\n  return queue.push();\n}\n",
+      "src/lib.js::Queue::push",
+    ],
+    [
+      "a variable",
+      "const plain = function plain() {\n  return 1;\n};\nexports.plain = plain;\n",
+      "const lib = require('./lib');\nfunction run() {\n  return lib.plain();\n}\n",
+      "src/lib.js::plain",
+    ],
+    [
+      "module.exports",
+      "module.exports = function build() {\n  return 1;\n};\n",
+      "const build = require('./lib');\nfunction run() {\n  return build();\n}\n",
+      "src/lib.js::default",
+    ],
+  ])("lists a function expression named in %s as a callee", async (_form, library, use, callee) => {
+    const { backend, files } = await backendOverSources({
+      "src/lib.js": library,
+      "src/use.js": use,
+    });
+
+    const callees = await backend.findCallees(files, identity("src/use.js", "run"));
+
+    expect(callees.map((edge) => formatSymbolIdentity(edge.symbol.identity))).toContain(callee);
+  });
+
+  it("lists a TypeScript function expression named like its variable as a callee", async () => {
+    const { backend, files } = await backendOverSources({
+      "src/lib.ts": "export const named = function named(): number {\n  return 1;\n};\n",
+      "src/use.ts":
+        "import { named } from './lib';\nexport function run(): number {\n  return named();\n}\n",
+    });
+
+    const callees = await backend.findCallees(files, identity("src/use.ts", "run"));
+
+    expect(callees.map((edge) => formatSymbolIdentity(edge.symbol.identity))).toEqual([
+      "src/lib.ts::named",
+    ]);
+  });
+});
+
 describe("TypeScriptBackend JSDoc type alias declarations", () => {
   it("resolves @typedef and @callback targets and finds their import type users", async () => {
     const { backend, files } = await backendOverSources({

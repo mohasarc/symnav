@@ -250,6 +250,28 @@ describe("TypeScriptBackend expando member declarations", () => {
       expect(referenceLocations(references)).toEqual(["src/use.js:2"]);
     },
   );
+
+  it.each([
+    ["bar", "bar() { return 1; }", "new Foo().bar();"],
+    ["baz", "baz: 2", "new Foo().baz;"],
+    ["dash-key", '"dash-key": 3', 'new Foo()["dash-key"];'],
+  ])(
+    "resolves the prototype object member %s and finds its instance users",
+    async (name, member, use) => {
+      const { backend, files } = await backendOverSources({
+        "src/lib.js": `function Foo() {}\nFoo.prototype = {\n  ${member},\n};\nexports.Foo = Foo;\n`,
+        "src/use.js": `const { Foo } = require('./lib');\n${use}\n`,
+      });
+
+      const definitions = await backend.findDefinitions(files, identity("src/lib.js", "Foo", name));
+      const references = await backend.findReferences(files, identity("src/lib.js", "Foo", name));
+
+      expect(definitions.map((definition) => formatSymbolIdentity(definition.identity))).toEqual([
+        `src/lib.js::Foo::${name}`,
+      ]);
+      expect(referenceLocations(references)).toEqual(["src/use.js:2"]);
+    },
+  );
 });
 
 async function backendOverSources(sources: Readonly<Record<string, string>>): Promise<{

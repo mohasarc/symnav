@@ -1,0 +1,212 @@
+import {
+  Node,
+  ts,
+  type Identifier,
+  type ImportDeclaration,
+  type SourceFile,
+  type StringLiteral,
+} from "ts-morph";
+
+import {
+  JavaScriptAssignmentDeclarations,
+  type CommonJsExportName,
+} from "../extract/javascript-assignment-declaration.js";
+import type { TypeScriptWorkspaceState } from "./typescript-workspace-state.js";
+
+interface PendingExport {
+  readonly sourceFile: SourceFile;
+  readonly exported: CommonJsExportName;
+}
+
+interface ImporterAnchors {
+  readonly bindings: readonly Identifier[];
+  readonly members: readonly Node[];
+}
+
+const NO_ANCHORS: ImporterAnchors = { bindings: [], members: [] };
+
+export class CommonJsExportImporters {
+  private readonly importLiteralsByProgram = new WeakMap<
+    ts.Program,
+    ReadonlyMap<string, readonly StringLiteral[]>
+  >();
+
+  constructor(private readonly workspaceState: TypeScriptWorkspaceState) {}
+
+  referencesThrough(declarationNode: Node, references: readonly Node[]): readonly Node[] {
+    const found: Node[] = [];
+    const visited = new Set<string>();
+    const pending = [
+      ...CommonJsExportImporters.wholeModuleExportOf(declarationNode),
+      ...CommonJsExportImporters.exportsNamedBy(references),
+    ];
+    for (let next = pending.pop(); next; next = pending.pop()) {
+      const key = CommonJsExportImporters.exportKey(next);
+      if (visited.has(key)) continue;
+      visited.add(key);
+      for (const literal of this.importLiteralsOf(next.sourceFile)) {
+        const anchors = CommonJsExportImporters.anchorsAt(literal, next.exported);
+        for (const binding of anchors.bindings) {
+          const bindingReferences = CommonJsExportImporters.referenceNodesOf(binding);
+          found.push(binding, ...bindingReferences);
+          pending.push(...CommonJsExportImporters.exportsNamedBy(bindingReferences));
+        }
+        found.push(...anchors.members);
+      }
+    }
+    return found;
+  }
+
+  private static wholeModuleExportOf(declarationNode: Node): readonly PendingExport[] {
+    const declaration = JavaScriptAssignmentDeclarations.declarationAt(declarationNode);
+    if (declaration?.form !== "module-exports") return [];
+    return [{ sourceFile: declarationNode.getSourceFile(), exported: { kind: "module" } }];
+  }
+
+  private static exportsNamedBy(references: readonly Node[]): readonly PendingExport[] {
+    return references.flatMap((reference) => {
+      const exported = JavaScriptAssignmentDeclarations.commonJsExportNamedBy(reference);
+      return exported ? [{ sourceFile: reference.getSourceFile(), exported }] : [];
+    });
+  }
+
+  private importLiteralsOf(sourceFile: SourceFile): readonly StringLiteral[] {
+    const project = sourceFile.getProject();
+    const program = project.getProgram().compilerObject;
+    let literalsByTarget = this.importLiteralsByProgram.get(program);
+    if (!literalsByTarget) {
+      literalsByTarget = this.scanImportLiterals(project.getSourceFiles());
+      this.importLiteralsByProgram.set(program, literalsByTarget);
+    }
+    return literalsByTarget.get(sourceFile.getFilePath()) ?? [];
+  }
+
+  private scanImportLiterals(
+    sourceFiles: readonly SourceFile[],
+  ): ReadonlyMap<string, readonly StringLiteral[]> {
+    const literalsByTarget = new Map<string, StringLiteral[]>();
+    for (const importer of sourceFiles) {
+      if (!this.workspaceState.relativePathOf(importer)) continue;
+      for (const literal of importer.getImportStringLiterals()) {
+        const target = literal
+          .getSymbol()
+          ?.getDeclarations()
+          .find((declaration) => Node.isSourceFile(declaration))
+          ?.getSourceFile()
+          .getFilePath();
+        if (!target) continue;
+        const literals = literalsByTarget.get(target) ?? [];
+        literals.push(literal);
+        literalsByTarget.set(target, literals);
+      }
+    }
+    return literalsByTarget;
+  }
+
+  private static anchorsAt(literal: StringLiteral, exported: CommonJsExportName): ImporterAnchors {
+    const holder = literal.getParent();
+    if (Node.isImportDeclaration(holder)) {
+      return CommonJsExportImporters.importDeclarationAnchors(holder, exported);
+    }
+    if (Node.isExportDeclaration(holder)) {
+      if (exported.kind !== "member") return NO_ANCHORS;
+      const bindings = holder
+        .getNamedExports()
+        .filter((specifier) => specifier.getName() === exported.name)
+        .map((specifier) => specifier.getAliasNode() ?? specifier.getNameNode())
+        .filter(Node.isIdentifier);
+      return { bindings, members: [] };
+    }
+    if (Node.isExternalModuleReference(holder)) {
+      const declaration = holder.getParent();
+      if (!Node.isImportEqualsDeclaration(declaration)) return NO_ANCHORS;
+      return CommonJsExportImporters.moduleBindingAnchors(declaration.getNameNode(), exported);
+    }
+    const isRequireCall = Node.isCallExpression(holder) && holder.getArguments()[0] === literal;
+    if (!isRequireCall) return NO_ANCHORS;
+    return CommonJsExportImporters.requireCallAnchors(holder, exported);
+  }
+
+  private static importDeclarationAnchors(
+    declaration: ImportDeclaration,
+    exported: CommonJsExportName,
+  ): ImporterAnchors {
+    const clause = declaration.getImportClause();
+    if (!clause) return NO_ANCHORS;
+    const defaultImport = clause.getDefaultImport();
+    const moduleAnchors = defaultImport
+      ? CommonJsExportImporters.moduleBindingAnchors(defaultImport, exported)
+      : NO_ANCHORS;
+    if (exported.kind === "module") return moduleAnchors;
+    const namespaceImport = clause.getNamespaceImport();
+    const namespaceMembers = namespaceImport
+      ? CommonJsExportImporters.memberAccessesOf(namespaceImport, exported.name)
+      : [];
+    const namedBindings = clause
+      .getNamedImports()
+      .filter((specifier) => specifier.getName() === exported.name)
+      .map((specifier) => specifier.getAliasNode() ?? specifier.getNameNode())
+      .filter(Node.isIdentifier);
+    return {
+      bindings: [...moduleAnchors.bindings, ...namedBindings],
+      members: [...moduleAnchors.members, ...namespaceMembers],
+    };
+  }
+
+  private static requireCallAnchors(call: Node, exported: CommonJsExportName): ImporterAnchors {
+    const holder = call.getParent();
+    if (Node.isPropertyAccessExpression(holder) && holder.getExpression() === call) {
+      const accessesMember = exported.kind === "member" && holder.getName() === exported.name;
+      return accessesMember ? { bindings: [], members: [holder.getNameNode()] } : NO_ANCHORS;
+    }
+    const isInitializer = Node.isVariableDeclaration(holder) && holder.getInitializer() === call;
+    if (!isInitializer) return NO_ANCHORS;
+    const name = holder.getNameNode();
+    if (Node.isIdentifier(name))
+      return CommonJsExportImporters.moduleBindingAnchors(name, exported);
+    if (!Node.isObjectBindingPattern(name) || exported.kind !== "member") return NO_ANCHORS;
+    const bindings = name
+      .getElements()
+      .filter((element) => {
+        const propertyName = element.getPropertyNameNode() ?? element.getNameNode();
+        return Node.isIdentifier(propertyName) && propertyName.getText() === exported.name;
+      })
+      .map((element) => element.getNameNode())
+      .filter(Node.isIdentifier);
+    return { bindings, members: [] };
+  }
+
+  private static moduleBindingAnchors(
+    binding: Identifier,
+    exported: CommonJsExportName,
+  ): ImporterAnchors {
+    if (exported.kind === "module") return { bindings: [binding], members: [] };
+    return {
+      bindings: [],
+      members: CommonJsExportImporters.memberAccessesOf(binding, exported.name),
+    };
+  }
+
+  private static memberAccessesOf(binding: Identifier, name: string): readonly Node[] {
+    return CommonJsExportImporters.referenceNodesOf(binding).flatMap((reference) => {
+      const access = reference.getParent();
+      const accessesMember =
+        Node.isPropertyAccessExpression(access) &&
+        access.getExpression() === reference &&
+        access.getName() === name;
+      return accessesMember ? [access.getNameNode()] : [];
+    });
+  }
+
+  private static referenceNodesOf(binding: Identifier): readonly Node[] {
+    return binding
+      .findReferences()
+      .flatMap((referencedSymbol) => referencedSymbol.getReferences())
+      .map((entry) => entry.getNode());
+  }
+
+  private static exportKey({ sourceFile, exported }: PendingExport): string {
+    const name = exported.kind === "member" ? `member:${exported.name}` : "module";
+    return `${sourceFile.getFilePath()}\0${name}`;
+  }
+}

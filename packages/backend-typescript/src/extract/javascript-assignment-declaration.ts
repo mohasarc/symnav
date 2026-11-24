@@ -38,6 +38,10 @@ export type JavaScriptAssignmentDeclarationForm =
 
 export type JavaScriptDeclarationContainerScope = "module" | "enclosing-declaration";
 
+export type CommonJsExportName =
+  | { readonly kind: "member"; readonly name: string }
+  | { readonly kind: "module" };
+
 interface SourceFileWithModuleIndicator extends ts.SourceFile {
   readonly externalModuleIndicator?: ts.Node | true;
 }
@@ -81,6 +85,32 @@ export class JavaScriptAssignmentDeclarations {
       ? JavaScriptAssignmentDeclarations.commonJsDeclarationOf(node)
       : undefined;
     return commonJsDeclaration ?? JavaScriptAssignmentDeclarations.expandoDeclarationOf(node);
+  }
+
+  static commonJsExportNamedBy(reference: Node): CommonJsExportName | undefined {
+    if (!Node.isIdentifier(reference)) return undefined;
+    if (!JavaScriptAssignmentDeclarations.isCommonJsFile(reference.getSourceFile())) {
+      return undefined;
+    }
+    const parent = reference.getParent();
+    if (Node.isShorthandPropertyAssignment(parent)) {
+      const object = parent.getParent();
+      const exportsMember =
+        Node.isObjectLiteralExpression(object) &&
+        JavaScriptAssignmentDeclarations.assignsModuleExports(object);
+      return exportsMember ? { kind: "member", name: parent.getName() } : undefined;
+    }
+    const assignsReference =
+      JavaScriptAssignmentDeclarations.isAssignment(parent) && parent.getRight() === reference;
+    if (!assignsReference) return undefined;
+    const target = parent.getLeft();
+    if (JavaScriptAssignmentDeclarations.isModuleExports(target)) return { kind: "module" };
+    const isExportsMember =
+      (Node.isPropertyAccessExpression(target) || Node.isElementAccessExpression(target)) &&
+      JavaScriptAssignmentDeclarations.isExportsObject(target.getExpression());
+    if (!isExportsMember) return undefined;
+    const name = JavaScriptAssignmentDeclarations.staticAccessName(target);
+    return name === undefined ? undefined : { kind: "member", name };
   }
 
   static isJavaScriptFile(sourceFile: SourceFile): boolean {

@@ -536,6 +536,78 @@ describe("expando prototype object members in overview", () => {
   });
 });
 
+describe("expando static members in overview", () => {
+  it("lists static properties of a function and a class under the container", () => {
+    const source = [
+      "function Foo() {}",
+      "Foo.make = function () {};",
+      "Foo.count = 0;",
+      "class Bar {}",
+      "Bar.instance = new Bar();",
+      'Bar["lit"] = () => 1;',
+    ].join("\n");
+
+    expect(
+      summariesOf(source).map((summary) => [summary.id, summary.label, summary.header]),
+    ).toEqual([
+      ["input.js::Foo", "function-implementation", ["function Foo()"]],
+      ["input.js::Foo::make", "method-implementation", ["Foo.make = function () {}"]],
+      ["input.js::Foo::count", "property", ["Foo.count = 0"]],
+      ["input.js::Bar", "class", ["class Bar"]],
+      ["input.js::Bar::instance", "property", ["Bar.instance = new Bar()"]],
+      ["input.js::Bar::lit", "method-implementation", ['Bar["lit"] = () => 1']],
+    ]);
+  });
+
+  it("lists each static property of an assignment chain and a static next to a same-name prototype member", () => {
+    const source = [
+      "function Foo() {}",
+      "Foo.a = Foo.b = 1;",
+      "Foo.x = 2;",
+      "Foo.prototype.x = 3;",
+    ].join("\n");
+
+    expect(idsOf(source)).toEqual([
+      "input.js::Foo",
+      "input.js::Foo::a",
+      "input.js::Foo::b",
+      "input.js::Foo::x#1",
+      "input.js::Foo::x#2",
+    ]);
+  });
+
+  it("lists a prototype assigned anything but an object literal as a static property", () => {
+    const source = [
+      "function Foo() {}",
+      "Foo.prototype = Object.create(Base.prototype);",
+      "function Bar() {}",
+      "Bar.prototype = ({ m() {} });",
+    ].join("\n");
+
+    expect(idsOf(source)).toEqual([
+      "input.js::Foo",
+      "input.js::Foo::prototype",
+      "input.js::Bar",
+      "input.js::Bar::prototype",
+    ]);
+  });
+
+  it("emits no static member on a nested-scope local without an expando value, a parameter, or an outer-scope container", () => {
+    const source = [
+      "function Foo() {}",
+      "function init(p) {",
+      "  let made = make();",
+      "  made.x = 1;",
+      "  p.y = 2;",
+      "  Foo.z = 3;",
+      "}",
+      "Foo.w = void 0;",
+    ].join("\n");
+
+    expect(idsOf(source)).toEqual(["input.js::Foo", "input.js::init", "input.js::init::made"]);
+  });
+});
+
 describe("CommonJS export declarations against the TypeScript binder", () => {
   it.each([
     [

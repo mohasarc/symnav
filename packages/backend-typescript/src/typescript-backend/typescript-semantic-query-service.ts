@@ -72,7 +72,7 @@ export class TypeScriptSemanticQueryService implements PositionDefinitionResolve
       ? new DeclarationImplementationPairs(projects, workspaceState)
       : undefined;
     this.pairedSymbols = new PairedSymbolMatcher(workspaceState);
-    this.commonJsImporters = new CommonJsExportImporters(workspaceState);
+    this.commonJsImporters = new CommonJsExportImporters(workspaceState, this.pairs);
   }
 
   beginTurn(files: readonly WorkspaceFile[]): void {

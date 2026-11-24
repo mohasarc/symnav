@@ -14,6 +14,7 @@ import {
   type JavaScriptAssignmentDeclaration,
   type JavaScriptAssignmentDeclarationForm,
 } from "../extract/javascript-assignment-declaration.js";
+import type { DeclarationImplementationPairs } from "./declaration-implementation-pairs.js";
 import type { TypeScriptWorkspaceState } from "./typescript-workspace-state.js";
 
 interface PendingExport {
@@ -44,7 +45,10 @@ export class CommonJsExportImporters {
     ReadonlyMap<string, readonly StringLiteral[]>
   >();
 
-  constructor(private readonly workspaceState: TypeScriptWorkspaceState) {}
+  constructor(
+    private readonly workspaceState: TypeScriptWorkspaceState,
+    private readonly pairs: DeclarationImplementationPairs | undefined,
+  ) {}
 
   referencesThrough(declarationNode: Node, references: readonly Node[]): readonly Node[] {
     const found: Node[] = [];
@@ -122,7 +126,17 @@ export class CommonJsExportImporters {
       literalsByTarget = this.scanImportLiterals(project.getSourceFiles());
       this.importLiteralsByProgram.set(program, literalsByTarget);
     }
-    return literalsByTarget.get(sourceFile.getFilePath()) ?? [];
+    const relativePath = this.workspaceState.relativePathOf(sourceFile);
+    if (!relativePath) return [];
+    return [relativePath, ...this.declarationTwinsOf(relativePath)].flatMap(
+      (target) => literalsByTarget.get(target) ?? [],
+    );
+  }
+
+  private declarationTwinsOf(relativePath: string): readonly string[] {
+    return (this.pairs?.filePairsOf(relativePath) ?? [])
+      .filter((pair) => pair.implementationFile === relativePath)
+      .map((pair) => pair.declarationFile);
   }
 
   private scanImportLiterals(
@@ -132,12 +146,12 @@ export class CommonJsExportImporters {
     for (const importer of sourceFiles) {
       if (!this.workspaceState.relativePathOf(importer)) continue;
       for (const literal of importer.getImportStringLiterals()) {
-        const target = literal
+        const targetFile = literal
           .getSymbol()
           ?.getDeclarations()
           .find((declaration) => Node.isSourceFile(declaration))
-          ?.getSourceFile()
-          .getFilePath();
+          ?.getSourceFile();
+        const target = targetFile && this.workspaceState.relativePathOf(targetFile);
         if (!target) continue;
         const literals = literalsByTarget.get(target) ?? [];
         literals.push(literal);

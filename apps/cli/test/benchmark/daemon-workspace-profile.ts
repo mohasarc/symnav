@@ -147,11 +147,20 @@ export class DaemonWorkspaceProfileValidator {
 }
 
 export class DaemonWorkspaceProfiler {
-  async profile(workspaceRoot: string): Promise<DaemonWorkspaceProfile> {
+  private static readonly sourceFilePatterns: Readonly<Record<DaemonWorkspaceLanguage, RegExp>> = {
+    typescript: /\.tsx?$/,
+    javascript: /\.(?:jsx?|mjs|cjs)$/,
+  };
+
+  async profile(
+    workspaceRoot: string,
+    language: DaemonWorkspaceLanguage = "typescript",
+  ): Promise<DaemonWorkspaceProfile> {
     const fileSystem = new NodeFileSystem();
     const workspace = await createWorkspace({ startDir: workspaceRoot, fs: fileSystem });
     const files = await workspace.enumerate();
-    const typeScriptFiles = files.filter((file) => /\.tsx?$/.test(file.relative));
+    const sourceFilePattern = DaemonWorkspaceProfiler.sourceFilePatterns[language];
+    const typeScriptFiles = files.filter((file) => sourceFilePattern.test(file.relative));
     const sourceBytes: number[] = [];
     const sourceLines: number[] = [];
     const symbolsPerFile: number[] = [];
@@ -159,9 +168,15 @@ export class DaemonWorkspaceProfiler {
     let importCount = 0;
     let aliasImportCount = 0;
     let workspaceImportCount = 0;
+    let commonJsFileCount = 0;
+    let minifiedFileBytes = 0;
 
     for (const file of typeScriptFiles) {
       const source = await fileSystem.readFile(file.absolute);
+      if (/\brequire\(|\bmodule\.exports\b|\bexports\.\w/.test(source)) commonJsFileCount += 1;
+      if (!source.includes("\n")) {
+        minifiedFileBytes = Math.max(minifiedFileBytes, Buffer.byteLength(source));
+      }
       const declarations = [
         ...source.matchAll(/\b(class|function|interface|type|enum|const|let|var)\s+\w+/g),
       ];
@@ -184,7 +199,9 @@ export class DaemonWorkspaceProfiler {
       }
     }
 
-    const configFiles = files.filter((file) => /(?:^|\/)tsconfig[^/]*\.json$/.test(file.relative));
+    const configFiles = files.filter((file) =>
+      /(?:^|\/)[tj]sconfig[^/]*\.json$/.test(file.relative),
+    );
     let projectReferenceCount = 0;
     for (const config of configFiles) {
       try {
@@ -195,9 +212,27 @@ export class DaemonWorkspaceProfiler {
       } catch {}
     }
 
+    const visiblePaths = new Set(files.map((file) => file.relative));
+    const declarationSiblingCount = typeScriptFiles.filter(
+      (file) =>
+        file.relative.endsWith(".js") && visiblePaths.has(file.relative.replace(/\.js$/, ".d.ts")),
+    ).length;
+    const javaScriptFields =
+      language === "javascript"
+        ? {
+            language,
+            declarationSiblingRatio: DaemonWorkspaceProfiler.ratio(
+              declarationSiblingCount,
+              typeScriptFiles.length,
+            ),
+            commonJsRatio: DaemonWorkspaceProfiler.ratio(commonJsFileCount, typeScriptFiles.length),
+            minifiedFileBytes,
+          }
+        : {};
     return DaemonWorkspaceProfileValidator.parse({
       schemaVersion: 1,
       profileVersion: "1.0.0",
+      ...javaScriptFields,
       visibleTypeScriptFiles: typeScriptFiles.length,
       sourceBytes: DaemonWorkspaceProfiler.distribution(sourceBytes),
       sourceLines: DaemonWorkspaceProfiler.distribution(sourceLines),
@@ -209,6 +244,10 @@ export class DaemonWorkspaceProfiler {
       aliasImportRatio: importCount === 0 ? 0 : aliasImportCount / importCount,
       workspaceImportRatio: importCount === 0 ? 0 : workspaceImportCount / importCount,
     });
+  }
+
+  private static ratio(count: number, total: number): number {
+    return total === 0 ? 0 : count / total;
   }
 
   private static distribution(values: readonly number[]): DistributionSummary {

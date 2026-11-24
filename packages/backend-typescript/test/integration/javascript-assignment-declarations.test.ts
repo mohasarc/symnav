@@ -365,6 +365,54 @@ describe("TypeScriptBackend CommonJS export declarations", () => {
     ]);
   });
 
+  it("finds users of exports re-exported by a whole-module CommonJS barrel", async () => {
+    const { backend, files } = await backendOverSources({
+      "src/lib.js": "exports.helper = function () { return 1; };\n",
+      "src/index.js": "module.exports = require('./lib');\n",
+      "src/alias.js": "const lib = require('./lib');\nmodule.exports = lib;\n",
+      "src/use.js": [
+        "const viaIndex = require('./index');",
+        "function member() { return viaIndex.helper(); }",
+        "const { helper } = require('./alias');",
+        "function destructured() { return helper(); }",
+        "",
+      ].join("\n"),
+    });
+
+    const references = await backend.findReferences(files, identity("src/lib.js", "helper"));
+    const callers = await backend.findCallers(files, identity("src/lib.js", "helper"));
+
+    expect(referenceLocations(references)).toEqual([
+      "src/use.js:2",
+      "src/use.js:3",
+      "src/use.js:4",
+    ]);
+    expect(callers.map((edge) => formatSymbolIdentity(edge.symbol.identity))).toEqual([
+      "src/use.js::member",
+      "src/use.js::destructured",
+    ]);
+  });
+
+  it("finds users of a module.exports value re-exported by a whole-module CommonJS barrel", async () => {
+    const { backend, files } = await backendOverSources({
+      "src/lib.js": "module.exports = function build() { return 1; };\n",
+      "src/index.js": "module.exports = require('./lib');\n",
+      "src/use.js": "const build = require('./index');\nfunction calls() { return build(); }\n",
+    });
+
+    const references = await backend.findReferences(files, identity("src/lib.js", "default"));
+    const callers = await backend.findCallers(files, identity("src/lib.js", "default"));
+
+    expect(referenceLocations(references)).toEqual([
+      "src/index.js:1",
+      "src/use.js:1",
+      "src/use.js:2",
+    ]);
+    expect(callers.map((edge) => formatSymbolIdentity(edge.symbol.identity))).toEqual([
+      "src/use.js::calls",
+    ]);
+  });
+
   it("pairs a module.exports function with the .d.ts export = declaration", async () => {
     const { backend, files } = await backendOverSources({
       "src/lib.js": "module.exports = function () { return 1; };\n",

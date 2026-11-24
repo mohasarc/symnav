@@ -228,6 +228,31 @@ describe("TypeScriptBackend declaration and implementation pairs", () => {
     expect(referenceLocations(fromImplementation)).toEqual(expected);
     expect(referenceLocations(fromDeclaration)).toEqual(expected);
   });
+
+  it("pairs the types and main entries of a workspace package an importer reaches", async () => {
+    const { backend, files } = await backendOverSources({
+      "packages/ui/package.json": JSON.stringify({
+        name: "@workspace/ui",
+        types: "index.d.ts",
+        main: "index.js",
+      }),
+      "packages/ui/index.d.ts": "export declare function button(): number;\n",
+      "packages/ui/index.js":
+        "export function button() { return 1; }\nexport const first = button();\n",
+      "src/app.ts": 'import { button } from "@workspace/ui";\nexport const value = button();\n',
+    });
+
+    const references = await backend.findReferences(
+      files,
+      identity("packages/ui/index.js", "button"),
+    );
+
+    expect(referenceLocations(references)).toEqual([
+      "packages/ui/index.js:2",
+      "src/app.ts:1",
+      "src/app.ts:2",
+    ]);
+  });
 });
 
 const interfaceFirstSources: Readonly<Record<string, string>> = {

@@ -42,6 +42,22 @@ describe("TypeScriptBackend CommonJS export declarations", () => {
       "src/required.js:3",
     ]);
   });
+
+  it("resolves an element-access export and finds its require users", async () => {
+    const { backend, files } = await backendOverSources({
+      "src/lib.js": 'exports["answer"] = 42;\n',
+      "src/required.js":
+        "const lib = require('./lib');\nlib.answer;\nrequire('./lib')['answer'];\n",
+    });
+
+    const definitions = await backend.findDefinitions(files, identity("src/lib.js", "answer"));
+    const references = await backend.findReferences(files, identity("src/lib.js", "answer"));
+
+    expect(definitions.map((definition) => formatSymbolIdentity(definition.identity))).toEqual([
+      "src/lib.js::answer",
+    ]);
+    expect(referenceLocations(references)).toEqual(["src/required.js:2", "src/required.js:3"]);
+  });
 });
 
 async function backendOverSources(sources: Readonly<Record<string, string>>): Promise<{

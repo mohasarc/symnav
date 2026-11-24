@@ -178,11 +178,12 @@ class CalleeFinder {
 
   private resolveConstructed(call: NewExpression): ResolvedCallee | undefined {
     const nameNode = calleeNameNode(call.getExpression());
-    const classDeclaration =
-      nameNode && this.definitionResolver.definitionNodesOf(nameNode).find(Node.isClassDeclaration);
-    if (!classDeclaration) return undefined;
-    const constructed = this.constructorTargetOf(classDeclaration);
-    const symbol = this.workspaceSymbolFor(constructed);
+    const definitions = nameNode ? this.definitionResolver.definitionNodesOf(nameNode) : [];
+    const classDeclaration = definitions.find(Node.isClassDeclaration);
+    const constructed = classDeclaration
+      ? this.constructorTargetOf(classDeclaration)
+      : definitions.find(isConstructorFunction);
+    const symbol = constructed && this.workspaceSymbolFor(constructed);
     if (!symbol) return undefined;
     return { symbol, confidence: "certain" };
   }
@@ -404,6 +405,13 @@ function compareSymbolOverviewNodes(a: SymbolOverviewNode, b: SymbolOverviewNode
   const aKey = DeclarationLocator.identityKey(a.identity);
   const bKey = DeclarationLocator.identityKey(b.identity);
   return aKey < bKey ? -1 : aKey > bKey ? 1 : 0;
+}
+
+function isConstructorFunction(node: Node): boolean {
+  if (Node.isFunctionDeclaration(node) || Node.isFunctionExpression(node)) return true;
+  if (!Node.isVariableDeclaration(node)) return false;
+  const initializer = node.getInitializer();
+  return initializer !== undefined && Node.isFunctionExpression(withoutParentheses(initializer));
 }
 
 function carriesBody(node: Node): boolean {

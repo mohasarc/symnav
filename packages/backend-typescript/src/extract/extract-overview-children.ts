@@ -2,6 +2,7 @@ import {
   Node,
   SyntaxKind,
   type Block,
+  type SourceFile,
   type ts,
   type ExpressionStatement,
   type TryStatement,
@@ -31,6 +32,10 @@ import {
   JavaScriptAssignmentDeclarations,
   type JavaScriptAssignmentDeclaration,
 } from "./javascript-assignment-declaration.js";
+import {
+  JavaScriptDocDeclarations,
+  type JavaScriptDocTypeAlias,
+} from "./javascript-doc-declarations.js";
 import { JavaScriptExpandoMembers } from "./javascript-expando-members.js";
 import { nodeKind } from "./node-kind.js";
 import { refineLabel } from "./refine-label.js";
@@ -95,6 +100,11 @@ export class OverviewChildrenExtractor {
     ]);
   }
 
+  extractEndOfFile(sourceFile: SourceFile): readonly OverviewNode[] {
+    const endOfFile = sourceFile.getLastChildByKind(SyntaxKind.EndOfFileToken);
+    return endOfFile ? this.typeAliasNodes(endOfFile, []) : [];
+  }
+
   declarationNodeOf(symbol: SymbolOverviewNode): Node | undefined {
     return this.declarationNodes.get(symbol);
   }
@@ -129,7 +139,39 @@ export class OverviewChildrenExtractor {
     symbolSegments: readonly SymbolPathSegment[];
     category: "statement" | "member";
   }): readonly OverviewNode[] {
-    return this.positioned(this.overviewNodesOf(args), args.node);
+    const typeAliases =
+      args.category === "statement" ? this.typeAliasNodes(args.node, args.symbolSegments) : [];
+    return [...typeAliases, ...this.positioned(this.overviewNodesOf(args), args.node)];
+  }
+
+  private typeAliasNodes(
+    host: Node,
+    symbolSegments: readonly SymbolPathSegment[],
+  ): readonly SymbolOverviewNode[] {
+    return JavaScriptDocDeclarations.typeAliasesOf(host).map((typeAlias) =>
+      this.buildTypeAliasNode(typeAlias, symbolSegments),
+    );
+  }
+
+  private buildTypeAliasNode(
+    typeAlias: JavaScriptDocTypeAlias,
+    symbolSegments: readonly SymbolPathSegment[],
+  ): SymbolOverviewNode {
+    const range = JavaScriptDocDeclarations.rangeOf(typeAlias);
+    return this.declared(
+      {
+        type: "symbol",
+        identity: this.identityFor([...symbolSegments, { name: typeAlias.name }]),
+        kind: { role: roleOf("type-alias"), nativeLabel: "type-alias" },
+        range,
+        header: OverviewChildrenExtractor.headerFrom(
+          range.startLine,
+          JavaScriptDocDeclarations.signatureOf(typeAlias),
+        ),
+        children: [],
+      },
+      typeAlias.nameNode,
+    );
   }
 
   private overviewNodesOf(args: {

@@ -53,6 +53,43 @@ describe("DaemonBenchmarkRunConfiguration", () => {
     ).toThrow("Daemon benchmark runner memory is undersized");
   });
 
+  it("runs the TypeScript profile by default", () => {
+    const configuration = DaemonBenchmarkRunConfiguration.parse(
+      ["--scale", "1"],
+      {},
+      64 * 1024 ** 3,
+    );
+
+    expect(configuration.profile).toBe("typescript");
+    expect(configuration.profileFileName).toBe("daemon-workspace-1x.v1.json");
+    expect(configuration.artifactFileName("linux")).toBe("daemon-benchmark-1x-linux.json");
+  });
+
+  it.each([
+    ["--scale", "2", "--profile", "javascript"],
+    ["--profile", "javascript", "--scale", "2"],
+  ])("selects the JavaScript profile and names its artifact %#", (...argv) => {
+    const configuration = DaemonBenchmarkRunConfiguration.parse(argv, {}, 64 * 1024 ** 3);
+
+    expect(configuration.scale).toBe(2);
+    expect(configuration.profile).toBe("javascript");
+    expect(configuration.profileFileName).toBe("daemon-workspace-js-1x.v1.json");
+    expect(configuration.artifactFileName("win32")).toBe(
+      "daemon-benchmark-javascript-2x-win32.json",
+    );
+  });
+
+  it.each([
+    { argv: ["--scale", "1", "--profile"] },
+    { argv: ["--scale", "1", "--profile", "python"] },
+    { argv: ["--scale", "1", "--profile", "javascript", "--profile", "typescript"] },
+    { argv: ["--profile", "javascript"] },
+  ])("rejects a partial or unknown profile %#", ({ argv }) => {
+    expect(() => DaemonBenchmarkRunConfiguration.parse(argv, {}, 64 * 1024 ** 3)).toThrow(
+      "Usage: pnpm daemon:benchmark --scale <1|2|3|10> [--profile <typescript|javascript>]",
+    );
+  });
+
   it("honors an explicit aggregate artifact directory", () => {
     expect(
       DaemonBenchmarkRunConfiguration.parse(

@@ -999,6 +999,24 @@ describe("TypeScriptProjectGraph", () => {
     });
   });
 
+  it("loads a jsconfig.json reached only through a project reference", async () => {
+    const workspace = inMemoryWorkspace({
+      "tsconfig.json": JSON.stringify({
+        files: [],
+        references: [{ path: "config/jsconfig.json" }],
+      }),
+      "config/jsconfig.json": JSON.stringify({ files: ["../web/src/b.js"] }),
+      "web/src/b.js": "export function b() {}\n",
+    });
+    const graph = new TypeScriptProjectGraph(workspace.fileSystem);
+
+    const refresh = await graph.refresh(workspace.snapshot);
+
+    expect(refresh.configuredProjectCount).toBe(2);
+    expect(refresh.inferredFileCount).toBe(0);
+    expect(graph.programFor("web/src/b.js")?.getCompilerOptions().skipLibCheck).toBe(true);
+  });
+
   it("keeps implicit outDir contents outside configured membership", async () => {
     const projectFixture = fixture();
     const graph = new TypeScriptProjectGraph(projectFixture.fileSystem);

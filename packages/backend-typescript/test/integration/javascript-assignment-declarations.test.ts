@@ -563,6 +563,26 @@ describe("TypeScriptBackend CommonJS export declarations", () => {
     ]);
   });
 
+  it("finds destructured require users of static class members of the module.exports value", async () => {
+    const { backend, files } = await backendOverSources({
+      "src/lib.js": [
+        "class Foo {",
+        "  static make() { return new Foo(); }",
+        "  static label = 'foo';",
+        "}",
+        "module.exports = Foo;",
+        "",
+      ].join("\n"),
+      "src/use.js": "const { make } = require('./lib');\nfunction useMake() { return make(); }\n",
+    });
+
+    const callers = await backend.findCallers(files, identity("src/lib.js", "Foo", "make"));
+
+    expect(callers.map((edge) => formatSymbolIdentity(edge.symbol.identity))).toEqual([
+      "src/use.js::useMake",
+    ]);
+  });
+
   it("pairs a module.exports function with the .d.ts export = declaration", async () => {
     const { backend, files } = await backendOverSources({
       "src/lib.js": "module.exports = function () { return 1; };\n",

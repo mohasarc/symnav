@@ -15,7 +15,7 @@ class DaemonBenchmarkRunner {
       process.constrainedMemory?.(),
     );
     const reviewed = JSON.parse(
-      readFileSync(new URL("./profiles/daemon-workspace-1x.v1.json", import.meta.url), "utf8"),
+      readFileSync(new URL(`./profiles/${configuration.profileFileName}`, import.meta.url), "utf8"),
     );
     const profile = DaemonWorkspaceProfileValidator.parse(reviewed);
     const artifactDirectory = resolve(
@@ -30,10 +30,7 @@ class DaemonBenchmarkRunner {
         seed: "daemon-workspace-v1",
       }),
     );
-    const artifactPath = join(
-      artifactDirectory,
-      `daemon-benchmark-${configuration.scale}x-${process.platform}.json`,
-    );
+    const artifactPath = join(artifactDirectory, configuration.artifactFileName(process.platform));
     writeFileSync(artifactPath, `${JSON.stringify(artifact, undefined, 2)}\n`, "utf8");
     process.stdout.write(
       `${JSON.stringify({

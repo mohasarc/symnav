@@ -1,4 +1,5 @@
 import type { DaemonBenchmarkScale } from "./daemon-workspace-generator.js";
+import type { DaemonWorkspaceLanguage } from "./daemon-workspace-profile.js";
 
 export interface DaemonBenchmarkRunEnvironment {
   readonly SYMNAV_BENCHMARK_ARTIFACT_DIR?: string;
@@ -6,10 +7,17 @@ export interface DaemonBenchmarkRunEnvironment {
 }
 
 export class DaemonBenchmarkRunConfiguration {
-  private static readonly usage = "Usage: pnpm daemon:benchmark --scale <1|2|3|10>";
+  private static readonly usage =
+    "Usage: pnpm daemon:benchmark --scale <1|2|3|10> [--profile <typescript|javascript>]";
+
+  private static readonly profileFileNames: Readonly<Record<DaemonWorkspaceLanguage, string>> = {
+    typescript: "daemon-workspace-1x.v1.json",
+    javascript: "daemon-workspace-js-1x.v1.json",
+  };
 
   private constructor(
     readonly scale: DaemonBenchmarkScale,
+    readonly profile: DaemonWorkspaceLanguage,
     readonly artifactDirectory: string,
     readonly minimumMemoryBytes: number,
     readonly effectiveMemoryBytes: number,
@@ -21,8 +29,9 @@ export class DaemonBenchmarkRunConfiguration {
     systemMemoryBytes: number,
     constrainedMemoryBytes?: number,
   ): DaemonBenchmarkRunConfiguration {
-    if (argv.length !== 2 || argv[0] !== "--scale") throw new Error(this.usage);
-    const scale = this.scale(argv[1]);
+    const options = this.options(argv);
+    const scale = this.scale(options.get("--scale"));
+    const profile = this.profile(options.get("--profile"));
     const minimumMemoryBytes = this.minimumMemory(environment, scale);
     const effectiveMemoryBytes =
       constrainedMemoryBytes === undefined || constrainedMemoryBytes <= 0
@@ -35,10 +44,40 @@ export class DaemonBenchmarkRunConfiguration {
     if (artifactDirectory.length === 0) throw new Error(this.usage);
     return new DaemonBenchmarkRunConfiguration(
       scale,
+      profile,
       artifactDirectory,
       minimumMemoryBytes,
       effectiveMemoryBytes,
     );
+  }
+
+  get profileFileName(): string {
+    return DaemonBenchmarkRunConfiguration.profileFileNames[this.profile];
+  }
+
+  artifactFileName(platform: NodeJS.Platform): string {
+    const profilePart = this.profile === "typescript" ? "" : `${this.profile}-`;
+    return `daemon-benchmark-${profilePart}${this.scale}x-${platform}.json`;
+  }
+
+  private static options(argv: readonly string[]): ReadonlyMap<string, string> {
+    const options = new Map<string, string>();
+    for (let index = 0; index < argv.length; index += 2) {
+      const name = argv[index]!;
+      const value = argv[index + 1];
+      const isKnownOption = name === "--scale" || name === "--profile";
+      if (!isKnownOption || value === undefined || options.has(name)) {
+        throw new Error(this.usage);
+      }
+      options.set(name, value);
+    }
+    return options;
+  }
+
+  private static profile(value: string | undefined): DaemonWorkspaceLanguage {
+    if (value === undefined) return "typescript";
+    if (value !== "typescript" && value !== "javascript") throw new Error(this.usage);
+    return value;
   }
 
   private static scale(value: string | undefined): DaemonBenchmarkScale {

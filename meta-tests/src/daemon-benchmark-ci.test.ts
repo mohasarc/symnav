@@ -57,6 +57,14 @@ describe("daemon scale benchmark CI", () => {
     expect(weekly).not.toContain("continue-on-error");
   });
 
+  it("runs the JavaScript profile in the nightly and weekly jobs, not on pull requests", () => {
+    expect(job("blocking-1x")).not.toContain("--profile javascript");
+    expect(job("nightly-scale")).toContain(
+      "pnpm daemon:benchmark --scale ${{ matrix.scale }} --profile javascript",
+    );
+    expect(job("weekly-10x")).toContain("pnpm daemon:benchmark --scale 10 --profile javascript");
+  });
+
   function job(name: string): string {
     const start = workflow.indexOf(`  ${name}:`);
     if (start === -1) throw new Error(`Missing workflow job: ${name}`);

@@ -1,4 +1,8 @@
-import type { DaemonWorkspaceProfile, DistributionSummary } from "./daemon-workspace-profile.js";
+import type {
+  DaemonWorkspaceLanguage,
+  DaemonWorkspaceProfile,
+  DistributionSummary,
+} from "./daemon-workspace-profile.js";
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { mkdirSync, writeFileSync } from "node:fs";
@@ -63,11 +67,24 @@ export interface GeneratedDaemonWorkspace {
 
 type GeneratedImportKind = "relative" | "path-alias" | "workspace";
 
+type GeneratedModuleKind = "typescript" | "ecmascript" | "commonjs" | "jsx";
+
+const DIRECT_BENCHMARK_HUB_FILES = 28;
+const JSX_FILE_INTERVAL = 10;
+const ECMASCRIPT_HUB_REFERENCES_PER_FILE = 3;
+const COMMONJS_HUB_REFERENCES_PER_FILE = 2;
+const MINIFIED_FILE = "packages/package-000/src/vendor.min.js";
+
 export class DaemonWorkspaceGenerator {
   private generatedImportKinds: readonly GeneratedImportKind[] = [];
   private generatedImportIndex = 0;
+  private packageDirectoryCount = 0;
 
   constructor(private readonly options: DaemonWorkspaceGeneratorOptions) {}
+
+  private get language(): DaemonWorkspaceLanguage {
+    return this.options.profile.language ?? "typescript";
+  }
 
   async generate(destination: string): Promise<GeneratedDaemonWorkspace> {
     const workspaceRoot = resolve(destination);
@@ -77,27 +94,25 @@ export class DaemonWorkspaceGenerator {
       Math.min(visibleTypeScriptFiles + 1, this.options.profile.packageCount * this.options.scale),
     );
     const packageDirectoryCount = totalPackageCount - 1;
+    this.packageDirectoryCount = packageDirectoryCount;
     const configCount = this.options.profile.configCount * this.options.scale;
     const projectReferenceCount = this.options.profile.projectReferenceCount * this.options.scale;
     this.generatedImportKinds = this.buildImportKinds(visibleTypeScriptFiles);
     this.generatedImportIndex = 0;
     this.initializeRepository(workspaceRoot);
-    this.writeRootConfiguration(
-      workspaceRoot,
-      packageDirectoryCount,
-      Math.min(packageDirectoryCount, projectReferenceCount),
-    );
+    const rootReferenceCount = Math.min(this.referencedPackageCount, projectReferenceCount);
+    this.writeRootConfiguration(workspaceRoot, packageDirectoryCount, rootReferenceCount);
     const firstModuleByPackage = this.writePackages(
       workspaceRoot,
       packageDirectoryCount,
       visibleTypeScriptFiles,
     );
     this.writePackageManifests(workspaceRoot, firstModuleByPackage);
+    this.writeMinifiedFile(workspaceRoot);
     this.writeAdditionalConfigurations(
       workspaceRoot,
-      packageDirectoryCount,
       configCount - packageDirectoryCount - 1,
-      Math.max(0, projectReferenceCount - packageDirectoryCount),
+      Math.max(0, projectReferenceCount - rootReferenceCount),
     );
     this.writeBoundaries(workspaceRoot);
     this.commit(workspaceRoot, "generated-foundation", "2000-01-01T00:00:00Z");
@@ -107,10 +122,10 @@ export class DaemonWorkspaceGenerator {
     );
     this.commit(workspaceRoot, "generated-profile", "2000-01-02T00:00:00Z");
 
-    const targetFile = "packages/package-000/src/module-000000.ts";
+    const targetFile = this.modulePath(0);
     const target = `${targetFile}::benchmarkHub`;
-    const representativeFileCount = Array.from(
-      { length: Math.min(28, visibleTypeScriptFiles - 1) },
+    const representativeFiles = Array.from(
+      { length: Math.min(DIRECT_BENCHMARK_HUB_FILES, visibleTypeScriptFiles - 1) },
       (_, index) => index + 1,
     ).filter(
       (index) =>
@@ -118,14 +133,27 @@ export class DaemonWorkspaceGenerator {
           0 &&
         this.distributionValue(this.options.profile.importsPerFile, index, visibleTypeScriptFiles) >
           0,
-    ).length;
-    const representativeOverviewSymbols = Math.max(
-      4,
-      this.distributionValue(this.options.profile.symbolsPerFile, 0, visibleTypeScriptFiles),
     );
+    const representativeFileCount = representativeFiles.length;
+    const representativeReferenceCount = representativeFiles.reduce(
+      (count, index) =>
+        count +
+        (this.moduleKind(index) === "commonjs"
+          ? COMMONJS_HUB_REFERENCES_PER_FILE
+          : ECMASCRIPT_HUB_REFERENCES_PER_FILE),
+      0,
+    );
+    const requiredBindingCount =
+      this.moduleKind(0) === "commonjs"
+        ? this.distributionValue(this.options.profile.importsPerFile, 0, visibleTypeScriptFiles)
+        : 0;
+    const representativeOverviewSymbols =
+      Math.max(
+        4,
+        this.distributionValue(this.options.profile.symbolsPerFile, 0, visibleTypeScriptFiles),
+      ) + requiredBindingCount;
     const removableIndex = visibleTypeScriptFiles - 1;
-    const removablePackage = removableIndex % packageDirectoryCount;
-    const removableFile = `packages/package-${String(removablePackage).padStart(3, "0")}/src/module-${String(removableIndex).padStart(6, "0")}.ts`;
+    const removableFile = this.modulePath(removableIndex);
     return {
       workspaceRoot,
       commands: {
@@ -147,7 +175,7 @@ export class DaemonWorkspaceGenerator {
         refs: {
           argv: ["refs", target, "--all", "--json"],
           expectNonEmpty: true,
-          expectation: { kind: "references", total: representativeFileCount * 3 },
+          expectation: { kind: "references", total: representativeReferenceCount },
         },
         context: {
           argv: ["context", target, "--json"],
@@ -176,16 +204,64 @@ export class DaemonWorkspaceGenerator {
       },
       mutations: {
         sameSizeEdit: targetFile,
-        add: "packages/package-000/src/added.ts",
+        add: `packages/package-000/src/added${this.sourceExtension}`,
         remove: removableFile,
         removeSymbol: `symbol${String(removableIndex).padStart(6, "0")}`,
-        renameFrom: "packages/package-001/src/module-000001.ts",
-        renameTo: "packages/package-001/src/renamed.ts",
+        renameFrom: this.modulePath(1),
+        renameTo: `packages/package-001/src/renamed${this.sourceExtension}`,
         ignoreRule: ".gitignore",
         nestedWorkspaceFile: "nested/nested.ts",
       },
       expectedProfile: this.scaledProfile(totalPackageCount, visibleTypeScriptFiles),
     };
+  }
+
+  private get sourceExtension(): string {
+    return this.language === "javascript" ? ".js" : ".ts";
+  }
+
+  private get writesMinifiedFile(): boolean {
+    return this.language === "javascript" && (this.options.profile.minifiedFileBytes ?? 0) > 0;
+  }
+
+  private get referencedPackageCount(): number {
+    const jsconfigPackageCount = this.language === "javascript" ? 1 : 0;
+    return this.packageDirectoryCount - jsconfigPackageCount;
+  }
+
+  private moduleKind(index: number): GeneratedModuleKind {
+    if (this.language === "typescript") return "typescript";
+    if (index === 0) return "commonjs";
+    const isJsx =
+      index % JSX_FILE_INTERVAL === JSX_FILE_INTERVAL - 1 &&
+      index >= this.packageDirectoryCount &&
+      index > DIRECT_BENCHMARK_HUB_FILES;
+    if (isJsx) return "jsx";
+    return this.selectedByRatio(index, this.options.profile.commonJsRatio)
+      ? "commonjs"
+      : "ecmascript";
+  }
+
+  private hasDeclarationSibling(index: number): boolean {
+    const kind = this.moduleKind(index);
+    const pairable = kind === "ecmascript" || kind === "commonjs";
+    return pairable && this.selectedByRatio(index, this.options.profile.declarationSiblingRatio);
+  }
+
+  private selectedByRatio(index: number, ratio: number | undefined): boolean {
+    if (index === 0 || ratio === undefined) return false;
+    return Math.floor(index * ratio) > Math.floor((index - 1) * ratio);
+  }
+
+  private moduleFileName(index: number): string {
+    const suffix = String(index).padStart(6, "0");
+    const extension = this.moduleKind(index) === "jsx" ? ".jsx" : this.sourceExtension;
+    return `module-${suffix}${extension}`;
+  }
+
+  private modulePath(index: number): string {
+    const packageName = `package-${String(index % this.packageDirectoryCount).padStart(3, "0")}`;
+    return `packages/${packageName}/src/${this.moduleFileName(index)}`;
   }
 
   private get seedMarker(): string {
@@ -231,7 +307,9 @@ export class DaemonWorkspaceGenerator {
             paths: Object.fromEntries(
               packageNames.map((name, index) => [
                 `@alias/${name}`,
-                [`packages/${name}/src/module-${String(index).padStart(6, "0")}.ts`],
+                [
+                  `packages/${name}/src/module-${String(index).padStart(6, "0")}${this.sourceExtension}`,
+                ],
               ]),
             ),
             target: "ES2022",
@@ -254,19 +332,16 @@ export class DaemonWorkspaceGenerator {
     const firstModuleByPackage = new Map<number, string>();
     for (let index = 0; index < visibleTypeScriptFiles; index += 1) {
       const packageIndex = index % packageCount;
-      const suffix = String(index).padStart(6, "0");
-      const moduleName = `module-${suffix}.ts`;
+      const moduleName = this.moduleFileName(index);
       firstModuleByPackage.set(packageIndex, firstModuleByPackage.get(packageIndex) ?? moduleName);
-      this.write(
-        join(
-          workspaceRoot,
-          "packages",
-          `package-${String(packageIndex).padStart(3, "0")}`,
-          "src",
-          moduleName,
-        ),
-        this.moduleSource(index, visibleTypeScriptFiles, packageCount),
-      );
+      const modulePath = join(workspaceRoot, this.modulePath(index));
+      this.write(modulePath, this.moduleSource(index, visibleTypeScriptFiles, packageCount));
+      if (this.hasDeclarationSibling(index)) {
+        this.write(
+          modulePath.replace(/\.js$/, ".d.ts"),
+          this.declarationSiblingSource(index, visibleTypeScriptFiles),
+        );
+      }
     }
     return firstModuleByPackage;
   }
@@ -278,19 +353,27 @@ export class DaemonWorkspaceGenerator {
     for (const [packageIndex, moduleName] of firstModuleByPackage) {
       const packageName = `package-${String(packageIndex).padStart(3, "0")}`;
       const packageRoot = join(workspaceRoot, "packages", packageName);
+      const moduleType = this.language === "typescript" ? { type: "module" } : {};
       this.write(
         join(packageRoot, "package.json"),
         JSON.stringify(
           {
             name: `@workspace/${packageName}`,
             private: true,
-            type: "module",
+            ...moduleType,
             exports: `./src/${moduleName}`,
           },
           undefined,
           2,
         ) + "\n",
       );
+      if (packageIndex >= this.referencedPackageCount) {
+        this.write(
+          join(packageRoot, "jsconfig.json"),
+          JSON.stringify({ extends: "../../tsconfig.json", include: ["src"] }, undefined, 2) + "\n",
+        );
+        continue;
+      }
       this.write(
         join(packageRoot, "tsconfig.json"),
         JSON.stringify(
@@ -301,7 +384,7 @@ export class DaemonWorkspaceGenerator {
               rootDir: "src",
               outDir: "dist",
             },
-            include: ["src/**/*.ts"],
+            include: [this.language === "typescript" ? "src/**/*.ts" : "src"],
           },
           undefined,
           2,
@@ -310,12 +393,30 @@ export class DaemonWorkspaceGenerator {
     }
   }
 
+  private writeMinifiedFile(workspaceRoot: string): void {
+    if (!this.writesMinifiedFile) return;
+    const minifiedFileBytes = this.options.profile.minifiedFileBytes ?? 0;
+    const functions: string[] = [];
+    let bytes = 0;
+    for (let index = 0; bytes < minifiedFileBytes; index += 1) {
+      const body = index === 0 ? "return n" : `return m${index - 1}(n)+${index % 7}`;
+      const declaration = `function m${index}(n){${body}}`;
+      functions.push(declaration);
+      bytes += declaration.length;
+    }
+    const lastFunction = `m${functions.length - 1}`;
+    this.write(
+      join(workspaceRoot, MINIFIED_FILE),
+      `"use strict";${functions.join("")}module.exports={run:${lastFunction}};`,
+    );
+  }
+
   private writeAdditionalConfigurations(
     workspaceRoot: string,
-    packageCount: number,
     additionalConfigCount: number,
     additionalReferenceCount: number,
   ): void {
+    const packageCount = this.referencedPackageCount;
     if (additionalConfigCount < 0) throw new Error("Profile config count is undersized");
     let remainingReferences = additionalReferenceCount;
     for (let index = 0; index < additionalConfigCount; index += 1) {
@@ -347,20 +448,40 @@ export class DaemonWorkspaceGenerator {
       fileCount,
     );
     const callCount = Math.min(importCount, 2 + (index % 12));
+    const kind = this.moduleKind(index);
     if (index === 0) {
+      const cycleExit = kind === "commonjs" ? "exports.cycleExit" : "cycleExit";
+      const cycleEntry = kind === "commonjs" ? "exports.cycleEntry" : "cycleEntry";
       const specialLines = [
-        ...Array.from(
-          { length: importCount },
-          (_, importIndex) =>
-            `import { symbol000001 as benchmarkImport${importIndex} } from "${this.importSpecifier(0, 1, this.nextImportKind())}";`,
+        ...Array.from({ length: importCount }, (_, importIndex) =>
+          DaemonWorkspaceGenerator.importLine(
+            kind,
+            "symbol000001",
+            importIndex,
+            this.importSpecifier(0, 1, this.nextImportKind()),
+          ),
         ),
-        `export const generatorSeed = "${this.seedMarker}";`,
-        "export function benchmarkHub(value: number): number { return benchmarkImport0(value) + 1; }",
-        "export function cycleEntry(value: number): number { return value <= 0 ? 0 : cycleExit(value - 1); }",
-        "export function cycleExit(value: number): number { return cycleEntry(value); }",
+        DaemonWorkspaceGenerator.valueLine(kind, "generatorSeed", `"${this.seedMarker}"`),
+        DaemonWorkspaceGenerator.hubFunctionLine(
+          kind,
+          "benchmarkHub",
+          "return benchmarkImport0(value) + 1;",
+        ),
+        DaemonWorkspaceGenerator.hubFunctionLine(
+          kind,
+          "cycleEntry",
+          `return value <= 0 ? 0 : ${cycleExit}(value - 1);`,
+        ),
+        DaemonWorkspaceGenerator.hubFunctionLine(kind, "cycleExit", `return ${cycleEntry}(value);`),
       ];
       for (let symbolIndex = 4; symbolIndex < symbolCount; symbolIndex += 1) {
-        specialLines.push(`export const benchmarkValue${symbolIndex} = ${symbolIndex};`);
+        specialLines.push(
+          DaemonWorkspaceGenerator.valueLine(
+            kind,
+            `benchmarkValue${symbolIndex}`,
+            `${symbolIndex}`,
+          ),
+        );
       }
       return this.fitSource(specialLines, sourceLines, sourceBytes);
     }
@@ -379,10 +500,15 @@ export class DaemonWorkspaceGenerator {
         targetPackage,
         this.nextImportKind(),
       );
-      return `import { ${importedSymbol} as benchmarkImport${importIndex} } from "${importSpecifier}";`;
+      return DaemonWorkspaceGenerator.importLine(
+        kind,
+        importedSymbol,
+        importIndex,
+        importSpecifier,
+      );
     });
     if (symbolCount > 0) {
-      lines.push(`export function symbol${suffix}(value: number): number {`);
+      lines.push(DaemonWorkspaceGenerator.functionOpening(kind, `symbol${suffix}`));
       const directBenchmarkHubFile = index <= directBenchmarkHubFiles;
       const executableCalls = directBenchmarkHubFile ? 0 : Math.max(0, callCount - 2);
       for (let callIndex = 0; callIndex < executableCalls && importCount > 0; callIndex += 1) {
@@ -392,14 +518,64 @@ export class DaemonWorkspaceGenerator {
         importCount === 0
           ? `  return value + ${index % 17};`
           : `  return benchmarkImport0(value) + ${index % 17};`,
-        "}",
+        kind === "commonjs" ? "};" : "}",
       );
       for (let symbolIndex = 1; symbolIndex < symbolCount; symbolIndex += 1) {
-        lines.push(`export const value${suffix}_${symbolIndex} = ${symbolIndex};`);
+        lines.push(
+          DaemonWorkspaceGenerator.valueLine(
+            kind,
+            `value${suffix}_${symbolIndex}`,
+            `${symbolIndex}`,
+          ),
+        );
       }
     }
     if (lines.length === 0) lines.push("// generated");
     return this.fitSource(lines, sourceLines, sourceBytes);
+  }
+
+  private declarationSiblingSource(index: number, fileCount: number): string {
+    const suffix = String(index).padStart(6, "0");
+    const symbolCount = this.distributionValue(
+      this.options.profile.symbolsPerFile,
+      index,
+      fileCount,
+    );
+    const lines = [`export declare function symbol${suffix}(value: number): number;`];
+    for (let symbolIndex = 1; symbolIndex < symbolCount; symbolIndex += 1) {
+      lines.push(`export declare const value${suffix}_${symbolIndex}: number;`);
+    }
+    return `${lines.join("\n")}\n`;
+  }
+
+  private static importLine(
+    kind: GeneratedModuleKind,
+    importedSymbol: string,
+    importIndex: number,
+    specifier: string,
+  ): string {
+    if (kind === "commonjs") {
+      return `const { ${importedSymbol}: benchmarkImport${importIndex} } = require("${specifier}");`;
+    }
+    return `import { ${importedSymbol} as benchmarkImport${importIndex} } from "${specifier}";`;
+  }
+
+  private static functionOpening(kind: GeneratedModuleKind, name: string): string {
+    if (kind === "typescript") return `export function ${name}(value: number): number {`;
+    if (kind === "commonjs") return `exports.${name} = function (value) {`;
+    return `export function ${name}(value) {`;
+  }
+
+  private static hubFunctionLine(kind: GeneratedModuleKind, name: string, body: string): string {
+    if (kind === "typescript") return `export function ${name}(value: number): number { ${body} }`;
+    if (kind === "commonjs") return `exports.${name} = function (value) { ${body} };`;
+    return `export function ${name}(value) { ${body} }`;
+  }
+
+  private static valueLine(kind: GeneratedModuleKind, name: string, value: string): string {
+    if (kind === "commonjs") return `exports.${name} = ${value};`;
+    if (kind === "jsx") return `export const ${name} = <span>{${value}}</span>;`;
+    return `export const ${name} = ${value};`;
   }
 
   private distributionValue(
@@ -501,7 +677,7 @@ export class DaemonWorkspaceGenerator {
   ): DaemonWorkspaceProfile {
     return {
       ...this.options.profile,
-      visibleTypeScriptFiles,
+      visibleTypeScriptFiles: visibleTypeScriptFiles + (this.writesMinifiedFile ? 1 : 0),
       packageCount,
       configCount: this.options.profile.configCount * this.options.scale,
       projectReferenceCount: this.options.profile.projectReferenceCount * this.options.scale,

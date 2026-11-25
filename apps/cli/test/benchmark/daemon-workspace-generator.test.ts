@@ -71,6 +71,61 @@ describe("DaemonWorkspaceGenerator", () => {
     },
   );
 
+  it("writes the JavaScript file mix and configurations deterministically for a seed", async () => {
+    const first = TestWorkspace.create(roots);
+    const second = TestWorkspace.create(roots);
+
+    const generated = await TestWorkspace.generateJavaScript(first, "javascript-seed");
+    await TestWorkspace.generateJavaScript(second, "javascript-seed");
+    const manifest = TestWorkspace.manifest(first);
+    const paths = manifest.map((entry) => entry.slice(0, entry.indexOf(":")));
+    const sources = manifest.join("\n");
+
+    expect(manifest).toEqual(TestWorkspace.manifest(second));
+    expect(paths.filter((path) => path.endsWith(".ts") && !path.endsWith(".d.ts"))).toEqual([
+      "ignored/ignored.ts",
+      "nested/nested.ts",
+    ]);
+    expect(paths.filter((path) => path.endsWith(".jsx")).length).toBeGreaterThan(0);
+    expect(paths.filter((path) => path.endsWith(".d.ts")).length).toBeGreaterThan(0);
+    for (const declaration of paths.filter((path) => path.endsWith(".d.ts"))) {
+      expect(paths).toContain(declaration.replace(/\.d\.ts$/, ".js"));
+    }
+    expect(sources).toContain("require(");
+    expect(sources).toContain("exports.symbol");
+    expect(sources).toContain("import { ");
+    expect(paths.filter((path) => path.endsWith("jsconfig.json"))).toHaveLength(1);
+    for (const configuration of paths.filter((path) =>
+      /packages\/[^/]+\/tsconfig\.json$/.test(path),
+    )) {
+      const parsed = JSON.parse(readFileSync(join(first, configuration), "utf8"));
+      expect(parsed.include).toEqual(["src"]);
+      expect(parsed.compilerOptions.allowJs).toBeUndefined();
+    }
+    const minified = readFileSync(join(first, "packages/package-000/src/vendor.min.js"), "utf8");
+    expect(minified).not.toContain("\n");
+    expect(Buffer.byteLength(minified)).toBeGreaterThanOrEqual(
+      TestWorkspace.javaScriptProfile.minifiedFileBytes!,
+    );
+    const profiled = await new DaemonWorkspaceProfiler().profile(first, "javascript");
+    expect(profiled.visibleTypeScriptFiles).toBe(generated.expectedProfile.visibleTypeScriptFiles);
+    expect(profiled.minifiedFileBytes).toBe(Buffer.byteLength(minified));
+  });
+
+  it("targets a JavaScript symbol with non-empty command expectations", async () => {
+    const root = TestWorkspace.create(roots);
+
+    const generated = await TestWorkspace.generateJavaScript(root, "javascript-commands");
+
+    expect(generated.commands.def.argv[1]).toMatch(/\.js::benchmarkHub$/);
+    expect(generated.commands.refs.expectation).toMatchObject({ kind: "references" });
+    expect(generated.commands.refs.expectation).not.toMatchObject({ total: 0 });
+    expect(generated.commands.context.expectation).not.toMatchObject({ callers: 0 });
+    expect(generated.mutations.add).toMatch(/\.js$/);
+    expect(statSync(join(root, generated.mutations.remove)).isFile()).toBe(true);
+    expect(statSync(join(root, generated.mutations.renameFrom)).isFile()).toBe(true);
+  });
+
   it("preserves the reviewed 1x structural distributions", async () => {
     const root = TestWorkspace.create(roots);
     const reviewed = DaemonWorkspaceProfileValidator.parse(
@@ -116,6 +171,14 @@ class TestWorkspace {
     workspaceImportRatio: 0.5,
   };
 
+  static readonly javaScriptProfile: DaemonWorkspaceProfile = {
+    ...this.profile,
+    language: "javascript",
+    declarationSiblingRatio: 0.25,
+    commonJsRatio: 0.3,
+    minifiedFileBytes: 2_048,
+  };
+
   static create(roots: string[]): string {
     const root = mkdtempSync(join(tmpdir(), "symnav-generated-workspace-"));
     roots.push(root);
@@ -128,6 +191,15 @@ class TestWorkspace {
       generatorVersion: "1.0.0",
       seed,
       scale,
+    }).generate(root);
+  }
+
+  static generateJavaScript(root: string, seed: string) {
+    return new DaemonWorkspaceGenerator({
+      profile: this.javaScriptProfile,
+      generatorVersion: "1.0.0",
+      seed,
+      scale: 3,
     }).generate(root);
   }
 

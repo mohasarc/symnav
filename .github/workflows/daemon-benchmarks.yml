@@ -58,6 +58,7 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm build
       - run: pnpm daemon:benchmark --scale ${{ matrix.scale }}
+      - run: pnpm daemon:benchmark --scale ${{ matrix.scale }} --profile javascript
       - if: always()
         uses: actions/upload-artifact@v4
         with:
@@ -81,6 +82,7 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm build
       - run: pnpm daemon:benchmark --scale 10
+      - run: pnpm daemon:benchmark --scale 10 --profile javascript
       - if: always()
         uses: actions/upload-artifact@v4
         with:

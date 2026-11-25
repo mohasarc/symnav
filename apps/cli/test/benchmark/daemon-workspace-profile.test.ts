@@ -23,6 +23,57 @@ describe("daemon workspace profile", () => {
     expect(serialized).not.toMatch(/(?:[A-Za-z]:\\|\/Users\/|\/home\/|::|[a-f\d]{40})/i);
   });
 
+  it("accepts the reviewed JavaScript aggregate with its JavaScript file mix", () => {
+    const serialized = readFileSync(
+      new URL("./profiles/daemon-workspace-js-1x.v1.json", import.meta.url),
+      "utf8",
+    );
+    const profile = DaemonWorkspaceProfileValidator.parse(JSON.parse(serialized));
+
+    expect(profile.language).toBe("javascript");
+    expect(profile.visibleTypeScriptFiles).toBe(reviewedProfile().visibleTypeScriptFiles);
+    expect(profile.declarationSiblingRatio).toBeGreaterThan(0);
+    expect(profile.commonJsRatio).toBeGreaterThan(0);
+    expect(profile.minifiedFileBytes).toBeGreaterThanOrEqual(1024 ** 2);
+    expect(serialized).not.toMatch(/(?:[A-Za-z]:\\|\/Users\/|\/home\/|::|[a-f\d]{40})/i);
+  });
+
+  it("accepts a TypeScript profile with or without its language", () => {
+    const valid = reviewedProfile();
+
+    expect(DaemonWorkspaceProfileValidator.parse(valid).language).toBeUndefined();
+    expect(
+      DaemonWorkspaceProfileValidator.parse({ ...valid, language: "typescript" }).language,
+    ).toBe("typescript");
+  });
+
+  it("rejects JavaScript fields that don't match the profile language", () => {
+    const valid = reviewedProfile();
+    const javaScriptFields: Partial<DaemonWorkspaceProfile> = {
+      declarationSiblingRatio: 0.25,
+      commonJsRatio: 0.3,
+      minifiedFileBytes: 1024,
+    };
+
+    expect(() =>
+      DaemonWorkspaceProfileValidator.parse({ ...valid, language: "javascript" }),
+    ).toThrow("profile fields");
+    expect(() => DaemonWorkspaceProfileValidator.parse({ ...valid, ...javaScriptFields })).toThrow(
+      "profile fields",
+    );
+    expect(() =>
+      DaemonWorkspaceProfileValidator.parse({ ...valid, language: "python", ...javaScriptFields }),
+    ).toThrow("profile language");
+    expect(() =>
+      DaemonWorkspaceProfileValidator.parse({
+        ...valid,
+        language: "javascript",
+        ...javaScriptFields,
+        commonJsRatio: 1.5,
+      }),
+    ).toThrow("commonJsRatio");
+  });
+
   it("rejects extra fields and invalid aggregate quantiles", () => {
     const valid = reviewedProfile();
 
@@ -85,6 +136,35 @@ describe("daemon workspace profile", () => {
       expect(profile.sourceLines).toEqual({ minimum: 1, p50: 1, p95: 2, maximum: 2 });
       expect(profile.importsPerFile.maximum).toBe(1);
       expect(JSON.stringify(profile)).not.toContain(root);
+      expect(() => DaemonWorkspaceProfileValidator.parse(profile)).not.toThrow();
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("profiles JavaScript files, .d.ts siblings, CommonJS files, and the minified file", async () => {
+    const root = mkdtempSync(join(tmpdir(), "symnav-daemon-profile-"));
+    try {
+      mkdirSync(join(root, ".git"));
+      mkdirSync(join(root, "src"));
+      writeFileSync(join(root, "src", "a.js"), "export const first = 1;\n");
+      writeFileSync(join(root, "src", "a.d.ts"), "export declare const first: number;\n");
+      writeFileSync(
+        join(root, "src", "b.js"),
+        "const { first } = require('./a');\nexports.b = first;\n",
+      );
+      writeFileSync(join(root, "src", "c.jsx"), "export const view = <div />;\n");
+      writeFileSync(join(root, "src", "vendor.min.js"), "function m0(n){return n}");
+      writeFileSync(join(root, "jsconfig.json"), "{}\n");
+
+      const profile = await new DaemonWorkspaceProfiler().profile(root, "javascript");
+
+      expect(profile.language).toBe("javascript");
+      expect(profile.visibleTypeScriptFiles).toBe(4);
+      expect(profile.declarationSiblingRatio).toBe(0.25);
+      expect(profile.commonJsRatio).toBe(0.25);
+      expect(profile.minifiedFileBytes).toBe(24);
+      expect(profile.configCount).toBe(1);
       expect(() => DaemonWorkspaceProfileValidator.parse(profile)).not.toThrow();
     } finally {
       rmSync(root, { recursive: true, force: true });

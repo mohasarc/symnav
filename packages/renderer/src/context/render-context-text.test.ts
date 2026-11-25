@@ -108,6 +108,26 @@ describe("renderContextText", () => {
     );
   });
 
+  it("names the file of the resolved target when it differs from the requested one", () => {
+    const implementation = decl({
+      file: "src/Tabs/Tabs.js",
+      segments: [{ name: "Tabs" }],
+      nativeLabel: "variable",
+      startLine: 6,
+      endLine: 8,
+      header: ["const Tabs = React.forwardRef(…)"],
+    });
+    const result = baseResult({
+      identity: { file: "src/Tabs/Tabs.d.ts", segments: [{ name: "Tabs" }] },
+      target: implementation,
+      definitions: [implementation],
+    });
+
+    expect(renderContextText(result)).toContain(
+      "Context: Tabs\nFile: src/Tabs/Tabs.js\nLines: 6-8\n",
+    );
+  });
+
   it("renders the full spec-shaped block", () => {
     const caller = decl({
       file: "src/api/CheckoutController.ts",

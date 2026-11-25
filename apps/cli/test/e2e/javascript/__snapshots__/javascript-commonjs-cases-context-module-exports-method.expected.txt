@@ -1,0 +1,25 @@
+Context: trim
+File: src/lib/padding.js
+Lines: 2-4
+
+Definition
+src/lib/padding.js
+└── 2-4: trim  [implementation]
+    trim(text)
+
+Callers
+src/client.js
+└── 7-9: readList  [call]
+      return parse(trim(text));
+
+Callees
+(none)
+
+References
+Total: 2
+Kinds: usage 2
+Run: symnav refs src/lib/padding.js::trim
+
+Recent History
+1. 056804a 2023-05-02 Script Bot
+   add CommonJS export declaration cases

@@ -1,0 +1,5 @@
+Definition: Queue::push
+
+src/prototype-property.js
+└── 5-7: Queue::push  [implementation]
+    Queue.prototype.push = function (item) …

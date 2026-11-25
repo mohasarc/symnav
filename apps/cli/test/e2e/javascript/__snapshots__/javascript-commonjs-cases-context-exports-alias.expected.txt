@@ -1,0 +1,25 @@
+Context: compare
+File: src/compare.js
+Lines: 1-3
+
+Definition
+src/compare.js
+└── 1-3: compare  [implementation]
+    function compare(a, b)
+
+Callers
+src/consumer.js
+└── 8-10: order  [call]
+      return semver.compare(a, b);
+
+Callees
+(none)
+
+References
+Total: 4
+Kinds: usage 4
+Run: symnav refs src/compare.js::compare
+
+Recent History
+1. 00ce225 2023-05-01 Script Bot
+   add the javascript-commonjs-cases fixture

@@ -67,14 +67,17 @@ class CountingFileSystem implements FileSystem {
 }
 
 describe("TypeScriptBackend.accepts", () => {
-  it("returns true for .ts, .tsx, .mts, .cts, .d.ts; false for .js, .json, .md", () => {
+  it("returns true for TypeScript and JavaScript files; false for .json, .md", () => {
     const { backend } = backendOver({});
     expect(backend.accepts("src/a.ts")).toBe(true);
     expect(backend.accepts("src/a.tsx")).toBe(true);
     expect(backend.accepts("src/a.mts")).toBe(true);
     expect(backend.accepts("src/a.cts")).toBe(true);
     expect(backend.accepts("src/a.d.ts")).toBe(true);
-    expect(backend.accepts("src/a.js")).toBe(false);
+    expect(backend.accepts("src/a.js")).toBe(true);
+    expect(backend.accepts("src/a.jsx")).toBe(true);
+    expect(backend.accepts("src/a.mjs")).toBe(true);
+    expect(backend.accepts("src/a.cjs")).toBe(true);
     expect(backend.accepts("src/a.json")).toBe(false);
     expect(backend.accepts("README.md")).toBe(false);
   });
@@ -88,8 +91,18 @@ describe("TypeScriptBackend.accepts", () => {
 
   it("exposes extension knowledge statically (no workspace required)", () => {
     expect(TypeScriptBackend.accepts("src/a.ts")).toBe(true);
-    expect(TypeScriptBackend.accepts("src/a.js")).toBe(false);
-    expect(TypeScriptBackend.extensions).toEqual([".d.ts", ".ts", ".tsx", ".mts", ".cts"]);
+    expect(TypeScriptBackend.accepts("src/a.js")).toBe(true);
+    expect(TypeScriptBackend.extensions).toEqual([
+      ".d.ts",
+      ".ts",
+      ".tsx",
+      ".mts",
+      ".cts",
+      ".js",
+      ".jsx",
+      ".mjs",
+      ".cjs",
+    ]);
   });
 });
 

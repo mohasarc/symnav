@@ -1,0 +1,5 @@
+Definition: Counter::label
+
+src/this-property.js
+└── 8: Counter::label
+    this.label = `count ${this.count}`

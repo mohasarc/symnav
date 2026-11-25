@@ -39,6 +39,16 @@ describe("JSDoc type alias declarations in overview", () => {
     ]);
   });
 
+  it("collapses a multi-line inline type so the header keeps the type alias name", () => {
+    const source = ["/**", " * @typedef {{", " *   id: string,", " * }} User", " */", "f();"].join(
+      "\n",
+    );
+
+    expect(summariesOf(source)).toEqual([
+      { id: "input.js::User", label: "type-alias", range: [2, 4], header: ["@typedef {…} User"] },
+    ]);
+  });
+
   it("lists each type alias tag of one comment", () => {
     const source = ["/**", " * @typedef {string} A", " * @typedef {number} B", " */", "f();"].join(
       "\n",

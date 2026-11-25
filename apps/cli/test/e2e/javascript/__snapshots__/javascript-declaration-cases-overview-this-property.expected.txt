@@ -1,0 +1,11 @@
+Overview: src/this-property.js
+└── 1-10: Counter
+    1 class Counter
+    ├── 2-4: Counter::constructor
+    │   2 constructor()
+    ├── 3: Counter::count
+    │   3 this.count = 0
+    ├── 6-9: Counter::increment
+    │   6 increment()
+    └── 8: Counter::label
+        8 this.label = `count ${this.count}`

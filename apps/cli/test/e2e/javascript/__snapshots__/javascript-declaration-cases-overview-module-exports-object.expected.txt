@@ -1,0 +1,6 @@
+Overview: src/module-exports-object.js
+├── 2: name
+│   2 name: "widgets"
+│
+└── 3-5: build
+    3 build()

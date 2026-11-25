@@ -1,0 +1,5 @@
+Definition: build
+
+src/module-exports-object.js
+└── 3-5: build  [implementation]
+    build()

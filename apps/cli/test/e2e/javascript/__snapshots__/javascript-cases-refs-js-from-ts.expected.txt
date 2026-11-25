@@ -1,0 +1,9 @@
+References: createTabs
+Total: 2
+Kinds: usage 1, import 1
+Page: 1/1
+Sort: path, line
+
+src/use.ts
+├── 1: import { createTabs } from "./Tabs/Tabs.js";  [import]
+└── 4: return createTabs("from ts");  [usage]

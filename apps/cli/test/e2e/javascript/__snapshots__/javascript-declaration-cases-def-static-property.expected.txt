@@ -1,0 +1,5 @@
+Definition: Registry::create
+
+src/static-property.js
+└── 3-5: Registry::create  [implementation]
+    Registry.create = function () …

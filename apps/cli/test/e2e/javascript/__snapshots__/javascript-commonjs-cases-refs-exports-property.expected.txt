@@ -1,0 +1,15 @@
+References: parse
+Total: 5
+Kinds: usage 5
+Page: 1/1
+Sort: path, line
+
+src/
+├── client.js
+│   ├── 1: const { parse } = require("./lib/strings");  [usage]
+│   ├── 8: return parse(trim(text));  [usage]
+│   └── 16: return all.format(all.parse(text));  [usage]
+├── lib/alias.js
+│   └── 1: exports.splitList = require("./strings").parse;  [usage]
+└── tools.js
+    └── 5: return require("./lib/alias").splitList(text);  [usage]

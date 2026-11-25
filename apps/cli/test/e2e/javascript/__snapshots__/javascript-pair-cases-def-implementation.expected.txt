@@ -1,0 +1,9 @@
+Definition: Tabs
+
+src/Tabs/Tabs.js
+└── 6-8: Tabs  [implementation]
+    const Tabs = React.forwardRef(…)
+
+src/Tabs/Tabs.d.ts
+└── 5: Tabs  [declaration]
+    declare const Tabs: (props: TabsProps) => unknown

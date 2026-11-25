@@ -185,9 +185,403 @@ describe("TypeScriptBackend CommonJS export declarations", () => {
       expect(definitions.map((definition) => formatSymbolIdentity(definition.identity))).toEqual([
         "src/lib.js::default",
       ]);
-      expect(referenceLocations(references)).toEqual(["src/imported.ts:1", "src/required.js:1"]);
+      expect(referenceLocations(references)).toEqual([
+        "src/imported.ts:1",
+        "src/imported.ts:2",
+        "src/required.js:1",
+        "src/required.js:2",
+      ]);
     },
   );
+
+  it.each([
+    ["a module.exports shorthand member", "module.exports = { helper };\n", ["src/lib.js:2"]],
+    ["a same-name exports property", "exports.helper = helper;\n", ["src/lib.js:2"]],
+  ])(
+    "finds require and import users of a local exported as %s",
+    async (_form, exportSource, exportSiteLocations) => {
+      const { backend, files } = await backendOverSources({
+        "src/lib.js": `function helper() { return 1; }\n${exportSource}`,
+        "src/required.js": [
+          "const lib = require('./lib');",
+          "lib.helper();",
+          "const { helper } = require('./lib');",
+          "helper();",
+          "",
+        ].join("\n"),
+        "src/imported.ts": "import { helper } from './lib';\nexport const value = helper();\n",
+      });
+
+      const references = await backend.findReferences(files, identity("src/lib.js", "helper"));
+
+      expect(referenceLocations(references)).toEqual([
+        "src/imported.ts:1",
+        "src/imported.ts:2",
+        ...exportSiteLocations,
+        "src/required.js:2",
+        "src/required.js:3",
+        "src/required.js:4",
+      ]);
+    },
+  );
+
+  it("finds users of a local re-exported through a CommonJS barrel", async () => {
+    const { backend, files } = await backendOverSources({
+      "src/functions/gt.js": "const gt = (a, b) => a > b;\nmodule.exports = gt;\n",
+      "src/index.js": "const gt = require('./functions/gt');\nmodule.exports = { gt };\n",
+      "src/use.js": [
+        "const { gt } = require('./index');",
+        "gt(1, 2);",
+        "const semver = require('./index');",
+        "semver.gt(1, 2);",
+        "",
+      ].join("\n"),
+    });
+
+    const references = await backend.findReferences(files, identity("src/functions/gt.js", "gt"));
+
+    expect(referenceLocations(references)).toEqual([
+      "src/functions/gt.js:2",
+      "src/index.js:1",
+      "src/index.js:2",
+      "src/use.js:1",
+      "src/use.js:2",
+      "src/use.js:4",
+    ]);
+  });
+
+  it("lists callers that reach a CommonJS-exported local through require", async () => {
+    const { backend, files } = await backendOverSources({
+      "src/lib.js": "function helper() { return 1; }\nmodule.exports = { helper };\n",
+      "src/use.js": [
+        "const { helper } = require('./lib');",
+        "const lib = require('./lib');",
+        "function direct() { return helper(); }",
+        "function member() { return lib.helper(); }",
+        "",
+      ].join("\n"),
+    });
+
+    const callers = await backend.findCallers(files, identity("src/lib.js", "helper"));
+
+    expect(callers.map((edge) => formatSymbolIdentity(edge.symbol.identity))).toEqual([
+      "src/use.js::direct",
+      "src/use.js::member",
+    ]);
+  });
+
+  it("lists a CommonJS-exported local once per importer line", async () => {
+    const { backend, files } = await backendOverSources({
+      "src/lib.js": "function foo() { return 1; }\nexports.foo = foo;\n",
+      "src/use.js": "const { foo } = require('./lib');\nfoo();\n",
+    });
+
+    const references = await backend.findReferences(files, identity("src/lib.js", "foo"));
+
+    expect(referenceLocations(references)).toEqual([
+      "src/lib.js:2",
+      "src/use.js:1",
+      "src/use.js:2",
+    ]);
+  });
+
+  it("lists a module.exports value once per importer line", async () => {
+    const { backend, files } = await backendOverSources({
+      "src/lib.js": "module.exports = function build() { return 1; };\n",
+      "src/use.js": "const build = require('./lib');\nbuild();\n",
+      "src/use.mjs": "import build from './lib.js';\nbuild();\n",
+    });
+
+    const references = await backend.findReferences(files, identity("src/lib.js", "default"));
+
+    expect(referenceLocations(references)).toEqual([
+      "src/use.js:1",
+      "src/use.js:2",
+      "src/use.mjs:1",
+      "src/use.mjs:2",
+    ]);
+  });
+
+  it.each([
+    ["exports.foo", "exports.foo = function () { return 1; };\n"],
+    ["a named exports.foo", "exports.foo = function realFoo() { return 1; };\n"],
+    ["module.exports.foo", "module.exports.foo = function () { return 1; };\n"],
+    ["a module.exports method", "module.exports = { foo() { return 1; } };\n"],
+    ["a module.exports property", "module.exports = { foo: function () { return 1; } };\n"],
+    [
+      "an Object.defineProperty export",
+      'Object.defineProperty(exports, "foo", { value: function () { return 1; } });\n',
+    ],
+  ])("finds destructured require users and callers of %s", async (_form, librarySource) => {
+    const { backend, files } = await backendOverSources({
+      "src/lib.js": librarySource,
+      "src/use.js": "const { foo } = require('./lib');\nfunction callsFoo() { return foo(); }\n",
+    });
+
+    const references = await backend.findReferences(files, identity("src/lib.js", "foo"));
+    const callers = await backend.findCallers(files, identity("src/lib.js", "foo"));
+
+    expect(referenceLocations(references)).toEqual(["src/use.js:1", "src/use.js:2"]);
+    expect(callers.map((edge) => formatSymbolIdentity(edge.symbol.identity))).toEqual([
+      "src/use.js::callsFoo",
+    ]);
+  });
+
+  it("follows variables initialized from a required member and re-exported under their own name", async () => {
+    const { backend, files } = await backendOverSources({
+      "src/lib.js": "exports.helper = function () { return 1; };\n",
+      "src/mid.js": [
+        "const picked = require('./lib').helper;",
+        "function callsPicked() { return picked(); }",
+        "module.exports = { picked };",
+        "",
+      ].join("\n"),
+      "src/other.js": [
+        "const lib = require('./lib');",
+        "const aliased = lib.helper;",
+        "function callsAliased() { return aliased(); }",
+        "",
+      ].join("\n"),
+      "src/use.js":
+        "const { picked } = require('./mid');\nfunction callsMid() { return picked(); }\n",
+    });
+
+    const references = await backend.findReferences(files, identity("src/lib.js", "helper"));
+    const callers = await backend.findCallers(files, identity("src/lib.js", "helper"));
+
+    expect(referenceLocations(references)).toEqual([
+      "src/mid.js:1",
+      "src/mid.js:2",
+      "src/mid.js:3",
+      "src/other.js:2",
+      "src/other.js:3",
+      "src/use.js:1",
+      "src/use.js:2",
+    ]);
+    expect(callers.map((edge) => formatSymbolIdentity(edge.symbol.identity))).toEqual([
+      "src/mid.js::callsPicked",
+      "src/other.js::callsAliased",
+      "src/use.js::callsMid",
+    ]);
+  });
+
+  it("finds users of exports re-exported by a whole-module CommonJS barrel", async () => {
+    const { backend, files } = await backendOverSources({
+      "src/lib.js": "exports.helper = function () { return 1; };\n",
+      "src/index.js": "module.exports = require('./lib');\n",
+      "src/alias.js": "const lib = require('./lib');\nmodule.exports = lib;\n",
+      "src/use.js": [
+        "const viaIndex = require('./index');",
+        "function member() { return viaIndex.helper(); }",
+        "const { helper } = require('./alias');",
+        "function destructured() { return helper(); }",
+        "",
+      ].join("\n"),
+    });
+
+    const references = await backend.findReferences(files, identity("src/lib.js", "helper"));
+    const callers = await backend.findCallers(files, identity("src/lib.js", "helper"));
+
+    expect(referenceLocations(references)).toEqual([
+      "src/use.js:2",
+      "src/use.js:3",
+      "src/use.js:4",
+    ]);
+    expect(callers.map((edge) => formatSymbolIdentity(edge.symbol.identity))).toEqual([
+      "src/use.js::member",
+      "src/use.js::destructured",
+    ]);
+  });
+
+  it("finds users of a module.exports value re-exported by a whole-module CommonJS barrel", async () => {
+    const { backend, files } = await backendOverSources({
+      "src/lib.js": "module.exports = function build() { return 1; };\n",
+      "src/index.js": "module.exports = require('./lib');\n",
+      "src/use.js": "const build = require('./index');\nfunction calls() { return build(); }\n",
+    });
+
+    const references = await backend.findReferences(files, identity("src/lib.js", "default"));
+    const callers = await backend.findCallers(files, identity("src/lib.js", "default"));
+
+    expect(referenceLocations(references)).toEqual([
+      "src/index.js:1",
+      "src/use.js:1",
+      "src/use.js:2",
+    ]);
+    expect(callers.map((edge) => formatSymbolIdentity(edge.symbol.identity))).toEqual([
+      "src/use.js::calls",
+    ]);
+  });
+
+  it.each([
+    ["exports.helper from lib.js", "exports.helper = function () { return 1; };\n", "src/lib.js"],
+    [
+      "exports.helper from lib.d.ts",
+      "exports.helper = function () { return 1; };\n",
+      "src/lib.d.ts",
+    ],
+    [
+      "an aliased local from lib.js",
+      "function helper() { return 1; }\nmodule.exports = { helper };\n",
+      "src/lib.js",
+    ],
+  ])("finds require users of %s paired with a .d.ts twin", async (_form, librarySource, file) => {
+    const { backend, files } = await backendOverSources({
+      "src/lib.js": librarySource,
+      "src/lib.d.ts": "export declare function helper(): number;\n",
+      "src/use.js": [
+        "const { helper } = require('./lib');",
+        "function destructured() { return helper(); }",
+        "const lib = require('./lib');",
+        "function member() { return lib.helper(); }",
+        "",
+      ].join("\n"),
+    });
+
+    const references = await backend.findReferences(files, identity(file, "helper"));
+    const callers = await backend.findCallers(files, identity(file, "helper"));
+
+    expect(
+      referenceLocations(references).filter((location) => location.startsWith("src/use.js")),
+    ).toEqual(["src/use.js:1", "src/use.js:2", "src/use.js:4"]);
+    expect(callers.map((edge) => formatSymbolIdentity(edge.symbol.identity))).toEqual([
+      "src/use.js::destructured",
+      "src/use.js::member",
+    ]);
+  });
+
+  it.each([
+    ["an exports parameter", "function install(exports) { exports.foo = bar; }"],
+    ["a local exports variable", "function install() { const exports = {}; exports.foo = bar; }"],
+    ["a module parameter", "function install(module) { module.exports = { bar }; }"],
+  ])("credits no require users through %s", async (_shadow, installSource) => {
+    const { backend, files } = await backendOverSources({
+      "src/lib.js": [
+        "function bar() { return 1; }",
+        installSource,
+        "install({});",
+        "exports.foo = function () { return 2; };",
+        "",
+      ].join("\n"),
+      "src/use.js":
+        "const { foo, bar } = require('./lib');\nfunction callsBoth() { return foo() + bar(); }\n",
+    });
+
+    const references = await backend.findReferences(files, identity("src/lib.js", "bar"));
+    const callers = await backend.findCallers(files, identity("src/lib.js", "bar"));
+
+    expect(referenceLocations(references)).toEqual(["src/lib.js:2"]);
+    expect(callers).toEqual([]);
+  });
+
+  it("follows exports assigned a member of another module", async () => {
+    const { backend, files } = await backendOverSources({
+      "src/m.js": "exports.foo = function () { return 1; };\n",
+      "src/r.js": "exports.bar = require('./m').foo;\n",
+      "src/a.js": "const m = require('./m');\nexports.y = m.foo;\n",
+      "src/use.js": [
+        "function viaR() { return require('./r').bar(); }",
+        "const { bar } = require('./r');",
+        "function viaDestructure() { return bar(); }",
+        "function viaA() { return require('./a').y(); }",
+        "",
+      ].join("\n"),
+    });
+
+    const callers = await backend.findCallers(files, identity("src/m.js", "foo"));
+
+    expect(callers.map((edge) => formatSymbolIdentity(edge.symbol.identity))).toEqual([
+      "src/use.js::viaR",
+      "src/use.js::viaDestructure",
+      "src/use.js::viaA",
+    ]);
+  });
+
+  it.each([
+    ["module.exports = minimatch", "module.exports = minimatch;"],
+    ["exports = module.exports = minimatch", "exports = module.exports = minimatch;"],
+    [
+      "a conditional module.exports = minimatch",
+      'if (typeof module !== "undefined") module.exports = minimatch;',
+    ],
+  ])("finds destructured require users of static members after %s", async (_form, exportLine) => {
+    const { backend, files } = await backendOverSources({
+      "src/lib.js": [
+        "function minimatch(p) { return p; }",
+        exportLine,
+        "minimatch.makeRe = function (p) { return p; };",
+        "function Minimatch(p) { this.p = p; }",
+        "minimatch.Minimatch = Minimatch;",
+        "",
+      ].join("\n"),
+      "src/use.js": [
+        "const { makeRe, Minimatch } = require('./lib');",
+        "function useMakeRe() { return makeRe('a'); }",
+        "function useCtor() { return new Minimatch('a'); }",
+        "",
+      ].join("\n"),
+    });
+
+    const makeReCallers = await backend.findCallers(
+      files,
+      identity("src/lib.js", "minimatch", "makeRe"),
+    );
+    const constructorCallers = await backend.findCallers(
+      files,
+      identity("src/lib.js", "Minimatch"),
+    );
+
+    expect(makeReCallers.map((edge) => formatSymbolIdentity(edge.symbol.identity))).toEqual([
+      "src/use.js::useMakeRe",
+    ]);
+    expect(constructorCallers.map((edge) => formatSymbolIdentity(edge.symbol.identity))).toEqual([
+      "src/use.js::useCtor",
+    ]);
+  });
+
+  it("credits no require users through a member of a parameter named like the module.exports value", async () => {
+    const { backend, files } = await backendOverSources({
+      "src/lib.js": [
+        "function fn() { return 0; }",
+        "function realParse() { return 1; }",
+        "function localParse() { return 2; }",
+        "function setup(fn) { fn.parse = localParse; }",
+        "module.exports = fn;",
+        "fn.parse = realParse;",
+        "",
+      ].join("\n"),
+      "src/use.js":
+        "const { parse } = require('./lib');\nfunction useParse() { return parse(); }\n",
+    });
+
+    const localCallers = await backend.findCallers(files, identity("src/lib.js", "localParse"));
+    const realCallers = await backend.findCallers(files, identity("src/lib.js", "realParse"));
+
+    expect(localCallers).toEqual([]);
+    expect(realCallers.map((edge) => formatSymbolIdentity(edge.symbol.identity))).toEqual([
+      "src/use.js::useParse",
+    ]);
+  });
+
+  it("finds destructured require users of static class members of the module.exports value", async () => {
+    const { backend, files } = await backendOverSources({
+      "src/lib.js": [
+        "class Foo {",
+        "  static make() { return new Foo(); }",
+        "  static label = 'foo';",
+        "}",
+        "module.exports = Foo;",
+        "",
+      ].join("\n"),
+      "src/use.js": "const { make } = require('./lib');\nfunction useMake() { return make(); }\n",
+    });
+
+    const callers = await backend.findCallers(files, identity("src/lib.js", "Foo", "make"));
+
+    expect(callers.map((edge) => formatSymbolIdentity(edge.symbol.identity))).toEqual([
+      "src/use.js::useMake",
+    ]);
+  });
 
   it("pairs a module.exports function with the .d.ts export = declaration", async () => {
     const { backend, files } = await backendOverSources({
@@ -418,6 +812,7 @@ describe("TypeScriptBackend this-property member declarations", () => {
   it.each([
     ["a constructor function", "function Foo() {\n  this.value = 1;\n}\n"],
     ["a function expression", "var Foo = function () {\n  this.value = 1;\n};\n"],
+    ["a parenthesized function expression", "var Foo = (function () {\n  this.value = 1;\n});\n"],
     [
       "a prototype method",
       "function Foo() {}\nFoo.prototype.init = function () {\n  this.value = 1;\n};\n",
@@ -450,6 +845,127 @@ describe("TypeScriptBackend this-property member declarations", () => {
     const references = await backend.findReferences(files, identity("src/lib.js", "Foo", "shared"));
 
     expect(referenceLocations(references)).toEqual(["src/use.js:2"]);
+  });
+});
+
+describe("TypeScriptBackend callees of constructor functions", () => {
+  it.each([
+    ["a function declaration", "function Foo(a) {\n  this.a = a;\n}\n"],
+    ["a function expression", "var Foo = function (a) {\n  this.a = a;\n};\n"],
+  ])("lists new on %s as a callee", async (_form, constructorSource) => {
+    const { backend, files } = await backendOverSources({
+      "src/lib.js": `${constructorSource}function make() {\n  return new Foo(1);\n}\n`,
+    });
+
+    const callees = await backend.findCallees(files, identity("src/lib.js", "make"));
+
+    expect(callees.map((edge) => formatSymbolIdentity(edge.symbol.identity))).toEqual([
+      "src/lib.js::Foo",
+    ]);
+  });
+});
+
+describe("TypeScriptBackend callees inside JavaScript assignment declarations", () => {
+  it.each([
+    ["exports.run", "exports.run = function () {\n  return local();\n};\n", ["run"]],
+    ["module.exports.run", "module.exports.run = function () {\n  return local();\n};\n", ["run"]],
+    ["module.exports", "module.exports = function () {\n  return local();\n};\n", ["default"]],
+    [
+      "Foo.prototype.run",
+      "function Foo() {}\nFoo.prototype.run = function () {\n  return local();\n};\n",
+      ["Foo", "run"],
+    ],
+    [
+      "Foo.run",
+      "function Foo() {}\nFoo.run = function () {\n  return local();\n};\n",
+      ["Foo", "run"],
+    ],
+  ])("lists calls inside the function assigned to %s as callees", async (_form, source, names) => {
+    const { backend, files } = await backendOverSources({
+      "src/lib.js": `${source}function local() {\n  return 1;\n}\n`,
+    });
+
+    const callees = await backend.findCallees(files, identity("src/lib.js", ...names));
+
+    expect(callees.map((edge) => formatSymbolIdentity(edge.symbol.identity))).toEqual([
+      "src/lib.js::local",
+    ]);
+  });
+});
+
+describe("TypeScriptBackend callees declared by Object.defineProperty", () => {
+  it.each([
+    [
+      "a destructured require",
+      "const { dp } = require('./m');\nfunction calls() { return dp(); }\n",
+    ],
+    [
+      "a required module member",
+      "const m = require('./m');\nfunction calls() { return m.dp(); }\n",
+    ],
+  ])("lists the export as a callee through %s", async (_form, userSource) => {
+    const { backend, files } = await backendOverSources({
+      "src/m.js": 'Object.defineProperty(exports, "dp", { value: function () { return 1; } });\n',
+      "src/use.js": userSource,
+    });
+
+    const callees = await backend.findCallees(files, identity("src/use.js", "calls"));
+
+    expect(callees.map((edge) => formatSymbolIdentity(edge.symbol.identity))).toEqual([
+      "src/m.js::dp",
+    ]);
+  });
+});
+
+describe("TypeScriptBackend callees declared by named function expressions", () => {
+  it.each([
+    [
+      "an exports property",
+      "exports.parse = function parse() {\n  return 1;\n};\n",
+      "const lib = require('./lib');\nfunction run() {\n  return lib.parse();\n}\n",
+      "src/lib.js::parse",
+    ],
+    [
+      "a prototype method",
+      "function Queue() {}\nQueue.prototype.push = function push() {};\nexports.Queue = Queue;\n",
+      "const { Queue } = require('./lib');\nfunction run(queue = new Queue()) {\n  return queue.push();\n}\n",
+      "src/lib.js::Queue::push",
+    ],
+    [
+      "a variable",
+      "const plain = function plain() {\n  return 1;\n};\nexports.plain = plain;\n",
+      "const lib = require('./lib');\nfunction run() {\n  return lib.plain();\n}\n",
+      "src/lib.js::plain",
+    ],
+    [
+      "module.exports",
+      "module.exports = function build() {\n  return 1;\n};\n",
+      "const build = require('./lib');\nfunction run() {\n  return build();\n}\n",
+      "src/lib.js::default",
+    ],
+  ])("lists a function expression named in %s as a callee", async (_form, library, use, callee) => {
+    const { backend, files } = await backendOverSources({
+      "src/lib.js": library,
+      "src/use.js": use,
+    });
+
+    const callees = await backend.findCallees(files, identity("src/use.js", "run"));
+
+    expect(callees.map((edge) => formatSymbolIdentity(edge.symbol.identity))).toContain(callee);
+  });
+
+  it("lists a TypeScript function expression named like its variable as a callee", async () => {
+    const { backend, files } = await backendOverSources({
+      "src/lib.ts": "export const named = function named(): number {\n  return 1;\n};\n",
+      "src/use.ts":
+        "import { named } from './lib';\nexport function run(): number {\n  return named();\n}\n",
+    });
+
+    const callees = await backend.findCallees(files, identity("src/use.ts", "run"));
+
+    expect(callees.map((edge) => formatSymbolIdentity(edge.symbol.identity))).toEqual([
+      "src/lib.ts::named",
+    ]);
   });
 });
 

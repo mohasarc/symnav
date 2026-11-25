@@ -1,5 +1,6 @@
 import {
   Node,
+  SyntaxKind,
   type ArrayLiteralExpression,
   type CallExpression,
   type ClassDeclaration,
@@ -16,9 +17,11 @@ import type {
   SymbolIdentity,
 } from "@symnav/core";
 
+import { JavaScriptAssignmentDeclarations } from "../extract/javascript-assignment-declaration.js";
 import { DeclarationLocator } from "../identity/locate-declarations.js";
 import type { TypeScriptWorkspaceState } from "../typescript-backend/typescript-workspace-state.js";
 
+const DESCRIPTOR_ARGUMENT_INDEX = 2;
 const DYNAMIC_DISPATCH_REASON = "dynamic dispatch: exact callee not statically resolvable";
 
 export interface FindCalleesArgs {
@@ -72,7 +75,17 @@ class CalleeFinder {
     const outsideDeclarationFile = matches.find(
       (match) => !match.node.getSourceFile().isDeclarationFile(),
     );
-    return (withBody ?? outsideDeclarationFile ?? matches[0])?.node;
+    const target = (withBody ?? outsideDeclarationFile ?? matches[0])?.node;
+    return target && CalleeFinder.assignmentOf(target);
+  }
+
+  private static assignmentOf(target: Node): Node {
+    const assignment = target.getParent();
+    const assignsDeclaration =
+      Node.isBinaryExpression(assignment) &&
+      assignment.getLeft() === target &&
+      JavaScriptAssignmentDeclarations.declarationAt(target) !== undefined;
+    return assignsDeclaration ? assignment : target;
   }
 
   private edgesFrom(bodyNode: Node): readonly CallEdge[] {
@@ -178,11 +191,12 @@ class CalleeFinder {
 
   private resolveConstructed(call: NewExpression): ResolvedCallee | undefined {
     const nameNode = calleeNameNode(call.getExpression());
-    const classDeclaration =
-      nameNode && this.definitionResolver.definitionNodesOf(nameNode).find(Node.isClassDeclaration);
-    if (!classDeclaration) return undefined;
-    const constructed = this.constructorTargetOf(classDeclaration);
-    const symbol = this.workspaceSymbolFor(constructed);
+    const definitions = nameNode ? this.definitionResolver.definitionNodesOf(nameNode) : [];
+    const classDeclaration = definitions.find(Node.isClassDeclaration);
+    const constructed = classDeclaration
+      ? this.constructorTargetOf(classDeclaration)
+      : definitions.find(isConstructorFunction);
+    const symbol = constructed && this.workspaceSymbolFor(constructed);
     if (!symbol) return undefined;
     return { symbol, confidence: "certain" };
   }
@@ -247,7 +261,19 @@ class CalleeFinder {
   }
 
   private workspaceSymbolFor(node: Node): SymbolOverviewNode | undefined {
-    return this.workspaceState.declarationAt(node);
+    const declaration = this.workspaceState.declarationAt(node);
+    if (declaration) return declaration;
+    const owner = namedValueOwnerOf(node) ?? CalleeFinder.definePropertyCallOf(node);
+    return owner && this.workspaceState.declarationAt(owner);
+  }
+
+  private static definePropertyCallOf(node: Node): Node | undefined {
+    if (!Node.isPropertyAssignment(node) || node.getName() !== "value") return undefined;
+    const descriptor = node.getParent();
+    const call = descriptor.getParent();
+    const describesCallProperty =
+      Node.isCallExpression(call) && call.getArguments()[DESCRIPTOR_ARGUMENT_INDEX] === descriptor;
+    return describesCallProperty ? call : undefined;
   }
 
   private siteFor(node: Node): CallSite {
@@ -404,6 +430,28 @@ function compareSymbolOverviewNodes(a: SymbolOverviewNode, b: SymbolOverviewNode
   const aKey = DeclarationLocator.identityKey(a.identity);
   const bKey = DeclarationLocator.identityKey(b.identity);
   return aKey < bKey ? -1 : aKey > bKey ? 1 : 0;
+}
+
+function namedValueOwnerOf(node: Node): Node | undefined {
+  if (!Node.isFunctionExpression(node) && !Node.isClassExpression(node)) return undefined;
+  let value: Node = node;
+  let parent = node.getParent();
+  while (Node.isParenthesizedExpression(parent)) {
+    value = parent;
+    parent = parent.getParent();
+  }
+  if (Node.isVariableDeclaration(parent) || Node.isPropertyAssignment(parent)) return parent;
+  if (!Node.isBinaryExpression(parent)) return undefined;
+  const assignsValue =
+    parent.getOperatorToken().getKind() === SyntaxKind.EqualsToken && parent.getRight() === value;
+  return assignsValue ? parent.getLeft() : undefined;
+}
+
+function isConstructorFunction(node: Node): boolean {
+  if (Node.isFunctionDeclaration(node) || Node.isFunctionExpression(node)) return true;
+  if (!Node.isVariableDeclaration(node)) return false;
+  const initializer = node.getInitializer();
+  return initializer !== undefined && Node.isFunctionExpression(withoutParentheses(initializer));
 }
 
 function carriesBody(node: Node): boolean {

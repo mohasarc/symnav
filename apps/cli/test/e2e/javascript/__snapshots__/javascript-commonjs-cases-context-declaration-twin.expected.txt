@@ -1,0 +1,28 @@
+Context: now
+File: src/lib/clock.js
+Lines: 1-3
+
+Definition
+src/lib/clock.js
+└── 1-3: now  [implementation]
+    exports.now = function () …
+src/lib/clock.d.ts
+└── 1: now  [declaration]
+    export declare function now(): number
+
+Callers
+src/client.js
+└── 19-21: stamp  [call]
+      return now();
+
+Callees
+(none)
+
+References
+Total: 2
+Kinds: usage 2
+Run: symnav refs src/lib/clock.d.ts::now
+
+Recent History
+1. 056804a 2023-05-02 Script Bot
+   add CommonJS export declaration cases

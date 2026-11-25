@@ -1,0 +1,27 @@
+Context: makeQueue
+File: src/queue.js
+Lines: 9-13
+
+Definition
+src/queue.js
+└── 9-13: makeQueue  [implementation]
+    function makeQueue()
+
+Callers
+(none)
+
+Callees
+src/queue.js
+├── 1-3: Queue  [call]
+│   function Queue()
+└── 5-7: Queue::push  [call]
+    Queue.prototype.push = function push(item) …
+
+References
+Total: 1
+Kinds: usage 1
+Run: symnav refs src/queue.js::makeQueue
+
+Recent History
+1. 00ce225 2023-05-01 Script Bot
+   add the javascript-commonjs-cases fixture

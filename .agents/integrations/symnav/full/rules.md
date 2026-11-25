@@ -1,6 +1,6 @@
 # symnav
 
-`symnav` answers TypeScript navigation questions deterministically, project-wide: what's in a file, where a symbol is defined, who references it, how calls flow. Use it alongside normal reads, search, and edits.
+`symnav` answers TypeScript and JavaScript navigation questions deterministically, project-wide: what's in a file, where a symbol is defined, who references it, how calls flow. Use it alongside normal reads, search, and edits.
 
 Reach for it at two moments, both worth it:
 

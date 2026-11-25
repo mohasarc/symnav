@@ -1,0 +1,19 @@
+Graph: parse
+File: src/lib/strings.js
+Lines: 1-3
+Depth: 1
+Direction: incoming
+Edges: calls
+
+Incoming
+src/lib/strings.js
+└── 1-3: parse
+    exports.parse = function (text) …
+    ├── src/client.js
+    │   ├── 7-9: readList  [caller]
+    │   │   function readList(text)
+    │   └── 15-17: roundTrip  [caller]
+    │       function roundTrip(text)
+    └── src/tools.js
+        └── 4-6: split  [caller]
+            function split(text)

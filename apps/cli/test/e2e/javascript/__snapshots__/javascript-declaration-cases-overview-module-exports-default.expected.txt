@@ -1,0 +1,6 @@
+Overview: src/module-exports-default.js
+├── 1-3: createStore
+│   1 function createStore()
+│
+└── 5: default
+    5 module.exports = createStore

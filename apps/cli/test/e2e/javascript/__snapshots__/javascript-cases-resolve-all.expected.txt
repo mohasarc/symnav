@@ -1,0 +1,28 @@
+Resolve: ^(?!HEAD$|config$|index$|exclude$|main$)[A-Za-z]+$ (regex)
+
+Symbols
+├── src/App.jsx
+│   └── 3-9: App
+│       export function App()
+├── src/Tabs/Tabs.js
+│   ├── 3-5: createTabs
+│   │   export function createTabs(label)
+│   ├── 7-11: Tabs
+│   │   export class Tabs
+│   └── 8-10: Tabs::render
+│       render()
+├── src/format.ts
+│   └── 1-3: formatLabel
+│       export function formatLabel(label: string): string
+├── src/legacy.cjs
+│   └── 1-3: legacyGreeting
+│       function legacyGreeting(name)
+├── src/lib.mjs
+│   └── 3-5: greet
+│       export function greet(name)
+└── src/use.ts
+    └── 3-5: useTabs
+        export function useTabs(): unknown
+
+Files
+(none)

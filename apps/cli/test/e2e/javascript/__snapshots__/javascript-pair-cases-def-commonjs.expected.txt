@@ -1,0 +1,9 @@
+Definition: helper
+
+src/cjs/util.js
+└── 1-3: helper  [implementation]
+    function helper(value)
+
+src/cjs/util.d.ts
+└── 2: util::helper  [declaration]
+    function helper(value: string): string

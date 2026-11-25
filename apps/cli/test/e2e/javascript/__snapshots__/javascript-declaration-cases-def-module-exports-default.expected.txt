@@ -1,0 +1,5 @@
+Definition: default
+
+src/module-exports-default.js
+└── 5: default
+    module.exports = createStore

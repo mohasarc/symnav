@@ -1,0 +1,9 @@
+References: slugify
+Total: 2
+Kinds: usage 1, import 1
+Page: 1/1
+Sort: path, line
+
+src/index.js
+├── 1: import { slugify } from "@/util";  [import]
+└── 4: return slugify(text);  [usage]

@@ -1,0 +1,32 @@
+Context: Tabs
+File: src/Tabs/Tabs.js
+Lines: 6-8
+
+Definition
+src/Tabs/Tabs.js
+└── 6-8: Tabs  [implementation]
+    const Tabs = React.forwardRef(…)
+src/Tabs/Tabs.d.ts
+└── 5: Tabs  [declaration]
+    declare const Tabs: (props: TabsProps) => unknown
+
+Callers
+src/
+├── App.tsx
+│   └── 3-5: App  [call]
+│         return Tabs({ value: 1 });
+└── hooks/useTabs.js
+    └── 4-6: useTabs  [call ×2]
+          return [Tabs({ value: 0 }), TabsComponent({ value: 0 })];
+
+Callees
+(none)
+
+References
+Total: 10
+Kinds: usage 3, import 3, export 4
+Run: symnav refs src/Tabs/Tabs.js::Tabs
+
+Recent History
+1. c84868b 2023-05-01 Script Bot
+   add the javascript-pair-cases fixture

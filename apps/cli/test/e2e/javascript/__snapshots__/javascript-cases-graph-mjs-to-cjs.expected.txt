@@ -1,0 +1,14 @@
+Graph: greet
+File: src/lib.mjs
+Lines: 3-5
+Depth: 1
+Direction: outgoing
+Edges: calls
+
+Outgoing
+src/lib.mjs
+└── 3-5: greet
+    export function greet(name)
+    └── src/legacy.cjs
+        └── 1-3: legacyGreeting  [callee]
+            function legacyGreeting(name)

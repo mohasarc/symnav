@@ -18,6 +18,7 @@ import { findCallees, type PositionDefinitionResolver } from "../call-graph/find
 import { findDefinitions } from "../definition/find-definitions.js";
 import { JavaScriptAssignmentDeclarations } from "../extract/javascript-assignment-declaration.js";
 import { classifyReferenceKind } from "../references/classify-reference-kind.js";
+import { CommonJsExportImporters } from "./commonjs-export-importers.js";
 import { DeclarationImplementationPairs } from "./declaration-implementation-pairs.js";
 import { PairedSymbolMatcher } from "./paired-symbol-matcher.js";
 import type { TypeScriptProjectGraph } from "./typescript-project-graph.js";
@@ -60,6 +61,7 @@ export class TypeScriptSemanticQueryService implements PositionDefinitionResolve
   >();
   private readonly pairs: DeclarationImplementationPairs | undefined;
   private readonly pairedSymbols: PairedSymbolMatcher;
+  private readonly commonJsImporters: CommonJsExportImporters;
 
   constructor(
     private readonly projects: TypeScriptProjectGraph | undefined,
@@ -70,6 +72,7 @@ export class TypeScriptSemanticQueryService implements PositionDefinitionResolve
       ? new DeclarationImplementationPairs(projects, workspaceState)
       : undefined;
     this.pairedSymbols = new PairedSymbolMatcher(workspaceState);
+    this.commonJsImporters = new CommonJsExportImporters(workspaceState, this.pairs);
   }
 
   beginTurn(files: readonly WorkspaceFile[]): void {
@@ -223,29 +226,9 @@ export class TypeScriptSemanticQueryService implements PositionDefinitionResolve
         this.semanticDeclarationNodes(counterpart),
       ),
     ];
-    const locations = declarationNodes.flatMap((declarationNode) => {
-      const assignment = JavaScriptAssignmentDeclarations.declarationAt(declarationNode);
-      return TypeScriptSemanticQueryService.referenceEntriesOf(
-        declarationNode,
-        assignment?.nameLiteral,
-      ).flatMap((entry) => {
-        const node = entry.getNode();
-        const relativePath = this.workspaceState.relativePathOf(node.getSourceFile());
-        const namesAssignment =
-          assignment !== undefined &&
-          TypeScriptSemanticQueryService.isWithin(node, assignment.nameNode);
-        return relativePath
-          ? [
-              {
-                relativePath,
-                start: node.getStart(),
-                length: node.getWidth(),
-                isDefinition: (entry.isDefinition() ?? false) || namesAssignment,
-              },
-            ]
-          : [];
-      });
-    });
+    const locations = declarationNodes.flatMap((declarationNode) =>
+      this.referenceLocationsOf(declarationNode),
+    );
     const byLocation = new Map<string, SemanticReferenceLocation>();
     for (const location of locations) {
       byLocation.set(
@@ -254,6 +237,47 @@ export class TypeScriptSemanticQueryService implements PositionDefinitionResolve
       );
     }
     return [...byLocation.values()];
+  }
+
+  private referenceLocationsOf(declarationNode: Node): readonly SemanticReferenceLocation[] {
+    const assignment = JavaScriptAssignmentDeclarations.declarationAt(declarationNode);
+    const entries = TypeScriptSemanticQueryService.referenceEntriesOf(
+      declarationNode,
+      assignment?.nameLiteral,
+    );
+    const ownLocations = entries.flatMap((entry) => {
+      const node = entry.getNode();
+      const namesAssignment =
+        assignment !== undefined &&
+        TypeScriptSemanticQueryService.isWithin(node, assignment.nameNode);
+      return this.locationOf(node, (entry.isDefinition() ?? false) || namesAssignment);
+    });
+    const definitionKeys = new Set(
+      ownLocations
+        .filter((location) => location.isDefinition)
+        .map(TypeScriptSemanticQueryService.positionKey),
+    );
+    const importerLocations = this.commonJsImporters
+      .referencesThrough(
+        declarationNode,
+        entries.map((entry) => entry.getNode()),
+      )
+      .flatMap((node) => this.locationOf(node, false))
+      .map((location) => ({
+        ...location,
+        isDefinition: definitionKeys.has(TypeScriptSemanticQueryService.positionKey(location)),
+      }));
+    return [...ownLocations, ...importerLocations];
+  }
+
+  private locationOf(node: Node, isDefinition: boolean): readonly SemanticReferenceLocation[] {
+    const relativePath = this.workspaceState.relativePathOf(node.getSourceFile());
+    if (!relativePath) return [];
+    return [{ relativePath, start: node.getStart(), length: node.getWidth(), isDefinition }];
+  }
+
+  private static positionKey(location: SemanticReferenceLocation): string {
+    return `${location.relativePath}:${location.start}:${location.length}`;
   }
 
   private semanticDeclarationNodes(identity: SymbolIdentity): readonly Node[] {

@@ -1,0 +1,9 @@
+Overview: src/jsdoc-types.js
+├── 2-4: User
+│   2 @typedef {…} User
+│
+├── 8-10: Visitor
+│   8 @callback Visitor
+│
+└── 14-16: Color
+    14 const Color = { … }

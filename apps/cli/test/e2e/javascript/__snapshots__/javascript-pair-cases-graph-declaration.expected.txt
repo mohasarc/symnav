@@ -1,0 +1,22 @@
+Graph: Tabs
+File: src/Tabs/Tabs.js
+Lines: 6-8
+Depth: 1
+Direction: both
+Edges: calls
+
+Incoming
+src/Tabs/Tabs.js
+└── 6-8: Tabs
+    const Tabs = React.forwardRef(…)
+    ├── src/App.tsx
+    │   └── 3-5: App  [caller]
+    │       export function App()
+    └── src/hooks/useTabs.js
+        └── 4-6: useTabs  [caller]
+            export function useTabs()
+
+Outgoing
+src/Tabs/Tabs.js
+└── 6-8: Tabs
+    const Tabs = React.forwardRef(…)

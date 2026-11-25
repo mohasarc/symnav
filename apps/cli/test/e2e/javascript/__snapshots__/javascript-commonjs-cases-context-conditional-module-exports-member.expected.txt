@@ -1,0 +1,25 @@
+Context: picker::first
+File: src/lib/umd.js
+Lines: 5-7
+
+Definition
+src/lib/umd.js
+└── 5-7: picker::first  [implementation]
+    picker.first = function (items) …
+
+Callers
+src/extras.js
+└── 5-7: pickFirst  [call]
+      return first(items);
+
+Callees
+(none)
+
+References
+Total: 2
+Kinds: usage 2
+Run: symnav refs src/lib/umd.js::picker::first
+
+Recent History
+1. 056804a 2023-05-02 Script Bot
+   add CommonJS export declaration cases

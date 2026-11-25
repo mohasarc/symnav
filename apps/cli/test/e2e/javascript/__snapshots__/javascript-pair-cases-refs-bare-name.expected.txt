@@ -1,0 +1,24 @@
+References: Tabs
+Total: 10
+Kinds: usage 3, import 3, export 4
+Page: 1/1
+Sort: path, line
+
+src/
+├── App.tsx
+│   ├── 1: import Tabs from "./Tabs/Tabs";  [import]
+│   └── 4: return Tabs({ value: 1 });  [usage]
+├── Tabs/
+│   ├── Tabs.d.ts
+│   │   └── 7: export default Tabs;  [export]
+│   ├── Tabs.js
+│   │   └── 10: export default withStyles(styles, { name: "MuiTabs" })(Tabs);  [export]
+│   ├── index.d.ts
+│   │   └── 1: export { default } from "./Tabs";  [export]
+│   └── index.js
+│       └── 1: export { default } from "./Tabs";  [export]
+└── hooks/useTabs.js
+    ├── 1: import Tabs from "../Tabs";  [import]
+    ├── 2: import TabsComponent from "../Tabs/Tabs";  [import]
+    ├── 5: return [Tabs({ value: 0 }), TabsComponent({ value: 0 })];  [usage]
+    └── 5: return [Tabs({ value: 0 }), TabsComponent({ value: 0 })];  [usage]

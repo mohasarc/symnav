@@ -1,0 +1,5 @@
+Overview: src/namespace-property.js
+└── 1: helpers
+    1 const helpers = {}
+    └── 3-5: helpers::slug
+        3 helpers.slug = function (text) …

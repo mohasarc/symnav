@@ -110,9 +110,25 @@ export class CommonJsExportImporters {
 
   private static ownExportOf(declarationNode: Node): readonly PendingExport[] {
     const declaration = JavaScriptAssignmentDeclarations.declarationAt(declarationNode);
-    const exported = declaration && CommonJsExportImporters.exportNameOf(declaration);
+    const exported = declaration
+      ? CommonJsExportImporters.exportNameOf(declaration)
+      : CommonJsExportImporters.staticClassMemberExportOf(declarationNode);
     if (!exported || CommonJsExportImporters.shadowsModuleObjects(declarationNode)) return [];
     return [{ sourceFile: declarationNode.getSourceFile(), exported }];
+  }
+
+  private static staticClassMemberExportOf(member: Node): CommonJsExportName | undefined {
+    const isStaticMember =
+      (Node.isMethodDeclaration(member) ||
+        Node.isPropertyDeclaration(member) ||
+        Node.isGetAccessorDeclaration(member)) &&
+      member.isStatic();
+    if (!isStaticMember) return undefined;
+    const owner = member.getParent();
+    const ownerName = Node.isClassDeclaration(owner) ? owner.getNameNode() : undefined;
+    const exportsOwner =
+      ownerName !== undefined && JavaScriptAssignmentDeclarations.isModuleExportsValue(ownerName);
+    return exportsOwner ? { kind: "member", name: member.getName() } : undefined;
   }
 
   private static exportNameOf(
